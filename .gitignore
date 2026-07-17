@@ -1,0 +1,9 @@
+# build output
+/dist/
+/plugins/shell/shell
+
+# runtime artifacts
+*.log
+memory.db
+memory.db-shm
+memory.db-wal

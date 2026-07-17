@@ -1,0 +1,429 @@
+# Glossary
+
+A reference of concepts, components, and terms used throughout Nine's
+architecture and documentation. Entries are grouped by topic; each links to
+the doc with the full explanation.
+
+---
+
+## Core Processes & Components
+
+**Daemon** — The long-running background process that holds all state: plugin
+registry, LLM queue, active sessions, and the connection to the PostgreSQL store.
+The CLI is a
+thin client that connects to it over a Unix socket and auto-starts it if not
+running (`EnsureDaemon`). See [Daemon Architecture](daemon.md).
+
+**CLI** — The `nine` binary used both as a one-shot client (`nine
+"<message>"`) and as the interactive TUI (`nine` with no args). See
+[CLI Usage](usage.md).
+
+**AgentWorker** — Per-session goroutine that wraps one `agent.Loop`,
+serializes turns through a buffered-1 inbox channel, prepends pending
+notifications, runs the loop, checks for stalls, and checkpoints state after
+every turn. Used for interactive conversations, self-reflection, goal pursue
+sessions, and sub-agents alike. See [AgentWorker Architecture](runner.md).
+
+**Agent Loop (`internal/agent/loop.go`)** — The ReAct (Reason → Act →
+Observe) implementation. Holds `history` and `scratchpad`, repeatedly builds
+a context, submits it to the LLM queue, and dispatches any tool calls until
+the model returns a final answer with no tool calls. See
+[Agent Loop](agent-loop.md).
+
+**Supervisor Agent** — A special agent that monitors all other sessions. It
+activates on `gap_report` calls or stall detection. It has higher LLM queue
+priority than background work but lower than active conversations. See
+[Architecture § Supervisor Agent](architecture.md#supervisor-agent).
+
+**Tool Dispatcher (`internal/agent/dispatcher.go`)** — Routes each tool call
+to its registered handler: plugin tools via `plugin.call`, core-intercepted
+tools in-process. Fires post-call hooks on success and caps every result at
+~2048 tokens. Handlers are registered at loop-build time via `RegisterPlugin`
+and the `Register*` functions. See [Agent Loop § Dispatcher](agent-loop.md#dispatcher).
+
+**Plugin Manager (`internal/plugin/manager.go`)** — Spawns plugin
+subprocesses, calls `plugin.describe`, and registers their tools with the
+dispatcher. Plugins are fixed at build time — started at boot and stopped on
+shutdown (`Start`/`TryStart`/`Stop`/`StopAll`); there is no runtime hot-swap. A
+crashed subprocess is isolated from the daemon. See [Plugins](plugins.md).
+
+**LLM Queue (`internal/llm/queue.go`)** — Prioritized queue in front of the
+LLM provider. Enforces `max_concurrent` in-flight requests. Priority order:
+1 = supervisor, 2 = active conversations, 3 = background sessions and sub-agents. See
+[Architecture § LLM Queue](architecture.md#llm-queue-internalllm).
+
+**Context Builder (`ninectx.Builder`, `internal/context/builder.go`)** —
+Assembles one `llm.Request` per loop iteration from system prompt, tool
+definitions, message history, and scratchpad, trimming lower-priority content
+to fit `context_budget`. See [Context Builder](context-builder.md).
+
+**Checkpoint** — Serialized `history` + `scratchpad` for one agent, persisted
+to the `conversations` table (`CheckpointStore`) after every turn via `SaveCheckpoint`/
+`LoadCheckpoint`. Enables `nine attach <id>` and survival of daemon
+restarts. See [Agent Loop § Checkpointing](agent-loop.md#checkpointing).
+
+---
+
+## Work Units
+
+**Conversation** — An interactive thread tied to a terminal session. Status
+`active` (terminal connected) or `archived` (disconnected, resumable via
+`nine attach`).
+
+**Work unit** — Nine has two fundamental units: a **session** (an agent loop —
+conversation, goal-pursue, reflection, or sub-agent) and a **tool call** (the
+atom, issued within a turn). There is **no "Task" entity**: finite work is
+either a sub-agent (transient) or a workflow step (durable), and
+`task_timeout_seconds` is just the sub-agent timeout. See
+[overview.md §3](../spec/overview.md).
+
+**Goal** — A persistent, open-ended intention with no defined end condition
+(e.g. "monitor this repo for security issues"). Stored in the `goals` table
+with `status` (`active`/`paused`/`done`/`archived`), an optional
+`parent_id`/`parent_type`, and an append-only `subtree` of spawned
+sub-goals and sub-work. LLM tools: `goal_create`, `goal_get`, `goal_list`,
+`goal_update_status`, `goal_append_subtree` (role-gated like `run_agent`).
+See [Architecture § Goals](architecture.md#goals).
+
+**Sub-agent (`run_agent` / `run_agents`)** — Core-intercepted tools that spawn
+a child agent to execute one task (`run_agent`) or several in parallel
+(`run_agents`, default 120s timeout). Both accept an optional `role` naming the
+child's worker role (default `executor`; see [Roles](roles.md)). Available to
+delegating roles only, with the delegation depth guard as recursion backstop.
+See `internal/agent/register_subagents.go`.
+
+**Workflow** — A named, persistent multi-step execution plan the LLM creates
+before delegating to sub-agents. Has a `name`, ordered `steps`
+(`pending`/`running`/`done`/`failed`/`skipped`), and an overall `status`
+(`active`/`done`/`failed`/`cancelled`). Auto-closes when all steps reach a
+terminal state. LLM tools: `workflow_create`, `workflow_update`,
+`workflow_get`, `workflow_list`, `workflow_retry_step` (depth-capped like
+`run_agent`). Operator commands: `nine workflow stop|fail`. See
+[Workflows](workflows.md).
+
+**Session Plan** — Persistent state machine of **stages** attached to every
+`AgentWorker` (ordinary conversation, the self-reflection session, or a
+goal's pursue session). Stored as one row per agent ID in `session_plans`.
+Drives autonomous between-turn behavior via `OnTurnEnd` (every turn) and
+`OnIdle` (per-stage idle scheduler). See [Session Plans & Stages](session-plans.md).
+
+**Stage / StageHandler** — The extension point for session plans. Each
+`kind` (`active`, `idle-reflection`, `pursue`) implements `Init`,
+`OnTurnEnd`, and `OnIdle`. `active` is a no-op trivial stage every
+conversation gets; `idle-reflection` and `pursue` are idle-capable and get
+their own resumable background sessions.
+
+**Self-reflection session (`idle-reflection` stage)** — A single fixed
+session (agent ID `self-reflection`) that wakes every 2 minutes and asks the
+model to update `self/capabilities` and `self/learned` via `memory_set`. Each
+result is recorded in the `reflections` table (`nine reflections` /
+`/reflections`). See [Session Plans § idle-reflection](session-plans.md#idle-reflection--self-reflection-session).
+
+**Pursue session (`pursue` stage)** — Background session spawned 1:1 for
+every top-level goal (`agentID == goalID`), waking every 5 minutes to
+`goal_get`, act on the goal, and call `goal_update_status`/
+`goal_append_subtree`. Capped by `daemon.max_goal_sessions` (default 10);
+`goal_create` reports `pursue_session: "spawned"` or `"limit_reached"`. See
+[Session Plans § pursue](session-plans.md#pursue--background-goal-pursuit).
+
+---
+
+## Context, Memory & Self-Model
+
+**Context Budget (`context_budget` / `num_ctx`)** — Per-turn token limit. The
+context builder allocates it across priorities: (1) system prompt core —
+never trimmed, (2) tool definitions — relevance-filtered, (2.5) self-model —
+capped ~600 tokens, (3) message history — oldest trimmed first, (4)
+scratchpad — oldest trimmed first, (5) system extras — dropped if tight. See
+[Context Builder](context-builder.md).
+
+**Scratchpad** — Ephemeral list of `ScratchpadEntry{Thought, ToolName,
+ToolArgs, Observation}` accumulated during the current turn's tool-call loop.
+Each entry expands to an assistant message (thought + tool call) and a user
+message (tool result) for the LLM. Cleared on every final answer; persisted
+in checkpoints so it survives disconnects/restarts.
+
+**Tool Relevance Filtering** — At each turn the advertised tool set is capped at
+top-N (`ToolTopN`, default 20), plus always-include tools (memory tools,
+core-intercepted tools like `gap_report` and `run_agent`) which bypass the cap.
+Non-always tools are ordered by cosine similarity between the query and each
+tool's description embedding. The `AgentBuilder` embeds each tool description once
+(cached by name; descriptions are static after boot) and sets it on the
+`ToolWithVector`, so ranking is live with any embedder; with `provider = "none"`
+vectors are nil and selection falls back to insertion order under the cap.
+
+**Embedder** — Provider-agnostic interface (`Embed(ctx, text) ([]float32,
+error)`) used for skill ranking, semantic memory/file search, and the
+related-session indexer. Configured independently of the chat LLM via
+`[embeddings]`. Providers: `keyword` (built-in, default, no network), `ollama`,
+or `none` (disables ranking). See
+[Configuration § Embeddings](configuration.md#embeddings).
+
+**Vector store / namespaces** — Embeddings are stored in the in-process
+`internal/memory.Store`'s `vectors` table (Postgres `pgvector` type) under
+namespaced keys — e.g. `skills` (skill descriptions), `session-index` (one vector
+per completed turn, for the related-session indexer), and per-agent memory
+namespaces. Nearest-neighbour queries rank by pgvector's `<=>` cosine distance.
+
+**Self-model (`SystemSelf`)** — A context block built by
+`internal/selfmodel.Assembler` from the `self/identity`, `self/capabilities`,
+and `self/learned` KV keys, injected into every turn at priority 2.5 (capped
+~600 tokens). Seeded by `BootstrapSelfKV`; `self/learned` and
+`self/capabilities` are refreshed by the idle-reflection stage.
+
+**`internal/memory.Store`** — The single, in-process **PostgreSQL** (+ `pgvector`)
+interface for all of Nine's persistent state — *not* a plugin subprocess. Connects
+via a DSN (`[memory].database_url`, default `postgres://…:5433/nine`), fails fast
+if unreachable, and is the sole owner of `*sql.DB` (the "single gateway"
+invariant). Agent-facing K/V (`memory_get/set/delete/list`), file storage
+(`file_store/fetch/list`, `file_search_text`), and (core-intercepted) vector ops
+(`memory_embed`/`memory_query`/`file_search_semantic`) are exposed as tools.
+Operational tables (`conversations`, `goals`, `notifications`,
+`user_notifications`, `reflections`, `workflows`, `session_plans`,
+`human_requests`, `interactive_sessions`, `session_events`, `event_cursors`,
+`related_sessions`) are accessed only by the daemon, never exposed as agent tools.
+(There is no `tasks` or `plugin_registry` table.)
+See [Architecture § Memory and Persistence](architecture.md#memory-and-persistence).
+
+**Notification** — Result of a completed/errored background session, goal, or
+sub-agent. **Pull**: `nine goals`/`/goals` (and `nine workflows`) show live status.
+**Push**: pending rows in the `notifications` table are prepended to the next
+active-conversation turn (`prependNotifications`). Separately, the
+`user_notifications` table is a human-facing feed background agents post to
+(`notify_user`), read via `nine notifications`.
+
+---
+
+## Event Journal & Subscriptions
+
+**Event journal (`session_events`)** — Append-only, per-session execution log:
+one row per step (`turn_start`, `llm_request`/`llm_response` with the exact
+assembled prompt, `tool_start`/`tool_end`, `context_update`, `turn_end`,
+`supervisor`), ordered by a `seq` BIGSERIAL and grouped by `span_id`. It is the
+source of truth for observation, replay, and subscriptions. Design:
+[event log](event-log.md).
+
+**EventSink (`runtime.NewSQLEventSink`)** — The async, batched writer that
+persists journal events off the turn's critical path. Its flush also wakes
+journal subscribers (`daemon.NotifySubscribers`).
+
+**Span (`span_id` / `parent_span_id`)** — Causal grouping within a turn: the turn
+root, each LLM call, and each tool call get spans, so a trajectory forms a tree.
+
+**`nine trace` / `nine replay`** — `trace` renders a session's journal directly
+(works with the daemon down). `replay` (`internal/replay`) deterministically
+re-executes a recorded session on a real loop wired to a *recorded*
+provider/dispatcher — no live LLM or tool calls.
+
+**Retention scrub (`SessionEventsScrub`)** — Boot-time pruning that bounds journal
+growth: keep the last N turns per agent and/or drop events older than a max age
+(`[daemon] event_retention_turns` / `event_retention_days`).
+
+**Subscription (`internal/subscribe`)** — A durable-cursor reader over the journal:
+a `Handler` (id = cursor key, opt-in event `Types`, idempotent `Handle`) driven
+forward from its persisted position (`event_cursors`), woken in-process and
+catching up after restart. At-least-once delivery; a poison event is logged and
+skipped, never wedging the cursor.
+
+**Subscriber (`internal/subscribers`)** — A programmatic, **out-of-band** handler
+that reacts to journal events to enrich *derived* stores — never a generative LLM
+call, never a write into the active session (enrich, don't interject). Design:
+[reactive events](reactive-events.md).
+
+**Related-session indexer / `related_sessions`** — The first subscriber: on each
+`turn_end` it embeds the answer, links topically-similar prior sessions into the
+`related_sessions` table (pgvector, threshold-gated), and indexes the turn. A
+later user turn *pulls* the most relevant link into context under the token budget
+(pull, not push). On by default when an embedder is configured
+(`[daemon] related_sessions_index`).
+
+---
+
+## Plugins & Tools
+
+**Plugin** — A standalone binary that answers two methods — `plugin.describe`
+(returns tool definitions) and `plugin.call` (executes a tool, returns a result)
+— over **HTTP on a per-plugin Unix socket** (`NINE_PLUGIN_SOCKET`, `POST /rpc`;
+see [HTTP transport](plugins-http-transport.md)). External **MCP** servers instead
+speak JSON-RPC 2.0 over stdio. Plugins are compiled into the image at build time;
+there is no runtime generation. See [Plugins](plugins.md) and
+[Architecture § Plugin Protocol](architecture.md#plugin-protocol).
+
+**Core-intercepted tools** — Tools that appear in the agent's tool list but
+are handled directly by the Tool Dispatcher, with no plugin subprocess:
+`gap_report`, `memory_embed`, `memory_query`, `file_search_semantic`,
+`run_agent`, `run_agents`, the `workflow_*` tools, and the `goal_*` tools.
+Registered by `AgentBuilder.registerCoreTools` and `registerSubAgentTools`
+when each loop is built.
+
+**Post-call hook** — A callback registered with `AddHook(toolName, fn)` that
+fires after a successful call to a specific tool. (Skill description embedding
+is now done inline by `skill_write`/`skill_modify` in `RegisterSkillTools`, not
+via a hook.)
+
+**Plugin lifecycle** — Built into the image (`go build` → `/opt/nine/bin/<name>`)
+→ started at daemon boot (`TryStart` → spawn, `plugin.describe`, register tools)
+→ in use via `plugin.call` → SIGTERM on shutdown. A crashed
+subprocess is isolated from the daemon; restart from the existing binary is the
+plugin manager's responsibility. See [Plugins § Plugin Lifecycle](plugins.md#plugin-lifecycle).
+
+**Default plugins** — Shipped with Nine and auto-loaded at startup: `shell`
+(`shell`), `files` (`read_file`, `write_file`), `http` (`http_get`,
+`http_post`, `web_search`, `web_page_read`), `time` (`time`), and
+`browser` (headless Chromium). Memory/file/vector and skill tools are
+core-intercepted, not a subprocess plugin. See [Plugins](plugins.md).
+
+**Browser plugin** — Playwright/Chromium-based plugin (compiled with Bun, no
+Node/npm needed at runtime) providing `browser_navigate`, `browser_screenshot`,
+`browser_extract`, `browser_click`, `browser_fill`, `browser_eval`,
+`browser_wait`, `browser_status`, `browser_reset`. Blocks private/loopback
+URLs by default (SSRF protection); supports allow/block glob lists. See
+[Browser Plugin](browser.md).
+
+**`plugin.Serve`** — Helper in `internal/plugin` (`serve.go`) that implements the
+JSON-RPC server loop for a plugin, so a plugin's `main` only passes its
+`ToolDefinition`s and a `name → ToolHandler` map. See
+[Plugins § Adding a Plugin](plugins.md#adding-a-plugin).
+
+**`NINE_BIN`** — Environment variable passed to every plugin subprocess: the
+plugin binary directory. Individual plugins may receive extra env vars at
+startup (e.g. the `BROWSER_*` settings for `browser`).
+
+---
+
+## Skills
+
+**Skill** — A named markdown how-to note (`name`, `description`, `tags`, body)
+stored in the `skills` table (PostgreSQL). Never preloaded; the description is
+embedded into the `skills` vector namespace and the self-model surfaces relevant
+names (context priority 5, dropped first under budget pressure), which the agent
+then reads in full via `skill_read`. See [Skills](skills.md).
+
+**Built-in vs. agent skills** — Built-in skills are seeded from the binary
+(repo `skills/*.md`, embedded at build) on every boot and are **immutable** at
+runtime. Agent skills are authored by Nine via `skill_write`/`skill_modify`,
+persist in the store, and are mutable. `skill_write`/`skill_modify` refuse to
+touch a built-in skill.
+
+**Skill vs. Memory** — Skills are semantically-retrieved procedures that shape
+*how* the agent approaches a class of task. Memory (KV store) is
+exact-key-lookup, per-session/dynamic *data* the agent fetches explicitly.
+
+**Default skills** — The repo's `skills/*.md` (e.g. `task-management`,
+`git-workflow`, `go-development`), embedded into the binary and seeded into the
+`skills` table on every boot (`runtime.SeedSkills`).
+
+**Self-improvement loop** — When a task completes successfully, the
+supervisor evaluates whether the approach is general enough to write up as a
+new agent skill via `skill_write`, so future similar tasks can reuse it.
+
+---
+
+## Self-Improvement & Capability Gaps
+
+**Self-Improvement** — Nine improves itself only by writing its own skills
+(`skill_write` / `skill_modify`) — data, not code. Built-in skills are immutable.
+It does not generate plugins, change `nine.toml`, or rebuild its own source at
+runtime. See [Self-Improvement & Boundaries](self-modification.md).
+
+**`gap_report`** — Core-intercepted tool an agent calls when no available
+tool fits its task. Posts a gap event to the supervisor's internal event
+queue (distinct from the user-facing notification queue).
+
+**Capability Gap Detection** — When no tool fits, the agent first tries
+`skill_search` to recall a documented approach. An unresolved gap is reported
+via `gap_report` (or surfaced by stall detection), which notifies the
+supervisor; capabilities Nine genuinely lacks are surfaced to the user rather
+than self-generated.
+
+**Stall detection** — The AgentWorker counts consecutive turns where
+`agent.Loop.LastRunToolCount() == 0`. At `StallConfig.Limit` (default 3),
+`OnStall` fires (notifies the supervisor) and the counter resets. Disabled if
+`Limit == 0`. See [AgentWorker § Stall Detection](runner.md#stall-detection).
+
+---
+
+## Configuration & Operations
+
+**`nine.toml`** — TOML config file, located via `$NINE_CONFIG` → `./nine.toml`
+→ `/nine.toml` (Docker bind-mount) → `~/.nine/nine.toml`. Sections:
+`[llm]`, `[daemon]`, `[plugins]`, `[skills]`, `[memory]`, `[embeddings]`,
+`[ui]`, `[workspace]`. See [Configuration](configuration.md).
+
+**LLM provider** — `[llm].provider`: `anthropic` (default) or `ollama`. These are
+the only chat backends `BuildProvider` wires; any other value falls through to the
+Anthropic client. (`internal/llm/openai` is an empty placeholder — OpenAI is
+available for *embeddings* only, via `[embeddings].provider`.) The `Provider`
+interface is a single method, `Complete(ctx, Request) (Response, error)`, with
+streaming via the request's `OnChunk` callback.
+
+**`max_concurrent`** — Cap on in-flight LLM requests in the priority queue;
+set to `1` for local Ollama models to avoid contention.
+
+**`max_goal_sessions` (`daemon.max_goal_sessions`)** — Cap on concurrently
+running `pursue` sessions, default 10 (`DefaultMaxGoalSessions`).
+
+**Token counting** — Approximated as 4 characters ≈ 1 token everywhere in the
+context builder (no tokenizer dependency).
+
+**Volume layout (`/data/`)** — Holds `workspace/` (files-plugin working dir) only.
+Primary state lives in **PostgreSQL**, which runs as its own service (the
+`docker-compose` `pgvector/pgvector:pg17` image on port 5433 with its own
+`nine-pgdata` volume), not in `/data`. The `nine` binary (with built-in skills
+embedded) and plugins are immutable image content under `/opt/nine`.
+
+**`database_url` (`[memory].database_url` / `NINE_DATABASE_URL`)** — The
+PostgreSQL DSN the daemon connects to (default
+`postgres://nine:nine@localhost:5433/nine?sslmode=disable`). The daemon fails fast
+if the database is unreachable.
+
+---
+
+## CLI & TUI
+
+**`nine <message>`** — One-shot client call; auto-starts the daemon if
+needed and continues the same conversation thread across calls.
+
+**`nine attach <agent-id>`** — Reconnect to a specific conversation/task/goal
+session by its agent ID (restores from checkpoint if not already running).
+
+**`nine status` / `/status`** — Daemon uptime, active agent count, loaded
+plugins (and tool counts).
+
+**`nine goals` / `nine reflections` / `nine workflows`** —
+List goals (with their sub-goal/sub-work subtree), idle-reflection history,
+and active/recent workflows respectively. TUI equivalents: `/goals`,
+`/reflections`, `/workflows`. (There is no `tasks` verb.)
+
+**`nine workflow stop <id>`** — Live cancellation of an ongoing workflow
+(daemon must be running): marks it `cancelled`, pending steps `skipped`,
+running steps `failed` (`stopped`). In-flight sub-agents finish but their
+results are discarded.
+
+**`nine workflow fail <id> | --all`** — Post-mortem cleanup; marks
+workflow(s) `failed`. Works even if the daemon is down (runs the memory
+plugin as a one-shot process).
+
+**Startup scrub (`internal.workflow.scrub`)** — On every daemon start, marks
+all `running` workflow steps as `failed` (`interrupted`) and auto-closes
+workflows whose steps are now all terminal; workflows with remaining
+`pending` steps stay `active` for the LLM to resume.
+
+**TUI slash commands** — `/help`, `/status`, `/config`, `/tools [filter]`,
+`/skills [name]`, `/memory [key]`, `/goals`, `/workflows`, `/new`,
+`/clear`. Handled locally — no LLM tokens consumed. See
+[CLI Usage § TUI Slash Commands](usage.md#tui-slash-commands).
+
+---
+
+## Protocol
+
+**`internal/protocol`** — Package holding the daemon/client wire types
+(`Msg`, `ProgressEvent`, `StatusInfo`) and the client (`EnsureDaemon`, typed
+request methods), kept separate from the runtime so client code doesn't pull
+in the whole daemon. Messages are newline-delimited JSON over the Unix
+socket. See [Daemon Architecture § Protocol](daemon.md#protocol).
+
+**Progress events** — Streamed during a turn: `tool_start`/`tool_end` (tool
+call lifecycle), `context_update` (token usage vs. budget), `response_chunk`
+(streamed text). Final `response` + `done` sent when the turn completes.

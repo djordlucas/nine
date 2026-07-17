@@ -1,0 +1,384 @@
+package protocol
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"net"
+	"os"
+	"os/exec"
+	"syscall"
+	"time"
+)
+
+// CanConnect reports whether a daemon is listening on sock.
+func CanConnect(sock string) bool {
+	conn, err := net.DialTimeout("unix", sock, 200*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
+// EnsureDaemon starts the daemon if none is listening on sock.
+// binary is the path to the nine executable (typically os.Args[0]).
+// Returns the started process if we launched it, or nil if one was already running.
+func EnsureDaemon(sock, binary string) (*os.Process, error) {
+	if CanConnect(sock) {
+		return nil, nil
+	}
+	cmd := exec.Command(binary, "daemon")
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	// Create a new session so the daemon is detached from the terminal.
+	// Without this, closing the terminal sends SIGHUP to the daemon.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	for range 50 {
+		time.Sleep(100 * time.Millisecond)
+		if CanConnect(sock) {
+			return cmd.Process, nil
+		}
+	}
+	cmd.Process.Kill() //nolint:errcheck
+	return nil, fmt.Errorf("daemon did not start within 5s")
+}
+
+// Client is a connection to a running daemon.
+type Client struct {
+	conn    net.Conn
+	scanner *bufio.Scanner
+	enc     *json.Encoder
+}
+
+// Connect dials the daemon's Unix socket.
+func Connect(socketPath string) (*Client, error) {
+	conn, err := net.Dial("unix", socketPath)
+	if err != nil {
+		return nil, err
+	}
+	return &Client{
+		conn:    conn,
+		scanner: bufio.NewScanner(conn),
+		enc:     json.NewEncoder(conn),
+	}, nil
+}
+
+// Close closes the connection.
+func (c *Client) Close() error { return c.conn.Close() }
+
+// NewConversation asks the daemon to create a new, non-interactive
+// conversation and returns its ID.
+func (c *Client) NewConversation() (string, error) {
+	id, _, err := c.NewConversationInteractive(false)
+	return id, err
+}
+
+// NewConversationInteractive creates a conversation, marking it interactive
+// (HITL-eligible) when interactive is true. Only the TUI sets this. Returns the
+// new conversation's ID and its resolved role.
+func (c *Client) NewConversationInteractive(interactive bool) (id, role string, err error) {
+	if err := c.send(Msg{Type: "new_conversation", Interactive: interactive}); err != nil {
+		return "", "", err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return "", "", err
+	}
+	if reply.Type == "error" {
+		return "", "", fmt.Errorf("daemon: %s", reply.Text)
+	}
+	if reply.Type != "conversation_id" {
+		return "", "", fmt.Errorf("unexpected reply: %s", reply.Type)
+	}
+	return reply.ID, reply.Role, nil
+}
+
+// Attach reconnects to an existing conversation and returns an AttachResult
+// with the resolved agent ID, display name, any buffered tool events from while
+// no client was connected, and the last completed response if available.
+func (c *Client) Attach(agentID string) (AttachResult, error) {
+	if err := c.send(NewAttachMsg(agentID)); err != nil {
+		return AttachResult{}, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return AttachResult{}, err
+	}
+	if reply.Type == "error" {
+		return AttachResult{}, fmt.Errorf("daemon: %s", reply.Text)
+	}
+	if reply.Type != "ok" {
+		return AttachResult{}, fmt.Errorf("unexpected reply: %s", reply.Type)
+	}
+	resolved := reply.AgentID
+	if resolved == "" {
+		resolved = agentID
+	}
+	return AttachResult{
+		AgentID:         resolved,
+		Name:            reply.Name,
+		Role:            reply.Role,
+		ReplayEvents:    reply.ReplayEvents,
+		PendingResponse: reply.PendingResponse,
+		History:         reply.History,
+	}, nil
+}
+
+// Turn sends a user message and returns the assistant's response.
+// Progress events are silently discarded; use TurnWithProgress to receive them.
+func (c *Client) Turn(agentID, text string) (string, error) {
+	return c.TurnWithProgress(agentID, text, nil)
+}
+
+// TurnWithProgress sends a user message and calls onProgress (if non-nil) for
+// each tool event received before the final response.
+func (c *Client) TurnWithProgress(agentID, text string, onProgress func(ProgressEvent)) (string, error) {
+	return c.turnWithProgress(agentID, text, false, onProgress)
+}
+
+// TurnForced is like TurnWithProgress but forces native thinking / the analysis
+// pass for this turn (the /think command).
+func (c *Client) TurnForced(agentID, text string, onProgress func(ProgressEvent)) (string, error) {
+	return c.turnWithProgress(agentID, text, true, onProgress)
+}
+
+func (c *Client) turnWithProgress(agentID, text string, forceThink bool, onProgress func(ProgressEvent)) (string, error) {
+	msg := NewUserTurnMsg(agentID, text)
+	msg.ForceThink = forceThink
+	if err := c.send(msg); err != nil {
+		return "", err
+	}
+
+	for {
+		msg, err := c.recv()
+		if err != nil {
+			return "", err
+		}
+		if evt, ok := msg.ToProgressEvent(); ok {
+			if onProgress != nil {
+				onProgress(evt)
+			}
+			continue
+		}
+		switch msg.Type {
+		case "response":
+			// Consume the trailing "done" message.
+			if done, err := c.recv(); err != nil {
+				return "", err
+			} else if done.Type == "error" {
+				return "", fmt.Errorf("daemon: %s", done.Text)
+			}
+			return msg.Text, nil
+		case "error":
+			return "", fmt.Errorf("daemon: %s", msg.Text)
+		default:
+			return "", fmt.Errorf("unexpected reply: %s", msg.Type)
+		}
+	}
+}
+
+// AnswerHuman delivers a human's answer to a pending ask_human request. It is
+// sent on its own connection (the turn's connection is blocked reading the
+// in-flight stream), and returns once the daemon acknowledges.
+func (c *Client) AnswerHuman(agentID, requestID, answer string) error {
+	if err := c.send(NewHumanInputAnswerMsg(agentID, requestID, answer)); err != nil {
+		return err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return err
+	}
+	if reply.Type == "error" {
+		return fmt.Errorf("daemon: %s", reply.Text)
+	}
+	return nil
+}
+
+// Status requests daemon status information.
+func (c *Client) Status() (*StatusInfo, error) {
+	if err := c.send(NewQueryMsg("status")); err != nil {
+		return nil, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return nil, err
+	}
+	if reply.Type == "error" {
+		return nil, fmt.Errorf("daemon: %s", reply.Text)
+	}
+	var info StatusInfo
+	if err := json.Unmarshal([]byte(reply.Text), &info); err != nil {
+		return nil, fmt.Errorf("decode status: %w", err)
+	}
+	return &info, nil
+}
+
+// ListGoals requests the goal list from the daemon. Returns raw JSON.
+func (c *Client) ListGoals() (string, error) {
+	return c.queryList("list_goals")
+}
+
+// ListReflections requests the reflection history from the daemon. Returns raw JSON.
+func (c *Client) ListReflections() (string, error) {
+	return c.queryList("list_reflections")
+}
+
+// ListNotifications requests the human-facing notification feed. When all is
+// true the full history is returned and nothing is marked seen; otherwise only
+// unseen entries are returned and they are marked seen. Returns raw JSON.
+func (c *Client) ListNotifications(all bool) (string, error) {
+	m := NewQueryMsg("list_notifications")
+	if all {
+		m.Text = "--all"
+	}
+	if err := c.send(m); err != nil {
+		return "", err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return "", err
+	}
+	if reply.Type == "error" {
+		return "", fmt.Errorf("daemon: %s", reply.Text)
+	}
+	return reply.Text, nil
+}
+
+// ListWorkflows requests the workflow list from the daemon. Returns raw JSON.
+func (c *Client) ListWorkflows() (string, error) {
+	return c.queryList("list_workflows")
+}
+
+// StopWorkflow sends a workflow_stop message to cancel an active workflow.
+func (c *Client) StopWorkflow(id string) error {
+	if err := c.send(NewWorkflowStopMsg(id)); err != nil {
+		return err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return err
+	}
+	if reply.Type == "error" {
+		return fmt.Errorf("daemon: %s", reply.Text)
+	}
+	return nil
+}
+
+// FailWorkflow sends a workflow_fail message to mark workflow(s) as failed.
+func (c *Client) FailWorkflow(id string, all bool) error {
+	text := id
+	if all {
+		text = "--all"
+	}
+	if err := c.send(NewWorkflowFailMsg(text)); err != nil {
+		return err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return err
+	}
+	if reply.Type == "error" {
+		return fmt.Errorf("daemon: %s", reply.Text)
+	}
+	return nil
+}
+
+func (c *Client) queryList(msgType string) (string, error) {
+	if err := c.send(NewQueryMsg(msgType)); err != nil {
+		return "", err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return "", err
+	}
+	if reply.Type == "error" {
+		return "", fmt.Errorf("daemon: %s", reply.Text)
+	}
+	return reply.Text, nil
+}
+
+// Context requests a breakdown of the session's assembled context as raw JSON
+// (a ninectx.Report). It performs no LLM call. The caller unmarshals the result.
+func (c *Client) Context(agentID string) (string, error) {
+	if err := c.send(NewContextMsg(agentID)); err != nil {
+		return "", err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return "", err
+	}
+	if reply.Type == "error" {
+		return "", fmt.Errorf("daemon: %s", reply.Text)
+	}
+	return reply.Text, nil
+}
+
+// ListTools requests all tool definitions from all loaded plugins.
+func (c *Client) ListTools() ([]ToolSummary, error) {
+	if err := c.send(NewQueryMsg("list_tools")); err != nil {
+		return nil, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return nil, err
+	}
+	if reply.Type == "error" {
+		return nil, fmt.Errorf("daemon: %s", reply.Text)
+	}
+	var tools []ToolSummary
+	if err := json.Unmarshal([]byte(reply.Text), &tools); err != nil {
+		return nil, fmt.Errorf("decode tools: %w", err)
+	}
+	return tools, nil
+}
+
+// PluginCall calls a plugin tool directly, bypassing the LLM agent.
+func (c *Client) PluginCall(tool string, args json.RawMessage) (string, error) {
+	if err := c.send(NewPluginCallMsg(tool, args)); err != nil {
+		return "", err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return "", err
+	}
+	if reply.Type == "error" {
+		return "", fmt.Errorf("daemon: %s", reply.Text)
+	}
+	return reply.Text, nil
+}
+
+func (c *Client) send(m Msg) error { return c.enc.Encode(m) }
+
+func (c *Client) recv() (Msg, error) {
+	if !c.scanner.Scan() {
+		if err := c.scanner.Err(); err != nil {
+			return Msg{}, err
+		}
+		return Msg{}, fmt.Errorf("connection closed")
+	}
+	var m Msg
+	if err := json.Unmarshal(c.scanner.Bytes(), &m); err != nil {
+		return Msg{}, err
+	}
+	return m, nil
+}
+
+// SetPlanMode changes the reasoning mode (off | plan-only | always) for a
+// session live, returning the daemon's confirmation text.
+func (c *Client) SetPlanMode(agentID, mode string) (string, error) {
+	if err := c.send(NewSetPlanModeMsg(agentID, mode)); err != nil {
+		return "", err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return "", err
+	}
+	if reply.Type == "error" {
+		return "", fmt.Errorf("daemon: %s", reply.Text)
+	}
+	return reply.Text, nil
+}

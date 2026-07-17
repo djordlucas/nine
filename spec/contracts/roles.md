@@ -1,0 +1,138 @@
+# Contract — Roles: worker kinds as data
+
+**Status:** Built · **Depends on:** skills, dispatcher, context builder, orchestration, session plans · **Used by:** loop builder, delegation tools
+
+A **role** makes worker-kind first-class data: a persona (skill body), an **enforced
+tool allowlist**, and structural wiring (persistence, delegation, goal-spawning, HITL
+eligibility, stage profile). Roles carry all tool gating: the top-level worker is the
+**orchestrator** role, a sub-agent is a worker running a **leaf** role, and `depth` is a
+recursion guardrail. Full design rationale and the
+implementation handoff live in [`../../docs/roles.md`](../../docs/roles.md); this file
+is the normative contract.
+
+---
+
+## R-ROLE.1 — Frontmatter format
+
+A skill ([`skills.md`](skills.md) R-SKILL.1) **MAY** carry an optional `role:`
+frontmatter block. A skill *with* a role block is *also* a role; a skill *without* one
+is an ordinary knowledge skill, unchanged.
+
+```schema
+role:
+  tools: "*" | [name, ...]   # wildcard or strict allowlist (R-ROLE.2)
+  delegates: bool             # run_agent/run_agents/workflow_*/goal_* tools
+  spawns_goals: bool          # background pursue-session spawn fn
+  persists: bool              # checkpointing session worker vs ephemeral leaf
+  interactive: bool           # HITL-eligible (effective only with an interactive caller)
+  profile: [stage-kind, ...]  # [] / absent ⇒ ephemeral leaf, no stages
+```
+
+A malformed role block **MUST NOT** fail skill loading — the skill degrades to a plain
+knowledge skill.
+
+## R-ROLE.2 — Wildcard tools
+
+`tools: "*"` (or an omitted `tools` key with a role block present) means **all
+available tools**. An explicit list means a **strict allowlist**.
+
+## R-ROLE.3 — The role body is the persona
+
+The skill's markdown body becomes the role's system prompt. An empty body falls back to
+the daemon's configured system prompt (so the orchestrator, whose body is empty, runs on
+the daemon prompt).
+
+## R-ROLE.4 — Two-boundary enforcement
+
+A role's tool set **MUST** be enforced at *both*:
+
+1. the **advertised tool list** the loop sends to the model, and
+2. the **dispatcher handler registration** — a disallowed tool dispatches as
+   `unknown tool` even if the model hallucinates its name.
+
+Wildcard roles keep the full handler set (including registered-but-unadvertised
+tools such as `gap_report` and the embedding-backed memory tools).
+
+## R-ROLE.5 — Roles only narrow, never widen
+
+For allowlist roles, the effective tool set is the **intersection** of the allowlist
+with the tools the daemon exposes. A name the daemon does not expose (unknown tool, or
+a plugin that is not running) **MUST** be silently dropped, never created.
+`gap_report` remains registered regardless of role — it is the escape hatch when no
+allowed tool fits.
+
+## R-ROLE.6 — Depth becomes a guardrail
+
+Termination of delegation is primarily structural: leaf roles have `delegates: false`.
+A **depthGuard** (default seed **2**, configurable via `roles.max_delegation_depth`,
+decremented on each spawn) is the backstop: when it reaches 0, delegation tools are not
+registered even for a delegating role. Runaway recursion stays structurally impossible
+(I6, R-ORCH.3).
+
+## R-ROLE.7 — Agent-authored roles are purely restrictive
+
+A role block on an **agent-authored** skill MAY declare a `tools` allowlist (which, by
+R-ROLE.5, can only narrow). Its **structural flags MUST be ignored** and forced to leaf
+defaults (`persists/interactive/spawns_goals/delegates: false`, no profile). Only
+built-in (embedded, immutable) role skills may set structural flags. Defining a role is
+writing data, not changing Nine's executable shape (I10, N1–N3).
+
+## R-ROLE.8 — Role selection at delegation time
+
+`run_agent` input and each `run_agents` task gain an optional `role` field (string).
+The tool schema **SHOULD** enumerate the built-in leaf roles with one-line descriptions
+so the model chooses well; the system prompt **SHOULD** steer toward the narrowest
+fitting role.
+
+## R-ROLE.9 — Resolution and fallback
+
+A role registry resolves names: built-ins first (embedded role skills, loaded at
+boot), then agent-authored role skills (looked up in the store at resolve time, so a
+`skill_write` takes effect on the next delegation). An unknown or omitted name resolves
+to `roles.default_leaf` (default `executor`) — never an error. A spawned child always
+runs as a **leaf**: root-only structural flags are ignored on the delegation path.
+
+## R-ROLE.10 — The leaf persona
+
+A spawned leaf's system core **MUST** be its role body (the executor body for a default
+leaf) — never the orchestrator's daemon prompt. The executor role body carries the
+finite-task, no-clarifying-questions sub-agent stance.
+
+---
+
+## Built-in roles
+
+Seeded from `skills/roles/*.md` (embedded, immutable — R-SKILL.2 applies):
+
+| Role | Tools | Delegates | SpawnsGoals | Persists | Interactive | Profile |
+|------|:-----:|:---------:|:-----------:|:--------:|:-----------:|---------|
+| `orchestrator` | `*` | ✓ | ✓ | ✓ | ✓ (from caller) | `[active]` |
+| `reflection` | `memory_*`, `skill_read` | ✗ | ✗ | ✓ | ✗ | `[idle-reflection]` |
+| `pursue` | `*` | ✓ | ✗ | ✓ | ✗ | `[pursue]` |
+| `executor` (default leaf) | `*` | ✓ (guard-capped) | ✗ | ✗ | ✗ | — |
+| `software-dev` | shell + file + memory allowlist | ✗ | ✗ | ✗ | ✗ | — |
+| `sysadmin` | shell + file + http allowlist | ✗ | ✗ | ✗ | ✗ | — |
+| `report-writer` | web + stored-file allowlist (**no `shell`, no `write_file`**) | ✗ | ✗ | ✗ | ✗ | — |
+
+The daemon resolves a session's role from its plan profile: `active` → orchestrator,
+`idle-reflection` → reflection, `pursue` → pursue. `orchestrator` and `executor` carry
+the full delegation surface; `reflection` and `pursue` are deliberately **narrowed** to
+their background purpose.
+
+---
+
+## Config
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `roles.default_leaf` | `"executor"` | role used when a delegation names none |
+| `roles.max_delegation_depth` | `2` | depthGuard seed (R-ROLE.6) |
+
+---
+
+## Reference symbols
+
+`internal/runtime/roles.go` (`Role`, `RoleRegistry`, `roleNameForPlan`),
+`internal/runtime/builder.go` (`AgentBuilder.build(agentID, role, depthGuard)`,
+`buildToolList`, `filterByRole`), `internal/agent/dispatcher.go` (`RestrictTo`),
+`nine/skills` (`RoleSpec`, role frontmatter parsing), `skills/roles/*.md`.

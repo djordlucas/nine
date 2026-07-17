@@ -1,0 +1,64 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - bodyclose     # HTTP response bodies closed
+    - errcheck      # unchecked error returns
+    - gosec         # security checks
+    - govet         # go vet
+    - ineffassign   # ineffective assignments
+    - revive        # general code quality
+    - staticcheck   # comprehensive static analysis
+    - unused        # unused code
+
+  settings:
+    errcheck:
+      check-blank: false
+      exclude-functions:
+        # Idiomatic deferred closes — errors not actionable at call site
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (*database/sql.DB).Close
+        - (*database/sql.Rows).Close
+        - (net.Listener).Close
+        - (net.Conn).Close
+        - (*net.TCPConn).Close
+        # bufio write chain to a network conn — errors unrecoverable
+        - (*bufio.Writer).Flush
+        - (*bufio.Writer).Write
+        - (*bufio.Writer).WriteByte
+        # fmt writes to http.ResponseWriter — unrecoverable
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        # json codec on http.ResponseWriter — unrecoverable
+        - (*encoding/json.Decoder).Decode
+        - (*encoding/json.Encoder).Encode
+        # OS helpers where errors are not actionable (not found, already removed, etc.)
+        - os.Remove
+        - os.RemoveAll
+        - os.MkdirAll
+        - os.WriteFile
+        # Plugin/daemon cleanup in tests and CLI — error means process already exited
+        - (*nine/internal/plugin.Manager).Stop
+        - (*nine/internal/plugin.Manager).Call
+        - (*nine/internal/daemon.Client).Close
+
+    gosec:
+      excludes:
+        # Nine is intentionally a shell-execution and file-access agent
+        - G104  # errors unhandled (covered by errcheck; duplicate)
+        - G118  # context cancel not called (false positive in tests)
+        - G204  # subprocess launched with variable
+        - G301  # directory permissions — 0755 is appropriate for data dirs
+        - G304  # file path from variable
+        - G306  # permissions on written files
+        - G702  # command injection via taint analysis (self-restart is intentional)
+        - G703  # path traversal via taint (skill writes are intentional)
+        - G704  # SSRF via taint analysis (http plugin is intentionally a web proxy)
+
+    revive:
+      rules:
+        - name: exported
+          disabled: true  # don't require doc comments on all exported symbols
