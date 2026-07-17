@@ -1,0 +1,107 @@
+## Nine configuration.
+##
+## This is the only config file: the same nine.toml serves the native and the
+## container layouts. It is written for a native run against a local Ollama and
+## the docker-compose Postgres, and works as-is after `make all`.
+##
+## The container overrides what differs via environment variables (see
+## docker-compose.yml and the Makefile) rather than a second config file:
+##   NINE_LLM_ENDPOINT     http://host.docker.internal:11434
+##   NINE_DATABASE_URL     postgres://nine:nine@postgres:5432/nine?sslmode=disable
+##   NINE_PLUGINS_BIN      /opt/nine/bin
+##   NINE_WORKSPACE_ROOT   /data/workspace
+##
+## Search order: $NINE_CONFIG, ./nine.toml, /nine.toml, ~/.nine/nine.toml.
+## Full reference: docs/configuration.md
+
+[llm]
+# Chat providers: "ollama" (default) and "anthropic". Any other value falls
+# through to the Anthropic client.
+provider       = "ollama"
+model          = "gemma4:e2b"
+# Anthropic only. Leave empty to read ANTHROPIC_API_KEY.
+api_key        = ""
+# Required for ollama; empty uses Ollama's local default. Overridden in the
+# container with NINE_LLM_ENDPOINT.
+endpoint       = ""
+# Keep at 1 for local models to prevent contention.
+max_concurrent = 1
+# Requested context window; also sets the per-turn context budget.
+num_ctx        = 32768
+# context_budget defaults to num_ctx (32768) when not set
+# thinking: stream the model's reasoning as a live trace in the TUI (Ollama only;
+# the model must advertise the "thinking" capability). Defaults to true; set to
+# false to suppress thinking (restores /no_think) for lower latency.
+# thinking = true
+
+[daemon]
+socket_path = "/tmp/nine.sock"
+task_timeout_seconds = 1800  # 30 minutes
+# When true, the [[agent]] list below is the full desired state: a config-origin
+# goal no longer listed here is archived and its session stopped on boot
+# (docs/predefined-agents.md §7 v3). Conversation-created goals are never
+# touched. Default false — removing an entry just stops reconciling it.
+# standing_agents_authoritative = false
+# Links topically-similar sessions out-of-band and lets a later turn pull a
+# related prior session into context (docs/reactive-events.md). On by default;
+# requires an embedder (a no-op when [embeddings] is disabled). Uncomment to
+# disable.
+# related_sessions_index = false
+
+[plugins]
+# Plugin sources, and the compiled plugin binaries `make all` writes to
+# ./dist/bin. The image bakes them at /opt/nine/bin (NINE_PLUGINS_BIN).
+dir = "./plugins"
+bin = "./dist/bin"
+
+[memory]
+# PostgreSQL DSN. Postgres holds all durable state, and the daemon fails fast if
+# it is unreachable. Start a local instance with `docker compose up -d`; the
+# container reaches it over the compose network via NINE_DATABASE_URL.
+database_url = "postgres://nine:nine@localhost:5433/nine?sslmode=disable"
+
+[embeddings]
+# provider = "ollama" requires nomic-embed-text to be pulled and uses extra VRAM.
+# Leave empty to use the built-in keyword embedder (feature hashing, no model needed).
+# Set to "none" to disable tool ranking entirely.
+provider = ""
+model    = "nomic-embed-text"
+# Only used when provider = "ollama"; empty uses Ollama's local default.
+endpoint = ""
+api_key  = ""
+
+[ui]
+theme = "auto"  # "auto" detects terminal background; "light" or "dark" to force
+
+[workspace]
+# Files-plugin working directory. The container overrides this to the mounted
+# volume at /data/workspace (NINE_WORKSPACE_ROOT).
+root = "./dist"
+
+[planning]
+# Plan-before-execute policy (docs/thinking-and-planning.md). Both keys have a
+# live per-session override via the /plan-mode command.
+# plan_mode — how the agent reasons before acting:
+#   off        no native thinking and no analysis pass
+#   plan-only  (default) reason on the first inner call, then execute
+#   always     request native thinking on every inner call
+# plan_mode = "plan-only"
+# plan_approval — interactive plan-approval checkpoint before a plan executes:
+#   off        never prompt
+#   on         always prompt
+#   on-risky   (default) prompt only when the plan intends a [hitl].require_approval tool
+# plan_approval = "on-risky"
+
+# Pre-defined, long-running agents (docs/predefined-agents.md). Each [[agent]]
+# is seeded as a config-owned goal at boot and runs under the pursue shell with
+# a narrowed role — no human turn needed to bring it to life. `id` is a stable,
+# operator-chosen key; edit `description`/`role`/trigger and restart to
+# reconcile in place. `role` defaults to "monitor" (read-only). Set a wake
+# trigger with `interval` (Go duration) XOR `schedule` (5-field cron; see
+# docs/scheduling.md). Findings reach you via `nine notifications`.
+#
+# [[agent]]
+# id          = "sec-watch"
+# description = "Monitor this repo for security issues; triage new CVEs affecting our deps."
+# role        = "monitor"
+# schedule    = "0 9 * * 1-5"   # weekdays at 09:00  (or e.g. interval = "24h")

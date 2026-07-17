@@ -1,0 +1,187 @@
+# Agent Loop Architecture
+
+The agent loop is a stateful ReAct (Reason + Act) implementation. Each `Loop` holds conversation history and a scratchpad, and iterates between LLM calls and tool dispatches until the model produces a final answer with no tool calls.
+
+## Component Diagram
+
+```mermaid
+flowchart TD
+    subgraph Loop["agent.Loop (one per conversation)"]
+        RUN[Loop.Run\nentry point]
+        EMBED[embedText\nquery vector]
+        SELF[SelfModelFn\nself-model injection]
+        BUILD[Builder.BuildWithUsage\nassemble context]
+        SUBMIT[Queue.Submit\nLLM call]
+        TOOLS{tool calls\nin response?}
+        FINAL[return answer\nclear scratchpad]
+
+        RUN --> EMBED
+        EMBED --> SELF
+        SELF --> BUILD
+        BUILD --> SUBMIT
+        SUBMIT --> TOOLS
+        TOOLS -->|"no"| FINAL
+    end
+
+    subgraph Dispatch["dispatchWithRetry (up to 3 attempts)"]
+        DISPATCH[Dispatcher.Dispatch]
+        RETRY{success?}
+        OBS[record observation\nappend to scratchpad]
+
+        DISPATCH --> RETRY
+        RETRY -->|"no, attempt lt 3"| DISPATCH
+        RETRY -->|"yes"| OBS
+        RETRY -->|"no, gave up"| OBS
+    end
+
+    subgraph Dispatcher["Dispatcher"]
+        HMAP[handlers map\ntool name to fn]
+        HOOKS[post-call hooks]
+        CAP[capOutput\nmax 2048 tokens]
+
+        HMAP --> HOOKS
+        HOOKS --> CAP
+    end
+
+    subgraph State["Loop State"]
+        HIST["history\n[]llm.Message"]
+        SCRATCH["scratchpad\n[]ScratchpadEntry"]
+        CKPT[Checkpoint\nSave / Load]
+
+        HIST --- SCRATCH
+        SCRATCH --- CKPT
+    end
+
+    subgraph Callbacks["Progress Callbacks"]
+        CB1[OnContextUpdate\nused / budget]
+        CB2[OnToolStart\nname + input]
+        CB3[OnToolEnd\nname + input + output]
+        CB4[OnChunk\nstreamed token]
+    end
+
+    TOOLS -->|"yes, for each tc"| DISPATCH
+    OBS --> BUILD
+
+    BUILD -->|"tokensUsed"| CB1
+    DISPATCH -->|"before"| CB2
+    OBS -->|"after"| CB3
+    SUBMIT -->|"streaming"| CB4
+
+    FINAL -->|"append to"| HIST
+    OBS -->|"append to"| SCRATCH
+    FINAL -->|"clear"| SCRATCH
+
+    style Loop fill:#3a1a1a,color:#fff
+    style Dispatch fill:#1a2a3a,color:#fff
+    style Dispatcher fill:#1e3a1e,color:#fff
+    style State fill:#2a2a1a,color:#fff
+    style Callbacks fill:#2a1a3a,color:#fff
+```
+
+## ReAct Inner Loop (sequence)
+
+```mermaid
+sequenceDiagram
+    participant R as runner
+    participant L as Loop.Run
+    participant B as Builder
+    participant Q as LLM Queue
+    participant D as Dispatcher
+
+    R->>L: Run(ctx, userText)
+    L->>L: append user message to history
+    L->>L: embedText(userText) → queryVec
+    L->>L: SelfModelFn(ctx, queryVec) → selfModel
+
+    loop until no tool calls
+        L->>B: BuildWithUsage(history, scratchpad, tools, queryVec)
+        B-->>L: Request + tokensUsed
+        L->>L: fire OnContextUpdate(tokensUsed, budget)
+
+        L->>Q: Submit(ctx, priority, req)
+        Q-->>L: Response{Text, ToolCalls[]}
+
+        alt ToolCalls is empty
+            L->>L: append assistant message to history
+            L->>L: clear scratchpad
+            L-->>R: answer text
+        else ToolCalls present
+            loop for each ToolCall tc
+                L->>L: fire OnToolStart(tc.Name, tc.Input)
+                L->>D: dispatchWithRetry(tc.Name, tc.Input)
+                D-->>L: CallResult{Output, Truncated}
+                L->>L: fire OnToolEnd(tc.Name, tc.Input, output)
+                L->>L: append ScratchpadEntry{thought, tool, args, observation}
+            end
+        end
+    end
+```
+
+## Dispatcher
+
+The `Dispatcher` is a registry of `handlers` (tool name → function). It routes every tool call, runs post-call hooks, and caps output at 2048 tokens (~8 000 chars).
+
+### Tool Categories
+
+| Category | Tools |
+|----------|-------|
+| Memory | `memory_embed`, `memory_query`, `file_search_semantic` |
+| Sub-agents | `run_agent`, `run_agents` |
+| Workflows | `workflow_create`, `workflow_get`, `workflow_update`, `workflow_list`, `workflow_retry_step` |
+| Goals | `goal_create`, `goal_get`, `goal_list`, `goal_update_status`, `goal_append_subtree` |
+| Supervision | `gap_report` |
+| Plugin tools | any tool registered via `RegisterPlugin` |
+
+### Wiring Model
+
+`Dispatcher.New()` returns an **empty** dispatcher (an empty handler map). The
+daemon adds handlers at startup via the `Register*` functions — only the tools a
+given role is allowed to see are registered — and plugin tools are added
+dynamically via `RegisterPlugin` when a plugin binary starts. There are no
+pre-registered "stub" handlers; an unregistered tool name simply has no handler.
+
+```
+Dispatcher.New()                  → empty handler map
+  └─ RegisterGapReport(...)
+  └─ RegisterRunAgent(...) / RegisterRunAgents(...)
+  └─ RegisterWorkflowTools(...)
+  └─ RegisterGoalTools(...)
+  └─ RegisterMemoryTools(...) / RegisterSkillTools(...)
+  └─ ...
+  └─ RegisterPlugin(mgr, plugin)  → plugin tool handlers
+```
+
+### Post-call Hooks
+
+`AddHook(toolName, fn)` registers callbacks that fire after every successful call to that tool. (Skill description embedding is done inline by the `skill_write` / `skill_modify` handlers in `RegisterSkillTools`, not via a hook.)
+
+## Loop State
+
+| Field | Description |
+|-------|-------------|
+| `history` | Accumulated `llm.Message` pairs (user + assistant). Never cleared between turns unless `ClearHistory()` is called explicitly. |
+| `scratchpad` | `ScratchpadEntry` list for the current turn (thought + tool name + args + observation). Cleared on every successful final answer. |
+| `lastToolCount` | Number of tool calls in the most recent `Run()`. Used by the runner for stall detection. |
+
+### Checkpointing
+
+`SaveCheckpoint()` serialises `history` and `scratchpad` to JSON. `LoadCheckpoint()` restores them. Called by the runner after every turn.
+
+## Context Assembly (`Builder`)
+
+On each inner loop iteration `BuildWithUsage` assembles the full LLM request:
+- System prompt: current time + `SystemCore` + `SystemExtras` + self-model
+- Tool list: intercepted tools (always included) + plugin tools ranked by `queryVec` relevance
+- History: trimmed to fit the context budget
+- Scratchpad: current turn's observations
+
+`OnContextUpdate` fires with `(tokensUsed, budget)` after each assembly.
+
+## Source Files
+
+| File | Responsibility |
+|------|---------------|
+| `loop.go` | ReAct loop, checkpointing, callbacks |
+| `dispatcher.go` | Tool registry, wiring methods, intercepted tool definitions |
+
+[`internal/agent/`](../internal/agent/)

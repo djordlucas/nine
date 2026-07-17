@@ -1,0 +1,250 @@
+package plugin
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sync"
+	"time"
+)
+
+// socketDir is a short fixed directory for plugin sockets. It must be short to
+// stay under the macOS sun_path limit (104 chars); $TMPDIR on darwin overflows
+// it. It is a directory and does not collide with the daemon's own socket file.
+const socketDir = "/tmp/nine"
+
+// socketReadyTimeout bounds how long Start waits for a spawned plugin to start
+// listening before giving up.
+const socketReadyTimeout = time.Second
+
+// Plugin is a running plugin process with its advertised tools.
+type Plugin struct {
+	Name   string
+	client pluginClient
+	Tools  []ToolDefinition
+}
+
+// Manager spawns and manages plugin processes.
+type Manager struct {
+	mu      sync.Mutex
+	running []*Plugin
+
+	env       []string
+	pluginBin string
+}
+
+// NewManager creates a Manager that passes nineBin to each plugin via the
+// NINE_BIN environment variable (appended to the inherited OS environment).
+func NewManager(nineBin string) *Manager {
+	return &Manager{
+		pluginBin: nineBin,
+		env:       []string{"NINE_BIN=" + nineBin},
+	}
+}
+
+// PluginBin returns the full path to the named plugin binary.
+func (m *Manager) getPluginBinaryPath(name string) string {
+	if m.pluginBin != "" {
+		return filepath.Join(m.pluginBin, name)
+	}
+	return filepath.Join("/data/bin", name)
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// Start spawns a native Nine plugin binary with optional extra env vars over the
+// HTTP-on-a-Unix-socket transport, calls plugin.describe, and returns the running
+// Plugin. The plugin listens on the socket named by NINE_PLUGIN_SOCKET; the daemon
+// dials it.
+func (m *Manager) Start(binaryPath string, extraEnv ...string) (*Plugin, error) {
+	name := filepath.Base(binaryPath)
+
+	if err := os.MkdirAll(socketDir, 0o700); err != nil {
+		return nil, fmt.Errorf("create socket dir: %w", err)
+	}
+	socketPath, err := allocSocketPath(name)
+	if err != nil {
+		return nil, err
+	}
+
+	env := append([]string{}, m.env...)
+	env = append(env, extraEnv...)
+	env = append(env, "NINE_PLUGIN_SOCKET="+socketPath)
+
+	cmd := exec.Command(binaryPath)
+	cmd.Env = append(os.Environ(), env...)
+	cmd.Stderr = os.Stderr // surface plugin startup/listen errors
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start plugin: %w", err)
+	}
+
+	cleanup := func() {
+		cmd.Process.Kill() //nolint:errcheck // best-effort
+		cmd.Wait()         //nolint:errcheck
+		os.Remove(socketPath)
+	}
+
+	if err := waitForSocket(socketPath, socketReadyTimeout); err != nil {
+		cleanup()
+		return nil, err
+	}
+
+	// Read max_concurrent on a throwaway client first: net/http forbids mutating
+	// a Transport after a request is issued on it, so the real client's transport
+	// is built afterwards with MaxConnsPerHost already set.
+	desc, err := describeOverSocket(context.Background(), socketPath)
+	if err != nil {
+		cleanup()
+		return nil, fmt.Errorf("plugin.describe: %w", err)
+	}
+
+	if err := checkProtocolVersion(name, desc.ProtocolVersion); err != nil {
+		cleanup()
+		return nil, err
+	}
+
+	c := newHTTPClient(name, socketPath, cmd, desc.MaxConcurrent)
+	p := &Plugin{Name: name, client: c, Tools: desc.Tools}
+	m.track(p)
+	slog.Info("plugin started", "name", name, "tools", len(desc.Tools), "max_concurrent", desc.MaxConcurrent)
+	return p, nil
+}
+
+// checkProtocolVersion rejects a plugin whose wire-contract version the daemon
+// does not support. The daemon supports exactly one version today, so any
+// mismatch is fatal; widen this if it ever needs to support a range. An absent
+// version (0) means the plugin predates protocol versioning.
+func checkProtocolVersion(name string, got int) error {
+	if got == ProtocolVersion {
+		return nil
+	}
+	if got == 0 {
+		return fmt.Errorf("plugin %q reports no protocol version; it predates plugin protocol v%d — rebuild it against the current Nine", name, ProtocolVersion)
+	}
+	return fmt.Errorf("plugin %q speaks protocol v%d but this daemon speaks v%d — rebuild the plugin (or upgrade Nine)", name, got, ProtocolVersion)
+}
+
+// allocSocketPath returns a unique short socket path under socketDir.
+func allocSocketPath(name string) (string, error) {
+	var b [4]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("alloc socket path: %w", err)
+	}
+	return filepath.Join(socketDir, fmt.Sprintf("%s.%s.sock", name, hex.EncodeToString(b[:]))), nil
+}
+
+// describeOverSocket calls plugin.describe on a one-shot client whose idle
+// connections are dropped immediately after.
+func describeOverSocket(ctx context.Context, socketPath string) (DescribeResult, error) {
+	hc := &http.Client{Transport: &http.Transport{DialContext: dialUnix(socketPath)}}
+	defer hc.CloseIdleConnections()
+
+	raw, err := postRPC(ctx, hc, "plugin.describe", struct{}{})
+	if err != nil {
+		return DescribeResult{}, err
+	}
+	var desc DescribeResult
+	if err := json.Unmarshal(raw, &desc); err != nil {
+		return DescribeResult{}, fmt.Errorf("unmarshal describe result: %w", err)
+	}
+	return desc, nil
+}
+
+func (m *Manager) track(p *Plugin) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.running = append(m.running, p)
+}
+
+func (m *Manager) untrack(p *Plugin) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, r := range m.running {
+		if r == p {
+			m.running = append(m.running[:i], m.running[i+1:]...)
+			return
+		}
+	}
+}
+
+// Running returns a snapshot of all currently running plugins.
+func (m *Manager) Running() []*Plugin {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]*Plugin, len(m.running))
+	copy(out, m.running)
+	return out
+}
+
+// StopAll stops all tracked plugins, accumulating errors.
+func (m *Manager) StopAll() error {
+	var errs []error
+	for _, p := range m.Running() {
+		if err := m.Stop(p); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (m *Manager) TryStart(name string, extraEnv ...string) *Plugin {
+	bin := m.getPluginBinaryPath(name)
+	if !fileExists(bin) {
+		slog.Warn("binary to start does not exist", "name", name, "path", bin)
+		return nil
+	}
+	p, err := m.Start(bin, extraEnv...)
+	if err != nil {
+		slog.Warn("plugin start failed", "name", name, "err", err)
+		return nil
+	}
+
+	return p
+}
+
+// Call invokes a tool on a running plugin and returns the result. The context is
+// carried to the plugin (HTTP request for native plugins) for cancellation and
+// deadlines, e.g. task_timeout.
+func (m *Manager) Call(ctx context.Context, p *Plugin, toolName string, args json.RawMessage) (CallResult, error) {
+	result, err := p.client.call(ctx, "plugin.call", CallRequest{Tool: toolName, Args: args})
+	if err != nil {
+		return CallResult{}, err
+	}
+
+	var cr CallResult
+	if err := json.Unmarshal(result, &cr); err != nil {
+		return CallResult{}, fmt.Errorf("unmarshal call result: %w", err)
+	}
+	return cr, nil
+}
+
+// Stop gracefully shuts down the plugin process.
+func (m *Manager) Stop(p *Plugin) error {
+	err := p.client.stop()
+	if err == nil {
+		slog.Debug("plugin stopped")
+	}
+	m.untrack(p)
+	return err
+}
+
+// ListRunning returns the names of all currently running plugins.
+func (m *Manager) ListRunning() []string {
+	plugins := m.Running()
+	names := make([]string, len(plugins))
+	for i, p := range plugins {
+		names[i] = p.Name
+	}
+	return names
+}
