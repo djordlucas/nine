@@ -73,16 +73,38 @@ registered even for a delegating role. Runaway recursion stays structurally impo
 
 A role block on an **agent-authored** skill MAY declare a `tools` allowlist (which, by
 R-ROLE.5, can only narrow). Its **structural flags MUST be ignored** and forced to leaf
-defaults (`persists/interactive/spawns_goals/delegates: false`, no profile). Only
-built-in (embedded, immutable) role skills may set structural flags. Defining a role is
-writing data, not changing Nine's executable shape (I10, N1–N3).
+defaults (`persists/interactive/spawns_goals/delegates: false`, no profile). Nine
+defining a role for itself is writing data, not changing its executable shape (I10,
+N1–N3) — so it can never become an escalation path.
+
+The line is **authorship, not storage**: *operator-authored* role skills — built-in
+(embedded) and user (`[skills].user_dir`, R-SKILL.2) alike — **MAY** set structural
+flags. A user role skill arrives on a file the operator mounted, the same trust level as
+editing `nine.toml`; treating it as untrusted would mean an operator could not define a
+persisting or delegating role at all. *Agent-authored* role skills (`source=agent`,
+written at runtime via `skill_write`) stay purely restrictive.
+
+Both kinds are equally bound by R-ROLE.5: a `tools` list can only ever narrow the
+daemon's surface. Trust governs structure, never the allowlist.
 
 ## R-ROLE.8 — Role selection at delegation time
 
 `run_agent` input and each `run_agents` task gain an optional `role` field (string).
-The tool schema **SHOULD** enumerate the built-in leaf roles with one-line descriptions
+The tool schema **SHOULD** enumerate the available leaf roles with one-line descriptions
 so the model chooses well; the system prompt **SHOULD** steer toward the narrowest
 fitting role.
+
+That enumeration **MUST** be rendered from the live role registry at agent-build time,
+not fixed at compile time, and **MUST** cover store-backed role skills (operator- and
+agent-authored) as well as built-ins. A role that resolves but is never advertised is
+reachable only if the model guesses its name — which makes an operator's role skill
+effectively invisible. The rendered list **MUST** be deterministically ordered
+(built-ins first, then store-backed, each sorted by name) so the tool schema is stable
+across boots.
+
+Only the `role` field's description varies; the tools' `name` and `description` stay
+fixed, keeping the builder's name-keyed tool-embedding cache valid. A storeless caller
+falls back to a static list of the built-in leaf roles.
 
 ## R-ROLE.9 — Resolution and fallback
 

@@ -121,6 +121,55 @@ func TestDelegationDefaultsToExecutorWithSubAgentPersona(t *testing.T) {
 	}
 }
 
+// R-ROLE.8 end-to-end: a store-backed role skill reaches the run_agent schema
+// the model is actually shown. This drives the whole path — registry →
+// RoleEnum → buildToolList → appendInterceptedTools → advertised ToolDef — so
+// it fails if the delegation defs go back to being static package constants.
+func TestAdvertisedRunAgentSchemaListsStoreRoles(t *testing.T) {
+	store := newRoleTestStore(t)
+	if err := store.SkillUpsert(memory.Skill{
+		Name:        "data-wrangler",
+		Description: "Clean and reshape datasets — files and shell, no network.",
+		Content:     "---\nname: data-wrangler\nrole:\n  tools: [shell, read_file]\n---\n\nWrangle data.",
+		Source:      memory.SkillSourceAgent,
+	}); err != nil {
+		t.Fatalf("seed role skill: %v", err)
+	}
+
+	p := &scriptedProvider{}
+	p.script = func(int, llm.Request) llm.Response {
+		return llm.Response{Text: "done", StopReason: "end_turn"}
+	}
+	factory := rolesTestBuilder(t, p, func(c *runtime.AgentBuilderConfig) {
+		c.Loop.Memory = store
+	})
+
+	loop := factory.Build("root-1", false)
+	if _, err := loop.Run(context.Background(), "hello"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if p.nCalls() == 0 {
+		t.Fatal("no LLM calls recorded")
+	}
+
+	var schema string
+	for _, td := range p.call(1).Tools {
+		if td.Name == "run_agent" {
+			schema = string(td.InputSchema)
+		}
+	}
+	if schema == "" {
+		t.Fatal("run_agent not advertised to the orchestrator")
+	}
+	if !strings.Contains(schema, "data-wrangler") {
+		t.Errorf("advertised run_agent schema omits store-backed role; the model can only\nreach it by guessing the name (R-ROLE.8). schema = %s", schema)
+	}
+	// Built-ins must still be listed alongside it.
+	if !strings.Contains(schema, "executor") {
+		t.Errorf("advertised run_agent schema dropped the built-in executor: %s", schema)
+	}
+}
+
 // Gate 2: a coarse role's allowlist is enforced at both boundaries — a
 // disallowed tool is absent from the advertised list AND dispatching it
 // returns unknown-tool.

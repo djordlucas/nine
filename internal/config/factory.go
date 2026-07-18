@@ -63,6 +63,9 @@ func ApplyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("NINE_WORKSPACE_ROOT"); v != "" {
 		cfg.Workspace.Root = v
 	}
+	if v := os.Getenv("NINE_SKILLS_USER_DIR"); v != "" {
+		cfg.Skills.UserDir = v
+	}
 }
 
 // SocketPath returns the configured Unix socket path, falling back to DefaultSocketPath.

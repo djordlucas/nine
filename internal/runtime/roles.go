@@ -2,6 +2,9 @@ package runtime
 
 import (
 	"log/slog"
+	"slices"
+	"sort"
+	"strings"
 
 	"nine/internal/memory"
 	"nine/skills"
@@ -59,10 +62,15 @@ type Role struct {
 }
 
 // roleSkillStore is the slice of the memory store the registry needs to
-// resolve agent-authored role skills. Nil-able (tests, storeless builders).
+// resolve store-backed role skills. Nil-able (tests, storeless builders).
 type roleSkillStore interface {
 	SkillGet(name string) (memory.Skill, bool, error)
+	SkillsBySource(source string) ([]memory.Skill, error)
 }
+
+// storeRoleSources are the skill sources the registry scans for delegatable
+// role skills, in precedence order after the built-ins.
+var storeRoleSources = []string{memory.SkillSourceUser, memory.SkillSourceAgent}
 
 // RoleRegistry resolves role names to Roles. Built-in roles come from the
 // embedded role skills (skills/roles/*.md) at construction; agent-authored
@@ -108,9 +116,10 @@ func NewRoleRegistry(store roleSkillStore, defaultLeaf string) *RoleRegistry {
 }
 
 // roleFromSkill converts a skill with a role block into a Role. Structural
-// flags are honored only for built-in skills; agent-authored role skills are
-// forced to leaf defaults so a role can never be an escalation path (R-ROLE.7).
-func roleFromSkill(name, description, body string, spec skills.RoleSpec, builtin bool) Role {
+// flags are honored only for trusted (operator-authored: built-in or user)
+// skills; agent-authored role skills are forced to leaf defaults so a role can
+// never be an escalation path (R-ROLE.7).
+func roleFromSkill(name, description, body string, spec skills.RoleSpec, trusted bool) Role {
 	role := Role{
 		Name:         name,
 		Description:  description,
@@ -118,7 +127,7 @@ func roleFromSkill(name, description, body string, spec skills.RoleSpec, builtin
 		AllTools:     spec.AllTools,
 		Tools:        spec.Tools,
 	}
-	if builtin {
+	if trusted {
 		role.Delegates = spec.Delegates
 		role.SpawnsGoals = spec.SpawnsGoals
 		role.Persists = spec.Persists
@@ -140,9 +149,9 @@ func (r *RoleRegistry) Resolve(name string) Role {
 		return role
 	}
 	if r.store != nil {
-		if sk, found, err := r.store.SkillGet(name); err == nil && found && sk.Source == memory.SkillSourceAgent {
+		if sk, found, err := r.store.SkillGet(name); err == nil && found && slices.Contains(storeRoleSources, sk.Source) {
 			if parsed := skills.Parse(sk.Content); parsed.Role != nil {
-				return roleFromSkill(sk.Name, sk.Description, parsed.Content, *parsed.Role, false)
+				return roleFromSkill(sk.Name, sk.Description, parsed.Content, *parsed.Role, trustedRoleSource(sk.Source))
 			}
 		}
 	}
@@ -168,10 +177,34 @@ func (r *RoleRegistry) ResolveLeaf(name string) Role {
 	return role
 }
 
-// LeafRoles returns the names of all built-in leaf roles (non-persisting,
-// non-goal-spawning), for surfacing in delegation tool descriptions and tests.
+// LeafRole is one delegation-target role as surfaced to the model on
+// run_agent/run_agents (R-ROLE.8): the name it passes and the one-line
+// description it chooses by.
+type LeafRole struct {
+	Name        string
+	Description string
+}
+
+// LeafRoles returns the names of every delegatable leaf role, built-ins first
+// then store-backed, each group sorted by name.
 func (r *RoleRegistry) LeafRoles() []string {
-	var names []string
+	leaves := r.LeafRoleDescriptions()
+	names := make([]string, 0, len(leaves))
+	for _, l := range leaves {
+		names = append(names, l.Name)
+	}
+	return names
+}
+
+// LeafRoleDescriptions returns every delegatable leaf role (non-persisting,
+// non-goal-spawning) with its description, for rendering the run_agent role
+// enum (R-ROLE.8). Built-ins come first, then store-backed role skills; both
+// groups are sorted by name so the rendered tool schema is stable across
+// boots. A store role may not shadow a built-in.
+func (r *RoleRegistry) LeafRoleDescriptions() []LeafRole {
+	var builtins, stored []LeafRole
+	seen := make(map[string]bool, len(r.builtins))
+
 	for name, role := range r.builtins {
 		if name == AnalystRole {
 			// Internal prompt-fragment role (M4): borrowed for the no-tool
@@ -179,12 +212,92 @@ func (r *RoleRegistry) LeafRoles() []string {
 			// run_agent surface.
 			continue
 		}
+		seen[name] = true
 		if !role.Persists && !role.SpawnsGoals {
-			names = append(names, name)
+			builtins = append(builtins, LeafRole{Name: name, Description: role.Description})
 		}
 	}
-	return names
+
+	if r.store != nil {
+		for _, source := range storeRoleSources {
+			roleSkills, err := r.store.SkillsBySource(source)
+			if err != nil {
+				slog.Warn("list role skills", "source", source, "err", err)
+				continue
+			}
+			for _, sk := range roleSkills {
+				if seen[sk.Name] || sk.Name == AnalystRole {
+					continue
+				}
+				parsed := skills.Parse(sk.Content)
+				if parsed.Role == nil {
+					continue // a plain knowledge skill, not a role
+				}
+				// Structural flags are honored per R-ROLE.7 — agent-authored
+				// roles are purely restrictive, so they are always leaves.
+				role := roleFromSkill(sk.Name, sk.Description, parsed.Content, *parsed.Role, trustedRoleSource(sk.Source))
+				if role.Persists || role.SpawnsGoals {
+					continue
+				}
+				seen[sk.Name] = true
+				stored = append(stored, LeafRole{Name: sk.Name, Description: sk.Description})
+			}
+		}
+	}
+
+	sortLeaves(builtins)
+	sortLeaves(stored)
+	return append(builtins, stored...)
 }
+
+// RoleEnum renders the leaf-role list for the `role` field on
+// run_agent/run_agents (R-ROLE.8) as "name — description" pairs, marking the
+// default leaf. Returns "" when the registry has no leaf roles, letting the
+// caller keep its static fallback text.
+func (r *RoleRegistry) RoleEnum() string {
+	leaves := r.LeafRoleDescriptions()
+	if len(leaves) == 0 {
+		return ""
+	}
+	// Entries are separated by " | " and name/description by ": ". Role
+	// descriptions routinely contain em-dashes and semicolons, so neither of
+	// those can serve as a separator without reading ambiguously.
+	var b strings.Builder
+	b.WriteString("One of: ")
+	for i, l := range leaves {
+		if i > 0 {
+			b.WriteString(" | ")
+		}
+		b.WriteString(l.Name)
+		if l.Name == r.defaultLeaf {
+			b.WriteString(" (default)")
+		}
+		if desc := strings.TrimRight(strings.TrimSpace(l.Description), "."); desc != "" {
+			b.WriteString(": ")
+			b.WriteString(desc)
+		}
+	}
+	b.WriteString(".")
+	return b.String()
+}
+
+func sortLeaves(l []LeafRole) {
+	sort.Slice(l, func(i, j int) bool { return l[i].Name < l[j].Name })
+}
+
+// trustedRoleSource reports whether role skills from this source may set
+// structural flags (R-ROLE.7). Agent-authored roles are purely restrictive;
+// operator-authored ones are trusted like built-ins.
+func trustedRoleSource(source string) bool {
+	return slices.Contains(trustedRoleSources, source)
+}
+
+// trustedRoleSources are the skill sources whose role blocks may set
+// structural flags (R-ROLE.7). A user skill comes from a file the operator
+// mounted — the same trust level as editing nine.toml — so it is trusted like
+// a built-in. An agent-authored one is written by Nine at runtime and stays
+// purely restrictive: defining a role must never become an escalation path.
+var trustedRoleSources = []string{memory.SkillSourceUser}
 
 // roleNameForPlan maps a session plan's stage profile to the role its worker
 // runs (docs/roles.md §6): pursue sessions run the pursue role,

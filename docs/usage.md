@@ -27,6 +27,10 @@ nine workflow stop <id>          Cancel an ongoing workflow
 nine workflow fail <id>          Mark a stale workflow as failed
 nine workflow fail --all         Mark all stale workflows as failed
 
+nine skills validate [path]      Check your own skill/role files against the
+                                 format Nine seeds from (defaults to
+                                 [skills].user_dir; works with the daemon down)
+
 nine trace <agent-id> [--turn N] Print a session's event journal (or one turn);
                                  works even with the daemon down
 nine replay <agent-id> --turn N  Deterministically re-run a recorded turn

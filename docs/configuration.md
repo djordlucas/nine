@@ -152,6 +152,16 @@ show_context = true
 # Working directory for file operations. Optional.
 # root = "./workspace"
 
+[skills]
+# Directory holding your own skills and roles, seeded on every boot alongside
+# the built-ins (docs/skills.md). Layout mirrors the built-ins: *.md at the top
+# level, role skills under roles/. The directory is the source of truth — edit
+# a file and restart to update it, delete it to remove it. Discovery is
+# boot-only; there is no watcher. Invalid files are skipped with a logged
+# reason and the daemon still starts; check them with `nine skills validate`.
+# Unset or missing disables user skills entirely.
+# user_dir = "./skills.d"
+
 [planning]
 # Plan-before-execute policy (docs/thinking-and-planning.md). Both keys have a
 # live per-session override via the TUI /plan-mode command.
@@ -260,6 +270,7 @@ Environment variables take priority over `nine.toml` values.
 | `NINE_DATABASE_URL` | Override `memory.database_url` |
 | `NINE_PLUGINS_BIN` | Override `plugins.bin` |
 | `NINE_WORKSPACE_ROOT` | Override `workspace.root` |
+| `NINE_SKILLS_USER_DIR` | Override `skills.user_dir` |
 | `ANTHROPIC_API_KEY` | Anthropic API key (used when `llm.api_key` is empty) |
 | `SEARCH_PROVIDER` | `web_search` backend: `brave` or `serpapi`. Unset uses DuckDuckGo, which needs no key. |
 | `SEARCH_API_KEY` | API key for the chosen `SEARCH_PROVIDER` |

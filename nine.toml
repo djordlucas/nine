@@ -78,6 +78,22 @@ theme = "auto"  # "auto" detects terminal background; "light" or "dark" to force
 # volume at /data/workspace (NINE_WORKSPACE_ROOT).
 root = "./dist"
 
+[skills]
+# Your own skills and roles, seeded alongside the built-ins on every boot
+# (docs/skills.md). Layout mirrors the built-ins:
+#
+#   skills.d/my-skill.md          a knowledge skill
+#   skills.d/roles/my-role.md     a role (a skill with a `role:` block)
+#
+# The directory is the source of truth: edit a file and restart to update it,
+# delete the file to remove it. Discovery is boot-only — there is no watcher.
+# Invalid files are skipped with a logged reason; the daemon still starts.
+# Check them first with `nine skills validate`.
+#
+# Names must not collide with a built-in (built-ins win). Unset or missing
+# disables user skills. The container overrides this with NINE_SKILLS_USER_DIR.
+# user_dir = "./skills.d"
+
 [planning]
 # Plan-before-execute policy (docs/thinking-and-planning.md). Both keys have a
 # live per-session override via the /plan-mode command.

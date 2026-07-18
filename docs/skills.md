@@ -30,16 +30,55 @@ The description is embedded into the `skills` vector namespace; the self-model s
 
 ## Where Skills Live
 
-Skills are stored in the **memory store** (the `skills` table in PostgreSQL), not on the filesystem. There are two kinds:
+Skills are stored in the **memory store** (the `skills` table in PostgreSQL), not on the filesystem. There are three kinds:
 
 | Kind | Source | Mutable at runtime? |
 |---|---|---|
 | **Built-in** | The `.md` files in the repo's `skills/` directory, embedded into the `nine` binary at build time | **No** — immutable |
+| **User** | Your own `.md` files in `[skills].user_dir` | **No** — the file is the source of truth |
 | **Agent-authored** | Written by Nine via `skill_write` / `skill_modify` | Yes |
 
-Built-in skills are **seeded into the store on every boot** from the binary, which is their single source of truth: editing a skill file and rebuilding updates it, and removing one prunes it. Agent-authored skills persist in the store across restarts and are never touched by the seeder.
+Built-in and user skills are both **seeded into the store on every boot** from their files, which are their single source of truth: edit a file and restart to update it, delete it to prune it. Agent-authored skills persist in the store across restarts and are never touched by the seeder.
 
-This split is deliberate: the curated default skills should not drift on a running instance (which could cause inconsistent behaviour across sessions), so they are changed only through normal development — edit the file, rebuild. Nine remains free to capture what it learns in its own skills.
+This split is deliberate: curated skills should not drift on a running instance (which could cause inconsistent behaviour across sessions), so they change only by editing their file. Nine remains free to capture what it learns in its own skills — but it cannot edit yours.
+
+---
+
+## Your Own Skills and Roles
+
+Point `[skills].user_dir` at a directory and Nine seeds it alongside the built-ins:
+
+```toml
+[skills]
+user_dir = "./skills.d"
+```
+
+```
+skills.d/
+  deploy-checklist.md      a knowledge skill
+  roles/
+    data-wrangler.md       a role (a skill with a `role:` block)
+```
+
+The format is identical to a built-in — see [`skills.d/README.md`](../skills.d/README.md) for annotated examples of both, and [roles.md](roles.md) for what a `role:` block can declare.
+
+**How it behaves:**
+
+- **Boot-only.** There is no watcher; restart to pick up changes.
+- **Files are authoritative.** Deleting a file removes the skill on the next boot. Only user skills are pruned — built-in and agent-authored ones are untouched. An unconfigured or missing directory prunes nothing.
+- **Built-ins win.** A user skill may not take a built-in's name; the collision is logged and the file skipped.
+- **Bad files are skipped, not fatal.** A file that fails validation is logged with the reason and ignored, so one typo cannot stop the daemon from starting.
+- **Nine cannot edit them.** `skill_write` and `skill_modify` refuse user skills the same way they refuse built-ins.
+- **Your roles are trusted.** Structural flags (`persists`, `delegates`, `spawns_goals`, `interactive`, `profile`) are honored in your role files, exactly as in built-ins — you wrote the file, the same as editing `nine.toml`. Roles Nine writes for *itself* are restricted to narrowing tools. Either way a `tools` list can only narrow; it never grants a tool the daemon lacks.
+
+Check files before restarting:
+
+```bash
+./nine skills validate                        # the configured user_dir
+./nine skills validate skills.d/my-skill.md   # a single file
+```
+
+It runs the same validation the daemon runs at boot and reports every problem per file, so a file that passes here is a file that will seed. In Docker the directory is mounted at `/skills.d` (`NINE_SKILLS_USER_DIR`).
 
 ---
 
@@ -49,8 +88,8 @@ This split is deliberate: the curated default skills should not drift on a runni
 |---|---|
 | `skill_list` | List all skills (built-in and agent-authored) with names, descriptions, tags |
 | `skill_read` | Read a skill's full content by name |
-| `skill_write` | Create or replace one of Nine's own skills (refuses built-in names) |
-| `skill_modify` | Update one of Nine's own skills (refuses built-in skills) |
+| `skill_write` | Create or replace one of Nine's own skills (refuses built-in and user skills) |
+| `skill_modify` | Update one of Nine's own skills (refuses built-in and user skills) |
 
 These are **core-intercepted** tools (handled in-process against the memory store), not a plugin subprocess.
 
@@ -60,7 +99,7 @@ These are **core-intercepted** tools (handled in-process against the memory stor
 ./nine "Create a skill called 'python-testing' with best practices for pytest and fixtures"
 ```
 
-Attempting to overwrite or modify a built-in skill returns an error directing the change to the repo + rebuild.
+Attempting to overwrite or modify a built-in skill returns an error directing the change to the repo + rebuild; the same applies to a user skill, whose file is its source of truth.
 
 ---
 
