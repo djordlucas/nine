@@ -10,6 +10,7 @@ type Config struct {
 	Embeddings EmbeddingsConfig `toml:"embeddings"`
 	UI         UIConfig         `toml:"ui"`
 	Workspace  WorkspaceConfig  `toml:"workspace"`
+	Skills     SkillsConfig     `toml:"skills"`
 	HITL       HITLConfig       `toml:"hitl"`
 	Planning   PlanningConfig   `toml:"planning"`
 	Roles      RolesConfig      `toml:"roles"`
@@ -81,6 +82,16 @@ type HITLConfig struct {
 
 type WorkspaceConfig struct {
 	Root string `toml:"root"`
+}
+
+// SkillsConfig points at the operator's own skills and roles
+// (spec/contracts/skills.md R-SKILL.2). Skills are read from UserDir at boot
+// only; there is no watcher.
+type SkillsConfig struct {
+	// UserDir holds operator-authored skills as `*.md`, with role skills under
+	// `roles/`, mirroring the built-in layout. Empty or absent disables user
+	// skills entirely. The container overrides it with NINE_SKILLS_USER_DIR.
+	UserDir string `toml:"user_dir"`
 }
 
 type UIConfig struct {

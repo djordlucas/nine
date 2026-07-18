@@ -44,6 +44,13 @@ func runDaemon() {
 		slog.Warn("seed skills", "err", err)
 	}
 
+	// Seed operator-authored skills and roles from [skills].user_dir, after the
+	// built-ins so a collision is caught against the full built-in set. Invalid
+	// files are skipped with a logged reason; the daemon still boots.
+	if err := runtime.SeedUserSkills(store, embedder, cfg.Skills.UserDir); err != nil {
+		slog.Warn("seed user skills", "dir", cfg.Skills.UserDir, "err", err)
+	}
+
 	// The supervisor manages the execution of agent tasks, and provides a shared context for plugins to use for cancellation and timeouts.
 	// It journals its control-plane events durably and consumes them via a
 	// cursor-backed subscription, so reactions survive a restart (docs/event-log.md §8a).

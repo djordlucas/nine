@@ -87,7 +87,9 @@ type Role struct {
     AllTools     bool      // true  ⇒ every available tool (plugin + core), minus depth-gated
     Tools        []string  // used only when AllTools == false: strict allowlist
 
-    // Structural wiring. Only built-in roles MAY set these true (R-ROLE.7).
+    // Structural wiring. Only operator-authored roles — built-in or user —
+    // MAY set these true (R-ROLE.7); agent-authored ones are forced to leaf
+    // defaults.
     Delegates    bool      // gets run_agent/run_agents/workflow_* (was: depth < 2)
     SpawnsGoals  bool      // gets goal-session spawn fn         (was: depth == 0)
     Persists     bool      // saveFn/checkpointing wired         (AgentWorker vs sub-agent)
@@ -121,8 +123,9 @@ tags: [coding, dev]
 role:
   tools: [shell, read_file, write_file, file_store, file_fetch, file_list,
           file_search_text, memory_get, memory_set, memory_list, skill_read, skill_list]
-  # structural flags below are honored only for built-in skills (R-ROLE.7);
-  # for agent-authored skills they are ignored and forced to leaf defaults.
+  # structural flags below are honored for operator-authored skills — built-in
+  # and user (docs/skills.md) alike (R-ROLE.7); for agent-authored skills they
+  # are ignored and forced to leaf defaults.
   delegates: false
   spawns_goals: false
   persists: false
@@ -304,6 +307,11 @@ run_agents input += each task gets optional { "role": string }
 
 - The orchestrator picks a role by **name** (a small enum in the tool description listing
   the available leaf roles + their one-line descriptions, so the model chooses well).
+- That enum is **rendered from the live registry** each time an agent is built
+  (`RoleRegistry.RoleEnum` → `agent.SubAgentDefs`), so store-backed role skills —
+  operator-authored and agent-authored alike — are advertised, not just built-ins. It is
+  deterministically ordered (built-ins first, then store roles, each by name) because it
+  feeds a tool schema. Storeless callers fall back to `agent.DefaultRoleEnum`.
 - An unknown/omitted role resolves to `roles.default_leaf` (default `executor`, §11;
   R-ROLE.9), never an error — the system degrades to today's behavior.
 - The system prompt SHOULD steer: "when delegating, pick the narrowest role that fits;

@@ -37,16 +37,45 @@ under `skills/roles/` and are embedded/seeded like any other built-in (R-SKILL.2
 
 ---
 
-## R-SKILL.2 — Two sources, one of them immutable
+## R-SKILL.2 — Three sources, two of them immutable
 
 | Source | Where it lives | Mutable at runtime? |
 |--------|----------------|---------------------|
 | **Built-in defaults** | embedded in the binary (`//go:embed *.md`); seeded into the store on **every** boot | **No** — read-only |
+| **User (operator-authored)** | `[skills].user_dir` on disk; seeded into the store on **every** boot | **No** — read-only to the agent |
 | **Agent-authored** | the `skills` table only | Yes — via `skill_write`/`skill_modify` |
 
-`skill_write` **MUST** refuse to overwrite a built-in; `skill_modify` **MUST** refuse to
-modify a built-in. To change a built-in, edit its markdown in the source and rebuild the
-image.
+Both file-backed sources are immutable to the agent: `skill_write` **MUST** refuse to
+overwrite one and `skill_modify` **MUST** refuse to modify one. A runtime write would be
+undone by the next boot's reseed anyway, and for user skills it would let Nine edit the
+operator's intent. To change a built-in, edit its markdown in the source and rebuild;
+to change a user skill, edit the file and restart.
+
+### User skills
+
+`[skills].user_dir` mirrors the built-in layout — `*.md` at the top level, role skills
+under `roles/` — and uses the **same format** as a built-in (R-SKILL.1). Discovery is
+**boot-only**; there is no watcher.
+
+Seeding **MUST**:
+
+- run **after** the built-ins, so collisions are checked against the full built-in set;
+- **reject** a user skill whose name matches a built-in — built-ins win, and a same-named
+  user skill would be silently clobbered by the next reseed;
+- **validate** each file and **skip** invalid ones with a logged reason, without failing
+  the boot — one typo must not take the daemon down;
+- **prune** `source=user` rows whose files are gone, leaving built-in and agent-authored
+  skills untouched, so the directory is the source of truth. An **absent or unconfigured**
+  directory is a no-op and **MUST NOT** prune (there is no desired state to reconcile);
+  an existing but empty one means "no user skills" and prunes normally.
+
+Validation covers name shape (`^[a-z0-9]+(-[a-z0-9]+)*$`), a required non-empty
+description, a non-empty body for non-role skills (a role body **MAY** be empty — that is
+the R-ROLE.3 daemon-prompt fallback), and known stage kinds in a role `profile`. Tool
+names in a role allowlist are **NOT** validated: core-intercepted tools are not registered
+with the plugin manager, so any name-based check would reject valid allowlists. An
+implementation **SHOULD** expose this validator as an offline command (`nine skills
+validate`) so an operator can check a file without restarting.
 
 ---
 

@@ -74,6 +74,21 @@ func Defaults() ([]Skill, error) {
 	return out, nil
 }
 
+// BuiltinNames returns the set of built-in skill names. User-supplied skills
+// may not claim one of these: built-ins are reseeded from the binary on every
+// boot, so a same-named user skill would be silently clobbered.
+func BuiltinNames() (map[string]bool, error) {
+	defaults, err := Defaults()
+	if err != nil {
+		return nil, err
+	}
+	names := make(map[string]bool, len(defaults))
+	for _, s := range defaults {
+		names[s.Name] = true
+	}
+	return names, nil
+}
+
 // Parse splits a skill markdown document into frontmatter metadata (name,
 // description, tags, optional role block) and its body. A document without a
 // leading `---` block is treated as all body. A malformed role block never

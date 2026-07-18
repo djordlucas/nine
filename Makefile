@@ -98,6 +98,8 @@ docker-run:
 	  --name nine \
 	  -v nine-data:/data \
 	  -v $(PWD)/nine.toml:/nine.toml:ro \
+	  -v $(PWD)/skills.d:/skills.d:ro \
+	  -e NINE_SKILLS_USER_DIR=/skills.d \
 	  -e NINE_LLM_PROVIDER=$(NINE_LLM_PROVIDER) \
 	  -e NINE_LLM_MODEL=$(NINE_LLM_MODEL) \
 	  -e NINE_LLM_ENDPOINT=$(NINE_LLM_ENDPOINT) \
