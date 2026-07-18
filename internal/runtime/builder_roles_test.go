@@ -170,6 +170,80 @@ func TestAdvertisedRunAgentSchemaListsStoreRoles(t *testing.T) {
 	}
 }
 
+// R-ROLE.8 steering: a worker that can delegate is told to pick the narrowest
+// role, with the role names rendered live. This must reach the executor, which
+// delegates but supplies its own body and so never sees the daemon prompt —
+// and it must name store-backed roles, not just the built-ins.
+func TestDelegationSteeringReachesDelegatingRoles(t *testing.T) {
+	store := seedTestStore(t)
+	if err := store.SkillUpsert(memory.Skill{
+		Name:        "data-wrangler",
+		Description: "Clean and reshape datasets.",
+		Content:     "---\nname: data-wrangler\nrole:\n  tools: [shell, read_file]\n---\n\nWrangle data.",
+		Source:      memory.SkillSourceUser,
+	}); err != nil {
+		t.Fatalf("seed role skill: %v", err)
+	}
+
+	p := &scriptedProvider{}
+	p.script = func(n int, req llm.Request) llm.Response {
+		switch n {
+		case 1: // root delegates to the executor, which may sub-delegate
+			return runAgentCall("do a thing", "")
+		default:
+			return llm.Response{Text: "done", StopReason: "end_turn"}
+		}
+	}
+	factory := rolesTestBuilder(t, p, func(c *runtime.AgentBuilderConfig) {
+		c.Loop.Memory = store
+		c.Loop.SystemPrompt = "ROOT-DAEMON-PROMPT"
+	})
+
+	loop := factory.Build("root-1", false)
+	if _, err := loop.Run(context.Background(), "please delegate"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if p.nCalls() < 2 {
+		t.Fatalf("expected >=2 LLM calls, got %d", p.nCalls())
+	}
+
+	rootSys, subSys := p.call(1).System, p.call(2).System
+	for name, sys := range map[string]string{"orchestrator": rootSys, "executor (sub-agent)": subSys} {
+		if !strings.Contains(sys, "narrowest role") {
+			t.Errorf("%s got no role-selection steering (R-ROLE.8):\n%s", name, sys)
+		}
+		if !strings.Contains(sys, "data-wrangler") {
+			t.Errorf("%s steering omits the store-backed role:\n%s", name, sys)
+		}
+	}
+	// The executor supplies its own body, so it must still not inherit the
+	// daemon prompt just because steering was appended (gate 7 / R-ROLE.10).
+	if strings.Contains(subSys, "ROOT-DAEMON-PROMPT") {
+		t.Errorf("sub-agent inherited the orchestrator prompt:\n%s", subSys)
+	}
+	if !strings.Contains(subSys, "sub-agent mode") {
+		t.Errorf("sub-agent lost the executor persona:\n%s", subSys)
+	}
+}
+
+// A role that cannot delegate never gets run_agent, so steering it would be
+// dead text taking up context on every turn.
+func TestNonDelegatingRoleGetsNoSteering(t *testing.T) {
+	p := &scriptedProvider{}
+	p.script = func(int, llm.Request) llm.Response {
+		return llm.Response{Text: "done", StopReason: "end_turn"}
+	}
+	factory := rolesTestBuilder(t, p, nil)
+
+	loop := factory.BuildForRole("leaf-1", runtime.RoleParams{Role: "report-writer"})
+	if _, err := loop.Run(context.Background(), "write something"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if sys := p.call(1).System; strings.Contains(sys, "narrowest role") {
+		t.Errorf("non-delegating role got delegation steering:\n%s", sys)
+	}
+}
+
 // Gate 2: a coarse role's allowlist is enforced at both boundaries — a
 // disallowed tool is absent from the advertised list AND dispatching it
 // returns unknown-tool.

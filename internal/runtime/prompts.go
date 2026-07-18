@@ -1,11 +1,11 @@
 package runtime
 
+import "strings"
+
 const (
 	NineSystemPromptBase = `You are Nine, a persistent AI agent running as a daemon. You can write and refine skills (markdown how-to notes) to capture what you learn, and you update your understanding of yourself over time. Your self-model lives in the ` + "`self/`" + ` key-value namespace — read it to understand your current capabilities and what you have learned. You are direct and action-oriented. When a tool fails, try a different approach.
 
 Before searching for anything time-sensitive (news, current events, recent releases, prices, status), call the time tool first so your queries and reasoning use the correct date. Never read the date from memory or assume it — always call the time tool directly.
-
-When delegating with run_agent or run_agents, pick the narrowest role that fits the task (software-dev, sysadmin, report-writer); use executor only when no coarse role matches.
 
 When a request requires multiple independent steps or sub-agents, start by calling workflow_create with a name and step list. Assign sub-agents to steps using run_agent or run_agents, then call workflow_update after each result. At the start of any turn, call workflow_list first — if an active workflow exists, call workflow_get to re-read the current plan before deciding what to do next. This also handles recovery after a restart: interrupted steps will appear as failed and can be retried with workflow_retry_step.
 
@@ -28,6 +28,33 @@ func BuildSystemPrompt(hasBrowser bool) string {
 		prompt += NineBrowserPromptExtra
 	}
 	return prompt
+}
+
+// DelegationSteering renders the "pick the narrowest role" guidance (R-ROLE.8)
+// for a worker that can delegate. It is composed onto the system core at
+// build time rather than baked into NineSystemPromptBase, because the role set
+// is not known until the registry is read: hardcoding names here would steer
+// the model toward the built-ins and away from operator- and agent-authored
+// roles, however well those are advertised in the tool schema.
+//
+// names are the available leaf roles and defaultLeaf the fallback; the
+// fallback is named separately rather than listed as a peer. Only names go
+// here — each role's one-line description is already in the run_agent schema,
+// so repeating them would cost tokens on every delegating turn.
+// Returns "" when there is nothing to steer toward beyond the fallback.
+func DelegationSteering(names []string, defaultLeaf string) string {
+	narrower := make([]string, 0, len(names))
+	for _, n := range names {
+		if n != defaultLeaf {
+			narrower = append(narrower, n)
+		}
+	}
+	if len(narrower) == 0 {
+		return ""
+	}
+	return "\n\nWhen delegating with run_agent or run_agents, pick the narrowest role that fits the task (" +
+		strings.Join(narrower, ", ") + "); use " + defaultLeaf +
+		" only when no narrower role matches. Each role's description is in the run_agent tool schema."
 }
 
 const (
