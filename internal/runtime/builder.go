@@ -363,7 +363,7 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int) *agent.L
 	// rendered from the live registry only for roles that can delegate —
 	// nothing else advertises run_agent, so nothing else needs it (R-ROLE.8).
 	var roleEnum string
-	if role.Delegates && depthGuard > 0 {
+	if delegates {
 		roleEnum = f.roles.RoleEnum()
 	}
 	tools := buildToolList(lc, role, shellTools, roleEnum)
@@ -407,6 +407,15 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int) *agent.L
 	systemCore := role.SystemPrompt
 	if systemCore == "" {
 		systemCore = lc.SystemPrompt
+	}
+	// Role-selection steering is composed here rather than baked into the
+	// daemon prompt, so it reaches every worker that can actually delegate —
+	// including one running a role with its own body, which never sees the
+	// daemon prompt at all (the executor is exactly that case). Roles that
+	// cannot delegate never get run_agent, so steering them would be dead
+	// text (R-ROLE.8).
+	if delegates {
+		systemCore += DelegationSteering(f.roles.LeafRoles(), f.roles.DefaultLeaf())
 	}
 
 	analystPrompt := ""

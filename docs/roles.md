@@ -315,7 +315,11 @@ run_agents input += each task gets optional { "role": string }
 - An unknown/omitted role resolves to `roles.default_leaf` (default `executor`, §11;
   R-ROLE.9), never an error — the system degrades to today's behavior.
 - The system prompt SHOULD steer: "when delegating, pick the narrowest role that fits;
-  use `executor` only when no coarse role matches."
+  use `executor` only when no coarse role matches." This sentence is rendered from the
+  live registry too (`DelegationSteering`) and composed onto the system core of any
+  worker that can delegate — not baked into the daemon prompt, which a role with its own
+  body never sees. Hardcoding the names here would steer the model toward the built-ins
+  and away from the operator's own roles, however well the schema advertises them.
 
 Semantic role selection (embedding the request against role descriptions, reusing the
 `skills:` vector namespace that already exists) is a **MAY** for a later iteration — v1 is
