@@ -106,6 +106,15 @@ Only the `role` field's description varies; the tools' `name` and `description` 
 fixed, keeping the builder's name-keyed tool-embedding cache valid. A storeless caller
 falls back to a static list of the built-in leaf roles.
 
+The **system prompt** steering ("pick the narrowest fitting role") is subject to the same
+rule: its role names **MUST** be rendered from the live registry, not hardcoded, or the
+prompt steers toward the built-ins and away from the very roles the schema advertises.
+It **MUST** be composed onto the system core of every worker that can actually delegate
+— including one whose role supplies its own body and therefore never sees the daemon
+prompt (the `executor` is exactly that case) — and **MUST NOT** be given to a role that
+cannot delegate, for which it is dead text. Names alone belong here; the one-line
+descriptions are already in the tool schema.
+
 ## R-ROLE.9 — Resolution and fallback
 
 A role registry resolves names: built-ins first (embedded role skills, loaded at

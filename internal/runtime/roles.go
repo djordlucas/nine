@@ -250,6 +250,10 @@ func (r *RoleRegistry) LeafRoleDescriptions() []LeafRole {
 	return append(builtins, stored...)
 }
 
+// DefaultLeaf returns the role a delegation with no (or an unknown) role name
+// resolves to (roles.default_leaf; R-ROLE.9).
+func (r *RoleRegistry) DefaultLeaf() string { return r.defaultLeaf }
+
 // RoleEnum renders the leaf-role list for the `role` field on
 // run_agent/run_agents (R-ROLE.8) as "name — description" pairs, marking the
 // default leaf. Returns "" when the registry has no leaf roles, letting the
