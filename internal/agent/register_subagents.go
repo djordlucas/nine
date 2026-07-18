@@ -9,31 +9,60 @@ import (
 	"nine/internal/llm"
 )
 
-// roleFieldDescription is the role enum surfaced on run_agent/run_agents
-// (docs/roles.md R-ROLE.8). The named roles are the built-in leaf roles
-// shipped in skills/roles/; a runtime test asserts they stay in sync.
-const roleFieldDescription = "Optional worker role for the sub-agent. One of: executor (default; full toolset), software-dev (implement/modify code: shell + files), sysadmin (operate the system: shell, files, http), report-writer (web research and writing; no shell), monitor (read-only: web, http GET, file reads, memory; no shell or writes). Pick the narrowest role that fits the task; omit for executor. Unknown roles fall back to executor."
+// DefaultRoleEnum is the fallback leaf-role list for the `role` field on
+// run_agent/run_agents (docs/roles.md R-ROLE.8), naming the built-in leaf
+// roles shipped in skills/roles/. A live daemon renders the real list — which
+// also covers operator- and agent-authored role skills — from the role
+// registry and passes it to SubAgentDefs; this constant only serves storeless
+// callers (tests, builders with no memory store).
+const DefaultRoleEnum = "One of: executor (default; full toolset), software-dev (implement/modify code: shell + files), sysadmin (operate the system: shell, files, http), report-writer (web research and writing; no shell), monitor (read-only: web, http GET, file reads, memory; no shell or writes)."
 
-var subAgentToolDefs = []llm.ToolDef{
-	{
-		Name:        "gap_report",
-		DisplayName: "Gap Report",
-		Description: "Report a capability gap to the supervisor when no available tool can accomplish the task. The supervisor will attempt to resolve it autonomously.",
-		InputSchema: json.RawMessage(`{"type":"object","required":["description"],"properties":{"description":{"type":"string","description":"What capability is missing and why"}}}`),
-	},
-	{
-		Name:        "run_agent",
-		DisplayName: "Run Agent",
-		Description: "Spawn a sub-agent to execute a single self-contained task and return its final answer. Use this to isolate a focused piece of work or delegate a subtask. For multiple independent tasks at once, use run_agents.",
-		InputSchema: json.RawMessage(`{"type":"object","required":["task"],"properties":{"task":{"type":"string","description":"A clear, self-contained description of the task for the sub-agent."},"context":{"type":"string","description":"Optional background the sub-agent needs. Keep concise."},"role":{"type":"string","description":"` + roleFieldDescription + `"}}}`),
-	},
-	{
-		Name:        "run_agents",
-		DisplayName: "Run Agents",
-		Description: "Spawn multiple sub-agents in parallel and wait for all results. Use this when tasks are independent and can run concurrently. Returns when all agents finish or the timeout expires.",
-		InputSchema: json.RawMessage(`{"type":"object","required":["tasks"],"properties":{"tasks":{"type":"array","description":"Tasks to run in parallel.","items":{"type":"object","required":["task"],"properties":{"task":{"type":"string","description":"Self-contained task description."},"context":{"type":"string","description":"Optional background context."},"role":{"type":"string","description":"` + roleFieldDescription + `"}}}},"timeout_seconds":{"type":"integer","description":"Maximum seconds to wait for the whole group. Defaults to the daemon's configured task timeout (typically 30 minutes); only lower this if the tasks are known to be quick. Agents still running when the timeout fires are cancelled and marked timed_out."}}}`),
-	},
+// roleFieldDescription wraps a rendered leaf-role list in the guidance the
+// model needs to choose well. Empty roleEnum falls back to DefaultRoleEnum.
+func roleFieldDescription(roleEnum string) string {
+	if roleEnum == "" {
+		roleEnum = DefaultRoleEnum
+	}
+	return "Optional worker role for the sub-agent. " + roleEnum +
+		" Pick the narrowest role that fits the task; omit for executor. Unknown roles fall back to executor."
 }
+
+// SubAgentDefs returns the sub-agent tool definitions with roleEnum rendered
+// into the `role` field of run_agent and run_agents. The role property is
+// built once and spliced into both schemas, so the two can never drift.
+func SubAgentDefs(roleEnum string) []llm.ToolDef {
+	// Marshal through encoding/json so any punctuation in a role description
+	// (quotes, backslashes) cannot corrupt the surrounding schema.
+	desc, err := json.Marshal(roleFieldDescription(roleEnum))
+	if err != nil {
+		desc = []byte(`"Optional worker role for the sub-agent."`)
+	}
+	roleProp := `"role":{"type":"string","description":` + string(desc) + `}`
+
+	return []llm.ToolDef{
+		{
+			Name:        "gap_report",
+			DisplayName: "Gap Report",
+			Description: "Report a capability gap to the supervisor when no available tool can accomplish the task. The supervisor will attempt to resolve it autonomously.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["description"],"properties":{"description":{"type":"string","description":"What capability is missing and why"}}}`),
+		},
+		{
+			Name:        "run_agent",
+			DisplayName: "Run Agent",
+			Description: "Spawn a sub-agent to execute a single self-contained task and return its final answer. Use this to isolate a focused piece of work or delegate a subtask. For multiple independent tasks at once, use run_agents.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["task"],"properties":{"task":{"type":"string","description":"A clear, self-contained description of the task for the sub-agent."},"context":{"type":"string","description":"Optional background the sub-agent needs. Keep concise."},` + roleProp + `}}`),
+		},
+		{
+			Name:        "run_agents",
+			DisplayName: "Run Agents",
+			Description: "Spawn multiple sub-agents in parallel and wait for all results. Use this when tasks are independent and can run concurrently. Returns when all agents finish or the timeout expires.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["tasks"],"properties":{"tasks":{"type":"array","description":"Tasks to run in parallel.","items":{"type":"object","required":["task"],"properties":{"task":{"type":"string","description":"Self-contained task description."},"context":{"type":"string","description":"Optional background context."},` + roleProp + `}}},"timeout_seconds":{"type":"integer","description":"Maximum seconds to wait for the whole group. Defaults to the daemon's configured task timeout (typically 30 minutes); only lower this if the tasks are known to be quick. Agents still running when the timeout fires are cancelled and marked timed_out."}}}`),
+		},
+	}
+}
+
+// subAgentToolDefs is the static default set folded into InterceptedDefs.
+var subAgentToolDefs = SubAgentDefs("")
 
 // RegisterGapReport registers the gap_report handler into d. post is called
 // with the description whenever the agent reports a capability gap.

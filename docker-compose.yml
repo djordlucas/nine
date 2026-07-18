@@ -28,6 +28,9 @@ x-nine-common: &nine-common
     NINE_DATABASE_URL: postgres://nine:nine@postgres:5432/nine?sslmode=disable
     NINE_PLUGINS_BIN: /opt/nine/bin
     NINE_WORKSPACE_ROOT: /data/workspace
+    # Your own skills and roles, bind-mounted read-only from ./skills.d below.
+    # Seeded on every boot; an absent directory just means none (docs/skills.md).
+    NINE_SKILLS_USER_DIR: /skills.d
     # Send logs to stderr so `docker compose logs` shows them.
     NINE_LOG_FILE: "off"
     # Optional LLM overrides (empty = use nine.toml). Same knobs as `make docker-run`.
@@ -91,6 +94,7 @@ services:
     volumes:
       - nine-data:/data
       - ./nine.toml:/nine.toml:ro
+      - ./skills.d:/skills.d:ro
 
   # ── Hot-reload: Go toolchain over the bind-mounted source; rebuild on change. ─
   nine-dev:
@@ -112,6 +116,7 @@ services:
       - .:/nine-src
       - nine-dev-data:/data
       - ./nine.toml:/nine.toml:ro
+      - ./skills.d:/skills.d:ro
       - nine-dev-gocache:/root/.cache/go-build
 
 volumes:

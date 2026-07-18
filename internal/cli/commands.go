@@ -109,6 +109,15 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 			return fmt.Errorf("usage: nine send [--id <agent-id>] <message>")
 		}
 		return c.Send(cfg, id, strings.Join(rest, " "))
+	case "skills":
+		if len(args) < 2 || args[1] != "validate" {
+			return fmt.Errorf("usage: nine skills validate [path]")
+		}
+		p := ""
+		if len(args) > 2 {
+			p = args[2]
+		}
+		return c.SkillValidate(cfg, p)
 	case "status":
 		return c.Status(cfg)
 	case "context":

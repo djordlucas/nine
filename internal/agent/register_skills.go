@@ -38,9 +38,10 @@ var skillToolDefs = []llm.ToolDef{
 }
 
 // RegisterSkillTools registers the core-intercepted skill_list/read/write/modify
-// handlers into d, backed by the memory store. Built-in (boot-seeded) skills are
-// immutable: skill_write refuses to overwrite one and skill_modify refuses to
-// change one. When embedder is non-nil, write/modify also (re-)embed the skill's
+// handlers into d, backed by the memory store. File-backed skills — built-in and
+// user (both boot-seeded, see memory.SkillSourceImmutable) — are immutable:
+// skill_write refuses to overwrite one and skill_modify refuses to change one.
+// When embedder is non-nil, write/modify also (re-)embed the skill's
 // description into the "skills" vector namespace so it is semantically retrievable.
 func RegisterSkillTools(d *Dispatcher, store *memory.Store, embedder embed.Embedder) {
 	embedSkill := func(name, description string) {
@@ -90,8 +91,8 @@ func RegisterSkillTools(d *Dispatcher, store *memory.Store, embedder embed.Embed
 		}
 		if existing, found, err := store.SkillGet(req.Name); err != nil {
 			return "", err
-		} else if found && existing.Source == memory.SkillSourceBuiltin {
-			return "", fmt.Errorf("skill %q is a built-in skill and cannot be overwritten", req.Name)
+		} else if found && memory.SkillSourceImmutable(existing.Source) {
+			return "", fmt.Errorf("skill %q is a %s skill and cannot be overwritten; it is owned by its source file", req.Name, existing.Source)
 		}
 		if err := store.SkillUpsert(memory.Skill{
 			Name:        req.Name,
@@ -123,8 +124,8 @@ func RegisterSkillTools(d *Dispatcher, store *memory.Store, embedder embed.Embed
 		if !found {
 			return "", fmt.Errorf("skill %q not found", req.Name)
 		}
-		if existing.Source == memory.SkillSourceBuiltin {
-			return "", fmt.Errorf("skill %q is a built-in skill and cannot be modified", req.Name)
+		if memory.SkillSourceImmutable(existing.Source) {
+			return "", fmt.Errorf("skill %q is a %s skill and cannot be modified; it is owned by its source file", req.Name, existing.Source)
 		}
 		// Merge: keep existing values where new ones are not provided.
 		if req.Description != "" {
