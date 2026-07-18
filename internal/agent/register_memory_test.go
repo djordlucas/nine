@@ -61,6 +61,38 @@ func TestSkillWriteRefusesBuiltin(t *testing.T) {
 	}
 }
 
+// A user skill is file-backed and operator-owned, so Nine may not overwrite or
+// modify it either — a runtime write would be undone by the next boot's reseed
+// and would let the agent edit the operator's intent (R-SKILL.2).
+func TestSkillWriteAndModifyRefuseUserSkills(t *testing.T) {
+	store := newTestStore(t)
+	if err := store.SkillUpsert(memory.Skill{
+		Name: "ops-runbook", Description: "Operator's runbook.", Content: "original",
+		Source: memory.SkillSourceUser,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	d := agent.New()
+	agent.RegisterSkillTools(d, store, nil)
+
+	if _, err := d.Dispatch(context.Background(), "skill_write",
+		json.RawMessage(`{"name":"ops-runbook","description":"x","content":"y"}`)); err == nil {
+		t.Error("expected skill_write to refuse overwriting a user skill")
+	}
+	if _, err := d.Dispatch(context.Background(), "skill_modify",
+		json.RawMessage(`{"name":"ops-runbook","content":"y"}`)); err == nil {
+		t.Error("expected skill_modify to refuse modifying a user skill")
+	}
+
+	sk, found, err := store.SkillGet("ops-runbook")
+	if err != nil || !found {
+		t.Fatalf("skill vanished: found=%v err=%v", found, err)
+	}
+	if sk.Content != "original" {
+		t.Errorf("content = %q, want it unchanged", sk.Content)
+	}
+}
+
 func TestFileSearchSemanticDefaultTopK(t *testing.T) {
 	store := newTestStore(t)
 	d := agent.New()

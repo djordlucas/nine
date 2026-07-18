@@ -263,7 +263,7 @@ How to use this file:
 | ID | Property | Observable check |
 |----|----------|------------------|
 | R-SKILL.1 | File / record format | Markdown with `name`/`description`/`tags` frontmatter in the skills dir. |
-| R-SKILL.2 | Two sources, one immutable | Image-shipped skills are read-only; the writable dir accepts new/updated skills. |
+| R-SKILL.2 | Three sources, two immutable | Built-in and user skills are read-only to the agent (`skill_write`/`skill_modify` refuse both); agent-authored ones accept updates. A user skill seeds from `[skills].user_dir` as `source=user`; one whose name matches a built-in is skipped, not applied. An invalid user file is skipped with a logged reason and the daemon still boots. Deleting a user file prunes only that skill on the next boot; an absent/unconfigured dir prunes nothing. |
 | R-SKILL.3 | Tools | `skill_list`/`skill_read`/`skill_write`/`skill_modify`/`skill_search` behave as specified. |
 | R-SKILL.4 | Indexing hook | After `skill_write`/`skill_modify`, the description embeds into `skills:` and is discoverable via `skill_search` next turn without restart. |
 | R-SKILL.5 | Self-improvement boundary (N1–N3, I10) | No tool exists that mutates `nine.toml`, builds a plugin, or rebuilds the binary. |
@@ -278,9 +278,9 @@ How to use this file:
 | R-ROLE.4 | Two-boundary enforcement | A disallowed tool is absent from the advertised list AND dispatches as `unknown tool`. |
 | R-ROLE.5 | Roles only narrow | An allowlist naming an unavailable tool spawns a leaf without it, no error; `gap_report` survives every allowlist. |
 | R-ROLE.6 | Depth is a guardrail | depthGuard 0 removes delegation tools from a `Delegates:true` role. |
-| R-ROLE.7 | Agent roles are restrictive | An agent-authored role with `persists:true`/`tools:"*"` yields a non-persisting leaf; structural flags ignored. |
-| R-ROLE.8 | Delegation role field | `run_agent`/`run_agents` accept an optional `role`; omitted/unknown resolves to the default leaf, never an error. |
-| R-ROLE.9 | Resolution & fallback | Built-ins resolve from the embedded registry; agent role skills resolve from the store at delegation time; children always spawn as leaves. |
+| R-ROLE.7 | Agent roles are restrictive; operator roles are trusted | An **agent-authored** role with `persists:true` yields a non-persisting leaf (structural flags ignored). A **user** role (`source=user`, from `[skills].user_dir`) with `persists:true`/`delegates:true` keeps them, like a built-in. Neither may widen tools beyond the daemon's surface. |
+| R-ROLE.8 | Delegation role field | `run_agent`/`run_agents` accept an optional `role`; omitted/unknown resolves to the default leaf, never an error. The advertised schema's role enum is rendered from the live registry, so a store-backed role skill (user or agent) appears in it — not only the built-ins — and its order is stable across boots. |
+| R-ROLE.9 | Resolution & fallback | Built-ins resolve from the embedded registry; user and agent role skills resolve from the store at delegation time; children always spawn as leaves. |
 | R-ROLE.10 | Leaf persona | A spawned leaf's system core is its role body (executor's sub-agent stance by default), never the orchestrator's daemon prompt. |
 
 ---

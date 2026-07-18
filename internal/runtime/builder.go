@@ -267,15 +267,32 @@ var goalSelfMgmtToolNames = []string{
 
 // appendInterceptedTools appends the agent.InterceptedDefs entries whose
 // names appear in names to tools, preserving InterceptedDefs order.
-func appendInterceptedTools(tools []ninectx.ToolWithVector, names []string) []ninectx.ToolWithVector {
+//
+// roleEnum, when non-empty, replaces the delegation tools' static definitions
+// with ones whose `role` field lists the live leaf roles (R-ROLE.8) — that is
+// what lets an operator- or agent-authored role skill be advertised to the
+// model at all, rather than only resolving if the model guesses its name.
+// Only the InputSchema varies; Name and Description are untouched, so the
+// builder's name-keyed tool-description embedding cache stays valid.
+func appendInterceptedTools(tools []ninectx.ToolWithVector, names []string, roleEnum string) []ninectx.ToolWithVector {
 	nameSet := make(map[string]bool, len(names))
 	for _, n := range names {
 		nameSet[n] = true
 	}
-	for _, def := range agent.InterceptedDefs {
-		if nameSet[def.Name] {
-			tools = append(tools, ninectx.ToolWithVector{Tool: def})
+	rendered := make(map[string]llm.ToolDef)
+	if roleEnum != "" {
+		for _, def := range agent.SubAgentDefs(roleEnum) {
+			rendered[def.Name] = def
 		}
+	}
+	for _, def := range agent.InterceptedDefs {
+		if !nameSet[def.Name] {
+			continue
+		}
+		if r, ok := rendered[def.Name]; ok {
+			def = r
+		}
+		tools = append(tools, ninectx.ToolWithVector{Tool: def})
 	}
 	return tools
 }
@@ -342,8 +359,14 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int) *agent.L
 		d.RestrictTo(allow)
 	}
 
-	// Boundary 1 of R-ROLE.4: the advertised tool list.
-	tools := buildToolList(lc, role, shellTools)
+	// Boundary 1 of R-ROLE.4: the advertised tool list. The role enum is
+	// rendered from the live registry only for roles that can delegate —
+	// nothing else advertises run_agent, so nothing else needs it (R-ROLE.8).
+	var roleEnum string
+	if role.Delegates && depthGuard > 0 {
+		roleEnum = f.roles.RoleEnum()
+	}
+	tools := buildToolList(lc, role, shellTools, roleEnum)
 	if role.Interactive && f.cfg.HITL != nil {
 		tools = append(tools, ninectx.ToolWithVector{Tool: agent.AskHumanDef})
 	}
@@ -605,7 +628,7 @@ func filterByRole(names []string, role Role) []string {
 // the always-available core tools, and (for delegating roles with depthGuard
 // remaining) the run_agent/workflow/goal tools — intersected with the role's
 // allowlist (boundary 1 of R-ROLE.4).
-func buildToolList(lc LoopConfig, role Role, shellTools []string) []ninectx.ToolWithVector {
+func buildToolList(lc LoopConfig, role Role, shellTools []string, roleEnum string) []ninectx.ToolWithVector {
 	var tools []ninectx.ToolWithVector
 	for _, p := range lc.Mgr.Running() {
 		if p == nil {
@@ -620,11 +643,11 @@ func buildToolList(lc LoopConfig, role Role, shellTools []string) []ninectx.Tool
 			})
 		}
 	}
-	tools = appendInterceptedTools(tools, filterByRole(coreToolNames, role))
+	tools = appendInterceptedTools(tools, filterByRole(coreToolNames, role), roleEnum)
 	// Shell-conferred tools (delegation, goal self-management, notify_user) are
 	// advertised unfiltered — the shell grants them, not the role's allowlist
 	// (docs/predefined-agents.md §3.1).
-	tools = appendInterceptedTools(tools, shellTools)
+	tools = appendInterceptedTools(tools, shellTools, roleEnum)
 	return tools
 }
 
