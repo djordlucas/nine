@@ -40,7 +40,7 @@ func TestRegisterGapReport(t *testing.T) {
 func TestRegisterMultipleToolsEachTakeEffect(t *testing.T) {
 	d := agent.New()
 	store := newTestStore(t)
-	agent.RegisterMemoryTools(d, store, nil, nil)
+	agent.RegisterMemoryTools(d, store, nil, nil, false)
 
 	if _, err := d.Dispatch(context.Background(), "memory_set",
 		json.RawMessage(`{"key":"k","value":"v"}`)); err != nil {

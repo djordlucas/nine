@@ -6,6 +6,13 @@ import (
 	"strings"
 )
 
+// MemoriesNamespace is the shared pgvector namespace that agent key-value
+// memories are mirrored into (one vector per KV key, embedding of the value).
+// The context builder queries it to pull-surface memories relevant to the
+// current turn. It is a single shared pool — memories are not isolated per
+// agent — so any session can surface any recorded memory.
+const MemoriesNamespace = "memories"
+
 // formatVector renders a float32 slice as a pgvector literal, e.g. "[0.1,0.2]".
 func formatVector(v []float32) string {
 	var b strings.Builder

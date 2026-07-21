@@ -47,6 +47,11 @@ type LoopConfig struct {
 	// session relevant to the current turn (docs/reactive-events.md §5). On by
 	// default; the read costs nothing when disabled.
 	RelatedSessions bool
+	// SurfaceMemories mirrors [memory] surface_memories: when on (and an embedder
+	// is configured), each memory_set is indexed into the shared vector pool and
+	// each loop pull-surfaces the stored memories most relevant to the current
+	// turn. On by default; the read costs nothing when disabled.
+	SurfaceMemories bool
 }
 
 // AgentBuilderConfig holds the behavioral dependencies layered on top of the
@@ -401,6 +406,18 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int) *agent.L
 		relatedFn = relatedEnrichmentFn(lc.Memory, agentID)
 	}
 
+	// Pull-surface stored key-value memories relevant to the current query. Same
+	// preconditions as related sessions: needs an embedder to rank and the store
+	// to read; disabled via [memory] surface_memories.
+	var memoryFn func(ctx context.Context, queryVec []float32) string
+	if lc.SurfaceMemories && lc.Embedder != nil && lc.Memory != nil {
+		memoryFn = memoryEnrichmentFn(lc.Memory)
+	}
+
+	// The loop exposes a single enrichment channel (context builder priority 2.6,
+	// shared token cap), so the two pull-surfacers are composed into one.
+	enrichmentFn := composeEnrichment(relatedFn, memoryFn)
+
 	// The role body is the persona; an empty body falls back to the daemon's
 	// configured system prompt (R-ROLE.3). This is what gives leaves their
 	// finite-task stance instead of the orchestrator prompt (R-ROLE.10).
@@ -456,7 +473,7 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int) *agent.L
 		Tools:          tools,
 		Embedder:       lc.Embedder,
 		SelfModelFn:    selfModelFn,
-		RelatedFn:      relatedFn,
+		EnrichmentFn:   enrichmentFn,
 		ThinkPolicy:    agent.DefaultThinkPolicy,
 		AnalysisPrompt: analystPrompt,
 		PlanMode:       f.cfg.PlanMode,
@@ -481,7 +498,7 @@ func (f *AgentBuilder) registerCoreTools(d *agent.Dispatcher, lc LoopConfig, age
 	agent.RegisterGapReport(d, func(desc string) {
 		f.cfg.Sup.Post(Event{Kind: EventGapReported, AgentID: agentID, Payload: desc})
 	})
-	agent.RegisterMemoryTools(d, lc.Memory, lc.Embedder, protectedKeyPrefixes)
+	agent.RegisterMemoryTools(d, lc.Memory, lc.Embedder, protectedKeyPrefixes, lc.SurfaceMemories)
 	agent.RegisterSkillTools(d, lc.Memory, lc.Embedder)
 }
 
