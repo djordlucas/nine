@@ -187,6 +187,12 @@ func runDaemon() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// Resolve this instance's display name (shown in the TUI top bar): the
+	// configured name if set, else a previously generated one from the store,
+	// else a placeholder that a background LLM call replaces with a random name
+	// and persists (docs/configuration.md). Non-blocking.
+	daemon.ResolveInstanceName(ctx, cfg.Daemon.InstanceName, store, cfg.BuildProvider())
+
 	// Start the agent builder's main loop in the background, so it can manage agents while the daemon is running.
 	go supervisor.Run(ctx)
 

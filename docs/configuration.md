@@ -67,6 +67,15 @@ task_timeout_seconds = 1800
 # (one per top-level goal). Defaults to 10 when unset or <= 0.
 max_goal_sessions = 10
 
+# Display name for this Nine instance, shown in the TUI top bar (replacing the
+# literal "nine"). When set, it is authoritative and fixed. When unset, the
+# daemon reuses a name it generated on a prior boot (persisted in the store), or
+# — on a first boot with none — shows "nine" as a placeholder and asks the LLM
+# to coin a short random name asynchronously, persists it, and pushes it live to
+# connected clients. If the LLM is unavailable it falls back to a random
+# "adjective-noun" name. Once generated, the name stays stable across restarts.
+# instance_name = "atlas"
+
 # Treat the [[agent]] list as the full desired state for pre-defined agents
 # (docs/predefined-agents.md §7 v3). When true, a config-origin goal no longer
 # listed in [[agent]] is archived and its session stopped on boot;

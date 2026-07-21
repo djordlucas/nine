@@ -132,6 +132,7 @@ type connectedMsg struct {
 	client          *protocol.Client
 	agentID         string
 	name            string
+	instanceName    string
 	role            string
 	daemonProc      *os.Process // non-nil if we started the daemon; nil if it was already running
 	replayEvents    []toolEvent // tool events that happened while no client was connected
@@ -184,16 +185,17 @@ func (s *streamConn) next() tea.Cmd {
 
 // connState holds the daemon connection, session identity, and in-flight turn stream.
 type connState struct {
-	client      *protocol.Client
-	agentID     string
-	sessionName string
-	role        string      // resolved role the session runs (shown in the header)
-	daemonProc  *os.Process // non-nil if we started the daemon
-	sockPath    string
-	binary      string
-	attachID    string // non-empty when attaching to an existing agent
-	stream      *streamConn
-	err         error
+	client       *protocol.Client
+	agentID      string
+	sessionName  string
+	instanceName string      // this Nine instance's display name (shown in the header)
+	role         string      // resolved role the session runs (shown in the header)
+	daemonProc   *os.Process // non-nil if we started the daemon
+	sockPath     string
+	binary       string
+	attachID     string // non-empty when attaching to an existing agent
+	stream       *streamConn
+	err          error
 
 	// reconnecting is set while the TUI is transparently re-attaching to its
 	// session after the daemon connection dropped (e.g. a hot-reload restart).
@@ -363,12 +365,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						case "clear":
 							m.chat.messages = m.chat.messages[:0]
 						case "new":
-							id, role, err := m.conn.client.NewConversationInteractive(true)
+							id, role, instanceName, err := m.conn.client.NewConversationInteractive(true)
 							if err != nil {
 								m.appendSystem("error: " + err.Error())
 							} else {
 								m.conn.agentID = id
 								m.conn.role = role
+								if instanceName != "" {
+									m.conn.instanceName = instanceName
+								}
 								m.chat.messages = m.chat.messages[:0]
 								m.appendSystem("new conversation: " + id[:8])
 							}
@@ -428,6 +433,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.conn.client = msg.client
 		m.conn.agentID = msg.agentID
 		m.conn.sessionName = msg.name
+		if msg.instanceName != "" {
+			m.conn.instanceName = msg.instanceName
+		}
 		m.conn.role = msg.role
 		m.conn.daemonProc = msg.daemonProc
 		if wasReconnecting {
@@ -516,6 +524,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.display.contextBudget = evt.ContextBudget
 		case "set_name":
 			m.conn.sessionName = evt.Text
+		case "set_instance_name":
+			if evt.Text != "" {
+				m.conn.instanceName = evt.Text
+			}
 		case "sub_agent_start":
 			m.chat.pendingToolEvts = append(m.chat.pendingToolEvts, toolEvent{
 				inputStr:     truncateOutput(evt.Text),
@@ -672,8 +684,12 @@ func (m model) View() string {
 		askHint = "  ·  ? awaiting answer"
 	}
 
+	instanceName := m.conn.instanceName
+	if instanceName == "" {
+		instanceName = "nine"
+	}
 	header := m.display.pal.header.Width(m.display.width).Render(
-		fmt.Sprintf("nine  ·  %s%s%s%s%s", label, askHint, ctxHint, detailHint, scrollHint),
+		fmt.Sprintf("%s  ·  %s%s%s%s%s", instanceName, label, askHint, ctxHint, detailHint, scrollHint),
 	)
 	rule := m.display.pal.rule.Render(strings.Repeat("─", m.display.width))
 
@@ -1188,12 +1204,12 @@ func connectCmd(sockPath, binary string) tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		id, role, err := c.NewConversationInteractive(true)
+		id, role, instanceName, err := c.NewConversationInteractive(true)
 		if err != nil {
 			c.Close() //nolint:errcheck
 			return errMsg{err}
 		}
-		return connectedMsg{client: c, agentID: id, role: role, daemonProc: proc}
+		return connectedMsg{client: c, agentID: id, role: role, instanceName: instanceName, daemonProc: proc}
 	}
 }
 
@@ -1218,6 +1234,7 @@ func attachCmd(sockPath, binary, agentID string) tea.Cmd {
 			client:          c,
 			agentID:         result.AgentID,
 			name:            result.Name,
+			instanceName:    result.InstanceName,
 			role:            result.Role,
 			daemonProc:      proc,
 			replayEvents:    replayToToolEvents(result.ReplayEvents),
@@ -1261,6 +1278,7 @@ func reattachCmd(sockPath, agentID string) tea.Cmd {
 							client:          c,
 							agentID:         result.AgentID,
 							name:            result.Name,
+							instanceName:    result.InstanceName,
 							role:            result.Role,
 							replayEvents:    replayToToolEvents(result.ReplayEvents),
 							pendingResponse: result.PendingResponse,

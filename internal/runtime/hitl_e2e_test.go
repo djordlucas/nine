@@ -57,7 +57,7 @@ func TestHITLEndToEnd(t *testing.T) {
 
 	// Turn connection.
 	c := dial(t, sock)
-	id, _, err := c.NewConversationInteractive(true)
+	id, _, _, err := c.NewConversationInteractive(true)
 	if err != nil {
 		t.Fatalf("NewConversation: %v", err)
 	}
