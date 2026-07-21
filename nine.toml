@@ -64,6 +64,10 @@ bin = "./dist/bin"
 # it is unreachable. Start a local instance with `docker compose up -d`; the
 # container reaches it over the compose network via NINE_DATABASE_URL.
 database_url = "postgres://nine:nine@localhost:5433/nine?sslmode=disable"
+# Index each memory_set into a shared vector pool and pull-surface the memories
+# most relevant to the current turn as advisory context. On by default; needs an
+# embedder (no-op when embeddings are disabled). Set false to turn it off.
+# surface_memories = false
 
 [embeddings]
 # provider = "ollama" requires nomic-embed-text to be pulled and uses extra VRAM.

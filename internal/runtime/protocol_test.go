@@ -225,7 +225,7 @@ func TestMemoryEmbedWire(t *testing.T) {
 	embedder := mockEmbedder(fixedVec)
 
 	d := agent.New()
-	agent.RegisterMemoryTools(d, store, embedder, nil)
+	agent.RegisterMemoryTools(d, store, embedder, nil, false)
 
 	args := json.RawMessage(`{"id":"test-1","namespace":"notes","key":"note1","text":"hello world"}`)
 	res, err := d.Dispatch(context.Background(), "memory_embed", args)
@@ -256,7 +256,7 @@ func TestMemoryQueryWire(t *testing.T) {
 	}
 
 	d := agent.New()
-	agent.RegisterMemoryTools(d, store, embedder, nil)
+	agent.RegisterMemoryTools(d, store, embedder, nil, false)
 
 	args := json.RawMessage(`{"namespace":"notes","query":"hello","top_k":3}`)
 	res, err := d.Dispatch(context.Background(), "memory_query", args)
@@ -347,7 +347,7 @@ func TestMemoryEmbedQueryIntegration(t *testing.T) {
 	})
 
 	d := agent.New()
-	agent.RegisterMemoryTools(d, store, deterministicEmbed, nil)
+	agent.RegisterMemoryTools(d, store, deterministicEmbed, nil, false)
 
 	// Embed a sentence.
 	embedArgs := json.RawMessage(`{"id":"integ-1","namespace":"test","key":"sentence1","text":"the quick brown fox"}`)

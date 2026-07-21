@@ -119,8 +119,11 @@ store into and query the pgvector `vector` column, ranking by `<=>` cosine dista
 (similarity = `1 - distance`), filtered to matching dimensionality. Namespaces partition
 the space so queries don't collide: `skills` (skill descriptions, written on skill
 create/modify), `session-index` (one vector per completed turn, written by the
-related-session subscriber), and per-agent memory namespaces (from `memory_embed`).
-`VectorDelete(id)` removes a stored vector (used when a skill is deleted/replaced).
+related-session subscriber), `memories` (one vector per KV key — the embedded value —
+mirrored on every `memory_set` when memory surfacing is enabled, so the context builder
+can pull-surface memories relevant to the current turn; see R-MEM.8), and per-agent
+memory namespaces (from `memory_embed`). `VectorDelete(id)` removes a stored vector
+(used when a skill is deleted/replaced, or when `memory_delete` removes a mirrored KV key).
 
 > Note: tool-relevance ranking is a separate, in-memory computation over
 > `ToolWithVector` embeddings in the context builder — the `AgentBuilder` embeds each tool
@@ -135,6 +138,29 @@ Several reads have `…JSON` / `…String` variants (`KVListString`, `FileListSt
 `FileSearchTextJSON`, `SkillListJSON`, `GoalList` → JSON at the tool boundary) that
 return a ready-to-emit payload. These are an optimization, not a requirement; an
 implementation **MAY** serialize at the call site instead.
+
+---
+
+## R-MEM.8 — Memory surfacing (KV pull-surfacing)
+
+When `[memory].surface_memories` is enabled (**default on**; a no-op without an embedder),
+key-value memory becomes semantically retrievable without the agent asking:
+
+- **Index on write.** Each `memory_set` also embeds the value and mirrors it into the
+  `memories` namespace (id `memories:<key>`, vector key `<key>`). `memory_delete` removes
+  the mirror. Indexing is **best-effort** — an embed/store failure never fails the KV write
+  (R-EMB.5). This is a side effect of the agent-facing tools, not a new tool.
+- **Pull-surface on read.** Once per turn the context builder embeds the current query,
+  ranks the `memories` pool, and injects up to a small N (reference: 3) memories that clear
+  a similarity floor (reference: 0.6) as **advisory enrichment** — the same priority-2.6,
+  small-capped, drop-when-tight band the related-session surfacer uses, so it never crowds
+  out the turn. Surfaced values are re-read from the KV store (not the vector row) so they
+  reflect the latest `memory_set`, and are framed non-authoritatively ("draw on them only
+  if they help; don't assume they are still current").
+
+The pool is a **single shared namespace**, not partitioned per agent: any session can
+surface any recorded memory. The runtime composes this surfacer with the related-session
+surfacer into the loop's single enrichment channel.
 
 ---
 

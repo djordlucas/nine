@@ -30,11 +30,12 @@ type Config struct {
 	Tools        []ninectx.ToolWithVector
 	Embedder     embed.Embedder                                       // nil = no query embedding / tool ranking
 	SelfModelFn  func(ctx context.Context, queryVec []float32) string // nil = no self-model
-	// RelatedFn optionally returns pull-surfaced enrichment for the current
-	// query — a related prior session recorded out-of-band by the reactive
-	// subscriber (docs/reactive-events.md §5). It returns "" when nothing is
-	// relevant. nil = no enrichment. Computed once per turn, off no extra path.
-	RelatedFn func(ctx context.Context, queryVec []float32) string
+	// EnrichmentFn optionally returns pull-surfaced enrichment for the current
+	// query — e.g. a related prior session recorded out-of-band by the reactive
+	// subscriber (docs/reactive-events.md §5) and/or stored memories relevant to
+	// the turn, composed by the runtime. It returns "" when nothing is relevant.
+	// nil = no enrichment. Computed once per turn, off no extra path.
+	EnrichmentFn func(ctx context.Context, queryVec []float32) string
 
 	// ThinkPolicy decices, by inner LLM call, whether to request native extended reasoning ("thinking") from the model.
 	// It receives the 1-based inner LLM call index and a boolean indicating whether the user explicitly requested thinking for this turn.
@@ -269,8 +270,8 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 		selfModel = l.cfg.SelfModelFn(ctx, queryVec)
 	}
 	enrichment := ""
-	if l.cfg.RelatedFn != nil {
-		enrichment = l.cfg.RelatedFn(ctx, queryVec)
+	if l.cfg.EnrichmentFn != nil {
+		enrichment = l.cfg.EnrichmentFn(ctx, queryVec)
 	}
 
 	plan := ""
@@ -465,8 +466,8 @@ func (l *Loop) InspectContext(ctx context.Context) ninectx.Report {
 		selfModel = l.cfg.SelfModelFn(ctx, queryVec)
 	}
 	enrichment := ""
-	if l.cfg.RelatedFn != nil {
-		enrichment = l.cfg.RelatedFn(ctx, queryVec)
+	if l.cfg.EnrichmentFn != nil {
+		enrichment = l.cfg.EnrichmentFn(ctx, queryVec)
 	}
 	return l.builder.BuildReport(ninectx.BuildInput{
 		SystemCore:       "Current time: " + time.Now().UTC().Format(time.RFC3339) + "\n\n" + l.cfg.SystemCore,

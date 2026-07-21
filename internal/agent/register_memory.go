@@ -83,7 +83,14 @@ var memoryToolDefs = []llm.ToolDef{
 // RegisterMemoryTools registers KV, file, and (when embedder is non-nil)
 // vector/semantic tools into d. protectedPrefixes lists KV key prefixes that
 // memory_delete will refuse to touch.
-func RegisterMemoryTools(d *Dispatcher, store *memory.Store, embedder embed.Embedder, protectedPrefixes []string) {
+//
+// When indexMemories is true and an embedder is present, every memory_set is
+// mirrored into the shared memory.MemoriesNamespace vector pool (embedding of
+// the value, keyed by the KV key) and memory_delete removes the mirror, so the
+// context builder can pull-surface memories relevant to a later turn. Indexing
+// is best-effort: an embed/store failure never fails the underlying KV write
+// (graceful degradation, embedder contract R-EMB.5).
+func RegisterMemoryTools(d *Dispatcher, store *memory.Store, embedder embed.Embedder, protectedPrefixes []string, indexMemories bool) {
 	if embedder != nil {
 		d.handlers["memory_embed"] = func(_ context.Context, args json.RawMessage) (string, error) {
 			var req struct {
@@ -187,6 +194,14 @@ func RegisterMemoryTools(d *Dispatcher, store *memory.Store, embedder embed.Embe
 		if err := store.Set(req.Key, req.Value); err != nil {
 			return "", err
 		}
+		// Mirror the memory into the shared vector pool so later turns can
+		// pull-surface it by relevance. Best-effort: a failure here must not
+		// fail the KV write the agent asked for.
+		if indexMemories && embedder != nil {
+			if vec, err := embedder.Embed(context.Background(), req.Value); err == nil && len(vec) > 0 {
+				_ = store.VectorStore("memories:"+req.Key, memory.MemoriesNamespace, req.Key, vec)
+			}
+		}
 		return "ok", nil
 	}
 
@@ -204,6 +219,10 @@ func RegisterMemoryTools(d *Dispatcher, store *memory.Store, embedder embed.Embe
 		}
 		if err := store.Delete(req.Key); err != nil {
 			return "", err
+		}
+		// Keep the vector pool in sync with the KV store. Best-effort.
+		if indexMemories && embedder != nil {
+			_ = store.VectorDelete("memories:" + req.Key)
 		}
 		return "ok", nil
 	}
