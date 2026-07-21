@@ -128,6 +128,13 @@ bin = "./dist/bin"
 # instance with `docker compose up -d`.
 database_url = "postgres://nine:nine@localhost:5433/nine?sslmode=disable"
 
+# Memory surfacing: mirror every memory_set into a shared vector pool and, on
+# later turns, inject the stored memories most relevant to the current query as
+# advisory enrichment (the same small, drop-when-tight band as related-session
+# surfacing). On by default; requires an embedder (no-op when embeddings are
+# disabled). Set false to disable both the indexing and the surfacing.
+# surface_memories = false
+
 
 [embeddings]
 # Embeddings backend.

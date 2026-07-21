@@ -52,7 +52,9 @@ There are exactly two ways embeddings get produced, and they **MUST** be kept di
    `vectors` table, so there is no `tools:` namespace). These call the embedder directly.
 2. **Agent-invoked (core-intercepted tools).** `memory_embed`, `memory_query`, and
    `file_search_semantic` are tools the agent calls; the **dispatcher** intercepts them,
-   calls the embedder, and routes to the store. The agent never holds the embedder.
+   calls the embedder, and routes to the store. The agent never holds the embedder. The
+   `memory_set` handler also embeds — as a best-effort side effect — to mirror the value
+   into the `memories` pool (R-MEM.8); the agent still never holds the embedder.
 
 No embedding logic lives inside a plugin subprocess.
 
@@ -62,8 +64,10 @@ No embedding logic lives inside a plugin subprocess.
 
 All vectors are stored namespaced to avoid cross-domain collisions during similarity
 search: `skills` for skill descriptions, `session-index` for per-turn session vectors
-(the related-session subscriber), and per-agent namespaces for `memory_embed`. Semantic
-file search uses its own keying within the store. See R-MEM.6.
+(the related-session subscriber), `memories` for the shared key-value memory pool
+(mirrored on `memory_set`, pull-surfaced by the context builder; see R-MEM.8), and
+per-agent namespaces for `memory_embed`. Semantic file search uses its own keying within
+the store. See R-MEM.6.
 
 ---
 

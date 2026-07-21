@@ -98,7 +98,7 @@ func TestFileSearchSemanticDefaultTopK(t *testing.T) {
 	d := agent.New()
 	agent.RegisterMemoryTools(d, store, embed.EmbedderFunc(func(_ context.Context, _ string) ([]float32, error) {
 		return []float32{1, 0}, nil
-	}), nil)
+	}), nil, false)
 
 	_, err := d.Dispatch(context.Background(), "file_search_semantic",
 		json.RawMessage(`{"query":"test"}`))
@@ -107,10 +107,62 @@ func TestFileSearchSemanticDefaultTopK(t *testing.T) {
 	}
 }
 
+func TestMemorySetIndexesAndDeleteRemovesFromPool(t *testing.T) {
+	store := newTestStore(t)
+	d := agent.New()
+
+	// A deterministic embedder so the query below is an exact hit.
+	vec := []float32{1, 0, 0}
+	e := embed.EmbedderFunc(func(_ context.Context, _ string) ([]float32, error) {
+		return vec, nil
+	})
+	agent.RegisterMemoryTools(d, store, e, nil, true /* indexMemories */)
+
+	if _, err := d.Dispatch(context.Background(), "memory_set",
+		json.RawMessage(`{"key":"pref","value":"user runs Postgres"}`)); err != nil {
+		t.Fatalf("memory_set: %v", err)
+	}
+
+	// The memory is mirrored into the shared pool, keyed by the KV key.
+	got, err := store.VectorQuery(memory.MemoriesNamespace, vec, 5)
+	if err != nil {
+		t.Fatalf("vector query: %v", err)
+	}
+	if len(got) != 1 || got[0].Key != "pref" {
+		t.Fatalf("pool after set = %+v, want one entry keyed 'pref'", got)
+	}
+
+	// memory_delete removes the mirror so the pool stays in sync with the KV store.
+	if _, err := d.Dispatch(context.Background(), "memory_delete",
+		json.RawMessage(`{"key":"pref"}`)); err != nil {
+		t.Fatalf("memory_delete: %v", err)
+	}
+	if got, _ := store.VectorQuery(memory.MemoriesNamespace, vec, 5); len(got) != 0 {
+		t.Fatalf("pool after delete = %+v, want empty", got)
+	}
+}
+
+func TestMemorySetDoesNotIndexWhenDisabled(t *testing.T) {
+	store := newTestStore(t)
+	d := agent.New()
+	e := embed.EmbedderFunc(func(_ context.Context, _ string) ([]float32, error) {
+		return []float32{1, 0, 0}, nil
+	})
+	agent.RegisterMemoryTools(d, store, e, nil, false /* indexMemories off */)
+
+	if _, err := d.Dispatch(context.Background(), "memory_set",
+		json.RawMessage(`{"key":"pref","value":"v"}`)); err != nil {
+		t.Fatalf("memory_set: %v", err)
+	}
+	if got, _ := store.VectorQuery(memory.MemoriesNamespace, []float32{1, 0, 0}, 5); len(got) != 0 {
+		t.Fatalf("pool = %+v, want empty when indexing is disabled", got)
+	}
+}
+
 func TestMemoryDeleteProtectedKey(t *testing.T) {
 	store := newTestStore(t)
 	d := agent.New()
-	agent.RegisterMemoryTools(d, store, nil, []string{"self/"})
+	agent.RegisterMemoryTools(d, store, nil, []string{"self/"}, false)
 
 	if err := store.Set("self/capabilities", "can do things"); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -132,7 +184,7 @@ func TestMemoryDeleteProtectedKey(t *testing.T) {
 func TestMemoryDeleteUnprotectedKey(t *testing.T) {
 	store := newTestStore(t)
 	d := agent.New()
-	agent.RegisterMemoryTools(d, store, nil, []string{"self/"})
+	agent.RegisterMemoryTools(d, store, nil, []string{"self/"}, false)
 
 	if err := store.Set("user/pref", "dark mode"); err != nil {
 		t.Fatalf("seed: %v", err)
