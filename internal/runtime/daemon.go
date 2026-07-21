@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -96,6 +97,7 @@ type Daemon struct {
 	stall      StallConfig
 	startedAt  time.Time
 	names      map[string]string // agentID → display name (set on first turn)
+	instName   string            // instance display name shown in the TUI top bar (guarded by mu)
 
 	mgr   pluginRegistry
 	store queryBackend
@@ -286,6 +288,41 @@ func (d *Daemon) EmitProgress(agentID string, msg protocol.Msg) {
 	}
 }
 
+// InstanceName returns the daemon's current display name (the instance name
+// shown in the TUI top bar). Empty until ResolveInstanceName has run.
+func (d *Daemon) InstanceName() string {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.instName
+}
+
+// SetInstanceName sets the daemon's display name and, when it changes,
+// broadcasts a set_instance_name event to every active session so a connected
+// client's header updates live (e.g. after the async naming call resolves).
+// A blank name is ignored. Safe from any goroutine.
+func (d *Daemon) SetInstanceName(name string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+	d.mu.Lock()
+	if d.instName == name {
+		d.mu.Unlock()
+		return
+	}
+	d.instName = name
+	workers := make([]*AgentWorker, 0, len(d.sessions))
+	for _, w := range d.sessions {
+		workers = append(workers, w)
+	}
+	d.mu.Unlock()
+
+	msg := protocol.NewSetInstanceNameMsg(name)
+	for _, w := range workers {
+		w.emitEvent(msg)
+	}
+}
+
 // Start removes any stale socket file, opens the Unix socket, and begins
 // accepting connections. It blocks until ctx is cancelled or a fatal error
 // occurs.
@@ -377,6 +414,7 @@ func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.M
 		if w := d.sessions[id]; w != nil {
 			cid.Role = w.role()
 		}
+		cid.InstanceName = d.instName
 		d.mu.RUnlock()
 		enc.Encode(cid) //nolint:errcheck
 
@@ -389,6 +427,7 @@ func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.M
 		d.mu.RLock()
 		name := d.names[resolved]
 		worker := d.sessions[resolved]
+		instName := d.instName
 		d.mu.RUnlock()
 		var replayEvents []protocol.Msg
 		var pendingResponse string
@@ -405,6 +444,7 @@ func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.M
 		// durable journal so reattaching shows the whole conversation, not a blank
 		// screen. It supersedes the single-turn replay when available.
 		ok := protocol.NewOKMsgWithReplay(resolved, name, replayEvents, pendingResponse)
+		ok.InstanceName = instName
 		if worker != nil {
 			ok.Role = worker.role()
 		}

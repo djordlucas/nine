@@ -37,6 +37,11 @@ num_ctx        = 32768
 [daemon]
 socket_path = "/tmp/nine.sock"
 task_timeout_seconds = 1800  # 30 minutes
+# Display name for this Nine instance, shown in the TUI top bar. Set it here to
+# pin a fixed name. Left unset, the daemon reuses a name it generated on a prior
+# boot, or — on a first boot with none — shows "nine" and asks the LLM to coin a
+# random name, then persists it so it stays stable thereafter.
+# instance_name = "atlas"
 # When true, the [[agent]] list below is the full desired state: a config-origin
 # goal no longer listed here is archived and its session stopped on boot
 # (docs/predefined-agents.md §7 v3). Conversation-created goals are never
