@@ -294,13 +294,13 @@ Environment variables take priority over `nine.toml` values.
 | `NINE_LOG_FORMAT` | Log format: `text` (default) or `json` |
 | `NINE_LOG_FILE` | Set to `off` to disable file logging (logs go to stderr only) |
 
-These are how one `nine.toml` serves every deployment. The `Makefile` and
-`docker-compose.yml` pass `NINE_DATABASE_URL`, `NINE_PLUGINS_BIN`,
-`NINE_WORKSPACE_ROOT`, and `NINE_LLM_ENDPOINT` to point the container at its own
-layout, and the `NINE_LLM_*` knobs let you switch models without editing the file:
+These are how one `nine.toml` serves every deployment. `docker-compose.yml` sets
+`NINE_DATABASE_URL`, `NINE_PLUGINS_BIN`, and `NINE_WORKSPACE_ROOT` to point each
+container at its own layout, and the `NINE_LLM_*` knobs — passed through by the
+Makefile's compose targets — let you switch models without editing the file:
 
 ```bash
-make docker-run NINE_LLM_MODEL=llama3.2
+NINE_LLM_MODEL=llama3.2 make compose-prod
 ```
 
 ---

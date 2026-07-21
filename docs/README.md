@@ -47,17 +47,14 @@ features built on top of that architecture.
 
 ## Quick Start
 
-### Docker (recommended)
+### Docker compose (recommended)
 
 ```bash
-# 1. Build the image
-make docker
+# 1. Deploy the stack — Postgres + the daemon (edit nine.toml for your LLM)
+make compose-prod
 
-# 2. Start the container (edit nine.toml to set your LLM provider/model)
-make docker-run
-
-# 3. Open an interactive session
-make docker-session
+# 2. Open an interactive session
+make compose-session
 ```
 
 ### Native (local dev)
