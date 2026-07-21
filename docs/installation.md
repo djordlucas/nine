@@ -4,77 +4,16 @@
 
 | Requirement | Version | Notes |
 |-------------|---------|-------|
-| Go | 1.26+ | Required for native build |
-| Node.js | 18+ | Required for browser plugin |
-| Docker | 24+ | Required for container build |
+| Docker | 24+ | Required — docker compose runs the whole stack |
+| Go | 1.26+ | For development (build from source) |
+| Node.js | 18+ | For development (browser plugin) |
 | golangci-lint | Latest | Optional, for `make lint` |
 
 An LLM provider is also required — see [Configuration](configuration.md) for options.
 
 ---
 
-## Option 1: Build from Source (Native)
-
-This runs Nine directly on your machine. Useful for development.
-
-### 1. Clone and build
-
-```bash
-git clone https://github.com/djordlucas/nine
-cd nine
-
-# Build the nine binary, all default plugin binaries, and the browser plugin
-make all
-```
-
-The build produces:
-- `dist/nine` — the main CLI/daemon binary
-- `dist/bin/shell`, `dist/bin/files`, etc. — default plugin binaries
-- `dist/bin/browser` — browser plugin launcher (requires Node.js + npm)
-
-### 2. Config
-
-The repo's `nine.toml` is the only config file, and it is written for exactly this
-layout — a local Ollama, plugins in `./dist/bin`, and the compose Postgres on
-`localhost:5433`. Running from the project root needs no edits.
-
-To use it from anywhere, copy it to the global location and make the paths absolute:
-
-```bash
-mkdir -p ~/.nine
-cp nine.toml ~/.nine/nine.toml
-```
-
-Nine searches `$NINE_CONFIG`, then `./nine.toml`, then `/nine.toml`, then
-`~/.nine/nine.toml`. See [Configuration](configuration.md) for all options.
-
-### 3. Start PostgreSQL
-
-Postgres holds all durable state and the daemon fails fast without it:
-
-```bash
-docker compose up -d          # pgvector on localhost:5433
-```
-
-### 4. Pull a model and run
-
-```bash
-ollama pull gemma4:e2b
-./dist/nine "Hello"
-```
-
-The daemon starts automatically and stays running in the background.
-
-To use Anthropic instead, set `provider = "anthropic"` and a `claude-*` model in
-`nine.toml`, then export your key:
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-```
-
----
-
-## Option 2: docker compose (recommended)
+## Deployment (docker compose)
 
 docker compose is the way to deploy Nine: it runs the whole stack — the
 PostgreSQL (`pgvector`) database plus the daemon — with the daemon in one of two
@@ -100,7 +39,7 @@ make compose-session          # docker exec -it nine nine
 
 The Go toolchain runs over a bind-mount of the source tree; `docker/dev-entrypoint.sh`
 builds `nine` + the Go plugins and **rebuilds and restarts the daemon on any `.go`
-change** (via `inotifywait`). Use this for development:
+change** (via `inotifywait`). This is the containerized development loop:
 
 ```bash
 make compose-dev
@@ -156,7 +95,74 @@ This is destructive and irreversible: the database and workspace are wiped.
 
 ---
 
+## Development (build from source)
+
+For working on Nine itself, build and run the binary natively. Deployment is
+docker compose (above); this section is about compiling, running, and testing the
+code from a checkout. For a containerized development loop instead, use
+[hot-reload mode](#hot-reload-mode).
+
+### 1. Clone and build
+
+```bash
+git clone https://github.com/djordlucas/nine
+cd nine
+
+# Build the nine binary, all default plugin binaries, and the browser plugin
+make all
+```
+
+The build produces:
+- `dist/nine` — the main CLI/daemon binary
+- `dist/bin/shell`, `dist/bin/files`, etc. — default plugin binaries
+- `dist/bin/browser` — browser plugin launcher (requires Node.js + npm)
+
+### 2. Config
+
+The repo's `nine.toml` is the only config file, and it is written for exactly this
+layout — a local Ollama, plugins in `./dist/bin`, and the compose Postgres on
+`localhost:5433`. Running from the project root needs no edits.
+
+To use it from anywhere, copy it to the global location and make the paths absolute:
+
+```bash
+mkdir -p ~/.nine
+cp nine.toml ~/.nine/nine.toml
+```
+
+Nine searches `$NINE_CONFIG`, then `./nine.toml`, then `/nine.toml`, then
+`~/.nine/nine.toml`. See [Configuration](configuration.md) for all options.
+
+### 3. Start PostgreSQL
+
+Postgres holds all durable state and the daemon fails fast without it. Bring up
+just the database from the compose file (no profile starts only Postgres):
+
+```bash
+docker compose up -d          # pgvector on localhost:5433
+```
+
+### 4. Pull a model and run
+
+```bash
+ollama pull gemma4:e2b
+./dist/nine "Hello"
+```
+
+The daemon starts automatically and stays running in the background.
+
+To use Anthropic instead, set `provider = "anthropic"` and a `claude-*` model in
+`nine.toml`, then export your key:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+---
+
 ## Makefile Targets
+
+**Build & test**
 
 | Target | Description |
 |--------|-------------|
@@ -170,6 +176,13 @@ This is destructive and irreversible: the database and workspace are wiped.
 | `make cover-html` | Open HTML coverage report in browser |
 | `make lint` | Run golangci-lint |
 | `make model` | Pull the default Ollama model (`gemma4:e2b`) |
+| `make integration-test` | Run integration tests (requires Docker + Ollama) |
+| `make clean` | Remove `dist/` |
+
+**Deploy (docker compose)**
+
+| Target | Description |
+|--------|-------------|
 | `make compose-prod` | Deploy the stack in production mode (built image) |
 | `make compose-dev` | Deploy the stack in hot-reload mode (rebuild on `.go` change) |
 | `make compose-session` | Open an interactive TUI session in the running container |
@@ -177,18 +190,22 @@ This is destructive and irreversible: the database and workspace are wiped.
 | `make compose-logs` | Follow the daemon logs |
 | `make compose-down` | Stop the stack, keeping all data volumes |
 | `make compose-destroy` | Remove the stack **and all data volumes and images** |
-| `make integration-test` | Run integration tests (requires Docker + Ollama) |
-| `make clean` | Remove `dist/` |
 
 ---
 
 ## Verifying the Installation
 
-```bash
-# Check the daemon is running and see loaded plugins
-./dist/nine status
+**Deployed with compose** — attach a session and check status:
 
-# Send a test message
+```bash
+make compose-session
+nine status
+```
+
+**Native build** — the daemon auto-starts on first use:
+
+```bash
+./dist/nine status
 ./dist/nine "What tools do you have available?"
 ```
 
