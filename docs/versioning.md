@@ -15,9 +15,13 @@ internal compatibility contracts that bump *only* when a real break happens.
 ## 1. Release version
 
 The release version is the only number humans say out loud. It follows
-[SemVer](https://semver.org/). While on `0.x` we use the pre-1.0 convention:
-**minor may break, patch is safe.** That keeps us fast before the API and
-protocol have settled.
+[SemVer](https://semver.org/). Now that Nine is past `1.0`, standard SemVer
+applies: **major** bumps on a breaking change (wire protocol, config shape, CLI
+surface, or a public `spec/` contract), **minor** on a backward-compatible
+feature, **patch** on a fix. Nine spent its `0.x` phase under the pre-1.0
+convention — minor could break, patch was safe — to stay fast before the API and
+protocol settled; `v1.0.0` is the point where they became stable enough to
+commit to.
 
 It is **not** hardcoded. `cmd/nine/main.go` declares:
 
@@ -34,9 +38,9 @@ LDFLAGS := -ldflags "-X main.Version=$(VERSION)"
 
 `git describe` resolves to:
 
-- `v0.1.0` — on a tagged commit, clean tree
-- `v0.1.0-3-gabc123` — 3 commits past the tag (self-identifying dev build)
-- `v0.1.0-dirty` — tagged commit with uncommitted changes
+- `v1.1.0` — on a tagged commit, clean tree
+- `v1.1.0-3-gabc123` — 3 commits past the tag (self-identifying dev build)
+- `v1.1.0-dirty` — tagged commit with uncommitted changes
 - `dev` — plain `go build` / `go run`, or outside a git checkout
 
 Check it with `nine version` (aliases: `--version`, `-v`).
@@ -49,8 +53,10 @@ make build          # binary now reports vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-The first published version is `v0.1.0` (deliberately not `1.0.0` — we are not
-promising stability yet).
+Nine's first published version was `v0.1.0`. `v1.0.0` marks the point where the
+CLI, wire protocol, and public `spec/` contracts became stable enough to promise
+compatibility within the `1.x` line — breaking any of them now requires a major
+bump.
 
 ## 2. Plugin protocol version
 
@@ -87,8 +93,9 @@ separate, externally-defined contracts.
 
 When `nine.toml` first changes shape incompatibly, add a `schema_version`
 integer to the config and migrate-on-load so an upgraded daemon can read an
-older user's file instead of crashing. Not yet implemented — pre-publish we can
-still reset config freely.
+older user's file instead of crashing. Not yet implemented — no incompatible
+config change has landed yet, but now that Nine is past `1.0` the migration path
+must be in place *before* the first one does.
 
 ## 4. Memory DB schema (planned)
 
