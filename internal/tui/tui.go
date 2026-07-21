@@ -232,6 +232,7 @@ type displayState struct {
 	pal           palette
 	glamourStyle  string
 	renderer      *glamour.TermRenderer
+	version       string // Nine's build version, shown under the logo
 }
 
 type model struct {
@@ -241,7 +242,7 @@ type model struct {
 	cfg     *config.Config
 }
 
-func initialModel(sockPath, binary, attachID string, pal palette, glamourStyle string, showContext bool, cfg *config.Config) model {
+func initialModel(sockPath, binary, attachID string, pal palette, glamourStyle string, showContext bool, cfg *config.Config, version string) model {
 	ti := textinput.New()
 	ti.Placeholder = "Type a message..."
 	ti.Prompt = "> "
@@ -268,6 +269,7 @@ func initialModel(sockPath, binary, attachID string, pal palette, glamourStyle s
 			showContext:  showContext,
 			pal:          pal,
 			glamourStyle: glamourStyle,
+			version:      version,
 		},
 		cfg: cfg,
 	}
@@ -738,8 +740,8 @@ const nineLogo = ` ███╗   ██╗██╗███╗   ██╗█�
  ██║ ╚████║██║██║ ╚████║███████╗
  ╚═╝  ╚═══╝╚═╝╚═╝  ╚═══╝╚══════╝`
 
-// renderLogo writes the centered, styled nine banner plus a tagline.
-func renderLogo(sb *strings.Builder, pal palette, width int) {
+// renderLogo writes the centered, styled nine banner, its version, and a tagline.
+func renderLogo(sb *strings.Builder, pal palette, width int, version string) {
 	logoWidth := lipgloss.Width(nineLogo)
 	pad := (width - logoWidth) / 2
 	if pad < 0 {
@@ -749,6 +751,13 @@ func renderLogo(sb *strings.Builder, pal palette, width int) {
 	sb.WriteByte('\n')
 	for _, line := range strings.Split(nineLogo, "\n") {
 		sb.WriteString(indent + pal.nine.Render(line) + "\n")
+	}
+	if version != "" {
+		vpad := (width - len(version)) / 2
+		if vpad < 0 {
+			vpad = 0
+		}
+		sb.WriteString(strings.Repeat(" ", vpad) + pal.continuation.Render(version) + "\n")
 	}
 	tagline := "your local-first AI agent · type a message to begin"
 	tpad := (width - len(tagline)) / 2
@@ -764,7 +773,7 @@ func (m *model) rebuildContent() {
 	}
 	var sb strings.Builder
 	if len(m.chat.messages) == 0 && !m.chat.thinking {
-		renderLogo(&sb, m.display.pal, m.chat.viewport.Width)
+		renderLogo(&sb, m.display.pal, m.chat.viewport.Width, m.display.version)
 		m.chat.viewport.SetContent(sb.String())
 		return
 	}
@@ -1313,7 +1322,7 @@ func answerCmd(sockPath, agentID, requestID, answer string) tea.Cmd {
 // Run starts the TUI. sockPath is the daemon's Unix socket; binary is os.Args[0].
 // cfg is the loaded nine config, used by slash commands like /config.
 // attachID, when non-empty, attaches to an existing conversation instead of creating one.
-func Run(sockPath, binary string, cfg *config.Config, attachID string) error {
+func Run(sockPath, binary string, cfg *config.Config, attachID, version string) error {
 	theme := cfg.UI.Theme
 	showContext := cfg.UI.ShowContext == nil || *cfg.UI.ShowContext
 
@@ -1341,7 +1350,7 @@ func Run(sockPath, binary string, cfg *config.Config, attachID string) error {
 		}
 	}
 	p := tea.NewProgram(
-		initialModel(sockPath, binary, attachID, pal, glamourStyle, showContext, cfg),
+		initialModel(sockPath, binary, attachID, pal, glamourStyle, showContext, cfg, version),
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 	)
