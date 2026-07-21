@@ -203,7 +203,7 @@ func TestWireFileSearchSemantic(t *testing.T) {
 	})
 
 	d := agent.New()
-	agent.RegisterMemoryTools(d, store, mockEmbedder, nil)
+	agent.RegisterMemoryTools(d, store, mockEmbedder, nil, false)
 
 	res, err := d.Dispatch(context.Background(), "file_search_semantic",
 		json.RawMessage(`{"query":"test","top_k":1}`))
@@ -222,7 +222,7 @@ func TestWireFileSearchSemanticDefaultTopK(t *testing.T) {
 	})
 
 	d := agent.New()
-	agent.RegisterMemoryTools(d, store, mockEmbedder, nil)
+	agent.RegisterMemoryTools(d, store, mockEmbedder, nil, false)
 
 	// Omit top_k — should default to 5. With empty store returns no error.
 	_, err := d.Dispatch(context.Background(), "file_search_semantic",

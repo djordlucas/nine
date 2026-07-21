@@ -117,6 +117,8 @@ func runDaemon() {
 			// Pull-surface related prior sessions on later turns only when the
 			// out-of-band indexer that populates the store is enabled.
 			RelatedSessions: cfg.Daemon.RelatedSessionsIndexEnabled(),
+			// Index and pull-surface stored key-value memories relevant to the turn.
+			SurfaceMemories: cfg.Memory.SurfaceMemoriesEnabled(),
 		},
 		InitialQueue: cfg.BuildQueue(),
 		NotifAdd:     notifAdd,

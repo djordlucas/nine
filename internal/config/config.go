@@ -173,6 +173,21 @@ type PluginsConfig struct {
 type MemoryConfig struct {
 	Path        string `toml:"path"`         // deprecated: legacy SQLite file path, no longer used
 	DatabaseURL string `toml:"database_url"` // PostgreSQL DSN (see Config.DatabaseURL)
+
+	// SurfaceMemories controls the context-builder pull-surfacing of stored
+	// key-value memories: each `memory_set` is mirrored into a shared vector pool
+	// and, on later turns, the memories most similar to the current query are
+	// injected as advisory enrichment. On by default; set
+	// `surface_memories = false` to disable. Requires an embedder — it is a no-op
+	// when embeddings are disabled. A *bool so an unset value can default to on
+	// while an explicit false still disables it.
+	SurfaceMemories *bool `toml:"surface_memories"`
+}
+
+// SurfaceMemoriesEnabled reports whether stored memories are indexed and
+// pull-surfaced into the context, defaulting to true when the key is unset.
+func (m MemoryConfig) SurfaceMemoriesEnabled() bool {
+	return m.SurfaceMemories == nil || *m.SurfaceMemories
 }
 
 type EmbeddingsConfig struct {
