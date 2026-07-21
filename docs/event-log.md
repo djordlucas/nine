@@ -239,7 +239,7 @@ captured anywhere durable):
 - `tool_start` — name, input
 - `tool_end` — name, **output**, **truncated**, **duration_ms**, **error**, **retries**
 - `context_update` — used, budget
-- `sub_agent_start` / `sub_agent_end` — sub_id (as `span_id`), task, status, elapsed
+- `sub_agent_start` / `sub_agent_end` — sub_id (as `span_id`), task, status, role, elapsed
 - `notify_user` / `goal_mutated` — audit of human-facing / goal-steering effects
 - `hitl_ask` / `hitl_answer` — question, options, answer
 - `turn_end` — result, error, tool_count, duration_ms

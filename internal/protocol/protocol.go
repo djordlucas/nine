@@ -39,8 +39,8 @@ import (
 //	"context_update"   — context assembled; ContextUsed + ContextBudget set
 //	"response_chunk"   — streamed text token; Text carries the chunk
 //	"thinking_chunk"   — streamed reasoning token; Text carries the chunk
-//	"sub_agent_start"  — a sub-agent was spawned; SubAgentID + Text (task) + Timestamp set
-//	"sub_agent_end"    — a sub-agent finished; SubAgentID + Text (task) + Status + Timestamp set
+//	"sub_agent_start"  — a sub-agent was spawned; SubAgentID + Text (task) + Role + Timestamp set
+//	"sub_agent_end"    — a sub-agent finished; SubAgentID + Text (task) + Status + Role + Timestamp set
 //	"stage"            — the turn entered a named waiting phase; Text carries the label
 type Msg struct {
 	AgentID         string          `json:"agent_id,omitempty"`
@@ -48,7 +48,7 @@ type Msg struct {
 	Text            string          `json:"text,omitempty"`
 	ID              string          `json:"id,omitempty"`
 	Name            string          `json:"name,omitempty"`
-	Role            string          `json:"role,omitempty"` // conversation_id/ok reply: the session's resolved role
+	Role            string          `json:"role,omitempty"` // conversation_id/ok reply: session's role; sub_agent_start/end: sub-agent's resolved leaf role
 	ToolName        string          `json:"tool_name,omitempty"`
 	ToolDisplayName string          `json:"tool_display_name,omitempty"`
 	ToolInput       json.RawMessage `json:"tool_input,omitempty"`
@@ -110,6 +110,7 @@ type ProgressEvent struct {
 	Text            string        // set when Type == "response_chunk"/"thinking_chunk" or "sub_agent_start"/"sub_agent_end" (task description)
 	SubAgentID      string        // set when Type == "sub_agent_start" or "sub_agent_end"
 	Status          string        // set when Type == "sub_agent_end"
+	Role            string        // set when Type == "sub_agent_start"/"sub_agent_end": the sub-agent's resolved leaf role
 	LLMCallN        int           // set when Type == "thinking"; 1-based LLM call count within the current turn
 	Think           bool          // set when Type == "thinking"; the call streams reasoning (thinking_chunk)
 	HumanRequest    *HumanRequest // set when Type == "human_input_required"
@@ -328,25 +329,29 @@ func NewThinkingChunkMsg(agentID, text string) Msg {
 }
 
 // NewSubAgentStartMsg announces that a sub-agent was spawned to work on task.
-func NewSubAgentStartMsg(agentID, subAgentID, task string) Msg {
+// role is the sub-agent's resolved leaf role (e.g. "software-dev"), shown in
+// the TUI so the user can see which kind of agent is doing the work.
+func NewSubAgentStartMsg(agentID, subAgentID, task, role string) Msg {
 	return Msg{
 		Type:       "sub_agent_start",
 		AgentID:    agentID,
 		SubAgentID: subAgentID,
 		Text:       task,
+		Role:       role,
 		Timestamp:  time.Now().UnixMilli(),
 	}
 }
 
 // NewSubAgentEndMsg announces that a sub-agent finished working on task.
-// status is "done", "failed", or "timed_out".
-func NewSubAgentEndMsg(agentID, subAgentID, task, status string) Msg {
+// status is "done", "failed", or "timed_out"; role is its resolved leaf role.
+func NewSubAgentEndMsg(agentID, subAgentID, task, status, role string) Msg {
 	return Msg{
 		Type:       "sub_agent_end",
 		AgentID:    agentID,
 		SubAgentID: subAgentID,
 		Text:       task,
 		Status:     status,
+		Role:       role,
 		Timestamp:  time.Now().UnixMilli(),
 	}
 }
@@ -458,6 +463,7 @@ func (m Msg) ToProgressEvent() (ProgressEvent, bool) {
 			SubAgentID: m.SubAgentID,
 			Text:       m.Text,
 			Status:     m.Status,
+			Role:       m.Role,
 			At:         at,
 		}, true
 	case "thinking":

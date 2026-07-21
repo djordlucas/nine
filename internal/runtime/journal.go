@@ -74,6 +74,7 @@ type subAgentPayload struct {
 	SubID  string `json:"sub_id"`
 	Task   string `json:"task,omitempty"`
 	Status string `json:"status,omitempty"`
+	Role   string `json:"role,omitempty"`
 }
 
 // turnSpan returns the span id of a turn's root.

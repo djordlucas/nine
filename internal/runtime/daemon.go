@@ -181,12 +181,12 @@ func (d *Daemon) journalReplay(agentID string) ([]protocol.Msg, string) {
 		case "sub_agent_start":
 			var p subAgentPayload
 			if json.Unmarshal(e.Payload, &p) == nil {
-				msgs = append(msgs, protocol.NewSubAgentStartMsg(agentID, p.SubID, p.Task))
+				msgs = append(msgs, protocol.NewSubAgentStartMsg(agentID, p.SubID, p.Task, p.Role))
 			}
 		case "sub_agent_end":
 			var p subAgentPayload
 			if json.Unmarshal(e.Payload, &p) == nil {
-				msgs = append(msgs, protocol.NewSubAgentEndMsg(agentID, p.SubID, p.Task, p.Status))
+				msgs = append(msgs, protocol.NewSubAgentEndMsg(agentID, p.SubID, p.Task, p.Status, p.Role))
 			}
 		case "turn_end":
 			var p turnEndPayload
@@ -251,13 +251,13 @@ func (d *Daemon) journalHistory(agentID string) []protocol.Msg {
 			if json.Unmarshal(e.Payload, &p) != nil {
 				continue
 			}
-			m = protocol.NewSubAgentStartMsg(agentID, p.SubID, p.Task)
+			m = protocol.NewSubAgentStartMsg(agentID, p.SubID, p.Task, p.Role)
 		case "sub_agent_end":
 			var p subAgentPayload
 			if json.Unmarshal(e.Payload, &p) != nil {
 				continue
 			}
-			m = protocol.NewSubAgentEndMsg(agentID, p.SubID, p.Task, p.Status)
+			m = protocol.NewSubAgentEndMsg(agentID, p.SubID, p.Task, p.Status, p.Role)
 		case "turn_end":
 			var p turnEndPayload
 			if json.Unmarshal(e.Payload, &p) != nil || p.Result == "" {
