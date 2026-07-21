@@ -17,6 +17,9 @@ nine status                      Show daemon info, active agents, loaded plugins
 nine context <agent-id> [-v]     Show the session's assembled-context token
                                  breakdown (no LLM call; -v dumps the full prompt)
 nine attach <agent-id>           Reconnect to an existing conversation/session
+nine stop <agent-id>             Terminate a session (stops the worker and
+                                 deletes its saved state)
+nine stop --all                  Terminate every active session
 
 nine goals                       List active goals
 nine reflections                 List idle-reflection history
@@ -209,6 +212,27 @@ On reconnect the full conversation transcript is restored — prior prompts, too
 activity, and responses — so the session looks as it did before you detached,
 not like a fresh conversation. The history is reconstructed from the durable
 event journal, so it survives daemon restarts too.
+
+### `nine stop` — terminate a session
+
+Stops a session and deletes its saved state, so it is not revived on the next
+turn or attach, nor resumed after a daemon restart. Use it to clean up a
+misbehaving background session or one created by accident — for example a
+mistyped command:
+
+```bash
+./nine status                 # find the session's id
+./nine stop a1b2c3d4-...      # terminate that one session
+./nine stop --all             # terminate every active session
+```
+
+`stop` acts on running state, so it needs the daemon up; with none running there
+is nothing to stop.
+
+> **Typos don't start sessions.** A mistyped command that closely matches a real
+> one (e.g. `nine staus`) is reported as an error with a suggestion and the usage
+> reference, instead of being sent as a message. Genuine one-word messages that
+> don't resemble any command still go through as normal.
 
 ### `nine context` — inspect a session's assembled context
 

@@ -34,6 +34,10 @@ func (s *SQLCheckpointStore) Load(agentID string) ([]byte, bool, error) {
 	return s.store.ConversationLoad(agentID)
 }
 
+func (s *SQLCheckpointStore) Delete(agentID string) error {
+	return s.store.ConversationDelete(agentID)
+}
+
 // SQLNotifStore persists notifications in the memory store's SQLite
 // notifications table.
 type SQLNotifStore struct {
@@ -90,6 +94,13 @@ func (s *InMemoryCheckpointStore) Load(agentID string) ([]byte, bool, error) {
 	cp := make([]byte, len(d))
 	copy(cp, d)
 	return cp, true, nil
+}
+
+func (s *InMemoryCheckpointStore) Delete(agentID string) error {
+	s.mu.Lock()
+	delete(s.data, agentID)
+	s.mu.Unlock()
+	return nil
 }
 
 // InMemoryNotifStore is an in-memory NotifStore. Safe for concurrent use.
