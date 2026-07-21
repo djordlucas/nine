@@ -37,12 +37,13 @@ fix it rather than appending a note.
 ## 3. Decide the version bump (semver, git-tag driven)
 
 Per `docs/versioning.md`, the release version is **not** a file — it lives in
-git tags and is injected at build time. While on `0.x`:
+git tags and is injected at build time. Nine is past `1.0`, so standard SemVer
+applies:
 
 - **Breaking** change (wire protocol, config shape, CLI surface, a public
-  contract in `spec/`) → bump the **minor**: `v0.1.0` → `v0.2.0`.
-- **Backward-compatible** change (additive or fix) → bump the **patch**:
-  `v0.1.0` → `v0.1.1`.
+  contract in `spec/`) → bump the **major**: `v1.1.0` → `v2.0.0`.
+- **Backward-compatible feature** (additive) → bump the **minor**: `v1.1.0` → `v1.2.0`.
+- **Fix** (no new surface) → bump the **patch**: `v1.1.0` → `v1.1.1`.
 
 Separately, if the **native plugin wire contract** changed, also bump
 `plugin.ProtocolVersion` in `internal/plugin/contract.go` (its own integer,
@@ -50,21 +51,33 @@ independent of the release version — see versioning.md §2).
 
 State the chosen next version and one line of justification before tagging.
 
-## 4. Commit and tag
+## 4. Branch, commit, PR — then tag
 
-A tag must point at a commit, so commit the source + doc/spec updates first,
-then tag:
+Every change goes on a feature branch with a pull request (see `CLAUDE.md`), so
+never commit the sync straight to `main`. If you are not already on a feature
+branch, create one first — `git checkout -b` carries the uncommitted work over:
 
 ```sh
+git checkout -b docs/sync-<summary>   # skip if already on a feature branch
 git add -A
 git commit -m "<concise summary of the change>
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
-git tag -a vX.Y.Z -m "Nine vX.Y.Z — <summary>"
+git push -u origin HEAD
+gh pr create --fill
 ```
 
-Do **not** push unless explicitly asked. Do not create a branch — work on the
-current branch.
+A release tag must point at a commit on `main`, so cut it **after the PR merges**,
+on the updated `main` — not on the branch:
+
+```sh
+git checkout main && git pull
+git tag -a vX.Y.Z -m "Nine vX.Y.Z — <summary>"
+git push origin vX.Y.Z   # only when explicitly asked
+```
+
+State the chosen version in the PR, and do **not** push the branch, open the PR,
+or push the tag beyond what the user asked for.
 
 ## 5. Report
 
