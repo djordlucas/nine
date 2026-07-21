@@ -48,7 +48,8 @@ type Msg struct {
 	Text            string          `json:"text,omitempty"`
 	ID              string          `json:"id,omitempty"`
 	Name            string          `json:"name,omitempty"`
-	Role            string          `json:"role,omitempty"` // conversation_id/ok reply: session's role; sub_agent_start/end: sub-agent's resolved leaf role
+	InstanceName    string          `json:"instance_name,omitempty"` // conversation_id/ok reply and set_instance_name event: the daemon's display name
+	Role            string          `json:"role,omitempty"`          // conversation_id/ok reply: session's role; sub_agent_start/end: sub-agent's resolved leaf role
 	ToolName        string          `json:"tool_name,omitempty"`
 	ToolDisplayName string          `json:"tool_display_name,omitempty"`
 	ToolInput       json.RawMessage `json:"tool_input,omitempty"`
@@ -99,7 +100,7 @@ type HumanRequest struct {
 // ProgressEvent is a structured progress update delivered to the TUI client
 // during a turn. It is constructed by the client from streaming Msgs.
 type ProgressEvent struct {
-	Type            string // "tool_start" | "tool_end" | "context_update" | "response_chunk" | "thinking_chunk" | "sub_agent_start" | "sub_agent_end" | "thinking" | "plan_start" | "plan_end" | "notice"
+	Type            string // "tool_start" | "tool_end" | "context_update" | "response_chunk" | "thinking_chunk" | "sub_agent_start" | "sub_agent_end" | "thinking" | "plan_start" | "plan_end" | "notice" | "set_instance_name"
 	ToolName        string
 	ToolDisplayName string
 	ToolInput       json.RawMessage
@@ -235,6 +236,7 @@ func NewOKMsgWithReplay(agentID, name string, replay []Msg, pendingResponse stri
 type AttachResult struct {
 	AgentID         string
 	Name            string
+	InstanceName    string
 	Role            string
 	ReplayEvents    []Msg
 	PendingResponse string
@@ -258,6 +260,12 @@ func NewTextMsg(msgType, text string) Msg {
 // NewSetNameMsg announces the inferred display name for a conversation.
 func NewSetNameMsg(agentID, name string) Msg {
 	return Msg{Type: "set_name", AgentID: agentID, Name: name}
+}
+
+// NewSetInstanceNameMsg announces the daemon's display name (instance name),
+// broadcast to active sessions when it is resolved or updated asynchronously.
+func NewSetInstanceNameMsg(name string) Msg {
+	return Msg{Type: "set_instance_name", InstanceName: name}
 }
 
 // NewResponseMsg carries the assistant's final reply for a turn.
@@ -453,6 +461,8 @@ func (m Msg) ToProgressEvent() (ProgressEvent, bool) {
 		return ProgressEvent{Type: m.Type, Text: m.Text}, true
 	case "set_name":
 		return ProgressEvent{Type: m.Type, Text: m.Name}, true
+	case "set_instance_name":
+		return ProgressEvent{Type: m.Type, Text: m.InstanceName}, true
 	case "sub_agent_start", "sub_agent_end":
 		at := time.Now()
 		if m.Timestamp > 0 {

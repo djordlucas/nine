@@ -22,6 +22,7 @@ Msg {
   text              string   // free text / JSON payload depending on type
   id                string
   name              string
+  instance_name     string   // ok/conversation_id + set_instance_name: the daemon's display name
   tool_name         string
   tool_display_name string   // UI only — see R-PROTO.6
   tool_input        json     // raw JSON args
@@ -70,8 +71,8 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 
 | `type` | Fields | Meaning |
 |--------|--------|---------|
-| `conversation_id` | `id`, `role` | conversation created; `role` is the session's resolved role |
-| `ok` | `agent_id`, `role`, `replay_events`, `pending_response` | attach succeeded (+ replay snapshot); `role` is the session's resolved role |
+| `conversation_id` | `id`, `role`, `instance_name` | conversation created; `role` is the session's resolved role, `instance_name` the daemon's display name |
+| `ok` | `agent_id`, `role`, `instance_name`, `replay_events`, `pending_response` | attach succeeded (+ replay snapshot); `role` is the session's resolved role, `instance_name` the daemon's display name |
 | `response` | `agent_id`, `text` | the assistant's final answer |
 | `done` | `agent_id` | turn complete |
 | `error` | `text` | failure |
@@ -89,6 +90,7 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `plan_start` | — | the no-tool request-analysis (planning) pass began (thinking-degraded models) |
 | `plan_end` | — | the request-analysis pass finished |
 | `notice` | `text` | a session-level notice (e.g. native thinking unavailable, planning pass used) |
+| `set_instance_name` | `instance_name` | the daemon's display name resolved or changed (e.g. async naming completed); broadcast to active sessions, optional — clients that don't recognise it **MUST** ignore it |
 | `context_update` | `context_used`, `context_budget` | context assembled |
 | `tool_start` | `tool_name`, `tool_display_name`, `tool_input`, `ts` | tool call started |
 | `tool_end` | `+ tool_output` | tool call finished |

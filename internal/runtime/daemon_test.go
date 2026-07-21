@@ -379,7 +379,7 @@ func TestDaemonStatus(t *testing.T) {
 
 	// Create a conversation so there's at least one agent. The reply carries the
 	// session's resolved role (orchestrator for a normal conversation).
-	id, role, err := c.NewConversationInteractive(false)
+	id, role, _, err := c.NewConversationInteractive(false)
 	if err != nil {
 		t.Fatalf("NewConversation: %v", err)
 	}

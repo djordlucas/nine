@@ -127,6 +127,13 @@ type DaemonConfig struct {
 	TaskTimeoutSeconds int    `toml:"task_timeout_seconds"` // default 1800 (30 min)
 	MaxGoalSessions    int    `toml:"max_goal_sessions"`    // default runtime.DefaultMaxGoalSessions when <= 0
 
+	// InstanceName is the display name for this Nine instance, shown in the TUI
+	// top bar. When set here it is authoritative and fixed. When empty, the
+	// daemon reuses a previously generated name persisted in the store, or — on a
+	// first boot with neither — shows a placeholder and asks the LLM to coin a
+	// random name asynchronously, then persists it (docs/configuration.md).
+	InstanceName string `toml:"instance_name"`
+
 	// StandingAgentsAuthoritative treats the [[agent]] list as the full desired
 	// state (docs/predefined-agents.md §7 v3). When true, a config-origin goal no
 	// longer listed in nine.toml is archived and its session stopped on boot.
