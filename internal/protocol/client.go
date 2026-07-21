@@ -73,28 +73,28 @@ func (c *Client) Close() error { return c.conn.Close() }
 // NewConversation asks the daemon to create a new, non-interactive
 // conversation and returns its ID.
 func (c *Client) NewConversation() (string, error) {
-	id, _, err := c.NewConversationInteractive(false)
+	id, _, _, err := c.NewConversationInteractive(false)
 	return id, err
 }
 
 // NewConversationInteractive creates a conversation, marking it interactive
 // (HITL-eligible) when interactive is true. Only the TUI sets this. Returns the
-// new conversation's ID and its resolved role.
-func (c *Client) NewConversationInteractive(interactive bool) (id, role string, err error) {
+// new conversation's ID, its resolved role, and the daemon's instance name.
+func (c *Client) NewConversationInteractive(interactive bool) (id, role, instanceName string, err error) {
 	if err := c.send(Msg{Type: "new_conversation", Interactive: interactive}); err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	reply, err := c.recv()
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	if reply.Type == "error" {
-		return "", "", fmt.Errorf("daemon: %s", reply.Text)
+		return "", "", "", fmt.Errorf("daemon: %s", reply.Text)
 	}
 	if reply.Type != "conversation_id" {
-		return "", "", fmt.Errorf("unexpected reply: %s", reply.Type)
+		return "", "", "", fmt.Errorf("unexpected reply: %s", reply.Type)
 	}
-	return reply.ID, reply.Role, nil
+	return reply.ID, reply.Role, reply.InstanceName, nil
 }
 
 // Attach reconnects to an existing conversation and returns an AttachResult
@@ -121,6 +121,7 @@ func (c *Client) Attach(agentID string) (AttachResult, error) {
 	return AttachResult{
 		AgentID:         resolved,
 		Name:            reply.Name,
+		InstanceName:    reply.InstanceName,
 		Role:            reply.Role,
 		ReplayEvents:    reply.ReplayEvents,
 		PendingResponse: reply.PendingResponse,

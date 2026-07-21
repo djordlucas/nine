@@ -17,6 +17,16 @@ var PlanMentionRiskyTool = planMentionRiskyTool
 // NameFromPrompt exposes nameFromPrompt for testing.
 var NameFromPrompt = nameFromPrompt
 
+// SanitizeInstanceName exposes sanitizeInstanceName for testing.
+var SanitizeInstanceName = sanitizeInstanceName
+
+// RandomInstanceName exposes randomInstanceName for testing.
+var RandomInstanceName = randomInstanceName
+
+// InstanceNameKV exposes the store key under which a generated instance name
+// is persisted, so tests can seed and assert on it.
+var InstanceNameKV = instanceNameKV
+
 // ToolVectorForTest exposes the cached per-tool embedding lookup for testing.
 func (f *AgentBuilder) ToolVectorForTest(emb embed.Embedder, name, desc string) []float32 {
 	return f.toolVector(emb, llm.ToolDef{Name: name, Description: desc})
