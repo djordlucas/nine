@@ -26,7 +26,7 @@ func main() {
 	c.Version = Version
 	c.StartDaemon = runDaemon
 	c.StartTUI = func(attachID string) error {
-		return tui.Run(cfg.SocketPath(), os.Args[0], cfg, attachID)
+		return tui.Run(cfg.SocketPath(), os.Args[0], cfg, attachID, Version)
 	}
 
 	if err := c.Run(os.Args[1:], cfg); err != nil {
