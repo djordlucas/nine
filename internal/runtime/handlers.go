@@ -344,6 +344,82 @@ func (d *Daemon) userTurn(ctx context.Context, enc *json.Encoder, agentID, text 
 	}
 }
 
+// handleSessionStop terminates one session (or every session, when all is set):
+// it stops the running worker, drops it from the active maps, and deletes its
+// persisted state so it is neither revived on the next turn/attach nor resumed
+// after a daemon restart. It is the operator's escape hatch for a misbehaving or
+// accidentally-created session (e.g. one spawned by a mistyped command).
+func (d *Daemon) handleSessionStop(enc *json.Encoder, agentID string, all bool) {
+	if all {
+		d.mu.Lock()
+		workers := make([]*AgentWorker, 0, len(d.sessions))
+		ids := make([]string, 0, len(d.sessions))
+		for id, w := range d.sessions {
+			workers = append(workers, w)
+			ids = append(ids, id)
+			delete(d.names, id)
+		}
+		d.sessions = make(map[string]*AgentWorker)
+		d.mu.Unlock()
+
+		for _, w := range workers {
+			w.stop()
+		}
+		for _, id := range ids {
+			d.forgetSession(id)
+		}
+		enc.Encode(protocol.NewTextMsg("session_stop", fmt.Sprintf("stopped %d session(s)", len(ids)))) //nolint:errcheck
+		return
+	}
+
+	resolved := d.resolveID(agentID)
+	d.mu.Lock()
+	w, running := d.sessions[resolved]
+	delete(d.sessions, resolved)
+	delete(d.names, resolved)
+	d.mu.Unlock()
+
+	if running {
+		w.stop()
+	}
+	// Delete persisted state even for an idle session (checkpoint only, no live
+	// worker). existed reports whether any trace of the session was found, so a
+	// stray id is reported as not-found rather than silently "stopped".
+	existed := d.forgetSession(resolved)
+	if !running && !existed {
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("session %s not found", agentID))) //nolint:errcheck
+		return
+	}
+	slog.Info("session stopped", "id", resolved)
+	enc.Encode(protocol.NewTextMsg("session_stop", "stopped "+resolved)) //nolint:errcheck
+}
+
+// forgetSession deletes a session's durable state: its checkpoint and, when a
+// plan store is configured, its session plan (archived so it is not resumed at
+// startup). It reports whether any persisted trace of the session existed.
+// Best-effort — persistence errors are logged, not returned.
+func (d *Daemon) forgetSession(id string) bool {
+	existed := false
+	if d.ckpt != nil {
+		if _, found, err := d.ckpt.Load(id); err == nil && found {
+			existed = true
+		}
+		if err := d.ckpt.Delete(id); err != nil {
+			slog.Warn("delete checkpoint failed", "id", id, "err", err)
+		}
+	}
+	if d.plans != nil {
+		if p, err := d.plans.SessionPlanGet(id); err == nil && p != nil {
+			existed = true
+			p.Status = "archived"
+			if err := d.plans.SessionPlanSave(p); err != nil {
+				slog.Warn("archive session plan failed", "id", id, "err", err)
+			}
+		}
+	}
+	return existed
+}
+
 // handleListTools returns all tool definitions from core and all loaded plugins.
 func (d *Daemon) handleListTools(enc *json.Encoder) {
 	var tools []protocol.ToolSummary
