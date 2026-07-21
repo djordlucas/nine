@@ -14,11 +14,11 @@ GOFLAGS  := -mod=vendor
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS  := -ldflags "-X main.Version=$(VERSION)"
 
-.PHONY: all dev build plugins test test-v lint cover cover-html clean docker docker-run docker-stop docker-session docker-up docker-logs compose-prod compose-dev compose-session compose-down integration-test integration-test-short
+.PHONY: all dev build plugins test test-v lint cover cover-html clean model compose-prod compose-dev compose-session compose-shell compose-logs compose-down compose-destroy integration-test integration-test-short
 
 dev: build plugins browser-plugin
 
-all: dev docker
+all: dev
 
 # ── core binary ───────────────────────────────────────────────────────────────
 
@@ -71,78 +71,22 @@ cover-html: cover
 lint:
 	golangci-lint run ./...
 
-# ── docker ────────────────────────────────────────────────────────────────────
+# ── docker-compose deployment ─────────────────────────────────────────────────
+# docker-compose is the way to run Nine: Postgres (pgvector) plus the daemon in
+# one of two profiles — `prod` (the built runtime image) or `dev` (the Go
+# toolchain hot-reloading the mounted source). The LLM knobs below default for a
+# local Ollama and are passed through to the compose services.
 
 NINE_LLM_PROVIDER  ?= ollama
 NINE_LLM_MODEL     ?= gemma4:e2b
 NINE_LLM_ENDPOINT  ?= http://host.docker.internal:11434
 
-# Container overrides for the paths and endpoints that differ from the native
-# layout, so a single nine.toml serves both (see internal/config.ApplyEnvOverrides).
-NINE_DATABASE_URL   ?= postgres://nine:nine@host.docker.internal:5433/nine?sslmode=disable
-NINE_PLUGINS_BIN    ?= /opt/nine/bin
-NINE_WORKSPACE_ROOT ?= /data/workspace
+LLM_ENV = NINE_LLM_PROVIDER=$(NINE_LLM_PROVIDER) NINE_LLM_MODEL=$(NINE_LLM_MODEL) NINE_LLM_ENDPOINT=$(NINE_LLM_ENDPOINT)
 
 # The 32k context window is requested per-call via num_ctx (nine.toml), so the
 # stock gemma4:e2b is all that's needed — no custom Modelfile.
 model:
 	ollama pull gemma4:e2b
-
-docker:
-	docker build -t nine .
-
-docker-run:
-	@docker image inspect nine >/dev/null 2>&1 || $(MAKE) docker
-	docker compose up -d --wait postgres
-	docker run -d \
-	  --name nine \
-	  -v nine-data:/data \
-	  -v $(PWD)/nine.toml:/nine.toml:ro \
-	  -v $(PWD)/skills.d:/skills.d:ro \
-	  -e NINE_SKILLS_USER_DIR=/skills.d \
-	  -e NINE_LLM_PROVIDER=$(NINE_LLM_PROVIDER) \
-	  -e NINE_LLM_MODEL=$(NINE_LLM_MODEL) \
-	  -e NINE_LLM_ENDPOINT=$(NINE_LLM_ENDPOINT) \
-	  -e NINE_DATABASE_URL=$(NINE_DATABASE_URL) \
-	  -e NINE_PLUGINS_BIN=$(NINE_PLUGINS_BIN) \
-	  -e NINE_WORKSPACE_ROOT=$(NINE_WORKSPACE_ROOT) \
-	  nine
-	@echo "waiting for the nine daemon to be ready..."
-	@for i in $$(seq 1 120); do \
-	  docker exec nine test -S /tmp/nine.sock 2>/dev/null && { echo "daemon ready"; exit 0; }; \
-	  sleep 0.5; \
-	done; \
-	echo "daemon did not become ready in 60s; check 'make docker-logs'"; exit 1
-
-docker-stop:
-	docker rm -f nine 2>/dev/null || true
-	docker volume rm nine-data 2>/dev/null || true
-
-docker-logs:
-	@echo "=== container stdout/stderr ==="
-	@docker logs nine 2>&1 || true
-	@echo "=== nine daemon log (live) ==="
-	docker exec nine tail -f /usr/local/bin/nine.log
-
-docker-session:
-	@docker inspect -f '{{.State.Running}}' nine 2>/dev/null | grep -q true || \
-	  { echo "nine container is not running — start it with: make docker-run"; exit 1; }
-	docker exec -it nine nine
-
-# Build everything, then stop+wipe any prior container/volume, run a fresh
-# container, and open a session — one command to go from source to a clean
-# interactive session for testing.
-docker-up:
-	$(MAKE) all
-	$(MAKE) docker-stop
-	$(MAKE) docker-run
-	$(MAKE) docker-session
-
-# ── docker-compose deployment (Postgres + one daemon mode) ────────────────────
-# Production: the built runtime image. Hot-reload: Go toolchain over the mounted
-# source, rebuilding the daemon on .go changes. LLM knobs default as above and
-# are passed through to the compose services.
-LLM_ENV = NINE_LLM_PROVIDER=$(NINE_LLM_PROVIDER) NINE_LLM_MODEL=$(NINE_LLM_MODEL) NINE_LLM_ENDPOINT=$(NINE_LLM_ENDPOINT)
 
 compose-prod:
 	$(LLM_ENV) docker compose --profile prod up -d --build --wait
@@ -161,8 +105,17 @@ compose-shell:
 compose-logs:
 	@docker compose logs -f nine 2>/dev/null || docker compose logs -f nine-dev
 
+# Stop the stack. Named volumes (Postgres data, workspace) are kept, so a later
+# `make compose-prod` comes back up with all state intact.
 compose-down:
 	docker compose --profile prod --profile dev down
+
+# Completely remove Nine: stop and delete every container, network, named volume
+# (all data — the database and workspace are wiped), and the locally built nine
+# images. Destructive and irreversible.
+compose-destroy:
+	docker compose --profile prod --profile dev down --volumes --remove-orphans
+	-docker image rm nine nine-dev
 
 # ── integration tests ────────────────────────────────────────────────────────
 # Requires: Docker running, Ollama on localhost:11434 with NINE_LLM_MODEL loaded.

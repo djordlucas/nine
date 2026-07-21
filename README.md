@@ -142,36 +142,23 @@ Nine looks for its config, in order: `$NINE_CONFIG`, `./nine.toml`, `/nine.toml`
 then `~/.nine/nine.toml`. The repo's `nine.toml` works as-is against a local Ollama
 and the compose Postgres.
 
-### Docker
+### Docker (docker compose)
+
+`docker-compose.yml` is the way to deploy Nine — the PostgreSQL (`pgvector`)
+database plus the daemon — under two profiles:
 
 ```bash
-make docker        # build the nine:latest image
-make docker-run    # start the container
-make docker-session
+make compose-prod      # built runtime image
+make compose-dev       # hot-reload: rebuilds and restarts the daemon on any .go change
+make compose-down      # stop, keeping all data
+make compose-destroy   # remove everything, including all data volumes and images
 ```
 
 The runtime image is minimal Alpine holding the compiled binary, the plugins, and the
 built-in skills — no Go toolchain and no source tree, because Nine never compiles
-anything at runtime. The same `nine.toml` is bind-mounted in, with the container's
-differing paths and endpoints supplied as environment overrides. You can override the
-model without editing a file:
-
-```bash
-make docker-run NINE_LLM_MODEL=llama3.2
-```
-
-### docker compose
-
-`docker-compose.yml` runs the full stack under two profiles:
-
-```bash
-make compose-prod   # built runtime image
-make compose-dev    # hot-reload: rebuilds and restarts the daemon on any .go change
-make compose-down
-```
-
-Hot-reload mode bind-mounts the source and rebuilds via `inotifywait` — this is the
-development path. The browser plugin ships only in the production image.
+anything at runtime. Hot-reload mode bind-mounts the source and rebuilds via
+`inotifywait` — this is the development path. The browser plugin ships only in the
+production image.
 
 The full Makefile target list is in [docs/installation.md](docs/installation.md).
 
