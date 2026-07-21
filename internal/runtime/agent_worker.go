@@ -149,6 +149,7 @@ func (w *AgentWorker) emitEvent(msg protocol.Msg) {
 			SubID:  msg.SubAgentID,
 			Task:   msg.Text,
 			Status: msg.Status,
+			Role:   msg.Role,
 		})
 	}
 }

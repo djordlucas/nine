@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"nine/internal/protocol"
@@ -55,6 +56,41 @@ func TestHistoryToChatMsgs(t *testing.T) {
 		if te[0].name != "echo" || te[0].outputStr == "" {
 			t.Errorf("tool event not paired: %+v", te[0])
 		}
+	}
+}
+
+// TestSubAgentRoleThreaded verifies a sub-agent's resolved leaf role survives the
+// replay round-trip and is rendered on the sub-agent line, so the user can see
+// which kind of agent ran.
+func TestSubAgentRoleThreaded(t *testing.T) {
+	evts := replayToToolEvents([]protocol.Msg{
+		protocol.NewSubAgentStartMsg("a", "sub1", "build the parser", "software-dev"),
+		protocol.NewSubAgentEndMsg("a", "sub1", "build the parser", "done", "software-dev"),
+	})
+	if len(evts) != 1 {
+		t.Fatalf("got %d events, want 1: %+v", len(evts), evts)
+	}
+	if !evts[0].subAgent || evts[0].subAgentRole != "software-dev" {
+		t.Fatalf("role not threaded onto sub-agent event: %+v", evts[0])
+	}
+
+	var sb strings.Builder
+	renderToolEvent(&sb, evts[0], true, autoPalette(), 80)
+	if out := sb.String(); !strings.Contains(out, "sub-agent · software-dev") {
+		t.Errorf("rendered line missing role label:\n%s", out)
+	}
+}
+
+// TestSubAgentRoleOmittedWhenEmpty keeps the bare "sub-agent" label when no role
+// is known (e.g. a workflow step spawn resolving to the default leaf).
+func TestSubAgentRoleOmittedWhenEmpty(t *testing.T) {
+	evts := replayToToolEvents([]protocol.Msg{
+		protocol.NewSubAgentStartMsg("a", "sub1", "do it", ""),
+	})
+	var sb strings.Builder
+	renderToolEvent(&sb, evts[0], true, autoPalette(), 80)
+	if out := sb.String(); strings.Contains(out, " · ") {
+		t.Errorf("expected no role separator for empty role:\n%s", out)
 	}
 }
 

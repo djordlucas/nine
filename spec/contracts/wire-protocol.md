@@ -31,6 +31,7 @@ Msg {
   context_budget    int
   sub_agent_id      string
   status            string   // sub_agent_end: "done" | "failed" | "timed_out"
+  role              string   // ok/conversation_id: session's role; sub_agent_*: sub-agent's leaf role
   llm_call_n        int      // thinking: 1-based LLM call count within the turn
   think             bool     // thinking: this call streams reasoning (thinking_chunk)
   replay_events     []Msg    // attach response only
@@ -69,8 +70,8 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 
 | `type` | Fields | Meaning |
 |--------|--------|---------|
-| `conversation_id` | `id` | conversation created |
-| `ok` | `agent_id`, `replay_events`, `pending_response` | attach succeeded (+ replay snapshot) |
+| `conversation_id` | `id`, `role` | conversation created; `role` is the session's resolved role |
+| `ok` | `agent_id`, `role`, `replay_events`, `pending_response` | attach succeeded (+ replay snapshot); `role` is the session's resolved role |
 | `response` | `agent_id`, `text` | the assistant's final answer |
 | `done` | `agent_id` | turn complete |
 | `error` | `text` | failure |
@@ -93,8 +94,8 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `tool_end` | `+ tool_output` | tool call finished |
 | `response_chunk` | `text` | a streamed text token |
 | `thinking_chunk` | `text` | a streamed reasoning ("thinking") token; ephemeral, never journaled |
-| `sub_agent_start` | `sub_agent_id`, `text` (task), `ts` | a sub-agent spawned |
-| `sub_agent_end` | `+ status` | a sub-agent finished (`done`/`failed`/`timed_out`) |
+| `sub_agent_start` | `sub_agent_id`, `text` (task), `role`, `ts` | a sub-agent spawned; `role` is its resolved leaf role, for display |
+| `sub_agent_end` | `+ status` | a sub-agent finished (`done`/`failed`/`timed_out`); carries `role` too |
 
 A conforming daemon **MUST** emit `thinking`/`context_update`/`tool_*`/`response_chunk`
 during a turn and **MUST** terminate every turn with `response` then `done` (or
@@ -107,7 +108,9 @@ only on thinking-degraded turns; `notice` is informational and session-level. `s
 names the phases of a turn that precede any model output — memory recall, context
 assembly, a queue wait, waiting on the first token — so a client need not render dead
 air; its labels are display text and a client **MUST NOT** branch on them. All four are
-optional — clients that don't recognise them **MUST** ignore them.
+optional — clients that don't recognise them **MUST** ignore them. The `role` on
+`sub_agent_start`/`sub_agent_end` is likewise a display affordance (the sub-agent's
+resolved leaf role); it never reaches the LLM and a client **MUST NOT** branch on it.
 
 ---
 
@@ -117,8 +120,8 @@ optional — clients that don't recognise them **MUST** ignore them.
 
 ```schema
 StatusInfo { agents []AgentInfo, sub_agents []SubAgentInfo, plugins []string, uptime string }
-AgentInfo  { id string, name string, plan_mode string }  // plan_mode: off | plan-only | always
-SubAgentInfo { id string, description string }
+AgentInfo  { id string, name string, role string, plan_mode string }  // plan_mode: off | plan-only | always
+SubAgentInfo { id string, description string, role string }  // role: the sub-agent's resolved leaf role
 ```
 
 `list_tools` returns `[]ToolSummary{ plugin, name, description }`. The `list_*` reads are

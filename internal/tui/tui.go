@@ -114,8 +114,9 @@ type toolEvent struct {
 
 	at time.Time
 
-	subAgent   bool   // true if this represents a sub-agent lifecycle, not a tool call
-	subAgentID string // set when subAgent is true
+	subAgent     bool   // true if this represents a sub-agent lifecycle, not a tool call
+	subAgentID   string // set when subAgent is true
+	subAgentRole string // the sub-agent's resolved leaf role, when subAgent is true
 }
 
 type chatMsg struct {
@@ -517,10 +518,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.conn.sessionName = evt.Text
 		case "sub_agent_start":
 			m.chat.pendingToolEvts = append(m.chat.pendingToolEvts, toolEvent{
-				inputStr:   truncateOutput(evt.Text),
-				at:         evt.At,
-				subAgent:   true,
-				subAgentID: evt.SubAgentID,
+				inputStr:     truncateOutput(evt.Text),
+				at:           evt.At,
+				subAgent:     true,
+				subAgentID:   evt.SubAgentID,
+				subAgentRole: evt.Role,
 			})
 		case "sub_agent_end":
 			for i := len(m.chat.pendingToolEvts) - 1; i >= 0; i-- {
@@ -943,7 +945,10 @@ func renderToolEvent(sb *strings.Builder, te toolEvent, showDetail bool, pal pal
 	styledTs := pal.ts.Render(tsText)
 	const indent = "  "
 	if te.subAgent {
-		const label = "sub-agent"
+		label := "sub-agent"
+		if te.subAgentRole != "" {
+			label += " · " + te.subAgentRole
+		}
 		rawLeft := "↳ " + label + "  " + te.inputStr
 		fill := width - lipgloss.Width(rawLeft) - len(tsText)
 		if fill < 1 {
@@ -1037,10 +1042,11 @@ func replayToToolEvents(msgs []protocol.Msg) []toolEvent {
 			}
 		case "sub_agent_start":
 			evts = append(evts, toolEvent{
-				inputStr:   truncateOutput(msg.Text),
-				at:         at,
-				subAgent:   true,
-				subAgentID: msg.SubAgentID,
+				inputStr:     truncateOutput(msg.Text),
+				at:           at,
+				subAgent:     true,
+				subAgentID:   msg.SubAgentID,
+				subAgentRole: msg.Role,
 			})
 		case "sub_agent_end":
 			for i := len(evts) - 1; i >= 0; i-- {

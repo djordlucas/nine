@@ -32,7 +32,8 @@ A child runs a **fresh `agent.Loop` in its leaf role at depthGuard-1, synchronou
 `run_agents` runs its tasks **concurrently and joins** (waits for all to finish), then
 returns the collected results to the parent as a single tool observation. Child lifecycle streams to
 the parent (and through to the client) as `sub_agent_start` / `sub_agent_end{status}`
-events (R-PROTO.3).
+events (R-PROTO.3), each carrying the child's resolved leaf `role` so a client can
+show which kind of agent is running.
 
 ### R-ORCH.3 — Delegation termination (I6)
 

@@ -501,7 +501,7 @@ func (f *AgentBuilder) registerSubAgentTools(d *agent.Dispatcher, lc LoopConfig,
 			taskPreview = taskPreview[:80] + "..."
 		}
 		removeSubAgent := f.trackSubAgent(subID, task, leaf.Name)
-		f.emitProgressEvent(parentID, protocol.NewSubAgentStartMsg(parentID, subID, task))
+		f.emitProgressEvent(parentID, protocol.NewSubAgentStartMsg(parentID, subID, task, leaf.Name))
 		slog.Info("sub_agent_start", "parent_id", parentID, "sub_id", subID, "role", leaf.Name, "task", taskPreview)
 		spawnStart := time.Now()
 		result, err := RunSubAgentSync(ctx, subID, prompt, f.build(subID, leaf, depthGuard-1))
@@ -514,7 +514,7 @@ func (f *AgentBuilder) registerSubAgentTools(d *agent.Dispatcher, lc LoopConfig,
 			status = "failed"
 		}
 		slog.Info("sub_agent_end", "sub_id", subID, "status", status, "elapsed_ms", time.Since(spawnStart).Milliseconds())
-		f.emitProgressEvent(parentID, protocol.NewSubAgentEndMsg(parentID, subID, task, status))
+		f.emitProgressEvent(parentID, protocol.NewSubAgentEndMsg(parentID, subID, task, status, leaf.Name))
 		return agent.SubAgentResult{Task: task, Result: result, Err: err}
 	}
 
