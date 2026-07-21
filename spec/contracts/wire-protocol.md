@@ -58,6 +58,7 @@ Msg {
 | `list_tools` | — | request all tools grouped by plugin |
 | `workflow_stop` | `text` = workflow ID | live-cancel a workflow |
 | `workflow_fail` | `text` = ID or `--all` | post-mortem fail |
+| `session_stop` | `agent_id`, or `text` = `--all` | terminate a session (stop its worker + delete its persisted state) |
 | `plugin_call` | `tool_name`, `tool_input` | invoke a tool directly, **bypassing the LLM** |
 
 `plugin_call` (R-PROTO.5) is the only way to reach a tool without an agent loop; the CLI
@@ -79,6 +80,7 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `status` / `list_*` | `text` = JSON payload | the requested read (StatusInfo / array) |
 | `context` | `text` = JSON `ninectx.Report` | per-section token breakdown + assembled prompt/messages |
 | `workflow_stop` / `workflow_fail` | `text` = `"stopped"` / `"failed"` | operator-command result |
+| `session_stop` | `text` = human-readable outcome (`stopped <id>`, `stopped N session(s)`) | terminate result (or `error` when the id is unknown) |
 | `set_plan_mode` | `text` = `"plan mode: <mode>"` | mode change acknowledged (or `error` on an unknown mode) |
 
 **Streaming progress** (emitted during a turn, before `response`+`done`):

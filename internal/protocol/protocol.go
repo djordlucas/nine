@@ -20,6 +20,7 @@ import (
 //	"list_workflows"    — request workflow list; no extra fields
 //	"workflow_stop"    — cancel an active workflow; Text = workflow ID
 //	"workflow_fail"    — mark workflow(s) as failed; Text = workflow ID or "--all"
+//	"session_stop"     — terminate a session; AgentID set, or Text = "--all"
 //
 // Daemon → client:
 //
@@ -188,6 +189,15 @@ func NewWorkflowStopMsg(id string) Msg {
 // workflow ID or "--all".
 func NewWorkflowFailMsg(text string) Msg {
 	return Msg{Type: "workflow_fail", Text: text}
+}
+
+// NewSessionStopMsg requests termination of a session. Pass an agent ID to stop
+// one session, or all=true to stop every active session.
+func NewSessionStopMsg(agentID string, all bool) Msg {
+	if all {
+		return Msg{Type: "session_stop", Text: "--all"}
+	}
+	return Msg{Type: "session_stop", AgentID: agentID}
 }
 
 // NewPluginCallMsg invokes a plugin tool directly, bypassing the LLM agent.

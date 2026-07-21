@@ -53,6 +53,9 @@ type RoleParams struct {
 type CheckpointStore interface {
 	Save(agentID string, data []byte) error
 	Load(agentID string) (data []byte, found bool, err error)
+	// Delete removes the persisted state for agentID. Deleting a missing entry
+	// is not an error, so terminating an already-gone session is idempotent.
+	Delete(agentID string) error
 }
 
 // NotifStore retrieves (and marks as delivered) pending notifications for an agent.
@@ -464,6 +467,9 @@ func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.M
 
 	case "context":
 		d.handleContext(ctx, enc, msg.AgentID)
+
+	case "session_stop":
+		d.handleSessionStop(enc, msg.AgentID, msg.Text == "--all")
 
 	case "list_goals":
 		d.handleListGoals(enc)

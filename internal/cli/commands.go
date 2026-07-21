@@ -152,18 +152,106 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 			return fmt.Errorf("usage: nine attach <agent-id>")
 		}
 		return c.StartTUI(args[1])
+	case "stop":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: nine stop <agent-id|--all>")
+		}
+		all := args[1] == "--all"
+		id := ""
+		if !all {
+			id = args[1]
+		}
+		return c.StopSession(cfg, id, all)
 	default:
 		// A flag-shaped first argument (e.g. `nine --foo`, `nine -x`) is almost
 		// certainly a mistyped command rather than a message the user wants to
 		// send, so show help instead of silently opening a conversation.
 		if strings.HasPrefix(args[0], "-") {
-			fmt.Fprintf(c.Err, "unknown command: %s\n\n", args[0])
-			return c.Help()
+			return c.unknownCommand(args[0])
+		}
+		// A single unrecognized word that closely resembles a command is far more
+		// likely a typo than a one-word message (e.g. `nine staus` → `status`).
+		// Surface the error and help rather than silently spending a turn on it.
+		if len(args) == 1 {
+			if _, ok := nearestCommand(args[0]); ok {
+				return c.unknownCommand(args[0])
+			}
 		}
 		// Anything else is treated as a message on the CLI's persistent default
 		// conversation (`nine <message>`).
 		return c.Message(cfg, strings.Join(args, " "))
 	}
+}
+
+// knownCommands is the set of top-level subcommands, used to spot a mistyped
+// command and suggest the intended one. Kept in sync with the switch in Run.
+var knownCommands = []string{
+	"help", "docs", "spec", "version", "daemon", "goals", "reflections",
+	"notifications", "workflows", "workflow", "send", "skills", "status",
+	"context", "trace", "replay", "attach", "stop",
+}
+
+// nearestCommand returns the known command closest to arg and true when arg is a
+// likely typo of it. A match requires a small edit distance (≤2) and a shared
+// first letter — people rarely fat-finger the first character, and that guard
+// keeps unrelated one-word messages (e.g. `deploy`, two edits from `replay`)
+// from being mistaken for commands. Returns ok=false for anything that reads
+// like a genuine message, so `nine <message>` still works.
+func nearestCommand(arg string) (string, bool) {
+	if len(arg) < 3 {
+		return "", false
+	}
+	best, bestDist := "", 0
+	for _, cmd := range knownCommands {
+		if cmd[0] != arg[0] {
+			continue
+		}
+		d := levenshtein(arg, cmd)
+		if d == 0 {
+			return "", false // exact match is handled by the switch, not here
+		}
+		if best == "" || d < bestDist {
+			best, bestDist = cmd, d
+		}
+	}
+	if best == "" || bestDist > 2 {
+		return "", false
+	}
+	return best, true
+}
+
+// levenshtein returns the edit distance between a and b.
+func levenshtein(a, b string) int {
+	prev := make([]int, len(b)+1)
+	curr := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		curr[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			curr[j] = min(curr[j-1]+1, prev[j]+1, prev[j-1]+cost)
+		}
+		prev, curr = curr, prev
+	}
+	return prev[len(b)]
+}
+
+// unknownCommand reports name as an unrecognized command: a note on stderr —
+// with a "did you mean" suggestion when one is close — followed by the usage
+// reference on stdout. Returns nil (usage was shown); the note is the error
+// surfaced to the user.
+func (c *CLI) unknownCommand(name string) error {
+	if suggestion, ok := nearestCommand(name); ok {
+		fmt.Fprintf(c.Err, "unknown command: %s (did you mean %q?)\n\n", name, suggestion)
+	} else {
+		fmt.Fprintf(c.Err, "unknown command: %s\n\n", name)
+	}
+	return c.Help()
 }
 
 // topicArg returns the topic name for `nine docs`/`nine spec`, or "" to list.
@@ -486,6 +574,28 @@ func (c *CLI) Status(cfg *config.Config) error {
 		return fmt.Errorf("status: %w", err)
 	}
 	printStatus(c.Out, info)
+	return nil
+}
+
+// StopSession terminates a session by ID, or every active session with all set.
+// It requires a running daemon — with none up there are no sessions to stop.
+func (c *CLI) StopSession(cfg *config.Config, id string, all bool) error {
+	sock := cfg.SocketPath()
+	if !protocol.CanConnect(sock) {
+		fmt.Fprintln(c.Out, "no daemon running; nothing to stop")
+		return nil
+	}
+	cl, err := protocol.Connect(sock)
+	if err != nil {
+		return fmt.Errorf("connect: %w", err)
+	}
+	defer cl.Close() //nolint:errcheck
+
+	msg, err := cl.StopSession(id, all)
+	if err != nil {
+		return fmt.Errorf("stop session: %w", err)
+	}
+	fmt.Fprintln(c.Out, msg)
 	return nil
 }
 
