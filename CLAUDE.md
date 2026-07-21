@@ -23,3 +23,52 @@ feature branch, then open a PR. A release tag must point at a commit on `main`,
 so cut the `vX.Y.Z` tag **after the PR merges**, on the updated `main` — not on
 the branch. Do not push branches, open PRs, or push tags beyond what the user
 asked for.
+
+## Architecture at a glance
+
+Nine is a **daemon/client** system, which the directory tree does not make
+obvious:
+
+- The **CLI** (`internal/cli`) and **TUI** (`internal/tui`) are thin clients.
+- They talk to a long-running **daemon** (`internal/runtime`) over a
+  Unix-socket **wire protocol** (`internal/protocol`, newline-delimited JSON).
+- The daemon routes each turn to a per-conversation **`AgentWorker`**, which
+  drives the agent loop (`internal/agent`).
+- **Persistence** — checkpoints, goals, workflows, the event journal — is
+  PostgreSQL (pgx) in `internal/memory`. Config lives in `internal/config`
+  (+ `nine.toml`; the DSN is `database_url`).
+
+Terms like agent / session / conversation / sub-agent / goal / workflow / role
+are overloaded and the distinctions matter; see `docs/glossary.md`.
+
+## Changes that cross layers
+
+Two patterns are easy to half-complete — do the whole checklist:
+
+- **Adding a wire message** touches five places in lockstep: the `Msg`
+  fields + constructor + the doc-comment block in `internal/protocol/protocol.go`,
+  a client method in `client.go`, the dispatch switch in
+  `internal/runtime/daemon.go`, the handler in `handlers.go`, and the
+  `spec/contracts/wire-protocol.md` tables. If the wire contract changes
+  incompatibly, bump `plugin.ProtocolVersion`.
+- **`docs/` and `spec/` are the source of truth.** They hold the precise,
+  intended behavior — contracts, invariants, wire formats — and are kept in
+  sync with the code via `/sync-nine`, so consult them (`nine docs <topic>`,
+  `nine spec <topic>`, or the files) before inferring behavior from the
+  implementation, and treat a code/doc mismatch as a bug to reconcile, not a
+  doc to quietly follow. They are compiled into the binary
+  (`docs/embed.go`, `spec/embed.go`), so `nine help` *is* `docs/usage.md` and
+  the binary always matches the docs of its version. A behavior change that
+  skips the embedded docs silently drifts — reconcile it via `/sync-nine`
+  (see above).
+
+## Tests & toolchain
+
+- Go **1.26**. Build with `make build` (or `make dev` to also build plugins);
+  `make test`, `make lint`, `make integration-test`. The browser plugin needs
+  `make browser-plugin`.
+- Daemon tests use the harness in `internal/runtime/daemon_test.go`
+  (`startDaemon` / `dial` / `seqProvider`) with in-memory stores. Sockets go in
+  `/tmp`, not `t.TempDir()`, because macOS caps Unix-socket paths at 104 bytes.
+- `TestRegisterPlugin` (`internal/agent`) is a known plugin-socket timing
+  flake — it passes on re-run; don't chase it as a real failure.
