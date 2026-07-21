@@ -102,6 +102,14 @@ func (s *Store) ConversationSave(id string, data []byte) error {
 	return s.ConversationUpdateScratchpad(id, cp.Scratchpad)
 }
 
+// ConversationDelete removes a conversation row (its checkpointed history and
+// scratchpad). It is a no-op if no such row exists, so terminating an
+// already-gone session is not an error.
+func (s *Store) ConversationDelete(id string) error {
+	_, err := s.db.Exec(`DELETE FROM conversations WHERE id = ?`, id)
+	return err
+}
+
 // ConversationNameSave stores the display name for a conversation in kv.
 func (s *Store) ConversationNameSave(id, name string) error {
 	return s.Set("name:"+id, name)

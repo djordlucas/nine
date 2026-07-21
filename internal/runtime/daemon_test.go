@@ -282,6 +282,89 @@ func TestAttachResumesCheckpoint(t *testing.T) {
 	}
 }
 
+// TestStopSession verifies that stopping a session drops it from daemon status
+// and deletes its checkpoint, so it cannot be attached again.
+func TestStopSession(t *testing.T) {
+	ckpt := runtime.NewInMemoryCheckpointStore()
+	provider := seqProvider([]llm.Response{finalResp("hi")})
+	_, sock := startDaemon(t, makeFactory(provider), ckpt, nil)
+	c := dial(t, sock)
+
+	id, err := c.NewConversation()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Turn(id, "first message"); err != nil {
+		t.Fatal(err) // establishes a checkpoint
+	}
+	if _, found, _ := ckpt.Load(id); !found {
+		t.Fatal("checkpoint should exist after a turn")
+	}
+
+	msg, err := c.StopSession(id, false)
+	if err != nil {
+		t.Fatalf("StopSession: %v", err)
+	}
+	if !strings.Contains(msg, "stopped") {
+		t.Errorf("stop reply = %q, want it to mention 'stopped'", msg)
+	}
+
+	// The session is gone from status and its checkpoint is deleted.
+	info, err := c.Status()
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	for _, a := range info.Agents {
+		if a.ID == id {
+			t.Errorf("stopped session %q still listed in status", id)
+		}
+	}
+	if _, found, _ := ckpt.Load(id); found {
+		t.Errorf("checkpoint for stopped session %q was not deleted", id)
+	}
+}
+
+// TestStopSessionNotFound verifies stopping an unknown id is reported as an error.
+func TestStopSessionNotFound(t *testing.T) {
+	ckpt := runtime.NewInMemoryCheckpointStore()
+	provider := seqProvider(nil)
+	_, sock := startDaemon(t, makeFactory(provider), ckpt, nil)
+	c := dial(t, sock)
+
+	if _, err := c.StopSession("no-such-session", false); err == nil {
+		t.Error("expected an error stopping an unknown session, got nil")
+	}
+}
+
+// TestStopAllSessions verifies --all clears every active session.
+func TestStopAllSessions(t *testing.T) {
+	ckpt := runtime.NewInMemoryCheckpointStore()
+	provider := seqProvider([]llm.Response{finalResp("a"), finalResp("b")})
+	_, sock := startDaemon(t, makeFactory(provider), ckpt, nil)
+	c := dial(t, sock)
+
+	for _, m := range []string{"one", "two"} {
+		id, err := c.NewConversation()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := c.Turn(id, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := c.StopSession("", true); err != nil {
+		t.Fatalf("StopSession --all: %v", err)
+	}
+	info, err := c.Status()
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if len(info.Agents) != 0 {
+		t.Errorf("after stop --all, status still lists %d agent(s): %v", len(info.Agents), info.Agents)
+	}
+}
+
 func TestNotificationPrepend(t *testing.T) {
 	notif := runtime.NewInMemoryNotifStore()
 

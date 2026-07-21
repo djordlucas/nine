@@ -288,6 +288,22 @@ func (c *Client) FailWorkflow(id string, all bool) error {
 	return nil
 }
 
+// StopSession terminates a session by ID (or every session when all is true),
+// returning the daemon's human-readable outcome message.
+func (c *Client) StopSession(id string, all bool) (string, error) {
+	if err := c.send(NewSessionStopMsg(id, all)); err != nil {
+		return "", err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return "", err
+	}
+	if reply.Type == "error" {
+		return "", fmt.Errorf("daemon: %s", reply.Text)
+	}
+	return reply.Text, nil
+}
+
 func (c *Client) queryList(msgType string) (string, error) {
 	if err := c.send(NewQueryMsg(msgType)); err != nil {
 		return "", err
