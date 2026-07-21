@@ -18,10 +18,10 @@ func NewStores(store *memory.Store) (
 	return cs, ns, ns.Add
 }
 
-// ---- SQLite-backed stores ----
+// ---- Postgres-backed stores ----
 
 // SQLCheckpointStore persists conversation state in the memory store's
-// SQLite conversations table, enabling resume across daemon restarts.
+// Postgres conversations table, enabling resume across daemon restarts.
 type SQLCheckpointStore struct {
 	store *memory.Store
 }
@@ -38,7 +38,7 @@ func (s *SQLCheckpointStore) Delete(agentID string) error {
 	return s.store.ConversationDelete(agentID)
 }
 
-// SQLNotifStore persists notifications in the memory store's SQLite
+// SQLNotifStore persists notifications in the memory store's Postgres
 // notifications table.
 type SQLNotifStore struct {
 	store *memory.Store
