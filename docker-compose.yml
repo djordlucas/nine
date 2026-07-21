@@ -9,7 +9,8 @@
 #                 docker compose --profile dev up
 #
 # Attach a session to either:  docker exec -it <nine|nine-dev> nine
-# Stop everything:             docker compose --profile prod --profile dev down
+# Stop everything (keep data): docker compose --profile prod --profile dev down
+# Remove everything + data:    docker compose --profile prod --profile dev down -v
 
 # Shared config for both daemon services. They reach the compose-internal
 # Postgres by service name, and the host's LLM endpoint via host.docker.internal.
@@ -33,7 +34,8 @@ x-nine-common: &nine-common
     NINE_SKILLS_USER_DIR: /skills.d
     # Send logs to stderr so `docker compose logs` shows them.
     NINE_LOG_FILE: "off"
-    # Optional LLM overrides (empty = use nine.toml). Same knobs as `make docker-run`.
+    # Optional LLM overrides (empty = use nine.toml). Passed through by the
+    # Makefile's compose targets (make compose-prod / compose-dev).
     NINE_LLM_PROVIDER: "${NINE_LLM_PROVIDER:-}"
     NINE_LLM_MODEL: "${NINE_LLM_MODEL:-}"
     NINE_LLM_ENDPOINT: "${NINE_LLM_ENDPOINT:-http://host.docker.internal:11434}"
