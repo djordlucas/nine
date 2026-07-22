@@ -30,6 +30,20 @@ type Plugin struct {
 	Name   string
 	client pluginClient
 	Tools  []ToolDefinition
+	// User marks a plugin loaded from the operator's plugins directory rather
+	// than a built-in. Reload stops and re-discovers only User plugins.
+	User bool
+}
+
+// UserPluginStatus records the outcome of trying to load one operator plugin
+// from the scan directory, for `nine plugins` reporting. Loaded plugins carry
+// their advertised tool names; a skipped one carries the reason in Err.
+type UserPluginStatus struct {
+	Name     string   `json:"name"`
+	Manifest string   `json:"manifest"`
+	Loaded   bool     `json:"loaded"`
+	Tools    []string `json:"tools,omitempty"`
+	Err      string   `json:"error,omitempty"`
 }
 
 // Manager spawns and manages plugin processes.
@@ -39,6 +53,9 @@ type Manager struct {
 
 	env       []string
 	pluginBin string
+
+	userDir    string
+	userStatus []UserPluginStatus
 }
 
 // NewManager creates a Manager that passes nineBin to each plugin via the
@@ -70,23 +87,47 @@ func fileExists(path string) bool {
 func (m *Manager) Start(binaryPath string, extraEnv ...string) (*Plugin, error) {
 	name := filepath.Base(binaryPath)
 
-	if err := os.MkdirAll(socketDir, 0o700); err != nil {
-		return nil, fmt.Errorf("create socket dir: %w", err)
-	}
-	socketPath, err := allocSocketPath(name)
+	env := append([]string{}, m.env...)
+	env = append(env, extraEnv...)
+
+	cmd, socketPath, desc, err := spawnAndDescribe(binaryPath, env)
 	if err != nil {
 		return nil, err
 	}
 
-	env := append([]string{}, m.env...)
-	env = append(env, extraEnv...)
+	c := newHTTPClient(name, socketPath, cmd, desc.MaxConcurrent)
+	p := &Plugin{Name: name, client: c, Tools: desc.Tools}
+	m.track(p)
+	slog.Info("plugin started", "name", name, "tools", len(desc.Tools), "max_concurrent", desc.MaxConcurrent)
+	return p, nil
+}
+
+// spawnAndDescribe spawns binaryPath on a fresh Unix socket, waits for it to
+// listen, calls plugin.describe, and checks the reported protocol version. It is
+// the shared front half of both Start (which keeps the process running) and
+// Probe (which stops it). On any failure it tears the process and socket down and
+// returns the error; on success the caller owns cmd and must eventually stop it
+// and remove socketPath. env is the full extra environment (NINE_PLUGIN_SOCKET is
+// appended here).
+func spawnAndDescribe(binaryPath string, env []string) (*exec.Cmd, string, DescribeResult, error) {
+	name := filepath.Base(binaryPath)
+
+	if err := os.MkdirAll(socketDir, 0o700); err != nil {
+		return nil, "", DescribeResult{}, fmt.Errorf("create socket dir: %w", err)
+	}
+	socketPath, err := allocSocketPath(name)
+	if err != nil {
+		return nil, "", DescribeResult{}, err
+	}
+
+	env = append([]string{}, env...)
 	env = append(env, "NINE_PLUGIN_SOCKET="+socketPath)
 
 	cmd := exec.Command(binaryPath)
 	cmd.Env = append(os.Environ(), env...)
 	cmd.Stderr = os.Stderr // surface plugin startup/listen errors
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("start plugin: %w", err)
+		return nil, "", DescribeResult{}, fmt.Errorf("start plugin: %w", err)
 	}
 
 	cleanup := func() {
@@ -97,7 +138,7 @@ func (m *Manager) Start(binaryPath string, extraEnv ...string) (*Plugin, error) 
 
 	if err := waitForSocket(socketPath, socketReadyTimeout); err != nil {
 		cleanup()
-		return nil, err
+		return nil, "", DescribeResult{}, err
 	}
 
 	// Read max_concurrent on a throwaway client first: net/http forbids mutating
@@ -106,19 +147,32 @@ func (m *Manager) Start(binaryPath string, extraEnv ...string) (*Plugin, error) 
 	desc, err := describeOverSocket(context.Background(), socketPath)
 	if err != nil {
 		cleanup()
-		return nil, fmt.Errorf("plugin.describe: %w", err)
+		return nil, "", DescribeResult{}, fmt.Errorf("plugin.describe: %w", err)
 	}
 
 	if err := checkProtocolVersion(name, desc.ProtocolVersion); err != nil {
 		cleanup()
-		return nil, err
+		return nil, "", DescribeResult{}, err
 	}
 
-	c := newHTTPClient(name, socketPath, cmd, desc.MaxConcurrent)
-	p := &Plugin{Name: name, client: c, Tools: desc.Tools}
-	m.track(p)
-	slog.Info("plugin started", "name", name, "tools", len(desc.Tools), "max_concurrent", desc.MaxConcurrent)
-	return p, nil
+	return cmd, socketPath, desc, nil
+}
+
+// Probe runs binaryPath through the same handshake Start uses — spawn, wait for
+// the socket, plugin.describe, protocol-version check — then stops the process.
+// It reports whether the binary is a valid Nine plugin and, when it is, the tools
+// it advertises, without tracking anything or leaving a process running. It backs
+// `nine plugin validate` and the pre-load vetting of user plugins. env is passed
+// straight through as the process environment (e.g. the manager's NINE_BIN).
+func Probe(binaryPath string, env ...string) (DescribeResult, error) {
+	cmd, socketPath, desc, err := spawnAndDescribe(binaryPath, env)
+	if err != nil {
+		return DescribeResult{}, err
+	}
+	cmd.Process.Kill() //nolint:errcheck // best-effort
+	cmd.Wait()         //nolint:errcheck
+	os.Remove(socketPath)
+	return desc, nil
 }
 
 // checkProtocolVersion rejects a plugin whose wire-contract version the daemon

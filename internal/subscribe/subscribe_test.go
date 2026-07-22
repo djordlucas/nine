@@ -78,7 +78,7 @@ func TestSubscriptionDeliversInOrderAndFilters(t *testing.T) {
 	waitFor(t, func() bool { return h.count() == 2 })
 
 	got := h.snapshot()
-	if !(got[0] < got[1]) {
+	if got[0] >= got[1] {
 		t.Errorf("out of order: %v", got)
 	}
 	// Cursor advanced past every event (including filtered-out ones).

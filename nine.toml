@@ -58,6 +58,19 @@ task_timeout_seconds = 1800  # 30 minutes
 # ./dist/bin. The image bakes them at /opt/nine/bin (NINE_PLUGINS_BIN).
 dir = "./plugins"
 bin = "./dist/bin"
+# Your own plugins, discovered at boot from a sidecar-manifest layout (see
+# plugins.d/README.md and docs/plugins.md):
+#
+#   plugins.d/weather        the plugin executable
+#   plugins.d/weather.toml   its manifest (name + entrypoint)
+#
+# A binary with no manifest is never executed. A plugin that fails the handshake,
+# or whose tools collide with an already-loaded plugin, is skipped and surfaced —
+# the daemon still starts. Check first with `nine plugin validate`; inspect the
+# live roster with `nine plugins`; re-scan without a restart via
+# `nine plugins reload`. Unset or missing disables user plugins. The container
+# overrides this with NINE_PLUGINS_USER_DIR.
+# user_dir = "./plugins.d"
 
 [memory]
 # PostgreSQL DSN. Postgres holds all durable state, and the daemon fails fast if

@@ -29,7 +29,7 @@ func TestSessionEventsAfterAndCursor(t *testing.T) {
 	if len(all) != 3 {
 		t.Fatalf("SessionEventsAfter(0) returned %d, want 3", len(all))
 	}
-	if !(all[0].Seq < all[1].Seq && all[1].Seq < all[2].Seq) {
+	if all[0].Seq >= all[1].Seq || all[1].Seq >= all[2].Seq {
 		t.Errorf("not seq-ordered: %d %d %d", all[0].Seq, all[1].Seq, all[2].Seq)
 	}
 

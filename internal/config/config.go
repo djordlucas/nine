@@ -168,6 +168,17 @@ func (d DaemonConfig) RelatedSessionsIndexEnabled() bool {
 type PluginsConfig struct {
 	Dir string `toml:"dir"`
 	Bin string `toml:"bin"`
+
+	// UserDir holds operator-supplied plugins, discovered at boot from a
+	// sidecar-manifest layout: an executable `<name>` beside a `<name>.toml`
+	// manifest (name + entrypoint). It is scanned separately from the built-in
+	// Bin dir and is never required — empty or absent disables user plugins.
+	// A binary with no manifest is never executed; a manifest whose binary fails
+	// the plugin handshake, or whose tools collide with an already-loaded plugin,
+	// is skipped and surfaced rather than aborting the boot
+	// (spec/contracts/plugins.md). The container overrides this with
+	// NINE_PLUGINS_USER_DIR.
+	UserDir string `toml:"user_dir"`
 }
 
 type MemoryConfig struct {
