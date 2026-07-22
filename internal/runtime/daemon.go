@@ -88,6 +88,8 @@ type pluginRegistry interface {
 	ListRunning() []string
 	Running() []*plugin.Plugin
 	Call(ctx context.Context, p *plugin.Plugin, toolName string, args json.RawMessage) (plugin.CallResult, error)
+	ReloadUserPlugins()
+	UserStatus() []plugin.UserPluginStatus
 }
 
 // Daemon accepts connections on a Unix socket and routes messages to
@@ -515,6 +517,12 @@ func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.M
 
 	case "plugin_call":
 		d.handlePluginCall(ctx, enc, msg.ToolName, msg.ToolInput)
+
+	case "plugins_list":
+		d.handlePluginsList(enc)
+
+	case "plugins_reload":
+		d.handlePluginsReload(enc)
 
 	case "human_input_answer":
 		d.handleHumanAnswer(enc, msg)

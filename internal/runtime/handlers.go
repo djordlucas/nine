@@ -462,6 +462,54 @@ func (d *Daemon) handlePluginCall(ctx context.Context, enc *json.Encoder, toolNa
 	enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("unknown tool: %s", toolName))) //nolint:errcheck
 }
 
+// handlePluginsList returns the plugin roster: built-in and user plugins that are
+// running, plus user plugins that were skipped at load with the reason.
+func (d *Daemon) handlePluginsList(enc *json.Encoder) {
+	data, _ := json.Marshal(d.pluginStatuses())
+	enc.Encode(protocol.NewTextMsg("plugins_list", string(data))) //nolint:errcheck
+}
+
+// handlePluginsReload re-scans the user-plugin directory (stopping and restarting
+// only user plugins) and returns the resulting roster.
+func (d *Daemon) handlePluginsReload(enc *json.Encoder) {
+	if d.mgr == nil {
+		enc.Encode(protocol.NewErrorMsg("plugin manager not available")) //nolint:errcheck
+		return
+	}
+	d.mgr.ReloadUserPlugins()
+	data, _ := json.Marshal(d.pluginStatuses())
+	enc.Encode(protocol.NewTextMsg("plugins_reload", string(data))) //nolint:errcheck
+}
+
+// pluginStatuses assembles the plugin roster from the manager: every running
+// plugin (built-in or user) with its tools, followed by user plugins that failed
+// to load, each with its skip reason.
+func (d *Daemon) pluginStatuses() []protocol.PluginStatus {
+	out := []protocol.PluginStatus{}
+	if d.mgr == nil {
+		return out
+	}
+	for _, p := range d.mgr.Running() {
+		source := "builtin"
+		if p.User {
+			source = "user"
+		}
+		names := make([]string, len(p.Tools))
+		for i, t := range p.Tools {
+			names[i] = t.Name
+		}
+		out = append(out, protocol.PluginStatus{Name: p.Name, Source: source, Loaded: true, Tools: names})
+	}
+	// Skipped user plugins are not in Running(); surface them with their reason.
+	for _, st := range d.mgr.UserStatus() {
+		if st.Loaded {
+			continue
+		}
+		out = append(out, protocol.PluginStatus{Name: st.Name, Source: "user", Loaded: false, Error: st.Err})
+	}
+	return out
+}
+
 // resolveID maps a friendly name or UUID prefix to a full agent ID.
 // Returns query unchanged if no match is found.
 func (d *Daemon) resolveID(query string) string {

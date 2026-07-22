@@ -32,6 +32,9 @@ x-nine-common: &nine-common
     # Your own skills and roles, bind-mounted read-only from ./skills.d below.
     # Seeded on every boot; an absent directory just means none (docs/skills.md).
     NINE_SKILLS_USER_DIR: /skills.d
+    # Your own plugins, bind-mounted read-only from ./plugins.d below. Discovered
+    # on every boot; an absent directory just means none (docs/plugins.md).
+    NINE_PLUGINS_USER_DIR: /plugins.d
     # Send logs to stderr so `docker compose logs` shows them.
     NINE_LOG_FILE: "off"
     # Optional LLM overrides (empty = use nine.toml). Passed through by the
@@ -97,6 +100,7 @@ services:
       - nine-data:/data
       - ./nine.toml:/nine.toml:ro
       - ./skills.d:/skills.d:ro
+      - ./plugins.d:/plugins.d:ro
 
   # ── Hot-reload: Go toolchain over the bind-mounted source; rebuild on change. ─
   nine-dev:
@@ -119,6 +123,7 @@ services:
       - nine-dev-data:/data
       - ./nine.toml:/nine.toml:ro
       - ./skills.d:/skills.d:ro
+      - ./plugins.d:/plugins.d:ro
       - nine-dev-gocache:/root/.cache/go-build
 
 volumes:
