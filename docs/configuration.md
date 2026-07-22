@@ -116,6 +116,13 @@ standing_agents_authoritative = false
 # at /opt/nine/bin, which the container sets via NINE_PLUGINS_BIN.
 dir = "./plugins"
 bin = "./dist/bin"
+# Your own plugins, discovered at boot from a sidecar-manifest layout — an
+# executable beside a <name>.toml (name + entrypoint). Scanned separately from
+# the built-in bin dir and purely additive; unset or absent disables it. A
+# non-plugin binary, or one whose tools collide with a loaded plugin, is skipped
+# and surfaced — the daemon still starts. See docs/plugins.md and plugins.d/.
+# The container overrides this with NINE_PLUGINS_USER_DIR.
+# user_dir = "./plugins.d"
 
 
 [memory]
@@ -285,6 +292,7 @@ Environment variables take priority over `nine.toml` values.
 | `NINE_EMBED_PROVIDER` | Override `embeddings.provider` |
 | `NINE_DATABASE_URL` | Override `memory.database_url` |
 | `NINE_PLUGINS_BIN` | Override `plugins.bin` |
+| `NINE_PLUGINS_USER_DIR` | Override `plugins.user_dir` |
 | `NINE_WORKSPACE_ROOT` | Override `workspace.root` |
 | `NINE_SKILLS_USER_DIR` | Override `skills.user_dir` |
 | `ANTHROPIC_API_KEY` | Anthropic API key (used when `llm.api_key` is empty) |
