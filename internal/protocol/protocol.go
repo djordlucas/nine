@@ -21,6 +21,8 @@ import (
 //	"workflow_stop"    — cancel an active workflow; Text = workflow ID
 //	"workflow_fail"    — mark workflow(s) as failed; Text = workflow ID or "--all"
 //	"session_stop"     — terminate a session; AgentID set, or Text = "--all"
+//	"plugins_list"     — request the plugin roster; no extra fields
+//	"plugins_reload"   — re-scan the user-plugin dir and reload; no extra fields
 //
 // Daemon → client:
 //
@@ -35,6 +37,8 @@ import (
 //	"list_workflows"    — workflow list; Text carries JSON-encoded workflow array
 //	"workflow_stop"    — stop result; Text = "stopped"
 //	"workflow_fail"    — fail result; Text = "failed"
+//	"plugins_list"     — plugin roster; Text carries JSON-encoded PluginStatus array
+//	"plugins_reload"   — reload result; Text carries the JSON-encoded PluginStatus array
 //	"tool_start"       — tool call started; ToolName + ToolInput + Timestamp set
 //	"tool_end"         — tool call finished; ToolName + ToolInput + ToolOutput + Timestamp set
 //	"context_update"   — context assembled; ContextUsed + ContextBudget set
@@ -125,6 +129,18 @@ type ToolSummary struct {
 	Description string `json:"description"`
 }
 
+// PluginStatus describes one plugin for the "plugins_list" / "plugins_reload"
+// responses. Source is "builtin" or "user". A loaded plugin carries its
+// advertised tool names; a user plugin that failed to load carries Loaded=false
+// and the skip reason in Error.
+type PluginStatus struct {
+	Name   string   `json:"name"`
+	Source string   `json:"source"`
+	Loaded bool     `json:"loaded"`
+	Tools  []string `json:"tools,omitempty"`
+	Error  string   `json:"error,omitempty"`
+}
+
 // SubAgentInfo describes one currently-running sub-agent.
 type SubAgentInfo struct {
 	ID          string `json:"id"`
@@ -160,7 +176,7 @@ type StatusInfo struct {
 
 // NewQueryMsg builds a request consisting of only a Type field — used for
 // "new_conversation", "status", "list_goals", "list_reflections",
-// "list_workflows", and "list_tools".
+// "list_workflows", "list_tools", "plugins_list", and "plugins_reload".
 func NewQueryMsg(msgType string) Msg { return Msg{Type: msgType} }
 
 // NewAttachMsg requests reattachment to an existing conversation.

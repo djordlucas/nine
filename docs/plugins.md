@@ -214,6 +214,63 @@ plugins are sub-packages of the core module and use the vendored dependencies.
 
 ---
 
+## User Plugins
+
+Built-in plugins are baked into the image. **User plugins** are operator-supplied
+executables Nine discovers at boot from `[plugins].user_dir` (env
+`NINE_PLUGINS_USER_DIR`; mounted at `/plugins.d` under Docker). They are purely
+additive — built-ins are never affected — and the directory is never required:
+empty or absent means "no user plugins".
+
+Discovery is boot-only, mirroring skills (`docs/skills.md`), with a live
+convenience path: `nine plugins reload` re-scans without a restart.
+
+### Layout — sidecar manifest
+
+A user plugin is a **pre-built executable** beside a `<name>.toml` manifest:
+
+```
+plugins.d/
+  weather          the plugin executable (built however you like)
+  weather.toml     name + entrypoint
+```
+
+```toml
+name = "weather"
+entrypoint = "./weather"   # resolved relative to the manifest
+```
+
+The manifest is the **gate**: a binary with no manifest beside it is never
+executed. It declares intent only — the authoritative tool list still comes from
+`plugin.describe` at load time — so it needs just `name` and `entrypoint`.
+
+### Loading rules
+
+At boot (and on reload), for each manifest in name order:
+
+1. A malformed manifest or a missing binary is **skipped** — the binary is never
+   run.
+2. The binary is started and must pass the same handshake as a built-in
+   (`plugin.describe` + a matching `ProtocolVersion`). A non-plugin is **skipped**.
+3. Its tools must not collide with an already-loaded plugin — a built-in **or** an
+   earlier user plugin (built-ins load first, so they always win). A collision
+   **skips the whole plugin**; there is no overriding, ever.
+
+Any single failure is logged at ERROR and surfaced in `nine plugins`, but never
+aborts the others — one bad drop-in cannot take the daemon down.
+
+### CLI
+
+| Command | Effect |
+|---------|--------|
+| `nine plugins` | The live roster: built-in and user plugins with their tools, plus any skipped user plugins and the reason. |
+| `nine plugins reload` | Re-scan `user_dir` and start/stop user plugins live. New turns pick up the new set; in-flight turns keep theirs. |
+| `nine plugin validate [path]` | Run the load-time handshake locally (no daemon needed) against `user_dir`, a `.toml` manifest, or a binary — vet before you deploy. |
+
+See `plugins.d/README.md` for an operator walkthrough.
+
+---
+
 ## Plugin Lifecycle
 
 ```

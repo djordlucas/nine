@@ -59,6 +59,7 @@ max_concurrent = 2
 [plugins]
 dir = "/data/src/plugins"
 bin = "/data/bin"
+user_dir = "/data/plugins.d"
 
 [memory]
 path = "/data/memory.db"
@@ -99,6 +100,7 @@ func TestLoad(t *testing.T) {
 		{"LLM.MaxConcurrent", cfg.LLM.MaxConcurrent, 2},
 		{"Plugins.Dir", cfg.Plugins.Dir, "/data/src/plugins"},
 		{"Plugins.Bin", cfg.Plugins.Bin, "/data/bin"},
+		{"Plugins.UserDir", cfg.Plugins.UserDir, "/data/plugins.d"},
 		{"Memory.Path", cfg.Memory.Path, "/data/memory.db"},
 		{"Embeddings.Provider", cfg.Embeddings.Provider, "ollama"},
 		{"Embeddings.Model", cfg.Embeddings.Model, "nomic-embed-text"},

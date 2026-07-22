@@ -40,7 +40,7 @@ func TestSessionEventsAppendAndRead(t *testing.T) {
 	}
 
 	// seq is monotonic and assigned by the DB.
-	if !(got[0].Seq < got[1].Seq && got[1].Seq < got[2].Seq) {
+	if got[0].Seq >= got[1].Seq || got[1].Seq >= got[2].Seq {
 		t.Errorf("seq not monotonic: %d %d %d", got[0].Seq, got[1].Seq, got[2].Seq)
 	}
 	if got[0].Type != "turn_start" || got[1].Type != "llm_request" || got[2].Type != "turn_end" {

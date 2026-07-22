@@ -34,6 +34,12 @@ func runDaemon() {
 	pluginManager.TryStart("time")
 	browserPlug := pluginManager.TryStart("browser", cfg.PluginEnvs("browser")...)
 
+	// Load operator-supplied plugins from [plugins].user_dir, after the built-ins
+	// so their tools are reserved and a colliding user plugin is skipped (not
+	// allowed to override). An invalid or colliding user plugin is surfaced and
+	// skipped; the daemon still boots. Absent/empty dir is a no-op.
+	pluginManager.LoadUserPlugins(cfg.Plugins.UserDir)
+
 	// Initialize checkpoint and notification stores
 	checkpointStore, notifStore, notifAdd := runtime.NewStores(store)
 	embedder := embed.Build(cfg.Embeddings.Provider, cfg.Embeddings.Model, cfg.Embeddings.Endpoint)

@@ -118,6 +118,23 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 			p = args[2]
 		}
 		return c.SkillValidate(cfg, p)
+	case "plugins":
+		if len(args) > 1 {
+			if args[1] == "reload" {
+				return c.PluginsReload(cfg)
+			}
+			return fmt.Errorf("usage: nine plugins [reload]")
+		}
+		return c.Plugins(cfg)
+	case "plugin":
+		if len(args) < 2 || args[1] != "validate" {
+			return fmt.Errorf("usage: nine plugin validate [path]")
+		}
+		p := ""
+		if len(args) > 2 {
+			p = args[2]
+		}
+		return c.PluginValidate(cfg, p)
 	case "status":
 		return c.Status(cfg)
 	case "context":
@@ -187,8 +204,8 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 // command and suggest the intended one. Kept in sync with the switch in Run.
 var knownCommands = []string{
 	"help", "docs", "spec", "version", "daemon", "goals", "reflections",
-	"notifications", "workflows", "workflow", "send", "skills", "status",
-	"context", "trace", "replay", "attach", "stop",
+	"notifications", "workflows", "workflow", "send", "skills", "plugins",
+	"plugin", "status", "context", "trace", "replay", "attach", "stop",
 }
 
 // nearestCommand returns the known command closest to arg and true when arg is a
@@ -265,30 +282,30 @@ func topicArg(args []string) string {
 // parseTurnFlag reads an optional "--turn N" (or "--turn=N") from args,
 // returning 0 when absent. Any other argument is an error.
 func parseTurnFlag(args []string) (int, error) {
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		switch {
-		case a == "--turn":
-			if i+1 >= len(args) {
-				return 0, fmt.Errorf("--turn requires a value")
-			}
-			i++
-			n, err := strconv.Atoi(args[i])
-			if err != nil {
-				return 0, fmt.Errorf("invalid --turn value %q", args[i])
-			}
-			return n, nil
-		case strings.HasPrefix(a, "--turn="):
-			n, err := strconv.Atoi(strings.TrimPrefix(a, "--turn="))
-			if err != nil {
-				return 0, fmt.Errorf("invalid --turn value %q", strings.TrimPrefix(a, "--turn="))
-			}
-			return n, nil
-		default:
-			return 0, fmt.Errorf("unexpected argument: %s", a)
-		}
+	if len(args) == 0 {
+		return 0, nil
 	}
-	return 0, nil
+	a := args[0]
+	switch {
+	case a == "--turn":
+		if len(args) < 2 {
+			return 0, fmt.Errorf("--turn requires a value")
+		}
+		n, err := strconv.Atoi(args[1])
+		if err != nil {
+			return 0, fmt.Errorf("invalid --turn value %q", args[1])
+		}
+		return n, nil
+	case strings.HasPrefix(a, "--turn="):
+		v := strings.TrimPrefix(a, "--turn=")
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return 0, fmt.Errorf("invalid --turn value %q", v)
+		}
+		return n, nil
+	default:
+		return 0, fmt.Errorf("unexpected argument: %s", a)
+	}
 }
 
 // parseVerboseFlag reads an optional "--verbose" / "-v" from args, returning
