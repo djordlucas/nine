@@ -353,6 +353,36 @@ func (c *Client) ListTools() ([]ToolSummary, error) {
 	return tools, nil
 }
 
+// ListPlugins requests the daemon's plugin roster: built-in and user plugins,
+// each with its tools, plus any user plugins that were skipped with a reason.
+func (c *Client) ListPlugins() ([]PluginStatus, error) {
+	return c.pluginStatusQuery("plugins_list")
+}
+
+// ReloadPlugins asks the daemon to re-scan the user-plugin directory and reload
+// it, returning the resulting roster.
+func (c *Client) ReloadPlugins() ([]PluginStatus, error) {
+	return c.pluginStatusQuery("plugins_reload")
+}
+
+func (c *Client) pluginStatusQuery(msgType string) ([]PluginStatus, error) {
+	if err := c.send(NewQueryMsg(msgType)); err != nil {
+		return nil, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return nil, err
+	}
+	if reply.Type == "error" {
+		return nil, fmt.Errorf("daemon: %s", reply.Text)
+	}
+	var plugins []PluginStatus
+	if err := json.Unmarshal([]byte(reply.Text), &plugins); err != nil {
+		return nil, fmt.Errorf("decode plugins: %w", err)
+	}
+	return plugins, nil
+}
+
 // PluginCall calls a plugin tool directly, bypassing the LLM agent.
 func (c *Client) PluginCall(tool string, args json.RawMessage) (string, error) {
 	if err := c.send(NewPluginCallMsg(tool, args)); err != nil {

@@ -73,7 +73,7 @@ func Open(t *testing.T) (*memory.Store, error) {
 	}
 
 	t.Cleanup(func() {
-		store.Close()
+		store.Close() //nolint:errcheck // best-effort cleanup
 		admin.Exec(`DROP SCHEMA ` + schema + ` CASCADE`) //nolint:errcheck
 		admin.Close()
 	})

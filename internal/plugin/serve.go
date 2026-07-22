@@ -91,7 +91,7 @@ func Serve(tools []ToolDefinition, handlers map[string]ToolHandler, opts ...Serv
 		handleRPC(w, r, describe, handlers)
 	})
 
-	if err := http.Serve(ln, mux); err != nil {
+	if err := http.Serve(ln, mux); err != nil { //nolint:gosec // G114: local Unix-socket RPC server; per-call deadlines come from the daemon-side transport
 		fmt.Fprintf(os.Stderr, "plugin: serve: %v\n", err)
 	}
 }
@@ -143,7 +143,7 @@ func handleRPC(w http.ResponseWriter, r *http.Request, describe DescribeResult, 
 			rpcErr = &RPCErr{-32601, "unknown tool: " + p.Tool}
 			break
 		}
-		slog.Debug("plugin.call", "tool", p.Tool, "request_id", reqID)
+		slog.Debug("plugin.call", "tool", p.Tool, "request_id", reqID) //nolint:gosec // G706: tool/request_id are internal daemon values, not untrusted input
 		output, err := h(ctx, p.Args)
 		if err != nil {
 			if re, ok := err.(*RPCErr); ok {

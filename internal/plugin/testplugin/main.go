@@ -75,5 +75,5 @@ func main() {
 		json.NewEncoder(w).Encode(resp) //nolint:errcheck
 	})
 
-	http.Serve(ln, mux) //nolint:errcheck
+	http.Serve(ln, mux) //nolint:errcheck,gosec // G114: test-only local socket server
 }

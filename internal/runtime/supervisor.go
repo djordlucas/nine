@@ -76,7 +76,7 @@ func (s *Supervisor) Post(e Event) {
 	if s.store == nil {
 		return
 	}
-	payload, _ := json.Marshal(supervisorPayload{Kind: e.Kind, AgentID: e.AgentID, Payload: e.Payload})
+	payload, _ := json.Marshal(supervisorPayload(e))
 	ev := memory.SessionEvent{
 		AgentID: e.AgentID,
 		Turn:    0,
@@ -120,7 +120,7 @@ func (s *Supervisor) Handle(_ context.Context, ev memory.SessionEvent) error {
 	if err := json.Unmarshal(ev.Payload, &p); err != nil {
 		return err
 	}
-	s.handle(Event{Kind: p.Kind, AgentID: p.AgentID, Payload: p.Payload})
+	s.handle(Event(p))
 	return nil
 }
 

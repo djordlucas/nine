@@ -151,11 +151,50 @@ gracefully.
 
 ---
 
-## R-PLUG.7 — No runtime plugin mutation (N1)
+## R-PLUG.7 — No runtime plugin mutation *by the agent* (N1)
 
-There **MUST NOT** be any tool or path that writes plugin source, builds a plugin,
-starts a new plugin binary, hot-swaps, or rolls back a plugin at runtime. To add a
-capability, add a plugin to the source repo and rebuild the image.
+No **agent-reachable** tool or path may write plugin source, build a plugin, start
+a new plugin binary, hot-swap, or roll back a plugin. This is a self-modification
+boundary: Nine cannot grant itself capabilities. Adding a built-in plugin means
+editing the source repo and rebuilding the image.
+
+This is distinct from **operator**-initiated loading. Just as `[skills].user_dir`
+lets an operator add skills (R-SKILL.2), `[plugins].user_dir` lets an operator add
+plugins (R-PLUG.9). Both are driven by operator-controlled config and CLI, never by
+an agent tool, so neither is a path by which Nine mutates its own capabilities.
+
+---
+
+## R-PLUG.9 — User plugins (operator-supplied)
+
+Operator plugins are discovered from `[plugins].user_dir` (env
+`NINE_PLUGINS_USER_DIR`), scanned separately from the built-in `bin` dir. Unset or
+absent disables the feature; it is purely additive and never touches built-ins.
+
+- **Sidecar-manifest layout.** A user plugin is a pre-built executable beside a
+  `<name>.toml` manifest declaring `name` and `entrypoint` (resolved relative to
+  the manifest). The manifest is a **gate**: a binary with no manifest beside it
+  **MUST NOT** be executed. The manifest declares intent only — the tool list is
+  authoritatively `plugin.describe` (R-PLUG.1), not the manifest.
+- **Load sequence**, per manifest, in deterministic name order: (1) a malformed
+  manifest or missing binary is skipped without executing anything; (2) the binary
+  is started and **MUST** pass the R-PLUG.1 handshake and R-PLUG.3 protocol-version
+  check, else it is skipped; (3) its tools **MUST NOT** collide with any
+  already-loaded plugin — built-in first, then earlier user plugins — and a
+  collision skips the whole plugin. **No override, ever.**
+- **Fail-soft.** Any single failure is logged at ERROR and recorded in the
+  per-plugin status (surfaced by `nine plugins`), but **MUST NOT** abort the boot
+  or the loading of the other plugins.
+- **Reload.** `nine plugins reload` (the `plugins_reload` wire message) re-runs
+  discovery, stopping and restarting **only** user plugins; built-ins are
+  untouched. It is an operator CLI/wire action, not an agent tool (R-PLUG.7).
+  Newly-started plugins are seen by subsequently-built agent loops; in-flight turns
+  keep the tool set they started with.
+- **Pre-flight.** `nine plugin validate` runs the same handshake locally (no
+  daemon), so a binary can be vetted before deployment.
+
+`plugin.Probe` performs the spawn → `describe` → version-check → stop handshake
+without tracking, and backs both the pre-load vetting and `validate`.
 
 ---
 
@@ -177,8 +216,11 @@ their stdio transport and ignore `max_concurrent`.)
 
 ## Reference symbols
 
-`internal/plugin/manager.go` (`Manager`, `Start`, `Call`, `TryStart`),
+`internal/plugin/manager.go` (`Manager`, `Start`, `Call`, `TryStart`, `spawnAndDescribe`,
+`Probe`), `internal/plugin/userplugins.go` (`LoadUserPlugins`, `ReloadUserPlugins`,
+`UserStatus`), `internal/plugin/manifest.go` (`Manifest`, `LoadManifest`, `discoverPlugins`),
 `internal/plugin/` (`client.go` `newHTTPClient` — native HTTP transport; `client`/`mcp.go`
 — stdio, retained for MCP; `serve.go` `plugin.Serve` — the plugin-side HTTP server loop on
 `NINE_PLUGIN_SOCKET`; `contract.go` — `ToolDefinition`/`DescribeResult`),
-`plugins/{files,shell,http,time,browser}/`.
+`plugins/{files,shell,http,time,browser}/`, `cmd/nine/daemon.go` (`LoadUserPlugins` at boot),
+`internal/cli/plugins.go` (`nine plugins` / `nine plugin validate`).

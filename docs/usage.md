@@ -34,6 +34,14 @@ nine skills validate [path]      Check your own skill/role files against the
                                  format Nine seeds from (defaults to
                                  [skills].user_dir; works with the daemon down)
 
+nine plugins                     Show the plugin roster (built-in + user, with
+                                 any skipped user plugins and the reason)
+nine plugins reload              Re-scan [plugins].user_dir and reload user
+                                 plugins live (built-ins untouched)
+nine plugin validate [path]      Check a user plugin with the load-time handshake
+                                 (defaults to [plugins].user_dir; a path may be a
+                                 manifest or a binary; works with the daemon down)
+
 nine trace <agent-id> [--turn N] Print a session's event journal (or one turn);
                                  works even with the daemon down
 nine replay <agent-id> --turn N  Deterministically re-run a recorded turn

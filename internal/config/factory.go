@@ -60,6 +60,9 @@ func ApplyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("NINE_PLUGINS_BIN"); v != "" {
 		cfg.Plugins.Bin = v
 	}
+	if v := os.Getenv("NINE_PLUGINS_USER_DIR"); v != "" {
+		cfg.Plugins.UserDir = v
+	}
 	if v := os.Getenv("NINE_WORKSPACE_ROOT"); v != "" {
 		cfg.Workspace.Root = v
 	}
