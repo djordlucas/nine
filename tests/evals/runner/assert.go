@@ -356,7 +356,7 @@ func newTrace(events []memory.SessionEvent) *trace {
 			var p struct {
 				Trigger string `json:"trigger"`
 			}
-			json.Unmarshal(e.Payload, &p)
+			_ = json.Unmarshal(e.Payload, &p)
 			turnTrigger[e.Turn] = p.Trigger
 		case "turn_end":
 			// Count only user-triggered turns (idle/background turns don't count
@@ -367,7 +367,7 @@ func newTrace(events []memory.SessionEvent) *trace {
 			var p struct {
 				Error string `json:"error"`
 			}
-			json.Unmarshal(e.Payload, &p)
+			_ = json.Unmarshal(e.Payload, &p)
 			if p.Error == "stall" {
 				t.stalled = true
 			}
@@ -376,7 +376,7 @@ func newTrace(events []memory.SessionEvent) *trace {
 				Name  string          `json:"name"`
 				Input json.RawMessage `json:"input"`
 			}
-			json.Unmarshal(e.Payload, &p)
+			_ = json.Unmarshal(e.Payload, &p)
 			if p.Name == "" {
 				continue
 			}
@@ -394,7 +394,7 @@ func newTrace(events []memory.SessionEvent) *trace {
 				System    string   `json:"system"`
 				ToolNames []string `json:"tool_names"`
 			}
-			json.Unmarshal(e.Payload, &p)
+			_ = json.Unmarshal(e.Payload, &p)
 			t.systems = append(t.systems, p.System)
 			for _, n := range p.ToolNames {
 				t.advertised[n] = true

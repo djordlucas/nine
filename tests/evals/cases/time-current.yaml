@@ -1,0 +1,20 @@
+id: time-current
+description: "Ask for the current time; the model must call the time tool."
+track: live
+tier: smoke
+tags: [time, plugin]
+
+prompts:
+  - "What is the current time? Use your tools to find out."
+
+expect:
+  trajectory:
+    tools_all_of: [time]
+    no_stall: true
+  answer:
+    matches: "[0-9]{1,2}:[0-9]{2}"
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: nano

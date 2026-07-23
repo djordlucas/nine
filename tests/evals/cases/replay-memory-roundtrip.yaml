@@ -1,0 +1,13 @@
+id: replay-memory-roundtrip
+description: "Deterministic Track-R fixture: store a KV value, confirm, then recall. Guards the loop/dispatcher/context code, not the model."
+track: replay
+tier: basic
+tags: [memory, kv, replay]
+
+prompts:
+  - "Store my prod DB host db.prod.example.com under self/prod_db."
+  - "What is my prod DB host?"
+
+expect:
+  answer:
+    contains: ["db.prod.example.com"]

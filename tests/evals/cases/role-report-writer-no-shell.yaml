@@ -1,0 +1,21 @@
+id: role-report-writer-no-shell
+description: "A report-writer session must never be advertised the shell tool (role gating, R-ROLE.4)."
+track: live
+tier: basic
+tags: [roles, gating]
+session:
+  role: report-writer
+
+prompts:
+  - "Summarize in one sentence why event journaling matters for a coding agent."
+
+expect:
+  trajectory:
+    no_stall: true
+    llm_request:
+      tool_advertised_none_of: [shell]
+
+runs: 2
+pass_threshold: "2/2"
+models:
+  expected_pass_min_class: small

@@ -14,7 +14,7 @@ GOFLAGS  := -mod=vendor
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS  := -ldflags "-X main.Version=$(VERSION)"
 
-.PHONY: all dev build plugins test test-v lint cover cover-html clean model compose-prod compose-dev compose-session compose-shell compose-logs compose-down compose-destroy integration-test integration-test-short
+.PHONY: all dev build plugins test test-v lint cover cover-html clean model compose-prod compose-dev compose-session compose-shell compose-logs compose-down compose-destroy integration-test integration-test-short eval-replay eval-live eval-generate
 
 dev: build plugins browser-plugin
 
@@ -128,6 +128,27 @@ integration-test-short:
 	NINE_INTEGRATION=1 $(GO) test $(GOFLAGS) -v -timeout 300s -count=1 \
 		-run 'TestDaemonResponds|TestPluginsLoaded|TestTimeTool|TestShellToolEcho|TestShellBlocksRecursiveDeletion|TestShellAllowsSafeCommands' \
 		./tests/integration/...
+
+# ── evals ─────────────────────────────────────────────────────────────────────
+# Two tracks (docs/evals.md). eval-replay is deterministic and infra-free — the
+# every-PR gate. eval-live runs the model matrix and needs Postgres, plugin
+# binaries (make plugins), and a model list.
+
+# Track R + schema validation: no live model, no database. Fast, deterministic.
+eval-replay:
+	$(GO) test $(GOFLAGS) -count=1 -run 'TestCasesValidate|TestReplayFixtures' ./tests/evals/
+
+# Track L: the live model matrix. Needs Postgres up (docker compose up -d postgres)
+# and plugin binaries. Override the models with NINE_EVAL_MODELS.
+#   NINE_EVAL_MODELS=claude-haiku-4-5-20251001 make eval-live
+eval-live: plugins
+	NINE_EVALS_LIVE=1 \
+	NINE_PLUGINS_BIN=$(abspath $(BIN_DIR)) \
+	$(GO) test $(GOFLAGS) -v -count=1 -timeout 1800s -run TestLiveMatrix ./tests/evals/
+
+# Regenerate the committed Track-R fixtures from scripted runs (needs Postgres).
+eval-generate:
+	NINE_EVALS_GENERATE=1 $(GO) test $(GOFLAGS) -count=1 -run TestGenerateSeedFixtures ./tests/evals/runner/
 
 # ── clean ─────────────────────────────────────────────────────────────────────
 
