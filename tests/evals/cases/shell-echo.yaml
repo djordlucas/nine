@@ -1,0 +1,20 @@
+id: shell-echo
+description: "Run a safe shell command and report its output."
+track: live
+tier: smoke
+tags: [shell, plugin]
+
+prompts:
+  - "Use the shell to run `echo nine-eval-marker` and tell me exactly what it printed."
+
+expect:
+  trajectory:
+    tools_all_of: [shell]
+    no_stall: true
+  answer:
+    contains: ["nine-eval-marker"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

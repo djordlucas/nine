@@ -1,0 +1,23 @@
+id: semantic-memory
+description: "Embed a note into semantic memory, then query it back."
+track: live
+tier: multi_step
+tags: [memory, vectors, semantic]
+
+prompts:
+  - "Embed this note into your semantic memory for later: 'The staging cluster lives in eu-central-1.'"
+  - "Using semantic memory, which region hosts the staging cluster?"
+
+expect:
+  side_effects:
+    vectors: { namespace: memories, min: 1 }
+  trajectory:
+    tools_any_of: [memory_embed, memory_query]
+    no_stall: true
+  answer:
+    contains: ["eu-central-1"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: medium

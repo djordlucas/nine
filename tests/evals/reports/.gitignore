@@ -1,0 +1,4 @@
+# Live-run reports (JSON + rendered grid) are written here by the eval suite.
+# They are run artifacts, not source; keep the directory, ignore the contents.
+*.json
+!.gitignore
