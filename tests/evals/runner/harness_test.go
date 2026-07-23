@@ -92,7 +92,7 @@ func TestHarness_MemoryRoundtrip(t *testing.T) {
 			var p struct {
 				Name string `json:"name"`
 			}
-			json.Unmarshal(e.Payload, &p)
+			_ = json.Unmarshal(e.Payload, &p)
 			if p.Name == "memory_set" {
 				sawToolStart = true
 			}

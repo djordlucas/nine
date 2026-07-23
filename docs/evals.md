@@ -1,6 +1,7 @@
 # Evals — testing Nine with replays and live models
 
-**Status:** Design note / working spec · **Purpose:** define how we test Nine's
+**Status:** Implemented (`tests/evals`, `make eval-replay` / `eval-live`) ·
+**Purpose:** define how we test Nine's
 behavior end-to-end against real (and recorded) LLM infrastructure, and specify a
 **machine-usable case schema** precise enough that new test cases can be generated
 from this document — by a person or by an LLM — to cover features and guard
@@ -308,6 +309,10 @@ To add coverage, or to have an LLM expand the corpus:
 
 ## Reference symbols
 
+- Runner (this system): `tests/evals/runner` — `LoadCases`/`Case` (schema),
+  `Harness.Run` (in-process daemon + isolated store/workspace), `Grade` (assertions),
+  `ReplayFixture`/`RecordFixture` (Track R), `Suite`/`Report` (matrix + grid);
+  entry point `tests/evals/eval_test.go`; corpus `tests/evals/cases/`.
 - Journal + read: `internal/memory/events.go` (`SessionEventsByAgent`, `SessionEvent`),
   `internal/runtime/journal.go` (payload structs), `nine trace`.
 - Replay: `internal/replay/replay.go` (`FromEvents`, `Recorded`, `Provider`,
