@@ -263,7 +263,11 @@ func (c *Case) defaults() {
 		c.PassThreshold = "1/1"
 	}
 	if c.TimeoutSecs == 0 {
-		c.TimeoutSecs = 120
+		// Generous by default: a multi-turn, tool-using run on a local model
+		// (slower per token than a hosted API) needs headroom, or a run trips
+		// the per-run deadline mid-turn and reads as a failure rather than a
+		// genuine pass/fail. Cases that are known-fast can override downward.
+		c.TimeoutSecs = 300
 	}
 	if c.Models.ExpectedPassMinClass == "" {
 		c.Models.ExpectedPassMinClass = "medium"
