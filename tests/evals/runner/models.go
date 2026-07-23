@@ -46,6 +46,7 @@ func ParseClass(s string) (ModelClass, error) {
 // defaultClasses maps the example models from docs/evals.md §6 to their tier.
 // Unknown models fall back to classOf's prefix heuristics.
 var defaultClasses = map[string]ModelClass{
+	"gemma4:e2b":   ClassNano,
 	"gemma4:e4b":   ClassNano,
 	"llama3.2:3b":  ClassNano,
 	"qwen3.5:9b":   ClassSmall,
