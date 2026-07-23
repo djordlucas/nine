@@ -203,7 +203,7 @@ Run the same cases across a set and report a **cases × models** grid.
 
 | Class | Example models | Reasonable expectation |
 |-------|----------------|------------------------|
-| `nano` | `gemma4:e4b`, `llama3.2:3b` | single tool call; simple recall |
+| `nano` | `gemma4:e2b`, `gemma4:e4b`, `llama3.2:3b` | single tool call; simple recall |
 | `small` | `qwen3.5:9b`, `llama3.1:8b` | reliable tool use; 2–3 step tasks |
 | `medium` | `claude-haiku`, `gemma4:12b` | multi-step, basic delegation |
 | `large` | `claude-sonnet-5`, `claude-opus` | delegation, workflows, HITL, judging |
