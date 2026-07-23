@@ -1,0 +1,26 @@
+id: kv-roundtrip
+description: "Store a fact in one turn, then recall it in a later turn."
+track: live
+tier: basic
+tags: [memory, kv]
+
+prompts:
+  - "Remember that my prod DB host is db.prod.example.com. Save it under the key self/prod_db."
+  - "What is my prod DB host?"
+
+expect:
+  side_effects:
+    kv:
+      self/prod_db: { contains: "db.prod.example.com" }
+  trajectory:
+    tools_all_of: [memory_set]
+    tools_any_of: [memory_get]
+    max_turns: 2
+    no_stall: true
+  answer:
+    contains: ["db.prod.example.com"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

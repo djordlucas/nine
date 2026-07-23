@@ -1,0 +1,24 @@
+id: files-write-read
+description: "Write a file to the workspace, then confirm its contents."
+track: live
+tier: basic
+tags: [files, plugin]
+
+setup:
+  files:
+    /work/input.txt: "the secret code is plum-42\n"
+
+prompts:
+  - "Read /work/input.txt and write the single secret code it contains into /work/output.txt (just the code, nothing else)."
+
+expect:
+  side_effects:
+    files:
+      /work/output.txt: { contains: "plum-42" }
+  trajectory:
+    no_stall: true
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small
