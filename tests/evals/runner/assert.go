@@ -422,7 +422,7 @@ func countTasks(input json.RawMessage) int {
 	return len(p.Tasks)
 }
 
-func (t *trace) calledTool(name string) bool  { return t.tools[name] }
+func (t *trace) calledTool(name string) bool     { return t.tools[name] }
 func (t *trace) toolAdvertised(name string) bool { return t.advertised[name] }
 
 func (t *trace) systemContains(sub string) bool {

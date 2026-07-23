@@ -142,16 +142,16 @@ type VectorExpect struct {
 
 // Trajectory asserts on the tool/turn shape of the run (docs/evals.md §1(2)).
 type Trajectory struct {
-	ToolsAllOf []string `yaml:"tools_all_of"`
-	ToolsAnyOf []string `yaml:"tools_any_of"`
+	ToolsAllOf  []string `yaml:"tools_all_of"`
+	ToolsAnyOf  []string `yaml:"tools_any_of"`
 	ToolsNoneOf []string `yaml:"tools_none_of"`
 
-	MaxTurns *int  `yaml:"max_turns"`
-	MinTurns *int  `yaml:"min_turns"`
-	NoStall  bool  `yaml:"no_stall"`
+	MaxTurns  *int  `yaml:"max_turns"`
+	MinTurns  *int  `yaml:"min_turns"`
+	NoStall   bool  `yaml:"no_stall"`
 	GapReport *bool `yaml:"gap_report"`
 
-	SubAgents *SubAgentExpect `yaml:"sub_agents"`
+	SubAgents  *SubAgentExpect   `yaml:"sub_agents"`
 	LLMRequest *LLMRequestExpect `yaml:"llm_request"`
 }
 
