@@ -46,6 +46,20 @@ same durable journal (`session_events`) production writes.
 | `ANTHROPIC_API_KEY` | for `claude-*` matrix models |
 | `NINE_LLM_ENDPOINT` | Ollama endpoint for local matrix models |
 
+## Keeping the harness faithful
+
+`runner/harness.go` hand-mirrors the production daemon assembly (`runDaemon` in
+`cmd/nine/daemon.go`). Signature changes break its build; **additive** changes (a
+new dependency/setter/config field) can leave it compiling but no longer
+reproducing production. Two guards keep it honest:
+
+- **Stop hook** (`.claude/hooks/eval-harness-guard.sh`): nags when
+  `cmd/nine/daemon.go` or `internal/runtime/builder.go` changed in the working
+  tree but `harness.go` wasn't touched alongside.
+- **`/sync-evals` command** (`.claude/commands/sync-evals.md`): the reconciliation
+  workflow — diff the assembly change, classify each part (mirror / intentionally
+  skip / already covered), update the harness, and re-run `make eval-replay`.
+
 ## Adding a case
 
 Write a `cases/<id>.yaml` per the schema in docs/evals.md §2, forcing the target
