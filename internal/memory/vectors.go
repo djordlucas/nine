@@ -86,3 +86,13 @@ func (s *Store) VectorQuery(namespace string, vector []float32, topK int) ([]Vec
 	}
 	return results, rows.Err()
 }
+
+// VectorCount returns the number of vectors stored in namespace. It backs
+// count-based assertions (e.g. eval side-effects: "at least one vector was
+// indexed into the skills namespace") that need a total rather than a ranked
+// nearest-neighbour result.
+func (s *Store) VectorCount(namespace string) (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT count(*) FROM vectors WHERE namespace = ?`, namespace).Scan(&n)
+	return n, err
+}
