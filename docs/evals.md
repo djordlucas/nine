@@ -118,7 +118,7 @@ expect:
 # ── Live-run controls (Track L) ──
 runs: 3                               # repetitions per model
 pass_threshold: "2/3"                 # fraction that must pass to count the case as passing
-timeout_seconds: 120
+timeout_seconds: 300                 # per-run wall-clock bound; default 300 (generous for local models)
 
 # ── Model applicability ──
 models:
@@ -203,7 +203,7 @@ Run the same cases across a set and report a **cases × models** grid.
 
 | Class | Example models | Reasonable expectation |
 |-------|----------------|------------------------|
-| `nano` | `gemma4:e4b`, `llama3.2:3b` | single tool call; simple recall |
+| `nano` | `gemma4:e2b`, `gemma4:e4b`, `llama3.2:3b` | single tool call; simple recall |
 | `small` | `qwen3.5:9b`, `llama3.1:8b` | reliable tool use; 2–3 step tasks |
 | `medium` | `claude-haiku`, `gemma4:12b` | multi-step, basic delegation |
 | `large` | `claude-sonnet-5`, `claude-opus` | delegation, workflows, HITL, judging |

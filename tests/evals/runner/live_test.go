@@ -10,6 +10,7 @@ import (
 
 func TestClassOf(t *testing.T) {
 	cases := map[string]ModelClass{
+		"gemma4:e2b":                ClassNano,
 		"gemma4:e4b":                ClassNano,
 		"qwen3.5:9b":                ClassSmall,
 		"claude-haiku":              ClassMedium,

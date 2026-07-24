@@ -39,7 +39,7 @@ expect:
 	if c.Session.Role != "executor" {
 		t.Errorf("default role = %q, want executor", c.Session.Role)
 	}
-	if c.Runs != 3 || c.TimeoutSecs != 120 {
+	if c.Runs != 3 || c.TimeoutSecs != 300 {
 		t.Errorf("defaults runs=%d timeout=%d", c.Runs, c.TimeoutSecs)
 	}
 	if c.Models.ExpectedPassMinClass != "medium" {
