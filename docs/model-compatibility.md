@@ -58,34 +58,43 @@ capability tier; `Host` is the profile it ran on.
 | `role-report-writer-no-shell` (small) | ✓ 2/2 | ✓ 2/2 | — | — |
 | `files-write-read` (small) | ✗ 0/3 | ✗! 0/3 | — | — |
 | `semantic-memory` (medium) | ✗ 0/3 | ✗ 0/3 | — | — |
-| `goal-create` (medium) | — | — | — | — |
-| `workflow-plan` (medium) | — | — | — | — |
-| `skill-write-recall` (small) | — | — | — | — |
-| `memory-delete` (small) | — | — | — | — |
-| `file-store-search` (medium) | — | — | — | — |
-| `delegate-subagent` (medium) | — | — | — | — |
+| `memory-delete` (small) | ✓ 3/3 | ✓ 3/3 | — | — |
+| `goal-create` (medium) | ✓ 3/3 | ✓ 3/3 | — | — |
+| `workflow-plan` (medium) | ✓ 3/3 | ✓ 3/3 | — | — |
+| `skill-write-recall` (small) | ✗ 1/3 | ✓ 3/3 | — | — |
+| `file-store-search` (medium) | ✓ 3/3 | ✗ 1/3 | — | — |
+| `delegate-subagent` (medium) | ✗ 0/3 | ✗ 1/3 | — | — |
 
-Source runs: `gemma4:e2b` — `reports/20260723-230230.json` (also 20260723-183117,
-same pattern); `qwen3.5:9b` — `reports/20260723-234738.json`.
+Source runs: both `gemma4:e2b` and `qwen3.5:9b` — `reports/20260724-141551.json`
+(full 12-case matrix, 52 min on H1). Earlier `gemma4:e2b`-only runs
+(`20260723-230230`, `20260723-183117`) and `qwen3.5:9b` (`20260723-234738`) show
+the same pattern on the six original cases.
 
 ## What we've learned so far
 
 - **`gemma4:e2b` (nano, H1)** — reliable at single-tool-call work: shell, time,
-  KV roundtrip, and role gating all pass. As expected for its class it does not
-  handle the multi-step file-copy or semantic-embedding cases. Good smoke-tier
-  signal on a 16 GB Mac.
-- **`qwen3.5:9b` (small, H1)** — same shape as nano: solid on tool-calling
-  basics, but `files-write-read` fails **at its own class** (`✗!`) — one run also
-  tripped a `context deadline exceeded` on H1, so this is partly a
-  throughput/timeout signal worth re-checking on faster hardware before reading
-  it as a pure capability gap. `semantic-memory` is below its class, so its
-  failure is expected.
+  KV roundtrip, and role gating all pass. Surprisingly it also passes several
+  cases **above its class** cleanly — `goal-create`, `workflow-plan`,
+  `memory-delete`, and `file-store-search` all 3/3 — because each is really one
+  well-formed tool call, which a 2B model can emit. It stumbles on the genuinely
+  multi-step ones: `skill-write-recall` (1/3, needs a write then a recall across
+  turns), `files-write-read`, `semantic-memory`, and `delegate-subagent` (0/3).
+- **`qwen3.5:9b` (small, H1)** — solid across the board: passes every case at or
+  below its class except `files-write-read`, which fails **at its own class**
+  (`✗!`) and is the only fatal miss in the matrix. Two other misses are
+  infrastructure/format noise on H1's Ollama, not capability gaps, and should be
+  re-checked before being read as real: `file-store-search` (1/3 — one run hit an
+  Ollama tool-call XML parse error, `element <function> closed by </parameter>`)
+  and `delegate-subagent` (1/3 — one run hit `context deadline exceeded`). Both
+  are below its class, so tolerated. `semantic-memory` fails for lack of an
+  embedder in the eval harness (below class, expected).
+- **Delegation (`delegate-subagent`)** is the clear ceiling for both local models
+  (0/3 and 1/3) — it spawns a real sub-agent, and small models don't reliably
+  drive the two-level flow. This is exactly what its `medium` min-class encodes.
 - **`claude-*` (medium/large, API)** — **not yet run.** The matrix needs
   `ANTHROPIC_API_KEY`; these rows are the priority for the next run, since the
-  delegation/workflow/goal cases target their class.
-- **Newly added cases** (`goal-create`, `workflow-plan`, `skill-write-recall`,
-  `memory-delete`, `file-store-search`, `delegate-subagent`) have **not been run
-  on any model yet** — they postdate the reports above.
+  delegation/workflow/goal cases target their class and the local models above
+  only sample the easy end of them.
 
 ## Keeping this current
 
