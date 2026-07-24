@@ -50,25 +50,25 @@ provider's infrastructure over the API, so they have no local hardware profile.
 Cases × models, from the most recent run of each model. `Class` is the model's
 capability tier; `Host` is the profile it ran on.
 
-| Case (min class) | `gemma4:e2b` (nano · H1) | `qwen3.5:9b` (small · H1) | `claude-haiku` (medium · API) | `claude-sonnet-5` (large · API) |
-|------------------|:---:|:---:|:---:|:---:|
-| `shell-echo` (nano) | ✓ 3/3 | ✓ 3/3 | — | — |
-| `time-current` (nano) | ✓ 3/3 | ✓ 3/3 | — | — |
-| `kv-roundtrip` (small) | ✓ 2/3 | ✓ 3/3 | — | — |
-| `role-report-writer-no-shell` (small) | ✓ 2/2 | ✓ 2/2 | — | — |
-| `files-write-read` (small) | ✓ 3/3 | ✓ 3/3 | — | — |
-| `semantic-memory` (medium) | ✗ 0/3 | ✗ 0/3 | — | — |
-| `memory-delete` (small) | ✓ 3/3 | ✓ 3/3 | — | — |
-| `goal-create` (medium) | ✓ 3/3 | ✓ 3/3 | — | — |
-| `workflow-plan` (medium) | ✓ 3/3 | ✓ 3/3 | — | — |
-| `skill-write-recall` (small) | ✓ 3/3 | ✓ 3/3 | — | — |
-| `file-store-search` (medium) | ✗ 1/3 | ✓ 3/3 | — | — |
-| `delegate-subagent` (medium) | ✗ 1/3 | ✓ 3/3 | — | — |
+| Case (min class) | `gemma4:e2b` (nano · H1) | `gemma4:e4b` (nano · H1) | `qwen3.5:9b` (small · H1) | `claude-haiku` (medium · API) | `claude-sonnet-5` (large · API) |
+|------------------|:---:|:---:|:---:|:---:|:---:|
+| `shell-echo` (nano) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
+| `time-current` (nano) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
+| `kv-roundtrip` (small) | ✓ 2/3 | ✓ 3/3 | ✓ 3/3 | — | — |
+| `role-report-writer-no-shell` (small) | ✓ 2/2 | ✓ 2/2 | ✓ 2/2 | — | — |
+| `files-write-read` (small) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
+| `semantic-memory` (medium) | ✗ 0/3 | ✗ 0/3 | ✗ 0/3 | — | — |
+| `memory-delete` (small) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
+| `goal-create` (medium) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
+| `workflow-plan` (medium) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
+| `skill-write-recall` (small) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
+| `file-store-search` (medium) | ✗ 1/3 | ✓ 3/3 | ✓ 3/3 | — | — |
+| `delegate-subagent` (medium) | ✗ 1/3 | ✗ 0/3 | ✓ 3/3 | — | — |
 
 Source runs (all on H1, post-fix): `gemma4:e2b` — `reports/20260724-170752.json`
-(14 min, 9/12 pass; the 3 misses are all tolerated below-class, suite green);
-`qwen3.5:9b` — `reports/20260724-155013.json` (34 min, **11/12; only the
-tolerated `semantic-memory` misses, suite green**).
+(14 min, 9/12); `gemma4:e4b` — `reports/20260724-182911.json` (34 min, 10/12);
+`qwen3.5:9b` — `reports/20260724-155013.json` (34 min, **11/12**). Every miss in
+all three is a tolerated below-class case, so all three suites are green.
 
 ## What we've learned so far
 
@@ -80,6 +80,12 @@ tolerated `semantic-memory` misses, suite green**).
   nano-level flakiness on multi-step) — and misses `semantic-memory` the same way
   qwen does. `kv-roundtrip` slipped to 2/3 (still meets threshold) — ordinary
   small-model run-to-run variance.
+- **`gemma4:e4b` (nano, H1)** — the stronger nano: **10 of 12**, one better than
+  its e2b sibling. It clears `file-store-search` 3/3 (e2b managed only 1/3) and is
+  otherwise clean across the basics and the `medium` goal/workflow cases. Its only
+  misses are `delegate-subagent` (0/3 — two-level sub-agent delegation is still out
+  of reach at nano) and `semantic-memory` (0/3 — KV instead of embed, as with the
+  others). Both tolerated; suite green.
 - **`qwen3.5:9b` (small, H1)** — passes **11 of 12** cases, including every one at
   or below its class and all four `medium` delegation/file cases; the suite is
   green (no fatal). Getting there took fixing four genuine harness bugs, not the
