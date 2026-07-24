@@ -146,6 +146,8 @@ func TestShellSecurityBlocked(t *testing.T) {
 		{"git reset --hard HEAD~1", "git reset --hard"},
 		{"git clean -fd", "git clean -f"},
 		{"echo x > /etc/passwd", "write to /etc/passwd"},
+		{"cat data > /dev/sda", "write to real device /dev/sda"},
+		{"echo x >> /dev/rdisk0", "append to real device /dev/rdisk0"},
 	}
 
 	for _, tc := range cases {
@@ -176,6 +178,10 @@ func TestShellSecurityAllowed(t *testing.T) {
 		{"echo hello | grep hello", "pipe to grep"},
 		{"ls -la /tmp", "ls"},
 		{"go build ./...", "go build"},
+		{"cat /work/input.txt 2>/dev/null", "stderr to /dev/null"},
+		{"echo hi > /dev/null", "stdout to /dev/null"},
+		{"echo hi > /dev/stderr", "write to /dev/stderr"},
+		{"program &>/dev/null", "all output to /dev/null"},
 	}
 
 	for _, tc := range cases {
