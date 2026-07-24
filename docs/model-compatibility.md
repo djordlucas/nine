@@ -71,6 +71,11 @@ Source runs (all on H1, post-fix): `gemma4:e2b` — `reports/20260724-170752.jso
 `reports/20260724-155013.json` (**11/12**). Every miss across all four is a
 tolerated below-class case, so all four suites are green.
 
+`gemma4:12b` (medium) is **not benchmarked on H1**: on 16 GB it is
+throughput-bound and thrashes — runs hit `deadline exceeded` / malformed-tool-call
+errors so often that even with retries the numbers would measure the host's memory
+ceiling, not the model. Revisit it on a host with more memory.
+
 ## What we've learned so far
 
 - **`gemma4:e2b` (nano, H1)** — passes **9 of 12** with the harness fixes in place,
