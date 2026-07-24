@@ -1,0 +1,13 @@
+id: replay-skill-write-recall
+description: "Deterministic Track-R fixture: write a skill, then read it back in a later turn. Guards the loop/dispatcher/context code across a skill_write/skill_read roundtrip, not the model."
+track: replay
+tier: basic
+tags: [skills, replay]
+
+prompts:
+  - "Save a skill named deploy-nine documenting our deploy steps: run make build, then nine daemon restart."
+  - "What are the deploy steps from your saved deploy-nine skill?"
+
+expect:
+  answer:
+    contains: ["make build"]

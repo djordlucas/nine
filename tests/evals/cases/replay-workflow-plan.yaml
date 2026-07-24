@@ -1,0 +1,12 @@
+id: replay-workflow-plan
+description: "Deterministic Track-R fixture: lay out multi-step work as a named workflow (workflow_create). Guards the loop/dispatcher/context code around workflow_create, not the model."
+track: replay
+tier: basic
+tags: [workflows, planning, replay]
+
+prompts:
+  - "Lay out a REST-to-gRPC migration as a named workflow with these ordered steps: audit endpoints, define protobufs, implement services, cut over clients. Just create the plan."
+
+expect:
+  answer:
+    contains: ["workflow"]
