@@ -21,5 +21,8 @@ expect:
 
 runs: 3
 pass_threshold: "2/3"
+# Spawning a sub-agent means a second nested agent loop with its own LLM calls;
+# on a slow local backend the default 300s per run trips a deadline mid-turn.
+timeout_seconds: 900
 models:
   expected_pass_min_class: medium
