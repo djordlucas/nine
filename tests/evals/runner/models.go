@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"nine/internal/embed"
 	"nine/internal/llm"
 	"nine/internal/llm/anthropic"
 	llmollama "nine/internal/llm/ollama"
@@ -95,6 +96,28 @@ func ProviderFor(model string) (llm.Provider, error) {
 		endpoint = "http://localhost:11434"
 	}
 	return llmollama.New(model, endpoint, 8192, false), nil
+}
+
+// EvalEmbedder builds the embedder the live harness uses so semantic-memory and
+// related-session/tool-ranking features are exercised as in production (else those
+// tools are never even registered — RegisterMemoryTools gates them on a non-nil
+// embedder). It defaults to Ollama's nomic-embed-text at NINE_LLM_ENDPOINT;
+// override the model via NINE_EVAL_EMBED_MODEL, or disable entirely with
+// NINE_EVAL_EMBED_MODEL=none (semantic cases then can't pass — useful when no
+// embedding backend is reachable).
+func EvalEmbedder() embed.Embedder {
+	model := os.Getenv("NINE_EVAL_EMBED_MODEL")
+	if model == "none" {
+		return nil
+	}
+	if model == "" {
+		model = "nomic-embed-text"
+	}
+	endpoint := os.Getenv("NINE_LLM_ENDPOINT")
+	if endpoint == "" {
+		endpoint = "http://localhost:11434"
+	}
+	return embed.Build("ollama", model, endpoint)
 }
 
 // ApplicableModels returns the models a case should run on: its models.include

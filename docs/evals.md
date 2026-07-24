@@ -191,6 +191,16 @@ pass fraction ≥ `pass_threshold`. Everything in §1–§3 applies. Requirement
   see each other's memory/goals/files.
 - **Variance reduction**: temperature 0 and a fixed `seed` where the provider
   supports it (Ollama does; Anthropic is best-effort).
+- **Embedder wired in**: the live harness builds an embedder (Ollama
+  `nomic-embed-text` by default; `NINE_EVAL_EMBED_MODEL`, or `=none` to disable) so
+  semantic-memory, related-session, and tool-ranking behave as in production —
+  without it `memory_embed`/`memory_query` are not even registered and semantic
+  cases can't pass.
+- **Transient-error retry**: a repetition that aborts with an infrastructure error
+  (a provider deadline, an Ollama malformed tool-call, a dropped connection) is
+  retried up to 3 times before it counts, so flaky local backends don't mask a
+  model's real behavior. A graded verdict — pass or a real assertion failure — is
+  never retried.
 - **Driving turns**: `nine send [--id <id>] <prompt>` (the id is printed to stderr as
   `id=<agent-id>`) or the protocol client `c.Turn(id, text)` as the existing
   `tests/integration` tests do.
