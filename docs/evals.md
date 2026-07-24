@@ -215,6 +215,9 @@ without failing the suite because a 3B model can't do 3-hop delegation. Per-mode
 report metrics: task success rate by tier, avg turns, tool-call accuracy, stall rate,
 p50/p95 latency, tokens.
 
+Observed results per model — which models have been run, how they did, and on what
+hardware — are tracked in [model-compatibility.md](model-compatibility.md).
+
 ---
 
 ## 7. Non-determinism, judging, and pitfalls

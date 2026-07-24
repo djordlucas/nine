@@ -44,6 +44,7 @@ features built on top of that architecture.
 23. [Glossary](glossary.md) — All key concepts and features in one place, grouped by topic
 24. [Versioning](versioning.md) — Release, plugin-protocol, config, and schema versioning
 25. [Evals](evals.md) — Test plan for replays + live models; the case schema and feature map used to generate test cases
+26. [Model compatibility](model-compatibility.md) — Which models Nine has been run against, how they did, and on what hardware
 
 ## Quick Start
 
