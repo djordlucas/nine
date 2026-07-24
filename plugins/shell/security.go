@@ -50,7 +50,37 @@ var blocked = []rule{
 
 	// ── writing to critical system paths ─────────────────────────────────────
 	{re(`>\s*/etc/(passwd|shadow|sudoers|crontab|hosts|fstab)`), "overwriting a critical system file"},
-	{re(`>\s*/dev/[a-zA-Z]`), "writing directly to a device node"},
+	// Writes to real device nodes are handled by checkDevRedirect below, which
+	// allows the benign pseudo-devices (/dev/null, /dev/stderr, …) that ordinary
+	// redirects target.
+}
+
+// devRedirect finds an output redirect whose target is under /dev/, e.g.
+// "2>/dev/null", "cat x > /dev/sda", ">>/dev/tty". It captures the first path
+// segment after /dev/ (so "/dev/fd/2" yields "fd").
+var devRedirect = re(`(?:\d*|&)>>?\s*\|?\s*/dev/([a-zA-Z0-9_-]+)`)
+
+// benignDevices are pseudo-devices that are safe, everyday redirect targets:
+// writing to them cannot damage hardware or data. Any other /dev/ target is a
+// real device node (a disk, memory, …) and is blocked by default.
+var benignDevices = map[string]bool{
+	"null": true, "zero": true, "full": true,
+	"stdin": true, "stdout": true, "stderr": true,
+	"tty": true, "fd": true, "random": true, "urandom": true,
+}
+
+// checkDevRedirect blocks redirecting output into a real device node while
+// permitting the benign pseudo-devices in benignDevices.
+func checkDevRedirect(cmd string) error {
+	for _, m := range devRedirect.FindAllStringSubmatch(cmd, -1) {
+		if !benignDevices[strings.ToLower(m[1])] {
+			return fmt.Errorf(
+				"blocked: %s\ncommand: %s\nset NINE_SHELL_UNSAFE=1 to override",
+				"writing directly to a device node", cmd,
+			)
+		}
+	}
+	return nil
 }
 
 // checkCommand returns an error if cmd matches any blocked pattern and the
@@ -69,5 +99,5 @@ func checkCommand(cmd string) error {
 			)
 		}
 	}
-	return nil
+	return checkDevRedirect(cmd)
 }
