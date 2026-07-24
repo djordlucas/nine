@@ -1,0 +1,16 @@
+id: replay-memory-delete
+description: "Deterministic Track-R fixture: delete a seeded KV key, then confirm it is gone. Guards the loop/dispatcher/context code around memory_delete, not the model."
+track: replay
+tier: basic
+tags: [memory, kv, replay]
+
+setup:
+  kv:
+    notes/api_token: "tok-live-abc123"
+
+prompts:
+  - "Delete the key notes/api_token from memory, then check whether it still exists and tell me."
+
+expect:
+  answer:
+    contains: ["Deleted"]

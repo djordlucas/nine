@@ -1,0 +1,295 @@
+[
+  {
+    "seq": 2,
+    "agent_id": "82401b0e-5419-463d-b3c5-251d52cb1d25",
+    "turn": 1,
+    "span_id": "t1",
+    "type": "turn_start",
+    "ts": "2026-07-24T09:12:19.62545-04:00",
+    "payload": {
+      "input": "Lay out a REST-to-gRPC migration as a named workflow with these ordered steps: audit endpoints, define protobufs, implement services, cut over clients. Just create the plan.",
+      "trigger": "user"
+    }
+  },
+  {
+    "seq": 3,
+    "agent_id": "82401b0e-5419-463d-b3c5-251d52cb1d25",
+    "turn": 1,
+    "span_id": "t1.llm1",
+    "parent_span_id": "t1",
+    "type": "thinking",
+    "ts": "2026-07-24T09:12:19.62545-04:00",
+    "payload": {
+      "llm_call_n": 1
+    }
+  },
+  {
+    "seq": 4,
+    "agent_id": "82401b0e-5419-463d-b3c5-251d52cb1d25",
+    "turn": 1,
+    "span_id": "t1",
+    "type": "context_update",
+    "ts": "2026-07-24T09:12:19.62545-04:00",
+    "payload": {
+      "used": 2299,
+      "budget": 100000
+    }
+  },
+  {
+    "seq": 5,
+    "agent_id": "82401b0e-5419-463d-b3c5-251d52cb1d25",
+    "turn": 1,
+    "span_id": "t1.llm1",
+    "parent_span_id": "t1",
+    "type": "llm_request",
+    "ts": "2026-07-24T09:12:19.62545-04:00",
+    "payload": {
+      "budget": 100000,
+      "system": "Current time: 2026-07-24T13:12:19Z\n\n\nYou are Nine operating in sub-agent mode.\nYou have a specific, finite task to complete. Use the available tools to\naccomplish it. When done, provide a brief confirmation of what was completed.\nDo not ask clarifying questions — make reasonable assumptions and proceed.\n\n\nWhen delegating with run_agent or run_agents, pick the narrowest role that fits the task (monitor, report-writer, software-dev, sysadmin); use executor only when no narrower role matches. Each role's description is in the run_agent tool schema.\n\n## Environment\nRuntime: host\n",
+      "messages": [
+        {
+          "Role": "user",
+          "Text": "Lay out a REST-to-gRPC migration as a named workflow with these ordered steps: audit endpoints, define protobufs, implement services, cut over clients. Just create the plan.",
+          "ToolCalls": null,
+          "ToolResults": null
+        }
+      ],
+      "llm_call_n": 1,
+      "max_tokens": 2048,
+      "tool_names": [
+        "memory_get",
+        "memory_set",
+        "memory_delete",
+        "memory_list",
+        "file_store",
+        "file_fetch",
+        "file_list",
+        "file_search_text",
+        "skill_list",
+        "skill_read",
+        "skill_write",
+        "skill_modify",
+        "run_agent",
+        "run_agents",
+        "workflow_create",
+        "workflow_get",
+        "workflow_update",
+        "workflow_list",
+        "workflow_retry_step",
+        "goal_create",
+        "goal_get",
+        "goal_list",
+        "goal_update_status",
+        "goal_append_subtree"
+      ],
+      "tokens_used": 2299
+    }
+  },
+  {
+    "seq": 6,
+    "agent_id": "82401b0e-5419-463d-b3c5-251d52cb1d25",
+    "turn": 1,
+    "span_id": "t1.llm1",
+    "parent_span_id": "t1",
+    "type": "llm_response",
+    "ts": "2026-07-24T09:12:19.62545-04:00",
+    "payload": {
+      "text": "",
+      "llm_call_n": 1,
+      "tool_calls": [
+        {
+          "ID": "wf1",
+          "Name": "workflow_create",
+          "Input": {
+            "name": "REST to gRPC migration",
+            "steps": [
+              "audit endpoints",
+              "define protobufs",
+              "implement services",
+              "cut over clients"
+            ]
+          }
+        }
+      ],
+      "stop_reason": "tool_use"
+    }
+  },
+  {
+    "seq": 7,
+    "agent_id": "82401b0e-5419-463d-b3c5-251d52cb1d25",
+    "turn": 1,
+    "span_id": "t1.tool1",
+    "parent_span_id": "t1.llm1",
+    "type": "tool_start",
+    "ts": "2026-07-24T09:12:19.62545-04:00",
+    "payload": {
+      "name": "workflow_create",
+      "input": {
+        "name": "REST to gRPC migration",
+        "steps": [
+          "audit endpoints",
+          "define protobufs",
+          "implement services",
+          "cut over clients"
+        ]
+      }
+    }
+  },
+  {
+    "seq": 8,
+    "agent_id": "82401b0e-5419-463d-b3c5-251d52cb1d25",
+    "turn": 1,
+    "span_id": "t1.tool1",
+    "parent_span_id": "t1.llm1",
+    "type": "tool_end",
+    "ts": "2026-07-24T09:12:19.62545-04:00",
+    "payload": {
+      "name": "workflow_create",
+      "input": {
+        "name": "REST to gRPC migration",
+        "steps": [
+          "audit endpoints",
+          "define protobufs",
+          "implement services",
+          "cut over clients"
+        ]
+      },
+      "output": "{\"id\":\"bc7d32c4-bfa8-41bd-a55f-3f7726baaf3a\",\"steps\":[{\"id\":\"s0\",\"label\":\"audit endpoints\",\"status\":\"pending\",\"updated_at\":\"2026-07-24T13:12:19Z\"},{\"id\":\"s1\",\"label\":\"define protobufs\",\"status\":\"pending\",\"updated_at\":\"2026-07-24T13:12:19Z\"},{\"id\":\"s2\",\"label\":\"implement services\",\"status\":\"pending\",\"updated_at\":\"2026-07-24T13:12:19Z\"},{\"id\":\"s3\",\"label\":\"cut over clients\",\"status\":\"pending\",\"updated_at\":\"2026-07-24T13:12:19Z\"}]}",
+      "attempts": 1,
+      "duration_ms": 1
+    }
+  },
+  {
+    "seq": 9,
+    "agent_id": "82401b0e-5419-463d-b3c5-251d52cb1d25",
+    "turn": 1,
+    "span_id": "t1.llm2",
+    "parent_span_id": "t1",
+    "type": "thinking",
+    "ts": "2026-07-24T09:12:19.62545-04:00",
+    "payload": {
+      "llm_call_n": 2
+    }
+  },
+  {
+    "seq": 10,
+    "agent_id": "82401b0e-5419-463d-b3c5-251d52cb1d25",
+    "turn": 1,
+    "span_id": "t1",
+    "type": "context_update",
+    "ts": "2026-07-24T09:12:19.62545-04:00",
+    "payload": {
+      "used": 2442,
+      "budget": 100000
+    }
+  },
+  {
+    "seq": 11,
+    "agent_id": "82401b0e-5419-463d-b3c5-251d52cb1d25",
+    "turn": 1,
+    "span_id": "t1.llm2",
+    "parent_span_id": "t1",
+    "type": "llm_request",
+    "ts": "2026-07-24T09:12:19.62545-04:00",
+    "payload": {
+      "budget": 100000,
+      "system": "Current time: 2026-07-24T13:12:19Z\n\n\nYou are Nine operating in sub-agent mode.\nYou have a specific, finite task to complete. Use the available tools to\naccomplish it. When done, provide a brief confirmation of what was completed.\nDo not ask clarifying questions — make reasonable assumptions and proceed.\n\n\nWhen delegating with run_agent or run_agents, pick the narrowest role that fits the task (monitor, report-writer, software-dev, sysadmin); use executor only when no narrower role matches. Each role's description is in the run_agent tool schema.\n\n## Environment\nRuntime: host\n",
+      "messages": [
+        {
+          "Role": "user",
+          "Text": "Lay out a REST-to-gRPC migration as a named workflow with these ordered steps: audit endpoints, define protobufs, implement services, cut over clients. Just create the plan.",
+          "ToolCalls": null,
+          "ToolResults": null
+        },
+        {
+          "Role": "assistant",
+          "Text": "",
+          "ToolCalls": [
+            {
+              "ID": "wf1",
+              "Name": "workflow_create",
+              "Input": {
+                "name": "REST to gRPC migration",
+                "steps": [
+                  "audit endpoints",
+                  "define protobufs",
+                  "implement services",
+                  "cut over clients"
+                ]
+              }
+            }
+          ],
+          "ToolResults": null
+        },
+        {
+          "Role": "user",
+          "Text": "",
+          "ToolCalls": null,
+          "ToolResults": [
+            {
+              "Content": "{\"id\":\"bc7d32c4-bfa8-41bd-a55f-3f7726baaf3a\",\"steps\":[{\"id\":\"s0\",\"label\":\"audit endpoints\",\"status\":\"pending\",\"updated_at\":\"2026-07-24T13:12:19Z\"},{\"id\":\"s1\",\"label\":\"define protobufs\",\"status\":\"pending\",\"updated_at\":\"2026-07-24T13:12:19Z\"},{\"id\":\"s2\",\"label\":\"implement services\",\"status\":\"pending\",\"updated_at\":\"2026-07-24T13:12:19Z\"},{\"id\":\"s3\",\"label\":\"cut over clients\",\"status\":\"pending\",\"updated_at\":\"2026-07-24T13:12:19Z\"}]}",
+              "IsError": false,
+              "ToolCallID": "wf1"
+            }
+          ]
+        }
+      ],
+      "llm_call_n": 2,
+      "max_tokens": 2048,
+      "tool_names": [
+        "memory_get",
+        "memory_set",
+        "memory_delete",
+        "memory_list",
+        "file_store",
+        "file_fetch",
+        "file_list",
+        "file_search_text",
+        "skill_list",
+        "skill_read",
+        "skill_write",
+        "skill_modify",
+        "run_agent",
+        "run_agents",
+        "workflow_create",
+        "workflow_get",
+        "workflow_update",
+        "workflow_list",
+        "workflow_retry_step",
+        "goal_create",
+        "goal_get",
+        "goal_list",
+        "goal_update_status",
+        "goal_append_subtree"
+      ],
+      "tokens_used": 2442
+    }
+  },
+  {
+    "seq": 12,
+    "agent_id": "82401b0e-5419-463d-b3c5-251d52cb1d25",
+    "turn": 1,
+    "span_id": "t1.llm2",
+    "parent_span_id": "t1",
+    "type": "llm_response",
+    "ts": "2026-07-24T09:12:19.62545-04:00",
+    "payload": {
+      "text": "Created the REST to gRPC migration workflow with 4 steps.",
+      "llm_call_n": 2,
+      "stop_reason": "end_turn"
+    }
+  },
+  {
+    "seq": 13,
+    "agent_id": "82401b0e-5419-463d-b3c5-251d52cb1d25",
+    "turn": 1,
+    "span_id": "t1",
+    "type": "turn_end",
+    "ts": "2026-07-24T09:12:19.62545-04:00",
+    "payload": {
+      "result": "Created the REST to gRPC migration workflow with 4 steps.",
+      "tool_count": 1,
+      "duration_ms": 2
+    }
+  }
+]
