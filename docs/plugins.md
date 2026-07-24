@@ -33,9 +33,17 @@ Run "ls -la /tmp" and tell me the five largest files.
 | `read_file` | Read the contents of a file at a given path. |
 | `write_file` | Write content to a file, creating parent directories as needed. |
 
+**Paths and the workspace root.** When a workspace root is configured
+(`workspace.root` / `NINE_WORKSPACE`), paths resolve against it: a relative path
+or one under the `/work` alias (e.g. `/work/out.txt`) maps to the root, and
+`write_file` is confined to it — a genuine absolute path outside the root is
+rejected. `read_file` also honours the `/work` alias but still reads other
+absolute paths as given. With no workspace root configured, paths are used
+as-is.
+
 **Example prompt:**
 ```
-Read /etc/hostname and then write its value to /tmp/myhost.txt
+Read /work/notes.txt and then write a summary to /work/summary.txt
 ```
 
 ---
