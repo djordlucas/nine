@@ -50,33 +50,36 @@ provider's infrastructure over the API, so they have no local hardware profile.
 Cases × models, from the most recent run of each model. `Class` is the model's
 capability tier; `Host` is the profile it ran on.
 
-| Case (min class) | `gemma4:e2b` (nano · H1) † | `qwen3.5:9b` (small · H1) | `claude-haiku` (medium · API) | `claude-sonnet-5` (large · API) |
+| Case (min class) | `gemma4:e2b` (nano · H1) | `qwen3.5:9b` (small · H1) | `claude-haiku` (medium · API) | `claude-sonnet-5` (large · API) |
 |------------------|:---:|:---:|:---:|:---:|
 | `shell-echo` (nano) | ✓ 3/3 | ✓ 3/3 | — | — |
 | `time-current` (nano) | ✓ 3/3 | ✓ 3/3 | — | — |
-| `kv-roundtrip` (small) | ✓ 3/3 | ✓ 3/3 | — | — |
+| `kv-roundtrip` (small) | ✓ 2/3 | ✓ 3/3 | — | — |
 | `role-report-writer-no-shell` (small) | ✓ 2/2 | ✓ 2/2 | — | — |
-| `files-write-read` (small) | ✗ 0/3 † | ✓ 3/3 | — | — |
+| `files-write-read` (small) | ✓ 3/3 | ✓ 3/3 | — | — |
 | `semantic-memory` (medium) | ✗ 0/3 | ✗ 0/3 | — | — |
 | `memory-delete` (small) | ✓ 3/3 | ✓ 3/3 | — | — |
 | `goal-create` (medium) | ✓ 3/3 | ✓ 3/3 | — | — |
 | `workflow-plan` (medium) | ✓ 3/3 | ✓ 3/3 | — | — |
-| `skill-write-recall` (small) | ✗ 1/3 | ✓ 3/3 | — | — |
-| `file-store-search` (medium) | ✓ 3/3 | ✓ 3/3 | — | — |
-| `delegate-subagent` (medium) | ✗ 0/3 † | ✓ 3/3 | — | — |
+| `skill-write-recall` (small) | ✓ 3/3 | ✓ 3/3 | — | — |
+| `file-store-search` (medium) | ✗ 1/3 | ✓ 3/3 | — | — |
+| `delegate-subagent` (medium) | ✗ 1/3 | ✓ 3/3 | — | — |
 
-Source runs: `qwen3.5:9b` — `reports/20260724-155013.json` (34 min on H1, **all
-12 cases pass except the tolerated `semantic-memory`; suite green**). `gemma4:e2b`
-column is the earlier `reports/20260724-141551.json`.
-
-**† The `gemma4:e2b` column predates the harness fixes below** (files `/work`
-path resolution, the wired-in embedder, transient-error retry, the delegation
-timeout bump). Its `files-write-read`, `file-store-search`, and
-`delegate-subagent` numbers reflect those pre-fix bugs, not current behavior;
-re-run gemma to refresh them.
+Source runs (all on H1, post-fix): `gemma4:e2b` — `reports/20260724-170752.json`
+(14 min, 9/12 pass; the 3 misses are all tolerated below-class, suite green);
+`qwen3.5:9b` — `reports/20260724-155013.json` (34 min, **11/12; only the
+tolerated `semantic-memory` misses, suite green**).
 
 ## What we've learned so far
 
+- **`gemma4:e2b` (nano, H1)** — passes **9 of 12** with the harness fixes in place,
+  and every miss is a tolerated below-class case, so the suite is green. Notably it
+  now passes `files-write-read` (3/3, was 0/3 before the `/work` fix) and
+  `skill-write-recall` (3/3, was 1/3). It still can't reliably drive the two
+  hardest `medium` cases — `file-store-search` and `delegate-subagent` (both 1/3,
+  nano-level flakiness on multi-step) — and misses `semantic-memory` the same way
+  qwen does. `kv-roundtrip` slipped to 2/3 (still meets threshold) — ordinary
+  small-model run-to-run variance.
 - **`qwen3.5:9b` (small, H1)** — passes **11 of 12** cases, including every one at
   or below its class and all four `medium` delegation/file cases; the suite is
   green (no fatal). Getting there took fixing four genuine harness bugs, not the
@@ -96,8 +99,9 @@ re-run gemma to refresh them.
   exactly what the `medium` class encodes; the miss is tolerated and the suite
   stays green. Forcing it would need a prompt that names the semantic path.
 - **Delegation (`delegate-subagent`)** — qwen now drives the two-level sub-agent
-  flow reliably (3/3) once the timeout and retry stopped masking it. It remained
-  the ceiling for **nano** `gemma4:e2b` in the earlier run (0/3).
+  flow reliably (3/3) once the timeout and retry stopped masking it. It stays the
+  ceiling for **nano** `gemma4:e2b` (1/3) — a 2B model spawning and steering a
+  sub-agent is genuinely at its limit, which is what the `medium` class encodes.
 - **`claude-*` (medium/large, API)** — **not yet run.** The matrix needs
   `ANTHROPIC_API_KEY`; these rows are the priority for the next run, since the
   delegation/workflow/goal cases target their class and the local models above
