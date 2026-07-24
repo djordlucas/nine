@@ -1,0 +1,25 @@
+id: memory-delete
+description: "Forget a previously stored fact: the model must delete the key (memory_delete) and confirm it is gone, not just say so."
+track: live
+tier: basic
+tags: [memory, kv]
+
+setup:
+  kv:
+    notes/api_token: "tok-live-abc123"
+
+prompts:
+  - "The value under notes/api_token is stale — delete that key from memory, then check whether it still exists and tell me."
+
+expect:
+  trajectory:
+    tools_all_of: [memory_delete]
+    tools_any_of: [memory_get, memory_list]
+    no_stall: true
+  answer:
+    not_contains: ["tok-live-abc123"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small
