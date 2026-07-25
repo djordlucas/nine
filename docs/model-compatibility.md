@@ -57,7 +57,7 @@ capability tier; `Host` is the profile it ran on.
 | `kv-roundtrip` (small) | ✓ 2/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
 | `role-report-writer-no-shell` (small) | ✓ 2/2 | ✓ 2/2 | ✓ 2/2 | ✓ 2/2 | — | — |
 | `files-write-read` (small) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
-| `semantic-memory` (medium) | ✗ 0/3 | ✗ 0/3 | ✗ 0/3 | ✗ 0/3 | — | — |
+| `semantic-memory` (small) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 2/3 | — | — |
 | `memory-delete` (small) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
 | `goal-create` (medium) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
 | `workflow-plan` (medium) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
@@ -66,9 +66,10 @@ capability tier; `Host` is the profile it ran on.
 | `delegate-subagent` (medium) | ✗ 1/3 | ✗ 0/3 | ✓ 3/3 | ✓ 3/3 | — | — |
 
 Source runs (all on H1, post-fix): `gemma4:e2b` — `reports/20260724-170752.json`
-(9/12); `gemma4:e4b` — `reports/20260724-182911.json` (10/12); `qwen3.5:4b` —
-`reports/20260724-195901.json` (**11/12**); `qwen3.5:9b` —
-`reports/20260724-155013.json` (**11/12**). Every miss across all four is a
+(**10/12**); `gemma4:e4b` — `reports/20260724-182911.json` (**11/12**);
+`qwen3.5:4b` and `qwen3.5:9b` — `reports/20260724-195901.json` /
+`20260724-155013.json` (**12/12 each**). The `semantic-memory` row is from the
+corrected-case re-run `reports/20260725-190739.json`. Every remaining miss is a
 tolerated below-class case, so all four suites are green.
 
 `gemma4:12b` (medium) is **not benchmarked on H1**: on 16 GB it is
@@ -78,57 +79,43 @@ ceiling, not the model. Revisit it on a host with more memory.
 
 ## What we've learned so far
 
-- **`gemma4:e2b` (nano, H1)** — passes **9 of 12** with the harness fixes in place,
-  and every miss is a tolerated below-class case, so the suite is green. Notably it
-  now passes `files-write-read` (3/3, was 0/3 before the `/work` fix) and
-  `skill-write-recall` (3/3, was 1/3). It still can't reliably drive the two
-  hardest `medium` cases — `file-store-search` and `delegate-subagent` (both 1/3,
-  nano-level flakiness on multi-step) — and misses `semantic-memory` the same way
-  qwen does. `kv-roundtrip` slipped to 2/3 (still meets threshold) — ordinary
-  small-model run-to-run variance.
-- **`gemma4:e4b` (nano, H1)** — the stronger nano: **10 of 12**, one better than
-  its e2b sibling. It clears `file-store-search` 3/3 (e2b managed only 1/3) and is
-  otherwise clean across the basics and the `medium` goal/workflow cases. Its only
-  misses are `delegate-subagent` (0/3 — two-level sub-agent delegation is still out
-  of reach at nano) and `semantic-memory` (0/3 — KV instead of embed, as with the
-  others). Both tolerated; suite green.
-- **`qwen3.5:4b` (small, H1)** — matches its 9B sibling at **11 of 12**: every
-  case green except the tolerated `semantic-memory`, including all four `medium`
-  delegation/file cases (`file-store-search` at 2/3, still over threshold). A 4B
-  model holding the whole tool surface is the strongest signal here that the
-  fixes, not raw scale, were the blocker.
-- **`qwen3.5:9b` (small, H1)** — passes **11 of 12** cases, including every one at
-  or below its class and all four `medium` delegation/file cases; the suite is
-  green (no fatal). Getting there took fixing four genuine harness bugs, not the
-  model: (1) the `files` plugin rejected the eval's `/work/…` paths, so
-  `files-write-read` was 0/3 for *every* model — now a `/work` root alias resolves
-  them; (2) the live harness ran with no embedder, so `memory_embed`/`memory_query`
-  were never registered — now an Ollama `nomic-embed-text` embedder is wired in;
+- **`qwen3.5:4b` and `qwen3.5:9b` (small, H1)** — both now pass **all 12 cases**,
+  including every `medium` delegation/file case. Getting there took fixing genuine
+  harness bugs, not the models: (1) the `files` plugin rejected the eval's `/work/…`
+  paths, so `files-write-read` was 0/3 for *every* model — now a `/work` root alias
+  resolves them; (2) the live harness ran with no embedder, so semantic memory
+  couldn't index — now an Ollama `nomic-embed-text` embedder is wired in;
   (3) transient Ollama flakiness (a malformed tool-call, a slow-host deadline) now
   retries instead of counting as a failure, which recovered `file-store-search`
   and `delegate-subagent`; (4) `delegate-subagent`'s per-run timeout was raised to
-  900s for the nested sub-agent loop.
-- **`semantic-memory` (medium)** is the one case **no** local model passes (0/3
-  on all four), and it is **model behavior, not a bug**. The case was redesigned
-  (`reports/20260725-124705.json`) to *require* by-meaning retrieval — three notes
-  stored, then a paraphrased query (`pre-production` ≈ `staging`) with distractor
-  regions — so KV can no longer trivially answer it. The models still never call
-  `memory_embed`/`memory_query`: across the whole re-run there were **zero**
-  semantic-tool calls. They read "store in your semantic memory" as `memory_set`
-  with keys like `memories:fact_1`, treating the namespace as a KV key prefix. So
-  this is a robust preference for the key-value store, not prompt ambiguity that a
-  better-worded task fixes. It stays a tolerated below-class miss (suite green);
-  exercising the vector path likely needs either a stronger model (the `claude-*`
-  rows) or renaming/redescribing the semantic tools so a model recognises them as
-  the way to store for meaning-based recall.
+  900s for the nested sub-agent loop. That a 4B model holds the whole tool surface
+  is the strongest signal that the fixes, not raw scale, were the blocker.
+- **`gemma4:e4b` (nano, H1)** — **11 of 12**: clean everywhere except
+  `delegate-subagent` (0/3 — driving a two-level sub-agent is out of reach at
+  nano). Tolerated; suite green.
+- **`gemma4:e2b` (nano, H1)** — **10 of 12**: passes the basics, the `medium`
+  goal/workflow/semantic cases, and (post-`/work`-fix) `files-write-read`. Its two
+  misses are the hardest `medium` cases — `file-store-search` (1/3) and
+  `delegate-subagent` (1/3) — nano-level flakiness on multi-step work. Both
+  tolerated; `kv-roundtrip` at 2/3 is ordinary run-to-run variance.
+- **`semantic-memory`** now passes on all four models — but only after the case
+  was **corrected to test the real feature**. It originally asserted calls to
+  `memory_embed`/`memory_query`, which turned out to be **never advertised** to the
+  model (not in `coreToolNames`), so it could never pass on any model. In this
+  architecture semantic memory is driven *through* `memory_set`: each set
+  auto-embeds its value into the shared `memories` vector pool for later relevance
+  surfacing. The rewritten case stores facts with `memory_set` (asserting the
+  vector pool is populated) and selectively recalls one — an honest test of the
+  path as built. (Isolating pull-surfacing specifically would need a fresh session,
+  which the harness doesn't yet express.)
 - **Delegation (`delegate-subagent`)** — qwen now drives the two-level sub-agent
   flow reliably (3/3) once the timeout and retry stopped masking it. It stays the
   ceiling for **nano** `gemma4:e2b` (1/3) — a 2B model spawning and steering a
   sub-agent is genuinely at its limit, which is what the `medium` class encodes.
 - **`claude-*` (medium/large, API)** — **not yet run.** The matrix needs
-  `ANTHROPIC_API_KEY`; these rows are the priority for the next run, since the
-  delegation/workflow/goal cases target their class and the local models above
-  only sample the easy end of them.
+  `ANTHROPIC_API_KEY`; these rows are the next priority to confirm behavior at
+  their own class and to exercise judged cases, though the local small models
+  already clear the full corpus here.
 
 ## Keeping this current
 
