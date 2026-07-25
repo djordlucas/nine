@@ -20,7 +20,7 @@ func init() {
 func main() {
 	writeDesc := "Write content to a file, creating parent directories as needed."
 	if workspaceRoot != "" {
-		writeDesc = fmt.Sprintf("Write content to a file within the workspace root (%s). Relative paths resolve against the workspace root; absolute paths outside it are rejected.", workspaceRoot)
+		writeDesc = fmt.Sprintf("Write content to a file within the workspace root (%s). Relative paths and paths under /work resolve against the workspace root; other absolute paths outside it are rejected.", workspaceRoot)
 	}
 
 	plugin.Serve(
@@ -52,7 +52,7 @@ func readFile(_ context.Context, args json.RawMessage) (string, error) {
 	if err := json.Unmarshal(args, &p); err != nil {
 		return "", plugin.InvalidArgs("%v", err)
 	}
-	b, err := os.ReadFile(p.Path)
+	b, err := os.ReadFile(resolveReadPath(p.Path))
 	if err != nil {
 		return "", err
 	}
@@ -80,6 +80,42 @@ func writeFile(_ context.Context, args json.RawMessage) (string, error) {
 	return "ok", nil
 }
 
+// workspaceAlias is the canonical path prefix under which the workspace root is
+// presented to the agent. A leading "/work" resolves to the configured root, so
+// the model can address workspace files by a stable absolute path regardless of
+// where the run's actual root lives (e.g. the eval schema's /work/… convention,
+// docs/evals.md §2). It never collides with the production root (workspace.root,
+// e.g. ./workspace) and is a no-op when no workspace root is configured.
+const workspaceAlias = "/work"
+
+// rootRelative maps a caller-supplied path into the workspace root: it rewrites a
+// leading /work alias to the root and joins relative paths onto it. Genuine
+// absolute paths (outside the alias) are returned untouched. It returns the empty
+// string when no workspace root is configured, signalling "use the path as-is".
+func rootRelative(rootAbs, path string) string {
+	if path == workspaceAlias || strings.HasPrefix(path, workspaceAlias+"/") {
+		return filepath.Join(rootAbs, filepath.Clean("/"+strings.TrimPrefix(path, workspaceAlias)))
+	}
+	if !filepath.IsAbs(path) {
+		return filepath.Join(rootAbs, path)
+	}
+	return path
+}
+
+// resolveReadPath maps path into the workspace root when one is configured (via
+// the /work alias or a relative path), leaving other absolute paths as given so
+// reads outside the workspace still work.
+func resolveReadPath(path string) string {
+	if workspaceRoot == "" {
+		return path
+	}
+	rootAbs, err := filepath.Abs(workspaceRoot)
+	if err != nil {
+		return path
+	}
+	return rootRelative(rootAbs, path)
+}
+
 // resolveWritePath resolves path against the workspace root (if configured) and
 // rejects any write that escapes the root.
 func resolveWritePath(path string) (string, error) {
@@ -90,10 +126,7 @@ func resolveWritePath(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(rootAbs, path)
-	}
-	abs, err := filepath.Abs(path)
+	abs, err := filepath.Abs(rootRelative(rootAbs, path))
 	if err != nil {
 		return "", err
 	}

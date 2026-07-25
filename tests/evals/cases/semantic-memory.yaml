@@ -1,23 +1,24 @@
 id: semantic-memory
-description: "Embed a note into semantic memory, then query it back."
+description: "Store several facts, then selectively recall one. Each memory_set auto-embeds into the shared vector pool, so this exercises the semantic-memory path (vector index + relevance recall), which is driven through memory_set — not the unadvertised memory_embed/memory_query tools."
 track: live
 tier: multi_step
 tags: [memory, vectors, semantic]
 
 prompts:
-  - "Embed this note into your semantic memory for later: 'The staging cluster lives in eu-central-1.'"
-  - "Using semantic memory, which region hosts the staging cluster?"
+  - "Store these three facts in your memory so you can recall them later: (a) The staging cluster lives in eu-central-1. (b) Production traffic is served from us-east-1. (c) The analytics warehouse sits in ap-southeast-2."
+  - "Which region hosts the staging cluster?"
 
 expect:
   side_effects:
     vectors: { namespace: memories, min: 1 }
   trajectory:
-    tools_any_of: [memory_embed, memory_query]
+    tools_all_of: [memory_set]
     no_stall: true
   answer:
     contains: ["eu-central-1"]
+    not_contains: ["us-east-1", "ap-southeast-2"]
 
 runs: 3
 pass_threshold: "2/3"
 models:
-  expected_pass_min_class: medium
+  expected_pass_min_class: small

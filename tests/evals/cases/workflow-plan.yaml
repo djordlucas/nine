@@ -1,0 +1,20 @@
+id: workflow-plan
+description: "Before multi-step delegated work, the model must lay out a named workflow with ordered steps (workflow_create)."
+track: live
+tier: delegation
+tags: [workflows, delegation, planning]
+
+prompts:
+  - "I want to migrate our API from REST to gRPC. Before doing any of it, lay out the work as a named workflow with the ordered steps you'd take (at least: audit endpoints, define protobufs, implement services, cut over clients). Just create the plan; don't execute the steps."
+
+expect:
+  side_effects:
+    workflows: { min_steps: 3 }
+  trajectory:
+    tools_all_of: [workflow_create]
+    no_stall: true
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: medium
