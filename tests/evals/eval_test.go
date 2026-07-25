@@ -101,7 +101,7 @@ func TestLiveMatrix(t *testing.T) {
 	}
 
 	suite := &runner.Suite{
-		Harness:     &runner.Harness{PluginBin: os.Getenv("NINE_PLUGINS_BIN")},
+		Harness:     &runner.Harness{PluginBin: os.Getenv("NINE_PLUGINS_BIN"), Embedder: runner.EvalEmbedder()},
 		Models:      models,
 		ProviderFor: runner.ProviderFor,
 		JudgeFn:     runner.NewJudge(runner.ProviderFor),

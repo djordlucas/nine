@@ -1,0 +1,20 @@
+id: goal-create
+description: "Ask for open-ended, persistent work; the model must record it as a goal (goal_create), not just answer inline."
+track: live
+tier: delegation
+tags: [goals, delegation]
+
+prompts:
+  - "Keep an ongoing watch on our payments repo for newly introduced security issues. This is open-ended standing work, so set it up as a persistent goal rather than a one-off reply."
+
+expect:
+  side_effects:
+    goals: { created: 1 }
+  trajectory:
+    tools_all_of: [goal_create]
+    no_stall: true
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: medium

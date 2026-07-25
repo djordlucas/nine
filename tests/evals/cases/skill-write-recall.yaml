@@ -1,0 +1,23 @@
+id: skill-write-recall
+description: "Persist a how-to as a skill in one turn, then retrieve and apply it in a later turn (skill_write then skill_read/skill_list)."
+track: live
+tier: multi_step
+tags: [skills, memory]
+
+prompts:
+  - "Save a skill named deploy-nine that documents our deploy step: run `make build`, then `nine daemon restart`. Store it as a skill so you can follow it later."
+  - "Using your saved skills, what are the exact commands to deploy nine, in order?"
+
+expect:
+  trajectory:
+    tools_all_of: [skill_write]
+    tools_any_of: [skill_read, skill_list]
+    max_turns: 2
+    no_stall: true
+  answer:
+    contains: ["make build", "nine daemon restart"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

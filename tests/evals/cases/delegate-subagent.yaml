@@ -1,0 +1,28 @@
+id: delegate-subagent
+description: "A self-contained subtask should be handed to a sub-agent (run_agent/run_agents), not done inline."
+track: live
+tier: delegation
+tags: [delegation, sub-agents]
+
+setup:
+  files:
+    /work/orders.csv: "id,amount\n1,10\n2,25\n3,7\n4,40\n"
+
+prompts:
+  - "Delegate this to a sub-agent as a single self-contained task: read /work/orders.csv, sum the amount column, and report the total. Have the sub-agent do the work and give me its result."
+
+expect:
+  trajectory:
+    tools_any_of: [run_agent, run_agents]
+    sub_agents: { min: 1 }
+    no_stall: true
+  answer:
+    contains: ["82"]
+
+runs: 3
+pass_threshold: "2/3"
+# Spawning a sub-agent means a second nested agent loop with its own LLM calls;
+# on a slow local backend the default 300s per run trips a deadline mid-turn.
+timeout_seconds: 900
+models:
+  expected_pass_min_class: medium

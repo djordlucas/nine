@@ -1,0 +1,130 @@
+# Model compatibility
+
+Which LLMs Nine has been run against, how well they drive the agent loop, and on
+what hardware. Use it to judge whether a model is likely to work for you before
+you wire it up.
+
+This is a **living record of observed results**, not a support promise. It is
+compiled by hand from Track-L eval runs (`tests/evals/reports/<date>.json`, see
+[evals.md](evals.md) §6/§8). Re-run the matrix and update the tables below when
+you test a new model or a new host.
+
+## How to read this
+
+- Results come from the **Track-L** eval matrix: each case is run N times on a
+  model and graded with tolerant, side-effect/trajectory assertions
+  ([evals.md](evals.md) §1). A cell shows the pass fraction for that case.
+- Every case declares an `expected_pass_min_class` (`nano < small < medium <
+  large`). A model is only *expected* to pass cases at or below its own class; a
+  failure **below** a model's class is normal (a 3B model can't do 3-hop
+  delegation) and is reported, not counted against the model. See
+  [evals.md](evals.md) §6.
+- ✓ = met the case's pass threshold · ✗ = did not · — = not run · ✗! = a
+  fatal miss (failed a case at or above the model's own class).
+
+Reproduce any row:
+
+```sh
+docker compose up -d postgres
+NINE_EVAL_MODELS=<model> make eval-live      # local models need Ollama at NINE_LLM_ENDPOINT
+# claude-* models additionally need ANTHROPIC_API_KEY
+```
+
+## Hardware profiles
+
+Local (Ollama) models run on real hardware, and throughput/timeout behavior
+depends on it — a case that fails only with `context deadline exceeded` on a
+small host may pass on a faster one. Hosted `claude-*` models run on the
+provider's infrastructure over the API, so they have no local hardware profile.
+
+| Host | Machine | Chip | Memory | OS | Runtime |
+|------|---------|------|--------|-----|---------|
+| **H1** | Mac16,10 | Apple M4 (10 core) | 16 GB | macOS 26.6 | Ollama 0.31.2 |
+| **API** | — | provider-hosted | — | — | Anthropic API |
+
+> H1 is the reference host used for the local-model runs below. If you run the
+> matrix on different hardware, add a row and tag your results with it.
+
+## Compatibility matrix
+
+Cases × models, from the most recent run of each model. `Class` is the model's
+capability tier; `Host` is the profile it ran on.
+
+| Case (min class) | `gemma4:e2b` (nano · H1) | `gemma4:e4b` (nano · H1) | `qwen3.5:4b` (small · H1) | `qwen3.5:9b` (small · H1) | `claude-haiku` (medium · API) | `claude-sonnet-5` (large · API) |
+|------------------|:---:|:---:|:---:|:---:|:---:|:---:|
+| `shell-echo` (nano) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
+| `time-current` (nano) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
+| `kv-roundtrip` (small) | ✓ 2/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
+| `role-report-writer-no-shell` (small) | ✓ 2/2 | ✓ 2/2 | ✓ 2/2 | ✓ 2/2 | — | — |
+| `files-write-read` (small) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
+| `semantic-memory` (small) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 2/3 | — | — |
+| `memory-delete` (small) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
+| `goal-create` (medium) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
+| `workflow-plan` (medium) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
+| `skill-write-recall` (small) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
+| `file-store-search` (medium) | ✗ 1/3 | ✓ 3/3 | ✓ 2/3 | ✓ 3/3 | — | — |
+| `delegate-subagent` (medium) | ✗ 1/3 | ✗ 0/3 | ✓ 3/3 | ✓ 3/3 | — | — |
+
+Source runs (all on H1, post-fix): `gemma4:e2b` — `reports/20260724-170752.json`
+(**10/12**); `gemma4:e4b` — `reports/20260724-182911.json` (**11/12**);
+`qwen3.5:4b` and `qwen3.5:9b` — `reports/20260724-195901.json` /
+`20260724-155013.json` (**12/12 each**). The `semantic-memory` row is from the
+corrected-case re-run `reports/20260725-190739.json`. Every remaining miss is a
+tolerated below-class case, so all four suites are green.
+
+`gemma4:12b` (medium) is **not benchmarked on H1**: on 16 GB it is
+throughput-bound and thrashes — runs hit `deadline exceeded` / malformed-tool-call
+errors so often that even with retries the numbers would measure the host's memory
+ceiling, not the model. Revisit it on a host with more memory.
+
+## What we've learned so far
+
+- **`qwen3.5:4b` and `qwen3.5:9b` (small, H1)** — both now pass **all 12 cases**,
+  including every `medium` delegation/file case. Getting there took fixing genuine
+  harness bugs, not the models: (1) the `files` plugin rejected the eval's `/work/…`
+  paths, so `files-write-read` was 0/3 for *every* model — now a `/work` root alias
+  resolves them; (2) the live harness ran with no embedder, so semantic memory
+  couldn't index — now an Ollama `nomic-embed-text` embedder is wired in;
+  (3) transient Ollama flakiness (a malformed tool-call, a slow-host deadline) now
+  retries instead of counting as a failure, which recovered `file-store-search`
+  and `delegate-subagent`; (4) `delegate-subagent`'s per-run timeout was raised to
+  900s for the nested sub-agent loop. That a 4B model holds the whole tool surface
+  is the strongest signal that the fixes, not raw scale, were the blocker.
+- **`gemma4:e4b` (nano, H1)** — **11 of 12**: clean everywhere except
+  `delegate-subagent` (0/3 — driving a two-level sub-agent is out of reach at
+  nano). Tolerated; suite green.
+- **`gemma4:e2b` (nano, H1)** — **10 of 12**: passes the basics, the `medium`
+  goal/workflow/semantic cases, and (post-`/work`-fix) `files-write-read`. Its two
+  misses are the hardest `medium` cases — `file-store-search` (1/3) and
+  `delegate-subagent` (1/3) — nano-level flakiness on multi-step work. Both
+  tolerated; `kv-roundtrip` at 2/3 is ordinary run-to-run variance.
+- **`semantic-memory`** now passes on all four models — but only after the case
+  was **corrected to test the real feature**. It originally asserted calls to
+  `memory_embed`/`memory_query`, which turned out to be **never advertised** to the
+  model (not in `coreToolNames`), so it could never pass on any model. In this
+  architecture semantic memory is driven *through* `memory_set`: each set
+  auto-embeds its value into the shared `memories` vector pool for later relevance
+  surfacing. The rewritten case stores facts with `memory_set` (asserting the
+  vector pool is populated) and selectively recalls one — an honest test of the
+  path as built. (Isolating pull-surfacing specifically would need a fresh session,
+  which the harness doesn't yet express.)
+- **Delegation (`delegate-subagent`)** — qwen now drives the two-level sub-agent
+  flow reliably (3/3) once the timeout and retry stopped masking it. It stays the
+  ceiling for **nano** `gemma4:e2b` (1/3) — a 2B model spawning and steering a
+  sub-agent is genuinely at its limit, which is what the `medium` class encodes.
+- **`claude-*` (medium/large, API)** — **not yet run.** The matrix needs
+  `ANTHROPIC_API_KEY`; these rows are the next priority to confirm behavior at
+  their own class and to exercise judged cases, though the local small models
+  already clear the full corpus here.
+
+## Keeping this current
+
+After a Track-L run:
+
+1. Note the host you ran local models on (add a profile row if it's new).
+2. For each model, copy the latest `reports/<date>.json` results into the matrix
+   (pass fraction per case; `✗!` when a failure is at/above the model's class).
+3. Record which report each column came from under the matrix.
+
+The `reports/` JSON is the raw record (git-ignored run artifacts); this file is
+the curated, committed summary humans read.
