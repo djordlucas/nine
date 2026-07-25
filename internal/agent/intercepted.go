@@ -15,6 +15,7 @@ var InterceptedDefs = concatToolDefs(
 	workflowToolDefs,
 	goalToolDefs,
 	notifyToolDefs,
+	searchToolDefs,
 )
 
 func concatToolDefs(groups ...[]llm.ToolDef) []llm.ToolDef {
