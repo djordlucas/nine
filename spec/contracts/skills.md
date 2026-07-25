@@ -83,14 +83,16 @@ validate`) so an operator can check a file without restarting.
 
 | Tool | Effect |
 |------|--------|
-| `skill_list` | list all skills (names, descriptions, tags) — discovery |
+| `skill_list` | list all skills (names, descriptions, tags) — full enumeration |
+| `skill_search` | semantically rank skills against a query, returning names + descriptions — discovery by meaning |
 | `skill_read` | read the full content of a skill by name |
 | `skill_write` | create or replace one of the agent's **own** skills (not built-ins) |
 | `skill_modify` | update one of the agent's own skills (description/tags/content) |
 
-There is **no `skill_search` tool**; discovery is `skill_list` followed by `skill_read`.
-(An implementation **MAY** add semantic skill search — the seed step already embeds
-descriptions, see R-SKILL.4 — but it is not required.)
+Discovery is either `skill_list` (enumerate) or `skill_search` (rank the `skills:`
+vector namespace by relevance, R-SKILL.4), followed by `skill_read` for the body.
+`skill_search` is **embedder-gated**: with no embedder configured it is neither
+registered nor advertised, and discovery falls back to `skill_list`.
 
 Skill tools are never preloaded into context as bulk content; only names/descriptions are
 cheap to surface, keeping context lean for small models.
@@ -101,8 +103,8 @@ cheap to surface, keeping context lean for small models.
 
 After a successful `skill_write`/`skill_modify`, a dispatcher post-call hook (R-DISP.5)
 embeds the skill's description into the `skills:` vector namespace. `SeedSkills` does the
-same for built-in defaults at boot. This keeps skill vectors current for any future
-ranking/search, independent of whether a `skill_search` tool exists yet.
+same for built-in defaults at boot. This keeps skill vectors current for both the
+passive self-model ranking and the `skill_search` tool (R-SKILL.3).
 
 ---
 

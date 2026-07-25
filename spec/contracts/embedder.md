@@ -50,9 +50,12 @@ There are exactly two ways embeddings get produced, and they **MUST** be kept di
    relevance; and the `AgentBuilder` embeds each tool's description for context-builder
    relevance ranking (cached by tool name, held **in memory** — not written to the
    `vectors` table, so there is no `tools:` namespace). These call the embedder directly.
-2. **Agent-invoked (core-intercepted tools).** `memory_embed`, `memory_query`, and
-   `file_search_semantic` are tools the agent calls; the **dispatcher** intercepts them,
-   calls the embedder, and routes to the store. The agent never holds the embedder. The
+2. **Agent-invoked (core-intercepted tools).** `memory_embed`, `memory_query`,
+   `file_search_semantic`, `skill_search`, and `tool_search` are tools the agent calls;
+   the **dispatcher** intercepts them, calls the embedder, and routes to the store (or,
+   for `tool_search`, ranks the in-memory tool-description vectors). Each is embedder-gated
+   — absent an embedder it is neither registered nor advertised. The agent never holds the
+   embedder. The
    `memory_set` handler also embeds — as a best-effort side effect — to mirror the value
    into the `memories` pool (R-MEM.8); the agent still never holds the embedder.
 
