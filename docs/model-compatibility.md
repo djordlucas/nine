@@ -108,13 +108,19 @@ ceiling, not the model. Revisit it on a host with more memory.
   retries instead of counting as a failure, which recovered `file-store-search`
   and `delegate-subagent`; (4) `delegate-subagent`'s per-run timeout was raised to
   900s for the nested sub-agent loop.
-- **`semantic-memory` (medium)** is qwen's one remaining miss, and it is **model
-  behavior, not a bug**: the embed tools are now available, but qwen answers the
-  task with plain `memory_set`/`memory_get` (KV) instead of
-  `memory_embed`/`memory_query`, so the vector never gets written. It gets the
-  right answer by the "wrong" path. A 9B model reaching for KV when it suffices is
-  exactly what the `medium` class encodes; the miss is tolerated and the suite
-  stays green. Forcing it would need a prompt that names the semantic path.
+- **`semantic-memory` (medium)** is the one case **no** local model passes (0/3
+  on all four), and it is **model behavior, not a bug**. The case was redesigned
+  (`reports/20260725-124705.json`) to *require* by-meaning retrieval — three notes
+  stored, then a paraphrased query (`pre-production` ≈ `staging`) with distractor
+  regions — so KV can no longer trivially answer it. The models still never call
+  `memory_embed`/`memory_query`: across the whole re-run there were **zero**
+  semantic-tool calls. They read "store in your semantic memory" as `memory_set`
+  with keys like `memories:fact_1`, treating the namespace as a KV key prefix. So
+  this is a robust preference for the key-value store, not prompt ambiguity that a
+  better-worded task fixes. It stays a tolerated below-class miss (suite green);
+  exercising the vector path likely needs either a stronger model (the `claude-*`
+  rows) or renaming/redescribing the semantic tools so a model recognises them as
+  the way to store for meaning-based recall.
 - **Delegation (`delegate-subagent`)** — qwen now drives the two-level sub-agent
   flow reliably (3/3) once the timeout and retry stopped masking it. It stays the
   ceiling for **nano** `gemma4:e2b` (1/3) — a 2B model spawning and steering a
