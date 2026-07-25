@@ -24,6 +24,12 @@ var skillToolDefs = []llm.ToolDef{
 		InputSchema: json.RawMessage(`{"type":"object","required":["name"],"properties":{"name":{"type":"string"}}}`),
 	},
 	{
+		Name:        "skill_search",
+		DisplayName: "Search Skills",
+		Description: "Semantically search available skills by a natural-language query, returning the most relevant skill names and descriptions. Use this to find a skill when you do not know its exact name or when the task changes; then skill_read the one you want.",
+		InputSchema: json.RawMessage(`{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"top_k":{"type":"integer","description":"Number of results (default 5)"}}}`),
+	},
+	{
 		Name:        "skill_write",
 		DisplayName: "Write Skill",
 		Description: "Create or replace one of your own skills (a markdown how-to note). Built-in skills are read-only and cannot be overwritten.",
@@ -53,6 +59,54 @@ func RegisterSkillTools(d *Dispatcher, store *memory.Store, embedder embed.Embed
 			return
 		}
 		store.VectorStore("skills:"+name, "skills", name, vec) //nolint:errcheck
+	}
+
+	// skill_search ranks the "skills" vector namespace against a model-supplied
+	// query (embedSkill and the boot seed keep that namespace current). Gated on
+	// an embedder, like the memory semantic tools: without one there is nothing
+	// to rank against, and the builder omits the def from the advertised set.
+	if embedder != nil {
+		d.handlers["skill_search"] = func(_ context.Context, args json.RawMessage) (string, error) {
+			var req struct {
+				Query string `json:"query"`
+				TopK  int    `json:"top_k"`
+			}
+			if err := json.Unmarshal(args, &req); err != nil {
+				return "", fmt.Errorf("skill_search: %w", err)
+			}
+			if req.Query == "" {
+				return "", fmt.Errorf("skill_search: query is required")
+			}
+			if req.TopK <= 0 {
+				req.TopK = 5
+			}
+			vec, err := embedder.Embed(context.Background(), req.Query)
+			if err != nil {
+				return "", fmt.Errorf("embed: %w", err)
+			}
+			results, err := store.VectorQuery("skills", vec, req.TopK)
+			if err != nil {
+				return "", fmt.Errorf("vector query: %w", err)
+			}
+			type hit struct {
+				Name        string  `json:"name"`
+				Description string  `json:"description"`
+				Score       float32 `json:"score"`
+			}
+			hits := make([]hit, 0, len(results))
+			for _, r := range results {
+				h := hit{Name: r.Key, Score: r.Score}
+				if sk, found, err := store.SkillGet(r.Key); err == nil && found {
+					h.Description = sk.Description
+				}
+				hits = append(hits, h)
+			}
+			data, err := json.Marshal(map[string]any{"results": hits})
+			if err != nil {
+				return "", err
+			}
+			return string(data), nil
+		}
 	}
 
 	d.handlers["skill_list"] = func(_ context.Context, _ json.RawMessage) (string, error) {

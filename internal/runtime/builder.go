@@ -352,6 +352,17 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int) *agent.L
 		f.registerHumanTools(d, agentID)
 	}
 
+	// Catalog-search meta-tools (tool_search, skill_search) let the model query
+	// the full tool/skill catalogs on demand, covering the once-per-turn ranking
+	// blind spot (docs/tool-exposition.md). Granted regardless of the role
+	// allowlist — like gap_report — but only with an embedder to rank against.
+	// Treated as shell capabilities so they are advertised, always-included, and
+	// survive RestrictTo; skill_search's handler is registered by
+	// RegisterSkillTools above, tool_search's below once the tool list exists.
+	if lc.Embedder != nil {
+		shellTools = append(shellTools, "tool_search", "skill_search")
+	}
+
 	// Boundary 2 of R-ROLE.4: for allowlist roles, prune dispatch handlers so
 	// a disallowed tool cannot run even if the model hallucinates its name.
 	// gap_report survives every allowlist — it is the escape hatch when no
@@ -381,6 +392,10 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int) *agent.L
 	for i := range tools {
 		tools[i].Vector = f.toolVector(lc.Embedder, tools[i].Tool)
 	}
+	// tool_search ranks over the finalized advertised set (vectors populated
+	// above), so register it now that `tools` is complete. The closure returns
+	// this loop's slice, so results only ever include tools it can actually call.
+	agent.RegisterToolSearch(d, lc.Embedder, func() []ninectx.ToolWithVector { return tools })
 
 	alwaysTools := filterByRole(append([]string{}, coreToolNames...), role)
 	alwaysTools = append(alwaysTools, shellTools...)
