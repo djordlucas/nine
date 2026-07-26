@@ -126,6 +126,7 @@ The `Dispatcher` is a registry of `handlers` (tool name → function). It routes
 | Category | Tools |
 |----------|-------|
 | Memory | `memory_embed`, `memory_query`, `file_search_semantic` |
+| Search | `tool_search`, `skill_search` (embedder-gated catalog search) |
 | Sub-agents | `run_agent`, `run_agents` |
 | Workflows | `workflow_create`, `workflow_get`, `workflow_update`, `workflow_list`, `workflow_retry_step` |
 | Goals | `goal_create`, `goal_get`, `goal_list`, `goal_update_status`, `goal_append_subtree` |
@@ -147,6 +148,7 @@ Dispatcher.New()                  → empty handler map
   └─ RegisterWorkflowTools(...)
   └─ RegisterGoalTools(...)
   └─ RegisterMemoryTools(...) / RegisterSkillTools(...)
+  └─ RegisterToolSearch(...)       → tool_search (skill_search rides in RegisterSkillTools)
   └─ ...
   └─ RegisterPlugin(mgr, plugin)  → plugin tool handlers
 ```

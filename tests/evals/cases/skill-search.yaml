@@ -1,0 +1,25 @@
+id: skill-search
+description: "Save several skills, then find one by meaning rather than by name. The later turn's phrasing never names the target skill, so the model must skill_search the vector-indexed catalog (populated by skill_write) and skill_read the hit, not enumerate with skill_list."
+track: live
+tier: multi_step
+tags: [skills, search, vectors, semantic]
+
+prompts:
+  - "Save three separate skills for me, each with its own name, a one-line description, and the content. (1) name 'pg-restore', how to recover the production Postgres database — run `pg_restore` from the nightly S3 snapshot. (2) name 'redis-flush', how to safely flush the Redis cache. (3) name 'cert-renew', how to renew the TLS certificates."
+  - "Search your saved skills for the one about recovering the production database after data loss, and tell me the exact command it says to run."
+
+expect:
+  side_effects:
+    vectors: { namespace: skills, min: 3 }
+  trajectory:
+    tools_all_of: [skill_write, skill_search]
+    tools_any_of: [skill_read]
+    no_stall: true
+  answer:
+    contains: ["pg_restore"]
+    not_contains: ["redis", "cert"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small
