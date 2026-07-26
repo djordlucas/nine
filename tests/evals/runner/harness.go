@@ -17,7 +17,6 @@ import (
 	"nine/internal/plugin"
 	"nine/internal/protocol"
 	"nine/internal/runtime"
-	"nine/internal/selfmodel"
 )
 
 // Harness stands up a real Nine daemon in-process — the production wiring from
@@ -122,12 +121,11 @@ func (h *Harness) Run(ctx context.Context, c *Case, provider llm.Provider) (res 
 	}
 	r.cleanups = append(r.cleanups, func() { pluginMgr.StopAll() }) //nolint:errcheck
 
-	// 5. Daemon dependencies, mirroring cmd/nine/daemon.go.
-	ckpt, notif, notifAdd := runtime.NewStores(store)
-	supervisor := runtime.NewSupervisor(64)
-	supervisor.Attach(store)
-	assembler := selfmodel.New(store, h.Embedder, pluginMgr.ListRunning)
-
+	// 5. Assemble the daemon core — the same wiring cmd/nine/daemon.go uses, minus
+	//    the production-only bootstrap (resume, standing agents, self-reflection,
+	//    subscribers). The store, plugins, provider queue, and per-case knobs are
+	//    injected; the runner serializes runs because Assemble registers the
+	//    pursue stage handler over this run's store (a package global).
 	budget := h.ContextBudget
 	if budget == 0 {
 		budget = 100_000
@@ -138,74 +136,46 @@ func (h *Harness) Run(ctx context.Context, c *Case, provider llm.Provider) (res 
 		hitl = runtime.NewHITL(store, 2*time.Minute)
 	}
 
-	builder := runtime.NewAgentBuilder(runtime.AgentBuilderConfig{
-		Loop: runtime.LoopConfig{
-			Mgr:             pluginMgr,
-			Embedder:        h.Embedder,
-			Memory:          store,
-			ContextBudget:   budget,
-			SystemPrompt:    runtime.BuildSystemPrompt(false),
-			Assembler:       assembler,
-			RelatedSessions: h.Embedder != nil,
-			SurfaceMemories: h.Embedder != nil,
-		},
-		InitialQueue: llm.NewQueue(provider, 4),
-		NotifAdd:     notifAdd,
-		NotifyUser: func(agentID, text string) {
-			store.UserNotificationCreate(memory.NewID(), agentID, text) //nolint:errcheck
-		},
-		Sup:                supervisor,
-		TaskTimeoutSeconds: c.TimeoutSecs,
-		HITL:               hitl,
-		DefaultLeafRole:    "executor",
-	})
-
 	// Force the case's role by overriding the resolved params before delegating
 	// to the production factory. The daemon otherwise derives the role from the
 	// session's plan profile; a case declares the role it means to exercise.
 	forcedRole := c.Session.Role
-	factory := func(agentID string, p runtime.RoleParams) *agent.Loop {
-		if forcedRole != "" {
-			p.Role = forcedRole
+	roleFactory := func(inner runtime.LoopFactory) runtime.LoopFactory {
+		return func(agentID string, p runtime.RoleParams) *agent.Loop {
+			if forcedRole != "" {
+				p.Role = forcedRole
+			}
+			return inner(agentID, p)
 		}
-		return builder.BuildForRole(agentID, p)
 	}
 
-	// 6. Socket + daemon.
 	sock := filepath.Join(workspace, "d.sock")
-	daemon := runtime.New(sock, factory, ckpt, notif)
+	asm := runtime.Assemble(runtime.AssemblyConfig{
+		SocketPath:         sock,
+		Store:              store,
+		Plugins:            pluginMgr,
+		Embedder:           h.Embedder,
+		ContextBudget:      budget,
+		SystemPrompt:       runtime.BuildSystemPrompt(false),
+		RelatedSessions:    h.Embedder != nil,
+		SurfaceMemories:    h.Embedder != nil,
+		Queue:              llm.NewQueue(provider, 4),
+		TaskTimeoutSeconds: c.TimeoutSecs,
+		HITL:               hitl,
+		DefaultLeafRole:    "executor",
+		MaxGoalSessions:    8,
+		RoleFactory:        roleFactory,
+	})
+	daemon := asm.Daemon
+	supervisor := asm.Supervisor
 
-	sink := runtime.NewSQLEventSink(store, daemon.NotifySubscribers)
-	daemon.SetEventSink(sink)
 	// The sink is closed explicitly after the last turn (to drain the journal
 	// before reads); guard against a double close on teardown.
 	var sinkOnce sync.Once
-	closeSink := func() { sinkOnce.Do(func() { sink.Close() }) } //nolint:errcheck
+	closeSink := func() { sinkOnce.Do(func() { asm.EventSink.Close() }) } //nolint:errcheck
 	r.cleanups = append(r.cleanups, closeSink)
 
-	if hitl != nil {
-		hitl.SetEmit(daemon.EmitProgress)
-		daemon.ConfigureHITL(hitl)
-	}
-	daemon.SetSubAgentLister(builder.SubAgents)
-	daemon.SetQueueStatFn(builder.QueueDepth)
-	daemon.ConfigureMemory(store)
-	daemon.ConfigurePlugins(pluginMgr)
-	daemon.ConfigureSupervisor(supervisor)
-	daemon.ConfigurePlanStore(store)
-	daemon.SetMaxGoalSessions(8)
-
-	// goal_create spawns a background pursue session per new top-level goal
-	// (docs/goal-sessions.md). Registered per-run: the stage handler closes over
-	// this run's store, so concurrent runs would clobber it — the runner is
-	// sequential for this reason.
-	runtime.StageRegistry["pursue"] = func() runtime.StageHandler {
-		return runtime.NewPursueStage(store)
-	}
-	builder.SetGoalSessionSpawnFn(daemon.SpawnGoalSession)
-	builder.SetEmitProgressFn(daemon.EmitProgress)
-
-	// 7. Start the daemon and wait for the socket.
+	// 6. Start the daemon and wait for the socket.
 	dctx, dcancel := context.WithCancel(ctx)
 	go supervisor.Run(dctx)
 	go daemon.Start(dctx) //nolint:errcheck
@@ -214,7 +184,7 @@ func (h *Harness) Run(ctx context.Context, c *Case, provider llm.Provider) (res 
 		return nil, err
 	}
 
-	// 8. Drive the prompts on one conversation.
+	// 7. Drive the prompts on one conversation.
 	client, err := protocol.Connect(sock)
 	if err != nil {
 		return nil, err
@@ -239,7 +209,7 @@ func (h *Harness) Run(ctx context.Context, c *Case, provider llm.Provider) (res 
 	}
 	r.Answers = answers
 
-	// 9. Drain the journal, then read it back for grading.
+	// 8. Drain the journal, then read it back for grading.
 	closeSink()
 	events, err := store.SessionEventsByAgent(agentID)
 	if err != nil {
