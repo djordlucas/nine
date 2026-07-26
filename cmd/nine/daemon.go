@@ -11,7 +11,6 @@ import (
 	"nine/internal/memory"
 	"nine/internal/plugin"
 	"nine/internal/runtime"
-	"nine/internal/selfmodel"
 	"nine/internal/subscribers"
 )
 
@@ -40,8 +39,6 @@ func runDaemon() {
 	// skipped; the daemon still boots. Absent/empty dir is a no-op.
 	pluginManager.LoadUserPlugins(cfg.Plugins.UserDir)
 
-	// Initialize checkpoint and notification stores
-	checkpointStore, notifStore, notifAdd := runtime.NewStores(store)
 	embedder := embed.Build(cfg.Embeddings.Provider, cfg.Embeddings.Model, cfg.Embeddings.Endpoint)
 
 	// Seed built-in skills from the binary into the store (immutable; refreshed
@@ -57,15 +54,6 @@ func runDaemon() {
 		slog.Warn("seed user skills", "dir", cfg.Skills.UserDir, "err", err)
 	}
 
-	// The supervisor manages the execution of agent tasks, and provides a shared context for plugins to use for cancellation and timeouts.
-	// It journals its control-plane events durably and consumes them via a
-	// cursor-backed subscription, so reactions survive a restart (docs/event-log.md §8a).
-	supervisor := runtime.NewSupervisor(64)
-	supervisor.Attach(store)
-
-	// Initialize the self-model assembler with a callback to get the current plugin list.
-	assembler := selfmodel.New(store, embedder, pluginManager.ListRunning)
-
 	// Bootstrap the self-model with the current plugin list, so it can answer questions about them.
 	if err := runtime.BootstrapSelfKV(store, pluginManager.ListRunning()); err != nil {
 		slog.Error("bootstrap self KV", "err", err)
@@ -79,12 +67,6 @@ func runDaemon() {
 	}
 	if err := runtime.BootstrapSelfReflection(store, 2*time.Minute); err != nil {
 		slog.Error("bootstrap self-reflection session", "err", err)
-	}
-
-	// Register the pursue stage handler (docs/goal-sessions.md): each
-	// top-level goal gets its own background session running this stage.
-	runtime.StageRegistry["pursue"] = func() runtime.StageHandler {
-		return runtime.NewPursueStage(store)
 	}
 
 	// Scrub old workflows on startup, to prevent unbounded growth of the workflow store.
@@ -111,29 +93,23 @@ func runDaemon() {
 		slog.Warn("expire stale human requests", "err", err)
 	}
 
-	// Build the agent builder with all dependencies, and start the daemon.
-	agentBuilder := runtime.NewAgentBuilder(runtime.AgentBuilderConfig{
-		Loop: runtime.LoopConfig{
-			Mgr:           pluginManager,
-			Embedder:      embedder,
-			Memory:        store,
-			ContextBudget: cfg.ContextBudget(),
-			SystemPrompt:  runtime.BuildSystemPrompt(browserPlug != nil),
-			Assembler:     assembler,
-			// Pull-surface related prior sessions on later turns only when the
-			// out-of-band indexer that populates the store is enabled.
-			RelatedSessions: cfg.Daemon.RelatedSessionsIndexEnabled(),
-			// Index and pull-surface stored key-value memories relevant to the turn.
-			SurfaceMemories: cfg.Memory.SurfaceMemoriesEnabled(),
-		},
-		InitialQueue: cfg.BuildQueue(),
-		NotifAdd:     notifAdd,
-		NotifyUser: func(agentID, text string) {
-			if err := store.UserNotificationCreate(memory.NewID(), agentID, text); err != nil {
-				slog.Warn("post user notification", "agent_id", agentID, "err", err)
-			}
-		},
-		Sup:                supervisor,
+	// Build and wire the daemon core (stores, supervisor, self-model, agent
+	// builder, daemon, event sink) shared with the eval harness. Production-only
+	// bootstrap — subscribers, standing agents, resume, instance name — is layered
+	// on below against the returned daemon (docs/evals.md §5).
+	asm := runtime.Assemble(runtime.AssemblyConfig{
+		SocketPath:    cfg.SocketPath(),
+		Store:         store,
+		Plugins:       pluginManager,
+		Embedder:      embedder,
+		ContextBudget: cfg.ContextBudget(),
+		SystemPrompt:  runtime.BuildSystemPrompt(browserPlug != nil),
+		// Pull-surface related prior sessions only when the out-of-band indexer
+		// that populates the store is enabled.
+		RelatedSessions: cfg.Daemon.RelatedSessionsIndexEnabled(),
+		// Index and pull-surface stored key-value memories relevant to the turn.
+		SurfaceMemories:    cfg.Memory.SurfaceMemoriesEnabled(),
+		Queue:              cfg.BuildQueue(),
 		TaskTimeoutSeconds: cfg.Daemon.TaskTimeoutSeconds,
 		HITL:               hitl,
 		ApprovalTools:      cfg.HITL.RequireApproval,
@@ -141,41 +117,16 @@ func runDaemon() {
 		PlanMode:           cfg.Planning.Mode(),
 		DefaultLeafRole:    cfg.Roles.DefaultLeaf,
 		MaxDelegationDepth: cfg.Roles.MaxDelegationDepth,
+		MaxGoalSessions:    cfg.Daemon.MaxGoalSessions,
 	})
-
-	// Wire up the runtime with the agent builder, stores, and plugins. The
-	// daemon resolves each session's role from its plan profile and passes it
-	// to the factory (docs/roles.md §6).
-	daemon := runtime.New(cfg.SocketPath(), agentBuilder.BuildForRole, checkpointStore, notifStore)
-
-	// Durable session-event journal (docs/event-log.md): every new session
-	// worker writes its full execution trajectory — turn boundaries, exact LLM
-	// request/response, tool I/O — through this async batched sink.
-	eventSink := runtime.NewSQLEventSink(store, daemon.NotifySubscribers)
-	defer eventSink.Close() //nolint:errcheck // best-effort drain on shutdown
-	daemon.SetEventSink(eventSink)
-
-	// ask_human emits questions onto the asking session's progress stream;
-	// the daemon resolves session interactivity for HITL on attach.
-	hitl.SetEmit(daemon.EmitProgress)
-	daemon.ConfigureHITL(hitl)
-
-	// The self-model needs to be able to list plugins for reflection and question-answering, so we provide it with a callback that returns the current plugin list.
-	// Sub-agents are a special case since they're not real plugins, but we still want them to be discoverable and show up in the self-model.
-	daemon.SetSubAgentLister(agentBuilder.SubAgents)
-	daemon.SetQueueStatFn(agentBuilder.QueueDepth)
-
-	// Wire the plugins with the daemon, so they can be used in agents and show up in the self-model.
-	daemon.ConfigureMemory(store)
-	daemon.ConfigurePlugins(pluginManager)
-	daemon.ConfigureSupervisor(supervisor)
-	daemon.ConfigurePlanStore(store)
-	daemon.SetMaxGoalSessions(cfg.Daemon.MaxGoalSessions)
+	daemon := asm.Daemon
+	supervisor := asm.Supervisor
+	defer asm.EventSink.Close() //nolint:errcheck // best-effort drain on shutdown
 
 	// Out-of-band subscribers (docs/reactive-events.md): on by default, but a
 	// no-op without an embedder and never on the agent loop. Set
-	// related_sessions_index = false to disable. Must follow ConfigureMemory — a
-	// subscriber needs the store to read the journal.
+	// related_sessions_index = false to disable. Intentionally omitted from the
+	// shared assembly and the eval harness — it needs an embedder to be useful.
 	if cfg.Daemon.RelatedSessionsIndexEnabled() {
 		if embedder == nil {
 			slog.Warn("related_sessions_index enabled but no embedder configured; skipping")
@@ -183,15 +134,6 @@ func runDaemon() {
 			daemon.AddSubscriber(subscribers.NewRelatedIndexer(store, embedder))
 		}
 	}
-
-	// goal_create spawns a background pursue session for each new top-level
-	// goal (docs/goal-sessions.md); only depth-0 loops get this wired.
-	agentBuilder.SetGoalSessionSpawnFn(daemon.SpawnGoalSession)
-
-	// Sub-agent lifecycle events (run_agent/run_agents) stream to the
-	// spawning conversation's progress feed, so the TUI shows delegated work
-	// in flight instead of going silent until the tool call returns.
-	agentBuilder.SetEmitProgressFn(daemon.EmitProgress)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
