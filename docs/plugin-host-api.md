@@ -3,9 +3,10 @@
 - **Status:** Proposed (design note). Nothing here is built yet.
 - **Date:** 2026-07-25.
 - **Motivation:** let a running plugin **call back into its Nine instance** — to
-  read memory on demand and to report events (e.g. "the long job finished") —
-  over an authenticated, capability-scoped channel. Today the transport is
-  strictly one-directional (daemon → plugin); there is no way back.
+  read memory on demand, to report events (e.g. "the long job finished"), and to
+  persist and reuse **its own** working data — over an authenticated,
+  capability-scoped channel. Today the transport is strictly one-directional
+  (daemon → plugin); there is no way back.
 - **Depends on:** the plugin HTTP-over-Unix-socket transport
   (`docs/plugins-http-transport.md`), the memory store (`internal/memory`,
   `spec/contracts/memory-store.md`), the notification feed
@@ -24,12 +25,16 @@ daemon becomes the server, the plugin the client. Every call carries a
 **per-plugin capability token** handed to the plugin at spawn; the daemon
 enforces a **default-deny, config-declared** grant set keyed to that token.
 
-Ship the two capabilities the real use cases need and **not** the dangerous one:
+Ship the capabilities the real use cases need, and split write by **who reads it
+back** (§6) rather than banning it outright:
 
 - `host.memory.get` / `host.memory.list` — **read**, namespace-scoped.
 - `host.notify` — inject a notification / event (the "I'm done" path).
-- `host.memory.set` — **write**, namespace-scoped — is deferred. Neither
-  motivating use case needs it, and it is the primary security hazard (see §6).
+- `host.memory.set` — **write**, namespace-scoped. Safe and useful when a plugin
+  writes to its **own** namespace as private state it reads back itself (§3 case
+  C); hazardous only when the written data reaches the *agent's* trusted context
+  (§6). So write ships for plugin-private storage and stays walled off from
+  agent-facing stores.
 
 Keep this **entirely separate** from the tool-output overflow-spill idea (§2).
 
@@ -57,8 +62,9 @@ about the reverse channel.
 |---|---|---|
 | A security plugin, notified of a CVE out-of-band, reads a memory key to get scan context | **pull**, read-only | `host.memory.get` (scoped read) |
 | A long-running process reports "I'm done" | **push**, event | `host.notify` (not a memory write) |
+| A plugin persists and reuses **its own** state across calls/restarts — scan history, cursors, last-seen timestamps, cached lookups | **pull + push**, private | `host.memory.set` / `host.memory.get` on the plugin's own namespace |
 
-The second case is the important tell. **"I'm done" is an event, not a memory
+The second case is an important tell. **"I'm done" is an event, not a memory
 mutation.** Nine already has the machinery to carry it: `NotificationCreate` /
 `UserNotificationCreate` (`internal/memory/notifications.go`,
 `user_notifications.go`) and the subscribable journal (`docs/reactive-events.md`).
@@ -66,9 +72,21 @@ Routing a completion signal through raw memory *writes* would bypass that and
 land untrusted text in a store later turns read as fact. So it goes through
 `host.notify` instead.
 
-The consequence is worth stating plainly: **neither motivating use case needs
-memory write.** Case A is read; case B is notify. That lets us defer the one
-capability with real blast radius (§6).
+The third case is the reason **not** to ban write outright. A plugin often needs
+somewhere durable to keep **its own** working data — a security scanner
+remembering which CVEs it has already processed, a poller keeping a cursor, a
+plugin caching an expensive lookup. Rather than every plugin inventing its own
+on-disk store (paths, format, cleanup), the host API can give it a scoped
+key-value space inside Nine's memory: `host.memory.set`/`get` confined to the
+plugin's own namespace. This data is **written and read back by the same plugin**
+and never surfaced to the agent as context — so it carries none of the injection
+risk that agent-facing writes do (§6).
+
+The consequence for the access model: it is not "read is safe, write is
+dangerous." It is **who reads the write back**. Plugin-private writes (case C) are
+safe; writes that land in agent-trusted stores are the hazard (§6). Case A is a
+scoped read, case B is a notify, case C is a scoped *private* write — and only
+writes into agent-facing memory are gated hardest.
 
 ---
 
@@ -141,7 +159,7 @@ the host API is on its own socket.
 | `host.memory.get`  | `memory: read`  | Single key, confined to the plugin's `memory_scope` prefix. |
 | `host.memory.list` | `memory: read`  | Keys under a prefix, itself confined to `memory_scope`. |
 | `host.notify`      | `notify: true`  | Injects a user/agent notification or a journal event. |
-| `host.memory.set`  | `memory: read-write` | **Deferred** (§6). Scoped write, tainted. |
+| `host.memory.set`  | `memory: read-write` | Scoped write. Safe into the plugin's **own private namespace** (§3 case C); writes into agent-facing memory are gated hardest and deferred (§6). |
 
 ---
 
@@ -166,23 +184,37 @@ notify       = true        # may inject notifications / events
 
 A plugin with no stanza gets nothing. `memory = "read"` without a `memory_scope`
 is a config error, not "read everything" — broad read must be an explicit,
-visible choice, never a default.
+visible choice, never a default. `memory_scope` is also the plugin's **private
+namespace** for case C: a `read-write` grant lets it read and write freely within
+that prefix and nowhere else.
 
-### The hazard: memory as an injection-laundering surface
+### The hazard is *who reads the write back*, not write itself
 
-The real risk is not a plugin reading a key. It is a plugin **writing**
-attacker-influenced text into a store that a later turn reads as trusted context
-— prompt injection laundered through Nine's own memory. That is why:
+The risk is not a plugin storing its own data. It is a plugin **writing
+attacker-influenced text into a store that a later *turn* reads as trusted
+context** — prompt injection laundered through Nine's own memory. The two are
+distinguished by who consumes the write:
 
-- **Write is deferred** and, when built, is namespace-scoped and confined to KV.
-- **Agent-trusted stores are never plugin-writable** — reflections, self-model,
-  goals, conversation history are off-limits to `host.memory.set` regardless of
-  grant. Only KV (and the notification path) are ever exposed.
-- **Plugin-written memory is tainted.** When write does land, entries carry an
-  origin marker (which plugin wrote them) so the context builder and the agent can
-  treat plugin-authored memory with appropriate skepticism rather than as
-  first-party fact. (Needs a small schema addition to KV — it has no origin column
-  today; see `internal/memory/kv.go`.)
+- **Plugin-private write (§3 case C) — safe.** A plugin writes under its own
+  `memory_scope` and reads it back itself; the agent's context builder never
+  surfaces that namespace. The content is never interpreted as first-party fact,
+  so its trustworthiness is irrelevant. This is a plain scoped key-value store and
+  ships as such.
+- **Agent-facing write — the hazard, deferred.** Writing anything the agent will
+  later read as context is the dangerous path. Guardrails, when it is ever built:
+  - **Agent-trusted stores are never plugin-writable** — reflections, self-model,
+    goals, conversation history are off-limits to `host.memory.set` regardless of
+    grant.
+  - **Plugin-written memory that can reach the agent is tainted** — entries carry
+    an origin marker (which plugin wrote them) so the context builder and agent
+    treat it with skepticism, not as first-party fact. (Needs a small schema
+    addition to KV — no origin column today; see `internal/memory/kv.go`.)
+
+The enforcement primitive is the same for both: writes are confined to the
+plugin's `memory_scope`, and the context builder is what decides whether a
+namespace is ever agent-visible. Keep plugin-private namespaces out of the
+context builder's reach and case C needs none of the taint machinery.
+
 - **Reads are scoped too.** `host.memory.get` outside the plugin's `memory_scope`
   is denied — a read grant is not a licence to read the agent's private state.
 
@@ -191,8 +223,12 @@ attacker-influenced text into a store that a later turn reads as trusted context
 - **`read`** (scoped) — covers use case A. Ships in phase 1.
 - **`notify`** — covers use case B via the existing notification/journal path,
   needing zero memory write. Ships in phase 1.
-- **`read-write`** (scoped, KV-only, tainted) — covers neither motivating case;
-  gated hardest and deferred until a concrete need justifies it.
+- **`read-write`** (scoped to a plugin-private namespace) — covers use case C:
+  plugins keeping their own durable state. Ships once the namespace is proven
+  invisible to the context builder.
+- **Agent-facing write** (a plugin writing into memory a turn reads as context) —
+  covers no motivating case; gated hardest, tainted, and deferred until a concrete
+  need justifies it.
 
 ---
 
@@ -216,12 +252,19 @@ Route to `NotificationCreate` / `UserNotificationCreate` (or a journal event, pe
 it does not interrupt a live turn). This closes use case B. Decide whether a
 report targets a specific conversation (param) or the instance-wide user feed.
 
-### Phase 4 (deferred) — `host.memory.set` (scoped write, tainted)
-Only if a concrete use case appears. Requires the KV origin/taint column (§6),
-the KV-only restriction, and a distinct `read-write` grant. Design its own note
-before building.
+### Phase 4 — `host.memory.set` for plugin-private storage (scoped write)
+Wire the write method to `memory.Store`, confined to the plugin's `memory_scope`,
+behind a `read-write` grant. This closes use case C — a plugin gets a durable
+key-value space of its own. The one prerequisite is confirming those namespaces
+are **invisible to the context builder** (so a private write can never reach the
+agent), which lets case C skip the taint machinery entirely.
 
-### Phase 5 — Docs & spec
+### Phase 5 (deferred) — agent-facing write (tainted)
+Letting a plugin write into memory the agent reads as context. Requires the KV
+origin/taint column (§6) and the never-over-trusted-stores restriction. Covers no
+current use case; design its own note before building.
+
+### Phase 6 — Docs & spec
 `spec/contracts/plugin.md` gains the host-API contract and the `ProtocolVersion`
 bump; `docs/plugins.md` documents the SDK helper and the config grants; this note
 flips from Proposed to Implemented. Run `/sync-nine`.
@@ -235,8 +278,13 @@ flips from Proposed to Implemented. Run `/sync-nine`.
 - **Default-deny, per-plugin config grants**, keyed to a per-process token.
 - **"I'm done" is a notification/event, not a memory write** — case B never
   touches write.
-- **Write deferred**; when built, KV-only, scoped, tainted, and never over
-  agent-trusted stores.
+- **Write is split by who reads it back.** Plugin-private writes (a plugin's own
+  scoped namespace, case C) ship as a plain key-value store; writes into
+  agent-facing memory are the hazard — tainted, never over trusted stores, and
+  deferred until a concrete need appears.
+- **`memory_scope` is both the read/write confinement prefix and the plugin's
+  private namespace**; the context builder must never surface plugin-private
+  namespaces.
 - **Independent of the tool-output spill** (§2), which is daemon-internal.
 
 ## 9. Open questions
