@@ -1,7 +1,35 @@
 # Tool Exposition: top-K ranking vs. on-demand lookup
 
-**Status:** Design note / not yet implemented. Captures the problem and the
-options for later. No code changes made.
+**Status:** **Option 3 (hybrid) is the live behavior.** The passive always-on
+top-K layer already existed (`selectTools`, `ToolTopN` = 20 tool defs; the
+assembler's top-3 skills); this change added the active layer on top —
+`tool_search` and `skill_search` let the model query the full catalogs mid-turn.
+The two coexist, which is the hybrid. The remaining open item is **Option 1**
+(re-rank the passive top-K against the evolving scratchpad, not just the opening
+query) — orthogonal to the hybrid: it makes the always-on layer fresher, whereas
+the search tools compensate for its staleness reactively. See "Implemented".
+
+## Implemented
+
+- `tool_search(query, top_k)` — `internal/agent/register_search.go`. Ranks the
+  loop's advertised (and therefore callable) tool set against a model-supplied
+  query, returning name + description + input schema. Registered per-loop in
+  `AgentBuilder.build` once the tool list and its vectors exist, over a closure
+  that returns exactly what this loop can call.
+- `skill_search(query, top_k)` — `internal/agent/register_skills.go`. Ranks the
+  `skills` vector namespace and returns name + description; the model then
+  `skill_read`s the one it wants. Gated on an embedder, like the memory
+  semantic tools.
+- Both are granted like `gap_report` — advertised, always-included, and surviving
+  `RestrictTo` regardless of the role allowlist — but only when an embedder is
+  present. Wired as shell-like capabilities in `internal/runtime/builder.go`.
+
+Still open: **Option 1** (re-rank the passive selection against the evolving
+scratchpad, not just the opening query) and the token-cost refinement of only
+advertising the search tools when the catalog actually exceeds `ToolTopN`.
+
+Spec reconciliation still owed (via `/sync-nine`): `spec/contracts/skills.md`
+R-SKILL.3 currently says "There is **no `skill_search` tool**" — now false.
 
 ## Problem
 

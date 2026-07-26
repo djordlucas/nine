@@ -123,8 +123,9 @@ Started at daemon boot from immutable image content:
 > backed by the store). This is a deliberate difference from older designs that shipped a
 > `memory` plugin.
 >
-> **Skills are also core-intercepted.** `skill_list/read/write/modify` are store-backed
-> core handlers with binary-embedded immutable defaults — see [`skills.md`](skills.md).
+> **Skills are also core-intercepted.** `skill_list/search/read/write/modify` are
+> store-backed core handlers with binary-embedded immutable defaults — see
+> [`skills.md`](skills.md).
 > This migration is **complete**: there is no `skills` subprocess and no `plugins/skills/`
 > directory; skills are seeded from the `nine` binary (`//go:embed`) into the `skills`
 > table on boot.
