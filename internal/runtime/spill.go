@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"log/slog"
 	"path"
@@ -54,41 +53,13 @@ func registerLargeOutput(d *agent.Dispatcher, store *memory.Store, agentID strin
 			return "", err
 		}
 		if !found {
-			return "", unresolvedRefError(store, p)
+			// Same wording the file tools use for an unreadable path, so a model
+			// learns one lesson about the two namespaces rather than two.
+			return "", agent.MissingStorePathError(store, p)
 		}
 		return content, nil
 	})
 }
-
-// unresolvedRefError explains a ref that did not resolve. Nine has two distinct
-// file namespaces — the workspace filesystem (shell, read_file, write_file) and
-// the memory file store (file_store, file_fetch, spilled output) — and a model
-// that confuses them gets no useful signal from a bare "not found". A live eval
-// showed exactly that failure: the model passed "/tmp/sequence.txt" to a ref
-// parameter and then thrashed. So the error names the namespace, rules out the
-// filesystem when the path looks like one, and lists what is actually available.
-func unresolvedRefError(store *memory.Store, p string) error {
-	msg := fmt.Sprintf("no file stored at %q in the memory file store", p)
-	if strings.HasPrefix(p, "/") || strings.HasPrefix(p, "./") || strings.HasPrefix(p, "~") {
-		msg += ". This argument takes a MEMORY FILE-STORE path (for example a spill/… path" +
-			" from a truncated tool result), not a filesystem path" +
-			"; a file written by shell or write_file is not in the store." +
-			" To put a filesystem file into the store, read it and pass its content"
-	}
-	if paths, err := store.FileList(""); err == nil && len(paths) > 0 {
-		if len(paths) > refHintLimit {
-			paths = paths[:refHintLimit]
-		}
-		msg += ". Stored paths available now: " + strings.Join(paths, ", ")
-	} else {
-		msg += ". The memory file store is currently empty"
-	}
-	return errors.New(msg)
-}
-
-// refHintLimit caps how many stored paths an unresolved-ref error lists, so the
-// hint stays a hint and cannot itself blow the output cap.
-const refHintLimit = 20
 
 // spillPath builds the file-store path for one spilled result:
 // spill/<agentID>/<tool>-<random>.txt. The random suffix (rather than a

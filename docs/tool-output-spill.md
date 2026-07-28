@@ -98,6 +98,31 @@ The banner therefore costs more than a terse one would (bounded by
 `maxPreviewOverhead`, 1024 characters). That is a deliberate trade: it is what
 makes the difference between a model retrieving the rest and guessing.
 
+### Empty results must explain themselves
+
+Nine has **two file namespaces** — the workspace filesystem (`shell`,
+`read_file`, `write_file`) and the memory file store (`file_store`,
+`file_fetch`, spilled output) — and the single most common model error is
+reaching into the wrong one. A spill is named `spill/…`, but the file it came
+from was `/work/audit.txt`, and models reach for the path they remember.
+
+So every "not there" answer names the namespace and lists what *is* stored
+(`MissingStorePathError`, `noSearchHitsMessage`), and says outright when a path
+looks like a filesystem path. This matters more than it sounds: `file_search_text`
+originally returned a bare `null` for no hits, and a live model (llama3.1:8b)
+responded by **inventing a value**. With the explanatory result the same model,
+on the same case, corrects itself in one step:
+
+```
+file_search_text {path: "/work/audit.txt"}    → No file is stored under … that
+                                                looks like a workspace path; this
+                                                tool searches the MEMORY FILE STORE
+file_search_text {path: "spill/…"}            → [{"snippet": "…pangolin-count=8321…"}]
+```
+
+A silent empty result is not a neutral outcome — it is an invitation to
+hallucinate.
+
 Slicing is rune-safe at both ends — the previous `output[:maxChars]` could split
 a multi-byte character and hand the model invalid UTF-8.
 
