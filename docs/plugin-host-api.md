@@ -47,12 +47,19 @@ into memory and returning the model a key. **They are independent, and coupling
 them is a mistake.**
 
 The output cap lives in the daemon's dispatcher (`internal/agent/dispatcher.go`,
-`capOutput`, `maxOutputTokens = 2048` ≈ 8192 chars). At that point the daemon
-**already holds the full output** and direct access to `memory.Store` — so the
-spill is a purely daemon-internal interception. It needs no reverse channel, no
-plugin involvement, and no access-control model. It is a smaller, separate piece
-of work and should be designed and shipped on its own. This document is only
-about the reverse channel.
+`capOrSpill`, `DefaultMaxOutputTokens = 2048` ≈ 8192 chars). At that point the
+daemon **already holds the full output** and direct access to `memory.Store` — so
+the spill is a purely daemon-internal interception. It needs no reverse channel,
+no plugin involvement, and no access-control model. It is a smaller, separate
+piece of work and should be designed and shipped on its own. This document is
+only about the reverse channel.
+
+**Update (2026-07-28): that call held, and the spill shipped separately** — see
+[`tool-output-spill.md`](tool-output-spill.md). The two features touch at exactly
+one point: the deferred phase-4 `host.memory.set` (§7) would let a plugin write a
+large payload straight to the store instead of returning it and having the daemon
+spill it. That is a socket-throughput optimization on top of a working feature,
+not a dependency in either direction.
 
 ---
 

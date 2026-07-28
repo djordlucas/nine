@@ -40,19 +40,21 @@ type AssemblyConfig struct {
 	Embedder   embed.Embedder
 
 	// Loop / builder behavior.
-	ContextBudget      int
-	SystemPrompt       string
-	RelatedSessions    bool
-	SurfaceMemories    bool
-	Queue              *llm.Queue
-	TaskTimeoutSeconds int
-	HITL               *HITL
-	ApprovalTools      []string
-	PlanApproval       string
-	PlanMode           string
-	DefaultLeafRole    string
-	MaxDelegationDepth int
-	MaxGoalSessions    int
+	ContextBudget   int
+	SystemPrompt    string
+	RelatedSessions bool
+	SurfaceMemories bool
+	// MaxToolOutputTokens mirrors [tools] max_output_tokens; 0 keeps the default.
+	MaxToolOutputTokens int
+	Queue               *llm.Queue
+	TaskTimeoutSeconds  int
+	HITL                *HITL
+	ApprovalTools       []string
+	PlanApproval        string
+	PlanMode            string
+	DefaultLeafRole     string
+	MaxDelegationDepth  int
+	MaxGoalSessions     int
 
 	// RoleFactory optionally decorates the builder's BuildForRole before it is
 	// handed to the daemon. Production passes nil (BuildForRole is used as-is);
@@ -74,14 +76,15 @@ func Assemble(c AssemblyConfig) *Assembly {
 
 	builder := NewAgentBuilder(AgentBuilderConfig{
 		Loop: LoopConfig{
-			Mgr:             c.Plugins,
-			Embedder:        c.Embedder,
-			Memory:          c.Store,
-			ContextBudget:   c.ContextBudget,
-			SystemPrompt:    c.SystemPrompt,
-			Assembler:       assembler,
-			RelatedSessions: c.RelatedSessions,
-			SurfaceMemories: c.SurfaceMemories,
+			Mgr:                 c.Plugins,
+			Embedder:            c.Embedder,
+			Memory:              c.Store,
+			ContextBudget:       c.ContextBudget,
+			SystemPrompt:        c.SystemPrompt,
+			Assembler:           assembler,
+			RelatedSessions:     c.RelatedSessions,
+			SurfaceMemories:     c.SurfaceMemories,
+			MaxToolOutputTokens: c.MaxToolOutputTokens,
 		},
 		InitialQueue: c.Queue,
 		NotifAdd:     notifAdd,

@@ -99,6 +99,14 @@ func TestLiveMatrix(t *testing.T) {
 	if only := os.Getenv("NINE_EVAL_TIER"); only != "" {
 		cases = filterTier(cases, only)
 	}
+	// NINE_EVAL_CASES narrows to specific case ids — the fast loop when
+	// iterating on one case rather than running a whole tier.
+	if only := os.Getenv("NINE_EVAL_CASES"); only != "" {
+		cases = filterIDs(cases, splitModels(only))
+		if len(cases) == 0 {
+			t.Fatalf("NINE_EVAL_CASES=%q matched no cases", only)
+		}
+	}
 
 	suite := &runner.Suite{
 		Harness:     &runner.Harness{PluginBin: os.Getenv("NINE_PLUGINS_BIN"), Embedder: runner.EvalEmbedder()},
@@ -127,6 +135,21 @@ func splitModels(s string) []string {
 	for _, m := range strings.Split(s, ",") {
 		if m = strings.TrimSpace(m); m != "" {
 			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// filterIDs keeps only the cases whose id appears in ids.
+func filterIDs(cases []*runner.Case, ids []string) []*runner.Case {
+	want := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		want[id] = true
+	}
+	var out []*runner.Case
+	for _, c := range cases {
+		if want[c.ID] {
+			out = append(out, c)
 		}
 	}
 	return out

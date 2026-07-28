@@ -1,0 +1,37 @@
+id: tool-output-spill
+description: "A shell command produces far more output than the per-result cap; the daemon spills it to the file store and the model answers from the preview's tail."
+track: live
+tier: basic
+tags: [spill, shell, large-output]
+
+# `seq 1 20000` prints ~128 KB — well over the 2048-token (~8192-char) cap — so
+# the dispatcher must spill it. The marker is echoed LAST, so it survives only
+# via the tail half of the head+tail preview: this case fails against the old
+# head-only truncation and passes against the preview.
+#
+# The marker is a distinctive token rather than the final number, deliberately.
+# Asking for "the last number" makes the model find one integer among ~8000
+# newline-escaped integers in a single-line JSON blob — that grades numeric
+# attention, not spilling, and small models fail it even though the observation
+# demonstrably contains the answer (docs/tool-output-spill.md §8).
+prompts:
+  - "Use the shell to run `seq 1 20000; echo DONE-TOKEN-4b19`, then tell me the exact marker it printed at the very end."
+
+expect:
+  trajectory:
+    tools_all_of: [shell]
+    spills: { min: 1 }
+    max_turns: 1
+    no_stall: true
+  side_effects:
+    # The full output really is in the store, not just the preview: 10000 sits
+    # in the elided middle, so it can only be there if the whole result spilled.
+    stored_files:
+      "spill/": { contains: "10000" }
+  answer:
+    contains: ["DONE-TOKEN-4b19"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small
