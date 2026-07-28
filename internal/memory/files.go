@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
+	"unicode/utf8"
 )
 
 // FileStore saves or replaces the file at path with content.
@@ -27,6 +29,78 @@ func (s *Store) FileFetch(path string) (string, bool, error) {
 		return "", false, err
 	}
 	return content, true, nil
+}
+
+// FileSlice is a windowed read of a stored file (docs/tool-output-spill.md).
+type FileSlice struct {
+	Content string `json:"content"`
+	Offset  int    `json:"offset"` // character offset the window starts at
+	Chars   int    `json:"chars"`  // characters actually returned
+	Total   int    `json:"total"`  // total characters in the file
+}
+
+// FileFetchRange returns a window of the file at path: limit characters
+// starting at character offset. It is how an agent reads back a large stored
+// file — a spilled tool output, typically — without pulling the whole thing
+// into context.
+//
+// Offsets and lengths are in **characters**, not bytes, so a window can never
+// split a multi-byte rune, and the slicing happens in Postgres so a huge file
+// is never materialized in the daemon. A negative offset clamps to 0; a
+// non-positive limit means "to the end of the file". An offset past the end
+// returns an empty window rather than an error, so a paging loop terminates
+// cleanly. Returns found=false if the path does not exist.
+func (s *Store) FileFetchRange(path string, offset, limit int) (FileSlice, bool, error) {
+	if offset < 0 {
+		offset = 0
+	}
+	var (
+		content string
+		total   int
+	)
+	// substr(text, start, count) is 1-based and character-oriented; length()
+	// on text likewise counts characters.
+	query := `SELECT substr(content, ?, ?), length(content) FROM files WHERE path = ?`
+	args := []any{offset + 1, limit, path}
+	if limit <= 0 {
+		query = `SELECT substr(content, ?), length(content) FROM files WHERE path = ?`
+		args = []any{offset + 1, path}
+	}
+	err := s.db.QueryRow(query, args...).Scan(&content, &total)
+	if err == sql.ErrNoRows {
+		return FileSlice{}, false, nil
+	}
+	if err != nil {
+		return FileSlice{}, false, err
+	}
+	return FileSlice{
+		Content: content,
+		Offset:  offset,
+		Chars:   utf8.RuneCountInString(content),
+		Total:   total,
+	}, true, nil
+}
+
+// FileDeleteOlderThan removes files under pathPrefix last stored more than
+// olderThan ago, returning how many rows it deleted. It is the retention sweep
+// for spilled tool output, which is per-session debris: without it the files
+// table grows without bound (docs/tool-output-spill.md §5). An empty prefix is
+// rejected — this must never be able to clear the whole store.
+func (s *Store) FileDeleteOlderThan(pathPrefix string, olderThan time.Duration) (int64, error) {
+	if pathPrefix == "" {
+		return 0, fmt.Errorf("file delete: a path prefix is required")
+	}
+	if olderThan <= 0 {
+		return 0, fmt.Errorf("file delete: age must be positive, got %s", olderThan)
+	}
+	cutoff := time.Now().Add(-olderThan)
+	res, err := s.db.Exec(
+		`DELETE FROM files WHERE path LIKE ? AND stored_at < ?`,
+		pathPrefix+"%", cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 // FileList returns paths with the given prefix, sorted. Pass "" for all.
@@ -62,20 +136,33 @@ type FileSearchResult struct {
 	Snippet string `json:"snippet"`
 }
 
-// FileSearchText runs a full-text search and returns up to limit results.
+// FileSearchText runs a full-text search over every stored file and returns up
+// to limit results.
 func (s *Store) FileSearchText(query string, limit int) ([]FileSearchResult, error) {
+	return s.FileSearchTextScoped(query, "", limit)
+}
+
+// FileSearchTextScoped is FileSearchText confined to paths under pathPrefix.
+// Passing an exact path narrows the search to a single file, which is how an
+// agent locates the relevant region of one large spilled output rather than
+// searching the whole store (docs/tool-output-spill.md §3). An empty prefix
+// searches everything.
+func (s *Store) FileSearchTextScoped(query, pathPrefix string, limit int) ([]FileSearchResult, error) {
 	if limit <= 0 {
 		limit = 10
 	}
+	// The path filter is an optional conjunct rather than a second query so the
+	// ranking and snippet extraction stay identical either way.
 	rows, err := s.db.Query(
 		`SELECT path,
 		        ts_headline('english', content, websearch_to_tsquery('english', ?),
 		                    'StartSel=[, StopSel=], MaxFragments=1, MaxWords=10, MinWords=1') AS snippet
 		 FROM files
 		 WHERE search_tsv @@ websearch_to_tsquery('english', ?)
+		   AND (? = '' OR path LIKE ? || '%')
 		 ORDER BY ts_rank(search_tsv, websearch_to_tsquery('english', ?)) DESC
 		 LIMIT ?`,
-		query, query, query, limit)
+		query, query, pathPrefix, pathPrefix, query, limit)
 	if err != nil {
 		return nil, fmt.Errorf("fts query: %w", err)
 	}
@@ -101,9 +188,10 @@ func (s *Store) FileListString(prefix string) (string, error) {
 	return strings.Join(paths, "\n"), nil
 }
 
-// FileSearchTextJSON returns FTS results as a JSON string (for LLM tool output).
-func (s *Store) FileSearchTextJSON(query string, limit int) (string, error) {
-	results, err := s.FileSearchText(query, limit)
+// FileSearchTextJSON returns FTS results as a JSON string (for LLM tool
+// output), optionally confined to paths under pathPrefix.
+func (s *Store) FileSearchTextJSON(query, pathPrefix string, limit int) (string, error) {
+	results, err := s.FileSearchTextScoped(query, pathPrefix, limit)
 	if err != nil {
 		return "", err
 	}

@@ -35,10 +35,12 @@ flowchart TD
     end
 
     subgraph Dispatcher["Dispatcher"]
+        REFS[expandRefs\nx-nine-ref args]
         HMAP[handlers map\ntool name to fn]
         HOOKS[post-call hooks]
-        CAP[capOutput\nmax 2048 tokens]
+        CAP[capOrSpill\nmax 2048 tokens\nover-cap spills to file store]
 
+        REFS --> HMAP
         HMAP --> HOOKS
         HOOKS --> CAP
     end
@@ -119,7 +121,7 @@ sequenceDiagram
 
 ## Dispatcher
 
-The `Dispatcher` is a registry of `handlers` (tool name → function). It routes every tool call, runs post-call hooks, and caps output at 2048 tokens (~8 000 chars).
+The `Dispatcher` is a registry of `handlers` (tool name → function). It routes every tool call, expands `x-nine-ref` arguments, runs post-call hooks, and caps output at 2048 tokens (~8 000 chars) — spilling anything larger to the file store and returning a head+tail preview naming the path ([tool-output-spill.md](tool-output-spill.md)).
 
 ### Tool Categories
 

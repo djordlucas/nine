@@ -1,0 +1,76 @@
+id: spill-read-back
+description: "The answer is buried in the MIDDLE of an over-cap tool output, so the model must read the spilled file back rather than rely on the preview."
+track: live
+tier: multi_step
+tags: [spill, files, search, large-output]
+
+# The retrieval half of the feature. Three design choices make this case
+# actually test that, and each was learned from a live run that gamed it:
+#
+#  1. A FIXTURE FILE, not a shell command. Asked to run an exact `seq` command,
+#     models rewrote it — redirecting half the output to a file — which moved
+#     the needle into the preview's tail and let them answer without retrieving.
+#     A model cannot rewrite the contents of a file it is told to read.
+#  2. A LOWERED CAP via session.config, so a 2.5 KB fixture is over-cap. The
+#     alternative (generating ~128 KB) makes every run slow and floods the
+#     observation with noise that small models drown in.
+#  3. SINGLE TURN. The loop clears the scratchpad each turn, so a spill path is
+#     addressable only inside the turn that produced it (docs/tool-output-spill.md
+#     §4). A two-turn version is unwinnable.
+#
+# With max_output_tokens=150 (600 chars) the preview shows ~400 chars of head
+# and ~200 of tail; pangolin-count sits near offset 1236 of 2518, so it appears
+# in neither. The ONLY way to answer is file_search_text or a windowed
+# file_fetch against the spill path named in the truncation banner.
+
+setup:
+  files:
+    /work/audit.txt: |
+      audit record 001 | region=eu-west-1 | status=nominal | checksum=0x0001ab | retained until 2027-01-01
+      audit record 002 | region=eu-west-1 | status=nominal | checksum=0x0002ab | retained until 2027-01-01
+      audit record 003 | region=eu-west-1 | status=nominal | checksum=0x0003ab | retained until 2027-01-01
+      audit record 004 | region=eu-west-1 | status=nominal | checksum=0x0004ab | retained until 2027-01-01
+      audit record 005 | region=eu-west-1 | status=nominal | checksum=0x0005ab | retained until 2027-01-01
+      audit record 006 | region=eu-west-1 | status=nominal | checksum=0x0006ab | retained until 2027-01-01
+      audit record 007 | region=eu-west-1 | status=nominal | checksum=0x0007ab | retained until 2027-01-01
+      audit record 008 | region=eu-west-1 | status=nominal | checksum=0x0008ab | retained until 2027-01-01
+      audit record 009 | region=eu-west-1 | status=nominal | checksum=0x0009ab | retained until 2027-01-01
+      audit record 010 | region=eu-west-1 | status=nominal | checksum=0x000aab | retained until 2027-01-01
+      audit record 011 | region=eu-west-1 | status=nominal | checksum=0x000bab | retained until 2027-01-01
+      audit record 012 | region=eu-west-1 | status=nominal | checksum=0x000cab | retained until 2027-01-01
+      pangolin-count=8321
+      audit record 013 | region=us-east-2 | status=nominal | checksum=0x000dcd | retained until 2027-01-01
+      audit record 014 | region=us-east-2 | status=nominal | checksum=0x000ecd | retained until 2027-01-01
+      audit record 015 | region=us-east-2 | status=nominal | checksum=0x000fcd | retained until 2027-01-01
+      audit record 016 | region=us-east-2 | status=nominal | checksum=0x0010cd | retained until 2027-01-01
+      audit record 017 | region=us-east-2 | status=nominal | checksum=0x0011cd | retained until 2027-01-01
+      audit record 018 | region=us-east-2 | status=nominal | checksum=0x0012cd | retained until 2027-01-01
+      audit record 019 | region=us-east-2 | status=nominal | checksum=0x0013cd | retained until 2027-01-01
+      audit record 020 | region=us-east-2 | status=nominal | checksum=0x0014cd | retained until 2027-01-01
+      audit record 021 | region=us-east-2 | status=nominal | checksum=0x0015cd | retained until 2027-01-01
+      audit record 022 | region=us-east-2 | status=nominal | checksum=0x0016cd | retained until 2027-01-01
+      audit record 023 | region=us-east-2 | status=nominal | checksum=0x0017cd | retained until 2027-01-01
+      audit record 024 | region=us-east-2 | status=nominal | checksum=0x0018cd | retained until 2027-01-01
+
+session:
+  config:
+    tools.max_output_tokens: 150
+
+prompts:
+  - "Read the file /work/audit.txt and tell me the pangolin-count value recorded in it."
+
+expect:
+  trajectory:
+    tools_all_of: [read_file]
+    # Either retrieval route is fine; the point is that one was necessary.
+    tools_any_of: [file_search_text, file_fetch]
+    spills: { min: 1 }
+    max_turns: 1
+    no_stall: true
+  answer:
+    contains: ["8321"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

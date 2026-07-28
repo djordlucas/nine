@@ -363,10 +363,12 @@ post-call hooks and a hard output cap.
 ```
 Dispatch(toolName, args):
    fn = handlers[toolName]            ← unknown tool → error
-   output, err = fn(ctx, args)
+   callArgs = expandRefs(args)        ← x-nine-ref params: path → stored content
+   output, err = fn(ctx, callArgs)
    if err: return err
    for h in hooks[toolName]: h(toolName, args, output)   ← e.g. embed a new skill
-   return capOutput(output)           ← truncate at maxOutputTokens (2048) × 4 chars
+   return capOrSpill(output)          ← over 2048 tokens × 4 chars: store it,
+                                        return a head+tail preview + the path
 ```
 
 Tools come in two flavors, both appearing in the same LLM tool list:

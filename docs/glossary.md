@@ -38,8 +38,21 @@ priority than background work but lower than active conversations. See
 **Tool Dispatcher (`internal/agent/dispatcher.go`)** — Routes each tool call
 to its registered handler: plugin tools via `plugin.call`, core-intercepted
 tools in-process. Fires post-call hooks on success and caps every result at
-~2048 tokens. Handlers are registered at loop-build time via `RegisterPlugin`
-and the `Register*` functions. See [Agent Loop § Dispatcher](agent-loop.md#dispatcher).
+~2048 tokens, spilling larger output to the file store
+([tool-output-spill.md](tool-output-spill.md)). Handlers are registered at
+loop-build time via `RegisterPlugin` and the `Register*` functions.
+See [Agent Loop § Dispatcher](agent-loop.md#dispatcher).
+
+**Spill (`spill/<agent-id>/…`)** — A tool result too large for the output cap,
+written whole to the memory file store and replaced in the model's context by a
+head+tail preview naming the path. The namespace is daemon-owned: `file_store`
+cannot write to it and nothing in it is embedded, so untrusted tool output can
+never be pull-surfaced into a later turn as fact.
+
+**Reference argument (`x-nine-ref`)** — An input property a tool declares as
+carrying a file-store *path* rather than a value. The daemon substitutes the
+stored content before the call, so a large payload moves between tools without
+passing through the model's context.
 
 **Plugin Manager (`internal/plugin/manager.go`)** — Spawns plugin
 subprocesses, calls `plugin.describe`, and registers their tools with the

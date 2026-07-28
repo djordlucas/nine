@@ -90,6 +90,38 @@ func (g *grader) gradeSideEffects() {
 		}
 	}
 
+	// stored_files is keyed by a path prefix and passes when SOME file under it
+	// matches, because a spill path carries an unpredictable random suffix.
+	for prefix, m := range se.StoredFiles {
+		paths, err := store.FileList(prefix)
+		if err != nil {
+			g.fail("side_effect stored_file %s: %v", prefix, err)
+			continue
+		}
+		if len(paths) == 0 {
+			g.fail("side_effect stored_file %s: no stored file under that prefix", prefix)
+			continue
+		}
+		matched := false
+		var why string
+		for _, p := range paths {
+			content, found, err := store.FileFetch(p)
+			if err != nil || !found {
+				continue
+			}
+			if reason, ok := m.match(content); ok {
+				matched = true
+				break
+			} else {
+				why = reason
+			}
+		}
+		if !matched {
+			g.fail("side_effect stored_file %s: none of %d file(s) matched: %s",
+				prefix, len(paths), why)
+		}
+	}
+
 	for key, m := range se.KV {
 		val, ok, err := store.Get(key)
 		if err != nil {
@@ -220,6 +252,10 @@ func (g *grader) gradeTrajectory() {
 	if t.NoStall && tr.stalled {
 		g.fail("trajectory no_stall: a turn ended with a stall")
 	}
+	if t.Spills != nil && tr.spills < t.Spills.Min {
+		g.fail("trajectory spills: %d tool result(s) spilled, want >= %d",
+			tr.spills, t.Spills.Min)
+	}
 	if t.GapReport != nil {
 		if *t.GapReport && !tr.gapReported {
 			g.fail("trajectory gap_report: expected a gap_report, none fired")
@@ -339,6 +375,7 @@ type trace struct {
 	stalled     bool            // any turn_end.error == "stall"
 	gapReported bool            // gap_report tool_start (or supervisor gap)
 	subAgents   int             // spawned sub-agents (see subAgents accounting below)
+	spills      int             // tool_end events whose output was spilled to the file store
 }
 
 func newTrace(events []memory.SessionEvent) *trace {
@@ -388,6 +425,14 @@ func newTrace(events []memory.SessionEvent) *trace {
 				fromCalls++
 			case "run_agents":
 				fromCalls += countTasks(p.Input)
+			}
+		case "tool_end":
+			var p struct {
+				SpillPath string `json:"spill_path"`
+			}
+			_ = json.Unmarshal(e.Payload, &p)
+			if p.SpillPath != "" {
+				t.spills++
 			}
 		case "llm_request":
 			var p struct {

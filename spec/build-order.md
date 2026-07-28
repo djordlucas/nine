@@ -137,7 +137,10 @@ are never dropped.
 - The dispatcher → [`contracts/dispatcher.md`](contracts/dispatcher.md): a name→handler
   map (empty at construction), post-call hooks, and the 2048-token output cap.
   Core-intercepted handlers are added by the `Register*` functions at startup; an
-  unregistered tool dispatches as `unknown tool`.
+  unregistered tool dispatches as `unknown tool`. The large-output paths (spilling an
+  over-cap result to the store, R-DISP.2; expanding `x-nine-ref` arguments, R-DISP.7)
+  are additive — the dispatcher works without a spill sink or ref resolver registered,
+  so they can be deferred until the memory store exists.
 - The loop → [`contracts/agent-loop.md`](contracts/agent-loop.md): `Run(ctx, text)`
   embeds the query once, assembles context, submits to the queue, and either returns a
   final answer (no tool calls → clear scratchpad, fold into history) or dispatches each

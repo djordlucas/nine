@@ -209,3 +209,52 @@ func TestPlanApprovalMode(t *testing.T) {
 		t.Errorf("explicit = %q, want off", got)
 	}
 }
+
+// TestToolsMaxOutputTokens covers the dispatcher output-cap knob
+// (docs/tool-output-spill.md). It lives under [tools] rather than [agent]
+// because [[agent]] is already the standing-agent table array — a regression
+// here would silently move the key.
+func TestToolsMaxOutputTokens(t *testing.T) {
+	f, err := os.CreateTemp("", "nine-*.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(f.Name())
+	if _, err := f.WriteString("[tools]\nmax_output_tokens = 8192\n\n[[agent]]\nid = \"watcher\"\ndescription = \"watch things\"\n"); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	cfg, err := config.Load(f.Name())
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Tools.MaxOutputTokens != 8192 {
+		t.Errorf("Tools.MaxOutputTokens = %d, want 8192", cfg.Tools.MaxOutputTokens)
+	}
+	// [tools] must not disturb the [[agent]] table array.
+	if len(cfg.Agents) != 1 || cfg.Agents[0].ID != "watcher" {
+		t.Errorf("Agents = %+v, want the one standing agent to survive alongside [tools]", cfg.Agents)
+	}
+}
+
+// An unset cap stays zero so the dispatcher keeps agent.DefaultMaxOutputTokens.
+func TestToolsMaxOutputTokensUnset(t *testing.T) {
+	f, err := os.CreateTemp("", "nine-*.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(f.Name())
+	if _, err := f.WriteString("[llm]\nprovider = \"ollama\"\n"); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	cfg, err := config.Load(f.Name())
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Tools.MaxOutputTokens != 0 {
+		t.Errorf("Tools.MaxOutputTokens = %d, want 0 (meaning: use the default)", cfg.Tools.MaxOutputTokens)
+	}
+}
