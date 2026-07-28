@@ -1,0 +1,68 @@
+id: spill-ref-passing
+description: "A large tool output is handed to a second tool by reference (file_store's content_ref), so the payload never passes through the model's context."
+track: live
+tier: multi_step
+tags: [spill, refs, files, large-output]
+
+# The point of the ref path: the model routes the payload by naming a handle,
+# never seeing the bytes. Graded on the side-effect — the archived copy must
+# contain the needle from the ELIDED MIDDLE of the output, which the model never
+# saw. If it had retyped the preview instead, the needle would be absent.
+#
+# Same anti-gaming design as spill-read-back: a fixture file rather than a shell
+# command (models rewrite shell commands to redirect output, which dodges the
+# spill entirely), and a lowered cap so a 2.5 KB file is over-cap without
+# generating megabytes.
+
+setup:
+  files:
+    /work/audit.txt: |
+      audit record 001 | region=eu-west-1 | status=nominal | checksum=0x0001ab | retained until 2027-01-01
+      audit record 002 | region=eu-west-1 | status=nominal | checksum=0x0002ab | retained until 2027-01-01
+      audit record 003 | region=eu-west-1 | status=nominal | checksum=0x0003ab | retained until 2027-01-01
+      audit record 004 | region=eu-west-1 | status=nominal | checksum=0x0004ab | retained until 2027-01-01
+      audit record 005 | region=eu-west-1 | status=nominal | checksum=0x0005ab | retained until 2027-01-01
+      audit record 006 | region=eu-west-1 | status=nominal | checksum=0x0006ab | retained until 2027-01-01
+      audit record 007 | region=eu-west-1 | status=nominal | checksum=0x0007ab | retained until 2027-01-01
+      audit record 008 | region=eu-west-1 | status=nominal | checksum=0x0008ab | retained until 2027-01-01
+      audit record 009 | region=eu-west-1 | status=nominal | checksum=0x0009ab | retained until 2027-01-01
+      audit record 010 | region=eu-west-1 | status=nominal | checksum=0x000aab | retained until 2027-01-01
+      audit record 011 | region=eu-west-1 | status=nominal | checksum=0x000bab | retained until 2027-01-01
+      audit record 012 | region=eu-west-1 | status=nominal | checksum=0x000cab | retained until 2027-01-01
+      pangolin-count=8321
+      audit record 013 | region=us-east-2 | status=nominal | checksum=0x000dcd | retained until 2027-01-01
+      audit record 014 | region=us-east-2 | status=nominal | checksum=0x000ecd | retained until 2027-01-01
+      audit record 015 | region=us-east-2 | status=nominal | checksum=0x000fcd | retained until 2027-01-01
+      audit record 016 | region=us-east-2 | status=nominal | checksum=0x0010cd | retained until 2027-01-01
+      audit record 017 | region=us-east-2 | status=nominal | checksum=0x0011cd | retained until 2027-01-01
+      audit record 018 | region=us-east-2 | status=nominal | checksum=0x0012cd | retained until 2027-01-01
+      audit record 019 | region=us-east-2 | status=nominal | checksum=0x0013cd | retained until 2027-01-01
+      audit record 020 | region=us-east-2 | status=nominal | checksum=0x0014cd | retained until 2027-01-01
+      audit record 021 | region=us-east-2 | status=nominal | checksum=0x0015cd | retained until 2027-01-01
+      audit record 022 | region=us-east-2 | status=nominal | checksum=0x0016cd | retained until 2027-01-01
+      audit record 023 | region=us-east-2 | status=nominal | checksum=0x0017cd | retained until 2027-01-01
+      audit record 024 | region=us-east-2 | status=nominal | checksum=0x0018cd | retained until 2027-01-01
+
+session:
+  config:
+    tools.max_output_tokens: 150
+
+prompts:
+  - "Read the file /work/audit.txt. Its contents are too large to fit in your context and will be stored for you automatically at a spill/... path named in the truncation notice. Without reading the rest yourself, archive the COMPLETE contents into the memory file store at path archive/audit.txt, by passing that spill/... path as file_store's content_ref argument."
+
+expect:
+  trajectory:
+    tools_all_of: [read_file, file_store]
+    spills: { min: 1 }
+    max_turns: 1
+    no_stall: true
+  side_effects:
+    stored_files:
+      # The needle is in the elided middle: present only if the daemon expanded
+      # the ref, not if the model copied what it could see.
+      "archive/audit.txt": { contains: "pangolin-count=8321" }
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: medium

@@ -174,7 +174,7 @@ The dispatcher routes tool calls from the agent to the appropriate handler:
   - `run_agent` / `run_agents` — sub-agent delegation
   - `workflow_*` / `goal_*` — multi-step plans and open-ended goals
 
-Tool output is capped at ~2048 tokens before being appended to the scratchpad. Longer output is truncated with a note indicating truncation.
+Tool output is capped at ~2048 tokens before being appended to the scratchpad. Longer output is **spilled** to the memory file store under `spill/<agent-id>/` and replaced with a head+tail preview naming the path, so the model can read the rest on demand (`file_fetch` with `offset`/`limit`) or hand it to another tool by reference. See [tool-output-spill.md](tool-output-spill.md).
 
 ---
 

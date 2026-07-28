@@ -202,6 +202,19 @@ plan_mode = "plan-only"
 #   on-risky   (default) prompt only when the plan intends a tool listed in
 #              [hitl].require_approval — one source of truth, no second list
 plan_approval = "on-risky"
+
+[tools]
+# max_output_tokens — the per-result tool output cap (docs/tool-output-spill.md).
+# A result larger than this is written whole to the memory file store under
+# spill/<agent-id>/ and replaced in context by a short preview naming the path,
+# which the agent can read back with file_fetch(offset, limit) or search with
+# file_search_text(query, path). Nothing is discarded, so raising this is rarely
+# necessary — do it only when models should routinely see more of a large result
+# inline. Default 2048 (~8192 characters).
+#
+# It is [tools] rather than [agent] because [[agent]] is already the
+# standing-agent table array.
+max_output_tokens = 2048
 ```
 
 ---

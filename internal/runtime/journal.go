@@ -51,13 +51,18 @@ type toolStartPayload struct {
 }
 
 type toolEndPayload struct {
-	Name       string          `json:"name"`
-	Input      json.RawMessage `json:"input,omitempty"`
-	Output     string          `json:"output"`
-	Truncated  bool            `json:"truncated,omitempty"`
-	DurationMs int64           `json:"duration_ms"`
-	Attempts   int             `json:"attempts"`
-	Error      string          `json:"error,omitempty"`
+	Name      string          `json:"name"`
+	Input     json.RawMessage `json:"input,omitempty"`
+	Output    string          `json:"output"`
+	Truncated bool            `json:"truncated,omitempty"`
+	// SpillPath / OutputChars describe an over-cap result: Output holds the
+	// preview the model saw, and these say where the full text lives and how
+	// long it was (docs/tool-output-spill.md §4).
+	SpillPath   string `json:"spill_path,omitempty"`
+	OutputChars int    `json:"output_chars,omitempty"`
+	DurationMs  int64  `json:"duration_ms"`
+	Attempts    int    `json:"attempts"`
+	Error       string `json:"error,omitempty"`
 }
 
 type contextPayload struct {
@@ -163,12 +168,14 @@ func (w *AgentWorker) journalToolStart(turn int, name string, input json.RawMess
 // journalToolEnd records a tool_end for the tool most recently started this turn.
 func (w *AgentWorker) journalToolEnd(turn int, name string, input json.RawMessage, out agent.ToolOutcome) {
 	w.journal(turn, "tool_end", toolSpan(turn, w.toolN), llmSpan(turn, w.llmCallN), toolEndPayload{
-		Name:       name,
-		Input:      input,
-		Output:     out.Output,
-		Truncated:  out.Truncated,
-		DurationMs: out.DurationMs,
-		Attempts:   out.Attempts,
-		Error:      out.Err,
+		Name:        name,
+		Input:       input,
+		Output:      out.Output,
+		Truncated:   out.Truncated,
+		SpillPath:   out.SpillPath,
+		OutputChars: out.OutputChars,
+		DurationMs:  out.DurationMs,
+		Attempts:    out.Attempts,
+		Error:       out.Err,
 	})
 }

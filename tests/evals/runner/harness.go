@@ -42,6 +42,10 @@ type Harness struct {
 	BaseDSN string
 	// ContextBudget is the per-loop token budget (default 100_000).
 	ContextBudget int
+	// MaxToolOutputTokens mirrors [tools] max_output_tokens (production:
+	// cmd/nine/daemon.go). 0 keeps agent.DefaultMaxOutputTokens. A case can
+	// override it via session.config "tools.max_output_tokens".
+	MaxToolOutputTokens int
 }
 
 // RunResult is everything grading needs from one execution of a case: the final
@@ -151,20 +155,21 @@ func (h *Harness) Run(ctx context.Context, c *Case, provider llm.Provider) (res 
 
 	sock := filepath.Join(workspace, "d.sock")
 	asm := runtime.Assemble(runtime.AssemblyConfig{
-		SocketPath:         sock,
-		Store:              store,
-		Plugins:            pluginMgr,
-		Embedder:           h.Embedder,
-		ContextBudget:      budget,
-		SystemPrompt:       runtime.BuildSystemPrompt(false),
-		RelatedSessions:    h.Embedder != nil,
-		SurfaceMemories:    h.Embedder != nil,
-		Queue:              llm.NewQueue(provider, 4),
-		TaskTimeoutSeconds: c.TimeoutSecs,
-		HITL:               hitl,
-		DefaultLeafRole:    "executor",
-		MaxGoalSessions:    8,
-		RoleFactory:        roleFactory,
+		SocketPath:          sock,
+		Store:               store,
+		Plugins:             pluginMgr,
+		Embedder:            h.Embedder,
+		ContextBudget:       budget,
+		MaxToolOutputTokens: maxToolOutputTokens(h.MaxToolOutputTokens, c),
+		SystemPrompt:        runtime.BuildSystemPrompt(false),
+		RelatedSessions:     h.Embedder != nil,
+		SurfaceMemories:     h.Embedder != nil,
+		Queue:               llm.NewQueue(provider, 4),
+		TaskTimeoutSeconds:  c.TimeoutSecs,
+		HITL:                hitl,
+		DefaultLeafRole:     "executor",
+		MaxGoalSessions:     8,
+		RoleFactory:         roleFactory,
 	})
 	daemon := asm.Daemon
 	supervisor := asm.Supervisor
@@ -331,4 +336,25 @@ func waitForSocket(sock string, timeout time.Duration) error {
 		time.Sleep(10 * time.Millisecond)
 	}
 	return fmt.Errorf("daemon socket %s not ready after %v", sock, timeout)
+}
+
+// maxToolOutputTokens resolves the dispatcher's output cap for a run: the
+// case's `session.config` override if present, else the harness default (0 =
+// agent.DefaultMaxOutputTokens). Cases that exercise the large-output path use
+// it to make a modest tool result exceed the cap without generating megabytes
+// (docs/tool-output-spill.md).
+func maxToolOutputTokens(harnessDefault int, c *Case) int {
+	v, ok := c.Session.Config["tools.max_output_tokens"]
+	if !ok {
+		return harnessDefault
+	}
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	}
+	return harnessDefault
 }

@@ -39,14 +39,14 @@ var memoryToolDefs = []llm.ToolDef{
 	{
 		Name:        "file_store",
 		DisplayName: "File Store",
-		Description: "Store a file by path and content.",
-		InputSchema: json.RawMessage(`{"type":"object","required":["path","content"],"properties":{"path":{"type":"string"},"content":{"type":"string"}}}`),
+		Description: "Store a file by path and content, in the memory file store (separate from the workspace filesystem that shell and read_file use). To copy an already-stored file — a spilled tool output, typically — to a new path without reading it, pass content_ref instead of content.",
+		InputSchema: json.RawMessage(`{"type":"object","required":["path"],"properties":{"path":{"type":"string"},"content":{"type":"string"},"content_ref":{"type":"string","x-nine-ref":true,"description":"A MEMORY FILE-STORE path whose content to store at path, e.g. a spill/... path from a truncated tool result. NOT a filesystem path: a file created by shell or write_file is not in the store. Used instead of content; the data never passes through your context."}}}`),
 	},
 	{
 		Name:        "file_fetch",
 		DisplayName: "File Fetch",
-		Description: "Fetch a stored file by path.",
-		InputSchema: json.RawMessage(`{"type":"object","required":["path"],"properties":{"path":{"type":"string"}}}`),
+		Description: "Fetch a stored file by path. For a large file, read it in windows with offset and limit rather than all at once — an over-large result is capped and spilled again.",
+		InputSchema: json.RawMessage(`{"type":"object","required":["path"],"properties":{"path":{"type":"string"},"offset":{"type":"integer","description":"Character offset to start reading at (default 0)."},"limit":{"type":"integer","description":"Maximum characters to return; omit or 0 for the whole file."}}}`),
 	},
 	{
 		Name:        "file_list",
@@ -57,8 +57,8 @@ var memoryToolDefs = []llm.ToolDef{
 	{
 		Name:        "file_search_text",
 		DisplayName: "File Search",
-		Description: "Full-text search over stored file content.",
-		InputSchema: json.RawMessage(`{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"limit":{"type":"integer"}}}`),
+		Description: "Full-text search over stored file content. Pass path to search inside one file (or one directory prefix) — the way to find the relevant region of a large spilled tool output.",
+		InputSchema: json.RawMessage(`{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"path":{"type":"string","description":"Restrict the search to paths starting with this prefix; omit to search all files."},"limit":{"type":"integer"}}}`),
 	},
 	{
 		Name:        "memory_embed",
@@ -241,11 +241,21 @@ func RegisterMemoryTools(d *Dispatcher, store *memory.Store, embedder embed.Embe
 		var req struct {
 			Path    string `json:"path"`
 			Content string `json:"content"`
+			// ContentRef arrives already expanded: the dispatcher replaced the
+			// path the model supplied with the content stored there (refs.go).
+			ContentRef string `json:"content_ref"`
 		}
 		if err := json.Unmarshal(args, &req); err != nil {
 			return "", fmt.Errorf("file_store: %w", err)
 		}
-		if err := store.FileStore(req.Path, req.Content); err != nil {
+		if strings.HasPrefix(req.Path, SpillPathPrefix) {
+			return "", fmt.Errorf("file_store: %q is reserved for spilled tool output and is not writable; choose another path", req.Path)
+		}
+		content := req.Content
+		if content == "" && req.ContentRef != "" {
+			content = req.ContentRef
+		}
+		if err := store.FileStore(req.Path, content); err != nil {
 			return "", err
 		}
 		return "ok", nil
@@ -253,19 +263,37 @@ func RegisterMemoryTools(d *Dispatcher, store *memory.Store, embedder embed.Embe
 
 	d.handlers["file_fetch"] = func(_ context.Context, args json.RawMessage) (string, error) {
 		var req struct {
-			Path string `json:"path"`
+			Path   string `json:"path"`
+			Offset int    `json:"offset"`
+			Limit  int    `json:"limit"`
 		}
 		if err := json.Unmarshal(args, &req); err != nil {
 			return "", fmt.Errorf("file_fetch: %w", err)
 		}
-		content, found, err := store.FileFetch(req.Path)
+		// A plain whole-file fetch stays a plain string result; only a windowed
+		// read reports its position, which the model needs to page onwards.
+		if req.Offset <= 0 && req.Limit <= 0 {
+			content, found, err := store.FileFetch(req.Path)
+			if err != nil {
+				return "", err
+			}
+			if !found {
+				return "", fmt.Errorf("file not found: %s", req.Path)
+			}
+			return content, nil
+		}
+		slice, found, err := store.FileFetchRange(req.Path, req.Offset, req.Limit)
 		if err != nil {
 			return "", err
 		}
 		if !found {
 			return "", fmt.Errorf("file not found: %s", req.Path)
 		}
-		return content, nil
+		data, err := json.Marshal(slice)
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
 	}
 
 	d.handlers["file_list"] = func(_ context.Context, args json.RawMessage) (string, error) {
@@ -281,11 +309,12 @@ func RegisterMemoryTools(d *Dispatcher, store *memory.Store, embedder embed.Embe
 	d.handlers["file_search_text"] = func(_ context.Context, args json.RawMessage) (string, error) {
 		var req struct {
 			Query string `json:"query"`
+			Path  string `json:"path"`
 			Limit int    `json:"limit"`
 		}
 		if err := json.Unmarshal(args, &req); err != nil {
 			return "", fmt.Errorf("file_search_text: %w", err)
 		}
-		return store.FileSearchTextJSON(req.Query, req.Limit)
+		return store.FileSearchTextJSON(req.Query, req.Path, req.Limit)
 	}
 }

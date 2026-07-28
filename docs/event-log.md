@@ -237,7 +237,12 @@ captured anywhere durable):
   priority, `tokens_used`/`budget`, `llm_call_n`
 - **`llm_response`** — text, tool_calls, stop_reason
 - `tool_start` — name, input
-- `tool_end` — name, **output**, **truncated**, **duration_ms**, **error**, **retries**
+- `tool_end` — name, **output**, **truncated**, **spill_path**, **output_chars**,
+  **duration_ms**, **error**, **retries**. On an over-cap result `output` is the
+  preview the model saw, while `spill_path`/`output_chars` say where the full text
+  lives and how long it was — the journal stores the *pointer*, not the payload, since
+  the bytes are already in the file store (see
+  [tool-output-spill.md](tool-output-spill.md) §4)
 - `context_update` — used, budget
 - `sub_agent_start` / `sub_agent_end` — sub_id (as `span_id`), task, status, role, elapsed
 - `notify_user` / `goal_mutated` — audit of human-facing / goal-steering effects

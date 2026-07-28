@@ -145,11 +145,12 @@ How to use this file:
 | ID | Property | Observable check |
 |----|----------|------------------|
 | R-DISP.1 | Dispatch path | A name→handler map routes each tool call to its handler. |
-| R-DISP.2 | Output cap | Tool output is capped at 2048 tokens. |
+| R-DISP.2 | Output cap and spill | Tool output is capped at 2048 tokens. Over-cap output is stored whole and replaced by a banner+head+tail preview naming the path; with no spill sink (or on sink failure) it is truncated instead, and the call still succeeds. |
 | R-DISP.3 | Tool taxonomy | Plugin vs core-intercepted tools are classified as specified. |
 | R-DISP.4 | Wiring model | `Dispatcher.New()` is empty; `Register*` add handlers at startup (only a role's allowed tools); an unregistered tool dispatches as `unknown tool`. |
 | R-DISP.5 | Post-call hooks | A registered post-call hook fires after the matching tool returns. |
 | R-DISP.6 | Role-aware registration (I6) | Registration follows the role's Delegates/SpawnsGoals/allowlist gates; delegation tools are absent once depthGuard is exhausted. |
+| R-DISP.7 | Reference arguments | A property marked `x-nine-ref` is resolved from the file store before dispatch; unmarked properties are never expanded; an unresolvable path fails the call; approval gates and hooks see the unexpanded arguments. |
 
 ---
 

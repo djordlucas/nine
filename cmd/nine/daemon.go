@@ -108,16 +108,17 @@ func runDaemon() {
 		// that populates the store is enabled.
 		RelatedSessions: cfg.Daemon.RelatedSessionsIndexEnabled(),
 		// Index and pull-surface stored key-value memories relevant to the turn.
-		SurfaceMemories:    cfg.Memory.SurfaceMemoriesEnabled(),
-		Queue:              cfg.BuildQueue(),
-		TaskTimeoutSeconds: cfg.Daemon.TaskTimeoutSeconds,
-		HITL:               hitl,
-		ApprovalTools:      cfg.HITL.RequireApproval,
-		PlanApproval:       cfg.Planning.PlanApprovalMode(),
-		PlanMode:           cfg.Planning.Mode(),
-		DefaultLeafRole:    cfg.Roles.DefaultLeaf,
-		MaxDelegationDepth: cfg.Roles.MaxDelegationDepth,
-		MaxGoalSessions:    cfg.Daemon.MaxGoalSessions,
+		SurfaceMemories:     cfg.Memory.SurfaceMemoriesEnabled(),
+		MaxToolOutputTokens: cfg.Tools.MaxOutputTokens,
+		Queue:               cfg.BuildQueue(),
+		TaskTimeoutSeconds:  cfg.Daemon.TaskTimeoutSeconds,
+		HITL:                hitl,
+		ApprovalTools:       cfg.HITL.RequireApproval,
+		PlanApproval:        cfg.Planning.PlanApprovalMode(),
+		PlanMode:            cfg.Planning.Mode(),
+		DefaultLeafRole:     cfg.Roles.DefaultLeaf,
+		MaxDelegationDepth:  cfg.Roles.MaxDelegationDepth,
+		MaxGoalSessions:     cfg.Daemon.MaxGoalSessions,
 	})
 	daemon := asm.Daemon
 	supervisor := asm.Supervisor
@@ -145,6 +146,11 @@ func runDaemon() {
 
 	// Start the agent builder's main loop in the background, so it can manage agents while the daemon is running.
 	go supervisor.Run(ctx)
+
+	// Spilled tool outputs are session debris: sweep the expired ones on boot
+	// and hourly thereafter so large results cannot grow the file store without
+	// bound (docs/tool-output-spill.md §5).
+	go runtime.RunSpillSweeper(ctx, store)
 
 	// Reconcile pre-defined agents declared in nine.toml: seed a config-owned
 	// goal + pursue shell for each, and bring existing ones' definitions in line

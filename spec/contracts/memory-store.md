@@ -34,7 +34,7 @@ additional operational tables to be agent-visible (R-MEM.4).
 | Table | Purpose | Access tier |
 |-------|---------|-------------|
 | `kv` | agent key-value memory | agent (tools) |
-| `files` | file content + generated `tsvector`/GIN full-text index | agent (tools) |
+| `files` | file content + generated `tsvector`/GIN full-text index; the `spill/` prefix is daemon-owned (R-MEM.9) | agent (tools) |
 | `vectors` | pgvector embeddings + `<=>` cosine query, namespaced (`skills`, `session-index`, agent namespaces) | mixed (see below) |
 | `skills` | skill records (name, description, tags, body, source) | mixed |
 | `conversations` | message history, scratchpad checkpoint, status, display name | daemon-private |
@@ -64,8 +64,9 @@ the dispatcher calls the embedder and then the store; see
 | Tool(s) | Store methods | Notes |
 |---------|---------------|-------|
 | `memory_get/set/delete/list` | `Get`, `Set`, `Delete`, `List(prefix)` | exact-key K/V; `List` is prefix-scan |
-| `file_store/fetch/list` | `FileStore`, `FileFetch`, `FileList(prefix)` | arbitrary content storage |
-| `file_search_text` | `FileSearchText(query, limit)` | Postgres full-text search (`websearch_to_tsquery` + `ts_rank`, highlighted via `ts_headline`) |
+| `file_store/fetch/list` | `FileStore`, `FileFetch`, `FileList(prefix)` | arbitrary content storage; `file_store` refuses the reserved `spill/` prefix |
+| `file_fetch` (windowed) | `FileFetchRange(path, offset, limit)` → `FileSlice{content, offset, chars, total}` | reads a window of a large file; offsets are **characters**, sliced in Postgres so the file is never materialized whole |
+| `file_search_text` | `FileSearchTextScoped(query, pathPrefix, limit)` | Postgres full-text search (`websearch_to_tsquery` + `ts_rank`, highlighted via `ts_headline`); an optional path prefix scopes the search to one file or directory |
 | `memory_embed` / `memory_query` | `VectorStore`, `VectorQuery(ns, vec, topK)` | **core-intercepted** |
 | `file_search_semantic` | `VectorQuery` over file chunks | **core-intercepted** |
 | `skill_*` | `SkillUpsert/Get/List/Delete`, `SkillNamesBySource` | see [`skills.md`](skills.md) |
@@ -89,6 +90,7 @@ tables, notifications, session plans, or reflections through a tool call.
 | HITL | `human_requests` / `interactive_sessions` state (see [`hitl.md`](hitl.md)) |
 | Event journal | `SessionEventsAppend`, `SessionEventsByAgent`, `SessionEventsAfter`, `SessionEventsScrub`, `LatestTurnResult` (see [`event-journal.md`](event-journal.md)) |
 | Subscriptions | `EventCursorGet/Set`, `RelatedSessionAdd`, `RelatedSessions` (see [`subscriptions.md`](subscriptions.md)) |
+| Spill retention | `FileDeleteOlderThan(pathPrefix, age)` — the sweep for spilled tool output. **MUST** reject an empty prefix and a non-positive age, so it can never clear the store (see [`../../docs/tool-output-spill.md`](../../docs/tool-output-spill.md) §6) |
 
 > The `goal_*` and `workflow_*` tools *appear* in the agent's tool list, but they are
 > **core-intercepted**: the dispatcher validates and routes them to these daemon-private
@@ -161,6 +163,27 @@ key-value memory becomes semantically retrievable without the agent asking:
 The pool is a **single shared namespace**, not partitioned per agent: any session can
 surface any recorded memory. The runtime composes this surfacer with the related-session
 surfacer into the loop's single enrichment channel.
+
+---
+
+## R-MEM.9 — The `spill/` namespace is daemon-owned
+
+Over-cap tool output is written to `files` under `spill/<agent-id>/`
+([`dispatcher.md`](dispatcher.md) R-DISP.2). That prefix carries two invariants, both of
+which keep untrusted tool output from being laundered into trusted context:
+
+- **Not agent-writable.** `file_store` **MUST** refuse a path under `spill/`, so a
+  spilled file is always exactly what a tool returned — never something the model
+  composed there and later cited as a tool result. It stays agent-*readable*: reading it
+  back is the point.
+- **Never embedded.** Nothing under `spill/` enters the vector pool (R-MEM.6/8), so
+  pull-surfacing can never inject an untrusted blob into a later turn. It reaches the
+  model only when the model explicitly reads it.
+
+Spills are session debris and **MUST** be swept on a retention window
+(reference: 7 days, hourly, via `FileDeleteOlderThan`), or the table grows without bound.
+Retention is production-only bootstrap; a per-case harness that discards its store omits
+it by design.
 
 ---
 
