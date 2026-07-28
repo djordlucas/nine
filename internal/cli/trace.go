@@ -97,12 +97,14 @@ type llmResponsePayload struct {
 }
 
 type toolEndPayload struct {
-	Name       string `json:"name"`
-	Output     string `json:"output"`
-	Truncated  bool   `json:"truncated"`
-	DurationMs int64  `json:"duration_ms"`
-	Attempts   int    `json:"attempts"`
-	Error      string `json:"error"`
+	Name        string `json:"name"`
+	Output      string `json:"output"`
+	Truncated   bool   `json:"truncated"`
+	SpillPath   string `json:"spill_path"`
+	OutputChars int    `json:"output_chars"`
+	DurationMs  int64  `json:"duration_ms"`
+	Attempts    int    `json:"attempts"`
+	Error       string `json:"error"`
 }
 
 type toolStartPayload struct {
@@ -275,11 +277,15 @@ func formatReplay(w io.Writer, agentID string, all []memory.SessionEvent, turn i
 			if p.Error != "" {
 				fmt.Fprintf(w, "  error:  %s\n", trunc(p.Error, 200))
 			}
-			out := p.Output
-			if p.Truncated {
-				out += " [truncated]"
+			fmt.Fprintf(w, "  output: %s\n", trunc(p.Output, 200))
+			// An over-cap result: say how big it really was and where the full
+			// text is, so the trace can be followed to the actual bytes.
+			switch {
+			case p.SpillPath != "":
+				fmt.Fprintf(w, "  spilled: %d chars → %s\n", p.OutputChars, p.SpillPath)
+			case p.Truncated:
+				fmt.Fprintf(w, "  truncated: %d chars, full output not retained\n", p.OutputChars)
 			}
-			fmt.Fprintf(w, "  output: %s\n", trunc(out, 200))
 		case "sub_agent_start":
 			var p subAgentPayload
 			unpack(e, &p)

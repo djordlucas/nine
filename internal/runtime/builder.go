@@ -52,6 +52,9 @@ type LoopConfig struct {
 	// each loop pull-surfaces the stored memories most relevant to the current
 	// turn. On by default; the read costs nothing when disabled.
 	SurfaceMemories bool
+	// MaxToolOutputTokens mirrors [tools] max_output_tokens: the dispatcher's
+	// per-result output cap. 0 keeps agent.DefaultMaxOutputTokens.
+	MaxToolOutputTokens int
 }
 
 // AgentBuilderConfig holds the behavioral dependencies layered on top of the
@@ -515,6 +518,10 @@ func (f *AgentBuilder) registerCoreTools(d *agent.Dispatcher, lc LoopConfig, age
 	})
 	agent.RegisterMemoryTools(d, lc.Memory, lc.Embedder, protectedKeyPrefixes, lc.SurfaceMemories)
 	agent.RegisterSkillTools(d, lc.Memory, lc.Embedder)
+	// Over-cap tool results spill to the file store and come back by path, for
+	// this loop and any sub-agent loop built from it.
+	d.SetMaxOutputTokens(lc.MaxToolOutputTokens) // no-op when unset
+	registerLargeOutput(d, lc.Memory, agentID)
 }
 
 // registerSubAgentTools registers run_agent/run_agents/workflow/goal tools

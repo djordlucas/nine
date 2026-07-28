@@ -134,11 +134,18 @@ type Loop struct {
 // the model saw as the observation — the tool's text on success, or the
 // instructive failure notice when Err is set.
 type ToolOutcome struct {
-	Output     string
-	Truncated  bool
-	DurationMs int64
-	Attempts   int    // total dispatch attempts (1 = succeeded on first try)
-	Err        string // "" when the call ultimately succeeded
+	Output    string
+	Truncated bool
+	// SpillPath is where the full output was stored when it exceeded the cap,
+	// and OutputChars how long that output was. The journal records the pointer
+	// rather than the payload: the bytes already live in the file store, so
+	// duplicating them into the event log would double the cost of every large
+	// result (docs/tool-output-spill.md §4).
+	SpillPath   string
+	OutputChars int
+	DurationMs  int64
+	Attempts    int    // total dispatch attempts (1 = succeeded on first try)
+	Err         string // "" when the call ultimately succeeded
 }
 
 // SetForceThinkNextTurn forces native thinking for the whole of the next Run
@@ -426,11 +433,13 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 			}
 			if l.onToolEnd != nil {
 				l.onToolEnd(tc.Name, dn, tc.Input, ToolOutcome{
-					Output:     observation,
-					Truncated:  result.Truncated,
-					DurationMs: elapsed.Milliseconds(),
-					Attempts:   attempts,
-					Err:        errStr,
+					Output:      observation,
+					Truncated:   result.Truncated,
+					SpillPath:   result.SpillPath,
+					OutputChars: result.OutputChars,
+					DurationMs:  elapsed.Milliseconds(),
+					Attempts:    attempts,
+					Err:         errStr,
 				})
 			}
 

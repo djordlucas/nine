@@ -101,7 +101,14 @@ type Expect struct {
 // SideEffects assert on the isolated store/workspace after the run (strongest,
 // model-independent — docs/evals.md §1).
 type SideEffects struct {
-	Files         map[string]StringMatch `yaml:"files"`
+	Files map[string]StringMatch `yaml:"files"`
+	// StoredFiles asserts over the memory file store (the `files` table) rather
+	// than the workspace, keyed by a path **prefix**: the assertion holds when
+	// some stored file under that prefix matches. A prefix rather than an exact
+	// path because spilled tool outputs get a random suffix
+	// (spill/<agent>/<tool>-<rand>.txt) that a case cannot predict
+	// (docs/tool-output-spill.md §6).
+	StoredFiles   map[string]StringMatch `yaml:"stored_files"`
 	KV            map[string]StringMatch `yaml:"kv"`
 	Workflows     *WorkflowExpect        `yaml:"workflows"`
 	Goals         *GoalExpect            `yaml:"goals"`
@@ -153,6 +160,12 @@ type Trajectory struct {
 
 	SubAgents  *SubAgentExpect   `yaml:"sub_agents"`
 	LLMRequest *LLMRequestExpect `yaml:"llm_request"`
+
+	// Spills asserts how many tool results exceeded the output cap and were
+	// spilled to the file store — a `tool_end` event carrying a spill_path
+	// (docs/tool-output-spill.md §4). Use it to prove a case really exercised
+	// the large-output path instead of getting a conveniently small result.
+	Spills *CountExpect `yaml:"spills"`
 }
 
 // SubAgentExpect asserts spawned sub-agent count, either exact (Count) or a range.
@@ -318,6 +331,11 @@ func (c *Case) validate() error {
 			return fmt.Errorf("side_effects.kv[%s]: %w", key, err)
 		}
 	}
+	for prefix, m := range c.Expect.SideEffects.StoredFiles {
+		if err := m.validate(); err != nil {
+			return fmt.Errorf("side_effects.stored_files[%s]: %w", prefix, err)
+		}
+	}
 	if j := c.Expect.Answer.Judge; j != nil {
 		if j.Rubric == "" || j.Model == "" {
 			return fmt.Errorf("answer.judge requires rubric and model")
@@ -350,14 +368,14 @@ func (m StringMatch) validate() error {
 // hasAny reports whether the case declares at least one assertion.
 func (e Expect) hasAny() bool {
 	se := e.SideEffects
-	if len(se.Files) > 0 || len(se.KV) > 0 || se.Workflows != nil || se.Goals != nil ||
-		se.Notifications != nil || se.Vectors != nil {
+	if len(se.Files) > 0 || len(se.StoredFiles) > 0 || len(se.KV) > 0 || se.Workflows != nil ||
+		se.Goals != nil || se.Notifications != nil || se.Vectors != nil {
 		return true
 	}
 	t := e.Trajectory
 	if len(t.ToolsAllOf) > 0 || len(t.ToolsAnyOf) > 0 || len(t.ToolsNoneOf) > 0 ||
 		t.MaxTurns != nil || t.MinTurns != nil || t.NoStall || t.GapReport != nil ||
-		t.SubAgents != nil || t.LLMRequest != nil {
+		t.SubAgents != nil || t.LLMRequest != nil || t.Spills != nil {
 		return true
 	}
 	a := e.Answer

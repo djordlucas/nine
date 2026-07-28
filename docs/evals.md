@@ -42,6 +42,43 @@ robust first):
 4. **Judge** — an LLM-as-judge rubric, only for open-ended answers where 1–3 can't
    apply. Least trusted (see §7).
 
+**Corollary: don't accidentally grade something else.** A case must fail for the reason
+it names. The `tool-output-spill` case originally asked the model for "the last number"
+of `seq 1 20000`; every run spilled correctly and stored all 128 KB, yet the case scored
+0/3 because finding one integer among ~8000 newline-escaped integers in a single-line
+JSON blob grades *numeric attention*, not spilling. Ending the output with a distinctive
+token instead tests the identical mechanism and passes. When a case fails, check the
+per-run failure list: if the mechanism assertions passed and only `answer` failed, the
+case is probably mis-designed rather than the feature broken.
+
+**Corollary: assume the model will game the setup.** Three separate live runs of the
+spill cases defeated their own premise, each time legitimately:
+
+- Told to run `seq 1 5000; echo NEEDLE; seq 5001 10000`, models **rewrote the command**
+  to redirect half of it to a file — which moved the needle into the preview's tail and
+  let them answer without the retrieval the case existed to test.
+- Told to run `seq 1 20000`, a model redirected it to `/tmp/x`, so nothing was ever
+  over-cap and nothing spilled.
+
+The fix is to remove the model's freedom to change the input: read a **fixture file**
+(whose contents it cannot rewrite) rather than asking it to generate output, and lower
+the cap via `session.config` so a small fixture is over-cap. If a case's precondition
+depends on the model following an instruction exactly, it will eventually not.
+
+### Debugging one case: `TestDiagLiveTrajectory`
+
+When a case fails and the report's failure list is not enough, run it **once** with the
+full trajectory printed — every tool call with its arguments, every result, the answer,
+and the verdict:
+
+```sh
+DIAG_MODEL=qwen3.5:9b DIAG_CASE=spill-read-back NINE_PLUGINS_BIN=$PWD/dist/bin \
+  go test -count=1 -v -run TestDiagLiveTrajectory ./tests/evals/runner/
+```
+
+This is how each of the gaming behaviors above was found; the aggregate report only
+showed "tool never called". It skips unless both env vars are set.
+
 ---
 
 ## 2. Case schema (the generation contract)
@@ -76,8 +113,9 @@ prompts:
 session:
   role: executor                     # orchestrator | executor | report-writer | …
   interactive: false                 # enables HITL tools; requires an answers script
-  config:                            # per-case nine.toml overrides
-    related_sessions_index: false
+  config:                            # per-case nine.toml overrides (dotted keys)
+    tools.max_output_tokens: 150     # honored: the dispatcher output cap, so a small
+                                     # fixture can exercise the spill path
 
 # ── HITL script: canned human answers, matched in order to ask_human calls ──
 human_answers: []                    # e.g. ["yes", "the staging cluster"]
@@ -87,6 +125,8 @@ expect:
   side_effects:
     files:
       /work/out.txt: { contains: "db.prod.example.com" }
+    stored_files:                     # the memory file store, keyed by path PREFIX
+      "spill/": { contains: "10000" } # passes if SOME file under the prefix matches
     kv:
       self/prod_db: { equals: "db.prod.example.com" }   # or { matches: "..." }
     workflows: { status: done, min_steps: 3 }
@@ -102,6 +142,8 @@ expect:
     no_stall: true                    # no turn ended with ErrStall
     gap_report: false                 # true = expect a gap_report
     sub_agents: { count: 0 }          # spawned sub-agent count (exact or {min,max})
+    spills: { min: 1 }                # tool results that exceeded the output cap and
+                                      # were spilled to the file store
     llm_request:                      # assert over the assembled prompt sent to the model
       system_contains: []             # substrings that MUST be present
       system_not_contains: []
@@ -153,6 +195,13 @@ Mappings:
 - **`no_stall`** → no `turn_end.error == "stall"` and no `supervisor` event of kind stall.
 - **`gap_report`** → a `tool_start.name == "gap_report"` (or the supervisor `gap_reported` event).
 - **`sub_agents.count`** → `sub_agent_start` progress events (or `run_agent`/`run_agents` tool calls).
+- **`spills.min`** → count of `tool_end` events with a non-empty `spill_path`. Use it to
+  prove a large-output case really exercised the spill path rather than getting a
+  conveniently small result (see [tool-output-spill.md](tool-output-spill.md)).
+- **`side_effects.stored_files`** → `store.FileList(prefix)` + `FileFetch`, passing if
+  *any* file under the prefix matches. A prefix rather than an exact path because a
+  spill path carries a random suffix (`spill/<agent>/<tool>-<rand>.txt`) a case cannot
+  predict.
 - **`llm_request.tool_advertised_none_of`** → the tool name never appears in any `llm_request.tool_names` (proves role gating at the advertised boundary, R-ROLE.4).
 - **`side_effects.*`** → read the isolated store/workspace *after* the run: `kv` via
   `store.Get`, files via the workspace dir or `file_fetch`, `workflows` via
@@ -186,6 +235,13 @@ recorded behavior should change.
 Run the case against each applicable model, `runs` times, and mark it passing if the
 pass fraction ≥ `pass_threshold`. Everything in §1–§3 applies. Requirements:
 
+- **Selecting what runs**: `NINE_EVAL_MODELS` (comma-separated, required) picks the
+  matrix; `NINE_EVAL_TIER` narrows to one tier; `NINE_EVAL_CASES` narrows to specific
+  case ids — the fast loop when iterating on a single case:
+
+  ```sh
+  NINE_EVAL_MODELS=qwen3.5:4b NINE_EVAL_CASES=tool-output-spill make eval-live
+  ```
 - **Isolation per run**: a fresh session id, a schema-per-run Postgres (reuse the
   `internal/memory/memtest` pattern), and an ephemeral workspace dir. Cases must not
   see each other's memory/goals/files.

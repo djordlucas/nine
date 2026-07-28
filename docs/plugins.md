@@ -220,6 +220,39 @@ To register the new plugin: add it under `plugins/<name>/`, add `<name>` to the
 in `cmd/nine/daemon.go` (`pluginManager.TryStart("<name>", …)`), and rebuild. Default
 plugins are sub-packages of the core module and use the vendored dependencies.
 
+### Taking large input by reference
+
+A tool that consumes a large payload should not make the model paste it. Mark the
+property with `"x-nine-ref": true` and the daemon will treat the argument as a
+**file-store path**, substituting the stored content before your handler runs:
+
+```go
+InputSchema: plugin.Schema(`{
+    "type": "object",
+    "required": ["content"],
+    "properties": {"content": {
+        "type": "string",
+        "x-nine-ref": true,
+        "description": "File-store path whose content to parse."
+    }}
+}`),
+```
+
+Your handler still receives `content` as a plain string — now holding the bytes. The
+model only ever handles the path, so a 400 KB payload costs it ~40 characters of
+context. Paths typically come from a spilled tool result (`spill/<agent>/…`, see
+[tool-output-spill.md](tool-output-spill.md)), but any stored path works.
+
+Only marked properties are expanded, so a tool whose arguments are genuinely paths is
+unaffected. One expansion is capped at 8 MiB.
+
+### Large output
+
+You do not need to do anything about large *output*. A result over the dispatcher's cap
+is spilled to the file store automatically and the model is handed a path — this applies
+to every tool, including MCP servers, with no plugin involvement
+([tool-output-spill.md](tool-output-spill.md)).
+
 ---
 
 ## User Plugins

@@ -15,6 +15,19 @@ type Config struct {
 	Planning   PlanningConfig   `toml:"planning"`
 	Roles      RolesConfig      `toml:"roles"`
 	Agents     []AgentConfig    `toml:"agent"`
+	Tools      ToolsConfig      `toml:"tools"`
+}
+
+// ToolsConfig tunes the tool-dispatch boundary. It is `[tools]` rather than
+// `[agent]` because `[[agent]]` is already the standing-agent table array.
+type ToolsConfig struct {
+	// MaxOutputTokens is the per-result output cap (docs/tool-output-spill.md).
+	// A result over it is spilled to the memory file store and replaced by a
+	// short preview naming the path, so raising this is rarely needed — the data
+	// is not lost either way. Raise it when a model should routinely see more of
+	// a large result inline; lower it to keep observations tight. 0 (unset)
+	// keeps agent.DefaultMaxOutputTokens (2048).
+	MaxOutputTokens int `toml:"max_output_tokens"`
 }
 
 // PlanningConfig controls the plan-before-execute policy
