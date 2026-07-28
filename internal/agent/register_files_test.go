@@ -158,3 +158,73 @@ var errNotFound = errString("no stored file")
 type errString string
 
 func (e errString) Error() string { return string(e) }
+
+// A path absent from the store must teach the model which namespace it is in.
+// Nine has two — the workspace filesystem and the memory file store — and a
+// live model (llama3.1:8b) that searched the wrong one got a bare result and
+// invented an answer rather than correcting itself.
+func TestMissingStorePathExplainsNamespace(t *testing.T) {
+	store := newTestStore(t)
+	if err := store.FileStore("spill/agent-1/tool-aa.txt", "payload"); err != nil {
+		t.Fatal(err)
+	}
+
+	msg := agent.MissingStorePathError(store, "/work/audit.txt").Error()
+	for _, want := range []string{"/work/audit.txt", "MEMORY FILE STORE", "read_file"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error %q missing %q", msg, want)
+		}
+	}
+	if !strings.Contains(msg, "spill/agent-1/tool-aa.txt") {
+		t.Errorf("error %q should list the stored paths so the model can correct itself", msg)
+	}
+
+	// A store-shaped path that is simply absent gets no filesystem lecture.
+	msg = agent.MissingStorePathError(store, "spill/agent-1/missing.txt").Error()
+	if strings.Contains(msg, "workspace filesystem path") {
+		t.Errorf("error %q should not lecture about filesystems for a store-shaped path", msg)
+	}
+}
+
+// file_search_text returned a bare "null" for no hits, which a live model
+// answered by hallucinating a value. It must explain instead.
+func TestFileSearchTextNoHitsExplains(t *testing.T) {
+	d := fileToolDispatcher(t)
+	if _, err := dispatchTool(t, d, "file_store",
+		`{"path":"notes/a.md","content":"nothing relevant here"}`); err != nil {
+		t.Fatal(err)
+	}
+
+	// A filesystem-looking path filter: the usual namespace mix-up.
+	res, err := dispatchTool(t, d, "file_search_text", `{"query":"pangolin","path":"/work/audit.txt"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Output == "null" || res.Output == "" {
+		t.Fatalf("empty search returned %q; it must explain why there were no hits", res.Output)
+	}
+	if !strings.Contains(res.Output, "MEMORY FILE STORE") {
+		t.Errorf("output %q should name the namespace for a filesystem-looking path", res.Output)
+	}
+
+	// A store path that exists but has no match says so, without the lecture.
+	res, err = dispatchTool(t, d, "file_search_text", `{"query":"pangolin","path":"notes/"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(res.Output, "MEMORY FILE STORE") {
+		t.Errorf("output %q should not lecture when the path exists", res.Output)
+	}
+	if res.Output == "null" {
+		t.Error("a genuine no-match must still explain itself")
+	}
+
+	// An unscoped miss explains too.
+	res, err = dispatchTool(t, d, "file_search_text", `{"query":"pangolin"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Output == "null" {
+		t.Error("an unscoped no-match must explain itself, not return null")
+	}
+}

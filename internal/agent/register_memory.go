@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -278,7 +279,7 @@ func RegisterMemoryTools(d *Dispatcher, store *memory.Store, embedder embed.Embe
 				return "", err
 			}
 			if !found {
-				return "", fmt.Errorf("file not found: %s", req.Path)
+				return "", fmt.Errorf("file_fetch: %s", missingStorePath(store, req.Path))
 			}
 			return content, nil
 		}
@@ -287,7 +288,7 @@ func RegisterMemoryTools(d *Dispatcher, store *memory.Store, embedder embed.Embe
 			return "", err
 		}
 		if !found {
-			return "", fmt.Errorf("file not found: %s", req.Path)
+			return "", fmt.Errorf("file_fetch: %s", missingStorePath(store, req.Path))
 		}
 		data, err := json.Marshal(slice)
 		if err != nil {
@@ -315,6 +316,83 @@ func RegisterMemoryTools(d *Dispatcher, store *memory.Store, embedder embed.Embe
 		if err := json.Unmarshal(args, &req); err != nil {
 			return "", fmt.Errorf("file_search_text: %w", err)
 		}
-		return store.FileSearchTextJSON(req.Query, req.Path, req.Limit)
+		results, err := store.FileSearchTextScoped(req.Query, req.Path, req.Limit)
+		if err != nil {
+			return "", err
+		}
+		// A bare "null" for no hits teaches the model nothing, and a live model
+		// answered it by inventing a value. Say why there were none — and if the
+		// path filter matched nothing at all, say so explicitly, since the usual
+		// cause is a workspace path used where a store path belongs.
+		if len(results) == 0 {
+			return noSearchHitsMessage(store, req.Query, req.Path), nil
+		}
+		data, err := json.Marshal(results)
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
 	}
+}
+
+// noSearchHitsMessage explains an empty file_search_text result. Nine has two
+// file namespaces — the workspace filesystem (shell, read_file, write_file) and
+// the memory file store (file_store, file_fetch, spilled output) — and a model
+// that searches the wrong one gets zero hits for a reason it cannot see.
+func noSearchHitsMessage(store *memory.Store, query, pathFilter string) string {
+	if pathFilter == "" {
+		return fmt.Sprintf("No stored file matched %q. The memory file store may be empty, "+
+			"or the text may be in the workspace filesystem instead (try shell/read_file).", query)
+	}
+	paths, err := store.FileList(pathFilter)
+	if err == nil && len(paths) == 0 {
+		msg := fmt.Sprintf("No file is stored under %q, so nothing could be searched.", pathFilter)
+		if strings.HasPrefix(pathFilter, "/") || strings.HasPrefix(pathFilter, "./") {
+			msg += " That looks like a workspace filesystem path; this tool searches the" +
+				" MEMORY FILE STORE, whose paths have no leading slash (for example a" +
+				" spill/... path from a truncated tool result)."
+		}
+		if stored, lerr := store.FileList(""); lerr == nil && len(stored) > 0 {
+			if len(stored) > searchHintLimit {
+				stored = stored[:searchHintLimit]
+			}
+			msg += " Stored paths available now: " + strings.Join(stored, ", ")
+		}
+		return msg
+	}
+	return fmt.Sprintf("No text matching %q was found in the file(s) under %q.", query, pathFilter)
+}
+
+// searchHintLimit caps how many stored paths an empty-result message lists, so
+// the hint cannot itself blow the output cap.
+const searchHintLimit = 20
+
+// MissingStorePathError reports a path absent from the memory file store, with
+// the namespace explanation missingStorePath builds. Exported so the ref
+// resolver (internal/runtime) reports an unresolvable x-nine-ref argument the
+// same way the file tools report an unreadable path — one wording, one lesson.
+func MissingStorePathError(store *memory.Store, path string) error {
+	return errors.New(missingStorePath(store, path))
+}
+
+// missingStorePath explains a path that is not in the memory file store,
+// naming the namespace and — when the path looks like a workspace filesystem
+// path — saying so outright. A live model retrieved a spill by passing its
+// original /work/... path here and, given a bare "not found", invented an
+// answer instead of correcting itself.
+func missingStorePath(store *memory.Store, path string) string {
+	msg := fmt.Sprintf("no file stored at %q in the memory file store", path)
+	if strings.HasPrefix(path, "/") || strings.HasPrefix(path, "./") {
+		msg += ". That looks like a workspace filesystem path; this tool reads the" +
+			" MEMORY FILE STORE, whose paths have no leading slash (for example a" +
+			" spill/... path named in a truncation notice). Use read_file for a" +
+			" workspace file"
+	}
+	if stored, err := store.FileList(""); err == nil && len(stored) > 0 {
+		if len(stored) > searchHintLimit {
+			stored = stored[:searchHintLimit]
+		}
+		msg += ". Stored paths available now: " + strings.Join(stored, ", ")
+	}
+	return msg
 }
