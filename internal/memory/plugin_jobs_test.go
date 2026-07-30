@@ -76,21 +76,24 @@ func TestPluginJobFinishIsTerminalGuarded(t *testing.T) {
 	}
 }
 
-func TestPluginJobsOutstandingByOwner(t *testing.T) {
+func TestPluginJobsOutstandingSummary(t *testing.T) {
 	store, err := memtest.Open(t)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = store.PluginJobCreate(memory.PluginJob{Handle: "a", Plugin: "p", Tool: "t", PluginJobID: "1", OwnerID: "me", State: "running"})
+	_ = store.PluginJobCreate(memory.PluginJob{Handle: "a", Plugin: "p", Tool: "scan", PluginJobID: "1", OwnerID: "me", State: "running"})
 	_ = store.PluginJobCreate(memory.PluginJob{Handle: "b", Plugin: "p", Tool: "t", PluginJobID: "2", OwnerID: "me", State: "running"})
 	_ = store.PluginJobCreate(memory.PluginJob{Handle: "c", Plugin: "p", Tool: "t", PluginJobID: "3", OwnerID: "other", State: "running"})
 	_ = store.PluginJobFinish("b", "done", "", "", "")
 
-	out, err := store.PluginJobsOutstandingByOwner("me")
+	out, err := store.PluginJobsOutstandingSummary("me")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(out) != 1 || out[0].Handle != "a" {
+	if len(out) != 1 || out[0].Handle != "a" || out[0].Tool != "scan" {
 		t.Errorf("outstanding for me = %+v, want only the running job a", out)
+	}
+	if out[0].AgeSeconds < 0 {
+		t.Errorf("age = %d, want >= 0", out[0].AgeSeconds)
 	}
 }

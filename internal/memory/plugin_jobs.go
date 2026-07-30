@@ -67,15 +67,40 @@ func (s *Store) PluginJobsRunning() ([]PluginJob, error) {
 		 ORDER BY created_at`)
 }
 
-// PluginJobsOutstandingByOwner returns ownerID's non-terminal jobs, oldest
+// PluginJobSummary is a compact view of an outstanding job for the context
+// builder and job_list: enough to name it and show how long it has been running,
+// without its (possibly large) result. AgeSeconds is computed at query time.
+type PluginJobSummary struct {
+	Handle     string `json:"handle"`
+	Tool       string `json:"tool"`
+	State      string `json:"state"`
+	Progress   string `json:"progress,omitempty"`
+	AgeSeconds int    `json:"age_seconds"`
+}
+
+// PluginJobsOutstandingSummary returns ownerID's non-terminal jobs, oldest
 // first — what the context builder surfaces and job_list reports.
-func (s *Store) PluginJobsOutstandingByOwner(ownerID string) ([]PluginJob, error) {
-	return s.queryPluginJobs(
-		`SELECT handle, plugin, tool, plugin_job_id, owner_id, state, ack, progress,
-		        output, spill_path, error, created_at, updated_at, finished_at
+func (s *Store) PluginJobsOutstandingSummary(ownerID string) ([]PluginJobSummary, error) {
+	rows, err := s.db.Query(
+		`SELECT handle, tool, state, progress,
+		        extract(epoch FROM now() - created_at)::int
 		 FROM plugin_jobs
 		 WHERE owner_id = ? AND state NOT IN ('done','failed','cancelled','lost')
 		 ORDER BY created_at`, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []PluginJobSummary
+	for rows.Next() {
+		var s PluginJobSummary
+		if err := rows.Scan(&s.Handle, &s.Tool, &s.State, &s.Progress, &s.AgeSeconds); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
 }
 
 // PluginJobUpdateLive updates a still-running job's state and progress. It never
