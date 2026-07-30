@@ -258,8 +258,10 @@ later user turn *pulls* the most relevant link into context under the token budg
 (returns tool definitions) and `plugin.call` (executes a tool, returns a result)
 — over **HTTP on a per-plugin Unix socket** (`NINE_PLUGIN_SOCKET`, `POST /rpc`;
 see [HTTP transport](plugins-http-transport.md)). External **MCP** servers instead
-speak JSON-RPC 2.0 over stdio. Plugins are compiled into the image at build time;
-there is no runtime generation. See [Plugins](plugins.md) and
+speak JSON-RPC 2.0 over stdio. A native plugin may also implement two optional
+job methods (`plugin.job_status` / `plugin.job_cancel`, protocol v2) for
+long-running work. Plugins are compiled into the image at build time; there is no
+runtime generation. See [Plugins](plugins.md) and
 [Architecture § Plugin Protocol](architecture.md#plugin-protocol).
 
 **Core-intercepted tools** — Tools that appear in the agent's tool list but
@@ -300,7 +302,24 @@ JSON-RPC server loop for a plugin, so a plugin's `main` only passes its
 
 **`NINE_BIN`** — Environment variable passed to every plugin subprocess: the
 plugin binary directory. Individual plugins may receive extra env vars at
-startup (e.g. the `BROWSER_*` settings for `browser`).
+startup: the built-in defaults (e.g. `BROWSER_*` for `browser`), an operator's
+`[plugin.<name>.settings]` (passed through verbatim), and the cache-dir vars
+below. See [Plugin capabilities](plugin-capabilities.md).
+
+**Plugin cache directory** — A per-plugin scratch directory the manager creates
+and hands over as `NINE_PLUGIN_CACHE_DIR` (with `NINE_PLUGIN_CACHE_PERSISTENT`).
+Ephemeral by default (`<root>/<name>.<rand>/`, wiped when the plugin exits);
+`[plugin.<name>].persist_cache = true` keeps `<root>/<name>/` across restarts.
+Opaque scratch — Nine never reads it. See [Plugin capabilities § 4](plugin-capabilities.md).
+
+**Job (plugin job)** — Detached work a plugin tool starts and outlives the call:
+`plugin.call` returns a `job_id` and an ack instead of a result, the daemon
+records it in the `plugin_jobs` registry keyed to the owning conversation under a
+stable **handle** (`job_<hex>`), and a sweeper polls `plugin.job_status` until it
+finishes, then notifies the owner so a later turn learns of it. The model drives
+it with `job_wait` / `job_check` / `job_list` / `job_cancel`. Distinct from a
+*task* (the per-turn unit) and a *goal*. Native plugins only. See
+[Plugin capabilities § 5](plugin-capabilities.md).
 
 ---
 

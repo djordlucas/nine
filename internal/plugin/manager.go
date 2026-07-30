@@ -22,8 +22,11 @@ import (
 const socketDir = "/tmp/nine"
 
 // socketReadyTimeout bounds how long Start waits for a spawned plugin to start
-// listening before giving up.
-const socketReadyTimeout = time.Second
+// listening before giving up. It only bounds the failure path — a healthy plugin
+// listens within milliseconds — so it is set generously enough that a spawn under
+// heavy parallel load (many plugins building and starting at once, as the test
+// suite does) is not spuriously declared dead.
+const socketReadyTimeout = 3 * time.Second
 
 // Plugin is a running plugin process with its advertised tools.
 type Plugin struct {
@@ -33,6 +36,17 @@ type Plugin struct {
 	// User marks a plugin loaded from the operator's plugins directory rather
 	// than a built-in. Reload stops and re-discovers only User plugins.
 	User bool
+
+	// AsyncJobs mirrors the plugin's describe flag: it can run detached work and
+	// answer job_status / job_cancel. The daemon refuses a job_id from a plugin
+	// with this false — fail-closed against version skew.
+	AsyncJobs bool
+
+	// cacheDir is the plugin's scratch directory (docs/plugin-capabilities.md §4),
+	// handed over as NINE_PLUGIN_CACHE_DIR. Empty when no cache root is configured.
+	// cacheEphemeral marks it for removal on Stop; a persistent dir is left alone.
+	cacheDir       string
+	cacheEphemeral bool
 }
 
 // UserPluginStatus records the outcome of trying to load one operator plugin
@@ -54,6 +68,19 @@ type Manager struct {
 	env       []string
 	pluginBin string
 
+	// pluginEnv resolves a plugin's extra spawn environment (built-in defaults +
+	// operator settings) by name. Set by the daemon via SetPluginEnv so this
+	// package stays config-agnostic (docs/plugin-capabilities.md §3). Nil means no
+	// extra env — the pre-settings behaviour, used by tests and probes.
+	pluginEnv func(name string) []string
+
+	// cacheRoot is the directory under which per-plugin cache dirs are created
+	// (docs/plugin-capabilities.md §4); persistCache reports whether a given
+	// plugin's dir survives restarts. Both set by the daemon via SetCacheConfig;
+	// an empty cacheRoot disables cache dirs entirely (tests, probes).
+	cacheRoot    string
+	persistCache func(name string) bool
+
 	userDir    string
 	userStatus []UserPluginStatus
 }
@@ -65,6 +92,39 @@ func NewManager(nineBin string) *Manager {
 		pluginBin: nineBin,
 		env:       []string{"NINE_BIN=" + nineBin},
 	}
+}
+
+// SetPluginEnv installs the resolver used to look up a plugin's extra spawn
+// environment by name (typically config.Config.PluginEnvs). It is optional: with
+// no resolver installed, plugins start with only the manager's own env, which is
+// the behaviour tests and Probe callers rely on.
+func (m *Manager) SetPluginEnv(fn func(name string) []string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.pluginEnv = fn
+}
+
+// SetCacheConfig installs the cache-dir root and the per-plugin persistence
+// resolver (typically config.Config.PluginCacheRoot and PluginPersistCache).
+// With an empty root, plugins start without a cache dir — the behaviour tests
+// and probes rely on.
+func (m *Manager) SetCacheConfig(root string, persist func(name string) bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cacheRoot = root
+	m.persistCache = persist
+}
+
+// envFor returns the extra environment for the named plugin via the installed
+// resolver, or nil when none is set.
+func (m *Manager) envFor(name string) []string {
+	m.mu.Lock()
+	fn := m.pluginEnv
+	m.mu.Unlock()
+	if fn == nil {
+		return nil
+	}
+	return fn(name)
 }
 
 // PluginBin returns the full path to the named plugin binary.
@@ -90,13 +150,27 @@ func (m *Manager) Start(binaryPath string, extraEnv ...string) (*Plugin, error) 
 	env := append([]string{}, m.env...)
 	env = append(env, extraEnv...)
 
+	// Allocate the plugin's cache dir and hand it over as Nine-owned env vars.
+	// They go last so Nine's values win over anything inherited; an operator
+	// cannot set them via [plugin.<name>.settings] (they are reserved).
+	cacheDir, ephemeral, err := m.allocCacheDir(name)
+	if err != nil {
+		return nil, err
+	}
+	if cacheDir != "" {
+		env = append(env, "NINE_PLUGIN_CACHE_DIR="+cacheDir, "NINE_PLUGIN_CACHE_PERSISTENT="+persistentEnv(!ephemeral))
+	}
+
 	cmd, socketPath, desc, err := spawnAndDescribe(binaryPath, env)
 	if err != nil {
+		if ephemeral && cacheDir != "" {
+			os.RemoveAll(cacheDir) //nolint:errcheck // spawn failed; reclaim the dir we just made
+		}
 		return nil, err
 	}
 
 	c := newHTTPClient(name, socketPath, cmd, desc.MaxConcurrent)
-	p := &Plugin{Name: name, client: c, Tools: desc.Tools}
+	p := &Plugin{Name: name, client: c, Tools: desc.Tools, AsyncJobs: desc.AsyncJobs, cacheDir: cacheDir, cacheEphemeral: ephemeral}
 	m.track(p)
 	slog.Info("plugin started", "name", name, "tools", len(desc.Tools), "max_concurrent", desc.MaxConcurrent)
 	return p, nil
@@ -165,6 +239,15 @@ func spawnAndDescribe(binaryPath string, env []string) (*exec.Cmd, string, Descr
 // `nine plugin validate` and the pre-load vetting of user plugins. env is passed
 // straight through as the process environment (e.g. the manager's NINE_BIN).
 func Probe(binaryPath string, env ...string) (DescribeResult, error) {
+	// Validation must never create or touch persistent state, so Probe always
+	// hands over a throwaway ephemeral cache dir removed with the process, whatever
+	// the plugin's persist_cache setting (docs/plugin-capabilities.md §4).
+	if cacheDir, err := os.MkdirTemp("", "nine-probe-cache-"); err == nil {
+		defer os.RemoveAll(cacheDir) //nolint:errcheck // best-effort
+		env = append(append([]string{}, env...),
+			"NINE_PLUGIN_CACHE_DIR="+cacheDir,
+			"NINE_PLUGIN_CACHE_PERSISTENT=0")
+	}
 	cmd, socketPath, desc, err := spawnAndDescribe(binaryPath, env)
 	if err != nil {
 		return DescribeResult{}, err
@@ -176,17 +259,24 @@ func Probe(binaryPath string, env ...string) (DescribeResult, error) {
 }
 
 // checkProtocolVersion rejects a plugin whose wire-contract version the daemon
-// does not support. The daemon supports exactly one version today, so any
-// mismatch is fatal; widen this if it ever needs to support a range. An absent
-// version (0) means the plugin predates protocol versioning.
+// does not support. Support is a set, not a single version: v2 is additive over
+// v1 (it only adds jobs), so a v1 plugin is accepted and simply treated as
+// lacking async jobs (docs/plugin-capabilities.md §6). An absent version (0)
+// means the plugin predates protocol versioning and is rejected.
 func checkProtocolVersion(name string, got int) error {
-	if got == ProtocolVersion {
+	if supportedProtocolVersion(got) {
 		return nil
 	}
 	if got == 0 {
 		return fmt.Errorf("plugin %q reports no protocol version; it predates plugin protocol v%d — rebuild it against the current Nine", name, ProtocolVersion)
 	}
 	return fmt.Errorf("plugin %q speaks protocol v%d but this daemon speaks v%d — rebuild the plugin (or upgrade Nine)", name, got, ProtocolVersion)
+}
+
+// supportedProtocolVersion reports whether the daemon can talk to a plugin
+// advertising version v. v1 and the current v2 are both accepted.
+func supportedProtocolVersion(v int) bool {
+	return v == 1 || v == ProtocolVersion
 }
 
 // allocSocketPath returns a unique short socket path under socketDir.
@@ -283,11 +373,47 @@ func (m *Manager) Call(ctx context.Context, p *Plugin, toolName string, args jso
 	return cr, nil
 }
 
+// JobStatus asks a plugin for the status of one of its jobs
+// (docs/plugin-capabilities.md §5). An unknown job id is not an RPC error: the
+// plugin answers a failed status, so a daemon that lost track cannot wedge.
+func (m *Manager) JobStatus(ctx context.Context, p *Plugin, pluginJobID string) (JobStatus, error) {
+	raw, err := p.client.call(ctx, "plugin.job_status", map[string]string{"job_id": pluginJobID})
+	if err != nil {
+		return JobStatus{}, err
+	}
+	var st JobStatus
+	if err := json.Unmarshal(raw, &st); err != nil {
+		return JobStatus{}, fmt.Errorf("unmarshal job status: %w", err)
+	}
+	return st, nil
+}
+
+// JobCancel best-effort cancels one of a plugin's jobs.
+func (m *Manager) JobCancel(ctx context.Context, p *Plugin, pluginJobID string) error {
+	_, err := p.client.call(ctx, "plugin.job_cancel", map[string]string{"job_id": pluginJobID})
+	return err
+}
+
+// PluginByName returns the running plugin with the given name, or (nil, false).
+func (m *Manager) PluginByName(name string) (*Plugin, bool) {
+	for _, p := range m.Running() {
+		if p.Name == name {
+			return p, true
+		}
+	}
+	return nil, false
+}
+
 // Stop gracefully shuts down the plugin process.
 func (m *Manager) Stop(p *Plugin) error {
 	err := p.client.stop()
 	if err == nil {
 		slog.Debug("plugin stopped")
+	}
+	// The process is down (client.stop waited on it), so its scratch dir is now
+	// safe to reclaim. Persistent dirs are the operator's to keep.
+	if p.cacheEphemeral && p.cacheDir != "" {
+		os.RemoveAll(p.cacheDir) //nolint:errcheck // best-effort scratch cleanup
 	}
 	m.untrack(p)
 	return err

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"nine/internal/plugin"
@@ -74,6 +75,33 @@ func TestLoadUserPlugins(t *testing.T) {
 		t.Error("loaded plugin should be marked User")
 	}
 	_ = m.StopAll()
+}
+
+// A user plugin's spawn environment includes the operator settings resolved by
+// the manager's env provider (docs/plugin-capabilities.md §3).
+func TestUserPluginReceivesSettingsEnv(t *testing.T) {
+	bin := buildBinary(t, "./internal/plugin/testplugin")
+	dir := t.TempDir()
+	seedManifest(t, dir, "weather", bin)
+	dump := filepath.Join(t.TempDir(), "env.txt")
+
+	m := plugin.NewManager("")
+	m.SetPluginEnv(func(name string) []string {
+		if name == "weather" {
+			return []string{"NINE_TEST_ENV_DUMP=" + dump, "WEATHER_API_KEY=sk-xyz"}
+		}
+		return nil
+	})
+	m.LoadUserPlugins(dir)
+	defer m.StopAll() //nolint:errcheck
+
+	data, err := os.ReadFile(dump)
+	if err != nil {
+		t.Fatalf("read env dump: %v", err)
+	}
+	if !strings.Contains(string(data), "WEATHER_API_KEY=sk-xyz") {
+		t.Errorf("plugin env missing operator setting; got:\n%s", data)
+	}
 }
 
 func TestUserPluginCollisionSkipped(t *testing.T) {

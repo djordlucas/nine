@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"nine/internal/config"
@@ -25,12 +27,25 @@ func runDaemon() {
 		os.Exit(1)
 	}
 
+	// Shared between the job sweeper and every worker's job_wait, so a completing
+	// job wakes its waiters at once instead of each polling (§5).
+	jobWaiters := runtime.NewJobWaiters()
+
 	// Initialize plugin manager and start plugins
 	pluginManager := plugin.NewManager(cfg.Plugins.Bin)
+	// Resolve per-plugin spawn env (built-in defaults + operator settings) by name.
+	// Built-ins pass it explicitly below; user plugins reach it through the
+	// manager (docs/plugin-capabilities.md §3).
+	pluginManager.SetPluginEnv(cfg.PluginEnvs)
+	// Per-plugin cache dirs (docs/plugin-capabilities.md §4). Sweep leftover
+	// ephemeral dirs from a previous daemon that exited without stopping its
+	// plugins, before any new plugin allocates one.
+	pluginManager.SetCacheConfig(cfg.PluginCacheRoot(), cfg.PluginPersistCache)
+	pluginManager.SweepCache()
 	pluginManager.TryStart("files", cfg.PluginEnvs("files")...)
-	pluginManager.TryStart("shell")
-	pluginManager.TryStart("http")
-	pluginManager.TryStart("time")
+	pluginManager.TryStart("shell", cfg.PluginEnvs("shell")...)
+	pluginManager.TryStart("http", cfg.PluginEnvs("http")...)
+	pluginManager.TryStart("time", cfg.PluginEnvs("time")...)
 	browserPlug := pluginManager.TryStart("browser", cfg.PluginEnvs("browser")...)
 
 	// Load operator-supplied plugins from [plugins].user_dir, after the built-ins
@@ -109,8 +124,10 @@ func runDaemon() {
 		RelatedSessions: cfg.Daemon.RelatedSessionsIndexEnabled(),
 		// Index and pull-surface stored key-value memories relevant to the turn.
 		SurfaceMemories:     cfg.Memory.SurfaceMemoriesEnabled(),
-		MaxToolOutputTokens: cfg.Tools.MaxOutputTokens,
-		Queue:               cfg.BuildQueue(),
+		MaxToolOutputTokens:    cfg.Tools.MaxOutputTokens,
+		MaxJobsPerConversation: cfg.Plugins.MaxJobsPerConversation,
+		JobWaiters:             jobWaiters,
+		Queue:                  cfg.BuildQueue(),
 		TaskTimeoutSeconds:  cfg.Daemon.TaskTimeoutSeconds,
 		HITL:                hitl,
 		ApprovalTools:       cfg.HITL.RequireApproval,
@@ -139,6 +156,19 @@ func runDaemon() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// Graceful shutdown (docs/plugin-capabilities.md §5/§6). Without a handler a
+	// SIGINT/SIGTERM kills the process outright, orphaning every plugin — and its
+	// jobs, cache dir, and socket. Catch the signal, cancel the context (which
+	// stops the daemon's accept loop and returns from Start), and let the cleanup
+	// after Start cancel running jobs and stop the plugins.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		slog.Info("shutdown signal received; stopping")
+		cancel()
+	}()
+
 	// Resolve this instance's display name (shown in the TUI top bar): the
 	// configured name if set, else a previously generated one from the store,
 	// else a placeholder that a background LLM call replaces with a random name
@@ -152,6 +182,17 @@ func runDaemon() {
 	// and hourly thereafter so large results cannot grow the file store without
 	// bound (docs/tool-output-spill.md §5).
 	go runtime.RunSpillSweeper(ctx, store)
+
+	// Any plugin job still marked running belongs to a plugin the previous daemon
+	// left behind (this boot spawned fresh ones), so it is unreachable: mark such
+	// rows lost and tell their owners (docs/plugin-capabilities.md §5).
+	runtime.MarkOrphanedJobsLost(store)
+
+	// Poll running plugin jobs (docs/plugin-capabilities.md §5): reconcile their
+	// state, expire over-age ones, and on completion cap-or-spill the result and
+	// notify the owning conversation so the next turn learns of it.
+	go runtime.RunJobSweeper(ctx, store, pluginManager, jobWaiters,
+		time.Duration(cfg.Plugins.JobPollSeconds)*time.Second, cfg.Plugins.JobMaxSeconds)
 
 	// Reconcile pre-defined agents declared in nine.toml: seed a config-owned
 	// goal + pursue shell for each, and bring existing ones' definitions in line
@@ -173,4 +214,14 @@ func runDaemon() {
 		os.Exit(1)
 	}
 	cancel()
+
+	// Graceful cleanup: ask every running plugin job to cancel, then stop the
+	// plugin processes (which also removes their ephemeral cache dirs and sockets).
+	// Bounded so shutdown cannot hang on an unresponsive plugin.
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	runtime.ShutdownJobs(shutdownCtx, store, pluginManager)
+	shutdownCancel()
+	if err := pluginManager.StopAll(); err != nil {
+		slog.Warn("stop plugins on shutdown", "err", err)
+	}
 }

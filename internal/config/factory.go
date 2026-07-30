@@ -1,8 +1,15 @@
 package config
 
 import (
+	"errors"
+	"fmt"
+	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
+	"strconv"
 	"time"
 
 	"nine/internal/llm"
@@ -30,9 +37,19 @@ func LoadDefault() *Config {
 		if p == "" {
 			continue
 		}
-		if cfg, err := Load(p); err == nil {
+		cfg, err := Load(p)
+		if err == nil {
 			ApplyEnvOverrides(cfg)
 			return cfg
+		}
+		// A missing file is normal — try the next path. Anything else (a TOML
+		// parse error, a settings-validation error) means a config file is present
+		// but unusable; surface it rather than silently falling through to an empty
+		// config the operator did not intend.
+		if !errors.Is(err, fs.ErrNotExist) {
+			// path and err come from the operator's own config discovery, not an
+			// untrusted source, so logging them verbatim is safe.
+			slog.Warn("ignoring unusable config file", "path", p, "err", err) //nolint:gosec // G706: operator-controlled path
 		}
 	}
 	cfg := &Config{}
@@ -62,6 +79,9 @@ func ApplyEnvOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("NINE_PLUGINS_USER_DIR"); v != "" {
 		cfg.Plugins.UserDir = v
+	}
+	if v := os.Getenv("NINE_PLUGINS_CACHE_DIR"); v != "" {
+		cfg.Plugins.CacheDir = v
 	}
 	if v := os.Getenv("NINE_WORKSPACE_ROOT"); v != "" {
 		cfg.Workspace.Root = v
@@ -178,8 +198,29 @@ func (cfg *Config) BuildQueue() *llm.Queue {
 	return llm.NewQueue(cfg.BuildProvider(), max(cfg.LLM.MaxConcurrent, 1))
 }
 
-// PluginEnvs returns the extra environment variables required to start the named plugin.
+// PluginEnvs returns the extra environment variables to start the named plugin:
+// Nine's built-in defaults with the operator's [plugin.<name>.settings] layered
+// on top. Settings come last so an operator value wins on a duplicate key (e.g.
+// BROWSER_HEADLESS), which is what lets an operator override a built-in default
+// (docs/plugin-capabilities.md §3). It applies to every plugin, built-in or user;
+// a plugin with no defaults and no settings gets an empty slice.
+//
+// The settings were validated at load (Config.Validate), so the error from
+// pluginSettingsEnv here is defensive: on the impossible residual error the
+// settings are dropped rather than crashing a spawn.
 func (cfg *Config) PluginEnvs(name string) []string {
+	env := cfg.pluginDefaults(name)
+	if entry, ok := cfg.Plugin[name]; ok {
+		if settings, err := pluginSettingsEnv(name, entry.Settings); err == nil {
+			env = append(env, settings...)
+		}
+	}
+	return env
+}
+
+// pluginDefaults returns the built-in default environment Nine ships for a
+// plugin so it works out of the box. Operator settings layer on top (PluginEnvs).
+func (cfg *Config) pluginDefaults(name string) []string {
 	switch name {
 	case "files":
 		if cfg.Workspace.Root != "" {
@@ -195,5 +236,97 @@ func (cfg *Config) PluginEnvs(name string) []string {
 		}
 	default:
 		return nil
+	}
+}
+
+// PluginCacheRoot returns the directory under which each plugin's cache dir is
+// created (docs/plugin-capabilities.md §4): the configured [plugins].cache_dir,
+// else os.UserCacheDir()/nine/plugins. It returns "" only when no directory is
+// configured and the OS user cache dir cannot be resolved, in which case the
+// daemon runs without per-plugin cache dirs rather than failing.
+func (cfg *Config) PluginCacheRoot() string {
+	if cfg.Plugins.CacheDir != "" {
+		return cfg.Plugins.CacheDir
+	}
+	base, err := os.UserCacheDir()
+	if err != nil || base == "" {
+		return ""
+	}
+	return filepath.Join(base, "nine", "plugins")
+}
+
+// PluginPersistCache reports whether the named plugin's cache dir persists across
+// restarts (docs/plugin-capabilities.md §4). Default false — an unconfigured
+// plugin gets an ephemeral dir wiped when it exits.
+func (cfg *Config) PluginPersistCache(name string) bool {
+	return cfg.Plugin[name].PersistCache
+}
+
+// reservedPluginEnvKeys are the environment variables Nine computes freshly per
+// spawn. An operator [plugin.<name>.settings] key naming one is a config error,
+// because overriding it breaks the transport or the cache contract rather than
+// merely changing a default. It is exactly these three — not the whole NINE_
+// prefix, so NINE_WORKSPACE and other pluginDefaults values stay overridable
+// (docs/plugin-capabilities.md §3).
+var reservedPluginEnvKeys = map[string]bool{
+	"NINE_PLUGIN_SOCKET":           true,
+	"NINE_PLUGIN_CACHE_DIR":        true,
+	"NINE_PLUGIN_CACHE_PERSISTENT": true,
+}
+
+// pluginEnvKeyRe matches a POSIX environment-variable name. Keys are used
+// verbatim as env-var names, so a key outside this shape is a config error.
+var pluginEnvKeyRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// pluginSettingsEnv turns a plugin's operator settings into KEY=VALUE strings,
+// validating each key name and value type. Keys are emitted in sorted order for
+// a reproducible spawn environment; because keys are distinct, order does not
+// affect precedence. It is called both at load (Config.Validate, for the error)
+// and at spawn (PluginEnvs, for the values).
+func pluginSettingsEnv(name string, settings map[string]any) ([]string, error) {
+	if len(settings) == 0 {
+		return nil, nil
+	}
+	keys := make([]string, 0, len(settings))
+	for k := range settings {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		if !pluginEnvKeyRe.MatchString(k) {
+			return nil, fmt.Errorf("plugin %q: settings key %q is not a valid environment variable name", name, k)
+		}
+		if reservedPluginEnvKeys[k] {
+			return nil, fmt.Errorf("plugin %q: settings key %q is reserved by Nine and cannot be set here", name, k)
+		}
+		val, err := stringifyPluginSetting(settings[k])
+		if err != nil {
+			return nil, fmt.Errorf("plugin %q: settings key %q: %w", name, k, err)
+		}
+		out = append(out, k+"="+val)
+	}
+	return out, nil
+}
+
+// stringifyPluginSetting renders a TOML scalar as an environment-variable value.
+// A table or array (or any non-scalar such as a datetime) is a config error —
+// env vars are strings, and inventing an encoding for structured values invites
+// two plugins to disagree about it (docs/plugin-capabilities.md §3).
+func stringifyPluginSetting(v any) (string, error) {
+	switch t := v.(type) {
+	case string:
+		return t, nil
+	case bool:
+		return strconv.FormatBool(t), nil
+	case int64:
+		return strconv.FormatInt(t, 10), nil
+	case int:
+		return strconv.Itoa(t), nil
+	case float64:
+		return strconv.FormatFloat(t, 'g', -1, 64), nil
+	default:
+		return "", fmt.Errorf("value must be a string, integer, float, or boolean, not %T", v)
 	}
 }

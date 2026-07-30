@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 )
 
 func main() {
@@ -32,6 +33,13 @@ func main() {
 		}
 		protocolVersion = n
 	}
+	// When NINE_TEST_ENV_DUMP names a path, write the process environment there
+	// before listening. Tests use it to assert that operator settings reach the
+	// spawned plugin (docs/plugin-capabilities.md §3). No-op unless the var is set.
+	if dump := os.Getenv("NINE_TEST_ENV_DUMP"); dump != "" {
+		os.WriteFile(dump, []byte(strings.Join(os.Environ(), "\n")), 0o600) //nolint:errcheck
+	}
+
 	os.Remove(socketPath) //nolint:errcheck
 	ln, err := net.Listen("unix", socketPath)
 	if err != nil {

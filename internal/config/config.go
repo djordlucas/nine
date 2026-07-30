@@ -16,6 +16,31 @@ type Config struct {
 	Roles      RolesConfig      `toml:"roles"`
 	Agents     []AgentConfig    `toml:"agent"`
 	Tools      ToolsConfig      `toml:"tools"`
+
+	// Plugin holds per-plugin `[plugin.<name>]` tables (singular), sibling to the
+	// plural `[plugins]` subsystem table above — the same split `[agent]` and
+	// `[[agent]]` already use. It carries operator settings passed through to a
+	// plugin as environment variables, so an operator can configure a plugin Nine
+	// has never heard of without a rebuild (docs/plugin-capabilities.md §3).
+	Plugin map[string]PluginEntry `toml:"plugin"`
+}
+
+// PluginEntry is one `[plugin.<name>]` table. Its Settings are schema-less on
+// Nine's side: keys are copied through verbatim as environment-variable names so
+// they match what a plugin's own README documents, and values are TOML scalars,
+// stringified. Both are validated at load (Config.Validate), so a bad key or a
+// non-scalar value is a config error rather than a surprise at spawn.
+type PluginEntry struct {
+	// PersistCache keeps the plugin's cache directory across restarts
+	// (docs/plugin-capabilities.md §4). Default false. Declared here so the table
+	// shape is stable; it is wired in the cache-dir phase.
+	PersistCache bool `toml:"persist_cache"`
+
+	// Settings are operator-supplied environment variables handed to the plugin
+	// process at spawn, layered on top of Nine's built-in defaults (operator
+	// values win on a duplicate key). Reserved keys and Nine's own spawn vars
+	// cannot be set here.
+	Settings map[string]any `toml:"settings"`
 }
 
 // ToolsConfig tunes the tool-dispatch boundary. It is `[tools]` rather than
@@ -196,6 +221,25 @@ type PluginsConfig struct {
 	Dir string `toml:"dir"`
 	Bin string `toml:"bin"`
 
+	// CacheDir is the root under which each plugin gets its own scratch directory
+	// (docs/plugin-capabilities.md §4). Empty falls back to the OS user cache dir
+	// (os.UserCacheDir()/nine/plugins). The container overrides it with
+	// NINE_PLUGINS_CACHE_DIR. It must be durable, not /tmp, because persistent
+	// caches live under the same root.
+	CacheDir string `toml:"cache_dir"`
+
+	// JobPollSeconds is how often the daemon polls running plugin jobs
+	// (docs/plugin-capabilities.md §5). 0 uses runtime.DefaultJobPollSeconds.
+	JobPollSeconds int `toml:"job_poll_seconds"`
+
+	// JobMaxSeconds bounds a single job's lifetime: the sweeper marks an over-age
+	// job failed and attempts a cancel. 0 uses runtime.DefaultJobMaxSeconds (1h).
+	JobMaxSeconds int `toml:"job_max_seconds"`
+
+	// MaxJobsPerConversation caps a conversation's outstanding jobs, so a looping
+	// model cannot start an unbounded number. 0 uses runtime's default (8).
+	MaxJobsPerConversation int `toml:"max_jobs_per_conversation"`
+
 	// UserDir holds operator-supplied plugins, discovered at boot from a
 	// sidecar-manifest layout: an executable `<name>` beside a `<name>.toml`
 	// manifest (name + entrypoint). It is scanned separately from the built-in
@@ -240,5 +284,21 @@ func Load(path string) (*Config, error) {
 	if _, err := toml.DecodeFile(path, &cfg); err != nil {
 		return nil, err
 	}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	return &cfg, nil
+}
+
+// Validate checks per-plugin invariants that TOML decoding cannot express, so a
+// malformed config fails at load rather than at spawn. Today it validates
+// [plugin.<name>.settings] key names and value types (docs/plugin-capabilities.md
+// §3); it is the natural home for future cross-field checks.
+func (cfg *Config) Validate() error {
+	for name, entry := range cfg.Plugin {
+		if _, err := pluginSettingsEnv(name, entry.Settings); err != nil {
+			return err
+		}
+	}
+	return nil
 }
