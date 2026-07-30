@@ -232,6 +232,14 @@ type PluginsConfig struct {
 	// (docs/plugin-capabilities.md §5). 0 uses runtime.DefaultJobPollSeconds.
 	JobPollSeconds int `toml:"job_poll_seconds"`
 
+	// JobMaxSeconds bounds a single job's lifetime: the sweeper marks an over-age
+	// job failed and attempts a cancel. 0 uses runtime.DefaultJobMaxSeconds (1h).
+	JobMaxSeconds int `toml:"job_max_seconds"`
+
+	// MaxJobsPerConversation caps a conversation's outstanding jobs, so a looping
+	// model cannot start an unbounded number. 0 uses runtime's default (8).
+	MaxJobsPerConversation int `toml:"max_jobs_per_conversation"`
+
 	// UserDir holds operator-supplied plugins, discovered at boot from a
 	// sidecar-manifest layout: an executable `<name>` beside a `<name>.toml`
 	// manifest (name + entrypoint). It is scanned separately from the built-in

@@ -17,6 +17,14 @@ import (
 // [plugins].job_poll_seconds is unset.
 const DefaultJobPollSeconds = 2
 
+// DefaultJobMaxSeconds bounds a single job's lifetime when
+// [plugins].job_max_seconds is unset: one hour.
+const DefaultJobMaxSeconds = 3600
+
+// DefaultMaxJobsPerConversation caps a conversation's outstanding jobs when
+// [plugins].max_jobs_per_conversation is unset.
+const DefaultMaxJobsPerConversation = 8
+
 // jobInlineCap is how many characters of a job's terminal output are kept inline
 // in the registry row; a larger result is spilled to the file store, mirroring
 // tool-output handling (docs/tool-output-spill.md).
@@ -33,17 +41,34 @@ func newJobHandle() string {
 // owning conversation and returns the observation the model sees.
 type jobStarter struct {
 	store   *memory.Store
+	mgr     *plugin.Manager
 	ownerID string
+	maxJobs int
 }
 
-func newJobStarter(store *memory.Store, ownerID string) *jobStarter {
-	return &jobStarter{store: store, ownerID: ownerID}
+func newJobStarter(store *memory.Store, mgr *plugin.Manager, ownerID string, maxJobs int) *jobStarter {
+	if maxJobs <= 0 {
+		maxJobs = DefaultMaxJobsPerConversation
+	}
+	return &jobStarter{store: store, mgr: mgr, ownerID: ownerID, maxJobs: maxJobs}
 }
 
 // StartJob writes the registry row and returns a one-line observation naming the
 // handle. The job is recorded as running; the sweeper reconciles its true state
 // (queued/running/done…) on the next poll.
-func (js *jobStarter) StartJob(_ context.Context, pluginName, tool, pluginJobID, ack string) (string, error) {
+//
+// The per-conversation cap is enforced here, on admission: the plugin has already
+// started the goroutine by the time its id reaches us, so an over-cap job is
+// cancelled rather than refused, and no row is written
+// (docs/plugin-capabilities.md §5).
+func (js *jobStarter) StartJob(ctx context.Context, pluginName, tool, pluginJobID, ack string) (string, error) {
+	if n, err := js.store.PluginJobCountOutstanding(js.ownerID); err == nil && n >= js.maxJobs {
+		if p, ok := js.mgr.PluginByName(pluginName); ok {
+			js.mgr.JobCancel(ctx, p, pluginJobID) //nolint:errcheck // best-effort; we are declining it
+		}
+		return fmt.Sprintf("Not started: you already have %d background jobs running, the maximum. Wait for one to finish (job_wait/job_check) or cancel one (job_cancel), then try again.", js.maxJobs), nil
+	}
+
 	handle := newJobHandle()
 	err := js.store.PluginJobCreate(memory.PluginJob{
 		Handle:      handle,
@@ -67,21 +92,26 @@ func (js *jobStarter) StartJob(_ context.Context, pluginName, tool, pluginJobID,
 // (docs/plugin-capabilities.md §5). It is a single daemon-level component, not a
 // goroutine per job.
 type jobSweeper struct {
-	store *memory.Store
-	mgr   *plugin.Manager
+	store      *memory.Store
+	mgr        *plugin.Manager
+	maxSeconds int
 }
 
 // RunJobSweeper polls running plugin jobs on interval until ctx is cancelled,
-// completing finished ones. Production-only, like the spill sweeper: the eval
+// completing finished ones and expiring over-age ones (maxSeconds, 0 =
+// DefaultJobMaxSeconds). Production-only, like the spill sweeper: the eval
 // harness never starts one. A nil store or manager is a no-op.
-func RunJobSweeper(ctx context.Context, store *memory.Store, mgr *plugin.Manager, interval time.Duration) {
+func RunJobSweeper(ctx context.Context, store *memory.Store, mgr *plugin.Manager, interval time.Duration, maxSeconds int) {
 	if store == nil || mgr == nil {
 		return
 	}
 	if interval <= 0 {
 		interval = DefaultJobPollSeconds * time.Second
 	}
-	s := &jobSweeper{store: store, mgr: mgr}
+	if maxSeconds <= 0 {
+		maxSeconds = DefaultJobMaxSeconds
+	}
+	s := &jobSweeper{store: store, mgr: mgr, maxSeconds: maxSeconds}
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
@@ -94,8 +124,11 @@ func RunJobSweeper(ctx context.Context, store *memory.Store, mgr *plugin.Manager
 	}
 }
 
-// sweepOnce polls every running job once and reconciles the registry.
+// sweepOnce expires over-age jobs, then polls every remaining running job and
+// reconciles the registry.
 func (s *jobSweeper) sweepOnce(ctx context.Context) {
+	s.expireOverAge(ctx)
+
 	jobs, err := s.store.PluginJobsRunning()
 	if err != nil {
 		slog.Warn("job sweep: list running", "err", err)
@@ -103,6 +136,26 @@ func (s *jobSweeper) sweepOnce(ctx context.Context) {
 	}
 	for _, j := range jobs {
 		s.reconcile(ctx, j)
+	}
+}
+
+// expireOverAge fails jobs past their lifetime bound, attempts a best-effort
+// cancel of each, and notifies its owner.
+func (s *jobSweeper) expireOverAge(ctx context.Context) {
+	expired, err := s.store.PluginJobsExpire(s.maxSeconds, fmt.Sprintf("exceeded job_max_seconds (%ds)", s.maxSeconds))
+	if err != nil {
+		slog.Warn("job sweep: expire", "err", err)
+		return
+	}
+	for _, j := range expired {
+		if p, ok := s.mgr.PluginByName(j.Plugin); ok {
+			s.mgr.JobCancel(ctx, p, j.PluginJobID) //nolint:errcheck // best-effort
+		}
+		msg := fmt.Sprintf("Background job %s (%s) was stopped after exceeding its %ds time limit.", j.Handle, j.Tool, s.maxSeconds)
+		if err := s.store.NotificationCreate(memory.NewID(), j.OwnerID, msg, false); err != nil {
+			slog.Warn("job sweep: expire notify", "handle", j.Handle, "err", err)
+		}
+		slog.Info("plugin job expired", "handle", j.Handle, "plugin", j.Plugin)
 	}
 }
 
@@ -140,6 +193,51 @@ func (s *jobSweeper) reconcile(ctx context.Context, j memory.PluginJob) {
 		slog.Warn("job sweep: notify", "handle", j.Handle, "err", err)
 	}
 	slog.Info("plugin job finished", "handle", j.Handle, "plugin", j.Plugin, "state", state)
+}
+
+// MarkOrphanedJobsLost marks every still-running job lost at boot and notifies
+// each owner. A job runs as a goroutine inside a plugin process, and this daemon
+// spawns fresh plugins on fresh sockets, so any row still running belongs to a
+// plugin the previous daemon left behind and is unreachable
+// (docs/plugin-capabilities.md §5). Returns the number marked. Best-effort.
+func MarkOrphanedJobsLost(store *memory.Store) int {
+	if store == nil {
+		return 0
+	}
+	lost, err := store.PluginJobsMarkLost("the daemon restarted while this job was running, so its result is unavailable")
+	if err != nil {
+		slog.Warn("mark orphaned jobs lost", "err", err)
+		return 0
+	}
+	for _, j := range lost {
+		msg := fmt.Sprintf("Background job %s (%s) was lost when the daemon restarted; its result is unavailable. You may start it again if you still need it.", j.Handle, j.Tool)
+		if err := store.NotificationCreate(memory.NewID(), j.OwnerID, msg, false); err != nil {
+			slog.Warn("mark lost: notify", "handle", j.Handle, "err", err)
+		}
+	}
+	if len(lost) > 0 {
+		slog.Info("marked orphaned plugin jobs lost", "count", len(lost))
+	}
+	return len(lost)
+}
+
+// ShutdownJobs cancels every running plugin job before the daemon stops its
+// plugins, so a graceful shutdown asks jobs to stop rather than orphaning them.
+// Best-effort and bounded by ctx. Callers run Manager.StopAll afterwards.
+func ShutdownJobs(ctx context.Context, store *memory.Store, mgr *plugin.Manager) {
+	if store == nil || mgr == nil {
+		return
+	}
+	jobs, err := store.PluginJobsRunning()
+	if err != nil {
+		slog.Warn("shutdown: list running jobs", "err", err)
+		return
+	}
+	for _, j := range jobs {
+		if p, ok := mgr.PluginByName(j.Plugin); ok {
+			mgr.JobCancel(ctx, p, j.PluginJobID) //nolint:errcheck // best-effort on the way down
+		}
+	}
 }
 
 // storeResult caps or spills a job's terminal output, mirroring the tool-output

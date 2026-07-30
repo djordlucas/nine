@@ -76,6 +76,56 @@ func TestPluginJobFinishIsTerminalGuarded(t *testing.T) {
 	}
 }
 
+func TestPluginJobCountAndMarkLost(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = store.PluginJobCreate(memory.PluginJob{Handle: "r1", Plugin: "p", Tool: "t", PluginJobID: "1", OwnerID: "me", State: "running"})
+	_ = store.PluginJobCreate(memory.PluginJob{Handle: "r2", Plugin: "p", Tool: "t", PluginJobID: "2", OwnerID: "me", State: "running"})
+	_ = store.PluginJobCreate(memory.PluginJob{Handle: "d1", Plugin: "p", Tool: "t", PluginJobID: "3", OwnerID: "me", State: "running"})
+	_ = store.PluginJobFinish("d1", "done", "", "", "")
+
+	if n, _ := store.PluginJobCountOutstanding("me"); n != 2 {
+		t.Errorf("outstanding count = %d, want 2", n)
+	}
+
+	lost, err := store.PluginJobsMarkLost("daemon restarted")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lost) != 2 {
+		t.Fatalf("marked %d lost, want 2 (the running ones only)", len(lost))
+	}
+	for _, j := range lost {
+		if j.State != "lost" || j.Error == "" {
+			t.Errorf("lost row %s = %+v, want state lost with a reason", j.Handle, j)
+		}
+	}
+	// The done job is untouched; nothing is outstanding anymore.
+	if n, _ := store.PluginJobCountOutstanding("me"); n != 0 {
+		t.Errorf("outstanding after mark-lost = %d, want 0", n)
+	}
+	if got, _, _ := store.PluginJobGet("d1"); got.State != "done" {
+		t.Errorf("done job mutated to %q", got.State)
+	}
+}
+
+func TestPluginJobsExpireDisabled(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = store.PluginJobCreate(memory.PluginJob{Handle: "j", Plugin: "p", Tool: "t", PluginJobID: "1", OwnerID: "me", State: "running"})
+	// maxSeconds <= 0 disables expiry; a fresh job is well within any positive age.
+	if rows, _ := store.PluginJobsExpire(0, "x"); len(rows) != 0 {
+		t.Errorf("expire disabled returned %d rows, want 0", len(rows))
+	}
+	if rows, _ := store.PluginJobsExpire(3600, "x"); len(rows) != 0 {
+		t.Errorf("fresh job expired under a 1h bound: %d rows", len(rows))
+	}
+}
+
 func TestPluginJobsOutstandingSummary(t *testing.T) {
 	store, err := memtest.Open(t)
 	if err != nil {

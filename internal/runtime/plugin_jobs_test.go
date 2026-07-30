@@ -71,7 +71,7 @@ func TestJobSweeperCompletesAndNotifies(t *testing.T) {
 	if cr.JobID == "" {
 		t.Fatal("slowjob should return a job id")
 	}
-	obs, err := newJobStarter(store, "conv1").StartJob(ctx, p.Name, "slowjob", cr.JobID, cr.Output)
+	obs, err := newJobStarter(store, mgr, "conv1", 8).StartJob(ctx, p.Name, "slowjob", cr.JobID, cr.Output)
 	if err != nil {
 		t.Fatalf("StartJob: %v", err)
 	}

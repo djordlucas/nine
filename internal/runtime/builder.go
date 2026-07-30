@@ -55,6 +55,10 @@ type LoopConfig struct {
 	// MaxToolOutputTokens mirrors [tools] max_output_tokens: the dispatcher's
 	// per-result output cap. 0 keeps agent.DefaultMaxOutputTokens.
 	MaxToolOutputTokens int
+	// MaxJobsPerConversation mirrors [plugins] max_jobs_per_conversation: the cap
+	// on a conversation's outstanding plugin jobs (docs/plugin-capabilities.md §5).
+	// 0 uses DefaultMaxJobsPerConversation.
+	MaxJobsPerConversation int
 }
 
 // AgentBuilderConfig holds the behavioral dependencies layered on top of the
@@ -333,11 +337,6 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 			d.RegisterPlugin(lc.Mgr, p)
 		}
 	}
-	// A plugin tool that returns a job id is recorded against this conversation,
-	// so its completion can be notified back (docs/plugin-capabilities.md §5).
-	if lc.Memory != nil {
-		d.SetJobStarter(newJobStarter(lc.Memory, agentID))
-	}
 
 	f.registerCoreTools(d, lc, agentID)
 
@@ -355,6 +354,11 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 	if lc.Memory != nil {
 		agent.RegisterJobTools(d, newJobTools(lc.Memory, lc.Mgr, agentID))
 		shellTools = append(shellTools, agent.JobToolNames...)
+	}
+	// A plugin tool that returns a job id is recorded against this conversation,
+	// with the per-conversation cap enforced on admission (§5).
+	if lc.Memory != nil {
+		d.SetJobStarter(newJobStarter(lc.Memory, lc.Mgr, agentID, lc.MaxJobsPerConversation))
 	}
 
 	delegates := role.Delegates && depthGuard > 0

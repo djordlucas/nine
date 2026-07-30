@@ -46,7 +46,9 @@ type AssemblyConfig struct {
 	SurfaceMemories bool
 	// MaxToolOutputTokens mirrors [tools] max_output_tokens; 0 keeps the default.
 	MaxToolOutputTokens int
-	Queue               *llm.Queue
+	// MaxJobsPerConversation mirrors [plugins] max_jobs_per_conversation; 0 default.
+	MaxJobsPerConversation int
+	Queue                  *llm.Queue
 	TaskTimeoutSeconds  int
 	HITL                *HITL
 	ApprovalTools       []string
@@ -84,8 +86,9 @@ func Assemble(c AssemblyConfig) *Assembly {
 			SystemPrompt:        c.SystemPrompt,
 			Assembler:           assembler,
 			RelatedSessions:     c.RelatedSessions,
-			SurfaceMemories:     c.SurfaceMemories,
-			MaxToolOutputTokens: c.MaxToolOutputTokens,
+			SurfaceMemories:        c.SurfaceMemories,
+			MaxToolOutputTokens:    c.MaxToolOutputTokens,
+			MaxJobsPerConversation: c.MaxJobsPerConversation,
 		},
 		InitialQueue: c.Queue,
 		NotifAdd:     notifAdd,
