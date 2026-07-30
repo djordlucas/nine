@@ -459,6 +459,15 @@ func (w *AgentWorker) handleIdle() {
 		w.processTurn(turnReq{ctx: ctx, text: text, respCh: make(chan turnResp, 1), trigger: "idle"})
 		return
 	}
+	// No stage produced idle work. Refresh the cached plan so any stage-status
+	// change an OnIdle handler wrote directly (e.g. the pursue stage retiring
+	// itself once its goal is no longer active) is reflected before we decide
+	// whether to re-arm — otherwise a since-retired stage keeps arming the timer
+	// and keeps counting against MaxGoalSessions (activeGoalSessionCount reads
+	// this cached plan).
+	if err := w.persistPlan(); err != nil {
+		slog.Warn("session plan refresh failed", "agent_id", w.id, "err", err)
+	}
 	w.armIdleTimer()
 }
 
