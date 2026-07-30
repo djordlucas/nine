@@ -54,6 +54,12 @@ type Manager struct {
 	env       []string
 	pluginBin string
 
+	// pluginEnv resolves a plugin's extra spawn environment (built-in defaults +
+	// operator settings) by name. Set by the daemon via SetPluginEnv so this
+	// package stays config-agnostic (docs/plugin-capabilities.md §3). Nil means no
+	// extra env — the pre-settings behaviour, used by tests and probes.
+	pluginEnv func(name string) []string
+
 	userDir    string
 	userStatus []UserPluginStatus
 }
@@ -65,6 +71,28 @@ func NewManager(nineBin string) *Manager {
 		pluginBin: nineBin,
 		env:       []string{"NINE_BIN=" + nineBin},
 	}
+}
+
+// SetPluginEnv installs the resolver used to look up a plugin's extra spawn
+// environment by name (typically config.Config.PluginEnvs). It is optional: with
+// no resolver installed, plugins start with only the manager's own env, which is
+// the behaviour tests and Probe callers rely on.
+func (m *Manager) SetPluginEnv(fn func(name string) []string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.pluginEnv = fn
+}
+
+// envFor returns the extra environment for the named plugin via the installed
+// resolver, or nil when none is set.
+func (m *Manager) envFor(name string) []string {
+	m.mu.Lock()
+	fn := m.pluginEnv
+	m.mu.Unlock()
+	if fn == nil {
+		return nil
+	}
+	return fn(name)
 }
 
 // PluginBin returns the full path to the named plugin binary.

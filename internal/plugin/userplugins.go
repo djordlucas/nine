@@ -60,7 +60,13 @@ func (m *Manager) loadUserPlugins(dir string) {
 			continue
 		}
 
-		desc, err := Probe(d.BinaryPath, m.env...)
+		// Operator settings (docs/plugin-capabilities.md §3) apply to user plugins,
+		// which otherwise receive no environment. Probe gets the manager env plus
+		// the settings; Start prepends the manager env itself, so it gets settings
+		// alone.
+		extra := m.envFor(d.Name)
+		probeEnv := append(append([]string{}, m.env...), extra...)
+		desc, err := Probe(d.BinaryPath, probeEnv...)
 		if err != nil {
 			st.Err = err.Error()
 			slog.Error("skipping user plugin: not a valid plugin", "name", d.Name, "path", d.BinaryPath, "err", err)
@@ -75,7 +81,7 @@ func (m *Manager) loadUserPlugins(dir string) {
 			continue
 		}
 
-		p, err := m.Start(d.BinaryPath)
+		p, err := m.Start(d.BinaryPath, extra...)
 		if err != nil {
 			st.Err = err.Error()
 			slog.Error("skipping user plugin: start failed", "name", d.Name, "path", d.BinaryPath, "err", err)
