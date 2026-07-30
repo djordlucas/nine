@@ -81,6 +81,7 @@ TOOL CALL
    └── CORE-INTERCEPTED TOOLS (Register* at build) handled in-process, no subprocess:
           gap_report
           memory_embed, memory_query, file_search_semantic
+          tool_list, tool_search  (skill_list/skill_search: see skills.md)
           run_agent, run_agents
           workflow_create/update/get/list/retry_step
           goal_create/get/list/update_status/append_subtree
