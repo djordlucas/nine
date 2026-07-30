@@ -10,9 +10,9 @@
 - **Depends on:** the dispatcher (`spec/contracts/dispatcher.md`), the memory
   file store (`internal/memory/files.go`, `spec/contracts/memory-store.md`), the
   session journal (`docs/event-log.md`).
-- **Not this:** the plugin **host API** (`docs/plugin-host-api.md`) — a reverse
-  channel letting a plugin call *into* Nine. That is a different feature with a
-  different trust model; see §7.
+- **Not this:** plugin capabilities (`docs/plugin-capabilities.md`) — settings, a
+  cache dir, and long-running jobs. That note once proposed a reverse channel
+  letting a plugin call *into* Nine; the reverse channel was dropped. See §7.
 
 ---
 
@@ -46,9 +46,10 @@ and return a key. Interception wins on three counts:
   tools (`run_agent`, `memory_query`, workflow/goal tools) and misses MCP servers
   entirely (`internal/plugin/mcp.go`), which are third-party stdio processes Nine
   does not control.
-- **No new trust boundary.** A host API needs a socket, a capability token, and
-  a per-plugin grant model (`docs/plugin-host-api.md` §5–6). An in-process
-  function call needs none of it.
+- **No new trust boundary.** A host API would need a socket, a capability token,
+  and a per-plugin grant model. An in-process function call needs none of it.
+  (That cost is also why the host API was dropped outright —
+  `docs/plugin-capabilities.md` §2.)
 - **One policy, not N.** Otherwise every plugin author re-implements "am I over
   the limit, where do I put it, what key do I return."
 
@@ -238,9 +239,9 @@ touched. This is the single most important design constraint in the feature, and
 
 This solves the *context* problem completely. The bytes still transit the daemon
 once (plugin → daemon → plugin). A plugin writing directly to the store without
-returning the payload needs `host.memory.set` — phase 4 of
-`docs/plugin-host-api.md`. That is a socket-throughput optimization, not a
-context one, and is deliberately out of scope here.
+returning the payload would need a reverse channel into memory, which
+`docs/plugin-capabilities.md` §2 rules out for good. That would have been a
+socket-throughput optimization, never a context one, so nothing is lost here.
 
 ---
 
@@ -269,12 +270,15 @@ and a non-positive age, so the sweep can never clear the store.
 
 ---
 
-## 7. Relationship to the plugin host API
+## 7. Relationship to the plugin capabilities note
 
-`docs/plugin-host-api.md` §2 called this out as a separate feature, and it
-shipped separately. They touch at exactly one point: the deferred phase-4
-`host.memory.set` would let a plugin skip the daemon round-trip described in §5.
-Neither depends on the other.
+`docs/plugin-capabilities.md` (then a host-API proposal) called this out as a
+separate feature, and it shipped separately. The call held: that note has since
+dropped the reverse channel entirely, so the one point where the two designs
+touched — a plugin writing its own result to the store — no longer exists, and
+this feature never needed it. The two do meet again in one place, harmlessly:
+a long-running **job**'s output is run through this same cap-or-spill path when
+the daemon collects it.
 
 ---
 
