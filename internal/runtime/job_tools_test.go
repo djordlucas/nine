@@ -17,7 +17,7 @@ func newJobTest(t *testing.T) (*memory.Store, *jobTools) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return store, newJobTools(store, plugin.NewManager(""), "conv1")
+	return store, newJobTools(store, plugin.NewManager(""), nil, "conv1")
 }
 
 func TestJobCheckStates(t *testing.T) {
@@ -84,6 +84,58 @@ func TestJobListAndSurface(t *testing.T) {
 	if empty := jobsEnrichmentFn(store, "other")(context.Background(), nil); empty != "" {
 		t.Errorf("surface for owner with no jobs = %q, want empty", empty)
 	}
+}
+
+// With a waiter registry wired, job_wait wakes on the sweeper's signal rather
+// than a poll tick — so it returns well under the poll interval.
+func TestJobWaitWakesOnSignal(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waiters := NewJobWaiters()
+	jt := newJobTools(store, plugin.NewManager(""), waiters, "conv1")
+
+	_ = store.PluginJobCreate(memory.PluginJob{Handle: "job_s", Plugin: "p", Tool: "t", PluginJobID: "1", OwnerID: "conv1", State: "running"})
+
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		_ = store.PluginJobFinish("job_s", "done", "the result", "", "")
+		waiters.signal("job_s")
+	}()
+
+	start := time.Now()
+	out, err := jt.Wait(context.Background(), "job_s", 5*time.Second)
+	elapsed := time.Since(start)
+	if err != nil || !strings.Contains(out, "the result") {
+		t.Fatalf("wait: out=%q err=%v", out, err)
+	}
+	if elapsed >= jobWaitPoll {
+		t.Errorf("wait took %s (>= poll interval %s); it should have woken on the signal", elapsed, jobWaitPoll)
+	}
+}
+
+func TestJobWaitersSignalAndCancel(t *testing.T) {
+	w := NewJobWaiters()
+	ch, cancel := w.register("h")
+
+	select {
+	case <-ch:
+		t.Fatal("channel closed before signal")
+	default:
+	}
+	w.signal("h")
+	select {
+	case <-ch:
+	case <-time.After(time.Second):
+		t.Fatal("signal did not close the waiter")
+	}
+
+	// A second waiter that is cancelled is simply removed; signalling is a no-op.
+	_, cancel2 := w.register("h")
+	cancel2()
+	w.signal("h") // must not panic on the removed waiter
+	cancel()      // cancelling an already-signalled waiter is safe
 }
 
 func TestJobCancelBranches(t *testing.T) {

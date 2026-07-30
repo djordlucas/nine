@@ -27,6 +27,10 @@ func runDaemon() {
 		os.Exit(1)
 	}
 
+	// Shared between the job sweeper and every worker's job_wait, so a completing
+	// job wakes its waiters at once instead of each polling (§5).
+	jobWaiters := runtime.NewJobWaiters()
+
 	// Initialize plugin manager and start plugins
 	pluginManager := plugin.NewManager(cfg.Plugins.Bin)
 	// Resolve per-plugin spawn env (built-in defaults + operator settings) by name.
@@ -122,6 +126,7 @@ func runDaemon() {
 		SurfaceMemories:     cfg.Memory.SurfaceMemoriesEnabled(),
 		MaxToolOutputTokens:    cfg.Tools.MaxOutputTokens,
 		MaxJobsPerConversation: cfg.Plugins.MaxJobsPerConversation,
+		JobWaiters:             jobWaiters,
 		Queue:                  cfg.BuildQueue(),
 		TaskTimeoutSeconds:  cfg.Daemon.TaskTimeoutSeconds,
 		HITL:                hitl,
@@ -186,7 +191,7 @@ func runDaemon() {
 	// Poll running plugin jobs (docs/plugin-capabilities.md §5): reconcile their
 	// state, expire over-age ones, and on completion cap-or-spill the result and
 	// notify the owning conversation so the next turn learns of it.
-	go runtime.RunJobSweeper(ctx, store, pluginManager,
+	go runtime.RunJobSweeper(ctx, store, pluginManager, jobWaiters,
 		time.Duration(cfg.Plugins.JobPollSeconds)*time.Second, cfg.Plugins.JobMaxSeconds)
 
 	// Reconcile pre-defined agents declared in nine.toml: seed a config-owned

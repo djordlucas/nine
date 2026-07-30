@@ -2,6 +2,7 @@ package memory_test
 
 import (
 	"testing"
+	"time"
 
 	"nine/internal/memory"
 	"nine/internal/memory/memtest"
@@ -108,6 +109,31 @@ func TestPluginJobCountAndMarkLost(t *testing.T) {
 	}
 	if got, _, _ := store.PluginJobGet("d1"); got.State != "done" {
 		t.Errorf("done job mutated to %q", got.State)
+	}
+}
+
+func TestPluginJobsDueForPoll(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = store.PluginJobCreate(memory.PluginJob{Handle: "j", Plugin: "p", Tool: "t", PluginJobID: "1", OwnerID: "me", State: "running"})
+
+	// Just created (updated_at = now): not yet due under a 1s base cadence.
+	if due, _ := store.PluginJobsDueForPoll(1, 30, 60); len(due) != 0 {
+		t.Errorf("fresh job due immediately: %d rows", len(due))
+	}
+
+	time.Sleep(1100 * time.Millisecond)
+
+	// Aged past the base cadence: now due.
+	if due, _ := store.PluginJobsDueForPoll(1, 30, 60); len(due) != 1 {
+		t.Errorf("aged job not due: %d rows, want 1", len(due))
+	}
+	// A poll refreshes updated_at, so it is not due again right away.
+	_ = store.PluginJobUpdateLive("j", "running", "")
+	if due, _ := store.PluginJobsDueForPoll(1, 30, 60); len(due) != 0 {
+		t.Errorf("just-polled job due again immediately: %d rows", len(due))
 	}
 }
 

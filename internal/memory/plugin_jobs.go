@@ -78,6 +78,25 @@ type PluginJobSummary struct {
 	AgeSeconds int    `json:"age_seconds"`
 }
 
+// PluginJobsDueForPoll returns the non-terminal jobs the sweeper should poll
+// now, applying an age-based backoff (docs/plugin-capabilities.md §5): a job
+// younger than youngWindowSeconds is due every baseSeconds, an older one every
+// backoffSeconds. updated_at is the last-poll time (each poll refreshes it), so a
+// job not yet due is simply skipped this tick.
+func (s *Store) PluginJobsDueForPoll(baseSeconds, backoffSeconds, youngWindowSeconds int) ([]PluginJob, error) {
+	return s.queryPluginJobs(
+		`SELECT handle, plugin, tool, plugin_job_id, owner_id, state, ack, progress,
+		        output, spill_path, error, created_at, updated_at, finished_at
+		 FROM plugin_jobs
+		 WHERE state NOT IN ('done','failed','cancelled','lost')
+		   AND updated_at < now() - (CASE
+		         WHEN created_at > now() - (? * interval '1 second')
+		         THEN (? * interval '1 second')
+		         ELSE (? * interval '1 second') END)
+		 ORDER BY created_at`,
+		youngWindowSeconds, baseSeconds, backoffSeconds)
+}
+
 // PluginJobsOutstandingSummary returns ownerID's non-terminal jobs, oldest
 // first — what the context builder surfaces and job_list reports.
 func (s *Store) PluginJobsOutstandingSummary(ownerID string) ([]PluginJobSummary, error) {
