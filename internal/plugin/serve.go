@@ -43,13 +43,31 @@ type ServeOption func(*serveConfig)
 
 type serveConfig struct {
 	maxConcurrent int
+	jobs          *Jobs
+	jobHandlers   map[string]JobHandler
 }
 
 // WithMaxConcurrent advertises a concurrency cap to the daemon (see
 // DescribeResult.MaxConcurrent). Omit it for stateless plugins, which default
-// to unbounded; pass a finite value only for plugins with shared state.
+// to unbounded; pass a finite value only for plugins with shared state. The same
+// cap bounds concurrent jobs (docs/plugin-capabilities.md §5).
 func WithMaxConcurrent(n int) ServeOption {
 	return func(c *serveConfig) { c.maxConcurrent = n }
+}
+
+// WithJobHandlers registers the plugin's long-running job tools by name
+// (docs/plugin-capabilities.md §5). A tool with a job handler returns a job id
+// from plugin.call instead of a result; the daemon then polls job_status. It is
+// what makes Serve advertise async_jobs.
+func WithJobHandlers(handlers map[string]JobHandler) ServeOption {
+	return func(c *serveConfig) { c.jobHandlers = handlers }
+}
+
+// WithJobs installs the job registry Serve drives. Optional: with job handlers
+// but no registry, Serve creates one. Pass an explicit NewJobs() when the plugin
+// needs its own handle to it.
+func WithJobs(jobs *Jobs) ServeOption {
+	return func(c *serveConfig) { c.jobs = jobs }
 }
 
 // Serve runs the plugin's HTTP transport: it listens on the Unix socket named by
@@ -61,7 +79,20 @@ func Serve(tools []ToolDefinition, handlers map[string]ToolHandler, opts ...Serv
 	for _, o := range opts {
 		o(&cfg)
 	}
-	describe := DescribeResult{ProtocolVersion: ProtocolVersion, Tools: tools, MaxConcurrent: cfg.maxConcurrent}
+
+	// Wire up jobs when the plugin registered any handler: honour the concurrency
+	// cap for jobs and hand per-job dirs out of the plugin cache dir.
+	async := len(cfg.jobHandlers) > 0
+	var jobs *Jobs
+	if async {
+		jobs = cfg.jobs
+		if jobs == nil {
+			jobs = NewJobs()
+		}
+		jobs.configure(cfg.maxConcurrent, os.Getenv("NINE_PLUGIN_CACHE_DIR"))
+	}
+
+	describe := DescribeResult{ProtocolVersion: ProtocolVersion, Tools: tools, MaxConcurrent: cfg.maxConcurrent, AsyncJobs: async}
 
 	socketPath := os.Getenv("NINE_PLUGIN_SOCKET")
 	if socketPath == "" {
@@ -88,7 +119,7 @@ func Serve(tools []ToolDefinition, handlers map[string]ToolHandler, opts ...Serv
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/rpc", func(w http.ResponseWriter, r *http.Request) {
-		handleRPC(w, r, describe, handlers)
+		handleRPC(w, r, describe, handlers, cfg.jobHandlers, jobs)
 	})
 
 	if err := http.Serve(ln, mux); err != nil { //nolint:gosec // G114: local Unix-socket RPC server; per-call deadlines come from the daemon-side transport
@@ -98,7 +129,7 @@ func Serve(tools []ToolDefinition, handlers map[string]ToolHandler, opts ...Serv
 
 // handleRPC decodes one request envelope and writes one reply envelope. There is
 // no JSON-RPC id: each call owns its connection, so correlation is per-connection.
-func handleRPC(w http.ResponseWriter, r *http.Request, describe DescribeResult, handlers map[string]ToolHandler) {
+func handleRPC(w http.ResponseWriter, r *http.Request, describe DescribeResult, handlers map[string]ToolHandler, jobHandlers map[string]JobHandler, jobs *Jobs) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeRPC(w, nil, Errorf("read body: %v", err))
@@ -138,28 +169,75 @@ func handleRPC(w http.ResponseWriter, r *http.Request, describe DescribeResult, 
 			rpcErr = InvalidArgs("invalid params: %v", err)
 			break
 		}
+		slog.Debug("plugin.call", "tool", p.Tool, "request_id", reqID) //nolint:gosec // G706: tool/request_id are internal daemon values, not untrusted input
+
+		// A job tool validates synchronously, then returns a handle: the work runs
+		// detached and the daemon polls job_status for the result.
+		if jh, ok := jobHandlers[p.Tool]; ok {
+			job, err := jh(ctx, p.Args)
+			if err != nil {
+				rpcErr = asRPCErr(err)
+				break
+			}
+			id := jobs.start(job)
+			result = map[string]string{"job_id": id, "output": job.Ack}
+			break
+		}
+
 		h, ok := handlers[p.Tool]
 		if !ok {
 			rpcErr = &RPCErr{-32601, "unknown tool: " + p.Tool}
 			break
 		}
-		slog.Debug("plugin.call", "tool", p.Tool, "request_id", reqID) //nolint:gosec // G706: tool/request_id are internal daemon values, not untrusted input
 		output, err := h(ctx, p.Args)
 		if err != nil {
-			if re, ok := err.(*RPCErr); ok {
-				rpcErr = re
-			} else {
-				rpcErr = Errorf("%v", err)
-			}
+			rpcErr = asRPCErr(err)
 			break
 		}
 		result = map[string]string{"output": output}
+
+	case "plugin.job_status":
+		if jobs == nil {
+			rpcErr = &RPCErr{-32601, "plugin does not support jobs"}
+			break
+		}
+		var p struct {
+			JobID string `json:"job_id"`
+		}
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			rpcErr = InvalidArgs("invalid params: %v", err)
+			break
+		}
+		result = jobs.status(p.JobID)
+
+	case "plugin.job_cancel":
+		if jobs == nil {
+			rpcErr = &RPCErr{-32601, "plugin does not support jobs"}
+			break
+		}
+		var p struct {
+			JobID string `json:"job_id"`
+		}
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			rpcErr = InvalidArgs("invalid params: %v", err)
+			break
+		}
+		result = map[string]bool{"cancelled": jobs.cancel(p.JobID)}
 
 	default:
 		rpcErr = &RPCErr{-32601, "method not found: " + req.Method}
 	}
 
 	writeRPC(w, result, rpcErr)
+}
+
+// asRPCErr maps a handler error to an RPC error, preserving an explicit *RPCErr
+// (with its code) and wrapping anything else as an internal error.
+func asRPCErr(err error) *RPCErr {
+	if re, ok := err.(*RPCErr); ok {
+		return re
+	}
+	return Errorf("%v", err)
 }
 
 // writeRPC encodes the reply envelope. The HTTP status is always 200; failures

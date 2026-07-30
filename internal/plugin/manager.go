@@ -251,17 +251,24 @@ func Probe(binaryPath string, env ...string) (DescribeResult, error) {
 }
 
 // checkProtocolVersion rejects a plugin whose wire-contract version the daemon
-// does not support. The daemon supports exactly one version today, so any
-// mismatch is fatal; widen this if it ever needs to support a range. An absent
-// version (0) means the plugin predates protocol versioning.
+// does not support. Support is a set, not a single version: v2 is additive over
+// v1 (it only adds jobs), so a v1 plugin is accepted and simply treated as
+// lacking async jobs (docs/plugin-capabilities.md §6). An absent version (0)
+// means the plugin predates protocol versioning and is rejected.
 func checkProtocolVersion(name string, got int) error {
-	if got == ProtocolVersion {
+	if supportedProtocolVersion(got) {
 		return nil
 	}
 	if got == 0 {
 		return fmt.Errorf("plugin %q reports no protocol version; it predates plugin protocol v%d — rebuild it against the current Nine", name, ProtocolVersion)
 	}
 	return fmt.Errorf("plugin %q speaks protocol v%d but this daemon speaks v%d — rebuild the plugin (or upgrade Nine)", name, got, ProtocolVersion)
+}
+
+// supportedProtocolVersion reports whether the daemon can talk to a plugin
+// advertising version v. v1 and the current v2 are both accepted.
+func supportedProtocolVersion(v int) bool {
+	return v == 1 || v == ProtocolVersion
 }
 
 // allocSocketPath returns a unique short socket path under socketDir.
