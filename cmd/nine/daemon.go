@@ -27,10 +27,14 @@ func runDaemon() {
 
 	// Initialize plugin manager and start plugins
 	pluginManager := plugin.NewManager(cfg.Plugins.Bin)
+	// Resolve per-plugin spawn env (built-in defaults + operator settings) by name.
+	// Built-ins pass it explicitly below; user plugins reach it through the
+	// manager (docs/plugin-capabilities.md §3).
+	pluginManager.SetPluginEnv(cfg.PluginEnvs)
 	pluginManager.TryStart("files", cfg.PluginEnvs("files")...)
-	pluginManager.TryStart("shell")
-	pluginManager.TryStart("http")
-	pluginManager.TryStart("time")
+	pluginManager.TryStart("shell", cfg.PluginEnvs("shell")...)
+	pluginManager.TryStart("http", cfg.PluginEnvs("http")...)
+	pluginManager.TryStart("time", cfg.PluginEnvs("time")...)
 	browserPlug := pluginManager.TryStart("browser", cfg.PluginEnvs("browser")...)
 
 	// Load operator-supplied plugins from [plugins].user_dir, after the built-ins
