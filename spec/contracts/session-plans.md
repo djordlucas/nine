@@ -76,8 +76,13 @@ on fire (handleIdle):
    2. call its OnIdle
    3. if ok: run the returned text as the next turn (full pipeline: context, tools,
       checkpoint, notifyStages, re-arm)
-   4. if not ok: re-arm for the next cycle
+   4. if not ok: refresh the cached plan from the store, then re-arm for the next cycle
 ```
+
+The refresh in step 4 is load-bearing: a stage may retire itself from within `OnIdle`
+by writing its plan row directly (as `pursue` does when its goal is no longer active).
+Without the refresh the cached plan would keep that stage `active`, so the timer would
+re-arm indefinitely and the session would keep counting against the goal-session cap.
 
 Stages with no `idle_interval_seconds` (e.g. plain `active`) never trigger idle turns.
 
@@ -138,7 +143,10 @@ Each top-level goal gets a `pursue` session keyed 1:1 by `agentID == goalID`, pr
 - `OnIdle` — if the goal is still `active`, return a prompt asking the session to
   `goal_get` the goal + subtree, take useful action (including spawning sub-goals/
   sub-agents and recording them via `goal_append_subtree`), and call `goal_update_status`
-  if the status should change. If the goal is missing/inactive, return `ok=false`.
+  if the status should change. If the goal is missing/inactive, sync the stage status
+  the same way `OnTurnEnd` does (missing goal → `done`) and return `ok=false` — this
+  retires the stage on the idle path when a goal is paused/finished/archived while the
+  session is idle and no turn (hence no `OnTurnEnd`) ever fires.
 - `OnTurnEnd` — read the goal back and sync the stage status from `goals.status`
   (`active→active`, `paused→paused`, `done`/`archived→done`). On `ErrStall`, also pause
   the goal (`goal_update_status → paused`), freeing a slot under the session cap.

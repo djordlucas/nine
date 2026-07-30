@@ -82,6 +82,40 @@ func TestPursueStageOnIdleNoWorkWhenNotActive(t *testing.T) {
 	}
 }
 
+func TestPursueStageOnIdleRetiresStageWhenNotActive(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close() //nolint:errcheck
+
+	h := runtime.NewPursueStage(store)
+
+	// A goal paused/finished/archived while the session sat idle never reaches
+	// OnTurnEnd, so OnIdle must sync the stage out of "active" itself — otherwise
+	// the idle scheduler keeps arming and the slot keeps counting against
+	// MaxGoalSessions.
+	cases := []struct {
+		goalStatus string
+		wantStage  string
+	}{
+		{"paused", "paused"},
+		{"done", "done"},
+		{"archived", "done"},
+	}
+	for _, c := range cases {
+		goalID := "idle-" + c.goalStatus
+		newPursueSession(t, store, goalID, c.goalStatus)
+
+		if _, ok := h.OnIdle(context.Background(), goalID); ok {
+			t.Errorf("goal status %q: OnIdle ok = true, want false", c.goalStatus)
+		}
+		if got := stageStatus(t, store, goalID); got != c.wantStage {
+			t.Errorf("goal status %q: stage status = %q, want %q", c.goalStatus, got, c.wantStage)
+		}
+	}
+}
+
 func TestPursueStageOnTurnEndSyncsStatus(t *testing.T) {
 	store, err := memtest.Open(t)
 	if err != nil {
