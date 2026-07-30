@@ -116,6 +116,16 @@ root = "./dist"
 # disables user skills. The container overrides this with NINE_SKILLS_USER_DIR.
 # user_dir = "./skills.d"
 
+# Human-in-the-loop (docs/hitl.md), interactive TUI conversations only.
+# require_approval names tools that need an explicit "yes" before each call;
+# gate_sub_agents (default true) extends those gates to sub-agents the
+# conversation spawns, so delegation is not a way around them — the prompt
+# arrives on your stream, attributed to the sub-agent.
+# [hitl]
+# timeout_seconds  = 300
+# require_approval = ["shell", "write_file"]
+# gate_sub_agents  = true
+
 [planning]
 # Plan-before-execute policy (docs/thinking-and-planning.md). Both keys have a
 # live per-session override via the /plan-mode command.

@@ -185,6 +185,26 @@ show_context = true
 # Unset or missing disables user skills entirely.
 # user_dir = "./skills.d"
 
+[hitl]
+# Human-in-the-loop (docs/hitl.md). Interactive TUI conversations only.
+#
+# timeout_seconds — how long a question waits for an answer before it fails the
+# call and lets the model move on. Default 300 (5 min).
+timeout_seconds = 300
+#
+# require_approval — tools that need an explicit "yes" before each call. The
+# prompt is tool-aware (shell shows its command, write_file its path). A refusal
+# fails that call as a normal tool error and is not retried.
+require_approval = []
+#
+# gate_sub_agents — whether those gates also cover sub-agents spawned by an
+# interactive conversation. Default true: without it, delegating a gated tool
+# to a sub-agent runs it unprompted, which makes require_approval trivially
+# bypassable. The prompt appears on the conversation's own stream, attributed to
+# the sub-agent. Sub-agents never get ask_human either way, and a non-interactive
+# session's sub-agents are never gated — no human is attached to ask.
+gate_sub_agents = true
+
 [planning]
 # Plan-before-execute policy (docs/thinking-and-planning.md). Both keys have a
 # live per-session override via the TUI /plan-mode command.

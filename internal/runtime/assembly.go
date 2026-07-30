@@ -50,6 +50,7 @@ type AssemblyConfig struct {
 	TaskTimeoutSeconds  int
 	HITL                *HITL
 	ApprovalTools       []string
+	GateSubAgents       bool
 	PlanApproval        string
 	PlanMode            string
 	DefaultLeafRole     string
@@ -97,6 +98,7 @@ func Assemble(c AssemblyConfig) *Assembly {
 		TaskTimeoutSeconds: c.TaskTimeoutSeconds,
 		HITL:               c.HITL,
 		ApprovalTools:      c.ApprovalTools,
+		GateSubAgents:      c.GateSubAgents,
 		PlanApproval:       c.PlanApproval,
 		PlanMode:           c.PlanMode,
 		DefaultLeafRole:    c.DefaultLeafRole,

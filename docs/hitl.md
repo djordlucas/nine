@@ -11,11 +11,13 @@ Both cases route through the same mechanism — `ask_human` — so the TUI has o
 
 ## Session eligibility
 
-HITL tools are only available in **interactive sessions**: conversations started by a human through the TUI. Everything else — background sessions (self-reflection, goal/pursue), sub-agents, `nine query` — is treated as non-interactive and does not have access to `ask_human` or approval gates.
+`ask_human` is only available in **interactive sessions**: conversations started by a human through the TUI. Everything else — background sessions (self-reflection, goal/pursue), sub-agents, `nine query` — is treated as non-interactive and cannot raise its own questions. A sub-agent is a bounded worker, not a conversational participant.
+
+**Approval gates are the exception, and they follow the owning session rather than the asking loop.** A sub-agent spawned by an interactive conversation inherits that conversation's gates at any delegation depth, so delegating a risky tool is not a way around `require_approval`. See [Approval gates](#approval-gates) below.
 
 The daemon learns whether a session is interactive from the `new_conversation` protocol message (`Interactive: true`). The TUI sets this flag; the CLI fire-and-forget path does not. Interactive session IDs are persisted in the `interactive_sessions` DB table so the flag survives daemon restarts.
 
-`LoopFactory` gains a second parameter, `interactive bool`. `AgentBuilder.build()` registers HITL tools conditionally on this flag. All background session creation paths pass `false`.
+`LoopFactory` gains a second parameter, `interactive bool`. `AgentBuilder.build()` registers `ask_human` conditionally on this flag; gates are keyed off a `gateCtx` threaded down the spawn chain instead. All background session creation paths pass `false`.
 
 ---
 
@@ -63,6 +65,7 @@ Certain tools can be flagged for mandatory human approval before dispatch. This 
 [hitl]
 timeout_seconds  = 300          # how long to wait before timing out (default 5 min)
 require_approval = ["shell", "write_file"]  # empty by default
+gate_sub_agents  = true         # default; false confines gates to the session's own loop
 ```
 
 When the dispatcher encounters a tool whose name is in `require_approval`, it calls `ask_human` internally with an auto-generated question before running the handler:
@@ -79,7 +82,23 @@ The question format is tool-aware: `shell` shows `command`, `write_file` shows `
 
 The answer is checked case-insensitively: a response starting with `"y"` proceeds; anything else returns an error (`"tool shell rejected by user"`) that the LLM receives as a normal tool failure.
 
-Because approval gates are registered alongside `ask_human` — only for interactive sessions — non-interactive sessions are unaffected even if their tool names appear in `require_approval`.
+A refusal is **terminal** — the loop's tool-retry path (`dispatchWithRetry`, 3 attempts) must not re-dispatch it, or the same human gets asked the same question three times. Both refusal and failure-to-obtain-approval (timeout, cancellation) are wrapped in `agent.ApprovalError`, which the retry loop returns on immediately.
+
+### Gates in sub-agents
+
+A gate is armed for any loop with an **owning interactive session** — the conversation's own loop, plus every sub-agent it spawns unless `gate_sub_agents = false`. A loop with no interactive owner (a goal/pursue session and its children, reflection, `nine query`) is never prompted even if its tool names appear in `require_approval`: there is no human attached, so blocking would hang on a question nobody can see.
+
+Routing keeps three identities apart:
+
+| Identity | Role |
+|----------|------|
+| **asker** | the loop that hit the gate; keys the `human_requests` row so parallel sub-agents don't collide |
+| **owner** | the interactive session whose stream carries the prompt and whose ID answers it |
+| **origin** | display attribution — `sub-agent "executor" · <task>` — empty when the owner itself asks |
+
+Emitting to the asker would go nowhere: a sub-agent's ID is not a registered session, so `Daemon.EmitProgress` finds no stream and drops the message, leaving the call blocked until timeout. `HITL.AskFrom` takes asker and owner separately for exactly this reason; `HITL.Ask` is the same call with the two collapsed.
+
+Since a `run_agents` fan-out can put several sub-agents at a gate simultaneously, the TUI queues questions and renders them one at a time, oldest first, with a count of those still waiting.
 
 ---
 

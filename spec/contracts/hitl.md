@@ -21,10 +21,17 @@ one pair of message types.
 
 ## R-HITL.1 — Interactive-session gating
 
-HITL is available **only in interactive sessions** — conversations started by a human
-through the TUI. Every other session kind (self-reflection, goal/pursue, sub-agents, the
-one-shot CLI request path) is **non-interactive** and **MUST NOT** be given `ask_human`
-or approval gates, even if a gated tool's name appears in `[hitl].require_approval`.
+`ask_human` is available **only in interactive sessions** — conversations started by a
+human through the TUI. Every other session kind (self-reflection, goal/pursue,
+sub-agents, the one-shot CLI request path) is **non-interactive** and **MUST NOT** be
+given `ask_human`. A sub-agent is a bounded worker, not a conversational participant: it
+may be stopped for permission, but it never gets to interrogate the user itself.
+
+**Approval gates follow the owning session, not the asking loop** (R-HITL.5). A
+sub-agent spawned by an interactive conversation inherits that conversation's gates, at
+any delegation depth, so delegation cannot be used to run a `[hitl].require_approval`
+tool unprompted. A sub-agent of a *non-interactive* root stays ungated — there is no
+human attached, so blocking would hang on a question nobody can see.
 
 The daemon learns interactivity from the `new_conversation` message's `Interactive` flag
 (see [`wire-protocol.md`](wire-protocol.md) R-PROTO.2). The TUI sets it; the
@@ -75,8 +82,13 @@ A call **MUST** proceed as follows:
    reason about (`"no response from human (timed out)"`). Timeout returns an error to the
    model; it is **not** task cancellation — a subsequent tool call may still proceed.
 
-At most **one** pending question per session: concurrent `ask_human` calls within a turn
-are serialized because the loop blocks on the first before issuing the second.
+At most **one** pending question per **asking agent**: concurrent `ask_human` calls within
+one loop are serialized because the loop blocks on the first before issuing the second.
+A session may nonetheless have several questions outstanding at once, one per asker, when
+parallel sub-agents each hit an approval gate (R-HITL.5). Step 1's pending-row reuse is
+therefore keyed by the **asker's** agent ID, never the owning session's — keying it by
+session would make two concurrent sub-agents collide on one row, answering one twice
+while the other waits out its timeout.
 
 ---
 
@@ -94,14 +106,39 @@ At startup, `HumanRequestExpireStale(now)` **MUST** mark any `pending` row whose
 `expires_at` is in the past as `timed_out`. Still-valid pending rows are recovered
 naturally when their sessions resume and re-call `ask_human`.
 
+**Sub-agent gates do not recover this way.** Reuse is keyed by the asker (R-HITL.3), and a
+sub-agent's ID is a fresh UUID per spawn — so a restart mid-gate re-runs the parent's turn,
+spawns a *new* sub-agent, and raises a *new* question. The orphaned row stays `pending`
+until its deadline passes and a later `ExpireStale` collects it; nothing queries it in the
+meantime and no stale question is re-emitted. The human simply sees the question again
+once the re-spawned sub-agent reaches the same gate. Making these resumable would require
+stable sub-agent identities across restarts, which the delegation path does not have.
+
 ---
 
 ## R-HITL.5 — Approval gates
 
 Tools named in `[hitl].require_approval` (see [`config.md`](config.md)) trigger an
-auto-generated `ask_human` **before** the handler runs. Gates are registered alongside
-`ask_human` — i.e. only for interactive sessions (R-HITL.1) — so a non-interactive session
-is never prompted even if its tool name is listed.
+auto-generated `ask_human` **before** the handler runs. A gate is armed for any loop with
+an **owning interactive session**: the conversation's own loop, and — unless
+`[hitl].gate_sub_agents` is `false` — every sub-agent it spawns, at any depth. A loop with
+no interactive owner is never prompted even if its tool name is listed.
+
+### Routing a sub-agent's gate
+
+A sub-agent has no session of its own, so its prompt **MUST** be emitted on the **owning
+session's** progress stream — emitting to the sub-agent's own ID would find no session,
+drop the message, and leave the call blocked until timeout. Three identities are in play
+and **MUST NOT** be conflated:
+
+| Identity | Role |
+|----------|------|
+| **asker** | the loop that hit the gate; keys the `human_requests` row (R-HITL.3) |
+| **owner** | the interactive session carrying the prompt and answering it; the message's `AgentID` |
+| **origin** | display attribution (`sub-agent "executor" · <task>`); empty when the owner itself asks |
+
+A client answers with the **owner**'s ID and the request ID, so it needs no knowledge of
+sub-agent IDs.
 
 The auto-question is tool-aware: `shell` shows `command`, `write_file` shows `path`,
 everything else falls back to truncated JSON args. Example:
@@ -114,10 +151,19 @@ Command: rm -rf /tmp/old
 Enter "yes" to proceed, anything else to cancel.
 ```
 
+### Refusal is terminal
+
 The answer is checked **case-insensitively**: a response starting with `"y"` proceeds;
 anything else fails the call with an error the model receives as a normal tool failure
 (`"tool shell rejected by user"`). `require_approval` is a single global list — there is
 no per-session or per-argument matching.
+
+That failure **MUST NOT** be retried by the loop's tool-retry path: a refusal is a
+decision, not a transient fault, and re-dispatching re-prompts the same human for the
+same call — which a parallel sub-agent fan-out multiplies into a barrage. The same holds
+when approval cannot be obtained at all (the question timed out, or the turn was
+cancelled). The reference tree marks both with `agent.ApprovalError`, which
+`dispatchWithRetry` returns on immediately instead of retrying.
 
 ---
 
@@ -127,12 +173,16 @@ Two message types ([`wire-protocol.md`](wire-protocol.md)):
 
 | Type | Direction | Key fields |
 |------|-----------|------------|
-| `human_input_required` | daemon → client (on the progress stream) | `RequestID`, `Question`, `Options []string`, `TimeoutSeconds` |
+| `human_input_required` | daemon → client (on the progress stream) | `RequestID`, `Question`, `Options []string`, `TimeoutSeconds`, `Origin` |
 | `human_input_answer` | client → daemon | `AgentID`, `RequestID`, `Answer` |
 
-`human_input_required` is delivered on the session's existing progress stream alongside
-`tool_start`/`response_chunk`/…; the client surfaces it as a `ProgressEvent` carrying a
-`HumanRequest` field. `human_input_answer` is a **top-level** message, **not** a turn: the
+`human_input_required` is delivered on the **owning** session's existing progress stream
+alongside `tool_start`/`response_chunk`/…; the client surfaces it as a `ProgressEvent`
+carrying a `HumanRequest` field. `AgentID` is always that owning session, even when a
+sub-agent of it is the asker (R-HITL.5), so a client replies with the ID it already has.
+`Origin` attributes such a question (`sub-agent "executor" · <task>`) and is **omitted**
+when the session's own loop asks; it is display metadata only and **MUST NOT** be echoed
+back in `human_input_answer`. `human_input_answer` is a **top-level** message, **not** a turn: the
 daemon routes it straight to the `hitlStore` answer slot for its `RequestID` and updates
 the DB row. It **MUST NOT** start a new `agent.Loop.Run`.
 
@@ -181,12 +231,29 @@ it waits in the DB and is re-emitted automatically when the user reattaches (R-H
 status bar **SHOULD** show a `?` badge while a pending unanswered question exists in the
 current session.
 
+A question carrying `Origin` **MUST** be rendered with that attribution — an approval
+prompt for a tool the user never saw requested is unactionable without knowing which
+sub-agent wants it.
+
+### Queueing
+
+Parallel sub-agents can each raise a gate at once (R-HITL.5), so a session may have
+several unanswered questions. The client **MUST** queue them and render **one at a
+time**, oldest first: a question arriving while another is on screen waits rather than
+replacing the one the user is reading. Answering the head uncovers the next and keeps the
+`Answer:` prompt active until the queue drains. The status bar **SHOULD** report how many
+remain behind the visible one. When a turn ends with questions still unanswered (they
+timed out with it), the whole queue is discarded — every asker's wait ended too.
+
 ---
 
 ## Reference symbols
 
-Planned — no reference implementation yet. Target shape: `hitlStore` and the
-`human_input_answer` dispatch in the daemon; `ask_human` and `approvalFn` wiring in
-`internal/agent/register_*.go`; the `[hitl]` block in [`config.md`](config.md);
-`human_requests`/`interactive_sessions` and their methods on `memory.Store`; the question
-panel in `internal/tui`. Design source: [`docs/hitl.md`](../../docs/hitl.md).
+`HITL` (`Ask`, `AskFrom`, `Answer`, `ExpireStale`) and the `human_input_answer` dispatch
+in `internal/runtime/hitl.go`; `ask_human` in `internal/agent/register_human.go`; the
+gate wiring — `gateCtx`, `subGate`, `registerAskHuman`, `registerApprovalGates` — in
+`internal/runtime/builder.go`; `agent.ApprovalError` and its handling in
+`dispatchWithRetry` (`internal/agent/`); the `[hitl]` block in
+[`config.md`](config.md); `human_requests`/`interactive_sessions` and their methods on
+`memory.Store`; the question queue (`chatState.humanQueue`, `pendingHuman`, `popHuman`)
+in `internal/tui`. Design source: [`docs/hitl.md`](../../docs/hitl.md).
