@@ -248,14 +248,14 @@ How to use this file:
 
 | ID | Property | Observable check |
 |----|----------|------------------|
-| R-HITL.1 | Interactive-session gating | HITL tools register only for interactive sessions; the flag persists across restart; background/sub-agent paths pass `false`. |
+| R-HITL.1 | Interactive-session gating | `ask_human` registers only for interactive sessions (never for sub-agents); the flag persists across restart; background/sub-agent paths pass `false`. Approval gates instead follow the owning session into its sub-agents (R-HITL.5). |
 | R-HITL.2 | `ask_human` tool | Schema matches; available only in interactive sessions, all depths within them. |
-| R-HITL.3 | `ask_human` behavior | A call blocks the turn until `human_input_answer`; on answer it resumes; on timeout it returns an error (not cancellation); one pending per session. |
+| R-HITL.3 | `ask_human` behavior | A call blocks the turn until `human_input_answer`; on answer it resumes; on timeout it returns an error (not cancellation); one pending per **asking agent** (parallel sub-agent gates get distinct rows). |
 | R-HITL.4 | Restart recovery | A pending request survives restart and is re-emitted; an answer given while down returns immediately; stale pendings expire at boot. |
-| R-HITL.5 | Approval gates | With `require_approval=["shell"]`, a `shell` call prompts; non-`y` fails it; a background session is never prompted. |
-| R-HITL.6 | Protocol messages | `human_input_required` streams on the progress channel; `human_input_answer` is a top-level message that starts no turn. |
+| R-HITL.5 | Approval gates | With `require_approval=["shell"]`, a `shell` call prompts; non-`y` fails it and is **not** retried; a sub-agent of an interactive session prompts on that session's stream with an `origin`; `gate_sub_agents=false` or a non-interactive root is never prompted. |
+| R-HITL.6 | Protocol messages | `human_input_required` streams on the **owning** session's progress channel (with `origin` when a sub-agent asks); `human_input_answer` is a top-level message that starts no turn. |
 | R-HITL.7 | Persistence | `human_requests`/`interactive_sessions` tables + methods; HITL tables are never tools (I4). |
-| R-HITL.8 | TUI rendering | A pending question renders a panel with a `?` badge; submit sends an answer, not a turn. |
+| R-HITL.8 | TUI rendering | A pending question renders a panel with a `?` badge; submit sends an answer, not a turn; concurrent questions queue and render oldest-first with a waiting count, and an `origin` is shown. |
 
 ---
 

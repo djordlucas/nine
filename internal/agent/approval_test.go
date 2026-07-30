@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync/atomic"
 	"testing"
 
 	"nine/internal/agent"
+	ninectx "nine/internal/context"
+	"nine/internal/llm"
 )
 
 func TestApprovalGateAllows(t *testing.T) {
@@ -99,5 +102,55 @@ func TestRegisterAskHumanRequiresQuestion(t *testing.T) {
 	})
 	if _, err := d.Dispatch(context.Background(), "ask_human", json.RawMessage(`{"question":"  "}`)); err == nil {
 		t.Error("expected error for empty question")
+	}
+}
+
+// A human's refusal is a decision, not a transient failure: the loop must
+// dispatch the gated call once and hand the refusal to the model, rather than
+// re-running it (and re-prompting the same person) maxToolRetries+1 times.
+// With parallel sub-agent gates (R-HITL.5) the retry version multiplies into a
+// barrage of identical questions.
+func TestApprovalRejectionIsNotRetried(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		gateErr   error
+		wantGates int32
+	}{
+		{"rejection is terminal", &agent.ApprovalError{Err: errors.New("tool echo rejected by user")}, 1},
+		{"plain error still retries", errors.New("transient glitch"), 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var gateCalls, handlerCalls atomic.Int32
+
+			dispatcher := agent.New()
+			dispatcher.InjectHandler("echo", func(context.Context, json.RawMessage) (string, error) {
+				handlerCalls.Add(1)
+				return "ran", nil
+			})
+			dispatcher.SetApproval([]string{"echo"}, func(context.Context, string, json.RawMessage) error {
+				gateCalls.Add(1)
+				return tc.gateErr
+			})
+
+			provider := sequenceProvider([]llm.Response{{
+				StopReason: "tool_use",
+				ToolCalls:  []llm.ToolCall{{ID: "c1", Name: "echo", Input: json.RawMessage(`{}`)}},
+			}})
+			loop := agent.NewLoop(agent.Config{
+				SystemCore: "You are a test agent.",
+				Priority:   llm.PriorityConversation,
+				Tools:      []ninectx.ToolWithVector{echoToolVec()},
+			}, newTestBuilder(), llm.NewQueue(provider, 1), dispatcher)
+
+			if _, err := loop.Run(context.Background(), "go"); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			if got := gateCalls.Load(); got != tc.wantGates {
+				t.Errorf("approval gate consulted %d times, want %d", got, tc.wantGates)
+			}
+			if got := handlerCalls.Load(); got != 0 {
+				t.Errorf("blocked handler ran %d times, want 0", got)
+			}
+		})
 	}
 }

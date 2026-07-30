@@ -114,6 +114,7 @@ func runDaemon() {
 		TaskTimeoutSeconds:  cfg.Daemon.TaskTimeoutSeconds,
 		HITL:                hitl,
 		ApprovalTools:       cfg.HITL.RequireApproval,
+		GateSubAgents:       cfg.HITL.GateSubAgentsEnabled(),
 		PlanApproval:        cfg.Planning.PlanApprovalMode(),
 		PlanMode:            cfg.Planning.Mode(),
 		DefaultLeafRole:     cfg.Roles.DefaultLeaf,
