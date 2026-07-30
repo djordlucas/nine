@@ -16,20 +16,27 @@ the search tools compensate for its staleness reactively. See "Implemented".
   query, returning name + description + input schema. Registered per-loop in
   `AgentBuilder.build` once the tool list and its vectors exist, over a closure
   that returns exactly what this loop can call.
+- `tool_list(include_schemas)` — `internal/agent/register_search.go`. The
+  query-free counterpart to `tool_search` and the mirror of `skill_list`:
+  enumerates the same advertised set, sorted by name, returning name +
+  description (+ input schema only when `include_schemas` is set, to keep the
+  default listing under the dispatcher's output cap). Unlike the `*_search`
+  pair it is **not** embedder-gated — enumeration does not rank — so "what tools
+  do you have?" is answerable on a daemon with no embedder configured. Unlike
+  `tool_search` it hides nothing, including the meta-tools themselves.
 - `skill_search(query, top_k)` — `internal/agent/register_skills.go`. Ranks the
   `skills` vector namespace and returns name + description; the model then
   `skill_read`s the one it wants. Gated on an embedder, like the memory
   semantic tools.
-- Both are granted like `gap_report` — advertised, always-included, and surviving
-  `RestrictTo` regardless of the role allowlist — but only when an embedder is
-  present. Wired as shell-like capabilities in `internal/runtime/builder.go`.
+- All three are granted like `gap_report` — advertised, always-included, and
+  surviving `RestrictTo` regardless of the role allowlist. The two `*_search`
+  tools additionally require an embedder; `tool_list` is granted
+  unconditionally. Wired as shell-like capabilities in
+  `internal/runtime/builder.go`.
 
 Still open: **Option 1** (re-rank the passive selection against the evolving
 scratchpad, not just the opening query) and the token-cost refinement of only
 advertising the search tools when the catalog actually exceeds `ToolTopN`.
-
-Spec reconciliation still owed (via `/sync-nine`): `spec/contracts/skills.md`
-R-SKILL.3 currently says "There is **no `skill_search` tool**" — now false.
 
 ## Problem
 

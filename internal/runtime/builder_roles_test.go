@@ -549,3 +549,64 @@ func TestToolVectorsArePopulatedAndCached(t *testing.T) {
 		t.Errorf("nil embedder should yield a nil vector, got %v", v)
 	}
 }
+
+// tool_list is granted like gap_report — advertised and callable regardless of
+// the role allowlist — and, unlike tool_search, without an embedder, so "what
+// tools do you have?" is answerable on an embedder-less daemon running a
+// narrowed role. Its result enumerates exactly the advertised set.
+func TestToolListGrantedWithoutEmbedder(t *testing.T) {
+	p := &scriptedProvider{}
+	p.script = func(n int, _ llm.Request) llm.Response {
+		if n == 1 {
+			return llm.Response{
+				StopReason: "tool_use",
+				ToolCalls:  []llm.ToolCall{{ID: "t1", Name: "tool_list", Input: json.RawMessage(`{}`)}},
+			}
+		}
+		return llm.Response{Text: "listed", StopReason: "end_turn"}
+	}
+	// rolesTestBuilder configures no embedder.
+	factory := rolesTestBuilder(t, p, nil)
+
+	loop := factory.BuildForRole("lister", runtime.RoleParams{Role: "monitor"})
+	if _, err := loop.Run(context.Background(), "what can you do?"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	advertised := toolNames(p.call(1))
+	if !advertised["tool_list"] {
+		t.Fatal("tool_list must be advertised to an allowlist role with no embedder")
+	}
+	// The embedder-gated search tools stay absent — nothing to rank against.
+	for _, banned := range []string{"tool_search", "skill_search"} {
+		if advertised[banned] {
+			t.Errorf("%q must not be advertised without an embedder", banned)
+		}
+	}
+
+	// The call survived RestrictTo (the monitor allowlist lists no tool_list)
+	// and returned the advertised set, itself included.
+	if p.nCalls() < 2 {
+		t.Fatalf("expected a follow-up turn carrying the tool_list observation, got %d calls", p.nCalls())
+	}
+	obs := observationText(p.call(2))
+	for want := range advertised {
+		if !strings.Contains(obs, `"`+want+`"`) {
+			t.Errorf("tool_list output omits advertised tool %q: %s", want, obs)
+		}
+	}
+}
+
+// observationText concatenates every tool result carried by a request, so a
+// test can assert on what a tool observation fed back into the next turn.
+func observationText(req llm.Request) string {
+	var b strings.Builder
+	for _, m := range req.Messages {
+		b.WriteString(m.Text)
+		b.WriteString("\n")
+		for _, r := range m.ToolResults {
+			b.WriteString(r.Content)
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
