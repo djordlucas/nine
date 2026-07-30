@@ -1,7 +1,13 @@
 # Plugin capabilities — settings, a cache dir, and long-running work
 
-- **Status:** Proposed (design note, **rev 2**). Nothing here is built yet.
+- **Status:** **Implemented** (rev 3). All three capabilities are built; the
+  normative contract is `spec/contracts/plugin.md` (R-PLUG.10/11/12) and the
+  authoring guide is `docs/plugins.md`. This note is kept as the design rationale.
 - **Date:** 2026-07-30 (rev 1: 2026-07-25).
+- **Two small deviations from the design, both behaviour-preserving:** the sweeper
+  polls on an age-based backoff computed in SQL (`PluginJobsDueForPoll`) rather
+  than per-job timers, and `job_wait` blocks on a sweeper-signalled `JobWaiters`
+  channel with a poll fallback (the eval harness wires no signaller).
 - **Supersedes:** the rev-1 proposal, `docs/plugin-host-api.md` (renamed to this
   file), which added a *host API* — a reverse channel letting a plugin call back
   into the daemon to read and write memory. **That feature is dropped** (§2). What remains, and what this rev
@@ -126,10 +132,20 @@ BROWSER_HEADLESS = "0"                   # overrides the built-in default
   invites two plugins to disagree about it.
 - **Merge order** (later wins): inherited OS environment → manager env
   (`NINE_BIN`) → Nine-owned vars (`NINE_PLUGIN_SOCKET`, the §4 cache vars) →
-  built-in defaults from `PluginEnvs` → operator `settings`. Operator settings
-  beat built-in defaults, which is what makes `BROWSER_HEADLESS = "0"` work.
-  Nine-owned vars are deliberately *below* nothing that could clobber them — a
-  settings key named `NINE_PLUGIN_SOCKET` is rejected by a reserved-prefix check.
+  built-in defaults from `PluginEnvs` → operator `settings`. This is expressed as
+  **append order**: the manager builds `cmd.Env` as `os.Environ()` followed by each
+  later group, and `os/exec` resolves a duplicate key to its **last** occurrence,
+  so later groups win by construction — there is no explicit dedup to get wrong.
+  Operator settings beat built-in defaults, which is what makes
+  `BROWSER_HEADLESS = "0"` work, and which also lets an operator override a
+  `NINE_`-prefixed default such as `NINE_WORKSPACE` through `settings`.
+- **Reserved keys.** The three vars Nine computes freshly per spawn are off-limits
+  to `settings`, because overriding one breaks the transport or the cache contract
+  rather than merely changing a default. The reserved set is exactly
+  `NINE_PLUGIN_SOCKET`, `NINE_PLUGIN_CACHE_DIR`, and `NINE_PLUGIN_CACHE_PERSISTENT`
+  — **not** the whole `NINE_` prefix, so `NINE_WORKSPACE` and other `PluginEnvs`
+  defaults stay overridable. A `settings` key naming one of the three is a **config
+  error** at load, not a silent drop.
 - **Secrets.** Values routinely hold API keys. They are never logged (the
   manager logs key *names* at debug, never values), and `nine plugins` shows
   names only. Same-uid processes can read another process's environment; that is
@@ -173,7 +189,11 @@ persist_cache = true                   # default false
 
 Default root (**decided**): the OS user cache dir (`os.UserCacheDir()` →
 `~/.cache/nine/plugins` on Linux, `~/Library/Caches/nine/plugins` on macOS),
-overridable by `NINE_PLUGINS_CACHE_DIR` for the container layout. It must be a durable location,
+overridable by `NINE_PLUGINS_CACHE_DIR` for the container layout — note the
+**plural**: `NINE_PLUGINS_CACHE_DIR` overrides the shared *root* for every plugin,
+and is a different variable from the singular `NINE_PLUGIN_CACHE_DIR` that each
+plugin receives pointing at *its own* dir under that root (see *Environment*
+below). The root must be a durable location,
 not `/tmp`, because persistent caches live under the same root. The macOS
 `sun_path` limit does not apply — this is a directory, not a socket.
 
@@ -254,8 +274,8 @@ later with `job_check`. Both are supported, and the registry row is what makes
 |---|---|---|
 | `async_jobs: true` | `plugin.describe` result | The plugin can run detached work and answer status queries. The daemon **rejects a `job_id` from a plugin that did not advertise it** — fail-closed against version skew. |
 | `job_id: "…"` | `plugin.call` result | The call did not produce a result. `output` carries a one-line ack (`"started download of ubuntu-24.04.iso"`) that the model sees verbatim. |
-| `plugin.job_status` | new method | `{"job_id":"…"}` → `{"state":"queued\|running\|done\|failed","progress":"…","output":"…","error":"…"}`. `progress` is an optional free-text one-liner (`"41% · 1.2 GB/2.9 GB"`) — see below. |
-| `plugin.job_cancel` | new method | `{"job_id":"…"}` → `{"cancelled":true}`. Best-effort; the daemon calls it on explicit cancel and on shutdown. |
+| `plugin.job_status` | new method | `{"job_id":"…"}` → `{"state":"queued\|running\|done\|failed\|cancelled","progress":"…","output":"…","error":"…"}`. `cancelled` is terminal and distinct from `failed`. `progress` is an optional free-text one-liner (`"41% · 1.2 GB/2.9 GB"`) — see below. |
+| `plugin.job_cancel` | new method | `{"job_id":"…"}` → `{"cancelled":true}`. Best-effort; the daemon calls it on explicit cancel and on shutdown. Once a cancel takes effect the job is terminal and `job_status` reports `cancelled` (not `failed`); the daemon mirrors that state into the registry row. |
 
 Unknown job ids answer `failed` with a clear error rather than an RPC error, so a
 daemon that restarted and lost track cannot wedge on a missing key.
@@ -430,7 +450,14 @@ The one gap is an owner that will genuinely never take another turn — a sessio
 stopped or archived while its job was still running. There the daemon posts to
 the **human-facing feed** (`UserNotificationCreate`, readable with
 `nine notifications`) instead, and the same applies to rows marked `lost` at boot
-whose owner is gone. Otherwise the human feed stays untouched: whether a finished
+whose owner is gone. The common instance of this is a **sub-agent** owner: a
+delegated turn that started a long job and then returned to its parent is exactly
+such an owner — it takes no further turn of its own, so its completions route to
+the human feed by the same rule rather than to a turn that will never come. (A
+future refinement could instead deliver a sub-agent's job result back to its
+*parent* conversation, but that needs a parent link the registry does not carry
+today, so the human feed is the v1 answer.) Otherwise the human feed stays
+untouched: whether a finished
 job is worth telling a human about is the agent's judgement, made with
 `notify_user` on its next turn, exactly as `docs/predefined-agents.md` §5 has it.
 A plugin cannot reach the human's feed on its own — that would be the pushy
@@ -463,9 +490,17 @@ reverse channel §2 removed, arriving by another door.
 - **A cancelled turn does not cancel a job.** Outliving the turn is the feature.
   Only `job_cancel` and daemon shutdown stop one.
 - **Limits.** `[plugins] job_max_seconds` (default 3600) marks an over-age job
-  `failed` and attempts a cancel; `max_jobs_per_conversation` (default 8) makes
-  `plugin.call` refuse a new job with a clear error, so a looping model cannot
-  start a hundred downloads.
+  `failed` and attempts a cancel. `max_jobs_per_conversation` (default 8) caps the
+  outstanding jobs a conversation may hold — but the plugin has already started the
+  goroutine by the time its `job_id` reaches the daemon, so the cap is enforced
+  **on admission, not by refusal**: a `job_id` that would exceed the cap is
+  immediately `plugin.job_cancel`'d, no registry row is written, and the model gets
+  a clear over-limit error in place of a handle. A looping model therefore cannot
+  accumulate a hundred *live* jobs, though it can briefly start-and-kill them — a
+  plugin that treats cancel as a hard stop wastes no real work. (Counting the id
+  before starting the work would need a pre-flight admission handshake the
+  transport does not have; the post-hoc cancel is the price of the plugin owning
+  when work begins.)
 
 ---
 
@@ -525,7 +560,43 @@ Each phase is independently shippable and independently useful.
 
 ---
 
-## 8. Decisions taken
+## 8. Eval scenarios
+
+The unit and integration tests in §7 prove the *mechanism* works — a plugin can
+detach work, the daemon can poll and surface it. What they do not exercise is the
+**model behaviour** the feature exists to shape: posture, memory, and escalation.
+Those belong in the in-process eval harness (`docs/evals.md`), one scenario each,
+asserting on the transcript rather than on daemon state:
+
+1. **Posture — wait vs move on.** Given a job whose ack reads as fast, the model
+   `job_wait`s; given one described as long (a large download), it starts the job
+   and continues with other work instead of blocking. Asserts the model *reads the
+   ack and chooses* rather than always doing one thing.
+2. **Timeout is not failure.** A `job_wait` that times out returns `"still
+   running"` plus progress; the model carries on — reports progress, moves to the
+   next step — rather than treating it as an error or retrying in a tight loop.
+3. **Memory by context, not discipline.** After a turn boundary with a job still
+   outstanding, the model — reminded only by the context-builder line — reports the
+   job as in-flight and does **not** loop on `job_check` or claim it forgot. This
+   pins the §9 decision that surfacing outstanding jobs into context makes
+   remembering structural.
+4. **Escalation is the agent's call.** On a finished job the model uses
+   `notify_user` to tell the human when the result warrants it, and stays silent
+   when it does not — it never reaches for a plugin-side push, which does not exist
+   (§2).
+5. **Completion reaches the next turn.** After a job the model never waited on
+   completes, the following turn's context carries the notification and the model
+   acts on the result without having been told to poll — the pull-only delivery
+   path (§5) exercised end to end.
+
+Each maps to an assertion made elsewhere in §5/§9; together they are the
+acceptance bar for the model-facing half, distinct from the plugin/daemon unit
+tests that only prove the mechanism runs. They land with phase 5 (the tools) and
+phase 6 (completion delivery), and `/sync-evals` reconciles the harness after.
+
+---
+
+## 9. Decisions taken
 
 - **The host API is dropped entirely** — no reverse channel, no second socket, no
   capability tokens, no plugin access to memory in either direction. The daemon
@@ -567,8 +638,19 @@ Each phase is independently shippable and independently useful.
   cannot hold that line once work outlives its request.
 - **Every job gets its own directory** under the shared cache dir, since one
   plugin process serves every agent.
+- **Reserved env keys are the three transport/cache vars, not the `NINE_` prefix**
+  — `NINE_PLUGIN_SOCKET`, `NINE_PLUGIN_CACHE_DIR`, `NINE_PLUGIN_CACHE_PERSISTENT`
+  are rejected in `settings`; `NINE_WORKSPACE` and other defaults stay overridable.
+- **`cancelled` is a terminal state distinct from `failed`**, returned by
+  `plugin.job_status` after a successful `job_cancel` and mirrored into the row.
+- **`max_jobs_per_conversation` is enforced on admission, not by refusal** — the
+  plugin starts the work before the daemon sees the id, so an over-cap job is
+  cancelled post-hoc rather than prevented.
+- **A sub-agent's job completion goes to the human feed**, because a returned
+  sub-agent takes no further turn of its own to receive it (parent-delivery is a
+  deferred refinement).
 
-## 9. Open questions
+## 10. Open questions
 
 **None outstanding.** Q1 (`cache_dir` default) and Q2 (protocol version) are
 settled in §4 and §6; Q3 (waking an idle owner) and Q4 (jobs with no live

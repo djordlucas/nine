@@ -55,6 +55,14 @@ type LoopConfig struct {
 	// MaxToolOutputTokens mirrors [tools] max_output_tokens: the dispatcher's
 	// per-result output cap. 0 keeps agent.DefaultMaxOutputTokens.
 	MaxToolOutputTokens int
+	// MaxJobsPerConversation mirrors [plugins] max_jobs_per_conversation: the cap
+	// on a conversation's outstanding plugin jobs (docs/plugin-capabilities.md §5).
+	// 0 uses DefaultMaxJobsPerConversation.
+	MaxJobsPerConversation int
+	// JobWaiters lets job_wait block on the sweeper's completion signal instead of
+	// polling (docs/plugin-capabilities.md §5). Shared with the sweeper; nil in the
+	// eval harness, where job_wait falls back to polling.
+	JobWaiters *JobWaiters
 }
 
 // AgentBuilderConfig holds the behavioral dependencies layered on top of the
@@ -344,6 +352,19 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 	// gets the tools even though its allowlist never lists them.
 	var shellTools []string
 
+	// Background-job tools (docs/plugin-capabilities.md §5) are available whenever
+	// the job registry — the store — is wired, like tool_list: granted regardless
+	// of the role allowlist so an agent can always follow up on a job it started.
+	if lc.Memory != nil {
+		agent.RegisterJobTools(d, newJobTools(lc.Memory, lc.Mgr, lc.JobWaiters, agentID))
+		shellTools = append(shellTools, agent.JobToolNames...)
+	}
+	// A plugin tool that returns a job id is recorded against this conversation,
+	// with the per-conversation cap enforced on admission (§5).
+	if lc.Memory != nil {
+		d.SetJobStarter(newJobStarter(lc.Memory, lc.Mgr, agentID, lc.MaxJobsPerConversation))
+	}
+
 	delegates := role.Delegates && depthGuard > 0
 	if delegates {
 		f.registerSubAgentTools(d, lc, agentID, role, depthGuard, gate)
@@ -457,9 +478,18 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		memoryFn = memoryEnrichmentFn(lc.Memory)
 	}
 
+	// Surface the conversation's outstanding background jobs, so remembering an
+	// in-flight job is structural rather than left to the model (§5). Needs only
+	// the store — no embedder — and is placed first so the shared enrichment cap
+	// never truncates it away.
+	var jobsFn func(ctx context.Context, queryVec []float32) string
+	if lc.Memory != nil {
+		jobsFn = jobsEnrichmentFn(lc.Memory, agentID)
+	}
+
 	// The loop exposes a single enrichment channel (context builder priority 2.6,
-	// shared token cap), so the two pull-surfacers are composed into one.
-	enrichmentFn := composeEnrichment(relatedFn, memoryFn)
+	// shared token cap), so the pull-surfacers are composed into one.
+	enrichmentFn := composeEnrichment(jobsFn, relatedFn, memoryFn)
 
 	// The role body is the persona; an empty body falls back to the daemon's
 	// configured system prompt (R-ROLE.3). This is what gives leaves their

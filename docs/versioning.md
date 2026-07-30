@@ -77,12 +77,17 @@ How it works:
   `plugin.describe` response (`DescribeResult.ProtocolVersion`). Plugins built
   with `plugin.Serve` stamp it automatically.
 - On startup the daemon (`Manager.Start`) compares the advertised version with
-  its own `ProtocolVersion` and **rejects a mismatch**, with a message telling
-  the operator to rebuild the plugin (or upgrade Nine). A plugin reporting `0`
-  predates protocol versioning and is treated as incompatible.
+  its own supported set and **rejects an unsupported version**, with a message
+  telling the operator to rebuild the plugin (or upgrade Nine). A plugin reporting
+  `0` predates protocol versioning and is treated as incompatible.
 
-Today the daemon supports exactly one version, so any mismatch is fatal. If we
-ever need to support a range, widen the check in `checkProtocolVersion`.
+The current version is **2**, which added long-running jobs (the `async_jobs`
+describe flag, a `job_id` on `plugin.call`, and the `plugin.job_status` /
+`plugin.job_cancel` methods — see `spec/contracts/plugin.md` R-PLUG.12). Because
+that is purely **additive** — a v1 plugin remains fully functional, just without
+jobs — the check (`checkProtocolVersion`) accepts a **set**, `{1, 2}`, rather than
+a single version, and treats a v1 plugin as lacking jobs. The `0` (predates
+versioning) rejection stays.
 
 This applies only to **native** Nine plugins. MCP plugins negotiate their own
 protocol version (`mcpProtocolVersion`, see `internal/plugin/mcp.go`) and the

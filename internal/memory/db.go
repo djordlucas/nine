@@ -217,6 +217,28 @@ func initSchema(d db) error {
 			updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
 			PRIMARY KEY (agent_id, related_agent_id)
 		)`,
+		// plugin_jobs: the daemon-side registry of long-running plugin work
+		// (docs/plugin-capabilities.md §5). The model sees `handle`; the daemon
+		// polls (plugin, plugin_job_id) and notifies owner_id on completion. A
+		// large result goes to the file store (spill_path), not the row.
+		`CREATE TABLE IF NOT EXISTS plugin_jobs (
+			handle        TEXT PRIMARY KEY,
+			plugin        TEXT NOT NULL,
+			tool          TEXT NOT NULL,
+			plugin_job_id TEXT NOT NULL,
+			owner_id      TEXT NOT NULL DEFAULT '',
+			state         TEXT NOT NULL DEFAULT 'running',
+			ack           TEXT NOT NULL DEFAULT '',
+			progress      TEXT NOT NULL DEFAULT '',
+			output        TEXT NOT NULL DEFAULT '',
+			spill_path    TEXT NOT NULL DEFAULT '',
+			error         TEXT NOT NULL DEFAULT '',
+			created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+			finished_at   TIMESTAMPTZ
+		)`,
+		`CREATE INDEX IF NOT EXISTS plugin_jobs_owner ON plugin_jobs (owner_id)`,
+		`CREATE INDEX IF NOT EXISTS plugin_jobs_state ON plugin_jobs (state)`,
 	}
 	for _, s := range stmts {
 		if _, err := d.Exec(s); err != nil {

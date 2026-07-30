@@ -331,12 +331,79 @@ daemon start          TryStart → spawn process → plugin.describe → registe
 
 ## Environment Variables Passed to Plugins
 
-The plugin manager passes this to each subprocess:
+The plugin manager passes these to each subprocess:
 
 | Variable | Value | Purpose |
 |----------|-------|---------|
 | `NINE_BIN` | `plugins.bin` from config | Plugin binary directory |
+| `NINE_PLUGIN_SOCKET` | per-plugin socket path | Where the plugin listens |
+| `NINE_PLUGIN_CACHE_DIR` | per-plugin scratch dir | Cache directory (below) |
+| `NINE_PLUGIN_CACHE_PERSISTENT` | `0`/`1` | Whether the cache dir persists |
 
-Individual plugins may receive extra env vars at startup (see `Config.PluginEnvs`),
-e.g. `NINE_SKILLS_DIR` for `skills` or the `BROWSER_*` settings for `browser`.
-Plugins can also read their own env for secrets (e.g., `MY_PLUGIN_API_KEY`).
+Individual plugins also receive their built-in defaults (e.g. `NINE_WORKSPACE`
+for `files`, the `BROWSER_*` settings for `browser`) plus any operator settings.
+
+### Operator settings (no rebuild needed)
+
+An operator configures a plugin Nine has never heard of via a singular
+`[plugin.<name>]` table in `nine.toml`. Everything under
+`[plugin.<name>.settings]` is copied through to the process as environment
+variables at spawn — Nine never declares a schema, so a third-party plugin's API
+key or tuning is set in config, not code:
+
+```toml
+[plugin.weather.settings]
+WEATHER_API_KEY = "sk-…"
+UNITS           = "metric"
+
+[plugin.browser.settings]
+BROWSER_HEADLESS = "0"   # operator settings override a built-in default
+```
+
+Keys are used verbatim as env-var names (a malformed key is a config error at
+load); values are TOML scalars, stringified. `NINE_PLUGIN_SOCKET` and the two
+`NINE_PLUGIN_CACHE_*` vars are reserved and cannot be set here. Settings are read
+at spawn — edit and `nine plugins reload` (user plugins) or restart (built-ins)
+to apply. Applies to MCP servers too.
+
+### The cache directory
+
+Each plugin gets its own scratch directory at `NINE_PLUGIN_CACHE_DIR` (partial
+downloads, an extracted archive, a SQLite file, a cursor). Nine creates it and
+never reads it. It is **ephemeral by default** — wiped when the plugin exits — so
+do not put anything there you need to survive. Set `persist_cache = true` under
+`[plugin.<name>]` to keep it across restarts (`NINE_PLUGIN_CACHE_PERSISTENT`
+tells the plugin which it got). The root is `[plugins].cache_dir`
+(default `~/.cache/nine/plugins`).
+
+### Long-running work (jobs)
+
+A tool that would hold the turn open for minutes — a download, a scan — can run
+detached. Return a `plugin.Job` from a job handler: the call replies immediately
+with a one-line ack and a job id, and the work runs on a context **detached from
+the request** so writing the reply does not cancel it. The daemon polls the job
+and surfaces its result on a later turn; the model steers it with
+`job_wait`/`job_check`/`job_list`/`job_cancel`.
+
+```go
+jobs := plugin.NewJobs()
+plugin.Serve(tools, handlers,
+    plugin.WithJobHandlers(map[string]plugin.JobHandler{
+        "download_file": func(ctx context.Context, args json.RawMessage) (plugin.Job, error) {
+            var req struct{ URL string `json:"url"` }
+            // … validate synchronously; a bad argument is a normal error, not a job …
+            return plugin.Job{
+                Ack: "started download of " + req.URL,
+                Run: func(ctx context.Context) (string, error) { return download(ctx, req.URL) },
+            }, nil
+        },
+    }),
+    plugin.WithJobs(jobs),
+)
+```
+
+Inside `Run`, use `plugin.JobDir(ctx)` for per-job scratch and
+`plugin.SetProgress(ctx, "41% · 1.2 GB/2.9 GB")` to report progress. `Serve`
+honours the plugin's `max_concurrent` for jobs (excess jobs queue) and evicts
+finished jobs after a TTL. Jobs are native-plugin only (protocol v2); MCP servers
+cannot use them. See [Plugin capabilities § 5](plugin-capabilities.md).
