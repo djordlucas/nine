@@ -123,6 +123,31 @@ bin = "./dist/bin"
 # and surfaced — the daemon still starts. See docs/plugins.md and plugins.d/.
 # The container overrides this with NINE_PLUGINS_USER_DIR.
 # user_dir = "./plugins.d"
+# Root for each plugin's scratch/cache directory (docs/plugin-capabilities.md §4).
+# Defaults to the OS user cache dir (~/.cache/nine/plugins); the container
+# overrides it with NINE_PLUGINS_CACHE_DIR. Must be durable, not /tmp.
+# cache_dir = "~/.cache/nine/plugins"
+# Long-running plugin jobs (docs/plugin-capabilities.md §5): how often the daemon
+# polls a running job (default 2s), the per-job lifetime bound (default 3600s),
+# and the per-conversation cap on outstanding jobs (default 8).
+# job_poll_seconds = 2
+# job_max_seconds = 3600
+# max_jobs_per_conversation = 8
+
+# Per-plugin operator config (docs/plugin-capabilities.md §3). The singular
+# [plugin.<name>] table (sibling to the plural [plugins] above) configures one
+# plugin. [plugin.<name>.settings] is a schema-less bag of environment variables
+# passed through verbatim at spawn — so a plugin Nine was not built to know about
+# (a weather plugin needing an API key) can be configured without a rebuild. Keys
+# are used as env-var names; values are TOML scalars. persist_cache keeps the
+# plugin's cache dir across restarts (default false).
+# [plugin.weather]
+# persist_cache = false
+# [plugin.weather.settings]
+# WEATHER_API_KEY = "sk-…"
+# UNITS = "metric"
+# [plugin.browser.settings]
+# BROWSER_HEADLESS = "0"   # override a built-in default
 
 
 [memory]
@@ -326,6 +351,7 @@ Environment variables take priority over `nine.toml` values.
 | `NINE_DATABASE_URL` | Override `memory.database_url` |
 | `NINE_PLUGINS_BIN` | Override `plugins.bin` |
 | `NINE_PLUGINS_USER_DIR` | Override `plugins.user_dir` |
+| `NINE_PLUGINS_CACHE_DIR` | Override `plugins.cache_dir` (the plugin cache-dir root) |
 | `NINE_WORKSPACE_ROOT` | Override `workspace.root` |
 | `NINE_SKILLS_USER_DIR` | Override `skills.user_dir` |
 | `ANTHROPIC_API_KEY` | Anthropic API key (used when `llm.api_key` is empty) |

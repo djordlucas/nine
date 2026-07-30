@@ -24,9 +24,15 @@ reply↔request correlation is per-connection. Only these two methods flow; ther
 generic method route.
 
 ```text
-plugin.describe → returns {protocol_version, max_concurrent, tools: [ {name, description, inputSchema [, display_name]} ]}
-plugin.call({tool, args}) → returns {output}   (or an error envelope)
+plugin.describe → returns {protocol_version, max_concurrent, async_jobs?, tools: [ {name, description, inputSchema [, display_name]} ]}
+plugin.call({tool, args}) → returns {output [, job_id]}   (or an error envelope)
 ```
+
+A native plugin that runs long work **MAY** additionally implement two job
+methods (R-PLUG.12); `async_jobs: true` in `describe` advertises them, and a
+`plugin.call` that started detached work returns a `job_id` in place of a result.
+These are additive — protocol **v2** (see `docs/versioning.md`) — and a v1 plugin
+that implements neither is fully conforming.
 
 ```text
 POST http://unix/rpc
@@ -68,6 +74,11 @@ encoding (`plugin.InvalidArgs`, etc.) — one goroutine per request, so handlers
 concurrently up to the advertised `max_concurrent`. This is a convenience, not a
 requirement; the requirement is R-PLUG.1.
 
+For long-running work, `plugin.WithJobHandlers(map[string]plugin.JobHandler)` (with an
+optional `plugin.WithJobs(plugin.NewJobs())`) makes `Serve` advertise `async_jobs`, answer
+the job methods (R-PLUG.12), and run each job on a context **detached from the HTTP
+request** so writing the reply does not cancel the work. See R-PLUG.12.
+
 ---
 
 ## R-PLUG.3 — Manager lifecycle
@@ -76,14 +87,15 @@ The manager owns subprocess lifecycle:
 
 ```text
 Start(binaryPath, extraEnv…):
-   allocate a per-plugin Unix socket path; pass it via NINE_PLUGIN_SOCKET (+ NINE_BIN, extras)
-   spawn process; dial the socket with bounded retry (~1s budget)
-   → plugin.describe  → {tool defs, max_concurrent}
+   allocate a per-plugin Unix socket path; pass it via NINE_PLUGIN_SOCKET
+     (+ NINE_BIN, the cache-dir vars (R-PLUG.11), operator settings (R-PLUG.10), extras)
+   spawn process; dial the socket with bounded retry (~3s budget)
+   → plugin.describe  → {tool defs, max_concurrent, async_jobs}
    set the per-plugin HTTP transport's MaxConnsPerHost from max_concurrent (0 = unbounded; R-PLUG.8)
-   track *Plugin{Name, client, Tools}
+   track *Plugin{Name, client, Tools, AsyncJobs}
    register each tool with the dispatcher (handler = manager.Call(plugin, tool, args))
-on each tool invocation:  → plugin.call{tool,args} → {output}   (its own pooled connection)
-Stop:  SIGTERM, wait for clean exit (kill after grace), unlink the socket
+on each tool invocation:  → plugin.call{tool,args} → {output}  (or {job_id} → R-PLUG.12; its own pooled connection)
+Stop:  SIGTERM, wait for clean exit (kill after grace), unlink the socket, remove the ephemeral cache dir
 ```
 
 The manager registers tool definitions at start. (It does **not** write tool embeddings
@@ -215,13 +227,94 @@ their stdio transport and ignore `max_concurrent`.)
 
 ---
 
+## R-PLUG.10 — Operator settings pass-through
+
+An operator configures a plugin Nine has never heard of through a **singular**
+`[plugin.<name>]` table (sibling to the plural `[plugins]` subsystem table). Its
+`[plugin.<name>.settings]` sub-table is a **schema-less** bag of keys Nine copies
+through to the plugin process as environment variables at spawn — Nine never
+declares them, so no rebuild is needed to configure a third-party plugin.
+
+- **Keys** are used **verbatim** as env-var names; a key outside `[A-Za-z_][A-Za-z0-9_]*`
+  is a **config error at load**, not a silent skip.
+- **Values** are TOML scalars, stringified (bool → `"true"`/`"false"`); a table or
+  array value is a config error.
+- **Precedence** (later wins): OS env → `NINE_BIN` → Nine-owned vars → `PluginEnvs`
+  built-in defaults → operator `settings`. Operator settings therefore override a
+  built-in default (e.g. `BROWSER_HEADLESS`).
+- **Reserved:** `NINE_PLUGIN_SOCKET`, `NINE_PLUGIN_CACHE_DIR`, and
+  `NINE_PLUGIN_CACHE_PERSISTENT` **MUST NOT** be set via `settings` (config error) —
+  not the whole `NINE_` prefix, so `NINE_WORKSPACE` stays overridable.
+- Applies to **every** plugin including user plugins and MCP servers; read at spawn
+  (a change reaches a running plugin only on `nine plugins reload` or restart).
+
+## R-PLUG.11 — Per-plugin cache directory
+
+The manager creates a scratch directory per plugin process and hands it over as
+`NINE_PLUGIN_CACHE_DIR` (guaranteed to exist, mode `0700`), with
+`NINE_PLUGIN_CACHE_PERSISTENT` = `0`/`1`. Nine **never reads it** — it is opaque
+scratch, never embedded, and reaches the model only if the plugin returns it.
+
+- **Root:** `[plugins].cache_dir`, else `os.UserCacheDir()/nine/plugins` (env
+  `NINE_PLUGINS_CACHE_DIR`, **plural**). Must be durable, not `/tmp`.
+- **Ephemeral (default):** `<root>/<name>.<rand8>/`, removed on `Stop`/`StopAll` and
+  by a **boot sweep** of leftover `<name>.<hex>` dirs (the primary reclaim path,
+  since a hard-killed daemon never runs `Stop`).
+- **Persistent (`[plugin.<name>].persist_cache = true`):** `<root>/<name>/`, never
+  removed by Nine.
+- `Probe` (validate / user-plugin vetting) always uses a throwaway ephemeral dir,
+  regardless of `persist_cache`, so validation never touches persistent state.
+
+## R-PLUG.12 — Long-running jobs (native plugins only)
+
+A tool call **MAY** start detached work and return a `job_id` plus a one-line
+`output` ack instead of a result. Such a plugin **MUST** advertise `async_jobs`
+and implement two methods; the daemon **rejects a `job_id` from a plugin that did
+not advertise it** (fail-closed against version skew).
+
+```text
+plugin.job_status({job_id}) → {state: queued|running|done|failed|cancelled, progress?, output?, error?}
+plugin.job_cancel({job_id}) → {cancelled: true}
+```
+
+An unknown `job_id` **MUST** answer `job_status` with `failed` and a clear error
+(not an RPC error), so a daemon that lost track cannot wedge. `cancelled` is
+terminal and distinct from `failed`. `progress` is free text.
+
+- **Plugin side** (`plugin.NewJobs`): runs jobs through a worker pool honouring
+  `max_concurrent` (excess jobs sit `queued`, since a job start frees the HTTP
+  connection at once and the daemon's cap cannot hold that line), gives each job a
+  `<cache_dir>/jobs/<job_id>/` dir, and evicts terminal jobs after a TTL.
+- **Daemon side:** a `plugin_jobs` registry row (Postgres) keyed to the owning
+  conversation records a stable `handle` (`job_<hex>`; the plugin-side id is never
+  shown). A single sweeper polls `job_status` on an age-based backoff (base cadence
+  for the first minute, then ~30s) and, on a terminal state, cap-or-spills the
+  output into the row, journals the event, and posts a notification to the owner —
+  so the completion enriches a **later** turn (pull, not push; per
+  `docs/reactive-events.md`). A boot marks orphaned `running` rows `lost`;
+  `job_max_seconds` expires an over-age job; `max_jobs_per_conversation` caps a
+  conversation on admission.
+- **Model-facing tools** (core-intercepted, granted whenever the registry is wired):
+  `job_wait` (blocks up to a timeout, returns the result or current progress — a
+  timeout is not an error), `job_check`, `job_list`, `job_cancel`. The context
+  builder surfaces outstanding jobs as one compact line each.
+- **MCP is excluded:** its adapter collapses replies to `{output}` and has no
+  status/cancel to map. Settings (R-PLUG.10) and the cache dir (R-PLUG.11) do apply
+  to MCP.
+
 ## Reference symbols
 
-`internal/plugin/manager.go` (`Manager`, `Start`, `Call`, `TryStart`, `spawnAndDescribe`,
-`Probe`), `internal/plugin/userplugins.go` (`LoadUserPlugins`, `ReloadUserPlugins`,
-`UserStatus`), `internal/plugin/manifest.go` (`Manifest`, `LoadManifest`, `discoverPlugins`),
+`internal/plugin/manager.go` (`Manager`, `Start`, `Call`, `JobStatus`, `JobCancel`,
+`PluginByName`, `TryStart`, `spawnAndDescribe`, `Probe`, `SetPluginEnv`, `SetCacheConfig`,
+`SweepCache`), `internal/plugin/userplugins.go` (`LoadUserPlugins`, `ReloadUserPlugins`,
+`UserStatus`), `internal/plugin/cache.go` (`allocCacheDir`, `SweepCache`),
+`internal/plugin/jobs.go` (`Jobs`, `Job`, `JobHandler`, `JobStatus`, `JobDir`, `SetProgress`),
+`internal/plugin/manifest.go` (`Manifest`, `LoadManifest`, `discoverPlugins`),
 `internal/plugin/` (`client.go` `newHTTPClient` — native HTTP transport; `client`/`mcp.go`
 — stdio, retained for MCP; `serve.go` `plugin.Serve` — the plugin-side HTTP server loop on
-`NINE_PLUGIN_SOCKET`; `contract.go` — `ToolDefinition`/`DescribeResult`),
-`plugins/{files,shell,http,time,browser}/`, `cmd/nine/daemon.go` (`LoadUserPlugins` at boot),
-`internal/cli/plugins.go` (`nine plugins` / `nine plugin validate`).
+`NINE_PLUGIN_SOCKET`, `WithJobHandlers`/`WithJobs`; `contract.go` — `ToolDefinition`/`DescribeResult`),
+`internal/memory/plugin_jobs.go` (the `plugin_jobs` registry), `internal/runtime/plugin_jobs.go`
+(job starter + sweeper), `internal/runtime/job_tools.go` (model-facing tools + surfacing),
+`internal/agent/register_jobs.go` (`job_wait`/`job_check`/`job_list`/`job_cancel`),
+`plugins/{files,shell,http,time,browser}/`, `cmd/nine/daemon.go` (`LoadUserPlugins`, job
+sweeper, graceful shutdown at boot), `internal/cli/plugins.go` (`nine plugins` / `nine plugin validate`).

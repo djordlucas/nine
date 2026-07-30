@@ -44,6 +44,18 @@ related_sessions_index  = true  # out-of-band related-session indexing + surfaci
 [plugins]
 dir = ""                        # plugin source/aux dir (if used)
 bin = ""                        # compiled plugin binary directory
+# user_dir = ""                 # operator plugins (sidecar-manifest layout); env NINE_PLUGINS_USER_DIR
+# cache_dir = ""                # per-plugin cache-dir root; default os.UserCacheDir()/nine/plugins; env NINE_PLUGINS_CACHE_DIR
+# job_poll_seconds = 2          # how often the sweeper polls a running plugin job
+# job_max_seconds = 3600        # per-job lifetime bound; the sweeper expires an over-age job
+# max_jobs_per_conversation = 8 # cap on a conversation's outstanding plugin jobs
+
+# Per-plugin operator config (plugin.md R-PLUG.10/11). Singular [plugin.<name>]
+# table, sibling to the plural [plugins] above.
+# [plugin.<name>]
+# persist_cache = false         # keep the plugin's cache dir across restarts (R-PLUG.11)
+# [plugin.<name>.settings]      # schema-less env vars passed through verbatim at spawn (R-PLUG.10);
+#   KEY = "value"               #   keys are env-var names, values TOML scalars; reserved NINE_PLUGIN_* rejected
 
 [memory]
 # PostgreSQL DSN (pgx). Default: postgres://nine:nine@localhost:5433/nine?sslmode=disable
