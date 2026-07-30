@@ -65,6 +65,10 @@ type Dispatcher struct {
 	resolveRef      RefResolver
 	refParams       map[string][]string
 	maxOutputTokens int
+
+	// jobs records long-running plugin jobs (docs/plugin-capabilities.md §5), set
+	// per worker via SetJobStarter. Nil when jobs are not enabled.
+	jobs JobStarter
 }
 
 // New returns an empty Dispatcher. Register handlers with the Register*
@@ -96,6 +100,19 @@ func (d *Dispatcher) SetApproval(toolNames []string, fn ApprovalFn) {
 	d.approve = fn
 }
 
+// JobStarter records a long-running plugin job a tool call returned instead of a
+// result (docs/plugin-capabilities.md §5) and returns the observation the model
+// sees — a short line naming the job's stable handle. It is set per conversation
+// (the owner) so a completion can be notified back; without one, a plugin that
+// returns a job id is an error.
+type JobStarter interface {
+	StartJob(ctx context.Context, pluginName, tool, pluginJobID, ack string) (string, error)
+}
+
+// SetJobStarter installs the sink for plugin jobs. Registered per worker so the
+// job is keyed to the conversation that started it.
+func (d *Dispatcher) SetJobStarter(js JobStarter) { d.jobs = js }
+
 // RegisterPlugin indexes all tools advertised by p so they can be dispatched.
 func (d *Dispatcher) RegisterPlugin(m *plugin.Manager, p *plugin.Plugin) {
 	for _, t := range p.Tools {
@@ -107,9 +124,27 @@ func (d *Dispatcher) RegisterPlugin(m *plugin.Manager, p *plugin.Plugin) {
 			if err != nil {
 				return "", err
 			}
-			return cr.Output, nil
+			return d.resolveCallResult(ctx, pp, toolName, cr)
 		}
 	}
+}
+
+// resolveCallResult turns a plugin CallResult into the string the model sees. An
+// ordinary result passes through; a job id is recorded via the JobStarter and
+// replaced with its handle observation. A job id from a plugin that did not
+// advertise async_jobs is rejected (fail-closed against version skew), as is one
+// when no JobStarter is wired.
+func (d *Dispatcher) resolveCallResult(ctx context.Context, p *plugin.Plugin, tool string, cr plugin.CallResult) (string, error) {
+	if cr.JobID == "" {
+		return cr.Output, nil
+	}
+	if !p.AsyncJobs {
+		return "", fmt.Errorf("plugin %q returned a job id but did not advertise async_jobs", p.Name)
+	}
+	if d.jobs == nil {
+		return "", fmt.Errorf("plugin %q started a job but background jobs are not enabled here", p.Name)
+	}
+	return d.jobs.StartJob(ctx, p.Name, tool, cr.JobID, cr.Output)
 }
 
 // InjectHandler registers a handler function directly by tool name.

@@ -228,6 +228,10 @@ type PluginsConfig struct {
 	// caches live under the same root.
 	CacheDir string `toml:"cache_dir"`
 
+	// JobPollSeconds is how often the daemon polls running plugin jobs
+	// (docs/plugin-capabilities.md §5). 0 uses runtime.DefaultJobPollSeconds.
+	JobPollSeconds int `toml:"job_poll_seconds"`
+
 	// UserDir holds operator-supplied plugins, discovered at boot from a
 	// sidecar-manifest layout: an executable `<name>` beside a `<name>.toml`
 	// manifest (name + entrypoint). It is scanned separately from the built-in

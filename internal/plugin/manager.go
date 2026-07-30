@@ -22,8 +22,11 @@ import (
 const socketDir = "/tmp/nine"
 
 // socketReadyTimeout bounds how long Start waits for a spawned plugin to start
-// listening before giving up.
-const socketReadyTimeout = time.Second
+// listening before giving up. It only bounds the failure path — a healthy plugin
+// listens within milliseconds — so it is set generously enough that a spawn under
+// heavy parallel load (many plugins building and starting at once, as the test
+// suite does) is not spuriously declared dead.
+const socketReadyTimeout = 3 * time.Second
 
 // Plugin is a running plugin process with its advertised tools.
 type Plugin struct {
@@ -33,6 +36,11 @@ type Plugin struct {
 	// User marks a plugin loaded from the operator's plugins directory rather
 	// than a built-in. Reload stops and re-discovers only User plugins.
 	User bool
+
+	// AsyncJobs mirrors the plugin's describe flag: it can run detached work and
+	// answer job_status / job_cancel. The daemon refuses a job_id from a plugin
+	// with this false — fail-closed against version skew.
+	AsyncJobs bool
 
 	// cacheDir is the plugin's scratch directory (docs/plugin-capabilities.md §4),
 	// handed over as NINE_PLUGIN_CACHE_DIR. Empty when no cache root is configured.
@@ -162,7 +170,7 @@ func (m *Manager) Start(binaryPath string, extraEnv ...string) (*Plugin, error) 
 	}
 
 	c := newHTTPClient(name, socketPath, cmd, desc.MaxConcurrent)
-	p := &Plugin{Name: name, client: c, Tools: desc.Tools, cacheDir: cacheDir, cacheEphemeral: ephemeral}
+	p := &Plugin{Name: name, client: c, Tools: desc.Tools, AsyncJobs: desc.AsyncJobs, cacheDir: cacheDir, cacheEphemeral: ephemeral}
 	m.track(p)
 	slog.Info("plugin started", "name", name, "tools", len(desc.Tools), "max_concurrent", desc.MaxConcurrent)
 	return p, nil
@@ -363,6 +371,37 @@ func (m *Manager) Call(ctx context.Context, p *Plugin, toolName string, args jso
 		return CallResult{}, fmt.Errorf("unmarshal call result: %w", err)
 	}
 	return cr, nil
+}
+
+// JobStatus asks a plugin for the status of one of its jobs
+// (docs/plugin-capabilities.md §5). An unknown job id is not an RPC error: the
+// plugin answers a failed status, so a daemon that lost track cannot wedge.
+func (m *Manager) JobStatus(ctx context.Context, p *Plugin, pluginJobID string) (JobStatus, error) {
+	raw, err := p.client.call(ctx, "plugin.job_status", map[string]string{"job_id": pluginJobID})
+	if err != nil {
+		return JobStatus{}, err
+	}
+	var st JobStatus
+	if err := json.Unmarshal(raw, &st); err != nil {
+		return JobStatus{}, fmt.Errorf("unmarshal job status: %w", err)
+	}
+	return st, nil
+}
+
+// JobCancel best-effort cancels one of a plugin's jobs.
+func (m *Manager) JobCancel(ctx context.Context, p *Plugin, pluginJobID string) error {
+	_, err := p.client.call(ctx, "plugin.job_cancel", map[string]string{"job_id": pluginJobID})
+	return err
+}
+
+// PluginByName returns the running plugin with the given name, or (nil, false).
+func (m *Manager) PluginByName(name string) (*Plugin, bool) {
+	for _, p := range m.Running() {
+		if p.Name == name {
+			return p, true
+		}
+	}
+	return nil, false
 }
 
 // Stop gracefully shuts down the plugin process.
