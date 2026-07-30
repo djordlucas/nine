@@ -1,7 +1,13 @@
 # Plugin capabilities — settings, a cache dir, and long-running work
 
-- **Status:** Proposed (design note, **rev 3**). Nothing here is built yet.
+- **Status:** **Implemented** (rev 3). All three capabilities are built; the
+  normative contract is `spec/contracts/plugin.md` (R-PLUG.10/11/12) and the
+  authoring guide is `docs/plugins.md`. This note is kept as the design rationale.
 - **Date:** 2026-07-30 (rev 1: 2026-07-25).
+- **Two small deviations from the design, both behaviour-preserving:** the sweeper
+  polls on an age-based backoff computed in SQL (`PluginJobsDueForPoll`) rather
+  than per-job timers, and `job_wait` blocks on a sweeper-signalled `JobWaiters`
+  channel with a poll fallback (the eval harness wires no signaller).
 - **Supersedes:** the rev-1 proposal, `docs/plugin-host-api.md` (renamed to this
   file), which added a *host API* — a reverse channel letting a plugin call back
   into the daemon to read and write memory. **That feature is dropped** (§2). What remains, and what this rev
