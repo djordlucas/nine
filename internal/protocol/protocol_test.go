@@ -131,3 +131,49 @@ func TestCanConnectDeadSocket(t *testing.T) {
 		t.Error("CanConnect on a nonexistent socket should be false")
 	}
 }
+
+// R-HITL.6: human_input_required survives the wire and parses into a
+// ProgressEvent. Origin attributes a question raised by a sub-agent; AgentID
+// stays the owning session, so a client answers with that ID and needs no
+// knowledge of sub-agent IDs.
+func TestHumanInputRequiredCarriesOrigin(t *testing.T) {
+	origin := `sub-agent "executor" · audit the repo`
+	msg := protocol.NewHumanInputRequiredMsg("root-1", "req-9", "Run tool \"shell\"?", []string{"yes", "no"}, 300, origin)
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(msg); err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	var got protocol.Msg
+	if err := json.NewDecoder(&buf).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	evt, ok := got.ToProgressEvent()
+	if !ok {
+		t.Fatal("human_input_required should parse as a progress event")
+	}
+	if evt.HumanRequest == nil {
+		t.Fatal("progress event carries no HumanRequest")
+	}
+	if evt.HumanRequest.Origin != origin {
+		t.Errorf("Origin = %q, want %q", evt.HumanRequest.Origin, origin)
+	}
+	if got.AgentID != "root-1" {
+		t.Errorf("AgentID = %q, want the owning session", got.AgentID)
+	}
+	if evt.HumanRequest.RequestID != "req-9" || evt.HumanRequest.TimeoutSeconds != 300 {
+		t.Errorf("request round-tripped as %+v", evt.HumanRequest)
+	}
+
+	// A question from the session's own loop carries no origin, and the field
+	// is omitted from the wire form entirely.
+	plain := protocol.NewHumanInputRequiredMsg("root-1", "req-10", "Proceed?", nil, 300, "")
+	raw, err := json.Marshal(plain)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if bytes.Contains(raw, []byte("origin")) {
+		t.Errorf("empty origin should be omitted, got %s", raw)
+	}
+}

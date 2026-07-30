@@ -216,9 +216,28 @@ type chatState struct {
 	streamingText   string                 // accumulated text chunks from the current LLM turn
 	thinkingTrace   string                 // accumulated reasoning tokens for the current step (ephemeral)
 	thinkingThink   bool                   // the in-flight step streams reasoning; false = execute-only call
-	stage           string                 // current waiting phase label; empty when none
-	pendingHuman    *protocol.HumanRequest // non-nil while awaiting a human answer
+	stage           string                   // current waiting phase label; empty when none
+	humanQueue      []*protocol.HumanRequest // unanswered questions, oldest first; [0] is the one on screen
 	ready           bool
+}
+
+// pendingHuman is the question currently on screen, or nil when none is
+// waiting. Parallel sub-agents can each raise an approval gate at the same
+// time (R-HITL.5), so questions queue and are answered oldest-first rather
+// than the newest silently replacing the one the user is reading.
+func (c *chatState) pendingHuman() *protocol.HumanRequest {
+	if len(c.humanQueue) == 0 {
+		return nil
+	}
+	return c.humanQueue[0]
+}
+
+// popHuman removes the on-screen question and returns the next one, if any.
+func (c *chatState) popHuman() *protocol.HumanRequest {
+	if len(c.humanQueue) > 0 {
+		c.humanQueue = c.humanQueue[1:]
+	}
+	return c.pendingHuman()
 }
 
 // displayState holds layout, theming, and rendering configuration.
@@ -325,20 +344,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyEnter:
 			// Answering a pending ask_human takes priority — it is allowed even
 			// while the turn is still in flight (thinking == true).
-			if m.chat.pendingHuman != nil && m.conn.client != nil {
+			if req := m.chat.pendingHuman(); req != nil && m.conn.client != nil {
 				text := strings.TrimSpace(m.chat.input.Value())
 				if text == "" {
 					break
 				}
 				m.chat.input.Reset()
-				req := m.chat.pendingHuman
-				m.chat.pendingHuman = nil
-				m.resetInputPrompt()
 				m.chat.messages = append(m.chat.messages, chatMsg{
 					role: "user",
 					text: text,
 					at:   time.Now(),
 				})
+				// Answering uncovers the next queued question, if any, rather than
+				// returning the input box to normal.
+				if next := m.chat.popHuman(); next != nil {
+					m.chat.messages = append(m.chat.messages, chatMsg{
+						role: "ask",
+						text: formatQuestion(next),
+						at:   time.Now(),
+					})
+				} else {
+					m.resetInputPrompt()
+				}
 				m.rebuildContent()
 				m.chat.viewport.GotoBottom()
 				cmds = append(cmds, answerCmd(m.conn.sockPath, m.conn.agentID, req.RequestID, text))
@@ -548,14 +575,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "human_input_required":
 			if evt.HumanRequest != nil {
-				m.chat.pendingHuman = evt.HumanRequest
-				m.chat.messages = append(m.chat.messages, chatMsg{
-					role: "ask",
-					text: formatQuestion(evt.HumanRequest),
-					at:   time.Now(),
-				})
-				m.chat.input.Prompt = "Answer: "
-				m.chat.input.PromptStyle = m.display.pal.you
+				// Only the head of the queue is rendered; a question arriving while
+				// another is unanswered (parallel sub-agents each hitting a gate)
+				// waits its turn instead of overwriting the one on screen.
+				first := m.chat.pendingHuman() == nil
+				m.chat.humanQueue = append(m.chat.humanQueue, evt.HumanRequest)
+				if first {
+					m.chat.messages = append(m.chat.messages, chatMsg{
+						role: "ask",
+						text: formatQuestion(evt.HumanRequest),
+						at:   time.Now(),
+					})
+					m.chat.input.Prompt = "Answer: "
+					m.chat.input.PromptStyle = m.display.pal.you
+				}
 			}
 		}
 		m.rebuildContent()
@@ -573,9 +606,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.thinkingTrace = ""
 		m.chat.stage = ""
 
-		if m.chat.pendingHuman != nil {
-			// Turn ended without the question being answered (e.g. it timed out).
-			m.chat.pendingHuman = nil
+		if m.chat.pendingHuman() != nil {
+			// Turn ended with questions still unanswered (e.g. they timed out).
+			// The whole queue goes with it — every asker's wait ended too.
+			m.chat.humanQueue = nil
 			m.resetInputPrompt()
 		}
 		m.chat.messages = append(m.chat.messages, chatMsg{
@@ -682,8 +716,11 @@ func (m model) View() string {
 		ctxHint = fmt.Sprintf("  ·  ctx: %d/%d", m.display.contextUsed, m.display.contextBudget)
 	}
 	askHint := ""
-	if m.chat.pendingHuman != nil {
+	if m.chat.pendingHuman() != nil {
 		askHint = "  ·  ? awaiting answer"
+		if waiting := len(m.chat.humanQueue) - 1; waiting > 0 {
+			askHint += fmt.Sprintf(" (%d more waiting)", waiting)
+		}
 	}
 
 	instanceName := m.conn.instanceName
@@ -724,12 +761,20 @@ func (m *model) resetInputPrompt() {
 }
 
 // formatQuestion renders an ask_human question and any options for display.
+// formatQuestion renders a pending question for the transcript. A question
+// raised by a sub-agent is prefixed with who is asking — without that, an
+// approval prompt for a tool the user never saw requested is unactionable
+// (R-HITL.8).
 func formatQuestion(hr *protocol.HumanRequest) string {
-	q := hr.Question
-	for i, opt := range hr.Options {
-		q += fmt.Sprintf("\n  %d) %s", i+1, opt)
+	var b strings.Builder
+	if hr.Origin != "" {
+		b.WriteString("[" + hr.Origin + "]\n")
 	}
-	return q
+	b.WriteString(hr.Question)
+	for i, opt := range hr.Options {
+		fmt.Fprintf(&b, "\n  %d) %s", i+1, opt)
+	}
+	return b.String()
 }
 
 // nineLogo is the ASCII banner shown at the top of a fresh conversation.

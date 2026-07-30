@@ -35,6 +35,19 @@ type CallResult struct {
 // blocks the call; the error is surfaced to the model as a normal tool failure.
 type ApprovalFn func(ctx context.Context, toolName string, args json.RawMessage) error
 
+// ApprovalError wraps a gated call a human declined, or one whose approval
+// could not be obtained (the question timed out or the turn was cancelled).
+//
+// It exists so the retry loop can tell a *decision* from a transient failure:
+// re-dispatching a rejected call just asks the same person the same question
+// again, and with parallel sub-agent gates (R-HITL.5) that multiplies into a
+// barrage. dispatchWithRetry treats it as terminal. The wrapped error carries
+// the message the model sees, unchanged.
+type ApprovalError struct{ Err error }
+
+func (e *ApprovalError) Error() string { return e.Err.Error() }
+func (e *ApprovalError) Unwrap() error { return e.Err }
+
 // Dispatcher routes tool calls to registered plugins or to core-intercepted
 // handlers, expands ref arguments, applies post-call hooks, and enforces the
 // output token cap.

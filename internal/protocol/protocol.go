@@ -84,22 +84,31 @@ type Msg struct {
 	ForceThink bool `json:"force_think,omitempty"`
 
 	// human-in-the-loop (see internal/runtime/hitl.go):
-	//   human_input_required (daemon → client): RequestID, Question, Options, TimeoutSeconds
+	//   human_input_required (daemon → client): RequestID, Question, Options, TimeoutSeconds, Origin
 	//   human_input_answer   (client → daemon): AgentID, RequestID, Answer
+	//
+	// Origin attributes a question raised by a sub-agent rather than by the
+	// session itself ("sub-agent \"researcher\" · <task>"). Empty when the
+	// session's own loop is asking. AgentID stays the *owning* session — the one
+	// whose progress stream carries the message and whose ID answers it — so a
+	// client needs no knowledge of sub-agent IDs to reply.
 	RequestID      string   `json:"request_id,omitempty"`
 	Question       string   `json:"question,omitempty"`
 	Options        []string `json:"options,omitempty"`
 	TimeoutSeconds int      `json:"timeout_seconds,omitempty"`
 	Answer         string   `json:"answer,omitempty"`
+	Origin         string   `json:"origin,omitempty"`
 }
 
 // HumanRequest is a pending request for human input, surfaced to the TUI as
-// part of a ProgressEvent.
+// part of a ProgressEvent. Origin is empty for a question from the session's
+// own loop and names the sub-agent for a delegated one.
 type HumanRequest struct {
 	RequestID      string
 	Question       string
 	Options        []string
 	TimeoutSeconds int
+	Origin         string
 }
 
 // ProgressEvent is a structured progress update delivered to the TUI client
@@ -391,8 +400,10 @@ func NewSubAgentEndMsg(agentID, subAgentID, task, status, role string) Msg {
 }
 
 // NewHumanInputRequiredMsg announces that the agent is blocked waiting for
-// human input. Delivered on the session's progress stream.
-func NewHumanInputRequiredMsg(agentID, requestID, question string, options []string, timeoutSeconds int) Msg {
+// human input. Delivered on the owning session's progress stream; agentID is
+// that session, even when a sub-agent of it is the one asking (origin names
+// the sub-agent then, and is empty otherwise).
+func NewHumanInputRequiredMsg(agentID, requestID, question string, options []string, timeoutSeconds int, origin string) Msg {
 	return Msg{
 		Type:           "human_input_required",
 		AgentID:        agentID,
@@ -400,6 +411,7 @@ func NewHumanInputRequiredMsg(agentID, requestID, question string, options []str
 		Question:       question,
 		Options:        options,
 		TimeoutSeconds: timeoutSeconds,
+		Origin:         origin,
 		Timestamp:      time.Now().UnixMilli(),
 	}
 }
@@ -516,6 +528,7 @@ func (m Msg) ToProgressEvent() (ProgressEvent, bool) {
 				Question:       m.Question,
 				Options:        m.Options,
 				TimeoutSeconds: m.TimeoutSeconds,
+				Origin:         m.Origin,
 			},
 		}, true
 	default:

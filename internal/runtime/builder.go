@@ -75,8 +75,15 @@ type AgentBuilderConfig struct {
 	// Nil disables human-in-the-loop (e.g. in tests).
 	HITL *HITL
 	// ApprovalTools are tool names that require human approval before running,
-	// from [hitl].require_approval. Only enforced for interactive sessions.
+	// from [hitl].require_approval. Only enforced for loops owned by an
+	// interactive session — the session's own, and (per GateSubAgents) the
+	// sub-agents it spawns.
 	ApprovalTools []string
+	// GateSubAgents extends the ApprovalTools gates into sub-agents spawned by
+	// an interactive session, so delegation is not a way around them
+	// ([hitl].gate_sub_agents, default on). Sub-agents never get ask_human
+	// regardless — only the automatic gates (R-HITL.1/R-HITL.5).
+	GateSubAgents bool
 
 	// DefaultLeafRole names the role used when a delegation names none
 	// (roles.default_leaf; default "executor" — R-ROLE.9).
@@ -182,7 +189,12 @@ func (f *AgentBuilder) BuildForRole(agentID string, p RoleParams) *agent.Loop {
 	role.Interactive = role.Interactive && p.Interactive
 	role.OwnsGoal = p.OwnsGoal
 	role.Delegates = role.Delegates || p.Delegates
-	return f.build(agentID, role, f.maxDelegationDepth())
+	// A root session owns its own gates; sub-agents inherit this owner (subGate).
+	var gate gateCtx
+	if role.Interactive && f.cfg.HITL != nil {
+		gate.owner = agentID
+	}
+	return f.build(agentID, role, f.maxDelegationDepth(), gate)
 }
 
 // maxDelegationDepth returns the configured depthGuard seed (R-ROLE.6).
@@ -309,8 +321,10 @@ func appendInterceptedTools(tools []ninectx.ToolWithVector, names []string, role
 // delegation-recursion backstop: delegation tools are registered only when
 // role.Delegates and depthGuard > 0, and each spawn passes depthGuard-1
 // (R-ROLE.6). role.Interactive must already be the effective value (role
-// eligibility AND caller interactivity).
-func (f *AgentBuilder) build(agentID string, role Role, depthGuard int) *agent.Loop {
+// eligibility AND caller interactivity). gate routes approval-gate prompts to
+// the owning interactive session, if any — a sub-agent has role.Interactive
+// false but may still be gated through its parent's owner.
+func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gateCtx) *agent.Loop {
 	lc := f.cfg.Loop
 	d := agent.New()
 
@@ -332,7 +346,7 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int) *agent.L
 
 	delegates := role.Delegates && depthGuard > 0
 	if delegates {
-		f.registerSubAgentTools(d, lc, agentID, role, depthGuard)
+		f.registerSubAgentTools(d, lc, agentID, role, depthGuard, gate)
 		shellTools = append(shellTools, subAgentToolNames...)
 	}
 	// Goal self-management is a shell capability: any goal-owning pursue shell
@@ -349,10 +363,16 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int) *agent.L
 		agent.RegisterNotifyUser(d, agentID, f.cfg.NotifyUser)
 		shellTools = append(shellTools, "notify_user")
 	}
-	// HITL tools are gated to interactive sessions (R-HITL.1): sub-agents and
-	// background sessions never get ask_human or approval gates.
+	// ask_human stays interactive-only (R-HITL.1): a sub-agent or background
+	// session never raises its own questions. Approval gates are broader — they
+	// follow the *owning* session, so a gated tool a sub-agent reaches for is
+	// still put to the human who started the conversation (R-HITL.5). That is
+	// what stops delegation from being a way around require_approval.
 	if role.Interactive && f.cfg.HITL != nil {
-		f.registerHumanTools(d, agentID)
+		f.registerAskHuman(d, agentID)
+	}
+	if gate.gated() && f.cfg.HITL != nil && len(f.cfg.ApprovalTools) > 0 {
+		f.registerApprovalGates(d, agentID, gate)
 	}
 
 	// Catalog meta-tools let the model query the full tool/skill catalogs on
@@ -532,7 +552,7 @@ func (f *AgentBuilder) registerCoreTools(d *agent.Dispatcher, lc LoopConfig, age
 // registerSubAgentTools registers run_agent/run_agents/workflow/goal tools
 // for a delegating role. Spawned children run the leaf role named by the
 // delegation call (default executor) with depthGuard-1 (R-ROLE.6/8/9).
-func (f *AgentBuilder) registerSubAgentTools(d *agent.Dispatcher, lc LoopConfig, agentID string, role Role, depthGuard int) {
+func (f *AgentBuilder) registerSubAgentTools(d *agent.Dispatcher, lc LoopConfig, agentID string, role Role, depthGuard int, gate gateCtx) {
 	spawnOne := func(ctx context.Context, parentID, task, extraCtx, roleName string) agent.SubAgentResult {
 		leaf := f.roles.ResolveLeaf(roleName)
 		subID := newUUID()
@@ -540,15 +560,14 @@ func (f *AgentBuilder) registerSubAgentTools(d *agent.Dispatcher, lc LoopConfig,
 		if extraCtx != "" {
 			prompt = extraCtx + "\n\n" + task
 		}
-		taskPreview := task
-		if len(taskPreview) > 80 {
-			taskPreview = taskPreview[:80] + "..."
-		}
+		taskPreview := truncate(task, 80)
 		removeSubAgent := f.trackSubAgent(subID, task, leaf.Name)
 		f.emitProgressEvent(parentID, protocol.NewSubAgentStartMsg(parentID, subID, task, leaf.Name))
 		slog.Info("sub_agent_start", "parent_id", parentID, "sub_id", subID, "role", leaf.Name, "task", taskPreview)
 		spawnStart := time.Now()
-		result, err := RunSubAgentSync(ctx, subID, prompt, f.build(subID, leaf, depthGuard-1))
+		// The child inherits this loop's gate owner, so an approval prompt from
+		// any delegation depth still lands on the session a human is watching.
+		result, err := RunSubAgentSync(ctx, subID, prompt, f.build(subID, leaf, depthGuard-1, f.subGate(gate, leaf.Name, task)))
 		removeSubAgent()
 		status := "done"
 		switch {
@@ -606,26 +625,65 @@ func (f *AgentBuilder) registerSubAgentTools(d *agent.Dispatcher, lc LoopConfig,
 	agent.RegisterGoalCreate(d, agentID, lc.Memory, goalSpawn)
 }
 
-// registerHumanTools registers ask_human and (if configured) approval gates
-// for an interactive session. Both route through HITL.Ask so the TUI has one
-// rendering path (R-HITL.5).
-func (f *AgentBuilder) registerHumanTools(d *agent.Dispatcher, agentID string) {
-	hitl := f.cfg.HITL
-	agent.RegisterAskHuman(d, agentID, hitl.Ask)
+// gateCtx routes a loop's approval-gate prompts to a human. owner is the
+// interactive session whose progress stream carries them and whose ID answers
+// them; an empty owner means this loop is not gated at all. origin attributes
+// the prompt in the UI and is empty when the owner's own loop is the asker.
+//
+// A sub-agent inherits its parent's owner (see subGate), so a gate raised at
+// any delegation depth surfaces on the one session a human is actually
+// watching — emitting to the sub-agent's own ID would find no session and the
+// call would block until timeout.
+type gateCtx struct {
+	owner  string
+	origin string
+}
 
-	if len(f.cfg.ApprovalTools) == 0 {
-		return
+// gated reports whether this loop should enforce approval gates.
+func (g gateCtx) gated() bool { return g.owner != "" }
+
+// subGate derives the gate context for a sub-agent spawned by a loop running
+// under g. Gating stops at the parent when [hitl].gate_sub_agents is off.
+func (f *AgentBuilder) subGate(g gateCtx, roleName, task string) gateCtx {
+	if !g.gated() || !f.cfg.GateSubAgents {
+		return gateCtx{}
 	}
+	return gateCtx{owner: g.owner, origin: fmt.Sprintf("sub-agent %q · %s", roleName, truncate(task, 60))}
+}
+
+// registerAskHuman registers the ask_human tool. Interactive sessions only
+// (R-HITL.1) — a sub-agent is a bounded worker, not a conversational
+// participant, so it never gets to raise its own questions.
+func (f *AgentBuilder) registerAskHuman(d *agent.Dispatcher, agentID string) {
+	agent.RegisterAskHuman(d, agentID, f.cfg.HITL.Ask)
+}
+
+// registerApprovalGates arms the [hitl].require_approval gates for a loop
+// owned by an interactive session, routing each prompt through HITL.AskFrom so
+// the TUI has one rendering path (R-HITL.5). askerID is this loop's own agent
+// ID — it keys the persisted request, keeping parallel sub-agents from
+// colliding on a single pending row.
+func (f *AgentBuilder) registerApprovalGates(d *agent.Dispatcher, askerID string, gate gateCtx) {
+	hitl := f.cfg.HITL
 	d.SetApproval(f.cfg.ApprovalTools, func(ctx context.Context, toolName string, args json.RawMessage) error {
-		ans, err := hitl.Ask(ctx, agentID, approvalQuestion(toolName, args), nil)
+		ans, err := hitl.AskFrom(ctx, askerID, gate.owner, gate.origin, approvalQuestion(toolName, args), nil)
 		if err != nil {
-			return fmt.Errorf("tool %s approval failed: %w", toolName, err)
+			return &agent.ApprovalError{Err: fmt.Errorf("tool %s approval failed: %w", toolName, err)}
 		}
 		if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(ans)), "y") {
-			return fmt.Errorf("tool %s rejected by user", toolName)
+			return &agent.ApprovalError{Err: fmt.Errorf("tool %s rejected by user", toolName)}
 		}
 		return nil
 	})
+}
+
+// truncate shortens s to at most n runes, appending an ellipsis when it cuts.
+func truncate(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "..."
 }
 
 // approvalQuestion builds a tool-aware approval prompt: shell shows its

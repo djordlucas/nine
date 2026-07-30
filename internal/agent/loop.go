@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -538,6 +539,18 @@ func (l *Loop) dispatchWithRetry(ctx context.Context, name string, input json.Ra
 				"duration_ms", elapsed.Milliseconds(),
 			)
 			return result, attempt + 1, elapsed, nil
+		}
+		// A human's refusal (or an unanswered approval question) is a decision,
+		// not a flake — retrying would re-prompt for the same call. Give the
+		// model the refusal now and let it choose another route.
+		var approvalErr *ApprovalError
+		if errors.As(err, &approvalErr) {
+			slog.Info("tool call not approved, not retrying",
+				"tool", name,
+				"err", err,
+				"duration_ms", elapsed.Milliseconds(),
+			)
+			return result, attempt + 1, elapsed, err
 		}
 		if attempt < maxToolRetries {
 			slog.Warn("tool call failed, retrying",

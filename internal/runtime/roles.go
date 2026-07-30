@@ -165,8 +165,10 @@ func (r *RoleRegistry) Resolve(name string) Role {
 }
 
 // ResolveLeaf resolves name for a spawned child: root-only structural flags
-// are ignored — a delegated worker never persists, never gets HITL, and never
-// spawns goal sessions, whatever role it runs (R-ROLE.9).
+// are ignored — a delegated worker never persists, never raises its own
+// ask_human, and never spawns goal sessions, whatever role it runs (R-ROLE.9).
+// Interactive=false here governs ask_human only; approval gates reach a child
+// through its parent's gateCtx, not this flag (R-HITL.5).
 func (r *RoleRegistry) ResolveLeaf(name string) Role {
 	role := r.Resolve(name)
 	role.SpawnsGoals = false
