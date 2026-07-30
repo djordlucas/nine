@@ -31,6 +31,11 @@ func runDaemon() {
 	// Built-ins pass it explicitly below; user plugins reach it through the
 	// manager (docs/plugin-capabilities.md §3).
 	pluginManager.SetPluginEnv(cfg.PluginEnvs)
+	// Per-plugin cache dirs (docs/plugin-capabilities.md §4). Sweep leftover
+	// ephemeral dirs from a previous daemon that exited without stopping its
+	// plugins, before any new plugin allocates one.
+	pluginManager.SetCacheConfig(cfg.PluginCacheRoot(), cfg.PluginPersistCache)
+	pluginManager.SweepCache()
 	pluginManager.TryStart("files", cfg.PluginEnvs("files")...)
 	pluginManager.TryStart("shell", cfg.PluginEnvs("shell")...)
 	pluginManager.TryStart("http", cfg.PluginEnvs("http")...)

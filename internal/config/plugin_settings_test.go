@@ -141,6 +141,38 @@ NINE_WORKSPACE = "/custom/ws"
 	}
 }
 
+func TestPluginCacheRoot(t *testing.T) {
+	cfg, err := loadTOML(t, "[plugins]\ncache_dir = \"/custom/cache\"\n")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got := cfg.PluginCacheRoot(); got != "/custom/cache" {
+		t.Errorf("PluginCacheRoot = %q, want /custom/cache", got)
+	}
+
+	// Unconfigured: falls back to the OS user cache dir under nine/plugins.
+	def, err := loadTOML(t, "")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got := def.PluginCacheRoot(); got != "" && filepath.Base(got) != "plugins" {
+		t.Errorf("default PluginCacheRoot = %q, want …/nine/plugins", got)
+	}
+}
+
+func TestPluginPersistCache(t *testing.T) {
+	cfg, err := loadTOML(t, "[plugin.scanner]\npersist_cache = true\n")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !cfg.PluginPersistCache("scanner") {
+		t.Error("scanner should persist its cache")
+	}
+	if cfg.PluginPersistCache("other") {
+		t.Error("an unconfigured plugin must default to non-persistent")
+	}
+}
+
 func TestPluginSettingsValidation(t *testing.T) {
 	cases := []struct {
 		name    string

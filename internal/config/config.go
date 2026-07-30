@@ -221,6 +221,13 @@ type PluginsConfig struct {
 	Dir string `toml:"dir"`
 	Bin string `toml:"bin"`
 
+	// CacheDir is the root under which each plugin gets its own scratch directory
+	// (docs/plugin-capabilities.md §4). Empty falls back to the OS user cache dir
+	// (os.UserCacheDir()/nine/plugins). The container overrides it with
+	// NINE_PLUGINS_CACHE_DIR. It must be durable, not /tmp, because persistent
+	// caches live under the same root.
+	CacheDir string `toml:"cache_dir"`
+
 	// UserDir holds operator-supplied plugins, discovered at boot from a
 	// sidecar-manifest layout: an executable `<name>` beside a `<name>.toml`
 	// manifest (name + entrypoint). It is scanned separately from the built-in

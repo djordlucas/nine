@@ -80,6 +80,9 @@ func ApplyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("NINE_PLUGINS_USER_DIR"); v != "" {
 		cfg.Plugins.UserDir = v
 	}
+	if v := os.Getenv("NINE_PLUGINS_CACHE_DIR"); v != "" {
+		cfg.Plugins.CacheDir = v
+	}
 	if v := os.Getenv("NINE_WORKSPACE_ROOT"); v != "" {
 		cfg.Workspace.Root = v
 	}
@@ -234,6 +237,29 @@ func (cfg *Config) pluginDefaults(name string) []string {
 	default:
 		return nil
 	}
+}
+
+// PluginCacheRoot returns the directory under which each plugin's cache dir is
+// created (docs/plugin-capabilities.md §4): the configured [plugins].cache_dir,
+// else os.UserCacheDir()/nine/plugins. It returns "" only when no directory is
+// configured and the OS user cache dir cannot be resolved, in which case the
+// daemon runs without per-plugin cache dirs rather than failing.
+func (cfg *Config) PluginCacheRoot() string {
+	if cfg.Plugins.CacheDir != "" {
+		return cfg.Plugins.CacheDir
+	}
+	base, err := os.UserCacheDir()
+	if err != nil || base == "" {
+		return ""
+	}
+	return filepath.Join(base, "nine", "plugins")
+}
+
+// PluginPersistCache reports whether the named plugin's cache dir persists across
+// restarts (docs/plugin-capabilities.md §4). Default false — an unconfigured
+// plugin gets an ephemeral dir wiped when it exits.
+func (cfg *Config) PluginPersistCache(name string) bool {
+	return cfg.Plugin[name].PersistCache
 }
 
 // reservedPluginEnvKeys are the environment variables Nine computes freshly per

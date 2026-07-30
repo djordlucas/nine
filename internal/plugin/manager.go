@@ -33,6 +33,12 @@ type Plugin struct {
 	// User marks a plugin loaded from the operator's plugins directory rather
 	// than a built-in. Reload stops and re-discovers only User plugins.
 	User bool
+
+	// cacheDir is the plugin's scratch directory (docs/plugin-capabilities.md §4),
+	// handed over as NINE_PLUGIN_CACHE_DIR. Empty when no cache root is configured.
+	// cacheEphemeral marks it for removal on Stop; a persistent dir is left alone.
+	cacheDir       string
+	cacheEphemeral bool
 }
 
 // UserPluginStatus records the outcome of trying to load one operator plugin
@@ -60,6 +66,13 @@ type Manager struct {
 	// extra env — the pre-settings behaviour, used by tests and probes.
 	pluginEnv func(name string) []string
 
+	// cacheRoot is the directory under which per-plugin cache dirs are created
+	// (docs/plugin-capabilities.md §4); persistCache reports whether a given
+	// plugin's dir survives restarts. Both set by the daemon via SetCacheConfig;
+	// an empty cacheRoot disables cache dirs entirely (tests, probes).
+	cacheRoot    string
+	persistCache func(name string) bool
+
 	userDir    string
 	userStatus []UserPluginStatus
 }
@@ -81,6 +94,17 @@ func (m *Manager) SetPluginEnv(fn func(name string) []string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.pluginEnv = fn
+}
+
+// SetCacheConfig installs the cache-dir root and the per-plugin persistence
+// resolver (typically config.Config.PluginCacheRoot and PluginPersistCache).
+// With an empty root, plugins start without a cache dir — the behaviour tests
+// and probes rely on.
+func (m *Manager) SetCacheConfig(root string, persist func(name string) bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cacheRoot = root
+	m.persistCache = persist
 }
 
 // envFor returns the extra environment for the named plugin via the installed
@@ -118,13 +142,27 @@ func (m *Manager) Start(binaryPath string, extraEnv ...string) (*Plugin, error) 
 	env := append([]string{}, m.env...)
 	env = append(env, extraEnv...)
 
+	// Allocate the plugin's cache dir and hand it over as Nine-owned env vars.
+	// They go last so Nine's values win over anything inherited; an operator
+	// cannot set them via [plugin.<name>.settings] (they are reserved).
+	cacheDir, ephemeral, err := m.allocCacheDir(name)
+	if err != nil {
+		return nil, err
+	}
+	if cacheDir != "" {
+		env = append(env, "NINE_PLUGIN_CACHE_DIR="+cacheDir, "NINE_PLUGIN_CACHE_PERSISTENT="+persistentEnv(!ephemeral))
+	}
+
 	cmd, socketPath, desc, err := spawnAndDescribe(binaryPath, env)
 	if err != nil {
+		if ephemeral && cacheDir != "" {
+			os.RemoveAll(cacheDir) //nolint:errcheck // spawn failed; reclaim the dir we just made
+		}
 		return nil, err
 	}
 
 	c := newHTTPClient(name, socketPath, cmd, desc.MaxConcurrent)
-	p := &Plugin{Name: name, client: c, Tools: desc.Tools}
+	p := &Plugin{Name: name, client: c, Tools: desc.Tools, cacheDir: cacheDir, cacheEphemeral: ephemeral}
 	m.track(p)
 	slog.Info("plugin started", "name", name, "tools", len(desc.Tools), "max_concurrent", desc.MaxConcurrent)
 	return p, nil
@@ -193,6 +231,15 @@ func spawnAndDescribe(binaryPath string, env []string) (*exec.Cmd, string, Descr
 // `nine plugin validate` and the pre-load vetting of user plugins. env is passed
 // straight through as the process environment (e.g. the manager's NINE_BIN).
 func Probe(binaryPath string, env ...string) (DescribeResult, error) {
+	// Validation must never create or touch persistent state, so Probe always
+	// hands over a throwaway ephemeral cache dir removed with the process, whatever
+	// the plugin's persist_cache setting (docs/plugin-capabilities.md §4).
+	if cacheDir, err := os.MkdirTemp("", "nine-probe-cache-"); err == nil {
+		defer os.RemoveAll(cacheDir) //nolint:errcheck // best-effort
+		env = append(append([]string{}, env...),
+			"NINE_PLUGIN_CACHE_DIR="+cacheDir,
+			"NINE_PLUGIN_CACHE_PERSISTENT=0")
+	}
 	cmd, socketPath, desc, err := spawnAndDescribe(binaryPath, env)
 	if err != nil {
 		return DescribeResult{}, err
@@ -316,6 +363,11 @@ func (m *Manager) Stop(p *Plugin) error {
 	err := p.client.stop()
 	if err == nil {
 		slog.Debug("plugin stopped")
+	}
+	// The process is down (client.stop waited on it), so its scratch dir is now
+	// safe to reclaim. Persistent dirs are the operator's to keep.
+	if p.cacheEphemeral && p.cacheDir != "" {
+		os.RemoveAll(p.cacheDir) //nolint:errcheck // best-effort scratch cleanup
 	}
 	m.untrack(p)
 	return err
