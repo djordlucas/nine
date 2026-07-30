@@ -74,11 +74,24 @@ func (h *HITL) ExpireStale() error {
 	return h.store.HumanRequestExpireStale(time.Now())
 }
 
-// Ask raises a question and blocks until the human answers, the turn is
-// cancelled, or the deadline passes (R-HITL.3). A pending row left over from a
-// prior attempt is reused rather than duplicated.
+// Ask raises a question from agentID's own loop and blocks until the human
+// answers, the turn is cancelled, or the deadline passes (R-HITL.3). A pending
+// row left over from a prior attempt is reused rather than duplicated.
 func (h *HITL) Ask(ctx context.Context, agentID, question string, options []string) (string, error) {
-	id, q, opts, deadline, err := h.openRequest(agentID, question, options)
+	return h.AskFrom(ctx, agentID, agentID, "", question, options)
+}
+
+// AskFrom is Ask with the asker and the owning session separated, so a
+// sub-agent's approval gate reaches a human (R-HITL.5).
+//
+// askerID keys the persisted row and its pending-row reuse, so concurrent
+// sub-agents each get their own request rather than colliding on one. ownerID
+// is the session whose progress stream carries the question and whose ID the
+// client answers with — a sub-agent has no session of its own, so emitting to
+// askerID would drop the message and block until timeout. origin attributes
+// the question in the UI; empty means the session itself is asking.
+func (h *HITL) AskFrom(ctx context.Context, askerID, ownerID, origin, question string, options []string) (string, error) {
+	id, q, opts, deadline, err := h.openRequest(askerID, question, options)
 	if err != nil {
 		return "", err
 	}
@@ -92,10 +105,10 @@ func (h *HITL) Ask(ctx context.Context, agentID, question string, options []stri
 		delete(h.pending, id)
 		h.mu.Unlock()
 	}()
-	slog.Info("hitl ask waiting", "agent_id", agentID, "request_id", id)
+	slog.Info("hitl ask waiting", "agent_id", askerID, "owner_id", ownerID, "request_id", id, "origin", origin)
 
 	if h.emit != nil {
-		h.emit(agentID, protocol.NewHumanInputRequiredMsg(agentID, id, q, opts, int(h.timeout.Seconds())))
+		h.emit(ownerID, protocol.NewHumanInputRequiredMsg(ownerID, id, q, opts, int(h.timeout.Seconds()), origin))
 	}
 
 	timer := time.NewTimer(time.Until(deadline))
@@ -103,17 +116,17 @@ func (h *HITL) Ask(ctx context.Context, agentID, question string, options []stri
 
 	select {
 	case ans := <-ch:
-		slog.Info("hitl ask answered", "agent_id", agentID, "request_id", id)
+		slog.Info("hitl ask answered", "agent_id", askerID, "request_id", id)
 		if err := h.store.HumanRequestAnswer(id, ans); err != nil {
 			return "", err
 		}
 		return ans, nil
 	case <-timer.C:
-		slog.Warn("hitl ask timed out", "agent_id", agentID, "request_id", id, "deadline", deadline)
+		slog.Warn("hitl ask timed out", "agent_id", askerID, "request_id", id, "deadline", deadline)
 		h.store.HumanRequestMarkTimedOut(id) //nolint:errcheck // best-effort; the row stays pending and is expired on next boot
 		return "", errHumanTimeout
 	case <-ctx.Done():
-		slog.Warn("hitl ask cancelled", "agent_id", agentID, "request_id", id, "err", ctx.Err())
+		slog.Warn("hitl ask cancelled", "agent_id", askerID, "request_id", id, "err", ctx.Err())
 		h.store.HumanRequestMarkTimedOut(id) //nolint:errcheck
 		return "", ctx.Err()
 	}

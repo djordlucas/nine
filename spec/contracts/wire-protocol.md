@@ -103,6 +103,7 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `thinking_chunk` | `text` | a streamed reasoning ("thinking") token; ephemeral, never journaled |
 | `sub_agent_start` | `sub_agent_id`, `text` (task), `role`, `ts` | a sub-agent spawned; `role` is its resolved leaf role, for display |
 | `sub_agent_end` | `+ status` | a sub-agent finished (`done`/`failed`/`timed_out`); carries `role` too |
+| `human_input_required` | `request_id`, `question`, `options`, `timeout_seconds`, `origin` | the turn is blocked on a human ([`hitl.md`](hitl.md) R-HITL.6); `agent_id` is the **owning** session even when a sub-agent is the asker, and `origin` attributes it to that sub-agent (absent when the session itself asks) |
 
 A conforming daemon **MUST** emit `thinking`/`context_update`/`tool_*`/`response_chunk`
 during a turn and **MUST** terminate every turn with `response` then `done` (or

@@ -91,6 +91,20 @@ type RolesConfig struct {
 type HITLConfig struct {
 	TimeoutSeconds  int      `toml:"timeout_seconds"`  // how long ask_human waits; default 300 (5 min)
 	RequireApproval []string `toml:"require_approval"` // tool names gated behind human approval
+
+	// GateSubAgents extends the RequireApproval gates to sub-agents spawned by
+	// an interactive session, so delegation cannot be used to run a gated tool
+	// unprompted. The prompt is routed to the owning session's stream and
+	// attributed to the sub-agent. A *bool so an operator can switch it off
+	// explicitly; nil (unset) means enabled. Sub-agents never get ask_human
+	// either way — only the automatic gates (R-HITL.1).
+	GateSubAgents *bool `toml:"gate_sub_agents"`
+}
+
+// GateSubAgentsEnabled reports whether approval gates extend into sub-agents,
+// defaulting to true when unset.
+func (h HITLConfig) GateSubAgentsEnabled() bool {
+	return h.GateSubAgents == nil || *h.GateSubAgents
 }
 
 type WorkspaceConfig struct {

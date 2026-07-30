@@ -93,7 +93,8 @@ type Role struct {
     Delegates    bool      // gets run_agent/run_agents/workflow_* (was: depth < 2)
     SpawnsGoals  bool      // gets goal-session spawn fn         (was: depth == 0)
     Persists     bool      // saveFn/checkpointing wired         (AgentWorker vs sub-agent)
-    Interactive  bool      // HITL: ask_human + approval gates
+    Interactive  bool      // HITL: ask_human (approval gates follow the owning
+                           // session instead — R-HITL.5)
     Profile      []string  // stage kinds; nil ⇒ ephemeral leaf (no stages)
 }
 ```
@@ -270,10 +271,10 @@ instance it passes for interactive sessions). Branch replacements in the current
 |----------------------|---------|
 | `if depth < 2 { registerSubAgentTools(...) }` | `if role.Delegates && depthGuard > 0 { registerSubAgentTools(...) }` |
 | `if depth == 0 { goalSpawn = *p }` | `if role.SpawnsGoals { goalSpawn = *p }` |
-| `if interactive && HITL != nil { registerHumanTools }` | `if role.Interactive && HITL != nil { registerHumanTools }` |
+| `if interactive && HITL != nil { registerHumanTools }` | `if role.Interactive && HITL != nil { registerAskHuman }`, plus `registerApprovalGates` for any loop with an interactive owner (R-HITL.5) |
 | `buildToolList(lc, depth)` | `buildToolList(lc, role, depthGuard)` (applies §5) |
 | `SystemCore: lc.SystemPrompt` | `SystemCore: role.SystemPrompt or fallback lc.SystemPrompt` (R-ROLE.3) |
-| sub-agent spawn `f.build(subID, depth+1, false)` | `f.build(subID, resolvedLeafRole, depthGuard-1)` |
+| sub-agent spawn `f.build(subID, depth+1, false)` | `f.build(subID, resolvedLeafRole, depthGuard-1, subGate(...))` |
 
 **Call sites beyond `build()`.** `build` has only two direct callers today: `Build`
 (depth 0) and the sub-agent spawn (depth+1). Reflection and pursue sessions reach `build`
@@ -410,8 +411,10 @@ role) to delegate safely, but cannot use roles as an escalation path.
 - **`depthGuard` exhausted with a delegating role**: delegation tools simply aren't
   registered; the worker behaves as a leaf. No error.
 - **Interactive orchestrator delegates**: children are always non-interactive
-  (`Interactive:false` on spawned leaves) — R-HITL.1 (sub-agents never get HITL) is
-  preserved because the spawn path never sets `Interactive`.
+  (`Interactive:false` on spawned leaves), so R-HITL.1 holds — a sub-agent never gets
+  `ask_human`, because the spawn path never sets `Interactive`. Its *approval gates* are
+  a separate channel: they ride the parent's `gateCtx` down to the child and prompt on the
+  owning session's stream (R-HITL.5), so delegation does not bypass `require_approval`.
 - **Role block malformed in frontmatter**: seeding SHOULD log and treat the skill as a
   plain knowledge skill (no role), never fail the boot.
 
