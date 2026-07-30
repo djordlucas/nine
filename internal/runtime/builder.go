@@ -59,6 +59,10 @@ type LoopConfig struct {
 	// on a conversation's outstanding plugin jobs (docs/plugin-capabilities.md §5).
 	// 0 uses DefaultMaxJobsPerConversation.
 	MaxJobsPerConversation int
+	// JobWaiters lets job_wait block on the sweeper's completion signal instead of
+	// polling (docs/plugin-capabilities.md §5). Shared with the sweeper; nil in the
+	// eval harness, where job_wait falls back to polling.
+	JobWaiters *JobWaiters
 }
 
 // AgentBuilderConfig holds the behavioral dependencies layered on top of the
@@ -352,7 +356,7 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 	// the job registry — the store — is wired, like tool_list: granted regardless
 	// of the role allowlist so an agent can always follow up on a job it started.
 	if lc.Memory != nil {
-		agent.RegisterJobTools(d, newJobTools(lc.Memory, lc.Mgr, agentID))
+		agent.RegisterJobTools(d, newJobTools(lc.Memory, lc.Mgr, lc.JobWaiters, agentID))
 		shellTools = append(shellTools, agent.JobToolNames...)
 	}
 	// A plugin tool that returns a job id is recorded against this conversation,

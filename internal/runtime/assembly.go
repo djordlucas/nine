@@ -48,7 +48,10 @@ type AssemblyConfig struct {
 	MaxToolOutputTokens int
 	// MaxJobsPerConversation mirrors [plugins] max_jobs_per_conversation; 0 default.
 	MaxJobsPerConversation int
-	Queue                  *llm.Queue
+	// JobWaiters is shared with the job sweeper so job_wait blocks on completion
+	// signals rather than polling. Production passes one; the harness leaves it nil.
+	JobWaiters *JobWaiters
+	Queue      *llm.Queue
 	TaskTimeoutSeconds  int
 	HITL                *HITL
 	ApprovalTools       []string
@@ -89,6 +92,7 @@ func Assemble(c AssemblyConfig) *Assembly {
 			SurfaceMemories:        c.SurfaceMemories,
 			MaxToolOutputTokens:    c.MaxToolOutputTokens,
 			MaxJobsPerConversation: c.MaxJobsPerConversation,
+			JobWaiters:             c.JobWaiters,
 		},
 		InitialQueue: c.Queue,
 		NotifAdd:     notifAdd,

@@ -22,18 +22,29 @@ const jobWaitPoll = 500 * time.Millisecond
 type jobTools struct {
 	store   *memory.Store
 	mgr     *plugin.Manager
+	waiters *JobWaiters
 	ownerID string
 }
 
-func newJobTools(store *memory.Store, mgr *plugin.Manager, ownerID string) *jobTools {
-	return &jobTools{store: store, mgr: mgr, ownerID: ownerID}
+func newJobTools(store *memory.Store, mgr *plugin.Manager, waiters *JobWaiters, ownerID string) *jobTools {
+	return &jobTools{store: store, mgr: mgr, waiters: waiters, ownerID: ownerID}
 }
 
 // Wait blocks until the job is terminal, the timeout elapses, or the turn is
 // cancelled. A timeout is not a failure: it returns the current progress so the
-// model can move on and check back later.
+// model can move on and check back later. With a waiter registry wired it blocks
+// on the sweeper's completion signal; otherwise it falls back to polling.
 func (jt *jobTools) Wait(ctx context.Context, handle string, timeout time.Duration) (string, error) {
-	deadline := time.Now().Add(timeout)
+	// Register before the first read so a completion between the read and the
+	// block is not missed; the closed channel then makes the next read return.
+	var signal <-chan struct{}
+	if jt.waiters != nil {
+		var cancel func()
+		signal, cancel = jt.waiters.register(handle)
+		defer cancel()
+	}
+
+	deadline := time.After(timeout)
 	for {
 		j, ok, err := jt.store.PluginJobGet(handle)
 		if err != nil {
@@ -45,13 +56,23 @@ func (jt *jobTools) Wait(ctx context.Context, handle string, timeout time.Durati
 		if memory.PluginJobTerminal(j.State) {
 			return renderJob(j), nil
 		}
-		if !time.Now().Before(deadline) {
-			return stillRunning(j), nil
+
+		// Wait on the sweeper's signal when wired, else on a short poll tick. The
+		// unused channel is nil, which blocks forever in the select.
+		var poll <-chan time.Time
+		if signal == nil {
+			poll = time.After(jobWaitPoll)
 		}
 		select {
+		case <-signal:
+			// Signalled (job now terminal); the channel stays closed, so drop to
+			// polling for any further iterations.
+			signal = nil
+		case <-poll:
+		case <-deadline:
+			return stillRunning(j), nil
 		case <-ctx.Done():
 			return stillRunning(j), nil
-		case <-time.After(min(jobWaitPoll, time.Until(deadline))):
 		}
 	}
 }

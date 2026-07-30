@@ -21,6 +21,14 @@ const DefaultJobPollSeconds = 2
 // [plugins].job_max_seconds is unset: one hour.
 const DefaultJobMaxSeconds = 3600
 
+// Job-poll backoff (docs/plugin-capabilities.md §5): a job is polled every
+// base interval for its first minute, then every jobPollBackoffSeconds, so a
+// long-running job stops being hammered once it is clearly slow.
+const (
+	jobPollBackoffSeconds = 30
+	jobPollYoungWindow    = 60
+)
+
 // DefaultMaxJobsPerConversation caps a conversation's outstanding jobs when
 // [plugins].max_jobs_per_conversation is unset.
 const DefaultMaxJobsPerConversation = 8
@@ -92,16 +100,20 @@ func (js *jobStarter) StartJob(ctx context.Context, pluginName, tool, pluginJobI
 // (docs/plugin-capabilities.md §5). It is a single daemon-level component, not a
 // goroutine per job.
 type jobSweeper struct {
-	store      *memory.Store
-	mgr        *plugin.Manager
-	maxSeconds int
+	store       *memory.Store
+	mgr         *plugin.Manager
+	waiters     *JobWaiters
+	maxSeconds  int
+	baseSeconds int
 }
 
-// RunJobSweeper polls running plugin jobs on interval until ctx is cancelled,
-// completing finished ones and expiring over-age ones (maxSeconds, 0 =
-// DefaultJobMaxSeconds). Production-only, like the spill sweeper: the eval
-// harness never starts one. A nil store or manager is a no-op.
-func RunJobSweeper(ctx context.Context, store *memory.Store, mgr *plugin.Manager, interval time.Duration, maxSeconds int) {
+// RunJobSweeper polls running plugin jobs until ctx is cancelled, completing
+// finished ones and expiring over-age ones (maxSeconds, 0 = DefaultJobMaxSeconds).
+// interval is the base poll cadence; a job is polled at that rate for its first
+// minute, then every jobPollBackoffSeconds. waiters, when non-nil, is signalled
+// on each completion so a blocked job_wait wakes at once. Production-only, like
+// the spill sweeper. A nil store or manager is a no-op.
+func RunJobSweeper(ctx context.Context, store *memory.Store, mgr *plugin.Manager, waiters *JobWaiters, interval time.Duration, maxSeconds int) {
 	if store == nil || mgr == nil {
 		return
 	}
@@ -111,7 +123,13 @@ func RunJobSweeper(ctx context.Context, store *memory.Store, mgr *plugin.Manager
 	if maxSeconds <= 0 {
 		maxSeconds = DefaultJobMaxSeconds
 	}
-	s := &jobSweeper{store: store, mgr: mgr, maxSeconds: maxSeconds}
+	s := &jobSweeper{
+		store:       store,
+		mgr:         mgr,
+		waiters:     waiters,
+		maxSeconds:  maxSeconds,
+		baseSeconds: max(int(interval/time.Second), 1),
+	}
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
@@ -124,14 +142,18 @@ func RunJobSweeper(ctx context.Context, store *memory.Store, mgr *plugin.Manager
 	}
 }
 
-// sweepOnce expires over-age jobs, then polls every remaining running job and
-// reconciles the registry.
+// sweepOnce expires over-age jobs, then polls the running jobs that are due under
+// the backoff and reconciles the registry.
 func (s *jobSweeper) sweepOnce(ctx context.Context) {
 	s.expireOverAge(ctx)
 
-	jobs, err := s.store.PluginJobsRunning()
+	// A job older than the base cadence never wants a shorter backoff, so the
+	// backoff is at least the base — an operator raising job_poll_seconds past 30s
+	// simply polls everything at that rate rather than inverting young and old.
+	backoff := max(jobPollBackoffSeconds, s.baseSeconds)
+	jobs, err := s.store.PluginJobsDueForPoll(s.baseSeconds, backoff, jobPollYoungWindow)
 	if err != nil {
-		slog.Warn("job sweep: list running", "err", err)
+		slog.Warn("job sweep: list due", "err", err)
 		return
 	}
 	for _, j := range jobs {
@@ -155,6 +177,7 @@ func (s *jobSweeper) expireOverAge(ctx context.Context) {
 		if err := s.store.NotificationCreate(memory.NewID(), j.OwnerID, msg, false); err != nil {
 			slog.Warn("job sweep: expire notify", "handle", j.Handle, "err", err)
 		}
+		s.wake(j.Handle)
 		slog.Info("plugin job expired", "handle", j.Handle, "plugin", j.Plugin)
 	}
 }
@@ -192,6 +215,7 @@ func (s *jobSweeper) reconcile(ctx context.Context, j memory.PluginJob) {
 	if err := s.store.NotificationCreate(memory.NewID(), j.OwnerID, completionMessage(j, st), false); err != nil {
 		slog.Warn("job sweep: notify", "handle", j.Handle, "err", err)
 	}
+	s.wake(j.Handle)
 	slog.Info("plugin job finished", "handle", j.Handle, "plugin", j.Plugin, "state", state)
 }
 
@@ -237,6 +261,14 @@ func ShutdownJobs(ctx context.Context, store *memory.Store, mgr *plugin.Manager)
 		if p, ok := mgr.PluginByName(j.Plugin); ok {
 			mgr.JobCancel(ctx, p, j.PluginJobID) //nolint:errcheck // best-effort on the way down
 		}
+	}
+}
+
+// wake signals any job_wait blocked on this handle, when a waiter registry is
+// wired. A no-op otherwise (the waiter falls back to polling).
+func (s *jobSweeper) wake(handle string) {
+	if s.waiters != nil {
+		s.waiters.signal(handle)
 	}
 }
 
