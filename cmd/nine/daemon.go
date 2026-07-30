@@ -162,6 +162,11 @@ func runDaemon() {
 	// bound (docs/tool-output-spill.md §5).
 	go runtime.RunSpillSweeper(ctx, store)
 
+	// Poll running plugin jobs (docs/plugin-capabilities.md §5): reconcile their
+	// state and, on completion, cap-or-spill the result and notify the owning
+	// conversation so the next turn learns of it.
+	go runtime.RunJobSweeper(ctx, store, pluginManager, time.Duration(cfg.Plugins.JobPollSeconds)*time.Second)
+
 	// Reconcile pre-defined agents declared in nine.toml: seed a config-owned
 	// goal + pursue shell for each, and bring existing ones' definitions in line
 	// with the file (docs/predefined-agents.md). Must run after the daemon is

@@ -333,6 +333,11 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 			d.RegisterPlugin(lc.Mgr, p)
 		}
 	}
+	// A plugin tool that returns a job id is recorded against this conversation,
+	// so its completion can be notified back (docs/plugin-capabilities.md §5).
+	if lc.Memory != nil {
+		d.SetJobStarter(newJobStarter(lc.Memory, agentID))
+	}
 
 	f.registerCoreTools(d, lc, agentID)
 
