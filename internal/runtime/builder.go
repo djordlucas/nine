@@ -355,13 +355,15 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int) *agent.L
 		f.registerHumanTools(d, agentID)
 	}
 
-	// Catalog-search meta-tools (tool_search, skill_search) let the model query
-	// the full tool/skill catalogs on demand, covering the once-per-turn ranking
-	// blind spot (docs/tool-exposition.md). Granted regardless of the role
-	// allowlist — like gap_report — but only with an embedder to rank against.
-	// Treated as shell capabilities so they are advertised, always-included, and
-	// survive RestrictTo; skill_search's handler is registered by
-	// RegisterSkillTools above, tool_search's below once the tool list exists.
+	// Catalog meta-tools let the model query the full tool/skill catalogs on
+	// demand, covering the once-per-turn ranking blind spot
+	// (docs/tool-exposition.md). Granted regardless of the role allowlist — like
+	// gap_report — so they are advertised, always-included, and survive
+	// RestrictTo. tool_list is the query-free enumeration and needs no embedder;
+	// the *_search pair does, since without one there is nothing to rank
+	// against. tool_list's and tool_search's handlers are registered below once
+	// the tool list exists; skill_search's rides in RegisterSkillTools above.
+	shellTools = append(shellTools, "tool_list")
 	if lc.Embedder != nil {
 		shellTools = append(shellTools, "tool_search", "skill_search")
 	}
@@ -395,10 +397,13 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int) *agent.L
 	for i := range tools {
 		tools[i].Vector = f.toolVector(lc.Embedder, tools[i].Tool)
 	}
-	// tool_search ranks over the finalized advertised set (vectors populated
-	// above), so register it now that `tools` is complete. The closure returns
-	// this loop's slice, so results only ever include tools it can actually call.
-	agent.RegisterToolSearch(d, lc.Embedder, func() []ninectx.ToolWithVector { return tools })
+	// tool_search ranks — and tool_list enumerates — the finalized advertised set
+	// (vectors populated above), so register them now that `tools` is complete.
+	// The closure returns this loop's slice, so results only ever include tools
+	// it can actually call.
+	getTools := func() []ninectx.ToolWithVector { return tools }
+	agent.RegisterToolSearch(d, lc.Embedder, getTools)
+	agent.RegisterToolList(d, getTools)
 
 	alwaysTools := filterByRole(append([]string{}, coreToolNames...), role)
 	alwaysTools = append(alwaysTools, shellTools...)

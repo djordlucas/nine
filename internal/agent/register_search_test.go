@@ -96,6 +96,93 @@ func TestToolSearchGuards(t *testing.T) {
 	}
 }
 
+// tool_list enumerates the whole advertised set — no query, nothing pruned —
+// sorted by name, with schemas omitted unless asked for.
+func TestToolList(t *testing.T) {
+	d := agent.New()
+	defs := []llm.ToolDef{
+		{Name: "run_sql", Description: "run a database query", InputSchema: json.RawMessage(`{"type":"object"}`)},
+		{Name: "deploy_app", Description: "deploy the application", InputSchema: json.RawMessage(`{"type":"object"}`)},
+		{Name: "tool_search", Description: "search tools", InputSchema: json.RawMessage(`{"type":"object"}`)},
+	}
+	getTools := func() []ninectx.ToolWithVector {
+		out := make([]ninectx.ToolWithVector, len(defs))
+		for i, def := range defs {
+			out[i] = ninectx.ToolWithVector{Tool: def}
+		}
+		return out
+	}
+	agent.RegisterToolList(d, getTools)
+
+	type listOut struct {
+		Count int `json:"count"`
+		Tools []struct {
+			Name        string          `json:"name"`
+			Description string          `json:"description"`
+			InputSchema json.RawMessage `json:"input_schema"`
+		} `json:"tools"`
+	}
+
+	// No arguments at all is a valid "list everything".
+	res, err := d.Dispatch(context.Background(), "tool_list", nil)
+	if err != nil {
+		t.Fatalf("tool_list: %v", err)
+	}
+	var out listOut
+	if err := json.Unmarshal([]byte(res.Output), &out); err != nil {
+		t.Fatalf("unmarshal: %v (%s)", err, res.Output)
+	}
+	if out.Count != len(defs) || len(out.Tools) != len(defs) {
+		t.Fatalf("count = %d / %d tools, want %d of each", out.Count, len(out.Tools), len(defs))
+	}
+	// Sorted by name, and the meta-tools are listed too — unlike tool_search,
+	// this is a complete enumeration of what the loop can call.
+	want := []string{"deploy_app", "run_sql", "tool_search"}
+	for i, w := range want {
+		if out.Tools[i].Name != w {
+			t.Errorf("tools[%d] = %q, want %q", i, out.Tools[i].Name, w)
+		}
+	}
+	if out.Tools[0].Description != "deploy the application" {
+		t.Errorf("description = %q, want the tool's description", out.Tools[0].Description)
+	}
+	if len(out.Tools[0].InputSchema) != 0 {
+		t.Errorf("schemas should be omitted by default, got %s", out.Tools[0].InputSchema)
+	}
+
+	res, err = d.Dispatch(context.Background(), "tool_list", json.RawMessage(`{"include_schemas":true}`))
+	if err != nil {
+		t.Fatalf("tool_list with schemas: %v", err)
+	}
+	out = listOut{}
+	if err := json.Unmarshal([]byte(res.Output), &out); err != nil {
+		t.Fatalf("unmarshal: %v (%s)", err, res.Output)
+	}
+	if len(out.Tools) == 0 || len(out.Tools[0].InputSchema) == 0 {
+		t.Errorf("include_schemas should return input schemas: %s", res.Output)
+	}
+}
+
+// tool_list needs no embedder — enumeration does not rank — but a nil getTools
+// registers nothing.
+func TestToolListGuards(t *testing.T) {
+	d := agent.New()
+	agent.RegisterToolList(d, func() []ninectx.ToolWithVector { return nil })
+	res, err := d.Dispatch(context.Background(), "tool_list", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("tool_list on an empty catalog should succeed: %v", err)
+	}
+	if !strings.Contains(res.Output, `"count":0`) {
+		t.Errorf("empty catalog = %q, want count 0", res.Output)
+	}
+
+	dNil := agent.New()
+	agent.RegisterToolList(dNil, nil)
+	if _, err := dNil.Dispatch(context.Background(), "tool_list", json.RawMessage(`{}`)); err == nil {
+		t.Error("nil getTools must not register tool_list (unknown tool expected)")
+	}
+}
+
 // skill_search ranks the skills namespace against the query and returns names
 // with descriptions; it is only registered when an embedder is present.
 func TestSkillSearch(t *testing.T) {
