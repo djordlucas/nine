@@ -125,6 +125,46 @@ func (s *Store) PluginJobFinish(handle, state, output, spillPath, errMsg string)
 	return err
 }
 
+// PluginJobCountOutstanding returns how many non-terminal jobs ownerID holds —
+// the admission check for max_jobs_per_conversation.
+func (s *Store) PluginJobCountOutstanding(ownerID string) (int, error) {
+	var n int
+	err := s.db.QueryRow(
+		`SELECT count(*) FROM plugin_jobs
+		 WHERE owner_id = ? AND state NOT IN ('done','failed','cancelled','lost')`,
+		ownerID).Scan(&n)
+	return n, err
+}
+
+// PluginJobsMarkLost marks every still-running job lost with a reason and returns
+// the affected rows. Run at boot: a job lives inside a plugin process, so any row
+// still running belongs to a plugin the previous daemon left behind and can no
+// longer be reached (docs/plugin-capabilities.md §5).
+func (s *Store) PluginJobsMarkLost(reason string) ([]PluginJob, error) {
+	return s.queryPluginJobs(
+		`UPDATE plugin_jobs SET state='lost', error=?, finished_at=now(), updated_at=now()
+		 WHERE state NOT IN ('done','failed','cancelled','lost')
+		 RETURNING handle, plugin, tool, plugin_job_id, owner_id, state, ack, progress,
+		           output, spill_path, error, created_at, updated_at, finished_at`,
+		reason)
+}
+
+// PluginJobsExpire marks every non-terminal job older than maxSeconds failed with
+// reason and returns the affected rows, so the sweeper can attempt a cancel and
+// notify the owner. maxSeconds <= 0 disables it (returns no rows).
+func (s *Store) PluginJobsExpire(maxSeconds int, reason string) ([]PluginJob, error) {
+	if maxSeconds <= 0 {
+		return nil, nil
+	}
+	return s.queryPluginJobs(
+		`UPDATE plugin_jobs SET state='failed', error=?, finished_at=now(), updated_at=now()
+		 WHERE state NOT IN ('done','failed','cancelled','lost')
+		   AND created_at < now() - (? * interval '1 second')
+		 RETURNING handle, plugin, tool, plugin_job_id, owner_id, state, ack, progress,
+		           output, spill_path, error, created_at, updated_at, finished_at`,
+		reason, maxSeconds)
+}
+
 type rowScanner interface{ Scan(...any) error }
 
 func scanPluginJob(row rowScanner) (PluginJob, error) {
