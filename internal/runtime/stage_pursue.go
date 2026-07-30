@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"nine/internal/memory"
@@ -49,9 +50,27 @@ func (s *pursueStage) OnTurnEnd(_ context.Context, agentID string, _ string, err
 
 // OnIdle prompts the session to assess and act on its goal, unless the goal
 // is missing or no longer active.
+//
+// When the goal is no longer active, OnIdle also syncs this stage's Status
+// before returning. Without this, a goal paused/finished/archived (e.g. via
+// goal_update_status) while the session sat idle would never reach OnTurnEnd —
+// which only fires after a turn — so the pursue stage would linger in "active":
+// the idle scheduler would re-arm forever and the session would keep counting
+// against MaxGoalSessions. Syncing here retires the stage on the idle path too,
+// mirroring OnTurnEnd. A missing goal collapses to "done".
 func (s *pursueStage) OnIdle(_ context.Context, agentID string) (string, bool) {
 	goal, err := s.store.GoalGet(agentID)
-	if err != nil || goal == nil || goal.Status != "active" {
+	if err != nil {
+		return "", false
+	}
+	if goal == nil || goal.Status != "active" {
+		status := "done"
+		if goal != nil {
+			status = pursueStageStatus(goal.Status)
+		}
+		if serr := s.syncStatus(agentID, status); serr != nil {
+			slog.Warn("pursue stage idle status sync failed", "agent_id", agentID, "err", serr)
+		}
 		return "", false
 	}
 	return fmt.Sprintf(PursuePromptTemplate, agentID, goal.Description), true

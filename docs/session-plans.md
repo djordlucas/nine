@@ -100,8 +100,12 @@ fires, `handleIdle`:
 3. If `OnIdle` returns `ok == true`, runs the returned text as the session's next turn
    (going through the normal turn pipeline — context assembly, tool calls,
    checkpointing, `notifyStages`, re-arming the timer).
-4. If `OnIdle` returns `ok == false` (nothing to do), the scheduler is simply
-   re-armed for the next cycle.
+4. If `OnIdle` returns `ok == false` (nothing to do), the worker refreshes its
+   cached plan from the store and re-arms for the next cycle. The refresh matters
+   because a stage may retire *itself* from within `OnIdle` by writing its plan
+   row directly (as `pursue` does when its goal is no longer active); picking that
+   change up here is what stops the timer re-arming a since-retired stage and
+   keeps it counting against the goal-session cap.
 
 Stages with no `idle_interval_seconds` in their `config` (e.g. plain `active`) never
 trigger idle turns.
@@ -163,7 +167,12 @@ goal gets its own background session running the `pursue` stage, keyed 1:1 by
   (`PursuePromptTemplate`) asking the session to `goal_get` the goal and its subtree,
   take any useful action (including spawning sub-goals/sub-agents and recording them
   via `goal_append_subtree`), and call `goal_update_status` if its status should
-  change. If the goal is missing or no longer active, `OnIdle` returns `ok == false`.
+  change. If the goal is missing or no longer active, `OnIdle` returns `ok == false`
+  **and** syncs the stage's `status` the same way `OnTurnEnd` does (a missing goal
+  collapses to `done`). This matters when a goal is paused/finished/archived (e.g.
+  via `goal_update_status`) while the session sits idle: `OnTurnEnd` only fires
+  after a turn, so without this the stage would linger in `active`, re-arming the
+  idle timer forever and holding a slot under the concurrent-session cap.
 - **`OnTurnEnd`** — reads the goal back and syncs the stage's own `status` from
   `goals.status`: `active → active`, `paused → paused`, `done`/`archived → done`. On
   `ErrStall`, it also pauses the goal (`goal_update_status` → `paused`), which frees a
