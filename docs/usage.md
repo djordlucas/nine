@@ -42,8 +42,10 @@ nine plugin validate [path]      Check a user plugin with the load-time handshak
                                  (defaults to [plugins].user_dir; a path may be a
                                  manifest or a binary; works with the daemon down)
 
-nine trace <agent-id> [--turn N] Print a session's event journal (or one turn);
-                                 works even with the daemon down
+nine trace <agent-id> [--turn N] [--sub-agents]
+                                 Print a session's event journal (or one turn);
+                                 --sub-agents nests delegated sub-agent traces
+                                 inline; works even with the daemon down
 nine replay <agent-id> --turn N  Deterministically re-run a recorded turn
                                  (no live LLM or tool calls)
 ```
@@ -267,9 +269,15 @@ exact LLM requests/responses, tool calls with timing, and the final answer. It
 reads the journal directly, so it **works with the daemon down**:
 
 ```bash
-./nine trace a1b2c3d4-...            # the whole session
-./nine trace a1b2c3d4-... --turn 3   # just turn 3
+./nine trace a1b2c3d4-...              # the whole session
+./nine trace a1b2c3d4-... --turn 3     # just turn 3
+./nine trace a1b2c3d4-... --sub-agents # nest delegated sub-agent traces inline
 ```
+
+A delegated sub-agent runs under its own ID and journals its own trajectory. By
+default `nine trace` shows only the parent's `sub_agent_start`/`sub_agent_end`
+markers; `--sub-agents` expands each marker into that sub-agent's full trace,
+indented beneath it, recursing to any delegation depth.
 
 ### `nine replay` — deterministically re-run a turn
 
