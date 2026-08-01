@@ -9,9 +9,11 @@ import (
 
 // RunSubAgentSync runs loop with description, blocks until the sub-agent
 // produces a final answer, then tears down the runner. It is safe to call
-// concurrently from multiple goroutines.
-func RunSubAgentSync(ctx context.Context, agentID, description string, loop *agent.Loop) (string, error) {
-	r := newAgentWorker(agentID, loop, nil, nil, StallConfig{}, nil, nil)
+// concurrently from multiple goroutines. sink, when non-nil, journals the
+// sub-agent's own execution trajectory under agentID (the sub-agent's ID), so it
+// can be surfaced by `nine trace --sub-agents`; pass nil to disable journaling.
+func RunSubAgentSync(ctx context.Context, agentID, description string, loop *agent.Loop, sink EventSink) (string, error) {
+	r := newAgentWorker(agentID, loop, nil, nil, StallConfig{}, nil, sink)
 	result, err := r.turn(ctx, description)
 	r.stop()
 	return result, err

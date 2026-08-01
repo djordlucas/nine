@@ -42,12 +42,21 @@ supervisor      {kind, agent_id, payload}   // control-plane events (see supervi
 `span_id`/`parent_span_id` form a per-turn tree: the turn root, each LLM call, and each
 tool call get spans.
 
+A delegated sub-agent runs as its own `AgentWorker` and **MUST** be given the same sink
+(`AgentBuilder.SetEventSink` → `RunSubAgentSync`), so it journals its full trajectory
+under **its own** `agent_id` (the sub-agent ID). The parent separately records
+`sub_agent_start`/`sub_agent_end` events carrying that `sub_id`, which is how a reader
+links a parent to its children across the flat, per-`agent_id` log.
+
 ---
 
 ## R-EVT.3 — Read surface: trace & replay
 
-- **`nine trace <agent-id> [--turn N]`** renders a session's journal directly from the
-  table — it **MUST** work with the daemon down (it opens the store read-only).
+- **`nine trace <agent-id> [--turn N] [--sub-agents]`** renders a session's journal
+  directly from the table — it **MUST** work with the daemon down (it opens the store
+  read-only). With `--sub-agents`, each `sub_agent_start` event expands into the spawned
+  sub-agent's own journal (fetched by `sub_id`), nested and indented beneath the marker,
+  recursing to any delegation depth.
 - **`nine replay <agent-id> --turn N`** deterministically re-executes a recorded session:
   `internal/replay` (`FromEvents` → `Recorded`) rebuilds the loop on a **recorded**
   provider and dispatcher, so replay makes **no live LLM or tool calls** and reproduces

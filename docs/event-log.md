@@ -412,7 +412,9 @@ lifecycle events (§6).
 
 ## 10. Debug / UX surface
 
-- `nine trace <agent-id> [--turn N]` — print the event timeline (or one turn).
+- `nine trace <agent-id> [--turn N] [--sub-agents]` — print the event timeline
+  (or one turn); `--sub-agents` nests each delegated sub-agent's own journal
+  inline beneath its `sub_agent_start` marker, recursing to any depth.
 - `nine replay <agent-id> --turn N` — reconstruct a turn: request → response →
   each tool call I/O, with token usage and timings.
 - `RecordedProvider` / `RecordedDispatcher` (test helpers) — feed a session's
@@ -452,8 +454,12 @@ prerequisite for everything after it.
    `parent_span_id`. The daemon builds one sink from the store and closes it on
    shutdown (`cmd/nine/daemon.go`). *Gate met:* a turn's exact request, raw reply,
    and full tool trajectory are reconstructable from `session_events` after the
-   worker is gone (`TestJournalReconstructsTurn`); sub-agent workers pass a nil sink
-   for now (the parent journals the sub-agent tree pointers).
+   worker is gone (`TestJournalReconstructsTurn`). Sub-agent workers initially
+   passed a nil sink; they now journal their own trajectory under the sub-agent's
+   ID through the same shared sink (`AgentBuilder.SetEventSink` →
+   `RunSubAgentSync`), while the parent still records the `sub_agent_start`/
+   `sub_agent_end` tree pointers — so `nine trace --sub-agents` can nest a
+   sub-agent's full trace beneath the parent.
 2. **v2 — read surface. ✅ Done (2026-07-07).** `nine trace <agent-id> [--turn N]`
    (compact one-line-per-event timeline) and `nine replay <agent-id> --turn N`
    (one turn reconstructed: each inner LLM request → response → tool I/O with

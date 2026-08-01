@@ -50,17 +50,17 @@ type AssemblyConfig struct {
 	MaxJobsPerConversation int
 	// JobWaiters is shared with the job sweeper so job_wait blocks on completion
 	// signals rather than polling. Production passes one; the harness leaves it nil.
-	JobWaiters *JobWaiters
-	Queue      *llm.Queue
-	TaskTimeoutSeconds  int
-	HITL                *HITL
-	ApprovalTools       []string
-	GateSubAgents       bool
-	PlanApproval        string
-	PlanMode            string
-	DefaultLeafRole     string
-	MaxDelegationDepth  int
-	MaxGoalSessions     int
+	JobWaiters         *JobWaiters
+	Queue              *llm.Queue
+	TaskTimeoutSeconds int
+	HITL               *HITL
+	ApprovalTools      []string
+	GateSubAgents      bool
+	PlanApproval       string
+	PlanMode           string
+	DefaultLeafRole    string
+	MaxDelegationDepth int
+	MaxGoalSessions    int
 
 	// RoleFactory optionally decorates the builder's BuildForRole before it is
 	// handed to the daemon. Production passes nil (BuildForRole is used as-is);
@@ -82,13 +82,13 @@ func Assemble(c AssemblyConfig) *Assembly {
 
 	builder := NewAgentBuilder(AgentBuilderConfig{
 		Loop: LoopConfig{
-			Mgr:                 c.Plugins,
-			Embedder:            c.Embedder,
-			Memory:              c.Store,
-			ContextBudget:       c.ContextBudget,
-			SystemPrompt:        c.SystemPrompt,
-			Assembler:           assembler,
-			RelatedSessions:     c.RelatedSessions,
+			Mgr:                    c.Plugins,
+			Embedder:               c.Embedder,
+			Memory:                 c.Store,
+			ContextBudget:          c.ContextBudget,
+			SystemPrompt:           c.SystemPrompt,
+			Assembler:              assembler,
+			RelatedSessions:        c.RelatedSessions,
 			SurfaceMemories:        c.SurfaceMemories,
 			MaxToolOutputTokens:    c.MaxToolOutputTokens,
 			MaxJobsPerConversation: c.MaxJobsPerConversation,
@@ -126,6 +126,10 @@ func Assemble(c AssemblyConfig) *Assembly {
 	// writes its full execution trajectory through this async batched sink.
 	sink := NewSQLEventSink(c.Store, daemon.NotifySubscribers)
 	daemon.SetEventSink(sink)
+	// Sub-agents journal through the same sink under their own IDs, so a
+	// delegated sub-agent's trajectory is persisted and `nine trace --sub-agents`
+	// can nest it beneath the parent.
+	builder.SetEventSink(sink)
 
 	// ask_human emits questions onto the asking session's progress stream; the
 	// daemon resolves session interactivity for HITL on attach.
