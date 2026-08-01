@@ -148,13 +148,13 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 		return c.Context(cfg, args[1], verbose)
 	case "trace":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: nine trace <agent-id> [--turn N]")
+			return fmt.Errorf("usage: nine trace <agent-id> [--turn N] [--sub-agents]")
 		}
-		turn, err := parseTurnFlag(args[2:])
+		turn, subAgents, err := parseTraceFlags(args[2:])
 		if err != nil {
 			return err
 		}
-		return c.Trace(cfg, args[1], turn)
+		return c.Trace(cfg, args[1], turn, subAgents)
 	case "replay":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: nine replay <agent-id> --turn N")
@@ -306,6 +306,36 @@ func parseTurnFlag(args []string) (int, error) {
 	default:
 		return 0, fmt.Errorf("unexpected argument: %s", a)
 	}
+}
+
+// parseTraceFlags reads the optional "--turn N" and "--sub-agents" flags for the
+// trace command, in any order. Any other argument is an error.
+func parseTraceFlags(args []string) (turn int, subAgents bool, err error) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--sub-agents":
+			subAgents = true
+		case a == "--turn":
+			if i+1 >= len(args) {
+				return 0, false, fmt.Errorf("--turn requires a value")
+			}
+			i++
+			turn, err = strconv.Atoi(args[i])
+			if err != nil {
+				return 0, false, fmt.Errorf("invalid --turn value %q", args[i])
+			}
+		case strings.HasPrefix(a, "--turn="):
+			v := strings.TrimPrefix(a, "--turn=")
+			turn, err = strconv.Atoi(v)
+			if err != nil {
+				return 0, false, fmt.Errorf("invalid --turn value %q", v)
+			}
+		default:
+			return 0, false, fmt.Errorf("unexpected argument: %s", a)
+		}
+	}
+	return turn, subAgents, nil
 }
 
 // parseVerboseFlag reads an optional "--verbose" / "-v" from args, returning

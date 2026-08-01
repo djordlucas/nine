@@ -63,6 +63,68 @@ func TestFormatTrace(t *testing.T) {
 	}
 }
 
+// parentWithSubAgent returns a parent turn that spawns sub-agent subID.
+func parentWithSubAgent(subID string) []memory.SessionEvent {
+	return []memory.SessionEvent{
+		{Seq: 1, Turn: 1, SpanID: "t1", Type: "turn_start",
+			Payload: json.RawMessage(`{"input":"delegate it","trigger":"user"}`)},
+		{Seq: 2, Turn: 1, SpanID: "t1", Type: "sub_agent_start",
+			Payload: json.RawMessage(`{"sub_id":"` + subID + `","task":"research the thing"}`)},
+		{Seq: 3, Turn: 1, SpanID: "t1", Type: "sub_agent_end",
+			Payload: json.RawMessage(`{"sub_id":"` + subID + `","status":"done"}`)},
+		{Seq: 4, Turn: 1, SpanID: "t1", Type: "turn_end",
+			Payload: json.RawMessage(`{"result":"delegated","tool_count":1,"duration_ms":50}`)},
+	}
+}
+
+func TestFormatTraceTreeNestsSubAgents(t *testing.T) {
+	// child spawns grandchild, so the tree must recurse to full depth.
+	child := parentWithSubAgent("grandchild-1")
+	grandchild := sampleTurn()
+
+	fetch := func(id string) ([]memory.SessionEvent, error) {
+		switch id {
+		case "child-1":
+			return child, nil
+		case "grandchild-1":
+			return grandchild, nil
+		}
+		return nil, nil
+	}
+
+	var b strings.Builder
+	formatTraceTree(&b, "parent-1", parentWithSubAgent("child-1"), 0, fetch)
+	out := b.String()
+
+	for _, want := range []string{
+		"session parent-1 — 4 events across 1 turn(s)",
+		"    └─ sub-agent child-1 — 4 events across 1 turn(s)",       // one level in
+		"        └─ sub-agent grandchild-1 — 6 events across 1 turn(s)", // two levels in
+		`user: "what is it?"`, // a grandchild event, proving full-depth recursion
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("tree output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestFormatTraceTreeMissingChild(t *testing.T) {
+	// A sub_agent_start whose sub-agent has no journal (e.g. never persisted)
+	// must not abort the trace — it notes the gap and continues.
+	fetch := func(string) ([]memory.SessionEvent, error) { return nil, nil }
+
+	var b strings.Builder
+	formatTraceTree(&b, "parent-1", parentWithSubAgent("gone-1"), 0, fetch)
+	out := b.String()
+	if !strings.Contains(out, "sub-agent gone-1 — no events recorded") {
+		t.Errorf("expected missing-child note:\n%s", out)
+	}
+	// The parent's own events after the missing child must still render.
+	if !strings.Contains(out, "sub_agent_end    gone-1 done") || !strings.Contains(out, "ok · 1 tools · 50ms") {
+		t.Errorf("parent trace truncated after missing child:\n%s", out)
+	}
+}
+
 func TestFormatTraceEmpty(t *testing.T) {
 	var b strings.Builder
 	formatTrace(&b, "ghost", nil, 0)

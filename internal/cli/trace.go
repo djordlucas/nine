@@ -15,12 +15,25 @@ import (
 // event timeline (docs/event-log.md §10). With turn > 0 only that turn is shown.
 // It reads session_events directly from the store, so it works after a restart
 // and with the daemon down — the post-hoc debugging case.
-func (c *CLI) Trace(cfg *config.Config, agentID string, turn int) error {
-	events, err := c.readEvents(cfg, agentID)
+//
+// When subAgents is true, each sub_agent_start event expands into the spawned
+// sub-agent's own journal, nested inline and indented beneath the marker, and
+// recursively for sub-agents of sub-agents.
+func (c *CLI) Trace(cfg *config.Config, agentID string, turn int, subAgents bool) error {
+	store, err := memory.Open(cfg.DatabaseURL())
 	if err != nil {
-		return err
+		return fmt.Errorf("open memory store: %w", err)
 	}
-	formatTrace(c.Out, agentID, events, turn)
+	defer store.Close() //nolint:errcheck
+	events, err := store.SessionEventsByAgent(agentID)
+	if err != nil {
+		return fmt.Errorf("read session events: %w", err)
+	}
+	if subAgents {
+		formatTraceTree(c.Out, agentID, events, turn, store.SessionEventsByAgent)
+	} else {
+		formatTrace(c.Out, agentID, events, turn)
+	}
 	return nil
 }
 
@@ -175,6 +188,85 @@ func formatTrace(w io.Writer, agentID string, events []memory.SessionEvent, turn
 		}
 		fmt.Fprintf(w, "#%-5d t%-2d  %-16s %s\n", e.Seq, e.Turn, e.Type, traceSummary(e))
 	}
+}
+
+// subAgentFetch reads a sub-agent's journal by ID, matching
+// memory.Store.SessionEventsByAgent.
+type subAgentFetch func(agentID string) ([]memory.SessionEvent, error)
+
+// formatTraceTree renders agentID's trace like formatTrace, but expands each
+// sub_agent_start event into the spawned sub-agent's own journal, nested and
+// indented beneath the marker, recursively. The turn filter applies only to the
+// top-level (parent) trace; an expanded sub-agent is always shown in full.
+func formatTraceTree(w io.Writer, agentID string, events []memory.SessionEvent, turnFilter int, fetch subAgentFetch) {
+	if turnFilter > 0 {
+		events = filterTurn(events, turnFilter)
+	}
+	if len(events) == 0 {
+		if turnFilter > 0 {
+			fmt.Fprintf(w, "no events for turn %d of %s\n", turnFilter, agentID)
+		} else {
+			fmt.Fprintf(w, "no events recorded for %s\n", agentID)
+		}
+		return
+	}
+	renderTraceNode(w, agentID, events, "", true, fetch, map[string]bool{agentID: true})
+}
+
+// renderTraceNode prints one agent's events with the given indent, recursing
+// into sub-agents on each sub_agent_start. seen guards against re-expanding an
+// ID (cycles or a sub-agent referenced twice).
+func renderTraceNode(w io.Writer, agentID string, events []memory.SessionEvent, indent string, root bool, fetch subAgentFetch, seen map[string]bool) {
+	turns := map[int]bool{}
+	for _, e := range events {
+		turns[e.Turn] = true
+	}
+	if root {
+		fmt.Fprintf(w, "session %s — %d events across %d turn(s)\n\n", agentID, len(events), len(turns))
+	} else {
+		fmt.Fprintf(w, "%s└─ sub-agent %s — %d events across %d turn(s)\n", indent, agentID, len(events), len(turns))
+	}
+
+	lastTurn := -1
+	for _, e := range events {
+		if e.Turn != lastTurn {
+			if lastTurn != -1 {
+				fmt.Fprintf(w, "%s\n", indent)
+			}
+			lastTurn = e.Turn
+		}
+		fmt.Fprintf(w, "%s#%-5d t%-2d  %-16s %s\n", indent, e.Seq, e.Turn, e.Type, traceSummary(e))
+		if e.Type != "sub_agent_start" {
+			continue
+		}
+		var p subAgentPayload
+		unpack(e, &p)
+		if p.SubID == "" || seen[p.SubID] {
+			continue
+		}
+		seen[p.SubID] = true
+		child, err := fetch(p.SubID)
+		if err != nil {
+			fmt.Fprintf(w, "%s    └─ sub-agent %s — trace unavailable: %v\n", indent, p.SubID, err)
+			continue
+		}
+		if len(child) == 0 {
+			fmt.Fprintf(w, "%s    └─ sub-agent %s — no events recorded\n", indent, p.SubID)
+			continue
+		}
+		renderTraceNode(w, p.SubID, child, indent+"    ", false, fetch, seen)
+	}
+}
+
+// filterTurn keeps only events belonging to the given turn.
+func filterTurn(events []memory.SessionEvent, turn int) []memory.SessionEvent {
+	var kept []memory.SessionEvent
+	for _, e := range events {
+		if e.Turn == turn {
+			kept = append(kept, e)
+		}
+	}
+	return kept
 }
 
 // traceSummary renders a one-line, type-specific summary of an event's payload.
