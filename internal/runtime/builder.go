@@ -123,6 +123,10 @@ type AgentBuilder struct {
 	goalSpawnFn  atomic.Pointer[agent.GoalSessionSpawnFn]
 	emitProgress atomic.Pointer[func(agentID string, msg protocol.Msg)]
 
+	// sink journals each delegated sub-agent's own execution trajectory under its
+	// ID, so `nine trace --sub-agents` can nest it beneath the parent. nil = off.
+	sink EventSink
+
 	subAgentMu      sync.RWMutex
 	activeSubAgents []protocol.SubAgentInfo
 
@@ -253,6 +257,14 @@ func (f *AgentBuilder) SetGoalSessionSpawnFn(fn agent.GoalSessionSpawnFn) {
 // created.
 func (f *AgentBuilder) SetEmitProgressFn(fn func(agentID string, msg protocol.Msg)) {
 	f.emitProgress.Store(&fn)
+}
+
+// SetEventSink registers the session-event journal handed to sub-agent workers,
+// so a delegated sub-agent records its own trajectory under its ID (surfaced by
+// `nine trace --sub-agents`). Set once at assembly, before conversations start;
+// nil disables sub-agent journaling.
+func (f *AgentBuilder) SetEventSink(sink EventSink) {
+	f.sink = sink
 }
 
 // emitProgressEvent forwards msg to agentID's progress stream, if a function
@@ -597,7 +609,7 @@ func (f *AgentBuilder) registerSubAgentTools(d *agent.Dispatcher, lc LoopConfig,
 		spawnStart := time.Now()
 		// The child inherits this loop's gate owner, so an approval prompt from
 		// any delegation depth still lands on the session a human is watching.
-		result, err := RunSubAgentSync(ctx, subID, prompt, f.build(subID, leaf, depthGuard-1, f.subGate(gate, leaf.Name, task)))
+		result, err := RunSubAgentSync(ctx, subID, prompt, f.build(subID, leaf, depthGuard-1, f.subGate(gate, leaf.Name, task)), f.sink)
 		removeSubAgent()
 		status := "done"
 		switch {
