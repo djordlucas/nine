@@ -20,60 +20,117 @@ WORKDIR /nine-src/plugins/browser
 COPY plugins/browser/package.json plugins/browser/package-lock.json ./
 RUN npm ci --production
 
-# ── Dev stage (hot-reload) ────────────────────────────────────────────────────
-# The source tree is bind-mounted at runtime; docker/dev-entrypoint.sh builds
-# nine + the Go plugins and rebuilds/restarts the daemon on any .go change. The
-# Go toolchain lives here (not in the runtime image), so this stage is dev-only.
-FROM golang:1.26-alpine AS dev
-RUN apk add --no-cache \
-    git \
-    inotify-tools \
-    chromium \
-    nss \
-    freetype \
-    harfbuzz \
-    ca-certificates \
-    ttf-freefont \
-    eudev \
-    nodejs
-ENV GOFLAGS=-mod=vendor \
-    NINE_BIN=/opt/nine/bin \
-    PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser \
-    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+# ── s6-overlay fetch stage (shared by dev + runtime) ──────────────────────────
+# s6-overlay supervises Postgres and the daemon as one container (docs/single-
+# container.md): it reaps zombies, forwards docker stop's SIGTERM to both
+# processes, and restarts a service that exits. Fetched once here and copied
+# into both final stages rather than downloaded twice.
+FROM debian:bookworm-slim AS s6-fetch
+ARG S6_OVERLAY_VERSION=3.2.3.2
+ARG TARGETARCH
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      curl xz-utils ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+RUN case "$TARGETARCH" in \
+      amd64)   S6_ARCH=x86_64 ;; \
+      arm64)   S6_ARCH=aarch64 ;; \
+      arm)     S6_ARCH=arm ;; \
+      386)     S6_ARCH=i686 ;; \
+      ppc64le) S6_ARCH=powerpc64le ;; \
+      s390x)   S6_ARCH=s390x ;; \
+      riscv64) S6_ARCH=riscv64 ;; \
+      *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
+    esac && \
+    mkdir -p /out && \
+    curl -fsSL -o /tmp/noarch.tar.xz \
+      "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz" && \
+    curl -fsSL -o /tmp/arch.tar.xz \
+      "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${S6_ARCH}.tar.xz" && \
+    tar -C /out -Jxpf /tmp/noarch.tar.xz && \
+    tar -C /out -Jxpf /tmp/arch.tar.xz
 
-# The browser plugin is Node, so dev-entrypoint.sh cannot build it from the
-# mounted source the way it builds the Go plugins. Bake it in as immutable image
-# content exactly as runtime does, under /opt/nine (never the /nine-src mount):
-# the daemon then finds /opt/nine/bin/browser on every start, and the hot-reload
-# loop neither rebuilds nor restarts it. Editing plugins/browser/ therefore needs
-# an image rebuild, which is the same deal as production.
+# ── Dev stage (hot-reload) ────────────────────────────────────────────────────
+# The source tree is bind-mounted at runtime; docker/dev-entrypoint.sh (wrapped
+# by the s6 `nine` service) builds nine + the Go plugins and rebuilds/restarts
+# the daemon on any .go change. The Go toolchain lives here (not in the runtime
+# image), so this stage is dev-only. Postgres runs alongside it under the same
+# supervisor (docs/single-container.md); pgAdmin is not part of either image —
+# it is opt-in tooling spawned separately (`make pgadmin`).
+FROM pgvector/pgvector:pg17 AS dev
+
+COPY --from=s6-fetch /out/ /
+
+# Debian bookworm's `golang-go` apt package is far behind go.mod's `go 1.26`
+# directive, so the toolchain comes from the go-build stage instead (its Go
+# binaries are statically linked and run fine on glibc, unrelated to that
+# stage's own Alpine base) — this also keeps the dev toolchain in lockstep with
+# whatever golang:1.26-alpine tag go-build uses, with nothing to track here.
+COPY --from=go-build /usr/local/go /usr/local/go
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git \
+      inotify-tools \
+      chromium \
+      nodejs \
+      ca-certificates \
+      fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PATH=/usr/local/go/bin:$PATH \
+    GOFLAGS=-mod=vendor \
+    GOCACHE=/root/.cache/go-build \
+    NINE_BIN=/opt/nine/bin \
+    PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+    POSTGRES_USER=nine \
+    POSTGRES_PASSWORD=nine \
+    POSTGRES_DB=nine \
+    NINE_DATABASE_URL=postgres://nine:nine@localhost:5432/nine?sslmode=disable
+
+# The browser plugin is Node, so the hot-reload loop cannot rebuild it from the
+# mounted source the way it rebuilds the Go plugins. Bake it in as immutable
+# image content exactly as runtime does, under /opt/nine (never the /nine-src
+# mount): the daemon then finds /opt/nine/bin/browser on every start, and the
+# hot-reload loop neither rebuilds nor restarts it. Editing plugins/browser/
+# therefore needs an image rebuild, which is the same deal as production.
 COPY plugins/browser/ /opt/nine/browser/
 COPY --from=node-build /nine-src/plugins/browser/node_modules/ /opt/nine/browser/node_modules/
 RUN mkdir -p /opt/nine/bin && \
     printf '#!/bin/sh\nexec node /opt/nine/browser/index.js "$@"\n' \
       > /opt/nine/bin/browser && chmod +x /opt/nine/bin/browser
 
+COPY docker/s6/common/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
+COPY docker/s6/common/user-bundles.d/ /etc/s6-overlay/user-bundles.d/
+COPY docker/s6/dev/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
+RUN chmod +x /etc/s6-overlay/s6-rc.d/postgres/run /etc/s6-overlay/s6-rc.d/nine/run
+
 WORKDIR /nine-src
-ENTRYPOINT ["sh", "docker/dev-entrypoint.sh"]
+
+VOLUME /var/lib/postgresql/data
+VOLUME /data
+ENTRYPOINT ["/init"]
 
 # ── Runtime stage (production) ────────────────────────────────────────────────
-FROM alpine AS runtime
+FROM pgvector/pgvector:pg17 AS runtime
+
+COPY --from=s6-fetch /out/ /
 
 # Chromium, system deps, and Node.js runtime for the browser plugin.
 # No Go toolchain, git, or source tree: Nine no longer modifies itself.
-# Alpine uses eudev, not udev.
-RUN apk add --no-cache \
-    chromium \
-    nss \
-    freetype \
-    harfbuzz \
-    ca-certificates \
-    ttf-freefont \
-    eudev \
-    nodejs
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      chromium \
+      nodejs \
+      ca-certificates \
+      fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
 
-ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
-ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+    NINE_BIN=/opt/nine/bin \
+    POSTGRES_USER=nine \
+    POSTGRES_PASSWORD=nine \
+    POSTGRES_DB=nine \
+    NINE_DATABASE_URL=postgres://nine:nine@localhost:5432/nine?sslmode=disable
 
 COPY --from=go-build /usr/local/bin/nine /usr/local/bin/nine
 
@@ -87,10 +144,11 @@ COPY --from=node-build /nine-src/plugins/browser/node_modules/ /opt/nine/browser
 RUN printf '#!/bin/sh\nexec node /opt/nine/browser/index.js "$@"\n' \
       > /opt/nine/bin/browser && chmod +x /opt/nine/bin/browser
 
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY docker/s6/common/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
+COPY docker/s6/common/user-bundles.d/ /etc/s6-overlay/user-bundles.d/
+COPY docker/s6/runtime/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
+RUN chmod +x /etc/s6-overlay/s6-rc.d/postgres/run /etc/s6-overlay/s6-rc.d/nine/run
 
-ENV NINE_BIN=/opt/nine/bin
-
+VOLUME /var/lib/postgresql/data
 VOLUME /data
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["/init"]

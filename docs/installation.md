@@ -4,7 +4,7 @@
 
 | Requirement | Version | Notes |
 |-------------|---------|-------|
-| Docker | 24+ | Required — docker compose runs the whole stack |
+| Docker | 24+ | Required — runs the whole stack in one container |
 | Go | 1.26+ | For development (build from source) |
 | Node.js | 18+ | For development (browser plugin) |
 | golangci-lint | Latest | Optional, for `make lint` |
@@ -13,82 +13,99 @@ An LLM provider is also required — see [Configuration](configuration.md) for o
 
 ---
 
-## Deployment (docker compose)
+## Deployment (single container)
 
-docker compose is the way to deploy Nine: it runs the whole stack — the
-PostgreSQL (`pgvector`) database plus the daemon — with the daemon in one of two
-**profiles**. Postgres always comes up; each daemon service reaches it over the
-compose network as `postgres:5432` (the `NINE_DATABASE_URL` override), and reaches
-the host's LLM endpoint via `host.docker.internal`.
+Nine cannot be decoupled from its database — the daemon fails fast if Postgres
+is unreachable, and Postgres holds all durable state. So the whole stack is
+**one container**: PostgreSQL (`pgvector`) and the daemon, supervised together
+by s6-overlay (see [Single-container Nine](single-container.md) for the full
+design). There is no docker-compose file; `docker run` is wrapped in a handful
+of Makefile targets for the env/volume/flag boilerplate. Inside the container
+the daemon reaches Postgres at `localhost:5432` (baked into the image's
+`NINE_DATABASE_URL`), and reaches the host's LLM endpoint via
+`host.docker.internal`.
 
-The runtime image is a minimal Alpine image with the compiled `nine` binary and
-plugins baked in — no Go toolchain, no source tree (Nine does not compile anything
-at runtime).
+There are two modes, built from the same `Dockerfile`, both re-based on
+`pgvector/pgvector:pg17` (Debian bookworm) so Postgres, pgvector, and the
+official Postgres entrypoint are reused rather than reimplemented.
 
 ### Production mode
 
 The built runtime image (immutable; no toolchain or source):
 
 ```bash
-make compose-prod
-# = docker compose --profile prod up -d --build --wait
-make compose-session          # docker exec -it nine nine
+make up
+make session          # docker exec -it nine nine
 ```
 
 ### Hot-reload mode
 
-The Go toolchain runs over a bind-mount of the source tree; `docker/dev-entrypoint.sh`
-builds `nine` + the Go plugins and **rebuilds and restarts the daemon on any `.go`
-change** (via `inotifywait`). This is the containerized development loop:
+The Go toolchain runs over a bind-mount of the source tree; the `nine` service's
+run script builds `nine` + the Go plugins and **rebuilds and restarts the
+daemon on any `.go` change** (via `inotifywait`, see `docker/dev-entrypoint.sh`).
+This is the containerized development loop:
 
 ```bash
-make compose-dev
-# = docker compose --profile dev up -d --build
-docker compose logs -f nine-dev   # watch builds + daemon output
-make compose-session              # attaches to nine-dev if nine isn't running
+make up-hot
+make logs              # watch builds + daemon output
+make session           # attaches to nine-dev if nine isn't running
 ```
 
-The hot-reload container (`nine-dev`) uses its own `/data` volume and a cached Go
-build volume; the two modes are separate services and are not meant to run at once.
-LLM knobs (`NINE_LLM_PROVIDER`/`MODEL`/`ENDPOINT`) pass through to the services
-(empty = use `nine.toml`). The browser plugin (Chromium + Node) is present only in
-the production image, not the hot-reload container.
+The hot-reload container (`nine-dev`) uses its own volumes and a cached Go build
+volume; the two modes are separate containers and are not meant to run at once.
+LLM knobs (`NINE_LLM_PROVIDER`/`MODEL`/`ENDPOINT`) pass through (empty = use
+`nine.toml`). The browser plugin (Chromium + Node) is present in **both**
+images — it is Node, so it is baked in as immutable content rather than rebuilt
+from the mounted source, but that applies equally to hot-reload and production.
+
+### Optional: pgAdmin
+
+pgAdmin is not part of either image — it's opt-in tooling, spawned on demand as
+a separate container:
+
+```bash
+make pgadmin           # http://localhost:5050, pre-wired to the nine database
+make pgadmin-down
+```
+
+It connects over whichever container's published Postgres port; `up-hot`
+publishes `5432` by default. Desktop mode (no login) is for local convenience
+only — never expose it beyond localhost.
 
 ### Volume layout
 
 The `nine` binary (with built-in skills embedded), the compiled plugins, and the
 browser plugin code are immutable image content under `/opt/nine` — they are **not**
-stored in a volume. Named volumes hold only mutable state:
+stored in a volume. Each mode has **two** named volumes for mutable state, kept
+separate so the database can be backed up, snapshotted, or reset independently
+of the workspace:
 
-- `nine-pgdata` — PostgreSQL data: conversations, tasks, goals, KV, skills,
-  vectors, and the session event journal
-- `nine-data` (prod) / `nine-dev-data` (dev) — the files-plugin workspace at
-  `/data/workspace`
+- `nine-pgdata` / `nine-dev-pgdata` — the PostgreSQL cluster: conversations,
+  tasks, goals, KV, skills, vectors, and the session event journal
+- `nine-data` / `nine-dev-data` — the files-plugin workspace at `/data/workspace`
 
-On first boot `entrypoint.sh` creates `/data/workspace` and the daemon seeds the
-built-in skills (embedded in the binary) into Postgres; this runs every boot, so
-editing a skill file and rebuilding updates it, while agent-authored skills are
-left untouched. Rebuilding the image picks up code changes without touching the
-volumes.
+On first boot the `nine` service's run script creates `/data/workspace` and the
+daemon seeds the built-in skills (embedded in the binary) into Postgres; this
+runs every boot, so editing a skill file and rebuilding updates it, while
+agent-authored skills are left untouched. Rebuilding the image picks up code
+changes without touching the volumes.
 
 ### Stop
 
 ```bash
-make compose-down   # docker compose --profile prod --profile dev down
+make down
 ```
 
-This stops and removes the containers but **keeps the named volumes**, so the next
-`make compose-prod` comes back up with all state intact.
+This removes the container but **keeps the named volumes**, so the next
+`make up` / `make up-hot` comes back up with all state intact.
 
 ### Completely remove Nine
 
-To tear everything down — containers, network, **all data volumes**, and the
-locally built images:
+To tear everything down — the container, **all data volumes**, and the locally
+built images:
 
 ```bash
-make compose-destroy
-# = docker compose --profile prod --profile dev down --volumes --remove-orphans
-#   then docker image rm nine nine-dev
+make destroy
 ```
 
 This is destructive and irreversible: the database and workspace are wiped.
@@ -97,9 +114,9 @@ This is destructive and irreversible: the database and workspace are wiped.
 
 ## Development (build from source)
 
-For working on Nine itself, build and run the binary natively. Deployment is
-docker compose (above); this section is about compiling, running, and testing the
-code from a checkout. For a containerized development loop instead, use
+For working on Nine itself, build and run the binary natively. Deployment is a
+single container (above); this section is about compiling, running, and testing
+the code from a checkout. For a containerized development loop instead, use
 [hot-reload mode](#hot-reload-mode).
 
 ### 1. Clone and build
@@ -120,8 +137,8 @@ The build produces:
 ### 2. Config
 
 The repo's `nine.toml` is the only config file, and it is written for exactly this
-layout — a local Ollama, plugins in `./dist/bin`, and the compose Postgres on
-`localhost:5433`. Running from the project root needs no edits.
+layout — a local Ollama, plugins in `./dist/bin`, and `make pg`'s standalone
+Postgres on `localhost:5433`. Running from the project root needs no edits.
 
 To use it from anywhere, copy it to the global location and make the paths absolute:
 
@@ -135,11 +152,12 @@ Nine searches `$NINE_CONFIG`, then `./nine.toml`, then `/nine.toml`, then
 
 ### 3. Start PostgreSQL
 
-Postgres holds all durable state and the daemon fails fast without it. Bring up
-just the database from the compose file (no profile starts only Postgres):
+Postgres holds all durable state and the daemon fails fast without it. This is
+a standalone database container — unrelated to the containerized Nine above,
+which runs its own Postgres internally:
 
 ```bash
-docker compose up -d          # pgvector on localhost:5433
+make pg                       # pgvector on localhost:5433
 ```
 
 ### 4. Pull a model and run
@@ -179,26 +197,30 @@ export ANTHROPIC_API_KEY=sk-ant-...
 | `make integration-test` | Run integration tests (requires Docker + Ollama) |
 | `make clean` | Remove `dist/` |
 
-**Deploy (docker compose)**
+**Deploy (single container)**
 
 | Target | Description |
 |--------|-------------|
-| `make compose-prod` | Deploy the stack in production mode (built image) |
-| `make compose-dev` | Deploy the stack in hot-reload mode (rebuild on `.go` change) |
-| `make compose-session` | Open an interactive TUI session in the running container |
-| `make compose-shell` | Open a shell in the running container |
-| `make compose-logs` | Follow the daemon logs |
-| `make compose-down` | Stop the stack, keeping all data volumes |
-| `make compose-destroy` | Remove the stack **and all data volumes and images** |
+| `make up` | Build + run the production container |
+| `make up-hot` | Build + run the hot-reload container (rebuild on `.go` change) |
+| `make session` | Open an interactive TUI session in the running container |
+| `make shell` | Open a shell in the running container |
+| `make logs` | Follow the container's logs (Postgres + daemon) |
+| `make down` | Remove the container, keeping all data volumes |
+| `make destroy` | Remove the container **and all data volumes and images** |
+| `make pgadmin` | Spawn the opt-in pgAdmin side-container |
+| `make pgadmin-down` | Remove it |
+| `make pg` | Standalone Postgres for the native dev loop / evals (`localhost:5433`) |
+| `make pg-down` | Remove it |
 
 ---
 
 ## Verifying the Installation
 
-**Deployed with compose** — attach a session and check status:
+**Deployed in a container** — attach a session and check status:
 
 ```bash
-make compose-session
+make session
 nine status
 ```
 

@@ -399,10 +399,10 @@ running `pursue` sessions, default 10 (`DefaultMaxGoalSessions`).
 context builder (no tokenizer dependency).
 
 **Volume layout (`/data/`)** — Holds `workspace/` (files-plugin working dir) only.
-Primary state lives in **PostgreSQL**, which runs as its own service (the
-`docker-compose` `pgvector/pgvector:pg17` image on port 5433 with its own
-`nine-pgdata` volume), not in `/data`. The `nine` binary (with built-in skills
-embedded) and plugins are immutable image content under `/opt/nine`.
+Primary state lives in **PostgreSQL**, which runs in the same container as the
+daemon under s6-overlay (docs/single-container.md), on its own `nine-pgdata`
+volume — not in `/data`. The `nine` binary (with built-in skills embedded) and
+plugins are immutable image content under `/opt/nine`.
 
 **`database_url` (`[memory].database_url` / `NINE_DATABASE_URL`)** — The
 PostgreSQL DSN the daemon connects to (default

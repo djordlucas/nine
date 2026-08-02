@@ -392,9 +392,12 @@ lifecycle events (§6).
   table group; the `memory` tests run against a Postgres test container.
 - **Postgres availability is now load-bearing.** Fail-fast means the daemon won't
   start without the DB (decided §1a). *Mitigate:* docker-compose `depends_on` +
-  healthcheck; a clear startup error; connection pooling with retries/backoff on
-  transient blips (distinct from start-time absence). Event `Append` stays async
-  and batched for throughput, but a durable write failure surfaces as an error.
+  healthcheck (superseded by the s6 `pg_isready` gate once Postgres and the
+  daemon moved into one container — see
+  [Single-container Nine](single-container.md) §5); a clear startup error;
+  connection pooling with retries/backoff on transient blips (distinct from
+  start-time absence). Event `Append` stays async and batched for throughput,
+  but a durable write failure surfaces as an error.
 - **Growth / retention.** Events are unbounded. Add a scrub (cf.
   `WorkflowScrub` at boot): keep last *N* turns or *M* days per session, and
   prune journal rows below the latest `checkpoint` seq for closed sessions.

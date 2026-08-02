@@ -1,0 +1,11 @@
+#!/command/with-contenv sh
+set -e
+
+mkdir -p /data/workspace
+
+# Same fail-fast gate as the runtime service (see ../../runtime/s6-rc.d/nine/run).
+until pg_isready -q -h localhost -U "${POSTGRES_USER:-nine}" -d "${POSTGRES_DB:-nine}"; do
+	sleep 0.5
+done
+
+exec sh /nine-src/docker/dev-entrypoint.sh

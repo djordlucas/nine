@@ -21,7 +21,8 @@ Enable it in `nine.toml`:
 user_dir = "./skills.d"
 ```
 
-Under Docker this is already mounted at `/skills.d` (see `docker-compose.yml`).
+Under Docker this is already mounted at `/skills.d` (see the Makefile's
+`up`/`up-hot` targets).
 
 ## A skill
 

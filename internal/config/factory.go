@@ -58,8 +58,8 @@ func LoadDefault() *Config {
 }
 
 // ApplyEnvOverrides applies NINE_* environment variables on top of cfg.
-// The Docker Makefile and docker-compose pass these so one nine.toml serves both
-// the native and container layouts: the container overrides the paths and
+// The Docker Makefile's `up`/`up-hot` targets pass these so one nine.toml serves
+// both the native and container layouts: the container overrides the paths and
 // endpoints that differ, without a second config file.
 func ApplyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("NINE_LLM_PROVIDER"); v != "" {
@@ -101,7 +101,7 @@ func (cfg *Config) SocketPath() string {
 
 // DatabaseURL returns the PostgreSQL connection string for the memory store,
 // honoring NINE_DATABASE_URL, then nine.toml's [memory].database_url, then a
-// local docker-compose default (see docker-compose.yml).
+// local default matching `make pg`'s standalone Postgres.
 func (cfg *Config) DatabaseURL() string {
 	if v := os.Getenv("NINE_DATABASE_URL"); v != "" {
 		return v
