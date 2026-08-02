@@ -98,19 +98,23 @@ An implementation **MUST NOT** expose a tool that mutates `nine.toml`.
 The runtime separates **mutable state** from **immutable image content**:
 
 ```text
-/data                 mutable state only (a single persistent volume)
-└── workspace/   files-plugin working directory
+/data                       mutable state only (the "nine-data" volume)
+└── workspace/         files-plugin working directory
 
-/opt/nine             immutable image content (NOT in the volume)
-├── bin/         compiled nine binary's default plugins + browser launcher
-└── browser/     browser plugin JS + node_modules
+/var/lib/postgresql/data   PostgreSQL cluster (the "nine-pgdata" volume)
+
+/opt/nine                   immutable image content (NOT in a volume)
+├── bin/                compiled nine binary's default plugins + browser launcher
+└── browser/            browser plugin JS + node_modules
 ```
 
-Primary state lives in **PostgreSQL**, which runs as its own service (the `docker-compose`
-`pgvector/pgvector:pg17` image on port 5433 with its own volume) — **not** in `/data`.
-Built-in skills are embedded in the `nine` binary (`//go:embed`) and seeded into the
-`skills` table on every boot; there is **no** skills directory in the image or the volume.
-The runtime image carries **no Go toolchain, no git, and no source tree** (N3).
+Primary state lives in **PostgreSQL**, which runs in the *same container* as the
+daemon — supervised alongside it under s6-overlay, reachable at `localhost:5432`,
+on its own volume kept separate from `/data` (docs/single-container.md) — **not**
+in `/data`. Built-in skills are embedded in the `nine` binary (`//go:embed`) and
+seeded into the `skills` table on every boot; there is **no** skills directory in
+the image or either volume. The runtime image carries **no Go toolchain, no git,
+and no source tree** (N3).
 
 ---
 

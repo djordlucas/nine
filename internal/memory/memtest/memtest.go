@@ -3,9 +3,9 @@
 // on cleanup, so tests are isolated without needing a database per test.
 //
 // The base connection string is taken from NINE_TEST_DATABASE_URL, falling back
-// to the local docker-compose default (see docker-compose.yml). If the database
-// is unreachable the test is skipped rather than failed, so the suite still runs
-// on machines without Postgres.
+// to `make pg`'s standalone Postgres default. If the database is unreachable the
+// test is skipped rather than failed, so the suite still runs on machines
+// without Postgres.
 package memtest
 
 import (
@@ -43,7 +43,7 @@ func Open(t *testing.T) (*memory.Store, error) {
 	}
 	if err := admin.Ping(); err != nil {
 		admin.Close()
-		t.Skipf("postgres unavailable (%v); set NINE_TEST_DATABASE_URL or run docker compose up -d", err)
+		t.Skipf("postgres unavailable (%v); set NINE_TEST_DATABASE_URL or run make pg", err)
 	}
 
 	// pgvector's type lives in public; ensure it exists before per-schema DDL.

@@ -111,6 +111,13 @@ func startContainer() string {
 		"-e", "NINE_LLM_MODEL=" + model,
 		"-e", "NINE_LLM_ENDPOINT=http://host.docker.internal:11434",
 		"-e", "NINE_LOG_FILE=off", // logs → stderr → docker logs
+		// No nine.toml is mounted, so these two must come from the environment
+		// or every plugin silently fails to start (config.DatabaseURL's sibling
+		// pluginBinPath falls back to a stale "/data/bin" that has never existed
+		// in any image layout — see docs/single-container.md; plugins live under
+		// /opt/nine/bin, the workspace under /data/workspace).
+		"-e", "NINE_PLUGINS_BIN=/opt/nine/bin",
+		"-e", "NINE_WORKSPACE_ROOT=/data/workspace",
 	}
 	if runtime.GOOS == "linux" {
 		args = append(args, "--add-host=host.docker.internal:host-gateway")

@@ -86,21 +86,28 @@ The CLI auto-starts the daemon if the socket is dead (`EnsureDaemon` in
 which dispatches to either the TUI, the one-shot client, or `runDaemon`
 (`cmd/nine/daemon.go`).
 
-### Volume layout (`/data` in Docker)
+### Volume layout (Docker)
 
 ```
-/data                 mutable state only
+/data                 mutable state only (the "nine-data" volume)
 └── workspace/   files-plugin working directory
 
-/opt/nine             immutable image content (not in the volume)
+/var/lib/postgresql/data   PostgreSQL cluster (the "nine-pgdata" volume)
+
+/opt/nine             immutable image content (not in a volume)
 ├── bin/         compiled default plugin binaries + browser launcher
 └── browser/     browser plugin JS + node_modules
 ```
 
-Primary state lives in **PostgreSQL**, which runs as its own service (the
-`docker-compose` `pgvector/pgvector:pg17` image on port 5433, with its own
-`nine-pgdata` volume) — *not* in the `/data` volume. Point the daemon at it with
-`[memory].database_url` or `NINE_DATABASE_URL`.
+Primary state lives in **PostgreSQL**, which runs in the *same container* as the
+daemon — supervised alongside it under s6-overlay, reachable at `localhost:5432`
+— rather than as a separate service (see [Single-container Nine](single-container.md)
+for why the two are one deployment unit, and can't be split, in the first place).
+Its cluster lives on its own volume, kept separate from `/data` so the database
+can be backed up, snapshotted, or reset independently of the workspace. Point the
+daemon at it with `[memory].database_url` or `NINE_DATABASE_URL` (baked into the
+image; the native/native-eval layout instead uses `make pg`'s standalone Postgres
+on port 5433).
 
 Built-in skills are embedded in the `nine` binary (`//go:embed` in the `nine/skills`
 package) and seeded into the `skills` table on every boot — there is no skills
