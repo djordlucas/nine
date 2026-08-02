@@ -105,9 +105,9 @@ max_concurrent = 1
 
 Start Nine
 ```bash
-make compose-prod      # Postgres (pgvector) + the daemon
-make compose-session   # interactive TUI session
-make compose-shell     # sh into nine's container for debug
+make up                # Postgres (pgvector) + the daemon, one container
+make session           # interactive TUI session
+make shell             # sh into nine's container for debug
 ```
 
 The daemon auto-starts on first use. Later calls share the same daemon and
@@ -120,9 +120,9 @@ conversation history. Run `nine` with no arguments for the interactive TUI.
 | Requirement | Version | Notes |
 |-------------|---------|-------|
 | Go | 1.26+ | Native build |
-| PostgreSQL | 16+ with `pgvector` | All persistent state; `docker compose up -d` provides it |
+| PostgreSQL | 16+ with `pgvector` | All persistent state; `make pg` provides a standalone instance for native use |
 | Node.js | 18+ | Browser plugin only |
-| Docker | 24+ | Container build |
+| Docker | 24+ | Container build (runs Postgres + the daemon together, no compose) |
 | golangci-lint | latest | Optional, for `make lint` |
 
 Plus an LLM provider: a running Ollama, or an Anthropic API key.
@@ -140,25 +140,27 @@ in `dist/bin/`. The browser plugin additionally needs Node and npm.
 
 Nine looks for its config, in order: `$NINE_CONFIG`, `./nine.toml`, `/nine.toml`,
 then `~/.nine/nine.toml`. The repo's `nine.toml` works as-is against a local Ollama
-and the compose Postgres.
+and `make pg`'s standalone Postgres.
 
-### Docker (docker compose)
+### Docker (single container)
 
-`docker-compose.yml` is the way to deploy Nine — the PostgreSQL (`pgvector`)
-database plus the daemon — under two profiles:
+Nine cannot be decoupled from its database — the daemon fails fast if Postgres
+is unreachable — so the deployment unit is **one container** running both,
+supervised together by s6-overlay ([docs/single-container.md](docs/single-container.md)).
+There's no docker-compose file; `docker run` is wrapped in Makefile targets:
 
 ```bash
-make compose-prod      # built runtime image
-make compose-dev       # hot-reload: rebuilds and restarts the daemon on any .go change
-make compose-down      # stop, keeping all data
-make compose-destroy   # remove everything, including all data volumes and images
+make up                # built runtime image
+make up-hot            # hot-reload: rebuilds and restarts the daemon on any .go change
+make down              # stop, keeping all data
+make destroy           # remove everything, including all data volumes and images
 ```
 
-The runtime image is minimal Alpine holding the compiled binary, the plugins, and the
-built-in skills — no Go toolchain and no source tree, because Nine never compiles
-anything at runtime. Hot-reload mode bind-mounts the source and rebuilds via
-`inotifywait` — this is the development path. The browser plugin ships only in the
-production image.
+The runtime image holds the compiled binary, the plugins, and the built-in skills
+— no Go toolchain and no source tree, because Nine never compiles anything at
+runtime. Hot-reload mode bind-mounts the source and rebuilds via `inotifywait` —
+this is the development path. The browser plugin ships in both images. pgAdmin
+is opt-in tooling, not part of either image (`make pgadmin`).
 
 The full Makefile target list is in [docs/installation.md](docs/installation.md).
 

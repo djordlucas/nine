@@ -2,14 +2,16 @@
 ##
 ## This is the only config file: the same nine.toml serves the native and the
 ## container layouts. It is written for a native run against a local Ollama and
-## the docker-compose Postgres, and works as-is after `make all`.
+## `make pg`'s standalone Postgres, and works as-is after `make all`.
 ##
-## The container overrides what differs via environment variables (see
-## docker-compose.yml and the Makefile) rather than a second config file:
+## The container (docs/single-container.md) runs Postgres alongside the daemon
+## in the same unit and overrides what differs via environment variables (see
+## the Makefile's `up`/`up-hot` targets) rather than a second config file:
 ##   NINE_LLM_ENDPOINT     http://host.docker.internal:11434
-##   NINE_DATABASE_URL     postgres://nine:nine@postgres:5432/nine?sslmode=disable
 ##   NINE_PLUGINS_BIN      /opt/nine/bin
 ##   NINE_WORKSPACE_ROOT   /data/workspace
+## NINE_DATABASE_URL needs no override there — it's baked into the image,
+## already pointing at the co-located Postgres (localhost:5432).
 ##
 ## Search order: $NINE_CONFIG, ./nine.toml, /nine.toml, ~/.nine/nine.toml.
 ## Full reference: docs/configuration.md
@@ -74,8 +76,9 @@ bin = "./dist/bin"
 
 [memory]
 # PostgreSQL DSN. Postgres holds all durable state, and the daemon fails fast if
-# it is unreachable. Start a local instance with `docker compose up -d`; the
-# container reaches it over the compose network via NINE_DATABASE_URL.
+# it is unreachable. Start a local instance with `make pg`; the containerized
+# daemon (docs/single-container.md) runs its own Postgres instead and never
+# reads this value (NINE_DATABASE_URL is baked into its image).
 database_url = "postgres://nine:nine@localhost:5433/nine?sslmode=disable"
 # Index each memory_set into a shared vector pool and pull-surface the memories
 # most relevant to the current turn as advisory context. On by default; needs an

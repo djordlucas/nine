@@ -3,7 +3,7 @@
     "1": {
       "Name": "nine",
       "Group": "Servers",
-      "Host": "postgres",
+      "Host": "host.docker.internal",
       "Port": 5432,
       "MaintenanceDB": "nine",
       "Username": "nine",
