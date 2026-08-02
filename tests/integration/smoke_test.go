@@ -25,7 +25,10 @@ func TestPluginsLoaded(t *testing.T) {
 	}
 	t.Logf("status output:\n%s", out)
 
-	required := []string{"shell", "files", "memory", "http", "skills", "nine", "time"}
+	// memory and skills are in-process capabilities of memory.Store, never
+	// plugin subprocesses (docs/architecture_detailed.md §1), so they never
+	// appear in the Plugins: line — only check the actual subprocess plugins.
+	required := []string{"shell", "files", "http", "time"}
 	for _, p := range required {
 		if !strings.Contains(out, p) {
 			t.Errorf("plugin %q not found in nine status output", p)
