@@ -1,10 +1,12 @@
 # Single-container Nine — design & implementation plan
 
-> Status: **proposal**. This document plans collapsing today's multi-container
-> docker-compose stack (Postgres + daemon [+ pgAdmin]) into **one image that
-> runs Nine and its PostgreSQL database as a single unit**, keeping the two
-> existing modes — *normal* (the immutable runtime) and *dev* (hot-reload,
-> plus pgAdmin) — behaviourally identical to today.
+> Status: **implemented**. This document plans (and now records) collapsing the
+> former multi-container docker-compose stack (Postgres + daemon + pgAdmin) into
+> **one image that runs Nine and its PostgreSQL database as a single unit**,
+> keeping the two existing modes — *normal* (the immutable runtime) and *dev*
+> (hot-reload) — behaviourally identical to before. pgAdmin is no longer part of
+> either image; it's opt-in tooling (`make pgadmin`, §8). Both images have been
+> built and boot-verified against the §13 checklist below.
 
 ## 1. Motivation
 
@@ -401,32 +403,55 @@ Accepting DB-in-app-container knowingly:
 
 ## 13. Behavioural-parity checklist
 
-Everything below must work identically to the current stack:
+Everything below must work identically to the current stack. Checked items were
+verified directly (build + boot both images, `docker exec ... nine status`,
+touch-a-`.go`-file, timed `docker stop`); unchecked items still need a real run
+(no live Ollama/agent config in the verification environment):
 
-- [ ] `docker exec -it nine nine` opens a TUI session against `/tmp/nine.sock`.
-- [ ] `initSchema` bootstraps a fresh PGDATA volume (extension + tables) on
-      first boot; second boot is a no-op; existing data survives.
-- [ ] Built-in skills seed every boot; agent-authored skills untouched.
-- [ ] `skills.d` / `plugins.d` user dirs discovered from their mounts.
-- [ ] Standing agents / scheduling reconcile on boot.
-- [ ] Browser plugin runs (Chromium + Node) in **both** modes, with the Debian
-      binary path (`/usr/bin/chromium`, §6).
+- [x] `docker exec -it nine nine` opens a session against `/tmp/nine.sock` —
+      verified via `nine status` over the same socket path; not re-tested with
+      an actual interactive pty.
+- [x] `initSchema` bootstraps a fresh PGDATA volume (extension + tables) on
+      first boot; second boot is a no-op; existing data survives — confirmed
+      `initdb` runs once, "Skipping initialization" on restart, prior session
+      resumed.
+- [x] Built-in skills seed every boot; agent-authored skills untouched — 17
+      built-ins seeded identically across restarts, both images.
+- [ ] `skills.d` / `plugins.d` user dirs discovered from their mounts — not
+      exercised in verification (no user skills/plugins configured).
+- [ ] Standing agents / scheduling reconcile on boot — not exercised (no
+      `[[agent]]` configured in the test run).
+- [x] Browser plugin runs (Chromium + Node) in **both** modes, with the Debian
+      binary path (`/usr/bin/chromium`, §6) — confirmed: `plugin started
+      name=browser tools=9` in both the runtime and dev images.
 
-      > **Pre-existing doc bug to reconcile while you're here:**
-      > `docs/installation.md` claims the browser plugin is "present only in the
-      > production image, not the hot-reload container". That is false — the
-      > Dockerfile `dev` stage installs `chromium` and bakes
-      > `/opt/nine/browser` + `node_modules` + the launcher, exactly as `runtime`
-      > does. Fix the sentence during the step-8 docs sweep.
-- [ ] Dev mode rebuilds + restarts the daemon on `.go` save; DB survives the
-      restart (state is external to the daemon process).
+      > **Pre-existing doc bug, reconciled:** `docs/installation.md` claimed the
+      > browser plugin was "present only in the production image, not the
+      > hot-reload container". That was false — the `dev` stage installs
+      > `chromium` and bakes `/opt/nine/browser` + `node_modules` + the launcher
+      > exactly as `runtime` does. Fixed in the docs sweep (§14 step 8).
+- [x] Dev mode rebuilds + restarts the daemon on `.go` save; DB survives the
+      restart — confirmed: touching a `.go` file triggered `[dev] change
+      detected — rebuilding` → new daemon PID → session resumed.
 - [ ] `make pgadmin` spawns a side-container that reaches the DB via the
-      published `5432` and the updated `servers.json`; `make pgadmin-down` removes
-      it — neither touches the Nine container.
-- [ ] `docker stop` cleanly terminates both Postgres and the daemon (s6 signal
-      forwarding).
-- [ ] LLM reachable via `host.docker.internal`.
-- [ ] Integration tests (`make integration-test`) pass against the single image.
+      published `5432` and the updated `servers.json`; `make pgadmin-down`
+      removes it — not exercised in verification.
+- [x] `docker stop` cleanly terminates both Postgres and the daemon (s6 signal
+      forwarding) — confirmed on both images; a real bug was found and fixed
+      here: `docker/dev-entrypoint.sh`'s watch loop ran `inotifywait` as the
+      loop's direct foreground command, and dash (Debian's `/bin/sh`) defers a
+      trapped `TERM` until a foreground child exits — so `docker stop` hung
+      idle for the full grace period, then force-killed the container,
+      skipping Postgres's own shutdown entirely. Fixed by backgrounding
+      `inotifywait` and joining it with `wait`, which *is* interrupted
+      immediately by a trapped signal; clean shutdown now completes in ~3s
+      instead of hitting the 10s force-kill.
+- [ ] LLM reachable via `host.docker.internal` — the connection attempt fires
+      correctly (logged `dial tcp ... connect: connection refused`, as
+      expected with no Ollama listening in the verification environment); not
+      confirmed against a real running model.
+- [ ] Integration tests (`make integration-test`) pass against the single
+      image — not run (needs Docker + a live Ollama with the configured model).
 
 ## 14. Implementation steps
 

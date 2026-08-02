@@ -18,8 +18,8 @@ import (
 var ErrNoPostgres = fmt.Errorf("eval postgres unreachable")
 
 // baseDSN is the connection string for the eval database, mirroring
-// internal/memory/memtest so evals reuse the docker-compose Postgres. Overridable
-// via NINE_TEST_DATABASE_URL.
+// internal/memory/memtest so evals reuse `make pg`'s standalone Postgres.
+// Overridable via NINE_TEST_DATABASE_URL.
 func baseDSN() string {
 	if v := os.Getenv("NINE_TEST_DATABASE_URL"); v != "" {
 		return v

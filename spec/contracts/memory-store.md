@@ -194,4 +194,6 @@ it by design.
 `goals.go`, `workflows.go` (delegates to `internal/workflow.Service`), `notifications.go`,
 `user_notifications.go`, `reflections.go`, `session_plans.go`, `hitl.go`, `events.go`
 (journal), `cursors.go` (subscriber cursors), `related.go` (related sessions). Driver:
-`github.com/jackc/pgx/v5/stdlib`. Backend: `docker-compose` `pgvector/pgvector:pg17`.
+`github.com/jackc/pgx/v5/stdlib`. Backend: `pgvector/pgvector:pg17`, co-located with
+the daemon in the single container (docs/single-container.md), or standalone via
+`make pg` for native use.

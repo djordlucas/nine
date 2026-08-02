@@ -10,7 +10,8 @@ features built on top of that architecture.
 
 ### Getting Started
 
-1. [Installation](installation.md) — Build from source, Docker, first run
+1. [Installation](installation.md) — Build from source, Docker, first run (see also
+   [Single-container Nine](single-container.md) for the container's design)
 2. [CLI Usage](usage.md) — Commands, interactive TUI, slash commands, background tasks, examples
 3. [Configuration](configuration.md) — `nine.toml` reference, LLM providers, environment variables
 
@@ -48,14 +49,17 @@ features built on top of that architecture.
 
 ## Quick Start
 
-### Docker compose (recommended)
+### Docker (recommended)
+
+Postgres and the daemon run together as one container ([Single-container
+Nine](single-container.md)) — no docker-compose:
 
 ```bash
-# 1. Deploy the stack — Postgres + the daemon (edit nine.toml for your LLM)
-make compose-prod
+# 1. Build + run — Postgres + the daemon (edit nine.toml for your LLM)
+make up
 
 # 2. Open an interactive session
-make compose-session
+make session
 ```
 
 ### Native (local dev)

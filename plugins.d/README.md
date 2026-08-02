@@ -14,8 +14,8 @@ plugins.d/
 
 This directory is scanned at boot; re-scan a running daemon with
 `nine plugins reload` (see below). An absent or empty directory just means "no
-user plugins". Under Docker it is mounted at `/plugins.d` (see
-`docker-compose.yml`).
+user plugins". Under Docker it is mounted at `/plugins.d` (see the Makefile's
+`up`/`up-hot` targets).
 
 Enable it for the native layout in `nine.toml`:
 
