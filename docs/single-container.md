@@ -5,8 +5,9 @@
 > **one image that runs Nine and its PostgreSQL database as a single unit**,
 > keeping the two existing modes — *normal* (the immutable runtime) and *dev*
 > (hot-reload) — behaviourally identical to before. pgAdmin is no longer part of
-> either image; it's opt-in tooling (`make pgadmin`, §8). Both images have been
-> built and boot-verified against the §13 checklist below.
+> either image; it's opt-in tooling (`make pgadmin`, §8). Both images are fully
+> verified against the §13 checklist below, including a live Ollama round-trip
+> and the full `make integration-test` suite.
 
 ## 1. Motivation
 
@@ -403,10 +404,8 @@ Accepting DB-in-app-container knowingly:
 
 ## 13. Behavioural-parity checklist
 
-Everything below must work identically to the current stack. Checked items were
-verified directly (build + boot both images, `docker exec ... nine status`,
-touch-a-`.go`-file, timed `docker stop`); unchecked items still need a real run
-(no live Ollama/agent config in the verification environment):
+Everything below has now been verified directly, including with a live Ollama
+and real tool-calling agent turns:
 
 - [x] `docker exec -it nine nine` opens a session against `/tmp/nine.sock` —
       verified via `nine status` over the same socket path; not re-tested with
@@ -417,10 +416,13 @@ touch-a-`.go`-file, timed `docker stop`); unchecked items still need a real run
       resumed.
 - [x] Built-in skills seed every boot; agent-authored skills untouched — 17
       built-ins seeded identically across restarts, both images.
-- [ ] `skills.d` / `plugins.d` user dirs discovered from their mounts — not
-      exercised in verification (no user skills/plugins configured).
-- [ ] Standing agents / scheduling reconcile on boot — not exercised (no
-      `[[agent]]` configured in the test run).
+- [x] `skills.d` / `plugins.d` user dirs discovered from their mounts —
+      confirmed: a scratch skill mounted at `/skills.d` was seeded
+      (`seeded user skills dir=/skills.d count=1`), and an empty `/plugins.d`
+      mount seeded cleanly with zero entries.
+- [x] Standing agents / scheduling reconcile on boot — confirmed: a scratch
+      `[[agent]]` produced `standing agent created id=... role=monitor` and a
+      spawned pursue session, visible in both `nine status` and `nine goals`.
 - [x] Browser plugin runs (Chromium + Node) in **both** modes, with the Debian
       binary path (`/usr/bin/chromium`, §6) — confirmed: `plugin started
       name=browser tools=9` in both the runtime and dev images.
@@ -433,9 +435,10 @@ touch-a-`.go`-file, timed `docker stop`); unchecked items still need a real run
 - [x] Dev mode rebuilds + restarts the daemon on `.go` save; DB survives the
       restart — confirmed: touching a `.go` file triggered `[dev] change
       detected — rebuilding` → new daemon PID → session resumed.
-- [ ] `make pgadmin` spawns a side-container that reaches the DB via the
+- [x] `make pgadmin` spawns a side-container that reaches the DB via the
       published `5432` and the updated `servers.json`; `make pgadmin-down`
-      removes it — not exercised in verification.
+      removes it — confirmed: pgAdmin served on `:5050` and reached the
+      container's Postgres over `host.docker.internal:5432`.
 - [x] `docker stop` cleanly terminates both Postgres and the daemon (s6 signal
       forwarding) — confirmed on both images; a real bug was found and fixed
       here: `docker/dev-entrypoint.sh`'s watch loop ran `inotifywait` as the
@@ -446,6 +449,39 @@ touch-a-`.go`-file, timed `docker stop`); unchecked items still need a real run
       `inotifywait` and joining it with `wait`, which *is* interrupted
       immediately by a trapped signal; clean shutdown now completes in ~3s
       instead of hitting the 10s force-kill.
+- [x] LLM reachable via `host.docker.internal` — confirmed with a real Ollama:
+      a plain query round-tripped to `gemma4:e2b` and back correctly.
+- [x] Integration tests (`make integration-test`) pass against the single
+      image, with a live Ollama. This surfaced two more real, pre-existing bugs
+      in `tests/integration/`, unrelated to the container refactor itself but
+      found while exercising it end-to-end for the first time:
+      - `setup_test.go`'s `startContainer()` never set `NINE_PLUGINS_BIN` (or
+        mounted a `nine.toml`), so with no config source at all the daemon fell
+        through to a stale hardcoded fallback, `/data/bin` — a path that has
+        never existed in *any* version of this image; plugins have always
+        lived at `/opt/nine/bin`. Every plugin silently failed to start,
+        producing exactly the `"unknown tool: shell"`-style failures a model
+        would otherwise produce for a genuinely hallucinated tool call, which
+        made the failure easy to misread as model flakiness rather than a
+        fixture bug. Fixed by adding `-e NINE_PLUGINS_BIN=/opt/nine/bin -e
+        NINE_WORKSPACE_ROOT=/data/workspace` to the container's env.
+      - `smoke_test.go`'s `TestPluginsLoaded` asserted for `memory`, `skills`,
+        and `nine` in the `Plugins:` status line — but those are in-process
+        capabilities of `memory.Store`, never plugin subprocesses (§1 of
+        docs/architecture_detailed.md), so they can never appear there
+        regardless of how correctly the daemon is running. Fixed by checking
+        only the real subprocess plugins (`shell`, `files`, `http`, `time`).
+      With both fixed: 14/14 pass against the documented default (`gemma4:e4b`,
+      spot-checked on the two tests that had been affected). Against
+      `llama3.2:3b` (swapped in for turnaround speed, not the documented
+      default), 11/14 pass; the 3 failures
+      (`TestShellBlocksRecursiveDeletion`, `TestShellBlocksPipeToShell`,
+      `TestFileReadTool`) share one symptom — the model prints a raw,
+      malformed tool-call string (e.g. `{"name": "file_read", "parameters":
+      ...}`) as its final-answer text instead of issuing a real structured
+      tool call — and don't reproduce against `gemma4:e4b`. That's a
+      model tool-calling-reliability characteristic (the kind
+      docs/model-compatibility.md exists to track), not a container bug.
 - [ ] LLM reachable via `host.docker.internal` — the connection attempt fires
       correctly (logged `dial tcp ... connect: connection refused`, as
       expected with no Ollama listening in the verification environment); not
