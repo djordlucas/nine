@@ -596,6 +596,28 @@ func TestToolListGrantedWithoutEmbedder(t *testing.T) {
 	}
 }
 
+// The daemon dispatches plugin_call through CoreDispatcher, and list_tools
+// advertises every core-intercepted tool under the "core" plugin — so a store
+// tool missing here is one a client can see but not call.
+func TestCoreDispatcherHoldsClientReachableTools(t *testing.T) {
+	store := seedTestStore(t)
+	b := rolesTestBuilder(t, &scriptedProvider{}, func(cfg *runtime.AgentBuilderConfig) {
+		cfg.Loop.Memory = store
+	})
+
+	core := b.CoreDispatcher()
+	for _, name := range []string{
+		"memory_get", "memory_set", "memory_list", "memory_delete",
+		"file_store", "file_fetch", "file_list", "file_search_text",
+		"skill_list", "skill_read", "skill_write", "skill_modify",
+		"doc_read", "doc_search",
+	} {
+		if !core.Has(name) {
+			t.Errorf("core dispatcher missing %q; plugin_call cannot reach it", name)
+		}
+	}
+}
+
 // observationText concatenates every tool result carried by a request, so a
 // test can assert on what a tool observation fed back into the next turn.
 func observationText(req llm.Request) string {

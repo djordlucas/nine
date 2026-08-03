@@ -142,6 +142,7 @@ func Assemble(c AssemblyConfig) *Assembly {
 	daemon.SetQueueStatFn(builder.QueueDepth)
 	daemon.ConfigureMemory(c.Store)
 	daemon.ConfigurePlugins(c.Plugins)
+	daemon.ConfigureCoreTools(builder.CoreDispatcher())
 	daemon.ConfigureSupervisor(supervisor)
 	daemon.ConfigurePlanStore(c.Store)
 	daemon.SetMaxGoalSessions(c.MaxGoalSessions)

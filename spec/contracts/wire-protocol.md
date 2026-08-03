@@ -155,6 +155,15 @@ never agent tools.
 return its output, with no agent loop, no context assembly, and no LLM call. It is the
 mechanism behind daemon-down operator commands and direct tooling.
 
+Its reach **MUST** match what `list_tools` advertises: the core-intercepted store tools
+(`memory_*`, `file_*`, `skill_*`, `doc_*` — see [`plugin.md`](plugin.md) R-PLUG.5) are
+listed under the `core` plugin but served in-process, so the daemon resolves the name
+against the core dispatcher first and only then against the plugin roster. A tool the
+client can *see* but not *call* is a contract violation — it is what broke the TUI's
+`/skills` and `/memory`. The delegation tools (`run_agent`, `workflow_*`, `goal_*`) are the
+one exception: they need a live session to spawn into, so they are registered per loop and
+are not reachable this way.
+
 ---
 
 ## R-PROTO.6 — Display names never reach the LLM (I8)
