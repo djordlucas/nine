@@ -354,9 +354,12 @@ Salient details:
   `history`.
 - **`dispatchWithRetry`** retries a failing tool up to `maxToolRetries` (2) more
   times, returning `(CallResult, time.Duration, error)`.
-- **Empty answers are surfaced, not swallowed.** If the model ends a turn with
-  no text and no tool calls, `emptyAnswerFallback` turns the accumulated tool
-  errors into a visible message instead of returning blank.
+- **Empty responses are retried, then surfaced.** A response with no text and no
+  tool calls is a failed sample rather than an answer — common on small local
+  models right after a tool observation — so the loop re-issues the call up to
+  `maxEmptyAnswerRetries` (2) more times. If it is still empty,
+  `emptyAnswerFallback` turns the accumulated tool errors into a visible message
+  instead of returning blank.
 - **Checkpointing happens outside the loop**, in the worker, after `Run`
   returns. `ConversationState{History, Scratchpad}` is the serialized unit.
 

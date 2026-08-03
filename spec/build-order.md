@@ -145,7 +145,9 @@ are never dropped.
   embeds the query once, assembles context, submits to the queue, and either returns a
   final answer (no tool calls → clear scratchpad, fold into history) or dispatches each
   tool call (retry up to `maxToolRetries = 2`), appends observations to the scratchpad,
-  and loops. Empty answers surface accumulated tool errors rather than returning blank.
+  and loops. An empty response (no text, no tool calls) is re-drawn up to
+  `maxEmptyAnswerRetries = 2` times; a still-empty answer then surfaces accumulated tool
+  errors rather than returning blank.
 
 **Wire.** Loop ← context builder, queue, dispatcher, embedder, optional self-model fn.
 

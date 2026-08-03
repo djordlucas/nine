@@ -26,8 +26,10 @@ Run(ctx, userText):
     resp = queue.Submit(ctx, Priority, req)
 
     if resp.ToolCalls is empty:
+        if resp.Text is blank and retries remain:
+            continue                   // re-draw; see R-LOOP.5
         answer = resp.Text  (or emptyAnswerFallback)
-        history += {assistant, answer}
+        history += {assistant, answer} // only what the model actually said
         scratchpad = []
         return answer                  // TURN COMPLETE
     for each toolCall tc:
@@ -81,11 +83,22 @@ thrown. A conforming implementation **MUST** retry exactly 3 times total by defa
 
 ---
 
-## R-LOOP.5 — Empty-answer fallback
+## R-LOOP.5 — Empty-answer retry and fallback
 
-If the model ends a turn with no tool calls **and** no text, the loop **MUST NOT** return
-blank. `emptyAnswerFallback` turns the accumulated tool errors from the turn into a
-visible message. Failures surface to the user rather than being swallowed.
+A response with no tool calls **and** no text is treated as a failed draw, not as an
+answer: the loop **MUST** re-issue the call up to `maxEmptyAnswerRetries` (2, so **3
+attempts total**) before giving up. Nothing has been appended to history or the
+scratchpad at that point, so the retry rebuilds the same request and draws a fresh
+sample. This is not a theoretical case — small local models routinely emit a lone
+end-of-turn token on the call that follows a tool observation, which would otherwise
+throw away a turn whose tool call had already succeeded.
+
+Once the retries are spent, the loop **MUST NOT** return blank. `emptyAnswerFallback`
+turns the accumulated tool errors from the turn into a visible message. Failures surface
+to the user rather than being swallowed.
+
+The fallback text is **not** appended to history: it is written about the turn, for
+whoever is reading, and a long-lived session that read it back would learn to imitate it.
 
 ---
 
@@ -128,4 +141,5 @@ loop is built for a given session role.
 ## Reference symbols
 
 `internal/agent/loop.go` (`Loop`, `Run`, `dispatchWithRetry`, `maxToolRetries`,
-`emptyAnswerFallback`, `SaveState`/`LoadState`, `LastRunToolCount`).
+`maxEmptyAnswerRetries`, `emptyAnswerFallback`, `SaveState`/`LoadState`,
+`LastRunToolCount`).
