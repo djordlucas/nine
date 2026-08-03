@@ -174,9 +174,10 @@ or `none` (disables ranking). See
 
 **Vector store / namespaces** — Embeddings are stored in the in-process
 `internal/memory.Store`'s `vectors` table (Postgres `pgvector` type) under
-namespaced keys — e.g. `skills` (skill descriptions), `session-index` (one vector
-per completed turn, for the related-session indexer), and per-agent memory
-namespaces. Nearest-neighbour queries rank by pgvector's `<=>` cosine distance.
+namespaced keys — e.g. `skills` (skill descriptions), `docs` (one vector per
+section of the bundled documentation), `session-index` (one vector per completed
+turn, for the related-session indexer), and per-agent memory namespaces.
+Nearest-neighbour queries rank by pgvector's `<=>` cosine distance.
 
 **Self-model (`SystemSelf`)** — A context block built by
 `internal/selfmodel.Assembler` from the `self/identity`, `self/capabilities`,
@@ -340,6 +341,14 @@ touch a built-in skill.
 **Skill vs. Memory** — Skills are semantically-retrieved procedures that shape
 *how* the agent approaches a class of task. Memory (KV store) is
 exact-key-lookup, per-session/dynamic *data* the agent fetches explicitly.
+
+**Self-documentation (`doc_search` / `doc_read`)** — The `docs/` and `spec/`
+trees embedded in the binary, indexed at boot into the `docs` vector namespace
+as one vector per `##` section and retrieved on demand. The index stores
+addresses (`docs/skills.md#tools`), never text: a read slices the section back
+out of the embedded filesystem, so what Nine cites always matches its own
+version. Never preloaded — the standing context cost is two tool definitions.
+See [Self-Documentation](self-documentation.md).
 
 **Default skills** — The repo's `skills/*.md` (e.g. `task-management`,
 `git-workflow`, `go-development`), embedded into the binary and seeded into the

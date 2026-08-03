@@ -69,6 +69,13 @@ func runDaemon() {
 		slog.Warn("seed user skills", "dir", cfg.Skills.UserDir, "err", err)
 	}
 
+	// Index the docs and spec embedded in this binary so Nine can retrieve its
+	// own manual on demand (docs/self-documentation.md). Fingerprinted, so this
+	// is a no-op on every boot that does not change the binary or the embedder.
+	if err := runtime.SeedDocs(store, embedder, cfg.Embeddings.Provider+"/"+cfg.Embeddings.Model); err != nil {
+		slog.Warn("seed docs index", "err", err)
+	}
+
 	// Bootstrap the self-model with the current plugin list, so it can answer questions about them.
 	if err := runtime.BootstrapSelfKV(store, pluginManager.ListRunning()); err != nil {
 		slog.Error("bootstrap self KV", "err", err)
