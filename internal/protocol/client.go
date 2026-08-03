@@ -29,10 +29,21 @@ func EnsureDaemon(sock, binary string) (*os.Process, error) {
 		return nil, nil
 	}
 	cmd := exec.Command(binary, "daemon")
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
-	// Create a new session so the daemon is detached from the terminal.
-	// Without this, closing the terminal sends SIGHUP to the daemon.
+	// Leave Stdout/Stderr nil so the daemon's go to os.DevNull rather than
+	// being inherited from whoever started it. The caller is usually the TUI,
+	// which is about to take over that same terminal with an alt screen — a
+	// daemon writing there paints its boot log over the UI. That is not
+	// hypothetical: with file logging disabled (NINE_LOG_FILE=off, the
+	// container default) slog *is* stderr, so every boot line lands in the
+	// chat area. The daemon owns its log destination; the terminal is the
+	// client's, and the Setsid below already says this process is detached
+	// from it.
+	//
+	// The daemon's own logging is unaffected — see setupLogger in
+	// cmd/nine/main.go for where its output actually goes.
+	//
+	// Setsid puts it in a new session, so closing the terminal does not send it
+	// SIGHUP.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		return nil, err
@@ -44,7 +55,9 @@ func EnsureDaemon(sock, binary string) (*os.Process, error) {
 		}
 	}
 	cmd.Process.Kill() //nolint:errcheck
-	return nil, fmt.Errorf("daemon did not start within 5s")
+	// Discarding the daemon's output above means the reason is not on this
+	// terminal, so say where it is rather than leaving a bare timeout.
+	return nil, fmt.Errorf("daemon did not start within 5s; check its log (see NINE_LOG_FILE in docs/configuration.md) or run %q in the foreground to see why", binary+" daemon")
 }
 
 // Client is a connection to a running daemon.
