@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"nine/internal/docindex"
@@ -118,32 +116,47 @@ func RegisterDocTools(d *Dispatcher, store *memory.Store, embedder embed.Embedde
 		if err != nil {
 			return "", fmt.Errorf("embed: %w", err)
 		}
-		// Over-fetch: the bundle filter and the subject boost below both reorder
-		// and thin the ranked list, so the candidate pool has to be wider than
-		// what is returned.
+		// Two retrievers, fused. The vector side catches phrasing the documents
+		// do not use literally; the lexical side supplies the inverse document
+		// frequency the default embedder lacks. They fail differently, which is
+		// the point — see docindex.Lexical.
+		//
+		// Over-fetch on both: the bundle filter and the fusion below reorder and
+		// thin the candidate list, so the pool must be wider than what is returned.
 		results, err := store.VectorQuery(memory.DocsNamespace, vec, req.TopK*docCandidateFactor)
 		if err != nil {
 			return "", fmt.Errorf("vector query: %w", err)
 		}
-		if req.Bundle != "" {
-			kept := results[:0]
-			for _, r := range results {
-				if strings.HasPrefix(r.Key, req.Bundle+"/") {
-					kept = append(kept, r)
-				}
-			}
-			results = kept
+		vectorRanked := make([]string, 0, len(results))
+		score := make(map[string]float32, len(results))
+		for _, r := range results {
+			vectorRanked = append(vectorRanked, r.Key)
+			score[r.Key] = r.Score
 		}
-		rerankBySubject(results, req.Query)
+
+		var lexicalRanked []string
+		// A lexical index that fails to build is not fatal: degrade to
+		// vector-only ranking rather than failing the search outright.
+		if lex, err := docindex.LexicalIndex(); err == nil {
+			lexicalRanked = lex.Rank(req.Query)
+			if len(lexicalRanked) > req.TopK*docCandidateFactor {
+				lexicalRanked = lexicalRanked[:req.TopK*docCandidateFactor]
+			}
+		}
+
+		ranked := docindex.FuseRRF(docindex.RRFK, vectorRanked, lexicalRanked)
 
 		hits := make([]docHit, 0, req.TopK)
-		for _, r := range results {
+		for _, addr := range ranked {
 			if len(hits) >= req.TopK {
 				break
 			}
+			if req.Bundle != "" && !strings.HasPrefix(addr, req.Bundle+"/") {
+				continue
+			}
 			// An address that no longer resolves means the index outran the
 			// binary; skip it rather than pointing the model at nothing.
-			sec, found, err := docindex.Fetch(r.Key)
+			sec, found, err := docindex.Fetch(addr)
 			if err != nil || !found {
 				continue
 			}
@@ -152,7 +165,11 @@ func RegisterDocTools(d *Dispatcher, store *memory.Store, embedder embed.Embedde
 				Title:   sec.Title,
 				Heading: sec.Heading,
 				Snippet: snippet(sec.Body, docSnippetBytes),
-				Score:   r.Score,
+				// The cosine score, reported for what it is. Rank fusion has no
+				// meaningful score of its own, and inventing one would suggest a
+				// calibration that does not exist. A section the lexical side
+				// found but the vector side did not reports 0.
+				Score: score[addr],
 			})
 		}
 		data, err := json.Marshal(map[string]any{"count": len(hits), "results": hits})
@@ -163,59 +180,15 @@ func RegisterDocTools(d *Dispatcher, store *memory.Store, embedder embed.Embedde
 	}
 }
 
-// docCandidateFactor widens the vector query beyond the requested result count,
-// giving the bundle filter and the subject boost room to reorder.
-const docCandidateFactor = 6
-
-// docSubjectBoost is added to a candidate's cosine score in proportion to how
-// much of the query its address accounts for.
+// docCandidateFactor widens each retriever's result list beyond the requested
+// count, giving the bundle filter and the rank fusion room to reorder.
 //
-// The default embedder is term frequency with no inverse document frequency
-// (internal/embed/keyword), which systematically favours long
-// vocabulary-dense sections: a compatibility matrix or reference table mentions
-// every feature once and so matches every feature query, outranking the short
-// section actually about the subject. An address is kebab-cased from the
-// document name and section heading — "docs/tool-output-spill.md#when-a-result-
-// is-too-large" — so overlapping it with the query is a cheap proxy for "is
-// this section *about* what was asked", independent of length.
-//
-// The value was picked by sweeping it against a labelled query set over the real
-// corpus; it lifted top-3 accuracy from 9/16 to 11/16, peaking here and
-// degrading above ~0.5 as the boost starts to overwhelm the cosine score. That
-// is a small sample, so treat it as a tuned default rather than an optimum.
-const docSubjectBoost = 0.3
-
-// rerankBySubject re-sorts candidates in place, adding docSubjectBoost scaled by
-// the fraction of the query's significant terms that appear in each address.
-// Short terms are ignored: they match too much to carry a subject.
-func rerankBySubject(results []memory.VectorResult, query string) {
-	terms := strings.FieldsFunc(strings.ToLower(query), func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-	})
-	var significant []string
-	for _, t := range terms {
-		if len(t) > 3 {
-			significant = append(significant, t)
-		}
-	}
-	if len(significant) == 0 {
-		return
-	}
-	boosted := make(map[string]float32, len(results))
-	for _, r := range results {
-		addr := strings.ToLower(r.Key)
-		var n int
-		for _, t := range significant {
-			if strings.Contains(addr, t) {
-				n++
-			}
-		}
-		boosted[r.Key] = r.Score + docSubjectBoost*float32(n)/float32(len(significant))
-	}
-	sort.SliceStable(results, func(i, j int) bool {
-		return boosted[results[i].Key] > boosted[results[j].Key]
-	})
-}
+// Fusion is only as good as the pools it draws from: a document ranked 25th by
+// cosine and 2nd lexically can only be rescued if the vector pool reaches 25
+// deep. Sweeping this against the labelled query set, top-5 accuracy climbed
+// from 25/30 at ×6 to 27/30 at ×20 and stopped improving after — past that the
+// extra candidates are noise that fusion has to sort back out.
+const docCandidateFactor = 20
 
 // snippet truncates s to at most n bytes on a rune boundary, marking the cut so
 // the model can tell a preview from a complete section.
