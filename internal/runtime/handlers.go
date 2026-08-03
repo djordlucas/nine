@@ -440,8 +440,25 @@ func (d *Daemon) handleListTools(enc *json.Encoder) {
 	enc.Encode(protocol.NewTextMsg("list_tools", string(data))) //nolint:errcheck
 }
 
-// handlePluginCall routes a tool call directly to the owning plugin.
+// handlePluginCall routes a tool call directly to its handler: the core
+// dispatcher for core-intercepted tools, otherwise the owning plugin.
+//
+// Core comes first because those tools are not backed by any subprocess — the
+// memory/file/skill/doc handlers live in-process (spec/contracts/plugin.md
+// R-PLUG.5) — yet list_tools advertises them under the `core` plugin, so a
+// plugin-only lookup would report a tool the client can see as unknown. It also
+// cannot collide with a plugin tool: the builder registers both onto one
+// dispatcher per loop, so a duplicate name is already a name clash there.
 func (d *Daemon) handlePluginCall(ctx context.Context, enc *json.Encoder, toolName string, args json.RawMessage) {
+	if d.core != nil && d.core.Has(toolName) {
+		result, err := d.core.Dispatch(ctx, toolName, args)
+		if err != nil {
+			enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+			return
+		}
+		enc.Encode(protocol.NewTextMsg("plugin_call", result.Output)) //nolint:errcheck
+		return
+	}
 	if d.mgr == nil {
 		enc.Encode(protocol.NewErrorMsg("plugin caller not available")) //nolint:errcheck
 		return

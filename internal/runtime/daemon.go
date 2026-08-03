@@ -105,6 +105,7 @@ type Daemon struct {
 	instName   string            // instance display name shown in the TUI top bar (guarded by mu)
 
 	mgr   pluginRegistry
+	core  *agent.Dispatcher // core-intercepted tools, for plugin_call (see ConfigureCoreTools)
 	store queryBackend
 	plans PlanStore
 	sup   *Supervisor
@@ -638,6 +639,15 @@ func (d *Daemon) startSubscribers(ctx context.Context) {
 // ConfigurePlugins stores the plugin manager used by tool listing and direct plugin calls.
 func (d *Daemon) ConfigurePlugins(mgr *plugin.Manager) {
 	d.mgr = mgr
+}
+
+// ConfigureCoreTools stores the dispatcher carrying the core-intercepted tools
+// (memory/file/skill/doc — the ones handled in-process rather than by a
+// subprocess plugin) so `plugin_call` can reach them. `list_tools` advertises
+// them under the `core` plugin, so without this a client can see them but not
+// call them. Passing nil leaves plugin_call plugin-only.
+func (d *Daemon) ConfigureCoreTools(disp *agent.Dispatcher) {
+	d.core = disp
 }
 
 // ConfigureSupervisor stores the supervisor and wires stall detection and

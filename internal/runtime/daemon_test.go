@@ -513,6 +513,54 @@ func TestDaemonListGoals(t *testing.T) {
 	}
 }
 
+// plugin_call reaches a core-intercepted tool. list_tools advertises skill_*,
+// memory_*, file_* and doc_* under the "core" plugin, but no subprocess serves
+// them, so a plugin-only lookup answered "unknown tool" for a tool the client
+// had just been shown — which is what the TUI's /skills and /memory hit.
+func TestDaemonPluginCallReachesCoreTools(t *testing.T) {
+	store := seedTestStore(t)
+	if err := store.SkillUpsert(memory.Skill{
+		Name:        "deploy-checklist",
+		Description: "Steps to verify before shipping a release build.",
+		Source:      memory.SkillSourceAgent,
+	}); err != nil {
+		t.Fatalf("SkillUpsert: %v", err)
+	}
+	core := agent.New()
+	agent.RegisterSkillTools(core, store, nil)
+
+	d, sock := startDaemon(t, makeFactory(seqProvider(nil)), nil, nil)
+	d.ConfigureCoreTools(core)
+	c := dial(t, sock)
+
+	out, err := c.PluginCall("skill_list", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("PluginCall(skill_list): %v", err)
+	}
+	if !strings.Contains(out, "deploy-checklist") {
+		t.Errorf("skill_list = %q, want it to include the stored skill", out)
+	}
+}
+
+// A tool the core dispatcher does not hold still falls through to the plugin
+// lookup rather than being answered by core — the new branch must not swallow
+// names it cannot serve.
+func TestDaemonPluginCallUnknownToolFallsThrough(t *testing.T) {
+	d, sock := startDaemon(t, makeFactory(seqProvider(nil)), nil, nil)
+	d.ConfigureCoreTools(agent.New()) // core holds nothing
+	c := dial(t, sock)
+
+	_, err := c.PluginCall("no_such_tool", json.RawMessage(`{}`))
+	if err == nil {
+		t.Fatal("PluginCall(no_such_tool) = nil error, want failure")
+	}
+	// No plugin manager is configured here, so the fall-through path is the one
+	// that reports it.
+	if !strings.Contains(err.Error(), "plugin caller not available") {
+		t.Errorf("error = %v, want the plugin-side error", err)
+	}
+}
+
 // ---- integration test ----
 
 func TestDaemonIntegration(t *testing.T) {
