@@ -3,6 +3,7 @@ package agent_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -209,19 +210,63 @@ func TestDocSearchBundleFilter(t *testing.T) {
 	}
 }
 
-// TestDocSearchRequiresEmbedder pins the gating: with no embedder there is no
-// index to rank, so doc_search must not be dispatchable while doc_read — which
-// only needs the embedded FS — still is.
-func TestDocSearchRequiresEmbedder(t *testing.T) {
-	store := newTestStore(t)
+// TestDocToolsWorkWithoutEmbedder is what sets this pair apart from the other
+// *_search tools: the documentation is compiled into the binary, so it can be
+// ranked lexically with no embedder, no store, and no index. A deployment
+// running `provider = "none"` still gets a searchable manual.
+func TestDocToolsWorkWithoutEmbedder(t *testing.T) {
 	d := agent.New()
-	agent.RegisterDocTools(d, store, nil)
+	agent.RegisterDocTools(d, nil, nil)
 
-	if _, err := d.Dispatch(context.Background(), "doc_search", json.RawMessage(`{"query":"anything"}`)); err == nil {
-		t.Error("doc_search dispatched without an embedder")
+	res, err := d.Dispatch(context.Background(), "doc_search",
+		json.RawMessage(`{"query":"how are skills stored and retrieved","top_k":5}`))
+	if err != nil {
+		t.Fatalf("doc_search without an embedder: %v", err)
+	}
+	var out struct {
+		Count   int `json:"count"`
+		Results []struct {
+			Addr string `json:"addr"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(res.Output), &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out.Count == 0 {
+		t.Fatal("lexical-only doc_search returned nothing")
+	}
+	var onTopic bool
+	for _, h := range out.Results {
+		if strings.Contains(h.Addr, "skills") {
+			onTopic = true
+		}
+	}
+	if !onTopic {
+		t.Errorf("lexical-only ranking missed the obvious document: %+v", out.Results)
 	}
 	if _, err := d.Dispatch(context.Background(), "doc_read", json.RawMessage(`{"ref":"glossary"}`)); err != nil {
-		t.Errorf("doc_read should work without an embedder: %v", err)
+		t.Errorf("doc_read without an embedder: %v", err)
+	}
+}
+
+// TestDocSearchDegradesToLexical covers the other half of R-DOC.5's degradation
+// rule: a failing embedder must not fail the search, since the caller asked a
+// question about the documentation, not about the embedder.
+func TestDocSearchDegradesToLexical(t *testing.T) {
+	store := newTestStore(t)
+	d := agent.New()
+	broken := embed.EmbedderFunc(func(_ context.Context, _ string) ([]float32, error) {
+		return nil, errors.New("embedder unavailable")
+	})
+	agent.RegisterDocTools(d, store, broken)
+
+	res, err := d.Dispatch(context.Background(), "doc_search",
+		json.RawMessage(`{"query":"how are skills stored and retrieved"}`))
+	if err != nil {
+		t.Fatalf("doc_search with a broken embedder: %v", err)
+	}
+	if !strings.Contains(res.Output, "skills") {
+		t.Errorf("degraded search returned nothing useful: %s", res.Output)
 	}
 }
 
