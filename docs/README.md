@@ -34,18 +34,19 @@ features built on top of that architecture.
 15. [Plugins — HTTP transport](plugins-http-transport.md) — The HTTP/SSE plugin transport
 16. [Browser Plugin](browser.md) — Headless Chromium: navigate, screenshot, extract, interact
 17. [Skills](skills.md) — What skills are, creating and managing skills
-18. [Workflows](workflows.md) — Persistent multi-step execution plans for sub-agent delegation
-19. [Predefined Agents](predefined-agents.md) — Config-declared standing agents (goals + pursue shells)
-20. [Scheduling](scheduling.md) — Interval and cron wake triggers for standing agents
-21. [Human-in-the-Loop](hitl.md) — `ask_human` and approval gates for interactive sessions
-22. [Self-Improvement & Boundaries](self-modification.md) — Skill writing, and why Nine does not modify itself
+18. [Self-Documentation](self-documentation.md) — How Nine retrieves its own bundled docs and spec to answer questions about itself
+19. [Workflows](workflows.md) — Persistent multi-step execution plans for sub-agent delegation
+20. [Predefined Agents](predefined-agents.md) — Config-declared standing agents (goals + pursue shells)
+21. [Scheduling](scheduling.md) — Interval and cron wake triggers for standing agents
+22. [Human-in-the-Loop](hitl.md) — `ask_human` and approval gates for interactive sessions
+23. [Self-Improvement & Boundaries](self-modification.md) — Skill writing, and why Nine does not modify itself
 
 ### Reference
 
-23. [Glossary](glossary.md) — All key concepts and features in one place, grouped by topic
-24. [Versioning](versioning.md) — Release, plugin-protocol, config, and schema versioning
-25. [Evals](evals.md) — Test plan for replays + live models; the case schema and feature map used to generate test cases
-26. [Model compatibility](model-compatibility.md) — Which models Nine has been run against, how they did, and on what hardware
+24. [Glossary](glossary.md) — All key concepts and features in one place, grouped by topic
+25. [Versioning](versioning.md) — Release, plugin-protocol, config, and schema versioning
+26. [Evals](evals.md) — Test plan for replays + live models; the case schema and feature map used to generate test cases
+27. [Model compatibility](model-compatibility.md) — Which models Nine has been run against, how they did, and on what hardware
 
 ## Quick Start
 

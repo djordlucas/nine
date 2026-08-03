@@ -3,7 +3,9 @@
 **Status:** **Option 3 (hybrid) is the live behavior.** The passive always-on
 top-K layer already existed (`selectTools`, `ToolTopN` = 20 tool defs; the
 assembler's top-3 skills); this change added the active layer on top —
-`tool_search` and `skill_search` let the model query the full catalogs mid-turn.
+`tool_search` and `skill_search` let the model query the full catalogs mid-turn,
+and `doc_search`/`doc_read` extend the same pattern to Nine's own bundled
+documentation ([self-documentation.md](self-documentation.md)).
 The two coexist, which is the hybrid. The remaining open item is **Option 1**
 (re-rank the passive top-K against the evolving scratchpad, not just the opening
 query) — orthogonal to the hybrid: it makes the always-on layer fresher, whereas
@@ -28,11 +30,24 @@ the search tools compensate for its staleness reactively. See "Implemented".
   `skills` vector namespace and returns name + description; the model then
   `skill_read`s the one it wants. Gated on an embedder, like the memory
   semantic tools.
-- All three are granted like `gap_report` — advertised, always-included, and
-  surviving `RestrictTo` regardless of the role allowlist. The two `*_search`
-  tools additionally require an embedder; `tool_list` is granted
-  unconditionally. Wired as shell-like capabilities in
-  `internal/runtime/builder.go`.
+- `doc_search(query, top_k, bundle)` / `doc_read(ref)` —
+  `internal/agent/register_docs.go`. The same shape applied to a third catalog:
+  the documentation and specification embedded in the binary
+  ([self-documentation.md](self-documentation.md)). `doc_search` fuses the
+  `docs` vector namespace with a BM25 index of the same sections and returns
+  section addresses plus snippets; `doc_read` exchanges an address for exact
+  text. `doc_read` is the query-free
+  half here in spirit but not in form — a corpus of ~570 sections is too large
+  to enumerate, so the catalog is surfaced instead through the address list
+  carried by an unresolvable-reference error.
+- All five are granted like `gap_report` — advertised, always-included, and
+  surviving `RestrictTo` regardless of the role allowlist. `tool_search` and
+  `skill_search` additionally require an embedder; `tool_list` and **both doc
+  tools** are granted unconditionally. The doc pair is the exception because its
+  corpus is embedded in the binary rather than resident in the store, so
+  `doc_search` can rank lexically (BM25) with no embedder at all — where
+  `tool_search` and `skill_search` would have nothing to rank. Wired as
+  shell-like capabilities in `internal/runtime/builder.go`.
 
 Still open: **Option 1** (re-rank the passive selection against the evolving
 scratchpad, not just the opening query) and the token-cost refinement of only

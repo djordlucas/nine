@@ -269,6 +269,17 @@ How to use this file:
 | R-SKILL.4 | Indexing hook | After `skill_write`/`skill_modify`, the description embeds into `skills:` and is discoverable via `skill_search` next turn without restart. |
 | R-SKILL.5 | Self-improvement boundary (N1–N3, I10) | No tool exists that mutates `nine.toml`, builds a plugin, or rebuilds the binary. |
 
+### Self-documentation — [`self-documentation.md`](contracts/self-documentation.md)
+
+| ID | Property | Observable check |
+|----|----------|------------------|
+| R-DOC.1 | Addressing | Every section address resolves to exactly one section; repeated headings disambiguate; an unanchored address returns the whole document, and the leading section carries a title-derived anchor of its own. Names accepted by `nine docs <topic>` resolve identically; hidden documents are not indexed. |
+| R-DOC.2 | Chunking | Split at `##`; headings inside code fences do not split; an oversized section splits again at `###` without losing its lead-in. Indexed text includes the document title and section heading. |
+| R-DOC.3 | Index holds addresses | The `docs` namespace stores one vector per section keyed by address; no section body is written to the store. |
+| R-DOC.4 | Fingerprinted indexing | An unchanged corpus + embedder re-embeds nothing on reboot; changing either forces a full namespace rebuild; a pass with any embed failure records no fingerprint and retries next boot; a nil embedder skips without error. |
+| R-DOC.5 | Tools | Every `doc_search` address is readable by `doc_read`; unresolvable addresses are skipped, not returned; a `bundle` filter still fills `top_k`. `doc_read` accepts addresses, topic names, and bundle paths, errors with the topic list on an unknown ref, and returns Markdown rather than JSON. Both tools work with no embedder configured (lexical ranking); hybrid ranking degrades to the surviving retriever rather than failing; a labelled retrieval suite guards the floor. |
+| R-DOC.6 | Docs are the source of truth | A documented/observed mismatch is reported as a defect rather than answered from the implementation. |
+
 ### Roles — [`roles.md`](contracts/roles.md)
 
 | ID | Property | Observable check |
