@@ -90,6 +90,16 @@ ceiling, not the model. Revisit it on a host with more memory.
   and `delegate-subagent`; (4) `delegate-subagent`'s per-run timeout was raised to
   900s for the nested sub-agent loop. That a 4B model holds the whole tool surface
   is the strongest signal that the fixes, not raw scale, were the blocker.
+- **`gemma4:12b` (H1)** — **the configured default, but not yet in the matrix.**
+  It has had no Track-L run; the only measurement is a microbenchmark that
+  replayed one real turn's second LLM call (the one following a `skill_list`
+  observation) against each model. On that single case it answered 4 of 4, where
+  `gemma4:e2b` returned an empty response 5 times in 10 and `gemma4:e4b` 2 in 8 —
+  the failure mode R-LOOP.5's retry exists to absorb. **On H1 it is also very
+  slow**: 77–451 s for that one call, against roughly 10–25 s for `e2b`, which is
+  what an 8 GB resident model on a 16 GB host costs. Those timings were taken
+  with a daemon sharing the same Ollama, so treat them as an order of magnitude,
+  not a benchmark. Run the matrix before trusting it as a default on your host.
 - **`gemma4:e4b` (nano, H1)** — **11 of 12**: clean everywhere except
   `delegate-subagent` (0/3 — driving a two-level sub-agent is out of reach at
   nano). Tolerated; suite green.

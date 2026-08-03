@@ -23,7 +23,7 @@ implementation **MUST** honor this order.
 ```toml
 [llm]
 provider        = "ollama"      # ollama (default) | anthropic  (openai chat NOT implemented)
-model           = "gemma4:e2b"
+model           = "gemma4:12b"
 api_key         = ""            # or via env
 endpoint        = ""            # base URL (ollama)
 context_budget  = 4096          # tokens per assembled turn

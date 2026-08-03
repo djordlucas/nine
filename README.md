@@ -97,7 +97,7 @@ root     = "./workspace" # Filesystem root, use a bind mount for external access
 
 [llm]                     # model configuration
 provider       = "ollama"
-model          = "gemma4:e2b"
+model          = "gemma4:12b"
 endpoint       = ""              # empty uses Ollama's local default
 num_ctx        = 32768
 max_concurrent = 1
@@ -174,7 +174,7 @@ variables rather than a second config file. The essentials:
 ```toml
 [llm]
 provider       = "ollama"        # or "anthropic" — these are the only two
-model          = "gemma4:e2b"
+model          = "gemma4:12b"
 endpoint       = ""              # ollama; empty uses its local default
 api_key        = ""              # anthropic: empty reads ANTHROPIC_API_KEY
 num_ctx        = 32768           # also sets the per-turn context budget
