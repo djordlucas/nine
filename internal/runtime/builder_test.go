@@ -2,6 +2,7 @@ package runtime_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"nine/internal/agent"
@@ -167,5 +168,29 @@ func TestPlanMentionRiskyTool(t *testing.T) {
 	// Empty risky set -> never prompts, even when the plan clearly acts
 	if runtime.PlanMentionRiskyTool("run a shell command", nil) {
 		t.Error("empty require_approval set should never flag a plan")
+	}
+}
+
+// Every loop the builder produces carries the id it was built for, so the model
+// can report which session it is. This is the wiring test: the loop-level
+// behaviour is covered in internal/agent, but only the builder knows the id.
+func TestAgentBuilderStampsSessionID(t *testing.T) {
+	var system string
+	provider := llm.ProviderFunc(func(_ context.Context, req llm.Request) (llm.Response, error) {
+		system = req.System
+		return llm.Response{Text: "ok", StopReason: "end_turn"}, nil
+	})
+	factory := runtime.NewAgentBuilder(runtime.AgentBuilderConfig{
+		Loop:         minimalLoopConfig("test"),
+		InitialQueue: llm.NewQueue(provider, 1),
+		Sup:          runtime.NewSupervisor(8),
+	})
+
+	const id = "agent-session-42"
+	if _, err := factory.Build(id, false).Run(context.Background(), "which session is this?"); err != nil {
+		t.Fatalf("loop.Run: %v", err)
+	}
+	if !strings.Contains(system, "Session ID: "+id) {
+		t.Errorf("system prompt = %q, want it to carry the built session id", system)
 	}
 }

@@ -149,8 +149,8 @@ They are conformance requirements *now*, while everything is in-process:
   *returning actions*, never by *calling into* the host.
 - Current time, random values, and any other nondeterminism a policy depends on
   **MUST** be delivered through events or state, never sampled directly. (The reference
-  host already stamps the current time into the assembled system prompt host-side —
-  R-LOOP.1 — so the default policy needs no clock.)
+  host already stamps the current time and the session id into the assembled system
+  prompt host-side — R-LOOP.1 — so the default policy needs no clock.)
 - `Decide` **SHOULD** be deterministic given `(state, event)`. See R-POLICY.10.
 
 ---

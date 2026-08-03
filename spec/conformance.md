@@ -131,7 +131,7 @@ How to use this file:
 
 | ID | Property | Observable check |
 |----|----------|------------------|
-| R-LOOP.1 | Turn structure | `Run(ctx, text)` embeds the query once, assembles context, submits via the queue. |
+| R-LOOP.1 | Turn structure | `Run(ctx, text)` embeds the query once, assembles context, submits via the queue. The system core carries the current time and, when the session has one, a `Session ID: <id>` line naming that loop's own session. |
 | R-LOOP.2 | Scratchpad is working memory | Observations accumulate in the scratchpad across inner round-trips. |
 | R-LOOP.3 | History | A final answer (no tool calls) clears the scratchpad and folds the exchange into history. |
 | R-LOOP.4 | Tool-call retry | An always-erroring tool is retried up to `maxToolRetries=2` (3 attempts total). |
