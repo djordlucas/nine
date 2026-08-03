@@ -54,7 +54,22 @@ nine replay <agent-id> --turn N  Deterministically re-run a recorded turn
 
 ## TUI Slash Commands
 
-When running the interactive TUI (`nine` with no arguments), you can type slash commands directly in the input box:
+When running the interactive TUI (`nine` with no arguments), you can type slash commands directly in the input box.
+
+Typing `/` opens a picker above the input listing every command with a short
+description. It narrows as you keep typing (`/to` leaves just `/tools`), and it
+closes as soon as the leading `/` is deleted, an argument is started, nothing
+matches, or you press Esc.
+
+| Key | While the picker is open |
+|-----|--------------------------|
+| `↑` / `↓` | Move the highlight (`ctrl+p` / `ctrl+n` also work) |
+| `Tab` | Complete to the highlighted command without running it |
+| `Enter` | Run the highlighted command — or, if it takes an argument, complete it and wait for you to type one |
+| `Esc` | Dismiss the picker (Esc quits the TUI when it is closed) |
+
+The picker stays out of the way while Nine is waiting on an answer to an
+`ask_human` question, where the input box is free text.
 
 | Command | Description | Example |
 |---------|-------------|---------|
