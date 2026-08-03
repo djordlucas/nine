@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -213,12 +214,19 @@ type chatState struct {
 	thinkingAt      time.Time
 	thinkingStep    int // LLM call count within the current turn (1-based)
 	pendingToolEvts []toolEvent
-	streamingText   string                 // accumulated text chunks from the current LLM turn
-	thinkingTrace   string                 // accumulated reasoning tokens for the current step (ephemeral)
-	thinkingThink   bool                   // the in-flight step streams reasoning; false = execute-only call
+	streamingText   string                   // accumulated text chunks from the current LLM turn
+	thinkingTrace   string                   // accumulated reasoning tokens for the current step (ephemeral)
+	thinkingThink   bool                     // the in-flight step streams reasoning; false = execute-only call
 	stage           string                   // current waiting phase label; empty when none
 	humanQueue      []*protocol.HumanRequest // unanswered questions, oldest first; [0] is the one on screen
 	ready           bool
+
+	// Slash-command picker, shown above the input while the user is typing a
+	// command name. suggestFilter is the input value its current items were
+	// built from, so the selection only resets when the filter actually changed.
+	suggest       list.Model
+	suggestOpen   bool
+	suggestFilter string
 }
 
 // pendingHuman is the question currently on screen, or nil when none is
@@ -282,6 +290,7 @@ func initialModel(sockPath, binary, attachID string, pal palette, glamourStyle s
 		chat: chatState{
 			input:   ti,
 			spinner: sp,
+			suggest: newSuggestList(pal),
 		},
 		display: displayState{
 			showDetail:   true,
@@ -322,6 +331,32 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// While the slash-command picker is open it owns navigation, completion
+		// and dismissal, and these keys must not reach the text input or the
+		// viewport (which would otherwise scroll on up/down). Enter is handled
+		// further down instead, so a no-argument command can be completed and
+		// submitted in the same keystroke.
+		if m.chat.suggestOpen {
+			switch msg.Type {
+			case tea.KeyUp, tea.KeyCtrlP:
+				m.chat.suggest.CursorUp()
+				return m, nil
+			case tea.KeyDown, tea.KeyCtrlN:
+				m.chat.suggest.CursorDown()
+				return m, nil
+			case tea.KeyTab:
+				if c, ok := m.selectedSuggestion(); ok {
+					m.acceptSuggestion(c)
+				}
+				return m, nil
+			case tea.KeyEsc:
+				// Esc quits the TUI everywhere else; with the picker open it
+				// dismisses the picker only.
+				m.closeSuggestions()
+				return m, nil
+			}
+		}
+
 		switch msg.Type {
 		case tea.KeyCtrlC, tea.KeyEsc:
 			if m.conn.client != nil {
@@ -342,6 +377,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 
 		case tea.KeyEnter:
+			// Accept the highlighted command rather than submitting whatever
+			// partial text is in the box — otherwise "/hel" + Enter would send
+			// "/hel" while "/help" sits visibly selected. A command that takes
+			// an argument stops here so the user can type it; one that does not
+			// falls through and runs immediately.
+			if c, ok := m.selectedSuggestion(); ok {
+				m.acceptSuggestion(c)
+				if c.args != "" {
+					return m, tea.Batch(cmds...)
+				}
+			}
 			// Answering a pending ask_human takes priority — it is allowed even
 			// while the turn is still in flight (thinking == true).
 			if req := m.chat.pendingHuman(); req != nil && m.conn.client != nil {
@@ -452,6 +498,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.chat.viewport.Width = msg.Width
 			m.chat.viewport.Height = vph
 		}
+		m.chat.suggest.SetSize(msg.Width, m.suggestHeight())
 		m.display.renderer = newRenderer(m.display.glamourStyle, msg.Width-4)
 		m.rebuildContent()
 
@@ -678,6 +725,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.chat.input, tiCmd = m.chat.input.Update(msg)
 	cmds = append(cmds, tiCmd)
 
+	// The input has the keystroke by now, so the picker tracks typing, deletion
+	// and paste alike — including closing itself the moment the leading "/" is
+	// gone or nothing matches any more.
+	m.refreshSuggestions()
+
 	return m, tea.Batch(cmds...)
 }
 
@@ -732,18 +784,21 @@ func (m model) View() string {
 	)
 	rule := m.display.pal.rule.Render(strings.Repeat("─", m.display.width))
 
-	return strings.Join([]string{
-		header,
-		rule,
-		m.chat.viewport.View(),
-		rule,
-		m.chat.input.View(),
-	}, "\n")
+	parts := []string{header, rule, m.chat.viewport.View(), rule}
+	// The picker sits directly on top of the input box, so it reads as attached
+	// to what is being typed.
+	if m.chat.suggestOpen {
+		parts = append(parts, m.chat.suggest.View())
+	}
+	parts = append(parts, m.chat.input.View())
+
+	return strings.Join(parts, "\n")
 }
 
 func (m *model) viewportHeight() int {
-	// 1 for the rule above the input + 1 for the input line itself.
-	h := m.display.height - headerHeight - inputAreaHeight
+	// 1 for the rule above the input + 1 for the input line itself, plus
+	// whatever rows the slash-command picker is borrowing.
+	h := m.display.height - headerHeight - inputAreaHeight - m.suggestHeight()
 	if h < 1 {
 		return 1
 	}

@@ -292,7 +292,8 @@ How to use this file:
 |-------|------------|
 | List verbs | `goals`/`reflections`/`workflows` render the matching read-only daemon query. |
 | `workflow stop\|fail [--all]` | Operator workflow commands act as in R-ORCH.8. |
-| Slash commands | `/help`, `/status`, `/config`, `/tools [filter]`, `/skills [name]`, `/memory [key]`, `/goals`, `/workflows`, `/new`, `/clear` run with no LLM call. |
+| Slash commands | `/help`, `/status`, `/config`, `/context [id]`, `/plan-mode <mode>`, `/sessions`, `/tools [filter]`, `/skills [name]`, `/memory [key]`, `/goals`, `/workflows`, `/new`, `/clear` run with no LLM call. |
+| Command picker | Typing `/` at the start of the TUI input opens a picker listing every command with its description; typing filters it by name prefix, and it closes when the leading `/` is deleted, when an argument is started, when nothing matches, or on Esc. Suppressed while an `ask_human` question is on screen. |
 | Live TUI | The TUI shows tool calls live; a pending `ask_human` renders with a `?` badge. Also: `nine trace`/`nine replay`/`nine send` (see §12) and `nine notifications`. |
 
 ---

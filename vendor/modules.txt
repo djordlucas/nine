@@ -24,7 +24,10 @@ github.com/aymerick/douceur/parser
 # github.com/charmbracelet/bubbles v1.0.0
 ## explicit; go 1.24.2
 github.com/charmbracelet/bubbles/cursor
+github.com/charmbracelet/bubbles/help
 github.com/charmbracelet/bubbles/key
+github.com/charmbracelet/bubbles/list
+github.com/charmbracelet/bubbles/paginator
 github.com/charmbracelet/bubbles/runeutil
 github.com/charmbracelet/bubbles/spinner
 github.com/charmbracelet/bubbles/textinput
@@ -140,6 +143,9 @@ github.com/muesli/termenv
 github.com/rivo/uniseg
 # github.com/rogpeppe/go-internal v1.15.0
 ## explicit; go 1.25
+# github.com/sahilm/fuzzy v0.1.1
+## explicit
+github.com/sahilm/fuzzy
 # github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e
 ## explicit; go 1.19
 github.com/xo/terminfo
