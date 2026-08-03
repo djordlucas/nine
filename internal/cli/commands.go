@@ -311,19 +311,24 @@ func parseTurnFlag(args []string) (int, error) {
 // parseTraceFlags reads the optional "--turn N" and "--sub-agents" flags for the
 // trace command, in any order. Any other argument is an error.
 func parseTraceFlags(args []string) (turn int, subAgents bool, err error) {
-	for i := 0; i < len(args); i++ {
-		a := args[i]
+	// Args are consumed off the front rather than walked by index: "--turn"
+	// needs to eat the argument after it, and doing that by advancing a loop
+	// counter defeats gosec's bounds analysis (G602) even when guarded.
+	for len(args) > 0 {
+		a := args[0]
+		args = args[1:]
 		switch {
 		case a == "--sub-agents":
 			subAgents = true
 		case a == "--turn":
-			if i+1 >= len(args) {
+			if len(args) == 0 {
 				return 0, false, fmt.Errorf("--turn requires a value")
 			}
-			i++
-			turn, err = strconv.Atoi(args[i])
+			v := args[0]
+			args = args[1:]
+			turn, err = strconv.Atoi(v)
 			if err != nil {
-				return 0, false, fmt.Errorf("invalid --turn value %q", args[i])
+				return 0, false, fmt.Errorf("invalid --turn value %q", v)
 			}
 		case strings.HasPrefix(a, "--turn="):
 			v := strings.TrimPrefix(a, "--turn=")
