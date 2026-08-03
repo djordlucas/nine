@@ -441,9 +441,12 @@ all `running` workflow steps as `failed` (`interrupted`) and auto-closes
 workflows whose steps are now all terminal; workflows with remaining
 `pending` steps stay `active` for the LLM to resume.
 
-**TUI slash commands** — `/help`, `/status`, `/config`, `/tools [filter]`,
-`/skills [name]`, `/memory [key]`, `/goals`, `/workflows`, `/new`,
-`/clear`. Handled locally — no LLM tokens consumed. See
+**TUI slash commands** — `/help`, `/sessions`, `/status`, `/config`,
+`/context [id]`, `/plan-mode <mode>`, `/goals`, `/workflows`,
+`/tools [filter]`, `/skills [name]`, `/memory [key]`, `/new`,
+`/think <message>`, `/clear`. Handled locally — no LLM tokens consumed
+(`/think` is the exception: it sends a real turn). Typing `/` opens a picker
+that filters the list as you type. See
 [CLI Usage § TUI Slash Commands](usage.md#tui-slash-commands).
 
 ---
