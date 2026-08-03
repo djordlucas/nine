@@ -81,3 +81,67 @@ func TestRunStopUsage(t *testing.T) {
 		t.Errorf("Run(stop) error = %v, want a usage error", err)
 	}
 }
+
+// parseTraceFlags consumes args off the front rather than walking them by
+// index, so "--turn" eating the argument after it is the case most worth
+// pinning: the flags must still work in any order, and "--turn" at the very end
+// must be an error rather than an out-of-range read.
+func TestParseTraceFlags(t *testing.T) {
+	cases := []struct {
+		name          string
+		args          []string
+		wantTurn      int
+		wantSubAgents bool
+		wantErr       string
+	}{
+		{name: "no flags", args: nil},
+		{name: "sub-agents alone", args: []string{"--sub-agents"}, wantSubAgents: true},
+		{name: "turn with separate value", args: []string{"--turn", "3"}, wantTurn: 3},
+		{name: "turn with equals", args: []string{"--turn=3"}, wantTurn: 3},
+		{
+			name: "both, turn first", args: []string{"--turn", "2", "--sub-agents"},
+			wantTurn: 2, wantSubAgents: true,
+		},
+		{
+			name: "both, sub-agents first", args: []string{"--sub-agents", "--turn", "2"},
+			wantTurn: 2, wantSubAgents: true,
+		},
+		{
+			name: "both, equals form", args: []string{"--sub-agents", "--turn=7"},
+			wantTurn: 7, wantSubAgents: true,
+		},
+		{name: "turn without a value", args: []string{"--turn"}, wantErr: "--turn requires a value"},
+		{
+			name: "turn without a value, after another flag",
+			args: []string{"--sub-agents", "--turn"}, wantErr: "--turn requires a value",
+		},
+		{name: "turn value is not a number", args: []string{"--turn", "x"}, wantErr: `invalid --turn value "x"`},
+		{name: "equals value is not a number", args: []string{"--turn=x"}, wantErr: `invalid --turn value "x"`},
+		{name: "unknown flag", args: []string{"--nope"}, wantErr: "unexpected argument: --nope"},
+		{
+			name: "the value of --turn is not treated as a flag",
+			args: []string{"--turn", "--sub-agents"}, wantErr: `invalid --turn value "--sub-agents"`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			turn, subAgents, err := parseTraceFlags(tc.args)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("parseTraceFlags(%q) error = %v, want it to contain %q", tc.args, err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseTraceFlags(%q) returned an unexpected error: %v", tc.args, err)
+			}
+			if turn != tc.wantTurn {
+				t.Errorf("parseTraceFlags(%q) turn = %d, want %d", tc.args, turn, tc.wantTurn)
+			}
+			if subAgents != tc.wantSubAgents {
+				t.Errorf("parseTraceFlags(%q) subAgents = %v, want %v", tc.args, subAgents, tc.wantSubAgents)
+			}
+		})
+	}
+}
