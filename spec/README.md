@@ -70,6 +70,7 @@ If you only want to build one subsystem, jump to its contract and follow its
 | [`supervisor.md`](contracts/supervisor.md) | The oversight event loop, stall/gap handling, plugin-crash handling |
 | [`orchestration.md`](contracts/orchestration.md) | Sub-agents (`run_agent`/`run_agents`), workflows, and goals — tools and data models |
 | [`skills.md`](contracts/skills.md) | Skill file format, search/read/write tools, the self-improvement boundary |
+| [`self-documentation.md`](contracts/self-documentation.md) | Addressing, chunking, and indexing of the bundled docs/spec; the `doc_search`/`doc_read` guarantees |
 | [`roles.md`](contracts/roles.md) | Worker kinds as data: role frontmatter, tool allowlists, structural wiring, delegation-time selection |
 | [`hitl.md`](contracts/hitl.md) | Human-in-the-loop: `ask_human`, approval gates, interactive-session gating |
 | [`config.md`](contracts/config.md) | `nine.toml` reference, config resolution order, volume layout |

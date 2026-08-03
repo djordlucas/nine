@@ -13,6 +13,14 @@ import (
 // agent — so any session can surface any recorded memory.
 const MemoriesNamespace = "memories"
 
+// DocsNamespace is the pgvector namespace holding one vector per section of the
+// documentation and specification embedded in the binary. Keys are docindex
+// addresses ("docs/skills.md#tools") and the vectors are a pure index: section
+// text is never copied into the store, it is sliced back out of the embedded FS
+// on read, so the docs Nine cites are always the ones its own version ships.
+// The seeder (runtime.SeedDocs) writes it; doc_search ranks against it.
+const DocsNamespace = "docs"
+
 // formatVector renders a float32 slice as a pgvector literal, e.g. "[0.1,0.2]".
 func formatVector(v []float32) string {
 	var b strings.Builder
@@ -48,6 +56,19 @@ func (s *Store) VectorStore(id, namespace, key string, vector []float32) error {
 func (s *Store) VectorDelete(id string) error {
 	_, err := s.db.Exec(`DELETE FROM vectors WHERE id = ?`, id)
 	return err
+}
+
+// VectorDeleteNamespace removes every vector in namespace, returning how many
+// were deleted. It backs wholesale reindexing of a derived namespace — one
+// whose contents are a pure function of some other source of truth (the docs
+// embedded in the binary), where rebuilding is cheaper and less error-prone
+// than diffing against what is already stored.
+func (s *Store) VectorDeleteNamespace(namespace string) (int64, error) {
+	res, err := s.db.Exec(`DELETE FROM vectors WHERE namespace = ?`, namespace)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 // VectorResult is one result from a nearest-neighbour query.

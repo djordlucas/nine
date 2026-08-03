@@ -416,9 +416,16 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 	// the *_search pair does, since without one there is nothing to rank
 	// against. tool_list's and tool_search's handlers are registered below once
 	// the tool list exists; skill_search's rides in RegisterSkillTools above.
-	shellTools = append(shellTools, "tool_list")
+	//
+	// The doc pair (docs/self-documentation.md) is granted on the same footing
+	// and for the same reason as gap_report: a narrowed role is the one most
+	// likely to be confused about what Nine can do, and consulting the bundled
+	// manual is read-only and harmless. Keeping doc_read here rather than in
+	// coreToolNames also stops an allowlist role from being able to search the
+	// docs but not read what it found.
+	shellTools = append(shellTools, "tool_list", "doc_read")
 	if lc.Embedder != nil {
-		shellTools = append(shellTools, "tool_search", "skill_search")
+		shellTools = append(shellTools, "tool_search", "skill_search", "doc_search")
 	}
 
 	// Boundary 2 of R-ROLE.4: for allowlist roles, prune dispatch handlers so
@@ -589,6 +596,7 @@ func (f *AgentBuilder) registerCoreTools(d *agent.Dispatcher, lc LoopConfig, age
 	})
 	agent.RegisterMemoryTools(d, lc.Memory, lc.Embedder, protectedKeyPrefixes, lc.SurfaceMemories)
 	agent.RegisterSkillTools(d, lc.Memory, lc.Embedder)
+	agent.RegisterDocTools(d, lc.Memory, lc.Embedder)
 	// Over-cap tool results spill to the file store and come back by path, for
 	// this loop and any sub-agent loop built from it.
 	d.SetMaxOutputTokens(lc.MaxToolOutputTokens) // no-op when unset
