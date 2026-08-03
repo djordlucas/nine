@@ -82,12 +82,19 @@ and a stale hit is worse than a missing one.
 | `doc_search(query, top_k, bundle?)` | Ranks the `docs` namespace and returns address + title + heading + snippet + score. Every returned address **MUST** be one `doc_read` accepts; addresses that no longer resolve **MUST** be skipped rather than returned. A `bundle` filter **MUST NOT** cause the result to fall short of `top_k` when enough in-bundle matches exist. |
 | `doc_read(ref)` | Returns the exact text at `ref`. **MUST** accept a `doc_search` address, a short topic name, and a bundle-relative path, with or without `.md`. An unresolvable `ref` **MUST** error with the list of available topics. Output is Markdown behind an address header, not JSON, so a result truncated by the dispatcher's output cap stays readable. |
 
-`doc_search` ranking **MAY** post-process the vector order; the live
-implementation adds a subject boost proportional to query/address term overlap,
-compensating for the default embedder's lack of inverse document frequency. Any
-such reranking **MUST** preserve R-DOC.5's address guarantees. Ranking *quality*
-is not specified — it depends on the configured embedder — but a conforming
-implementation **SHOULD** carry a labelled retrieval suite as a regression floor.
+`doc_search` ranking **MAY** combine retrievers. The live implementation is a
+hybrid: cosine similarity over the vector index fused with BM25 over an
+in-process lexical index of the same sections, combined by reciprocal rank
+fusion. The lexical half compensates for the default embedder's lack of inverse
+document frequency, and is built from the embedded corpus, so it requires no
+database, no embedder, and no boot-time work.
+
+Any such combination **MUST** preserve R-DOC.5's address guarantees, and **MUST**
+degrade to the surviving retriever rather than failing the search if the other is
+unavailable. Ranking *quality* is not specified — it depends on the configured
+embedder — but a conforming implementation **SHOULD** carry a labelled retrieval
+suite as a regression floor, and **SHOULD NOT** prune that suite to the cases it
+already passes.
 
 `doc_read` **MUST NOT** require an embedder. `doc_search` **MUST** be gated on one and
 omitted from the advertised set without it, consistent with `tool_search`/`skill_search`

@@ -117,33 +117,65 @@ silently answer from whichever sections happened to make it in.
 
 ---
 
-## Ranking, and How Good It Actually Is
+## Ranking: Two Retrievers, Fused
 
-`doc_search` ranks by cosine similarity, then applies a **subject boost**: a
-candidate's score rises in proportion to how much of the query its *address*
-accounts for. Because an address is kebab-cased from the document name and
-section heading (`docs/tool-output-spill.md#large-tool-output`), overlapping it
-with the query is a cheap length-independent proxy for "is this section *about*
-what was asked".
+`doc_search` is a **hybrid**. It runs two independent retrievers and fuses their
+rankings:
 
-The boost exists because the default embedder
-([`keyword`](configuration.md#embeddings)) is term frequency with no inverse
-document frequency, which systematically favours long, vocabulary-dense
-sections: a compatibility matrix mentions every feature once and so matches
-every feature query, outranking the short section on the actual subject.
+1. **Vector** — cosine similarity over the `docs` namespace, which catches
+   phrasing the documents do not use literally.
+2. **Lexical** — BM25 over the same sections, built in-process from the embedded
+   corpus (`docindex.Lexical`). No database, no embedder, no boot cost: it is
+   constructed on first search and cached for the life of the process.
 
-**Measured on the shipped corpus with the default embedder, the right document
-lands in the top 3 for 12 of 16 labelled questions**
-(`TestDocSearchRetrievalQuality`). That test is a regression floor, and it keeps
-the failing cases in the suite on purpose — a suite pruned to what already
-passes cannot demonstrate an improvement.
+The lexical half exists to supply **inverse document frequency**, which the
+default embedder ([`keyword`](configuration.md#embeddings)) does not have. That
+embedder is raw term frequency, so every term counts the same and long
+vocabulary-dense sections win everything: a compatibility matrix mentions every
+feature once and therefore matches every feature query, outranking the short
+section on the actual subject. IDF is exactly the missing signal — it discounts
+terms that appear everywhere (`agent`, `session`, `tool`) and rewards the ones
+that single a document out.
+
+Queries and documents are also lightly **stemmed**, so "how do I *configure* the
+database" reaches a document titled "*Configuration*".
+
+### Why fuse ranks rather than scores
+
+A cosine similarity and a BM25 score share no scale — BM25 is unbounded and
+moves with query length — so any weighted sum would need a normalisation that is
+itself arbitrary. Reciprocal rank fusion combines *positions* instead:
+`score(d) = Σ 1/(k + rank(d))`. Ranks are directly comparable, and a document
+missing from one retriever's list simply contributes nothing from it, which is
+the right behaviour when the two disagree about what is even a candidate.
+
+Because fusion can only rescue what it can see, each retriever contributes a
+pool far wider than the result count (`docCandidateFactor`).
+
+### How good it actually is
+
+Measured on the shipped corpus with the **default** embedder, over 30 labelled
+questions (`TestDocSearchRetrievalQuality`):
+
+| | top 3 | top 5 |
+|---|---|---|
+| Cosine only | 22/30 | 23/30 |
+| **Hybrid (live)** | **24/30** | **27/30** |
+
+Top 5 is the number that matters, since that is what `doc_search` returns by
+default: it decides whether the answer is in front of the model at all — 90% of
+the time it is.
+
+That test is a regression floor, and it keeps the still-failing cases in the
+suite on purpose: a suite pruned to what already passes cannot demonstrate an
+improvement.
 
 Two things follow for anyone relying on this:
 
-- Configuring a real embedding model (`provider = "ollama"`) ranks better than
-  the keyword default. The index rebuilds automatically on the switch.
-- A miss is usually a near miss — a related section from a related document —
-  so the model can re-query or `doc_read` a topic by name. It is not designed to
+- Configuring a real embedding model (`provider = "ollama"`) improves the vector
+  half further. The index rebuilds automatically on the switch.
+- A miss is usually a near miss — a related section from a related document — so
+  the model can re-query or `doc_read` a topic by name. This is not designed to
   be right first try every time; it is designed to make the manual reachable.
 
 ---
