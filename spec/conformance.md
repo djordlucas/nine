@@ -135,7 +135,7 @@ How to use this file:
 | R-LOOP.2 | Scratchpad is working memory | Observations accumulate in the scratchpad across inner round-trips. |
 | R-LOOP.3 | History | A final answer (no tool calls) clears the scratchpad and folds the exchange into history. |
 | R-LOOP.4 | Tool-call retry | An always-erroring tool is retried up to `maxToolRetries=2` (3 attempts total). |
-| R-LOOP.5 | Empty-answer fallback | An empty final answer surfaces accumulated tool errors rather than returning blank. |
+| R-LOOP.5 | Empty-answer retry + fallback | A response with no text and no tool calls is retried up to `maxEmptyAnswerRetries=2` (3 attempts total); only then does the fallback surface accumulated tool errors rather than returning blank. |
 | R-LOOP.6 | Progress callbacks | Tool start/end and context updates fire through the progress callback. |
 | R-LOOP.7 | Checkpoint unit & stall signal (I5) | The turn exposes `{history, scratchpad}` for checkpointing and a no-tool-turn signal. |
 | R-LOOP.8 | Priority is the owner's | The loop submits at its owner's priority (supervisor/conversation/background). |

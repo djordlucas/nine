@@ -331,6 +331,7 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 
 	llmCallN := 0
 	var toolErrs []string // tool failures seen this turn, surfaced if the answer is empty
+	emptyAnswers := 0     // no-text, no-tool-call responses so far (see maxEmptyAnswerRetries)
 	for {
 		llmCallN++
 		think := l.thinkFor(mode, llmCallN, forced)
@@ -396,6 +397,25 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 
 		if len(resp.ToolCalls) == 0 {
 			answer := resp.Text
+			// A turn that produced neither text nor a tool call is usually a
+			// sampling accident, not a decision: small local models answering
+			// on top of a tool observation quite often emit a single
+			// end-of-turn token and stop. Measured on gemma4:e2b replaying one
+			// real "list your skills" turn, half of ten identical requests came
+			// back that way. Nothing has been appended to history or the
+			// scratchpad yet, so re-running the loop rebuilds the same request
+			// and simply draws another sample — which is why a retry is worth
+			// far more here than the fallback text is.
+			if strings.TrimSpace(answer) == "" && emptyAnswers < maxEmptyAnswerRetries {
+				emptyAnswers++
+				slog.Warn("empty model response; retrying",
+					"priority", l.cfg.Priority,
+					"llm_call_n", llmCallN,
+					"attempt", emptyAnswers,
+					"max", maxEmptyAnswerRetries,
+				)
+				continue
+			}
 			// Record only what the model actually said. The fallback below is
 			// text *about* the turn, written for whoever is reading; appending it
 			// to history would put it in the model's own mouth, and on a
@@ -404,13 +424,14 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 			if strings.TrimSpace(answer) != "" {
 				l.history = append(l.history, llm.Message{Role: "assistant", Text: answer})
 			} else {
-				// The model ended the turn without text. Don't return a blank
-				// answer — surface whatever went wrong so the turn isn't a
-				// silent no-op.
+				// Out of retries: the model will not answer this one. Don't
+				// return a blank answer — surface whatever went wrong so the
+				// turn isn't a silent no-op.
 				answer = emptyAnswerFallback(toolErrs)
 				slog.Warn("empty final answer",
 					"priority", l.cfg.Priority,
 					"llm_call_n", llmCallN,
+					"retries", emptyAnswers,
 					"tool_errors", len(toolErrs),
 				)
 			}
@@ -521,6 +542,14 @@ func emptyAnswerFallback(toolErrs []string) string {
 // maxToolRetries is the number of times a failing tool call is retried before
 // the loop gives up and instructs the LLM to try a different approach.
 const maxToolRetries = 2
+
+// maxEmptyAnswerRetries is the number of times a response carrying neither text
+// nor a tool call is re-drawn before the turn gives up and falls back. Two
+// retries because the failure is an independent sample each time: at the ~50%
+// rate measured on a small local model, three attempts leave roughly one turn
+// in eight unanswered instead of one in two. The cost of being wrong is bounded
+// — an extra LLM call on a turn that was about to return nothing anyway.
+const maxEmptyAnswerRetries = 2
 
 // dispatchWithRetry calls Dispatch up to maxToolRetries+1 times, returning on
 // the first success. Each failed attempt is logged. On final failure the last
