@@ -24,7 +24,7 @@ strategy — **never** a higher-priority one.
 
 | Priority | Component | Strategy when tight |
 |----------|-----------|---------------------|
-| **P1** | System core (current time + identity/instructions) | **never trimmed** |
+| **P1** | System core (current time + session ID + identity/instructions) | **never trimmed** |
 | **P2** | Tool definitions | relevance-filtered to top-N + always-include (R-CTX.3) |
 | **P2.5** | Self-model (`SystemSelf`) | capped ~**600 tokens**; dropped if it won't fit |
 | **P2.6** | Enrichment (`SystemEnrichment`, a related prior session) | capped ~**300 tokens**; dropped first when tight (see [`subscriptions.md`](subscriptions.md)) |

@@ -23,7 +23,13 @@ type Config struct {
 	// pursue, …). Descriptive only — the tool boundary and persona are already
 	// baked into the loop at build time; this is carried so the daemon can
 	// surface which role a session or sub-agent is running (status, TUI header).
-	Role         string
+	Role string
+	// SessionID identifies the session this loop runs — a conversation,
+	// goal-pursue, reflection, or sub-agent (see docs/glossary.md § Work Units).
+	// When set it is stamped into the system core every turn, so the model can
+	// answer a user who asks which session they are talking to. Empty omits the
+	// line entirely, which is what replay and most tests want.
+	SessionID    string
 	SystemCore   string
 	SystemExtras string
 	Priority     int // llm.PrioritySupervisor / PriorityConversation / PriorityBackground
@@ -338,7 +344,7 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 		l.stage(StageContext)
 
 		req, tokensUsed := l.builder.BuildWithUsage(ninectx.BuildInput{
-			SystemCore:       "Current time: " + time.Now().UTC().Format(time.RFC3339) + "\n\n" + l.cfg.SystemCore,
+			SystemCore:       l.ambientCore(),
 			SystemExtras:     l.cfg.SystemExtras,
 			SystemSelf:       selfModel,
 			SystemEnrichment: enrichment,
@@ -480,7 +486,7 @@ func (l *Loop) InspectContext(ctx context.Context) ninectx.Report {
 		enrichment = l.cfg.EnrichmentFn(ctx, queryVec)
 	}
 	return l.builder.BuildReport(ninectx.BuildInput{
-		SystemCore:       "Current time: " + time.Now().UTC().Format(time.RFC3339) + "\n\n" + l.cfg.SystemCore,
+		SystemCore:       l.ambientCore(),
 		SystemExtras:     l.cfg.SystemExtras,
 		SystemSelf:       selfModel,
 		SystemEnrichment: enrichment,
@@ -615,6 +621,27 @@ func embedText(ctx context.Context, e embed.Embedder, text string) []float32 {
 		return nil
 	}
 	return vec
+}
+
+// ambientCore prepends the facts the model cannot derive for itself — the
+// current time (R-LOOP.1) and, when the runtime supplied one, this session's ID
+// — to the configured system core.
+//
+// Both places that assemble a turn go through here, so the request the model
+// actually sees and the breakdown `/context` reports can never drift apart.
+// With no SessionID the output is byte-identical to the plain time preamble,
+// which keeps replay and recorded eval journals stable.
+func (l *Loop) ambientCore() string {
+	var b strings.Builder
+	b.WriteString("Current time: ")
+	b.WriteString(time.Now().UTC().Format(time.RFC3339))
+	if l.cfg.SessionID != "" {
+		b.WriteString("\nSession ID: ")
+		b.WriteString(l.cfg.SessionID)
+	}
+	b.WriteString("\n\n")
+	b.WriteString(l.cfg.SystemCore)
+	return b.String()
 }
 
 // runAnalysisPass performs one tool-free completion that reasons about the

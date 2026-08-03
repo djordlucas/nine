@@ -175,7 +175,7 @@ Dispatcher.New()                  → empty handler map
 ## Context Assembly (`Builder`)
 
 On each inner loop iteration `BuildWithUsage` assembles the full LLM request:
-- System prompt: current time + `SystemCore` + `SystemExtras` + self-model
+- System prompt: current time + session ID + `SystemCore` + `SystemExtras` + self-model
 - Tool list: intercepted tools (always included) + plugin tools ranked by `queryVec` relevance
 - History: trimmed to fit the context budget
 - Scratchpad: current turn's observations

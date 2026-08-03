@@ -20,7 +20,7 @@ Run(ctx, userText):
 
   loop (inner):
     llmCallN++ ; onThinking(llmCallN)
-    req  = builder.BuildWithUsage(SystemCore+time, SystemExtras, SystemSelf,
+    req  = builder.BuildWithUsage(SystemCore+time+sessionID, SystemExtras, SystemSelf,
                                   Tools, queryVec, History, Scratchpad)
     onContextUpdate(used, budget)
     resp = queue.Submit(ctx, Priority, req)
@@ -39,6 +39,14 @@ Run(ctx, userText):
 ```
 
 The query vector and self-model are computed **once per turn**, not per inner iteration.
+
+The host stamps the facts a model cannot derive for itself into the system core
+on every assembly: the current time, and — when the session has one — its
+identifier, as a `Session ID: <id>` line directly under the time. A user can
+therefore ask which session they are talking to and be answered with no tool
+call. Each loop reports **its own** id, so a sub-agent names itself rather than
+its parent. A loop built without an id (replay, most tests) **MUST** emit the
+time-only preamble unchanged.
 
 ---
 

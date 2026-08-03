@@ -892,3 +892,56 @@ func TestEmptyAnswerNotWrittenToHistory(t *testing.T) {
 		t.Errorf("history = %+v, want just the user turn", cp.History)
 	}
 }
+
+// captureSystem runs one turn and returns the system prompt the model was sent.
+func captureSystem(t *testing.T, cfg agent.Config) string {
+	t.Helper()
+	var system string
+	provider := llm.ProviderFunc(func(_ context.Context, req llm.Request) (llm.Response, error) {
+		system = req.System
+		return finalResp("ok"), nil
+	})
+	cfg.Priority = llm.PriorityConversation
+	loop := agent.NewLoop(cfg, newTestBuilder(), llm.NewQueue(provider, 1), agent.New())
+	if _, err := loop.Run(context.Background(), "which session is this?"); err != nil {
+		t.Fatalf("loop.Run: %v", err)
+	}
+	return system
+}
+
+// A session's id is stamped into the system prompt every turn, so a user can
+// simply ask the model which session they are talking to.
+func TestLoopStampsSessionID(t *testing.T) {
+	const id = "4f3c9a2e-0000-4000-8000-000000000001"
+
+	system := captureSystem(t, agent.Config{
+		SystemCore: "You are a test agent.",
+		SessionID:  id,
+	})
+	if !strings.Contains(system, "Session ID: "+id) {
+		t.Errorf("system prompt = %q, want it to carry the session id", system)
+	}
+	if !strings.Contains(system, "You are a test agent.") {
+		t.Errorf("system prompt = %q, want the configured core retained", system)
+	}
+	if !strings.HasPrefix(system, "Current time: ") {
+		t.Errorf("system prompt = %q, want the time to stay first (R-LOOP.1)", system)
+	}
+}
+
+// With no session id the preamble must stay byte-identical to the time-only
+// form: recorded replay journals and eval fixtures contain it verbatim, and
+// replay builds its loop without one.
+func TestLoopOmitsEmptySessionID(t *testing.T) {
+	system := captureSystem(t, agent.Config{SystemCore: "You are a test agent."})
+
+	if strings.Contains(system, "Session ID") {
+		t.Errorf("system prompt = %q, want no session line when none is configured", system)
+	}
+	if !strings.HasPrefix(system, "Current time: ") {
+		t.Errorf("system prompt = %q, want the time preamble first", system)
+	}
+	if !strings.Contains(system, "\n\nYou are a test agent.") {
+		t.Errorf("system prompt = %q, want exactly one blank line before the core", system)
+	}
+}
