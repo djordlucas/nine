@@ -56,13 +56,19 @@ readable where a truncated JSON object is unparseable
 
 ### Availability
 
-`doc_read` needs nothing but the embedded filesystem and is always available.
-`doc_search` is gated on a configured embedder — without one there is no index
-to rank against, so the daemon omits it from the advertised tool set, exactly as
-it does for `tool_search` and `skill_search`
-([tool-exposition.md](tool-exposition.md)).
+**Neither tool requires an embedder**, which is what sets this pair apart from
+`tool_search` and `skill_search` ([tool-exposition.md](tool-exposition.md)).
+Those rank catalogs that exist only in the store, so without an embedder they
+have nothing to rank and the daemon omits them. The documentation is compiled
+into the binary, so it can be ranked lexically with no outside help: a
+deployment running `provider = "none"` still gets a searchable manual, and
+simply gains the vector half when an embedder is configured.
 
-Both are granted regardless of a role's allowlist, on the same footing as
+For the same reason, a failing embedder or an unreachable index does not fail a
+search — it degrades to whichever retriever survived. The caller asked a
+question about the documentation, not about the embedder.
+
+Both tools are granted regardless of a role's allowlist, on the same footing as
 `gap_report`: a narrowed role is the one most likely to be uncertain about what
 Nine can do, and reading the manual is read-only. See [roles.md](roles.md).
 
@@ -160,7 +166,13 @@ questions (`TestDocSearchRetrievalQuality`):
 | | top 3 | top 5 |
 |---|---|---|
 | Cosine only | 22/30 | 23/30 |
+| Lexical only (no embedder) | 21/30 | 25/30 |
 | **Hybrid (live)** | **24/30** | **27/30** |
+
+Worth noting the middle row: a daemon with **no embedder at all** now retrieves
+better than the original vector-only implementation did with one. The two
+retrievers are close in strength and fail on different queries, which is exactly
+the condition under which fusing them pays.
 
 Top 5 is the number that matters, since that is what `doc_search` returns by
 default: it decides whether the answer is in front of the model at all — 90% of

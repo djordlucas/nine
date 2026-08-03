@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"unicode/utf8"
 
@@ -51,10 +52,11 @@ type docHit struct {
 	Score   float32 `json:"score"`
 }
 
-// RegisterDocTools registers the doc_search/doc_read handlers. doc_read needs
-// nothing but the embedded FS, so it is always available; doc_search is gated on
-// an embedder like the other *_search tools, since without one there is no index
-// to rank against (the builder omits its def to match).
+// RegisterDocTools registers the doc_search/doc_read handlers. Neither requires
+// an embedder, which is what sets this pair apart from tool_search and
+// skill_search: those rank catalogs that exist only in the store, whereas the
+// documentation is compiled into the binary and can be ranked lexically with no
+// outside help. A store and embedder, when present, add the vector half.
 func RegisterDocTools(d *Dispatcher, store *memory.Store, embedder embed.Embedder) {
 	d.handlers["doc_read"] = func(_ context.Context, args json.RawMessage) (string, error) {
 		var req struct {
@@ -94,9 +96,6 @@ func RegisterDocTools(d *Dispatcher, store *memory.Store, embedder embed.Embedde
 		return b.String(), nil
 	}
 
-	if embedder == nil || store == nil {
-		return
-	}
 	d.handlers["doc_search"] = func(_ context.Context, args json.RawMessage) (string, error) {
 		var req struct {
 			Query  string `json:"query"`
@@ -112,35 +111,43 @@ func RegisterDocTools(d *Dispatcher, store *memory.Store, embedder embed.Embedde
 		if req.TopK <= 0 {
 			req.TopK = 5
 		}
-		vec, err := embedder.Embed(context.Background(), req.Query)
-		if err != nil {
-			return "", fmt.Errorf("embed: %w", err)
-		}
 		// Two retrievers, fused. The vector side catches phrasing the documents
 		// do not use literally; the lexical side supplies the inverse document
 		// frequency the default embedder lacks. They fail differently, which is
 		// the point — see docindex.Lexical.
 		//
-		// Over-fetch on both: the bundle filter and the fusion below reorder and
-		// thin the candidate list, so the pool must be wider than what is returned.
-		results, err := store.VectorQuery(memory.DocsNamespace, vec, req.TopK*docCandidateFactor)
-		if err != nil {
-			return "", fmt.Errorf("vector query: %w", err)
-		}
-		vectorRanked := make([]string, 0, len(results))
-		score := make(map[string]float32, len(results))
-		for _, r := range results {
-			vectorRanked = append(vectorRanked, r.Key)
-			score[r.Key] = r.Score
+		// Either may be absent, and neither is required: a daemon with no
+		// embedder configured still searches lexically, and a lexical index that
+		// fails to build still searches by vector. Both are over-fetched, since
+		// the bundle filter and the fusion below reorder and thin the candidate
+		// list.
+		pool := req.TopK * docCandidateFactor
+		var vectorRanked []string
+		score := map[string]float32{}
+		if embedder != nil && store != nil {
+			// A ranking failure here degrades to lexical-only rather than
+			// failing the search: half a result list beats none, and the caller
+			// asked a question about the docs, not about the embedder.
+			if vec, err := embedder.Embed(context.Background(), req.Query); err != nil {
+				slog.Warn("doc_search: embedding failed, falling back to lexical ranking", "err", err)
+			} else if results, err := store.VectorQuery(memory.DocsNamespace, vec, pool); err != nil {
+				slog.Warn("doc_search: vector query failed, falling back to lexical ranking", "err", err)
+			} else {
+				vectorRanked = make([]string, 0, len(results))
+				for _, r := range results {
+					vectorRanked = append(vectorRanked, r.Key)
+					score[r.Key] = r.Score
+				}
+			}
 		}
 
 		var lexicalRanked []string
-		// A lexical index that fails to build is not fatal: degrade to
-		// vector-only ranking rather than failing the search outright.
-		if lex, err := docindex.LexicalIndex(); err == nil {
+		if lex, err := docindex.LexicalIndex(); err != nil {
+			slog.Warn("doc_search: lexical index unavailable", "err", err)
+		} else {
 			lexicalRanked = lex.Rank(req.Query)
-			if len(lexicalRanked) > req.TopK*docCandidateFactor {
-				lexicalRanked = lexicalRanked[:req.TopK*docCandidateFactor]
+			if len(lexicalRanked) > pool {
+				lexicalRanked = lexicalRanked[:pool]
 			}
 		}
 

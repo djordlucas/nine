@@ -96,9 +96,11 @@ embedder — but a conforming implementation **SHOULD** carry a labelled retriev
 suite as a regression floor, and **SHOULD NOT** prune that suite to the cases it
 already passes.
 
-`doc_read` **MUST NOT** require an embedder. `doc_search` **MUST** be gated on one and
-omitted from the advertised set without it, consistent with `tool_search`/`skill_search`
-([`../../docs/tool-exposition.md`](../../docs/tool-exposition.md)).
+**Neither tool may require an embedder.** This is the point of divergence from
+`tool_search`/`skill_search` ([`../../docs/tool-exposition.md`](../../docs/tool-exposition.md)),
+which rank store-resident catalogs and are therefore omitted without one: the documentation
+is embedded in the binary, so a conforming implementation **MUST** still serve `doc_search`
+with no embedder configured, ranking by whatever retriever remains available.
 
 Both are granted regardless of a role's tool allowlist, like `gap_report` (R-ROLE.5).
 Granting them together is required: a role able to search the docs but not read them can

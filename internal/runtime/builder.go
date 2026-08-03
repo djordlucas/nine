@@ -423,9 +423,14 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 	// manual is read-only and harmless. Keeping doc_read here rather than in
 	// coreToolNames also stops an allowlist role from being able to search the
 	// docs but not read what it found.
-	shellTools = append(shellTools, "tool_list", "doc_read")
+	//
+	// Neither doc tool is embedder-gated, unlike the other *_search pair. Those
+	// rank catalogs that live only in the store; the documentation is compiled
+	// into the binary, so doc_search still ranks it lexically (BM25) with no
+	// embedder configured, and simply gains a vector half when there is one.
+	shellTools = append(shellTools, "tool_list", "doc_read", "doc_search")
 	if lc.Embedder != nil {
-		shellTools = append(shellTools, "tool_search", "skill_search", "doc_search")
+		shellTools = append(shellTools, "tool_search", "skill_search")
 	}
 
 	// Boundary 2 of R-ROLE.4: for allowlist roles, prune dispatch handlers so
