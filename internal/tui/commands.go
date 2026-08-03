@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -9,6 +10,73 @@ import (
 	ninectx "nine/internal/context"
 	"nine/internal/protocol"
 )
+
+// slashCmd is one entry in the TUI's command catalog.
+//
+// The catalog is the single source of truth behind /help and the suggestion
+// picker. Before it existed the command list was spelled out separately in
+// runCmd's switch, in a hand-written cmdHelp string, and in the TUI's key
+// handler — and the three had already drifted apart.
+type slashCmd struct {
+	name string // without the leading slash
+	args string // "" when the command takes none; e.g. "[filter]", "<mode>"
+	desc string // one short line, shown to the right in the picker
+}
+
+// slashCmds lists every command the TUI accepts, most-used first. That order is
+// what /help prints and the order the picker offers before typing narrows it,
+// so the commands worth reaching for are the ones on screen first.
+//
+// Commands are executed either by runCmd below or, for the three that need the
+// TUI's own state, by the key handler in tui.go (/new, /clear, /think).
+var slashCmds = []slashCmd{
+	{"help", "", "this list"},
+	{"sessions", "", "list running sessions (copy ID to reattach)"},
+	{"status", "", "daemon uptime, active agents, loaded plugins"},
+	{"config", "", "show running configuration"},
+	{"context", "[id]", "show assembled-context token breakdown (no LLM call)"},
+	{"plan-mode", "<mode>", "set reasoning mode: off | plan-only | always"},
+	{"goals", "", "list goals"},
+	{"workflows", "", "list active and recent workflows"},
+	{"tools", "[filter]", "list all tools (optional name filter)"},
+	{"skills", "[name]", "list skills, or show a specific skill"},
+	{"memory", "[key]", "list KV keys, or show a specific key's value"},
+	{"new", "", "start a fresh conversation"},
+	{"think", "<message>", "send a message with reasoning forced on for this turn"},
+	{"clear", "", "clear the screen"},
+}
+
+// label renders the command as it appears in /help: "/tools [filter]".
+func (c slashCmd) label() string {
+	if c.args == "" {
+		return "/" + c.name
+	}
+	return "/" + c.name + " " + c.args
+}
+
+// completion is the text the picker puts in the input box when the command is
+// accepted. Commands that take an argument get a trailing space so the user can
+// type it straight away.
+func (c slashCmd) completion() string {
+	if c.args == "" {
+		return "/" + c.name
+	}
+	return "/" + c.name + " "
+}
+
+// matchCmds returns the catalog entries whose name starts with prefix (given
+// without the leading slash), case-insensitively. An empty prefix matches every
+// command, which is what the picker shows the moment "/" is typed.
+func matchCmds(prefix string) []slashCmd {
+	prefix = strings.ToLower(prefix)
+	var out []slashCmd
+	for _, c := range slashCmds {
+		if strings.HasPrefix(c.name, prefix) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
 
 // runCmd executes a slash command and returns the text to display, or an error.
 // cmd is the command name (without the leading /), arg is everything after the first space.
@@ -39,28 +107,29 @@ func runCmd(cmd, arg string, client *protocol.Client, cfg *config.Config, curAge
 	case "sessions":
 		return cmdSessions(client)
 	default:
-		return "", fmt.Errorf("unknown command /%s — type /help for a list", cmd)
+		return "", fmt.Errorf("%w /%s — type /help for a list", errUnknownCmd, cmd)
 	}
 }
 
+// errUnknownCmd heads the error runCmd returns for a command it does not
+// dispatch. TestCatalogCommandsAreDispatched matches on it to prove no catalog
+// entry can be suggested without an implementation behind it.
+var errUnknownCmd = errors.New("unknown command")
+
+// cmdHelp renders the catalog, so /help and the picker can never disagree.
 func cmdHelp() string {
-	return strings.Join([]string{
-		"Slash commands:",
-		"  /help              this list",
-		"  /sessions          list running sessions (copy ID to reattach)",
-		"  /status            daemon uptime, active agents, loaded plugins",
-		"  /config            show running configuration",
-		"  /context [id]      show assembled-context token breakdown (no LLM call)",
-		"  /plan-mode <mode>  set reasoning mode: off | plan-only | always",
-		"  /goals             list goals",
-		"  /workflows         list active and recent workflows",
-		"  /tools [filter]    list all tools (optional name filter)",
-		"  /skills [name]     list skills, or show a specific skill",
-		"  /memory [key]      list KV keys, or show a specific key's value",
-		"  /new               start a fresh conversation",
-		"  /think <message>   send a message with reasoning forced on for this turn",
-		"  /clear             clear the screen",
-	}, "\n")
+	w := 0
+	for _, c := range slashCmds {
+		if n := len(c.label()); n > w {
+			w = n
+		}
+	}
+	var sb strings.Builder
+	sb.WriteString("Slash commands:")
+	for _, c := range slashCmds {
+		fmt.Fprintf(&sb, "\n  %-*s  %s", w, c.label(), c.desc)
+	}
+	return sb.String()
 }
 
 func cmdSessions(client *protocol.Client) (string, error) {
