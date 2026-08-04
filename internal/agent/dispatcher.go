@@ -179,6 +179,15 @@ func (d *Dispatcher) RestrictTo(names []string) {
 	}
 }
 
+// Has reports whether toolName has a registered handler — i.e. whether
+// Dispatch would route it rather than fail with "unknown tool". Callers that
+// hold more than one dispatch surface (the daemon holds this one plus the
+// plugin manager) use it to pick the right one before dispatching.
+func (d *Dispatcher) Has(toolName string) bool {
+	_, ok := d.handlers[toolName]
+	return ok
+}
+
 // AddHook registers h to be called after every successful call to toolName.
 func (d *Dispatcher) AddHook(toolName string, h Hook) {
 	d.hooks[toolName] = append(d.hooks[toolName], h)
