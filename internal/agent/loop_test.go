@@ -99,11 +99,12 @@ func TestLoopEmptyAnswerNoTools(t *testing.T) {
 }
 
 func TestLoopEmptyAnswerSurfacesToolFailure(t *testing.T) {
-	// First call invokes a failing tool, second call gives up with empty text.
-	// The returned answer must surface the tool failure rather than be blank.
+	// First call invokes a failing tool, then the model gives up with empty
+	// text — every time, so the empty-response retries are exhausted too. The
+	// returned answer must surface the tool failure rather than be blank.
 	queue := llm.NewQueue(sequenceProvider([]llm.Response{
 		toolCallResp("tc1", "boom", json.RawMessage(`{}`)),
-		finalResp(""),
+		finalResp(""), finalResp(""), finalResp(""),
 	}), 1)
 	dispatcher := agent.New()
 	dispatcher.InjectHandler("boom", func(_ context.Context, _ json.RawMessage) (string, error) {
@@ -121,6 +122,58 @@ func TestLoopEmptyAnswerSurfacesToolFailure(t *testing.T) {
 	}
 	if !strings.Contains(answer, "boom") || !strings.Contains(answer, "kaboom") {
 		t.Errorf("answer should surface the failed tool and error, got %q", answer)
+	}
+}
+
+// A response with neither text nor a tool call is a sampling accident on small
+// local models — gemma4:e2b returned one on half of ten identical replays of a
+// real "list your skills" turn. The tool already ran and its output is still in
+// the scratchpad, so the loop re-draws instead of throwing the turn away.
+func TestLoopRetriesEmptyResponse(t *testing.T) {
+	var calls atomic.Int64
+	provider := llm.ProviderFunc(func(_ context.Context, _ llm.Request) (llm.Response, error) {
+		switch calls.Add(1) {
+		case 1:
+			return toolCallResp("tc1", "echo", json.RawMessage(`{}`)), nil
+		case 2:
+			return finalResp(""), nil // the accident
+		default:
+			return finalResp("here are your skills"), nil
+		}
+	})
+
+	loop := newTestLoop(provider, []ninectx.ToolWithVector{echoToolVec()})
+	answer, err := loop.Run(context.Background(), "list your skills please")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer != "here are your skills" {
+		t.Errorf("answer = %q, want the retried response, not the fallback", answer)
+	}
+	if got := calls.Load(); got != 3 {
+		t.Errorf("llm calls = %d, want 3 (tool call, empty, retry)", got)
+	}
+}
+
+// The retry is capped: a model that never answers must not spin.
+func TestLoopEmptyResponseRetriesAreBounded(t *testing.T) {
+	var calls atomic.Int64
+	provider := llm.ProviderFunc(func(_ context.Context, _ llm.Request) (llm.Response, error) {
+		calls.Add(1)
+		return finalResp(""), nil
+	})
+
+	loop := newTestLoop(provider, nil)
+	answer, err := loop.Run(context.Background(), "do something")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(answer, "wasn't able to produce") {
+		t.Errorf("answer = %q, want the fallback once retries are spent", answer)
+	}
+	// One initial call plus maxEmptyAnswerRetries.
+	if got := calls.Load(); got != 3 {
+		t.Errorf("llm calls = %d, want 3 (initial + 2 retries)", got)
 	}
 }
 
