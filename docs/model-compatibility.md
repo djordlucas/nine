@@ -117,6 +117,30 @@ ceiling, not the model. Revisit it on a host with more memory.
   their own class and to exercise judged cases, though the local small models
   already clear the full corpus here.
 
+## Post-tool-observation microbenchmark (H1)
+
+Separate from the matrix, and much narrower: one real turn's **second** LLM call —
+the one following a `skill_list` observation — captured from the session journal
+and replayed 10 times per model. It isolates the failure R-LOOP.5's retry exists
+to absorb: a response carrying neither text nor a tool call.
+
+| Model | Resident | Empty | Median | Range |
+|-------|---------:|------:|-------:|------:|
+| `qwen3.5:4b`  | 3.4 GB | **0/10** | **16.5 s** | 13.9–21.6 s |
+| `qwen3.5:9b`  | 6.6 GB | 0/10 | 22.2 s | 19.1–24.7 s |
+| `gemma4:12b`  | 7.6 GB | 0/10 | 32.3 s | 26.8–34.3 s |
+| `gemma4:e2b`  | 7.2 GB | 2/10 | 8.1 s | 0.2–12.7 s |
+
+Each model was warmed up once first, so load time is excluded, and nothing else
+was using Ollama. Only `gemma4:e2b` produces the empty response at all — its 0.2 s
+minimum *is* the failure, a lone end-of-turn token. An earlier version of this run
+reported wildly slower and more variable timings for every model; that run had a
+Nine daemon sharing the same Ollama, and the constant model eviction dominated the
+numbers. Measure with nothing else resident.
+
+One case is not a capability verdict — `gemma4:12b` still has **no Track-L run at
+all**. Use the matrix above for that.
+
 ## Keeping this current
 
 After a Track-L run:
