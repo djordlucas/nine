@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"sync"
 )
@@ -39,7 +38,7 @@ type client struct {
 // current process environment, then sets up stdin/stdout pipes for JSON-RPC.
 func newClient(binaryPath string, args []string, extraEnv []string) (*client, error) {
 	cmd := exec.Command(binaryPath, args...)
-	cmd.Env = append(os.Environ(), extraEnv...)
+	cmd.Env = append(sanitizedHostEnv(), extraEnv...)
 
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
