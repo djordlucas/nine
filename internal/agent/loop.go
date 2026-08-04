@@ -17,6 +17,13 @@ import (
 
 const analysisMaxTokens = 512
 
+// contextWarnFraction is the assembled-context usage fraction of the budget at
+// or above which the loop emits a notice that oldest history is being trimmed
+// to fit. The warning re-arms once usage falls back below the threshold, so a
+// session that repeatedly brushes the ceiling is warned each time it crosses up
+// rather than only once.
+const contextWarnFraction = 0.9
+
 // Config holds static configuration for an agent loop.
 type Config struct {
 	// Role is the resolved role name this loop runs (orchestrator, executor,
@@ -131,6 +138,7 @@ type Loop struct {
 	onPlanEnd          func()
 	onNotice           func(text string)
 	downgradeNoticed   bool // one-shot per session: a thinking-downgrade notice was emitted
+	contextWarnLatched bool // re-arming latch: a context-pressure notice is active until usage drops back below contextWarnFraction
 	onLLMRequest       func(req *llm.Request, tokensUsed, budget, llmCallN int)
 	onLLMResponse      func(resp *llm.Response, llmCallN int)
 	onStage            func(string) // guarded by stageMu
@@ -168,6 +176,30 @@ func (l *Loop) SetQueue(q *llm.Queue) { l.queue = q }
 // reporting the estimated tokens used and the total budget.
 // Pass nil to clear. Safe to call between turns; not safe during Run.
 func (l *Loop) SetOnContextUpdate(fn func(used, budget int)) { l.onContextUpdate = fn }
+
+// maybeWarnContext emits a session notice when assembled context usage crosses
+// contextWarnFraction of the budget, re-arming once usage falls back below it.
+// By the time usage is this high the builder is already trimming oldest history
+// to fit (internal/context.trimFront), so the notice tells the user their
+// earliest turns are dropping out of the window rather than reporting an error —
+// the turn still fits the budget by construction.
+func (l *Loop) maybeWarnContext(used, budget int) {
+	if budget <= 0 {
+		return
+	}
+	over := float64(used) >= contextWarnFraction*float64(budget)
+	switch {
+	case over && !l.contextWarnLatched:
+		l.contextWarnLatched = true
+		if l.onNotice != nil {
+			l.onNotice(fmt.Sprintf(
+				"Context is %d%% full (%d/%d tokens) — oldest history is being trimmed to fit.",
+				used*100/budget, used, budget))
+		}
+	case !over:
+		l.contextWarnLatched = false
+	}
+}
 
 // SetOnToolStart registers a callback invoked before each tool call is dispatched.
 // displayName is the human-friendly label for the tool (falls back to name if unset).
@@ -367,6 +399,7 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 		if l.onContextUpdate != nil {
 			l.onContextUpdate(tokensUsed, l.builder.Budget())
 		}
+		l.maybeWarnContext(tokensUsed, l.builder.Budget())
 		if l.onLLMRequest != nil {
 			l.onLLMRequest(&req, tokensUsed, l.builder.Budget(), llmCallN)
 		}
