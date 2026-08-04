@@ -94,7 +94,7 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `stage` | `text` | the turn entered a named waiting phase; empty `text` clears it |
 | `plan_start` | — | the no-tool request-analysis (planning) pass began (thinking-degraded models) |
 | `plan_end` | — | the request-analysis pass finished |
-| `notice` | `text` | a session-level notice (e.g. native thinking unavailable, planning pass used) |
+| `notice` | `text` | a session-level notice (e.g. native thinking unavailable, planning pass used; context usage crossed the trim threshold) |
 | `set_instance_name` | `instance_name` | the daemon's display name resolved or changed (e.g. async naming completed); broadcast to active sessions, optional — clients that don't recognise it **MUST** ignore it |
 | `context_update` | `context_used`, `context_budget` | context assembled |
 | `tool_start` | `tool_name`, `tool_display_name`, `tool_input`, `ts` | tool call started |
