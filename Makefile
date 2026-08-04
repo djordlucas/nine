@@ -82,7 +82,7 @@ lint:
 # on demand with `make pgadmin`.
 
 NINE_LLM_PROVIDER  ?= ollama
-NINE_LLM_MODEL     ?= gemma4:e2b
+NINE_LLM_MODEL     ?= qwen3.5:4b
 NINE_LLM_ENDPOINT  ?= http://host.docker.internal:11434
 
 LLM_ENV = -e NINE_LLM_PROVIDER=$(NINE_LLM_PROVIDER) -e NINE_LLM_MODEL=$(NINE_LLM_MODEL) -e NINE_LLM_ENDPOINT=$(NINE_LLM_ENDPOINT)
@@ -106,9 +106,9 @@ NINE_MOUNTS = \
 NINE_RUN_FLAGS = --add-host host.docker.internal:host-gateway --restart unless-stopped
 
 # The 32k context window is requested per-call via num_ctx (nine.toml), so the
-# stock gemma4:e2b is all that's needed — no custom Modelfile.
+# stock qwen3.5:4b is all that's needed — no custom Modelfile.
 model:
-	ollama pull gemma4:e2b
+	ollama pull qwen3.5:4b
 
 up:
 	docker build --target runtime -t nine .

@@ -28,9 +28,9 @@ image, already pointing at the Postgres co-located in the same container
 provider = "ollama"
 
 # Model name. Examples:
-#   ollama:    gemma4:e2b, qwen3.5:9b, llama3.2, mistral
+#   ollama:    qwen3.5:4b, qwen3.5:9b, gemma4:e2b, llama3.2
 #   anthropic: claude-sonnet-4-6, claude-opus-4-7, claude-haiku-4-5-20251001
-model = "gemma4:e2b"
+model = "qwen3.5:4b"
 
 # API key for anthropic. Leave empty to read from ANTHROPIC_API_KEY.
 api_key = ""
@@ -276,7 +276,7 @@ any other value falls through to the Anthropic client.
 ```toml
 [llm]
 provider       = "ollama"
-model          = "gemma4:e2b"
+model          = "qwen3.5:4b"
 endpoint       = ""              # empty uses Ollama's local default
 num_ctx        = 32768
 max_concurrent = 1
@@ -285,7 +285,7 @@ max_concurrent = 1
 Ollama must be running before starting Nine. Pull the model first:
 
 ```bash
-ollama pull gemma4:e2b
+ollama pull qwen3.5:4b
 ```
 
 ### Anthropic
