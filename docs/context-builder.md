@@ -88,6 +88,13 @@ Budget (e.g. 200 000 tokens)
 
 `BuildWithUsage` returns `(llm.Request, tokensUsed)` where `tokensUsed = Budget - remaining`.
 
+When `tokensUsed` reaches **90%** of the budget (`contextWarnFraction`), the agent
+loop emits a one-shot `notice` wire event telling the user that the oldest history
+is being trimmed to fit. The notice re-arms once usage falls back below the
+threshold, so a session that repeatedly brushes the ceiling is warned on each
+upward crossing rather than only once. This is advisory only — the turn always
+fits the budget by construction; the notice never blocks or compacts.
+
 ## Tool Selection
 
 `selectTools` runs on every call to `BuildWithUsage`. It:
