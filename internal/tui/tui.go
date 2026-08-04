@@ -25,6 +25,12 @@ const (
 
 	maxInputDisplay  = 80
 	maxOutputDisplay = 200
+
+	// contextWarnPercent mirrors the daemon's contextWarnFraction (0.9,
+	// internal/agent): at or above this fraction of the budget the header flags
+	// context pressure so the warning persists after the transient `notice`
+	// scrolls out of the transcript. A display heuristic, not a shared contract.
+	contextWarnPercent = 90
 )
 
 // palette holds all TUI styles for a given theme.
@@ -763,10 +769,7 @@ func (m model) View() string {
 		detailHint = "  ·  ctrl+t: tools on"
 	}
 	scrollHint := "  ·  pgup/pgdn: scroll"
-	ctxHint := ""
-	if m.display.showContext && m.display.contextBudget > 0 {
-		ctxHint = fmt.Sprintf("  ·  ctx: %d/%d", m.display.contextUsed, m.display.contextBudget)
-	}
+	ctxHint := contextHint(m.display.contextUsed, m.display.contextBudget, m.display.showContext)
 	askHint := ""
 	if m.chat.pendingHuman() != nil {
 		askHint = "  ·  ? awaiting answer"
@@ -793,6 +796,25 @@ func (m model) View() string {
 	parts = append(parts, m.chat.input.View())
 
 	return strings.Join(parts, "\n")
+}
+
+// contextHint renders the header's context-usage segment. When usage crosses
+// contextWarnPercent of the budget it flags the pressure with a ⚠ marker and a
+// percentage, and does so even when showContext is off — a warning outranks the
+// user's opt-out of the routine ctx readout. Below the threshold it shows the
+// plain used/budget readout only when showContext is on, and nothing when the
+// budget is unknown.
+func contextHint(used, budget int, showContext bool) string {
+	if budget <= 0 {
+		return ""
+	}
+	if used*100 >= contextWarnPercent*budget {
+		return fmt.Sprintf("  ·  ⚠ ctx: %d/%d (%d%%)", used, budget, used*100/budget)
+	}
+	if showContext {
+		return fmt.Sprintf("  ·  ctx: %d/%d", used, budget)
+	}
+	return ""
 }
 
 func (m *model) viewportHeight() int {

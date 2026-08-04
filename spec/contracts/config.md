@@ -70,7 +70,7 @@ api_key  = ""
 
 [ui]
 theme        = "light"          # light | dark
-show_context = true             # show the context-usage bar
+show_context = true             # show the context-usage bar (a ⚠ warning shows at ≥90% even when false)
 
 [workspace]
 root = ""                       # files-plugin working directory
