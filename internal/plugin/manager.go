@@ -198,7 +198,7 @@ func spawnAndDescribe(binaryPath string, env []string) (*exec.Cmd, string, Descr
 	env = append(env, "NINE_PLUGIN_SOCKET="+socketPath)
 
 	cmd := exec.Command(binaryPath)
-	cmd.Env = append(os.Environ(), env...)
+	cmd.Env = append(sanitizedHostEnv(), env...)
 	cmd.Stderr = os.Stderr // surface plugin startup/listen errors
 	if err := cmd.Start(); err != nil {
 		return nil, "", DescribeResult{}, fmt.Errorf("start plugin: %w", err)
