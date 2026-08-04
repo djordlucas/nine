@@ -608,6 +608,25 @@ func (f *AgentBuilder) registerCoreTools(d *agent.Dispatcher, lc LoopConfig, age
 	registerLargeOutput(d, lc.Memory, agentID)
 }
 
+// directCallAgentID attributes work done on the plugin_call path — gap reports,
+// spilled tool output — to the client rather than to any conversation.
+const directCallAgentID = "direct-call"
+
+// CoreDispatcher returns a dispatcher carrying just the core-intercepted tools,
+// for callers that invoke one outside any agent loop — the daemon's plugin_call
+// path (docs/daemon.md), which has no loop and no role to build one from.
+//
+// It goes through the same registerCoreTools the loops use, so the direct call
+// runs the same handler the model would, and neither surface can drift from the
+// other. There is no role here to restrict against: plugin_call is an operator
+// surface that already reaches every plugin tool, so role scoping would be
+// scoping the wrong actor.
+func (f *AgentBuilder) CoreDispatcher() *agent.Dispatcher {
+	d := agent.New()
+	f.registerCoreTools(d, f.cfg.Loop, directCallAgentID)
+	return d
+}
+
 // registerSubAgentTools registers run_agent/run_agents/workflow/goal tools
 // for a delegating role. Spawned children run the leaf role named by the
 // delegation call (default executor) with depthGuard-1 (R-ROLE.6/8/9).

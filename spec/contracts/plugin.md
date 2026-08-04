@@ -135,6 +135,10 @@ Started at daemon boot from immutable image content:
 > backed by the store). This is a deliberate difference from older designs that shipped a
 > `memory` plugin.
 >
+> They are still tools like any other from a client's point of view: `list_tools` reports
+> them under the `core` plugin and `plugin_call` invokes them (R-PROTO.5). Having no
+> subprocess behind them is an implementation detail, not a narrower surface.
+>
 > **Skills are also core-intercepted.** `skill_list/search/read/write/modify` are
 > store-backed core handlers with binary-embedded immutable defaults — see
 > [`skills.md`](skills.md).

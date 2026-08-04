@@ -225,7 +225,9 @@ func NewSessionStopMsg(agentID string, all bool) Msg {
 	return Msg{Type: "session_stop", AgentID: agentID}
 }
 
-// NewPluginCallMsg invokes a plugin tool directly, bypassing the LLM agent.
+// NewPluginCallMsg invokes a tool directly, bypassing the LLM agent. Despite
+// the name it is not plugin-only: the daemon resolves the name against the
+// core-intercepted tools (memory/file/skill/doc) first, then the plugin roster.
 func NewPluginCallMsg(tool string, args json.RawMessage) Msg {
 	return Msg{Type: "plugin_call", ToolName: tool, ToolInput: args}
 }

@@ -109,7 +109,9 @@ These message types are handled synchronously in the dispatch loop:
 - `list_goals` / `list_reflections` / `list_workflows`
 - `workflow_stop` / `workflow_fail`
 - `list_tools` — all available tools grouped by plugin
-- `plugin_call` — bypasses the LLM, calls a plugin tool directly
+- `plugin_call` — bypasses the LLM, calls a tool directly: core-intercepted tools
+  (`memory_*`, `file_*`, `skill_*`, `doc_*`) through the daemon's core dispatcher,
+  everything else through the owning plugin
 
 ## Protocol
 
