@@ -163,7 +163,7 @@ make pg                       # pgvector on localhost:5433
 ### 4. Pull a model and run
 
 ```bash
-ollama pull gemma4:e2b
+ollama pull qwen3.5:4b
 ./dist/nine "Hello"
 ```
 
@@ -193,7 +193,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 | `make cover` | Generate `dist/coverage.out` |
 | `make cover-html` | Open HTML coverage report in browser |
 | `make lint` | Run golangci-lint |
-| `make model` | Pull the default Ollama model (`gemma4:e2b`) |
+| `make model` | Pull the default Ollama model (`qwen3.5:4b`) |
 | `make integration-test` | Run integration tests (requires Docker + Ollama) |
 | `make clean` | Remove `dist/` |
 
