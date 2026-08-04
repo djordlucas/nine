@@ -363,6 +363,18 @@ Environment variables take priority over `nine.toml` values.
 | `NINE_LOG_FORMAT` | Log format: `text` (default) or `json` |
 | `NINE_LOG_FILE` | Set to `off` to disable file logging (logs go to stderr only) |
 
+Logs default to `nine.log` beside the binary, falling back to stderr when that
+file cannot be opened (an installed binary in a read-only directory) as well as
+when `NINE_LOG_FILE=off` asks for it — which is what the container sets, so
+`docker logs` carries everything.
+
+Two places deliberately keep those logs off an interactive terminal, because the
+TUI draws a full-screen UI on it and a stray log line lands in the chat area:
+the TUI discards client-side logging for its own lifetime when the destination
+is stderr, and a daemon auto-started by a client (`EnsureDaemon`) never inherits
+the caller's stdout/stderr. Run `nine daemon` yourself to watch a daemon's
+output live.
+
 These are how one `nine.toml` serves every deployment. The Makefile's `up`/`up-hot`
 targets set `NINE_PLUGINS_BIN` and `NINE_WORKSPACE_ROOT` to point the container at
 its own layout (`NINE_DATABASE_URL` needs no override — it's baked into the image,
