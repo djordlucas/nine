@@ -194,7 +194,9 @@ api_key = ""
 theme = "auto"
 
 # Show context token usage in the TUI header.
-# Defaults to true (shown) when unset.
+# Defaults to true (shown) when unset. When usage crosses the trim threshold
+# (90% of the budget) the header shows a "⚠ ctx: used/budget (NN%)" warning even
+# if this is false — a warning overrides the opt-out of the routine readout.
 show_context = true
 
 
