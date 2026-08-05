@@ -88,7 +88,7 @@ func (s *Store) GoalList() ([]Goal, error) {
 // GoalUpdateStatus updates the status of a goal.
 func (s *Store) GoalUpdateStatus(id, status string) error {
 	_, err := s.db.Exec(
-		`UPDATE goals SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, status, id)
+		`UPDATE goals SET status=?, updated_at=? WHERE id=?`, status, nowText(), id)
 	return err
 }
 
@@ -97,7 +97,7 @@ func (s *Store) GoalUpdateStatus(id, status string) error {
 // (docs/predefined-agents.md §4).
 func (s *Store) GoalUpdateDescription(id, description string) error {
 	_, err := s.db.Exec(
-		`UPDATE goals SET description=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, description, id)
+		`UPDATE goals SET description=?, updated_at=? WHERE id=?`, description, nowText(), id)
 	return err
 }
 
@@ -118,7 +118,7 @@ func (s *Store) GoalAppendSubtree(id, entry string) error {
 	entries = append(entries, entry)
 	updated, _ := json.Marshal(entries)
 	_, err = s.db.Exec(
-		`UPDATE goals SET subtree=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
-		string(updated), id)
+		`UPDATE goals SET subtree=?, updated_at=? WHERE id=?`,
+		string(updated), nowText(), id)
 	return err
 }

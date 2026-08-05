@@ -10,9 +10,9 @@ import (
 func TestSanitizedHostEnvWithholdsSecrets(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin:/bin")
 	t.Setenv("LC_CTYPE", "en_US.UTF-8")
-	t.Setenv("DATABASE_URL", "postgres://user:pw@host/db")
+	t.Setenv("ANTHROPIC_API_KEY", "sk-secret")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "shh")
-	t.Setenv("NINE_DATABASE_URL", "postgres://leak")
+	t.Setenv("NINE_DB_PATH", "/data/nine.db")
 
 	got := make(map[string]string)
 	for _, kv := range sanitizedHostEnv() {
@@ -27,7 +27,7 @@ func TestSanitizedHostEnvWithholdsSecrets(t *testing.T) {
 	if got["LC_CTYPE"] != "en_US.UTF-8" {
 		t.Errorf("LC_CTYPE = %q, want LC_* passed through", got["LC_CTYPE"])
 	}
-	for _, secret := range []string{"DATABASE_URL", "AWS_SECRET_ACCESS_KEY", "NINE_DATABASE_URL"} {
+	for _, secret := range []string{"ANTHROPIC_API_KEY", "AWS_SECRET_ACCESS_KEY", "NINE_DB_PATH"} {
 		if v, ok := got[secret]; ok {
 			t.Errorf("%s leaked to plugin env (=%q); scrub must withhold it", secret, v)
 		}

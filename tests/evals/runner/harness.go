@@ -38,8 +38,9 @@ type Harness struct {
 	// Embedder powers semantic memory, tool ranking, and related-session
 	// surfacing. Nil disables those features (the reads cost nothing when off).
 	Embedder embed.Embedder
-	// BaseDSN overrides the eval database connection string (else baseDSN()).
-	BaseDSN string
+	// BaseDir overrides where each run's isolated database file is created
+	// (else the system temp dir).
+	BaseDir string
 	// ContextBudget is the per-loop token budget (default 100_000).
 	ContextBudget int
 	// MaxToolOutputTokens mirrors [tools] max_output_tokens (production:
@@ -93,7 +94,7 @@ func (h *Harness) Run(ctx context.Context, c *Case, provider llm.Provider) (res 
 	}()
 
 	// 1. Isolated store (schema-per-run).
-	store, dropStore, err := openIsolatedStore(h.BaseDSN)
+	store, dropStore, err := openIsolatedStore(h.BaseDir)
 	if err != nil {
 		return nil, err
 	}

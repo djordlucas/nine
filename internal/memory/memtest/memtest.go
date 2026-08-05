@@ -1,94 +1,42 @@
-// Package memtest provides an isolated PostgreSQL-backed memory.Store for tests.
-// Each Open call creates a fresh schema on the shared test database and drops it
-// on cleanup, so tests are isolated without needing a database per test.
-//
-// The base connection string is taken from NINE_TEST_DATABASE_URL, falling back
-// to `make pg`'s standalone Postgres default. If the database is unreachable the
-// test is skipped rather than failed, so the suite still runs on machines
-// without Postgres.
+// Package memtest provides an isolated SQLite-backed memory.Store for tests.
+// Each Open call creates a database file in the test's own temp directory, so
+// tests are isolated by construction and safe to run in parallel — there is no
+// shared server, and therefore nothing that can be unavailable.
 package memtest
 
 import (
-	"crypto/rand"
-	"database/sql"
-	"encoding/hex"
-	"fmt"
-	"net/url"
-	"os"
+	"path/filepath"
 	"testing"
-
-	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"nine/internal/memory"
 )
 
-func baseDSN() string {
-	if v := os.Getenv("NINE_TEST_DATABASE_URL"); v != "" {
-		return v
-	}
-	return "postgres://nine:nine@localhost:5433/nine?sslmode=disable"
-}
-
-// Open returns a memory.Store backed by a fresh, isolated schema on the test
-// database. The schema is dropped and the store closed via t.Cleanup. It returns
-// (store, nil) on success to preserve the `store, err := ...` call shape of the
-// SQLite-era tests; it skips the test if Postgres is unreachable.
-func Open(t *testing.T) (*memory.Store, error) {
+// Open returns a memory.Store backed by a fresh, empty database under
+// t.TempDir(). The store is closed and the file removed via t.Cleanup.
+//
+// It returns (store, nil) on success, a shape kept so that call sites stay
+// untouched — but the error is now only ever a genuine failure. There is no
+// skip-if-the-database-is-unreachable path any more, and with it goes the
+// possibility of the suite reporting green because most of it never ran.
+//
+// It takes a testing.TB rather than a *testing.T so fuzz targets can use it too.
+//
+// A temp file rather than an in-memory database, deliberately: with `:memory:`
+// each pooled connection opens its own separate database, which the store's
+// reader/writer pool split would expose immediately, and the shared-cache
+// workaround swaps SQLite's locking model for one production never uses. A file
+// exercises what actually ships — WAL, busy_timeout, and the read-only pool.
+func Open(t testing.TB) (*memory.Store, error) {
 	t.Helper()
 
-	base := baseDSN()
-	admin, err := sql.Open("pgx", base)
+	store, err := memory.Open(filepath.Join(t.TempDir(), "nine.db"))
 	if err != nil {
 		return nil, err
 	}
-	if err := admin.Ping(); err != nil {
-		admin.Close()
-		t.Skipf("postgres unavailable (%v); set NINE_TEST_DATABASE_URL or run make pg", err)
-	}
-
-	// pgvector's type lives in public; ensure it exists before per-schema DDL.
-	if _, err := admin.Exec(`CREATE EXTENSION IF NOT EXISTS vector`); err != nil {
-		admin.Close()
-		return nil, fmt.Errorf("create extension vector: %w", err)
-	}
-
-	buf := make([]byte, 8)
-	rand.Read(buf) //nolint:errcheck
-	schema := "test_" + hex.EncodeToString(buf)
-	if _, err := admin.Exec(`CREATE SCHEMA ` + schema); err != nil {
-		admin.Close()
-		return nil, fmt.Errorf("create schema: %w", err)
-	}
-
-	dsn, err := withSearchPath(base, schema)
-	if err != nil {
-		admin.Close()
-		return nil, err
-	}
-	store, err := memory.Open(dsn)
-	if err != nil {
-		admin.Exec(`DROP SCHEMA ` + schema + ` CASCADE`) //nolint:errcheck
-		admin.Close()
-		return nil, err
-	}
-
-	t.Cleanup(func() {
-		store.Close() //nolint:errcheck // best-effort cleanup
-		admin.Exec(`DROP SCHEMA ` + schema + ` CASCADE`) //nolint:errcheck
-		admin.Close()
-	})
+	// t.TempDir registers its own removal when it is called, i.e. before this
+	// one, and cleanups run last-in-first-out — so the store closes before the
+	// directory is removed. The other order leaves the WAL sidecar files behind
+	// and fails the removal.
+	t.Cleanup(func() { store.Close() }) //nolint:errcheck // best-effort cleanup
 	return store, nil
-}
-
-// withSearchPath returns dsn with search_path set to the test schema (falling
-// back to public so the pgvector type resolves).
-func withSearchPath(dsn, schema string) (string, error) {
-	u, err := url.Parse(dsn)
-	if err != nil {
-		return "", err
-	}
-	q := u.Query()
-	q.Set("search_path", schema+",public")
-	u.RawQuery = q.Encode()
-	return u.String(), nil
 }

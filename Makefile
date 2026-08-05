@@ -14,7 +14,7 @@ GOFLAGS  := -mod=vendor
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS  := -ldflags "-X main.Version=$(VERSION)"
 
-.PHONY: all dev build plugins test test-v lint cover cover-html clean model up up-hot session shell logs down destroy pgadmin pgadmin-down pg pg-down integration-test integration-test-short eval-replay eval-live eval-generate
+.PHONY: all dev build plugins test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-generate
 
 dev: build plugins browser-plugin
 
@@ -72,14 +72,12 @@ lint:
 	golangci-lint run ./...
 
 # ── container deployment ──────────────────────────────────────────────────────
-# Nine cannot be decoupled from its database (memory.Open fails fast if
-# Postgres is unreachable), so the container runs both under s6-overlay as one
-# unit (docs/single-container.md) instead of a docker-compose stack — just
-# `docker run`, wrapped below for the env/volume/flag boilerplate. `up` builds
-# and runs the immutable runtime image; `up-hot` builds and runs the hot-reload
-# image (Go toolchain over the bind-mounted source, rebuilding and restarting
-# the daemon on any .go change). pgAdmin is not part of either image — spawn it
-# on demand with `make pgadmin`.
+# The container runs the daemon alone under s6-overlay (docs/single-container.md)
+# — its database is a file on the /data volume, so there is no second service to
+# orchestrate and no compose stack. Just `docker run`, wrapped below for the
+# env/volume/flag boilerplate. `up` builds and runs the immutable runtime image;
+# `up-hot` builds and runs the hot-reload image (Go toolchain over the
+# bind-mounted source, rebuilding and restarting the daemon on any .go change).
 
 NINE_LLM_PROVIDER  ?= ollama
 NINE_LLM_MODEL     ?= qwen3.5:4b
@@ -89,9 +87,8 @@ LLM_ENV = -e NINE_LLM_PROVIDER=$(NINE_LLM_PROVIDER) -e NINE_LLM_MODEL=$(NINE_LLM
 
 # Flags common to both containers. The mounted nine.toml is written for the
 # native layout; these override the paths that differ inside the container
-# (see internal/config.ApplyEnvOverrides) — NINE_DATABASE_URL needs no such
-# override since it's already baked into the image, pointing at the co-located
-# Postgres.
+# (see internal/config.ApplyEnvOverrides). The database needs no override: it
+# defaults to /data/nine.db whenever the /data volume is present.
 NINE_ENV = \
 	-e NINE_CONFIG=/nine.toml \
 	-e NINE_PLUGINS_BIN=/opt/nine/bin \
@@ -115,7 +112,6 @@ up:
 	-docker rm -f nine 2>/dev/null
 	docker run -d --name nine \
 	  $(NINE_RUN_FLAGS) $(LLM_ENV) $(NINE_ENV) $(NINE_MOUNTS) \
-	  -v nine-pgdata:/var/lib/postgresql/data \
 	  -v nine-data:/data \
 	  nine
 	@echo "nine is up. Attach a session with: make session"
@@ -126,10 +122,8 @@ up-hot:
 	docker run -d --name nine-dev \
 	  $(NINE_RUN_FLAGS) $(LLM_ENV) $(NINE_ENV) $(NINE_MOUNTS) \
 	  -v $(CURDIR):/nine-src \
-	  -v nine-dev-pgdata:/var/lib/postgresql/data \
 	  -v nine-dev-data:/data \
 	  -v nine-dev-gocache:/root/.cache/go-build \
-	  -p 5432:5432 \
 	  nine-dev
 	@echo "nine (hot-reload) is building/starting. Follow it with: make logs"
 
@@ -142,7 +136,7 @@ shell:
 logs:
 	@docker logs -f nine 2>/dev/null || docker logs -f nine-dev
 
-# Stop the container. Named volumes (Postgres data, workspace) are kept, so a
+# Stop the container. Named volumes (database, workspace) are kept, so a
 # later `make up` / `make up-hot` comes back up with all state intact.
 down:
 	-docker rm -f nine nine-dev
@@ -151,39 +145,8 @@ down:
 # database and workspace are wiped), and the locally built images. Destructive
 # and irreversible.
 destroy: down
-	-docker volume rm nine-pgdata nine-data nine-dev-pgdata nine-dev-data nine-dev-gocache
+	-docker volume rm nine-data nine-dev-data nine-dev-gocache
 	-docker image rm nine nine-dev
-
-# pgAdmin is opt-in tooling, not part of either Nine image — spawn it on demand
-# against whichever container publishes Postgres (nine-dev does by default via
-# `up-hot`; add `-p 5432:5432` to `up`'s docker run if you want it against a
-# production DB instead). Desktop mode: no login, no master password — local
-# convenience only, never expose this beyond localhost.
-pgadmin:
-	docker run -d --name nine-pgadmin \
-	  --add-host host.docker.internal:host-gateway \
-	  -e PGADMIN_DEFAULT_EMAIL=nine@nine.dev \
-	  -e PGADMIN_DEFAULT_PASSWORD=nine \
-	  -e PGADMIN_CONFIG_SERVER_MODE=False \
-	  -e PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED=False \
-	  -v $(CURDIR)/docker/pgadmin-servers.json:/pgadmin4/servers.json:ro \
-	  -p 5050:80 dpage/pgadmin4:latest
-	@echo "pgAdmin on http://localhost:5050 (pre-wired to the nine database)"
-
-pgadmin-down:
-	-docker rm -f nine-pgadmin
-
-# Postgres for a native `./dist/nine daemon`, evals, and integration tests —
-# matches nine.toml's default DSN (localhost:5433). Unrelated to the
-# containerized Nine above, which runs its own Postgres internally.
-pg:
-	docker run -d --name nine-pg \
-	  -e POSTGRES_USER=nine -e POSTGRES_PASSWORD=nine -e POSTGRES_DB=nine \
-	  -p 5433:5432 -v nine-pg-native:/var/lib/postgresql/data \
-	  pgvector/pgvector:pg17
-
-pg-down:
-	-docker rm -f nine-pg
 
 # ── integration tests ────────────────────────────────────────────────────────
 # Requires: Docker running, Ollama on localhost:11434 with NINE_LLM_MODEL loaded.
@@ -199,14 +162,14 @@ integration-test-short:
 
 # ── evals ─────────────────────────────────────────────────────────────────────
 # Two tracks (docs/evals.md). eval-replay is deterministic and infra-free — the
-# every-PR gate. eval-live runs the model matrix and needs Postgres, plugin
+# every-PR gate. eval-live runs the model matrix and needs plugin
 # binaries (make plugins), and a model list.
 
 # Track R + schema validation: no live model, no database. Fast, deterministic.
 eval-replay:
 	$(GO) test $(GOFLAGS) -count=1 -run 'TestCasesValidate|TestReplayFixtures' ./tests/evals/
 
-# Track L: the live model matrix. Needs Postgres up (make pg) and plugin
+# Track L: the live model matrix. Needs plugin
 # binaries. Override the models with NINE_EVAL_MODELS.
 #   NINE_EVAL_MODELS=claude-haiku-4-5-20251001 make eval-live
 eval-live: plugins
@@ -214,7 +177,7 @@ eval-live: plugins
 	NINE_PLUGINS_BIN=$(abspath $(BIN_DIR)) \
 	$(GO) test $(GOFLAGS) -v -count=1 -timeout 1800s -run TestLiveMatrix ./tests/evals/
 
-# Regenerate the committed Track-R fixtures from scripted runs (needs Postgres).
+# Regenerate the committed Track-R fixtures from scripted runs.
 eval-generate:
 	NINE_EVALS_GENERATE=1 $(GO) test $(GOFLAGS) -count=1 -run TestGenerateSeedFixtures ./tests/evals/runner/
 

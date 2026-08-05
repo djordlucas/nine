@@ -7,9 +7,10 @@ import (
 
 // hostEnvAllowlist names the host environment variables a spawned plugin is
 // allowed to inherit from the daemon. Everything else in the daemon's
-// environment is withheld — most importantly secrets such as the database_url
-// DSN and any *_TOKEN / *_KEY / cloud credentials the operator exported into the
-// daemon's process. A plugin still receives the NINE_* vars the daemon sets and
+// environment is withheld — most importantly any *_TOKEN / *_KEY / cloud
+// credentials the operator exported into the daemon's process, and the location
+// of the database, which a plugin has no business opening directly. A plugin
+// still receives the NINE_* vars the daemon sets and
 // any operator-configured [plugin.<name>.settings]; those arrive as explicit
 // spawn env, not through this inheritance (see Manager.Start / newClient).
 //
@@ -34,8 +35,8 @@ var hostEnvAllowlist = map[string]bool{
 
 // sanitizedHostEnv returns the allowlisted subset of the daemon's environment to
 // hand to a spawned plugin. It replaces the previous wholesale os.Environ()
-// inheritance, which leaked every daemon secret (notably the DSN) into plugin
-// processes we do not necessarily trust. Callers append the daemon's explicit
+// inheritance, which leaked every daemon secret into plugin processes we do not
+// necessarily trust. Callers append the daemon's explicit
 // NINE_* / settings env after this base.
 func sanitizedHostEnv() []string {
 	environ := os.Environ()

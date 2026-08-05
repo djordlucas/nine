@@ -21,11 +21,14 @@ func runDaemon() {
 	cfg := config.LoadDefault()
 
 	// Initialize memory store
-	store, err := memory.Open(cfg.DatabaseURL())
+	store, err := memory.Open(cfg.DatabasePath())
 	if err != nil {
-		slog.Error("open memory store", "database_url", cfg.DatabaseURL(), "err", err)
+		slog.Error("open memory store", "path", cfg.DatabasePath(), "err", err)
 		os.Exit(1)
 	}
+	// Closing checkpoints the write-ahead log, so the database file is left
+	// self-contained rather than depending on its -wal sidecar to be complete.
+	defer store.Close() //nolint:errcheck
 
 	// Shared between the job sweeper and every worker's job_wait, so a completing
 	// job wakes its waiters at once instead of each polling (§5).
