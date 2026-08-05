@@ -1,32 +1,39 @@
 # Single-container Nine — design & implementation plan
 
-> Status: **implemented**. This document plans (and now records) collapsing the
-> former multi-container docker-compose stack (Postgres + daemon + pgAdmin) into
-> **one image that runs Nine and its PostgreSQL database as a single unit**,
-> keeping the two existing modes — *normal* (the immutable runtime) and *dev*
-> (hot-reload) — behaviourally identical to before. pgAdmin is no longer part of
-> either image; it's opt-in tooling (`make pgadmin`, §8). Both images are fully
-> verified against the §13 checklist below, including a live Ollama round-trip
-> and the full `make integration-test` suite.
+> Status: **implemented**, and since **simplified**. This document plans (and
+> records) collapsing the former multi-container docker-compose stack (Postgres +
+> daemon + pgAdmin) into one image, keeping the two modes — *normal* (the
+> immutable runtime) and *dev* (hot-reload) — behaviourally identical.
+>
+> **The database has since moved to SQLite**, which removes the second process
+> entirely: the container now runs the daemon alone, with its database as a file
+> on the `/data` volume. The parts of this document that argue for *packaging two
+> coupled processes together* are therefore historical — the coupling they
+> describe no longer exists, and the conclusion (one container) simply became
+> easier to reach. Sections describing the database service, its readiness gate,
+> its volume, and pgAdmin are marked or removed accordingly. The reasoning is kept
+> because it explains why the boundary was collapsed in the first place.
 
 ## 1. Motivation
 
-Nine cannot be decoupled from its database. `memory.Open` **fails fast** when
-Postgres is unreachable — it is not a degraded mode, it is a startup error
-(`internal/memory/db.go`). Postgres holds *all* durable state: conversations,
+Nine cannot be decoupled from its database. `memory.Open` **fails fast** when the
+database is unusable — it is not a degraded mode, it is a startup error
+(`internal/memory/db.go`). The database holds *all* durable state: conversations,
 goals, workflows, KV, files, vectors, and the session event journal. The daemon
-without its database is not a running Nine; it is a crash loop.
+without it is not a running Nine; it is a crash loop.
 
-Because the two are one logical unit, packaging them as two containers adds
-coordination cost (compose networks, service-name DSNs, health-gated
-`depends_on`, two lifecycles to start/stop/upgrade) for a boundary that never
-needs to be crossed independently. The goal is **simplicity**: one image, one
-volume, one thing to start, stop, back up, and reason about.
+*(Historical: when that database was a Postgres server, packaging the two as
+separate containers added real coordination cost — compose networks, service-name
+DSNs, health-gated `depends_on`, two lifecycles to start, stop and upgrade — for a
+boundary that never needed to be crossed independently. That argument is what
+collapsed the stack into one image, and it is preserved below.)*
 
-This is deliberately the "database-inside-the-app-container" pattern that is
-normally discouraged for horizontally-scaled services. For Nine it is the right
-call *because* the coupling is intrinsic — see [§12 Tradeoffs](#12-tradeoffs--caveats)
-for the costs we are knowingly accepting.
+**Today the coupling is not a packaging problem at all.** The database is a SQLite
+file on the same volume as the workspace, so there is no second process, no
+readiness gate, and no network between the daemon and its state. The goal was
+**simplicity**: one image, one volume, one thing to start, stop, back up, and
+reason about. What used to require a supervisor and a health gate to achieve is
+now simply the shape of the system.
 
 ## 2. Where we are today
 
@@ -50,76 +57,65 @@ and `runtime` targets — a good foundation to extend rather than rewrite.
 ### What already makes this easy
 
 - **One config file, env-overridden.** `internal/config.ApplyEnvOverrides` +
-  `Config.DatabaseURL()` already let a single `nine.toml` serve every layout;
-  the container just overrides `NINE_DATABASE_URL`, `NINE_PLUGINS_BIN`,
-  `NINE_WORKSPACE_ROOT`, `NINE_SKILLS_USER_DIR`, `NINE_PLUGINS_USER_DIR`. No
-  code change is required for the DSN to point at a co-located Postgres.
-- **Schema is self-applying.** `initSchema` runs `CREATE EXTENSION IF NOT EXISTS
-  vector` and all `CREATE TABLE IF NOT EXISTS …` on every boot, so any
-  pgvector-capable Postgres cluster is bootstrapped by the daemon itself. No
-  external migration step.
+  `Config.DatabasePath()` already let a single `nine.toml` serve every layout;
+  the container just overrides `NINE_PLUGINS_BIN`, `NINE_WORKSPACE_ROOT`,
+  `NINE_SKILLS_USER_DIR`, `NINE_PLUGINS_USER_DIR`. The database path needs no
+  override at all — it resolves to `/data/nine.db` when that volume is present.
+- **Schema is self-applying.** `initSchema` runs all `CREATE TABLE IF NOT
+  EXISTS …` on every boot, so the database is bootstrapped by the daemon itself.
+  No external migration step.
 - **The client is just `nine`.** Attaching a session is `docker exec -it nine
   nine`, talking to `/tmp/nine.sock` inside the container — unchanged.
 
 ## 3. Target design at a glance
 
-One image, built to the same two targets we ship today, each now bundling
-Postgres:
+One image, built to the same two targets we ship today:
 
 ```
-┌─────────────────── container (nine + postgres) ───────────────────┐
+┌──────────────────────── container (nine) ─────────────────────────┐
 │  s6-overlay (pid 1 · supervises · reaps · forwards signals)        │
-│                                                                     │
-│      ┌──── postgres ────┐        ┌──────── nine ────────┐          │
-│      │ initdb once      │        │ gate: wait pg_isready │         │
-│      │ listen localhost │───────▶│ then daemon / watcher │         │
-│      └──────────────────┘        └───────────────────────┘         │
-│                                                                     │
-│   pgdata vol → /var/lib/postgresql/data    nine vol → /data         │
-└─────────────────────────────────────────────────────────────────────┘
-     localhost:5432 (in-container)          LLM → host.docker.internal
-
-   pgAdmin is NOT in the container — it is opt-in tooling (`make pgadmin`)
-   that runs `dpage/pgadmin4` as a throwaway side-container when you want it.
+│                                                                    │
+│                    ┌──────── nine ────────┐                        │
+│                    │  daemon / watcher    │                        │
+│                    │  opens /data/nine.db │                        │
+│                    └──────────────────────┘                        │
+│                                                                    │
+│                   nine vol → /data  (nine.db + workspace/)         │
+└────────────────────────────────────────────────────────────────────┘
+                                          LLM → host.docker.internal
 ```
 
-- **Normal mode** (`runtime` target): two supervised processes — Postgres and
-  the immutable `nine daemon`. No toolchain, no source.
-- **Dev mode** (`dev` target): Postgres + the hot-reload watcher (rebuilds and
-  restarts the daemon on `.go` change). Go toolchain and source bind-mount as
-  today. **Same two processes as normal mode** — pgAdmin is not one of them.
-- **pgAdmin stays apart.** It is optional DB-admin tooling, spawned on demand as
-  a separate container via a Makefile target (§8) — never baked into the Nine
-  image. This keeps both image targets lean and the container to two processes.
-- **Two named volumes** — one for the Postgres cluster, one for the rest of
-  Nine's mutable data (§9). The DB's on-disk state stays independently
-  backup-/reset-able from the workspace.
+- **Normal mode** (`runtime` target): one supervised process — the immutable
+  `nine daemon`. No toolchain, no source.
+- **Dev mode** (`dev` target): the hot-reload watcher (rebuilds and restarts the
+  daemon on `.go` change). Go toolchain and source bind-mount as today. Same
+  single process as normal mode.
+- **One named volume** carrying both the database file and the workspace (§9).
+
+*(Historical: this diagram showed a second supervised `postgres` process, a
+`pg_isready` gate between the two, a separate `pgdata` volume, and a note about
+pgAdmin as a side-container. All are gone.)*
 
 ## 4. Process supervision
 
-The container runs exactly **two** long-lived processes (Postgres + the daemon)
-in both modes. It still needs a real init to (a) reap zombies, (b) forward
-`SIGTERM`/`SIGINT` from `docker stop` to *both* Postgres and the daemon for a
-clean shutdown, and (c) order startup so the daemon does not launch before
-Postgres accepts connections (remember: fail-fast).
+The container runs **one** long-lived service — the daemon — in both modes. It
+still needs a real init, for two of the three original reasons: (a) reap zombies,
+which the browser plugin's chromium produces in quantity, and (b) forward
+`SIGTERM`/`SIGINT` from `docker stop` for a clean shutdown. The third reason —
+ordering a database service ahead of the daemon — is gone with the database
+service itself.
 
-**Recommendation: `s6-overlay`.** It is the de-facto standard for
-multi-process images, is tiny, handles PID 1 duties correctly, and supports
-per-service `dependencies` and readiness gates. Two small `run` scripts:
+**s6-overlay** remains the choice. It is tiny, handles PID 1 duties correctly, and
+keeps the service restart-on-exit. One `run` script per mode:
 
-- `svc/postgres/run` → execs the official image's `docker-entrypoint.sh
-  postgres`, reusing its cluster init, `POSTGRES_USER/PASSWORD/DB` handling, and
-  `/docker-entrypoint-initdb.d` hooks. We do **not** reimplement `initdb`.
-- `svc/nine/run` → blocks on a `pg_isready -h localhost` loop, then
-  execs the daemon (normal) or the hot-reload watcher (dev).
+- `docker/s6/runtime/s6-rc.d/nine/run` → creates `/data/workspace`, execs the daemon.
+- `docker/s6/dev/s6-rc.d/nine/run` → creates `/data/workspace`, execs the
+  hot-reload watcher.
 
-**Alternative considered: `supervisord`.** Simpler mental model, but weaker
-dependency ordering and signal semantics; we would hand-roll the readiness gate
-anyway. **Plain shell entrypoint** (`postgres & ; wait-for-pg ; exec nine
-daemon`) is now more tenable given only two processes, but still reaps zombies
-poorly and forwards signals to one child. s6 remains the recommendation for
-correct PID 1 behaviour; the shell entrypoint is a viable fallback if we want to
-avoid the dependency.
+*(Historical: a `postgres` service and a `pg_isready` gate sat alongside these.
+Both are deleted.)* With a single process, a plain shell entrypoint would now be
+tenable, but it still reaps zombies poorly — which matters here specifically
+because of chromium — so s6 stays.
 
 > Whichever supervisor: the daemon service must be **restart-on-exit** so a
 > hot-reload rebuild that momentarily drops the daemon (dev) or a transient
@@ -127,59 +123,50 @@ avoid the dependency.
 
 ## 5. Startup ordering & the fail-fast constraint
 
-This is the crux. Today compose enforces order with
-`depends_on: postgres: condition: service_healthy`. Inside one container we
-reproduce it explicitly:
+This was the crux, and it has dissolved. There is no ordering constraint left:
 
-1. s6 starts `postgres`. On first boot the official entrypoint runs `initdb`
-   into the empty PGDATA volume (`/var/lib/postgresql/data`), creates the `nine`
-   role/db, and starts listening on `localhost:5432`.
-2. `nine`'s `run` script gates on `until pg_isready -q -h localhost -U nine; do
-   sleep 0.5; done` before exec'ing the daemon. This turns the previous
-   external health-gate into an in-container gate and prevents the fail-fast
-   `Ping` from ever hitting a not-yet-ready cluster.
-3. Daemon boots, `initSchema` creates the extension + tables (idempotent),
-   seeds embedded skills, reconciles standing agents — unchanged behaviour.
+1. s6 starts `nine`. Its `run` script creates `/data/workspace`.
+2. The daemon opens `/data/nine.db`, creating the file on first boot.
+3. `initSchema` creates the tables (idempotent), seeds embedded skills,
+   reconciles standing agents — unchanged behaviour.
 
-No Go code changes are required for this ordering; the gate lives in the service
-script. (Optionally we could later add bounded connect-retry to `memory.Open`
-for resilience, but it is **not** needed for this plan and is out of scope.)
+Fail-fast still holds — an unopenable database is a startup error — but there is
+nothing to wait for, so nothing to gate on.
+
+*(Historical: this section previously described an in-container `pg_isready` loop
+replacing compose's health-gated `depends_on`. Both are gone.)*
 
 ## 6. Image layout (Dockerfile plan)
 
-Extend the existing multi-stage file. Base the runtime/dev stages on a
-Postgres+pgvector image so the database, the `vector` extension, and the
-official init script are present.
+Extend the existing multi-stage file.
 
-- **Base choice:** `pgvector/pgvector:pg17` (Debian bookworm). It already ships
-  Postgres 17 + the pgvector extension and the `docker-entrypoint.sh` we want to
-  reuse. Node.js and Chromium (browser plugin) install cleanly from Debian
-  repos. This replaces today's Alpine runtime base — a deliberate trade of image
-  size for reusing the official Postgres tooling and avoiding a hand-built
-  pgvector.
+- **Base choice:** `debian:bookworm-slim`. Node.js and Chromium (browser plugin)
+  install cleanly from Debian repos, and the `nine` binary is pure Go — the
+  SQLite driver is a Go translation rather than a cgo binding — so it carries no
+  libc dependency across stages. *(Historical: the base was
+  `pgvector/pgvector:pg17`, chosen to reuse the official Postgres tooling; with
+  no database to run, that reason is gone. Alpine would be smaller still, but
+  the browser plugin's Playwright does not support musl.)*
 - **`go-build` / `node-build` stages:** unchanged — compile `nine` + Go plugins,
   install browser-plugin `node_modules`.
 - **`runtime` target (normal):**
-  - `FROM pgvector/pgvector:pg17`
+  - `FROM debian:bookworm-slim`
   - install `s6-overlay`, `nodejs`, `chromium` + fonts
   - `COPY` the `nine` binary, `/opt/nine/bin/*` plugins, `/opt/nine/browser`
     code + `node_modules`, and the browser launcher shim (as today)
-  - `COPY` s6 service definitions (`postgres`, `nine`)
-  - `ENV NINE_BIN=/opt/nine/bin`, `PLAYWRIGHT_*`, `POSTGRES_USER/PASSWORD/DB=nine`
-    (keep the official image's default `PGDATA=/var/lib/postgresql/data`)
-  - ⚠️ **Chromium path changes.** Today's
-    `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser` is Alpine's
-    layout. On Debian the package is `chromium` and the binary is
-    **`/usr/bin/chromium`** — update the env var in *both* targets or the browser
-    plugin silently fails to launch.
-  - `VOLUME /var/lib/postgresql/data`, `VOLUME /data`; `ENTRYPOINT ["/init"]` (s6)
+  - `COPY` the s6 service definition (`nine`)
+  - `ENV NINE_BIN=/opt/nine/bin`, `PLAYWRIGHT_*`
+  - ⚠️ **Chromium path.** On Debian the package is `chromium` and the binary is
+    **`/usr/bin/chromium`**, not Alpine's `/usr/bin/chromium-browser` — the env
+    var must match in *both* targets or the browser plugin silently fails to
+    launch.
+  - `VOLUME /data`; `ENTRYPOINT ["/init"]` (s6)
 - **`dev` target (hot-reload):**
-  - same base + s6, **plus** the Go toolchain and `inotify-tools` — **no
-    pgAdmin** (it is a separate side-container, §8)
+  - same base + s6, **plus** the Go toolchain and `inotify-tools`
   - bake the browser plugin under `/opt/nine/browser` as immutable content
     (unchanged rationale — it is Node, not rebuilt from the mount)
-  - `COPY` the same two s6 service definitions, but the `nine` service's `run`
-    wraps today's `docker/dev-entrypoint.sh` build/watch loop
+  - `COPY` the same s6 service definition, but the `nine` service's `run` wraps
+    today's `docker/dev-entrypoint.sh` build/watch loop
   - source bind-mounts at `/nine-src` at runtime, as today
 
 The current `entrypoint.sh` (`mkdir -p /data/workspace; exec nine daemon`) folds
@@ -191,7 +178,6 @@ verbatim as the dev `nine` service body.
 
 ```bash
 docker run -d --name nine \
-  -v nine-pgdata:/var/lib/postgresql/data \
   -v nine-data:/data \
   --add-host host.docker.internal:host-gateway \
   -e NINE_LLM_ENDPOINT=http://host.docker.internal:11434 \
@@ -199,11 +185,10 @@ docker run -d --name nine \
 docker exec -it nine nine        # attach a session
 ```
 
-- Two processes (Postgres + daemon), two volumes (§9), no exposed ports required
-  — a session is a `docker exec`, exactly as `make session` (§11) wraps.
-- `NINE_DATABASE_URL` defaults to `postgres://nine:nine@localhost:5432/nine?sslmode=disable`
-  (co-located), baked into the image env so the mounted `nine.toml` still needs
-  no container-specific edits.
+- One process, one volume (§9), no exposed ports required — a session is a
+  `docker exec`, exactly as `make session` (§11) wraps.
+- The database path defaults to `/data/nine.db` because that volume is present,
+  so the mounted `nine.toml` needs no container-specific edits.
 - LLM knobs (`NINE_LLM_PROVIDER/MODEL/ENDPOINT`) pass through unchanged.
 
 ## 8. Dev / hot-reload mode
@@ -211,98 +196,68 @@ docker exec -it nine nine        # attach a session
 ```bash
 docker run -d --name nine-dev \
   -v "$PWD":/nine-src \
-  -v nine-dev-pgdata:/var/lib/postgresql/data \
   -v nine-dev-data:/data \
   -v nine-dev-gocache:/root/.cache/go-build \
-  -p 5432:5432 \
   --add-host host.docker.internal:host-gateway \
   nine-dev
 docker logs -f nine-dev
 ```
 
-- Same two supervised processes as normal mode — Postgres + the `.go`
+- Same single supervised process as normal mode — here the `.go`
   watch/rebuild/restart loop — plus the mounted source and Go build cache.
 - The hot-reload loop is the existing `dev-entrypoint.sh` logic; the browser
   plugin stays baked image content and is excluded from the watch, unchanged.
-- Dev publishes Postgres on host `5432` so pgAdmin (or `psql`) can reach the DB
-  from outside the container. Normal mode leaves it unexposed.
+- Neither mode publishes any port. *(Historical: dev published `5432` so pgAdmin
+  or `psql` could reach the database from outside.)*
 - Behavioural parity: same rebuild-on-save, same separate data volumes from
   normal mode, same "not meant to run both at once" (enforced naturally — they
   are different containers/names).
 
-### pgAdmin — opt-in tooling, not in the image
+### Inspecting the database
 
-pgAdmin is **not** built into either Nine image. When you want a DB UI, spawn it
-on demand as a throwaway side-container that connects to the exposed Postgres
-port. A Makefile target wraps it:
+*(Historical: this section described spawning pgAdmin as a throwaway
+side-container against a published Postgres port. With SQLite there is no port
+and no server, so pgAdmin and its `make pgadmin` target are gone.)*
 
-```make
-# Spawn pgAdmin against the running dev container's Postgres (host :5432).
-# Desktop mode: no login, no master password. Tear down with `make pgadmin-down`.
-pgadmin:
-	docker run -d --name nine-pgadmin \
-	  --add-host host.docker.internal:host-gateway \
-	  -e PGADMIN_DEFAULT_EMAIL=nine@nine.dev \
-	  -e PGADMIN_DEFAULT_PASSWORD=nine \
-	  -e PGADMIN_CONFIG_SERVER_MODE=False \
-	  -e PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED=False \
-	  -v $(PWD)/docker/pgadmin-servers.json:/pgadmin4/servers.json:ro \
-	  -p 5050:80 dpage/pgadmin4:latest
-	@echo "pgAdmin on http://localhost:5050 (pre-wired to the nine database)"
+The database is a plain SQLite file, so any SQLite client reads it, and WAL means
+a reader never blocks the running daemon:
 
-pgadmin-down:
-	-docker rm -f nine-pgadmin
+```bash
+docker exec -it nine sh -c 'sqlite3 /data/nine.db ".tables"'
 ```
-
-- `docker/pgadmin-servers.json` is updated so `Host` is `host.docker.internal`
-  and `Port` is `5432` — it reaches Nine's Postgres through the published port,
-  not a compose service name.
-- Nothing about pgAdmin touches the Nine image, the supervisor, or either mode's
-  process set. It is pure operator tooling, spawned and torn down independently.
-- Works against **either** mode as long as that container publishes `5432` (dev
-  does by default; add `-p 5432:5432` to the normal-mode `docker run` if you want
-  to inspect a production DB).
 
 ## 9. Volumes & persistence
 
-**Two named volumes per mode** — the database cluster kept separate from the
-rest of Nine's mutable data:
+**One named volume per mode.** *(Historical: there were two, because a Postgres
+cluster wanted its own lifecycle. A database file has no such need, so the split
+is gone.)*
 
-| Volume (prod / dev)                | Mount                          | Contents                                   |
-|------------------------------------|--------------------------------|--------------------------------------------|
-| `nine-pgdata` / `nine-dev-pgdata`  | `/var/lib/postgresql/data`     | PostgreSQL cluster (`PGDATA`)              |
-| `nine-data` / `nine-dev-data`      | `/data`                        | files-plugin workspace (`/data/workspace`), and any other daemon-side state under `/data` |
+| Volume (prod / dev)           | Mount   | Contents                                                        |
+|-------------------------------|---------|-----------------------------------------------------------------|
+| `nine-data` / `nine-dev-data` | `/data` | `nine.db` (+ `-wal`/`-shm`) and the files-plugin workspace       |
 
-- Keeping PGDATA on its **own** volume lets the database be backed up, snapshotted,
-  reset, or migrated (major-version `pg_upgrade`) independently of the workspace —
-  and vice-versa. The container is still one unit; only its on-disk state is split
-  along the natural DB-vs-app-data seam.
-- PGDATA stays at the official image default (`/var/lib/postgresql/data`), so the
-  Postgres entrypoint's init logic works untouched. `initdb` runs only when that
-  volume is empty, so re-runs are safe and existing data survives container
-  replacement.
-- **Backups:** `pg_dump`/`pg_restore` over the DB (via `docker exec` or the
-  exposed port) for the database; a `nine-data` volume snapshot for the
-  workspace. The two concerns back up on their own cadence.
+- The database is created on first boot; an existing file survives container
+  replacement, so re-runs are safe.
+- **Backups:** snapshot the volume, or copy the database out. If copying, take
+  `nine.db` **with** its `-wal` and `-shm` sidecars, or run
+  `VACUUM INTO '/data/backup.db'` to get one consistent file. Copying `nine.db`
+  alone from a running daemon can miss committed transactions still in the WAL.
 
 ## 10. Networking, ports, env
 
-- **In-container:** daemon ↔ Postgres over `localhost:5432` (or the Postgres
-  unix socket `/var/run/postgresql` for slightly less overhead — TCP localhost
-  is simpler and keeps the DSN format; recommend TCP).
-- **Exposed ports:** normal mode needs none. Dev publishes `5432` so the opt-in
-  pgAdmin side-container (or `psql`) can reach the DB from outside. pgAdmin, when
-  spawned, publishes its own `5050` from its separate container (§8).
+- **In-container:** the daemon opens its database as a file. There is no database
+  socket or port of any kind. *(Historical: this was `localhost:5432`.)*
+- **Exposed ports:** neither mode needs any.
 - **LLM:** unchanged — `host.docker.internal` via `--add-host …:host-gateway`,
   or an external endpoint.
-- **Env surface** stays the current `NINE_*` set; only `NINE_DATABASE_URL`'s
-  default host changes (`postgres` → `localhost`).
+- **Env surface** stays the current `NINE_*` set. The database path needs no
+  override: it resolves to `/data/nine.db` whenever that volume is present.
 
 ## 11. Run surface: Makefile over `docker run` (no compose)
 
 **`docker-compose.yml` is deleted.** Compose exists to orchestrate *multiple*
 containers — networks, service-name DNS, health-gated `depends_on`, profile
-fan-out. Once Nine and Postgres are one container, every one of those features
+fan-out. Once Nine and its database are one container, every one of those features
 is dead weight: there is nothing to orchestrate. Keeping a one-service compose
 file would preserve the ceremony the whole change is meant to remove, and it
 would be a second place where volumes, env, and ports are declared.
@@ -319,9 +274,7 @@ no longer required at all.
 | `make shell`       | `docker exec -it <nine\|nine-dev> sh`                       |
 | `make logs`        | `docker logs -f <nine\|nine-dev>`                           |
 | `make down`        | `docker rm -f` the container — **volumes kept**            |
-| `make destroy`     | `down` + `docker volume rm` both volumes + `docker image rm` |
-| `make pgadmin`     | spawn the pgAdmin side-container (§8)                      |
-| `make pgadmin-down`| remove it                                                   |
+| `make destroy`     | `down` + `docker volume rm` the data volumes + `docker image rm` |
 
 Notes for the implementer:
 
@@ -345,62 +298,46 @@ Notes for the implementer:
 - **Restart policy:** pass `--restart unless-stopped` on `docker run` to preserve
   today's behaviour.
 
-### Don't strand the native dev loop
+### The native dev loop needs nothing
 
-Compose is not only the deployment surface today — it is also how a **native**
-checkout gets a database. Deleting the file without a replacement breaks three
-things that have nothing to do with containerized Nine:
+*(Historical: this section existed because compose was also how a **native**
+checkout got a database — deleting it would have stranded `./dist/nine daemon`,
+`make eval-live`, and the integration tests, so a standalone `make pg` target
+was introduced to replace it, publishing pgvector on `localhost:5433`.)*
 
-1. **`nine.toml`'s default DSN is `localhost:5433`** — that port exists only
-   because the compose `postgres` service maps `5433:5432`. A developer running
-   `make build && ./dist/nine daemon` on the host needs something listening there.
-2. **`make eval-live`** documents *"Needs Postgres up (`docker compose up -d
-   postgres`)"*.
-3. **`docs/configuration.md`** tells readers to start a local instance with
-   `docker compose up -d`.
-
-Replace all three with a standalone target — a bare pgvector container on 5433,
-no compose:
-
-```make
-# Postgres for a native `./dist/nine daemon`, evals, and integration tests.
-# Matches nine.toml's default DSN (localhost:5433). Unrelated to the Nine
-# container, which runs its own Postgres internally.
-pg:
-	docker run -d --name nine-pg \
-	  -e POSTGRES_USER=nine -e POSTGRES_PASSWORD=nine -e POSTGRES_DB=nine \
-	  -p 5433:5432 -v nine-pg-native:/var/lib/postgresql/data \
-	  pgvector/pgvector:pg17
-
-pg-down:
-	-docker rm -f nine-pg
-```
-
-Keep the port at **5433** so `nine.toml` and every existing doc/DSN stay correct,
-and so it never collides with the containerized Nine publishing 5432 (§8). Update
-the `eval-live` comment and `docs/configuration.md` to point at `make pg`.
+With SQLite there is nothing to provide. `make build && ./dist/nine daemon`
+creates `~/.nine/nine.db` on first run; evals give each run its own file; the
+`memory` test suite gives each test a file under `t.TempDir()`. The `pg` and
+`pg-down` targets are deleted, and no target replaces them.
 
 ## 12. Tradeoffs & caveats
 
-Accepting DB-in-app-container knowingly:
+Most of the costs this section was written to accept were costs of running a
+database *engine* in the app container. Embedding a database *file* does not carry
+them, so they are struck below rather than silently dropped:
 
-- **Coupled lifecycle.** Restarting the container cycles Postgres too. This is
-  the intended semantics (one unit), but it means a daemon-only restart is now a
-  `docker exec`-level concern (send the daemon a signal / restart its s6
-  service), not a container restart.
-- **Postgres major-version upgrades** require the usual `pg_upgrade` /
-  dump-restore dance against the volume — the image can't just bump `pg17`→`pg18`
-  and reuse an old `PGDATA`. Document a dump/restore path.
-- **No independent scaling.** Acceptable — Nine is a single-instance daemon.
-- **Larger image.** Postgres + pgvector + Node + Chromium (+ Go in dev) on a
-  Debian base is heavier than today's Alpine runtime. Mitigate with multi-stage
-  copies and by keeping the toolchain in the `dev` target only. (pgAdmin adds
-  nothing — it is a separate on-demand container.)
-- **Resource limits** now cover two engines; document sane `--memory` guidance
-  (Postgres `shared_buffers` + the model client + Chromium).
-- **Log multiplexing.** Postgres and daemon logs share the container's stdout.
-  Keep `NINE_LOG_FILE=off` (stderr) as today and prefix/space them via s6 so
-  `docker logs` stays readable.
+- ~~**Coupled lifecycle.**~~ Restarting the container no longer cycles a second
+  engine; there is only the daemon.
+- ~~**Major-version upgrades** (`pg_upgrade` / dump-restore against the volume).~~
+  SQLite's on-disk format is stable across releases, and the driver is vendored
+  with the binary, so an image bump carries its own engine.
+- **No independent scaling.** Still true, still acceptable — Nine is a
+  single-instance daemon. SQLite makes this *structural* rather than a choice:
+  one writer, one host, and no network protocol to reach the data.
+- **Larger image.** Node + Chromium (+ Go in dev) on a Debian base is heavier
+  than an Alpine runtime, and Chromium dominates. Dropping the Postgres base
+  removed a few hundred MB; Alpine would remove more, but Playwright does not
+  support musl.
+- **Resource limits** now cover one engine, so the guidance is simply the model
+  client plus Chromium.
+- ~~**Log multiplexing.**~~ Only the daemon writes to stdout now.
+- **New: durability tuning.** WAL with `synchronous=NORMAL` can lose the last
+  commits on OS crash or power loss, where a server's default fsync-per-commit
+  would not. A clean process crash loses nothing. `synchronous=FULL` is the knob
+  if that trade is wrong for a deployment.
+- **New: backups are file-shaped.** The `-wal` and `-shm` sidecars are part of
+  the database; copying `nine.db` alone from a running daemon can miss committed
+  transactions (§9).
 
 ## 13. Behavioural-parity checklist
 
@@ -410,10 +347,9 @@ and real tool-calling agent turns:
 - [x] `docker exec -it nine nine` opens a session against `/tmp/nine.sock` —
       verified via `nine status` over the same socket path; not re-tested with
       an actual interactive pty.
-- [x] `initSchema` bootstraps a fresh PGDATA volume (extension + tables) on
-      first boot; second boot is a no-op; existing data survives — confirmed
-      `initdb` runs once, "Skipping initialization" on restart, prior session
-      resumed.
+- [x] `initSchema` bootstraps a fresh database on first boot; second boot is a
+      no-op; existing data survives — confirmed the file is created once and a
+      prior session resumes on restart.
 - [x] Built-in skills seed every boot; agent-authored skills untouched — 17
       built-ins seeded identically across restarts, both images.
 - [x] `skills.d` / `plugins.d` user dirs discovered from their mounts —

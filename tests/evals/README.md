@@ -9,7 +9,7 @@ Two tracks:
   code — the parts we own. Infra-free; runs on every PR.
 - **Track L — live** (behavioral). The same case run against a real model (or a
   matrix), graded over N runs with tolerant, side-effect- and trajectory-based
-  assertions. Needs Postgres + plugin binaries + a model.
+  assertions. Needs plugin binaries + a model.
 
 ## Layout
 
@@ -24,13 +24,12 @@ reports/      JSON + rendered grid, one per live run
 
 ```sh
 make eval-replay      # Track R + schema validation. No model, no database.
-make pg
 NINE_EVAL_MODELS=claude-haiku-4-5-20251001 make eval-live   # Track L matrix
-make eval-generate    # re-record the committed Track-R fixtures (needs Postgres)
+make eval-generate    # re-record the committed Track-R fixtures
 ```
 
 The runner drives turns **in-process**: it stands up the real daemon (the
-production wiring from `cmd/nine/daemon.go`) over a schema-per-run Postgres store
+production wiring from `cmd/nine/daemon.go`) over a per-run SQLite database file
 and an ephemeral workspace, so a case sees a clean world and grading reads the
 same durable journal (`session_events`) production writes.
 
@@ -42,7 +41,6 @@ same durable journal (`session_events`) production writes.
 | `NINE_EVAL_MODELS` | comma-separated model list for the matrix |
 | `NINE_EVAL_TIER` | run only one tier (e.g. `smoke`) |
 | `NINE_PLUGINS_BIN` | plugin binary dir (default from `make eval-live`) |
-| `NINE_TEST_DATABASE_URL` | eval Postgres DSN (default: `make pg`'s `localhost:5433`) |
 | `ANTHROPIC_API_KEY` | for `claude-*` matrix models |
 | `NINE_LLM_ENDPOINT` | Ollama endpoint for local matrix models |
 

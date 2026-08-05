@@ -7,7 +7,7 @@
 //     reproduced answers equal the recorded ones. No live model, no database, no
 //     plugins. Runs on every PR.
 //   - TestLiveMatrix — Track L: the live model matrix. Gated by NINE_EVALS_LIVE=1
-//     and a model list; needs Postgres (and plugins for tool cases).
+//     and a model list (and plugins for tool cases).
 //
 // Layout (docs/evals.md §8):
 //

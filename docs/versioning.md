@@ -10,7 +10,7 @@ internal compatibility contracts that bump *only* when a real break happens.
 | **Release version** | "which Nine is this" (user-facing) | SemVer, git-tag driven | git tag `vX.Y.Z` → injected at build |
 | **Plugin protocol** | daemon ↔ native plugin wire compat | single integer, bump on break | `plugin.ProtocolVersion` |
 | **Config schema** | `nine.toml` shape | integer `schema_version` field (planned) | config struct + migrate-on-load |
-| **Memory DB schema** | PostgreSQL schema | idempotent `CREATE TABLE IF NOT EXISTS` on open; no migration table yet (planned) | `internal/memory.initSchema` |
+| **Memory DB schema** | SQLite schema | idempotent `CREATE TABLE IF NOT EXISTS` on open; `PRAGMA user_version` records a generation, but there is no migration runner yet (planned) | `internal/memory.initSchema` |
 
 ## 1. Release version
 
@@ -104,7 +104,7 @@ must be in place *before* the first one does.
 
 ## 4. Memory DB schema (planned)
 
-The PostgreSQL schema is currently applied idempotently on `Open` via
+The SQLite schema is currently applied idempotently on `Open` via
 `initSchema` (`CREATE TABLE IF NOT EXISTS`, plus `CREATE EXTENSION IF NOT EXISTS
 vector`) — additive changes are safe, but there is **no migration table or
 version counter**. When the schema first needs a backward-incompatible change,

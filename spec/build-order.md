@@ -27,19 +27,19 @@ format (even if nothing answers yet).
 **Build.**
 - Config loader → [`contracts/config.md`](contracts/config.md). Resolve `nine.toml` via
   `$NINE_CONFIG` → `./nine.toml` → `/nine.toml` → `~/.nine/nine.toml`; apply defaults.
-- The memory store → [`contracts/memory-store.md`](contracts/memory-store.md). Connect to
-  **PostgreSQL** by DSN (`[memory].database_url`, with the `pgvector` extension), **fail
-  fast** if unreachable, create the full schema idempotently (`CREATE TABLE IF NOT
-  EXISTS`; no migration table), and expose the agent-facing and daemon-internal method
-  sets. This object is the **only** holder of the DB handle (invariant I3).
+- The memory store → [`contracts/memory-store.md`](contracts/memory-store.md). Open the
+  **SQLite** database at `[memory].path`, creating the file if absent, **fail fast** if it
+  is unusable, create the full schema idempotently (`CREATE TABLE IF NOT EXISTS`; no
+  migration table), and expose the agent-facing and daemon-internal method sets. This
+  object is the **only** holder of the DB handle (invariant I3).
 - Wire types → [`contracts/wire-protocol.md`](contracts/wire-protocol.md). The `Msg`
   struct, `ProgressEvent`, `StatusInfo`, and the newline-delimited JSON framing, in a
   package that depends on neither client nor daemon.
 
-**Gate.** Point at a fresh PostgreSQL schema; run schema creation; round-trip a
+**Gate.** Point at a fresh database file; run schema creation; round-trip a
 `memory_set`/`memory_get` through the store; marshal/unmarshal every `Msg` type. The store
-passes its contract's unit tests against a real Postgres (the reference uses a
-schema-per-test isolation helper).
+passes its contract's unit tests against a real database (the reference gives each test
+its own file in a temp directory, so the suite needs no external service).
 
 ---
 
@@ -75,7 +75,7 @@ streamed chunks in order into the response and maps `done_reason`/tool calls cor
 - Providers: `keyword` (built-in, no network — the default), `ollama`, and
   `none` (returns no vector / disables ranking). There is no OpenAI embedder.
 
-**Wire.** Construct from `[embeddings]` config. The store gains pgvector put/query backed
+**Wire.** Construct from `[embeddings]` config. The store gains vector put/query backed
 by these embeddings under namespaced keys (`skills`, `session-index`, per-agent memory
 namespaces — there is no `tools:` namespace).
 
@@ -387,7 +387,7 @@ without an LLM call; the TUI shows tool calls live. (Once Phase 14 ships, a pend
 restores background autonomy.
 
 **Build / Wire (order matters).**
-1. Load config (+ env overrides). 2. Open the Postgres store (fail-fast). 3. Start the
+1. Load config (+ env overrides). 2. Open the SQLite store (fail-fast). 3. Start the
 plugin manager + default plugins. 4. Build checkpoint/notification stores. 5. Build the
 embedder. 6. Build the supervisor and `Attach(store)` (durable bus). 7. Build the
 self-model assembler. 8. `BootstrapSelfKV`. 9. Register `idle-reflection` +

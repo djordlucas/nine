@@ -1,7 +1,7 @@
 # Event subscriptions — reacting to the session journal
 
 **Status:** Proposed (design note) · **Depends on:** the session event journal
-(docs/event-log.md v1–v3), the supervisor bus, pgvector + the embedder (phase 0),
+(docs/event-log.md v1–v3), the supervisor bus, the vector store + the embedder (phase 0),
 the `llm.Queue` priority tiers, the context builder, the notification feed ·
 **Downstream of:** docs/event-log.md (this builds on the durable journal; it does
 not replace it)
@@ -20,7 +20,7 @@ than invasive.
 
 The journal (docs/event-log.md) is already append-only, ordered, and typed. Add a
 **subscription layer** on top of it: durable per-subscriber cursors over `seq`,
-live wake via Postgres `LISTEN/NOTIFY`, catch-up-after-restart from the last
+live wake via an in-process notify, catch-up-after-restart from the last
 cursor. Subscribers are **programmatic** handlers that run **off the turn path**
 and **enrich derived stores** — topic tags, cross-session links, indices,
 metrics, the notification feed — which *later* turns or the user **pull** from.
@@ -53,7 +53,7 @@ draws a hard line: **enrich, don't interject.**
   unnecessary in this scope.
 - **Embedding / vector retrieval is allowed; generative completion is not.**
   Embeddings are a bounded, cheap, single-vector model call (not a generative
-  turn), and pgvector + the embedder already back the store. Allowing them keeps
+  turn), and the vector store + the embedder already back it. Allowing them keeps
   semantic reactions ("is this related to an earlier discussion?") cheap and
   passive; keyword/regex/structural matching remains available for subscribers
   that want zero model calls.
@@ -107,7 +107,7 @@ delivery guarantees stop being optional:
   processed. On restart it resumes from there — a subscriber that was down catches
   up rather than losing the window (the gap the in-memory supervisor bus has
   today).
-- **Live wake + catch-up.** Postgres `LISTEN/NOTIFY` wakes subscribers on new
+- **Live wake + catch-up.** An in-process notify wakes subscribers on new
   events for low latency; the `seq` cursor covers everything missed while asleep
   or between daemon runs. Notify is a hint, the cursor is the truth.
 - **Best-effort tier still exists.** High-volume observability events
@@ -120,7 +120,8 @@ delivery guarantees stop being optional:
   on its own goroutine, **never on the turn path**, so a slow or failing
   subscriber cannot slow a user turn (the out-of-band guarantee, §1a).
 - **What subscribers produce** (derived state only): topic/entity **tags** on
-  sessions; **cross-session links** ("this turn resembles session X" via pgvector);
+  sessions; **cross-session links** ("this turn resembles session X" by vector
+  similarity);
   **indices** (topic → sessions); **metrics** (tool error rates, stall causes,
   token usage over time); and entries in the existing **notification feed** (which
   is already user-*pull*, not pushed into a session).
@@ -196,7 +197,7 @@ Each phase is independently shippable and downstream of docs/event-log.md.
    split across processes.
 2. **First programmatic subscriber. ✅ Done (2026-07-07).** `subscribers.RelatedIndexer`
    (`internal/subscribers/related.go`): on `turn_end`, embed the answer,
-   vector-search prior sessions (pgvector `session-index` namespace), record a
+   vector-search prior sessions (the `session-index` namespace), record a
    link in the derived `related_sessions` table (upsert; threshold-gated,
    deduped per agent), then add this turn's vector to the index. No generative
    call; idempotent (per-event vector id + upsert). Config-gated —
@@ -234,7 +235,7 @@ Each phase is independently shippable and downstream of docs/event-log.md.
    gist-less link stays silent (unit tests: relevant-surface, not-relevant-silent,
    unlinked-match-silent, empty-gist-skip, budget-cap/drop). *Verified live,
    end-to-end* (2026-07-08) against a real daemon (gemma4:e4b) + real
-   Postgres/pgvector + nomic-embed-text: two topically-linked sessions linked at
+   The vector store + nomic-embed-text: two topically-linked sessions linked at
    0.85–0.93, then on a later turn the enrichment landed in the model's actual
    assembled system prompt (confirmed by inspecting the journaled `llm_request`
    `system` payload) with the correct prior-session gist, while an off-topic
@@ -263,7 +264,7 @@ Each phase is independently shippable and downstream of docs/event-log.md.
 - `internal/runtime/supervisor.go` — the journal-backed control-plane bus.
 - `internal/context/builder.go` — `BuildWithUsage` (the pull seam for surfacing
   enrichment under relevance + budget).
-- `internal/memory/vectors.go` — pgvector search (the retrieval substrate for
+- `internal/memory/vectors.go` — vector search (the retrieval substrate for
   semantic subscribers).
 - `internal/memory/user_notifications.go` — the existing pull-based feed
   subscribers can post to.

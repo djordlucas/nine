@@ -1,17 +1,32 @@
-# Contract — Memory Store (the single Postgres gateway)
+# Contract — Memory Store (the single database gateway)
 
 **Status:** Built · **Depends on:** nothing · **Used by:** everything that persists
 
 One store object owns the only database handle. All persistence — agent memory,
 checkpoints, goals, workflows, session plans, vectors, skills, and the session event
-journal — flows through it (invariant I3). The reference backend is **PostgreSQL** with
-the **`pgvector`** extension, reached via the pgx v5 driver over `database/sql`. The
-store connects by DSN (`[memory].database_url`), **fails fast** if the database is
-unreachable (Postgres holds primary state, so an unavailable database is a startup error,
-not a degraded mode), and applies its schema idempotently on `Open`
-(`CREATE TABLE IF NOT EXISTS`, `CREATE EXTENSION IF NOT EXISTS vector`) — there is **no
-migration table or version counter**. A thin wrapper rewrites `?` placeholders to `$N`
-so query strings stay driver-agnostic.
+journal — flows through it (invariant I3). The reference backend is **SQLite**, reached
+via the pure-Go `modernc.org/sqlite` driver over `database/sql`; nine therefore ships
+with no database server and nothing to provision. The store opens a file path
+(`[memory].path`), creating the file and its parent directory if absent, **fails fast**
+if the database is unusable (it holds primary state, so an unopenable database is a
+startup error, not a degraded mode), and applies its schema idempotently on `Open`
+(`CREATE TABLE IF NOT EXISTS`) — there is **no migration table**, though `PRAGMA
+user_version` records a schema generation for the day one is needed.
+
+Because SQLite serializes writes, the store owns **two connection pools**: a
+single-connection read-write pool and a concurrent read-only pool, with each statement
+routed by its leading keyword. Routing is by statement text rather than by Go method
+because `UPDATE … RETURNING` arrives through `Query` but is a write; anything not
+recognizably a `SELECT` routes to the writer. The database runs in WAL mode with a busy
+timeout, so a second process (`nine trace`, `nine replay`) can read a live database
+without blocking, or being blocked by, the daemon's writer.
+
+> **Timestamps are fixed-width RFC3339 UTC microseconds stored as TEXT.** SQLite compares
+> TEXT bytewise, so ordering and range predicates *are* string comparisons: a
+> variable-width or mixed-offset format silently corrupts both. A conforming
+> implementation **MUST** write every timestamp in one fixed-width, always-UTC form, and
+> **MUST NOT** bind a native time value as a query argument unless the driver is known to
+> format it identically.
 
 ---
 
@@ -20,22 +35,22 @@ so query strings stay driver-agnostic.
 A conforming implementation **MUST** route every database access through one store type
 that holds the sole connection/handle. Domain services (e.g. the workflow service)
 **MUST** depend on a narrow repository interface, not on the database directly. This is
-what keeps the "single Postgres gateway" invariant and makes domain logic testable against
+what keeps the "single database gateway" invariant and makes domain logic testable against
 a fake repository.
 
 ---
 
 ## R-MEM.2 — Schema (exactly these tables)
 
-The reference database contains these **sixteen** tables (plus the `vector` extension).
-An implementation **MUST** provide equivalent storage for each; it **MUST NOT** require
-additional operational tables to be agent-visible (R-MEM.4).
+The reference database contains these **seventeen** tables. An implementation **MUST**
+provide equivalent storage for each; it **MUST NOT** require additional operational
+tables to be agent-visible (R-MEM.4).
 
 | Table | Purpose | Access tier |
 |-------|---------|-------------|
 | `kv` | agent key-value memory | agent (tools) |
-| `files` | file content + generated `tsvector`/GIN full-text index; the `spill/` prefix is daemon-owned (R-MEM.9) | agent (tools) |
-| `vectors` | pgvector embeddings + `<=>` cosine query, namespaced (`skills`, `session-index`, agent namespaces) | mixed (see below) |
+| `files` | file content, full-text indexed by a companion FTS5 table kept in sync by triggers; the `spill/` prefix is daemon-owned (R-MEM.9) | agent (tools) |
+| `vectors` | embeddings as packed float32 blobs, ranked by cosine similarity, namespaced (`skills`, `session-index`, `memories`, `docs`, agent namespaces) | mixed (see below) |
 | `skills` | skill records (name, description, tags, body, source) | mixed |
 | `conversations` | message history, scratchpad checkpoint, status, display name | daemon-private |
 | `goals` | open-ended intentions; status; parent; `subtree` JSON | daemon-private |
@@ -49,6 +64,7 @@ additional operational tables to be agent-visible (R-MEM.4).
 | `session_events` | append-only execution journal (see [`event-journal.md`](event-journal.md)) | daemon-private |
 | `event_cursors` | per-subscriber durable journal position | daemon-private |
 | `related_sessions` | derived cross-session links (see [`subscriptions.md`](subscriptions.md)) | daemon-private |
+| `plugin_jobs` | long-running plugin work tracked across turns (see [`plugin.md`](plugin.md)) | daemon-private |
 
 There is **no `plugin_registry` table** (plugins are immutable image content) and **no
 `tasks` table** (finite work is a sub-agent or a workflow step).
@@ -65,11 +81,19 @@ the dispatcher calls the embedder and then the store; see
 |---------|---------------|-------|
 | `memory_get/set/delete/list` | `Get`, `Set`, `Delete`, `List(prefix)` | exact-key K/V; `List` is prefix-scan |
 | `file_store/fetch/list` | `FileStore`, `FileFetch`, `FileList(prefix)` | arbitrary content storage; `file_store` refuses the reserved `spill/` prefix |
-| `file_fetch` (windowed) | `FileFetchRange(path, offset, limit)` → `FileSlice{content, offset, chars, total}` | reads a window of a large file; offsets are **characters**, sliced in Postgres so the file is never materialized whole |
-| `file_search_text` | `FileSearchTextScoped(query, pathPrefix, limit)` | Postgres full-text search (`websearch_to_tsquery` + `ts_rank`, highlighted via `ts_headline`); an optional path prefix scopes the search to one file or directory |
+| `file_fetch` (windowed) | `FileFetchRange(path, offset, limit)` → `FileSlice{content, offset, chars, total}` | reads a window of a large file; offsets are **characters**, sliced in the database so the file is never materialized whole |
+| `file_search_text` | `FileSearchTextScoped(query, pathPrefix, limit)` | FTS5 full-text search ranked by `bm25`, highlighted via `snippet`; an optional path prefix scopes the search to one file or directory |
 | `memory_embed` / `memory_query` | `VectorStore`, `VectorQuery(ns, vec, topK)` | **core-intercepted** |
 | `file_search_semantic` | `VectorQuery` over file chunks | **core-intercepted** |
 | `skill_*` | `SkillUpsert/Get/List/Delete`, `SkillNamesBySource` | see [`skills.md`](skills.md) |
+
+**Search input is untrusted.** `file_search_text` receives whatever the model composed,
+which routinely includes unbalanced quotes, stray operators, trailing conjunctions and
+column-filter syntax. A conforming implementation **MUST NOT** surface a query-syntax
+error to the agent: malformed input yields *no results*, never a failed tool call. The
+reference does this by emitting every user term as a quoted literal, so no input can
+reach the matcher as syntax; an input with nothing searchable in it short-circuits to an
+empty result.
 
 ---
 
@@ -117,13 +141,17 @@ is distinguishable from an error.
 ## R-MEM.6 — Vectors and namespaces
 
 `VectorStore(id, namespace, key, vector)` and `VectorQuery(namespace, vector, topK)`
-store into and query the pgvector `vector` column, ranking by `<=>` cosine distance
-(similarity = `1 - distance`), filtered to matching dimensionality. Namespaces partition
+store into and query the `embedding` blob column, ranking by cosine similarity and
+filtered to matching dimensionality. The reference implementation computes similarity in
+process over a namespace scan; this is not a shortcut but the same work the previous
+backend did, which likewise had no approximate-nearest-neighbour index. Namespaces partition
 the space so queries don't collide: `skills` (skill descriptions, written on skill
 create/modify), `session-index` (one vector per completed turn, written by the
 related-session subscriber), `memories` (one vector per KV key — the embedded value —
 mirrored on every `memory_set` when memory surfacing is enabled, so the context builder
-can pull-surface memories relevant to the current turn; see R-MEM.8), and per-agent
+can pull-surface memories relevant to the current turn; see R-MEM.8), `docs` (one vector
+per section of the embedded documentation; see
+[`self-documentation.md`](self-documentation.md)), and per-agent
 memory namespaces (from `memory_embed`). `VectorDelete(id)` removes a stored vector
 (used when a skill is deleted/replaced, or when `memory_delete` removes a mirrored KV key).
 
@@ -189,11 +217,12 @@ it by design.
 
 ## Reference symbols
 
-`internal/memory/` — `db.go` (open + schema; pgx v5; `?`→`$N` rebind), `kv.go`,
-`files.go` (tsvector FTS), `vectors.go` (pgvector), `skills.go`, `conversations.go`,
+`internal/memory/` — `db.go` (open + schema + pool routing), `time.go` (the stored
+timestamp format), `kv.go`, `files.go` (FTS5 search), `fts.go` (the MATCH-expression
+builder), `vectors.go` (blob encoding + cosine ranking), `skills.go`, `conversations.go`,
 `goals.go`, `workflows.go` (delegates to `internal/workflow.Service`), `notifications.go`,
 `user_notifications.go`, `reflections.go`, `session_plans.go`, `hitl.go`, `events.go`
-(journal), `cursors.go` (subscriber cursors), `related.go` (related sessions). Driver:
-`github.com/jackc/pgx/v5/stdlib`. Backend: `pgvector/pgvector:pg17`, co-located with
-the daemon in the single container (docs/single-container.md), or standalone via
-`make pg` for native use.
+(journal), `cursors.go` (subscriber cursors), `related.go` (related sessions),
+`plugin_jobs.go` (plugin job registry). Driver: `modernc.org/sqlite` (pure Go, no cgo).
+Backend: one SQLite file, on the container's `/data` volume or at `~/.nine/nine.db`
+natively.

@@ -35,7 +35,7 @@ transport. No new socket, no reverse channel, no capability tokens.
 |---|---|---|
 | 1 | **Pass-through settings** (§3) | `[plugin.<name>.settings]` in `nine.toml` → environment variables at spawn. Nine never declares a schema, so an operator can configure a third-party plugin without rebuilding Nine. |
 | 2 | **Cache directory** (§4) | A per-plugin scratch dir created by the manager, handed over as `NINE_PLUGIN_CACHE_DIR`, **wiped when the plugin exits**. A per-plugin `persist_cache = true` (default **false**) keeps it across restarts. |
-| 3 | **Long-running jobs** (§5) | A tool call may return a **job id** instead of a result. The daemon records the job in Postgres, **polls the plugin** for status over the transport it already uses, and surfaces completion on a later turn. The model gets `job_wait` (blocking) and `job_check` / `job_list` (non-blocking). |
+| 3 | **Long-running jobs** (§5) | A tool call may return a **job id** instead of a result. The daemon records the job in the database, **polls the plugin** for status over the transport it already uses, and surfaces completion on a later turn. The model gets `job_wait` (blocking) and `job_check` / `job_list` (non-blocking). |
 
 The plugin contract grows two methods (`plugin.job_status`, `plugin.job_cancel`),
 one describe flag, one call-result field, and two env vars — all additive, all
@@ -256,7 +256,7 @@ say "started, ask me later."
 
 1. A tool handler starts the work on its own goroutine and returns **immediately**
    with a `job_id` and a one-line acknowledgement instead of a result.
-2. The daemon records the job in Postgres, keyed to the conversation that started
+2. The daemon records the job in the database, keyed to the conversation that started
    it, and returns the model a short observation naming a **job handle**.
 3. A daemon-side poller asks `plugin.job_status` on a backoff until the job
    reaches a terminal state.
@@ -373,7 +373,7 @@ existing one actually hold.
 
 ### Daemon side: the registry
 
-A new `plugin_jobs` table in `internal/memory` (Postgres, like everything else
+A new `plugin_jobs` table in `internal/memory` (like everything else
 persistent):
 
 | Column | Purpose |
@@ -423,7 +423,7 @@ detached work inside a plugin process. `docs/glossary.md` gains the entry.
 Three independent mechanisms, because the model may never block and may never be
 asked again:
 
-1. **The registry row** is in Postgres, so the fact survives the turn, the
+1. **The registry row** is in the database, so the fact survives the turn, the
    session, and the daemon.
 2. **Completion posts a notification**, so the next turn in that conversation is
    told without having to ask.

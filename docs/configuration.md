@@ -10,11 +10,10 @@ Nine is configured via a single TOML file. Nine looks for the config file in thi
 The first file found wins. If none is found, Nine starts with default (zero) values.
 
 There is one `nine.toml` for every deployment. It is written for the native layout
-(local Ollama, `make pg`'s standalone Postgres on its host-published port, plugins in
-`./dist/bin`), and the container overrides the values that differ —
-`NINE_LLM_ENDPOINT`, `NINE_PLUGINS_BIN`, `NINE_WORKSPACE_ROOT` — rather than shipping
-a second file. `NINE_DATABASE_URL` needs no override there: it's baked into the
-image, already pointing at the Postgres co-located in the same container
+(local Ollama, plugins in `./dist/bin`), and the container overrides the values that
+differ — `NINE_LLM_ENDPOINT`, `NINE_PLUGINS_BIN`, `NINE_WORKSPACE_ROOT` — rather than
+shipping a second file. The database path needs no override there: it defaults to
+`/data/nine.db` whenever the container's `/data` volume is present
 ([Single-container Nine](single-container.md)). See [Environment Variables](#environment-variables).
 
 ---
@@ -153,14 +152,14 @@ bin = "./dist/bin"
 
 
 [memory]
-# PostgreSQL connection string. Postgres holds all persistent state:
-# conversations, tasks, goals, KV memory, file cache (full-text searchable via
-# tsvector), vectors (pgvector), skills, and the session event journal. (Built-in
-# skills are embedded in the binary and seeded into the skills table on boot —
-# there is no skills dir.) The daemon fails fast if the database is unreachable.
-# Overridable with the NINE_DATABASE_URL environment variable. Start a local
-# instance with `make pg`.
-database_url = "postgres://nine:nine@localhost:5433/nine?sslmode=disable"
+# SQLite database file. It holds all persistent state: conversations, goals, KV
+# memory, file cache (full-text searchable via FTS5), vectors, skills, and the
+# session event journal. (Built-in skills are embedded in the binary and seeded
+# into the skills table on boot — there is no skills dir.) The file and its parent
+# directory are created on first run; the daemon fails fast if it cannot be opened.
+# Defaults to /data/nine.db when the container's /data volume is present, else
+# ~/.nine/nine.db. Overridable with the NINE_DB_PATH environment variable.
+# path = "~/.nine/nine.db"
 
 # Memory surfacing: mirror every memory_set into a shared vector pool and, on
 # later turns, inject the stored memories most relevant to the current query as
@@ -352,7 +351,7 @@ Environment variables take priority over `nine.toml` values.
 | `NINE_LLM_MODEL` | Override `llm.model` |
 | `NINE_LLM_ENDPOINT` | Override `llm.endpoint` |
 | `NINE_EMBED_PROVIDER` | Override `embeddings.provider` |
-| `NINE_DATABASE_URL` | Override `memory.database_url` |
+| `NINE_DB_PATH` | Override `memory.path` |
 | `NINE_PLUGINS_BIN` | Override `plugins.bin` |
 | `NINE_PLUGINS_USER_DIR` | Override `plugins.user_dir` |
 | `NINE_PLUGINS_CACHE_DIR` | Override `plugins.cache_dir` (the plugin cache-dir root) |
@@ -379,8 +378,8 @@ output live.
 
 These are how one `nine.toml` serves every deployment. The Makefile's `up`/`up-hot`
 targets set `NINE_PLUGINS_BIN` and `NINE_WORKSPACE_ROOT` to point the container at
-its own layout (`NINE_DATABASE_URL` needs no override — it's baked into the image,
-already pointing at the co-located Postgres), and the `NINE_LLM_*` knobs — passed
+its own layout (the database path needs no override — it defaults to `/data/nine.db`
+when that volume is present), and the `NINE_LLM_*` knobs — passed
 through by those same targets — let you switch models without editing the file:
 
 ```bash
