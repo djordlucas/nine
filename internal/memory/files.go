@@ -10,11 +10,18 @@ import (
 )
 
 // FileStore saves or replaces the file at path with content.
+//
+// NUL bytes are replaced with U+FFFD. SQLite's length() and substr() treat a
+// NUL as the end of a TEXT value, so storing one verbatim would silently
+// truncate every windowed read past it — FileFetchRange would report a Total
+// shorter than the file and a paging loop would terminate early, with no error
+// anywhere.
 func (s *Store) FileStore(path, content string) error {
+	content = strings.ReplaceAll(content, "\x00", "�")
 	_, err := s.db.Exec(
-		`INSERT INTO files(path, content, size, stored_at) VALUES(?,?,?,CURRENT_TIMESTAMP)
-		 ON CONFLICT(path) DO UPDATE SET content=excluded.content, size=excluded.size, stored_at=CURRENT_TIMESTAMP`,
-		path, content, len(content))
+		`INSERT INTO files(path, content, size, stored_at) VALUES(?,?,?,?)
+		 ON CONFLICT(path) DO UPDATE SET content=excluded.content, size=excluded.size, stored_at=excluded.stored_at`,
+		path, content, len(content), nowText())
 	return err
 }
 
@@ -45,8 +52,8 @@ type FileSlice struct {
 // into context.
 //
 // Offsets and lengths are in **characters**, not bytes, so a window can never
-// split a multi-byte rune, and the slicing happens in Postgres so a huge file
-// is never materialized in the daemon. A negative offset clamps to 0; a
+// split a multi-byte rune, and the slicing happens in the database so a huge
+// file is never materialized in the daemon. A negative offset clamps to 0; a
 // non-positive limit means "to the end of the file". An offset past the end
 // returns an empty window rather than an error, so a paging loop terminates
 // cleanly. Returns found=false if the path does not exist.
@@ -93,10 +100,9 @@ func (s *Store) FileDeleteOlderThan(pathPrefix string, olderThan time.Duration) 
 	if olderThan <= 0 {
 		return 0, fmt.Errorf("file delete: age must be positive, got %s", olderThan)
 	}
-	cutoff := time.Now().Add(-olderThan)
 	res, err := s.db.Exec(
 		`DELETE FROM files WHERE path LIKE ? AND stored_at < ?`,
-		pathPrefix+"%", cutoff)
+		pathPrefix+"%", writeTime(time.Now().Add(-olderThan)))
 	if err != nil {
 		return 0, err
 	}
@@ -151,18 +157,27 @@ func (s *Store) FileSearchTextScoped(query, pathPrefix string, limit int) ([]Fil
 	if limit <= 0 {
 		limit = 10
 	}
+	// ftsQuery guarantees a syntactically valid MATCH expression, or "" when the
+	// input has nothing searchable in it — an empty MATCH is itself an error, so
+	// that case short-circuits to no results.
+	match := ftsQuery(query)
+	if match == "" {
+		return nil, nil
+	}
 	// The path filter is an optional conjunct rather than a second query so the
 	// ranking and snippet extraction stay identical either way.
+	//
+	// bm25() returns the negation of the usual score, so best-first is plain
+	// ascending order — a DESC here would rank the worst matches first.
 	rows, err := s.db.Query(
-		`SELECT path,
-		        ts_headline('english', content, websearch_to_tsquery('english', ?),
-		                    'StartSel=[, StopSel=], MaxFragments=1, MaxWords=10, MinWords=1') AS snippet
-		 FROM files
-		 WHERE search_tsv @@ websearch_to_tsquery('english', ?)
-		   AND (? = '' OR path LIKE ? || '%')
-		 ORDER BY ts_rank(search_tsv, websearch_to_tsquery('english', ?)) DESC
+		`SELECT f.path, snippet(files_fts, 0, '[', ']', '…', 10) AS snippet
+		 FROM files_fts
+		 JOIN files f ON f.rowid = files_fts.rowid
+		 WHERE files_fts MATCH ?
+		   AND (? = '' OR f.path LIKE ? || '%')
+		 ORDER BY bm25(files_fts)
 		 LIMIT ?`,
-		query, query, pathPrefix, pathPrefix, query, limit)
+		match, pathPrefix, pathPrefix, limit)
 	if err != nil {
 		return nil, fmt.Errorf("fts query: %w", err)
 	}

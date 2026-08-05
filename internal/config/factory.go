@@ -99,17 +99,29 @@ func (cfg *Config) SocketPath() string {
 	return DefaultSocketPath
 }
 
-// DatabaseURL returns the PostgreSQL connection string for the memory store,
-// honoring NINE_DATABASE_URL, then nine.toml's [memory].database_url, then a
-// local default matching `make pg`'s standalone Postgres.
-func (cfg *Config) DatabaseURL() string {
-	if v := os.Getenv("NINE_DATABASE_URL"); v != "" {
+// DatabasePath returns the filesystem path of the SQLite database backing the
+// memory store, honoring NINE_DB_PATH, then nine.toml's [memory].path, then a
+// platform default.
+//
+// The default follows the workspace: inside the container /data is the mounted
+// volume that already holds the workspace, so the database lives beside it and a
+// single volume carries all durable state. Natively it sits next to the config
+// in ~/.nine.
+func (cfg *Config) DatabasePath() string {
+	if v := os.Getenv("NINE_DB_PATH"); v != "" {
 		return v
 	}
-	if cfg.Memory.DatabaseURL != "" {
-		return cfg.Memory.DatabaseURL
+	if cfg.Memory.Path != "" {
+		return cfg.Memory.Path
 	}
-	return "postgres://nine:nine@localhost:5433/nine?sslmode=disable"
+	if fi, err := os.Stat("/data"); err == nil && fi.IsDir() {
+		return "/data/nine.db"
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "nine.db"
+	}
+	return filepath.Join(home, ".nine", "nine.db")
 }
 
 // EventRetention returns the session_events retention policy: how many recent

@@ -64,9 +64,9 @@ func (s *Store) SessionPlanSave(plan *SessionPlan) error {
 	}
 	_, err = s.db.Exec(
 		`INSERT INTO session_plans(id, status, stages, updated_at)
-		 VALUES(?, ?, ?, CURRENT_TIMESTAMP)
-		 ON CONFLICT(id) DO UPDATE SET status=excluded.status, stages=excluded.stages, updated_at=CURRENT_TIMESTAMP`,
-		plan.ID, status, string(stagesJSON))
+		 VALUES(?, ?, ?, ?)
+		 ON CONFLICT(id) DO UPDATE SET status=excluded.status, stages=excluded.stages, updated_at=excluded.updated_at`,
+		plan.ID, status, string(stagesJSON), nowText())
 	return err
 }
 

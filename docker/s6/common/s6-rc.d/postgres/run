@@ -1,7 +1,0 @@
-#!/command/with-contenv sh
-# Runs the official pgvector/postgres entrypoint under s6 supervision. It
-# handles initdb on an empty PGDATA, POSTGRES_USER/PASSWORD/DB creation, and
-# /docker-entrypoint-initdb.d hooks itself — nothing here reimplements that.
-# The entrypoint execs straight through to `postgres`, so s6 ends up
-# supervising the postgres process directly and can signal it directly.
-exec docker-entrypoint.sh postgres

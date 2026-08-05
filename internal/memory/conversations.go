@@ -44,24 +44,24 @@ func (s *Store) ConversationGet(id string) (*Conversation, error) {
 // ConversationUpdateHistory updates the history blob for a conversation.
 func (s *Store) ConversationUpdateHistory(id string, history json.RawMessage) error {
 	_, err := s.db.Exec(
-		`UPDATE conversations SET history=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
-		string(history), id)
+		`UPDATE conversations SET history=?, updated_at=? WHERE id=?`,
+		string(history), nowText(), id)
 	return err
 }
 
 // ConversationUpdateScratchpad updates the scratchpad blob for a conversation.
 func (s *Store) ConversationUpdateScratchpad(id string, scratchpad json.RawMessage) error {
 	_, err := s.db.Exec(
-		`UPDATE conversations SET scratchpad=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
-		string(scratchpad), id)
+		`UPDATE conversations SET scratchpad=?, updated_at=? WHERE id=?`,
+		string(scratchpad), nowText(), id)
 	return err
 }
 
 // ConversationSetStatus updates the status field for a conversation.
 func (s *Store) ConversationSetStatus(id, status string) error {
 	_, err := s.db.Exec(
-		`UPDATE conversations SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
-		status, id)
+		`UPDATE conversations SET status=?, updated_at=? WHERE id=?`,
+		status, nowText(), id)
 	return err
 }
 

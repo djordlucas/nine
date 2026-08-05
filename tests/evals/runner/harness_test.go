@@ -3,7 +3,6 @@ package runner
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
 	"sync/atomic"
 	"testing"
@@ -29,14 +28,12 @@ func toolCall(id, name string, args map[string]any) llm.ToolCall {
 	return llm.ToolCall{ID: id, Name: name, Input: b}
 }
 
-// requireHarness builds a plugin-less harness (core tools only) or skips when the
-// eval database is unreachable.
+// requireHarness builds a plugin-less harness (core tools only). The store is a
+// local file, so there is no external service to be unavailable and nothing to
+// skip for.
 func requireHarness(t *testing.T) *Harness {
 	t.Helper()
 	_, cleanup, err := openIsolatedStore("")
-	if errors.Is(err, ErrNoPostgres) {
-		t.Skipf("eval postgres unavailable: %v", err)
-	}
 	if err != nil {
 		t.Fatalf("openIsolatedStore: %v", err)
 	}

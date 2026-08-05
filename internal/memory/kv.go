@@ -21,9 +21,9 @@ func (s *Store) Get(key string) (string, bool, error) {
 // Set inserts or updates the value for key.
 func (s *Store) Set(key, value string) error {
 	_, err := s.db.Exec(
-		`INSERT INTO kv(key, value, updated_at) VALUES(?,?,CURRENT_TIMESTAMP)
-		 ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP`,
-		key, value)
+		`INSERT INTO kv(key, value, updated_at) VALUES(?,?,?)
+		 ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
+		key, value, nowText())
 	return err
 }
 

@@ -25,10 +25,17 @@ func (s *Store) SessionEventsAfter(afterSeq int64, limit int) ([]SessionEvent, e
 			e       SessionEvent
 			parent  sql.NullString
 			payload []byte
+			ts      string
 		)
-		if err := rows.Scan(&e.Seq, &e.AgentID, &e.Turn, &e.SpanID, &parent, &e.Type, &e.TS, &payload); err != nil {
+		if err := rows.Scan(&e.Seq, &e.AgentID, &e.Turn, &e.SpanID, &parent, &e.Type, &ts, &payload); err != nil {
 			return nil, err
 		}
+		// ts is parsed explicitly rather than scanned straight into a time.Time.
+		// The driver can be asked to convert TEXT columns automatically, but that
+		// would make the store's behaviour depend on a DSN flag that differs
+		// between the writer and the read-only CLI pool — two explicit parses are
+		// better than that kind of action at a distance.
+		e.TS = parseStoredTime(ts)
 		e.ParentSpanID = parent.String
 		e.Payload = payload
 		evs = append(evs, e)

@@ -1,114 +1,291 @@
-// Package memory provides a PostgreSQL-backed store for all persistent nine
-// data: key-value pairs, files, vectors, conversations, goals, notifications,
+// Package memory provides a SQLite-backed store for all persistent nine data:
+// key-value pairs, files, vectors, conversations, goals, notifications,
 // reflections, workflows, the plugin registry, and the session event journal.
+//
+// The database is a single file — nine ships with no database server, so the
+// daemon has nothing to wait for and nothing to provision.
 package memory
 
 import (
 	"database/sql"
 	"fmt"
-	"strconv"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "modernc.org/sqlite"
 
 	"nine/internal/workflow"
 )
 
-// db wraps *sql.DB and rewrites SQLite-style `?` placeholders to Postgres
-// `$N` placeholders on every call, so query strings elsewhere in the package
-// stay driver-agnostic. Exec/Query/QueryRow are overridden; Close, Ping, Begin,
-// and the pool setters are promoted from the embedded *sql.DB.
+const (
+	// writeDSN opens the one read-write connection. Each pragma earns its place:
+	//
+	//	busy_timeout(5000)   a lock wait rather than an error. In-process
+	//	                     contention is already zero (the writer pool holds a
+	//	                     single connection), so this exists for the second
+	//	                     process: `nine trace` and `nine replay` open the same
+	//	                     file while the daemon runs, and would far rather wait.
+	//	journal_mode(WAL)    readers and the writer stop blocking each other.
+	//	                     Without it the second-process CLI would stall the
+	//	                     daemon. Persisted in the file header, so it is a no-op
+	//	                     after the first Open.
+	//	synchronous(NORMAL)  the correct pairing with WAL: durable across a process
+	//	                     crash, with only the last commits at risk on power
+	//	                     loss. FULL fsyncs every commit, and the event sink
+	//	                     flushes every 100ms — a sustained 10 fsync/s for an
+	//	                     observability journal is not a trade worth making.
+	//	foreign_keys(ON)     per-connection, and off by default in SQLite. No
+	//	                     foreign keys exist yet; this means the first one added
+	//	                     is actually enforced.
+	//
+	// _txlock=immediate makes any future transaction take the write lock up
+	// front. A deferred transaction that reads and then writes can fail with
+	// SQLITE_BUSY_SNAPSHOT, which busy_timeout does not retry — it is an
+	// unrecoverable snapshot conflict, not a lock wait. Taking the lock
+	// immediately turns that into a plain, retriable wait.
+	writeDSN = "file:%s?_pragma=busy_timeout(5000)" +
+		"&_pragma=journal_mode(WAL)" +
+		"&_pragma=synchronous(NORMAL)" +
+		"&_pragma=foreign_keys(ON)" +
+		"&_txlock=immediate"
+
+	// readDSN opens the read-only pool. It deliberately omits journal_mode:
+	// setting it writes the file header, which a read-only connection cannot do.
+	// The writer has already persisted WAL mode.
+	readDSN = "file:%s?mode=ro&_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)"
+)
+
+// db routes each statement to the pool that can serve it. SQLite serializes
+// writes, so every write goes through a single-connection pool — the wait
+// becomes a fair queue in database/sql rather than a busy_timeout spin inside
+// the driver — while readers get their own pool and run concurrently against
+// the WAL snapshot.
+//
+// The routing key is the statement text, not the Go method: `UPDATE … RETURNING`
+// arrives through Query but is a write. Anything that is not a plain SELECT is
+// treated as a write, so a statement form nobody anticipated routes
+// conservatively rather than failing against a read-only connection.
+//
+// (This replaces the placeholder-rewriting wrapper the Postgres version needed.
+// `?` is SQLite's native placeholder, so every query string in the package —
+// all of which were already written with `?` — passes through untouched.)
 type db struct {
-	*sql.DB
+	w *sql.DB // writer: one connection, read-write
+	r *sql.DB // readers: concurrent, mode=ro
 }
 
-// rebind rewrites each `?` in query to a positional `$1`, `$2`, … placeholder.
-// None of the package's queries embed a literal `?`, so a straight scan is safe.
-func rebind(query string) string {
-	var b strings.Builder
-	b.Grow(len(query) + 8)
-	n := 0
-	for i := 0; i < len(query); i++ {
-		if query[i] == '?' {
-			n++
-			b.WriteByte('$')
-			b.WriteString(strconv.Itoa(n))
-			continue
-		}
-		b.WriteByte(query[i])
+// isRead reports whether query can be served by a read-only connection.
+func isRead(query string) bool {
+	q := strings.TrimLeft(query, " \t\r\n(")
+	return len(q) >= 6 && strings.EqualFold(q[:6], "select")
+}
+
+func (d db) pool(query string) *sql.DB {
+	if isRead(query) {
+		return d.r
 	}
-	return b.String()
+	return d.w
+}
+
+// checkArgs panics if any argument is a time.Time.
+//
+// Timestamps are stored as fixed-width RFC3339 UTC microseconds (see
+// timeLayout). The SQLite driver binds a time.Time using time.Time.String() by
+// default — "2026-08-04 12:34:56.789 +0000 UTC" — whose 11th byte is a space
+// where every stored value has a 'T'. Since SQLite compares TEXT bytewise, such
+// a value is *less than every stored timestamp*: a predicate like
+// `stored_at < ?` becomes permanently false and a retention sweep silently
+// deletes nothing, forever, with no error anywhere.
+//
+// A panic is the right severity. It can only fire on a code path someone just
+// wrote, it fires on that path's first test run, and the alternative is a bug
+// that is invisible in production. Callers pass writeTime(t).
+func checkArgs(args []any) {
+	for i, a := range args {
+		if _, bad := a.(time.Time); bad {
+			panic(fmt.Sprintf("memory: argument %d is a time.Time; pass writeTime(t) "+
+				"so it compares correctly against stored timestamps", i))
+		}
+	}
 }
 
 func (d db) Exec(query string, args ...any) (sql.Result, error) {
-	return d.DB.Exec(rebind(query), args...)
+	checkArgs(args)
+	return d.pool(query).Exec(query, args...)
 }
 
 func (d db) Query(query string, args ...any) (*sql.Rows, error) {
-	return d.DB.Query(rebind(query), args...)
+	checkArgs(args)
+	return d.pool(query).Query(query, args...)
 }
 
 func (d db) QueryRow(query string, args ...any) *sql.Row {
-	return d.DB.QueryRow(rebind(query), args...)
+	checkArgs(args)
+	return d.pool(query).QueryRow(query, args...)
 }
 
-// Store wraps a PostgreSQL database and exposes typed methods for every domain.
+// BeginWrite starts a transaction on the writer pool. Nothing in the package
+// needs one today; it exists so that the first caller to reach for a
+// transaction gets the writer (a transaction on the read-only pool would fail
+// confusingly) and _txlock=immediate's safe locking semantics for free.
+func (d db) BeginWrite() (*sql.Tx, error) { return d.w.Begin() }
+
+// Store wraps the database and exposes typed methods for every domain.
 type Store struct {
 	db        db
 	workflows *workflow.Service
 }
 
-// Open connects to the PostgreSQL database at dsn, verifies reachability
-// (fail-fast — Postgres holds primary state, so an unavailable database is a
-// startup error, not a degraded mode), applies the schema, and returns a
-// ready-to-use Store.
-func Open(dsn string) (*Store, error) {
-	sqldb, err := sql.Open("pgx", dsn)
+// Open opens the SQLite database at path, creating the file and its parent
+// directory if absent, applies the schema, and returns a ready-to-use Store.
+// An unusable database is a startup error rather than a degraded mode — it
+// holds primary state.
+func Open(path string) (*Store, error) {
+	if dir := filepath.Dir(path); dir != "" {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return nil, fmt.Errorf("create database directory: %w", err)
+		}
+	}
+
+	w, err := sql.Open("sqlite", fmt.Sprintf(writeDSN, path))
 	if err != nil {
 		return nil, err
 	}
-	if err := sqldb.Ping(); err != nil {
-		sqldb.Close()
-		return nil, fmt.Errorf("connect to postgres: %w", err)
+	// One connection, held for the process lifetime. Pragmas are per-connection,
+	// so churning connections would re-run them for nothing, and a second write
+	// connection could only ever contend with the first.
+	w.SetMaxOpenConns(1)
+	w.SetMaxIdleConns(1)
+	w.SetConnMaxIdleTime(0)
+	w.SetConnMaxLifetime(0)
+	if err := w.Ping(); err != nil {
+		w.Close() //nolint:errcheck
+		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
 
-	d := db{sqldb}
+	d := db{w: w}
 	if err := initSchema(d); err != nil {
-		sqldb.Close()
+		w.Close() //nolint:errcheck
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
+
+	// Readers open only after the writer has created the file and the schema:
+	// mode=ro cannot create anything.
+	r, err := sql.Open("sqlite", fmt.Sprintf(readDSN, path))
+	if err != nil {
+		w.Close() //nolint:errcheck
+		return nil, err
+	}
+	r.SetMaxOpenConns(4)
+	r.SetMaxIdleConns(4)
+	d.r = r
+
 	return &Store{
 		db:        d,
 		workflows: workflow.NewService(&sqlWorkflowRepo{db: d}),
 	}, nil
 }
 
-// Close closes the underlying database.
-func (s *Store) Close() error { return s.db.Close() }
+// OpenReadOnly opens an existing database for reading only. It is what
+// `nine trace` and `nine replay` use: those run in a second process while the
+// daemon holds the same file, and under WAL a read-only connection takes a
+// snapshot without ever blocking — or being blocked by — the daemon's writer.
+//
+// It skips initSchema entirely, so a stale CLI binary can never run DDL against
+// a running daemon's database. Both pools point at the same read-only handle,
+// so a write routed here fails with "attempt to write a readonly database",
+// which is the correct answer.
+func OpenReadOnly(path string) (*Store, error) {
+	r, err := sql.Open("sqlite", fmt.Sprintf(readDSN, path))
+	if err != nil {
+		return nil, err
+	}
+	r.SetMaxOpenConns(2)
+	r.SetMaxIdleConns(2)
+	if err := r.Ping(); err != nil {
+		r.Close() //nolint:errcheck
+		return nil, fmt.Errorf("open %s for reading: %w (has the daemon run at least once?)", path, err)
+	}
+	d := db{w: r, r: r}
+	return &Store{
+		db:        d,
+		workflows: workflow.NewService(&sqlWorkflowRepo{db: d}),
+	}, nil
+}
+
+// Close closes both pools. PRAGMA optimize runs first: SQLite recommends it
+// before closing a long-lived connection so the query planner's statistics
+// survive the restart. It is best-effort — a failure there must not mask a
+// shutdown.
+func (s *Store) Close() error {
+	s.db.w.Exec(`PRAGMA optimize`) //nolint:errcheck // best-effort
+	rerr := s.db.r.Close()
+	if werr := s.db.w.Close(); werr != nil {
+		return werr
+	}
+	return rerr
+}
 
 func initSchema(d db) error {
 	stmts := []string{
-		`CREATE EXTENSION IF NOT EXISTS vector`,
 		`CREATE TABLE IF NOT EXISTS kv (
 			key        TEXT PRIMARY KEY,
 			value      TEXT NOT NULL,
-			updated_at TIMESTAMPTZ DEFAULT now()
+			updated_at TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,
 		`CREATE TABLE IF NOT EXISTS files (
 			path       TEXT PRIMARY KEY,
 			content    TEXT NOT NULL,
 			size       INTEGER NOT NULL,
-			stored_at  TIMESTAMPTZ DEFAULT now(),
-			search_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', coalesce(content, ''))) STORED
+			stored_at  TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,
-		`CREATE INDEX IF NOT EXISTS files_search_idx ON files USING GIN (search_tsv)`,
+		// files_fts indexes `files` in place: content='files' means the index
+		// holds only postings, never a second copy of the text, which matters
+		// because a spilled tool output can be megabytes. snippet() reads the
+		// text back out of `files` by rowid, so a contentless index is not an
+		// option either.
+		//
+		// `porter` is the parity choice for the Postgres 'english' configuration
+		// this replaces: without a stemmer, a search for "databases" would stop
+		// matching a file that says "database".
+		`CREATE VIRTUAL TABLE IF NOT EXISTS files_fts USING fts5(
+			content,
+			content='files',
+			content_rowid='rowid',
+			tokenize='porter unicode61 remove_diacritics 2'
+		)`,
+		// These three triggers are the entire index-sync mechanism. Keeping them
+		// in SQL rather than in FileStore/FileDeleteOlderThan means the bulk
+		// retention DELETE — which never goes near any FTS-aware Go code — stays
+		// consistent for free.
+		//
+		// The 'delete' command row is how an external-content FTS5 table is told
+		// to retract postings: it must be handed the *old* text, because the
+		// index cannot reconstruct it.
+		`CREATE TRIGGER IF NOT EXISTS files_fts_ai AFTER INSERT ON files BEGIN
+			INSERT INTO files_fts(rowid, content) VALUES (new.rowid, new.content);
+		END`,
+		`CREATE TRIGGER IF NOT EXISTS files_fts_ad AFTER DELETE ON files BEGIN
+			INSERT INTO files_fts(files_fts, rowid, content) VALUES('delete', old.rowid, old.content);
+		END`,
+		`CREATE TRIGGER IF NOT EXISTS files_fts_au AFTER UPDATE ON files BEGIN
+			INSERT INTO files_fts(files_fts, rowid, content) VALUES('delete', old.rowid, old.content);
+			INSERT INTO files_fts(rowid, content)            VALUES (new.rowid, new.content);
+		END`,
+		// vectors.embedding holds packed little-endian float32 (see encodeVector).
+		// Similarity is computed in Go: the Postgres version's index on
+		// (namespace, dim) was a plain btree, never an ANN index, so ranking was
+		// already a filtered sequential scan — that index is what makes the scan
+		// selective, and it carries over unchanged.
 		`CREATE TABLE IF NOT EXISTS vectors (
 			id         TEXT PRIMARY KEY,
 			namespace  TEXT NOT NULL,
 			key        TEXT NOT NULL,
-			embedding  vector NOT NULL,
+			embedding  BLOB NOT NULL,
 			dim        INTEGER NOT NULL,
-			stored_at  TIMESTAMPTZ DEFAULT now()
+			stored_at  TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,
 		`CREATE INDEX IF NOT EXISTS vectors_ns_dim_idx ON vectors (namespace, dim)`,
 		`CREATE TABLE IF NOT EXISTS conversations (
@@ -116,8 +293,8 @@ func initSchema(d db) error {
 			history    TEXT NOT NULL DEFAULT '[]',
 			scratchpad TEXT NOT NULL DEFAULT '[]',
 			status     TEXT NOT NULL DEFAULT 'active',
-			created_at TIMESTAMPTZ DEFAULT now(),
-			updated_at TIMESTAMPTZ DEFAULT now()
+			created_at TEXT NOT NULL DEFAULT ` + nowExpr + `,
+			updated_at TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,
 		`CREATE TABLE IF NOT EXISTS goals (
 			id          TEXT PRIMARY KEY,
@@ -126,8 +303,8 @@ func initSchema(d db) error {
 			parent_id   TEXT,
 			parent_type TEXT,
 			subtree     TEXT NOT NULL DEFAULT '[]',
-			created_at  TIMESTAMPTZ DEFAULT now(),
-			updated_at  TIMESTAMPTZ DEFAULT now()
+			created_at  TEXT NOT NULL DEFAULT ` + nowExpr + `,
+			updated_at  TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,
 		`CREATE TABLE IF NOT EXISTS notifications (
 			id                TEXT PRIMARY KEY,
@@ -135,14 +312,14 @@ func initSchema(d db) error {
 			message           TEXT NOT NULL,
 			requires_approval INTEGER NOT NULL DEFAULT 0,
 			delivered         INTEGER NOT NULL DEFAULT 0,
-			created_at        TIMESTAMPTZ DEFAULT now()
+			created_at        TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,
 		`CREATE TABLE IF NOT EXISTS user_notifications (
 			id         TEXT PRIMARY KEY,
 			agent_id   TEXT NOT NULL DEFAULT '',
 			message    TEXT NOT NULL,
 			seen       INTEGER NOT NULL DEFAULT 0,
-			created_at TIMESTAMPTZ DEFAULT now()
+			created_at TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,
 		`CREATE TABLE IF NOT EXISTS skills (
 			name        TEXT PRIMARY KEY,
@@ -150,11 +327,11 @@ func initSchema(d db) error {
 			tags        TEXT NOT NULL DEFAULT '[]',
 			content     TEXT NOT NULL DEFAULT '',
 			source      TEXT NOT NULL DEFAULT 'agent',
-			updated_at  TIMESTAMPTZ DEFAULT now()
+			updated_at  TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,
 		`CREATE TABLE IF NOT EXISTS reflections (
 			id       TEXT PRIMARY KEY,
-			ran_at   TIMESTAMPTZ DEFAULT now(),
+			ran_at   TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			summary  TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE TABLE IF NOT EXISTS workflows (
@@ -163,15 +340,15 @@ func initSchema(d db) error {
 			status     TEXT NOT NULL DEFAULT 'active',
 			agent_id   TEXT NOT NULL DEFAULT '',
 			steps      TEXT NOT NULL DEFAULT '[]',
-			created_at TIMESTAMPTZ DEFAULT now(),
-			updated_at TIMESTAMPTZ DEFAULT now()
+			created_at TEXT NOT NULL DEFAULT ` + nowExpr + `,
+			updated_at TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,
 		`CREATE TABLE IF NOT EXISTS session_plans (
 			id         TEXT PRIMARY KEY,
 			status     TEXT NOT NULL DEFAULT 'active',
 			stages     TEXT NOT NULL DEFAULT '[]',
-			created_at TIMESTAMPTZ DEFAULT now(),
-			updated_at TIMESTAMPTZ DEFAULT now()
+			created_at TEXT NOT NULL DEFAULT ` + nowExpr + `,
+			updated_at TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,
 		`CREATE TABLE IF NOT EXISTS human_requests (
 			id          TEXT PRIMARY KEY,
@@ -188,15 +365,27 @@ func initSchema(d db) error {
 			id TEXT PRIMARY KEY
 		)`,
 		// session_events: append-only execution journal (docs/event-log.md §6).
+		//
+		// AUTOINCREMENT is required, not stylistic. A plain INTEGER PRIMARY KEY
+		// is a rowid alias, and SQLite assigns max(rowid)+1 — so it *reuses*
+		// values after a delete. SessionEventsScrub deletes aggressively and can
+		// remove the row holding the maximum seq. Meanwhile event_cursors stores
+		// absolute seq values durably and SessionEventsAfter filters `seq > ?`.
+		// Without AUTOINCREMENT: scrub removes seq 1000, a subscriber's persisted
+		// cursor is 1000, the next append is assigned 1000 again, `seq > 1000` is
+		// false, and that event is never delivered to that subscriber — silently,
+		// forever. AUTOINCREMENT keeps a high-water mark in sqlite_sequence and
+		// guarantees strictly increasing, never-reused values, which is the
+		// contract the cursor protocol was written against.
 		`CREATE TABLE IF NOT EXISTS session_events (
-			seq            BIGSERIAL PRIMARY KEY,
+			seq            INTEGER PRIMARY KEY AUTOINCREMENT,
 			agent_id       TEXT NOT NULL,
 			turn           INTEGER NOT NULL,
 			span_id        TEXT NOT NULL,
 			parent_span_id TEXT,
 			type           TEXT NOT NULL,
-			ts             TIMESTAMPTZ NOT NULL DEFAULT now(),
-			payload        JSONB NOT NULL DEFAULT '{}'
+			ts             TEXT NOT NULL DEFAULT ` + nowExpr + `,
+			payload        TEXT NOT NULL DEFAULT '{}'
 		)`,
 		`CREATE INDEX IF NOT EXISTS session_events_agent ON session_events (agent_id, seq)`,
 		`CREATE INDEX IF NOT EXISTS session_events_type ON session_events (type)`,
@@ -205,7 +394,7 @@ func initSchema(d db) error {
 		// (docs/reactive-events.md §3).
 		`CREATE TABLE IF NOT EXISTS event_cursors (
 			subscriber_id TEXT PRIMARY KEY,
-			seq           BIGINT NOT NULL DEFAULT 0
+			seq           INTEGER NOT NULL DEFAULT 0
 		)`,
 		// related_sessions: a derived index maintained by the related-session
 		// subscriber (docs/reactive-events.md §4) — a link from a session to a
@@ -214,7 +403,7 @@ func initSchema(d db) error {
 			agent_id         TEXT NOT NULL,
 			related_agent_id TEXT NOT NULL,
 			score            REAL NOT NULL,
-			updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at       TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			PRIMARY KEY (agent_id, related_agent_id)
 		)`,
 		// plugin_jobs: the daemon-side registry of long-running plugin work
@@ -233,12 +422,17 @@ func initSchema(d db) error {
 			output        TEXT NOT NULL DEFAULT '',
 			spill_path    TEXT NOT NULL DEFAULT '',
 			error         TEXT NOT NULL DEFAULT '',
-			created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-			updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-			finished_at   TIMESTAMPTZ
+			created_at    TEXT NOT NULL DEFAULT ` + nowExpr + `,
+			updated_at    TEXT NOT NULL DEFAULT ` + nowExpr + `,
+			finished_at   TEXT
 		)`,
 		`CREATE INDEX IF NOT EXISTS plugin_jobs_owner ON plugin_jobs (owner_id)`,
 		`CREATE INDEX IF NOT EXISTS plugin_jobs_state ON plugin_jobs (state)`,
+		// The schema is still applied idempotently on every Open rather than by
+		// migration, but user_version gives that a version to reason about — and
+		// is where the bookkeeping goes the day the FTS tokenizer changes and the
+		// index needs an INSERT INTO files_fts(files_fts) VALUES('rebuild').
+		`PRAGMA user_version = 1`,
 	}
 	for _, s := range stmts {
 		if _, err := d.Exec(s); err != nil {

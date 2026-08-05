@@ -1,6 +1,9 @@
 package memory
 
-import "database/sql"
+import (
+	"database/sql"
+	"time"
+)
 
 // PluginJob is one row of the plugin-job registry (docs/plugin-capabilities.md
 // §5): a piece of long-running plugin work the daemon tracks across turns and
@@ -84,25 +87,27 @@ type PluginJobSummary struct {
 // backoffSeconds. updated_at is the last-poll time (each poll refreshes it), so a
 // job not yet due is simply skipped this tick.
 func (s *Store) PluginJobsDueForPoll(baseSeconds, backoffSeconds, youngWindowSeconds int) ([]PluginJob, error) {
+	// The backoff is expressed as three cutoff instants computed here rather than
+	// as interval arithmetic in SQL. The CASE now picks between two literal
+	// cutoffs instead of two intervals, which keeps the whole predicate a plain
+	// string comparison against an indexable column. The semantics are unchanged.
+	now := time.Now()
+	cutoff := func(sec int) string { return writeTime(now.Add(-time.Duration(sec) * time.Second)) }
 	return s.queryPluginJobs(
 		`SELECT handle, plugin, tool, plugin_job_id, owner_id, state, ack, progress,
 		        output, spill_path, error, created_at, updated_at, finished_at
 		 FROM plugin_jobs
 		 WHERE state NOT IN ('done','failed','cancelled','lost')
-		   AND updated_at < now() - (CASE
-		         WHEN created_at > now() - (? * interval '1 second')
-		         THEN (? * interval '1 second')
-		         ELSE (? * interval '1 second') END)
+		   AND updated_at < (CASE WHEN created_at > ? THEN ? ELSE ? END)
 		 ORDER BY created_at`,
-		youngWindowSeconds, baseSeconds, backoffSeconds)
+		cutoff(youngWindowSeconds), cutoff(baseSeconds), cutoff(backoffSeconds))
 }
 
 // PluginJobsOutstandingSummary returns ownerID's non-terminal jobs, oldest
 // first — what the context builder surfaces and job_list reports.
 func (s *Store) PluginJobsOutstandingSummary(ownerID string) ([]PluginJobSummary, error) {
 	rows, err := s.db.Query(
-		`SELECT handle, tool, state, progress,
-		        extract(epoch FROM now() - created_at)::int
+		`SELECT handle, tool, state, progress, created_at
 		 FROM plugin_jobs
 		 WHERE owner_id = ? AND state NOT IN ('done','failed','cancelled','lost')
 		 ORDER BY created_at`, ownerID)
@@ -111,11 +116,23 @@ func (s *Store) PluginJobsOutstandingSummary(ownerID string) ([]PluginJobSummary
 	}
 	defer rows.Close()
 
+	// AgeSeconds is derived here rather than in SQL, from a single `now` for the
+	// whole result set — so two jobs created a microsecond apart cannot report
+	// ages that disagree about their ordering. Clamped at 0 against clock skew.
+	now := time.Now()
 	var out []PluginJobSummary
 	for rows.Next() {
-		var s PluginJobSummary
-		if err := rows.Scan(&s.Handle, &s.Tool, &s.State, &s.Progress, &s.AgeSeconds); err != nil {
+		var (
+			s         PluginJobSummary
+			createdAt string
+		)
+		if err := rows.Scan(&s.Handle, &s.Tool, &s.State, &s.Progress, &createdAt); err != nil {
 			return nil, err
+		}
+		if t := parseStoredTime(createdAt); !t.IsZero() {
+			if age := int(now.Sub(t).Seconds()); age > 0 {
+				s.AgeSeconds = age
+			}
 		}
 		out = append(out, s)
 	}
@@ -126,9 +143,9 @@ func (s *Store) PluginJobsOutstandingSummary(ownerID string) ([]PluginJobSummary
 // touches a terminal row (a late poll cannot resurrect a finished job).
 func (s *Store) PluginJobUpdateLive(handle, state, progress string) error {
 	_, err := s.db.Exec(
-		`UPDATE plugin_jobs SET state=?, progress=?, updated_at=now()
+		`UPDATE plugin_jobs SET state=?, progress=?, updated_at=?
 		 WHERE handle=? AND state NOT IN ('done','failed','cancelled','lost')`,
-		state, progress, handle)
+		state, progress, nowText(), handle)
 	return err
 }
 
@@ -136,11 +153,14 @@ func (s *Store) PluginJobUpdateLive(handle, state, progress string) error {
 // are the caller's already cap-or-spilled values. It is idempotent-safe: a row
 // already terminal is left unchanged.
 func (s *Store) PluginJobFinish(handle, state, output, spillPath, errMsg string) error {
+	// One timestamp bound twice, so finished_at and updated_at are exactly equal
+	// as a single now() within a statement guaranteed.
+	ts := nowText()
 	_, err := s.db.Exec(
 		`UPDATE plugin_jobs
-		 SET state=?, output=?, spill_path=?, error=?, finished_at=now(), updated_at=now()
+		 SET state=?, output=?, spill_path=?, error=?, finished_at=?, updated_at=?
 		 WHERE handle=? AND state NOT IN ('done','failed','cancelled','lost')`,
-		state, output, spillPath, errMsg, handle)
+		state, output, spillPath, errMsg, ts, ts, handle)
 	return err
 }
 
@@ -160,12 +180,13 @@ func (s *Store) PluginJobCountOutstanding(ownerID string) (int, error) {
 // still running belongs to a plugin the previous daemon left behind and can no
 // longer be reached (docs/plugin-capabilities.md §5).
 func (s *Store) PluginJobsMarkLost(reason string) ([]PluginJob, error) {
-	return s.queryPluginJobs(
-		`UPDATE plugin_jobs SET state='lost', error=?, finished_at=now(), updated_at=now()
+	ts := nowText()
+	return s.execReturning(
+		`UPDATE plugin_jobs SET state='lost', error=?, finished_at=?, updated_at=?
 		 WHERE state NOT IN ('done','failed','cancelled','lost')
 		 RETURNING handle, plugin, tool, plugin_job_id, owner_id, state, ack, progress,
 		           output, spill_path, error, created_at, updated_at, finished_at`,
-		reason)
+		reason, ts, ts)
 }
 
 // PluginJobsExpire marks every non-terminal job older than maxSeconds failed with
@@ -175,13 +196,14 @@ func (s *Store) PluginJobsExpire(maxSeconds int, reason string) ([]PluginJob, er
 	if maxSeconds <= 0 {
 		return nil, nil
 	}
-	return s.queryPluginJobs(
-		`UPDATE plugin_jobs SET state='failed', error=?, finished_at=now(), updated_at=now()
+	ts := nowText()
+	return s.execReturning(
+		`UPDATE plugin_jobs SET state='failed', error=?, finished_at=?, updated_at=?
 		 WHERE state NOT IN ('done','failed','cancelled','lost')
-		   AND created_at < now() - (? * interval '1 second')
+		   AND created_at < ?
 		 RETURNING handle, plugin, tool, plugin_job_id, owner_id, state, ack, progress,
 		           output, spill_path, error, created_at, updated_at, finished_at`,
-		reason, maxSeconds)
+		reason, ts, ts, writeTime(time.Now().Add(-time.Duration(maxSeconds)*time.Second)))
 }
 
 type rowScanner interface{ Scan(...any) error }
@@ -199,6 +221,40 @@ func scanPluginJob(row rowScanner) (PluginJob, error) {
 	}
 	j.FinishedAt = finishedAt.String
 	return j, nil
+}
+
+// execReturning runs an UPDATE … RETURNING and collects every row.
+//
+// Unlike queryPluginJobs it never abandons the sql.Rows partway through. SQLite
+// applies a RETURNING statement's changes incrementally as rows are stepped, so
+// returning early on a scan error would leave the update half-applied — where a
+// server-side engine would have completed it before streaming anything. Drain
+// first, report after.
+func (s *Store) execReturning(query string, args ...any) ([]PluginJob, error) {
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var (
+		jobs     []PluginJob
+		firstErr error
+	)
+	for rows.Next() {
+		j, err := scanPluginJob(rows)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		jobs = append(jobs, j)
+	}
+	if err := rows.Err(); err != nil {
+		return jobs, err
+	}
+	return jobs, firstErr
 }
 
 func (s *Store) queryPluginJobs(query string, args ...any) ([]PluginJob, error) {
