@@ -19,7 +19,7 @@ Cross-references: [glossary.md](glossary.md) for term definitions,
 Nine is a **daemon/client pair**. A single long-lived daemon process owns all
 state; the `nine` binary is both the thin client and the daemon (it re-execs
 itself with a hidden subcommand). Plugins are independent child processes. The
-LLM and PostgreSQL (with the `pgvector` extension) are the two external
+The LLM endpoint is the only external
 dependencies.
 
 ```
@@ -47,11 +47,11 @@ dependencies.
    │           │   Supervisor                  │        (Ollama/Anthropic)  │
    │           │   Plugin Manager              │                            │
    │           └───────┬───────────────┬───────┘                            │
-   │                   │ HTTP over     │ database/sql (pgx v5)              │
+   │                   │ HTTP over     │ database/sql (modernc sqlite)      │
    │                   │ unix socket   │                                    │
    │      ┌────────────┴───────┐       ▼                                    │
    │      ▼     ▼     ▼     ▼   ▼   ┌──────────────────┐                     │
-   │   shell files http time browser│  PostgreSQL      │  (+ pgvector)      │
+   │   shell files http time browser│  SQLite (one file)                    │
    │   (plugin subprocesses)        │  nine database   │                    │
    │                                └──────────────────┘                    │
    └──────────────────────────────────────────────────────────────────────┘
@@ -64,7 +64,7 @@ optional `browser`.
 
 Key consequences of this shape:
 
-- **All durable state is in the daemon + PostgreSQL.** Clients are disposable.
+- **All durable state is in the daemon + its SQLite file.** Clients are disposable.
   Closing a TUI does not stop work; reattaching replays what was missed.
 - **Plugins are isolation boundaries.** A crashing or hanging plugin is a child
   process, not a daemon panic. Tools are reached only through the manager.
@@ -90,24 +90,21 @@ which dispatches to either the TUI, the one-shot client, or `runDaemon`
 
 ```
 /data                 mutable state only (the "nine-data" volume)
+├── nine.db      the SQLite database (+ its -wal/-shm sidecars)
 └── workspace/   files-plugin working directory
-
-/var/lib/postgresql/data   PostgreSQL cluster (the "nine-pgdata" volume)
 
 /opt/nine             immutable image content (not in a volume)
 ├── bin/         compiled default plugin binaries + browser launcher
 └── browser/     browser plugin JS + node_modules
 ```
 
-Primary state lives in **PostgreSQL**, which runs in the *same container* as the
-daemon — supervised alongside it under s6-overlay, reachable at `localhost:5432`
-— rather than as a separate service (see [Single-container Nine](single-container.md)
-for why the two are one deployment unit, and can't be split, in the first place).
-Its cluster lives on its own volume, kept separate from `/data` so the database
-can be backed up, snapshotted, or reset independently of the workspace. Point the
-daemon at it with `[memory].database_url` or `NINE_DATABASE_URL` (baked into the
-image; the native/native-eval layout instead uses `make pg`'s standalone Postgres
-on port 5433).
+Primary state is the SQLite file on that same `/data` volume, so one volume carries
+the database and the workspace together (see
+[Single-container Nine](single-container.md)). Point the daemon elsewhere with
+`[memory].path` or `NINE_DB_PATH`; with no override it resolves to `/data/nine.db`
+whenever that volume is present, and `~/.nine/nine.db` natively. Note that a backup
+must capture the `-wal` and `-shm` sidecars alongside `nine.db`, or use
+`VACUUM INTO`.
 
 Built-in skills are embedded in the `nine` binary (`//go:embed` in the `nine/skills`
 package) and seeded into the `skills` table on every boot — there is no skills
@@ -565,18 +562,19 @@ Memory/file/vector operations and the skill tools are **core-intercepted**
 
 ## 11. Memory & persistence
 
-A single **PostgreSQL** database (driver: pgx v5 via `database/sql`, with the
-`pgvector` extension) holds everything. `internal/memory.Store` is the **sole
-owner** of `*sql.DB` — the "single gateway" invariant. A thin `db` wrapper
-rewrites `?` placeholders to `$N`; the schema is applied idempotently on `Open`
-(`CREATE TABLE IF NOT EXISTS`, no migration table), which fails fast if the
-database is unreachable.
+A single **SQLite** database file (driver: `modernc.org/sqlite` via `database/sql`
+— pure Go, no cgo) holds everything. `internal/memory.Store` is the **sole owner**
+of the database handles — the "single gateway" invariant. Since SQLite serializes
+writes, that is a one-connection writer pool plus a concurrent read-only pool, with
+statements routed by leading keyword. The schema is applied idempotently on `Open`
+(`CREATE TABLE IF NOT EXISTS`, no migration runner), which fails fast if the file
+cannot be opened.
 
 ```
-   nine (PostgreSQL database)
+   nine.db (SQLite)
    ├─ kv                 agent K/V memory          (memory_get/set/delete/list)
-   ├─ files              content + tsvector/GIN FTS (file_store/fetch/list/search_text)
-   ├─ vectors            pgvector embeddings, <=>   (skills, session-index, agent namespaces)
+   ├─ files              content + FTS5 index      (file_store/fetch/list/search_text)
+   ├─ vectors            float32 blob embeddings   (skills, session-index, agent namespaces)
    ├─ conversations      message history, scratchpad, status
    ├─ goals              open-ended intentions, subtree JSON
    ├─ notifications      pending push messages → next active turn
@@ -764,7 +762,7 @@ the runtime container carries no Go toolchain, no git, and no source tree.
    AGENT SKILLS   skill_write / skill_modify → skills table   no compile   no restart   no approval
 ```
 
-- Skills live in the `skills` table (PostgreSQL). **Built-in** skills are embedded
+- Skills live in the `skills` table. **Built-in** skills are embedded
   in the binary and seeded as immutable on every boot; **agent** skills are written
   via `skill_write`/`skill_modify`, which refuse to touch a built-in. Each write
   embeds the description into the `skills` vector namespace so the self-model can
@@ -843,7 +841,7 @@ the runtime container carries no Go toolchain, no git, and no source tree.
 
 ```
  1.  config load  +  ApplyEnvOverrides
- 2.  memory.Open(cfg.DatabaseURL())                 ← the single Postgres store (fail-fast)
+ 2.  memory.Open(cfg.DatabasePath())                ← the single SQLite store (fail-fast)
  3.  plugin.NewManager + TryStart(files, shell, http, time, browser)
  4.  NewStores(store) → checkpoint, notif, notifAdd
  5.  embed.Build(...)                               ← embedder (keyword default)
@@ -887,7 +885,7 @@ resumed.
    │  plans ───────────────► PlanStore / sessionPlanState ─► StageHandler
    │  sup ─────────────────► runtime.Supervisor
    │  mgr ─────────────────► plugin.Manager ──spawns──────► plugin subprocs
-   │  ckpt / notif / store ► memory.Store  (single *sql.DB → PostgreSQL)
+   │  ckpt / notif / store ► memory.Store  (sole handle → SQLite file)
    │  sink ─────────────────► EventSink ──► session_events journal
    │  subscribers[] ────────► RelatedIndexer (out-of-band, cursor-backed)
    └─────────────────────────────────────────────────────────────────┘

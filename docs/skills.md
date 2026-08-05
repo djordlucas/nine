@@ -30,7 +30,7 @@ The description is embedded into the `skills` vector namespace; the self-model s
 
 ## Where Skills Live
 
-Skills are stored in the **memory store** (the `skills` table in PostgreSQL), not on the filesystem. There are three kinds:
+Skills are stored in the **memory store** (the `skills` table), not on the filesystem. There are three kinds:
 
 | Kind | Source | Mutable at runtime? |
 |---|---|---|
@@ -123,7 +123,7 @@ Relevant skill names are injected into the self-model block (context priority 5 
 
 | | Skills | Memory (KV store) |
 |--|--------|------------------|
-| Storage | `skills` table (PostgreSQL) | `kv` table (PostgreSQL) |
+| Storage | `skills` table | `kv` table |
 | Retrieval | Semantic (embedding similarity) | Exact key lookup |
 | Scope | Surfaced into context automatically | Explicitly fetched with `memory_get` |
 | Best for | Reusable procedures, guidelines | Per-session state, dynamic data |

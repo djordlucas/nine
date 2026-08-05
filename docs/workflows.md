@@ -2,7 +2,7 @@
 
 ## What a workflow is
 
-A workflow is a named, persistent execution plan the LLM creates before delegating multi-step work to sub-agents. It lives in the `workflows` table of the in-process PostgreSQL store and is visible to both the LLM and the operator at any time.
+A workflow is a named, persistent execution plan the LLM creates before delegating multi-step work to sub-agents. It lives in the `workflows` table of the in-process SQLite store and is visible to both the LLM and the operator at any time.
 
 A workflow has:
 - A **name** — short human-readable label
@@ -61,7 +61,7 @@ Marks one or all active workflows as `failed`. Use this for cleanup after a cras
 
 Works whether the daemon is running or not:
 - **Daemon running** — sends a message to the daemon, which updates the workflow via the in-process store
-- **Daemon down** — the CLI opens the PostgreSQL store in-process (`memory.Open`) and updates it directly (memory is an in-process package, not a subprocess)
+- **Daemon down** — the CLI opens the store in-process (`memory.Open`) and updates it directly (memory is an in-process package, not a subprocess)
 
 ```bash
 nine workflow fail abc12345678      # mark one workflow as failed

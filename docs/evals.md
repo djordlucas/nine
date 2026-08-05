@@ -242,7 +242,7 @@ pass fraction ≥ `pass_threshold`. Everything in §1–§3 applies. Requirement
   ```sh
   NINE_EVAL_MODELS=qwen3.5:4b NINE_EVAL_CASES=tool-output-spill make eval-live
   ```
-- **Isolation per run**: a fresh session id, a schema-per-run Postgres (reuse the
+- **Isolation per run**: a fresh session id, a database file per run (reuse the
   `internal/memory/memtest` pattern), and an ephemeral workspace dir. Cases must not
   see each other's memory/goals/files.
 - **Variance reduction**: temperature 0 and a fixed `seed` where the provider
@@ -295,7 +295,7 @@ hardware — are tracked in [model-compatibility.md](model-compatibility.md).
   demand structured output (`{score, reason}`) against an explicit rubric; validate
   the judge against ~20 human-labeled samples before trusting it; keep judged cases a
   minority.
-- **Pitfalls**: Postgres is fail-fast (evals need it up — compose provides it);
+- **Pitfalls**: the store is fail-fast, though evals need no external service;
   browser cases need Chromium (gate them); small local models are genuinely flaky at
   multi-step (that's what `expected_pass_min_class` is for); the `nine send` id line
   goes to **stderr**.
@@ -387,7 +387,7 @@ To add coverage, or to have an LLM expand the corpus:
 - Replay: `internal/replay/replay.go` (`FromEvents`, `Recorded`, `Provider`,
   `Dispatcher`, `Session`), `nine replay`.
 - Driving turns: `nine send` (`internal/cli`), `protocol.Client.Turn`.
-- Isolation: `internal/memory/memtest` (schema-per-test Postgres).
+- Isolation: `internal/memory/memtest` (a database file per test, under `t.TempDir()`).
 - Existing harness: `tests/integration/setup_test.go` (Docker + Ollama bring-up),
   `make integration-test`.
 - Models/config: `NINE_LLM_PROVIDER`/`NINE_LLM_MODEL`/`NINE_LLM_ENDPOINT`,

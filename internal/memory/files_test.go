@@ -33,7 +33,7 @@ func TestFileSearchText(t *testing.T) {
 		t.Errorf("snippet not highlighted: %q", res[0].Snippet)
 	}
 
-	// Updating content re-derives the generated tsvector column.
+	// Updating content re-derives the full-text index (via the update trigger).
 	if err := s.FileStore("notes/cats.md", "cats enjoy a good database of napping spots"); err != nil {
 		t.Fatal(err)
 	}

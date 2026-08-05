@@ -124,7 +124,7 @@ All messages are newline-delimited JSON (`Msg` struct). The full message type re
 | `daemon.go` | Unix socket server, connection handling, dispatch |
 | `session_worker.go` | Per-conversation agent loop wrapper, stall detection, checkpointing |
 | `supervisor.go` | Async event handling, idle timer, plugin rebuild |
-| `store.go` | Postgres-backed `CheckpointStore` and `NotifStore` implementations |
+| `store.go` | SQL-backed `CheckpointStore` and `NotifStore` implementations |
 
 The wire protocol and client live in `internal/protocol`:
 

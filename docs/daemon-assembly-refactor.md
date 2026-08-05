@@ -162,7 +162,7 @@ sites — but that is a compile error, not a silent gap.
 3. Rewrite `Harness.Run` to construct isolated `AssemblyDeps` and call `Assemble`,
    deleting the duplicated wiring block. Keep the isolated-store, workspace, and
    sink-drain lifecycle in the harness.
-4. Run `make eval-replay` and (with Postgres) `go test ./tests/evals/...` — the
+4. Run `make eval-replay` and `go test ./tests/evals/...` — the
    harness self-tests already exercise the full path, so they are the regression
    gate for this refactor.
 5. Once the harness calls `Assemble`, retire the drift tooling: delete
