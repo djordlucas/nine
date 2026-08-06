@@ -21,9 +21,14 @@ func runDaemon() {
 	cfg := config.LoadDefault()
 
 	// Initialize memory store
-	store, err := memory.Open(cfg.DatabasePath())
+	dbPath, err := cfg.DatabasePath()
 	if err != nil {
-		slog.Error("open memory store", "path", cfg.DatabasePath(), "err", err)
+		slog.Error("resolve memory store path", "err", err)
+		os.Exit(1)
+	}
+	store, err := memory.Open(dbPath)
+	if err != nil {
+		slog.Error("open memory store", "path", dbPath, "err", err)
 		os.Exit(1)
 	}
 	// Closing checkpoints the write-ahead log, so the database file is left

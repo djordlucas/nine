@@ -107,21 +107,48 @@ func (cfg *Config) SocketPath() string {
 // volume that already holds the workspace, so the database lives beside it and a
 // single volume carries all durable state. Natively it sits next to the config
 // in ~/.nine.
-func (cfg *Config) DatabasePath() string {
+//
+// An operator-supplied value is checked for a URL scheme (dbPathError): Nine
+// stored its state in PostgreSQL before the SQLite migration, and a leftover DSN
+// is otherwise accepted verbatim as a relative path. Validation lives here rather
+// than in Validate because it must cover the environment variable, which is read
+// at call time, and because LoadDefault falls back to an unvalidated empty Config
+// when no nine.toml is found — the exact case where a stale NINE_DB_PATH bites.
+func (cfg *Config) DatabasePath() (string, error) {
 	if v := os.Getenv("NINE_DB_PATH"); v != "" {
-		return v
+		return v, dbPathError(v, "NINE_DB_PATH")
 	}
 	if cfg.Memory.Path != "" {
-		return cfg.Memory.Path
+		return cfg.Memory.Path, dbPathError(cfg.Memory.Path, "[memory].path")
 	}
 	if fi, err := os.Stat("/data"); err == nil && fi.IsDir() {
-		return "/data/nine.db"
+		return "/data/nine.db", nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "nine.db"
+		return "nine.db", nil
 	}
-	return filepath.Join(home, ".nine", "nine.db")
+	return filepath.Join(home, ".nine", "nine.db"), nil
+}
+
+// dsnSchemeRE matches a leading URL scheme (RFC 3986 §3.1) followed by "://".
+// Requiring the slashes keeps a legitimate Windows drive path ("C:\db") and a
+// relative path containing a colon from being mistaken for a DSN.
+var dsnSchemeRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.\-]*://`)
+
+// dbPathError rejects a database path that is a connection URL rather than a
+// filesystem path. Without it SQLite treats the DSN as a relative path and
+// silently creates a fresh, empty database in a directory tree named after the
+// URL — e.g. "postgres://nine:nine@localhost:5432/nine" becomes the directory
+// "postgres:/nine:nine@localhost:5432/". Every table is then empty, which is
+// indistinguishable from total data loss even though the real database is
+// untouched wherever it actually lives. source names the origin so the message
+// points at the thing to edit.
+func dbPathError(path, source string) error {
+	if !dsnSchemeRE.MatchString(path) {
+		return nil
+	}
+	return fmt.Errorf("%s is a connection URL (%q), not a file path: Nine stores all state in a single SQLite file since the PostgreSQL migration — set it to something like ~/.nine/nine.db (see docs/configuration.md)", source, path)
 }
 
 // EventRetention returns the session_events retention policy: how many recent
