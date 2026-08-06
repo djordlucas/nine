@@ -23,7 +23,11 @@ import (
 // sub-agent's own journal, nested inline and indented beneath the marker, and
 // recursively for sub-agents of sub-agents.
 func (c *CLI) Trace(cfg *config.Config, agentID string, turn int, subAgents bool) error {
-	store, err := memory.OpenReadOnly(cfg.DatabasePath())
+	dbPath, err := cfg.DatabasePath()
+	if err != nil {
+		return err
+	}
+	store, err := memory.OpenReadOnly(dbPath)
 	if err != nil {
 		return fmt.Errorf("open memory store: %w", err)
 	}
@@ -58,7 +62,11 @@ func (c *CLI) Replay(cfg *config.Config, agentID string, turn int) error {
 // readEvents opens the memory store read-only (see Trace) and returns agentID's
 // journal.
 func (c *CLI) readEvents(cfg *config.Config, agentID string) ([]memory.SessionEvent, error) {
-	store, err := memory.OpenReadOnly(cfg.DatabasePath())
+	dbPath, err := cfg.DatabasePath()
+	if err != nil {
+		return nil, err
+	}
+	store, err := memory.OpenReadOnly(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("open memory store: %w", err)
 	}
