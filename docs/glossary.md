@@ -9,7 +9,7 @@ the doc with the full explanation.
 ## Core Processes & Components
 
 **Daemon** — The long-running background process that holds all state: plugin
-registry, LLM queue, active sessions, and the connection to the PostgreSQL store.
+registry, LLM queue, active sessions, and the handle to the SQLite store.
 The CLI is a
 thin client that connects to it over a Unix socket and auto-starts it if not
 running (`EnsureDaemon`). See [Daemon Architecture](daemon.md).
@@ -173,11 +173,12 @@ or `none` (disables ranking). See
 [Configuration § Embeddings](configuration.md#embeddings).
 
 **Vector store / namespaces** — Embeddings are stored in the in-process
-`internal/memory.Store`'s `vectors` table (Postgres `pgvector` type) under
+`internal/memory.Store`'s `vectors` table (packed float32 blobs) under
 namespaced keys — e.g. `skills` (skill descriptions), `docs` (one vector per
 section of the bundled documentation), `session-index` (one vector per completed
 turn, for the related-session indexer), and per-agent memory namespaces.
-Nearest-neighbour queries rank by pgvector's `<=>` cosine distance.
+Nearest-neighbour queries rank by cosine similarity, computed in process over a
+namespace scan.
 
 **Self-model (`SystemSelf`)** — A context block built by
 `internal/selfmodel.Assembler` from the `self/identity`, `self/capabilities`,
@@ -185,11 +186,12 @@ and `self/learned` KV keys, injected into every turn at priority 2.5 (capped
 ~600 tokens). Seeded by `BootstrapSelfKV`; `self/learned` and
 `self/capabilities` are refreshed by the idle-reflection stage.
 
-**`internal/memory.Store`** — The single, in-process **PostgreSQL** (+ `pgvector`)
-interface for all of Nine's persistent state — *not* a plugin subprocess. Connects
-via a DSN (`[memory].database_url`, default `postgres://…:5433/nine`), fails fast
-if unreachable, and is the sole owner of `*sql.DB` (the "single gateway"
-invariant). Agent-facing K/V (`memory_get/set/delete/list`), file storage
+**`internal/memory.Store`** — The single, in-process **SQLite** interface for all of
+Nine's persistent state — *not* a plugin subprocess. Opens a file
+(`[memory].path`, default `~/.nine/nine.db`), creating it if absent, fails fast if
+it is unusable, and is the sole owner of the database handles (the "single
+gateway" invariant — a one-connection writer pool plus a read-only pool, since
+SQLite serializes writes). Agent-facing K/V (`memory_get/set/delete/list`), file storage
 (`file_store/fetch/list`, `file_search_text`), and (core-intercepted) vector ops
 (`memory_embed`/`memory_query`/`file_search_semantic`) are exposed as tools.
 Operational tables (`conversations`, `goals`, `notifications`,
@@ -246,7 +248,7 @@ call, never a write into the active session (enrich, don't interject). Design:
 
 **Related-session indexer / `related_sessions`** — The first subscriber: on each
 `turn_end` it embeds the answer, links topically-similar prior sessions into the
-`related_sessions` table (pgvector, threshold-gated), and indexes the turn. A
+`related_sessions` table (vector-ranked, threshold-gated), and indexes the turn. A
 later user turn *pulls* the most relevant link into context under the token budget
 (pull, not push). On by default when an embedder is configured
 (`[daemon] related_sessions_index`).
@@ -327,7 +329,7 @@ it with `job_wait` / `job_check` / `job_list` / `job_cancel`. Distinct from a
 ## Skills
 
 **Skill** — A named markdown how-to note (`name`, `description`, `tags`, body)
-stored in the `skills` table (PostgreSQL). Never preloaded; the description is
+stored in the `skills` table. Never preloaded; the description is
 embedded into the `skills` vector namespace and the self-model surfaces relevant
 names (context priority 5, dropped first under budget pressure), which the agent
 then reads in full via `skill_read`. See [Skills](skills.md).
@@ -407,16 +409,15 @@ running `pursue` sessions, default 10 (`DefaultMaxGoalSessions`).
 **Token counting** — Approximated as 4 characters ≈ 1 token everywhere in the
 context builder (no tokenizer dependency).
 
-**Volume layout (`/data/`)** — Holds `workspace/` (files-plugin working dir) only.
-Primary state lives in **PostgreSQL**, which runs in the same container as the
-daemon under s6-overlay (docs/single-container.md), on its own `nine-pgdata`
-volume — not in `/data`. The `nine` binary (with built-in skills embedded) and
-plugins are immutable image content under `/opt/nine`.
+**Volume layout (`/data/`)** — Holds `nine.db` (the SQLite database, plus its
+`-wal`/`-shm` sidecars) and `workspace/` (files-plugin working dir). All primary
+state is therefore on one volume. The `nine` binary (with built-in skills
+embedded) and plugins are immutable image content under `/opt/nine`.
 
-**`database_url` (`[memory].database_url` / `NINE_DATABASE_URL`)** — The
-PostgreSQL DSN the daemon connects to (default
-`postgres://nine:nine@localhost:5433/nine?sslmode=disable`). The daemon fails fast
-if the database is unreachable.
+**`path` (`[memory].path` / `NINE_DB_PATH`)** — The SQLite database file the
+daemon opens, creating it and its parent directory if absent. Defaults to
+`/data/nine.db` when the container's `/data` volume is present, else
+`~/.nine/nine.db`. The daemon fails fast if the file cannot be opened.
 
 ---
 

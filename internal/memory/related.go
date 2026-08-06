@@ -17,10 +17,10 @@ func (s *Store) RelatedSessionAdd(agentID, relatedAgentID string, score float32)
 	}
 	_, err := s.db.Exec(
 		`INSERT INTO related_sessions(agent_id, related_agent_id, score, updated_at)
-		 VALUES(?, ?, ?, now())
+		 VALUES(?, ?, ?, ?)
 		 ON CONFLICT (agent_id, related_agent_id)
-		 DO UPDATE SET score = EXCLUDED.score, updated_at = now()`,
-		agentID, relatedAgentID, score)
+		 DO UPDATE SET score = EXCLUDED.score, updated_at = EXCLUDED.updated_at`,
+		agentID, relatedAgentID, score, nowText())
 	return err
 }
 

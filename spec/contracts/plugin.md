@@ -289,7 +289,7 @@ terminal and distinct from `failed`. `progress` is free text.
   `max_concurrent` (excess jobs sit `queued`, since a job start frees the HTTP
   connection at once and the daemon's cap cannot hold that line), gives each job a
   `<cache_dir>/jobs/<job_id>/` dir, and evicts terminal jobs after a TTL.
-- **Daemon side:** a `plugin_jobs` registry row (Postgres) keyed to the owning
+- **Daemon side:** a `plugin_jobs` registry row keyed to the owning
   conversation records a stable `handle` (`job_<hex>`; the plugin-side id is never
   shown). A single sweeper polls `job_status` on an age-based backoff (base cadence
   for the first minute, then ~30s) and, on a terminal state, cap-or-spills the

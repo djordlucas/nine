@@ -33,8 +33,10 @@ plain goroutine, **off the turn path**.
 `Notify()` gives an in-process, low-latency wake (the event sink's flush calls
 `Daemon.NotifySubscribers`); a poll tick is the fallback. The durable **cursor is the
 source of truth**, the wake is only a hint — a subscriber that was down catches up from
-its cursor on restart. (Postgres `LISTEN/NOTIFY` is the deferred multi-process
-generalization; single-node uses the in-process `Notify`.)
+its cursor on restart. Single-node uses the in-process `Notify`; a database-level
+publish/subscribe channel was the previously-sketched multi-process generalization, and
+the move to SQLite forecloses it — a multi-process design would need its own transport
+rather than a database feature (see R-SUB.7).
 
 ---
 
@@ -95,8 +97,10 @@ applied to lifecycle events.
 ## R-SUB.7 — Deferred by decision (not forgotten)
 
 Generative-LLM reactions and autonomous session injection ("free will") are **out of
-scope**: reactions stay programmatic and out-of-band. `LISTEN/NOTIFY`, JSONB
+scope**: reactions stay programmatic and out-of-band. Database-level pub/sub, JSON
 indexes/partitioning, and request dedup are deferred as premature at single-node volume.
+The first two are no longer merely deferred but unavailable: SQLite offers neither, so a
+multi-process build would need a transport of its own.
 
 ---
 

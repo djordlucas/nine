@@ -61,9 +61,9 @@ becomes hard to trust.)
    │        │  Supervisor                    │   (anthropic/ollama)     │
    │        │  Plugin Manager   EventSink    │                          │
    │        └──────┬──────────────────┬──────┘                          │
-   │               │ HTTP/unix socket │ database/sql (pgx v5)           │
+   │               │ HTTP/unix socket │ database/sql (modernc sqlite)   │
    │          shell files http …      ▼                                 │
-   │          (plugin subprocs)   PostgreSQL + pgvector                 │
+   │          (plugin subprocs)   SQLite (one file)                     │
    └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -77,9 +77,9 @@ Three process kinds:
 
 Consequences that shape every contract:
 
-- **All durable state is in the daemon + PostgreSQL. Clients are disposable.** Closing a
-  client does not stop work; re-attaching replays what was missed. The daemon fails fast
-  if the database is unreachable.
+- **All durable state is in the daemon + its database file. Clients are disposable.**
+  Closing a client does not stop work; re-attaching replays what was missed. The daemon
+  fails fast if the database is unusable.
 - **Plugins are isolation boundaries.** A crashing/hanging plugin is a child process,
   reached only through the manager — never an in-daemon panic.
 - **The LLM is reachable only through the queue.** It is the single choke point for
@@ -191,10 +191,11 @@ checklist tests them. They are the rules that keep an implementation coherent.
   turn and a user turn can never run at once on the same session.
 - **I2 — The LLM is reachable only through the queue.** No component calls a provider
   directly; concurrency (`max_concurrent`) and priority are centralized in the queue.
-- **I3 — One Postgres gateway.** A single store object owns the only database handle to
-  PostgreSQL (with `pgvector`). All persistence flows through it. Domain services depend
-  on narrow repository interfaces, not on the database. The daemon fails fast if the
-  database is unreachable (Postgres holds primary state).
+- **I3 — One database gateway.** A single store object owns the only database handle to
+  the SQLite file. All persistence flows through it. Domain services depend on narrow
+  repository interfaces, not on the database. The daemon fails fast if the database is
+  unusable (it holds primary state). Because SQLite serializes writes, that one handle is
+  a writer pool of exactly one connection plus a concurrent read-only pool.
 - **I4 — Operational tables are daemon-private.** Agents get K/V, files, vectors, and
   skills as tools. They **never** get `conversations`, `goals`, `workflows`,
   `notifications`, `user_notifications`, `reflections`, `session_plans`, the HITL tables

@@ -16,7 +16,7 @@ comments, this spec wins.
 
 Nine is a self-contained AI agent **daemon**. A single long-lived process owns all
 state (sessions, a prioritized LLM queue, plugin subprocesses, and a single
-**PostgreSQL** database with `pgvector`); the `nine` binary doubles as a thin client and as the daemon itself
+**SQLite** database file); the `nine` binary doubles as a thin client and as the daemon itself
 (re-exec). Each unit of work is a **session** running a ReAct (reason → act → observe)
 agent loop, serialized on its own worker, checkpointed after every turn so it
 survives disconnects and restarts. Nine works in the background, pursues
@@ -56,7 +56,7 @@ If you only want to build one subsystem, jump to its contract and follow its
 | Contract | Boundary it defines |
 |----------|---------------------|
 | [`wire-protocol.md`](contracts/wire-protocol.md) | Daemon ↔ client messages over the Unix socket; progress events; `EnsureDaemon`/re-exec |
-| [`memory-store.md`](contracts/memory-store.md) | The single Postgres/pgvector gateway: all tables, the agent/daemon access split, checkpoints |
+| [`memory-store.md`](contracts/memory-store.md) | The single SQLite gateway: all tables, the agent/daemon access split, checkpoints |
 | [`llm-provider.md`](contracts/llm-provider.md) | `Provider` interface (single `Complete` method) and the prioritized concurrency `Queue` in front of it |
 | [`embedder.md`](contracts/embedder.md) | `Embedder` interface, providers, vector namespaces, where embeddings are used |
 | [`plugin.md`](contracts/plugin.md) | Plugin contract (HTTP over a Unix socket; MCP over stdio), the plugin manager lifecycle, default plugins |
@@ -116,7 +116,7 @@ load-bearing facts worth stating up front:
 - There is **no runtime plugin generation, config rewrite, or core rebuild**. Plugins
   are immutable image content; self-improvement is skills only.
 - Memory/file/vector operations are **core-intercepted** in-process, not a subprocess plugin.
-- The store is **PostgreSQL + pgvector**; the daemon fails fast if it is unreachable.
+- The store is a single **SQLite** file; the daemon fails fast if it is unusable.
   Native plugins use **HTTP over a Unix socket** (MCP uses stdio). The `Provider`
   interface is a **single** `Complete` method (streaming via `OnChunk`).
 - The supervisor bus is **durable** — journal-backed and resumable.

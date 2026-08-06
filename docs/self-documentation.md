@@ -101,7 +101,7 @@ introduction would read back as the entire file.
 ## Indexing
 
 The index is built at daemon boot by `runtime.SeedDocs`, alongside the skill
-seeders ([skills.md](skills.md)), into the `docs` pgvector namespace.
+seeders ([skills.md](skills.md)), into the `docs` vector namespace.
 
 It is **fingerprinted**: a SHA-256 over every section address and body plus the
 embedder's provider/model. When the fingerprint matches what is stored, boot

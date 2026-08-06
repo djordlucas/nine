@@ -293,7 +293,7 @@ the daemon collects it.
 - **Store** — `internal/memory/files_range_test.go` (windowing, paging
   round-trip, character orientation, scoped FTS, retention guards).
 - **Integration** — `internal/runtime/spill_test.go` drives spill → store →
-  ref-expansion against a real Postgres.
+  ref-expansion against a real store.
 - **Evals** — `tool-output-spill` (the answer is in the elided tail, so the case
   fails against head-only truncation), `spill-read-back` (the answer is in the
   elided *middle*, forcing a genuine read-back), `spill-ref-passing` (graded on

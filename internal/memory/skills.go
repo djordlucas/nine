@@ -40,12 +40,12 @@ func (s *Store) SkillUpsert(sk Skill) error {
 	}
 	_, err = s.db.Exec(
 		`INSERT INTO skills(name, description, tags, content, source, updated_at)
-		 VALUES(?,?,?,?,?,CURRENT_TIMESTAMP)
+		 VALUES(?,?,?,?,?,?)
 		 ON CONFLICT(name) DO UPDATE SET
 		   description=excluded.description, tags=excluded.tags,
 		   content=excluded.content, source=excluded.source,
-		   updated_at=CURRENT_TIMESTAMP`,
-		sk.Name, sk.Description, string(tags), sk.Content, sk.Source)
+		   updated_at=excluded.updated_at`,
+		sk.Name, sk.Description, string(tags), sk.Content, sk.Source, nowText())
 	return err
 }
 

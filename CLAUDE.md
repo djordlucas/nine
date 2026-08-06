@@ -35,8 +35,9 @@ obvious:
 - The daemon routes each turn to a per-conversation **`AgentWorker`**, which
   drives the agent loop (`internal/agent`).
 - **Persistence** — checkpoints, goals, workflows, the event journal — is
-  PostgreSQL (pgx) in `internal/memory`. Config lives in `internal/config`
-  (+ `nine.toml`; the DSN is `database_url`).
+  a single SQLite file (`modernc.org/sqlite`, pure Go) in `internal/memory`.
+  Config lives in `internal/config` (+ `nine.toml`; the database path is
+  `[memory].path`).
 
 Terms like agent / session / conversation / sub-agent / goal / workflow / role
 are overloaded and the distinctions matter; see `docs/glossary.md`.

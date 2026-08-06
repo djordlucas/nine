@@ -1,19 +1,20 @@
 package memory
 
 import (
+	"encoding/binary"
 	"fmt"
-	"strconv"
-	"strings"
+	"math"
+	"sort"
 )
 
-// MemoriesNamespace is the shared pgvector namespace that agent key-value
+// MemoriesNamespace is the shared vector namespace that agent key-value
 // memories are mirrored into (one vector per KV key, embedding of the value).
 // The context builder queries it to pull-surface memories relevant to the
 // current turn. It is a single shared pool — memories are not isolated per
 // agent — so any session can surface any recorded memory.
 const MemoriesNamespace = "memories"
 
-// DocsNamespace is the pgvector namespace holding one vector per section of the
+// DocsNamespace is the vector namespace holding one vector per section of the
 // documentation and specification embedded in the binary. Keys are docindex
 // addresses ("docs/skills.md#tools") and the vectors are a pure index: section
 // text is never copied into the store, it is sliced back out of the embedded FS
@@ -21,19 +22,92 @@ const MemoriesNamespace = "memories"
 // The seeder (runtime.SeedDocs) writes it; doc_search ranks against it.
 const DocsNamespace = "docs"
 
-// formatVector renders a float32 slice as a pgvector literal, e.g. "[0.1,0.2]".
-func formatVector(v []float32) string {
-	var b strings.Builder
-	b.Grow(len(v)*8 + 2)
-	b.WriteByte('[')
+// encodeVector packs a float32 slice into a BLOB, little-endian, 4 bytes per
+// component. The fixed stride means the dimensionality is derivable from
+// len(blob)/4, which decodeVector uses to catch a truncated row rather than
+// trusting the dim column.
+func encodeVector(v []float32) []byte {
+	b := make([]byte, 4*len(v))
 	for i, f := range v {
-		if i > 0 {
-			b.WriteByte(',')
-		}
-		b.WriteString(strconv.FormatFloat(float64(f), 'g', -1, 32))
+		binary.LittleEndian.PutUint32(b[4*i:], math.Float32bits(f))
 	}
-	b.WriteByte(']')
-	return b.String()
+	return b
+}
+
+// decodeVector unpacks a BLOB into dst, reusing dst's backing array when it is
+// large enough. The reuse is the point: VectorQuery decodes every candidate in
+// a namespace, and a fresh allocation per row would dominate the scan.
+func decodeVector(b []byte, dst []float32) ([]float32, error) {
+	if len(b)%4 != 0 {
+		return nil, fmt.Errorf("vector blob length %d is not a multiple of 4", len(b))
+	}
+	n := len(b) / 4
+	if cap(dst) < n {
+		dst = make([]float32, n)
+	}
+	dst = dst[:n]
+	for i := range dst {
+		dst[i] = math.Float32frombits(binary.LittleEndian.Uint32(b[4*i:]))
+	}
+	return dst, nil
+}
+
+// norm returns the Euclidean length of v, accumulated in float64.
+func norm(v []float32) float64 {
+	var n float64
+	for _, f := range v {
+		n += float64(f) * float64(f)
+	}
+	return math.Sqrt(n)
+}
+
+// cosine returns the cosine similarity of a and b, given a's precomputed norm.
+// The accumulators are float64 even though the data is float32, which keeps the
+// ordering of near-ties stable. The clamp stops floating-point slop from
+// surfacing a 1.0000001 in model-visible output.
+func cosine(a []float32, an float64, b []float32) float32 {
+	var dot, bn float64
+	for i := range a {
+		x, y := float64(a[i]), float64(b[i])
+		dot += x * y
+		bn += y * y
+	}
+	if bn == 0 {
+		// A zero vector has no direction, so similarity is undefined. Report 0
+		// rather than NaN: it sorts sanely and marshals to JSON.
+		return 0
+	}
+	return float32(math.Max(-1, math.Min(1, dot/(an*math.Sqrt(bn)))))
+}
+
+// ranker keeps the K highest-scoring results in a descending sorted slice.
+// container/heap would be asymptotically tidier, but K is 5–10 in practice: a
+// linear insert has no interface dispatch, stays in cache, and — for the common
+// case of a candidate that does not make the cut — costs exactly one comparison
+// against the current worst. It also yields results already sorted, which a
+// heap does not.
+type ranker struct {
+	k    int
+	best []VectorResult
+}
+
+func (t *ranker) add(r VectorResult) {
+	if len(t.best) == t.k && r.Score <= t.best[len(t.best)-1].Score {
+		return
+	}
+	i := sort.Search(len(t.best), func(i int) bool { return t.best[i].Score < r.Score })
+	if len(t.best) < t.k {
+		t.best = append(t.best, VectorResult{})
+	}
+	copy(t.best[i+1:], t.best[i:])
+	t.best[i] = r
+}
+
+func (t *ranker) results() []VectorResult {
+	if t.best == nil {
+		return []VectorResult{}
+	}
+	return t.best
 }
 
 // VectorStore saves or replaces a vector in the given namespace under id/key.
@@ -43,12 +117,12 @@ func (s *Store) VectorStore(id, namespace, key string, vector []float32) error {
 	}
 	_, err := s.db.Exec(
 		`INSERT INTO vectors(id, namespace, key, embedding, dim, stored_at)
-		 VALUES(?,?,?,?::vector,?,now())
+		 VALUES(?,?,?,?,?,?)
 		 ON CONFLICT(id) DO UPDATE SET
 		   namespace=excluded.namespace, key=excluded.key,
 		   embedding=excluded.embedding, dim=excluded.dim,
-		   stored_at=now()`,
-		id, namespace, key, formatVector(vector), len(vector))
+		   stored_at=excluded.stored_at`,
+		id, namespace, key, encodeVector(vector), len(vector), nowText())
 	return err
 }
 
@@ -78,34 +152,53 @@ type VectorResult struct {
 }
 
 // VectorQuery returns the topK most similar vectors in namespace, ranked by
-// cosine similarity. pgvector's `<=>` yields cosine distance, so similarity is
-// 1 - distance. Only vectors of matching dimensionality are considered.
+// cosine similarity. Only vectors of matching dimensionality are considered.
+//
+// The similarity is computed here rather than in SQL. That is not a regression:
+// the index on (namespace, dim) is a plain btree, never an ANN index, so
+// ranking has always been a filtered sequential scan — the arithmetic has
+// simply moved to this side of the driver boundary, where it costs one blob
+// decode per candidate and no round trip.
 func (s *Store) VectorQuery(namespace string, vector []float32, topK int) ([]VectorResult, error) {
 	if topK <= 0 {
 		topK = 5
 	}
-	lit := formatVector(vector)
+	qn := norm(vector)
+	if len(vector) == 0 || qn == 0 {
+		return []VectorResult{}, nil
+	}
+
 	rows, err := s.db.Query(
-		`SELECT key, 1 - (embedding <=> ?::vector) AS score
-		 FROM vectors
-		 WHERE namespace = ? AND dim = ?
-		 ORDER BY embedding <=> ?::vector
-		 LIMIT ?`,
-		lit, namespace, len(vector), lit, topK)
+		`SELECT key, embedding FROM vectors WHERE namespace = ? AND dim = ?`,
+		namespace, len(vector))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	results := []VectorResult{}
+	sel := ranker{k: topK}
+	scratch := make([]float32, 0, len(vector))
 	for rows.Next() {
-		var r VectorResult
-		if err := rows.Scan(&r.Key, &r.Score); err != nil {
+		var (
+			key  string
+			blob []byte
+		)
+		if err := rows.Scan(&key, &blob); err != nil {
 			return nil, err
 		}
-		results = append(results, r)
+		scratch, err = decodeVector(blob, scratch)
+		// A malformed or wrong-length row is skipped rather than fatal: a ranked
+		// search that returns slightly fewer neighbours is a far better failure
+		// than a context build that errors out over one corrupt embedding.
+		if err != nil || len(scratch) != len(vector) {
+			continue
+		}
+		sel.add(VectorResult{Key: key, Score: cosine(vector, qn, scratch)})
 	}
-	return results, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return sel.results(), nil
 }
 
 // VectorCount returns the number of vectors stored in namespace. It backs

@@ -21,8 +21,8 @@ remembers stay on hardware you control.
 
 Most agent tooling assumes a cloud model and a vendor's storage. That is a
 reasonable default, and it is not this one. Nine's default configuration points at
-[Ollama](https://ollama.com) on `localhost` and a PostgreSQL instance you run
-yourself; no API key is required and nothing leaves the machine. 
+[Ollama](https://ollama.com) on `localhost` and a SQLite file on disk; no API key
+is required, no database server is needed, and nothing leaves the machine. 
 
 Anthropic's API is supported as a first-class provider when you want a frontier model, but it is opt-in
 rather than the path of least resistance. Swapping between the two is a two-line
@@ -32,7 +32,7 @@ Nine is designed and developped with smaller models to ensure Nine remains usefu
 The other half of the idea is that an agent should be *durable*. Nine's state is not
 a process that dies with your terminal. Conversations, goals, workflows, memory, and
 a complete append-only journal of every step the agent has ever taken live in
-Postgres. You can kill the daemon mid-task and it resumes. You can replay a recorded
+a database file on disk. You can kill the daemon mid-task and it resumes. You can replay a recorded
 session deterministically, with no live model and no tool calls, and watch exactly
 what happened.
 
@@ -70,7 +70,7 @@ This project was made in part with Claude. The design is the author's, the code 
 For major features, a design document was made, iterated upon many times, implemented tested and then a specification document written.
 
 ## Quick start
-The fastest and recommended path is Docker, which brings up Postgres and the daemon together:
+The fastest and recommended path is Docker:
 
 Nine defaults to Ollama at `host.docker.internal:11434`, so pull a model on the host
 first:
@@ -105,7 +105,7 @@ max_concurrent = 1
 
 Start Nine
 ```bash
-make up                # Postgres (pgvector) + the daemon, one container
+make up                # the daemon, one container
 make session           # interactive TUI session
 make shell             # sh into nine's container for debug
 ```
@@ -120,9 +120,8 @@ conversation history. Run `nine` with no arguments for the interactive TUI.
 | Requirement | Version | Notes |
 |-------------|---------|-------|
 | Go | 1.26+ | Native build |
-| PostgreSQL | 16+ with `pgvector` | All persistent state; `make pg` provides a standalone instance for native use |
 | Node.js | 18+ | Browser plugin only |
-| Docker | 24+ | Container build (runs Postgres + the daemon together, no compose) |
+| Docker | 24+ | Container build (one container, no compose) |
 | golangci-lint | latest | Optional, for `make lint` |
 
 Plus an LLM provider: a running Ollama, or an Anthropic API key.
@@ -139,15 +138,15 @@ This produces `dist/nine` (the CLI and daemon in one binary) and the plugin bina
 in `dist/bin/`. The browser plugin additionally needs Node and npm.
 
 Nine looks for its config, in order: `$NINE_CONFIG`, `./nine.toml`, `/nine.toml`,
-then `~/.nine/nine.toml`. The repo's `nine.toml` works as-is against a local Ollama
-and `make pg`'s standalone Postgres.
+then `~/.nine/nine.toml`. The repo's `nine.toml` works as-is against a local Ollama;
+the database is created on first run at `~/.nine/nine.db`.
 
 ### Docker (single container)
 
-Nine cannot be decoupled from its database — the daemon fails fast if Postgres
-is unreachable — so the deployment unit is **one container** running both,
-supervised together by s6-overlay ([docs/single-container.md](docs/single-container.md)).
-There's no docker-compose file; `docker run` is wrapped in Makefile targets:
+The deployment unit is **one container** running the daemon under s6-overlay
+([docs/single-container.md](docs/single-container.md)). Its database is a file on
+the `/data` volume, so there is no second service to orchestrate and no
+docker-compose file; `docker run` is wrapped in Makefile targets:
 
 ```bash
 make up                # built runtime image
@@ -159,8 +158,7 @@ make destroy           # remove everything, including all data volumes and image
 The runtime image holds the compiled binary, the plugins, and the built-in skills
 — no Go toolchain and no source tree, because Nine never compiles anything at
 runtime. Hot-reload mode bind-mounts the source and rebuilds via `inotifywait` —
-this is the development path. The browser plugin ships in both images. pgAdmin
-is opt-in tooling, not part of either image (`make pgadmin`).
+this is the development path. The browser plugin ships in both images.
 
 The full Makefile target list is in [docs/installation.md](docs/installation.md).
 
@@ -187,9 +185,10 @@ task_timeout_seconds = 1800
 max_goal_sessions    = 10        # concurrent background "pursue" sessions
 
 [memory]
-# Postgres holds every piece of durable state. The daemon fails fast if it's
-# unreachable — this is primary storage, not a cache.
-database_url = "postgres://nine:nine@localhost:5433/nine?sslmode=disable"
+# The SQLite file holding every piece of durable state — primary storage, not a
+# cache. Created on first run; defaults to ~/.nine/nine.db (/data/nine.db in the
+# container).
+# path = "~/.nine/nine.db"
 
 [embeddings]
 provider = ""                    # "" or "keyword" = built-in, no model, no network
@@ -206,7 +205,7 @@ Environment variables override the file. The most useful:
 |----------|-------------|
 | `NINE_CONFIG` | Explicit config path, skipping the search order |
 | `NINE_LLM_PROVIDER` / `NINE_LLM_MODEL` / `NINE_LLM_ENDPOINT` | Override the LLM without editing config |
-| `NINE_DATABASE_URL` | Override the Postgres DSN |
+| `NINE_DB_PATH` | Override the database file path |
 | `NINE_PLUGINS_BIN` / `NINE_WORKSPACE_ROOT` | Override the plugin and workspace paths (how the container reuses `nine.toml`) |
 | `ANTHROPIC_API_KEY` | Anthropic key |
 | `SEARCH_PROVIDER` / `SEARCH_API_KEY` | `web_search` backend: `brave` or `serpapi`. Unset uses DuckDuckGo, no key needed. |
@@ -261,7 +260,7 @@ message, prints the reply. Everything long-lived is in the daemon.
 │  └────────────────────────────────────────────────┘ │
 │                                                     │
 │  ┌────────────────────────────────────────────────┐ │
-│  │  memory.Store  →  PostgreSQL + pgvector        │ │
+│  │  memory.Store  →  SQLite (one file)            │ │
 │  │  (in-process; all durable state + the event    │ │
 │  │   journal; memory/file/skill tools are core,   │ │
 │  │   not plugins)                                 │ │
@@ -284,7 +283,7 @@ sees the tools that matter for *this* turn instead of all of them.
 supervisor above active conversations above background work, so a goal grinding away
 in the background never makes you wait.
 
-**Memory** is one PostgreSQL database with pgvector, reached through a single store.
+**Memory** is one SQLite file, reached through a single store.
 Schema is applied idempotently on open. Tables cover conversations, goals, workflows,
 KV memory, full-text-searchable files, vectors, skills, session plans, human-in-the-loop
 state, and the event journal. Operational tables are daemon-private — never exposed to
@@ -400,7 +399,7 @@ fixed. The reasoning is in
 | **Goal** | An open-ended intention with no end condition, pursued in the background |
 | **Workflow** | A finite multi-step plan for sub-agent delegation |
 | **Supervisor** | Special agent that monitors others for stalls and capability gaps |
-| **Checkpoint** | Serialized agent state persisted to Postgres |
+| **Checkpoint** | Serialized agent state persisted to the database |
 | **Journal** | Append-only record of every step, enabling trace and deterministic replay |
 
 ## Documentation

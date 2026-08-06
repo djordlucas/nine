@@ -1,14 +1,8 @@
 #!/command/with-contenv sh
 set -e
 
-# Only the files-plugin workspace lives outside Postgres; everything else
-# durable is in the database (see entrypoint.sh, which this replaces).
+# /data holds everything durable: the SQLite database file and the files-plugin
+# workspace, on one volume.
 mkdir -p /data/workspace
-
-# memory.Open fails fast when Postgres is unreachable, so gate here rather
-# than let the daemon crash-loop while the cluster is still starting up.
-until pg_isready -q -h localhost -U "${POSTGRES_USER:-nine}" -d "${POSTGRES_DB:-nine}"; do
-	sleep 0.5
-done
 
 exec nine daemon

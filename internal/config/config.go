@@ -253,8 +253,7 @@ type PluginsConfig struct {
 }
 
 type MemoryConfig struct {
-	Path        string `toml:"path"`         // deprecated: legacy SQLite file path, no longer used
-	DatabaseURL string `toml:"database_url"` // PostgreSQL DSN (see Config.DatabaseURL)
+	Path string `toml:"path"` // SQLite database file path (see Config.DatabasePath)
 
 	// SurfaceMemories controls the context-builder pull-surfacing of stored
 	// key-value memories: each `memory_set` is mirrored into a shared vector pool

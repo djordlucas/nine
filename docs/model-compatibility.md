@@ -25,7 +25,6 @@ you test a new model or a new host.
 Reproduce any row:
 
 ```sh
-make pg
 NINE_EVAL_MODELS=<model> make eval-live      # local models need Ollama at NINE_LLM_ENDPOINT
 # claude-* models additionally need ANTHROPIC_API_KEY
 ```

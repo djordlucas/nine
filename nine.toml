@@ -2,16 +2,16 @@
 ##
 ## This is the only config file: the same nine.toml serves the native and the
 ## container layouts. It is written for a native run against a local Ollama and
-## `make pg`'s standalone Postgres, and works as-is after `make all`.
+## works as-is after `make all` — there is no database to provision.
 ##
-## The container (docs/single-container.md) runs Postgres alongside the daemon
-## in the same unit and overrides what differs via environment variables (see
-## the Makefile's `up`/`up-hot` targets) rather than a second config file:
+## The container (docs/single-container.md) overrides what differs via
+## environment variables (see the Makefile's `up`/`up-hot` targets) rather than
+## a second config file:
 ##   NINE_LLM_ENDPOINT     http://host.docker.internal:11434
 ##   NINE_PLUGINS_BIN      /opt/nine/bin
 ##   NINE_WORKSPACE_ROOT   /data/workspace
-## NINE_DATABASE_URL needs no override there — it's baked into the image,
-## already pointing at the co-located Postgres (localhost:5432).
+## The database needs no override there: it defaults to /data/nine.db whenever
+## the /data volume is present.
 ##
 ## Search order: $NINE_CONFIG, ./nine.toml, /nine.toml, ~/.nine/nine.toml.
 ## Full reference: docs/configuration.md
@@ -75,11 +75,10 @@ bin = "./dist/bin"
 # user_dir = "./plugins.d"
 
 [memory]
-# PostgreSQL DSN. Postgres holds all durable state, and the daemon fails fast if
-# it is unreachable. Start a local instance with `make pg`; the containerized
-# daemon (docs/single-container.md) runs its own Postgres instead and never
-# reads this value (NINE_DATABASE_URL is baked into its image).
-database_url = "postgres://nine:nine@localhost:5433/nine?sslmode=disable"
+# SQLite database file holding all durable state. Created on first run, along
+# with its parent directory. Defaults to /data/nine.db when the container's
+# /data volume is present, else ~/.nine/nine.db. Override with NINE_DB_PATH.
+# path = "~/.nine/nine.db"
 # Index each memory_set into a shared vector pool and pull-surface the memories
 # most relevant to the current turn as advisory context. On by default; needs an
 # embedder (no-op when embeddings are disabled). Set false to turn it off.

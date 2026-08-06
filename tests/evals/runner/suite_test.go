@@ -11,7 +11,7 @@ import (
 // TestSuite_RunBothTracks exercises the full orchestration: a live case graded
 // against two scripted "models" plus a replay case with a freshly recorded
 // fixture, then checks the aggregate report and grid. Uses scripted providers, so
-// it needs only Postgres.
+// it needs no external service.
 func TestSuite_RunBothTracks(t *testing.T) {
 	h := requireHarness(t)
 
