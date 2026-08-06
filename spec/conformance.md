@@ -22,7 +22,7 @@ How to use this file:
 |----|----------|------------------------|
 | I1 | One session, one serial worker, serialized turns | R-WORK.1; R-LOOP.1 |
 | I2 | LLM reachable only through the queue | R-LLM.3, R-LLM.4; R-LOOP.8 |
-| I3 | One Postgres gateway; services depend on narrow repos | R-MEM.1; R-ORCH.5 |
+| I3 | One database gateway; services depend on narrow repos | R-MEM.1; R-ORCH.5 |
 | I4 | Operational tables are daemon-private (not tools) | R-MEM.4; R-HITL.7 |
 | I5 | Every turn ends with a checkpoint | R-LOOP.7; R-WORK.2; R-MEM.5 |
 | I6 | Sub-agent recursion is depth-capped | R-DISP.6; R-ORCH.3; R-ROLE.6 |
@@ -313,7 +313,7 @@ How to use this file:
 
 | Check | Observable |
 |-------|------------|
-| Boot order | A single `runDaemon` builds the graph in the specified order (config → Postgres store (fail-fast) → plugins → checkpoint/notif → embedder → supervisor+`Attach` → self-model → bootstrap self KV → reflection → pursue → workflow+journal scrub → HITL → builder → daemon → event sink → configure (+ subscribers) → inject spawn/progress fns → start supervisor → reconcile standing agents → `ResumeSessions` → accept loop). |
+| Boot order | A single `runDaemon` builds the graph in the specified order (config → SQLite store (fail-fast) → plugins → checkpoint/notif → embedder → supervisor+`Attach` → self-model → bootstrap self KV → reflection → pursue → workflow+journal scrub → HITL → builder → daemon → event sink → configure (+ subscribers) → inject spawn/progress fns → start supervisor → reconcile standing agents → `ResumeSessions` → accept loop). |
 | Cold boot | Seeds self KV and the reflection session; scrubs stale workflows and journal events; seeds config-declared standing agents; resumes idle-capable sessions from a prior run. |
 | Restart survival | Killing and restarting the daemon brings back the reflection session and all active goal pursue sessions; ordinary conversations return on `attach`. |
 

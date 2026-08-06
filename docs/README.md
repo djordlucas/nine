@@ -17,7 +17,7 @@ features built on top of that architecture.
 
 ### Architecture
 
-4. [Architecture](architecture.md) — The big picture: daemon, agent loop, context budgeting, plugin protocol, memory (PostgreSQL)
+4. [Architecture](architecture.md) — The big picture: daemon, agent loop, context budgeting, plugin protocol, memory (SQLite)
 5. [Architecture (detailed)](architecture_detailed.md) — Deep dive: topology, concurrency, boot sequence, invariants
 6. [Daemon Architecture](daemon.md) — Unix socket server, message dispatch, conversation lifecycle
 7. [Runner Architecture](runner.md) — Per-conversation agent loop wrapper, stall detection, checkpointing
@@ -52,11 +52,11 @@ features built on top of that architecture.
 
 ### Docker (recommended)
 
-Postgres and the daemon run together as one container ([Single-container
+The daemon runs as one container ([Single-container
 Nine](single-container.md)) — no docker-compose:
 
 ```bash
-# 1. Build + run — Postgres + the daemon (edit nine.toml for your LLM)
+# 1. Build + run — the daemon (edit nine.toml for your LLM)
 make up
 
 # 2. Open an interactive session
@@ -86,7 +86,7 @@ Nine auto-starts the daemon on first use. Subsequent calls share the same runnin
 | **Plugin** | Standalone binary exposing tools via JSON-RPC; fixed at build time, started at boot |
 | **Skill** | Markdown how-to note describing a reusable capability, semantically retrieved into context |
 | **Supervisor** | A special agent that monitors others for stalls and capability gaps (durable, journal-backed) |
-| **Checkpoint** | Serialized agent state (messages + scratchpad) persisted to the `conversations` table in PostgreSQL |
+| **Checkpoint** | Serialized agent state (messages + scratchpad) persisted to the `conversations` table |
 
 ## TUI Slash Commands
 

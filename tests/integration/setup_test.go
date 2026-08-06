@@ -112,7 +112,7 @@ func startContainer() string {
 		"-e", "NINE_LLM_ENDPOINT=http://host.docker.internal:11434",
 		"-e", "NINE_LOG_FILE=off", // logs → stderr → docker logs
 		// No nine.toml is mounted, so these two must come from the environment
-		// or every plugin silently fails to start (config.DatabaseURL's sibling
+		// or every plugin silently fails to start (config.DatabasePath's sibling
 		// pluginBinPath falls back to a stale "/data/bin" that has never existed
 		// in any image layout — see docs/single-container.md; plugins live under
 		// /opt/nine/bin, the workspace under /data/workspace).

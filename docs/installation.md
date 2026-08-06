@@ -15,19 +15,17 @@ An LLM provider is also required — see [Configuration](configuration.md) for o
 
 ## Deployment (single container)
 
-Nine cannot be decoupled from its database — the daemon fails fast if Postgres
-is unreachable, and Postgres holds all durable state. So the whole stack is
-**one container**: PostgreSQL (`pgvector`) and the daemon, supervised together
-by s6-overlay (see [Single-container Nine](single-container.md) for the full
-design). There is no docker-compose file; `docker run` is wrapped in a handful
-of Makefile targets for the env/volume/flag boilerplate. Inside the container
-the daemon reaches Postgres at `localhost:5432` (baked into the image's
-`NINE_DATABASE_URL`), and reaches the host's LLM endpoint via
-`host.docker.internal`.
+Nine's durable state is a SQLite file, so the deployment unit is **one
+container** running the daemon alone under s6-overlay (see
+[Single-container Nine](single-container.md) for the full design). There is no
+docker-compose file and no database service to orchestrate; `docker run` is
+wrapped in a handful of Makefile targets for the env/volume/flag boilerplate.
+Inside the container the daemon opens `/data/nine.db` and reaches the host's LLM
+endpoint via `host.docker.internal`.
 
-There are two modes, built from the same `Dockerfile`, both re-based on
-`pgvector/pgvector:pg17` (Debian bookworm) so Postgres, pgvector, and the
-official Postgres entrypoint are reused rather than reimplemented.
+There are two modes, built from the same `Dockerfile`, both based on
+`debian:bookworm-slim` — enough for chromium and Node, which the browser plugin
+needs. The `nine` binary is pure Go and carries no libc dependency of its own.
 
 ### Production mode
 
@@ -58,34 +56,30 @@ LLM knobs (`NINE_LLM_PROVIDER`/`MODEL`/`ENDPOINT`) pass through (empty = use
 images — it is Node, so it is baked in as immutable content rather than rebuilt
 from the mounted source, but that applies equally to hot-reload and production.
 
-### Optional: pgAdmin
+### Inspecting the database
 
-pgAdmin is not part of either image — it's opt-in tooling, spawned on demand as
-a separate container:
+The database is a plain SQLite file, so any SQLite client reads it. Under WAL a
+reader never blocks the daemon:
 
 ```bash
-make pgadmin           # http://localhost:5050, pre-wired to the nine database
-make pgadmin-down
+docker exec -it nine sh -c 'sqlite3 /data/nine.db ".tables"'
 ```
-
-It connects over whichever container's published Postgres port; `up-hot`
-publishes `5432` by default. Desktop mode (no login) is for local convenience
-only — never expose it beyond localhost.
 
 ### Volume layout
 
 The `nine` binary (with built-in skills embedded), the compiled plugins, and the
 browser plugin code are immutable image content under `/opt/nine` — they are **not**
-stored in a volume. Each mode has **two** named volumes for mutable state, kept
-separate so the database can be backed up, snapshotted, or reset independently
-of the workspace:
+stored in a volume. Each mode has **one** named volume for mutable state:
 
-- `nine-pgdata` / `nine-dev-pgdata` — the PostgreSQL cluster: conversations,
-  tasks, goals, KV, skills, vectors, and the session event journal
-- `nine-data` / `nine-dev-data` — the files-plugin workspace at `/data/workspace`
+- `nine-data` / `nine-dev-data` — mounted at `/data`, holding both `nine.db`
+  (conversations, goals, KV, skills, vectors, and the session event journal) and
+  the files-plugin workspace at `/data/workspace`
+
+> Backing up the database means copying `nine.db` **and** its `-wal` and `-shm`
+> sidecars together, or running `VACUUM INTO` to produce a single consistent file.
 
 On first boot the `nine` service's run script creates `/data/workspace` and the
-daemon seeds the built-in skills (embedded in the binary) into Postgres; this
+daemon seeds the built-in skills (embedded in the binary) into the database; this
 runs every boot, so editing a skill file and rebuilding updates it, while
 agent-authored skills are left untouched. Rebuilding the image picks up code
 changes without touching the volumes.
@@ -137,8 +131,8 @@ The build produces:
 ### 2. Config
 
 The repo's `nine.toml` is the only config file, and it is written for exactly this
-layout — a local Ollama, plugins in `./dist/bin`, and `make pg`'s standalone
-Postgres on `localhost:5433`. Running from the project root needs no edits.
+layout — a local Ollama and plugins in `./dist/bin`. Running from the project root
+needs no edits; the database is created on first run at `~/.nine/nine.db`.
 
 To use it from anywhere, copy it to the global location and make the paths absolute:
 
@@ -150,17 +144,7 @@ cp nine.toml ~/.nine/nine.toml
 Nine searches `$NINE_CONFIG`, then `./nine.toml`, then `/nine.toml`, then
 `~/.nine/nine.toml`. See [Configuration](configuration.md) for all options.
 
-### 3. Start PostgreSQL
-
-Postgres holds all durable state and the daemon fails fast without it. This is
-a standalone database container — unrelated to the containerized Nine above,
-which runs its own Postgres internally:
-
-```bash
-make pg                       # pgvector on localhost:5433
-```
-
-### 4. Pull a model and run
+### 3. Pull a model and run
 
 ```bash
 ollama pull qwen3.5:4b
@@ -205,13 +189,9 @@ export ANTHROPIC_API_KEY=sk-ant-...
 | `make up-hot` | Build + run the hot-reload container (rebuild on `.go` change) |
 | `make session` | Open an interactive TUI session in the running container |
 | `make shell` | Open a shell in the running container |
-| `make logs` | Follow the container's logs (Postgres + daemon) |
+| `make logs` | Follow the container's logs |
 | `make down` | Remove the container, keeping all data volumes |
 | `make destroy` | Remove the container **and all data volumes and images** |
-| `make pgadmin` | Spawn the opt-in pgAdmin side-container |
-| `make pgadmin-down` | Remove it |
-| `make pg` | Standalone Postgres for the native dev loop / evals (`localhost:5433`) |
-| `make pg-down` | Remove it |
 
 ---
 

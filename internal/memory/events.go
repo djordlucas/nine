@@ -23,27 +23,32 @@ type SessionEvent struct {
 	Payload      json.RawMessage `json:"payload"`
 }
 
-// SessionEventsAppend inserts a batch of events in one round-trip. Seq and TS
-// are database-assigned; the passed values for those fields are ignored. An
-// empty batch is a no-op.
+// SessionEventsAppend inserts a batch of events in one round-trip. Seq is
+// database-assigned and TS is stamped here; the passed values for those fields
+// are ignored. An empty batch is a no-op.
 func (s *Store) SessionEventsAppend(evs []SessionEvent) error {
 	if len(evs) == 0 {
 		return nil
 	}
 	var b strings.Builder
-	b.WriteString(`INSERT INTO session_events(agent_id, turn, span_id, parent_span_id, type, payload) VALUES `)
-	args := make([]any, 0, len(evs)*6)
+	b.WriteString(`INSERT INTO session_events(agent_id, turn, span_id, parent_span_id, type, payload, ts) VALUES `)
+	args := make([]any, 0, len(evs)*7)
+	// One timestamp for the whole batch rather than one per event: the previous
+	// backend's now() was transaction time and constant across the multi-row
+	// INSERT, and preserving that keeps within-batch ordering carried purely by
+	// seq, which is what replay already assumes.
+	ts := nowText()
 	for i, e := range evs {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		b.WriteString("(?,?,?,?,?,?)")
+		b.WriteString("(?,?,?,?,?,?,?)")
 		parent := sql.NullString{String: e.ParentSpanID, Valid: e.ParentSpanID != ""}
 		payload := e.Payload
 		if len(payload) == 0 {
 			payload = []byte("{}")
 		}
-		args = append(args, e.AgentID, e.Turn, e.SpanID, parent, e.Type, string(payload))
+		args = append(args, e.AgentID, e.Turn, e.SpanID, parent, e.Type, string(payload), ts)
 	}
 	_, err := s.db.Exec(b.String(), args...)
 	return err
@@ -60,9 +65,12 @@ func (s *Store) SessionEventsScrub(keepTurns int, maxAge time.Duration) (int, er
 	if keepTurns > 0 {
 		// Keep the last keepTurns turns per agent; drop everything below that.
 		res, err := s.db.Exec(
-			`DELETE FROM session_events e
-			 USING (SELECT agent_id, max(turn) AS mx FROM session_events GROUP BY agent_id) m
-			 WHERE e.agent_id = m.agent_id AND e.turn <= m.mx - ?`,
+			`DELETE FROM session_events
+			 WHERE seq IN (
+			   SELECT e.seq FROM session_events e
+			   JOIN (SELECT agent_id, max(turn) AS mx FROM session_events GROUP BY agent_id) m
+			     ON m.agent_id = e.agent_id
+			   WHERE e.turn <= m.mx - ?)`,
 			keepTurns)
 		if err != nil {
 			return total, err
@@ -72,8 +80,8 @@ func (s *Store) SessionEventsScrub(keepTurns int, maxAge time.Duration) (int, er
 	}
 	if maxAge > 0 {
 		res, err := s.db.Exec(
-			`DELETE FROM session_events WHERE ts < now() - (? * interval '1 second')`,
-			maxAge.Seconds())
+			`DELETE FROM session_events WHERE ts < ?`,
+			writeTime(time.Now().Add(-maxAge)))
 		if err != nil {
 			return total, err
 		}
@@ -128,10 +136,17 @@ func (s *Store) SessionEventsByAgent(agentID string) ([]SessionEvent, error) {
 			e       SessionEvent
 			parent  sql.NullString
 			payload []byte
+			ts      string
 		)
-		if err := rows.Scan(&e.Seq, &e.AgentID, &e.Turn, &e.SpanID, &parent, &e.Type, &e.TS, &payload); err != nil {
+		if err := rows.Scan(&e.Seq, &e.AgentID, &e.Turn, &e.SpanID, &parent, &e.Type, &ts, &payload); err != nil {
 			return nil, err
 		}
+		// ts is parsed explicitly rather than scanned straight into a time.Time.
+		// The driver can be asked to convert TEXT columns automatically, but that
+		// would make the store's behaviour depend on a DSN flag that differs
+		// between the writer and the read-only CLI pool — two explicit parses are
+		// better than that kind of action at a distance.
+		e.TS = parseStoredTime(ts)
 		e.ParentSpanID = parent.String
 		e.Payload = payload
 		evs = append(evs, e)

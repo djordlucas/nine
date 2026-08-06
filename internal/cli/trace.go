@@ -14,13 +14,16 @@ import (
 // Trace prints the session event journal for agentID as a compact one-line-per-
 // event timeline (docs/event-log.md §10). With turn > 0 only that turn is shown.
 // It reads session_events directly from the store, so it works after a restart
-// and with the daemon down — the post-hoc debugging case.
+// and with the daemon down — the post-hoc debugging case. The store is opened
+// read-only: this runs in a second process that may well be sharing the file
+// with a running daemon, and a read-only connection takes a WAL snapshot
+// without ever blocking, or being blocked by, the daemon's writer.
 //
 // When subAgents is true, each sub_agent_start event expands into the spawned
 // sub-agent's own journal, nested inline and indented beneath the marker, and
 // recursively for sub-agents of sub-agents.
 func (c *CLI) Trace(cfg *config.Config, agentID string, turn int, subAgents bool) error {
-	store, err := memory.Open(cfg.DatabaseURL())
+	store, err := memory.OpenReadOnly(cfg.DatabasePath())
 	if err != nil {
 		return fmt.Errorf("open memory store: %w", err)
 	}
@@ -52,9 +55,10 @@ func (c *CLI) Replay(cfg *config.Config, agentID string, turn int) error {
 	return nil
 }
 
-// readEvents opens the memory store directly and returns agentID's journal.
+// readEvents opens the memory store read-only (see Trace) and returns agentID's
+// journal.
 func (c *CLI) readEvents(cfg *config.Config, agentID string) ([]memory.SessionEvent, error) {
-	store, err := memory.Open(cfg.DatabaseURL())
+	store, err := memory.OpenReadOnly(cfg.DatabasePath())
 	if err != nil {
 		return nil, fmt.Errorf("open memory store: %w", err)
 	}

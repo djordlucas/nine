@@ -119,7 +119,7 @@ Two new message types in `protocol.Msg`:
 
 ## DB schema
 
-Two tables in the PostgreSQL store:
+Two tables in the store:
 
 ```sql
 CREATE TABLE IF NOT EXISTS human_requests (

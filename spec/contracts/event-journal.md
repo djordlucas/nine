@@ -1,6 +1,6 @@
 # Contract — Session Event Journal
 
-**Status:** Built · **Depends on:** memory store (Postgres), agent worker · **Used by:** trace/replay, retention, subscriptions
+**Status:** Built · **Depends on:** memory store, agent worker · **Used by:** trace/replay, retention, subscriptions
 
 Every session's execution trajectory is recorded to an append-only journal (the
 `session_events` table). The journal is a **record** (replay, audit, debug) and the
@@ -14,7 +14,8 @@ design: `docs/event-log.md`.
 ## R-EVT.1 — Append-only, ordered, typed
 
 `session_events` rows are **append-only** and **never mutated** in place. Each row is
-`{seq BIGSERIAL, agent_id, turn, span_id, parent_span_id, type, ts, payload JSONB}`. `seq`
+`{seq INTEGER PRIMARY KEY AUTOINCREMENT, agent_id, turn, span_id, parent_span_id, type,
+ts, payload TEXT}`. `seq`
 is DB-assigned and monotonic; reads for one `agent_id` are returned in `seq` order. A
 conforming implementation **MUST NOT** expose journal mutation to agents (it is
 daemon-private, R-MEM.4).

@@ -516,7 +516,7 @@ func (c *CLI) Notifications(cfg *config.Config, all bool) error {
 	}
 
 	// Daemon down: read the feed directly from the memory store.
-	store, err := memory.Open(cfg.DatabaseURL())
+	store, err := memory.Open(cfg.DatabasePath())
 	if err != nil {
 		return fmt.Errorf("open memory store: %w", err)
 	}
@@ -594,7 +594,7 @@ func (c *CLI) WorkflowFail(cfg *config.Config, id string, all bool) error {
 
 	// Daemon is down: open the memory store in-process. (Memory is an in-process
 	// package, not a plugin — there is no memory subprocess to contact.)
-	store, err := memory.Open(cfg.DatabaseURL())
+	store, err := memory.Open(cfg.DatabasePath())
 	if err != nil {
 		return fmt.Errorf("open memory store: %w", err)
 	}

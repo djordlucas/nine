@@ -20,7 +20,7 @@ func NewID() string {
 		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
-// sqlWorkflowRepo is the Postgres-backed workflow.Repository implementation.
+// sqlWorkflowRepo is the SQL-backed workflow.Repository implementation.
 // internal/memory remains the sole owner of the database handle; workflow.Service
 // holds no database reference and depends only on this narrow interface.
 type sqlWorkflowRepo struct {

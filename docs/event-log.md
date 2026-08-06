@@ -2,6 +2,15 @@
 
 **Status:** Proposed (investigation report) · **Depends on:** loop, dispatcher, session workers, checkpoints, memory · **Overlaps:** checkpointing, the in-memory replay buffer, the supervisor event bus, `slog` logs, the `X-Nine-Request-ID` trace
 
+> **Superseded in part — backend.** This report was written when the store was
+> being moved onto PostgreSQL, and its phase log records that as it happened. The
+> store has since moved to **SQLite** (one file, no server); the journal's design —
+> append-only, monotonic `seq`, durable per-subscriber cursors — carried over
+> unchanged, because it never depended on the engine. Where this document describes
+> the *backend*, read [`../spec/contracts/memory-store.md`](../spec/contracts/memory-store.md)
+> and [`../spec/contracts/event-journal.md`](../spec/contracts/event-journal.md) as
+> current; the design reasoning below stands on its own.
+
 This report investigates persisting **every step** of a Nine session's
 execution — tool inputs/outputs, model replies, the exact context sent to the
 model and how it changed — as a durable, ordered, queryable record that makes
@@ -84,12 +93,12 @@ throughput and payload size, both addressed in §9.
 
 **Scope (resolved): the whole store.** The entire `memory.Store` — kv, files,
 vectors, conversations, goals, notifications, reflections, workflows,
-session_plans, human_requests, user_notifications — is on Postgres, with the
-`session_events` journal as one more table on the same backend. Files use Postgres
-`tsvector`/`websearch_to_tsquery` for full-text search and the vectors table uses
-`pgvector`. The
-Postgres backend is scoped as its own effort (§11 phase 0) — the event log is
-deliberately *downstream* of it.
+session_plans, human_requests, user_notifications — lives on one backend, with the
+`session_events` journal as one more table on it. (That backend was Postgres when
+this was written and is SQLite today: files are full-text indexed by FTS5 and
+vectors are ranked by cosine similarity over stored blobs.) The backend swap was
+scoped as its own effort (§11 phase 0) — the event log is deliberately *downstream*
+of it.
 
 ---
 
@@ -211,7 +220,10 @@ graph questions without a graph engine.
 ## 6. Proposed schema & event taxonomy
 
 ```sql
--- Postgres (phase 0 migrates the rest of the store; this table is the journal).
+-- Phase 0 migrates the rest of the store; this table is the journal.
+-- (As built on SQLite: seq is INTEGER PRIMARY KEY AUTOINCREMENT — AUTOINCREMENT
+-- is required, since a bare rowid alias reuses ids after a delete and subscribers
+-- persist absolute seq values as cursors.)
 CREATE TABLE IF NOT EXISTS session_events (
     seq            BIGSERIAL PRIMARY KEY,             -- global causal order
     agent_id       TEXT NOT NULL,                     -- session (conversation/goal) id
@@ -346,7 +358,7 @@ transactional insert.
    conversation (`expected_version`) so concurrent sub-agents can't clobber.
 3. **Projections / read models** — the payoff: goals, history, the self-model,
    the notification feed, and analytics all become materialized views rebuilt
-   from one stream (Postgres `LISTEN/NOTIFY` or a projection worker; materialized
+   from one stream (a database notify channel or a projection worker; materialized
    views for read-heavy ones), with a guaranteed-consistent rebuild path.
 4. **Schema evolution / upcasting** — events are immutable and long-lived; when
    the loop or tooling changes, old events must still fold. JSONB payloads help,

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Hot-reload body of the s6 `nine` service in the `nine-dev` image (see
-# docker/s6/dev/s6-rc.d/nine/run, which execs this after the Postgres gate).
+# docker/s6/dev/s6-rc.d/nine/run, which execs this).
 #
 # The repository is bind-mounted at /nine-src. This builds `nine` and the Go
 # plugins from the mounted source, starts the daemon, and watches for `.go`
@@ -53,7 +53,7 @@ while :; do
 	# loop's direct foreground command: a shell blocked in a foreground child
 	# (dash's behavior as Debian's /bin/sh) defers a trapped INT/TERM until
 	# that child exits, so `docker stop` would hang idle here for the full
-	# grace period, then get force-killed, skipping the Postgres service's own
+	# grace period, then get force-killed, skipping the daemon's own graceful
 	# shutdown entirely. `wait` on a backgrounded pid is interrupted by a
 	# trapped signal immediately, so shutdown while idle here stays prompt.
 	inotifywait -qq -r -e modify,create,delete,move \

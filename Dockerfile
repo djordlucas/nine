@@ -21,9 +21,9 @@ COPY plugins/browser/package.json plugins/browser/package-lock.json ./
 RUN npm ci --production
 
 # ── s6-overlay fetch stage (shared by dev + runtime) ──────────────────────────
-# s6-overlay supervises Postgres and the daemon as one container (docs/single-
-# container.md): it reaps zombies, forwards docker stop's SIGTERM to both
-# processes, and restarts a service that exits. Fetched once here and copied
+# s6-overlay supervises the daemon (docs/single-container.md): it reaps the
+# zombies the browser plugin's chromium leaves behind, forwards docker stop's
+# SIGTERM, and restarts the service if it exits. Fetched once here and copied
 # into both final stages rather than downloaded twice.
 FROM debian:bookworm-slim AS s6-fetch
 ARG S6_OVERLAY_VERSION=3.2.3.2
@@ -53,10 +53,8 @@ RUN case "$TARGETARCH" in \
 # The source tree is bind-mounted at runtime; docker/dev-entrypoint.sh (wrapped
 # by the s6 `nine` service) builds nine + the Go plugins and rebuilds/restarts
 # the daemon on any .go change. The Go toolchain lives here (not in the runtime
-# image), so this stage is dev-only. Postgres runs alongside it under the same
-# supervisor (docs/single-container.md); pgAdmin is not part of either image —
-# it is opt-in tooling spawned separately (`make pgadmin`).
-FROM pgvector/pgvector:pg17 AS dev
+# image), so this stage is dev-only.
+FROM debian:bookworm-slim AS dev
 
 COPY --from=s6-fetch /out/ /
 
@@ -65,6 +63,9 @@ COPY --from=s6-fetch /out/ /
 # binaries are statically linked and run fine on glibc, unrelated to that
 # stage's own Alpine base) — this also keeps the dev toolchain in lockstep with
 # whatever golang:1.26-alpine tag go-build uses, with nothing to track here.
+# The nine binary itself is pure Go — the SQLite driver is a Go translation of
+# SQLite, not a cgo binding — so it likewise carries no libc dependency across
+# stages.
 COPY --from=go-build /usr/local/go /usr/local/go
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -81,11 +82,7 @@ ENV PATH=/usr/local/go/bin:$PATH \
     GOCACHE=/root/.cache/go-build \
     NINE_BIN=/opt/nine/bin \
     PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
-    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
-    POSTGRES_USER=nine \
-    POSTGRES_PASSWORD=nine \
-    POSTGRES_DB=nine \
-    NINE_DATABASE_URL=postgres://nine:nine@localhost:5432/nine?sslmode=disable
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
 # The browser plugin is Node, so the hot-reload loop cannot rebuild it from the
 # mounted source the way it rebuilds the Go plugins. Bake it in as immutable
@@ -99,19 +96,18 @@ RUN mkdir -p /opt/nine/bin && \
     printf '#!/bin/sh\nexec node /opt/nine/browser/index.js "$@"\n' \
       > /opt/nine/bin/browser && chmod +x /opt/nine/bin/browser
 
-COPY docker/s6/common/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
 COPY docker/s6/common/user-bundles.d/ /etc/s6-overlay/user-bundles.d/
 COPY docker/s6/dev/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
-RUN chmod +x /etc/s6-overlay/s6-rc.d/postgres/run /etc/s6-overlay/s6-rc.d/nine/run
+RUN chmod +x /etc/s6-overlay/s6-rc.d/nine/run
 
 WORKDIR /nine-src
 
-VOLUME /var/lib/postgresql/data
+# /data carries all durable state: the SQLite database and the workspace.
 VOLUME /data
 ENTRYPOINT ["/init"]
 
 # ── Runtime stage (production) ────────────────────────────────────────────────
-FROM pgvector/pgvector:pg17 AS runtime
+FROM debian:bookworm-slim AS runtime
 
 COPY --from=s6-fetch /out/ /
 
@@ -126,11 +122,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
-    NINE_BIN=/opt/nine/bin \
-    POSTGRES_USER=nine \
-    POSTGRES_PASSWORD=nine \
-    POSTGRES_DB=nine \
-    NINE_DATABASE_URL=postgres://nine:nine@localhost:5432/nine?sslmode=disable
+    NINE_BIN=/opt/nine/bin
 
 COPY --from=go-build /usr/local/bin/nine /usr/local/bin/nine
 
@@ -144,11 +136,10 @@ COPY --from=node-build /nine-src/plugins/browser/node_modules/ /opt/nine/browser
 RUN printf '#!/bin/sh\nexec node /opt/nine/browser/index.js "$@"\n' \
       > /opt/nine/bin/browser && chmod +x /opt/nine/bin/browser
 
-COPY docker/s6/common/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
 COPY docker/s6/common/user-bundles.d/ /etc/s6-overlay/user-bundles.d/
 COPY docker/s6/runtime/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
-RUN chmod +x /etc/s6-overlay/s6-rc.d/postgres/run /etc/s6-overlay/s6-rc.d/nine/run
+RUN chmod +x /etc/s6-overlay/s6-rc.d/nine/run
 
-VOLUME /var/lib/postgresql/data
+# /data carries all durable state: the SQLite database and the workspace.
 VOLUME /data
 ENTRYPOINT ["/init"]

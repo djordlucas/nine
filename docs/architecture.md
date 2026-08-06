@@ -40,7 +40,7 @@ Nine is structured as a daemon/client pair. The daemon holds all long-lived stat
 │  └────────────────────────────────────────────────┘ │
 │                                                      │
 │  ┌────────────────────────────────────────────────┐ │
-│  │  memory.Store  →  PostgreSQL + pgvector         │ │
+│  │  memory.Store  →  SQLite (one file)             │ │
 │  │  (in-process; all durable state + the event     │ │
 │  │   journal; memory/file/skill tools are core,    │ │
 │  │   not plugins)                                   │ │
@@ -49,7 +49,7 @@ Nine is structured as a daemon/client pair. The daemon holds all long-lived stat
 ```
 
 > Memory, files, and skills are **core, in-process** capabilities backed
-> directly by `internal/memory.Store` (PostgreSQL), not plugin subprocesses. The
+> directly by `internal/memory.Store` (SQLite), not plugin subprocesses. The
 > plugin subprocesses are `shell`, `files`, `http`, `time`, and the optional
 > `browser`. Note the `files` *plugin* provides workspace filesystem access
 > (`read_file` / `write_file`), which is distinct from the in-process, durable
@@ -180,21 +180,26 @@ Tool output is capped at ~2048 tokens before being appended to the scratchpad. L
 
 ## Memory and Persistence
 
-All persistent state lives in a single **PostgreSQL** database (with the
-`pgvector` extension), reached through `internal/memory.Store`. The store connects
-via a DSN (`[memory].database_url`, default `postgres://…:5433/nine`), fails fast
-if the database is unreachable (Postgres holds primary state, so an unavailable
-database is a startup error, not a degraded mode), and applies its schema
-idempotently on `Open` with `CREATE TABLE IF NOT EXISTS` (there is no migration
-table or version counter). The driver is pgx v5 via `database/sql`; a thin `db`
-wrapper rewrites `?` placeholders to Postgres `$N` so query strings stay
-driver-agnostic. The schema:
+All persistent state lives in a single **SQLite** database file, reached through
+`internal/memory.Store`. The store opens `[memory].path` (default
+`~/.nine/nine.db`, or `/data/nine.db` in the container), creating the file and its
+parent directory if absent, fails fast if it is unusable (it holds primary state,
+so an unopenable database is a startup error, not a degraded mode), and applies
+its schema idempotently on `Open` with `CREATE TABLE IF NOT EXISTS` (there is no
+migration runner; `PRAGMA user_version` records a generation). The driver is
+`modernc.org/sqlite` via `database/sql` — a pure-Go translation of SQLite, so the
+build needs no cgo.
+
+Because SQLite serializes writes, the `db` wrapper holds two pools — one
+read-write connection and a concurrent read-only pool — and routes each statement
+by its leading keyword. The database runs in WAL mode, so `nine trace` can read a
+live database from a second process without blocking the daemon. The schema:
 
 | Table | Purpose |
 |-------|---------|
 | `kv` | Key-value store for agent memory (`memory_get/set/delete/list`) |
-| `files` | File content with a generated `tsvector` column + GIN index for full-text search |
-| `vectors` | Text embeddings; nearest-neighbour query via pgvector's `<=>` cosine distance |
+| `files` | File content, full-text indexed by a companion FTS5 table kept in sync by triggers |
+| `vectors` | Text embeddings as packed float32 blobs; nearest-neighbour query by cosine similarity |
 | `conversations` | Message history, scratchpad, agent status |
 | `goals` | Open-ended goals with their sub-goal/sub-work subtree |
 | `notifications` | Pending push notifications to active conversations |
@@ -213,9 +218,13 @@ There is no `tasks` table (finite work is a sub-agent or a workflow step) and no
 reached only through daemon-private methods on the store — never advertised to agents as
 tools — so an agent cannot directly manipulate conversation, goal, or workflow state.
 
-Full-text search over `files` uses `websearch_to_tsquery` + `ts_rank` and returns
-highlighted fragments via `ts_headline`. Vector search stores embeddings in the
-pgvector `vector` type and ranks by cosine distance (`1 - (embedding <=> query)`).
+Full-text search over `files` uses FTS5, ranked by `bm25` and returning highlighted
+fragments via `snippet`. Because FTS5's query parser rejects malformed input where
+the previous engine accepted anything, every user term is emitted as a quoted
+literal: a search can return no results, but never a syntax error. Vector search
+stores embeddings as packed float32 blobs and ranks by cosine similarity computed
+in process — the previous backend had no approximate-nearest-neighbour index
+either, so this is the same scan, on the other side of the driver boundary.
 
 ---
 
@@ -233,7 +242,7 @@ holds no database reference and can be tested without one (see
 
 `internal/memory` remains the sole owner of `*sql.DB`: it implements `Repository` via
 a `sqlWorkflowRepo` adapter and exposes the familiar `Store.Workflow*` methods as thin
-delegations to a `*workflow.Service`. This keeps the "single Postgres gateway" invariant
+delegations to a `*workflow.Service`. This keeps the "single database gateway" invariant
 intact while moving the actual domain rules out of the persistence layer.
 
 ### State
@@ -346,7 +355,7 @@ things:
   (`event_cursors`) over `seq`, in-process wake plus catch-up after restart. Subscribers
   are programmatic, out-of-band handlers that **enrich derived stores** — never a
   generative LLM call, never a write into the active session. The first one, the
-  related-session indexer, links topically-similar sessions (via pgvector) into
+  related-session indexer, links topically-similar sessions (by vector similarity) into
   `related_sessions`; a later user turn *pulls* that link into context under the token
   budget (enrich, don't interject). On by default when an embedder is configured
   (`[daemon] related_sessions_index`).
