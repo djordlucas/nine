@@ -41,7 +41,8 @@ reload`. An absent or empty directory just means "no sandboxed tools".
 ```console
 $ nine tools
   ok    csv_stats          js     none
-  SKIP  weather            js     capability net.http is not implemented yet
+  ok    weather            js     net.http GET api.weather.example
+  SKIP  scraper            js     capability fs.read is declared by the tool but not granted
 ```
 
 A tool that fails to load is **always reported with its reason** — that is the
@@ -119,6 +120,12 @@ load — and so does being granted something you did not declare. A manifest nev
 grants anything; only the operator's config does.
 
 `clock`, `randomness`, and `console.*` are always available. They leak nothing.
+
+For network access, declare `net = ["http"]` and have the operator grant the hosts; then
+`fetch` works. It is a subset — `status`, `ok`, `headers`, `text()`, `json()` — and a
+blocked request throws rather than returning a non-ok response. Loopback, link-local
+(`169.254.169.254`, where clouds serve instance credentials), and private addresses are
+refused whatever `allow_hosts` says and whatever a hostname resolves to.
 
 ## Limits
 

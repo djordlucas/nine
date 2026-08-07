@@ -116,10 +116,9 @@ type ToolCapabilities struct {
 	// *_API_KEY patterns are refused outright at load (Config.Validate).
 	Env []string `toml:"env"`
 
-	// Net is accepted so a manifest and a config written against the full design
-	// parse today, but `net.http` is not implemented yet — it is stage 4
-	// (docs/sandboxed-tools.md §8), and its security is entirely the host's
-	// problem. Granting it is a named load error rather than a silent no-op.
+	// Net grants outbound HTTP. It is the one capability with no wazero primitive
+	// behind it — wazero has no network at all — so every check that makes it
+	// safe is Nine's own (docs/sandboxed-tools.md §8).
 	Net ToolNetGrant `toml:"net"`
 }
 
@@ -139,17 +138,28 @@ type ToolMount struct {
 	Guest string `toml:"guest"`
 }
 
-// ToolNetGrant is the placeholder for the stage-4 `net.http` capability.
+// ToolNetGrant carries the `net.http` grant. Absent (nil HTTP) is the default
+// and means no network at all.
 type ToolNetGrant struct {
 	HTTP *ToolHTTPGrant `toml:"http"`
 }
 
-// ToolHTTPGrant is the shape §8 specifies. Parsed but not honored: see
-// ToolCapabilities.Net.
+// ToolHTTPGrant is the shape §8 specifies.
 type ToolHTTPGrant struct {
+	// AllowHosts is required and may not be a bare "*". Entries are exact names
+	// ("api.example.com") or single-wildcard subdomain patterns
+	// ("*.example.com", which does not match the apex).
+	//
+	// This is only half the control: the allowlist is a *name* check, and a name
+	// resolves wherever its owner points it. The other half — rejecting
+	// link-local, loopback, and private addresses on the IP actually dialed — is
+	// unconditional and not configurable, because an operator cannot be asked to
+	// remember that 169.254.169.254 is where their cloud keeps its credentials.
 	AllowHosts []string `toml:"allow_hosts"`
-	Methods    []string `toml:"methods"`
-	MaxBytes   int      `toml:"max_bytes"`
+	// Methods is required: the HTTP methods this tool may use.
+	Methods []string `toml:"methods"`
+	// MaxBytes caps the response body. 0 uses toolvm.DefaultHTTPMaxBytes (1 MiB).
+	MaxBytes int `toml:"max_bytes"`
 }
 
 // PlanningConfig controls the plan-before-execute policy
@@ -433,12 +443,50 @@ func validateToolEntry(name string, entry ToolEntry) error {
 		}
 	}
 
-	// Refusing the grant outright is the honest outcome while §8 is unbuilt:
-	// accepting it would advertise a boundary — SSRF filtering, redirect
-	// re-checks, response caps — that does not exist yet.
-	if caps.Net.HTTP != nil {
-		return fmt.Errorf("[tool.%s]: capability net.http is not implemented yet (docs/sandboxed-tools.md §8)", name)
+	return validateHTTPGrant(name, caps.Net.HTTP)
+}
+
+// validateHTTPGrant checks a `net.http` grant. Every rejection here is a config
+// error rather than a runtime surprise, because the whole point of an egress
+// allowlist is that the operator knows exactly what they permitted.
+func validateHTTPGrant(name string, g *ToolHTTPGrant) error {
+	if g == nil {
+		return nil
 	}
 
+	if len(g.AllowHosts) == 0 {
+		return fmt.Errorf("[tool.%s]: net.http needs allow_hosts; there is no implicit default", name)
+	}
+	for _, h := range g.AllowHosts {
+		h = strings.ToLower(strings.TrimSpace(h))
+		switch {
+		case h == "":
+			return fmt.Errorf("[tool.%s]: net.http allow_hosts has an empty entry", name)
+		case h == "*":
+			// An operator who wants an unrestricted egress tool should write a
+			// native plugin, where that intent is explicit and reviewed
+			// (docs/sandboxed-tools.md §8).
+			return fmt.Errorf("[tool.%s]: net.http allow_hosts may not be a bare %q; name the hosts, or write a native plugin if you need unrestricted egress", name, "*")
+		case strings.Contains(h, "://"), strings.Contains(h, "/"):
+			return fmt.Errorf("[tool.%s]: net.http allow_hosts entry %q must be a hostname, not a URL", name, h)
+		case strings.Count(h, "*") > 1, strings.Contains(h, "*") && !strings.HasPrefix(h, "*."):
+			return fmt.Errorf("[tool.%s]: net.http allow_hosts entry %q must be an exact host or a leading %q pattern", name, h, "*.")
+		}
+	}
+
+	if len(g.Methods) == 0 {
+		return fmt.Errorf("[tool.%s]: net.http needs methods; there is no implicit default", name)
+	}
+	for _, m := range g.Methods {
+		switch strings.ToUpper(strings.TrimSpace(m)) {
+		case "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS":
+		default:
+			return fmt.Errorf("[tool.%s]: net.http method %q is not a permitted method", name, m)
+		}
+	}
+
+	if g.MaxBytes < 0 {
+		return fmt.Errorf("[tool.%s]: net.http max_bytes must not be negative", name)
+	}
 	return nil
 }

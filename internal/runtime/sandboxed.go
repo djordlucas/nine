@@ -108,10 +108,24 @@ func toolGrants(cfg *config.Config) map[string]toolvm.Grant {
 			FSRead:  mounts(caps.FS.Read),
 			FSWrite: mounts(caps.FS.Write),
 			Env:     caps.Env,
-			NetHTTP: caps.Net.HTTP != nil,
+			HTTP:    httpGrant(caps.Net.HTTP),
 		}
 	}
 	return out
+}
+
+// httpGrant translates the operator's net.http table. Config.Validate has
+// already refused the shapes that are config errors — a bare "*", an unknown
+// method, an empty allowlist — so this is a pure translation.
+func httpGrant(in *config.ToolHTTPGrant) *toolvm.HTTPGrant {
+	if in == nil {
+		return nil
+	}
+	return &toolvm.HTTPGrant{
+		AllowHosts: in.AllowHosts,
+		Methods:    in.Methods,
+		MaxBytes:   int64(in.MaxBytes),
+	}
 }
 
 func mounts(in []config.ToolMount) []toolvm.Mount {

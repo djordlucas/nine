@@ -45,6 +45,12 @@ type Config struct {
 	// Timeout and MemoryMB override the defaults above when non-zero.
 	Timeout  time.Duration
 	MemoryMB int
+
+	// AuditHTTP, when set, receives every outbound request a granted tool makes
+	// (docs/sandboxed-tools.md §8 item 8). The host always logs; this is the hook
+	// the daemon uses to also reach the event journal, which it can do and this
+	// package cannot.
+	AuditHTTP func(HTTPCall)
 }
 
 // Tool is one loaded sandboxed tool, ready to dispatch.
@@ -174,12 +180,79 @@ func (h *Host) registerHostFunctions(ctx context.Context) error {
 			slog.Info("sandboxed tool log", "tool", name, "msg", string(buf))
 		}).
 		Export("log").
+		NewFunctionBuilder().
+		WithFunc(h.hostHTTP).
+		Export("http").
 		Instantiate(ctx)
 	if err != nil {
 		return fmt.Errorf("toolvm: export host functions: %w", err)
 	}
 	return nil
 }
+
+// hostHTTP is the guest's `nine.http`. The daemon makes the request; the guest
+// never touches a socket, and never learns an IP.
+//
+// It is exported to every tool, granted or not, because a wasm module's imports
+// are fixed at compile time and the QuickJS blob is shared by all `js` tools —
+// so the function must exist for the module to instantiate at all. That is not a
+// capability leak: the *grant* is read per call from the context below, and a
+// tool without one is refused here before anything is parsed. The capability
+// still lives entirely in the grant, which is what §6.3 requires; what is shared
+// is the import, not the permission.
+func (h *Host) hostHTTP(ctx context.Context, mod api.Module, ptr, size uint32) uint64 {
+	name, _ := ctx.Value(toolNameKey{}).(string)
+	grant, _ := ctx.Value(httpGrantKey{}).(*HTTPGrant)
+
+	if grant == nil {
+		return writeGuest(ctx, mod, httpResponse{
+			Error: "blocked: this tool was not granted the net.http capability"})
+	}
+
+	req, ok := mod.Memory().Read(ptr, size)
+	if !ok {
+		return writeGuest(ctx, mod, httpResponse{Error: "unreadable request"})
+	}
+	// Copy before doing anything slow: the read above aliases guest memory.
+	raw := make([]byte, len(req))
+	copy(raw, req)
+
+	return writeGuest(ctx, mod, h.doHTTP(ctx, name, *grant, raw))
+}
+
+// writeGuest marshals resp and hands it back through the guest's own allocator,
+// returning it packed the same way nine_run's result is. Calling back into
+// nine_alloc is how a host function returns variable-length data without a
+// second shared buffer to reason about.
+func writeGuest(ctx context.Context, mod api.Module, resp httpResponse) uint64 {
+	out, err := json.Marshal(resp)
+	if err != nil {
+		out = []byte(`{"error":"could not encode response"}`)
+	}
+	alloc := mod.ExportedFunction(exportAlloc)
+	if alloc == nil {
+		return 0
+	}
+	// +1 and a NUL, matching the input contract above: a guest is entitled to
+	// treat anything the host hands it as a C string.
+	res, err := alloc.Call(ctx, uint64(len(out))+1)
+	if err != nil || len(res) != 1 || res[0] == 0 || res[0] > math.MaxUint32 {
+		return 0
+	}
+	ptr := uint32(res[0]) //nolint:gosec // bounded by the MaxUint32 check above
+	if !mod.Memory().Write(ptr, out) {
+		return 0
+	}
+	if !mod.Memory().WriteByte(ptr+uint32(len(out)), 0) { //nolint:gosec // bounded by the write above
+		return 0
+	}
+	return uint64(ptr)<<32 | uint64(uint32(len(out))) //nolint:gosec // response length is bounded by MaxBytes
+}
+
+// httpGrantKey carries the calling tool's net.http grant into the host function.
+// Passing it per call, rather than binding it into the exported function, is what
+// keeps one shared import from becoming one shared permission.
+type httpGrantKey struct{}
 
 // toolNameKey carries the calling tool's name into host functions.
 type toolNameKey struct{}
@@ -232,6 +305,11 @@ func (h *Host) Call(ctx context.Context, name string, args json.RawMessage) (str
 	ctx, cancel := context.WithTimeout(ctx, h.timeout)
 	defer cancel()
 	ctx = context.WithValue(ctx, toolNameKey{}, name)
+	// The net.http grant travels on the context so the shared host import
+	// resolves to this tool's permission and no other's.
+	if t.Grant.HTTP != nil {
+		ctx = context.WithValue(ctx, httpGrantKey{}, t.Grant.HTTP)
+	}
 
 	input, err := t.input(args)
 	if err != nil {
@@ -330,18 +408,31 @@ func callGuest(ctx context.Context, mod api.Module, input []byte) ([]byte, error
 		return nil, fmt.Errorf("module does not export the Nine ABI (%s, %s)", exportAlloc, exportRun)
 	}
 
+	// One byte more than the input, and a NUL written into it. This is part of
+	// the ABI, not an implementation detail (see abi.go): QuickJS requires
+	// `buf[buf_len] == 0` for both JS_Eval and JS_ParseJSON, and a guest reading
+	// the input as a C string is entitled to the same guarantee.
+	//
+	// Omitting it does not fail loudly. It fails for roughly one input length in
+	// sixteen, depending on what the guest allocator happened to leave in the
+	// byte past the buffer — so a tool works or does not based on nothing but its
+	// own byte length. TestGuestInputIsNULTerminatedAtEveryLength is the
+	// regression.
 	size := uint64(len(input))
-	res, err := alloc.Call(ctx, size)
+	res, err := alloc.Call(ctx, size+1)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", exportAlloc, err)
 	}
 	if len(res) != 1 || res[0] == 0 || res[0] > math.MaxUint32 {
-		return nil, fmt.Errorf("%s returned no usable memory for %d bytes", exportAlloc, size)
+		return nil, fmt.Errorf("%s returned no usable memory for %d bytes", exportAlloc, size+1)
 	}
 	ptr := uint32(res[0]) //nolint:gosec // bounded by the MaxUint32 check above; wasm32 offsets are u32
 
 	if !mod.Memory().Write(ptr, input) {
 		return nil, fmt.Errorf("input of %d bytes does not fit in the tool's memory", len(input))
+	}
+	if !mod.Memory().WriteByte(ptr+uint32(len(input)), 0) { //nolint:gosec // len(input) is bounded by the write above
+		return nil, fmt.Errorf("could not terminate the input buffer")
 	}
 
 	res, err = run.Call(ctx, uint64(ptr), size)
