@@ -8,6 +8,7 @@ import (
 	"nine/internal/memory"
 	"nine/internal/plugin"
 	"nine/internal/selfmodel"
+	"nine/internal/toolvm"
 )
 
 // Assembly is the wired-but-not-started daemon core shared by the production
@@ -38,6 +39,11 @@ type AssemblyConfig struct {
 	Store      *memory.Store
 	Plugins    *plugin.Manager
 	Embedder   embed.Embedder
+
+	// Tools is the sandboxed-tool host (spec/contracts/toolvm.md). Nil when
+	// [tools] enabled is unset, which is the default — every loop then builds
+	// exactly the tool set it did before the host existed.
+	Tools *toolvm.Host
 
 	// Loop / builder behavior.
 	ContextBudget   int
@@ -93,6 +99,7 @@ func Assemble(c AssemblyConfig) *Assembly {
 			MaxToolOutputTokens:    c.MaxToolOutputTokens,
 			MaxJobsPerConversation: c.MaxJobsPerConversation,
 			JobWaiters:             c.JobWaiters,
+			Tools:                  c.Tools,
 		},
 		InitialQueue: c.Queue,
 		NotifAdd:     notifAdd,
@@ -142,6 +149,7 @@ func Assemble(c AssemblyConfig) *Assembly {
 	daemon.SetQueueStatFn(builder.QueueDepth)
 	daemon.ConfigureMemory(c.Store)
 	daemon.ConfigurePlugins(c.Plugins)
+	daemon.ConfigureSandboxedTools(c.Tools)
 	daemon.ConfigureCoreTools(builder.CoreDispatcher())
 	daemon.ConfigureSupervisor(supervisor)
 	daemon.ConfigurePlanStore(c.Store)

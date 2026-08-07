@@ -378,6 +378,37 @@ func (c *Client) ReloadPlugins() ([]PluginStatus, error) {
 	return c.pluginStatusQuery("plugins_reload")
 }
 
+// ListSandboxedTools requests the sandboxed-tool roster: every tool loaded from
+// [tools].user_dir with its resolved capabilities, plus any that were skipped
+// with the reason.
+func (c *Client) ListSandboxedTools() ([]SandboxedToolStatus, error) {
+	return c.sandboxedToolQuery("tools_list")
+}
+
+// ReloadSandboxedTools asks the daemon to re-scan the sandboxed-tool directory
+// and reload it, returning the resulting roster.
+func (c *Client) ReloadSandboxedTools() ([]SandboxedToolStatus, error) {
+	return c.sandboxedToolQuery("tools_reload")
+}
+
+func (c *Client) sandboxedToolQuery(msgType string) ([]SandboxedToolStatus, error) {
+	if err := c.send(NewQueryMsg(msgType)); err != nil {
+		return nil, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return nil, err
+	}
+	if reply.Type == "error" {
+		return nil, fmt.Errorf("daemon: %s", reply.Text)
+	}
+	var tools []SandboxedToolStatus
+	if err := json.Unmarshal([]byte(reply.Text), &tools); err != nil {
+		return nil, fmt.Errorf("decode sandboxed tools: %w", err)
+	}
+	return tools, nil
+}
+
 func (c *Client) pluginStatusQuery(msgType string) ([]PluginStatus, error) {
 	if err := c.send(NewQueryMsg(msgType)); err != nil {
 		return nil, err
