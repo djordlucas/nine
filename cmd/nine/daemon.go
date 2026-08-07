@@ -62,6 +62,15 @@ func runDaemon() {
 	// skipped; the daemon still boots. Absent/empty dir is a no-op.
 	pluginManager.LoadUserPlugins(cfg.Plugins.UserDir)
 
+	// Sandboxed tools (spec/contracts/toolvm.md), after the plugins so their tool
+	// names are already reserved and a colliding sandboxed tool is skipped rather
+	// than allowed to override. nil when [tools] enabled is unset, which is the
+	// default and leaves every loop exactly as it was.
+	toolHost := runtime.OpenSandboxedTools(context.Background(), cfg, pluginManager)
+	if toolHost != nil {
+		defer toolHost.Close(context.Background()) //nolint:errcheck // best-effort on shutdown
+	}
+
 	embedder := embed.Build(cfg.Embeddings.Provider, cfg.Embeddings.Model, cfg.Embeddings.Endpoint)
 
 	// Seed built-in skills from the binary into the store (immutable; refreshed
@@ -131,6 +140,7 @@ func runDaemon() {
 		SocketPath:    cfg.SocketPath(),
 		Store:         store,
 		Plugins:       pluginManager,
+		Tools:         toolHost,
 		Embedder:      embedder,
 		ContextBudget: cfg.ContextBudget(),
 		SystemPrompt:  runtime.BuildSystemPrompt(browserPlug != nil),

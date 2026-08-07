@@ -433,6 +433,14 @@ func (d *Daemon) handleListTools(enc *json.Encoder) {
 			}
 		}
 	}
+	// Sandboxed tools are listed under their own pseudo-plugin, so plugin_call's
+	// reach matches what this advertises (R-PROTO.5) and an operator can tell at a
+	// glance which tools run in the wasm sandbox rather than a subprocess.
+	if d.tools != nil {
+		for _, t := range d.tools.Tools() {
+			tools = append(tools, protocol.ToolSummary{Plugin: "sandboxed", Name: t.Name, Description: t.Description})
+		}
+	}
 	if tools == nil {
 		tools = []protocol.ToolSummary{}
 	}
@@ -449,7 +457,23 @@ func (d *Daemon) handleListTools(enc *json.Encoder) {
 // plugin-only lookup would report a tool the client can see as unknown. It also
 // cannot collide with a plugin tool: the builder registers both onto one
 // dispatcher per loop, so a duplicate name is already a name clash there.
+//
+// Sandboxed tools are resolved against the host itself rather than through a
+// dispatcher, because the host is the live authority: `nine tools reload` swaps
+// its registry, and a dispatcher built once at assembly would keep answering
+// from the tool set that existed at boot. Agent loops have no such problem —
+// they are rebuilt per turn, which is exactly the next-turn visibility R-TVM.11
+// specifies — but this surface is built once and must not go stale.
 func (d *Daemon) handlePluginCall(ctx context.Context, enc *json.Encoder, toolName string, args json.RawMessage) {
+	if d.tools != nil && d.tools.Get(toolName) != nil {
+		out, err := d.tools.Call(ctx, toolName, args)
+		if err != nil {
+			enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+			return
+		}
+		enc.Encode(protocol.NewTextMsg("plugin_call", out)) //nolint:errcheck
+		return
+	}
 	if d.core != nil && d.core.Has(toolName) {
 		result, err := d.core.Dispatch(ctx, toolName, args)
 		if err != nil {
@@ -563,4 +587,57 @@ func (d *Daemon) setPlanMode(enc *json.Encoder, agentID, mode string) {
 	}
 	w.setPlanMode(mode)
 	enc.Encode(protocol.NewTextMsg("set_plan_mode", "plan mode: "+mode)) //nolint:errcheck
+}
+
+// handleToolsList returns the sandboxed-tool roster: every tool loaded from
+// [tools].user_dir with its resolved capabilities, plus every candidate that was
+// skipped at load with the reason (spec/contracts/toolvm.md).
+//
+// The skipped entries are the reason this message exists. A capability mismatch
+// is deliberately a load failure rather than a degraded tool, and that promise
+// is only kept if the operator can read the failure somewhere.
+func (d *Daemon) handleToolsList(enc *json.Encoder) {
+	data, _ := json.Marshal(d.sandboxedToolStatuses())
+	enc.Encode(protocol.NewTextMsg("tools_list", string(data))) //nolint:errcheck
+}
+
+// handleToolsReload re-scans the sandboxed-tool directory and returns the
+// resulting roster. Newly-loaded tools are picked up by subsequently-built agent
+// loops; turns already in flight keep the tool set they started with, which is
+// what keeps a turn replayable (docs/sandboxed-tools.md §9.1).
+func (d *Daemon) handleToolsReload(enc *json.Encoder) {
+	if d.tools == nil {
+		enc.Encode(protocol.NewErrorMsg("sandboxed tools are not enabled ([tools] enabled)")) //nolint:errcheck
+		return
+	}
+	ReloadSandboxedTools(context.Background(), d.tools, d.mgr)
+	data, _ := json.Marshal(d.sandboxedToolStatuses())
+	enc.Encode(protocol.NewTextMsg("tools_reload", string(data))) //nolint:errcheck
+}
+
+// sandboxedToolStatuses assembles the roster from the host, folding the loaded
+// tools' descriptions in so `nine tools` reads as a catalog rather than a
+// diagnostic. Returns an empty slice when the subsystem is off, which the CLI
+// reports as "not enabled" rather than as an empty directory.
+func (d *Daemon) sandboxedToolStatuses() []protocol.SandboxedToolStatus {
+	out := []protocol.SandboxedToolStatus{}
+	if d.tools == nil {
+		return out
+	}
+	descriptions := map[string]string{}
+	for _, t := range d.tools.Tools() {
+		descriptions[t.Name] = t.Description
+	}
+	for _, st := range d.tools.Status() {
+		out = append(out, protocol.SandboxedToolStatus{
+			Name:         st.Name,
+			Kind:         st.Kind,
+			Loaded:       st.Loaded,
+			Capabilities: st.Capabilities,
+			Description:  descriptions[st.Name],
+			ManifestPath: st.ManifestPath,
+			Error:        st.Err,
+		})
+	}
+	return out
 }

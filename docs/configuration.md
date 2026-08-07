@@ -263,6 +263,56 @@ plan_approval = "on-risky"
 # It is [tools] rather than [agent] because [[agent]] is already the
 # standing-agent table array.
 max_output_tokens = 2048
+
+# ── Sandboxed tools (spec/contracts/toolvm.md) ───────────────────────────────
+# A wasm tool host: JavaScript or .wasm tools an operator installs as two files,
+# run in-process with an explicitly conferred capability set. OFF by default —
+# leaving `enabled` unset means no host, no tools, and agent loops identical to
+# what they were before this subsystem existed.
+enabled = false
+
+# Where developer tools live: a `<name>.js` or `<name>.wasm` beside a
+# `<name>.toml` manifest, the same sidecar layout [plugins].user_dir uses. A file
+# with no manifest beside it is never loaded. Unset loads nothing.
+user_dir = "/etc/nine/tools.d"
+
+# Per-call wall clock. This is the ONLY CPU bound the host has — wazero offers no
+# fuel metering — so a spinning tool is killed at the deadline rather than by a
+# work budget. Default 5s.
+timeout = "5s"
+
+# Per-call linear memory cap. Default 16.
+memory_mb = 16
+
+# ── Capability grants, per named tool ────────────────────────────────────────
+# `[tool.<name>]` (singular) is the grant half of the capability model, sibling
+# to the plural `[tools]` above — the same split `[plugin.<name>]` uses.
+#
+# A tool's manifest DECLARES what it needs; only this GRANTS. The two must name
+# the same capabilities or the tool fails to load with a named error that
+# `nine tools` reports. The default for everything with reach — filesystem,
+# network, environment — is nothing. Clock, randomness, and logging are always
+# granted; they leak nothing.
+#
+# There is deliberately no wildcard `[tool."*"]`: an operator granting filesystem
+# access does so to a tool they have read.
+
+[tool.csv_stats.capabilities.fs]
+# Host paths must be absolute. The guest path is what the tool's own code sees,
+# which is what makes narrowing a mount a one-line change.
+read  = [{ host = "/srv/data", guest = "/data" }]
+# write = [{ host = "/srv/out", guest = "/out" }]
+
+[tool.tz_aware.capabilities]
+# An explicit key allowlist, never all-or-nothing: the daemon's environment holds
+# the LLM provider API keys. Keys matching NINE_* or *_API_KEY are refused
+# outright as a config error.
+env = ["TZ"]
+
+# net.http is designed (docs/sandboxed-tools.md §8) but NOT IMPLEMENTED. Writing
+# a [tool.<name>.capabilities.net.http] table is a config error rather than a
+# silent no-op, because accepting it would advertise SSRF filtering, redirect
+# re-checks, and response caps that do not exist yet.
 ```
 
 ---

@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"nine/internal/plugin"
+	"nine/internal/toolvm"
 )
 
 // DefaultMaxOutputTokens is the per-result token cap. Results exceeding it are
@@ -125,6 +126,37 @@ func (d *Dispatcher) RegisterPlugin(m *plugin.Manager, p *plugin.Plugin) {
 				return "", err
 			}
 			return d.resolveCallResult(ctx, pp, toolName, cr)
+		}
+	}
+}
+
+// SandboxedHost is the sandboxed-tool backend, as the dispatcher needs it
+// (spec/contracts/toolvm.md). Narrowed to these two methods so the agent package
+// does not depend on the wasm runtime — and so a test can substitute a fake
+// without one.
+type SandboxedHost interface {
+	Tools() []*toolvm.Tool
+	Call(ctx context.Context, name string, args json.RawMessage) (string, error)
+}
+
+// RegisterSandboxed indexes every tool the sandboxed host holds, so it can be
+// dispatched exactly like a plugin tool. A nil host registers nothing — callers
+// pass one only when [tools] enabled is set, which is what keeps the whole
+// subsystem additive.
+//
+// Unlike a plugin, a sandboxed tool's schema is authoritative from its manifest
+// (there is no process to ask plugin.describe), but it reaches the ref machinery
+// through the same declaration path, so a sandboxed tool can take a ref argument
+// on the same terms.
+func (d *Dispatcher) RegisterSandboxed(h SandboxedHost) {
+	if h == nil {
+		return
+	}
+	for _, t := range h.Tools() {
+		toolName := t.Name
+		d.declareRefParams(toolName, t.InputSchema)
+		d.handlers[toolName] = func(ctx context.Context, args json.RawMessage) (string, error) {
+			return h.Call(ctx, toolName, args)
 		}
 	}
 }
