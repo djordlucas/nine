@@ -14,7 +14,7 @@ GOFLAGS  := -mod=vendor
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS  := -ldflags "-X main.Version=$(VERSION)"
 
-.PHONY: all dev build plugins test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-generate
+.PHONY: all dev build plugins test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-generate quickjs-wasm quickjs-verify
 
 dev: build plugins browser-plugin
 
@@ -47,6 +47,22 @@ $(BIN_DIR)/browser: FORCE
 	cd plugins/browser && sh build.sh ../../$(BIN_DIR)/browser
 
 .PHONY: browser-plugin
+
+# ── sandboxed tools: the QuickJS blob ─────────────────────────────────────────
+# Deliberately NOT part of `dev` or `build` (docs/sandboxed-tools.md §10.1). The
+# interpreter is built from pinned tags and committed, so an ordinary build needs
+# no wasi-sdk, no clang, and no clone — and the runtime image gains no toolchain.
+# Run this only on a deliberate version bump, and review the qjs.wasm diff and
+# the new hash in that PR.
+
+quickjs-wasm:
+	sh internal/toolvm/quickjs/build.sh
+
+# Verify the committed blob against its recorded hash. A binary artifact in the
+# tree is only acceptable if changing it is loud; this is what makes it loud in
+# CI, where it runs on every build.
+quickjs-verify:
+	cd internal/toolvm/quickjs && shasum -a 256 -c qjs.wasm.sha256
 
 # ── tests ─────────────────────────────────────────────────────────────────────
 
@@ -95,11 +111,13 @@ NINE_ENV = \
 	-e NINE_WORKSPACE_ROOT=/data/workspace \
 	-e NINE_SKILLS_USER_DIR=/skills.d \
 	-e NINE_PLUGINS_USER_DIR=/plugins.d \
+	-e NINE_TOOLS_USER_DIR=/tools.d \
 	-e NINE_LOG_FILE=off
 NINE_MOUNTS = \
 	-v $(CURDIR)/nine.toml:/nine.toml:ro \
 	-v $(CURDIR)/skills.d:/skills.d:ro \
-	-v $(CURDIR)/plugins.d:/plugins.d:ro
+	-v $(CURDIR)/plugins.d:/plugins.d:ro \
+	-v $(CURDIR)/tools.d:/tools.d:ro
 NINE_RUN_FLAGS = --add-host host.docker.internal:host-gateway --restart unless-stopped
 
 # The 32k context window is requested per-call via num_ctx (nine.toml), so the

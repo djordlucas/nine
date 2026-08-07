@@ -2,6 +2,11 @@
 /dist/
 /plugins/shell/shell
 
+# QuickJS blob build scratch: the wasi-sdk download and the quickjs clone.
+# The blob itself (internal/toolvm/quickjs/qjs.wasm) IS committed — see
+# docs/sandboxed-tools.md §10.1 — but the toolchain that produced it is not.
+/internal/toolvm/quickjs/.build/
+
 # runtime artifacts
 *.log
 memory.db

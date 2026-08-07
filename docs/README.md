@@ -33,20 +33,22 @@ features built on top of that architecture.
 14. [Plugins](plugins.md) — Built-in plugins, writing custom plugins, the plugin lifecycle
 15. [Plugins — HTTP transport](plugins-http-transport.md) — The HTTP/SSE plugin transport
 16. [Browser Plugin](browser.md) — Headless Chromium: navigate, screenshot, extract, interact
-17. [Skills](skills.md) — What skills are, creating and managing skills
-18. [Self-Documentation](self-documentation.md) — How Nine retrieves its own bundled docs and spec to answer questions about itself
-19. [Workflows](workflows.md) — Persistent multi-step execution plans for sub-agent delegation
-20. [Predefined Agents](predefined-agents.md) — Config-declared standing agents (goals + pursue shells)
-21. [Scheduling](scheduling.md) — Interval and cron wake triggers for standing agents
-22. [Human-in-the-Loop](hitl.md) — `ask_human` and approval gates for interactive sessions
-23. [Self-Improvement & Boundaries](self-modification.md) — Skill writing, and why Nine does not modify itself
+17. [Writing sandboxed tools](writing-sandboxed-tools.md) — Add a JS or wasm tool with two files, run in a capability-scoped sandbox
+18. [Sandboxed tools — design](sandboxed-tools.md) — The wasm tool host: why it exists, the capability model, and what is deliberately unbuilt
+19. [Skills](skills.md) — What skills are, creating and managing skills
+20. [Self-Documentation](self-documentation.md) — How Nine retrieves its own bundled docs and spec to answer questions about itself
+21. [Workflows](workflows.md) — Persistent multi-step execution plans for sub-agent delegation
+22. [Predefined Agents](predefined-agents.md) — Config-declared standing agents (goals + pursue shells)
+23. [Scheduling](scheduling.md) — Interval and cron wake triggers for standing agents
+24. [Human-in-the-Loop](hitl.md) — `ask_human` and approval gates for interactive sessions
+25. [Self-Improvement & Boundaries](self-modification.md) — Skill writing, and why Nine does not modify itself
 
 ### Reference
 
-24. [Glossary](glossary.md) — All key concepts and features in one place, grouped by topic
-25. [Versioning](versioning.md) — Release, plugin-protocol, config, and schema versioning
-26. [Evals](evals.md) — Test plan for replays + live models; the case schema and feature map used to generate test cases
-27. [Model compatibility](model-compatibility.md) — Which models Nine has been run against, how they did, and on what hardware
+26. [Glossary](glossary.md) — All key concepts and features in one place, grouped by topic
+27. [Versioning](versioning.md) — Release, plugin-protocol, tool-ABI, config, and schema versioning
+28. [Evals](evals.md) — Test plan for replays + live models; the case schema and feature map used to generate test cases
+29. [Model compatibility](model-compatibility.md) — Which models Nine has been run against, how they did, and on what hardware
 
 ## Quick Start
 

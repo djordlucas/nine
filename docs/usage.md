@@ -42,6 +42,17 @@ nine plugin validate [path]      Check a user plugin with the load-time handshak
                                  (defaults to [plugins].user_dir; a path may be a
                                  manifest or a binary; works with the daemon down)
 
+nine tools                       Show the sandboxed-tool roster: each tool with
+                                 the capabilities it actually runs with, plus any
+                                 skipped at load and the reason
+nine tools show <name>           Print one sandboxed tool in full: kind, status,
+                                 resolved grant, manifest path
+nine tools reload                Re-scan [tools].user_dir and reload sandboxed
+                                 tools live
+nine tool validate [path]        Check a sandboxed tool's manifest, entrypoint,
+                                 schema, and ABI exports (defaults to
+                                 [tools].user_dir; works with the daemon down)
+
 nine trace <agent-id> [--turn N] [--sub-agents]
                                  Print a session's event journal (or one turn);
                                  --sub-agents nests delegated sub-agent traces

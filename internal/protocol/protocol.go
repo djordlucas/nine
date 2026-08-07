@@ -23,6 +23,8 @@ import (
 //	"session_stop"     — terminate a session; AgentID set, or Text = "--all"
 //	"plugins_list"     — request the plugin roster; no extra fields
 //	"plugins_reload"   — re-scan the user-plugin dir and reload; no extra fields
+//	"tools_list"       — request the sandboxed-tool roster; no extra fields
+//	"tools_reload"     — re-scan the sandboxed-tool dir and reload; no extra fields
 //
 // Daemon → client:
 //
@@ -39,6 +41,8 @@ import (
 //	"workflow_fail"    — fail result; Text = "failed"
 //	"plugins_list"     — plugin roster; Text carries JSON-encoded PluginStatus array
 //	"plugins_reload"   — reload result; Text carries the JSON-encoded PluginStatus array
+//	"tools_list"       — sandboxed-tool roster; Text carries JSON-encoded SandboxedToolStatus array
+//	"tools_reload"     — reload result; Text carries the JSON-encoded SandboxedToolStatus array
 //	"tool_start"       — tool call started; ToolName + ToolInput + Timestamp set
 //	"tool_end"         — tool call finished; ToolName + ToolInput + ToolOutput + Timestamp set
 //	"context_update"   — context assembled; ContextUsed + ContextBudget set
@@ -150,6 +154,24 @@ type PluginStatus struct {
 	Error  string   `json:"error,omitempty"`
 }
 
+// SandboxedToolStatus describes one sandboxed tool for the "tools_list" /
+// "tools_reload" responses (spec/contracts/toolvm.md).
+//
+// A tool that failed to load carries Loaded=false and the reason in Error, and
+// that is the point of the message: §6.3 promises a loud failure rather than a
+// tool that half-works, and this is where an operator reads it. Capabilities is
+// the *resolved* grant — what the tool actually runs with, never what its
+// manifest asked for.
+type SandboxedToolStatus struct {
+	Name         string `json:"name"`
+	Kind         string `json:"kind,omitempty"`
+	Loaded       bool   `json:"loaded"`
+	Capabilities string `json:"capabilities,omitempty"`
+	Description  string `json:"description,omitempty"`
+	ManifestPath string `json:"manifest_path,omitempty"`
+	Error        string `json:"error,omitempty"`
+}
+
 // SubAgentInfo describes one currently-running sub-agent.
 type SubAgentInfo struct {
 	ID          string `json:"id"`
@@ -185,7 +207,8 @@ type StatusInfo struct {
 
 // NewQueryMsg builds a request consisting of only a Type field — used for
 // "new_conversation", "status", "list_goals", "list_reflections",
-// "list_workflows", "list_tools", "plugins_list", and "plugins_reload".
+// "list_workflows", "list_tools", "plugins_list", "plugins_reload",
+// "tools_list", and "tools_reload".
 func NewQueryMsg(msgType string) Msg { return Msg{Type: msgType} }
 
 // NewAttachMsg requests reattachment to an existing conversation.

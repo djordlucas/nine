@@ -21,6 +21,7 @@ import (
 	"nine/internal/plugin"
 	"nine/internal/protocol"
 	"nine/internal/selfmodel"
+	"nine/internal/toolvm"
 )
 
 // minSubAgentTimeoutSeconds is the smallest run_agents timeout the caller may
@@ -63,6 +64,11 @@ type LoopConfig struct {
 	// polling (docs/plugin-capabilities.md §5). Shared with the sweeper; nil in the
 	// eval harness, where job_wait falls back to polling.
 	JobWaiters *JobWaiters
+
+	// Tools is the sandboxed-tool host (spec/contracts/toolvm.md), or nil when
+	// the subsystem is disabled. Its tools are registered and advertised
+	// alongside plugin tools and are subject to the same role allowlist.
+	Tools *toolvm.Host
 }
 
 // AgentBuilderConfig holds the behavioral dependencies layered on top of the
@@ -353,6 +359,12 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 			d.RegisterPlugin(lc.Mgr, p)
 		}
 	}
+	// Sandboxed tools are a second backend behind the same dispatcher, indexed
+	// here exactly as plugin tools are. With the host disabled — the default —
+	// this is a no-op and the loop is byte-for-byte the loop it was before.
+	if lc.Tools != nil {
+		d.RegisterSandboxed(lc.Tools)
+	}
 
 	f.registerCoreTools(d, lc, agentID)
 
@@ -621,6 +633,12 @@ const directCallAgentID = "direct-call"
 // other. There is no role here to restrict against: plugin_call is an operator
 // surface that already reaches every plugin tool, so role scoping would be
 // scoping the wrong actor.
+//
+// Sandboxed tools are deliberately NOT registered here. plugin_call must reach
+// them (R-PROTO.5, to match list_tools), but this dispatcher is built once at
+// assembly and RegisterSandboxed snapshots the tool set — so a tool added by
+// `nine tools reload` would never appear on this surface. The daemon resolves
+// them against the live host instead (handlePluginCall).
 func (f *AgentBuilder) CoreDispatcher() *agent.Dispatcher {
 	d := agent.New()
 	f.registerCoreTools(d, f.cfg.Loop, directCallAgentID)
@@ -830,6 +848,17 @@ func buildToolList(lc LoopConfig, role Role, shellTools []string, roleEnum strin
 			tools = append(tools, ninectx.ToolWithVector{
 				Tool: td.ToLLMDef(),
 			})
+		}
+	}
+	// Sandboxed tools are advertised on the same footing as plugin tools, and
+	// intersected with the role allowlist the same way (boundary 1 of R-ROLE.4).
+	// A role that does not name one does not see it.
+	if lc.Tools != nil {
+		for _, st := range lc.Tools.Tools() {
+			if !role.AllTools && !slices.Contains(role.Tools, st.Name) {
+				continue
+			}
+			tools = append(tools, ninectx.ToolWithVector{Tool: st.ToLLMDef()})
 		}
 	}
 	tools = appendInterceptedTools(tools, filterByRole(coreToolNames, role), roleEnum)

@@ -22,6 +22,7 @@ import (
 	"nine/internal/plugin"
 	"nine/internal/protocol"
 	"nine/internal/subscribe"
+	"nine/internal/toolvm"
 	"nine/internal/workflow"
 )
 
@@ -105,6 +106,7 @@ type Daemon struct {
 	instName   string            // instance display name shown in the TUI top bar (guarded by mu)
 
 	mgr   pluginRegistry
+	tools *toolvm.Host      // sandboxed-tool host (see ConfigureSandboxedTools); nil = disabled
 	core  *agent.Dispatcher // core-intercepted tools, for plugin_call (see ConfigureCoreTools)
 	store queryBackend
 	plans PlanStore
@@ -525,6 +527,12 @@ func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.M
 	case "plugins_reload":
 		d.handlePluginsReload(enc)
 
+	case "tools_list":
+		d.handleToolsList(enc)
+
+	case "tools_reload":
+		d.handleToolsReload(enc)
+
 	case "human_input_answer":
 		d.handleHumanAnswer(enc, msg)
 
@@ -639,6 +647,13 @@ func (d *Daemon) startSubscribers(ctx context.Context) {
 // ConfigurePlugins stores the plugin manager used by tool listing and direct plugin calls.
 func (d *Daemon) ConfigurePlugins(mgr *plugin.Manager) {
 	d.mgr = mgr
+}
+
+// ConfigureSandboxedTools stores the sandboxed-tool host, so `tools_list` and
+// `tools_reload` can reach it. Passing nil (the default, when [tools] enabled is
+// unset) leaves both messages answering that the subsystem is disabled.
+func (d *Daemon) ConfigureSandboxedTools(h *toolvm.Host) {
+	d.tools = h
 }
 
 // ConfigureCoreTools stores the dispatcher carrying the core-intercepted tools
