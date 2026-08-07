@@ -1,0 +1,5 @@
+quickjs-ng v0.16.1 · wasi-sdk-33
+
+Built by build.sh. Do not edit by hand; do not rebuild casually. Bumping either
+pin above is a deliberate change reviewed in its own PR, where the qjs.wasm
+diff and the sha256 below are the artifact under review.

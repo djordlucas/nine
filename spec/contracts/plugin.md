@@ -180,6 +180,13 @@ lets an operator add skills (R-SKILL.2), `[plugins].user_dir` lets an operator a
 plugins (R-PLUG.9). Both are driven by operator-controlled config and CLI, never by
 an agent tool, so neither is a path by which Nine mutates its own capabilities.
 
+**Scope: native plugins.** Sandboxed tools (`spec/contracts/toolvm.md`) are a separate
+subsystem with its own runtime, and the rule above is written about this one. The
+sentence that generalizes — *Nine cannot grant itself capabilities* — is unchanged and
+now load-bearing for both: a sandboxed tool's capabilities come from `[tool.<name>]` in
+`nine.toml`, written by the operator, and no agent-reachable path writes one (I-TVM.2).
+Nothing in the sandboxed-tool subsystem as built lets an agent author a tool at all.
+
 ---
 
 ## R-PLUG.9 — User plugins (operator-supplied)

@@ -44,11 +44,21 @@ See [skills.md](skills.md) for the full skill format and lifecycle.
 
 | Capability | Status | Why |
 |---|---|---|
-| Generate / build / hot-swap plugins | **Removed** | Runtime code generation makes the running system drift from its source |
+| Generate / build / hot-swap **native plugins** | **Removed** | Runtime code generation makes the running system drift from its source |
 | Modify `nine.toml` at runtime | **Removed** | Config is set by the operator; changes require a deliberate restart |
 | Modify built-in skills at runtime | **Removed** | Curated defaults should not drift on a running instance; edit the repo + rebuild |
 | Rebuild its own Go source (`nine_propose_rebuild`) | **Removed** | Nine never edits and recompiles itself |
 | Read its own source tree (`self_read`) | **Removed** | The source tree is no longer shipped in the container |
+
+**Sandboxed tools are the one adjacent thing that is *not* removed** — but note carefully
+what they are. An operator may install a wasm or JavaScript tool from `[tools].user_dir`
+and grant it capabilities in `nine.toml` (`spec/contracts/toolvm.md`). That is operator
+action, the same category as `[plugins].user_dir` and `[skills].user_dir`, and **no
+agent-reachable path writes a sandboxed tool, its manifest, or its grant**. Nine does not
+gain the ability to write tools for itself; the design that would allow it
+(`docs/sandboxed-tools.md` §5.2) is deliberately unbuilt. Nothing above changes, including
+the toolchain property below: the QuickJS interpreter is built ahead of time from pinned
+tags and committed as an artifact, so the runtime image gains no compiler.
 
 Because of this, the runtime container carries **no Go toolchain, no git, and no
 source tree** — only the compiled `nine` binary, the compiled default plugins, and

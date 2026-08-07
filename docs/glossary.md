@@ -274,6 +274,36 @@ are handled directly by the Tool Dispatcher, with no plugin subprocess:
 Registered by `AgentBuilder.registerCoreTools` and `registerSubAgentTools`
 when each loop is built.
 
+**Sandboxed tool** — A wasm module the daemon executes **in-process**, in a
+wazero sandbox, with an explicitly conferred capability set. A *second backend
+behind the same Tool Dispatcher* as plugins — registered, advertised, and
+role-filtered identically — but neither a subprocess (unlike a **plugin**) nor
+built in (unlike a **core-intercepted tool**). Installed by an operator as two
+files in `[tools].user_dir`: a `.js` or `.wasm` entrypoint and a `.toml`
+manifest. Off unless `[tools] enabled` is set. See
+[Sandboxed tools](writing-sandboxed-tools.md) and
+[contract](../spec/contracts/toolvm.md).
+
+**Tool kind (`js` / `wasm`)** — How a sandboxed tool's module is obtained. A
+`wasm` tool is the developer's own module, built from Rust, TinyGo, Zig, or C. A
+`js` tool's module is the pre-supplied QuickJS-NG interpreter, with the author's
+JavaScript as its input — nothing is compiled at install time. Not two trust
+tiers: same ABI, same capability model, same everything downstream.
+
+**Capability declaration vs. capability grant** — The distinction the whole
+sandboxed-tool design rests on, and the one most easily blurred. A tool's
+manifest **declares** what it needs (developer, in the repo); `[tool.<name>]` in
+`nine.toml` **grants** what it gets (operator, on the host). Only the grant is
+effective — nothing reads the declaration at call time, so *a manifest that lies
+gains nothing*. The two must name the same capabilities or the tool does not
+load. Contrast **plugin settings**, which are configuration, not capability.
+
+**Generated tool** — A sandboxed tool authored by Nine itself
+(`docs/sandboxed-tools.md` §5.2). **Designed but deliberately not built.** No
+agent-reachable path writes a tool, a manifest, or a grant; *Nine cannot grant
+itself capabilities* (R-PLUG.7) holds unchanged. Do not confuse with a
+**developer tool**, which is the operator-installed kind that does exist.
+
 **Post-call hook** — A callback registered with `AddHook(toolName, fn)` that
 fires after a successful call to a specific tool. (Skill description embedding
 is now done inline by `skill_write`/`skill_modify` in `RegisterSkillTools`, not

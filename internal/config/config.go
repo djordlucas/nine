@@ -1,6 +1,12 @@
 package config
 
-import "github.com/BurntSushi/toml"
+import (
+	"fmt"
+	"path/filepath"
+	"strings"
+
+	"github.com/BurntSushi/toml"
+)
 
 type Config struct {
 	LLM        LLMConfig        `toml:"llm"`
@@ -23,6 +29,11 @@ type Config struct {
 	// plugin as environment variables, so an operator can configure a plugin Nine
 	// has never heard of without a rebuild (docs/plugin-capabilities.md §3).
 	Plugin map[string]PluginEntry `toml:"plugin"`
+
+	// Tool holds per-tool `[tool.<name>]` tables (singular), sibling to the plural
+	// `[tools]` table above and following the same split. It is the grant half of
+	// the sandboxed-tool capability model (spec/contracts/toolvm.md).
+	Tool map[string]ToolEntry `toml:"tool"`
 }
 
 // PluginEntry is one `[plugin.<name>]` table. Its Settings are schema-less on
@@ -53,6 +64,92 @@ type ToolsConfig struct {
 	// a large result inline; lower it to keep observations tight. 0 (unset)
 	// keeps agent.DefaultMaxOutputTokens (2048).
 	MaxOutputTokens int `toml:"max_output_tokens"`
+
+	// Enabled turns the sandboxed-tool host on (spec/contracts/toolvm.md). Off by
+	// default: a deployment that never sets it behaves exactly as it did before
+	// the host existed, which is the additive property the whole design rests on
+	// (docs/sandboxed-tools.md §1).
+	Enabled bool `toml:"enabled"`
+
+	// UserDir holds developer sandboxed tools, discovered at boot from the same
+	// sidecar-manifest layout user plugins use: a `<name>.js` or `<name>.wasm`
+	// beside a `<name>.toml` manifest. Empty or absent loads nothing. A file with
+	// no manifest is never loaded, and a tool whose name collides with a built-in,
+	// a plugin tool, or an earlier-loaded sandboxed tool is skipped and surfaced
+	// rather than aborting the boot (R-TVM.10).
+	UserDir string `toml:"user_dir"`
+
+	// Timeout is the per-call wall-clock deadline. It is the only CPU bound the
+	// host has — wazero offers no fuel metering — so an operator running many
+	// concurrent sessions is trusting this, not a work budget
+	// (docs/sandboxed-tools.md §3). Empty uses toolvm.DefaultTimeout (5s).
+	Timeout string `toml:"timeout"`
+
+	// MemoryMB caps a single call's linear memory. 0 uses toolvm.DefaultMemoryMB
+	// (16 MiB).
+	MemoryMB int `toml:"memory_mb"`
+}
+
+// ToolEntry is one `[tool.<name>]` table (singular), sibling to the plural
+// `[tools]` subsystem table above — the same split `[plugin.<name>]` and
+// `[plugins]` already use (R-PLUG.10).
+//
+// It is where an operator confers capabilities on one named sandboxed tool. The
+// asymmetry with the tool's own manifest is the point: a manifest *declares a
+// need* and only this *grants* (docs/sandboxed-tools.md §6.3). There is
+// deliberately no wildcard `[tool."*"]` — an operator granting filesystem access
+// to a tool does so to a tool they have read.
+type ToolEntry struct {
+	Capabilities ToolCapabilities `toml:"capabilities"`
+}
+
+// ToolCapabilities is the grant side of the capability model. Every field
+// defaults to the empty set: no filesystem, no network, no environment. Clock,
+// randomness, and logging are granted unconditionally because they leak nothing
+// (docs/sandboxed-tools.md §6.2) and so have no knob here.
+type ToolCapabilities struct {
+	FS ToolFSGrant `toml:"fs"`
+
+	// Env is an explicit key allowlist, never an all-or-nothing flag: the
+	// daemon's environment holds LLM provider API keys, so a tool granted "env"
+	// wholesale would be a credential exfiltration primitive. The NINE_* and
+	// *_API_KEY patterns are refused outright at load (Config.Validate).
+	Env []string `toml:"env"`
+
+	// Net is accepted so a manifest and a config written against the full design
+	// parse today, but `net.http` is not implemented yet — it is stage 4
+	// (docs/sandboxed-tools.md §8), and its security is entirely the host's
+	// problem. Granting it is a named load error rather than a silent no-op.
+	Net ToolNetGrant `toml:"net"`
+}
+
+// ToolFSGrant maps host paths into a tool's guest filesystem. wazero enforces
+// the scope itself via pre-opens, so this is the one capability Nine does not
+// have to police at call time.
+type ToolFSGrant struct {
+	Read  []ToolMount `toml:"read"`
+	Write []ToolMount `toml:"write"`
+}
+
+// ToolMount is one host→guest path mapping. The guest path is what the tool's
+// own code sees, which is what makes narrowing a mount to a subdirectory a
+// one-line change on the operator's side (docs/sandboxed-tools.md §7.1).
+type ToolMount struct {
+	Host  string `toml:"host"`
+	Guest string `toml:"guest"`
+}
+
+// ToolNetGrant is the placeholder for the stage-4 `net.http` capability.
+type ToolNetGrant struct {
+	HTTP *ToolHTTPGrant `toml:"http"`
+}
+
+// ToolHTTPGrant is the shape §8 specifies. Parsed but not honored: see
+// ToolCapabilities.Net.
+type ToolHTTPGrant struct {
+	AllowHosts []string `toml:"allow_hosts"`
+	Methods    []string `toml:"methods"`
+	MaxBytes   int      `toml:"max_bytes"`
 }
 
 // PlanningConfig controls the plan-before-execute policy
@@ -299,5 +396,49 @@ func (cfg *Config) Validate() error {
 			return err
 		}
 	}
+	for name, entry := range cfg.Tool {
+		if err := validateToolEntry(name, entry); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateToolEntry checks one `[tool.<name>]` grant. Everything here is a
+// config error rather than a runtime surprise, because a grant that silently
+// does not mean what the operator thought is the failure mode the capability
+// model exists to prevent.
+func validateToolEntry(name string, entry ToolEntry) error {
+	caps := entry.Capabilities
+
+	for _, m := range append(append([]ToolMount{}, caps.FS.Read...), caps.FS.Write...) {
+		if m.Host == "" || m.Guest == "" {
+			return fmt.Errorf("[tool.%s]: fs mount needs both host and guest paths", name)
+		}
+		if !filepath.IsAbs(m.Host) {
+			return fmt.Errorf("[tool.%s]: fs mount host path %q must be absolute", name, m.Host)
+		}
+	}
+
+	for _, k := range caps.Env {
+		if k == "" {
+			return fmt.Errorf("[tool.%s]: env grant has an empty key", name)
+		}
+		// The daemon's environment holds LLM provider credentials, and a
+		// sandboxed tool is precisely the thing that should never see them. This
+		// is a refusal rather than a filter so that an operator who meant to grant
+		// one finds out at load, not by wondering why the key is empty.
+		if strings.HasPrefix(k, "NINE_") || strings.HasSuffix(k, "_API_KEY") {
+			return fmt.Errorf("[tool.%s]: env key %q is reserved and cannot be granted to a sandboxed tool", name, k)
+		}
+	}
+
+	// Refusing the grant outright is the honest outcome while §8 is unbuilt:
+	// accepting it would advertise a boundary — SSRF filtering, redirect
+	// re-checks, response caps — that does not exist yet.
+	if caps.Net.HTTP != nil {
+		return fmt.Errorf("[tool.%s]: capability net.http is not implemented yet (docs/sandboxed-tools.md §8)", name)
+	}
+
 	return nil
 }
