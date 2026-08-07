@@ -167,12 +167,10 @@ env = ["TZ"]
 	}
 }
 
-// net.http is stage 4. Accepting the grant would advertise a boundary — SSRF
-// filtering, redirect re-checks, response caps — that does not exist yet, so it
-// is refused by name.
-func TestNetHTTPIsRefusedUntilImplemented(t *testing.T) {
-	dir := t.TempDir()
-	writeTool(t, dir, "fetcher", `
+// net.http follows the same conferred-never-claimed rule as everything else:
+// declared and granted must agree, and the grant supplies the parameters.
+func TestNetHTTPResolvesLikeAnyOtherCapability(t *testing.T) {
+	const manifest = `
 name = "fetcher"
 kind = "js"
 entrypoint = "./fetcher.js"
@@ -180,16 +178,46 @@ description = "Fetches."
 
 [capabilities]
 net = ["http"]
-`, `export default () => "ok";`)
+`
+	grant := &HTTPGrant{AllowHosts: []string{"api.example.com"}, Methods: []string{"GET"}}
 
-	h := openHost(t, dir, map[string]Grant{"fetcher": {NetHTTP: true}})
-	st := h.Status()
-	if len(st) != 1 || st[0].Loaded {
-		t.Fatalf("status = %+v, want a skipped tool", st)
-	}
-	if !strings.Contains(st[0].Err, "not implemented") {
-		t.Errorf("error %q should say the capability is unimplemented", st[0].Err)
-	}
+	t.Run("declared and granted", func(t *testing.T) {
+		dir := t.TempDir()
+		writeTool(t, dir, "fetcher", manifest, `export default () => "ok";`)
+		h := openHost(t, dir, map[string]Grant{"fetcher": {HTTP: grant}})
+
+		tool := h.Get("fetcher")
+		if tool == nil {
+			t.Fatalf("tool did not load: %+v", h.Status())
+		}
+		if got := tool.Grant.Summary(); !strings.Contains(got, "net.http") ||
+			!strings.Contains(got, "api.example.com") {
+			t.Errorf("Summary() = %q, want it to name the allowlist", got)
+		}
+	})
+
+	t.Run("declared but not granted", func(t *testing.T) {
+		dir := t.TempDir()
+		writeTool(t, dir, "fetcher", manifest, `export default () => "ok";`)
+		h := openHost(t, dir, nil)
+		if h.Get("fetcher") != nil {
+			t.Fatal("a tool declaring net.http loaded with no grant")
+		}
+	})
+
+	t.Run("granted but not declared", func(t *testing.T) {
+		dir := t.TempDir()
+		writeTool(t, dir, "quiet", `
+name = "quiet"
+kind = "js"
+entrypoint = "./quiet.js"
+description = "Declares nothing."
+`, `export default () => "ok";`)
+		h := openHost(t, dir, map[string]Grant{"quiet": {HTTP: grant}})
+		if h.Get("quiet") != nil {
+			t.Fatal("a tool was granted network it never declared")
+		}
+	})
 }
 
 // resolveGrant returns the grant and only the grant. The declaration contributes

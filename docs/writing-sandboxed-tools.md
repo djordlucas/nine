@@ -135,10 +135,51 @@ $ nine tools
 | `log` | `console.*` | ✅ |
 | `fs.read` / `fs.write` | mounted directories | ❌ declare + grant |
 | `env` | named keys only | ❌ declare + grant |
-| `net.http` | — | ❌ **not implemented yet** |
+| `net.http` | `fetch()` | ❌ declare + grant |
 
 `NINE_*` and `*_API_KEY` environment keys can never be granted: the daemon's environment
 holds the LLM provider credentials.
+
+### Network access
+
+Declare `net = ["http"]`, and the operator grants the hosts:
+
+```toml
+[tool.weather.capabilities.net.http]
+allow_hosts = ["api.weather.example"]
+methods     = ["GET"]
+max_bytes   = 1048576
+```
+
+Then `fetch` works:
+
+```js
+export default async ({ city }) => {
+  const res = await fetch(`https://api.weather.example/v1?q=${encodeURIComponent(city)}`);
+  if (!res.ok) throw new Error(`weather API returned ${res.status}`);
+  return res.json();
+};
+```
+
+It is a **subset** of the `fetch` you know, not a polyfill. You get `status`, `ok`,
+`headers`, `text()`, and `json()`. There is no streaming, no `AbortController`, no cookie
+jar, and no `Request`/`Headers`/`Response` classes.
+
+Two behaviors differ from browser `fetch` and are worth knowing:
+
+- **A blocked request throws**, it does not return a non-ok response. A refusal is not a
+  response, and letting it look like one invites `if (res.ok)` to quietly swallow a
+  decision the operator made. The message says why.
+- **Redirects are followed but re-checked.** Every hop must independently satisfy the
+  allowlist, and `Authorization`/`Cookie` are stripped when a hop crosses origins.
+
+What you cannot reach, regardless of `allow_hosts`: loopback, link-local (including
+`169.254.169.254`, the cloud instance-metadata endpoint), RFC 1918, and the other
+non-routable ranges. The check is on the address actually dialed, so pointing a permitted
+hostname at one of them does not help. That is deliberate and not configurable.
+
+You also cannot set `Host`, `Content-Length`, or hop-by-hop headers, and only `http` and
+`https` are permitted.
 
 ---
 

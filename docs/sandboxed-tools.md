@@ -1,19 +1,22 @@
 # Sandboxed tools — a Wasm tool host with conferred capabilities
 
-- **Status:** **Stages 1–3 built** (rev 1). This note remains the design rationale
+- **Status:** **Stages 1–4 built** (rev 1). This note remains the design rationale
   and covers all six stages; the normative contract for what exists is
   `spec/contracts/toolvm.md` (`R-TVM.*`) and the authoring guide is
   `docs/writing-sandboxed-tools.md`.
   **Built:** the wazero host and ABI (§3–§4), the `js` kind with a trimmed
   QuickJS blob (§4.1) and a closed import allowlist (§4.3), developer tools with
-  manifests (§5.1), and the capability model end to end (§6–§7) — `fs` and `env`,
-  conferred never claimed.
-  **Not built,** and refused by name rather than silently ignored:
-  `net.http` (§8, stage 4), the generated tier — `tool_write` / `js_eval` /
-  the `tools` table (§5.2–§5.3, stage 5), the `nine:*` stdlib (§4.2), and
-  external npm dependencies (§4.4, stage 6). §11 explains why stage 6 must not
-  precede adversarial tests on stages 3 and 4.
-- **Date:** 2026-08-06 (proposed), stages 1–3 landed 2026-08-06.
+  manifests (§5.1), the capability model end to end (§6–§7) — `fs` and `env`,
+  conferred never claimed — and **`net.http` with the full §8 checklist** and its
+  adversarial tests (SSRF, DNS rebinding, redirect laundering, credential
+  stripping).
+  **Not built,** and refused by name rather than silently ignored: the generated
+  tier — `tool_write` / `js_eval` / the `tools` table (§5.2–§5.3, stage 5), the
+  `nine:*` stdlib (§4.2), and external npm dependencies (§4.4, stage 6). §11 is
+  explicit that stage 6 must not precede adversarial tests on stages 3 and 4;
+  those now exist, so stage 5 is the next gate rather than the last.
+- **Date:** 2026-08-06 (proposed), stages 1–3 landed 2026-08-06, stage 4 on
+  2026-08-07.
 - **Motivation:** two capabilities that today have no home. (1) A **developer**
   wants to add a permanent tool without writing a Go plugin, building a binary,
   and rebuilding the image. (2) **Nine** wants to write a tool for a job it does
