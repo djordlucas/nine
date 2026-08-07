@@ -39,6 +39,48 @@ function safeStringify(v) {
   }
 }
 
+// The `net.http` capability (§8), shaped like the `fetch` every JS author
+// already knows. It is a faithful *subset*, not a polyfill: there is no
+// streaming, no AbortController, no cookie jar, no redirect control, and no
+// Request/Headers classes. What is here behaves as expected.
+//
+// Note what this function does NOT do: decide anything. Method allowlists, host
+// allowlists, SSRF rejection on the resolved IP, per-redirect revalidation, and
+// response caps are all enforced on the host side of __nine_http, where a tool
+// cannot reach them. A tool without the grant gets a refusal here, the same as
+// a tool that aimed at a blocked address — so neither is a special case it can
+// probe for.
+//
+// It is defined unconditionally because the underlying import must exist for the
+// module to instantiate at all; permission is checked per call by the host.
+globalThis.fetch = async (url, init = {}) => {
+  const raw = __nine_http(
+    JSON.stringify({
+      url: String(url),
+      method: init.method ?? "GET",
+      headers: init.headers ?? {},
+      body: init.body == null ? "" : String(init.body),
+    }),
+  );
+
+  const res = JSON.parse(raw);
+  if (res.error) {
+    // A refusal is a thrown error rather than a status code: it is not a
+    // response, and letting it look like one invites `if (res.ok)` to swallow a
+    // policy decision the operator made.
+    throw new Error(res.error);
+  }
+
+  const body = res.body ?? "";
+  return {
+    status: res.status,
+    ok: res.status >= 200 && res.status < 300,
+    headers: res.headers ?? {},
+    text: () => body,
+    json: () => JSON.parse(body),
+  };
+};
+
 // Everything crossing the ABI boundary is a UTF-8 JSON byte slice (§4), and the
 // contract downstream is CallResult{Output string} — so a string result is the
 // tool's own formatting and passes through untouched, while any other value is

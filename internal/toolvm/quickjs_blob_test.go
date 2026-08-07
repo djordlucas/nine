@@ -66,8 +66,11 @@ func TestQuickJSBlobImportsAndExportsAreClosed(t *testing.T) {
 			sawWASI = true
 		case hostModule:
 			sawNine = true
-			if name != "log" {
-				t.Errorf("blob imports %s.%s; the only host function is log", module, name)
+			// The whole host surface. `log` is granted to every tool; `http` is
+			// checked per call against the tool's grant (host.hostHTTP). Anything
+			// else appearing here is reach the capability table does not describe.
+			if name != "log" && name != "http" {
+				t.Errorf("blob imports %s.%s; the host module is only log and http", module, name)
 			}
 		default:
 			t.Errorf("blob imports an unexpected module: %s.%s", module, name)

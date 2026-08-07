@@ -143,6 +143,16 @@ root = "./dist"
 # [tool.csv_stats.capabilities.fs]
 # read = [{ host = "/srv/data", guest = "/data" }]   # host path must be absolute
 
+# Outbound HTTP. The hostname must match allow_hosts AND the address actually
+# dialed must be publicly routable — loopback, link-local (169.254.169.254, where
+# your cloud keeps its instance credentials), and RFC1918 are refused no matter
+# what a name resolves to, on every redirect hop. No bare "*": if you want
+# unrestricted egress, write a native plugin.
+# [tool.weather.capabilities.net.http]
+# allow_hosts = ["api.weather.example"]   # exact, or a leading "*." (not the apex)
+# methods     = ["GET"]                   # required
+# max_bytes   = 1048576                   # response cap; 0 uses 1 MiB
+
 # Human-in-the-loop (docs/hitl.md), interactive TUI conversations only.
 # require_approval names tools that need an explicit "yes" before each call;
 # gate_sub_agents (default true) extends those gates to sub-agents the
