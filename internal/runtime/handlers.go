@@ -633,6 +633,7 @@ func (d *Daemon) sandboxedToolStatuses() []protocol.SandboxedToolStatus {
 			Name:         st.Name,
 			Kind:         st.Kind,
 			Loaded:       st.Loaded,
+			Generated:    st.Generated,
 			Capabilities: st.Capabilities,
 			Description:  descriptions[st.Name],
 			ManifestPath: st.ManifestPath,

@@ -124,6 +124,12 @@ an **owning interactive session**: the conversation's own loop, and — unless
 `[hitl].gate_sub_agents` is `false` — every sub-agent it spawns, at any depth. A loop with
 no interactive owner is never prompted even if its tool name is listed.
 
+The generated tier (`spec/contracts/toolvm.md` R-TVM.14) arms `tool_write`/`js_eval` on this
+same gate, keyed off `[tools.agent].require_approval` instead of the `[hitl]` list, and on
+the identical owning-interactive-session terms. Its `on_capability` default is a **per-call**
+decision — a write whose declared capabilities are empty is not prompted — which is the one
+exception to the "single global list, no per-argument matching" rule below.
+
 ### Routing a sub-agent's gate
 
 A sub-agent has no session of its own, so its prompt **MUST** be emitted on the **owning

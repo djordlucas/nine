@@ -156,11 +156,14 @@ never agent tools.
 (`spec/contracts/toolvm.md`):
 
 ```schema
-SandboxedToolStatus { name string, kind string, loaded bool, capabilities string,
-                      description string, manifest_path string, error string }
+SandboxedToolStatus { name string, kind string, loaded bool, generated bool,
+                      capabilities string, description string, manifest_path string,
+                      error string }
 // kind: js | wasm. A skipped tool has loaded=false and error set.
 // capabilities is the RESOLVED grant — what the tool runs with, never what its
 // manifest asked for.
+// generated=true marks a tool Nine authored via tool_write (toolvm.md R-TVM.14):
+// its code lives in the store, so it has no manifest_path. Additive/optional field.
 ```
 
 The skipped entries are the point: a capability mismatch is deliberately a load failure

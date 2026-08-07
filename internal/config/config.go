@@ -88,6 +88,75 @@ type ToolsConfig struct {
 	// MemoryMB caps a single call's linear memory. 0 uses toolvm.DefaultMemoryMB
 	// (16 MiB).
 	MemoryMB int `toml:"memory_mb"`
+
+	// Agent is the `[tools.agent]` table: the generated tier, where Nine writes
+	// its own tools (docs/sandboxed-tools.md §5.2). Off by default and
+	// independent of `enabled` — an operator may want developer tools without
+	// letting the agent author any.
+	Agent ToolsAgentConfig `toml:"agent"`
+}
+
+// ToolsAgentConfig governs generated tools: the ones Nine writes itself.
+//
+// The distinction this table exists to enforce is the whole design
+// (docs/sandboxed-tools.md §2): **the agent writes the code; the operator writes
+// the grants; these are never the same actor.** Nine gains one column and never
+// the other. A generated tool that could grant itself filesystem access would be
+// a shell with extra steps.
+type ToolsAgentConfig struct {
+	// Enabled turns on `tool_write`. Off by default.
+	Enabled bool `toml:"enabled"`
+
+	// Eval additionally allows `js_eval` — one execution, nothing persisted
+	// (§5.3). It is not a third trust tier: it runs under exactly the
+	// generated-tool rules and is strictly *less* persistent. It earns a separate
+	// switch because it is the surface that keeps iteration out of the catalog.
+	Eval bool `toml:"eval"`
+
+	// MaxTools caps the catalog. 0 uses toolvm.DefaultMaxGeneratedTools (64).
+	//
+	// This is the sleeper problem, not a resource limit: every generated tool
+	// competes for the context budget in tool selection, so a catalog of 200
+	// half-redundant tools degrades ranking for the *built-in* tools too. The
+	// agent poisons its own tool selection and gets worse at everything (§9.2).
+	MaxTools int `toml:"max_tools"`
+
+	// RequireApproval selects when tool_write and js_eval route through the HITL
+	// gate: "on_capability" (default), "always", or "never".
+	//
+	// The default gates on substance rather than frequency, and that is the whole
+	// intent. Approval fatigue is what defeats approval gates: prompting a human
+	// on a pure date-formatting tool trains them to approve without reading, and
+	// then the one prompt that matters meets the same reflex. A gate that fires
+	// rarely is a gate that gets read.
+	RequireApproval string `toml:"require_approval"`
+
+	// Capabilities is the MAXIMUM a generated tool may be granted — a ceiling,
+	// not a default. A tool that declares nothing still gets nothing, however
+	// permissive this is. The ceiling bounds what is *grantable*; the tool's own
+	// declaration decides what is *granted*. The two are deliberately separate so
+	// that widening the ceiling does not retroactively widen every existing tool.
+	Capabilities ToolCapabilities `toml:"capabilities"`
+}
+
+// Approval modes for [tools.agent].require_approval.
+const (
+	ToolApprovalOnCapability = "on_capability"
+	ToolApprovalAlways       = "always"
+	ToolApprovalNever        = "never"
+)
+
+// ApprovalMode returns the effective require_approval mode, defaulting to
+// on_capability.
+func (a ToolsAgentConfig) ApprovalMode() string {
+	switch a.RequireApproval {
+	case ToolApprovalAlways, ToolApprovalNever, ToolApprovalOnCapability:
+		return a.RequireApproval
+	case "":
+		return ToolApprovalOnCapability
+	default:
+		return ToolApprovalOnCapability
+	}
 }
 
 // ToolEntry is one `[tool.<name>]` table (singular), sibling to the plural
@@ -407,9 +476,19 @@ func (cfg *Config) Validate() error {
 		}
 	}
 	for name, entry := range cfg.Tool {
-		if err := validateToolEntry(name, entry); err != nil {
+		if err := validateToolEntry("tool."+name, entry); err != nil {
 			return err
 		}
+	}
+	if err := validateToolEntry("tools.agent", ToolEntry{Capabilities: cfg.Tools.Agent.Capabilities}); err != nil {
+		return err
+	}
+	switch cfg.Tools.Agent.RequireApproval {
+	case "", ToolApprovalOnCapability, ToolApprovalAlways, ToolApprovalNever:
+	default:
+		return fmt.Errorf("[tools.agent]: require_approval %q must be %q, %q, or %q",
+			cfg.Tools.Agent.RequireApproval,
+			ToolApprovalOnCapability, ToolApprovalAlways, ToolApprovalNever)
 	}
 	return nil
 }
@@ -418,75 +497,75 @@ func (cfg *Config) Validate() error {
 // config error rather than a runtime surprise, because a grant that silently
 // does not mean what the operator thought is the failure mode the capability
 // model exists to prevent.
-func validateToolEntry(name string, entry ToolEntry) error {
+func validateToolEntry(table string, entry ToolEntry) error {
 	caps := entry.Capabilities
 
 	for _, m := range append(append([]ToolMount{}, caps.FS.Read...), caps.FS.Write...) {
 		if m.Host == "" || m.Guest == "" {
-			return fmt.Errorf("[tool.%s]: fs mount needs both host and guest paths", name)
+			return fmt.Errorf("[%s]: fs mount needs both host and guest paths", table)
 		}
 		if !filepath.IsAbs(m.Host) {
-			return fmt.Errorf("[tool.%s]: fs mount host path %q must be absolute", name, m.Host)
+			return fmt.Errorf("[%s]: fs mount host path %q must be absolute", table, m.Host)
 		}
 	}
 
 	for _, k := range caps.Env {
 		if k == "" {
-			return fmt.Errorf("[tool.%s]: env grant has an empty key", name)
+			return fmt.Errorf("[%s]: env grant has an empty key", table)
 		}
 		// The daemon's environment holds LLM provider credentials, and a
 		// sandboxed tool is precisely the thing that should never see them. This
 		// is a refusal rather than a filter so that an operator who meant to grant
 		// one finds out at load, not by wondering why the key is empty.
 		if strings.HasPrefix(k, "NINE_") || strings.HasSuffix(k, "_API_KEY") {
-			return fmt.Errorf("[tool.%s]: env key %q is reserved and cannot be granted to a sandboxed tool", name, k)
+			return fmt.Errorf("[%s]: env key %q is reserved and cannot be granted to a sandboxed tool", table, k)
 		}
 	}
 
-	return validateHTTPGrant(name, caps.Net.HTTP)
+	return validateHTTPGrant(table, caps.Net.HTTP)
 }
 
 // validateHTTPGrant checks a `net.http` grant. Every rejection here is a config
 // error rather than a runtime surprise, because the whole point of an egress
 // allowlist is that the operator knows exactly what they permitted.
-func validateHTTPGrant(name string, g *ToolHTTPGrant) error {
+func validateHTTPGrant(table string, g *ToolHTTPGrant) error {
 	if g == nil {
 		return nil
 	}
 
 	if len(g.AllowHosts) == 0 {
-		return fmt.Errorf("[tool.%s]: net.http needs allow_hosts; there is no implicit default", name)
+		return fmt.Errorf("[%s]: net.http needs allow_hosts; there is no implicit default", table)
 	}
 	for _, h := range g.AllowHosts {
 		h = strings.ToLower(strings.TrimSpace(h))
 		switch {
 		case h == "":
-			return fmt.Errorf("[tool.%s]: net.http allow_hosts has an empty entry", name)
+			return fmt.Errorf("[%s]: net.http allow_hosts has an empty entry", table)
 		case h == "*":
 			// An operator who wants an unrestricted egress tool should write a
 			// native plugin, where that intent is explicit and reviewed
 			// (docs/sandboxed-tools.md §8).
-			return fmt.Errorf("[tool.%s]: net.http allow_hosts may not be a bare %q; name the hosts, or write a native plugin if you need unrestricted egress", name, "*")
+			return fmt.Errorf("[%s]: net.http allow_hosts may not be a bare %q; name the hosts, or write a native plugin if you need unrestricted egress", table, "*")
 		case strings.Contains(h, "://"), strings.Contains(h, "/"):
-			return fmt.Errorf("[tool.%s]: net.http allow_hosts entry %q must be a hostname, not a URL", name, h)
+			return fmt.Errorf("[%s]: net.http allow_hosts entry %q must be a hostname, not a URL", table, h)
 		case strings.Count(h, "*") > 1, strings.Contains(h, "*") && !strings.HasPrefix(h, "*."):
-			return fmt.Errorf("[tool.%s]: net.http allow_hosts entry %q must be an exact host or a leading %q pattern", name, h, "*.")
+			return fmt.Errorf("[%s]: net.http allow_hosts entry %q must be an exact host or a leading %q pattern", table, h, "*.")
 		}
 	}
 
 	if len(g.Methods) == 0 {
-		return fmt.Errorf("[tool.%s]: net.http needs methods; there is no implicit default", name)
+		return fmt.Errorf("[%s]: net.http needs methods; there is no implicit default", table)
 	}
 	for _, m := range g.Methods {
 		switch strings.ToUpper(strings.TrimSpace(m)) {
 		case "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS":
 		default:
-			return fmt.Errorf("[tool.%s]: net.http method %q is not a permitted method", name, m)
+			return fmt.Errorf("[%s]: net.http method %q is not a permitted method", table, m)
 		}
 	}
 
 	if g.MaxBytes < 0 {
-		return fmt.Errorf("[tool.%s]: net.http max_bytes must not be negative", name)
+		return fmt.Errorf("[%s]: net.http max_bytes must not be negative", table)
 	}
 	return nil
 }
