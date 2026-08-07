@@ -46,6 +46,10 @@ type Config struct {
 	Timeout  time.Duration
 	MemoryMB int
 
+	// TouchGenerated, when set, records that a generated tool was called, for LRU
+	// eviction. The daemon wires it to the store; this package has none.
+	TouchGenerated func(name string)
+
 	// AuditHTTP, when set, receives every outbound request a granted tool makes
 	// (docs/sandboxed-tools.md §8 item 8). The host always logs; this is the hook
 	// the daemon uses to also reach the event journal, which it can do and this
@@ -63,8 +67,14 @@ type Tool struct {
 	// Grant is the resolved, effective capability set — what the operator
 	// conferred, never what the manifest asked for.
 	Grant Grant
-	// ManifestPath is where this tool came from, for `nine tools show`.
+	// ManifestPath is where this tool came from, for `nine tools show`. Empty for
+	// a generated tool, which came from the store rather than a file.
 	ManifestPath string
+	// Generated marks a tool Nine wrote itself (§5.2) rather than one an operator
+	// installed. It changes nothing about how the tool runs — same sandbox, same
+	// bounds, same capability resolution — only where its code and its ceiling
+	// came from.
+	Generated bool
 
 	// module is the compiled wasm. For a KindJS tool it is the shared QuickJS
 	// blob; for KindWasm it is the tool's own module. Compilation happens once,
@@ -84,6 +94,7 @@ type Status struct {
 	Name         string `json:"name"`
 	ManifestPath string `json:"manifest_path"`
 	Loaded       bool   `json:"loaded"`
+	Generated    bool   `json:"generated,omitempty"`
 	Kind         string `json:"kind,omitempty"`
 	Capabilities string `json:"capabilities,omitempty"`
 	Err          string `json:"err,omitempty"`
@@ -99,6 +110,10 @@ type Host struct {
 	mu     sync.RWMutex
 	tools  map[string]*Tool
 	status []Status
+	// generatedStatus is kept apart from status so reloading the developer-tool
+	// directory does not erase the generated tier's outcomes, or vice versa.
+	generatedStatus []Status
+	agent           AgentConfig
 
 	// qjs is the compiled QuickJS blob, shared by every `js` tool. Compiling it
 	// is by far the most expensive thing this package does (~1 MB of wasm), so it
@@ -276,12 +291,14 @@ func (h *Host) Get(name string) *Tool {
 	return h.tools[name]
 }
 
-// Status returns a snapshot of the last load's outcome, for `nine tools`.
+// Status returns a snapshot of the last load's outcome, for `nine tools`. It
+// covers both tiers: an operator asking what is loaded wants one answer, not two.
 func (h *Host) Status() []Status {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	out := make([]Status, len(h.status))
-	copy(out, h.status)
+	out := make([]Status, 0, len(h.status)+len(h.generatedStatus))
+	out = append(out, h.status...)
+	out = append(out, h.generatedStatus...)
 	return out
 }
 
@@ -301,6 +318,19 @@ func (h *Host) Call(ctx context.Context, name string, args json.RawMessage) (str
 	if t == nil {
 		return "", fmt.Errorf("unknown sandboxed tool: %s", name)
 	}
+	out, err := h.call(ctx, t, args)
+	if err == nil && t.Generated && h.cfg.TouchGenerated != nil {
+		// Usage drives LRU eviction (§9.2). Best-effort and after the fact: a
+		// bookkeeping failure must not fail the call the model is waiting on.
+		h.cfg.TouchGenerated(name)
+	}
+	return out, err
+}
+
+// call is the execution path both Call and EvalGenerated go through, so an
+// ephemeral evaluation cannot diverge from a catalogued tool's behavior.
+func (h *Host) call(ctx context.Context, t *Tool, args json.RawMessage) (string, error) {
+	name := t.Name
 
 	ctx, cancel := context.WithTimeout(ctx, h.timeout)
 	defer cancel()

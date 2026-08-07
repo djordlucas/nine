@@ -108,12 +108,18 @@ func printSandboxedTools(out io.Writer, tools []protocol.SandboxedToolStatus) {
 	}
 	var skipped int
 	for _, t := range tools {
+		kind := t.Kind
+		if t.Generated {
+			// Provenance, not a wasm kind: a generated tool is always `js`, so the
+			// column is free to carry the more useful distinction.
+			kind = "gen"
+		}
 		if t.Loaded {
-			fmt.Fprintf(out, "  ok    %-18s %-6s %s\n", t.Name, t.Kind, orNone(t.Capabilities))
+			fmt.Fprintf(out, "  ok    %-18s %-6s %s\n", t.Name, kind, orNone(t.Capabilities))
 			continue
 		}
 		skipped++
-		fmt.Fprintf(out, "  SKIP  %-18s %-6s %s\n", t.Name, t.Kind, t.Error)
+		fmt.Fprintf(out, "  SKIP  %-18s %-6s %s\n", t.Name, kind, t.Error)
 	}
 	if skipped > 0 {
 		fmt.Fprintf(out, "\n%d sandboxed tool(s) skipped; the daemon is running without them.\n", skipped)

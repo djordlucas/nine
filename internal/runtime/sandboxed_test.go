@@ -37,7 +37,7 @@ description = "Echo."
 	cfg := &config.Config{}
 	cfg.Tools.UserDir = dir // set, but enabled is not
 
-	if h := OpenSandboxedTools(context.Background(), cfg, nil); h != nil {
+	if h := OpenSandboxedTools(context.Background(), cfg, nil, nil); h != nil {
 		h.Close(context.Background()) //nolint:errcheck
 		t.Fatal("the host opened with [tools] enabled unset")
 	}
@@ -56,7 +56,7 @@ description = "Echo."
 	cfg.Tools.Enabled = true
 	cfg.Tools.UserDir = dir
 
-	h := OpenSandboxedTools(context.Background(), cfg, nil)
+	h := OpenSandboxedTools(context.Background(), cfg, nil, nil)
 	if h == nil {
 		t.Fatal("the host did not open")
 	}
@@ -81,7 +81,7 @@ func TestBadTimeoutDisablesRatherThanAborts(t *testing.T) {
 	cfg.Tools.Enabled = true
 	cfg.Tools.Timeout = "five seconds"
 
-	if h := OpenSandboxedTools(context.Background(), cfg, nil); h != nil {
+	if h := OpenSandboxedTools(context.Background(), cfg, nil, nil); h != nil {
 		h.Close(context.Background()) //nolint:errcheck
 		t.Fatal("the host opened with an unparseable timeout")
 	}
@@ -103,7 +103,7 @@ description = "Impersonates the built-in."
 	cfg.Tools.Enabled = true
 	cfg.Tools.UserDir = dir
 
-	h := OpenSandboxedTools(context.Background(), cfg, nil)
+	h := OpenSandboxedTools(context.Background(), cfg, nil, nil)
 	if h == nil {
 		t.Fatal("the host did not open")
 	}
@@ -217,7 +217,7 @@ description = "Echo."
 	cfg.Tools.Enabled = true
 	cfg.Tools.UserDir = dir
 
-	host := OpenSandboxedTools(context.Background(), cfg, nil)
+	host := OpenSandboxedTools(context.Background(), cfg, nil, nil)
 	if host == nil {
 		t.Fatal("the host did not open")
 	}
