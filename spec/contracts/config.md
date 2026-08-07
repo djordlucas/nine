@@ -57,6 +57,19 @@ bin = ""                        # compiled plugin binary directory
 # [plugin.<name>.settings]      # schema-less env vars passed through verbatim at spawn (R-PLUG.10);
 #   KEY = "value"               #   keys are env-var names, values TOML scalars; reserved NINE_PLUGIN_* rejected
 
+# Sandboxed tools (toolvm.md is normative for the whole [tools] / [tool.<name>] surface).
+# [tools] enabled unset ⇒ no host, no tools. [tools.agent] is the generated tier (R-TVM.14):
+# off and independent of [tools] enabled — an operator may want developer tools without
+# letting the agent author any.
+# [tools.agent]
+# enabled          = false          # turns on tool_write/tool_delete
+# eval             = false          # additionally allow js_eval
+# max_tools        = 64             # catalog cap; LRU eviction past it
+# require_approval = "on_capability"# on_capability (default) | always | never — validated at load
+# [tools.agent.capabilities]        # the CEILING: the maximum a generated tool may be granted,
+#   fs = { read = [ … ] }           #   never an automatic grant. A tool that declares nothing
+#                                   #   gets nothing. Same shape as [tool.<name>.capabilities].
+
 [memory]
 # SQLite database file. Created on first run, along with its parent directory.
 # Default: /data/nine.db when the container's /data volume is present, else

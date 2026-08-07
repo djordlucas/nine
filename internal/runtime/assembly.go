@@ -3,6 +3,7 @@ package runtime
 import (
 	"log/slog"
 
+	"nine/internal/agent"
 	"nine/internal/embed"
 	"nine/internal/llm"
 	"nine/internal/memory"
@@ -44,6 +45,17 @@ type AssemblyConfig struct {
 	// [tools] enabled is unset, which is the default — every loop then builds
 	// exactly the tool set it did before the host existed.
 	Tools *toolvm.Host
+
+	// GeneratedTools is the generated tier's write/delete/eval backend
+	// (docs/sandboxed-tools.md §5.2), or nil when `[tools.agent]` is off. The eval
+	// harness passes nil; only the production daemon opts the tier in.
+	GeneratedTools agent.GeneratedToolStore
+	// GeneratedEval mirrors `[tools.agent] eval`: whether js_eval is offered.
+	GeneratedEval bool
+	// GeneratedApproval is `[tools.agent].require_approval`, already defaulted
+	// (docs/sandboxed-tools.md §9.4). Gates tool_write/js_eval for interactive
+	// sessions; ignored where the generated tier is off.
+	GeneratedApproval string
 
 	// Loop / builder behavior.
 	ContextBudget   int
@@ -100,6 +112,8 @@ func Assemble(c AssemblyConfig) *Assembly {
 			MaxJobsPerConversation: c.MaxJobsPerConversation,
 			JobWaiters:             c.JobWaiters,
 			Tools:                  c.Tools,
+			GeneratedTools:         c.GeneratedTools,
+			GeneratedEval:          c.GeneratedEval,
 		},
 		InitialQueue: c.Queue,
 		NotifAdd:     notifAdd,
@@ -113,6 +127,7 @@ func Assemble(c AssemblyConfig) *Assembly {
 		HITL:               c.HITL,
 		ApprovalTools:      c.ApprovalTools,
 		GateSubAgents:      c.GateSubAgents,
+		GeneratedApproval:  c.GeneratedApproval,
 		PlanApproval:       c.PlanApproval,
 		PlanMode:           c.PlanMode,
 		DefaultLeafRole:    c.DefaultLeafRole,

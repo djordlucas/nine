@@ -42,7 +42,7 @@ a fake repository.
 
 ## R-MEM.2 — Schema (exactly these tables)
 
-The reference database contains these **seventeen** tables. An implementation **MUST**
+The reference database contains these **eighteen** tables. An implementation **MUST**
 provide equivalent storage for each; it **MUST NOT** require additional operational
 tables to be agent-visible (R-MEM.4).
 
@@ -52,6 +52,7 @@ tables to be agent-visible (R-MEM.4).
 | `files` | file content, full-text indexed by a companion FTS5 table kept in sync by triggers; the `spill/` prefix is daemon-owned (R-MEM.9) | agent (tools) |
 | `vectors` | embeddings as packed float32 blobs, ranked by cosine similarity, namespaced (`skills`, `session-index`, `memories`, `docs`, agent namespaces) | mixed (see below) |
 | `skills` | skill records (name, description, tags, body, source) | mixed |
+| `tools` | generated sandboxed tools Nine authored (name, description, input_schema, `js` source, capability **declaration**, usage counters) — code and declaration only, never a grant (see [`toolvm.md`](toolvm.md) R-TVM.14) | daemon-private |
 | `conversations` | message history, scratchpad checkpoint, status, display name | daemon-private |
 | `goals` | open-ended intentions; status; parent; `subtree` JSON | daemon-private |
 | `workflows` | multi-step plans; steps as a JSON array on the row | daemon-private |
