@@ -27,6 +27,16 @@ There are two modes, built from the same `Dockerfile`, both based on
 `debian:bookworm-slim` — enough for chromium and Node, which the browser plugin
 needs. The `nine` binary is pure Go and carries no libc dependency of its own.
 
+That extends to the sandboxed-tool host. Its wasm runtime (wazero) is pure Go,
+and the QuickJS interpreter it runs `js` tools on is **built ahead of time from
+pinned tags and committed** as `internal/toolvm/quickjs/qjs.wasm`
+(`docs/sandboxed-tools.md` §10.1). So an ordinary `make build` needs **no
+wasi-sdk, no clang, and no clone**, and the runtime image gains no toolchain —
+which is the property `docs/self-modification.md` insists on and the reason the
+blob is committed rather than built on demand. `make quickjs-wasm` rebuilds it
+and is invoked only on a deliberate version bump; `make quickjs-verify` re-checks
+the recorded hash and runs in CI.
+
 ### Production mode
 
 The built runtime image (immutable; no toolchain or source):

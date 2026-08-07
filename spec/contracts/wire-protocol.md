@@ -62,6 +62,8 @@ Msg {
 | `plugin_call` | `tool_name`, `tool_input` | invoke a tool directly, **bypassing the LLM** |
 | `plugins_list` | — | request the plugin roster (built-in + user, with skip reasons) |
 | `plugins_reload` | — | re-scan `[plugins].user_dir` and reload user plugins live (built-ins untouched) |
+| `tools_list` | — | request the sandboxed-tool roster (with resolved capabilities and skip reasons) |
+| `tools_reload` | — | re-scan `[tools].user_dir` and reload sandboxed tools live |
 
 `plugin_call` (R-PROTO.5) is the only way to reach a tool without an agent loop; the CLI
 uses it for `nine workflow fail` when the daemon is up and for diagnostics.
@@ -81,6 +83,7 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `error` | `text` | failure |
 | `status` / `list_*` | `text` = JSON payload | the requested read (StatusInfo / array) |
 | `plugins_list` / `plugins_reload` | `text` = JSON `[]PluginStatus` | the plugin roster (each: `name`, `source`, `loaded`, `tools`, `error`) |
+| `tools_list` / `tools_reload` | `text` = JSON `[]SandboxedToolStatus` | the sandboxed-tool roster (see R-PROTO.4a) |
 | `context` | `text` = JSON `ninectx.Report` | per-section token breakdown + assembled prompt/messages |
 | `workflow_stop` / `workflow_fail` | `text` = `"stopped"` / `"failed"` | operator-command result |
 | `session_stop` | `text` = human-readable outcome (`stopped <id>`, `stopped N session(s)`) | terminate result (or `error` when the id is unknown) |
@@ -146,6 +149,25 @@ PluginStatus { name string, source string, loaded bool, tools []string, error st
 `plugins_reload` re-scans `[plugins].user_dir` (stopping and restarting only user
 plugins) before returning the resulting roster; both are operator reads/actions,
 never agent tools.
+
+### R-PROTO.4a — Sandboxed tool roster
+
+`tools_list` and `tools_reload` return `[]SandboxedToolStatus` JSON-encoded in `text`
+(`spec/contracts/toolvm.md`):
+
+```schema
+SandboxedToolStatus { name string, kind string, loaded bool, capabilities string,
+                      description string, manifest_path string, error string }
+// kind: js | wasm. A skipped tool has loaded=false and error set.
+// capabilities is the RESOLVED grant — what the tool runs with, never what its
+// manifest asked for.
+```
+
+The skipped entries are the point: a capability mismatch is deliberately a load failure
+rather than a degraded tool (R-TVM.6), and that promise is only kept if an operator can
+read the reason. Both messages are operator reads/actions, never agent tools; with
+`[tools] enabled` unset, `tools_list` returns an empty array and `tools_reload` returns an
+error naming the disabled subsystem.
 
 ---
 

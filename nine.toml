@@ -118,6 +118,31 @@ root = "./dist"
 # disables user skills. The container overrides this with NINE_SKILLS_USER_DIR.
 # user_dir = "./skills.d"
 
+# Sandboxed tools (spec/contracts/toolvm.md): JavaScript or .wasm tools you drop
+# in a directory, run in a wasm sandbox with only the capabilities granted below.
+# A second backend behind the same dispatcher as plugins — not a replacement.
+#
+#   tools.d/csvstats.toml    the manifest (the gate)
+#   tools.d/csvstats.js      the code
+#
+# OFF by default. Leaving `enabled` unset means no host, no tools, and agent
+# loops exactly as they were. See tools.d/README.md for a working example, and
+# `nine tools` for the roster (including anything that failed to load, and why).
+# The container overrides the directory with NINE_TOOLS_USER_DIR, but `enabled`
+# stays a deliberate decision here.
+# [tools]
+# enabled   = true
+# user_dir  = "./tools.d"
+# timeout   = "5s"     # the only CPU bound there is; wazero has no fuel metering
+# memory_mb = 16
+
+# Capability grants, per named tool. A tool's manifest DECLARES what it needs;
+# only this GRANTS. The two must name the same capabilities or the tool fails to
+# load with a named error. Default for everything with reach is nothing; clock,
+# randomness, and logging are always on. There is no wildcard [tool."*"].
+# [tool.csv_stats.capabilities.fs]
+# read = [{ host = "/srv/data", guest = "/data" }]   # host path must be absolute
+
 # Human-in-the-loop (docs/hitl.md), interactive TUI conversations only.
 # require_approval names tools that need an explicit "yes" before each call;
 # gate_sub_agents (default true) extends those gates to sub-agents the

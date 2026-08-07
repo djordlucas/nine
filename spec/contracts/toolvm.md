@@ -1,0 +1,353 @@
+# Contract — Sandboxed Tools (the Wasm tool host)
+
+**Status:** Built (stages 1–3) · **Depends on:** dispatcher (registration), config (grants) · **Used by:** any turn calling a sandboxed tool
+
+A **sandboxed tool** is a wasm module that the daemon executes **in-process**, with an
+explicitly conferred set of capabilities and nothing else. It is a *second backend behind
+the same dispatcher* as native plugins (`spec/contracts/plugin.md`), not a replacement:
+the plugin contract, its transport, and `plugin.ProtocolVersion` are untouched, and a
+deployment that leaves `[tools] enabled` unset behaves exactly as it did before this
+subsystem existed.
+
+The design rationale is `docs/sandboxed-tools.md`; the authoring guide is
+`docs/writing-sandboxed-tools.md`. This file is normative.
+
+> **Two authors, one runtime.** A **developer tool** is a file on disk with a manifest,
+> installed by the operator. A **generated tool** — authored by Nine itself — is stage 5 of
+> the design and **is not built**; nothing in this contract admits one. Every requirement
+> below concerns developer tools.
+
+---
+
+## R-TVM.1 — The guest ABI
+
+A tool is a wasm module exporting exactly two functions. `toolvm.ABIVersion` is **1**.
+
+```text
+nine_alloc(size i32) -> i32
+  Reserve size bytes of the guest's linear memory; return the offset. The host writes
+  the call's input there before calling nine_run.
+
+nine_run(ptr i32, len i32) -> i64
+  Run the tool against the len bytes of UTF-8 JSON at ptr. Return the result packed as
+  (offset << 32) | length.
+```
+
+There is **no `free`**: the instance is destroyed when the call returns (R-TVM.3), so
+every allocation is reclaimed wholesale.
+
+Everything crossing the boundary is a UTF-8 JSON byte slice — no struct marshalling, no
+proxy objects, no reference counting — because the tool contract it must satisfy already
+is that narrow (`CallRequest{Tool, Args} → CallResult{Output}`).
+
+The result **MUST** be one of:
+
+```json
+{"ok": true,  "output": "<the string the model sees>"}
+{"ok": false, "error":  "<message>"}
+```
+
+A `false` result is surfaced to the model as an **ordinary tool error**, distinct from the
+host failing to run the tool at all — the model can read it and retry with different
+arguments.
+
+`ABIVersion` is independent of `plugin.ProtocolVersion` (`docs/versioning.md`). A module
+declaring an unsupported ABI **MUST** be refused at load, not called.
+
+---
+
+## R-TVM.2 — Two kinds, one contract
+
+| Kind | Module | Built when |
+|---|---|---|
+| `wasm` | the developer's own module, from Rust, TinyGo, Zig, or C | at development time |
+| `js` | the pre-supplied QuickJS-NG interpreter; the tool's source is its input | never — nothing is compiled at install time |
+
+The host knows nothing about JavaScript. A `js` tool is an ordinary wasm tool whose
+arguments happen to describe a JavaScript program, so both kinds share one ABI, one
+capability model, one dispatcher registration, and one audit trail. QuickJS is an
+implementation detail of one *kind*, not an architectural layer.
+
+The daemon **MUST NOT** contain a compiler or a package manager for either kind. Adding
+one would undo the no-toolchain property `docs/self-modification.md` insists on.
+
+---
+
+## R-TVM.3 — One instance per call
+
+A module is **compiled once** and **instantiated per call**; the instance is closed when
+the call returns.
+
+This is the strongest property in the design and is required, not an optimization:
+**no state survives a call.** Not a global, not a cached credential, not a poisoned
+prototype, not a half-freed heap. Two calls to the same tool **MUST NOT** be able to
+observe each other, and a tool **MUST NOT** be able to accumulate anything across a
+session.
+
+---
+
+## R-TVM.4 — Resource bounds (always on, orthogonal to capabilities)
+
+| Bound | Mechanism | Default |
+|---|---|---|
+| Wall clock | context deadline + `WithCloseOnContextDone(true)` | 5s (`[tools] timeout`) |
+| Memory | `WithMemoryLimitPages` | 16 MiB (`[tools] memory_mb`) |
+| Output | the dispatcher's existing cap + spill (R-DISP.2) | 2048 tokens |
+| CPU | **none — see below** | — |
+
+wazero has **no fuel/gas metering**. The wall-clock deadline is the only CPU bound, and it
+is enforced by closing the module out from under the guest. This is adequate — a spinning
+tool dies at the deadline and the model observes a normal failure — but an operator
+running many concurrent sessions is trusting the deadline, **not** a work budget, and that
+is a stated limitation rather than an assumption.
+
+A call that exceeds the deadline **MUST** report a timeout naming the tool, not a generic
+instantiation or trap failure.
+
+---
+
+## R-TVM.5 — The capability set
+
+The default is the **empty set**. Every capability is exactly one of two things: a wazero
+pre-open, or a host function the daemon exports. Anything else is not "denied" — it is
+**structurally absent**, with no function to call and therefore nothing to bypass.
+
+| Capability | Grant parameters | Default | Enforced by |
+|---|---|---|---|
+| `fs.read` | host→guest path mounts | **none** | wazero `WithReadOnlyDirMount` |
+| `fs.write` | host→guest path mounts | **none** | wazero `WithDirMount` |
+| `net.http` | host allowlist, methods, max bytes | **none** | *not implemented — see R-TVM.12* |
+| `env` | explicit key allowlist | **none** | `WithEnv`, per key |
+| `clock` | — | **granted** | `WithSysWalltime` / `WithSysNanotime` |
+| `random` | — | **granted** | `WithRandSource` |
+| `log` | — | **granted** | host fn `nine.log` → `slog` |
+
+`clock`, `random`, and `log` are unconditional because they leak nothing and every
+non-trivial tool needs them. Everything with reach starts at nothing.
+
+The **only** host module exported to a guest is `nine`, and its entire contents are `log`.
+
+A sandboxed tool **MUST NOT** be able to spawn a process, open a socket, load a native
+library, or call another tool. None of those verbs exist inside a wasm module and none are
+exported to it.
+
+---
+
+## R-TVM.6 — Capabilities are conferred, never claimed
+
+A manifest **declares a need**. Only `nine.toml` **grants**. These are different documents
+written by different people.
+
+```text
+manifest [capabilities]        — what the tool needs   (developer, in the repo)
+nine.toml [tool.<name>]        — what the tool gets    (operator, on the host)
+effective = the grant, and the grant only
+```
+
+The declaration contributes **no parameters** to the effective set — only the requirement
+that the two agree. The manifest is therefore documentation and a pre-flight check, never
+a security control: nothing reads it at call time, so **a manifest that lies gains
+nothing**.
+
+The declared and granted capability sets **MUST** be identical, and a mismatch in either
+direction is a **named load failure**, surfaced in `nine tools` rather than logged and
+forgotten:
+
+- **Declared but not granted** — the tool refuses to load rather than starting up
+  crippled. Silent degradation means a tool that half-works in ways neither the developer
+  nor the operator predicted.
+- **Granted but not declared** — refused on the same reasoning, read the other way.
+  Conferring reach on a tool that never asked for it is how an over-broad grant survives
+  review. Forcing the two documents to agree keeps the manifest an accurate description of
+  what the tool can do.
+
+For `env` the *keys themselves* must match, not merely the presence of the capability: a
+grant of the wrong keys would otherwise pass review as if it were the right ones.
+
+> **The invariant this preserves.** R-PLUG.7's "**Nine cannot grant itself capabilities**"
+> is unchanged and is now load-bearing for two subsystems. The operator writes every
+> grant; no agent-reachable path writes one.
+
+---
+
+## R-TVM.7 — Grants in `nine.toml`
+
+Following the plural-subsystem / singular-instance split (R-PLUG.10):
+
+```toml
+[tools]
+enabled   = true
+user_dir  = "/etc/nine/tools.d"
+timeout   = "5s"
+memory_mb = 16
+
+[tool.csv_stats.capabilities.fs]
+read = [{ host = "/srv/data", guest = "/data" }]
+
+[tool.tz_aware.capabilities]
+env = ["TZ"]
+```
+
+- **Grants are per named tool.** There is **no** wildcard `[tool."*"]`. An operator
+  granting filesystem access does so to a tool they have read.
+- **`fs` mount host paths MUST be absolute.** A relative one would resolve against the
+  daemon's working directory, which is not what an operator writing a grant is thinking
+  about.
+- **`env` keys matching `NINE_*` or `*_API_KEY` MUST be refused** as a config error. The
+  daemon's environment holds LLM provider credentials; a tool granted one wholesale would
+  be a credential exfiltration primitive. A refusal, not a filter — an operator who meant
+  it finds out at load.
+- **Read at load.** A grant change reaches a running tool only on `nine tools reload` or
+  restart, matching R-PLUG.10.
+
+---
+
+## R-TVM.8 — Imports are a capability
+
+> **Module resolution happens in the host, against a closed allowlist, before
+> instantiation. The guest never receives a resolver that can touch disk or network.**
+
+Without this, `import` is a capability-model bypass hiding in plain sight: a tool granted
+nothing could import another tool's bundle and execute code the operator approved for a
+different purpose, and an fs-reading resolver is an ungranted `fs.read` by another name.
+
+The host supplies the interpreter's module loader and serves only from a map it built
+before the call. There **MUST** be no relative import, no absolute path, no URL, and no
+dynamic `import()` of anything absent from that map; all of them fail identically.
+
+**For a developer tool the allowlist is empty.** Dependencies are pre-bundled at
+development time (`esbuild --bundle --format=esm` or equivalent), so by the time Nine
+loads the file it has no imports left. Nine has no package manager, no lockfile, and no
+network at load time.
+
+The curated `nine:*` standard library and external-dependency resolution
+(`docs/sandboxed-tools.md` §4.2, §4.4) belong to the generated tier and **are not built**.
+
+---
+
+## R-TVM.9 — The interpreter surface is trimmed
+
+QuickJS-NG ships `std` and `os` as **separate, opt-in init calls**, and the stock `qjs`
+CLI links both. Between them they expose a filesystem API, a process API (`os.exec`), a
+network fetch (`std.urlGet`), and two arbitrary-eval hooks (`std.evalScript`,
+`std.loadScript`) — in scope before any capability has been granted.
+
+**The committed blob MUST link neither.** This is a hard requirement, not a hardening
+nicety, and it is asserted by test: a capability table that says `fs.read` while the guest
+also holds `std.loadFile` and `os.stat` is a table that lies.
+
+wazero's denials are the backstop, not the control. Under WASI `os.exec` has no
+`proc_spawn` and `std.urlGet` has no socket — but `os.readdir` and `os.open` map onto
+`fd_readdir`/`path_open`, which work fine against **any pre-open granted**, so a tool
+granted `fs.read` on one directory would silently gain a second, undeclared file API over
+it.
+
+The interpreter is built from a pinned tag by `internal/toolvm/quickjs/build.sh`,
+committed with a recorded SHA-256, and rebuilt only on a deliberate bump
+(`make quickjs-wasm`). CI re-checks the hash (`make quickjs-verify`). An ordinary
+`make build` needs no wasi-sdk, no clang, and no clone, and **the runtime image gains no
+toolchain**.
+
+---
+
+## R-TVM.10 — Loading (the R-PLUG.9 sequence)
+
+Developer tools are discovered from `[tools].user_dir` in the sidecar layout user plugins
+already use — an operator should not have to learn a second set of rules.
+
+```text
+$NINE_TOOLS_USER_DIR/
+  csvstats.toml          # manifest — the gate
+  csvstats.js
+  imageresize.toml
+  imageresize.wasm
+```
+
+1. Candidates are taken in **deterministic name order**.
+2. A malformed manifest, a missing entrypoint, or an invalid input schema is recorded as
+   **skipped** — nothing of that tool is compiled or run.
+3. Capabilities are resolved (R-TVM.6); a mismatch skips the tool with a named error.
+4. The name is checked against **core-intercepted tools, native plugin tools, and
+   earlier-accepted sandboxed tools**. Any collision **skips the whole tool — no override,
+   ever**.
+5. A `wasm` module missing the ABI (R-TVM.1) is rejected here, at load, not at first call.
+
+Any single failure is logged at ERROR and kept in the load status, but **MUST NOT** abort
+the others: one bad drop-in cannot take the daemon down.
+
+The manifest is the **gate** — a `.js` or `.wasm` file with no manifest beside it is never
+loaded — and, unlike a native plugin manifest, it is **authoritative** for the tool's
+shape. There is no process to ask `plugin.describe`, so `name`, `description`, and
+`input_schema` come from the manifest.
+
+Required fields: `name` (matching `[a-z0-9_]+`), `kind`, `entrypoint`, `description`. An
+unknown key is an error: in a file whose job is declaring capabilities, a typo'd key
+silently meaning nothing is the worst available failure mode.
+
+---
+
+## R-TVM.11 — Visibility, reload, and reporting
+
+A newly-loaded tool is picked up by **subsequently-built agent loops**; turns already in
+flight keep the tool set they started with. This is exactly `plugins reload` semantics
+(R-PLUG.9) and needs no new push machinery — a tool set that mutated mid-turn would make
+the turn unreplayable, and `docs/event-log.md` depends on replay.
+
+Sandboxed tools are advertised on the same footing as plugin tools and intersected with a
+role's allowlist the same way (boundary 1 of R-ROLE.4).
+
+| Surface | Behavior |
+|---|---|
+| `nine tools` | the roster: loaded tools with their **resolved** capabilities, plus every skipped candidate **with its reason** |
+| `nine tools show <name>` | one tool's kind, status, resolved grant, manifest path, description |
+| `nine tools reload` | re-scan and reload; operator action, never an agent tool |
+| `nine tool validate [path]` | the manifest checks, locally, with no daemon |
+| wire | `tools_list` / `tools_reload` → `protocol.SandboxedToolStatus` |
+| `list_tools` | sandboxed tools appear under the pseudo-plugin `sandboxed` |
+| `plugin_call` | reaches sandboxed tools, resolved against the **live** host |
+
+`plugin_call` **MUST** resolve a sandboxed tool against the host itself, not through
+a dispatcher snapshot: its reach must match `list_tools` (R-PROTO.5), and a dispatcher
+built once at daemon assembly would keep answering from the tool set that existed at boot,
+so a tool added by `nine tools reload` would be listed but uncallable. Agent loops have no
+such requirement — they are rebuilt per turn, which *is* the next-turn visibility above.
+
+The skipped entries are why the reporting surface is required: R-TVM.6 makes a capability
+mismatch a load failure rather than a degraded tool, and that promise is only kept if the
+operator can read the failure.
+
+`nine tool validate` deliberately does **not** resolve capabilities. A grant lives in
+`nine.toml` on the host, so validating against the local config would report a confident
+answer that does not transfer. It checks what the developer owns: manifest shape,
+entrypoint presence, schema validity, and ABI exports.
+
+---
+
+## R-TVM.12 — Not built
+
+The following are specified in `docs/sandboxed-tools.md` and **are not implemented**.
+Each is refused by name rather than silently ignored, because accepting it would advertise
+a boundary that does not exist.
+
+| Feature | Design | Status |
+|---|---|---|
+| `net.http` | §8 | **Refused at config load and at grant resolution.** Its security is entirely the host's problem — SSRF filtering on *resolved IPs*, link-local/RFC1918 rejection, per-redirect re-checks, credential stripping — and none of it exists yet. |
+| `nine:*` stdlib | §4.2 | Not present; the developer-tier allowlist is empty by design (R-TVM.8). |
+| `tool_write`, `js_eval`, generated tools | §5.2, §5.3 | No agent-reachable path writes a tool. R-PLUG.7 applies unchanged. |
+| External npm dependencies | §4.4 | No resolver, no bundler, no registry client. |
+| HITL `require_approval` on tool writes | §9.4 | Nothing for it to gate. |
+
+---
+
+## Invariants
+
+- **I-TVM.1** — The default capability set is empty. A tool that declares nothing gets
+  nothing, regardless of what any other tool was granted.
+- **I-TVM.2** — No agent-reachable tool or path writes a sandboxed tool, its manifest, or
+  its grant. Nine cannot grant itself capabilities (R-PLUG.7, unchanged).
+- **I-TVM.3** — No state survives a call.
+- **I-TVM.4** — A tool name resolves to exactly one implementation. Sandboxed tools never
+  override built-ins or plugin tools.
+- **I-TVM.5** — The committed interpreter links neither `std` nor `os`.
+- **I-TVM.6** — `[tools] enabled` unset ⇒ no host, no tools, and loops identical to those
+  built before this subsystem existed.
