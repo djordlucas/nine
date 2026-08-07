@@ -163,9 +163,13 @@ type PluginStatus struct {
 // the *resolved* grant — what the tool actually runs with, never what its
 // manifest asked for.
 type SandboxedToolStatus struct {
-	Name         string `json:"name"`
-	Kind         string `json:"kind,omitempty"`
-	Loaded       bool   `json:"loaded"`
+	Name   string `json:"name"`
+	Kind   string `json:"kind,omitempty"`
+	Loaded bool   `json:"loaded"`
+	// Generated marks a tool Nine wrote itself (docs/sandboxed-tools.md §5.2)
+	// rather than one an operator installed from a file. It has no ManifestPath —
+	// its code lives in the store — so the roster names the provenance directly.
+	Generated    bool   `json:"generated,omitempty"`
 	Capabilities string `json:"capabilities,omitempty"`
 	Description  string `json:"description,omitempty"`
 	ManifestPath string `json:"manifest_path,omitempty"`

@@ -8,6 +8,7 @@ import (
 
 	"nine/internal/agent"
 	"nine/internal/config"
+	"nine/internal/memory"
 	"nine/internal/plugin"
 	"nine/internal/toolvm"
 )
@@ -22,7 +23,12 @@ import (
 // A failure to open the host is logged and yields nil rather than aborting the
 // boot: an operator whose wasm runtime will not start should lose the sandboxed
 // tools, not their daemon.
-func OpenSandboxedTools(ctx context.Context, cfg *config.Config, mgr toolOwner) *toolvm.Host {
+//
+// store is where generated tools live (spec/contracts/toolvm.md R-TVM.14). It
+// feeds the initial catalog into the host and receives the per-call usage touch
+// that drives LRU eviction; a nil store leaves the generated tier off, whatever
+// [tools.agent] says.
+func OpenSandboxedTools(ctx context.Context, cfg *config.Config, store *memory.Store, mgr toolOwner) *toolvm.Host {
 	if !cfg.Tools.Enabled {
 		return nil
 	}
@@ -38,14 +44,56 @@ func OpenSandboxedTools(ctx context.Context, cfg *config.Config, mgr toolOwner) 
 		Grants:   toolGrants(cfg),
 		Timeout:  timeout,
 		MemoryMB: cfg.Tools.MemoryMB,
+		// Usage bookkeeping for LRU eviction (§9.2). Best-effort and after the
+		// fact: a touch failure must not fail the tool call the model is waiting on.
+		TouchGenerated: touchGenerated(store),
 	})
 	if err != nil {
 		slog.Error("sandboxed tools disabled: cannot open the wasm host", "err", err)
 		return nil
 	}
 
+	// The generated tier's operator policy — the ceiling, the cap, whether it is on
+	// at all — must be installed before the first LoadGenerated, which refuses to
+	// register anything while the tier is off.
+	host.SetAgentConfig(agentConfig(cfg))
+
 	host.Load(ctx, pluginCollides(mgr))
+	// Project the stored catalog into the host, so tools the agent wrote in a
+	// previous run are callable from this one's first turn.
+	LoadGeneratedTools(ctx, store, host, mgr)
 	return host
+}
+
+// agentConfig translates `[tools.agent]` into the host's generated-tier policy.
+// The ceiling is expressed in exactly the grant terms a developer tool uses, so
+// the same mount/http translators serve both.
+func agentConfig(cfg *config.Config) toolvm.AgentConfig {
+	a := cfg.Tools.Agent
+	caps := a.Capabilities
+	return toolvm.AgentConfig{
+		Enabled:  a.Enabled,
+		MaxTools: a.MaxTools,
+		Ceiling: toolvm.Ceiling{Grant: toolvm.Grant{
+			FSRead:  mounts(caps.FS.Read),
+			FSWrite: mounts(caps.FS.Write),
+			Env:     caps.Env,
+			HTTP:    httpGrant(caps.Net.HTTP),
+		}},
+	}
+}
+
+// touchGenerated is the host's usage hook, or nil when there is no store to
+// record into.
+func touchGenerated(store *memory.Store) func(string) {
+	if store == nil {
+		return nil
+	}
+	return func(name string) {
+		if err := store.GeneratedToolTouch(name); err != nil {
+			slog.Warn("touch generated tool", "tool", name, "err", err)
+		}
+	}
 }
 
 // ReloadSandboxedTools re-runs discovery, for the `nine tools reload` path. Like
@@ -74,6 +122,18 @@ func pluginCollides(mgr toolOwner) toolvm.Collides {
 		// must hold even in a configuration with no plugins running at all.
 		for _, def := range agent.InterceptedDefs {
 			if def.Name == name {
+				return "nine (built-in)", true
+			}
+		}
+		// The generated tier's own meta-tools are core-intercepted too, but live
+		// outside InterceptedDefs because they are registered conditionally
+		// (register_tools.go). Reserve them explicitly, unconditionally: a generated
+		// tool named `js_eval` would otherwise persist and then either shadow the
+		// meta-tool or be silently shadowed by it, breaking "one name, one
+		// implementation" (I-TVM.4). Reserved even when the tier is off, since the
+		// names belong to a built-in capability regardless.
+		for _, n := range agent.GeneratedToolNames {
+			if n == name {
 				return "nine (built-in)", true
 			}
 		}

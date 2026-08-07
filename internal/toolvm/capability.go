@@ -23,15 +23,19 @@ const (
 // Declaration is what a tool's manifest says it needs. It is documentation and
 // a pre-flight check, never a security control: nothing reads it at call time,
 // so a manifest that lies gains nothing (docs/sandboxed-tools.md §6.3).
+// The json tags matter for the generated tier: a developer tool's declaration
+// arrives as TOML from a manifest, but a generated tool's arrives as the JSON the
+// agent handed tool_write (docs/sandboxed-tools.md §5.2), so the same struct has
+// to decode from both.
 type Declaration struct {
 	// FS lists filesystem verbs: "read", "write".
-	FS []string `toml:"fs"`
+	FS []string `toml:"fs" json:"fs"`
 	// Net lists network verbs: "http".
-	Net []string `toml:"net"`
+	Net []string `toml:"net" json:"net"`
 	// Env lists the environment keys the tool reads, by name. Keys rather than a
 	// verb, because for env the key *is* the parameter — and naming them in the
 	// manifest is what lets an operator diff a declaration against a grant.
-	Env []string `toml:"env"`
+	Env []string `toml:"env" json:"env"`
 }
 
 // Mount is one host→guest filesystem mapping.
@@ -200,4 +204,73 @@ func mountList(ms []Mount) string {
 		parts[i] = m.Host + "=>" + m.Guest
 	}
 	return strings.Join(parts, ",")
+}
+
+// Ceiling is the maximum a *generated* tool may be granted
+// (`[tools.agent.capabilities]`). It is deliberately the same shape as a Grant,
+// because it is expressed in the same terms — but it plays a different role, and
+// conflating the two is the mistake this type exists to prevent.
+type Ceiling struct{ Grant }
+
+// resolveCeiling settles what a generated tool runs with.
+//
+// This is where the design's two most easily-confused sentences are made
+// mechanical (docs/sandboxed-tools.md §7):
+//
+//   - **The ceiling is a maximum, not a default.** A tool does not receive
+//     workspace read merely by existing. It must declare `fs = ["read"]` to get
+//     it, and a tool that declares nothing runs with nothing regardless of how
+//     permissive the ceiling is. Least privilege is per tool, not per tier.
+//   - **A tool cannot request its way past it.** Declaring a capability the
+//     ceiling excludes is a refusal, not a negotiation.
+//
+// Keeping the two separate is what stops widening the ceiling from retroactively
+// widening every tool already in the catalog.
+//
+// The refusal is a usable signal rather than a dead end: it comes back as a
+// message the model can read, so the agent rewrites without the capability or
+// calls gap_report for a human to decide. That failure path is a feature.
+func resolveCeiling(decl Declaration, ceiling Ceiling) (Grant, error) {
+	declared, err := decl.capabilities()
+	if err != nil {
+		return Grant{}, err
+	}
+
+	available := ceiling.capabilities()
+	for _, c := range declared {
+		if !slices.Contains(available, c) {
+			return Grant{}, fmt.Errorf(
+				"capability %s is not available to generated tools on this instance; "+
+					"rewrite the tool without it, or use gap_report to ask an operator to widen [tools.agent.capabilities]", c)
+		}
+	}
+
+	// Grant only what was declared, drawing the parameters from the ceiling. A
+	// tool declaring fs.read gets exactly the ceiling's mounts; one declaring
+	// nothing gets an empty Grant, which is the common case and the intended one.
+	var g Grant
+	for _, c := range declared {
+		switch c {
+		case CapFSRead:
+			g.FSRead = ceiling.FSRead
+		case CapFSWrite:
+			g.FSWrite = ceiling.FSWrite
+		case CapEnvRead:
+			// Env keys are named on both sides, so the tool gets the intersection
+			// rather than the whole ceiling: declaring one key must not confer the
+			// others an operator happened to list.
+			for _, k := range decl.Env {
+				if slices.Contains(ceiling.Env, k) {
+					g.Env = append(g.Env, k)
+				}
+			}
+			if len(g.Env) != len(decl.Env) {
+				return Grant{}, fmt.Errorf(
+					"one or more declared env keys are not available to generated tools on this instance (available: %v)", ceiling.Env)
+			}
+		case CapNetHTTP:
+			g.HTTP = ceiling.HTTP
+		}
+	}
+	return g, nil
 }

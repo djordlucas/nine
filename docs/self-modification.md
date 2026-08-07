@@ -50,15 +50,26 @@ See [skills.md](skills.md) for the full skill format and lifecycle.
 | Rebuild its own Go source (`nine_propose_rebuild`) | **Removed** | Nine never edits and recompiles itself |
 | Read its own source tree (`self_read`) | **Removed** | The source tree is no longer shipped in the container |
 
-**Sandboxed tools are the one adjacent thing that is *not* removed** — but note carefully
-what they are. An operator may install a wasm or JavaScript tool from `[tools].user_dir`
-and grant it capabilities in `nine.toml` (`spec/contracts/toolvm.md`). That is operator
-action, the same category as `[plugins].user_dir` and `[skills].user_dir`, and **no
-agent-reachable path writes a sandboxed tool, its manifest, or its grant**. Nine does not
-gain the ability to write tools for itself; the design that would allow it
-(`docs/sandboxed-tools.md` §5.2) is deliberately unbuilt. Nothing above changes, including
-the toolchain property below: the QuickJS interpreter is built ahead of time from pinned
-tags and committed as an artifact, so the runtime image gains no compiler.
+**Sandboxed tools are the one adjacent thing that is *not* removed, and Nine can now write
+them — but only their code, never their capabilities.** Two shapes exist. A **developer
+tool** is installed by an operator from `[tools].user_dir` and granted capabilities in
+`nine.toml` — operator action, the same category as `[plugins].user_dir`. A **generated
+tool** is written by Nine itself through `tool_write` and lives as a row in the store
+(`spec/contracts/toolvm.md` R-TVM.14); it is *store state*, exactly like a goal, a workflow,
+or an agent skill — listable, deletable, and journalled — so it does **not** drift the binary
+the way a rebuilt native plugin would, which is the distinction that makes it permissible
+where plugin generation is not.
+
+The invariant is intact and load-bearing: **no agent-reachable path writes a capability
+grant.** `tool_write` writes JavaScript and a capability *declaration*; the operator writes
+the **ceiling** (`[tools.agent.capabilities]`) that bounds what any generated tool may be
+granted, and a tool that declares nothing gets nothing. *Nine cannot grant itself
+capabilities* (R-PLUG.7) holds unchanged — the agent writes the code, the operator writes the
+grants, and they are never the same actor. The generated tier is **off by default**
+(`[tools.agent] enabled`). Nothing about the toolchain property below changes: the QuickJS
+interpreter is built ahead of time from pinned tags and committed as an artifact, so even a
+generated tool adds no compiler to the runtime image — the agent writes JavaScript for a
+pre-supplied interpreter, never anything that is built.
 
 Because of this, the runtime container carries **no Go toolchain, no git, and no
 source tree** — only the compiled `nine` binary, the compiled default plugins, and
