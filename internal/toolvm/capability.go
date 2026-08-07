@@ -47,10 +47,10 @@ type Grant struct {
 	FSRead  []Mount
 	FSWrite []Mount
 	Env     []string
-	// NetHTTP records that an operator wrote a net.http grant. It is refused at
-	// config load today (stage 4); the field exists so grant resolution has
-	// something to reject rather than silently dropping it.
-	NetHTTP bool
+	// HTTP is the net.http grant, or nil when the operator conferred none. It is
+	// the one capability with no wazero primitive behind it — every check that
+	// makes it safe lives in ssrf.go and nethttp.go.
+	HTTP *HTTPGrant
 }
 
 // capabilities returns the capability names a Grant actually confers, sorted.
@@ -65,7 +65,7 @@ func (g Grant) capabilities() []string {
 	if len(g.Env) > 0 {
 		out = append(out, CapEnvRead)
 	}
-	if g.NetHTTP {
+	if g.HTTP != nil {
 		out = append(out, CapNetHTTP)
 	}
 	sort.Strings(out)
@@ -149,10 +149,6 @@ func resolveGrant(decl Declaration, g Grant) (Grant, error) {
 		return Grant{}, err
 	}
 
-	if g.NetHTTP {
-		return Grant{}, fmt.Errorf("capability %s is not implemented yet (docs/sandboxed-tools.md §8)", CapNetHTTP)
-	}
-
 	return g, nil
 }
 
@@ -188,6 +184,9 @@ func (g Grant) Summary() string {
 			parts = append(parts, "fs.write "+mountList(g.FSWrite))
 		case CapEnvRead:
 			parts = append(parts, "env "+strings.Join(g.Env, ","))
+		case CapNetHTTP:
+			parts = append(parts, "net.http "+strings.Join(g.HTTP.Methods, "/")+
+				" "+strings.Join(g.HTTP.AllowHosts, ","))
 		default:
 			parts = append(parts, c)
 		}

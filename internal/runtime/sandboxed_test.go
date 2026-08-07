@@ -139,8 +139,38 @@ func TestToolGrantsTranslateFromConfig(t *testing.T) {
 	if len(g.Env) != 1 || g.Env[0] != "TZ" {
 		t.Errorf("Env = %v", g.Env)
 	}
-	if g.NetHTTP {
-		t.Error("NetHTTP set without an [http] table")
+	if g.HTTP != nil {
+		t.Error("an http grant materialized without an [http] table")
+	}
+}
+
+// The net.http table is the one grant with real parameters, so its translation
+// from config to capability is worth pinning separately.
+func TestHTTPGrantTranslatesFromConfig(t *testing.T) {
+	cfg := &config.Config{
+		Tool: map[string]config.ToolEntry{
+			"weather": {Capabilities: config.ToolCapabilities{
+				Net: config.ToolNetGrant{HTTP: &config.ToolHTTPGrant{
+					AllowHosts: []string{"api.weather.example"},
+					Methods:    []string{"GET"},
+					MaxBytes:   4096,
+				}},
+			}},
+		},
+	}
+
+	g, ok := toolGrants(cfg)["weather"]
+	if !ok || g.HTTP == nil {
+		t.Fatal("http grant did not translate")
+	}
+	if len(g.HTTP.AllowHosts) != 1 || g.HTTP.AllowHosts[0] != "api.weather.example" {
+		t.Errorf("AllowHosts = %v", g.HTTP.AllowHosts)
+	}
+	if len(g.HTTP.Methods) != 1 || g.HTTP.Methods[0] != "GET" {
+		t.Errorf("Methods = %v", g.HTTP.Methods)
+	}
+	if g.HTTP.MaxBytes != 4096 {
+		t.Errorf("MaxBytes = %d", g.HTTP.MaxBytes)
 	}
 }
 

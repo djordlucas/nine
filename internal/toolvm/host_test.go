@@ -3,6 +3,7 @@ package toolvm
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -164,5 +165,63 @@ func TestRunawayToolHitsTheDeadline(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 5*time.Second {
 		t.Errorf("took %s to enforce a 250ms deadline", elapsed)
+	}
+}
+
+// Regression. QuickJS requires `buf[buf_len] == 0` for JS_Eval and JS_ParseJSON,
+// and the host originally allocated exactly len bytes for the call envelope —
+// leaving the terminator to be whatever the guest allocator happened to have
+// left there.
+//
+// The failure mode is the nasty kind: it depended on nothing but the total byte
+// length of the input, so a tool ran or did not according to how long its source
+// happened to be, with "unexpected data at the end" as the only clue. About one
+// length in sixteen failed. A single fixed-size fixture would very likely have
+// missed it, which is why this sweeps.
+func TestGuestInputIsNULTerminatedAtEveryLength(t *testing.T) {
+	dir := t.TempDir()
+	// One host, reloaded per iteration: opening a new one recompiles the ~1 MB
+	// interpreter each time, which turns a 0.3s test into a 20s one.
+	writeTool(t, dir, "probe", strings.ReplaceAll(echoManifest, "echo", "probe"), `export default () => "ok";`)
+	h := openHost(t, dir, nil)
+
+	for pad := 0; pad < 96; pad++ {
+		// Padding with spaces keeps the source valid JS at every length, so the
+		// only variable is the envelope's size.
+		src := `export default () => "ok";` + strings.Repeat(" ", pad)
+		if err := os.WriteFile(filepath.Join(dir, "probe.js"), []byte(src), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		h.Load(context.Background(), nil)
+
+		out, err := h.Call(context.Background(), "probe", json.RawMessage(`{}`))
+		if err != nil {
+			t.Fatalf("pad=%d (envelope length %d bytes): %v", pad, pad, err)
+		}
+		if out != "ok" {
+			t.Fatalf("pad=%d: output = %q", pad, out)
+		}
+	}
+}
+
+// The same sweep on the argument side: arguments are JSON the host writes into
+// the same buffer, so their length moves the envelope through the same residues.
+func TestArgumentsOfEveryLengthRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	writeTool(t, dir, "echo", echoManifest, `export default ({ s }) => ({ n: (s ?? "").length });`)
+	h := openHost(t, dir, nil)
+
+	for n := 0; n < 96; n++ {
+		args, err := json.Marshal(map[string]string{"s": strings.Repeat("x", n)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := h.Call(context.Background(), "echo", args)
+		if err != nil {
+			t.Fatalf("argument length %d: %v", n, err)
+		}
+		if want := fmt.Sprintf(`{"n":%d}`, n); out != want {
+			t.Fatalf("argument length %d: output = %q, want %q", n, out, want)
+		}
 	}
 }

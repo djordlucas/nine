@@ -309,10 +309,23 @@ read  = [{ host = "/srv/data", guest = "/data" }]
 # outright as a config error.
 env = ["TZ"]
 
-# net.http is designed (docs/sandboxed-tools.md §8) but NOT IMPLEMENTED. Writing
-# a [tool.<name>.capabilities.net.http] table is a config error rather than a
-# silent no-op, because accepting it would advertise SSRF filtering, redirect
-# re-checks, and response caps that do not exist yet.
+# Outbound HTTP. The guest never touches a socket: it asks the daemon, which
+# makes the request. Two independent gates both have to pass — the hostname must
+# match allow_hosts, AND the IP actually dialed must be publicly routable.
+#
+# The second gate is not configurable and not subject to allow_hosts. Loopback,
+# link-local (169.254.0.0/16 — where every cloud serves instance credentials),
+# RFC1918, IPv6 ULA, and the other non-routable ranges are refused whatever a
+# hostname resolves to. That is what stops DNS rebinding: the check runs on the
+# address, immediately before connect, and again on every redirect hop.
+#
+# There is no bare "*". If you want a tool with unrestricted egress, write a
+# native plugin — where that intent is explicit and gets reviewed.
+[tool.weather.capabilities.net.http]
+allow_hosts = ["api.weather.example", "*.cdn.weather.example"]  # exact, or a
+                                                    # leading "*." (not the apex)
+methods     = ["GET"]        # required; no implicit default
+max_bytes   = 1048576        # response cap; 0 uses 1 MiB
 ```
 
 ---

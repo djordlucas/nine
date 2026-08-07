@@ -71,15 +71,47 @@ read = [{ host = "/srv/data" }]
 	}
 }
 
-// net.http is stage 4. Accepting the grant would advertise a boundary that does
-// not exist yet, so it is refused by name at config load.
-func TestNetHTTPGrantIsRefused(t *testing.T) {
-	_, err := loadTOML(t, `
+// A well-formed net.http grant parses.
+func TestNetHTTPGrantParses(t *testing.T) {
+	cfg, err := loadTOML(t, `
 [tool.fetcher.capabilities.net.http]
-allow_hosts = ["api.example.com"]
+allow_hosts = ["api.example.com", "*.cdn.example.net"]
+methods     = ["GET", "POST"]
+max_bytes   = 1048576
 `)
-	if err == nil || !strings.Contains(err.Error(), "not implemented") {
-		t.Fatalf("err = %v, want net.http refused", err)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	g := cfg.Tool["fetcher"].Capabilities.Net.HTTP
+	if g == nil {
+		t.Fatal("grant did not parse")
+	}
+	if len(g.AllowHosts) != 2 || len(g.Methods) != 2 || g.MaxBytes != 1048576 {
+		t.Errorf("grant = %+v", g)
+	}
+}
+
+// The egress allowlist is only meaningful if the operator must be specific. Each
+// of these is a way of accidentally saying "anywhere".
+func TestNetHTTPGrantRejectsVagueAllowlists(t *testing.T) {
+	for _, tc := range []struct{ name, table, want string }{
+		{"bare wildcard", "allow_hosts = [\"*\"]\nmethods = [\"GET\"]", "native plugin"},
+		{"no allow_hosts", "methods = [\"GET\"]", "needs allow_hosts"},
+		{"no methods", "allow_hosts = [\"api.example.com\"]", "needs methods"},
+		{"a URL rather than a hostname", "allow_hosts = [\"https://api.example.com/v1\"]\nmethods = [\"GET\"]", "must be a hostname"},
+		{"an interior wildcard", "allow_hosts = [\"api.*.example.com\"]\nmethods = [\"GET\"]", "exact host"},
+		{"an unknown method", "allow_hosts = [\"api.example.com\"]\nmethods = [\"TRACE\"]", "not a permitted method"},
+		{"a negative cap", "allow_hosts = [\"api.example.com\"]\nmethods = [\"GET\"]\nmax_bytes = -1", "must not be negative"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := loadTOML(t, "[tool.fetcher.capabilities.net.http]\n"+tc.table+"\n")
+			if err == nil {
+				t.Fatal("the grant was accepted")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error = %v, want it to mention %q", err, tc.want)
+			}
+		})
 	}
 }
 
