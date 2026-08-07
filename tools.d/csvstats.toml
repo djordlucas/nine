@@ -1,0 +1,13 @@
+# A complete working example — see README.md. Copy this pair as a starting point.
+#
+# It declares no capabilities, which is the shape a good tool has: a pure
+# transform over its arguments needs no filesystem, no network, and no
+# environment, and therefore runs anywhere without the operator having to think
+# about it.
+
+name         = "csv_stats"
+kind         = "js"
+entrypoint   = "./csvstats.js"
+description  = "Summary statistics over a CSV string: row and column counts, and per-column empty/distinct counts plus min/max/mean/median for numeric columns. Use when you have CSV text in hand and want its shape before deciding what to do with it."
+display_name = "CSV Stats"
+input_schema = "./csvstats.schema.json"

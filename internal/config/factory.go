@@ -89,6 +89,13 @@ func ApplyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("NINE_SKILLS_USER_DIR"); v != "" {
 		cfg.Skills.UserDir = v
 	}
+	// Sandboxed tools (spec/contracts/toolvm.md). Only the path is overridable,
+	// matching the plugin and skill dirs: whether the subsystem is on at all is a
+	// deliberate operator decision that belongs in nine.toml, not something a
+	// stray environment variable should be able to switch on.
+	if v := os.Getenv("NINE_TOOLS_USER_DIR"); v != "" {
+		cfg.Tools.UserDir = v
+	}
 }
 
 // SocketPath returns the configured Unix socket path, falling back to DefaultSocketPath.

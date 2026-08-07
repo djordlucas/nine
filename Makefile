@@ -111,11 +111,13 @@ NINE_ENV = \
 	-e NINE_WORKSPACE_ROOT=/data/workspace \
 	-e NINE_SKILLS_USER_DIR=/skills.d \
 	-e NINE_PLUGINS_USER_DIR=/plugins.d \
+	-e NINE_TOOLS_USER_DIR=/tools.d \
 	-e NINE_LOG_FILE=off
 NINE_MOUNTS = \
 	-v $(CURDIR)/nine.toml:/nine.toml:ro \
 	-v $(CURDIR)/skills.d:/skills.d:ro \
-	-v $(CURDIR)/plugins.d:/plugins.d:ro
+	-v $(CURDIR)/plugins.d:/plugins.d:ro \
+	-v $(CURDIR)/tools.d:/tools.d:ro
 NINE_RUN_FLAGS = --add-host host.docker.internal:host-gateway --restart unless-stopped
 
 # The 32k context window is requested per-call via num_ctx (nine.toml), so the

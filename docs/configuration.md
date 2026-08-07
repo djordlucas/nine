@@ -407,6 +407,7 @@ Environment variables take priority over `nine.toml` values.
 | `NINE_PLUGINS_CACHE_DIR` | Override `plugins.cache_dir` (the plugin cache-dir root) |
 | `NINE_WORKSPACE_ROOT` | Override `workspace.root` |
 | `NINE_SKILLS_USER_DIR` | Override `skills.user_dir` |
+| `NINE_TOOLS_USER_DIR` | Override `tools.user_dir` (sandboxed tools). Only the path — `[tools] enabled` is deliberately not env-overridable, so a stray variable cannot switch the subsystem on. |
 | `ANTHROPIC_API_KEY` | Anthropic API key (used when `llm.api_key` is empty) |
 | `SEARCH_PROVIDER` | `web_search` backend: `brave` or `serpapi`. Unset uses DuckDuckGo, which needs no key. |
 | `SEARCH_API_KEY` | API key for the chosen `SEARCH_PROVIDER` |
