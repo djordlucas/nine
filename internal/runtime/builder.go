@@ -69,6 +69,14 @@ type LoopConfig struct {
 	// the subsystem is disabled. Its tools are registered and advertised
 	// alongside plugin tools and are subject to the same role allowlist.
 	Tools *toolvm.Host
+
+	// GeneratedTools is the generated tier's write/delete/eval backend, or nil
+	// when `[tools.agent]` is off (docs/sandboxed-tools.md §5.2). When set, the
+	// tool_write/tool_delete/js_eval meta-tools are registered and advertised; the
+	// tools they produce reach the loop through Tools like any other host tool.
+	GeneratedTools agent.GeneratedToolStore
+	// GeneratedEval enables js_eval alongside tool_write (`[tools.agent] eval`).
+	GeneratedEval bool
 }
 
 // AgentBuilderConfig holds the behavioral dependencies layered on top of the
@@ -98,6 +106,12 @@ type AgentBuilderConfig struct {
 	// ([hitl].gate_sub_agents, default on). Sub-agents never get ask_human
 	// regardless — only the automatic gates (R-HITL.1/R-HITL.5).
 	GateSubAgents bool
+
+	// GeneratedApproval is when tool_write/js_eval route through the approval gate
+	// ([tools.agent].require_approval; docs/sandboxed-tools.md §9.4): "on_capability"
+	// (default — gate only a write that declares reach), "always", or "never". Like
+	// ApprovalTools, it is enforced only for loops an interactive session owns.
+	GeneratedApproval string
 
 	// DefaultLeafRole names the role used when a delegation names none
 	// (roles.default_leaf; default "executor" — R-ROLE.9).
@@ -416,8 +430,22 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 	if role.Interactive && f.cfg.HITL != nil {
 		f.registerAskHuman(d, agentID)
 	}
-	if gate.gated() && f.cfg.HITL != nil && len(f.cfg.ApprovalTools) > 0 {
-		f.registerApprovalGates(d, agentID, gate)
+	// The generated tier routes tool_write (and js_eval, when enabled) through the
+	// same gate, keyed on [tools.agent].require_approval rather than the [hitl] list
+	// (§9.4). "never" adds nothing; "always" and "on_capability" both arm the name,
+	// and the callback decides per-call whether a given write is substantial enough
+	// to actually prompt. Like every approval gate, it applies only to a loop an
+	// interactive session owns — a non-interactive deployment has no gate at all.
+	var genGated []string
+	if lc.GeneratedTools != nil && gate.gated() && f.cfg.HITL != nil &&
+		f.cfg.GeneratedApproval != config.ToolApprovalNever {
+		genGated = append(genGated, "tool_write")
+		if lc.GeneratedEval {
+			genGated = append(genGated, "js_eval")
+		}
+	}
+	if gate.gated() && f.cfg.HITL != nil && (len(f.cfg.ApprovalTools) > 0 || len(genGated) > 0) {
+		f.registerApprovalGates(d, agentID, gate, genGated)
 	}
 
 	// Catalog meta-tools let the model query the full tool/skill catalogs on
@@ -445,6 +473,21 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		shellTools = append(shellTools, "tool_search", "skill_search")
 	}
 
+	// The generated tier's meta-tools (tool_write/tool_delete/js_eval) are the
+	// agent's own path to authoring sandboxed tools (docs/sandboxed-tools.md §5.2).
+	// They are shell-granted like the catalog meta-tools above: the operator opted
+	// the whole instance in via [tools.agent], so they survive an allowlist role's
+	// pruning rather than needing to be named in every role. The tools they
+	// *produce* are ordinary host tools and reach the loop through lc.Tools.
+	var generatedDefs []llm.ToolDef
+	if lc.GeneratedTools != nil {
+		agent.RegisterGeneratedTools(d, lc.GeneratedTools, lc.GeneratedEval)
+		generatedDefs = agent.GeneratedToolDefs(lc.GeneratedEval)
+		for _, def := range generatedDefs {
+			shellTools = append(shellTools, def.Name)
+		}
+	}
+
 	// Boundary 2 of R-ROLE.4: for allowlist roles, prune dispatch handlers so
 	// a disallowed tool cannot run even if the model hallucinates its name.
 	// gap_report survives every allowlist — it is the escape hatch when no
@@ -467,6 +510,13 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 	tools := buildToolList(lc, role, shellTools, roleEnum)
 	if role.Interactive && f.cfg.HITL != nil {
 		tools = append(tools, ninectx.ToolWithVector{Tool: agent.AskHumanDef})
+	}
+	// The generated meta-tool defs are not in InterceptedDefs, so buildToolList's
+	// shell-tool pass cannot advertise them — append them here, the way AskHumanDef
+	// is. Handlers were registered above; their names are in shellTools, so an
+	// allowlist role keeps them.
+	for _, def := range generatedDefs {
+		tools = append(tools, ninectx.ToolWithVector{Tool: def})
 	}
 
 	// Populate each tool's description embedding (cached) so the context builder
@@ -759,9 +809,28 @@ func (f *AgentBuilder) registerAskHuman(d *agent.Dispatcher, agentID string) {
 // the TUI has one rendering path (R-HITL.5). askerID is this loop's own agent
 // ID — it keys the persisted request, keeping parallel sub-agents from
 // colliding on a single pending row.
-func (f *AgentBuilder) registerApprovalGates(d *agent.Dispatcher, askerID string, gate gateCtx) {
+// genGated are the generated-tier tools (tool_write/js_eval) armed under
+// [tools.agent].require_approval; empty when that tier is off or set to "never".
+// They share the one dispatcher gate with the [hitl] list, so the callback
+// branches on the name: a generated tool under "on_capability" is only prompted
+// when its declared capabilities are non-empty (§9.4), while every [hitl] entry
+// and every generated tool under "always" prompts unconditionally.
+func (f *AgentBuilder) registerApprovalGates(d *agent.Dispatcher, askerID string, gate gateCtx, genGated []string) {
 	hitl := f.cfg.HITL
-	d.SetApproval(f.cfg.ApprovalTools, func(ctx context.Context, toolName string, args json.RawMessage) error {
+	names := append(append([]string{}, f.cfg.ApprovalTools...), genGated...)
+	genSet := make(map[string]bool, len(genGated))
+	for _, n := range genGated {
+		genSet[n] = true
+	}
+	onCapability := f.cfg.GeneratedApproval == config.ToolApprovalOnCapability
+
+	d.SetApproval(names, func(ctx context.Context, toolName string, args json.RawMessage) error {
+		// A capability-free generated write under the default mode is inert — nothing
+		// for a human to usefully evaluate — so it is allowed to pass without a
+		// prompt. Gating it would train the reflex that defeats the gate that matters.
+		if genSet[toolName] && onCapability && !declaresCapability(args) {
+			return nil
+		}
 		ans, err := hitl.AskFrom(ctx, askerID, gate.owner, gate.origin, approvalQuestion(toolName, args), nil)
 		if err != nil {
 			return &agent.ApprovalError{Err: fmt.Errorf("tool %s approval failed: %w", toolName, err)}
@@ -771,6 +840,23 @@ func (f *AgentBuilder) registerApprovalGates(d *agent.Dispatcher, askerID string
 		}
 		return nil
 	})
+}
+
+// declaresCapability reports whether a tool_write/js_eval argument object asks
+// for any capability. Unparseable arguments gate to be safe — the fail-closed
+// direction for an approval decision.
+func declaresCapability(args json.RawMessage) bool {
+	var req struct {
+		Capabilities json.RawMessage `json:"capabilities"`
+	}
+	if err := json.Unmarshal(args, &req); err != nil {
+		return true
+	}
+	decl, err := parseDeclaration(req.Capabilities)
+	if err != nil {
+		return true
+	}
+	return len(decl.FS) > 0 || len(decl.Net) > 0 || len(decl.Env) > 0
 }
 
 // truncate shortens s to at most n runes, appending an ellipsis when it cuts.
@@ -800,6 +886,18 @@ func approvalQuestion(toolName string, args json.RawMessage) string {
 		detail = "Command: " + unquote("command")
 	case "write_file", "file_store":
 		detail = "Path: " + unquote("path")
+	case "tool_write":
+		// The two things §9.4 says a human is actually being asked to weigh: the
+		// tool's name and the reach it declares.
+		detail = "Write tool: " + unquote("name")
+		if caps := capsSummary(fields["capabilities"]); caps != "" {
+			detail += " · declares " + caps
+		}
+	case "js_eval":
+		detail = "Evaluate JavaScript"
+		if caps := capsSummary(fields["capabilities"]); caps != "" {
+			detail += " · declares " + caps
+		}
 	default:
 		a := strings.TrimSpace(string(args))
 		if len(a) > 200 {
@@ -808,6 +906,26 @@ func approvalQuestion(toolName string, args json.RawMessage) string {
 		detail = "Args: " + a
 	}
 	return fmt.Sprintf("Run tool %q?\n\n%s\n\nEnter \"yes\" to proceed, anything else to cancel.", toolName, detail)
+}
+
+// capsSummary renders a generated tool's declared capabilities for the approval
+// prompt, e.g. "fs=read net=http env=TZ". Empty for a tool that declares nothing.
+func capsSummary(raw json.RawMessage) string {
+	decl, err := parseDeclaration(raw)
+	if err != nil {
+		return "unparseable capabilities"
+	}
+	var parts []string
+	if len(decl.FS) > 0 {
+		parts = append(parts, "fs="+strings.Join(decl.FS, ","))
+	}
+	if len(decl.Net) > 0 {
+		parts = append(parts, "net="+strings.Join(decl.Net, ","))
+	}
+	if len(decl.Env) > 0 {
+		parts = append(parts, "env="+strings.Join(decl.Env, ","))
+	}
+	return strings.Join(parts, " ")
 }
 
 // filterByRole returns names intersected with the role's allowlist; wildcard

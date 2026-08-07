@@ -298,11 +298,29 @@ effective — nothing reads the declaration at call time, so *a manifest that li
 gains nothing*. The two must name the same capabilities or the tool does not
 load. Contrast **plugin settings**, which are configuration, not capability.
 
-**Generated tool** — A sandboxed tool authored by Nine itself
-(`docs/sandboxed-tools.md` §5.2). **Designed but deliberately not built.** No
-agent-reachable path writes a tool, a manifest, or a grant; *Nine cannot grant
-itself capabilities* (R-PLUG.7) holds unchanged. Do not confuse with a
-**developer tool**, which is the operator-installed kind that does exist.
+**Generated tool** — A sandboxed tool authored by Nine itself, via the
+core-intercepted `tool_write` (`docs/sandboxed-tools.md` §5.2, R-TVM.14). A row in
+the store's `tools` table holding the tool's `js` source and its capability
+**declaration** — never a grant. It runs through the exact same sandbox, ABI, and
+bounds as a **developer tool**; the differences are that the *agent* wrote the code
+and that the operator confers a **capability ceiling** rather than a per-tool grant.
+Off unless `[tools.agent] enabled`. *Nine cannot grant itself capabilities*
+(R-PLUG.7) holds unchanged: `tool_write` writes code, never a grant.
+
+**Capability ceiling (`[tools.agent.capabilities]`)** — The **maximum** any
+generated tool may be granted, and the operator's only lever over a tier where the
+agent writes the code. Not a default: a generated tool receives a capability only
+if it **declares** it, so a tool that declares nothing runs with nothing however
+permissive the ceiling is — and a tool cannot declare its way past it. Re-resolved
+on every load, so narrowing the ceiling disables a tool that no longer fits rather
+than leaving it running. Distinct from a **capability grant**, which is per named
+developer tool.
+
+**`js_eval`** — Runs one JavaScript snippet under the generated-tool rules and
+persists **nothing** — no name, no row, no catalog entry (`docs/sandboxed-tools.md`
+§5.3). Not a softer trust tier than `tool_write`, only a less persistent one; it
+exists so iterating on an idea does not accrete single-use tools into the catalog.
+Switched on separately by `[tools.agent] eval`.
 
 **Post-call hook** — A callback registered with `AddHook(toolName, fn)` that
 fires after a successful call to a specific tool. (Skill description embedding

@@ -1,6 +1,6 @@
 # Contract — Sandboxed Tools (the Wasm tool host)
 
-**Status:** Built (stages 1–4) · **Depends on:** dispatcher (registration), config (grants) · **Used by:** any turn calling a sandboxed tool
+**Status:** Built (stages 1–5) · **Depends on:** dispatcher (registration), config (grants + the generated ceiling), memory store (generated tools are rows), HITL (the optional write gate) · **Used by:** any turn calling a sandboxed tool
 
 A **sandboxed tool** is a wasm module that the daemon executes **in-process**, with an
 explicitly conferred set of capabilities and nothing else. It is a *second backend behind
@@ -13,9 +13,12 @@ The design rationale is `docs/sandboxed-tools.md`; the authoring guide is
 `docs/writing-sandboxed-tools.md`. This file is normative.
 
 > **Two authors, one runtime.** A **developer tool** is a file on disk with a manifest,
-> installed by the operator. A **generated tool** — authored by Nine itself — is stage 5 of
-> the design and **is not built**; nothing in this contract admits one. Every requirement
-> below concerns developer tools.
+> installed by the operator (R-TVM.10). A **generated tool** — authored by Nine itself via
+> `tool_write` — is a row in the store (R-TVM.14). Both run through the *same* host, ABI,
+> capability model, and audit trail; the only differences are where the code comes from and,
+> for a generated tool, that the operator confers a **ceiling** rather than a per-tool grant.
+> Requirements R-TVM.1–R-TVM.12 hold for both kinds unless they say otherwise; R-TVM.14 adds
+> what is specific to the generated tier.
 
 ---
 
@@ -397,18 +400,97 @@ native plugin, where that intent is explicit and reviewed. Config validation ref
 
 ---
 
+## R-TVM.14 — Generated tools (the tier Nine authors)
+
+A **generated tool** is one Nine wrote itself, through the core-intercepted `tool_write`
+(R-DISP.3). It is a row in the store's `tools` table (`spec/contracts/memory-store.md`),
+holding the tool's `js` source, its `input_schema`, and its capability **declaration** — and
+deliberately **no grant**. It runs through the exact host, ABI (R-TVM.1), instance model
+(R-TVM.3), bounds (R-TVM.4), and audit (R-TVM.12) a developer tool does. Kind is always
+`js`: the agent cannot supply a `.wasm` blob, because a binary is not reviewable.
+
+The tier is **off unless `[tools.agent] enabled`**. With it off, `tool_write`, `tool_delete`,
+and `js_eval` are neither registered nor advertised, and a loop is identical to one built
+before the tier existed (I-TVM.6 extends to it).
+
+### The ceiling, not a grant
+
+The operator confers a single **ceiling** — `[tools.agent.capabilities]` — that is the
+**maximum** any generated tool may be granted, never an automatic grant:
+
+- A tool receives a capability only if it **declares** it; a tool that declares nothing runs
+  with nothing, whatever the ceiling permits. Least privilege is per tool, not per tier.
+- Declaring a capability the ceiling excludes is a **refusal**, returned to the model as a
+  message it can act on — it rewrites without the capability or calls `gap_report`. A tool
+  cannot request its way past the ceiling.
+- The declaration is **re-resolved against the current ceiling on every load**, so narrowing
+  the ceiling disables a tool that no longer fits rather than leaving it running with reach
+  the operator has withdrawn.
+- For `env`, the tool receives the **intersection** of its declared keys and the ceiling's,
+  and a declared key the ceiling omits is a refusal — declaring one key never confers the
+  others the operator happened to list.
+
+> **The invariant this preserves.** R-PLUG.7's "**Nine cannot grant itself capabilities**"
+> is unchanged. `tool_write` writes *code*; it has no column and no path to write a *grant*.
+> The agent writes the code, the operator writes the ceiling, and they are never the same
+> actor — the one asymmetry the whole tier exists to enforce.
+
+### Lifecycle
+
+- **Write.** `tool_write` validates the proposal against the ceiling and the namespace
+  (R-TVM.10's collision rules — a generated tool never overrides a built-in, plugin, or
+  developer tool) **before** persisting, so a refusal leaves no row behind. It then upserts
+  by name — writing an existing generated name **replaces** it, preserving the usage counters
+  — and evicts.
+- **Cap and eviction.** The catalog is capped at `[tools.agent].max_tools` (default 64) with
+  **LRU eviction on last-called-at**: every generated tool competes for the tool-selection
+  budget, so an unbounded catalog degrades ranking for the built-in tools too. A write that
+  crosses the cap evicts the least-recently-called tools and names them in its result.
+- **Visibility is next-turn** (R-TVM.11): a tool written this turn is callable from the next
+  loop built, exactly as `plugins reload` behaves. `tool_write`'s result says so explicitly.
+- **`js_eval`** (`[tools.agent] eval`) runs one snippet under the identical rules and persists
+  **nothing** — no name, no row, no catalog entry. It is not a softer tier, only a less
+  persistent one; it exists so iteration does not accrete single-use tools into the catalog.
+- **Delete.** `tool_delete` removes a generated tool by name; it cannot touch a built-in,
+  plugin, or developer tool.
+
+### The approval gate
+
+`[tools.agent].require_approval` selects when `tool_write` and `js_eval` route through the
+HITL gate (`spec/contracts/hitl.md`, R-HITL.5), reusing it wholesale:
+
+| Value | Gates when |
+|---|---|
+| `on_capability` *(default)* | the call **declares any capability** — a capability-free write is inert and passes without a prompt |
+| `always` | every write and every eval |
+| `never` | never — the ceiling is the only control |
+
+The gate applies **only to a loop an interactive session owns**, like every approval gate
+(R-HITL.5). A non-interactive deployment has no gate, so there the ceiling is the sole
+control. The default gates on **substance, not frequency**: prompting on a pure-computation
+tool trains the reflex that defeats the prompt that matters.
+
+### Reporting
+
+A generated tool appears in `nine tools` (R-TVM.11) with **no manifest path** and a
+provenance marker; `SandboxedToolStatus.Generated` carries this on the wire
+(`spec/contracts/wire-protocol.md`). Every write and delete is journalled to the daemon log
+with the tool name and its declared reach — the same posture as R-TVM.12 item 8, and with the
+same gap: per-turn attribution in `session_events` waits on the tool host carrying a session
+id.
+
+---
+
 ## R-TVM.13 — Not built
 
-The following are specified in `docs/sandboxed-tools.md` and **are not implemented**.
-Each is refused by name rather than silently ignored, because accepting it would advertise
-a boundary that does not exist.
+The following are specified in `docs/sandboxed-tools.md` and **are not implemented**. Each is
+refused by name rather than silently ignored, because accepting it would advertise a boundary
+that does not exist.
 
 | Feature | Design | Status |
 |---|---|---|
-| `nine:*` stdlib | §4.2 | Not present; the developer-tier allowlist is empty by design (R-TVM.8). |
-| `tool_write`, `js_eval`, generated tools | §5.2, §5.3 | No agent-reachable path writes a tool. R-PLUG.7 applies unchanged. |
-| External npm dependencies | §4.4 | No resolver, no bundler, no registry client. |
-| HITL `require_approval` on tool writes | §9.4 | Nothing for it to gate. |
+| `nine:*` stdlib | §4.2 | Not present; the tool-side import allowlist is empty (R-TVM.8), for generated tools as for developer ones. |
+| External npm dependencies | §4.4 | No resolver, no bundler, no registry client. `deps` in a declaration is unknown. |
 | The `deps` + `net.http` interlock | §4.4 | Nothing to interlock: there are no dependencies to resolve. It becomes load-bearing the moment stage 6 is built. |
 
 ---
@@ -417,8 +499,11 @@ a boundary that does not exist.
 
 - **I-TVM.1** — The default capability set is empty. A tool that declares nothing gets
   nothing, regardless of what any other tool was granted.
-- **I-TVM.2** — No agent-reachable tool or path writes a sandboxed tool, its manifest, or
-  its grant. Nine cannot grant itself capabilities (R-PLUG.7, unchanged).
+- **I-TVM.2** — No agent-reachable tool or path writes a **grant**. `tool_write` writes a
+  generated tool's *code and declaration* (R-TVM.14); the operator writes every grant and the
+  generated ceiling, in `nine.toml`. Nine cannot grant itself capabilities (R-PLUG.7,
+  unchanged) — the manifest of a developer tool and the declaration of a generated one are
+  descriptions, not grants.
 - **I-TVM.3** — No state survives a call.
 - **I-TVM.4** — A tool name resolves to exactly one implementation. Sandboxed tools never
   override built-ins or plugin tools.

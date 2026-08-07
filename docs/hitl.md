@@ -78,7 +78,19 @@ Command: rm -rf /tmp/old
 Enter "yes" to proceed, anything else to cancel.
 ```
 
-The question format is tool-aware: `shell` shows `command`, `write_file` shows `path`, everything else falls back to truncated JSON args.
+The question format is tool-aware: `shell` shows `command`, `write_file` shows `path`, `tool_write`/`js_eval` show the tool name and its declared capabilities, everything else falls back to truncated JSON args.
+
+### The generated-tools gate
+
+The generated tier (`docs/sandboxed-tools.md` §9.4, `spec/contracts/toolvm.md` R-TVM.14) reuses this same gate for `tool_write` and `js_eval`, but keyed off its own switch, `[tools.agent].require_approval`, rather than the `[hitl]` list — and with a per-call decision the `[hitl]` list does not have:
+
+| `[tools.agent].require_approval` | Gates |
+|---|---|
+| `on_capability` *(default)* | only a write/eval whose **declared capabilities are non-empty** — a pure transform passes without a prompt |
+| `always` | every write and every eval |
+| `never` | nothing; the ceiling is the only control |
+
+The default gates on **substance, not frequency**: prompting on a capability-free date-formatting tool trains the reflex that defeats the prompt that matters — a tool asking for workspace read. Both switches share the one dispatcher gate, so a generated tool armed here is gated on exactly the same owning-interactive-session terms as any `[hitl]` entry (below); a non-interactive deployment has no gate, so there the ceiling in `[tools.agent.capabilities]` is the whole control.
 
 The answer is checked case-insensitively: a response starting with `"y"` proceeds; anything else returns an error (`"tool shell rejected by user"`) that the LLM receives as a normal tool failure.
 
@@ -200,4 +212,4 @@ Steps 1–7 deliver a working `ask_human`. Step 8 adds automatic gates on top.
 - **Non-interactive sessions cannot ask** — sub-agents and background sessions that need human input must surface it to their parent conversation via their return value or a notification; they cannot call `ask_human` directly.
 - **One pending question per session** — `HumanRequestGetPending` returns at most one row. Concurrent `ask_human` calls within the same turn are serialised (first one blocks the loop before the second is issued).
 - **No goroutine interruption on timeout** — when a question times out, `ask_human` returns an error to the LLM. Any tool call the LLM subsequently makes may still proceed; timeout is not equivalent to task cancellation.
-- **Approval gate scope** — `require_approval` is a global list; there is no per-session or per-argument pattern matching. Fine-grained rules (e.g., "approve `shell` only for destructive-looking commands") are deferred.
+- **Approval gate scope** — the `[hitl].require_approval` list is global; there is no per-session or per-argument pattern matching for it. Fine-grained rules (e.g., "approve `shell` only for destructive-looking commands") are deferred. The generated-tools gate (`[tools.agent].require_approval = "on_capability"`) is the one per-argument exception, and only for `tool_write`/`js_eval`.

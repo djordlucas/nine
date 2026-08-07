@@ -329,6 +329,20 @@ func initSchema(d db) error {
 			source      TEXT NOT NULL DEFAULT 'agent',
 			updated_at  TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,
+		// Generated sandboxed tools (spec/contracts/toolvm.md R-TVM.14): code the
+		// agent wrote, as store state. `capabilities` is the tool's DECLARATION,
+		// never a grant — grants live in nine.toml and are the operator's.
+		`CREATE TABLE IF NOT EXISTS tools (
+			name           TEXT PRIMARY KEY,
+			description    TEXT NOT NULL DEFAULT '',
+			input_schema   TEXT NOT NULL DEFAULT '{}',
+			source         TEXT NOT NULL DEFAULT '',
+			capabilities   TEXT NOT NULL DEFAULT '{}',
+			created_at     TEXT NOT NULL DEFAULT ` + nowExpr + `,
+			updated_at     TEXT NOT NULL DEFAULT ` + nowExpr + `,
+			last_called_at TEXT NOT NULL DEFAULT '',
+			call_count     INTEGER NOT NULL DEFAULT 0
+		)`,
 		`CREATE TABLE IF NOT EXISTS reflections (
 			id       TEXT PRIMARY KEY,
 			ran_at   TEXT NOT NULL DEFAULT ` + nowExpr + `,
