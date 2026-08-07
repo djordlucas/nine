@@ -40,6 +40,14 @@ const ABIVersion = 1
 //	  Reserve `size` bytes in the guest's linear memory and return the offset.
 //	  The host writes the call's input there before calling nine_run.
 //
+//	  The host always asks for one byte more than it intends to write, and
+//	  writes a NUL into it, so the input at `ptr` is BOTH length-delimited and
+//	  NUL-terminated. A guest may therefore treat it as a C string. This is a
+//	  guarantee, not an accident: QuickJS requires `buf[buf_len] == 0` for
+//	  JS_Eval and JS_ParseJSON, and a host that skipped it would produce a
+//	  parser that fails for about one input length in sixteen — depending on
+//	  nothing but what the guest allocator left in the next byte.
+//
 //	nine_run(ptr i32, len i32) -> i64
 //	  Run the tool against the `len` bytes of UTF-8 JSON at `ptr`, and return
 //	  the result packed as (offset << 32) | length — one i64 rather than a

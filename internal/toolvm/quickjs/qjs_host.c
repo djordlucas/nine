@@ -21,12 +21,23 @@
 
 #include "quickjs.h"
 
-/* ── the one host import ──────────────────────────────────────────────────
+/* ── the host imports ─────────────────────────────────────────────────────
  * The `log` capability (§6.2). Granted by default because it leaks nothing:
  * the daemon decides where the bytes go (slog + the event journal).
  */
 __attribute__((import_module("nine"), import_name("log"))) extern void
 nine_host_log(const uint8_t *ptr, int32_t len);
+
+/* The `net.http` capability (§8). The import exists unconditionally — a wasm
+ * module's imports are fixed at compile time and this blob is shared by every
+ * `js` tool — but the *grant* is checked host-side, per call. A tool without one
+ * gets a refusal envelope back, not a connection. The guest never touches a
+ * socket and never learns an IP.
+ *
+ * Returns (offset << 32) | length of a JSON response the host allocated through
+ * nine_alloc, or 0 if it could not allocate one. */
+__attribute__((import_module("nine"), import_name("http"))) extern uint64_t
+nine_host_http(const uint8_t *ptr, int32_t len);
 
 /* ── ABI: allocation ──────────────────────────────────────────────────────
  * The host calls nine_alloc, writes the envelope into the returned offset,
@@ -127,6 +138,31 @@ static JSValue js_nine_log(JSContext *ctx, JSValueConst this_val, int argc,
     return JS_UNDEFINED;
 }
 
+/* fetch, as the guest sees it: JSON request string in, JSON response string
+ * out. Everything policy-shaped — method allowlist, host allowlist, SSRF
+ * rejection, redirect revalidation, response caps — happens on the host side of
+ * this call, where it can be reasoned about. */
+static JSValue js_nine_http(JSContext *ctx, JSValueConst this_val, int argc,
+                            JSValueConst *argv) {
+    (void)this_val;
+    if (argc < 1) return JS_ThrowTypeError(ctx, "http requires a request object");
+
+    size_t len = 0;
+    const char *req = JS_ToCStringLen(ctx, &len, argv[0]);
+    if (!req) return JS_EXCEPTION;
+
+    uint64_t packed = nine_host_http((const uint8_t *)req, (int32_t)len);
+    JS_FreeCString(ctx, req);
+
+    if (packed == 0) return JS_ThrowInternalError(ctx, "http: no response from host");
+
+    const char *out = (const char *)(uintptr_t)(uint32_t)(packed >> 32);
+    uint32_t out_len = (uint32_t)(packed & 0xffffffff);
+    JSValue res = JS_NewStringLen(ctx, out, out_len);
+    free((void *)out);
+    return res;
+}
+
 /* ── error reporting ─────────────────────────────────────────────────────── */
 
 /* Render the pending exception as the ABI's failure envelope. Building it with
@@ -209,6 +245,8 @@ __attribute__((export_name("nine_run"))) uint64_t nine_run(uint32_t ptr, uint32_
     JS_SetPropertyStr(ctx, global, "__nine_result", JS_UNDEFINED);
     JS_SetPropertyStr(ctx, global, "__nine_log",
                       JS_NewCFunction(ctx, js_nine_log, "__nine_log", 1));
+    JS_SetPropertyStr(ctx, global, "__nine_http",
+                      JS_NewCFunction(ctx, js_nine_http, "__nine_http", 1));
     JS_FreeValue(ctx, global);
 
     JSValue harness = JS_GetPropertyStr(ctx, envelope, "harness");
