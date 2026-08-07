@@ -10,17 +10,15 @@ import (
 // DefaultMaxGeneratedTools caps the generated catalog (§9.2).
 const DefaultMaxGeneratedTools = 64
 
-// GeneratedSource identifies a tool Nine wrote itself, mirroring how skills
-// already split built-in from agent-authored.
-const GeneratedSource = "agent"
-
 // Generated is one agent-authored tool as the host receives it. The store owns
 // the row; this is the shape the host needs to compile and run it.
 type Generated struct {
 	Name        string
 	Description string
 	InputSchema json.RawMessage
-	Source      string
+	// Source is the tool's JavaScript — the code the host compiles and runs, not a
+	// provenance tag. The store's `source` column holds it verbatim.
+	Source string
 	// Declaration is what the tool says it needs, checked against the ceiling.
 	Declaration Declaration
 }
