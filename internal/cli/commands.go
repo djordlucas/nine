@@ -126,6 +126,29 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 			return fmt.Errorf("usage: nine plugins [reload]")
 		}
 		return c.Plugins(cfg)
+	case "tools":
+		if len(args) > 1 {
+			switch args[1] {
+			case "reload":
+				return c.ToolsReload(cfg)
+			case "show":
+				if len(args) < 3 {
+					return fmt.Errorf("usage: nine tools show <name>")
+				}
+				return c.ToolsShow(cfg, args[2])
+			}
+			return fmt.Errorf("usage: nine tools [reload|show <name>]")
+		}
+		return c.Tools(cfg)
+	case "tool":
+		if len(args) < 2 || args[1] != "validate" {
+			return fmt.Errorf("usage: nine tool validate [path]")
+		}
+		p := ""
+		if len(args) > 2 {
+			p = args[2]
+		}
+		return c.ToolValidate(cfg, p)
 	case "plugin":
 		if len(args) < 2 || args[1] != "validate" {
 			return fmt.Errorf("usage: nine plugin validate [path]")
@@ -205,7 +228,8 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 var knownCommands = []string{
 	"help", "docs", "spec", "version", "daemon", "goals", "reflections",
 	"notifications", "workflows", "workflow", "send", "skills", "plugins",
-	"plugin", "status", "context", "trace", "replay", "attach", "stop",
+	"plugin", "tools", "tool", "status", "context", "trace", "replay", "attach",
+	"stop",
 }
 
 // nearestCommand returns the known command closest to arg and true when arg is a

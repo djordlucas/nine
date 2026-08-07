@@ -59,8 +59,10 @@ and `runtime` targets — a good foundation to extend rather than rewrite.
 - **One config file, env-overridden.** `internal/config.ApplyEnvOverrides` +
   `Config.DatabasePath()` already let a single `nine.toml` serve every layout;
   the container just overrides `NINE_PLUGINS_BIN`, `NINE_WORKSPACE_ROOT`,
-  `NINE_SKILLS_USER_DIR`, `NINE_PLUGINS_USER_DIR`. The database path needs no
-  override at all — it resolves to `/data/nine.db` when that volume is present.
+  `NINE_SKILLS_USER_DIR`, `NINE_PLUGINS_USER_DIR`, `NINE_TOOLS_USER_DIR`. The
+  database path needs no override at all — it resolves to `/data/nine.db` when
+  that volume is present. `[tools] enabled` is *not* env-overridable: turning the
+  sandboxed-tool host on stays a decision in the mounted `nine.toml`.
 - **Schema is self-applying.** `initSchema` runs all `CREATE TABLE IF NOT
   EXISTS …` on every boot, so the database is bootstrapped by the daemon itself.
   No external migration step.
