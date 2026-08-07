@@ -326,6 +326,33 @@ allow_hosts = ["api.weather.example", "*.cdn.weather.example"]  # exact, or a
                                                     # leading "*." (not the apex)
 methods     = ["GET"]        # required; no implicit default
 max_bytes   = 1048576        # response cap; 0 uses 1 MiB
+
+# ── Generated tools: the tier Nine writes itself (spec/contracts/toolvm.md R-TVM.14) ──
+# OFF by default and independent of [tools] enabled above — an operator may want developer
+# tools without letting the agent author any. When on, the agent gets tool_write/tool_delete
+# (and js_eval, separately switched); the tools it writes are rows in the store, listable and
+# deletable, and run under exactly the same sandbox and bounds as a developer tool.
+[tools.agent]
+enabled          = false            # turns on tool_write / tool_delete
+eval             = true             # additionally allow js_eval — run a snippet, persist nothing
+max_tools        = 64               # catalog cap; least-recently-called tools are evicted past it
+
+# When a write/eval routes through the human approval gate (docs/hitl.md):
+#   on_capability (default) — only when the tool DECLARES reach; a pure transform passes silently
+#   always                  — every write and every eval
+#   never                   — the ceiling below is the only control
+# The default gates on substance, not frequency: a prompt that fires on every trivial tool is a
+# prompt that gets approved without reading. Interactive sessions only — a non-interactive
+# deployment has no gate, so there the ceiling is everything.
+require_approval = "on_capability"
+
+# The CEILING — the MAXIMUM a generated tool may be granted, never an automatic grant. A tool
+# that declares nothing gets nothing, however permissive this is; a tool cannot declare its way
+# past it. Same shape as [tool.<name>.capabilities]. Narrowing it retroactively disables a tool
+# that no longer fits, on the next load. Omit it entirely to keep every generated tool inert.
+[tools.agent.capabilities.fs]
+read = [{ host = "${NINE_WORKSPACE}", guest = "/workspace" }]  # narrow to a subdirectory if the
+                                                    # workspace holds secrets (see §7.1)
 ```
 
 ---

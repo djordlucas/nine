@@ -66,10 +66,14 @@ func runDaemon() {
 	// names are already reserved and a colliding sandboxed tool is skipped rather
 	// than allowed to override. nil when [tools] enabled is unset, which is the
 	// default and leaves every loop exactly as it was.
-	toolHost := runtime.OpenSandboxedTools(context.Background(), cfg, pluginManager)
+	toolHost := runtime.OpenSandboxedTools(context.Background(), cfg, store, pluginManager)
 	if toolHost != nil {
 		defer toolHost.Close(context.Background()) //nolint:errcheck // best-effort on shutdown
 	}
+	// The generated tier's write/delete/eval backend (docs/sandboxed-tools.md §5.2),
+	// or nil when `[tools.agent]` is off — in which case the meta-tools are neither
+	// registered nor advertised.
+	generatedTools := runtime.NewGeneratedToolStore(store, toolHost, pluginManager)
 
 	embedder := embed.Build(cfg.Embeddings.Provider, cfg.Embeddings.Model, cfg.Embeddings.Endpoint)
 
@@ -137,31 +141,34 @@ func runDaemon() {
 	// bootstrap — subscribers, standing agents, resume, instance name — is layered
 	// on below against the returned daemon (docs/evals.md §5).
 	asm := runtime.Assemble(runtime.AssemblyConfig{
-		SocketPath:    cfg.SocketPath(),
-		Store:         store,
-		Plugins:       pluginManager,
-		Tools:         toolHost,
-		Embedder:      embedder,
-		ContextBudget: cfg.ContextBudget(),
-		SystemPrompt:  runtime.BuildSystemPrompt(browserPlug != nil),
+		SocketPath:     cfg.SocketPath(),
+		Store:          store,
+		Plugins:        pluginManager,
+		Tools:          toolHost,
+		GeneratedTools:    generatedTools,
+		GeneratedEval:     cfg.Tools.Agent.Eval,
+		GeneratedApproval: cfg.Tools.Agent.ApprovalMode(),
+		Embedder:       embedder,
+		ContextBudget:  cfg.ContextBudget(),
+		SystemPrompt:   runtime.BuildSystemPrompt(browserPlug != nil),
 		// Pull-surface related prior sessions only when the out-of-band indexer
 		// that populates the store is enabled.
 		RelatedSessions: cfg.Daemon.RelatedSessionsIndexEnabled(),
 		// Index and pull-surface stored key-value memories relevant to the turn.
-		SurfaceMemories:     cfg.Memory.SurfaceMemoriesEnabled(),
+		SurfaceMemories:        cfg.Memory.SurfaceMemoriesEnabled(),
 		MaxToolOutputTokens:    cfg.Tools.MaxOutputTokens,
 		MaxJobsPerConversation: cfg.Plugins.MaxJobsPerConversation,
 		JobWaiters:             jobWaiters,
 		Queue:                  cfg.BuildQueue(),
-		TaskTimeoutSeconds:  cfg.Daemon.TaskTimeoutSeconds,
-		HITL:                hitl,
-		ApprovalTools:       cfg.HITL.RequireApproval,
-		GateSubAgents:       cfg.HITL.GateSubAgentsEnabled(),
-		PlanApproval:        cfg.Planning.PlanApprovalMode(),
-		PlanMode:            cfg.Planning.Mode(),
-		DefaultLeafRole:     cfg.Roles.DefaultLeaf,
-		MaxDelegationDepth:  cfg.Roles.MaxDelegationDepth,
-		MaxGoalSessions:     cfg.Daemon.MaxGoalSessions,
+		TaskTimeoutSeconds:     cfg.Daemon.TaskTimeoutSeconds,
+		HITL:                   hitl,
+		ApprovalTools:          cfg.HITL.RequireApproval,
+		GateSubAgents:          cfg.HITL.GateSubAgentsEnabled(),
+		PlanApproval:           cfg.Planning.PlanApprovalMode(),
+		PlanMode:               cfg.Planning.Mode(),
+		DefaultLeafRole:        cfg.Roles.DefaultLeaf,
+		MaxDelegationDepth:     cfg.Roles.MaxDelegationDepth,
+		MaxGoalSessions:        cfg.Daemon.MaxGoalSessions,
 	})
 	daemon := asm.Daemon
 	supervisor := asm.Supervisor
