@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "required": ["csv"],
+  "properties": {
+    "csv": {
+      "type": "string",
+      "description": "The CSV text to summarize."
+    },
+    "header": {
+      "type": "boolean",
+      "description": "Whether the first row is a header row. Default true; set false to have columns named column_1, column_2, ...."
+    }
+  }
+}
