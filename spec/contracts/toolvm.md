@@ -1,6 +1,6 @@
 # Contract — Sandboxed Tools (the Wasm tool host)
 
-**Status:** Built (stages 1–3) · **Depends on:** dispatcher (registration), config (grants) · **Used by:** any turn calling a sandboxed tool
+**Status:** Built (stages 1–4) · **Depends on:** dispatcher (registration), config (grants) · **Used by:** any turn calling a sandboxed tool
 
 A **sandboxed tool** is a wasm module that the daemon executes **in-process**, with an
 explicitly conferred set of capabilities and nothing else. It is a *second backend behind
@@ -116,7 +116,7 @@ pre-open, or a host function the daemon exports. Anything else is not "denied" �
 |---|---|---|---|
 | `fs.read` | host→guest path mounts | **none** | wazero `WithReadOnlyDirMount` |
 | `fs.write` | host→guest path mounts | **none** | wazero `WithDirMount` |
-| `net.http` | host allowlist, methods, max bytes | **none** | *not implemented — see R-TVM.12* |
+| `net.http` | host allowlist, methods, max bytes | **none** | host fn `nine.http` — R-TVM.12 |
 | `env` | explicit key allowlist | **none** | `WithEnv`, per key |
 | `clock` | — | **granted** | `WithSysWalltime` / `WithSysNanotime` |
 | `random` | — | **granted** | `WithRandSource` |
@@ -323,7 +323,81 @@ entrypoint presence, schema validity, and ABI exports.
 
 ---
 
-## R-TVM.12 — Not built
+## R-TVM.12 — `net.http`
+
+The filesystem is easy: a wazero pre-open is a capability primitive wazero enforces
+without our help. The network has none — wazero has no network at all — so `net.http` is
+entirely a host function, and its security is entirely Nine's problem. Getting it wrong
+turns every sandboxed tool into an SSRF primitive with a manifest.
+
+**The guest never touches a socket and never learns an IP.** It calls `nine.http` with a
+JSON request; the daemon makes the request. In a `js` tool this is surfaced as a `fetch`
+subset (no streaming, no AbortController, no cookie jar, no Request/Headers classes).
+
+The host module exports `http` unconditionally, because a wasm module's imports are fixed
+at compile time and the QuickJS blob is shared by every `js` tool. That is not a leak: the
+**grant** is resolved per call, and a tool without one is refused before the request is
+parsed. What is shared is the import, not the permission.
+
+### Two independent gates
+
+Both **MUST** pass, and neither is redundant:
+
+1. **The hostname** must match the tool's `allow_hosts` (exact, or a leading `*.` pattern
+   that does not match the apex).
+2. **The IP actually being dialed** must be publicly routable — checked in
+   `net.Dialer.Control`, which runs *after* resolution and *immediately before* connect.
+
+> Gate 1 alone is defeated by a hostname that resolves wherever an attacker likes. Gate 2
+> alone would permit any public host.
+>
+> Gate 2 **MUST** be enforced at connect time, not after a separate resolution step.
+> Resolving, validating, then dialing leaves a window in which the name is re-resolved to
+> something else — that window *is* the DNS-rebinding attack.
+
+### The unconditional rejections
+
+Not configurable, and not subject to the allowlist. An operator cannot be asked to
+remember that `169.254.169.254` is where their cloud keeps its credentials.
+
+Loopback · link-local (**including cloud instance metadata**) · RFC 1918 · IPv6 ULA ·
+multicast · unspecified · carrier-grade NAT · benchmark, documentation and reserved
+ranges · NAT64 · interface-scoped addresses.
+
+IPv4-mapped IPv6 (`::ffff:127.0.0.1`) **MUST** be unmapped before checking — it is the
+standard way past a filter that only knows `127.0.0.0/8`.
+
+### The rest of the checklist
+
+| # | Requirement |
+|---|---|
+| 1 | Method allowlist enforced; `methods` is required, with no implicit default |
+| 2 | `http`/`https` only; a URL carrying credentials (`user:pass@host`) is refused |
+| 3 | The guest may not set `Host`, `Content-Length`, or any hop-by-hop header |
+| 4 | No proxy is ever taken from the environment — it would resolve and connect on our behalf, routing around gate 2 |
+| 5 | Every redirect hop is re-checked against **both** gates; chains are bounded |
+| 6 | `Authorization`, `Cookie`, and `Proxy-Authorization` are stripped on a cross-origin redirect — including a scheme or port change within one domain, which Go's own stripping does not cover |
+| 7 | The response body is bounded **on read**, not merely truncated after; the timeout sits below the per-call deadline so a slow host reads as an HTTP timeout, not a killed tool |
+| 8 | Every call is recorded: tool, method, host, status, bytes, truncation, duration |
+| 9 | `Set-Cookie` is dropped from the response — a tool has no cookie jar, so passing them on could only leak them into the model's context |
+
+A refusal reaches the tool as a thrown error carrying the reason, never as a status code:
+letting a policy decision look like a response invites `if (res.ok)` to swallow it.
+
+> **On item 8, precisely.** Every call is written to the daemon log with structured
+> fields, unconditionally. It does **not** yet reach the `session_events` journal
+> (`docs/event-log.md`), because attribution needs a session id that the tool host does
+> not have — the dispatcher does not carry one into a tool call. `toolvm.Config.AuditHTTP`
+> is the hook for that, and it is currently unwired. "What did this tool reach" is
+> answerable today from the log; "which turn asked for it" is not, and that gap should be
+> closed when session context reaches the dispatcher.
+
+**There is no bare `"*"`.** An operator who wants unrestricted egress should write a
+native plugin, where that intent is explicit and reviewed. Config validation refuses it.
+
+---
+
+## R-TVM.13 — Not built
 
 The following are specified in `docs/sandboxed-tools.md` and **are not implemented**.
 Each is refused by name rather than silently ignored, because accepting it would advertise
@@ -331,11 +405,11 @@ a boundary that does not exist.
 
 | Feature | Design | Status |
 |---|---|---|
-| `net.http` | §8 | **Refused at config load and at grant resolution.** Its security is entirely the host's problem — SSRF filtering on *resolved IPs*, link-local/RFC1918 rejection, per-redirect re-checks, credential stripping — and none of it exists yet. |
 | `nine:*` stdlib | §4.2 | Not present; the developer-tier allowlist is empty by design (R-TVM.8). |
 | `tool_write`, `js_eval`, generated tools | §5.2, §5.3 | No agent-reachable path writes a tool. R-PLUG.7 applies unchanged. |
 | External npm dependencies | §4.4 | No resolver, no bundler, no registry client. |
 | HITL `require_approval` on tool writes | §9.4 | Nothing for it to gate. |
+| The `deps` + `net.http` interlock | §4.4 | Nothing to interlock: there are no dependencies to resolve. It becomes load-bearing the moment stage 6 is built. |
 
 ---
 
@@ -351,3 +425,5 @@ a boundary that does not exist.
 - **I-TVM.5** — The committed interpreter links neither `std` nor `os`.
 - **I-TVM.6** — `[tools] enabled` unset ⇒ no host, no tools, and loops identical to those
   built before this subsystem existed.
+- **I-TVM.7** — A sandboxed tool cannot reach a loopback, link-local, or private address,
+  whatever its `allow_hosts` says and whatever any hostname resolves to.
