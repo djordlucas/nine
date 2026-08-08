@@ -353,6 +353,32 @@ require_approval = "on_capability"
 [tools.agent.capabilities.fs]
 read = [{ host = "${NINE_WORKSPACE}", guest = "/workspace" }]  # narrow to a subdirectory if the
                                                     # workspace holds secrets (see §7.1)
+
+# ── The nine:* stdlib and external npm dependencies (spec/contracts/toolvm.md R-TVM.15) ──
+# A generated tool may always `import` the curated nine:* stdlib — nine:csv, nine:date,
+# nine:diff — served from the binary, no config needed. External npm packages are the single
+# riskiest switch in the design and are OFF by default. When enabled, Nine resolves them once,
+# in the daemon, at tool_write time (never at call time), verifies each tarball's sha512, runs
+# no install scripts, and bundles everything into the tool's source with esbuild in-process —
+# so a called tool has no imports but nine:* and no network. Resolved packages are cached under
+# [tools].cache_dir (default os.UserCacheDir()/nine/tools) and listed by `nine tools deps`.
+[tools.agent.deps]
+mode          = "off"               # off (default) | allowlist (named packages, transitive
+                                    #   included) | open (anything within budgets — dev posture)
+registry      = ""                  # npm-compatible base URL; empty = the public registry
+frozen        = false               # resolve only from cache/lockfile, never the network
+max_packages  = 24                  # budgets: total incl. transitive / bundle KB / tree depth
+max_bundle_kb = 2048
+max_depth     = 4
+allow = [                           # allowlist mode only: the packages an operator stands behind
+  { name = "date-fns", version = "^4.1.0" },
+]
+
+# The interlock: a tool that BOTH declares net.http AND pulls an external dependency is refused,
+# because a package that can reach the network can exfiltrate whatever the tool sees. Lifting it
+# is the one combination that makes a supply-chain compromise materially dangerous — leave it off
+# unless you understand exactly why you need it.
+# [tools.agent] allow_network_deps = false
 ```
 
 ---

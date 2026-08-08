@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	"nine/internal/agent"
@@ -11,6 +14,7 @@ import (
 	"nine/internal/memory"
 	"nine/internal/plugin"
 	"nine/internal/toolvm"
+	"nine/internal/toolvm/deps"
 )
 
 // OpenSandboxedTools builds the sandboxed-tool host from config and loads the
@@ -81,6 +85,39 @@ func agentConfig(cfg *config.Config) toolvm.AgentConfig {
 			HTTP:    httpGrant(caps.Net.HTTP),
 		}},
 	}
+}
+
+// NewDepsBundler builds the external-dependency bundler from [tools.agent.deps],
+// or returns nil when deps are off — in which case the write path refuses any
+// external import outright (docs/sandboxed-tools.md §4.4). The registry client is
+// the daemon's, with a bounded timeout; registry traffic is the daemon's, never a
+// guest's, which is the whole reason resolution happens here.
+func NewDepsBundler(cfg *config.Config) *deps.Bundler {
+	d := cfg.Tools.Agent.Deps
+	policy := deps.Policy{
+		Mode:        cfg.Tools.Agent.DepsMode(),
+		Registry:    d.Registry,
+		MaxPackages: d.MaxPackages,
+		MaxBundleKB: d.MaxBundleKB,
+		MaxDepth:    d.MaxDepth,
+		Frozen:      d.Frozen,
+	}
+	for _, a := range d.Allow {
+		policy.Allow = append(policy.Allow, deps.Allow{Name: a.Name, Version: a.Version})
+	}
+	return deps.New(policy, toolsCacheDir(cfg), &http.Client{Timeout: 60 * time.Second})
+}
+
+// toolsCacheDir resolves [tools].cache_dir, defaulting under the user cache dir.
+func toolsCacheDir(cfg *config.Config) string {
+	if cfg.Tools.CacheDir != "" {
+		return cfg.Tools.CacheDir
+	}
+	base, err := os.UserCacheDir()
+	if err != nil {
+		base = os.TempDir()
+	}
+	return filepath.Join(base, "nine", "tools")
 }
 
 // touchGenerated is the host's usage hook, or nil when there is no store to

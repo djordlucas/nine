@@ -213,6 +213,21 @@ artifact. Nine inherits none of that machinery and none of that responsibility.
 Pure-ESM, zero-dependency packages bundle fine. Anything touching a Node builtin will not
 — which rules out a large share of npm before policy even enters the picture.
 
+### Generated tools: `nine:*` and, optionally, npm
+
+The above is about **developer** tools, which you bundle yourself. A **generated** tool —
+one Nine writes via `tool_write` — has two import routes the developer tier does not
+(`spec/contracts/toolvm.md` R-TVM.15):
+
+- **The `nine:*` stdlib**, always available, no config: `import { parse } from "nine:csv"`,
+  plus `nine:date` (`parseDate`, `isoWeek`, `formatISODate`) and `nine:diff` (`lineDiff`,
+  `unified`). These are served from the binary and need no bundling.
+- **External npm packages**, but only if an operator turned them on (`[tools.agent.deps]`,
+  off by default). Nine then resolves and bundles them **at `tool_write` time** — the agent
+  writes a normal `import "date-fns"` and Nine inlines it, verifies integrity, and records a
+  lockfile. A tool that both imports a package and declares `net.http` is refused unless
+  `allow_network_deps` is set. With deps off, only `nine:*` imports resolve.
+
 ---
 
 ## The `wasm` kind

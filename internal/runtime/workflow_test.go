@@ -8,10 +8,10 @@ import (
 
 	"nine/internal/agent"
 	ninectx "nine/internal/context"
+	"nine/internal/llm"
 	"nine/internal/memory"
 	"nine/internal/protocol"
 	"nine/internal/runtime"
-	"nine/internal/llm"
 	"nine/internal/workflow"
 )
 
@@ -23,8 +23,9 @@ type mockStore struct {
 	workflowFailFn   func(string, bool) (int, error)
 }
 
-func (m *mockStore) GoalList() ([]memory.Goal, error)           { return nil, nil }
-func (m *mockStore) ReflectionList() ([]memory.Reflection, error) { return nil, nil }
+func (m *mockStore) GoalList() ([]memory.Goal, error)                   { return nil, nil }
+func (m *mockStore) GeneratedToolList() ([]memory.GeneratedTool, error) { return nil, nil }
+func (m *mockStore) ReflectionList() ([]memory.Reflection, error)       { return nil, nil }
 func (m *mockStore) WorkflowList(id string) ([]workflow.Workflow, error) {
 	if m.workflowListFn != nil {
 		return m.workflowListFn(id)
