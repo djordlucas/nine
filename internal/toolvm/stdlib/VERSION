@@ -1,0 +1,6 @@
+nine stdlib rev 1 — csv, date, diff
+
+Authored in-house rather than vendored, so every module is known to run under the
+trimmed QuickJS blob (no std/os; R-TVM.9) and carries no transitive surface. Bump
+this line on any change to a module; the modules are embedded into the binary
+(stdlib.go), so the binary always matches the JS environment of its version.

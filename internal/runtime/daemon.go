@@ -76,6 +76,10 @@ type queryBackend interface {
 	WorkflowFail(id string, all bool) (int, error)
 	UserNotificationList(unseenOnly bool) ([]memory.UserNotification, error)
 	UserNotificationMarkSeen(id string) error
+	// GeneratedToolList backs the lockfile column of the `nine tools` roster: the
+	// host holds a generated tool's code, but its dependency lockfile lives in the
+	// store (spec/contracts/toolvm.md R-TVM.14).
+	GeneratedToolList() ([]memory.GeneratedTool, error)
 	SessionEventsByAgent(agentID string) ([]memory.SessionEvent, error)
 	// Journal subscription read surface (satisfies subscribe.Store) so the
 	// daemon can host cursor-backed subscribers (docs/reactive-events.md).

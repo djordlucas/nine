@@ -53,10 +53,15 @@ func (c *CLI) ToolsShow(cfg *config.Config, name string) error {
 			continue
 		}
 		fmt.Fprintf(c.Out, "%s\n", t.Name)
-		fmt.Fprintf(c.Out, "  kind          %s\n", t.Kind)
+		fmt.Fprintf(c.Out, "  kind          %s\n", provenance(t))
 		fmt.Fprintf(c.Out, "  status        %s\n", loadedLabel(t))
 		fmt.Fprintf(c.Out, "  capabilities  %s\n", orNone(t.Capabilities))
-		fmt.Fprintf(c.Out, "  manifest      %s\n", t.ManifestPath)
+		if t.Generated {
+			fmt.Fprintf(c.Out, "  source        generated (in the store)\n")
+			fmt.Fprintf(c.Out, "  dependencies  %s\n", orNone(strings.Join(t.Deps, ", ")))
+		} else {
+			fmt.Fprintf(c.Out, "  manifest      %s\n", t.ManifestPath)
+		}
 		if t.Description != "" {
 			fmt.Fprintf(c.Out, "  description   %s\n", t.Description)
 		}
@@ -124,6 +129,37 @@ func printSandboxedTools(out io.Writer, tools []protocol.SandboxedToolStatus) {
 	if skipped > 0 {
 		fmt.Fprintf(out, "\n%d sandboxed tool(s) skipped; the daemon is running without them.\n", skipped)
 	}
+}
+
+// ToolsDeps lists the external npm packages each generated tool carries, so
+// "what third-party code is in this daemon, and which tool pulled it in" has one
+// answer (docs/sandboxed-tools.md §4.4).
+func (c *CLI) ToolsDeps(cfg *config.Config) error {
+	tools, err := c.sandboxedRoster(cfg, false)
+	if err != nil || tools == nil {
+		return err
+	}
+	var found bool
+	for _, t := range tools {
+		if len(t.Deps) == 0 {
+			continue
+		}
+		found = true
+		fmt.Fprintf(c.Out, "%-18s %s\n", t.Name, strings.Join(t.Deps, ", "))
+	}
+	if !found {
+		fmt.Fprintln(c.Out, "No generated tool has external dependencies.")
+	}
+	return nil
+}
+
+// provenance labels a tool's origin for `nine tools show`. A generated tool is
+// always js, so the column carries the more useful distinction.
+func provenance(t protocol.SandboxedToolStatus) string {
+	if t.Generated {
+		return "generated (js)"
+	}
+	return t.Kind
 }
 
 func loadedLabel(t protocol.SandboxedToolStatus) string {

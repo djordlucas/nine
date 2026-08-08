@@ -22,6 +22,7 @@ import (
 	"nine/internal/protocol"
 	"nine/internal/selfmodel"
 	"nine/internal/toolvm"
+	"nine/internal/toolvm/deps"
 )
 
 // minSubAgentTimeoutSeconds is the smallest run_agents timeout the caller may
@@ -843,13 +844,19 @@ func (f *AgentBuilder) registerApprovalGates(d *agent.Dispatcher, askerID string
 }
 
 // declaresCapability reports whether a tool_write/js_eval argument object asks
-// for any capability. Unparseable arguments gate to be safe — the fail-closed
-// direction for an approval decision.
+// for any capability OR pulls in an external dependency — the two things §9.4
+// says a human is actually being asked to weigh (reach and third-party code).
+// Unparseable arguments gate to be safe — the fail-closed direction for an
+// approval decision.
 func declaresCapability(args json.RawMessage) bool {
 	var req struct {
 		Capabilities json.RawMessage `json:"capabilities"`
+		Source       string          `json:"source"`
 	}
 	if err := json.Unmarshal(args, &req); err != nil {
+		return true
+	}
+	if len(deps.ExternalImports(req.Source)) > 0 {
 		return true
 	}
 	decl, err := parseDeclaration(req.Capabilities)
