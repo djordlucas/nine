@@ -136,8 +136,10 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 					return fmt.Errorf("usage: nine tools show <name>")
 				}
 				return c.ToolsShow(cfg, args[2])
+			case "deps":
+				return c.ToolsDeps(cfg)
 			}
-			return fmt.Errorf("usage: nine tools [reload|show <name>]")
+			return fmt.Errorf("usage: nine tools [reload|show <name>|deps]")
 		}
 		return c.Tools(cfg)
 	case "tool":

@@ -332,12 +332,15 @@ func initSchema(d db) error {
 		// Generated sandboxed tools (spec/contracts/toolvm.md R-TVM.14): code the
 		// agent wrote, as store state. `capabilities` is the tool's DECLARATION,
 		// never a grant — grants live in nine.toml and are the operator's.
+		// `source` is the BUNDLED js (external npm deps inlined at write time,
+		// §4.4); `lockfile` is the exact third-party code that bundle carries.
 		`CREATE TABLE IF NOT EXISTS tools (
 			name           TEXT PRIMARY KEY,
 			description    TEXT NOT NULL DEFAULT '',
 			input_schema   TEXT NOT NULL DEFAULT '{}',
 			source         TEXT NOT NULL DEFAULT '',
 			capabilities   TEXT NOT NULL DEFAULT '{}',
+			lockfile       TEXT NOT NULL DEFAULT '{}',
 			created_at     TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			updated_at     TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			last_called_at TEXT NOT NULL DEFAULT '',
@@ -453,5 +456,41 @@ func initSchema(d db) error {
 			return fmt.Errorf("create schema: %w", err)
 		}
 	}
+	// The `tools` table shipped in v2.1.0 without a lockfile column; a database
+	// created then needs it added, which CREATE TABLE IF NOT EXISTS cannot do. The
+	// schema is otherwise migration-free, so this is the one idempotent ALTER —
+	// kept explicit rather than growing a migration framework for a single column.
+	if err := addColumnIfMissing(d, "tools", "lockfile", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
+		return fmt.Errorf("create schema: %w", err)
+	}
 	return nil
+}
+
+// addColumnIfMissing adds column to table only when it is absent, so it is safe
+// to run on every Open. Needed for a column added to a table that predates it;
+// CREATE TABLE IF NOT EXISTS is a no-op against an existing table.
+func addColumnIfMissing(d db, table, column, def string) error {
+	rows, err := d.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return err
+	}
+	defer rows.Close() //nolint:errcheck
+	for rows.Next() {
+		var (
+			cid, notnull, pk int
+			name, ctype      string
+			dflt             sql.NullString
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == column {
+			return rows.Close()
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_, err = d.Exec("ALTER TABLE " + table + " ADD COLUMN " + column + " " + def)
+	return err
 }

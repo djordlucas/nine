@@ -1,6 +1,6 @@
 # Contract — Sandboxed Tools (the Wasm tool host)
 
-**Status:** Built (stages 1–5) · **Depends on:** dispatcher (registration), config (grants + the generated ceiling), memory store (generated tools are rows), HITL (the optional write gate) · **Used by:** any turn calling a sandboxed tool
+**Status:** Built (stages 1–6) · **Depends on:** dispatcher (registration), config (grants + the generated ceiling + the deps policy), memory store (generated tools are rows), HITL (the optional write gate), esbuild (write-time dependency bundling) · **Used by:** any turn calling a sandboxed tool
 
 A **sandboxed tool** is a wasm module that the daemon executes **in-process**, with an
 explicitly conferred set of capabilities and nothing else. It is a *second backend behind
@@ -18,7 +18,7 @@ The design rationale is `docs/sandboxed-tools.md`; the authoring guide is
 > capability model, and audit trail; the only differences are where the code comes from and,
 > for a generated tool, that the operator confers a **ceiling** rather than a per-tool grant.
 > Requirements R-TVM.1–R-TVM.12 hold for both kinds unless they say otherwise; R-TVM.14 adds
-> what is specific to the generated tier.
+> what is specific to the generated tier, and R-TVM.15 the modules it may import.
 
 ---
 
@@ -223,8 +223,12 @@ development time (`esbuild --bundle --format=esm` or equivalent), so by the time
 loads the file it has no imports left. Nine has no package manager, no lockfile, and no
 network at load time.
 
-The curated `nine:*` standard library and external-dependency resolution
-(`docs/sandboxed-tools.md` §4.2, §4.4) belong to the generated tier and **are not built**.
+**For a generated tool the allowlist is the `nine:*` stdlib** (R-TVM.15), served
+host-side from the pinned, vendored module map. External npm imports are **not** served at
+call time either: they are resolved and bundled **into the tool's source at write time**
+(R-TVM.15), so by the time the tool runs it has no imports left but `nine:*`. The rule
+above is unchanged and is *implemented* by that write-time bundler's resolver, which serves
+only from a verified cache — never weakened by it.
 
 ---
 
@@ -472,26 +476,74 @@ tool trains the reflex that defeats the prompt that matters.
 
 ### Reporting
 
-A generated tool appears in `nine tools` (R-TVM.11) with **no manifest path** and a
-provenance marker; `SandboxedToolStatus.Generated` carries this on the wire
-(`spec/contracts/wire-protocol.md`). Every write and delete is journalled to the daemon log
-with the tool name and its declared reach — the same posture as R-TVM.12 item 8, and with the
-same gap: per-turn attribution in `session_events` waits on the tool host carrying a session
-id.
+A generated tool appears in `nine tools` (R-TVM.11) with **no manifest path**, a provenance
+marker, and its dependency set; `SandboxedToolStatus.Generated` and `.Deps` carry these on
+the wire (`spec/contracts/wire-protocol.md`). `tool_write`/`tool_delete`/`js_eval` are
+ordinary dispatched tools, so each call is already recorded in `session_events`, attributed
+to the session and turn; the daemon **additionally** logs each write/delete with the tool
+name, declared reach, and resolved packages as a greppable operator breadcrumb. The audit
+gap R-TVM.12 item 8 describes is specific to `net.http`, not the meta-tools.
 
 ---
 
-## R-TVM.13 — Not built
+## R-TVM.15 — External dependencies and the `nine:*` stdlib
 
-The following are specified in `docs/sandboxed-tools.md` and **are not implemented**. Each is
-refused by name rather than silently ignored, because accepting it would advertise a boundary
-that does not exist.
+A generated tool may import two kinds of module, both resolved **before** the call — never by
+the guest, never at call time.
 
-| Feature | Design | Status |
-|---|---|---|
-| `nine:*` stdlib | §4.2 | Not present; the tool-side import allowlist is empty (R-TVM.8), for generated tools as for developer ones. |
-| External npm dependencies | §4.4 | No resolver, no bundler, no registry client. `deps` in a declaration is unknown. |
-| The `deps` + `net.http` interlock | §4.4 | Nothing to interlock: there are no dependencies to resolve. It becomes load-bearing the moment stage 6 is built. |
+### The `nine:*` stdlib (§4.2)
+
+A small, pinned, vendored set of pure-ES2023 modules (`nine:csv`, `nine:date`, `nine:diff`),
+embedded in the binary and served host-side from the module map (R-TVM.8). It is the
+generated tier's import allowlist: a generated tool may import any `nine:` module and nothing
+else without deps. The modules are authored in-house rather than pulled from npm, so each is
+known to run under the trimmed blob (R-TVM.9) and carries no transitive surface; the binary
+always matches the stdlib of its version.
+
+### External npm dependencies (§4.4)
+
+**Off by default** (`[tools.agent.deps].mode = "off"`), and the single riskiest switch in the
+design. When an operator enables it, `tool_write` resolves the tool's external imports **in
+the daemon, at write time, once**, and inlines them into the stored source via esbuild
+in-process. By call time the tool is one self-contained module with no imports but `nine:*`
+and no network. The pipeline **MUST**:
+
+1. **Policy-gate** every package. `allowlist` admits only operator-named packages, **transitive
+   deps included** (else the list is decoration); `open` admits anything within the budgets.
+2. **Verify integrity** — sha512 from the registry's `dist.integrity` — on the tarball
+   **before** its contents are read. A mismatch is refused.
+3. **Run no install scripts, ever.** The pipeline reads files out of a tarball; there is no
+   install step, so npm's dominant attack vector structurally does not exist.
+4. **Refuse Node builtins.** A package importing `fs`/`http`/`child_process`/`crypto` fails to
+   bundle (esbuild `PlatformNeutral`), with an actionable error.
+5. **Enforce budgets** — `max_packages` (incl. transitive), `max_bundle_kb`, `max_depth` — so a
+   small allowlist cannot expand without bound.
+6. **Record a lockfile** — name, version, integrity, requester per package — stored beside the
+   tool and printed by `nine tools show` / `nine tools deps`.
+7. **Resolve only from the cache when `frozen`**, never the network — the reproducible /
+   air-gapped posture.
+
+> **The interlock.** A tool that both declares `net.http` **and** resolves an external
+> dependency is **refused** unless `[tools.agent] allow_network_deps = true`. A package that
+> can reach the network can exfiltrate whatever the tool sees; the two features are
+> individually reasonable and jointly a data-exfiltration primitive.
+
+The containment argument: a malicious package is bounded by the tool's capabilities, and a
+tool that declares none has none (R-TVM.6, I-TVM.1). The blast radius of "arbitrary npm" is
+exactly the reach the operator already granted — which is why the interlock, keeping egress
+off the table, is load-bearing.
+
+New Go dependency: `github.com/evanw/esbuild/pkg/api` (pure Go, vendored). No Node, no npm
+binary, no toolchain enters the runtime image — the resolver and bundler are in-process.
+
+---
+
+## R-TVM.13 — Fully built
+
+Every feature `docs/sandboxed-tools.md` specifies is now implemented (stages 1–6). The
+`nine:*` stdlib (§4.2), external npm dependencies (§4.4), and the `deps` + `net.http`
+interlock are R-TVM.15; the generated tier is R-TVM.14. Nothing in the design remains
+stubbed or refused-by-name.
 
 ---
 
