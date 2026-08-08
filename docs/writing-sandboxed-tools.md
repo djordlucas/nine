@@ -1,11 +1,8 @@
 # Writing a sandboxed tool
 
-A **sandboxed tool** lets you add a permanent tool to Nine without writing a Go plugin,
+A **sandboxed tool** lets you add a permanent tool to Nine without writing a plugin,
 building a binary, or rebuilding the image. You drop two files in a directory; the daemon
 runs your code in a wasm sandbox with exactly the capabilities the operator granted it.
-
-This is the authoring guide. The design rationale is `docs/sandboxed-tools.md`; the
-normative contract is `spec/contracts/toolvm.md`.
 
 > **Who grants what.** You write the code and *declare* what it needs. The operator
 > running Nine writes the *grant*. These are never the same person, and a manifest that
@@ -80,10 +77,10 @@ have without a grant.
 | `abi` | | Guest ABI version. Omit; it defaults correctly. |
 | `[capabilities]` | | What you need. See below. |
 
-Unlike a native plugin, **the manifest is authoritative** — there is no process to ask
-`plugin.describe`, so this is where the model's view of your tool comes from. An unknown
-key is an error rather than a warning: in a file whose job is declaring capabilities, a
-typo'd key silently meaning nothing is the worst possible outcome.
+**The manifest is authoritative** — it is where the model's view of your tool comes from,
+so `name`, `description`, and `input_schema` all live here. An unknown key is an error
+rather than a warning: in a file whose job is declaring capabilities, a typo'd key silently
+meaning nothing is the worst possible outcome.
 
 Check it before you deploy — no daemon needed:
 
@@ -126,7 +123,7 @@ tools` shows you the reason:
 ```console
 $ nine tools
   ok    csv_stats          js     fs.read /srv/data=>/data
-  SKIP  weather            js     capability net.http is not implemented yet
+  SKIP  weather            js     net.http declared but not granted; add [tool.weather.capabilities.net.http]
 ```
 
 | Capability | You get | Granted by default |
@@ -195,10 +192,9 @@ Everything you would reach for from ES2023 itself is there: `JSON`, `Map`/`Set`,
 
 ### Dependencies: bundle them yourself
 
-**Nine never resolves a dependency.** It has no package manager, no lockfile, and no
-network at load time. `import` resolves against a closed host-side allowlist which, for a
-developer tool, is **empty** — so a tool that still contains an `import` will fail at call
-time.
+**For a developer tool, Nine never resolves a dependency** — that is your job, at build
+time. A `.js` file that still contains an `import` when Nine loads it will fail at call
+time. (Generated tools are the exception, and get their own resolver — see below.)
 
 Bundle at development time instead:
 
@@ -213,20 +209,91 @@ artifact. Nine inherits none of that machinery and none of that responsibility.
 Pure-ESM, zero-dependency packages bundle fine. Anything touching a Node builtin will not
 — which rules out a large share of npm before policy even enters the picture.
 
-### Generated tools: `nine:*` and, optionally, npm
+---
 
-The above is about **developer** tools, which you bundle yourself. A **generated** tool —
-one Nine writes via `tool_write` — has two import routes the developer tier does not
-(`spec/contracts/toolvm.md` R-TVM.15):
+## Generated tools: the tier Nine writes itself
 
-- **The `nine:*` stdlib**, always available, no config: `import { parse } from "nine:csv"`,
-  plus `nine:date` (`parseDate`, `isoWeek`, `formatISODate`) and `nine:diff` (`lineDiff`,
-  `unified`). These are served from the binary and need no bundling.
-- **External npm packages**, but only if an operator turned them on (`[tools.agent.deps]`,
-  off by default). Nine then resolves and bundles them **at `tool_write` time** — the agent
-  writes a normal `import "date-fns"` and Nine inlines it, verifies integrity, and records a
-  lockfile. A tool that both imports a package and declares `net.http` is refused unless
-  `allow_network_deps` is set. With deps off, only `nine:*` imports resolve.
+Everything above is about **developer** tools — files you install. Nine can also write its
+own tools at runtime, when the operator turns the generated tier on. These live in Nine's
+store rather than on disk, but they run in the identical sandbox under the identical rules,
+and they get two import routes a developer tool does not.
+
+Turn the tier on (off by default, and independent of `[tools] enabled`):
+
+```toml
+[tools.agent]
+enabled          = true
+eval             = true            # also allow one-off snippets that persist nothing
+max_tools        = 64             # cap the catalog; least-recently-used are evicted
+require_approval = "on_capability" # prompt a human only when a tool asks for reach
+
+# The ceiling: the MOST any generated tool may be granted — never automatic. A tool that
+# declares nothing still gets nothing. Narrow the mount if your workspace holds secrets.
+[tools.agent.capabilities.fs]
+read = [{ host = "${NINE_WORKSPACE}", guest = "/workspace" }]
+```
+
+### The `nine:*` standard library
+
+A generated tool may always import a small, curated set of pure-JavaScript modules — no
+config, no bundling, no network:
+
+```js
+import { parse, format } from "nine:csv";
+import { parseDate, isoWeek, formatISODate } from "nine:date";
+import { lineDiff, unified } from "nine:diff";
+
+export default ({ csv }) => ({ rows: parse(csv, { header: true }).length });
+```
+
+### External npm packages
+
+Off by default, and the single riskiest switch here. When an operator enables it, a
+generated tool can `import` a real package and Nine resolves it — once, at write time, in
+the daemon — verifies the download against its published checksum, runs no install scripts,
+and inlines it into the tool. By the time the tool runs it has no imports left but `nine:*`
+and no way to reach the network.
+
+The operator names what may be imported, and the versions they stand behind:
+
+```toml
+[tools.agent.deps]
+mode  = "allowlist"        # off (default) | allowlist | open
+allow = [
+  { name = "date-fns", version = "^4.1.0" },
+  { name = "papaparse", version = "^5.4.1" },
+]
+frozen = false            # true = resolve only from cache, never the network
+```
+
+A generated tool then simply imports it, and the write inlines it:
+
+```js
+import { formatISO, addDays } from "date-fns";
+export default ({ from, days }) => ({ due: formatISO(addDays(new Date(from), days)) });
+```
+
+Two rules worth knowing:
+
+- **A package plus `net.http` is refused** unless the operator explicitly sets
+  `allow_network_deps = true`. A dependency that can reach the network could send anything
+  the tool sees anywhere — the sandbox stops being a boundary. Leave it off.
+- **Packages needing Node built-ins won't bundle.** Anything reaching for `fs`, `http`, or
+  `crypto` fails with a clear error, which rules out a large share of npm up front.
+
+Inspect what got pulled in:
+
+```console
+$ nine tools deps
+  due_date          date-fns@4.1.0
+
+$ nine tools show due_date
+  due_date
+    kind          generated (js)
+    status        loaded
+    capabilities  none
+    dependencies  date-fns@4.1.0
+```
 
 ---
 
@@ -250,8 +317,8 @@ nine_run(ptr i32, len i32) -> i64   # run; return (offset << 32) | length
 There is no `free` — the instance is destroyed when the call returns, so everything is
 reclaimed at once and you need not track lifetimes.
 
-`internal/toolvm/testdata/upper.c` is a complete, ~60-line example in C, with its build
-line in `testdata/build.sh`. The same shape works from Rust, TinyGo, or Zig.
+The same tiny shape works from C, Rust, TinyGo, or Zig: allocate a buffer, read JSON in,
+write JSON out. No runtime, no imports, no capabilities you did not declare.
 
 ---
 
@@ -263,8 +330,8 @@ line in `testdata/build.sh`. The same shape works from Rust, TinyGo, or Zig.
 - **Five seconds, 16 MiB.** Both are operator-tunable (`[tools] timeout`, `memory_mb`).
   There is no CPU metering, so an infinite loop is killed by the wall clock, not by a work
   budget.
-- **Large results are spilled**, not lost — the same per-result token cap and file-store
-  spill that plugin tools get (`docs/tool-output-spill.md`).
+- **Large results are spilled**, not lost — a result over the per-call token cap is written
+  to the file store and replaced with a short preview the model can read back by path.
 - **A new tool is visible next turn.** Loops already in flight keep the tool set they
   started with.
 
