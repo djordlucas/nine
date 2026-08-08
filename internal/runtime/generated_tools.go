@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"nine/internal/agent"
 	"nine/internal/memory"
 	"nine/internal/toolvm"
+	"nine/internal/toolvm/deps"
 )
 
 // generatedTools bridges the agent-facing store (tool_write / tool_delete /
@@ -23,17 +25,22 @@ type generatedTools struct {
 	store *memory.Store
 	host  *toolvm.Host
 	mgr   toolOwner
+	// bundler resolves external npm imports at write time (§4.4), or nil when
+	// [tools.agent.deps] is off — then any external import is refused outright.
+	bundler *deps.Bundler
+	// allowNetworkDeps lifts the deps+net.http interlock (§4.4).
+	allowNetworkDeps bool
 }
 
 // NewGeneratedToolStore wires the generated tier, or returns nil when it is off.
 // A nil result disables tool_write/tool_delete/js_eval end to end: the builder
 // registers no handlers and advertises no defs, so a loop is identical to one
 // built before the tier existed.
-func NewGeneratedToolStore(store *memory.Store, host *toolvm.Host, mgr toolOwner) agent.GeneratedToolStore {
+func NewGeneratedToolStore(store *memory.Store, host *toolvm.Host, mgr toolOwner, bundler *deps.Bundler, allowNetworkDeps bool) agent.GeneratedToolStore {
 	if store == nil || host == nil || !host.AgentEnabled() {
 		return nil
 	}
-	return &generatedTools{store: store, host: host, mgr: mgr}
+	return &generatedTools{store: store, host: host, mgr: mgr, bundler: bundler, allowNetworkDeps: allowNetworkDeps}
 }
 
 // Write validates a proposed tool against the ceiling and the namespace, persists
@@ -50,15 +57,30 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 		return nil, err
 	}
 
+	// Resolve and inline external npm dependencies now, at write time, once (§4.4).
+	// What lands in the row is the self-contained bundle; by call time it has no
+	// imports but nine:* and no way to reach the network.
+	source, lock, err := g.bundle(ctx, spec.Source, decl)
+	if err != nil {
+		return nil, err
+	}
+	var lockJSON json.RawMessage
+	if !lock.Empty() {
+		if lockJSON, err = json.Marshal(lock); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := g.store.GeneratedToolUpsert(memory.GeneratedTool{
 		Name:        spec.Name,
 		Description: spec.Description,
 		InputSchema: spec.InputSchema,
-		// Source is the tool's JavaScript, the code the host compiles and runs; the
-		// row holds it verbatim (every tools row is agent-authored, so there is no
-		// separate provenance to store).
-		Source:       spec.Source,
+		// Source is the BUNDLED JavaScript the host compiles and runs; Lockfile is
+		// the exact third-party code it carries. Every tools row is agent-authored,
+		// so there is no separate provenance to store.
+		Source:       source,
 		Capabilities: spec.Capabilities,
+		Lockfile:     lockJSON,
 	}); err != nil {
 		return nil, err
 	}
@@ -73,10 +95,63 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 	// was written, with what reach" is answerable now; per-turn attribution in the
 	// session_events journal waits on the tool host carrying a session id.
 	slog.Info("generated tool written",
-		"tool", spec.Name, "fs", decl.FS, "net", decl.Net, "env", decl.Env, "evicted", evicted)
+		"tool", spec.Name, "fs", decl.FS, "net", decl.Net, "env", decl.Env,
+		"deps", lockNames(lock), "evicted", evicted)
 
 	g.reload(ctx)
 	return evicted, nil
+}
+
+// bundle resolves and inlines any external npm imports in source at write time,
+// and enforces the deps+net.http interlock (§4.4). A source that imports only
+// nine:* or nothing passes through untouched. Deps off (nil bundler) refuses an
+// external import here, with a message the model can act on, rather than letting
+// it fail cryptically at call time.
+func (g *generatedTools) bundle(ctx context.Context, source string, decl toolvm.Declaration) (string, deps.Lockfile, error) {
+	ext := deps.ExternalImports(source)
+	if len(ext) == 0 {
+		return source, deps.Lockfile{}, nil
+	}
+	if g.bundler == nil {
+		return "", deps.Lockfile{}, fmt.Errorf(
+			"tool imports external package(s) %v but external dependencies are disabled ([tools.agent.deps].mode); "+
+				"import only nine:* modules, or ask an operator to enable deps", ext)
+	}
+	bundled, lock, err := g.bundler.Bundle(ctx, source)
+	if err != nil {
+		return "", deps.Lockfile{}, err
+	}
+	// The interlock: a package that can reach the network can exfiltrate whatever
+	// the tool sees, so deps + net.http on one tool is refused by default (§4.4).
+	if !lock.Empty() && declaresHTTP(decl) && !g.allowNetworkDeps {
+		return "", deps.Lockfile{}, fmt.Errorf(
+			"tool declares net.http and pulls external dependencies (%s); this combination is a "+
+				"data-exfiltration risk and is refused unless [tools.agent] allow_network_deps = true", lockNames(lock))
+	}
+	return bundled, lock, nil
+}
+
+// declaresHTTP reports whether a declaration asks for net.http.
+func declaresHTTP(decl toolvm.Declaration) bool {
+	for _, n := range decl.Net {
+		if strings.EqualFold(strings.TrimSpace(n), "http") {
+			return true
+		}
+	}
+	return false
+}
+
+// lockNames renders a lockfile's packages as "name@version, …" for audit and
+// error messages; empty for a tool with no external dependencies.
+func lockNames(l deps.Lockfile) string {
+	if l.Empty() {
+		return ""
+	}
+	names := make([]string, len(l.Packages))
+	for i, p := range l.Packages {
+		names[i] = p.Name + "@" + p.Version
+	}
+	return strings.Join(names, ", ")
 }
 
 // Delete removes a tool and re-projects the catalog, so it disappears from the
@@ -97,7 +172,14 @@ func (g *generatedTools) Eval(ctx context.Context, source string, caps, args jso
 	if err != nil {
 		return "", err
 	}
-	return g.host.EvalGenerated(ctx, source, decl, args)
+	// js_eval runs under the identical rules, so its dependencies are resolved and
+	// its interlock enforced exactly as a persisted tool's are (§5.3) — the lockfile
+	// is simply discarded with everything else.
+	bundled, _, err := g.bundle(ctx, source, decl)
+	if err != nil {
+		return "", err
+	}
+	return g.host.EvalGenerated(ctx, bundled, decl, args)
 }
 
 func (g *generatedTools) reload(ctx context.Context) {

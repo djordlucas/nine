@@ -644,6 +644,7 @@ type mockGoalStore struct {
 }
 
 func (m *mockGoalStore) GoalList() ([]memory.Goal, error)                   { return m.goals, nil }
+func (m *mockGoalStore) GeneratedToolList() ([]memory.GeneratedTool, error) { return nil, nil }
 func (m *mockGoalStore) ReflectionList() ([]memory.Reflection, error)       { return nil, nil }
 func (m *mockGoalStore) WorkflowList(_ string) ([]workflow.Workflow, error) { return nil, nil }
 func (m *mockGoalStore) WorkflowCancel(_ string) (int, error)               { return 0, nil }

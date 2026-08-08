@@ -174,6 +174,10 @@ type SandboxedToolStatus struct {
 	Description  string `json:"description,omitempty"`
 	ManifestPath string `json:"manifest_path,omitempty"`
 	Error        string `json:"error,omitempty"`
+	// Deps is the external npm packages a generated tool's bundle carries, as
+	// "name@version" entries (docs/sandboxed-tools.md §4.4). Empty for a tool with
+	// no external dependencies — the common case. Additive/optional field.
+	Deps []string `json:"deps,omitempty"`
 }
 
 // SubAgentInfo describes one currently-running sub-agent.

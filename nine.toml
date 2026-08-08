@@ -153,6 +153,25 @@ root = "./dist"
 # methods     = ["GET"]                   # required
 # max_bytes   = 1048576                   # response cap; 0 uses 1 MiB
 
+# Generated tools: the tier Nine writes itself (docs/sandboxed-tools.md, R-TVM.14/15).
+# OFF by default and independent of [tools] enabled. The ceiling is the MAXIMUM a
+# generated tool may be granted, never an automatic grant — a tool that declares
+# nothing gets nothing. Generated tools may always import the nine:* stdlib
+# (nine:csv, nine:date, nine:diff); external npm packages are a separate, riskier
+# switch, resolved and bundled at write time and OFF by default.
+# [tools.agent]
+# enabled          = true
+# eval             = true             # allow js_eval (run a snippet, persist nothing)
+# max_tools        = 64               # catalog cap; least-recently-used are evicted
+# require_approval = "on_capability"  # on_capability (default) | always | never
+# [tools.agent.capabilities.fs]
+# read = [{ host = "${NINE_WORKSPACE}", guest = "/workspace" }]   # narrow if secrets live here
+# [tools.agent.deps]
+# mode  = "allowlist"                 # off (default) | allowlist | open ; frozen = true to pin
+# allow = [{ name = "date-fns", version = "^4.1.0" }]
+# allow_network_deps is set on [tools.agent], not here, and lifting it is dangerous:
+# a networked dependency turns the sandbox into an exfiltration path.
+
 # Human-in-the-loop (docs/hitl.md), interactive TUI conversations only.
 # require_approval names tools that need an explicit "yes" before each call;
 # gate_sub_agents (default true) extends those gates to sub-agents the

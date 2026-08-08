@@ -27,8 +27,12 @@ type GeneratedTool struct {
 	// on every reload — so narrowing the ceiling retroactively disables a tool
 	// that no longer fits under it rather than leaving it running.
 	Capabilities json.RawMessage `json:"capabilities,omitempty"`
-	CreatedAt    string          `json:"created_at,omitempty"`
-	UpdatedAt    string          `json:"updated_at,omitempty"`
+	// Lockfile is the exact external npm code the bundled Source carries: name,
+	// version, integrity, and requester per package (docs/sandboxed-tools.md §4.4).
+	// "{}" for a tool with no external dependencies, which is the common case.
+	Lockfile  json.RawMessage `json:"lockfile,omitempty"`
+	CreatedAt string          `json:"created_at,omitempty"`
+	UpdatedAt string          `json:"updated_at,omitempty"`
 	// LastCalledAt drives LRU eviction (docs/sandboxed-tools.md §9.2). Empty
 	// until the tool is first called.
 	LastCalledAt string `json:"last_called_at,omitempty"`
@@ -51,14 +55,18 @@ func (s *Store) GeneratedToolUpsert(t GeneratedTool) error {
 	if caps == "" {
 		caps = "{}"
 	}
+	lock := string(t.Lockfile)
+	if lock == "" {
+		lock = "{}"
+	}
 	_, err := s.db.Exec(
-		`INSERT INTO tools(name, description, input_schema, source, capabilities, created_at, updated_at)
-		 VALUES(?,?,?,?,?,?,?)
+		`INSERT INTO tools(name, description, input_schema, source, capabilities, lockfile, created_at, updated_at)
+		 VALUES(?,?,?,?,?,?,?,?)
 		 ON CONFLICT(name) DO UPDATE SET
 		   description=excluded.description, input_schema=excluded.input_schema,
 		   source=excluded.source, capabilities=excluded.capabilities,
-		   updated_at=excluded.updated_at`,
-		t.Name, t.Description, schema, t.Source, caps, nowText(), nowText())
+		   lockfile=excluded.lockfile, updated_at=excluded.updated_at`,
+		t.Name, t.Description, schema, t.Source, caps, lock, nowText(), nowText())
 	return err
 }
 
@@ -68,13 +76,14 @@ func (s *Store) GeneratedToolGet(name string) (GeneratedTool, bool, error) {
 		t      GeneratedTool
 		schema string
 		caps   string
+		lock   string
 		last   sql.NullString
 	)
 	err := s.db.QueryRow(
-		`SELECT name, description, input_schema, source, capabilities,
+		`SELECT name, description, input_schema, source, capabilities, lockfile,
 		        created_at, updated_at, last_called_at, call_count
 		   FROM tools WHERE name = ?`, name).
-		Scan(&t.Name, &t.Description, &schema, &t.Source, &caps,
+		Scan(&t.Name, &t.Description, &schema, &t.Source, &caps, &lock,
 			&t.CreatedAt, &t.UpdatedAt, &last, &t.CallCount)
 	if err == sql.ErrNoRows {
 		return GeneratedTool{}, false, nil
@@ -84,6 +93,7 @@ func (s *Store) GeneratedToolGet(name string) (GeneratedTool, bool, error) {
 	}
 	t.InputSchema = json.RawMessage(schema)
 	t.Capabilities = json.RawMessage(caps)
+	t.Lockfile = json.RawMessage(lock)
 	t.LastCalledAt = last.String
 	return t, true, nil
 }
@@ -92,7 +102,7 @@ func (s *Store) GeneratedToolGet(name string) (GeneratedTool, bool, error) {
 // first — the order eviction walks.
 func (s *Store) GeneratedToolList() ([]GeneratedTool, error) {
 	rows, err := s.db.Query(
-		`SELECT name, description, input_schema, source, capabilities,
+		`SELECT name, description, input_schema, source, capabilities, lockfile,
 		        created_at, updated_at, last_called_at, call_count
 		   FROM tools
 		  ORDER BY COALESCE(NULLIF(last_called_at, ''), created_at) ASC, name ASC`)
@@ -107,14 +117,16 @@ func (s *Store) GeneratedToolList() ([]GeneratedTool, error) {
 			t      GeneratedTool
 			schema string
 			caps   string
+			lock   string
 			last   sql.NullString
 		)
-		if err := rows.Scan(&t.Name, &t.Description, &schema, &t.Source, &caps,
+		if err := rows.Scan(&t.Name, &t.Description, &schema, &t.Source, &caps, &lock,
 			&t.CreatedAt, &t.UpdatedAt, &last, &t.CallCount); err != nil {
 			return nil, err
 		}
 		t.InputSchema = json.RawMessage(schema)
 		t.Capabilities = json.RawMessage(caps)
+		t.Lockfile = json.RawMessage(lock)
 		t.LastCalledAt = last.String
 		out = append(out, t)
 	}

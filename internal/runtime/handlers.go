@@ -628,6 +628,17 @@ func (d *Daemon) sandboxedToolStatuses() []protocol.SandboxedToolStatus {
 	for _, t := range d.tools.Tools() {
 		descriptions[t.Name] = t.Description
 	}
+	// A generated tool's dependency lockfile lives in the store, not the host, so
+	// join it in by name for the roster (R-TVM.14). Best-effort: a store read
+	// failure drops the deps column, never the roster.
+	depsByTool := map[string][]string{}
+	if d.store != nil {
+		if rows, err := d.store.GeneratedToolList(); err == nil {
+			for _, r := range rows {
+				depsByTool[r.Name] = lockfilePackages(r.Lockfile)
+			}
+		}
+	}
 	for _, st := range d.tools.Status() {
 		out = append(out, protocol.SandboxedToolStatus{
 			Name:         st.Name,
@@ -638,7 +649,30 @@ func (d *Daemon) sandboxedToolStatuses() []protocol.SandboxedToolStatus {
 			Description:  descriptions[st.Name],
 			ManifestPath: st.ManifestPath,
 			Error:        st.Err,
+			Deps:         depsByTool[st.Name],
 		})
+	}
+	return out
+}
+
+// lockfilePackages renders a stored lockfile as "name@version" entries for the
+// roster. A tool with no external dependencies (the common case) yields nil.
+func lockfilePackages(raw json.RawMessage) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var lf struct {
+		Packages []struct {
+			Name    string `json:"name"`
+			Version string `json:"version"`
+		} `json:"packages"`
+	}
+	if err := json.Unmarshal(raw, &lf); err != nil || len(lf.Packages) == 0 {
+		return nil
+	}
+	out := make([]string, len(lf.Packages))
+	for i, p := range lf.Packages {
+		out[i] = p.Name + "@" + p.Version
 	}
 	return out
 }
