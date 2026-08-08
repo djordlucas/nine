@@ -89,6 +89,11 @@ type ToolsConfig struct {
 	// (16 MiB).
 	MemoryMB int `toml:"memory_mb"`
 
+	// CacheDir is the root for the generated tier's dependency cache: extracted,
+	// integrity-verified npm packages, content-addressed and shared across tools
+	// (docs/sandboxed-tools.md §4.4). Empty uses os.UserCacheDir()/nine/tools.
+	CacheDir string `toml:"cache_dir"`
+
 	// Agent is the `[tools.agent]` table: the generated tier, where Nine writes
 	// its own tools (docs/sandboxed-tools.md §5.2). Off by default and
 	// independent of `enabled` — an operator may want developer tools without
@@ -137,6 +142,66 @@ type ToolsAgentConfig struct {
 	// declaration decides what is *granted*. The two are deliberately separate so
 	// that widening the ceiling does not retroactively widen every existing tool.
 	Capabilities ToolCapabilities `toml:"capabilities"`
+
+	// Deps is the `[tools.agent.deps]` table: external npm dependencies for
+	// generated tools (docs/sandboxed-tools.md §4.4). Off by default — the single
+	// riskiest switch in the design.
+	Deps ToolsDepsConfig `toml:"deps"`
+
+	// AllowNetworkDeps lifts the deps+net.http interlock. A package that can reach
+	// the network can exfiltrate whatever the tool sees, so a tool that both
+	// declares net.http AND resolves an external dependency is refused unless this
+	// is set. The two features are individually reasonable and jointly a
+	// data-exfiltration primitive (§4.4).
+	AllowNetworkDeps bool `toml:"allow_network_deps"`
+}
+
+// ToolsDepsConfig is `[tools.agent.deps]`: when and how a generated tool may pull
+// an external npm package. Resolution happens once, in the daemon, at tool_write
+// time; by call time the tool is one self-contained module with no imports and no
+// network (docs/sandboxed-tools.md §4.4).
+type ToolsDepsConfig struct {
+	// Mode is "off" (default), "allowlist" (only named packages, transitive
+	// included), or "open" (anything within the budgets — a development posture).
+	Mode string `toml:"mode"`
+	// Registry is the npm-compatible registry base URL. Empty uses the public
+	// registry; an internal mirror is the hardened choice.
+	Registry string `toml:"registry"`
+	// Allow is the operator's package list for allowlist mode: a name and a semver
+	// range they are willing to stand behind. Ignored in open mode.
+	Allow []DepAllow `toml:"allow"`
+	// MaxPackages caps the resolved tree (transitive included), MaxBundleKB the
+	// final bundle, MaxDepth the transitive depth. 0 uses the deps-package
+	// defaults (24 / 2048 / 4). Budgets are how a small allowlist is kept small.
+	MaxPackages int `toml:"max_packages"`
+	MaxBundleKB int `toml:"max_bundle_kb"`
+	MaxDepth    int `toml:"max_depth"`
+	// Frozen resolves only from the cache/lockfile and never touches the network —
+	// the air-gapped / reproducible posture. Iterate open, then freeze.
+	Frozen bool `toml:"frozen"`
+}
+
+// DepAllow is one `[tools.agent.deps].allow` entry.
+type DepAllow struct {
+	Name    string `toml:"name"`
+	Version string `toml:"version"` // a semver range, e.g. "^4.17.21"
+}
+
+// Deps modes for [tools.agent.deps].mode.
+const (
+	DepsModeOff       = "off"
+	DepsModeAllowlist = "allowlist"
+	DepsModeOpen      = "open"
+)
+
+// DepsMode returns the effective deps mode, defaulting to off.
+func (a ToolsAgentConfig) DepsMode() string {
+	switch a.Deps.Mode {
+	case DepsModeAllowlist, DepsModeOpen, DepsModeOff:
+		return a.Deps.Mode
+	default:
+		return DepsModeOff
+	}
 }
 
 // Approval modes for [tools.agent].require_approval.
@@ -489,6 +554,17 @@ func (cfg *Config) Validate() error {
 		return fmt.Errorf("[tools.agent]: require_approval %q must be %q, %q, or %q",
 			cfg.Tools.Agent.RequireApproval,
 			ToolApprovalOnCapability, ToolApprovalAlways, ToolApprovalNever)
+	}
+	switch cfg.Tools.Agent.Deps.Mode {
+	case "", DepsModeOff, DepsModeAllowlist, DepsModeOpen:
+	default:
+		return fmt.Errorf("[tools.agent.deps]: mode %q must be %q, %q, or %q",
+			cfg.Tools.Agent.Deps.Mode, DepsModeOff, DepsModeAllowlist, DepsModeOpen)
+	}
+	for _, a := range cfg.Tools.Agent.Deps.Allow {
+		if a.Name == "" {
+			return fmt.Errorf("[tools.agent.deps]: an allow entry has an empty name")
+		}
 	}
 	return nil
 }

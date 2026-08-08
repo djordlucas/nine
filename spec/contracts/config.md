@@ -61,14 +61,22 @@ bin = ""                        # compiled plugin binary directory
 # [tools] enabled unset ⇒ no host, no tools. [tools.agent] is the generated tier (R-TVM.14):
 # off and independent of [tools] enabled — an operator may want developer tools without
 # letting the agent author any.
+# [tools] cache_dir = ""            # dependency cache root; default os.UserCacheDir()/nine/tools
 # [tools.agent]
-# enabled          = false          # turns on tool_write/tool_delete
-# eval             = false          # additionally allow js_eval
-# max_tools        = 64             # catalog cap; LRU eviction past it
-# require_approval = "on_capability"# on_capability (default) | always | never — validated at load
+# enabled            = false        # turns on tool_write/tool_delete
+# eval               = false        # additionally allow js_eval
+# max_tools          = 64           # catalog cap; LRU eviction past it
+# require_approval   = "on_capability" # on_capability (default) | always | never — validated at load
+# allow_network_deps = false        # lift the deps+net.http interlock (R-TVM.15); dangerous
 # [tools.agent.capabilities]        # the CEILING: the maximum a generated tool may be granted,
 #   fs = { read = [ … ] }           #   never an automatic grant. A tool that declares nothing
 #                                   #   gets nothing. Same shape as [tool.<name>.capabilities].
+# [tools.agent.deps]                # external npm deps (R-TVM.15); off by default
+#   mode          = "off"           #   off (default) | allowlist | open — validated at load
+#   registry      = ""              #   npm-compatible base URL; empty = public registry
+#   frozen        = false           #   resolve only from cache/lockfile, never the network
+#   max_packages  = 24              #   budgets (incl. transitive) / max_bundle_kb / max_depth
+#   allow = [{ name = "date-fns", version = "^4.1.0" }]  # allowlist mode: named packages + ranges
 
 [memory]
 # SQLite database file. Created on first run, along with its parent directory.

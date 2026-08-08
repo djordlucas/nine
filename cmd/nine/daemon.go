@@ -72,8 +72,10 @@ func runDaemon() {
 	}
 	// The generated tier's write/delete/eval backend (docs/sandboxed-tools.md §5.2),
 	// or nil when `[tools.agent]` is off — in which case the meta-tools are neither
-	// registered nor advertised.
-	generatedTools := runtime.NewGeneratedToolStore(store, toolHost, pluginManager)
+	// registered nor advertised. The deps bundler resolves external npm imports at
+	// write time (§4.4); nil when [tools.agent.deps] is off.
+	generatedTools := runtime.NewGeneratedToolStore(store, toolHost, pluginManager,
+		runtime.NewDepsBundler(cfg), cfg.Tools.Agent.AllowNetworkDeps)
 
 	embedder := embed.Build(cfg.Embeddings.Provider, cfg.Embeddings.Model, cfg.Embeddings.Endpoint)
 
@@ -141,16 +143,16 @@ func runDaemon() {
 	// bootstrap — subscribers, standing agents, resume, instance name — is layered
 	// on below against the returned daemon (docs/evals.md §5).
 	asm := runtime.Assemble(runtime.AssemblyConfig{
-		SocketPath:     cfg.SocketPath(),
-		Store:          store,
-		Plugins:        pluginManager,
-		Tools:          toolHost,
+		SocketPath:        cfg.SocketPath(),
+		Store:             store,
+		Plugins:           pluginManager,
+		Tools:             toolHost,
 		GeneratedTools:    generatedTools,
 		GeneratedEval:     cfg.Tools.Agent.Eval,
 		GeneratedApproval: cfg.Tools.Agent.ApprovalMode(),
-		Embedder:       embedder,
-		ContextBudget:  cfg.ContextBudget(),
-		SystemPrompt:   runtime.BuildSystemPrompt(browserPlug != nil),
+		Embedder:          embedder,
+		ContextBudget:     cfg.ContextBudget(),
+		SystemPrompt:      runtime.BuildSystemPrompt(browserPlug != nil),
 		// Pull-surface related prior sessions only when the out-of-band indexer
 		// that populates the store is enabled.
 		RelatedSessions: cfg.Daemon.RelatedSessionsIndexEnabled(),
