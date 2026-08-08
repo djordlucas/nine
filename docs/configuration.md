@@ -264,7 +264,7 @@ plan_approval = "on-risky"
 # standing-agent table array.
 max_output_tokens = 2048
 
-# ── Sandboxed tools (spec/contracts/toolvm.md) ───────────────────────────────
+# ── Sandboxed tools ──────────────────────────────────────────────────────────
 # A wasm tool host: JavaScript or .wasm tools an operator installs as two files,
 # run in-process with an explicitly conferred capability set. OFF by default —
 # leaving `enabled` unset means no host, no tools, and agent loops identical to
@@ -327,7 +327,7 @@ allow_hosts = ["api.weather.example", "*.cdn.weather.example"]  # exact, or a
 methods     = ["GET"]        # required; no implicit default
 max_bytes   = 1048576        # response cap; 0 uses 1 MiB
 
-# ── Generated tools: the tier Nine writes itself (spec/contracts/toolvm.md R-TVM.14) ──
+# ── Generated tools: the tier Nine writes itself ─────────────────────────────
 # OFF by default and independent of [tools] enabled above — an operator may want developer
 # tools without letting the agent author any. When on, the agent gets tool_write/tool_delete
 # (and js_eval, separately switched); the tools it writes are rows in the store, listable and
@@ -352,9 +352,9 @@ require_approval = "on_capability"
 # that no longer fits, on the next load. Omit it entirely to keep every generated tool inert.
 [tools.agent.capabilities.fs]
 read = [{ host = "${NINE_WORKSPACE}", guest = "/workspace" }]  # narrow to a subdirectory if the
-                                                    # workspace holds secrets (see §7.1)
+                                                    # workspace holds secrets
 
-# ── The nine:* stdlib and external npm dependencies (spec/contracts/toolvm.md R-TVM.15) ──
+# ── The nine:* stdlib and external npm dependencies ──────────────────────────
 # A generated tool may always `import` the curated nine:* stdlib — nine:csv, nine:date,
 # nine:diff — served from the binary, no config needed. External npm packages are the single
 # riskiest switch in the design and are OFF by default. When enabled, Nine resolves them once,
