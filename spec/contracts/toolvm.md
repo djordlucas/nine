@@ -474,10 +474,16 @@ tool trains the reflex that defeats the prompt that matters.
 
 A generated tool appears in `nine tools` (R-TVM.11) with **no manifest path** and a
 provenance marker; `SandboxedToolStatus.Generated` carries this on the wire
-(`spec/contracts/wire-protocol.md`). Every write and delete is journalled to the daemon log
-with the tool name and its declared reach — the same posture as R-TVM.12 item 8, and with the
-same gap: per-turn attribution in `session_events` waits on the tool host carrying a session
-id.
+(`spec/contracts/wire-protocol.md`).
+
+`tool_write`, `tool_delete`, and `js_eval` are ordinary dispatched tools, so each call —
+its source, declared capabilities, and result — is already recorded in the `session_events`
+journal (`spec/contracts/event-journal.md`), attributed to the session and turn. The daemon
+**additionally** logs each write/delete with the tool name and its declared reach, as a
+greppable operator breadcrumb that survives a journal scrub. The audit gap R-TVM.12 item 8
+describes is **specific to `net.http`**: that call happens inside the wasm host, below the
+dispatcher, with no session id — it does **not** apply to the meta-tools, which run in the
+loop's own context.
 
 ---
 
