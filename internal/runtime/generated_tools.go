@@ -90,10 +90,12 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 		return nil, err
 	}
 
-	// Audit (§9.3): what code was written and the reach it declared. Structured on
-	// the daemon log, the same posture net.http calls have (R-TVM.12 item 8) — "what
-	// was written, with what reach" is answerable now; per-turn attribution in the
-	// session_events journal waits on the tool host carrying a session id.
+	// Audit (§9.3). tool_write is an ordinary dispatched tool, so the loop already
+	// journals the call — source, declared capabilities, result — to session_events,
+	// attributed to the session and turn (journalToolStart/End). This line is the
+	// supplementary operator breadcrumb: it lands in the daemon log, so "what did
+	// Nine write, with what reach, and what did it evict" is greppable independent of
+	// the journal and survives a session_events scrub.
 	slog.Info("generated tool written",
 		"tool", spec.Name, "fs", decl.FS, "net", decl.Net, "env", decl.Env,
 		"deps", lockNames(lock), "evicted", evicted)
