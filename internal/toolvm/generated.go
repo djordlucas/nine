@@ -98,6 +98,11 @@ func (h *Host) LoadGenerated(ctx context.Context, tools []Generated, collides Co
 			Generated: true,
 			module:    h.qjs,
 			source:    g.Source,
+			// The `nine:*` stdlib is the generated tier's import allowlist (§4.2):
+			// a tool may import any nine: module and nothing else. External npm
+			// imports are bundled into Source at write time (§4.4), so by call time
+			// the only imports left are these.
+			imports: stdlibModules(),
 		}
 
 		h.mu.Lock()
@@ -221,6 +226,9 @@ func (h *Host) EvalGenerated(ctx context.Context, source string, decl Declaratio
 		Generated:   true,
 		module:      h.qjs,
 		source:      source,
+		// Same import surface as a catalogued generated tool (§4.2): js_eval is a
+		// less-persistent tier, not a softer one.
+		imports: stdlibModules(),
 	}
 	return h.call(ctx, t, args)
 }

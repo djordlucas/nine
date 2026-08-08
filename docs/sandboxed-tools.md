@@ -1,9 +1,11 @@
 # Sandboxed tools — a Wasm tool host with conferred capabilities
 
-- **Status:** **Stages 1–5 built** (rev 1). This note remains the design rationale
-  and covers all six stages; the normative contract for what exists is
+- **Status:** **Stages 1–6 built** (rev 1) — the design is fully implemented. This
+  note remains the design rationale; the normative contract for what exists is
   `spec/contracts/toolvm.md` (`R-TVM.*`) and the authoring guide is
-  `docs/writing-sandboxed-tools.md`.
+  `docs/writing-sandboxed-tools.md`. Stage 6 (the `nine:*` stdlib, §4.2, and
+  external npm dependencies with the write-time esbuild bundler, §4.4, incl. the
+  `deps`+`net.http` interlock) is `R-TVM.15`.
   **Built:** the wazero host and ABI (§3–§4), the `js` kind with a trimmed
   QuickJS blob (§4.1) and a closed import allowlist (§4.3), developer tools with
   manifests (§5.1), the capability model end to end (§6–§7) — `fs` and `env`,
@@ -13,11 +15,12 @@
   `tool_delete` / `js_eval`, the `tools` table, the operator ceiling with per-tool
   declarations, the catalog cap with LRU eviction, the conditional `require_approval`
   gate (§9.4), and write/delete audit to the daemon log (§9.3). See `R-TVM.14`.
-  **Not built,** and refused by name rather than silently ignored: the `nine:*`
-  stdlib (§4.2) and external npm dependencies (§4.4, stage 6). §11 is explicit that
-  stage 6 must not precede adversarial tests on stages 3 and 4; those exist.
+  Stage 6 completed the set: the `nine:*` stdlib (§4.2), and external npm
+  dependencies (§4.4) resolved + integrity-checked + bundled at write time via
+  esbuild in-process, with the `deps`+`net.http` interlock. Nothing designed here
+  remains unbuilt.
 - **Date:** 2026-08-06 (proposed), stages 1–3 landed 2026-08-06, stage 4 on
-  2026-08-07, stage 5 on 2026-08-07.
+  2026-08-07, stages 5–6 on 2026-08-08.
 - **Motivation:** two capabilities that today have no home. (1) A **developer**
   wants to add a permanent tool without writing a Go plugin, building a binary,
   and rebuilding the image. (2) **Nine** wants to write a tool for a job it does

@@ -36,7 +36,7 @@ func TestGeneratedToolWriteMakesToolCallable(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = host.Close(context.Background()) })
 
-	gt := NewGeneratedToolStore(store, host, nil)
+	gt := NewGeneratedToolStore(store, host, nil, nil, false)
 	if gt == nil {
 		t.Fatal("generated tier is off despite [tools.agent] enabled")
 	}
@@ -87,7 +87,7 @@ func TestGeneratedToolDeleteUnloads(t *testing.T) {
 
 	host := OpenSandboxedTools(context.Background(), enabledAgentCfg(), store, nil)
 	t.Cleanup(func() { _ = host.Close(context.Background()) })
-	gt := NewGeneratedToolStore(store, host, nil)
+	gt := NewGeneratedToolStore(store, host, nil, nil, false)
 
 	if _, err := gt.Write(context.Background(), genSpec("noop", `export default () => "ok";`, nil)); err != nil {
 		t.Fatal(err)
@@ -118,7 +118,7 @@ func TestGeneratedToolWriteRefusedAboveCeiling(t *testing.T) {
 	// Empty ceiling: net.http is not grantable to generated tools here.
 	host := OpenSandboxedTools(context.Background(), enabledAgentCfg(), store, nil)
 	t.Cleanup(func() { _ = host.Close(context.Background()) })
-	gt := NewGeneratedToolStore(store, host, nil)
+	gt := NewGeneratedToolStore(store, host, nil, nil, false)
 
 	caps := json.RawMessage(`{"net":["http"]}`)
 	if _, err := gt.Write(context.Background(), genSpec("fetcher", `export default () => "x";`, caps)); err == nil {
@@ -141,7 +141,7 @@ func TestGeneratedToolCannotShadowMetaTool(t *testing.T) {
 
 	host := OpenSandboxedTools(context.Background(), enabledAgentCfg(), store, nil)
 	t.Cleanup(func() { _ = host.Close(context.Background()) })
-	gt := NewGeneratedToolStore(store, host, nil)
+	gt := NewGeneratedToolStore(store, host, nil, nil, false)
 
 	for _, name := range []string{"tool_write", "tool_delete", "js_eval"} {
 		if _, err := gt.Write(context.Background(), genSpec(name, `export default () => "x";`, nil)); err == nil {
@@ -163,7 +163,7 @@ func TestGeneratedEvalPersistsNothing(t *testing.T) {
 
 	host := OpenSandboxedTools(context.Background(), enabledAgentCfg(), store, nil)
 	t.Cleanup(func() { _ = host.Close(context.Background()) })
-	gt := NewGeneratedToolStore(store, host, nil)
+	gt := NewGeneratedToolStore(store, host, nil, nil, false)
 
 	out, err := gt.Eval(context.Background(), `export default ({a,b}) => ({ sum: a+b });`, nil, []byte(`{"a":2,"b":3}`))
 	if err != nil {
@@ -194,7 +194,7 @@ func TestGeneratedTierOffWithoutAgentConfig(t *testing.T) {
 	if host.AgentEnabled() {
 		t.Fatal("generated tier is on without [tools.agent] enabled")
 	}
-	if gt := NewGeneratedToolStore(store, host, nil); gt != nil {
+	if gt := NewGeneratedToolStore(store, host, nil, nil, false); gt != nil {
 		t.Fatal("NewGeneratedToolStore returned a backend for a disabled tier")
 	}
 }

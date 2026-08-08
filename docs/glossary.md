@@ -322,6 +322,22 @@ persists **nothing** — no name, no row, no catalog entry (`docs/sandboxed-tool
 exists so iterating on an idea does not accrete single-use tools into the catalog.
 Switched on separately by `[tools.agent] eval`.
 
+**`nine:*` stdlib** — A small, pinned, vendored set of pure-JavaScript modules a
+generated tool may import with no config and no network — `nine:csv`, `nine:date`,
+`nine:diff` (`docs/sandboxed-tools.md` §4.2, R-TVM.15). Embedded in the binary and
+served host-side; authored in-house rather than pulled from npm, so each is known
+to run under the trimmed interpreter and carries no transitive surface.
+
+**External dependencies / lockfile (`[tools.agent.deps]`)** — Off by default. When
+an operator enables it, a generated tool may `import` a named npm package; Nine
+resolves it **once, in the daemon, at `tool_write` time**, verifies its sha512,
+runs no install scripts, and bundles it into the tool's source with esbuild — so a
+called tool has no imports but `nine:*` and no network (R-TVM.15). The **lockfile**
+is the exact third-party code a tool carries (name, version, integrity, requester),
+printed by `nine tools show` / `nine tools deps`. The **interlock**: `deps` +
+`net.http` on one tool is refused unless `allow_network_deps` — a networked package
+turns the sandbox into an exfiltration path.
+
 **Post-call hook** — A callback registered with `AddHook(toolName, fn)` that
 fires after a successful call to a specific tool. (Skill description embedding
 is now done inline by `skill_write`/`skill_modify` in `RegisterSkillTools`, not
