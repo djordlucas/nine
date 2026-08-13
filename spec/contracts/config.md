@@ -22,14 +22,13 @@ implementation **MUST** honor this order.
 
 ```toml
 [llm]
-provider        = "ollama"      # ollama (default) | anthropic  (openai chat NOT implemented)
+provider        = "ollama"      # ollama is the only chat backend (openai chat NOT implemented)
 model           = "qwen3.5:4b"
-api_key         = ""            # or via env
-endpoint        = ""            # base URL (ollama)
+endpoint        = ""            # base URL; empty = http://localhost:11434
 context_budget  = 4096          # tokens per assembled turn
 max_concurrent  = 1             # in-flight LLM requests (1 for local models)
-num_ctx         = 0             # ollama only: model context window
-timeout_seconds = 0             # HTTP timeout for LLM calls; 0 = none
+num_ctx         = 0             # model context window
+timeout_seconds = 0             # HTTP timeout per call; 0 = adapter default (300s), <0 = none
 
 [daemon]
 socket_path             = "/tmp/nine.sock"

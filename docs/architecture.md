@@ -30,7 +30,7 @@ Nine is structured as a daemon/client pair. The daemon holds all long-lived stat
 │                 │                                    │
 │  ┌──────────────▼───────────────────┐               │
 │  │         LLM Provider             │               │
-│  │  (Anthropic / Ollama)            │               │
+│  │  (Ollama)                        │               │
 │  └──────────────────────────────────┘               │
 │                                                      │
 │  ┌────────────────────────────────────────────────┐ │

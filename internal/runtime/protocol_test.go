@@ -17,7 +17,7 @@ import (
 	ninectx "nine/internal/context"
 	"nine/internal/embed"
 	"nine/internal/llm"
-	"nine/internal/llm/anthropic"
+	"nine/internal/llm/ollama"
 	"nine/internal/memory"
 	"nine/internal/memory/memtest"
 	"nine/internal/plugin"
@@ -327,14 +327,11 @@ func TestSpawnSubAgent(t *testing.T) {
 	t.Error("timeout: no notification received from task")
 }
 
-// ---- integration tests (require ANTHROPIC_API_KEY) ----
+// ---- integration tests ----
 
+// TestMemoryEmbedQueryIntegration wires the real memory tools to a deterministic
+// embedder, so it needs no model and runs everywhere.
 func TestMemoryEmbedQueryIntegration(t *testing.T) {
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		t.Skip("ANTHROPIC_API_KEY not set")
-	}
-
 	store := newWireTestStore(t)
 
 	// Use a deterministic fake embedder (no Ollama needed).
@@ -371,10 +368,13 @@ func TestMemoryEmbedQueryIntegration(t *testing.T) {
 	}
 }
 
+// TestBackgroundTaskIntegration runs a real sub-agent against a live local
+// model. Set NINE_LIVE_MODEL to an Ollama tag (e.g. qwen3.5:4b) to run it, and
+// NINE_LLM_ENDPOINT if Ollama is not at localhost:11434.
 func TestBackgroundTaskIntegration(t *testing.T) {
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		t.Skip("ANTHROPIC_API_KEY not set")
+	model := os.Getenv("NINE_LIVE_MODEL")
+	if model == "" {
+		t.Skip("NINE_LIVE_MODEL not set")
 	}
 
 	root := wireModuleRoot(t)
@@ -416,7 +416,7 @@ func TestBackgroundTaskIntegration(t *testing.T) {
 		}
 	}
 
-	provider := anthropic.New(apiKey, "claude-haiku-4-5-20251001", "", 0)
+	provider := ollama.New(model, os.Getenv("NINE_LLM_ENDPOINT"), 0, false, 0)
 	queue := llm.NewQueue(provider, 1)
 	builder := ninectx.New(ninectx.Config{Budget: 8000, ToolTopN: 10})
 

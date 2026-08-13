@@ -49,9 +49,9 @@ its own file in a temp directory, so the suite needs no external service).
 
 **Build.** → [`contracts/llm-provider.md`](contracts/llm-provider.md)
 - The `Provider` interface — a **single** `Complete(ctx, Request) (Response, error)`,
-  streaming via the request's `OnChunk` callback. Anthropic is the reference default; the
-  **Ollama** local-model adapter is required (R-LLM.7) and hermetically unit-tested. There
-  is no OpenAI chat adapter.
+  streaming via the request's `OnChunk` callback. The **Ollama** local-model adapter is the
+  only one, is required (R-LLM.7), and is hermetically unit-tested. There is no OpenAI
+  chat adapter and no hosted-API adapter.
 - The `Queue`: a priority-ordered queue bounding in-flight calls to `max_concurrent`, with
   priorities `Supervisor(1) < Conversation(2) < Background(3)` (lower served first).
 

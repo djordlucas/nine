@@ -21,14 +21,14 @@ local database — your prompts, your conversation history, and everything the a
 remembers stay on hardware you control.
 
 Most agent tooling assumes a cloud model and a vendor's storage. That is a
-reasonable default, and it is not this one. Nine's default configuration points at
+reasonable default, and it is not this one. Nine points at
 [Ollama](https://ollama.com) on `localhost` and a SQLite file on disk; no API key
-is required, no database server is needed, and nothing leaves the machine. 
+is required, no database server is needed, and nothing leaves the machine.
 
-Anthropic's API is supported as a first-class provider when you want a frontier model, but it is opt-in
-rather than the path of least resistance. Swapping between the two is a two-line
-config change, because the LLM layer is a single-method interface.
-Nine is designed and developped with smaller models to ensure Nine remains useful with modest hardware.
+Local models are the only ones Nine talks to — there is no hosted-API provider to
+fall back on, by design. Nine is developed against smaller models to make sure it
+stays useful on modest hardware, and the LLM layer is a single-method interface,
+so a backend is a small, self-contained thing to add if you ever need another.
 
 The other half of the idea is that an agent should be *durable*. Nine's state is not
 a process that dies with your terminal. Conversations, goals, workflows, memory, and
@@ -130,7 +130,7 @@ conversation history. Run `nine` with no arguments for the interactive TUI.
 | Docker | 24+ | Container build (one container, no compose) |
 | golangci-lint | latest | Optional, for `make lint` |
 
-Plus an LLM provider: a running Ollama, or an Anthropic API key.
+Plus a running [Ollama](https://ollama.com) with a model pulled.
 
 Sandboxed tools need nothing extra to run: the QuickJS interpreter they execute on is
 committed to the repo as a pre-built wasm artifact with a recorded SHA-256, and the
@@ -189,10 +189,9 @@ variables rather than a second config file. The essentials:
 
 ```toml
 [llm]
-provider       = "ollama"        # or "anthropic" — these are the only two
+provider       = "ollama"        # the only chat backend
 model          = "qwen3.5:4b"
-endpoint       = ""              # ollama; empty uses its local default
-api_key        = ""              # anthropic: empty reads ANTHROPIC_API_KEY
+endpoint       = ""              # empty uses Ollama's local default
 num_ctx        = 32768           # also sets the per-turn context budget
 max_concurrent = 1               # keep at 1 for local models
 thinking       = true            # stream reasoning as a live trace in the TUI
@@ -246,7 +245,6 @@ Environment variables override the file. The most useful:
 | `NINE_DB_PATH` | Override the database file path |
 | `NINE_PLUGINS_BIN` / `NINE_WORKSPACE_ROOT` | Override the plugin and workspace paths (how the container reuses `nine.toml`) |
 | `NINE_TOOLS_USER_DIR` | Override the sandboxed-tool directory. Deliberately the *only* tool override — whether the subsystem runs at all stays in `nine.toml` |
-| `ANTHROPIC_API_KEY` | Anthropic key |
 | `SEARCH_PROVIDER` / `SEARCH_API_KEY` | `web_search` backend: `brave` or `serpapi`. Unset uses DuckDuckGo, no key needed. |
 | `NINE_LOG_LEVEL` / `NINE_LOG_FORMAT` | `debug`/`info`/`warn`/`error`; `text`/`json` |
 
@@ -289,7 +287,7 @@ message, prints the reply. Everything long-lived is in the daemon.
 │                 │                                   │
 │  ┌──────────────▼───────────────────┐               │
 │  │         LLM Provider             │               │
-│  │  (Anthropic / Ollama)            │               │
+│  │  (Ollama)                        │               │
 │  └──────────────────────────────────┘               │
 │                                                     │
 │  ┌────────────────────────────────────────────────┐ │
