@@ -9,9 +9,13 @@
 ```
 **A local and durable AI agent daemon.**
 
+*Under active development — every feature ships with tests, but none of it has heavy
+mileage yet. See [Project status](#project-status).*
+
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8.svg)](go.mod)
 [![Status: experimental](https://img.shields.io/badge/status-experimental-orange.svg)](#project-status)
+[![Tests: broad, not deep](https://img.shields.io/badge/tests-broad%2C%20not%20deep-yellow.svg)](#project-status)
 
 Nine is a persistent background agent: a daemon that holds long-lived state, runs a
 ReAct loop over a pluggable set of tools, pursues goals between your turns, and
