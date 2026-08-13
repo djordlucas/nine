@@ -11,16 +11,17 @@
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8.svg)](go.mod)
 [![Status: experimental](https://img.shields.io/badge/status-experimental-orange.svg)](#project-status)
 
-Nine is a harness for putting a local model to work. A daemon stays running in the
-background, holds every conversation, goal, note and journal entry in one SQLite file
-on your disk, and drives a ReAct loop over a tool surface you assemble. A model on its
-own can only produce text; what makes it *do* something is the tools it is handed —
-so Nine treats the tool surface as the thing to grow, and gives it a shell, the
-filesystem, HTTP, a headless browser, and whatever else you add. Anything a computer
-can reach is something Nine can be pointed at, to automate outright or to work
-alongside you on.
+Nine is an **AI agent runtime** for putting a local model to work. A daemon stays
+running in the background, holds every conversation, goal, note and journal entry in one
+SQLite file on your disk, and drives a ReAct loop over a tool surface you assemble. A
+model on its own can only produce text; what makes it *do* something is the tools it is
+handed and somewhere to keep running once you stop typing — so Nine supplies both. It
+gives the model a shell, the filesystem, HTTP, a headless browser and whatever else you
+add, and it hosts that loop in a process that goes on taking turns without you. Anything
+a computer can reach is something Nine can be pointed at, to automate outright or to
+work alongside you on.
 
-Four properties shape the design.
+Five properties shape the design.
 
 **Modular.** Tools reach the agent through one dispatcher with several backends behind
 it: core tools calling the store in-process, native plugins as separate binaries over a
@@ -31,11 +32,20 @@ interface, so the model backend is swappable too.
 
 **Persistent.** State is not a process that dies with your terminal. Conversations,
 goals, workflows, memory, files, skills and generated tools live in a database file, and
-every turn is checkpointed — kill the daemon mid-task and it resumes. Work continues
-between your turns: each top-level goal gets a background session that wakes on an
-interval to make progress on it — standing agents you declare in config can wake on a
-cron schedule instead — always at a lower LLM priority than the conversation in front
-of you.
+every turn is checkpointed — kill the daemon mid-task and it resumes with the same
+history, the same plan, and the same place in it.
+
+**Autonomous.** Work continues between your turns, because taking a turn does not
+require you. Every session carries a plan of stages with an idle scheduler behind it,
+and that one mechanism drives the whole autonomous tier: a goal — open-ended, no end
+condition, *"monitor this repo for security issues"* — gets a background session that
+wakes on an interval to push it forward; **standing agents** declared in `nine.toml`
+skip the human entirely, coming up on boot, waking on a cron schedule, narrowly
+tool-scoped, and surfacing findings to `nine notifications`; a self-reflection session
+and a supervisor watching for stalls and capability gaps run on the same machinery.
+Background work is always queued below the conversation in front of you, so a goal
+grinding away never makes you wait, and it enriches rather than interrupts — it never
+steers a session you are in the middle of.
 
 **Auditable.** An append-only journal records every step the agent has ever taken —
 turn boundaries, the exact LLM request and response, tool I/O with latency and errors,
@@ -683,6 +693,8 @@ fixed. The reasoning is in
 | **Skill** | Markdown how-to note, semantically retrieved into context |
 | **Goal** | An open-ended intention with no end condition, pursued in the background |
 | **Workflow** | A finite multi-step plan for sub-agent delegation |
+| **Session plan** | The stages and idle schedule that let a session wake and take its own next turn |
+| **Standing agent** | A goal declared in `nine.toml`; runs from boot on a cron schedule, no human turn needed |
 | **Supervisor** | Special agent that monitors others for stalls and capability gaps |
 | **Checkpoint** | Serialized agent state persisted to the database |
 | **Journal** | Append-only record of every step, enabling trace and deterministic replay |
