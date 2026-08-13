@@ -24,7 +24,7 @@ reports/      JSON + rendered grid, one per live run
 
 ```sh
 make eval-replay      # Track R + schema validation. No model, no database.
-NINE_EVAL_MODELS=claude-haiku-4-5-20251001 make eval-live   # Track L matrix
+NINE_EVAL_MODELS=qwen3.5:4b make eval-live   # Track L matrix
 make eval-generate    # re-record the committed Track-R fixtures
 ```
 
@@ -41,8 +41,7 @@ same durable journal (`session_events`) production writes.
 | `NINE_EVAL_MODELS` | comma-separated model list for the matrix |
 | `NINE_EVAL_TIER` | run only one tier (e.g. `smoke`) |
 | `NINE_PLUGINS_BIN` | plugin binary dir (default from `make eval-live`) |
-| `ANTHROPIC_API_KEY` | for `claude-*` matrix models |
-| `NINE_LLM_ENDPOINT` | Ollama endpoint for local matrix models |
+| `NINE_LLM_ENDPOINT` | Ollama endpoint for the matrix models |
 
 ## Keeping the harness faithful
 

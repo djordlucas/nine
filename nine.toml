@@ -17,15 +17,16 @@
 ## Full reference: docs/configuration.md
 
 [llm]
-# Chat providers: "ollama" (default) and "anthropic". Any other value falls
-# through to the Anthropic client.
+# Ollama is the only chat provider: Nine runs on local models. Any other value
+# is reported at boot and Ollama is used anyway.
 provider       = "ollama"
 model          = "qwen3.5:4b"
-# Anthropic only. Leave empty to read ANTHROPIC_API_KEY.
-api_key        = ""
-# Required for ollama; empty uses Ollama's local default. Overridden in the
+# Empty uses Ollama's local default (http://localhost:11434). Overridden in the
 # container with NINE_LLM_ENDPOINT.
 endpoint       = ""
+# HTTP timeout for a single model call. 0 uses the adapter default (300s);
+# a negative value removes the timeout, leaving only turn cancellation.
+# timeout_seconds = 0
 # Keep at 1 for local models to prevent contention.
 max_concurrent = 1
 # Requested context window; also sets the per-turn context budget.

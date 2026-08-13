@@ -395,15 +395,14 @@ type UIConfig struct {
 type LLMConfig struct {
 	Provider       string `toml:"provider"`
 	Model          string `toml:"model"`
-	APIKey         string `toml:"api_key"`
 	Endpoint       string `toml:"endpoint"`
 	ContextBudget  int    `toml:"context_budget"`
 	MaxConcurrent  int    `toml:"max_concurrent"`
-	NumCtx         int    `toml:"num_ctx"`         // Ollama only: model context window size
-	TimeoutSeconds int    `toml:"timeout_seconds"` // HTTP timeout for LLM calls; 0 = no timeout
+	NumCtx         int    `toml:"num_ctx"`         // model context window size
+	TimeoutSeconds int    `toml:"timeout_seconds"` // HTTP timeout for LLM calls; 0 = the adapter default
 
 	// Thinking surfaces the model's extended-thinking reasoning as a live trace in
-	// the TUI (Ollama only for now: sends think:true and drops /no_think). A *bool
+	// the TUI (sends think:true to Ollama and drops /no_think). A *bool
 	// so an unset value defaults to on while an explicit false disables it. The
 	// model must advertise the "thinking" capability.
 	Thinking *bool `toml:"thinking"`

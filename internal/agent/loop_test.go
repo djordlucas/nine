@@ -14,7 +14,7 @@ import (
 	"nine/internal/agent"
 	ninectx "nine/internal/context"
 	"nine/internal/llm"
-	"nine/internal/llm/anthropic"
+	"nine/internal/llm/ollama"
 	"nine/internal/plugin"
 )
 
@@ -367,10 +367,14 @@ func TestLoopStatePreservesHistory(t *testing.T) {
 
 // ---- integration test ----
 
+// TestLoopIntegration drives the loop against a live local model. Set
+// NINE_LIVE_MODEL to an Ollama tag (e.g. qwen3.5:4b) to run it, and
+// NINE_LLM_ENDPOINT if Ollama is not at localhost:11434. It needs a model that
+// can hold a two-tool surface — see docs/model-compatibility.md.
 func TestLoopIntegration(t *testing.T) {
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		t.Skip("ANTHROPIC_API_KEY not set")
+	model := os.Getenv("NINE_LIVE_MODEL")
+	if model == "" {
+		t.Skip("NINE_LIVE_MODEL not set")
 	}
 
 	root := moduleRoot(t)
@@ -417,7 +421,7 @@ func TestLoopIntegration(t *testing.T) {
 	dispatcher.RegisterPlugin(mgr, shellPlug)
 	dispatcher.RegisterPlugin(mgr, filesPlug)
 
-	provider := anthropic.New(apiKey, "claude-haiku-4-5-20251001", "", 0)
+	provider := ollama.New(model, os.Getenv("NINE_LLM_ENDPOINT"), 0, false, 0)
 	queue := llm.NewQueue(provider, 1)
 	builder := ninectx.New(ninectx.Config{Budget: 8000, ToolTopN: 10})
 
