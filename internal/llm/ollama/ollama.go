@@ -16,7 +16,14 @@ import (
 	"nine/internal/llm"
 )
 
-const defaultEndpoint = "http://localhost:11434"
+const (
+	defaultEndpoint = "http://localhost:11434"
+
+	// defaultTimeout bounds a single /api/chat call when the operator sets no
+	// [llm].timeout_seconds. It is generous because a local model on CPU can
+	// take minutes to answer a long prompt.
+	defaultTimeout = 300 * time.Second
+)
 
 // Provider calls the Ollama chat API.
 type Provider struct {
@@ -36,17 +43,26 @@ type Provider struct {
 // numCtx sets the model context window size; 0 uses Ollama's default. When
 // thinking is true, the provider asks Ollama for extended thinking (think:true)
 // and streams reasoning tokens via Request.OnThinkingChunk; when false, thinking
-// is suppressed with /no_think as before.
-func New(model, endpoint string, numCtx int, thinking bool) *Provider {
+// is suppressed with /no_think as before. timeoutSecs is the HTTP client timeout
+// in seconds ([llm].timeout_seconds); 0 uses defaultTimeout and a negative value
+// disables the timeout entirely, leaving cancellation to the caller's context.
+func New(model, endpoint string, numCtx int, thinking bool, timeoutSecs int) *Provider {
 	if endpoint == "" {
 		endpoint = defaultEndpoint
+	}
+	timeout := defaultTimeout
+	switch {
+	case timeoutSecs > 0:
+		timeout = time.Duration(timeoutSecs) * time.Second
+	case timeoutSecs < 0:
+		timeout = 0
 	}
 	return &Provider{
 		model:    model,
 		endpoint: endpoint,
 		numCtx:   numCtx,
 		thinking: thinking,
-		client:   &http.Client{Timeout: 300 * time.Second},
+		client:   &http.Client{Timeout: timeout},
 	}
 }
 

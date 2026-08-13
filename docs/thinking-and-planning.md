@@ -31,7 +31,7 @@
      `LeafRoles()` (not a delegation target). Tested.
   - **Gate correction (important):** the pass triggers on `Queue.ThinkingUnsupported`
     (provider IS `ThinkingAware` AND reports false) — NOT `!SupportsThinking`, which
-    over-fires on providers without capability detection (Anthropic, test mocks). Tested.
+    over-fires on providers without capability detection (test mocks). Tested.
 - ✅ **M5 — Safety.** `PlanReviewFn`/`PlanDecision` on loop `Config`; invoked between the
   analysis pass and the exec loop with the **raw** plan text; reject-with-clarification folds
   the text in as a user message and re-runs analysis (`loop.go`). Runtime wires it in
@@ -155,9 +155,8 @@ Makes thinking per-call at all; unlocks every dynamic behavior above.
 - Ollama `Complete`: honor `req.Think` (gated by Layer 0) instead of the
   construction-time `p.thinking` field. Keep `p.thinking` as the default when
   `req.Think == nil` for back-compat.
-- Anthropic (`internal/llm/anthropic`): ignores thinking today; out of scope for
-  first cut. Later: implement `SupportsThinking → true` (static) and map `Think` to
-  `thinking.budget_tokens`.
+- Any future adapter: implement `SupportsThinking` and map `Think` onto whatever
+  the backend calls a reasoning budget. Ollama is the only adapter today.
 
 ---
 

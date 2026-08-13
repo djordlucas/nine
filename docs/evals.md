@@ -154,7 +154,7 @@ expect:
     not_contains: ["error", "cannot"]
     judge:                            # optional LLM-as-judge
       rubric: "The answer correctly states the prod DB host."
-      model: claude-sonnet-5          # a DIFFERENT, stronger model than under test
+      model: qwen3.5:32b              # a DIFFERENT, stronger model than under test
       pass_score: 0.8
 
 # ── Live-run controls (Track L) ──
@@ -164,7 +164,7 @@ timeout_seconds: 300                 # per-run wall-clock bound; default 300 (ge
 
 # ── Model applicability ──
 models:
-  include: [claude-haiku, claude-sonnet, gemma4:e4b, qwen3.5:9b]
+  include: [gemma4:e4b, qwen3.5:9b]
   # Expected to pass only on these classes; below-class failures are reported, not fatal.
   expected_pass_min_class: small      # nano | small | medium | large  (see §6)
 ```
@@ -245,8 +245,7 @@ pass fraction ≥ `pass_threshold`. Everything in §1–§3 applies. Requirement
 - **Isolation per run**: a fresh session id, a database file per run (reuse the
   `internal/memory/memtest` pattern), and an ephemeral workspace dir. Cases must not
   see each other's memory/goals/files.
-- **Variance reduction**: temperature 0 and a fixed `seed` where the provider
-  supports it (Ollama does; Anthropic is best-effort).
+- **Variance reduction**: temperature 0 and a fixed `seed`, which Ollama supports.
 - **Embedder wired in**: the live harness builds an embedder (Ollama
   `nomic-embed-text` by default; `NINE_EVAL_EMBED_MODEL`, or `=none` to disable) so
   semantic-memory, related-session, and tool-ranking behave as in production —
@@ -271,8 +270,13 @@ Run the same cases across a set and report a **cases × models** grid.
 |-------|----------------|------------------------|
 | `nano` | `gemma4:e2b`, `gemma4:e4b`, `llama3.2:3b` | single tool call; simple recall |
 | `small` | `qwen3.5:9b`, `llama3.1:8b` | reliable tool use; 2–3 step tasks |
-| `medium` | `claude-haiku`, `gemma4:12b` | multi-step, basic delegation |
-| `large` | `claude-sonnet-5`, `claude-opus` | delegation, workflows, HITL, judging |
+| `medium` | `gemma4:12b`, `qwen3.5:14b` | multi-step, basic delegation |
+| `large` | `qwen3.5:32b` and up | delegation, workflows, HITL, judging |
+
+A model's class comes from `runner.ClassOf`: an explicit table entry first, else the
+parameter count in its Ollama tag (`qwen3.5:32b` → 32B → `large`; `<4B` nano, `<10B`
+small, `<20B` medium, above that large), else `small`. Tag the exceptions in the table —
+gemma's `e4b` names *effective* parameters and behaves a tier below its number.
 
 A case's `expected_pass_min_class` sets the bar: a failure **at or above** that class
 is a real failure (fatal to the run); a failure **below** it is reported but expected.
@@ -390,5 +394,4 @@ To add coverage, or to have an LLM expand the corpus:
 - Isolation: `internal/memory/memtest` (a database file per test, under `t.TempDir()`).
 - Existing harness: `tests/integration/setup_test.go` (Docker + Ollama bring-up),
   `make integration-test`.
-- Models/config: `NINE_LLM_PROVIDER`/`NINE_LLM_MODEL`/`NINE_LLM_ENDPOINT`,
-  `internal/llm/{anthropic,ollama}`.
+- Models/config: `NINE_LLM_MODEL`/`NINE_LLM_ENDPOINT`, `internal/llm/ollama`.

@@ -457,12 +457,13 @@ than self-generated.
 `[llm]`, `[daemon]`, `[plugins]`, `[skills]`, `[memory]`, `[embeddings]`,
 `[ui]`, `[workspace]`. See [Configuration](configuration.md).
 
-**LLM provider** — `[llm].provider`: `anthropic` (default) or `ollama`. These are
-the only chat backends `BuildProvider` wires; any other value falls through to the
-Anthropic client. (`internal/llm/openai` is an empty placeholder — OpenAI is
-available for *embeddings* only, via `[embeddings].provider`.) The `Provider`
-interface is a single method, `Complete(ctx, Request) (Response, error)`, with
-streaming via the request's `OnChunk` callback.
+**LLM provider** — `[llm].provider`: `ollama`, the only chat backend
+`BuildProvider` wires. Nine runs on local models, so any other value is reported
+as unknown at boot and Ollama is used anyway. (`internal/llm/openai` is an empty
+placeholder — OpenAI is available for *embeddings* only, via
+`[embeddings].provider`.) The `Provider` interface is a single method,
+`Complete(ctx, Request) (Response, error)`, with streaming via the request's
+`OnChunk` callback.
 
 **`max_concurrent`** — Cap on in-flight LLM requests in the priority queue;
 set to `1` for local Ollama models to avoid contention.

@@ -20,7 +20,7 @@ func loadTOML(t *testing.T, body string) (*Config, error) {
 // one would be a credential exfiltration primitive. These are refused at load —
 // a config error, not a silent filter, so an operator who meant it finds out.
 func TestReservedEnvKeysAreRefused(t *testing.T) {
-	for _, key := range []string{"NINE_WORKSPACE_ROOT", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"} {
+	for _, key := range []string{"NINE_WORKSPACE_ROOT", "OPENAI_API_KEY"} {
 		t.Run(key, func(t *testing.T) {
 			_, err := loadTOML(t, `
 [tool.leaky.capabilities]

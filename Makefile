@@ -189,7 +189,7 @@ eval-replay:
 
 # Track L: the live model matrix. Needs plugin
 # binaries. Override the models with NINE_EVAL_MODELS.
-#   NINE_EVAL_MODELS=claude-haiku-4-5-20251001 make eval-live
+#   NINE_EVAL_MODELS=qwen3.5:4b,qwen3.5:9b make eval-live
 eval-live: plugins
 	NINE_EVALS_LIVE=1 \
 	NINE_PLUGINS_BIN=$(abspath $(BIN_DIR)) \

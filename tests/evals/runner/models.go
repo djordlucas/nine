@@ -3,11 +3,11 @@ package runner
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"nine/internal/embed"
 	"nine/internal/llm"
-	"nine/internal/llm/anthropic"
 	llmollama "nine/internal/llm/ollama"
 )
 
@@ -45,57 +45,78 @@ func ParseClass(s string) (ModelClass, error) {
 }
 
 // defaultClasses maps the example models from docs/evals.md §6 to their tier.
-// Unknown models fall back to classOf's prefix heuristics.
+// A model that is not listed falls back to ClassOf's tag heuristic.
 var defaultClasses = map[string]ModelClass{
-	"gemma4:e2b":   ClassNano,
-	"gemma4:e4b":   ClassNano,
-	"llama3.2:3b":  ClassNano,
-	"qwen3.5:9b":   ClassSmall,
-	"llama3.1:8b":  ClassSmall,
-	"gemma4:12b":   ClassMedium,
-	"claude-haiku": ClassMedium,
+	"gemma4:e2b":  ClassNano,
+	"gemma4:e4b":  ClassNano,
+	"llama3.2:3b": ClassNano,
+	"qwen3.5:9b":  ClassSmall,
+	"llama3.1:8b": ClassSmall,
+	"gemma4:12b":  ClassMedium,
 }
 
-// ClassOf returns a model's capability class: an explicit table entry, else a
-// prefix heuristic (claude-opus/sonnet are large, other claude-* medium, small
-// local models default to small).
+// ClassOf returns a model's capability class: an explicit table entry, else the
+// parameter count in the Ollama tag (`qwen3.5:32b` → 32B → large), else small.
+//
+// The tag heuristic exists because every model is now a local one, and its
+// parameter count is the only capability signal an Ollama tag carries. It is
+// deliberately coarse; a model whose tag lies about its tier (gemma's `e4b`
+// effective-parameter tags punch below their number) gets a table entry, which
+// always wins.
 func ClassOf(model string) ModelClass {
 	if c, ok := defaultClasses[model]; ok {
 		return c
 	}
-	m := strings.ToLower(model)
-	switch {
-	case strings.Contains(m, "opus"), strings.Contains(m, "sonnet"), strings.Contains(m, "fable"):
-		return ClassLarge
-	case strings.HasPrefix(m, "claude"):
-		return ClassMedium
-	default:
-		return ClassSmall
+	if b, ok := paramsB(model); ok {
+		switch {
+		case b < 4:
+			return ClassNano
+		case b < 10:
+			return ClassSmall
+		case b < 20:
+			return ClassMedium
+		default:
+			return ClassLarge
+		}
 	}
+	return ClassSmall
 }
 
-// ProviderFor constructs an llm.Provider for a model name. claude-* models use
-// the Anthropic provider (ANTHROPIC_API_KEY from the environment); everything
-// else is treated as an Ollama model reached at NINE_LLM_ENDPOINT (default
-// localhost:11434). Variance reduction (temperature 0, fixed seed) is left to the
-// provider's defaults — Ollama is deterministic, Anthropic best-effort
+// paramsB extracts the parameter count in billions from an Ollama tag —
+// "qwen3.5:32b" → 32, "gemma4:e2b" → 2 (the leading "e" marks effective
+// parameters), "llama3.2:1.5b" → 1.5. It reports false for a tag that names no
+// size, which is every model whose tier only a table entry can settle.
+func paramsB(model string) (float64, bool) {
+	_, tag, ok := strings.Cut(strings.ToLower(model), ":")
+	if !ok {
+		return 0, false
+	}
+	// A tag may carry a quantization suffix ("32b-instruct-q4_K_M"); the size is
+	// the first hyphen-separated field.
+	size, _, _ := strings.Cut(tag, "-")
+	size = strings.TrimSuffix(size, "b")
+	size = strings.TrimPrefix(size, "e")
+	b, err := strconv.ParseFloat(size, 64)
+	if err != nil || b <= 0 {
+		return 0, false
+	}
+	return b, true
+}
+
+// ProviderFor constructs an llm.Provider for a model name. Every model is an
+// Ollama model reached at NINE_LLM_ENDPOINT (default localhost:11434) — Ollama
+// is Nine's only chat backend. Variance reduction (temperature 0, fixed seed) is
+// left to the provider's defaults, which Ollama makes deterministic
 // (docs/evals.md §5); N runs + a pass threshold absorb the residual variance.
 func ProviderFor(model string) (llm.Provider, error) {
 	if model == "" {
 		return nil, fmt.Errorf("empty model name")
 	}
-	if strings.HasPrefix(strings.ToLower(model), "claude") {
-		key := os.Getenv("ANTHROPIC_API_KEY")
-		if key == "" {
-			return nil, fmt.Errorf("model %q needs ANTHROPIC_API_KEY", model)
-		}
-		return anthropic.New(key, model, "", 120), nil
-	}
 	endpoint := os.Getenv("NINE_LLM_ENDPOINT")
 	if endpoint == "" {
 		endpoint = "http://localhost:11434"
 	}
-	return llmollama.New(model, endpoint, 8192, false), nil
+	return llmollama.New(model, endpoint, 8192, false, 0), nil
 }
 
 // EvalEmbedder builds the embedder the live harness uses so semantic-memory and

@@ -81,7 +81,7 @@ func TestReplayFixtures(t *testing.T) {
 
 // TestLiveMatrix runs Track L across the requested models. Opt-in:
 //
-//	NINE_EVALS_LIVE=1 NINE_EVAL_MODELS=claude-haiku-4-5-20251001 \
+//	NINE_EVALS_LIVE=1 NINE_EVAL_MODELS=qwen3.5:4b \
 //	  NINE_PLUGINS_BIN=$PWD/dist/bin go test ./tests/evals -run TestLiveMatrix
 func TestLiveMatrix(t *testing.T) {
 	if os.Getenv("NINE_EVALS_LIVE") != "1" {
