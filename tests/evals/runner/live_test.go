@@ -10,14 +10,17 @@ import (
 
 func TestClassOf(t *testing.T) {
 	cases := map[string]ModelClass{
-		"gemma4:e2b":                ClassNano,
-		"gemma4:e4b":                ClassNano,
-		"qwen3.5:9b":                ClassSmall,
-		"claude-haiku":              ClassMedium,
-		"claude-sonnet-5":           ClassLarge,
-		"claude-opus-4-8":           ClassLarge,
-		"some-random-local-model":   ClassSmall,
-		"claude-haiku-4-5-20251001": ClassMedium,
+		"gemma4:e2b":              ClassNano,
+		"gemma4:e4b":              ClassNano, // table entry beats the 4B tag
+		"llama3.2:3b":             ClassNano,
+		"qwen3.5:4b":              ClassSmall,
+		"qwen3.5:9b":              ClassSmall,
+		"gemma4:12b":              ClassMedium,
+		"qwen3.5:14b":             ClassMedium,
+		"qwen3.5:32b":             ClassLarge,
+		"qwen3.5:32b-instruct-q4": ClassLarge,
+		"some-random-local-model": ClassSmall,
+		"qwen3.5:latest":          ClassSmall,
 	}
 	for model, want := range cases {
 		if got := ClassOf(model); got != want {
@@ -49,10 +52,10 @@ func TestThresholdMet(t *testing.T) {
 }
 
 func TestApplicableModels(t *testing.T) {
-	requested := []string{"claude-haiku", "qwen3.5:9b", "gemma4:e4b"}
-	c := &Case{Models: Models{Include: []string{"claude-haiku", "gemma4:e4b"}}}
+	requested := []string{"qwen3.5:4b", "qwen3.5:9b", "gemma4:e4b"}
+	c := &Case{Models: Models{Include: []string{"qwen3.5:4b", "gemma4:e4b"}}}
 	got := c.ApplicableModels(requested)
-	if strings.Join(got, ",") != "claude-haiku,gemma4:e4b" {
+	if strings.Join(got, ",") != "qwen3.5:4b,gemma4:e4b" {
 		t.Errorf("ApplicableModels = %v", got)
 	}
 	// No include list → all requested.
@@ -97,7 +100,7 @@ func TestRunCaseModel_FatalClassLogic(t *testing.T) {
 	}
 
 	// large model, expected_pass_min_class=medium → failure at/above class → fatal.
-	fatal := RunCaseModel(context.Background(), h, mk("medium"), "claude-sonnet-5", provider(), nil)
+	fatal := RunCaseModel(context.Background(), h, mk("medium"), "qwen3.5:32b", provider(), nil)
 	if !fatal.Fatal {
 		t.Error("large miss vs medium bar should be fatal")
 	}
@@ -111,7 +114,7 @@ func TestJudge_ScriptedProvider(t *testing.T) {
 		}), nil
 	}
 	judge := NewJudge(providerFor)
-	c := &Case{Expect: Expect{Answer: Answer{Judge: &Judge{Rubric: "correct", Model: "claude-sonnet-5", PassScore: 0.8}}}}
+	c := &Case{Expect: Expect{Answer: Answer{Judge: &Judge{Rubric: "correct", Model: "qwen3.5:32b", PassScore: 0.8}}}}
 
 	pass, detail, err := judge(c, "some answer")
 	if err != nil {
@@ -134,15 +137,15 @@ func TestJudge_ScriptedProvider(t *testing.T) {
 
 func TestRenderGrid(t *testing.T) {
 	r := &Report{
-		Models: []string{"claude-haiku", "qwen3.5:9b"},
+		Models: []string{"qwen3.5:4b", "qwen3.5:9b"},
 		Replay: []ReplayCaseResult{{CaseID: "replay-case", Pass: true}},
 		Live: []CaseModelResult{
-			{CaseID: "kv-case", Model: "claude-haiku", Runs: make([]RunOutcome, 3), Passes: 3, ThresholdOK: true},
+			{CaseID: "kv-case", Model: "qwen3.5:4b", Runs: make([]RunOutcome, 3), Passes: 3, ThresholdOK: true},
 			{CaseID: "kv-case", Model: "qwen3.5:9b", Runs: make([]RunOutcome, 3), Passes: 1, ThresholdOK: false, Fatal: false},
 		},
 	}
 	grid := r.RenderGrid()
-	if !strings.Contains(grid, "kv-case") || !strings.Contains(grid, "claude-haiku") {
+	if !strings.Contains(grid, "kv-case") || !strings.Contains(grid, "qwen3.5:4b") {
 		t.Errorf("grid missing rows/cols:\n%s", grid)
 	}
 	if !strings.Contains(grid, "3/3") || !strings.Contains(grid, "1/3 ~") {

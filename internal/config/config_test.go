@@ -49,10 +49,9 @@ func TestLoadDefaultResolutionOrder(t *testing.T) {
 
 const sampleTOML = `
 [llm]
-provider       = "anthropic"
-model          = "claude-sonnet-4-6"
-api_key        = "key123"
-endpoint       = "https://api.example.com"
+provider       = "ollama"
+model          = "qwen3.5:4b"
+endpoint       = "https://ollama.example.com"
 context_budget = 4096
 max_concurrent = 2
 
@@ -92,10 +91,9 @@ func TestLoad(t *testing.T) {
 		got  any
 		want any
 	}{
-		{"LLM.Provider", cfg.LLM.Provider, "anthropic"},
-		{"LLM.Model", cfg.LLM.Model, "claude-sonnet-4-6"},
-		{"LLM.APIKey", cfg.LLM.APIKey, "key123"},
-		{"LLM.Endpoint", cfg.LLM.Endpoint, "https://api.example.com"},
+		{"LLM.Provider", cfg.LLM.Provider, "ollama"},
+		{"LLM.Model", cfg.LLM.Model, "qwen3.5:4b"},
+		{"LLM.Endpoint", cfg.LLM.Endpoint, "https://ollama.example.com"},
 		{"LLM.ContextBudget", cfg.LLM.ContextBudget, 4096},
 		{"LLM.MaxConcurrent", cfg.LLM.MaxConcurrent, 2},
 		{"Plugins.Dir", cfg.Plugins.Dir, "/data/src/plugins"},

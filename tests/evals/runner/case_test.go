@@ -80,7 +80,7 @@ expect:
 runs: 3
 pass_threshold: "2/3"
 models:
-  include: [claude-haiku, claude-sonnet]
+  include: [qwen3.5:4b, qwen3.5:9b]
   expected_pass_min_class: small
 `)
 	c, err := LoadCase(p)

@@ -163,12 +163,9 @@ ollama pull qwen3.5:4b
 
 The daemon starts automatically and stays running in the background.
 
-To use Anthropic instead, set `provider = "anthropic"` and a `claude-*` model in
-`nine.toml`, then export your key:
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-```
+Ollama is the only chat backend — Nine runs on local models. Pick one that can
+actually drive the agent loop: [Model compatibility](model-compatibility.md)
+records which models have been run and how they did.
 
 ---
 

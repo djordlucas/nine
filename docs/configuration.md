@@ -22,36 +22,34 @@ shipping a second file. The database path needs no override there: it defaults t
 
 ```toml
 [llm]
-# Chat LLM backend to use. Implemented options: ollama (default), anthropic.
-# These are the only two; any other value falls through to the Anthropic client.
+# Chat LLM backend to use. Ollama is the only one: Nine runs on local models.
+# Any other value is reported at boot and Ollama is used anyway.
 provider = "ollama"
 
-# Model name. Examples:
-#   ollama:    qwen3.5:4b, qwen3.5:9b, gemma4:e2b, llama3.2
-#   anthropic: claude-sonnet-4-6, claude-opus-4-7, claude-haiku-4-5-20251001
+# Model name. Examples: qwen3.5:4b, qwen3.5:9b, gemma4:e2b, llama3.2
 model = "qwen3.5:4b"
 
-# API key for anthropic. Leave empty to read from ANTHROPIC_API_KEY.
-api_key = ""
-
-# Base URL for the API. Required for ollama (e.g. http://localhost:11434).
-# Leave empty for anthropic to use its default endpoint.
+# Base URL for the Ollama API. Empty uses http://localhost:11434.
 endpoint = ""
 
-# Context window size. For Ollama this is passed as num_ctx and also sets the
-# context budget (how many tokens the context builder may use per turn).
-# For cloud providers, set context_budget instead.
+# Context window size. Passed to Ollama as num_ctx, and it also sets the context
+# budget (how many tokens the context builder may use per turn) unless
+# context_budget overrides it.
 num_ctx = 32768
 
-# Maximum concurrent LLM requests.
-# Set to 1 for local models (Ollama) to prevent contention.
-# Increase for cloud providers if your tier supports parallel requests.
+# Maximum concurrent LLM requests. Keep it at 1 for a single local model, which
+# serializes on the GPU anyway; raise it only if you point Nine at an Ollama
+# host that can genuinely serve calls in parallel.
 max_concurrent = 1
 
+# HTTP timeout for a single model call, in seconds. 0 uses the adapter default
+# (300s); a negative value removes the timeout, leaving only turn cancellation.
+timeout_seconds = 0
+
 # Stream the model's extended-thinking reasoning as a live trace in the TUI
-# (Ollama only for now: sends think:true and drops the /no_think suppression;
-# the model must advertise the "thinking" capability). Defaults to true; set to
-# false to suppress thinking for lower latency.
+# (sends think:true and drops the /no_think suppression; the model must
+# advertise the "thinking" capability). Defaults to true; set to false to
+# suppress thinking for lower latency.
 thinking = true
 
 
@@ -385,10 +383,11 @@ allow = [                           # allowlist mode only: the packages an opera
 
 ## LLM Providers
 
-Two chat providers are implemented: `ollama` and `anthropic`. There are no others —
-any other value falls through to the Anthropic client.
+`ollama` is the only chat provider. Nine is built for local models, so there is
+nothing to choose between: any other `provider` value is logged as unknown at
+boot and the Ollama adapter is used anyway (Nine still starts).
 
-### Ollama (Local, default)
+### Ollama
 
 ```toml
 [llm]
@@ -405,19 +404,10 @@ Ollama must be running before starting Nine. Pull the model first:
 ollama pull qwen3.5:4b
 ```
 
-### Anthropic
-
-```toml
-[llm]
-provider = "anthropic"
-model    = "claude-sonnet-4-6"
-api_key  = ""   # reads ANTHROPIC_API_KEY
-```
-
-Models:
-- `claude-haiku-4-5-20251001` — fastest, lowest cost
-- `claude-sonnet-4-6` — balanced
-- `claude-opus-4-7` — most capable, highest cost
+`timeout_seconds` bounds a single model call. It defaults to 300s, which is
+generous enough for a large model on CPU; set a negative value to remove the
+bound entirely and rely on turn cancellation alone. Which models actually drive
+the agent loop well is recorded in [Model compatibility](model-compatibility.md).
 
 ---
 
@@ -474,7 +464,6 @@ Environment variables take priority over `nine.toml` values.
 | `NINE_WORKSPACE_ROOT` | Override `workspace.root` |
 | `NINE_SKILLS_USER_DIR` | Override `skills.user_dir` |
 | `NINE_TOOLS_USER_DIR` | Override `tools.user_dir` (sandboxed tools). Only the path — `[tools] enabled` is deliberately not env-overridable, so a stray variable cannot switch the subsystem on. |
-| `ANTHROPIC_API_KEY` | Anthropic API key (used when `llm.api_key` is empty) |
 | `SEARCH_PROVIDER` | `web_search` backend: `brave` or `serpapi`. Unset uses DuckDuckGo, which needs no key. |
 | `SEARCH_API_KEY` | API key for the chosen `SEARCH_PROVIDER` |
 | `NINE_LOG_LEVEL` | Logging verbosity: `debug`, `info`, `warn`, `error` |
