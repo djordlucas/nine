@@ -7,40 +7,58 @@
  ██║ ╚████║██║██║ ╚████║███████╗
  ╚═╝  ╚═══╝╚═╝╚═╝  ╚═══╝╚══════╝
 ```
-**A local and durable AI agent daemon.**
-
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8.svg)](go.mod)
 [![Status: experimental](https://img.shields.io/badge/status-experimental-orange.svg)](#project-status)
 
-Nine is a persistent background agent: a daemon that holds long-lived state, runs a
-ReAct loop over a pluggable set of tools, pursues goals between your turns, and
-writes its own skills as it learns — and, where the operator allows it, its own
-sandboxed tools. It is built to run against a local model with a
-local database — your prompts, your conversation history, and everything the agent
-remembers stay on hardware you control.
+Nine is a harness for putting a local model to work. A daemon stays running in the
+background, holds every conversation, goal, note and journal entry in one SQLite file
+on your disk, and drives a ReAct loop over a tool surface you assemble. A model on its
+own can only produce text; what makes it *do* something is the tools it is handed —
+so Nine treats the tool surface as the thing to grow, and gives it a shell, the
+filesystem, HTTP, a headless browser, and whatever else you add. Anything a computer
+can reach is something Nine can be pointed at, to automate outright or to work
+alongside you on.
 
-Most agent tooling assumes a cloud model and a vendor's storage. That is a
-reasonable default, and it is not this one. Nine points at
-[Ollama](https://ollama.com) on `localhost` and a SQLite file on disk; no API key
-is required, no database server is needed, and nothing leaves the machine.
+Four properties shape the design.
 
-Local models are the only ones Nine talks to — there is no hosted-API provider to
-fall back on, by design. Nine is developed against smaller models to make sure it
-stays useful on modest hardware, and the LLM layer is a single-method interface,
-so a backend is a small, self-contained thing to add if you ever need another.
+**Modular.** Tools reach the agent through one dispatcher with several backends behind
+it: core tools calling the store in-process, native plugins as separate binaries over a
+Unix socket, external MCP servers, and JS or wasm **sandboxed tools** that are two files
+dropped in a directory. Roles gate which of them a given worker may call. Adding reach
+means adding a tool, not editing the loop — and the LLM layer is a single-method
+interface, so the model backend is swappable too.
 
-The other half of the idea is that an agent should be *durable*. Nine's state is not
-a process that dies with your terminal. Conversations, goals, workflows, memory, and
-a complete append-only journal of every step the agent has ever taken live in
-a database file on disk. You can kill the daemon mid-task and it resumes. You can replay a recorded
-session deterministically, with no live model and no tool calls, and watch exactly
-what happened.
+**Persistent.** State is not a process that dies with your terminal. Conversations,
+goals, workflows, memory, files, skills and generated tools live in a database file, and
+every turn is checkpointed — kill the daemon mid-task and it resumes. Work continues
+between your turns: each top-level goal gets a background session that wakes on an
+interval to make progress on it — standing agents you declare in config can wake on a
+cron schedule instead — always at a lower LLM priority than the conversation in front
+of you.
 
-Use Nine to help you solve tasks and issues that matter to you.
+**Auditable.** An append-only journal records every step the agent has ever taken —
+turn boundaries, the exact LLM request and response, tool I/O with latency and errors,
+context usage, sub-agent lifecycle. `nine trace` reads it back, and `nine replay`
+re-runs a recorded turn deterministically, with no live model and no tool calls, so you
+can watch exactly what happened. The same holds for reach: `nine tools` prints the
+capabilities each sandboxed tool actually runs with, and the ones that failed to load
+with the reason why.
 
-Extend Nine with skills, plugins, and sandboxed tools to make it more useful and
-deliberate.
+**Evolving.** Nine improves what it *knows* by writing **skills** — markdown how-to
+notes, semantically retrieved into context when they are relevant to the task. Where the
+operator turns that tier on, it also improves what it can *do*, writing its own
+sandboxed tools at runtime to close the gaps it hits. The boundary is firm in both
+cases: the agent writes the code, the operator writes the capability grants, and they
+are never the same actor. Nine cannot rewrite its config or rebuild its binary.
+
+It is built to run against a local model with a local database. Most agent tooling
+assumes a cloud model and a vendor's storage; that is a reasonable default, and it is
+not this one. Nine points at [Ollama](https://ollama.com) on `localhost` and a SQLite
+file on disk — no API key, no database server, nothing leaving the machine. Local
+models are the only ones it talks to, with no hosted-API provider to fall back on, by
+design, and it is developed against smaller models to make sure it stays useful on
+modest hardware.
 
 ## Project status
 
@@ -49,6 +67,19 @@ deliberate.
 It works, and it is not a small system — but interfaces change without notice, and there is no support
 promise or stability guarantee. Treat it as something to read, run, expirement with for now, and it 
 will eventually stabilize into a production-ready state.
+
+**Under active development, and tested — but not yet tested heavily.**
+
+Every feature lands with tests: unit tests, hermetic harness tests for the daemon and
+its wire protocol, integration tests against a real container and a real model, and an
+eval suite that both replays recorded sessions deterministically and runs a live-model
+matrix ([docs/evals.md](docs/evals.md),
+[model compatibility](docs/model-compatibility.md)). What that does not yet buy is
+mileage. The coverage is broad rather than deep, most of it against a handful of small
+local models on one machine, and the failure modes that only long uninterrupted runs,
+unusual hardware, or an unfamiliar model turn up are still ahead of it. Expect rough
+edges in that territory, and please open an issue when you hit one — that is the
+testing this stage of the project most needs.
 
 **Nine is not security hardened, yet, but will be.**
 
