@@ -83,7 +83,7 @@ How to use this file:
 
 | ID | Property | Observable check |
 |----|----------|------------------|
-| R-LLM.1 | Provider interface | A single `Complete(ctx, Request) (Response, error)` implemented by the real adapters (Anthropic + Ollama); streaming via `Request.OnChunk`. |
+| R-LLM.1 | Provider interface | A single `Complete(ctx, Request) (Response, error)` implemented by the real adapter (Ollama); streaming via `Request.OnChunk`. |
 | R-LLM.2 | Tool calls and final answers | A completion yields either tool calls or a final answer, parsed to the common shape. |
 | R-LLM.3 | The priority queue (I2) | All provider calls go through the queue; `max_concurrent` bounds in-flight calls. |
 | R-LLM.4 | Priorities | With `max_concurrent=1` and one in flight, queued requests at priority 3/2/1 are served 1→2→3. |

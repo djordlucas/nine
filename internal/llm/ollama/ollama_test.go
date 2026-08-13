@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"nine/internal/llm"
 	"nine/internal/llm/ollama"
@@ -90,7 +91,7 @@ func TestOllamaCompleteStreaming(t *testing.T) {
 		`{"message":{"role":"assistant","content":""},"done":true,"done_reason":"stop"}`,
 	)
 
-	p := ollama.New("qwen3", srv.URL, 0, false)
+	p := ollama.New("qwen3", srv.URL, 0, false, 0)
 	var chunks []string
 	resp, err := p.Complete(context.Background(), llm.Request{
 		System:   "be brief",
@@ -144,7 +145,7 @@ func TestOllamaThinkingEnabled(t *testing.T) {
 		`{"message":{"role":"assistant","content":""},"done":true,"done_reason":"stop"}`,
 	)
 
-	p := ollama.New("qwen3", srv.URL, 0, true)
+	p := ollama.New("qwen3", srv.URL, 0, true, 0)
 	var thinking, chunks []string
 	resp, err := p.Complete(context.Background(), llm.Request{
 		Messages:        []llm.Message{{Role: "user", Text: "hi"}},
@@ -186,7 +187,7 @@ func TestOllamaToolCall(t *testing.T) {
 		`{"message":{"role":"assistant","content":""},"done":true,"done_reason":"tool_calls"}`,
 	)
 
-	p := ollama.New("qwen3", srv.URL, 0, false)
+	p := ollama.New("qwen3", srv.URL, 0, false, 0)
 	resp, err := p.Complete(context.Background(), llm.Request{
 		Messages: []llm.Message{{Role: "user", Text: "weather in Paris?"}},
 		Tools: []llm.ToolDef{{
@@ -229,7 +230,7 @@ func TestOllamaStopReasonLength(t *testing.T) {
 	srv := ndjsonServer(t, &body, 0,
 		`{"message":{"content":"cut off"},"done":true,"done_reason":"length"}`,
 	)
-	p := ollama.New("qwen3", srv.URL, 0, false)
+	p := ollama.New("qwen3", srv.URL, 0, false, 0)
 	resp, err := p.Complete(context.Background(), llm.Request{Messages: []llm.Message{{Role: "user", Text: "x"}}})
 	if err != nil {
 		t.Fatal(err)
@@ -242,7 +243,7 @@ func TestOllamaStopReasonLength(t *testing.T) {
 func TestOllamaNumCtxOption(t *testing.T) {
 	var body []byte
 	srv := ndjsonServer(t, &body, 0, `{"message":{"content":"ok"},"done":true}`)
-	p := ollama.New("qwen3", srv.URL, 4096, false)
+	p := ollama.New("qwen3", srv.URL, 4096, false, 0)
 	if _, err := p.Complete(context.Background(), llm.Request{Messages: []llm.Message{{Role: "user", Text: "x"}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +257,7 @@ func TestOllamaNumCtxOption(t *testing.T) {
 func TestOllamaHTTPErrorStatus(t *testing.T) {
 	var body []byte
 	srv := ndjsonServer(t, &body, http.StatusInternalServerError, `{"error":"model not found"}`)
-	p := ollama.New("qwen3", srv.URL, 0, false)
+	p := ollama.New("qwen3", srv.URL, 0, false, 0)
 	_, err := p.Complete(context.Background(), llm.Request{Messages: []llm.Message{{Role: "user", Text: "x"}}})
 	if err == nil || !strings.Contains(err.Error(), "model not found") {
 		t.Errorf("err = %v, want it to surface the ollama error body", err)
@@ -266,7 +267,7 @@ func TestOllamaHTTPErrorStatus(t *testing.T) {
 func TestOllamaErrorInStream(t *testing.T) {
 	var body []byte
 	srv := ndjsonServer(t, &body, 0, `{"error":"context canceled"}`)
-	p := ollama.New("qwen3", srv.URL, 0, false)
+	p := ollama.New("qwen3", srv.URL, 0, false, 0)
 	_, err := p.Complete(context.Background(), llm.Request{Messages: []llm.Message{{Role: "user", Text: "x"}}})
 	if err == nil || !strings.Contains(err.Error(), "context canceled") {
 		t.Errorf("err = %v, want the in-stream error surfaced", err)
@@ -275,7 +276,34 @@ func TestOllamaErrorInStream(t *testing.T) {
 
 // The adapter satisfies llm.Provider.
 func TestOllamaImplementsProvider(t *testing.T) {
-	var _ llm.Provider = ollama.New("m", "", 0, false)
+	var _ llm.Provider = ollama.New("m", "", 0, false, 0)
+}
+
+// [llm].timeout_seconds bounds a single call: a model that stops answering must
+// fail the turn rather than hang the agent loop forever.
+func TestOllamaHonorsTimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Error("test server response writer does not flush")
+			return
+		}
+		_, _ = w.Write([]byte(`{"message":{"role":"assistant","content":"partial"},"done":false}` + "\n"))
+		flusher.Flush()
+		// Never send the terminating done chunk: the client must give up.
+		<-r.Context().Done()
+	}))
+	t.Cleanup(srv.Close)
+
+	p := ollama.New("qwen3", srv.URL, 0, false, 1)
+	start := time.Now()
+	_, err := p.Complete(context.Background(), llm.Request{Messages: []llm.Message{{Role: "user", Text: "x"}}})
+	if err == nil {
+		t.Fatal("want a timeout error, got nil")
+	}
+	if elapsed := time.Since(start); elapsed > 30*time.Second {
+		t.Errorf("took %s, want the 1s client timeout to cut it off", elapsed)
+	}
 }
 
 func TestOllamaSupportThinking(t *testing.T) {
@@ -283,7 +311,7 @@ func TestOllamaSupportThinking(t *testing.T) {
 
 	// The test server responds to /api/show with a capabilities list that includes "thinking".
 	thinkSrv := showServer(t, &counter, `{"capabilities":["completion","thinking"]}`)
-	p1 := ollama.New("qwen3", thinkSrv.URL, 0, true)
+	p1 := ollama.New("qwen3", thinkSrv.URL, 0, true, 0)
 
 	if !p1.SupportsThinking(context.Background()) {
 		t.Errorf("SupportsThinking = false, want true for a model with thinking capability")
@@ -297,14 +325,14 @@ func TestOllamaSupportThinking(t *testing.T) {
 
 	// The test server responds to /api/show with a capabilities list that does not include "thinking".
 	noThinkSrv := showServer(t, nil, `{"capabilities":["completion"]}`)
-	p2 := ollama.New("qwen3", noThinkSrv.URL, 0, false)
+	p2 := ollama.New("qwen3", noThinkSrv.URL, 0, false, 0)
 
 	if p2.SupportsThinking(context.Background()) {
 		t.Errorf("SupportsThinking = true, want false for a model without thinking capability")
 	}
 
 	// Inability to reach the server should be treated as "thinking not supported" (false).
-	p3 := ollama.New("qwen3", "invalid!", 0, true)
+	p3 := ollama.New("qwen3", "invalid!", 0, true, 0)
 	if p3.SupportsThinking(context.Background()) {
 		t.Errorf("SupportsThinking = true, want false when the provider URL cannot be reached")
 	}
@@ -320,7 +348,7 @@ func TestOllamaPerRequestThinkOverride(t *testing.T) {
 		`{"message":{"role":"assistant","content":""},"done":true,"done_reason":"tool_calls"}`,
 	) // The provider is configured with thinking disabled.
 
-	p := ollama.New("qwen3", srv.URL, 0, false)
+	p := ollama.New("qwen3", srv.URL, 0, false, 0)
 	resp, err := p.Complete(context.Background(), llm.Request{
 		Messages: []llm.Message{{Role: "user", Text: "weather in Montreal?"}},
 		Think:    ptr(true), // per-request override to enable thinking
@@ -347,7 +375,7 @@ func TestOllamaPerRequestThinkOverride(t *testing.T) {
 	}
 
 	// Test that a per-request override to disable thinking works even when the provider has thinking enabled.
-	p2 := ollama.New("qwen3", srv.URL, 0, true)
+	p2 := ollama.New("qwen3", srv.URL, 0, true, 0)
 	resp2, err := p2.Complete(context.Background(), llm.Request{
 		Messages: []llm.Message{{Role: "user", Text: "weather in Montreal?"}},
 		Think:    ptr(false), // per-request override to disable thinking

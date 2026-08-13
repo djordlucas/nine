@@ -132,7 +132,7 @@ func TestGrade_JudgeWithoutFn(t *testing.T) {
 		ID:      "grade-judge-missing",
 		Prompts: []string{"tell me"},
 		Expect: Expect{Answer: Answer{
-			Judge: &Judge{Rubric: "correct", Model: "claude-sonnet-5", PassScore: 0.8},
+			Judge: &Judge{Rubric: "correct", Model: "qwen3.5:32b", PassScore: 0.8},
 		}},
 	}
 	g := runCase(t, c, []llm.Response{{Text: "anything", StopReason: "end_turn"}})

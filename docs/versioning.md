@@ -91,9 +91,8 @@ a single version, and treats a v1 plugin as lacking jobs. The `0` (predates
 versioning) rejection stays.
 
 This applies only to **native** Nine plugins. MCP plugins negotiate their own
-protocol version (`mcpProtocolVersion`, see `internal/plugin/mcp.go`) and the
-Anthropic LLM client pins its own API version (`anthropic-version`) — those are
-separate, externally-defined contracts.
+protocol version (`mcpProtocolVersion`, see `internal/plugin/mcp.go`) — a
+separate, externally-defined contract.
 
 ## 2a. Sandboxed tool ABI version
 

@@ -58,7 +58,7 @@ becomes hard to trust.)
    │        │     │          ├─ agent.Loop   │                          │
    │        │     │          └─ SessionPlan  │                          │
    │        │  LLM Queue ── Provider ────────┼──► LLM endpoint          │
-   │        │  Supervisor                    │   (anthropic/ollama)     │
+   │        │  Supervisor                    │   (ollama)               │
    │        │  Plugin Manager   EventSink    │                          │
    │        └──────┬──────────────────┬──────┘                          │
    │               │ HTTP/unix socket │ database/sql (modernc sqlite)   │

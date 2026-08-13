@@ -25,21 +25,18 @@ you test a new model or a new host.
 Reproduce any row:
 
 ```sh
-NINE_EVAL_MODELS=<model> make eval-live      # local models need Ollama at NINE_LLM_ENDPOINT
-# claude-* models additionally need ANTHROPIC_API_KEY
+NINE_EVAL_MODELS=<model> make eval-live      # needs Ollama at NINE_LLM_ENDPOINT
 ```
 
 ## Hardware profiles
 
-Local (Ollama) models run on real hardware, and throughput/timeout behavior
-depends on it — a case that fails only with `context deadline exceeded` on a
-small host may pass on a faster one. Hosted `claude-*` models run on the
-provider's infrastructure over the API, so they have no local hardware profile.
+Every model is local (Ollama), so throughput and timeout behavior depend on the
+host — a case that fails only with `context deadline exceeded` on a small host
+may pass on a faster one. Always read a result together with its host profile.
 
 | Host | Machine | Chip | Memory | OS | Runtime |
 |------|---------|------|--------|-----|---------|
 | **H1** | Mac16,10 | Apple M4 (10 core) | 16 GB | macOS 26.6 | Ollama 0.31.2 |
-| **API** | — | provider-hosted | — | — | Anthropic API |
 
 > H1 is the reference host used for the local-model runs below. If you run the
 > matrix on different hardware, add a row and tag your results with it.
@@ -49,20 +46,20 @@ provider's infrastructure over the API, so they have no local hardware profile.
 Cases × models, from the most recent run of each model. `Class` is the model's
 capability tier; `Host` is the profile it ran on.
 
-| Case (min class) | `gemma4:e2b` (nano · H1) | `gemma4:e4b` (nano · H1) | `qwen3.5:4b` (small · H1) | `qwen3.5:9b` (small · H1) | `claude-haiku` (medium · API) | `claude-sonnet-5` (large · API) |
-|------------------|:---:|:---:|:---:|:---:|:---:|:---:|
-| `shell-echo` (nano) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
-| `time-current` (nano) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
-| `kv-roundtrip` (small) | ✓ 2/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
-| `role-report-writer-no-shell` (small) | ✓ 2/2 | ✓ 2/2 | ✓ 2/2 | ✓ 2/2 | — | — |
-| `files-write-read` (small) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
-| `semantic-memory` (small) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 2/3 | — | — |
-| `memory-delete` (small) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
-| `goal-create` (medium) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
-| `workflow-plan` (medium) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
-| `skill-write-recall` (small) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | — | — |
-| `file-store-search` (medium) | ✗ 1/3 | ✓ 3/3 | ✓ 2/3 | ✓ 3/3 | — | — |
-| `delegate-subagent` (medium) | ✗ 1/3 | ✗ 0/3 | ✓ 3/3 | ✓ 3/3 | — | — |
+| Case (min class) | `gemma4:e2b` (nano · H1) | `gemma4:e4b` (nano · H1) | `qwen3.5:4b` (small · H1) | `qwen3.5:9b` (small · H1) |
+|------------------|:---:|:---:|:---:|:---:|
+| `shell-echo` (nano) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 |
+| `time-current` (nano) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 |
+| `kv-roundtrip` (small) | ✓ 2/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 |
+| `role-report-writer-no-shell` (small) | ✓ 2/2 | ✓ 2/2 | ✓ 2/2 | ✓ 2/2 |
+| `files-write-read` (small) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 |
+| `semantic-memory` (small) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 2/3 |
+| `memory-delete` (small) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 |
+| `goal-create` (medium) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 |
+| `workflow-plan` (medium) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 |
+| `skill-write-recall` (small) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 |
+| `file-store-search` (medium) | ✗ 1/3 | ✓ 3/3 | ✓ 2/3 | ✓ 3/3 |
+| `delegate-subagent` (medium) | ✗ 1/3 | ✗ 0/3 | ✓ 3/3 | ✓ 3/3 |
 
 Source runs (all on H1, post-fix): `gemma4:e2b` — `reports/20260724-170752.json`
 (**10/12**); `gemma4:e4b` — `reports/20260724-182911.json` (**11/12**);
@@ -111,10 +108,11 @@ ceiling, not the model. Revisit it on a host with more memory.
   flow reliably (3/3) once the timeout and retry stopped masking it. It stays the
   ceiling for **nano** `gemma4:e2b` (1/3) — a 2B model spawning and steering a
   sub-agent is genuinely at its limit, which is what the `medium` class encodes.
-- **`claude-*` (medium/large, API)** — **not yet run.** The matrix needs
-  `ANTHROPIC_API_KEY`; these rows are the next priority to confirm behavior at
-  their own class and to exercise judged cases, though the local small models
-  already clear the full corpus here.
+- **`medium`/`large` local models** — **not yet run.** `gemma4:12b` is the only
+  medium model attempted here and it is memory-bound on H1 (see above); the
+  medium and large rows are the next priority, on a host with more memory, to
+  confirm behavior at their own class and to exercise judged cases. The small
+  models already clear the full corpus.
 
 ## Post-tool-observation microbenchmark (H1)
 

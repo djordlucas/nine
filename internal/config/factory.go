@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"nine/internal/llm"
-	"nine/internal/llm/anthropic"
 	llmollama "nine/internal/llm/ollama"
 )
 
@@ -179,35 +178,34 @@ func (cfg *Config) EventRetention() (keepTurns int, maxAge time.Duration) {
 
 // BuildProvider constructs an LLM provider from cfg, with environment variable
 // overrides applied on top.
+//
+// Ollama is the only chat backend: Nine targets local models, so there is
+// nothing to switch on. `[llm].provider` is kept because it names the backend in
+// config and because a second local backend is plausible; any value other than
+// "ollama" is a stale config rather than a request Nine can honor, so it is
+// reported and the Ollama adapter is built anyway (BuildProvider cannot fail —
+// booting with a local model is strictly more useful than not booting).
 func (cfg *Config) BuildProvider() llm.Provider {
 	provider := cfg.LLM.Provider
 	if e := os.Getenv("NINE_LLM_PROVIDER"); e != "" {
 		provider = e
 	}
+	if provider != "" && provider != "ollama" {
+		// provider is operator-supplied config, not an untrusted source.
+		slog.Warn("unknown [llm].provider; using ollama", "provider", provider) //nolint:gosec // G706: operator-controlled value
+	}
 	model := cfg.LLM.Model
 	if e := os.Getenv("NINE_LLM_MODEL"); e != "" {
 		model = e
 	}
-	switch provider {
-	case "ollama":
-		endpoint := cfg.LLM.Endpoint
-		if e := os.Getenv("NINE_LLM_ENDPOINT"); e != "" {
-			endpoint = e
-		}
-		if model == "" {
-			model = "gemma4:e2b"
-		}
-		return llmollama.New(model, endpoint, cfg.LLM.NumCtx, cfg.LLM.ThinkingEnabled())
-	default:
-		apiKey := cfg.LLM.APIKey
-		if apiKey == "" {
-			apiKey = os.Getenv("ANTHROPIC_API_KEY")
-		}
-		if model == "" {
-			model = "claude-haiku-4-5-20251001"
-		}
-		return anthropic.New(apiKey, model, cfg.LLM.Endpoint, cfg.LLM.TimeoutSeconds)
+	if model == "" {
+		model = "gemma4:e2b"
 	}
+	endpoint := cfg.LLM.Endpoint
+	if e := os.Getenv("NINE_LLM_ENDPOINT"); e != "" {
+		endpoint = e
+	}
+	return llmollama.New(model, endpoint, cfg.LLM.NumCtx, cfg.LLM.ThinkingEnabled(), cfg.LLM.TimeoutSeconds)
 }
 
 // HITLTimeout returns the ask_human wait duration, defaulting to 5 minutes.
@@ -223,9 +221,9 @@ func (cfg *Config) ContextBudget() int {
 	if cfg.LLM.ContextBudget > 0 {
 		return cfg.LLM.ContextBudget
 	}
-	// For Ollama, num_ctx is the actual model context window. Use it as the
-	// budget so Nine fills the full window instead of the generic 8k default.
-	if cfg.LLM.Provider == "ollama" && cfg.LLM.NumCtx > 0 {
+	// num_ctx is the actual model context window. Use it as the budget so Nine
+	// fills the full window instead of the generic 8k default.
+	if cfg.LLM.NumCtx > 0 {
 		return cfg.LLM.NumCtx
 	}
 	return 8000
