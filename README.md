@@ -11,15 +11,15 @@
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8.svg)](go.mod)
 [![Status: experimental](https://img.shields.io/badge/status-experimental-orange.svg)](#project-status)
 
-Nine is a **runtime** for putting a local model to work. A daemon stays running in the
-background, holds every conversation, goal, note and journal entry in one SQLite file
-on your disk, and drives a ReAct loop over a tool surface you assemble. A model on its
-own can only produce text; what makes it *do* something is the tools it is handed and
-somewhere to keep running once you stop typing — so Nine supplies both. It gives the
-model a shell, the filesystem, HTTP, a headless browser and whatever else you add, and
-it hosts that loop in a process that goes on taking turns without you. Anything a
-computer can reach is something Nine can be pointed at, to automate outright or to work
-alongside you on.
+Nine is an **AI agent runtime** for putting a local model to work. A daemon stays
+running in the background, holds every conversation, goal, note and journal entry in one
+SQLite file on your disk, and drives a ReAct loop over a tool surface you assemble. A
+model on its own can only produce text; what makes it *do* something is the tools it is
+handed and somewhere to keep running once you stop typing — so Nine supplies both. It
+gives the model a shell, the filesystem, HTTP, a headless browser and whatever else you
+add, and it hosts that loop in a process that goes on taking turns without you. Anything
+a computer can reach is something Nine can be pointed at, to automate outright or to
+work alongside you on.
 
 Five properties shape the design.
 
