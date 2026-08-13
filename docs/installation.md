@@ -179,7 +179,7 @@ records which models have been run and how they did.
 | `make plugins` | Compile all default plugin binaries to `dist/bin/` |
 | `make browser-plugin` | Build the browser plugin (requires npm) |
 | `make all` | All of the above |
-| `make test` | Run all tests |
+| `make test` | Run all tests. The two live-model tests skip unless `NINE_LIVE_MODEL` names an Ollama tag (e.g. `NINE_LIVE_MODEL=qwen3.5:4b make test`) |
 | `make test-v` | Run tests with verbose output |
 | `make cover` | Generate `dist/coverage.out` |
 | `make cover-html` | Open HTML coverage report in browser |
