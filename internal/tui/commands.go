@@ -256,10 +256,10 @@ func cmdConfig(cfg *config.Config) string {
 	kv("provider", cfg.LLM.Provider)
 	kv("model", cfg.LLM.Model)
 	kv("endpoint", cfg.LLM.Endpoint)
-	kv("api_key", maskKey(cfg.LLM.APIKey))
 	kv("context_budget", fmt.Sprintf("%d", cfg.LLM.ContextBudget))
 	kv("max_concurrent", fmt.Sprintf("%d", cfg.LLM.MaxConcurrent))
 	kv("num_ctx", fmt.Sprintf("%d", cfg.LLM.NumCtx))
+	kv("timeout_seconds", fmt.Sprintf("%d", cfg.LLM.TimeoutSeconds))
 
 	sec("daemon")
 	kv("socket_path", cfg.Daemon.SocketPath)

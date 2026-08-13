@@ -66,7 +66,7 @@ func TestSuite_RunBothTracks(t *testing.T) {
 
 	suite := &Suite{
 		Harness:     h,
-		Models:      []string{"claude-haiku", "qwen3.5:9b"},
+		Models:      []string{"qwen3.5:4b", "qwen3.5:9b"},
 		ProviderFor: providerFor,
 		ReplayRoot:  replayRoot,
 	}

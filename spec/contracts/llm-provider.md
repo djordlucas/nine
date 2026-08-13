@@ -24,12 +24,13 @@ ToolCall { ID string; Name string; Input json }
 ```
 
 Adding a backend is therefore a **one-method** job. Streaming is delivered through the
-request's optional `OnChunk` callback — there is no separate streaming method. The
-reference default is **Anthropic**; the **Ollama** local-model adapter is required
-(R-LLM.7). (There is no OpenAI *chat* adapter — `internal/llm/openai` is an empty
-placeholder; OpenAI is available for embeddings only. `[llm].provider` values other than
-`ollama` fall through to the Anthropic client.) A conforming implementation **MUST** keep
-the provider behind the queue.
+request's optional `OnChunk` callback — there is no separate streaming method. The only
+adapter is **Ollama** (R-LLM.7), and it is required: Nine targets local models, so a
+hosted-API backend is deliberately absent rather than merely unimplemented. (There is no
+OpenAI *chat* adapter either — `internal/llm/openai` is an empty placeholder; OpenAI is
+available for embeddings only. A `[llm].provider` value other than `ollama` is reported
+as unknown and the Ollama adapter is built anyway, so a stale config still boots.) A
+conforming implementation **MUST** keep the provider behind the queue.
 
 ---
 
@@ -82,15 +83,17 @@ three tiers and this ordering.
 
 - `1` (default, correct for a single local model) serializes **everything**, strictly by
   priority.
-- higher values allow that many parallel provider calls (for cloud APIs with headroom).
+- higher values allow that many parallel provider calls, for an Ollama host with the
+  headroom to serve them.
 
 ---
 
 ## R-LLM.5 — Cancellation & timeout
 
 `Submit` honors a **cancellation handle**. Cancelling it removes a still-queued item and
-aborts an in-flight call. `[llm].timeout_seconds` (0 = none) bounds individual provider
-HTTP calls.
+aborts an in-flight call. `[llm].timeout_seconds` bounds individual provider HTTP calls:
+0 uses the adapter default (300s, sized for a large local model on CPU) and a negative
+value removes the bound, leaving cancellation as the only stop.
 Sub-agent group timeouts are enforced one layer up (see
 [`orchestration.md`](orchestration.md)), not in the queue.
 
@@ -123,9 +126,9 @@ conforming implementation **MUST** provide the **Ollama** adapter over Ollama's 
   folded into `Response.Text`;
 - surface an HTTP-error body and an in-stream `error` field as a Go error.
 
-Unlike the Anthropic adapter (whose test hits the live API and skips without a key), the
-Ollama adapter **MUST** be covered by a **hermetic** unit test (a mock `/api/chat` server),
-so it runs in CI without a live model.
+The adapter **MUST** be covered by a **hermetic** unit test (a mock `/api/chat` server),
+so it runs in CI without a live model. Tests that need a real model **MUST** be gated on
+`NINE_LIVE_MODEL` (an Ollama tag) and skip when it is unset.
 
 ---
 
@@ -133,6 +136,5 @@ so it runs in CI without a live model.
 
 `internal/llm/provider.go` (`Provider`, `Request`, `Response`, `Message`, `ToolCall`,
 `ToolResult`, priority constants), `internal/llm/queue.go` (`Queue`, `Submit`),
-`internal/llm/anthropic/` (live-API integration test), `internal/llm/ollama/` (adapter +
-`ollama_test.go`, a hermetic `httptest` unit test). (`internal/llm/openai/` is an empty
-placeholder.)
+`internal/llm/ollama/` (adapter + `ollama_test.go`, a hermetic `httptest` unit test).
+(`internal/llm/openai/` is an empty placeholder.)

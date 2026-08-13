@@ -44,7 +44,7 @@ dependencies.
    │           │     │         └─ SessionPlan  │                            │
    │           │     │                         │                            │
    │           │   LLM Queue ── Provider ──────┼──────►  LLM endpoint       │
-   │           │   Supervisor                  │        (Ollama/Anthropic)  │
+   │           │   Supervisor                  │        (Ollama)            │
    │           │   Plugin Manager              │                            │
    │           └───────┬───────────────┬───────┘                            │
    │                   │ HTTP over     │ database/sql (modernc sqlite)      │
@@ -892,8 +892,8 @@ resumed.
             │                       │                      │
             ▼                       ▼                      ▼
      agent.Dispatcher       ninectx.Builder          llm.Queue ──► llm.Provider
-     (tool routing)         (context budget)         (priority)    (anthropic/
-            │                                                       ollama)
+     (tool routing)         (context budget)         (priority)    (ollama)
+            │
             ├─ plugin tools  ──► plugin.Manager.Call
             └─ core tools    ──► in-process handlers
                                  (memory, embed, run_agent,
