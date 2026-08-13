@@ -15,7 +15,8 @@
 
 Nine is a persistent background agent: a daemon that holds long-lived state, runs a
 ReAct loop over a pluggable set of tools, pursues goals between your turns, and
-writes its own skills as it learns. It is built to run against a local model with a
+writes its own skills as it learns — and, where the operator allows it, its own
+sandboxed tools. It is built to run against a local model with a
 local database — your prompts, your conversation history, and everything the agent
 remembers stay on hardware you control.
 
@@ -38,7 +39,8 @@ what happened.
 
 Use Nine to help you solve tasks and issues that matter to you.
 
-Extend Nine with skills and plugins to make it more useful and deliberate.
+Extend Nine with skills, plugins, and sandboxed tools to make it more useful and
+deliberate.
 
 ## Project status
 
@@ -95,6 +97,10 @@ bin      = "./dist/bin"  # plugins binaries
 [workspace]
 root     = "./workspace" # Filesystem root, use a bind mount for external access
 
+[tools]                   # sandboxed tools, off unless enabled
+enabled  = true
+user_dir = "./tools.d"    # ships with a working csv_stats example
+
 [llm]                     # model configuration
 provider       = "ollama"
 model          = "qwen3.5:4b"
@@ -126,6 +132,12 @@ conversation history. Run `nine` with no arguments for the interactive TUI.
 
 Plus an LLM provider: a running Ollama, or an Anthropic API key.
 
+Sandboxed tools need nothing extra to run: the QuickJS interpreter they execute on is
+committed to the repo as a pre-built wasm artifact with a recorded SHA-256, and the
+wasm runtime and JS bundler are pure-Go libraries. Rebuilding that interpreter
+(`make quickjs-wasm`) is a deliberate, separate step and the only thing that wants a
+wasi-sdk; `make quickjs-verify` re-checks the committed hash.
+
 ### Build from source
 
 ```bash
@@ -156,9 +168,15 @@ make destroy           # remove everything, including all data volumes and image
 ```
 
 The runtime image holds the compiled binary, the plugins, and the built-in skills
-— no Go toolchain and no source tree, because Nine never compiles anything at
-runtime. Hot-reload mode bind-mounts the source and rebuilds via `inotifywait` —
-this is the development path. The browser plugin ships in both images.
+— no Go toolchain, no Node, no npm, and no source tree, because Nine never builds
+native code at runtime. That still holds with sandboxed tools in the picture: the
+wasm interpreter they run on is a pre-built artifact committed to the repo, and the
+JavaScript bundler used when a generated tool pulls in a dependency is a pure-Go
+library compiled into the binary. Hot-reload mode bind-mounts the source and rebuilds
+via `inotifywait` — this is the development path. The browser plugin ships in both
+images, and `tools.d/` is mounted at `/tools.d` — though the subsystem still needs
+`[tools] enabled = true` in the `nine.toml` you mount, which no environment variable
+can flip on.
 
 The full Makefile target list is in [docs/installation.md](docs/installation.md).
 
@@ -197,6 +215,26 @@ provider = ""                    # "" or "keyword" = built-in, no model, no netw
 [planning]
 plan_mode     = "plan-only"      # off | plan-only | always
 plan_approval = "on-risky"       # off | on | on-risky
+
+[tools]                          # sandboxed tools — off unless enabled
+enabled   = true
+user_dir  = "./tools.d"
+timeout   = "5s"                 # wall clock is the only CPU bound
+memory_mb = 16
+
+# A manifest DECLARES a capability; only config GRANTS it, per named tool.
+[tool.csv_stats.capabilities.fs]
+read = [{ host = "/srv/data", guest = "/data" }]
+
+[tools.agent]                    # the tier Nine writes itself — separately off
+enabled          = true
+eval             = true          # allow js_eval (run a snippet, persist nothing)
+max_tools        = 64            # catalog cap; least-recently-called are evicted
+require_approval = "on_capability"  # on_capability | always | never
+
+# The ceiling: the MOST any generated tool may be granted, never an automatic grant.
+[tools.agent.capabilities.fs]
+read = [{ host = "${NINE_WORKSPACE}", guest = "/workspace" }]
 ```
 
 Environment variables override the file. The most useful:
@@ -207,6 +245,7 @@ Environment variables override the file. The most useful:
 | `NINE_LLM_PROVIDER` / `NINE_LLM_MODEL` / `NINE_LLM_ENDPOINT` | Override the LLM without editing config |
 | `NINE_DB_PATH` | Override the database file path |
 | `NINE_PLUGINS_BIN` / `NINE_WORKSPACE_ROOT` | Override the plugin and workspace paths (how the container reuses `nine.toml`) |
+| `NINE_TOOLS_USER_DIR` | Override the sandboxed-tool directory. Deliberately the *only* tool override — whether the subsystem runs at all stays in `nine.toml` |
 | `ANTHROPIC_API_KEY` | Anthropic key |
 | `SEARCH_PROVIDER` / `SEARCH_API_KEY` | `web_search` backend: `brave` or `serpapi`. Unset uses DuckDuckGo, no key needed. |
 | `NINE_LOG_LEVEL` / `NINE_LOG_FORMAT` | `debug`/`info`/`warn`/`error`; `text`/`json` |
@@ -254,9 +293,14 @@ message, prints the reply. Everything long-lived is in the daemon.
 │  └──────────────────────────────────┘               │
 │                                                     │
 │  ┌────────────────────────────────────────────────┐ │
-│  │  Plugin Manager                                │ │
-│  │  shell  files  http  time  browser             │ │
-│  │  (subprocesses; reached with unix sockets)     │ │
+│  │  Tool Dispatcher                               │ │
+│  │  ┌──────────────────┐  ┌─────────────────────┐ │ │
+│  │  │ Plugin Manager   │  │ Sandboxed Tool Host │ │ │
+│  │  │ shell files http │  │ wasm, in-process    │ │ │
+│  │  │ time browser     │  │ tools.d + generated │ │ │
+│  │  │ (subprocesses,   │  │ (capabilities are   │ │ │
+│  │  │  unix sockets)   │  │  conferred by cfg)  │ │ │
+│  │  └──────────────────┘  └─────────────────────┘ │ │
 │  └────────────────────────────────────────────────┘ │
 │                                                     │
 │  ┌────────────────────────────────────────────────┐ │
@@ -283,10 +327,15 @@ sees the tools that matter for *this* turn instead of all of them.
 supervisor above active conversations above background work, so a goal grinding away
 in the background never makes you wait.
 
+**The tool dispatcher** is the single place a tool name resolves to an implementation,
+and it has three backends behind one namespace: core-intercepted tools calling the
+store in-process, plugin subprocesses, and the wasm sandbox host. A name resolves to
+exactly one of them — a collision is a load failure, not a silent override.
+
 **Memory** is one SQLite file, reached through a single store.
 Schema is applied idempotently on open. Tables cover conversations, goals, workflows,
-KV memory, full-text-searchable files, vectors, skills, session plans, human-in-the-loop
-state, and the event journal. Operational tables are daemon-private — never exposed to
+KV memory, full-text-searchable files, vectors, skills, generated tools, session plans,
+human-in-the-loop state, and the event journal. Operational tables are daemon-private — never exposed to
 the agent as tools — so an agent cannot reach in and rewrite its own goal state.
 
 **The event journal** records every session's trajectory: turn boundaries, exact LLM
@@ -308,11 +357,16 @@ Deeper treatments live in [docs/architecture.md](docs/architecture.md) and
 
 Nine ships five plugins — `shell`, `files`, `http`, `time`, and the optional
 `browser` (headless Chromium: navigate, screenshot, extract, interact). They are
-separate binaries, spawned by the daemon, fixed at build time. A crashing plugin is
-isolated from the daemon and from active conversations.
+separate binaries, spawned by the daemon, and the built-in set is fixed at build time.
+A crashing plugin is isolated from the daemon and from active conversations.
 
 Memory, durable file storage, semantic search, and skills are **not** plugins — they
 are core-intercepted, wired into the agent loop and calling the store in-process.
+
+Sandboxed tools (below) are a *second backend behind the same dispatcher*, not a
+replacement: the plugin protocol, transport, and lifecycle are untouched, and a
+deployment that enables no sandboxed tools behaves exactly as it did before they
+existed.
 
 ### Writing one
 
@@ -355,15 +409,212 @@ That description string matters more than it looks: it is what gets embedded and
 ranked for tool selection, so it determines whether your tool is offered to the model
 at all.
 
-Add the plugin to the repo and rebuild — nothing is loaded at runtime. External MCP
+Add the plugin to the repo and rebuild, or drop the built binary beside a manifest in
+`[plugins].user_dir` (`plugins.d/weather` + `plugins.d/weather.toml`), which the daemon
+discovers at boot and re-scans on `nine plugins reload`. Either way it is a binary you
+compiled — no source is built at runtime. External MCP
 servers are supported as an exception, speaking JSON-RPC 2.0 over stdio. See
 [docs/plugins.md](docs/plugins.md) and
 [docs/plugins-http-transport.md](docs/plugins-http-transport.md).
 
+## Sandboxed tools
+
+A plugin is a binary you build and ship. A **sandboxed tool** is two files you drop in
+a directory: the daemon runs them in a wasm sandbox, in-process, with exactly the
+capabilities the operator granted — by default, **none**. No subprocess, no compile
+step, no image rebuild.
+
+```text
+tools.d/
+  csvstats.toml     # the manifest — the gate
+  csvstats.js       # the code
+```
+
+A `.js` or `.wasm` file with no manifest beside it is never loaded. The subsystem is
+**off until you turn it on**:
+
+```toml
+[tools]
+enabled  = true
+user_dir = "./tools.d"
+```
+
+The code default-exports a function; return a string and it reaches the model
+untouched, return anything else and it is JSON-stringified, throw and the model reads
+your message as an ordinary tool failure and can retry.
+
+```js
+// csvstats.js
+export default ({ csv }) => {
+  const rows = csv.trim().split("\n").map((line) => line.split(","));
+  return { rows: rows.length, columns: rows[0]?.length ?? 0 };
+};
+```
+
+The manifest beside it is authoritative — `name`, `description`, and `input_schema` all
+live there, so it is where the model's view of the tool comes from:
+
+```toml
+# csvstats.toml
+name         = "csv_stats"
+kind         = "js"              # "js" or "wasm"
+entrypoint   = "./csvstats.js"
+description  = "Summary statistics over a CSV string."
+input_schema = "./csvstats.schema.json"
+```
+
+An unknown key is an error rather than a warning: in a file whose job is declaring
+capabilities, a typo'd key silently meaning nothing is the worst outcome. The tool's
+name shares one namespace with built-ins and plugin tools, and a collision skips your
+tool rather than overriding theirs.
+
+The `js` kind runs on a pre-supplied, trimmed QuickJS-NG interpreter compiled to wasm:
+**ES2023 and nothing else** — no Node standard library, no `require`, no `setTimeout`
+and no `URL`, and `fetch` only where `net.http` was granted. Bundle your dependencies
+at development time (`npx esbuild … --bundle --format=esm --platform=neutral`); an
+`import` left in a developer tool's file fails at call time. For another language or
+full speed, ship a `.wasm` module directly from Rust, TinyGo, Zig, or C, exporting the
+two-function ABI (`nine_alloc`, `nine_run`) that passes UTF-8 JSON in and out.
+
+### Capabilities are conferred, never claimed
+
+The manifest **declares a need**; only `nine.toml` **grants** it. The two must name the
+same capabilities exactly — declaring something ungranted fails to load, and being
+granted something you did not declare *also* fails to load. Both are loud by design.
+
+```toml
+# csvstats.toml — the tool declares a need
+[capabilities]
+fs = ["read"]
+```
+
+```toml
+# nine.toml — the operator grants it, by name
+[tool.csv_stats.capabilities.fs]
+read = [{ host = "/srv/data", guest = "/data" }]
+```
+
+Your code sees the **guest** path (`/data`), which is what lets an operator narrow or
+move the mount without your tool changing.
+
+| Capability | You get | Default |
+|---|---|---|
+| `clock`, `random`, `log` | `Date.now()`, `Math.random()`, `console.*` | granted |
+| `fs.read` / `fs.write` | mounted directories, addressed by their *guest* path | declare + grant |
+| `env` | named keys only (`NINE_*` and `*_API_KEY` can never be granted) | declare + grant |
+| `net.http` | a `fetch` subset | declare + grant |
+
+Everything with reach starts at nothing, and a capability is either a wazero pre-open
+or a host function the daemon exports — anything else is not "denied", it is
+structurally absent. A sandboxed tool cannot spawn a process, open a socket, load a
+native library, or call another tool.
+
+`net.http` is the one capability with no primitive under it — wazero has no network —
+so it is a host function and its security is Nine's problem. The guest never touches a
+socket and never learns an IP. Two independent gates must both pass: the hostname
+matches the tool's `allow_hosts`, **and** the address actually being dialed is publicly
+routable, checked immediately before connect so there is no window to re-resolve into.
+Loopback, link-local (including `169.254.169.254`, where your cloud keeps its instance
+credentials), and RFC 1918 are refused regardless of the allowlist, on every redirect
+hop, and `Authorization`/`Cookie` are stripped across origins. There is no bare `"*"`:
+an operator wanting unrestricted egress should write a plugin, where that intent is
+explicit and reviewed.
+
+Bounds are always on and orthogonal to capabilities: **one instance per call** (no
+global, no cache, and no credential survives a call), a 5s wall clock, and 16 MiB —
+the last two operator-tunable. wazero has no fuel metering, so the deadline is the only
+CPU bound, which is a stated limitation rather than an assumption.
+
+### The tier Nine writes itself
+
+Nine can also write its own tools at runtime — the gap its `gap_report` names but
+could not previously close. These are rows in the store rather than files on disk, but
+they run in the identical sandbox under the identical rules. The tier is off by
+default and independent of `[tools] enabled`; with it off, `tool_write`, `tool_delete`,
+and `js_eval` are neither registered nor advertised, and a loop is identical to one
+built before the tier existed:
+
+```toml
+[tools.agent]
+enabled          = true
+eval             = true             # allow js_eval — run a snippet, persist nothing
+max_tools        = 64               # catalog cap; least-recently-called are evicted
+require_approval = "on_capability"  # prompt a human only when a tool asks for reach
+
+[tools.agent.capabilities.fs]       # the ceiling, not a grant
+read = [{ host = "${NINE_WORKSPACE}", guest = "/workspace" }]
+```
+
+`[tools.agent.capabilities]` is a **ceiling**: the most any generated tool may be
+granted, never an automatic grant. A tool gets a capability only by declaring it, one
+that declares nothing runs with nothing, and declaring past the ceiling is a refusal
+the model can act on. Declarations are re-resolved on every load, so narrowing the
+ceiling disables a tool that no longer fits rather than leaving it running with reach
+you withdrew.
+
+This is the boundary, stated precisely: **the agent writes the code, the operator
+writes the grants, and they are never the same actor.** `tool_write` writes JavaScript
+and a capability *declaration* — it has no path to write a grant. Nine gains one
+column and never the other:
+
+| | Code | Capabilities |
+|---|---|---|
+| Native plugin | operator (build time) | operator (`nine.toml`) |
+| Developer sandboxed tool | developer (file on disk) | operator (`nine.toml`) |
+| Generated sandboxed tool | **Nine** (runtime) | operator (`nine.toml`) |
+
+Generated tools may always import a small vendored standard library — `nine:csv`,
+`nine:date`, `nine:diff` — embedded in the binary, no config and no network. External
+npm packages are a separate and much riskier switch, off by default: when an operator
+enables it and names the permitted packages, `tool_write` resolves the imports **once,
+at write time, in the daemon**, verifies each tarball against its published checksum,
+runs no install scripts, and inlines the result, so by call time the tool has no
+imports left and no way to reach the network. A tool that both declares `net.http` and
+pulls a dependency is refused unless the operator lifts an explicit interlock — a
+networked dependency turns the sandbox into an exfiltration path.
+
+A write can be gated on a human: `require_approval` defaults to `on_capability`, which
+prompts only when the proposed tool declares reach, since prompting on a pure
+computation trains the reflex that defeats the prompt that matters (`always` and
+`never` are the other two, and gates apply to interactive sessions only). The catalog
+is capped at `max_tools` with least-recently-called eviction — every generated tool
+competes for the same tool-ranking budget, so an unbounded catalog would degrade
+selection for the built-ins too.
+
+Writes and deletes are journalled per session and additionally logged as an operator
+breadcrumb; `js_eval` runs a snippet under the same rules and persists nothing, so
+iteration does not accrete single-use tools. A new tool is visible **next turn** —
+loops already in flight keep the tool set they started with.
+
+### Seeing what happened
+
+```console
+$ nine tools
+  ok    csv_stats          js     fs.read /srv/data=>/data
+  ok    weather            js     net.http GET api.weather.example
+  ok    due_date           gen    none
+  SKIP  scraper            js     capability fs.read is declared by the tool but not granted; add it
+                                  under [tool.<name>.capabilities] or remove the declaration
+```
+
+A tool that fails to load is always reported with its reason — that is the point of the
+surface, and the `gen` column marks a tool as Nine's own rather than yours.
+`nine tools show <name>` prints one in full — provenance, resolved grant, manifest path
+or store origin, dependencies; `nine tools deps` answers "what third-party code is in
+this daemon, and which tool pulled it in"; `nine tools reload` re-scans the directory
+live; and `nine tool validate [path]` checks a manifest, entrypoint, schema, and ABI
+exports with no daemon running.
+
+The authoring guide is [docs/writing-sandboxed-tools.md](docs/writing-sandboxed-tools.md);
+the design rationale and the capability model in full are in
+[docs/sandboxed-tools.md](docs/sandboxed-tools.md), with the normative contract in
+`spec/contracts/toolvm.md` (`nine spec toolvm`).
+
 ## Skills
 
-Skills are how Nine improves itself — and the only way it does. A skill is a markdown
-how-to note with YAML frontmatter, stored in the database:
+Skills are how Nine improves what it *knows*; generated tools, where an operator turned
+that tier on, are how it improves what it can *do*. A skill is a markdown how-to note
+with YAML frontmatter, stored in the database:
 
 ```markdown
 ---
@@ -383,8 +634,10 @@ tax. Built-in skills are embedded in the binary and seeded into the database on 
 boot, so editing one and rebuilding updates it; skills the agent wrote itself are left
 alone.
 
-The boundary is deliberate: Nine writes skills and nothing more. It does not generate
-plugins, rewrite its config, or rebuild its source at runtime. Its executable shape is
+The boundary is deliberate: Nine writes skills, and sandboxed-tool code where the
+operator enabled that tier — both of which are store state, listable and deletable
+like a goal or a workflow. It does not generate plugins, write itself a capability
+grant, rewrite its config, or rebuild its source at runtime. Its executable shape is
 fixed. The reasoning is in
 [docs/self-modification.md](docs/self-modification.md).
 
@@ -394,7 +647,10 @@ fixed. The reasoning is in
 |---------|-------------|
 | **Daemon** | Long-running background process; manages agents, holds plugin state |
 | **Agent** | A conversation thread running the ReAct loop |
-| **Plugin** | Standalone binary exposing tools over HTTP/Unix socket; fixed at build time |
+| **Plugin** | Standalone binary exposing tools over HTTP/Unix socket; compiled ahead of time, never at runtime |
+| **Sandboxed tool** | JS or wasm run in-process in a wasm sandbox, with only the capabilities config granted it |
+| **Generated tool** | A sandboxed tool Nine wrote itself, stored as a row; its code is the agent's, its capabilities the operator's |
+| **Capability** | A conferred reach — `fs`, `env`, `net.http` — declared by a tool's manifest and granted only in `nine.toml` |
 | **Skill** | Markdown how-to note, semantically retrieved into context |
 | **Goal** | An open-ended intention with no end condition, pursued in the background |
 | **Workflow** | A finite multi-step plan for sub-agent delegation |
@@ -412,6 +668,8 @@ Highlights:
 - [Event log](docs/event-log.md) and [reactive events](docs/reactive-events.md)
 - [Session plans & stages](docs/session-plans.md) — idle scheduling, reflection, goal pursuit
 - [Roles](docs/roles.md) — role-gated tool allowlists, delegation, depth guards
+- [Writing sandboxed tools](docs/writing-sandboxed-tools.md) and the
+  [design behind them](docs/sandboxed-tools.md) — the wasm host and its capability model
 - [Predefined agents](docs/predefined-agents.md) and [scheduling](docs/scheduling.md)
 - [Human-in-the-loop](docs/hitl.md) — `ask_human` and approval gates
 - [Glossary](docs/glossary.md) — every concept in one place
@@ -424,9 +682,19 @@ project developed solo, and keeping it single-author is a deliberate choice.
 
 ## Security
 
-Nine does not sandbox anything. The `shell` plugin runs commands as the daemon's
-process user, and the agent has real filesystem and network access. Run it in Docker
-or under a restricted user if you are pointing it at anything you don't trust.
+**Sandboxed tools are sandboxed; nothing else is.** The wasm host is a real boundary —
+default-deny capabilities, one instance per call, an SSRF-checked HTTP path — and it
+applies to sandboxed tools only. Everything around it is unchanged: the `shell` plugin
+runs commands as the daemon's process user, plugins are ordinary subprocesses with the
+daemon's own reach, and the agent has real filesystem and network access through them.
+Run Nine in Docker or under a restricted user if you are pointing it at anything you
+don't trust.
+
+Two settings deserve a deliberate decision rather than a default. Enabling
+`[tools.agent]` lets the agent write code that then runs — bounded by the ceiling you
+confer, which is worth narrowing if your workspace holds secrets. Enabling external npm
+dependencies for that tier is the riskiest switch in the system; leave it off unless you
+have a reason, and leave the `net.http` interlock in place if you turn it on.
 
 ## License
 
