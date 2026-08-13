@@ -7,15 +7,9 @@
  ██║ ╚████║██║██║ ╚████║███████╗
  ╚═╝  ╚═══╝╚═╝╚═╝  ╚═══╝╚══════╝
 ```
-**A persistent, local AI harness.**
-
-*Under active development — every feature ships with tests, but none of it has heavy
-mileage yet. See [Project status](#project-status).*
-
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8.svg)](go.mod)
 [![Status: experimental](https://img.shields.io/badge/status-experimental-orange.svg)](#project-status)
-[![Tests: broad, not deep](https://img.shields.io/badge/tests-broad%2C%20not%20deep-yellow.svg)](#project-status)
 
 Nine is a harness for putting a local model to work. A daemon stays running in the
 background, holds every conversation, goal, note and journal entry in one SQLite file
