@@ -87,7 +87,7 @@ The picker stays out of the way while Nine is waiting on an answer to an
 | `/help` | List all slash commands | `/help` |
 | `/sessions` | List running sessions (copy an ID to reattach with `nine attach`) | `/sessions` |
 | `/status` | Daemon uptime, active agents, loaded plugins | `/status` |
-| `/config` | Show running configuration (API key masked) | `/config` |
+| `/config` | Show running configuration (the embeddings API key, the only one left, is masked) | `/config` |
 | `/context [id]` | Assembled-context token breakdown for the current (or given) session | `/context` |
 | `/tools [filter]` | List all available tools, grouped by plugin (optional name filter) | `/tools http` |
 | `/skills [name]` | List skills, or show the full content of a specific skill | `/skills git-workflow` |
