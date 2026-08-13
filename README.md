@@ -50,6 +50,19 @@ It works, and it is not a small system — but interfaces change without notice,
 promise or stability guarantee. Treat it as something to read, run, expirement with for now, and it 
 will eventually stabilize into a production-ready state.
 
+**Under active development, and tested — but not yet tested heavily.**
+
+Every feature lands with tests: unit tests, hermetic harness tests for the daemon and
+its wire protocol, integration tests against a real container and a real model, and an
+eval suite that both replays recorded sessions deterministically and runs a live-model
+matrix ([docs/evals.md](docs/evals.md),
+[model compatibility](docs/model-compatibility.md)). What that does not yet buy is
+mileage. The coverage is broad rather than deep, most of it against a handful of small
+local models on one machine, and the failure modes that only long uninterrupted runs,
+unusual hardware, or an unfamiliar model turn up are still ahead of it. Expect rough
+edges in that territory, and please open an issue when you hit one — that is the
+testing this stage of the project most needs.
+
 **Nine is not security hardened, yet, but will be.**
 
 See [Contributing](#contributing) before opening a pull request.
