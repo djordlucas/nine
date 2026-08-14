@@ -2,10 +2,14 @@
 # Hot-reload body of the s6 `nine` service in the `nine-dev` image (see
 # docker/s6/dev/s6-rc.d/nine/run, which execs this).
 #
-# The repository is bind-mounted at /nine-src. This builds `nine` and the Go
-# plugins from the mounted source, starts the daemon, and watches for `.go`
-# changes — on each change it rebuilds and restarts the daemon. The Go toolchain
-# and inotify-tools come from the Dockerfile `dev` stage.
+# The repository is bind-mounted at /nine-src. This builds `nine` from the
+# mounted source, starts the daemon, and watches for `.go` changes — on each
+# change it rebuilds and restarts the daemon. The Go toolchain and inotify-tools
+# come from the Dockerfile `dev` stage.
+#
+# That one build covers the Go plugins (shell/files/http/time): they are served
+# out of the nine binary as `nine plugin serve <name>` (internal/builtins), so
+# restarting the daemon picks up plugin edits with no separate build step.
 #
 # The browser plugin is not part of this loop: it is Node, and the `dev` stage
 # bakes it under /opt/nine/browser as immutable image content. Rebuilding it
@@ -16,16 +20,11 @@ set -eu
 # the relative `./cmd/nine` build paths below need this explicit cd.
 cd /nine-src
 
-BIN="${NINE_BIN:-/opt/nine/bin}"
 DAEMON=""
 
 build() {
-	echo "[dev] building nine + plugins…"
+	echo "[dev] building nine…"
 	go build -o /usr/local/bin/nine ./cmd/nine || return 1
-	mkdir -p "$BIN"
-	for p in shell files http time; do
-		go build -o "$BIN/$p" "./plugins/$p" || return 1
-	done
 	echo "[dev] build ok"
 }
 

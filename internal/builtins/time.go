@@ -1,4 +1,4 @@
-package main
+package builtins
 
 import (
 	"context"
@@ -8,7 +8,9 @@ import (
 	"nine/internal/plugin"
 )
 
-func main() {
+// serveTime runs the `time` built-in: a single tool returning the current
+// date, time, and local timezone.
+func serveTime() {
 	plugin.Serve(
 		[]plugin.ToolDefinition{{
 			Name:        "time",
@@ -16,11 +18,11 @@ func main() {
 			Description: "Return the current date and time, including the local timezone.",
 			InputSchema: plugin.Schema(`{"type":"object","properties":{}}`),
 		}},
-		map[string]plugin.ToolHandler{"time": now},
+		map[string]plugin.ToolHandler{"time": timeNow},
 	)
 }
 
-func now(_ context.Context, _ json.RawMessage) (string, error) {
+func timeNow(_ context.Context, _ json.RawMessage) (string, error) {
 	t := time.Now()
 	out, _ := json.Marshal(map[string]string{
 		"iso8601":  t.Format(time.RFC3339),

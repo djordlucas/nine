@@ -458,7 +458,10 @@ func (d DaemonConfig) RelatedSessionsIndexEnabled() bool {
 }
 
 type PluginsConfig struct {
-	Dir string `toml:"dir"`
+	// Bin is the directory holding plugins that ship as their own executable.
+	// Since the Go built-ins moved into the nine binary (plugin.md R-PLUG.13)
+	// that is `browser` alone; user plugins come from UserDir instead. The
+	// container overrides this with NINE_PLUGINS_BIN.
 	Bin string `toml:"bin"`
 
 	// CacheDir is the root under which each plugin gets its own scratch directory
@@ -479,6 +482,19 @@ type PluginsConfig struct {
 	// MaxJobsPerConversation caps a conversation's outstanding jobs, so a looping
 	// model cannot start an unbounded number. 0 uses runtime's default (8).
 	MaxJobsPerConversation int `toml:"max_jobs_per_conversation"`
+
+	// Disabled names plugins that must never start, by their wire name
+	// (`shell`, `browser`, a user plugin's manifest name…). It is the operator's
+	// lever for withholding a capability — most obviously `shell` — and applies
+	// uniformly to built-ins, plugins with their own binary, and user plugins
+	// (spec/contracts/plugin.md R-PLUG.14).
+	//
+	// It exists because the built-ins moved into the nine binary (R-PLUG.13):
+	// before that, a plugin could be withheld by simply not shipping its binary,
+	// and a built-in has no binary to omit. A disabled plugin is reported by
+	// `nine plugins` rather than silently absent. The container overrides this
+	// with NINE_PLUGINS_DISABLED (comma-separated).
+	Disabled []string `toml:"disabled"`
 
 	// UserDir holds operator-supplied plugins, discovered at boot from a
 	// sidecar-manifest layout: an executable `<name>` beside a `<name>.toml`

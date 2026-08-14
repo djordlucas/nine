@@ -57,10 +57,18 @@ task_timeout_seconds = 1800  # 30 minutes
 # related_sessions_index = false
 
 [plugins]
-# Plugin sources, and the compiled plugin binaries `make all` writes to
-# ./dist/bin. The image bakes them at /opt/nine/bin (NINE_PLUGINS_BIN).
-dir = "./plugins"
+# The directory holding plugins that ship as their own binaries. The Go
+# built-ins (shell/files/http/time) are not among them: they live inside the
+# nine binary and are started as `nine plugin serve <name>`, so `bin` is only
+# where `make all` writes the browser plugin (./dist/bin; the image bakes it at
+# /opt/nine/bin, via NINE_PLUGINS_BIN). Your own plugins go in `user_dir` below.
 bin = "./dist/bin"
+# Plugins that must never start, by name — the lever for withholding a
+# capability. `shell` executes arbitrary commands, so this is the way to run
+# without it. Applies to built-ins, browser, and your own plugins alike; a
+# disabled plugin shows as `off` in `nine plugins` rather than silently missing.
+# The container can override this with NINE_PLUGINS_DISABLED="shell,browser".
+# disabled = ["shell"]
 # Your own plugins, discovered at boot from a sidecar-manifest layout (see
 # plugins.d/README.md and docs/plugins.md):
 #

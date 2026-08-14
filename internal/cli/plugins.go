@@ -67,7 +67,7 @@ func printPlugins(out io.Writer, plugins []protocol.PluginStatus) {
 		fmt.Fprintln(out, "No plugins loaded.")
 		return
 	}
-	var skipped int
+	var skipped, disabled int
 	for _, p := range plugins {
 		if p.Loaded {
 			tools := ""
@@ -77,11 +77,21 @@ func printPlugins(out io.Writer, plugins []protocol.PluginStatus) {
 			fmt.Fprintf(out, "  ok    %-14s %-8s%s\n", p.Name, p.Source, tools)
 			continue
 		}
+		// A plugin the operator switched off is not a failure, and reading it as
+		// one sends people hunting for a fault that is not there.
+		if p.Disabled {
+			disabled++
+			fmt.Fprintf(out, "  off   %-14s %-8s disabled in [plugins].disabled\n", p.Name, p.Source)
+			continue
+		}
 		skipped++
 		fmt.Fprintf(out, "  SKIP  %-14s %-8s %s\n", p.Name, p.Source, p.Error)
 	}
 	if skipped > 0 {
-		fmt.Fprintf(out, "\n%d user plugin(s) skipped; the daemon is running without them.\n", skipped)
+		fmt.Fprintf(out, "\n%d plugin(s) skipped; the daemon is running without them.\n", skipped)
+	}
+	if disabled > 0 {
+		fmt.Fprintf(out, "\n%d plugin(s) disabled by config.\n", disabled)
 	}
 }
 

@@ -142,8 +142,12 @@ daemon-private reads exposed only as protocol queries, never as agent tools).
 `plugins_list` and `plugins_reload` return `[]PluginStatus` JSON-encoded in `text`:
 
 ```schema
-PluginStatus { name string, source string, loaded bool, tools []string, error string }
+PluginStatus { name string, source string, loaded bool, tools []string, error string,
+               disabled bool }
 // source: builtin | user. A skipped user plugin has loaded=false and error set.
+// disabled=true marks a plugin switched off in [plugins].disabled (plugin.md
+// R-PLUG.14) rather than one that failed — a decision, not a fault. Additive and
+// optional; a client that does not know it sees an unloaded plugin with a reason.
 ```
 
 `plugins_reload` re-scans `[plugins].user_dir` (stopping and restarting only user

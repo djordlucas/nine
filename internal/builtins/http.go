@@ -1,4 +1,4 @@
-package main
+package builtins
 
 import (
 	"context"
@@ -15,7 +15,9 @@ import (
 	"nine/internal/plugin"
 )
 
-func main() {
+// serveHTTP runs the `http` built-in: http_get / http_post / web_search /
+// web_page_read.
+func serveHTTP() {
 	plugin.Serve(
 		[]plugin.ToolDefinition{
 			{

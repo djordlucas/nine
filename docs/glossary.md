@@ -343,8 +343,10 @@ fires after a successful call to a specific tool. (Skill description embedding
 is now done inline by `skill_write`/`skill_modify` in `RegisterSkillTools`, not
 via a hook.)
 
-**Plugin lifecycle** — Built into the image (`go build` → `/opt/nine/bin/<name>`)
-→ started at daemon boot (`TryStart` → spawn, `plugin.describe`, register tools)
+**Plugin lifecycle** — Built into the image (the Go built-ins into the `nine`
+binary itself; `browser` into `/opt/nine/bin/browser`) → started at daemon boot
+(`TryStartBuiltin` spawns `nine plugin serve <name>`, `TryStart` spawns a plugin
+binary; then `plugin.describe`, register tools)
 → in use via `plugin.call` → SIGTERM on shutdown. A crashed
 subprocess is isolated from the daemon; restart from the existing binary is the
 plugin manager's responsibility. See [Plugins § Plugin Lifecycle](plugins.md#plugin-lifecycle).

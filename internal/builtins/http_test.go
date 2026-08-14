@@ -1,4 +1,4 @@
-package main_test
+package builtins_test
 
 import (
 	"context"
@@ -8,57 +8,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
-
-	"nine/internal/plugin"
 )
 
-var testBin string
-
-func TestMain(m *testing.M) {
-	tmp, _ := os.MkdirTemp("", "nine-http-test-*")
-	defer os.RemoveAll(tmp)
-	testBin = filepath.Join(tmp, "http")
-	root := moduleRoot()
-	cmd := exec.Command("go", "build", "-o", testBin, "./plugins/http")
-	cmd.Dir = root
-	if b, err := cmd.CombinedOutput(); err != nil {
-		fmt.Fprintf(os.Stderr, "build: %v\n%s\n", err, b)
-		os.Exit(1)
-	}
-	os.Exit(m.Run())
-}
-
-func moduleRoot() string {
-	dir, _ := os.Getwd()
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			panic("go.mod not found")
-		}
-		dir = parent
-	}
-}
-
-func start(t *testing.T, extraEnv ...string) (*plugin.Plugin, *plugin.Manager) {
-	t.Helper()
-	m := plugin.NewManager("")
-	p, err := m.Start(testBin, extraEnv...)
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	t.Cleanup(func() { m.Stop(p) })
-	return p, m
-}
-
-func TestDescribe(t *testing.T) {
-	p, _ := start(t)
+func TestHTTPDescribe(t *testing.T) {
+	p, _ := start(t, "http")
 	names := make(map[string]bool)
 	for _, tool := range p.Tools {
 		names[tool.Name] = true
@@ -76,7 +31,7 @@ func TestHTTPGet(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p, m := start(t)
+	p, m := start(t, "http")
 	args, _ := json.Marshal(map[string]string{"url": srv.URL})
 	r, err := m.Call(context.Background(), p, "http_get", args)
 	if err != nil {
@@ -96,7 +51,7 @@ func TestHTTPPost(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p, m := start(t)
+	p, m := start(t, "http")
 	args, _ := json.Marshal(map[string]string{"url": srv.URL, "body": `{"key":"value"}`})
 	r, err := m.Call(context.Background(), p, "http_post", args)
 	if err != nil {
@@ -126,7 +81,7 @@ func TestWebPageRead(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p, m := start(t)
+	p, m := start(t, "http")
 	args, _ := json.Marshal(map[string]string{"url": srv.URL})
 	r, err := m.Call(context.Background(), p, "web_page_read", args)
 	if err != nil {

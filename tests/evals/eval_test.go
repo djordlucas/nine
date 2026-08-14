@@ -82,7 +82,7 @@ func TestReplayFixtures(t *testing.T) {
 // TestLiveMatrix runs Track L across the requested models. Opt-in:
 //
 //	NINE_EVALS_LIVE=1 NINE_EVAL_MODELS=qwen3.5:4b \
-//	  NINE_PLUGINS_BIN=$PWD/dist/bin go test ./tests/evals -run TestLiveMatrix
+//	  NINE_BINARY=$PWD/dist/nine go test ./tests/evals -run TestLiveMatrix
 func TestLiveMatrix(t *testing.T) {
 	if os.Getenv("NINE_EVALS_LIVE") != "1" {
 		t.Skip("live matrix skipped (set NINE_EVALS_LIVE=1 to run)")
@@ -109,7 +109,7 @@ func TestLiveMatrix(t *testing.T) {
 	}
 
 	suite := &runner.Suite{
-		Harness:     &runner.Harness{PluginBin: os.Getenv("NINE_PLUGINS_BIN"), Embedder: runner.EvalEmbedder()},
+		Harness:     &runner.Harness{NineBin: os.Getenv("NINE_BINARY"), Embedder: runner.EvalEmbedder()},
 		Models:      models,
 		ProviderFor: runner.ProviderFor,
 		JudgeFn:     runner.NewJudge(runner.ProviderFor),

@@ -36,7 +36,7 @@ func TestDiagLiveTrajectory(t *testing.T) {
 		t.Fatalf("provider: %v", err)
 	}
 	h := requireHarness(t)
-	h.PluginBin = os.Getenv("NINE_PLUGINS_BIN")
+	h.NineBin = os.Getenv("NINE_BINARY")
 	h.Embedder = EvalEmbedder()
 
 	res, err := h.Run(context.Background(), c, provider)
