@@ -406,7 +406,7 @@ and real tool-calling agent turns:
       - `smoke_test.go`'s `TestPluginsLoaded` asserted for `memory`, `skills`,
         and `nine` in the `Plugins:` status line — but those are in-process
         capabilities of `memory.Store`, never plugin subprocesses (§1 of
-        docs/architecture_detailed.md), so they can never appear there
+        docs/architecture.md), so they can never appear there
         regardless of how correctly the daemon is running. Fixed by checking
         only the real subprocess plugins (`shell`, `files`, `http`, `time`).
       With both fixed: 14/14 pass against the documented default (`gemma4:e4b`,
@@ -455,7 +455,7 @@ and real tool-calling agent turns:
    prerequisite), update `docs/README.md` quick-start and the top-level
    `README.md` to describe the single-container model, and sweep the stale
    compose references in `docs/configuration.md`,
-   `docs/architecture_detailed.md`, and `docs/event-log.md`. This doc is the
+   `docs/architecture.md`, and `docs/event-log.md`. This doc is the
    design of record; installation becomes the how-to.
 9. **Verify** the §13 checklist, including `make integration-test`, on both
    targets before merging.
