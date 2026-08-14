@@ -26,7 +26,7 @@ func TestPluginsLoaded(t *testing.T) {
 	t.Logf("status output:\n%s", out)
 
 	// memory and skills are in-process capabilities of memory.Store, never
-	// plugin subprocesses (docs/architecture_detailed.md §1), so they never
+	// plugin subprocesses (docs/architecture.md §1), so they never
 	// appear in the Plugins: line — only check the actual subprocess plugins.
 	required := []string{"shell", "files", "http", "time"}
 	for _, p := range required {

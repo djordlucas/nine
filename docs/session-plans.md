@@ -159,7 +159,7 @@ of the context (see [Context Builder](context-builder.md) and
 
 ### `pursue` — background goal pursuit
 
-See [Goals](architecture.md#goals) for the LLM-facing `goal_*` tools. Each top-level
+See [Goals](architecture.md#goals--state-write-paths-status) for the LLM-facing `goal_*` tools. Each top-level
 goal gets its own background session running the `pursue` stage, keyed 1:1 by
 `agentID == goalID`.
 
