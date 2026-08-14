@@ -50,6 +50,9 @@ func runDaemon() {
 	// ephemeral dirs from a previous daemon that exited without stopping its
 	// plugins, before any new plugin allocates one.
 	pluginManager.SetCacheConfig(cfg.PluginCacheRoot(), cfg.PluginPersistCache)
+	// Plugins the operator switched off ([plugins].disabled, R-PLUG.14). Set
+	// before any start so nothing disabled is ever spawned, not even briefly.
+	pluginManager.SetDisabled(cfg.Plugins.Disabled)
 	pluginManager.SweepCache()
 	// The Go built-ins are served by this same binary (`nine plugin serve <name>`,
 	// internal/builtins) — still one process each, just no separate artifact to

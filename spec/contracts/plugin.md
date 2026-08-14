@@ -382,13 +382,40 @@ plugins (R-PLUG.9) and MCP servers, which are genuinely separate artifacts.
 Go binary; it stays a separate artifact resolved through `[plugins].bin` and started
 with `TryStart`.
 
-**Consequence: the built-ins are no longer withholdable.** `TryStart` skips a plugin
-whose binary is absent, so an operator could previously suppress one — `shell` above
-all — by not shipping `dist/bin/shell`. A built-in has no binary to omit, so all four
-now start whenever the daemon does. This is deliberate (it is what makes plugin and
-daemon impossible to skew), and it is a real change in operator control: a deployment
-that relied on a missing binary to withhold `shell` no longer has that lever. Nine has
-no per-plugin enable key today; adding one is the way to restore it if needed.
+A built-in has no binary to omit, so the implicit lever an operator used to have —
+suppress a plugin by not shipping `dist/bin/<name>` — no longer exists for these four.
+R-PLUG.14 replaces it with an explicit one.
+
+---
+
+## R-PLUG.14 — `[plugins].disabled`
+
+`[plugins] disabled = ["shell"]` names plugins that **MUST NOT** start. Entries are
+wire names (`shell`, `browser`, a user plugin's manifest name), and the list applies
+uniformly to **every** start path — built-ins (R-PLUG.13), plugins with their own
+binary, and user plugins (R-PLUG.9). `NINE_PLUGINS_DISABLED` (comma-separated)
+overrides it, so a container can withhold a plugin without a second config file.
+
+An implementation **MUST**:
+
+- refuse a disabled plugin **before spawning anything**, so no process, socket, or
+  cache dir is created for it. Enforcing this at the single point every start path
+  funnels through is what makes the guarantee hold for a caller that forgets to ask;
+- treat the refusal as a **decision, not a failure**: the daemon boots normally and
+  the tolerant starters (`TryStart`, `TryStartBuiltin`, user-plugin loading) report it
+  as switched off rather than broken;
+- **surface it**. A disabled plugin appears in `plugins_list` with `disabled: true`
+  and a reason, and `nine plugins` prints it as `off`. A plugin that is simply absent
+  from the roster gives an operator debugging a missing tool nothing to read — the
+  same reasoning as the skipped-user-plugin entries in R-PLUG.9 and the skipped tools
+  in [`toolvm.md`](toolvm.md) R-TVM.6.
+
+Disabling is an **operator** action, never an agent one (N1, R-PLUG.7): it is read
+from config at boot and there is no tool or wire message that switches a plugin on or
+off at runtime.
+
+`nine plugin validate` still works against a disabled plugin — validation asks whether
+a binary *is* a plugin, which is independent of whether this daemon runs it.
 
 ---
 
