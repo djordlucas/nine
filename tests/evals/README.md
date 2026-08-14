@@ -40,7 +40,7 @@ same durable journal (`session_events`) production writes.
 | `NINE_EVALS_LIVE=1` | enable the Track-L matrix (`TestLiveMatrix`) |
 | `NINE_EVAL_MODELS` | comma-separated model list for the matrix |
 | `NINE_EVAL_TIER` | run only one tier (e.g. `smoke`) |
-| `NINE_PLUGINS_BIN` | plugin binary dir (default from `make eval-live`) |
+| `NINE_BINARY` | path to a built nine binary — the built-in plugins are served out of it (default from `make eval-live`) |
 | `NINE_LLM_ENDPOINT` | Ollama endpoint for the matrix models |
 
 ## Keeping the harness faithful

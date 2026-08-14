@@ -1,68 +1,21 @@
-package main_test
+package builtins_test
 
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
-
-	"nine/internal/plugin"
 )
 
-var testBin string
-
-func TestMain(m *testing.M) {
-	tmp, _ := os.MkdirTemp("", "nine-shell-test-*")
-	defer os.RemoveAll(tmp)
-	testBin = filepath.Join(tmp, "shell")
-	cmd := exec.Command("go", "build", "-o", testBin, "./plugins/shell")
-	cmd.Dir = moduleRoot()
-	if b, err := cmd.CombinedOutput(); err != nil {
-		fmt.Fprintf(os.Stderr, "build: %v\n%s\n", err, b)
-		os.Exit(1)
-	}
-	os.Exit(m.Run())
-}
-
-func moduleRoot() string {
-	dir, _ := os.Getwd()
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			panic("go.mod not found")
-		}
-		dir = parent
-	}
-}
-
-// start returns a plugin + manager; stops the plugin on test cleanup.
-func start(t *testing.T) (*plugin.Plugin, *plugin.Manager) {
-	t.Helper()
-	m := plugin.NewManager("")
-	p, err := m.Start(testBin)
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	t.Cleanup(func() { m.Stop(p) })
-	return p, m
-}
-
-func TestDescribe(t *testing.T) {
-	p, _ := start(t)
+func TestShellDescribe(t *testing.T) {
+	p, _ := start(t, "shell")
 	if len(p.Tools) != 1 || p.Tools[0].Name != "shell" {
 		t.Fatalf("describe: %+v", p.Tools)
 	}
 }
 
 func TestShellEcho(t *testing.T) {
-	p, m := start(t)
+	p, m := start(t, "shell")
 	r, err := m.Call(context.Background(), p, "shell", json.RawMessage(`{"command":"echo hello"}`))
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +34,7 @@ func TestShellEcho(t *testing.T) {
 }
 
 func TestShellNonZeroExit(t *testing.T) {
-	p, m := start(t)
+	p, m := start(t, "shell")
 	r, err := m.Call(context.Background(), p, "shell", json.RawMessage(`{"command":"exit 42"}`))
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +49,7 @@ func TestShellNonZeroExit(t *testing.T) {
 }
 
 func TestShellTimeout(t *testing.T) {
-	p, m := start(t)
+	p, m := start(t, "shell")
 	_, err := m.Call(context.Background(), p, "shell", json.RawMessage(`{"command":"sleep 10","timeout":1}`))
 	if err == nil {
 		t.Error("expected timeout error, got nil")
@@ -107,7 +60,7 @@ func TestShellTimeout(t *testing.T) {
 }
 
 func TestShellStderr(t *testing.T) {
-	p, m := start(t)
+	p, m := start(t, "shell")
 	r, err := m.Call(context.Background(), p, "shell", json.RawMessage(`{"command":"echo err >&2"}`))
 	if err != nil {
 		t.Fatal(err)
@@ -122,7 +75,7 @@ func TestShellStderr(t *testing.T) {
 }
 
 func TestShellSecurityBlocked(t *testing.T) {
-	p, m := start(t)
+	p, m := start(t, "shell")
 
 	cases := []struct {
 		cmd    string
@@ -165,7 +118,7 @@ func TestShellSecurityBlocked(t *testing.T) {
 }
 
 func TestShellSecurityAllowed(t *testing.T) {
-	p, m := start(t)
+	p, m := start(t, "shell")
 
 	cases := []struct {
 		cmd    string

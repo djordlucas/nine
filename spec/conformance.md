@@ -110,6 +110,7 @@ How to use this file:
 | R-PLUG.3 | Manager lifecycle | Spawn (env `NINE_PLUGIN_SOCKET` + `NINE_BIN` + extras), await socket, describe, track `*Plugin`, forward calls over an HTTP client. |
 | R-PLUG.4 | Crash isolation (I9) | Killing a plugin subprocess mid-run is reported without crashing the daemon. |
 | R-PLUG.5 | Default plugins | `files`, `shell`, `http`, `time`, `browser` start at boot (skills/memory are core-intercepted). |
+| R-PLUG.13 | Built-ins in the `nine` binary | `files`/`shell`/`http`/`time` start as `nine plugin serve <name>` child processes — no per-plugin binary on disk — and still get their own process, sanitized env, cache dir, and `max_concurrent`. `browser` still starts from `[plugins].bin`. |
 | R-PLUG.6 | Browser plugin | The browser plugin exposes its documented tools. |
 | R-PLUG.7 | No runtime plugin mutation (N1) | No path generates, compiles, or hot-swaps a plugin; recovery is restart-from-binary only. |
 

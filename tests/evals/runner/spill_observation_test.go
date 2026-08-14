@@ -19,9 +19,9 @@ import (
 // broke" from "the model failed to read its own observation"
 // (docs/tool-output-spill.md §8).
 func TestSpillObservationFromRealTool(t *testing.T) {
-	pluginBin := os.Getenv("NINE_PLUGINS_BIN")
-	if pluginBin == "" {
-		t.Skip("set NINE_PLUGINS_BIN (make plugins) to run the shell plugin")
+	nineBin := os.Getenv("NINE_BINARY")
+	if nineBin == "" {
+		t.Skip("set NINE_BINARY (make build) to run the shell plugin")
 	}
 
 	c := &Case{
@@ -31,7 +31,7 @@ func TestSpillObservationFromRealTool(t *testing.T) {
 	}
 	c.defaults()
 	h := requireHarness(t)
-	h.PluginBin = pluginBin
+	h.NineBin = nineBin
 
 	res, err := h.Run(context.Background(), c, scriptedProvider([]llm.Response{
 		{ToolCalls: []llm.ToolCall{toolCall("1", "shell", map[string]any{
