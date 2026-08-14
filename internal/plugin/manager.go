@@ -308,10 +308,11 @@ func (m *Manager) TryStartBuiltinInstance(builtin, instance string, extraEnv ...
 func (m *Manager) start(l launch, extraEnv ...string) (*Plugin, error) {
 	name := l.name
 
-	// Every native start path funnels through here, so a disabled plugin cannot
-	// be spawned by any caller — including a future one that forgets to ask. No
-	// process, no socket, no cache dir. StartMCP does not reach this (it builds
-	// its own stdio client) and carries the same check itself.
+	// Every start path funnels through here, so a disabled plugin cannot be
+	// spawned by any caller — including a future one that forgets to ask. No
+	// process, no socket, no cache dir. MCP servers are covered too: each is a
+	// bridge plugin started through StartBuiltinInstance (R-PLUG.15), not a
+	// separate spawn path of its own.
 	if m.IsDisabled(name) {
 		return nil, fmt.Errorf("%q: %w", name, ErrPluginDisabled)
 	}

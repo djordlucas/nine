@@ -627,10 +627,6 @@ func (cfg *Config) Validate() error {
 	return nil
 }
 
-// validateToolEntry checks one `[tool.<name>]` grant. Everything here is a
-// config error rather than a runtime surprise, because a grant that silently
-// does not mean what the operator thought is the failure mode the capability
-// model exists to prevent.
 // mcpServerNameRe constrains an MCP server name to what can serve as both a
 // tool-name prefix the model sees (`github__create_issue`) and a path-safe
 // socket filename. Underscore is excluded because `__` is the prefix separator:
@@ -668,6 +664,10 @@ func validateMCPServers(servers []MCPServer) error {
 	return nil
 }
 
+// validateToolEntry checks one `[tool.<name>]` grant. Everything here is a
+// config error rather than a runtime surprise, because a grant that silently
+// does not mean what the operator thought is the failure mode the capability
+// model exists to prevent.
 func validateToolEntry(table string, entry ToolEntry) error {
 	caps := entry.Capabilities
 

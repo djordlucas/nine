@@ -80,7 +80,7 @@ func (c *mcpHTTP) stop() error {
 }
 
 // call sends one JSON-RPC request and returns its result.
-func (c *mcpHTTP) call(method string, params any) (json.RawMessage, error) {
+func (c *mcpHTTP) call(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -100,7 +100,7 @@ func (c *mcpHTTP) call(method string, params any) (json.RawMessage, error) {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	resp, err := c.post(body)
+	resp, err := c.post(ctx, body)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +146,7 @@ func (c *mcpHTTP) notify(method string, params any) error {
 	if err != nil {
 		return err
 	}
-	resp, err := c.post(body)
+	resp, err := c.post(context.Background(), body)
 	if err != nil {
 		return err
 	}
@@ -162,15 +162,17 @@ func (c *mcpHTTP) notify(method string, params any) error {
 // post issues one request with the headers this transport carries: the
 // operator's (typically an Authorization bearer), the negotiated protocol
 // version, and the session id once the server has issued one.
-func (c *mcpHTTP) post(body []byte) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, c.url, bytes.NewReader(body))
+func (c *mcpHTTP) post(ctx context.Context, body []byte) (*http.Response, error) {
+	// Unlike stdio, HTTP can cancel one request without disturbing the next, so
+	// the caller's ctx rides the request directly.
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	// Both are accepted because the server chooses which to send per request.
 	req.Header.Set("Accept", "application/json, "+mcpSSEContentType)
-	req.Header.Set(mcpVersionHeader, mcpProtocolVersion)
+	req.Header.Set(mcpVersionHeader, mcpProtocolVersionHTTP)
 	for k, v := range c.headers {
 		req.Header.Set(k, v)
 	}

@@ -159,7 +159,7 @@ bin = "./dist/bin"
 
 # MCP servers. Each entry becomes one plugin (`mcp:<name>`) with its tools
 # prefixed by the server name, so two servers cannot collide. Disable one with
-# [plugins] disabled = ["mcp:github"]. stdio servers only.
+# [plugins] disabled = ["mcp:github"].
 # [[mcp.server]]
 # name    = "github"
 # command = "npx"
