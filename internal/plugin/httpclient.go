@@ -28,7 +28,7 @@ const stopGrace = 2 * time.Second
 // so high-fan-out call bursts don't churn connections.
 const defaultIdleConns = 64
 
-// httpClient is a pluginClient that speaks the compact RPC envelope over HTTP on
+// httpClient speaks the compact RPC envelope over HTTP on
 // a per-plugin Unix socket. It is concurrency-safe by construction: http.Client
 // pools connections, so there is no mutex, reader goroutine, or pending map.
 type httpClient struct {

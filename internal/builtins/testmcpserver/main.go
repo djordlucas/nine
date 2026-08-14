@@ -1,15 +1,36 @@
-// testmcpserver is a minimal MCP server used by internal/plugin tests.
+// testmcpserver is a minimal MCP server used by internal/builtins tests.
 // It implements the MCP stdio transport with one tool: "mcp_echo".
+//
+// MCP_TEST_STARTUP_DELAY makes it slow to come up, standing in for the real
+// thing: an `npx`-launched server took ~72s to reach tools/list in practice,
+// far past the daemon's ~3s socket-ready budget. A fixture that starts
+// instantly cannot catch a bridge that handshakes before it listens, which is
+// exactly how that bug shipped.
 package main
 
 import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"time"
 )
 
 func main() {
+	// MCP_TEST_HANG makes the server read stdin and never reply — the failure a
+	// handshake timeout exists for, and one no amount of waiting resolves.
+	if os.Getenv("MCP_TEST_HANG") == "1" {
+		io.Copy(io.Discard, os.Stdin) //nolint:errcheck // block until stdin closes
+		return
+	}
+
+	if d := os.Getenv("MCP_TEST_STARTUP_DELAY"); d != "" {
+		if wait, err := time.ParseDuration(d); err == nil {
+			time.Sleep(wait)
+		}
+	}
+
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 4*1024*1024), 4*1024*1024)
 

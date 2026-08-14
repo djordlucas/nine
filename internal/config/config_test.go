@@ -291,3 +291,67 @@ func TestPluginsDisabledEnvEmptyKeepsFile(t *testing.T) {
 		})
 	}
 }
+
+// [[mcp.server]] mistakes are caught at load, where the operator can act on
+// them, rather than surfacing later as a plugin that mysteriously never
+// appeared. The env/headers pairing matters because silently ignoring the wrong
+// one would leave someone believing they had passed a token.
+func TestMCPServerValidation(t *testing.T) {
+	cases := []struct {
+		name    string
+		toml    string
+		wantErr string
+	}{
+		{"stdio ok", `[[mcp.server]]
+name = "github"
+command = "npx"`, ""},
+		{"http ok", `[[mcp.server]]
+name = "hosted"
+url = "https://mcp.example.com/rpc"`, ""},
+		{"missing name", `[[mcp.server]]
+command = "npx"`, "name is required"},
+		{"no transport", `[[mcp.server]]
+name = "x"`, "needs command"},
+		{"both transports", `[[mcp.server]]
+name = "x"
+command = "npx"
+url = "https://example.com"`, "not both"},
+		{"duplicate names", `[[mcp.server]]
+name = "dup"
+command = "a"
+[[mcp.server]]
+name = "dup"
+command = "b"`, "duplicate"},
+		{"underscore in name", `[[mcp.server]]
+name = "bad_name"
+command = "npx"`, "alphanumeric"},
+		{"env with url", `[[mcp.server]]
+name = "x"
+url = "https://example.com"
+[mcp.server.env]
+TOKEN = "t"`, "use headers with url"},
+		{"headers with command", `[[mcp.server]]
+name = "x"
+command = "npx"
+[mcp.server.headers]
+Authorization = "Bearer t"`, "use env with command"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := filepath.Join(t.TempDir(), "nine.toml")
+			if err := os.WriteFile(f, []byte(c.toml), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := config.Load(f)
+			switch {
+			case c.wantErr == "" && err != nil:
+				t.Errorf("Load: unexpected error %v", err)
+			case c.wantErr != "" && err == nil:
+				t.Errorf("Load: want an error mentioning %q, got nil", c.wantErr)
+			case c.wantErr != "" && !strings.Contains(err.Error(), c.wantErr):
+				t.Errorf("Load error = %q, want it to mention %q", err, c.wantErr)
+			}
+		})
+	}
+}

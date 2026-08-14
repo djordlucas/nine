@@ -157,6 +157,24 @@ bin = "./dist/bin"
 # BROWSER_HEADLESS = "0"   # override a built-in default
 
 
+# MCP servers. Each entry becomes one plugin (`mcp:<name>`) with its tools
+# prefixed by the server name, so two servers cannot collide. Disable one with
+# [plugins] disabled = ["mcp:github"].
+# [[mcp.server]]
+# name    = "github"
+# command = "npx"
+# args    = ["-y", "@modelcontextprotocol/server-github"]
+# [mcp.server.env]
+# GITHUB_PERSONAL_ACCESS_TOKEN = "ghp_..."
+#
+# A hosted server is reached by url instead of being spawned (MCP streamable
+# HTTP). Use headers for auth; env applies only to a spawned command.
+# [[mcp.server]]
+# name = "hosted"
+# url  = "https://mcp.example.com/rpc"
+# [mcp.server.headers]
+# Authorization = "Bearer ..."
+
 [memory]
 # SQLite database file. It holds all persistent state: conversations, goals, KV
 # memory, file cache (full-text searchable via FTS5), vectors, skills, and the
