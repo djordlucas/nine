@@ -33,7 +33,7 @@ the model returns a final answer with no tool calls. See
 **Supervisor Agent** — A special agent that monitors all other sessions. It
 activates on `gap_report` calls or stall detection. It has higher LLM queue
 priority than background work but lower than active conversations. See
-[Architecture § Supervisor Agent](architecture.md#supervisor-agent).
+[Architecture § 14 Autonomy & oversight](architecture.md#14-autonomy--oversight-components).
 
 **Tool Dispatcher (`internal/agent/dispatcher.go`)** — Routes each tool call
 to its registered handler: plugin tools via `plugin.call`, core-intercepted
@@ -63,7 +63,7 @@ crashed subprocess is isolated from the daemon. See [Plugins](plugins.md).
 **LLM Queue (`internal/llm/queue.go`)** — Prioritized queue in front of the
 LLM provider. Enforces `max_concurrent` in-flight requests. Priority order:
 1 = supervisor, 2 = active conversations, 3 = background sessions and sub-agents. See
-[Architecture § LLM Queue](architecture.md#llm-queue-internalllm).
+[Architecture § 9 The LLM queue](architecture.md#9-the-llm-queue).
 
 **Context Builder (`ninectx.Builder`, `internal/context/builder.go`)** —
 Assembles one `llm.Request` per loop iteration from system prompt, tool
@@ -96,7 +96,7 @@ with `status` (`active`/`paused`/`done`/`archived`), an optional
 `parent_id`/`parent_type`, and an append-only `subtree` of spawned
 sub-goals and sub-work. LLM tools: `goal_create`, `goal_get`, `goal_list`,
 `goal_update_status`, `goal_append_subtree` (role-gated like `run_agent`).
-See [Architecture § Goals](architecture.md#goals).
+See [Architecture § 14 Goals](architecture.md#goals--state-write-paths-status).
 
 **Sub-agent (`run_agent` / `run_agents`)** — Core-intercepted tools that spawn
 a child agent to execute one task (`run_agent`) or several in parallel
@@ -199,7 +199,7 @@ Operational tables (`conversations`, `goals`, `notifications`,
 `human_requests`, `interactive_sessions`, `session_events`, `event_cursors`,
 `related_sessions`) are accessed only by the daemon, never exposed as agent tools.
 (There is no `tasks` or `plugin_registry` table.)
-See [Architecture § Memory and Persistence](architecture.md#memory-and-persistence).
+See [Architecture § 12 Memory & persistence](architecture.md#12-memory--persistence).
 
 **Notification** — Result of a completed/errored background session, goal, or
 sub-agent. **Pull**: `nine goals`/`/goals` (and `nine workflows`) show live status.
@@ -265,7 +265,7 @@ speak JSON-RPC 2.0 over stdio. A native plugin may also implement two optional
 job methods (`plugin.job_status` / `plugin.job_cancel`, protocol v2) for
 long-running work. Plugins are compiled into the image at build time; there is no
 runtime generation. See [Plugins](plugins.md) and
-[Architecture § Plugin Protocol](architecture.md#plugin-protocol).
+[Architecture § 10 Plugin subsystem](architecture.md#10-plugin-subsystem).
 
 **Core-intercepted tools** — Tools that appear in the agent's tool list but
 are handled directly by the Tool Dispatcher, with no plugin subprocess:
