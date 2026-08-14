@@ -77,6 +77,17 @@ bin = ""                        # dir of plugins shipping their own binary (brow
 #   max_packages  = 24              #   budgets (incl. transitive) / max_bundle_kb / max_depth
 #   allow = [{ name = "date-fns", version = "^4.1.0" }]  # allowlist mode: named packages + ranges
 
+[[mcp.server]]                  # zero or more; each becomes one `mcp:<name>` plugin (plugin.md R-PLUG.15)
+name    = "github"              # required; alphanumeric+dashes, prefixes the server's tools
+command = "npx"                 # spawn over stdio …
+args    = ["-y", "…"]
+[mcp.server.env]                # … with env for the spawned process
+GITHUB_TOKEN = "…"
+# …XOR…
+url     = "https://…/rpc"       # reach a hosted server over streamable HTTP …
+[mcp.server.headers]            # … with headers for auth
+Authorization = "Bearer …"
+
 [memory]
 # SQLite database file. Created on first run, along with its parent directory.
 # Default: /data/nine.db when the container's /data volume is present, else

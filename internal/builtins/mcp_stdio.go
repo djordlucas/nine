@@ -2,6 +2,7 @@ package builtins
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,9 +34,20 @@ type mcpStdio struct {
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
 	stdout *bufio.Scanner
-	mu     sync.Mutex
+
+	// callMu serializes a whole request/response round trip: it owns the stream.
+	// nextID rides with it because ids are only meaningful within one round trip.
+	callMu sync.Mutex
 	nextID int
-	closed bool
+
+	// stateMu guards closed, and is deliberately *not* callMu. A single mutex
+	// deadlocks teardown: call() holds it across a blocking Scan, so stop() —
+	// which is how a hung server is supposed to be interrupted — would wait on
+	// the very read it is meant to unblock. The handshake timeout could then
+	// never fire, and a server that accepts stdin without ever replying would
+	// hang plugin.describe, and with it daemon boot, forever.
+	stateMu sync.Mutex
+	closed  bool
 
 	// done closes when the server process has exited and been reaped; waitErr
 	// holds why. Exactly one goroutine calls cmd.Wait (started in dialMCP), so
@@ -52,8 +64,15 @@ func (c *mcpStdio) Exited() <-chan struct{} { return c.done }
 // StoppedDeliberately reports whether the exit followed a stop() rather than a
 // crash, so a watchdog can tell shutdown from failure.
 func (c *mcpStdio) StoppedDeliberately() bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	return c.closed
+}
+
+// isClosed reports whether stop() has run.
+func (c *mcpStdio) isClosed() bool {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
 	return c.closed
 }
 
@@ -103,11 +122,42 @@ func dialMCP(command string, args []string, env []string) (*mcpStdio, error) {
 
 // call sends a JSON-RPC request and returns the raw result, skipping any
 // notifications (messages with no id) that arrive before the response.
-func (c *mcpStdio) call(method string, params any) (json.RawMessage, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+// call sends a JSON-RPC request and returns the raw result.
+//
+// ctx bounds the round trip, but stdio cannot abandon one in-flight request and
+// resynchronize: the reply has no framing to skip past, so a request given up on
+// would leave the next call reading someone else's answer. Cancellation
+// therefore tears the connection down — the server is killed and the bridge
+// follows it out (exitWhenServerDies) — which is a loud, correct failure rather
+// than a stream silently out of step. HTTP has real per-request cancellation and
+// does not need this.
+func (c *mcpStdio) call(ctx context.Context, method string, params any) (json.RawMessage, error) {
+	type result struct {
+		raw json.RawMessage
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		raw, err := c.roundTrip(method, params)
+		done <- result{raw, err}
+	}()
 
-	if c.closed {
+	select {
+	case r := <-done:
+		return r.raw, r.err
+	case <-ctx.Done():
+		// stop() takes only stateMu, so it can interrupt a read blocked under
+		// callMu — the whole reason those are separate locks.
+		c.stop() //nolint:errcheck // best-effort teardown of a hung server
+		return nil, fmt.Errorf("MCP %s: %w", method, ctx.Err())
+	}
+}
+
+func (c *mcpStdio) roundTrip(method string, params any) (json.RawMessage, error) {
+	c.callMu.Lock()
+	defer c.callMu.Unlock()
+
+	if c.isClosed() {
 		return nil, fmt.Errorf("MCP server stopped")
 	}
 
@@ -165,10 +215,10 @@ func (c *mcpStdio) call(method string, params any) (json.RawMessage, error) {
 // notify sends a JSON-RPC notification: no id, no response expected. The MCP
 // handshake requires exactly one (notifications/initialized).
 func (c *mcpStdio) notify(method string, params any) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.callMu.Lock()
+	defer c.callMu.Unlock()
 
-	if c.closed {
+	if c.isClosed() {
 		return fmt.Errorf("MCP server stopped")
 	}
 	notif := struct {
@@ -186,15 +236,15 @@ func (c *mcpStdio) notify(method string, params any) error {
 
 // stop closes stdin and waits for the server to exit.
 func (c *mcpStdio) stop() error {
-	c.mu.Lock()
+	c.stateMu.Lock()
 	if c.closed {
-		c.mu.Unlock()
+		c.stateMu.Unlock()
 		<-c.done
 		return c.waitErr
 	}
 	c.closed = true
 	c.stdin.Close() //nolint:errcheck // best-effort; closing stdin is how an MCP server is asked to exit
-	c.mu.Unlock()
+	c.stateMu.Unlock()
 
 	// Closing stdin is a request, not a guarantee. An `npx` server is a shell
 	// wrapping npm wrapping node, and that tree does not reliably exit when its

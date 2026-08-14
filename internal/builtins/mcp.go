@@ -5,9 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
+	"sync"
 	"time"
 
 	"nine/internal/plugin"
@@ -27,9 +26,24 @@ import (
 // bridge's business, declared honestly through the ordinary plugin contract
 // (max_concurrent: 1) instead of being exceptions the daemon had to carry.
 
-// mcpProtocolVersion is the MCP revision this bridge speaks in the initialize
-// handshake.
-const mcpProtocolVersion = "2024-11-05"
+// The MCP revision this bridge announces, which depends on the transport:
+// streamable HTTP was introduced in 2025-03-26, so announcing the older revision
+// to a hosted server is a contradiction — a strict one may reject it, and a
+// lenient one may fall back to the superseded two-endpoint SSE flow we do not
+// implement. stdio stays on the older revision, which is what the servers in the
+// wild target and what tools/list + tools/call need.
+const (
+	mcpProtocolVersionStdio = "2024-11-05"
+	mcpProtocolVersionHTTP  = "2025-03-26"
+)
+
+// mcpProtocolVersion is the revision to announce for a given transport.
+func mcpProtocolVersion(spec mcpServerSpec) string {
+	if spec.URL != "" {
+		return mcpProtocolVersionHTTP
+	}
+	return mcpProtocolVersionStdio
+}
 
 // mcpToolSeparator joins a server name to a tool name. Two MCP servers that
 // both advertise `search` would otherwise collide, and a collision means the
@@ -84,21 +98,28 @@ func serveMCP() {
 	// start. Listening first moves the wait into plugin.describe, which has no
 	// deadline. Handshaking first is exactly the bug that made every real
 	// third-party server fail to load while a compiled test fixture passed.
+	// The connection is built inside ready but has to be reachable from the
+	// shutdown hook, which is registered before it exists.
+	var (
+		connMu sync.Mutex
+		conn   mcpConn
+	)
+
 	plugin.ServeDeferred(
 		func(ctx context.Context) ([]plugin.ToolDefinition, map[string]plugin.ToolHandler, error) {
-			ctx, cancel := context.WithTimeout(ctx, mcpHandshakeTimeout)
+			ctx, cancel := context.WithTimeout(ctx, handshakeTimeout())
 			defer cancel()
 
-			conn, tools, err := mcpConnect(ctx, spec)
+			c, tools, err := mcpConnect(ctx, spec)
 			if err != nil {
 				return nil, nil, err
 			}
-			// plugin.Serve owns SIGTERM for the socket but knows nothing about a
-			// server this bridge spawned, so tie its lifetime to ours here.
-			stopOnSignal(conn)
-			exitWhenServerDies(spec.Name, conn)
+			connMu.Lock()
+			conn = c
+			connMu.Unlock()
+			exitWhenServerDies(spec.Name, c)
 
-			defs, handlers := mcpToolSurface(spec.Name, conn, tools)
+			defs, handlers := mcpToolSurface(spec.Name, c, tools)
 			return defs, handlers, nil
 		},
 		// stdio has no per-message framing, so a response can only be matched to
@@ -106,6 +127,18 @@ func serveMCP() {
 		// is serial; saying so lets the daemon bound concurrency correctly instead
 		// of discovering it as contention (R-PLUG.8).
 		plugin.WithMaxConcurrent(1),
+		// Registered with Serve rather than as a second signal handler: two
+		// handlers race, and Serve's calls os.Exit the moment it wakes, so a
+		// competing one may never get to kill the server — leaving the orphaned
+		// process tree this is here to prevent.
+		plugin.WithOnShutdown(func() {
+			connMu.Lock()
+			c := conn
+			connMu.Unlock()
+			if c != nil {
+				c.stop() //nolint:errcheck // best-effort teardown on shutdown
+			}
+		}),
 	)
 }
 
@@ -119,6 +152,28 @@ func serveMCP() {
 // is hopeless for real servers, and a bound close to the observed time would
 // turn a slow day into a failed boot.
 const mcpHandshakeTimeout = 3 * time.Minute
+
+// handshakeTimeout is mcpHandshakeTimeout unless NINE_MCP_HANDSHAKE_TIMEOUT
+// overrides it. The knob exists because the right value is a property of the
+// server, not of Nine: a package resolved over a slow link may need longer, and
+// a test asserting that the timeout fires cannot wait out three minutes. An
+// unparseable value falls back to the default rather than failing the bridge —
+// a malformed duration should not cost an operator their MCP server.
+func handshakeTimeout() time.Duration {
+	if v := os.Getenv("NINE_MCP_HANDSHAKE_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
+		}
+		fmt.Fprintf(os.Stderr, "mcp: ignoring unparseable NINE_MCP_HANDSHAKE_TIMEOUT %q\n", v)
+	}
+	return mcpHandshakeTimeout
+}
+
+// mcpCallTimeout bounds one tool call. stdio cannot cancel an in-flight request
+// without losing stream sync, so an unbounded call is how a single hung server
+// wedges every later call to it until the daemon restarts. This is the backstop
+// when the daemon's own ctx carries no deadline; a shorter task_timeout wins.
+const mcpCallTimeout = 5 * time.Minute
 
 // mcpSpecFromEnv reads and validates the server spec the daemon passed down.
 func mcpSpecFromEnv() (mcpServerSpec, error) {
@@ -144,7 +199,7 @@ func mcpSpecFromEnv() (mcpServerSpec, error) {
 // translation are shared: only how bytes move differs between a spawned server
 // and a hosted one.
 type mcpConn interface {
-	call(method string, params any) (json.RawMessage, error)
+	call(ctx context.Context, method string, params any) (json.RawMessage, error)
 	notify(method string, params any) error
 	stop() error
 	// Exited closes when the connection is finished — for stdio, when the server
@@ -201,7 +256,7 @@ func mcpConnect(ctx context.Context, spec mcpServerSpec) (mcpConn, []mcpTool, er
 	fail := func(err error) (mcpConn, []mcpTool, error) {
 		conn.stop() //nolint:errcheck // best-effort teardown on a failed handshake
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, nil, fmt.Errorf("handshake timed out after %s: %w", mcpHandshakeTimeout, ctxErr)
+			return nil, nil, fmt.Errorf("handshake timed out after %s: %w", handshakeTimeout(), ctxErr)
 		}
 		return nil, nil, err
 	}
@@ -210,8 +265,8 @@ func mcpConnect(ctx context.Context, spec mcpServerSpec) (mcpConn, []mcpTool, er
 	if version == "" {
 		version = "unknown"
 	}
-	if _, err := conn.call("initialize", map[string]any{
-		"protocolVersion": mcpProtocolVersion,
+	if _, err := conn.call(ctx, "initialize", map[string]any{
+		"protocolVersion": mcpProtocolVersion(spec),
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "nine", "version": version},
 	}); err != nil {
@@ -221,7 +276,7 @@ func mcpConnect(ctx context.Context, spec mcpServerSpec) (mcpConn, []mcpTool, er
 		return fail(fmt.Errorf("initialized notification: %w", err))
 	}
 
-	raw, err := conn.call("tools/list", map[string]any{})
+	raw, err := conn.call(ctx, "tools/list", map[string]any{})
 	if err != nil {
 		return fail(fmt.Errorf("tools/list: %w", err))
 	}
@@ -251,8 +306,12 @@ func mcpToolSurface(server string, conn mcpConn, tools []mcpTool) ([]plugin.Tool
 		// upstream is captured per tool: the model calls the prefixed name, the
 		// server only ever knows its own.
 		upstream := t.Name
-		handlers[prefixed] = func(_ context.Context, args json.RawMessage) (string, error) {
-			return mcpCall(conn, upstream, args)
+		handlers[prefixed] = func(ctx context.Context, args json.RawMessage) (string, error) {
+			// The daemon's ctx carries task_timeout, and a call bounded by nothing
+			// is how one hung server wedges every later call to it.
+			ctx, cancel := context.WithTimeout(ctx, mcpCallTimeout)
+			defer cancel()
+			return mcpCall(ctx, conn, upstream, args)
 		}
 	}
 	return defs, handlers
@@ -265,8 +324,8 @@ func mcpToolSurface(server string, conn mcpConn, tools []mcpTool) ([]plugin.Tool
 // and only text survives. That was true of the old in-core adapter too, so it
 // is not a regression, but it is now a limitation of one plugin rather than of
 // Nine's tool contract, and can be revisited here alone.
-func mcpCall(conn mcpConn, tool string, args json.RawMessage) (string, error) {
-	raw, err := conn.call("tools/call", map[string]any{
+func mcpCall(ctx context.Context, conn mcpConn, tool string, args json.RawMessage) (string, error) {
+	raw, err := conn.call(ctx, "tools/call", map[string]any{
 		"name":      tool,
 		"arguments": args,
 	})
@@ -322,18 +381,5 @@ func exitWhenServerDies(server string, conn mcpConn) {
 		}
 		fmt.Fprintf(os.Stderr, "mcp %s: server exited; stopping the bridge rather than serving a plugin with nothing behind it\n", server)
 		os.Exit(1)
-	}()
-}
-
-// stopOnSignal tears the MCP server down when the daemon stops this bridge.
-// plugin.Serve installs its own handler for the socket, but nothing there knows
-// about a spawned child, so without this an MCP server would survive the plugin
-// that owns it and leak one process per daemon restart.
-func stopOnSignal(conn mcpConn) {
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)
-	go func() {
-		<-sigs
-		conn.stop() //nolint:errcheck // best-effort teardown on shutdown
 	}()
 }
