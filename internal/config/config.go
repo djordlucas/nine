@@ -458,7 +458,10 @@ func (d DaemonConfig) RelatedSessionsIndexEnabled() bool {
 }
 
 type PluginsConfig struct {
-	Dir string `toml:"dir"`
+	// Bin is the directory holding plugins that ship as their own executable.
+	// Since the Go built-ins moved into the nine binary (plugin.md R-PLUG.13)
+	// that is `browser` alone; user plugins come from UserDir instead. The
+	// container overrides this with NINE_PLUGINS_BIN.
 	Bin string `toml:"bin"`
 
 	// CacheDir is the root under which each plugin gets its own scratch directory

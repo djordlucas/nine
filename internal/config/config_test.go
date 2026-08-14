@@ -56,7 +56,6 @@ context_budget = 4096
 max_concurrent = 2
 
 [plugins]
-dir = "/data/src/plugins"
 bin = "/data/bin"
 user_dir = "/data/plugins.d"
 
@@ -96,7 +95,6 @@ func TestLoad(t *testing.T) {
 		{"LLM.Endpoint", cfg.LLM.Endpoint, "https://ollama.example.com"},
 		{"LLM.ContextBudget", cfg.LLM.ContextBudget, 4096},
 		{"LLM.MaxConcurrent", cfg.LLM.MaxConcurrent, 2},
-		{"Plugins.Dir", cfg.Plugins.Dir, "/data/src/plugins"},
 		{"Plugins.Bin", cfg.Plugins.Bin, "/data/bin"},
 		{"Plugins.UserDir", cfg.Plugins.UserDir, "/data/plugins.d"},
 		{"Memory.Path", cfg.Memory.Path, "/data/memory.db"},
