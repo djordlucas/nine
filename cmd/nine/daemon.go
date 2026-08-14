@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -58,10 +59,18 @@ func runDaemon() {
 	// internal/builtins) — still one process each, just no separate artifact to
 	// ship or keep in protocol lockstep. The browser plugin is Node + Chromium,
 	// so it stays a real binary resolved under [plugins].bin.
-	for _, name := range builtins.Names() {
+	for _, name := range builtins.AutoStart() {
 		pluginManager.TryStartBuiltin(name, cfg.PluginEnvs(name)...)
 	}
 	browserPlug := pluginManager.TryStart("browser", cfg.PluginEnvs("browser")...)
+
+	// One MCP server, one plugin. Each [[mcp.server]] gets its own `mcp` bridge
+	// instance (R-PLUG.15), so an MCP server has the same failure domain and the
+	// same operator controls as any other plugin: it crashes alone, it shows up
+	// in `nine plugins` under its own name, and [plugins].disabled switches it
+	// off by that name. Started before user plugins so a user plugin colliding
+	// with an MCP tool is the one skipped.
+	startMCPServers(pluginManager, cfg)
 
 	// Load operator-supplied plugins from [plugins].user_dir, after the built-ins
 	// so their tools are reserved and a colliding user plugin is skipped (not
@@ -275,5 +284,36 @@ func runDaemon() {
 	shutdownCancel()
 	if err := pluginManager.StopAll(); err != nil {
 		slog.Warn("stop plugins on shutdown", "err", err)
+	}
+}
+
+// startMCPServers starts one `mcp` bridge instance per [[mcp.server]].
+//
+// The daemon reads the config and hands each bridge only its own server's spec,
+// as JSON in a Nine-owned environment variable. That indirection is required,
+// not stylistic: a plugin child must not read nine.toml (R-PLUG.13a), which
+// carries the embeddings API key and every other plugin's settings. Passing the
+// slice it needs keeps the bridge to exactly the data it is entitled to.
+//
+// A server that fails to start is logged and skipped by TryStartBuiltinInstance
+// — one unreachable MCP server must not stop the daemon from booting.
+func startMCPServers(mgr *plugin.Manager, cfg *config.Config) {
+	for _, srv := range cfg.MCP.Servers {
+		spec, err := json.Marshal(map[string]any{
+			"name":         srv.Name,
+			"command":      srv.Command,
+			"args":         srv.Args,
+			"env":          srv.Env,
+			"nine_version": Version,
+		})
+		if err != nil {
+			// Only unmarshalable values could cause this, and the config types are
+			// all strings; log rather than fail the boot.
+			slog.Error("encode MCP server spec", "server", srv.Name, "err", err)
+			continue
+		}
+		instance := plugin.MCPInstanceName(srv.Name)
+		mgr.TryStartBuiltinInstance(builtins.MCPBuiltinName, instance,
+			append(cfg.PluginEnvs(instance), "NINE_MCP_SERVER="+string(spec))...)
 	}
 }
