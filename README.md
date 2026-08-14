@@ -389,8 +389,8 @@ finite, multi-step plan with dependency gating and auto-close. A goal is open-en
 with no end condition — "monitor this repo for security issues" — and each top-level
 goal gets a background session that wakes every five minutes to make progress on it.
 
-Deeper treatments live in [docs/architecture.md](docs/architecture.md) and
-[docs/architecture_detailed.md](docs/architecture_detailed.md).
+The full treatment — topology, concurrency, the turn lifecycle, boot sequence, and the
+invariants that hold it together — is in [docs/architecture.md](docs/architecture.md).
 
 ## Plugins
 
