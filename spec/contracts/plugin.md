@@ -382,6 +382,14 @@ plugins (R-PLUG.9) and MCP servers, which are genuinely separate artifacts.
 Go binary; it stays a separate artifact resolved through `[plugins].bin` and started
 with `TryStart`.
 
+**Consequence: the built-ins are no longer withholdable.** `TryStart` skips a plugin
+whose binary is absent, so an operator could previously suppress one — `shell` above
+all — by not shipping `dist/bin/shell`. A built-in has no binary to omit, so all four
+now start whenever the daemon does. This is deliberate (it is what makes plugin and
+daemon impossible to skew), and it is a real change in operator control: a deployment
+that relied on a missing binary to withhold `shell` no longer has that lever. Nine has
+no per-plugin enable key today; adding one is the way to restore it if needed.
+
 ---
 
 ## Reference symbols
