@@ -98,6 +98,14 @@ bin = "./dist/bin"
 # args    = ["-y", "@modelcontextprotocol/server-github"]
 # [mcp.server.env]
 # GITHUB_PERSONAL_ACCESS_TOKEN = "ghp_..."
+#
+# A hosted server is reached by url instead of being spawned (MCP streamable
+# HTTP). Use headers for auth; env applies only to a spawned command.
+# [[mcp.server]]
+# name = "hosted"
+# url  = "https://mcp.example.com/rpc"
+# [mcp.server.headers]
+# Authorization = "Bearer ..."
 
 [memory]
 # SQLite database file holding all durable state. Created on first run, along

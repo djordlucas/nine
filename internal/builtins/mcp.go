@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"nine/internal/plugin"
 )
@@ -48,10 +49,17 @@ const mcpToolSeparator = "__"
 // settings — inventing an encoding invites two plugins to disagree about it —
 // but the daemon and this bridge are one build and cannot disagree.
 type mcpServerSpec struct {
-	Name    string            `json:"name"`
-	Command string            `json:"command"`
+	Name string `json:"name"`
+
+	// Command/Args/Env describe a server spawned locally and spoken to over
+	// stdio. URL/Headers describe one reached over streamable HTTP. Exactly one
+	// pair is set; config validation enforces that before this ever runs.
+	Command string            `json:"command,omitempty"`
 	Args    []string          `json:"args,omitempty"`
 	Env     map[string]string `json:"env,omitempty"`
+
+	URL     string            `json:"url,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
 
 	// NineVersion is reported to the server as clientInfo.version in the
 	// handshake. It rides along because a plugin child has no other way to know
@@ -70,23 +78,29 @@ func serveMCP() {
 		os.Exit(1)
 	}
 
-	conn, tools, err := mcpConnect(spec)
-	if err != nil {
-		// Exiting here means the daemon's TryStartBuiltinInstance logs the failure
-		// and carries on without this server, which is the right blast radius: one
-		// unreachable MCP server must not stop Nine from booting.
-		fmt.Fprintf(os.Stderr, "mcp %s: %v\n", spec.Name, err)
-		os.Exit(1)
-	}
+	// The handshake runs inside ServeDeferred's ready func, not before it — the
+	// socket must exist within the daemon's ~3s socket-ready budget (R-PLUG.3),
+	// and an `npx`-launched MCP server routinely takes longer than that just to
+	// start. Listening first moves the wait into plugin.describe, which has no
+	// deadline. Handshaking first is exactly the bug that made every real
+	// third-party server fail to load while a compiled test fixture passed.
+	plugin.ServeDeferred(
+		func(ctx context.Context) ([]plugin.ToolDefinition, map[string]plugin.ToolHandler, error) {
+			ctx, cancel := context.WithTimeout(ctx, mcpHandshakeTimeout)
+			defer cancel()
 
-	// plugin.Serve blocks and owns SIGTERM for the socket, but it does not know
-	// about the child process this bridge spawned. Without this the MCP server
-	// would outlive its bridge on shutdown.
-	stopOnSignal(conn)
-	exitWhenServerDies(spec.Name, conn)
+			conn, tools, err := mcpConnect(ctx, spec)
+			if err != nil {
+				return nil, nil, err
+			}
+			// plugin.Serve owns SIGTERM for the socket but knows nothing about a
+			// server this bridge spawned, so tie its lifetime to ours here.
+			stopOnSignal(conn)
+			exitWhenServerDies(spec.Name, conn)
 
-	defs, handlers := mcpToolSurface(spec.Name, conn, tools)
-	plugin.Serve(defs, handlers,
+			defs, handlers := mcpToolSurface(spec.Name, conn, tools)
+			return defs, handlers, nil
+		},
 		// stdio has no per-message framing, so a response can only be matched to
 		// its request by owning the stream for the whole round trip. The transport
 		// is serial; saying so lets the daemon bound concurrency correctly instead
@@ -94,6 +108,17 @@ func serveMCP() {
 		plugin.WithMaxConcurrent(1),
 	)
 }
+
+// mcpHandshakeTimeout bounds how long a server has to come up and answer
+// tools/list. It is finite because plugin.describe has no deadline of its own,
+// so a server that never answers would otherwise hold up daemon boot forever.
+//
+// The value is set from measurement, not taste: `npx -y
+// @modelcontextprotocol/server-filesystem` took ~72s to reach tools/list here,
+// warm cache included. Anything on the order of the daemon's 3s socket budget
+// is hopeless for real servers, and a bound close to the observed time would
+// turn a slow day into a failed boot.
+const mcpHandshakeTimeout = 3 * time.Minute
 
 // mcpSpecFromEnv reads and validates the server spec the daemon passed down.
 func mcpSpecFromEnv() (mcpServerSpec, error) {
@@ -105,10 +130,40 @@ func mcpSpecFromEnv() (mcpServerSpec, error) {
 	if err := json.Unmarshal([]byte(raw), &spec); err != nil {
 		return mcpServerSpec{}, fmt.Errorf("parse NINE_MCP_SERVER: %w", err)
 	}
-	if spec.Name == "" || spec.Command == "" {
-		return mcpServerSpec{}, fmt.Errorf("NINE_MCP_SERVER needs both name and command")
+	if spec.Name == "" {
+		return mcpServerSpec{}, fmt.Errorf("NINE_MCP_SERVER needs a name")
+	}
+	if (spec.Command == "") == (spec.URL == "") {
+		return mcpServerSpec{}, fmt.Errorf("NINE_MCP_SERVER needs exactly one of command (stdio) or url (streamable HTTP)")
 	}
 	return spec, nil
+}
+
+// mcpConn is one connection to an MCP server, over either transport. The bridge
+// is written against this so the handshake, tool prefixing, and call
+// translation are shared: only how bytes move differs between a spawned server
+// and a hosted one.
+type mcpConn interface {
+	call(method string, params any) (json.RawMessage, error)
+	notify(method string, params any) error
+	stop() error
+	// Exited closes when the connection is finished — for stdio, when the server
+	// process dies; for HTTP, only on stop, since there is no process to lose.
+	Exited() <-chan struct{}
+	StoppedDeliberately() bool
+}
+
+// dialSpec opens the transport the spec asks for. The rest of the bridge is
+// transport-agnostic from here on.
+func dialSpec(spec mcpServerSpec) (mcpConn, error) {
+	if spec.URL != "" {
+		return dialMCPHTTP(spec.URL, spec.Headers), nil
+	}
+	env := make([]string, 0, len(spec.Env))
+	for k, v := range spec.Env {
+		env = append(env, k+"="+v)
+	}
+	return dialMCP(spec.Command, spec.Args, env)
 }
 
 // mcpTool is one tool as the MCP server describes it.
@@ -122,18 +177,32 @@ type mcpTool struct {
 // initialize → notifications/initialized → tools/list — returning the live
 // connection and what it advertises. On any failure the process is torn down,
 // so a half-initialized server is never left running.
-func mcpConnect(spec mcpServerSpec) (*mcpStdio, []mcpTool, error) {
-	env := make([]string, 0, len(spec.Env))
-	for k, v := range spec.Env {
-		env = append(env, k+"="+v)
-	}
-
-	conn, err := dialMCP(spec.Command, spec.Args, env)
+func mcpConnect(ctx context.Context, spec mcpServerSpec) (mcpConn, []mcpTool, error) {
+	conn, err := dialSpec(spec)
 	if err != nil {
 		return nil, nil, err
 	}
-	fail := func(err error) (*mcpStdio, []mcpTool, error) {
+
+	// A stdio read blocks in Scan and cannot be interrupted by a context, so the
+	// deadline is enforced by tearing the connection down: stop() closes stdin,
+	// the server exits, and the blocked read returns. Without this a server that
+	// accepts input and never replies would hang the handshake forever, and with
+	// it plugin.describe and the daemon's boot.
+	handshakeDone := make(chan struct{})
+	defer close(handshakeDone)
+	go func() {
+		select {
+		case <-ctx.Done():
+			conn.stop() //nolint:errcheck // best-effort: unblock the handshake
+		case <-handshakeDone:
+		}
+	}()
+
+	fail := func(err error) (mcpConn, []mcpTool, error) {
 		conn.stop() //nolint:errcheck // best-effort teardown on a failed handshake
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, nil, fmt.Errorf("handshake timed out after %s: %w", mcpHandshakeTimeout, ctxErr)
+		}
 		return nil, nil, err
 	}
 
@@ -168,7 +237,7 @@ func mcpConnect(spec mcpServerSpec) (*mcpStdio, []mcpTool, error) {
 // mcpToolSurface turns the server's tools into the plugin contract's shape:
 // prefixed names for the daemon and the model, each handler translating back to
 // the server's own unprefixed name.
-func mcpToolSurface(server string, conn *mcpStdio, tools []mcpTool) ([]plugin.ToolDefinition, map[string]plugin.ToolHandler) {
+func mcpToolSurface(server string, conn mcpConn, tools []mcpTool) ([]plugin.ToolDefinition, map[string]plugin.ToolHandler) {
 	defs := make([]plugin.ToolDefinition, 0, len(tools))
 	handlers := make(map[string]plugin.ToolHandler, len(tools))
 
@@ -196,7 +265,7 @@ func mcpToolSurface(server string, conn *mcpStdio, tools []mcpTool) ([]plugin.To
 // and only text survives. That was true of the old in-core adapter too, so it
 // is not a regression, but it is now a limitation of one plugin rather than of
 // Nine's tool contract, and can be revisited here alone.
-func mcpCall(conn *mcpStdio, tool string, args json.RawMessage) (string, error) {
+func mcpCall(conn mcpConn, tool string, args json.RawMessage) (string, error) {
 	raw, err := conn.call("tools/call", map[string]any{
 		"name":      tool,
 		"arguments": args,
@@ -245,7 +314,7 @@ func mcpCall(conn *mcpStdio, tool string, args json.RawMessage) (string, error) 
 // (Today that means the failure surfaces on the next call, as it does for any
 // plugin: EventPluginCrashed exists in the supervisor but nothing emits it yet,
 // so there is no automatic restart to rely on for MCP or anything else.)
-func exitWhenServerDies(server string, conn *mcpStdio) {
+func exitWhenServerDies(server string, conn mcpConn) {
 	go func() {
 		<-conn.Exited()
 		if conn.StoppedDeliberately() {
@@ -260,7 +329,7 @@ func exitWhenServerDies(server string, conn *mcpStdio) {
 // plugin.Serve installs its own handler for the socket, but nothing there knows
 // about a spawned child, so without this an MCP server would survive the plugin
 // that owns it and leak one process per daemon restart.
-func stopOnSignal(conn *mcpStdio) {
+func stopOnSignal(conn mcpConn) {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
