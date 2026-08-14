@@ -17,38 +17,37 @@ features built on top of that architecture.
 
 ### Architecture
 
-4. [Architecture](architecture.md) — The big picture: daemon, agent loop, context budgeting, plugin protocol, memory (SQLite)
-5. [Architecture (detailed)](architecture_detailed.md) — Deep dive: topology, concurrency, boot sequence, invariants
-6. [Daemon Architecture](daemon.md) — Unix socket server, message dispatch, conversation lifecycle
-7. [Runner Architecture](runner.md) — Per-conversation agent loop wrapper, stall detection, checkpointing
-8. [Agent Loop](agent-loop.md) — The ReAct (reason → act → observe) implementation
-9. [Context Builder](context-builder.md) — Token budgeting, message trimming, and tool relevance ranking
-10. [Session Plans & Stages](session-plans.md) — Per-session stages, idle scheduling, self-reflection, and background goal pursuit
-11. [Roles](roles.md) — Role-gated tool allowlists, delegation, depth guards
-12. [Event Log](event-log.md) — The append-only session event journal, trace, and deterministic replay
-13. [Reactive Events](reactive-events.md) — Journal subscriptions and out-of-band enrichment (related sessions)
+4. [Architecture](architecture.md) — Topology, concurrency, the turn lifecycle, boot sequence, invariants
+5. [Daemon Architecture](daemon.md) — Unix socket server, message dispatch, conversation lifecycle
+6. [Runner Architecture](runner.md) — Per-conversation agent loop wrapper, stall detection, checkpointing
+7. [Agent Loop](agent-loop.md) — The ReAct (reason → act → observe) implementation
+8. [Context Builder](context-builder.md) — Token budgeting, message trimming, and tool relevance ranking
+9. [Session Plans & Stages](session-plans.md) — Per-session stages, idle scheduling, self-reflection, and background goal pursuit
+10. [Roles](roles.md) — Role-gated tool allowlists, delegation, depth guards
+11. [Event Log](event-log.md) — The append-only session event journal, trace, and deterministic replay
+12. [Reactive Events](reactive-events.md) — Journal subscriptions and out-of-band enrichment (related sessions)
 
 ### Features
 
-14. [Plugins](plugins.md) — Built-in plugins, writing custom plugins, the plugin lifecycle
-15. [Plugins — HTTP transport](plugins-http-transport.md) — The HTTP/SSE plugin transport
-16. [Browser Plugin](browser.md) — Headless Chromium: navigate, screenshot, extract, interact
-17. [Writing sandboxed tools](writing-sandboxed-tools.md) — Add a JS or wasm tool with two files, run in a capability-scoped sandbox
-18. [Sandboxed tools — design](sandboxed-tools.md) — The wasm tool host: why it exists, the capability model, and what is deliberately unbuilt
-19. [Skills](skills.md) — What skills are, creating and managing skills
-20. [Self-Documentation](self-documentation.md) — How Nine retrieves its own bundled docs and spec to answer questions about itself
-21. [Workflows](workflows.md) — Persistent multi-step execution plans for sub-agent delegation
-22. [Predefined Agents](predefined-agents.md) — Config-declared standing agents (goals + pursue shells)
-23. [Scheduling](scheduling.md) — Interval and cron wake triggers for standing agents
-24. [Human-in-the-Loop](hitl.md) — `ask_human` and approval gates for interactive sessions
-25. [Self-Improvement & Boundaries](self-modification.md) — Skill writing, and why Nine does not modify itself
+13. [Plugins](plugins.md) — Built-in plugins, writing custom plugins, the plugin lifecycle
+14. [Plugins — HTTP transport](plugins-http-transport.md) — The HTTP/SSE plugin transport
+15. [Browser Plugin](browser.md) — Headless Chromium: navigate, screenshot, extract, interact
+16. [Writing sandboxed tools](writing-sandboxed-tools.md) — Add a JS or wasm tool with two files, run in a capability-scoped sandbox
+17. [Sandboxed tools — design](sandboxed-tools.md) — The wasm tool host: why it exists, the capability model, and what is deliberately unbuilt
+18. [Skills](skills.md) — What skills are, creating and managing skills
+19. [Self-Documentation](self-documentation.md) — How Nine retrieves its own bundled docs and spec to answer questions about itself
+20. [Workflows](workflows.md) — Persistent multi-step execution plans for sub-agent delegation
+21. [Predefined Agents](predefined-agents.md) — Config-declared standing agents (goals + pursue shells)
+22. [Scheduling](scheduling.md) — Interval and cron wake triggers for standing agents
+23. [Human-in-the-Loop](hitl.md) — `ask_human` and approval gates for interactive sessions
+24. [Self-Improvement & Boundaries](self-modification.md) — Skill writing, and why Nine does not modify itself
 
 ### Reference
 
-26. [Glossary](glossary.md) — All key concepts and features in one place, grouped by topic
-27. [Versioning](versioning.md) — Release, plugin-protocol, tool-ABI, config, and schema versioning
-28. [Evals](evals.md) — Test plan for replays + live models; the case schema and feature map used to generate test cases
-29. [Model compatibility](model-compatibility.md) — Which models Nine has been run against, how they did, and on what hardware
+25. [Glossary](glossary.md) — All key concepts and features in one place, grouped by topic
+26. [Versioning](versioning.md) — Release, plugin-protocol, tool-ABI, config, and schema versioning
+27. [Evals](evals.md) — Test plan for replays + live models; the case schema and feature map used to generate test cases
+28. [Model compatibility](model-compatibility.md) — Which models Nine has been run against, how they did, and on what hardware
 
 ## Quick Start
 
