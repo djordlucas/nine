@@ -81,8 +81,9 @@ the browser plugin's JavaScript. Configuration changes are made by editing
 ## Plugins are fixed
 
 Nine still runs a set of **default plugins** (`shell`, `files`, `http`, `time`,
-`browser`), but they are immutable image content built at `docker build` time and
-run from `/opt/nine/bin`. There is no mechanism for an agent to add, build, or
+`browser`), but they are immutable image content built at `docker build` time: the
+Go four are compiled into the `nine` binary and served as `nine plugin serve
+<name>`, and `browser` runs from `/opt/nine/bin`. There is no mechanism for an agent to add, build, or
 replace a plugin at runtime. To add a capability, add a plugin to the source repo
 and rebuild the image.
 

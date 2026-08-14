@@ -110,7 +110,7 @@ which dispatches to either the TUI, the one-shot client, or `runDaemon`
 └── workspace/   files-plugin working directory
 
 /opt/nine             immutable image content (not in a volume)
-├── bin/         compiled default plugin binaries + browser launcher
+├── bin/         browser launcher (the Go plugins live in the nine binary)
 └── browser/     browser plugin JS + node_modules
 
 /tools.d              developer sandboxed tools, bind-mounted (manifest + .js/.wasm)
@@ -585,9 +585,12 @@ Plugins are fixed: there is no runtime generation, build, or hot-swap. Each is
 compiled into the image at build time and started at daemon boot:
 
 ```
-   go build (image build) ──► TryStart (daemon boot) ──► (in use) ──► SIGTERM
-   /opt/nine/bin/<name>       spawn, describe,            plugin.call   (shutdown)
-                              register
+   go build (image build) ──► TryStartBuiltin (daemon boot) ──► (in use) ──► SIGTERM
+   the nine binary            spawn `nine plugin serve <name>`,  plugin.call  (shutdown)
+                              describe, register
+
+   node bundle (image build) ► TryStart (daemon boot) ─────────► (in use) ──► SIGTERM
+   /opt/nine/bin/browser       spawn, describe, register          plugin.call  (shutdown)
 ```
 
 Tool definitions are registered with the dispatcher at start time. (Their
