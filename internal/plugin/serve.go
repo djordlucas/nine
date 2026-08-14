@@ -46,6 +46,18 @@ type serveConfig struct {
 	maxConcurrent int
 	jobs          *Jobs
 	jobHandlers   map[string]JobHandler
+	onShutdown    func()
+}
+
+// WithOnShutdown registers cleanup to run when the plugin is signalled, before
+// the process exits.
+//
+// A plugin that owns something beyond its socket — the MCP bridge owns a server
+// process — cannot do this with its own signal handler: Serve's handler calls
+// os.Exit as soon as it wakes, so two handlers racing means the cleanup may
+// simply never run. Registering it here makes the ordering deterministic.
+func WithOnShutdown(fn func()) ServeOption {
+	return func(c *serveConfig) { c.onShutdown = fn }
 }
 
 // WithMaxConcurrent advertises a concurrency cap to the daemon (see
@@ -138,6 +150,9 @@ func ServeDeferred(ready ReadyFunc, opts ...ServeOption) {
 		<-sigs
 		ln.Close()            //nolint:errcheck
 		os.Remove(socketPath) //nolint:errcheck
+		if cfg.onShutdown != nil {
+			cfg.onShutdown()
+		}
 		os.Exit(0)
 	}()
 

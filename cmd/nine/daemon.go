@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -297,7 +298,15 @@ func runDaemon() {
 //
 // A server that fails to start is logged and skipped by TryStartBuiltinInstance
 // — one unreachable MCP server must not stop the daemon from booting.
+// startMCPServers brings up one bridge per configured MCP server.
+//
+// Concurrently, because each start blocks for that server's whole handshake and
+// a measured `npx` server takes ~72s to answer tools/list. Serially, four
+// servers would be five minutes of boot during which the daemon has not yet
+// listened and no client can connect. Starting them together makes the cost the
+// slowest server rather than their sum.
 func startMCPServers(mgr *plugin.Manager, cfg *config.Config) {
+	var wg sync.WaitGroup
 	for _, srv := range cfg.MCP.Servers {
 		spec, err := json.Marshal(map[string]any{
 			"name":         srv.Name,
@@ -315,7 +324,15 @@ func startMCPServers(mgr *plugin.Manager, cfg *config.Config) {
 			continue
 		}
 		instance := plugin.MCPInstanceName(srv.Name)
-		mgr.TryStartBuiltinInstance(builtins.MCPBuiltinName, instance,
-			append(cfg.PluginEnvs(instance), "NINE_MCP_SERVER="+string(spec))...)
+		env := append(cfg.PluginEnvs(instance), "NINE_MCP_SERVER="+string(spec))
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			mgr.TryStartBuiltinInstance(builtins.MCPBuiltinName, instance, env...)
+		}()
 	}
+	// Waited on rather than left running: the tool registry has to be complete
+	// before the first turn, or a conversation can start without tools that were
+	// configured.
+	wg.Wait()
 }

@@ -12,11 +12,19 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"time"
 )
 
 func main() {
+	// MCP_TEST_HANG makes the server read stdin and never reply — the failure a
+	// handshake timeout exists for, and one no amount of waiting resolves.
+	if os.Getenv("MCP_TEST_HANG") == "1" {
+		io.Copy(io.Discard, os.Stdin) //nolint:errcheck // block until stdin closes
+		return
+	}
+
 	if d := os.Getenv("MCP_TEST_STARTUP_DELAY"); d != "" {
 		if wait, err := time.ParseDuration(d); err == nil {
 			time.Sleep(wait)
