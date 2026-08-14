@@ -142,6 +142,33 @@ What's the current date and time?
 
 ---
 
+### `mcp` — Model Context Protocol servers
+
+An MCP server is a plugin. Each `[[mcp.server]]` you declare gets its own bridge
+process, so it has the same shape and the same controls as anything else here.
+
+```toml
+[[mcp.server]]
+name    = "github"
+command = "npx"
+args    = ["-y", "@modelcontextprotocol/server-github"]
+[mcp.server.env]
+GITHUB_PERSONAL_ACCESS_TOKEN = "ghp_..."
+```
+
+- **Tools are prefixed with the server name** — `github__create_issue`. Two servers
+  that both expose `search` would otherwise collide, and a collision silently drops
+  one depending on load order.
+- **It appears as `mcp:github`** in `nine plugins`, crashes on its own without
+  affecting the daemon or other servers, and is switched off with
+  `[plugins] disabled = ["mcp:github"]`.
+- **`env` goes to that server only.** Nine's own secrets are not inherited by it, the
+  same as for every other plugin.
+- **Only stdio servers** are supported today: `command` is spawned and spoken to over
+  its pipes, which is how the great majority of MCP servers ship.
+
+---
+
 ### `browser` — Headless Browser
 
 A Playwright/Chromium plugin for web automation and extraction. See [Browser Plugin](browser.md) for the full reference.
