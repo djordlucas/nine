@@ -12,6 +12,10 @@ no runtime generation, build, or hot-swap (N1).
 > **Transport.** Native plugins use HTTP over a Unix socket (see
 > `docs/plugins-http-transport.md`); the two-method contract (R-PLUG.1) rides on it, with
 > `max_concurrent` (R-PLUG.8). MCP servers use stdio JSON-RPC.
+>
+> **Packaging.** "Subprocess" does not imply "separate executable": the Go default
+> plugins are served out of the `nine` binary as `nine plugin serve <name>` (R-PLUG.13).
+> They are still one process each — everything below applies to them unchanged.
 
 ---
 
@@ -86,7 +90,8 @@ request** so writing the reply does not cancel the work. See R-PLUG.12.
 The manager owns subprocess lifecycle:
 
 ```text
-Start(binaryPath, extraEnv…):
+Start(binaryPath, extraEnv…)         — a plugin shipped as its own binary
+StartBuiltin(name, extraEnv…)        — a plugin served by the nine binary (R-PLUG.13)
    allocate a per-plugin Unix socket path; pass it via NINE_PLUGIN_SOCKET
      (+ NINE_BIN, the cache-dir vars (R-PLUG.11), operator settings (R-PLUG.10), extras)
    spawn process; dial the socket with bounded retry (~3s budget)
@@ -120,15 +125,15 @@ Tool calls to a down plugin return an error the agent observes as a normal tool 
 
 ## R-PLUG.5 — Default plugins
 
-Started at daemon boot from immutable image content:
+Started at daemon boot from immutable content:
 
-| Plugin | Tools |
-|--------|-------|
-| `files` | `read_file`, `write_file` |
-| `shell` | `shell` (run an arbitrary command) |
-| `http` | `http_get`, `http_post`, `web_search`, `web_page_read` |
-| `time` | `time` |
-| `browser` | headless-Chromium tools (R-PLUG.6) |
+| Plugin | Tools | Artifact |
+|--------|-------|----------|
+| `files` | `read_file`, `write_file` | the `nine` binary (R-PLUG.13) |
+| `shell` | `shell` (run an arbitrary command) | the `nine` binary (R-PLUG.13) |
+| `http` | `http_get`, `http_post`, `web_search`, `web_page_read` | the `nine` binary (R-PLUG.13) |
+| `time` | `time` | the `nine` binary (R-PLUG.13) |
+| `browser` | headless-Chromium tools (R-PLUG.6) | its own binary under `[plugins].bin` |
 
 > **Memory/file/vector operations are NOT a subprocess plugin.** `memory_*`, `file_*`,
 > and the vector tools are **core-intercepted** (handled in-process by the dispatcher,
@@ -313,10 +318,56 @@ terminal and distinct from `failed`. `progress` is free text.
   status/cancel to map. Settings (R-PLUG.10) and the cache dir (R-PLUG.11) do apply
   to MCP.
 
+---
+
+## R-PLUG.13 — Built-in plugins are served by the `nine` binary
+
+The Go default plugins (`files`, `shell`, `http`, `time`) ship **inside the `nine`
+binary**, not as separate executables. The manager starts one by re-executing that
+binary:
+
+```text
+StartBuiltin(name, extraEnv…):
+   resolve the nine binary (os.Executable)
+   spawn it as:  nine plugin serve <name>
+   …then exactly as R-PLUG.3: socket, describe, version check, transport, tracking
+```
+
+`nine plugin serve <name>` is a daemon-internal entry point, not an operator command:
+it is absent from `nine help`, and `plugin.Serve` exits immediately when
+`NINE_PLUGIN_SOCKET` is unset. This is the same self-exec the client already uses to
+auto-start the daemon ([`wire-protocol.md`](wire-protocol.md) R-PROTO.7).
+
+An implementation **MUST** preserve every property R-PLUG.3/R-PLUG.4 give an
+out-of-binary plugin, because only the packaging changes:
+
+- a built-in runs as its **own process**, so crash isolation (I9) is unchanged — a
+  panic in `shell` cannot take down the daemon;
+- it receives the same **sanitized environment** (the daemon's secrets and database
+  path are withheld), its own cache dir (R-PLUG.11), and its operator settings
+  (R-PLUG.10);
+- it is bound by `max_concurrent` the same way (R-PLUG.8).
+
+An implementation **MUST NOT** derive a built-in's name from its executable path: the
+path is `nine` for all of them, so the name is carried explicitly from the caller.
+
+The protocol-version check (R-PLUG.3) still runs for built-ins but can no longer fail
+for them — daemon and plugin are the same build. It remains load-bearing for user
+plugins (R-PLUG.9) and MCP servers, which are genuinely separate artifacts.
+
+**`browser` is deliberately excluded.** It is Node + Chromium, so it cannot live in a
+Go binary; it stays a separate artifact resolved through `[plugins].bin` and started
+with `TryStart`.
+
+---
+
 ## Reference symbols
 
-`internal/plugin/manager.go` (`Manager`, `Start`, `Call`, `JobStatus`, `JobCancel`,
-`PluginByName`, `TryStart`, `spawnAndDescribe`, `Probe`, `SetPluginEnv`, `SetCacheConfig`,
+`internal/builtins/` (`Serve`, `Names`, `Has`; `shell.go`, `files.go`, `http.go`,
+`time.go` — the built-in handlers, R-PLUG.13),
+`internal/plugin/manager.go` (`Manager`, `Start`, `StartBuiltin`, `Call`, `JobStatus`,
+`JobCancel`, `PluginByName`, `TryStart`, `TryStartBuiltin`, `launch`/`binaryLaunch`/
+`builtinLaunch`, `spawnAndDescribe`, `Probe`, `SetPluginEnv`, `SetBuiltinBinary`, `SetCacheConfig`,
 `SweepCache`), `internal/plugin/userplugins.go` (`LoadUserPlugins`, `ReloadUserPlugins`,
 `UserStatus`), `internal/plugin/cache.go` (`allocCacheDir`, `SweepCache`),
 `internal/plugin/jobs.go` (`Jobs`, `Job`, `JobHandler`, `JobStatus`, `JobDir`, `SetProgress`),
@@ -327,5 +378,5 @@ terminal and distinct from `failed`. `progress` is free text.
 `internal/memory/plugin_jobs.go` (the `plugin_jobs` registry), `internal/runtime/plugin_jobs.go`
 (job starter + sweeper), `internal/runtime/job_tools.go` (model-facing tools + surfacing),
 `internal/agent/register_jobs.go` (`job_wait`/`job_check`/`job_list`/`job_cancel`),
-`plugins/{files,shell,http,time,browser}/`, `cmd/nine/daemon.go` (`LoadUserPlugins`, job
+`plugins/browser/`, `cmd/nine/daemon.go` (`LoadUserPlugins`, job
 sweeper, graceful shutdown at boot), `internal/cli/plugins.go` (`nine plugins` / `nine plugin validate`).

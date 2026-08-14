@@ -42,7 +42,8 @@ related_sessions_index  = true  # out-of-band related-session indexing + surfaci
 
 [plugins]
 dir = ""                        # plugin source/aux dir (if used)
-bin = ""                        # compiled plugin binary directory
+bin = ""                        # dir of plugins shipping their own binary (browser);
+                                # the Go built-ins live in the nine binary (plugin.md R-PLUG.13)
 # user_dir = ""                 # operator plugins (sidecar-manifest layout); env NINE_PLUGINS_USER_DIR
 # cache_dir = ""                # per-plugin cache-dir root; default os.UserCacheDir()/nine/plugins; env NINE_PLUGINS_CACHE_DIR
 # job_poll_seconds = 2          # how often the sweeper polls a running plugin job
@@ -124,7 +125,7 @@ The runtime separates **mutable state** from **immutable image content**:
 └── workspace/          files-plugin working directory
 
 /opt/nine                   immutable image content (NOT in a volume)
-├── bin/                compiled nine binary's default plugins + browser launcher
+├── bin/                browser launcher (the Go plugins are inside the nine binary)
 └── browser/            browser plugin JS + node_modules
 ```
 
