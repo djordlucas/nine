@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 )
@@ -153,6 +154,30 @@ func (m *Manager) DisabledSkipped() []string {
 	return out
 }
 
+// UnmatchedDisabled returns the names in the disabled set that never actually
+// refused anything, once loading is done. Every such name is a mistake with a
+// silent and dangerous failure mode: `disabled = ["shel"]` withholds nothing and
+// leaves `shell` — arbitrary command execution — running, with no error, no
+// roster entry, and an operator who believes otherwise. Names cannot be
+// validated when config is read, because a user plugin's name is not known
+// until its directory is scanned, so this is checked after boot instead.
+func (m *Manager) UnmatchedDisabled() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	matched := make(map[string]bool, len(m.disabledSkipped))
+	for _, n := range m.disabledSkipped {
+		matched[n] = true
+	}
+	var out []string
+	for name := range m.disabled {
+		if !matched[name] {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // noteDisabledSkip records a refused default plugin once, for the roster.
 func (m *Manager) noteDisabledSkip(name string) {
 	m.mu.Lock()
@@ -240,9 +265,10 @@ func (m *Manager) StartBuiltin(name string, extraEnv ...string) (*Plugin, error)
 func (m *Manager) start(l launch, extraEnv ...string) (*Plugin, error) {
 	name := l.name
 
-	// The single chokepoint every start path funnels through, so a disabled
-	// plugin cannot be spawned by any caller — including a future one that
-	// forgets to ask. No process, no socket, no cache dir.
+	// Every native start path funnels through here, so a disabled plugin cannot
+	// be spawned by any caller — including a future one that forgets to ask. No
+	// process, no socket, no cache dir. StartMCP does not reach this (it builds
+	// its own stdio client) and carries the same check itself.
 	if m.IsDisabled(name) {
 		return nil, fmt.Errorf("%q: %w", name, ErrPluginDisabled)
 	}

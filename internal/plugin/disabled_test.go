@@ -115,3 +115,49 @@ func TestSetDisabledReplaces(t *testing.T) {
 		t.Error("http not disabled after being added to the set")
 	}
 }
+
+// StartMCP builds its own stdio client instead of going through start(), so it
+// is the one spawn path the shared check does not cover and has to carry its
+// own (R-PLUG.14). Without this, `disabled` would silently not apply to MCP
+// servers while the contract claims it applies everywhere.
+func TestDisabledRefusesMCP(t *testing.T) {
+	m := NewManager("")
+	m.SetDisabled([]string{"some-mcp-server"})
+
+	p, err := m.StartMCP("/some/dir/some-mcp-server", nil)
+	if err == nil {
+		m.Stop(p) //nolint:errcheck // cleanup on unexpected success
+		t.Fatal("StartMCP succeeded for a disabled name; want it refused")
+	}
+	if !errors.Is(err, ErrPluginDisabled) {
+		t.Errorf("err = %v, want ErrPluginDisabled", err)
+	}
+}
+
+// A name that matches no plugin disables nothing — `disabled = ["shel"]` leaves
+// `shell` running. That fails open while reading as closed, so it has to be
+// reportable rather than silent.
+func TestUnmatchedDisabledReportsTypos(t *testing.T) {
+	m := NewManager("")
+	m.SetDisabled([]string{"shell", "shel", "nosuchplugin"})
+
+	m.TryStartBuiltin("shell") // the real one is refused and recorded
+
+	got := m.UnmatchedDisabled()
+	if want := []string{"nosuchplugin", "shel"}; !slices.Equal(got, want) {
+		t.Errorf("UnmatchedDisabled() = %v, want %v", got, want)
+	}
+}
+
+// Nothing to report when every name did its job.
+func TestUnmatchedDisabledEmptyWhenAllMatched(t *testing.T) {
+	m := NewManager("")
+	m.SetDisabled([]string{"shell", "time"})
+
+	m.TryStartBuiltin("shell")
+	m.TryStartBuiltin("time")
+
+	if got := m.UnmatchedDisabled(); len(got) != 0 {
+		t.Errorf("UnmatchedDisabled() = %v, want empty", got)
+	}
+}

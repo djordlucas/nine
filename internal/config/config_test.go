@@ -273,15 +273,21 @@ func TestPluginsDisabledEnvOverride(t *testing.T) {
 	}
 }
 
-// An unset variable must leave the file's list alone rather than clearing it.
-func TestPluginsDisabledEnvUnsetKeepsFile(t *testing.T) {
-	cfg := &config.Config{}
-	cfg.Plugins.Disabled = []string{"shell"}
+// No flavour of "empty" may clear the list. An env var that could re-enable
+// `shell` is a hazard in the one direction this setting must never move by
+// accident, and "" vs "," vs " " must not mean different things.
+func TestPluginsDisabledEnvEmptyKeepsFile(t *testing.T) {
+	for _, v := range []string{"", ",", " ", " , , "} {
+		t.Run("value="+v, func(t *testing.T) {
+			cfg := &config.Config{}
+			cfg.Plugins.Disabled = []string{"shell"}
 
-	t.Setenv("NINE_PLUGINS_DISABLED", "")
-	config.ApplyEnvOverrides(cfg)
+			t.Setenv("NINE_PLUGINS_DISABLED", v)
+			config.ApplyEnvOverrides(cfg)
 
-	if got := strings.Join(cfg.Plugins.Disabled, ","); got != "shell" {
-		t.Errorf("Disabled = %q, want the file's value %q", got, "shell")
+			if got := strings.Join(cfg.Plugins.Disabled, ","); got != "shell" {
+				t.Errorf("with NINE_PLUGINS_DISABLED=%q, Disabled = %q, want the file's %q", v, got, "shell")
+			}
+		})
 	}
 }
