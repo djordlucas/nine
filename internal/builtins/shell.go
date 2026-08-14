@@ -1,4 +1,4 @@
-package main
+package builtins
 
 import (
 	"bytes"
@@ -11,7 +11,9 @@ import (
 	"nine/internal/plugin"
 )
 
-func main() {
+// serveShell runs the `shell` built-in: a single tool that executes a command
+// through sh, with the destructive-command guard in shell_security.go.
+func serveShell() {
 	plugin.Serve(
 		[]plugin.ToolDefinition{{
 			Name:        "shell",
@@ -26,11 +28,11 @@ func main() {
 				}
 			}`),
 		}},
-		map[string]plugin.ToolHandler{"shell": run},
+		map[string]plugin.ToolHandler{"shell": runShell},
 	)
 }
 
-func run(ctx context.Context, args json.RawMessage) (string, error) {
+func runShell(ctx context.Context, args json.RawMessage) (string, error) {
 	var p struct {
 		Command string `json:"command"`
 		Timeout int    `json:"timeout"`

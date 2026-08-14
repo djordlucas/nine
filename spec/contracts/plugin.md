@@ -12,6 +12,10 @@ no runtime generation, build, or hot-swap (N1).
 > **Transport.** Native plugins use HTTP over a Unix socket (see
 > `docs/plugins-http-transport.md`); the two-method contract (R-PLUG.1) rides on it, with
 > `max_concurrent` (R-PLUG.8). MCP servers use stdio JSON-RPC.
+>
+> **Packaging.** "Subprocess" does not imply "separate executable": the Go default
+> plugins are served out of the `nine` binary as `nine plugin serve <name>` (R-PLUG.13).
+> They are still one process each — everything below applies to them unchanged.
 
 ---
 
@@ -86,7 +90,8 @@ request** so writing the reply does not cancel the work. See R-PLUG.12.
 The manager owns subprocess lifecycle:
 
 ```text
-Start(binaryPath, extraEnv…):
+Start(binaryPath, extraEnv…)         — a plugin shipped as its own binary
+StartBuiltin(name, extraEnv…)        — a plugin served by the nine binary (R-PLUG.13)
    allocate a per-plugin Unix socket path; pass it via NINE_PLUGIN_SOCKET
      (+ NINE_BIN, the cache-dir vars (R-PLUG.11), operator settings (R-PLUG.10), extras)
    spawn process; dial the socket with bounded retry (~3s budget)
@@ -120,15 +125,15 @@ Tool calls to a down plugin return an error the agent observes as a normal tool 
 
 ## R-PLUG.5 — Default plugins
 
-Started at daemon boot from immutable image content:
+Started at daemon boot from immutable content:
 
-| Plugin | Tools |
-|--------|-------|
-| `files` | `read_file`, `write_file` |
-| `shell` | `shell` (run an arbitrary command) |
-| `http` | `http_get`, `http_post`, `web_search`, `web_page_read` |
-| `time` | `time` |
-| `browser` | headless-Chromium tools (R-PLUG.6) |
+| Plugin | Tools | Artifact |
+|--------|-------|----------|
+| `files` | `read_file`, `write_file` | the `nine` binary (R-PLUG.13) |
+| `shell` | `shell` (run an arbitrary command) | the `nine` binary (R-PLUG.13) |
+| `http` | `http_get`, `http_post`, `web_search`, `web_page_read` | the `nine` binary (R-PLUG.13) |
+| `time` | `time` | the `nine` binary (R-PLUG.13) |
+| `browser` | headless-Chromium tools (R-PLUG.6) | its own binary under `[plugins].bin` |
 
 > **Memory/file/vector operations are NOT a subprocess plugin.** `memory_*`, `file_*`,
 > and the vector tools are **core-intercepted** (handled in-process by the dispatcher,
@@ -313,10 +318,129 @@ terminal and distinct from `failed`. `progress` is free text.
   status/cancel to map. Settings (R-PLUG.10) and the cache dir (R-PLUG.11) do apply
   to MCP.
 
+---
+
+## R-PLUG.13 — Built-in plugins are served by the `nine` binary
+
+The Go default plugins (`files`, `shell`, `http`, `time`) ship **inside the `nine`
+binary**, not as separate executables. The manager starts one by re-executing that
+binary:
+
+```text
+StartBuiltin(name, extraEnv…):
+   resolve the nine binary (os.Executable)
+   spawn it as:  nine plugin serve <name>
+   …then exactly as R-PLUG.3: socket, describe, version check, transport, tracking
+```
+
+`nine plugin serve <name>` is a daemon-internal entry point, not an operator command:
+it is absent from `nine help`. This is the same self-exec the client already uses to
+auto-start the daemon ([`wire-protocol.md`](wire-protocol.md) R-PROTO.7).
+
+### R-PLUG.13a — A plugin child does plugin work and nothing else
+
+Sharing the binary means a plugin child could otherwise run the whole of nine's
+startup. An implementation **MUST** dispatch `plugin serve` **before** any of it, so a
+plugin process:
+
+- **loads no configuration.** The config search reaches the cwd and `$HOME`, which a
+  plugin inherits, and the file there carries `[embeddings].api_key` and every
+  `[plugin.<name>.settings]` block — *including other plugins' settings*. A plugin that
+  read it would walk straight around `sanitizedHostEnv`, whose whole purpose is to
+  withhold that class of data (R-PLUG.10, R-PLUG.3). A plugin receives exactly the
+  environment the manager hands it, and nothing it fetches for itself.
+- **opens no log file.** Plugin output goes to stderr, which the manager wires to the
+  daemon's. The daemon's log stays one process's account of itself rather than five
+  interleaved.
+- **builds no CLI**, so it never holds a `StartDaemon` or `StartTUI`.
+
+It **MUST** also fail closed: with `NINE_PLUGIN_SOCKET` unset there is no caller to
+answer, so the process exits non-zero naming the missing variable instead of idling.
+
+This is confinement against mistakes, not a sandbox. `shell` runs arbitrary commands
+by design, so no entry-point check bounds what a compromised *handler* can do; what is
+guaranteed is that **starting** a plugin has no effect beyond that plugin.
+
+An implementation **MUST** preserve every property R-PLUG.3/R-PLUG.4 give an
+out-of-binary plugin, because only the packaging changes:
+
+- a built-in runs as its **own process**, so crash isolation (I9) is unchanged — a
+  panic in `shell` cannot take down the daemon;
+- it receives the same **sanitized environment** (the daemon's secrets and database
+  path are withheld), its own cache dir (R-PLUG.11), and its operator settings
+  (R-PLUG.10);
+- it is bound by `max_concurrent` the same way (R-PLUG.8).
+
+An implementation **MUST NOT** derive a built-in's name from its executable path: the
+path is `nine` for all of them, so the name is carried explicitly from the caller.
+
+The protocol-version check (R-PLUG.3) still runs for built-ins but can no longer fail
+for them — daemon and plugin are the same build. It remains load-bearing for user
+plugins (R-PLUG.9) and MCP servers, which are genuinely separate artifacts.
+
+**`browser` is deliberately excluded.** It is Node + Chromium, so it cannot live in a
+Go binary; it stays a separate artifact resolved through `[plugins].bin` and started
+with `TryStart`.
+
+A built-in has no binary to omit, so the implicit lever an operator used to have —
+suppress a plugin by not shipping `dist/bin/<name>` — no longer exists for these four.
+R-PLUG.14 replaces it with an explicit one.
+
+---
+
+## R-PLUG.14 — `[plugins].disabled`
+
+`[plugins] disabled = ["shell"]` names plugins that **MUST NOT** start. Entries are
+wire names (`shell`, `browser`, a user plugin's manifest name), and the list applies
+uniformly to **every** start path — built-ins (R-PLUG.13), plugins with their own
+binary, and user plugins (R-PLUG.9). `NINE_PLUGINS_DISABLED` (comma-separated)
+overrides it, so a container can withhold a plugin without a second config file.
+
+An implementation **MUST**:
+
+- refuse a disabled plugin **before spawning anything**, so no process, socket, or
+  cache dir is created for it. Every native start path funnels through one check for
+  exactly this reason — a caller that forgets to ask still cannot spawn a disabled
+  plugin. `StartMCP` builds its own stdio client rather than going through that path,
+  so it **MUST** carry the check itself;
+- treat the refusal as a **decision, not a failure**: the daemon boots normally and
+  the tolerant starters (`TryStart`, `TryStartBuiltin`, user-plugin loading) report it
+  as switched off rather than broken;
+- **surface it**. A disabled plugin appears in `plugins_list` with `disabled: true`
+  and a reason, and `nine plugins` prints it as `off`. A plugin that is simply absent
+  from the roster gives an operator debugging a missing tool nothing to read — the
+  same reasoning as the skipped-user-plugin entries in R-PLUG.9 and the skipped tools
+  in [`toolvm.md`](toolvm.md) R-TVM.6.
+
+A name that matched nothing **MUST** be reported. `disabled = ["shel"]` withholds
+nothing and leaves `shell` — arbitrary command execution — running, with no error and
+no roster entry, which is the one failure mode of this setting that is worse than not
+having it: it fails open while reading as closed. Names cannot be validated when
+config is parsed, because a user plugin's name is not known until its directory is
+scanned, so the check belongs after loading. It is a warning rather than a hard
+failure: the name may legitimately belong to a user plugin the operator has not
+deployed yet.
+
+Disabling is an **operator** action, never an agent one (N1, R-PLUG.7): it is read
+from config at boot and there is no tool or wire message that switches a plugin on or
+off at runtime. `NINE_PLUGINS_DISABLED` can add to or replace the list but **MUST NOT
+be able to clear it** — an environment variable that could re-enable `shell` is a
+hazard in the one direction this setting must never move by accident.
+
+`nine plugin validate` still works against a disabled plugin — validation asks whether
+a binary *is* a plugin, which is independent of whether this daemon runs it.
+
+---
+
 ## Reference symbols
 
-`internal/plugin/manager.go` (`Manager`, `Start`, `Call`, `JobStatus`, `JobCancel`,
-`PluginByName`, `TryStart`, `spawnAndDescribe`, `Probe`, `SetPluginEnv`, `SetCacheConfig`,
+`internal/builtins/` (`Serve`, `Names`, `Has`; `shell.go`, `files.go`, `http.go`,
+`time.go` — the built-in handlers, R-PLUG.13),
+`cmd/nine/main.go` (`pluginServeArgs`, `servePluginAndExit` — the single-purpose
+plugin entry point, R-PLUG.13a),
+`internal/plugin/manager.go` (`Manager`, `Start`, `StartBuiltin`, `Call`, `JobStatus`,
+`JobCancel`, `PluginByName`, `TryStart`, `TryStartBuiltin`, `launch`/`binaryLaunch`/
+`builtinLaunch`, `spawnAndDescribe`, `Probe`, `SetPluginEnv`, `SetBuiltinBinary`, `SetCacheConfig`,
 `SweepCache`), `internal/plugin/userplugins.go` (`LoadUserPlugins`, `ReloadUserPlugins`,
 `UserStatus`), `internal/plugin/cache.go` (`allocCacheDir`, `SweepCache`),
 `internal/plugin/jobs.go` (`Jobs`, `Job`, `JobHandler`, `JobStatus`, `JobDir`, `SetProgress`),
@@ -327,5 +451,5 @@ terminal and distinct from `failed`. `progress` is free text.
 `internal/memory/plugin_jobs.go` (the `plugin_jobs` registry), `internal/runtime/plugin_jobs.go`
 (job starter + sweeper), `internal/runtime/job_tools.go` (model-facing tools + surfacing),
 `internal/agent/register_jobs.go` (`job_wait`/`job_check`/`job_list`/`job_cancel`),
-`plugins/{files,shell,http,time,browser}/`, `cmd/nine/daemon.go` (`LoadUserPlugins`, job
+`plugins/browser/`, `cmd/nine/daemon.go` (`LoadUserPlugins`, job
 sweeper, graceful shutdown at boot), `internal/cli/plugins.go` (`nine plugins` / `nine plugin validate`).

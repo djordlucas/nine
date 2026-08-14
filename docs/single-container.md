@@ -154,8 +154,8 @@ Extend the existing multi-stage file.
 - **`runtime` target (normal):**
   - `FROM debian:bookworm-slim`
   - install `s6-overlay`, `nodejs`, `chromium` + fonts
-  - `COPY` the `nine` binary, `/opt/nine/bin/*` plugins, `/opt/nine/browser`
-    code + `node_modules`, and the browser launcher shim (as today)
+  - `COPY` the `nine` binary (which carries the Go plugins), `/opt/nine/browser`
+    code + `node_modules`, and the browser launcher shim into `/opt/nine/bin`
   - `COPY` the s6 service definition (`nine`)
   - `ENV NINE_BIN=/opt/nine/bin`, `PLAYWRIGHT_*`
   - ⚠️ **Chromium path.** On Debian the package is `chromium` and the binary is

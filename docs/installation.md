@@ -129,13 +129,14 @@ the code from a checkout. For a containerized development loop instead, use
 git clone https://github.com/djordlucas/nine
 cd nine
 
-# Build the nine binary, all default plugin binaries, and the browser plugin
+# Build the nine binary and the browser plugin
 make all
 ```
 
 The build produces:
-- `dist/nine` — the main CLI/daemon binary
-- `dist/bin/shell`, `dist/bin/files`, etc. — default plugin binaries
+- `dist/nine` — the main CLI/daemon binary, which also *is* the `shell`, `files`,
+  `http`, and `time` plugins: the daemon starts each as a `nine plugin serve <name>`
+  child process, so they need no build step and no binary of their own
 - `dist/bin/browser` — browser plugin launcher (requires Node.js + npm)
 
 ### 2. Config
@@ -175,8 +176,7 @@ records which models have been run and how they did.
 
 | Target | Description |
 |--------|-------------|
-| `make build` | Compile `dist/nine` binary |
-| `make plugins` | Compile all default plugin binaries to `dist/bin/` |
+| `make build` | Compile `dist/nine` (which serves the `shell`/`files`/`http`/`time` plugins too) |
 | `make browser-plugin` | Build the browser plugin (requires npm) |
 | `make all` | All of the above |
 | `make test` | Run all tests. The two live-model tests skip unless `NINE_LIVE_MODEL` names an Ollama tag (e.g. `NINE_LIVE_MODEL=qwen3.5:4b make test`) |

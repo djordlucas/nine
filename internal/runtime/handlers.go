@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"nine/internal/agent"
+	"nine/internal/plugin"
 	"nine/internal/protocol"
 )
 
@@ -546,7 +547,19 @@ func (d *Daemon) pluginStatuses() []protocol.PluginStatus {
 		if st.Loaded {
 			continue
 		}
-		out = append(out, protocol.PluginStatus{Name: st.Name, Source: "user", Loaded: false, Error: st.Err})
+		out = append(out, protocol.PluginStatus{
+			Name: st.Name, Source: "user", Loaded: false, Error: st.Err,
+			Disabled: st.Err == plugin.ErrPluginDisabled.Error(),
+		})
+	}
+	// Default plugins the operator switched off. They are not in Running() and
+	// have no UserStatus, so without this they would simply be absent — and an
+	// operator debugging a missing tool would have nothing to read.
+	for _, name := range d.mgr.DisabledSkipped() {
+		out = append(out, protocol.PluginStatus{
+			Name: name, Source: "builtin", Loaded: false,
+			Error: plugin.ErrPluginDisabled.Error(), Disabled: true,
+		})
 	}
 	return out
 }

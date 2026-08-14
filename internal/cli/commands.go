@@ -152,6 +152,10 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 		}
 		return c.ToolValidate(cfg, p)
 	case "plugin":
+		// `plugin serve` never reaches here: it is the daemon's entry point for a
+		// built-in plugin child, and cmd/nine/main.go dispatches it before the
+		// config or this CLI is built, so a plugin process holds no StartDaemon
+		// or StartTUI (spec/contracts/plugin.md R-PLUG.13).
 		if len(args) < 2 || args[1] != "validate" {
 			return fmt.Errorf("usage: nine plugin validate [path]")
 		}

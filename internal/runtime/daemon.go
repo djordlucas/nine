@@ -95,6 +95,10 @@ type pluginRegistry interface {
 	Call(ctx context.Context, p *plugin.Plugin, toolName string, args json.RawMessage) (plugin.CallResult, error)
 	ReloadUserPlugins()
 	UserStatus() []plugin.UserPluginStatus
+	// DisabledSkipped names default plugins that config switched off. They are
+	// in neither Running() nor UserStatus(), so the roster needs them from here
+	// or they read as simply absent (R-PLUG.14).
+	DisabledSkipped() []string
 }
 
 // Daemon accepts connections on a Unix socket and routes messages to

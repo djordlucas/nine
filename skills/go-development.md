@@ -12,10 +12,9 @@ This project uses Go modules with a vendor directory. Always pass `-mod=vendor` 
 
 ```bash
 go build -mod=vendor -o nine ./cmd/nine
-go build -mod=vendor -o bin/<name> ./plugins/<name>
-make build        # builds the main binary
-make plugins      # builds all plugin binaries
-make all          # builds everything
+make build        # builds the main binary — which also serves the
+                  # shell/files/http/time plugins (internal/builtins)
+make all          # builds everything, incl. the Node browser plugin
 ```
 
 ### Testing
