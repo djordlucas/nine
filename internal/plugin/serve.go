@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 // RPCErr is a JSON-RPC 2.0 error object returned by plugin handlers.
@@ -45,6 +46,18 @@ type serveConfig struct {
 	maxConcurrent int
 	jobs          *Jobs
 	jobHandlers   map[string]JobHandler
+	onShutdown    func()
+}
+
+// WithOnShutdown registers cleanup to run when the plugin is signalled, before
+// the process exits.
+//
+// A plugin that owns something beyond its socket — the MCP bridge owns a server
+// process — cannot do this with its own signal handler: Serve's handler calls
+// os.Exit as soon as it wakes, so two handlers racing means the cleanup may
+// simply never run. Registering it here makes the ordering deterministic.
+func WithOnShutdown(fn func()) ServeOption {
+	return func(c *serveConfig) { c.onShutdown = fn }
 }
 
 // WithMaxConcurrent advertises a concurrency cap to the daemon (see
@@ -75,6 +88,31 @@ func WithJobs(jobs *Jobs) ServeOption {
 // goroutine per request. It blocks until the process is signalled. tools defines
 // the advertised tool set; handlers maps tool names to functions.
 func Serve(tools []ToolDefinition, handlers map[string]ToolHandler, opts ...ServeOption) {
+	ServeDeferred(func(context.Context) ([]ToolDefinition, map[string]ToolHandler, error) {
+		return tools, handlers, nil
+	}, opts...)
+}
+
+// ReadyFunc resolves a plugin's tools and handlers. See ServeDeferred.
+type ReadyFunc func(ctx context.Context) ([]ToolDefinition, map[string]ToolHandler, error)
+
+// ServeDeferred is Serve for a plugin that cannot name its tools until it has
+// done some work — typically talking to something else first.
+//
+// It listens **before** calling ready, then answers plugin.describe and
+// plugin.call once ready returns. That ordering matters because the daemon
+// bounds how long it waits for a plugin's socket to appear (~3s, R-PLUG.3),
+// while plugin.describe itself has no such deadline. A plugin that handshakes
+// with a remote service before listening spends that startup inside the socket
+// budget and is declared dead; doing it after moves the same work into describe,
+// where the daemon is willing to wait.
+//
+// The MCP bridge is the case this exists for: `npx`-launched servers routinely
+// take longer than the socket budget to come up (R-PLUG.15).
+//
+// If ready fails, the plugin answers requests with that error — so the daemon
+// logs the real reason rather than a bare connection failure — and then exits.
+func ServeDeferred(ready ReadyFunc, opts ...ServeOption) {
 	var cfg serveConfig
 	for _, o := range opts {
 		o(&cfg)
@@ -91,8 +129,6 @@ func Serve(tools []ToolDefinition, handlers map[string]ToolHandler, opts ...Serv
 		}
 		jobs.configure(cfg.maxConcurrent, os.Getenv("NINE_PLUGIN_CACHE_DIR"))
 	}
-
-	describe := DescribeResult{ProtocolVersion: ProtocolVersion, Tools: tools, MaxConcurrent: cfg.maxConcurrent, AsyncJobs: async}
 
 	socketPath := os.Getenv("NINE_PLUGIN_SOCKET")
 	if socketPath == "" {
@@ -114,11 +150,24 @@ func Serve(tools []ToolDefinition, handlers map[string]ToolHandler, opts ...Serv
 		<-sigs
 		ln.Close()            //nolint:errcheck
 		os.Remove(socketPath) //nolint:errcheck
+		if cfg.onShutdown != nil {
+			cfg.onShutdown()
+		}
 		os.Exit(0)
 	}()
 
+	// Resolve tools after the listener is up, so a slow ready() costs describe
+	// time rather than socket-ready time.
+	res := &deferredTools{done: make(chan struct{}), maxConcurrent: cfg.maxConcurrent, async: async}
+	go res.resolve(ready)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/rpc", func(w http.ResponseWriter, r *http.Request) {
+		describe, handlers, err := res.await(r.Context())
+		if err != nil {
+			writeRPC(w, nil, Errorf("plugin not ready: %v", err))
+			return
+		}
 		handleRPC(w, r, describe, handlers, cfg.jobHandlers, jobs)
 	})
 
@@ -126,6 +175,57 @@ func Serve(tools []ToolDefinition, handlers map[string]ToolHandler, opts ...Serv
 		fmt.Fprintf(os.Stderr, "plugin: serve: %v\n", err)
 	}
 }
+
+// deferredTools holds the once-resolved result of a ReadyFunc. Requests block on
+// done rather than racing it, so describe and call see a fully-built tool set or
+// the reason there isn't one.
+type deferredTools struct {
+	done          chan struct{}
+	maxConcurrent int
+	async         bool
+
+	describe DescribeResult
+	handlers map[string]ToolHandler
+	err      error
+}
+
+// resolve runs ready once and publishes the outcome. On failure it gives the
+// daemon a moment to collect the error from a describe reply before exiting —
+// a plugin that cannot build its tools has nothing to serve, and lingering would
+// leave it listed as healthy.
+func (d *deferredTools) resolve(ready ReadyFunc) {
+	tools, handlers, err := ready(context.Background())
+	if err != nil {
+		d.err = err
+		close(d.done)
+		fmt.Fprintf(os.Stderr, "plugin: not ready: %v\n", err)
+		time.Sleep(readyFailureGrace)
+		os.Exit(1)
+	}
+	d.describe = DescribeResult{
+		ProtocolVersion: ProtocolVersion,
+		Tools:           tools,
+		MaxConcurrent:   d.maxConcurrent,
+		AsyncJobs:       d.async,
+	}
+	d.handlers = handlers
+	close(d.done)
+}
+
+// await blocks until the tool set is resolved, or the caller gives up.
+func (d *deferredTools) await(ctx context.Context) (DescribeResult, map[string]ToolHandler, error) {
+	select {
+	case <-d.done:
+		return d.describe, d.handlers, d.err
+	case <-ctx.Done():
+		return DescribeResult{}, nil, ctx.Err()
+	}
+}
+
+// readyFailureGrace is how long a plugin whose ready() failed stays up so the
+// daemon can read the reason off a describe reply instead of a dropped
+// connection.
+const readyFailureGrace = 2 * time.Second
 
 // handleRPC decodes one request envelope and writes one reply envelope. There is
 // no JSON-RPC id: each call owns its connection, so correlation is per-connection.

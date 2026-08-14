@@ -31,6 +31,18 @@ var hostEnvAllowlist = map[string]bool{
 	"LANGUAGE":      true,
 	"SSL_CERT_FILE": true, // OpenSSL/Go CA bundle overrides — needed for HTTPS
 	"SSL_CERT_DIR":  true,
+
+	// Proxy configuration. Withholding these does not protect anything — a proxy
+	// URL is network configuration, not a credential — and without them the
+	// `http` plugin (http_get, http_post, web_search, web_page_read) cannot
+	// reach anything on a network that requires a proxy, which is most corporate
+	// ones. Both spellings are listed because tools disagree about case.
+	"HTTP_PROXY":  true,
+	"HTTPS_PROXY": true,
+	"NO_PROXY":    true,
+	"http_proxy":  true,
+	"https_proxy": true,
+	"no_proxy":    true,
 }
 
 // sanitizedHostEnv returns the allowlisted subset of the daemon's environment to

@@ -9,18 +9,36 @@ import (
 	"nine/internal/plugin"
 )
 
-// TestNamesMatchesDaemonRoster pins the built-in roster. The daemon starts
-// exactly these at boot (cmd/nine/daemon.go), and spec/contracts/plugin.md
-// R-PLUG.5 lists them, so a plugin added or dropped here is a contract change.
-// browser is deliberately absent: it is Node + Chromium, not Go, so it still
-// ships as its own artifact under [plugins].bin.
-func TestNamesMatchesDaemonRoster(t *testing.T) {
+// TestAutoStartMatchesDaemonRoster pins what the daemon starts unconditionally
+// at boot (cmd/nine/daemon.go); spec/contracts/plugin.md R-PLUG.5 lists the same
+// set, so a plugin added or dropped here is a contract change.
+//
+// Two deliberate absences. `browser` is Node + Chromium, not Go, so it still
+// ships as its own artifact under [plugins].bin. `mcp` is a built-in but is not
+// auto-started: it runs once per [[mcp.server]] with that server's spec in its
+// environment (R-PLUG.15), and a bare `mcp` would have nothing to bridge.
+func TestAutoStartMatchesDaemonRoster(t *testing.T) {
 	want := []string{"files", "http", "shell", "time"}
-	if got := builtins.Names(); !slices.Equal(got, want) {
-		t.Errorf("Names() = %v, want %v", got, want)
+	if got := builtins.AutoStart(); !slices.Equal(got, want) {
+		t.Errorf("AutoStart() = %v, want %v", got, want)
 	}
 	if builtins.Has("browser") {
 		t.Error("browser must not be a built-in: it is Node + Chromium, not Go")
+	}
+}
+
+// Servable and auto-started are different questions, and mcp is the case that
+// separates them: it must be servable (the daemon spawns `nine plugin serve
+// mcp` per configured server) while staying out of the boot roster.
+func TestMCPIsServableButNotAutoStarted(t *testing.T) {
+	if !builtins.Has(builtins.MCPBuiltinName) {
+		t.Error("mcp must be servable: the daemon spawns it per [[mcp.server]]")
+	}
+	if !slices.Contains(builtins.Names(), builtins.MCPBuiltinName) {
+		t.Error("Names() must include mcp, so `plugin serve` usage lists it")
+	}
+	if slices.Contains(builtins.AutoStart(), builtins.MCPBuiltinName) {
+		t.Error("mcp must not auto-start: with no server spec it can only fail")
 	}
 }
 

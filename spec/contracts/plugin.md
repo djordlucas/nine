@@ -2,16 +2,18 @@
 
 **Status:** Built · **Depends on:** dispatcher (registration) · **Used by:** every turn that calls an external tool
 
-Every external capability is a **subprocess**. A native Nine plugin serves a compact
-request/reply envelope over **HTTP on a per-plugin Unix socket**, so one process handles
-many concurrent calls; MCP servers — external, not under our control — keep speaking
-JSON-RPC 2.0 over stdio. Plugins are isolation boundaries (invariant I9): a crash is a
+Every external capability is a **subprocess** serving a compact request/reply envelope
+over **HTTP on a per-plugin Unix socket**, so one process handles many concurrent calls.
+There is exactly one plugin transport: an MCP server reaches Nine through a plugin like
+anything else (R-PLUG.15), so stdio is one bridge's internal detail rather than a second
+path through the manager. Plugins are isolation boundaries (invariant I9): a crash is a
 child-process failure, not a daemon panic. They are **immutable image content** — there is
 no runtime generation, build, or hot-swap (N1).
 
-> **Transport.** Native plugins use HTTP over a Unix socket (see
+> **Transport.** Plugins use HTTP over a Unix socket (see
 > `docs/plugins-http-transport.md`); the two-method contract (R-PLUG.1) rides on it, with
-> `max_concurrent` (R-PLUG.8). MCP servers use stdio JSON-RPC.
+> `max_concurrent` (R-PLUG.8). This is the only transport — MCP arrives through the
+> bridge plugin (R-PLUG.15), not through a second one.
 >
 > **Packaging.** "Subprocess" does not imply "separate executable": the Go default
 > plugins are served out of the `nine` binary as `nine plugin serve <name>` (R-PLUG.13).
@@ -54,9 +56,6 @@ The daemon **MAY** send an `X-Nine-Request-ID` header carrying a per-call trace 
 plugin **SHOULD** log it (and surface it on the handler context) so one ID greps across
 daemon and plugin logs. It is not part of the envelope — reply↔request correlation is
 per-connection.
-
-> MCP servers are the exception: they speak JSON-RPC 2.0 (with `id`) over stdio, and the
-> manager adapts `plugin.call` ↔ `tools/call` behind the same internal client interface.
 
 ---
 
@@ -238,8 +237,10 @@ semaphore.
 
 Transport-level concurrency is **orthogonal to handler safety**: a cap of N lets N calls
 reach the process at once, but a handler with unsynchronized shared state is unsafe
-regardless — such a plugin must cap itself accordingly. (MCP plugins are serialized by
-their stdio transport and ignore `max_concurrent`.)
+regardless — such a plugin must cap itself accordingly. The MCP bridge is the worked
+example: stdio cannot match a response to a request without owning the stream for the
+round trip, so it declares `max_concurrent: 1` — a limitation stated through the contract
+rather than exempted from it.
 
 ---
 
@@ -281,7 +282,7 @@ scratch, never embedded, and reaches the model only if the plugin returns it.
 - `Probe` (validate / user-plugin vetting) always uses a throwaway ephemeral dir,
   regardless of `persist_cache`, so validation never touches persistent state.
 
-## R-PLUG.12 — Long-running jobs (native plugins only)
+## R-PLUG.12 — Long-running jobs (opt-in)
 
 A tool call **MAY** start detached work and return a `job_id` plus a one-line
 `output` ack instead of a result. Such a plugin **MUST** advertise `async_jobs`
@@ -314,9 +315,9 @@ terminal and distinct from `failed`. `progress` is free text.
   `job_wait` (blocks up to a timeout, returns the result or current progress — a
   timeout is not an error), `job_check`, `job_list`, `job_cancel`. The context
   builder surfaces outstanding jobs as one compact line each.
-- **MCP is excluded:** its adapter collapses replies to `{output}` and has no
-  status/cancel to map. Settings (R-PLUG.10) and the cache dir (R-PLUG.11) do apply
-  to MCP.
+- **The MCP bridge does not advertise jobs:** MCP has no status/cancel to map onto them,
+  so the bridge reports `async_jobs: false` like any plugin without them. Nothing special
+  is needed — it is a plugin declining an optional capability, not an exclusion.
 
 ---
 
@@ -399,10 +400,10 @@ overrides it, so a container can withhold a plugin without a second config file.
 An implementation **MUST**:
 
 - refuse a disabled plugin **before spawning anything**, so no process, socket, or
-  cache dir is created for it. Every native start path funnels through one check for
-  exactly this reason — a caller that forgets to ask still cannot spawn a disabled
-  plugin. `StartMCP` builds its own stdio client rather than going through that path,
-  so it **MUST** carry the check itself;
+  cache dir is created for it. Every start path funnels through one check for exactly
+  this reason — a caller that forgets to ask still cannot spawn a disabled plugin. With
+  MCP behind a plugin (R-PLUG.15) there is no longer a second spawn path to keep in
+  step;
 - treat the refusal as a **decision, not a failure**: the daemon boots normally and
   the tolerant starters (`TryStart`, `TryStartBuiltin`, user-plugin loading) report it
   as switched off rather than broken;
@@ -432,6 +433,67 @@ a binary *is* a plugin, which is independent of whether this daemon runs it.
 
 ---
 
+## R-PLUG.15 — MCP servers are plugins
+
+An MCP server is reached through a **bridge plugin**, not through a second code path in
+the manager. The daemon starts one bridge instance per `[[mcp.server]]`:
+
+```text
+[[mcp.server]]                        [[mcp.server]]
+name    = "github"                    name = "hosted"
+command = "npx"                       url  = "https://mcp.example.com/rpc"
+args    = ["-y", "…server-github"]    [mcp.server.headers]
+[mcp.server.env]                      Authorization = "Bearer …"
+GITHUB_TOKEN = "…"
+
+  → daemon: StartBuiltinInstance("mcp", "mcp:<name>", NINE_MCP_SERVER={…})
+  → bridge: listen, then connect — spawn over stdio, or POST over streamable HTTP
+  → bridge: initialize → notifications/initialized → tools/list
+  → bridge: serve those tools over the ordinary plugin contract (R-PLUG.1)
+```
+
+Two transports are supported, and exactly one is configured per server: `command`
+spawns a local server and speaks JSON-RPC over its stdio pipes; `url` reaches a hosted
+one over **streamable HTTP**, where a server answers each POST with either a JSON body
+or an SSE stream and the client must handle both. Hosted servers never run locally, so
+stdio cannot reach them at all.
+
+An implementation **MUST**:
+
+- give each server **its own plugin instance**, named `mcp:<server>`. One server crashing,
+  hanging, or failing to start affects only itself — the isolation guarantee of R-PLUG.4,
+  which an in-manager adapter could not offer because a wedged stdio read blocked inside
+  the daemon. The name is also what the roster shows and what `[plugins].disabled`
+  matches (R-PLUG.14);
+- **prefix each tool** with the server name (`github__create_issue`). Two MCP servers
+  commonly advertise the same generic name (`search`, `read`), and an unprefixed
+  collision means one server silently loses a tool depending on load order (R-PLUG.9);
+- pass the server's configuration **from the daemon**, not by reading `nine.toml` in the
+  bridge — a plugin child loads no config (R-PLUG.13a), and that file carries other
+  plugins' secrets;
+- **declare the transport's limits through the contract, not around it.** stdio is
+  serial, so the bridge reports `max_concurrent: 1` (R-PLUG.8) and `async_jobs: false`
+  (R-PLUG.12). These are ordinary plugin declarations, not exemptions;
+- **listen before handshaking.** The daemon bounds how long it waits for a plugin's
+  socket (~3s, R-PLUG.3) but puts no deadline on `plugin.describe`. An MCP server
+  launched through `npx`/`uvx` routinely needs far longer than the socket budget just
+  to start — a measured 72s in one case — so a bridge that completes the handshake
+  before listening is declared dead for every real server. It **MUST** listen first and
+  resolve its tools inside `describe` (`plugin.ServeDeferred`), under its own finite
+  timeout so a server that never answers cannot hold up boot.
+
+The point is what the core no longer contains. There is one plugin transport, one client
+implementation, and no `except MCP` clause in this contract: the stdio client, the
+`plugin.call ↔ tools/call` adapter, and the second spawn path all live inside one plugin
+that the daemon treats like every other.
+
+Content flattening is the bridge's known limitation: MCP replies can carry images and
+resource links, and only `text` content survives into the single-string result the plugin
+contract returns. This is unchanged from the previous in-core adapter, but it is now one
+plugin's constraint rather than Nine's tool contract's.
+
+---
+
 ## Reference symbols
 
 `internal/builtins/` (`Serve`, `Names`, `Has`; `shell.go`, `files.go`, `http.go`,
@@ -440,13 +502,15 @@ a binary *is* a plugin, which is independent of whether this daemon runs it.
 plugin entry point, R-PLUG.13a),
 `internal/plugin/manager.go` (`Manager`, `Start`, `StartBuiltin`, `Call`, `JobStatus`,
 `JobCancel`, `PluginByName`, `TryStart`, `TryStartBuiltin`, `launch`/`binaryLaunch`/
-`builtinLaunch`, `spawnAndDescribe`, `Probe`, `SetPluginEnv`, `SetBuiltinBinary`, `SetCacheConfig`,
+`builtinLaunch`, `builtinInstanceLaunch`, `MCPInstanceName`, `spawnAndDescribe`, `Probe`, `SetPluginEnv`, `SetBuiltinBinary`, `SetCacheConfig`,
 `SweepCache`), `internal/plugin/userplugins.go` (`LoadUserPlugins`, `ReloadUserPlugins`,
 `UserStatus`), `internal/plugin/cache.go` (`allocCacheDir`, `SweepCache`),
 `internal/plugin/jobs.go` (`Jobs`, `Job`, `JobHandler`, `JobStatus`, `JobDir`, `SetProgress`),
 `internal/plugin/manifest.go` (`Manifest`, `LoadManifest`, `discoverPlugins`),
-`internal/plugin/` (`client.go` `newHTTPClient` — native HTTP transport; `client`/`mcp.go`
-— stdio, retained for MCP; `serve.go` `plugin.Serve` — the plugin-side HTTP server loop on
+`internal/plugin/httpclient.go` (`newHTTPClient` — the one plugin transport),
+`internal/builtins/mcp.go` + `mcp_stdio.go` (the MCP bridge and its private stdio
+client, R-PLUG.15),
+`internal/plugin/serve.go` `plugin.Serve` — the plugin-side HTTP server loop on
 `NINE_PLUGIN_SOCKET`, `WithJobHandlers`/`WithJobs`; `contract.go` — `ToolDefinition`/`DescribeResult`),
 `internal/memory/plugin_jobs.go` (the `plugin_jobs` registry), `internal/runtime/plugin_jobs.go`
 (job starter + sweeper), `internal/runtime/job_tools.go` (model-facing tools + surfacing),

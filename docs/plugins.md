@@ -142,6 +142,50 @@ What's the current date and time?
 
 ---
 
+### `mcp` — Model Context Protocol servers
+
+An MCP server is a plugin. Each `[[mcp.server]]` you declare gets its own bridge
+process, so it has the same shape and the same controls as anything else here.
+
+```toml
+[[mcp.server]]
+name    = "github"
+command = "npx"
+args    = ["-y", "@modelcontextprotocol/server-github"]
+[mcp.server.env]
+GITHUB_PERSONAL_ACCESS_TOKEN = "ghp_..."
+```
+
+- **Tools are prefixed with the server name** — `github__create_issue`. Two servers
+  that both expose `search` would otherwise collide, and a collision silently drops
+  one depending on load order.
+- **It appears as `mcp:github`** in `nine plugins`, crashes on its own without
+  affecting the daemon or other servers, and is switched off with
+  `[plugins] disabled = ["mcp:github"]`.
+- **`env` goes to that server only.** Nine's own secrets are not inherited by it, the
+  same as for every other plugin.
+- **Two transports:** `command` spawns a local server and speaks stdio; `url` reaches a
+  hosted one over streamable HTTP (below).
+
+**Hosted servers.** A server reached at a URL instead of spawned uses `url` and
+`headers` in place of `command` and `env`:
+
+```toml
+[[mcp.server]]
+name = "hosted"
+url  = "https://mcp.example.com/rpc"
+[mcp.server.headers]
+Authorization = "Bearer ..."
+```
+
+This is MCP's **streamable HTTP** transport: each request is a POST, and the server
+answers with either a JSON body or an SSE stream, its choice per request. A session id
+the server issues on connect is echoed on every later request. Exactly one of `command`
+or `url` is set per server; mixing `env` with `url` (or `headers` with `command`) is a
+config error rather than a silently ignored setting.
+
+---
+
 ### `browser` — Headless Browser
 
 A Playwright/Chromium plugin for web automation and extraction. See [Browser Plugin](browser.md) for the full reference.

@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -31,8 +32,12 @@ const socketReadyTimeout = 3 * time.Second
 
 // Plugin is a running plugin process with its advertised tools.
 type Plugin struct {
-	Name   string
-	client pluginClient
+	Name string
+	// client is the concrete HTTP-over-Unix-socket client, not an interface.
+	// The interface existed only because MCP servers spoke stdio from inside the
+	// manager; now that MCP is reached through a plugin like anything else
+	// (R-PLUG.15), there is one transport and nothing to abstract over.
+	client *httpClient
 	Tools  []ToolDefinition
 	// User marks a plugin loaded from the operator's plugins directory rather
 	// than a built-in. Reload stops and re-discovers only User plugins.
@@ -42,6 +47,13 @@ type Plugin struct {
 	// answer job_status / job_cancel. The daemon refuses a job_id from a plugin
 	// with this false — fail-closed against version skew.
 	AsyncJobs bool
+
+	// MaxConcurrent mirrors what the plugin declared (R-PLUG.8): 0 is unbounded,
+	// a finite value means its handlers are not safe to run in parallel. The
+	// transport is already bounded by it; keeping it here makes the declaration
+	// observable rather than only enforced, which is what lets a caller or a test
+	// check what a plugin actually promised.
+	MaxConcurrent int
 
 	// cacheDir is the plugin's scratch directory (docs/plugin-capabilities.md §4),
 	// handed over as NINE_PLUGIN_CACHE_DIR. Empty when no cache root is configured.
@@ -262,13 +274,45 @@ func (m *Manager) StartBuiltin(name string, extraEnv ...string) (*Plugin, error)
 	return m.start(builtinLaunch(bin, name), extraEnv...)
 }
 
+// StartBuiltinInstance starts the built-in `builtin` under the wire name
+// `instance`. It is how one built-in backs several plugins: the `mcp` bridge
+// runs once per configured server (R-PLUG.15), each instance a separate process
+// with its own tools, roster row, and failure domain. Everything else — the
+// sanitized environment, cache dir, describe, disable check — is identical to
+// StartBuiltin, which is the same call with instance == builtin.
+func (m *Manager) StartBuiltinInstance(builtin, instance string, extraEnv ...string) (*Plugin, error) {
+	bin, err := m.builtinBinary()
+	if err != nil {
+		return nil, err
+	}
+	return m.start(builtinInstanceLaunch(bin, builtin, instance), extraEnv...)
+}
+
+// TryStartBuiltinInstance is StartBuiltinInstance with TryStart's tolerance: it
+// logs and returns nil rather than failing the daemon's boot, so one unreachable
+// MCP server does not stop Nine from starting.
+func (m *Manager) TryStartBuiltinInstance(builtin, instance string, extraEnv ...string) *Plugin {
+	if m.IsDisabled(instance) {
+		m.noteDisabledSkip(instance)
+		slog.Info("plugin disabled by config, not starting", "name", instance)
+		return nil
+	}
+	p, err := m.StartBuiltinInstance(builtin, instance, extraEnv...)
+	if err != nil {
+		slog.Warn("plugin start failed", "name", instance, "builtin", builtin, "err", err)
+		return nil
+	}
+	return p
+}
+
 func (m *Manager) start(l launch, extraEnv ...string) (*Plugin, error) {
 	name := l.name
 
-	// Every native start path funnels through here, so a disabled plugin cannot
-	// be spawned by any caller — including a future one that forgets to ask. No
-	// process, no socket, no cache dir. StartMCP does not reach this (it builds
-	// its own stdio client) and carries the same check itself.
+	// Every start path funnels through here, so a disabled plugin cannot be
+	// spawned by any caller — including a future one that forgets to ask. No
+	// process, no socket, no cache dir. MCP servers are covered too: each is a
+	// bridge plugin started through StartBuiltinInstance (R-PLUG.15), not a
+	// separate spawn path of its own.
 	if m.IsDisabled(name) {
 		return nil, fmt.Errorf("%q: %w", name, ErrPluginDisabled)
 	}
@@ -296,7 +340,8 @@ func (m *Manager) start(l launch, extraEnv ...string) (*Plugin, error) {
 	}
 
 	c := newHTTPClient(name, socketPath, cmd, desc.MaxConcurrent)
-	p := &Plugin{Name: name, client: c, Tools: desc.Tools, AsyncJobs: desc.AsyncJobs, cacheDir: cacheDir, cacheEphemeral: ephemeral}
+	p := &Plugin{Name: name, client: c, Tools: desc.Tools, AsyncJobs: desc.AsyncJobs,
+		MaxConcurrent: desc.MaxConcurrent, cacheDir: cacheDir, cacheEphemeral: ephemeral}
 	m.track(p)
 	slog.Info("plugin started", "name", name, "tools", len(desc.Tools), "max_concurrent", desc.MaxConcurrent)
 	return p, nil
@@ -319,10 +364,28 @@ func binaryLaunch(binaryPath string) launch {
 	return launch{name: filepath.Base(binaryPath), path: binaryPath}
 }
 
-// builtinLaunch runs a built-in plugin out of the nine binary at nineBin.
+// builtinLaunch runs a built-in plugin out of the nine binary at nineBin, under
+// its own name.
 func builtinLaunch(nineBin, name string) launch {
-	return launch{name: name, path: nineBin, args: []string{"plugin", "serve", name}}
+	return builtinInstanceLaunch(nineBin, name, name)
 }
+
+// builtinInstanceLaunch runs the built-in `builtin` under a different wire name.
+// The two come apart when one built-in serves several plugins: the `mcp` bridge
+// runs once per configured MCP server, so four processes all execute
+// `nine plugin serve mcp` while presenting as `mcp:github`, `mcp:slack`, and so
+// on (R-PLUG.15). Keeping them distinct is what lets each server hold its own
+// row in the roster, its own crash isolation, and its own disable switch.
+func builtinInstanceLaunch(nineBin, builtin, instance string) launch {
+	return launch{name: instance, path: nineBin, args: []string{"plugin", "serve", builtin}}
+}
+
+// MCPInstanceName is the plugin name an MCP server runs under. One function so
+// the daemon that starts it, the roster that lists it, and the operator who
+// disables it all agree on the spelling — `[plugins].disabled = ["mcp:github"]`
+// has to match what boot registered, and a convention duplicated across three
+// call sites is a convention that drifts.
+func MCPInstanceName(server string) string { return "mcp:" + server }
 
 // builtinBinary resolves the nine executable to re-exec for built-in plugins.
 // It is the running binary unless a test has overridden it via
@@ -451,7 +514,23 @@ func allocSocketPath(name string) (string, error) {
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", fmt.Errorf("alloc socket path: %w", err)
 	}
-	return filepath.Join(socketDir, fmt.Sprintf("%s.%s.sock", name, hex.EncodeToString(b[:]))), nil
+	return filepath.Join(socketDir, fmt.Sprintf("%s.%s.sock", socketSafe(name), hex.EncodeToString(b[:]))), nil
+}
+
+// socketSafe reduces a plugin name to characters safe in a filename. Plugin
+// names became more than a bare word when instances arrived (`mcp:github`), and
+// a name is not a path — a separator in one would silently place the socket
+// somewhere other than socketDir, which the macOS sun_path limit exists to keep
+// short and predictable.
+func socketSafe(name string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			return r
+		default:
+			return '-'
+		}
+	}, name)
 }
 
 // describeOverSocket calls plugin.describe on a one-shot client whose idle

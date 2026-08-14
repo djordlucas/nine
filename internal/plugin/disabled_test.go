@@ -2,7 +2,9 @@ package plugin
 
 import (
 	"errors"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -116,24 +118,6 @@ func TestSetDisabledReplaces(t *testing.T) {
 	}
 }
 
-// StartMCP builds its own stdio client instead of going through start(), so it
-// is the one spawn path the shared check does not cover and has to carry its
-// own (R-PLUG.14). Without this, `disabled` would silently not apply to MCP
-// servers while the contract claims it applies everywhere.
-func TestDisabledRefusesMCP(t *testing.T) {
-	m := NewManager("")
-	m.SetDisabled([]string{"some-mcp-server"})
-
-	p, err := m.StartMCP("/some/dir/some-mcp-server", nil)
-	if err == nil {
-		m.Stop(p) //nolint:errcheck // cleanup on unexpected success
-		t.Fatal("StartMCP succeeded for a disabled name; want it refused")
-	}
-	if !errors.Is(err, ErrPluginDisabled) {
-		t.Errorf("err = %v, want ErrPluginDisabled", err)
-	}
-}
-
 // A name that matches no plugin disables nothing — `disabled = ["shel"]` leaves
 // `shell` running. That fails open while reading as closed, so it has to be
 // reportable rather than silent.
@@ -159,5 +143,44 @@ func TestUnmatchedDisabledEmptyWhenAllMatched(t *testing.T) {
 
 	if got := m.UnmatchedDisabled(); len(got) != 0 {
 		t.Errorf("UnmatchedDisabled() = %v, want empty", got)
+	}
+}
+
+// An MCP server is disabled by its instance name, which is what boot registers
+// and what the roster shows. Getting this wrong would mean an operator writing
+// `disabled = ["mcp:github"]` and quietly getting the server anyway.
+func TestDisabledRefusesBuiltinInstance(t *testing.T) {
+	m := NewManager("")
+	m.SetDisabled([]string{MCPInstanceName("github")})
+
+	if p := m.TryStartBuiltinInstance("mcp", MCPInstanceName("github")); p != nil {
+		t.Error("TryStartBuiltinInstance returned a plugin for a disabled instance")
+	}
+	if got := m.DisabledSkipped(); len(got) != 1 || got[0] != "mcp:github" {
+		t.Errorf("DisabledSkipped() = %v, want [mcp:github]", got)
+	}
+
+	// Disabling one instance must not disable the built-in for the others.
+	if m.IsDisabled("mcp") {
+		t.Error(`disabling "mcp:github" also disabled the "mcp" built-in`)
+	}
+	if m.IsDisabled(MCPInstanceName("slack")) {
+		t.Error(`disabling "mcp:github" also disabled "mcp:slack"`)
+	}
+}
+
+// The socket path is derived from the plugin name, and instance names carry a
+// colon. A separator would place the socket outside socketDir, which exists to
+// keep the path under the macOS sun_path limit.
+func TestSocketPathIsSafeForInstanceNames(t *testing.T) {
+	path, err := allocSocketPath(MCPInstanceName("github"))
+	if err != nil {
+		t.Fatalf("allocSocketPath: %v", err)
+	}
+	if dir := filepath.Dir(path); dir != socketDir {
+		t.Errorf("socket dir = %q, want %q", dir, socketDir)
+	}
+	if strings.ContainsAny(filepath.Base(path), ":/") {
+		t.Errorf("socket filename %q still contains a path-unsafe character", filepath.Base(path))
 	}
 }

@@ -35,13 +35,37 @@ import (
 // under and the agent sees in `nine plugins` — to the function that serves it.
 // Each entry blocks until the plugin process is told to stop.
 var serveFuncs = map[string]func(){
-	"shell": serveShell,
-	"files": serveFiles,
-	"http":  serveHTTP,
-	"time":  serveTime,
+	"shell":        serveShell,
+	"files":        serveFiles,
+	"http":         serveHTTP,
+	"time":         serveTime,
+	MCPBuiltinName: serveMCP,
 }
 
-// Names returns the built-in plugin names in a stable order.
+// MCPBuiltinName is the built-in that bridges one MCP server. It is served like
+// any other built-in but started differently — see AutoStart.
+const MCPBuiltinName = "mcp"
+
+// autoStart names the built-ins the daemon starts unconditionally at boot, one
+// process each.
+//
+// `mcp` is deliberately absent. It is started once per [[mcp.server]], under an
+// instance name (`mcp:github`) and with that server's spec in its environment
+// (R-PLUG.15); a bare `mcp` has nothing to bridge and would do nothing but fail
+// on every boot. Servable and startable are different questions, and this is the
+// one built-in where they diverge.
+var autoStart = []string{"files", "http", "shell", "time"}
+
+// AutoStart returns the built-ins to start at daemon boot, in a stable order.
+func AutoStart() []string {
+	out := make([]string, len(autoStart))
+	copy(out, autoStart)
+	sort.Strings(out)
+	return out
+}
+
+// Names returns every built-in this binary can serve, in a stable order —
+// including ones the daemon does not start on its own (see AutoStart).
 func Names() []string {
 	out := make([]string, 0, len(serveFuncs))
 	for name := range serveFuncs {
