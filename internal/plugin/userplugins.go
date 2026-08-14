@@ -64,6 +64,9 @@ func (m *Manager) loadUserPlugins(dir string) {
 		// refuse it a moment later (R-PLUG.14).
 		if m.IsDisabled(d.Name) {
 			st.Err = ErrPluginDisabled.Error()
+			// Recorded as matched so UnmatchedDisabled does not report this name
+			// as a typo; the roster entry itself comes from st, not from there.
+			m.noteDisabledSkip(d.Name)
 			slog.Info("skipping user plugin: disabled by config", "name", d.Name)
 			status = append(status, st)
 			continue

@@ -399,8 +399,10 @@ overrides it, so a container can withhold a plugin without a second config file.
 An implementation **MUST**:
 
 - refuse a disabled plugin **before spawning anything**, so no process, socket, or
-  cache dir is created for it. Enforcing this at the single point every start path
-  funnels through is what makes the guarantee hold for a caller that forgets to ask;
+  cache dir is created for it. Every native start path funnels through one check for
+  exactly this reason — a caller that forgets to ask still cannot spawn a disabled
+  plugin. `StartMCP` builds its own stdio client rather than going through that path,
+  so it **MUST** carry the check itself;
 - treat the refusal as a **decision, not a failure**: the daemon boots normally and
   the tolerant starters (`TryStart`, `TryStartBuiltin`, user-plugin loading) report it
   as switched off rather than broken;
@@ -410,9 +412,20 @@ An implementation **MUST**:
   same reasoning as the skipped-user-plugin entries in R-PLUG.9 and the skipped tools
   in [`toolvm.md`](toolvm.md) R-TVM.6.
 
+A name that matched nothing **MUST** be reported. `disabled = ["shel"]` withholds
+nothing and leaves `shell` — arbitrary command execution — running, with no error and
+no roster entry, which is the one failure mode of this setting that is worse than not
+having it: it fails open while reading as closed. Names cannot be validated when
+config is parsed, because a user plugin's name is not known until its directory is
+scanned, so the check belongs after loading. It is a warning rather than a hard
+failure: the name may legitimately belong to a user plugin the operator has not
+deployed yet.
+
 Disabling is an **operator** action, never an agent one (N1, R-PLUG.7): it is read
 from config at boot and there is no tool or wire message that switches a plugin on or
-off at runtime.
+off at runtime. `NINE_PLUGINS_DISABLED` can add to or replace the list but **MUST NOT
+be able to clear it** — an environment variable that could re-enable `shell` is a
+hazard in the one direction this setting must never move by accident.
 
 `nine plugin validate` still works against a disabled plugin — validation asks whether
 a binary *is* a plugin, which is independent of whether this daemon runs it.
