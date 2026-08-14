@@ -557,8 +557,15 @@ with an `http.Client`, which gives free per-request concurrency and
 context-based cancellation (docs/plugins-http-transport.md). External **MCP**
 servers keep the legacy stdio JSON-RPC client.
 
+The Go default plugins are not separate executables: their handlers live in
+`internal/builtins`, and `Manager.StartBuiltin` spawns them by re-executing the
+nine binary as `nine plugin serve <name>`. That is a packaging difference only —
+each still gets its own process, socket, sanitized environment, and crash
+isolation. The `browser` plugin is Node + Chromium and keeps its own binary.
+
 ```
-   Manager.Start(binaryPath, extraEnv…)
+   Manager.Start(binaryPath, extraEnv…)        (browser, user plugins)
+   Manager.StartBuiltin(name, extraEnv…)       (shell/files/http/time)
         │  spawn process with NINE_PLUGIN_SOCKET (+ NINE_BIN, extra env)
         │  wait for the socket, then use an http.Client on POST /rpc
         ▼

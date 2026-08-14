@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"nine/internal/builtins"
 	"nine/internal/config"
 	ninectx "nine/internal/context"
 	"nine/internal/memory"
@@ -152,6 +153,17 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 		}
 		return c.ToolValidate(cfg, p)
 	case "plugin":
+		// `serve` is the daemon's own entry point for a built-in plugin, not an
+		// operator command: the plugin manager spawns `nine plugin serve <name>`
+		// as a child process (spec/contracts/plugin.md R-PLUG.3). It is left out
+		// of `nine help` for that reason, and refuses to run outside that
+		// context — plugin.Serve exits when NINE_PLUGIN_SOCKET is unset.
+		if len(args) > 1 && args[1] == "serve" {
+			if len(args) < 3 {
+				return fmt.Errorf("usage: nine plugin serve <%s>", strings.Join(builtins.Names(), "|"))
+			}
+			return builtins.Serve(args[2])
+		}
 		if len(args) < 2 || args[1] != "validate" {
 			return fmt.Errorf("usage: nine plugin validate [path]")
 		}

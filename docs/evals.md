@@ -72,7 +72,7 @@ full trajectory printed — every tool call with its arguments, every result, th
 and the verdict:
 
 ```sh
-DIAG_MODEL=qwen3.5:9b DIAG_CASE=spill-read-back NINE_PLUGINS_BIN=$PWD/dist/bin \
+DIAG_MODEL=qwen3.5:9b DIAG_CASE=spill-read-back NINE_BINARY=$PWD/dist/nine \
   go test -count=1 -v -run TestDiagLiveTrajectory ./tests/evals/runner/
 ```
 

@@ -5,11 +5,10 @@ RUN apk add --no-cache git
 WORKDIR /nine-src
 COPY . .
 
-RUN go build -mod=vendor -o /usr/local/bin/nine ./cmd/nine && \
-    mkdir -p /out/bin && \
-    for p in shell files http time; do \
-      go build -mod=vendor -o /out/bin/$p ./plugins/$p; \
-    done
+# One binary: the shell/files/http/time plugins are served out of nine itself
+# (`nine plugin serve <name>`, internal/builtins), so there is no per-plugin
+# build loop and nothing to copy into /opt/nine/bin but the browser launcher.
+RUN go build -mod=vendor -o /usr/local/bin/nine ./cmd/nine
 
 # ── Node build stage (browser plugin npm deps) ───────────────────────────────
 # Shared by both dev and runtime: the browser plugin is Node, so its deps are
@@ -51,9 +50,10 @@ RUN case "$TARGETARCH" in \
 
 # ── Dev stage (hot-reload) ────────────────────────────────────────────────────
 # The source tree is bind-mounted at runtime; docker/dev-entrypoint.sh (wrapped
-# by the s6 `nine` service) builds nine + the Go plugins and rebuilds/restarts
-# the daemon on any .go change. The Go toolchain lives here (not in the runtime
-# image), so this stage is dev-only.
+# by the s6 `nine` service) builds nine and rebuilds/restarts the daemon on any
+# .go change — which now covers the Go plugins too, since they are served out of
+# that same binary. The Go toolchain lives here (not in the runtime image), so
+# this stage is dev-only.
 FROM debian:bookworm-slim AS dev
 
 COPY --from=s6-fetch /out/ /
@@ -126,9 +126,8 @@ ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
 
 COPY --from=go-build /usr/local/bin/nine /usr/local/bin/nine
 
-# Plugin binaries and browser plugin code are immutable image content under
-# /opt/nine — not seeded into the /data volume.
-COPY --from=go-build /out/bin/ /opt/nine/bin/
+# Browser plugin code is immutable image content under /opt/nine — not seeded
+# into the /data volume. It is the only plugin left with its own artifact.
 COPY plugins/browser/ /opt/nine/browser/
 COPY --from=node-build /nine-src/plugins/browser/node_modules/ /opt/nine/browser/node_modules/
 

@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"nine/internal/builtins"
 	"nine/internal/config"
 	"nine/internal/embed"
 	"nine/internal/memory"
@@ -50,10 +51,13 @@ func runDaemon() {
 	// plugins, before any new plugin allocates one.
 	pluginManager.SetCacheConfig(cfg.PluginCacheRoot(), cfg.PluginPersistCache)
 	pluginManager.SweepCache()
-	pluginManager.TryStart("files", cfg.PluginEnvs("files")...)
-	pluginManager.TryStart("shell", cfg.PluginEnvs("shell")...)
-	pluginManager.TryStart("http", cfg.PluginEnvs("http")...)
-	pluginManager.TryStart("time", cfg.PluginEnvs("time")...)
+	// The Go built-ins are served by this same binary (`nine plugin serve <name>`,
+	// internal/builtins) — still one process each, just no separate artifact to
+	// ship or keep in protocol lockstep. The browser plugin is Node + Chromium,
+	// so it stays a real binary resolved under [plugins].bin.
+	for _, name := range builtins.Names() {
+		pluginManager.TryStartBuiltin(name, cfg.PluginEnvs(name)...)
+	}
 	browserPlug := pluginManager.TryStart("browser", cfg.PluginEnvs("browser")...)
 
 	// Load operator-supplied plugins from [plugins].user_dir, after the built-ins
