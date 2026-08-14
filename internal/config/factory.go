@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"nine/internal/llm"
@@ -81,6 +82,30 @@ func ApplyEnvOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("NINE_PLUGINS_CACHE_DIR"); v != "" {
 		cfg.Plugins.CacheDir = v
+	}
+	// Unlike the paths above this is a capability decision, not a layout one —
+	// but it is overridable because the container is exactly where an operator
+	// needs to withhold a plugin without rebuilding an image around a second
+	// nine.toml. Empty entries are dropped so "a,,b" and a trailing comma are
+	// not read as a plugin named "".
+	//
+	// The override applies only when it names at least one plugin. Following the
+	// unset-is-no-override convention above, an empty value leaves the file's
+	// list in force — and this must hold for "," and " " too, or the variable
+	// would quietly mean two different things depending on which flavour of
+	// empty it was given. There is deliberately no way to clear the list from
+	// the environment: that would let a stray variable *re-enable* `shell`,
+	// which is the one direction this setting must never be nudged by accident.
+	if v := os.Getenv("NINE_PLUGINS_DISABLED"); v != "" {
+		var names []string
+		for _, n := range strings.Split(v, ",") {
+			if n = strings.TrimSpace(n); n != "" {
+				names = append(names, n)
+			}
+		}
+		if len(names) > 0 {
+			cfg.Plugins.Disabled = names
+		}
 	}
 	if v := os.Getenv("NINE_WORKSPACE_ROOT"); v != "" {
 		cfg.Workspace.Root = v

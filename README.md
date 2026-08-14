@@ -187,8 +187,10 @@ cd nine
 make all
 ```
 
-This produces `dist/nine` (the CLI and daemon in one binary) and the plugin binaries
-in `dist/bin/`. The browser plugin additionally needs Node and npm.
+This produces `dist/nine` — the CLI, the daemon, and the `shell`/`files`/`http`/`time`
+plugins in one binary (the daemon starts each as a `nine plugin serve <name>` child
+process). The browser plugin is Node + Chromium, so it stays a separate artifact in
+`dist/bin/` and additionally needs Node and npm.
 
 Nine looks for its config, in order: `$NINE_CONFIG`, `./nine.toml`, `/nine.toml`,
 then `~/.nine/nine.toml`. The repo's `nine.toml` works as-is against a local Ollama;

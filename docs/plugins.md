@@ -2,6 +2,12 @@
 
 Plugins are the mechanism through which Nine gains most of its capabilities — running shell commands, reading/writing files, searching the web. Nine ships with five default plugins, fixed at build time. Plugins are not generated or loaded at runtime; to add one, add it to the source repo and rebuild the image.
 
+Four of those five — `shell`, `files`, `http`, `time` — are Go, and are compiled **into the `nine` binary** (`internal/builtins`) rather than shipped as separate executables. The daemon starts each by re-executing itself as `nine plugin serve <name>`, so each still runs as its own isolated process; there is simply one artifact to build and ship. `browser` is Node + Chromium, so it keeps its own binary under `[plugins].bin`.
+
+**Withholding a plugin.** `[plugins] disabled = ["shell"]` (or `NINE_PLUGINS_DISABLED=shell`) stops a plugin from ever starting — no process, no socket, no tools registered. It works by name and covers built-ins, `browser`, and your own plugins alike. This is how you run without `shell`, which executes arbitrary commands. A disabled plugin is reported by `nine plugins` as `off` rather than silently missing, so a tool that has gone absent is traceable to the decision that removed it. It is an operator setting read at boot; no agent or wire message can switch a plugin on or off.
+
+Sharing the binary does not widen what a plugin process does. `plugin serve` is dispatched before nine's normal startup, so a plugin child loads **no config file** (the operator's `nine.toml` carries the embeddings API key and every other plugin's settings), writes **no** `nine.log`, and holds no way to start a daemon or TUI. Its output goes to stderr, which the daemon captures. Run by hand without `NINE_PLUGIN_SOCKET`, it refuses to start.
+
 Several tools (memory, file storage, semantic search, and skills) are **core-intercepted**: built directly into the agent loop rather than served by a subprocess. See [Memory & File Tools](#memory--file-tools-core) and [Skill Tools](#skill-tools-core) below.
 
 ---
@@ -170,8 +176,9 @@ Fill in the login form at https://myapp.internal/login with the credentials from
 
 Plugins are part of the source repo and are compiled into the image at build time.
 Nine cannot generate, build, or load a plugin at runtime — adding a capability means
-adding a plugin to the tree and rebuilding. A plugin is a standalone Go binary; here
-is a minimal example:
+adding a plugin to the tree and rebuilding.
+
+A plugin you supply is a standalone binary (see [User Plugins](#user-plugins) below); Nine's own Go plugins skip the separate binary by registering in `internal/builtins`. Either way the code is the same shape — `plugin.Serve` with a tool list and a handler map. Here is a minimal standalone example:
 
 ```go
 package main
@@ -315,9 +322,12 @@ See `plugins.d/README.md` for an operator walkthrough.
 ## Plugin Lifecycle
 
 ```
-build time            go build → /opt/nine/bin/<name>   (baked into the image)
+build time            built-in:  go build ./cmd/nine    (handlers linked into nine)
+                      browser:   node bundle → /opt/nine/bin/browser
      │
-daemon start          TryStart → spawn process → plugin.describe → register tools
+daemon start          built-in:  TryStartBuiltin → spawn `nine plugin serve <name>`
+                      browser:   TryStart → spawn /opt/nine/bin/browser
+                      then both: plugin.describe → register tools
      │
 [in use]              Dispatcher routes tool calls via plugin.call
      │
@@ -335,7 +345,7 @@ The plugin manager passes these to each subprocess:
 
 | Variable | Value | Purpose |
 |----------|-------|---------|
-| `NINE_BIN` | `plugins.bin` from config | Plugin binary directory |
+| `NINE_BIN` | `plugins.bin` from config | Directory of plugins that ship their own binary |
 | `NINE_PLUGIN_SOCKET` | per-plugin socket path | Where the plugin listens |
 | `NINE_PLUGIN_CACHE_DIR` | per-plugin scratch dir | Cache directory (below) |
 | `NINE_PLUGIN_CACHE_PERSISTENT` | `0`/`1` | Whether the cache dir persists |

@@ -59,6 +59,32 @@ CLI, wire protocol, and public `spec/` contracts became stable enough to promise
 compatibility within the `1.x` line — breaking any of them now requires a major
 bump.
 
+### Upgrade notes
+
+**The Go built-in plugins moved into the `nine` binary.** `shell`, `files`,
+`http`, and `time` are no longer separate executables under `[plugins].bin`; the
+daemon starts each as a `nine plugin serve <name>` child process
+(`spec/contracts/plugin.md` R-PLUG.13).
+
+⚠️ **If you withheld a plugin by not shipping its binary, it now starts.** That
+was never a documented control, but it worked: `TryStart` skips a plugin whose
+binary is absent, so deleting `dist/bin/shell` — or shipping a `bin` directory
+without it — kept `shell` out of the roster. A built-in has no binary to omit, so
+after upgrading, **`shell` runs unless you say otherwise**, and `shell` executes
+arbitrary commands.
+
+Replace the old lever with the explicit one (R-PLUG.14):
+
+```toml
+[plugins]
+disabled = ["shell"]
+```
+
+or `NINE_PLUGINS_DISABLED=shell` in a container. Confirm with `nine plugins`,
+which lists a disabled plugin as `off`. A name that matches no plugin disables
+nothing and is reported as a warning at boot — check for it, since a typo here
+fails open.
+
 ## 2. Plugin protocol version
 
 Native plugins are separate processes (one is Node), so the daemon and a plugin

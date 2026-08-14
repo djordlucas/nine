@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 )
@@ -68,6 +69,20 @@ type Manager struct {
 	env       []string
 	pluginBin string
 
+	// disabled names plugins the operator has switched off ([plugins].disabled,
+	// R-PLUG.14). disabledSkipped records the default plugins actually refused at
+	// boot, so `nine plugins` can show them as off rather than silently missing.
+	// User plugins are not recorded here — loadUserPlugins already keeps its own
+	// per-plugin status with the reason.
+	disabled        map[string]bool
+	disabledSkipped []string
+
+	// builtinBin overrides the executable re-exec'd for built-in plugins
+	// (StartBuiltin). Empty means os.Executable(), which is correct in the
+	// daemon and wrong under `go test`, where the running binary is the test
+	// binary; tests set this to a built nine. See SetBuiltinBinary.
+	builtinBin string
+
 	// pluginEnv resolves a plugin's extra spawn environment (built-in defaults +
 	// operator settings) by name. Set by the daemon via SetPluginEnv so this
 	// package stays config-agnostic (docs/plugin-capabilities.md §3). Nil means no
@@ -102,6 +117,87 @@ func (m *Manager) SetPluginEnv(fn func(name string) []string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.pluginEnv = fn
+}
+
+// ErrPluginDisabled is returned by the start path for a plugin the operator has
+// switched off. Callers that treat a missing plugin as tolerable (TryStart,
+// TryStartBuiltin, loadUserPlugins) report it as a deliberate choice rather than
+// a failure.
+var ErrPluginDisabled = errors.New("plugin disabled in [plugins].disabled")
+
+// SetDisabled installs the set of plugin names that must never start
+// (typically config.Plugins.Disabled). Names are wire names — `shell`,
+// `browser`, a user plugin's manifest name — and apply to every start path.
+func (m *Manager) SetDisabled(names []string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.disabled = make(map[string]bool, len(names))
+	for _, n := range names {
+		m.disabled[n] = true
+	}
+}
+
+// IsDisabled reports whether name is switched off by config.
+func (m *Manager) IsDisabled(name string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.disabled[name]
+}
+
+// DisabledSkipped returns the default plugins that were refused at boot because
+// they are disabled, for the `nine plugins` roster.
+func (m *Manager) DisabledSkipped() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]string, len(m.disabledSkipped))
+	copy(out, m.disabledSkipped)
+	return out
+}
+
+// UnmatchedDisabled returns the names in the disabled set that never actually
+// refused anything, once loading is done. Every such name is a mistake with a
+// silent and dangerous failure mode: `disabled = ["shel"]` withholds nothing and
+// leaves `shell` — arbitrary command execution — running, with no error, no
+// roster entry, and an operator who believes otherwise. Names cannot be
+// validated when config is read, because a user plugin's name is not known
+// until its directory is scanned, so this is checked after boot instead.
+func (m *Manager) UnmatchedDisabled() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	matched := make(map[string]bool, len(m.disabledSkipped))
+	for _, n := range m.disabledSkipped {
+		matched[n] = true
+	}
+	var out []string
+	for name := range m.disabled {
+		if !matched[name] {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// noteDisabledSkip records a refused default plugin once, for the roster.
+func (m *Manager) noteDisabledSkip(name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, n := range m.disabledSkipped {
+		if n == name {
+			return
+		}
+	}
+	m.disabledSkipped = append(m.disabledSkipped, name)
+}
+
+// SetBuiltinBinary overrides the nine executable used to spawn built-in plugins.
+// The daemon never needs it — os.Executable() is the nine binary there. Tests do:
+// their os.Executable() is the test binary, which has no `plugin serve`
+// subcommand, so they build a nine and point the manager at it.
+func (m *Manager) SetBuiltinBinary(path string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.builtinBin = path
 }
 
 // SetCacheConfig installs the cache-dir root and the per-plugin persistence
@@ -145,7 +241,37 @@ func fileExists(path string) bool {
 // Plugin. The plugin listens on the socket named by NINE_PLUGIN_SOCKET; the daemon
 // dials it.
 func (m *Manager) Start(binaryPath string, extraEnv ...string) (*Plugin, error) {
-	name := filepath.Base(binaryPath)
+	return m.start(binaryLaunch(binaryPath), extraEnv...)
+}
+
+// StartBuiltin spawns a built-in plugin — one whose handlers are linked into the
+// nine binary (internal/builtins) — by re-executing that binary as
+// `nine plugin serve <name>`. It is the same mechanism the client already uses
+// to auto-start the daemon (spec/contracts/wire-protocol.md R-PROTO.7), applied
+// to plugins.
+//
+// Everything past the spawn is identical to Start: a separate process, its own
+// socket, the sanitized environment, a cache dir, describe, and the
+// protocol-version check. Only the artifact differs — there is no per-plugin
+// binary to ship or to fall out of sync with the daemon.
+func (m *Manager) StartBuiltin(name string, extraEnv ...string) (*Plugin, error) {
+	bin, err := m.builtinBinary()
+	if err != nil {
+		return nil, err
+	}
+	return m.start(builtinLaunch(bin, name), extraEnv...)
+}
+
+func (m *Manager) start(l launch, extraEnv ...string) (*Plugin, error) {
+	name := l.name
+
+	// Every native start path funnels through here, so a disabled plugin cannot
+	// be spawned by any caller — including a future one that forgets to ask. No
+	// process, no socket, no cache dir. StartMCP does not reach this (it builds
+	// its own stdio client) and carries the same check itself.
+	if m.IsDisabled(name) {
+		return nil, fmt.Errorf("%q: %w", name, ErrPluginDisabled)
+	}
 
 	env := append([]string{}, m.env...)
 	env = append(env, extraEnv...)
@@ -161,7 +287,7 @@ func (m *Manager) Start(binaryPath string, extraEnv ...string) (*Plugin, error) 
 		env = append(env, "NINE_PLUGIN_CACHE_DIR="+cacheDir, "NINE_PLUGIN_CACHE_PERSISTENT="+persistentEnv(!ephemeral))
 	}
 
-	cmd, socketPath, desc, err := spawnAndDescribe(binaryPath, env)
+	cmd, socketPath, desc, err := spawnAndDescribe(l, env)
 	if err != nil {
 		if ephemeral && cacheDir != "" {
 			os.RemoveAll(cacheDir) //nolint:errcheck // spawn failed; reclaim the dir we just made
@@ -176,15 +302,55 @@ func (m *Manager) Start(binaryPath string, extraEnv ...string) (*Plugin, error) 
 	return p, nil
 }
 
-// spawnAndDescribe spawns binaryPath on a fresh Unix socket, waits for it to
+// launch is how to run one plugin process: the executable plus any leading
+// arguments, and the wire name the resulting plugin is known by. A standalone
+// plugin binary is named after its file and takes no arguments; a built-in is
+// the nine binary run as `nine plugin serve <name>`, so its name cannot be
+// derived from the path (that would name every built-in "nine").
+type launch struct {
+	name string
+	path string
+	args []string
+}
+
+// binaryLaunch runs a standalone plugin binary — a user plugin, or the browser
+// plugin's launcher script.
+func binaryLaunch(binaryPath string) launch {
+	return launch{name: filepath.Base(binaryPath), path: binaryPath}
+}
+
+// builtinLaunch runs a built-in plugin out of the nine binary at nineBin.
+func builtinLaunch(nineBin, name string) launch {
+	return launch{name: name, path: nineBin, args: []string{"plugin", "serve", name}}
+}
+
+// builtinBinary resolves the nine executable to re-exec for built-in plugins.
+// It is the running binary unless a test has overridden it via
+// SetBuiltinBinary — under `go test` the running binary is the test binary,
+// which knows nothing about serving plugins.
+func (m *Manager) builtinBinary() (string, error) {
+	m.mu.Lock()
+	override := m.builtinBin
+	m.mu.Unlock()
+	if override != "" {
+		return override, nil
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("locate nine binary for built-in plugin: %w", err)
+	}
+	return exe, nil
+}
+
+// spawnAndDescribe spawns l on a fresh Unix socket, waits for it to
 // listen, calls plugin.describe, and checks the reported protocol version. It is
 // the shared front half of both Start (which keeps the process running) and
 // Probe (which stops it). On any failure it tears the process and socket down and
 // returns the error; on success the caller owns cmd and must eventually stop it
 // and remove socketPath. env is the full extra environment (NINE_PLUGIN_SOCKET is
 // appended here).
-func spawnAndDescribe(binaryPath string, env []string) (*exec.Cmd, string, DescribeResult, error) {
-	name := filepath.Base(binaryPath)
+func spawnAndDescribe(l launch, env []string) (*exec.Cmd, string, DescribeResult, error) {
+	name := l.name
 
 	if err := os.MkdirAll(socketDir, 0o700); err != nil {
 		return nil, "", DescribeResult{}, fmt.Errorf("create socket dir: %w", err)
@@ -197,7 +363,7 @@ func spawnAndDescribe(binaryPath string, env []string) (*exec.Cmd, string, Descr
 	env = append([]string{}, env...)
 	env = append(env, "NINE_PLUGIN_SOCKET="+socketPath)
 
-	cmd := exec.Command(binaryPath)
+	cmd := exec.Command(l.path, l.args...) //nolint:gosec // path is a Nine-resolved plugin binary or the nine binary itself
 	cmd.Env = append(sanitizedHostEnv(), env...)
 	cmd.Stderr = os.Stderr // surface plugin startup/listen errors
 	if err := cmd.Start(); err != nil {
@@ -248,7 +414,7 @@ func Probe(binaryPath string, env ...string) (DescribeResult, error) {
 			"NINE_PLUGIN_CACHE_DIR="+cacheDir,
 			"NINE_PLUGIN_CACHE_PERSISTENT=0")
 	}
-	cmd, socketPath, desc, err := spawnAndDescribe(binaryPath, env)
+	cmd, socketPath, desc, err := spawnAndDescribe(binaryLaunch(binaryPath), env)
 	if err != nil {
 		return DescribeResult{}, err
 	}
@@ -342,7 +508,18 @@ func (m *Manager) StopAll() error {
 	return errors.Join(errs...)
 }
 
+// TryStart starts a plugin shipped as its own binary under [plugins].bin,
+// logging and returning nil rather than failing the daemon's boot. Built-in
+// plugins use TryStartBuiltin instead — they have no binary to look up.
 func (m *Manager) TryStart(name string, extraEnv ...string) *Plugin {
+	// Checked before the binary lookup so a disabled plugin reports as disabled
+	// rather than as a missing binary — two very different things for an
+	// operator reading the log.
+	if m.IsDisabled(name) {
+		m.noteDisabledSkip(name)
+		slog.Info("plugin disabled by config, not starting", "name", name)
+		return nil
+	}
 	bin := m.getPluginBinaryPath(name)
 	if !fileExists(bin) {
 		slog.Warn("binary to start does not exist", "name", name, "path", bin)
@@ -354,6 +531,23 @@ func (m *Manager) TryStart(name string, extraEnv ...string) *Plugin {
 		return nil
 	}
 
+	return p
+}
+
+// TryStartBuiltin is TryStart for a built-in plugin: it re-execs the nine
+// binary rather than resolving a path under [plugins].bin, and likewise logs
+// and returns nil instead of failing boot.
+func (m *Manager) TryStartBuiltin(name string, extraEnv ...string) *Plugin {
+	if m.IsDisabled(name) {
+		m.noteDisabledSkip(name)
+		slog.Info("built-in plugin disabled by config, not starting", "name", name)
+		return nil
+	}
+	p, err := m.StartBuiltin(name, extraEnv...)
+	if err != nil {
+		slog.Warn("built-in plugin start failed", "name", name, "err", err)
+		return nil
+	}
 	return p
 }
 

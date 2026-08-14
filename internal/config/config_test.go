@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -56,8 +57,8 @@ context_budget = 4096
 max_concurrent = 2
 
 [plugins]
-dir = "/data/src/plugins"
 bin = "/data/bin"
+disabled = ["shell", "browser"]
 user_dir = "/data/plugins.d"
 
 [memory]
@@ -96,8 +97,8 @@ func TestLoad(t *testing.T) {
 		{"LLM.Endpoint", cfg.LLM.Endpoint, "https://ollama.example.com"},
 		{"LLM.ContextBudget", cfg.LLM.ContextBudget, 4096},
 		{"LLM.MaxConcurrent", cfg.LLM.MaxConcurrent, 2},
-		{"Plugins.Dir", cfg.Plugins.Dir, "/data/src/plugins"},
 		{"Plugins.Bin", cfg.Plugins.Bin, "/data/bin"},
+		{"Plugins.Disabled", strings.Join(cfg.Plugins.Disabled, ","), "shell,browser"},
 		{"Plugins.UserDir", cfg.Plugins.UserDir, "/data/plugins.d"},
 		{"Memory.Path", cfg.Memory.Path, "/data/memory.db"},
 		{"Embeddings.Provider", cfg.Embeddings.Provider, "ollama"},
@@ -254,5 +255,39 @@ func TestToolsMaxOutputTokensUnset(t *testing.T) {
 	}
 	if cfg.Tools.MaxOutputTokens != 0 {
 		t.Errorf("Tools.MaxOutputTokens = %d, want 0 (meaning: use the default)", cfg.Tools.MaxOutputTokens)
+	}
+}
+
+// NINE_PLUGINS_DISABLED is the container's way to withhold a plugin without
+// baking a second nine.toml into an image (R-PLUG.14). It replaces the file's
+// list rather than merging, so what the operator sets is what they get.
+func TestPluginsDisabledEnvOverride(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Plugins.Disabled = []string{"http"}
+
+	t.Setenv("NINE_PLUGINS_DISABLED", "shell, browser ,,")
+	config.ApplyEnvOverrides(cfg)
+
+	if got := strings.Join(cfg.Plugins.Disabled, ","); got != "shell,browser" {
+		t.Errorf("Disabled = %q, want %q (trimmed, empties dropped)", got, "shell,browser")
+	}
+}
+
+// No flavour of "empty" may clear the list. An env var that could re-enable
+// `shell` is a hazard in the one direction this setting must never move by
+// accident, and "" vs "," vs " " must not mean different things.
+func TestPluginsDisabledEnvEmptyKeepsFile(t *testing.T) {
+	for _, v := range []string{"", ",", " ", " , , "} {
+		t.Run("value="+v, func(t *testing.T) {
+			cfg := &config.Config{}
+			cfg.Plugins.Disabled = []string{"shell"}
+
+			t.Setenv("NINE_PLUGINS_DISABLED", v)
+			config.ApplyEnvOverrides(cfg)
+
+			if got := strings.Join(cfg.Plugins.Disabled, ","); got != "shell" {
+				t.Errorf("with NINE_PLUGINS_DISABLED=%q, Disabled = %q, want the file's %q", v, got, "shell")
+			}
+		})
 	}
 }

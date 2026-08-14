@@ -30,7 +30,11 @@ A Nine plugin is a **pre-built executable** that speaks the plugin wire protocol
 on startup it listens on the Unix socket named by `NINE_PLUGIN_SOCKET` and answers
 `plugin.describe` (advertising its tools) and `plugin.call`. The easiest way to
 write one is with the `nine/internal/plugin` `Serve` helper — see the built-in
-plugins under `plugins/` for worked examples (`plugins/time` is the smallest).
+plugins under `internal/builtins/` for worked examples (`time.go` is the smallest).
+
+Those built-ins are compiled into the `nine` binary rather than shipped as separate
+executables, which is a packaging shortcut available only to Nine's own plugins. A
+plugin you drop here is a real executable, exactly as described below.
 
 Build it however you like and drop the resulting binary here. Nine does **not**
 compile anything in this directory.

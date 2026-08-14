@@ -99,6 +99,10 @@ ranking is bypassed (all candidates returned).
   Tools}`, and forward `plugin.call` over a pooled `http.Client`.
 - Default plugins started at boot: `files`, `shell`, `http`, `time`, `browser`. (Skills
   and memory are core-intercepted, not subprocesses.)
+- The Go four are not separate binaries: they live in the `nine` binary and are spawned
+  as `nine plugin serve <name>` (R-PLUG.13), so `StartBuiltin` carries the plugin's name
+  explicitly rather than deriving it from the executable path. `browser` is Node +
+  Chromium and keeps its own artifact.
 
 **Wire.** Tool definitions are registered with the dispatcher on start (they are **not**
 embedded — there is no `tools:` vector namespace). A crashed subprocess is isolated

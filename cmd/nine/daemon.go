@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"nine/internal/builtins"
 	"nine/internal/config"
 	"nine/internal/embed"
 	"nine/internal/memory"
@@ -49,11 +50,17 @@ func runDaemon() {
 	// ephemeral dirs from a previous daemon that exited without stopping its
 	// plugins, before any new plugin allocates one.
 	pluginManager.SetCacheConfig(cfg.PluginCacheRoot(), cfg.PluginPersistCache)
+	// Plugins the operator switched off ([plugins].disabled, R-PLUG.14). Set
+	// before any start so nothing disabled is ever spawned, not even briefly.
+	pluginManager.SetDisabled(cfg.Plugins.Disabled)
 	pluginManager.SweepCache()
-	pluginManager.TryStart("files", cfg.PluginEnvs("files")...)
-	pluginManager.TryStart("shell", cfg.PluginEnvs("shell")...)
-	pluginManager.TryStart("http", cfg.PluginEnvs("http")...)
-	pluginManager.TryStart("time", cfg.PluginEnvs("time")...)
+	// The Go built-ins are served by this same binary (`nine plugin serve <name>`,
+	// internal/builtins) — still one process each, just no separate artifact to
+	// ship or keep in protocol lockstep. The browser plugin is Node + Chromium,
+	// so it stays a real binary resolved under [plugins].bin.
+	for _, name := range builtins.Names() {
+		pluginManager.TryStartBuiltin(name, cfg.PluginEnvs(name)...)
+	}
 	browserPlug := pluginManager.TryStart("browser", cfg.PluginEnvs("browser")...)
 
 	// Load operator-supplied plugins from [plugins].user_dir, after the built-ins
@@ -61,6 +68,17 @@ func runDaemon() {
 	// allowed to override). An invalid or colliding user plugin is surfaced and
 	// skipped; the daemon still boots. Absent/empty dir is a no-op.
 	pluginManager.LoadUserPlugins(cfg.Plugins.UserDir)
+
+	// Every plugin has now had its chance to start, so any [plugins].disabled
+	// entry that refused nothing is a name that matched nothing — a typo, or a
+	// plugin that is not installed. Silence there is the dangerous outcome:
+	// `disabled = ["shel"]` withholds nothing and leaves `shell` running while
+	// the operator believes it is off. Warn rather than fail, since the name may
+	// legitimately belong to a user plugin they have not deployed yet.
+	if unmatched := pluginManager.UnmatchedDisabled(); len(unmatched) > 0 {
+		slog.Warn("[plugins].disabled names no plugin that exists; these are NOT disabled because nothing by that name was found",
+			"names", unmatched, "loaded", pluginManager.ListRunning())
+	}
 
 	// Sandboxed tools (spec/contracts/toolvm.md), after the plugins so their tool
 	// names are already reserved and a colliding sandboxed tool is skipped rather

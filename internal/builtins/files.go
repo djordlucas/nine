@@ -1,4 +1,4 @@
-package main
+package builtins
 
 import (
 	"context"
@@ -11,13 +11,18 @@ import (
 	"nine/internal/plugin"
 )
 
+// workspaceRoot confines writes when NINE_WORKSPACE is set. It is read in
+// serveFiles rather than an init(), because this package is linked into the
+// nine binary as a whole: an init() would also run in the daemon and CLI
+// processes, which have no business inheriting a plugin's env-derived state.
+// Only the `nine plugin serve files` child ever sets it.
 var workspaceRoot string
 
-func init() {
+// serveFiles runs the `files` built-in: read_file / write_file, confined to
+// NINE_WORKSPACE when one is configured.
+func serveFiles() {
 	workspaceRoot = os.Getenv("NINE_WORKSPACE")
-}
 
-func main() {
 	writeDesc := "Write content to a file, creating parent directories as needed."
 	if workspaceRoot != "" {
 		writeDesc = fmt.Sprintf("Write content to a file within the workspace root (%s). Relative paths and paths under /work resolve against the workspace root; other absolute paths outside it are rejected.", workspaceRoot)

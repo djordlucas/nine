@@ -1,7 +1,9 @@
 BINARY   := nine
 CMD      := ./cmd/nine
-PLUGINS  := shell files http time
 DIST     := dist
+# BIN_DIR holds plugins that ship as their own artifacts. Since the Go built-ins
+# (shell/files/http/time) moved into the nine binary as `nine plugin serve
+# <name>` (internal/builtins), that is the browser plugin alone.
 BIN_DIR  := $(DIST)/bin
 
 GO       := go
@@ -14,25 +16,20 @@ GOFLAGS  := -mod=vendor
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS  := -ldflags "-X main.Version=$(VERSION)"
 
-.PHONY: all dev build plugins test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-generate quickjs-wasm quickjs-verify
+.PHONY: all dev build test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-generate quickjs-wasm quickjs-verify
 
-dev: build plugins browser-plugin
+dev: build browser-plugin
 
 all: dev
 
 # ── core binary ───────────────────────────────────────────────────────────────
+# This also builds the shell/files/http/time plugins: they are served out of the
+# nine binary itself (`nine plugin serve <name>`), so there is nothing else to
+# build or ship for them.
 
 build:
 	@mkdir -p $(DIST)
 	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(DIST)/$(BINARY) $(CMD)
-
-# ── plugin binaries ───────────────────────────────────────────────────────────
-
-plugins: $(addprefix $(BIN_DIR)/,$(PLUGINS))
-
-$(BIN_DIR)/%: FORCE
-	@mkdir -p $(BIN_DIR)
-	$(GO) build $(GOFLAGS) -o $@ ./plugins/$*
 
 FORCE:
 
@@ -180,19 +177,20 @@ integration-test-short:
 
 # ── evals ─────────────────────────────────────────────────────────────────────
 # Two tracks (docs/evals.md). eval-replay is deterministic and infra-free — the
-# every-PR gate. eval-live runs the model matrix and needs plugin
-# binaries (make plugins), and a model list.
+# every-PR gate. eval-live runs the model matrix and needs a built nine binary
+# (make build), and a model list.
 
 # Track R + schema validation: no live model, no database. Fast, deterministic.
 eval-replay:
 	$(GO) test $(GOFLAGS) -count=1 -run 'TestCasesValidate|TestReplayFixtures' ./tests/evals/
 
-# Track L: the live model matrix. Needs plugin
-# binaries. Override the models with NINE_EVAL_MODELS.
+# Track L: the live model matrix. Needs a built nine binary, which is also where
+# the shell/files/http/time plugins now live. Override the models with
+# NINE_EVAL_MODELS.
 #   NINE_EVAL_MODELS=qwen3.5:4b,qwen3.5:9b make eval-live
-eval-live: plugins
+eval-live: build
 	NINE_EVALS_LIVE=1 \
-	NINE_PLUGINS_BIN=$(abspath $(BIN_DIR)) \
+	NINE_BINARY=$(abspath $(DIST)/$(BINARY)) \
 	$(GO) test $(GOFLAGS) -v -count=1 -timeout 1800s -run TestLiveMatrix ./tests/evals/
 
 # Regenerate the committed Track-R fixtures from scripted runs.

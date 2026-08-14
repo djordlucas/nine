@@ -110,7 +110,7 @@ which dispatches to either the TUI, the one-shot client, or `runDaemon`
 └── workspace/   files-plugin working directory
 
 /opt/nine             immutable image content (not in a volume)
-├── bin/         compiled default plugin binaries + browser launcher
+├── bin/         browser launcher (the Go plugins live in the nine binary)
 └── browser/     browser plugin JS + node_modules
 
 /tools.d              developer sandboxed tools, bind-mounted (manifest + .js/.wasm)
@@ -557,8 +557,15 @@ with an `http.Client`, which gives free per-request concurrency and
 context-based cancellation (docs/plugins-http-transport.md). External **MCP**
 servers keep the legacy stdio JSON-RPC client.
 
+The Go default plugins are not separate executables: their handlers live in
+`internal/builtins`, and `Manager.StartBuiltin` spawns them by re-executing the
+nine binary as `nine plugin serve <name>`. That is a packaging difference only —
+each still gets its own process, socket, sanitized environment, and crash
+isolation. The `browser` plugin is Node + Chromium and keeps its own binary.
+
 ```
-   Manager.Start(binaryPath, extraEnv…)
+   Manager.Start(binaryPath, extraEnv…)        (browser, user plugins)
+   Manager.StartBuiltin(name, extraEnv…)       (shell/files/http/time)
         │  spawn process with NINE_PLUGIN_SOCKET (+ NINE_BIN, extra env)
         │  wait for the socket, then use an http.Client on POST /rpc
         ▼
@@ -578,9 +585,12 @@ Plugins are fixed: there is no runtime generation, build, or hot-swap. Each is
 compiled into the image at build time and started at daemon boot:
 
 ```
-   go build (image build) ──► TryStart (daemon boot) ──► (in use) ──► SIGTERM
-   /opt/nine/bin/<name>       spawn, describe,            plugin.call   (shutdown)
-                              register
+   go build (image build) ──► TryStartBuiltin (daemon boot) ──► (in use) ──► SIGTERM
+   the nine binary            spawn `nine plugin serve <name>`,  plugin.call  (shutdown)
+                              describe, register
+
+   node bundle (image build) ► TryStart (daemon boot) ─────────► (in use) ──► SIGTERM
+   /opt/nine/bin/browser       spawn, describe, register          plugin.call  (shutdown)
 ```
 
 Tool definitions are registered with the dispatcher at start time. (Their

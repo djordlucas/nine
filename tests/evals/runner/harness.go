@@ -31,10 +31,15 @@ import (
 // execute concurrently on one process because the pursue stage handler is a
 // package global (see Run); the runner executes them sequentially.
 type Harness struct {
-	// PluginBin is the directory holding the plugin binaries (shell/files/http/
-	// time). Empty disables plugins, leaving only the in-process core tools
-	// (memory_*, file_*, skill_*) — enough for many cases and all harness self-tests.
-	PluginBin string
+	// NineBin is the path to a built nine binary. Its built-in plugins
+	// (shell/files/http/time) are started as `nine plugin serve <name>` child
+	// processes, the same way the daemon starts them. Empty disables plugins,
+	// leaving only the in-process core tools (memory_*, file_*, skill_*) —
+	// enough for many cases and all harness self-tests.
+	//
+	// This is a binary, not the [plugins].bin directory: the Go built-ins no
+	// longer ship as separate executables (internal/builtins).
+	NineBin string
 	// Embedder powers semantic memory, tool ranking, and related-session
 	// surfacing. Nil disables those features (the reads cost nothing when off).
 	Embedder embed.Embedder
@@ -116,13 +121,17 @@ func (h *Harness) Run(ctx context.Context, c *Case, provider llm.Provider) (res 
 	}
 
 	// 4. Plugins (optional). Each gets the workspace as its root so file writes
-	//    and setup.files line up. Missing binaries are skipped by TryStart.
-	pluginMgr := plugin.NewManager(h.PluginBin)
-	if h.PluginBin != "" {
-		pluginMgr.TryStart("files", "NINE_WORKSPACE="+workspace)
-		pluginMgr.TryStart("shell")
-		pluginMgr.TryStart("http")
-		pluginMgr.TryStart("time")
+	//    and setup.files line up. A failed start is logged and skipped by
+	//    TryStartBuiltin.
+	pluginMgr := plugin.NewManager("")
+	if h.NineBin != "" {
+		// os.Executable() here is the test binary, which has no `plugin serve`
+		// subcommand — point the manager at the nine binary under test instead.
+		pluginMgr.SetBuiltinBinary(h.NineBin)
+		pluginMgr.TryStartBuiltin("files", "NINE_WORKSPACE="+workspace)
+		pluginMgr.TryStartBuiltin("shell")
+		pluginMgr.TryStartBuiltin("http")
+		pluginMgr.TryStartBuiltin("time")
 	}
 	r.cleanups = append(r.cleanups, func() { pluginMgr.StopAll() }) //nolint:errcheck
 

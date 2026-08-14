@@ -152,6 +152,12 @@ type PluginStatus struct {
 	Loaded bool     `json:"loaded"`
 	Tools  []string `json:"tools,omitempty"`
 	Error  string   `json:"error,omitempty"`
+
+	// Disabled marks a plugin the operator switched off in [plugins].disabled
+	// rather than one that failed to load — the difference between a decision
+	// and a fault, which a roster must not blur. Additive and optional; a client
+	// that does not know it sees an unloaded plugin with a reason in Error.
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 // SandboxedToolStatus describes one sandboxed tool for the "tools_list" /

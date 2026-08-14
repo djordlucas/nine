@@ -73,6 +73,14 @@ func (m *mcpClient) stop() error { return m.inner.stop() }
 // handshake, lists its tools, and returns a Plugin usable identically to a
 // native Nine plugin.
 func (m *Manager) StartMCP(binaryPath string, args []string, extraEnv ...string) (*Plugin, error) {
+	// Checked here rather than inherited: StartMCP builds its own stdio client
+	// instead of going through start(), so it is the one spawn path the shared
+	// check in start() does not cover (R-PLUG.14).
+	name := filepath.Base(binaryPath)
+	if m.IsDisabled(name) {
+		return nil, fmt.Errorf("%q: %w", name, ErrPluginDisabled)
+	}
+
 	env := append(m.env, extraEnv...)
 	c, err := newClient(binaryPath, args, env)
 	if err != nil {
