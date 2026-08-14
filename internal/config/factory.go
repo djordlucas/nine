@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"nine/internal/llm"
@@ -81,6 +82,20 @@ func ApplyEnvOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("NINE_PLUGINS_CACHE_DIR"); v != "" {
 		cfg.Plugins.CacheDir = v
+	}
+	// Unlike the paths above this is a capability decision, not a layout one —
+	// but it is overridable because the container is exactly where an operator
+	// needs to withhold a plugin without rebuilding an image around a second
+	// nine.toml. Empty entries are dropped so "a,,b" and a trailing comma are
+	// not read as a plugin named "".
+	if v := os.Getenv("NINE_PLUGINS_DISABLED"); v != "" {
+		var names []string
+		for _, n := range strings.Split(v, ",") {
+			if n = strings.TrimSpace(n); n != "" {
+				names = append(names, n)
+			}
+		}
+		cfg.Plugins.Disabled = names
 	}
 	if v := os.Getenv("NINE_WORKSPACE_ROOT"); v != "" {
 		cfg.Workspace.Root = v

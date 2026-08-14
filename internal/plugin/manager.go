@@ -68,6 +68,14 @@ type Manager struct {
 	env       []string
 	pluginBin string
 
+	// disabled names plugins the operator has switched off ([plugins].disabled,
+	// R-PLUG.14). disabledSkipped records the default plugins actually refused at
+	// boot, so `nine plugins` can show them as off rather than silently missing.
+	// User plugins are not recorded here — loadUserPlugins already keeps its own
+	// per-plugin status with the reason.
+	disabled        map[string]bool
+	disabledSkipped []string
+
 	// builtinBin overrides the executable re-exec'd for built-in plugins
 	// (StartBuiltin). Empty means os.Executable(), which is correct in the
 	// daemon and wrong under `go test`, where the running binary is the test
@@ -108,6 +116,53 @@ func (m *Manager) SetPluginEnv(fn func(name string) []string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.pluginEnv = fn
+}
+
+// ErrPluginDisabled is returned by the start path for a plugin the operator has
+// switched off. Callers that treat a missing plugin as tolerable (TryStart,
+// TryStartBuiltin, loadUserPlugins) report it as a deliberate choice rather than
+// a failure.
+var ErrPluginDisabled = errors.New("plugin disabled in [plugins].disabled")
+
+// SetDisabled installs the set of plugin names that must never start
+// (typically config.Plugins.Disabled). Names are wire names — `shell`,
+// `browser`, a user plugin's manifest name — and apply to every start path.
+func (m *Manager) SetDisabled(names []string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.disabled = make(map[string]bool, len(names))
+	for _, n := range names {
+		m.disabled[n] = true
+	}
+}
+
+// IsDisabled reports whether name is switched off by config.
+func (m *Manager) IsDisabled(name string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.disabled[name]
+}
+
+// DisabledSkipped returns the default plugins that were refused at boot because
+// they are disabled, for the `nine plugins` roster.
+func (m *Manager) DisabledSkipped() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]string, len(m.disabledSkipped))
+	copy(out, m.disabledSkipped)
+	return out
+}
+
+// noteDisabledSkip records a refused default plugin once, for the roster.
+func (m *Manager) noteDisabledSkip(name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, n := range m.disabledSkipped {
+		if n == name {
+			return
+		}
+	}
+	m.disabledSkipped = append(m.disabledSkipped, name)
 }
 
 // SetBuiltinBinary overrides the nine executable used to spawn built-in plugins.
@@ -184,6 +239,13 @@ func (m *Manager) StartBuiltin(name string, extraEnv ...string) (*Plugin, error)
 
 func (m *Manager) start(l launch, extraEnv ...string) (*Plugin, error) {
 	name := l.name
+
+	// The single chokepoint every start path funnels through, so a disabled
+	// plugin cannot be spawned by any caller — including a future one that
+	// forgets to ask. No process, no socket, no cache dir.
+	if m.IsDisabled(name) {
+		return nil, fmt.Errorf("%q: %w", name, ErrPluginDisabled)
+	}
 
 	env := append([]string{}, m.env...)
 	env = append(env, extraEnv...)
@@ -424,6 +486,14 @@ func (m *Manager) StopAll() error {
 // logging and returning nil rather than failing the daemon's boot. Built-in
 // plugins use TryStartBuiltin instead — they have no binary to look up.
 func (m *Manager) TryStart(name string, extraEnv ...string) *Plugin {
+	// Checked before the binary lookup so a disabled plugin reports as disabled
+	// rather than as a missing binary — two very different things for an
+	// operator reading the log.
+	if m.IsDisabled(name) {
+		m.noteDisabledSkip(name)
+		slog.Info("plugin disabled by config, not starting", "name", name)
+		return nil
+	}
 	bin := m.getPluginBinaryPath(name)
 	if !fileExists(bin) {
 		slog.Warn("binary to start does not exist", "name", name, "path", bin)
@@ -442,6 +512,11 @@ func (m *Manager) TryStart(name string, extraEnv ...string) *Plugin {
 // binary rather than resolving a path under [plugins].bin, and likewise logs
 // and returns nil instead of failing boot.
 func (m *Manager) TryStartBuiltin(name string, extraEnv ...string) *Plugin {
+	if m.IsDisabled(name) {
+		m.noteDisabledSkip(name)
+		slog.Info("built-in plugin disabled by config, not starting", "name", name)
+		return nil
+	}
 	p, err := m.StartBuiltin(name, extraEnv...)
 	if err != nil {
 		slog.Warn("built-in plugin start failed", "name", name, "err", err)
