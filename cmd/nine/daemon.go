@@ -69,6 +69,17 @@ func runDaemon() {
 	// skipped; the daemon still boots. Absent/empty dir is a no-op.
 	pluginManager.LoadUserPlugins(cfg.Plugins.UserDir)
 
+	// Every plugin has now had its chance to start, so any [plugins].disabled
+	// entry that refused nothing is a name that matched nothing — a typo, or a
+	// plugin that is not installed. Silence there is the dangerous outcome:
+	// `disabled = ["shel"]` withholds nothing and leaves `shell` running while
+	// the operator believes it is off. Warn rather than fail, since the name may
+	// legitimately belong to a user plugin they have not deployed yet.
+	if unmatched := pluginManager.UnmatchedDisabled(); len(unmatched) > 0 {
+		slog.Warn("[plugins].disabled names no plugin that exists; these are NOT disabled because nothing by that name was found",
+			"names", unmatched, "loaded", pluginManager.ListRunning())
+	}
+
 	// Sandboxed tools (spec/contracts/toolvm.md), after the plugins so their tool
 	// names are already reserved and a colliding sandboxed tool is skipped rather
 	// than allowed to override. nil when [tools] enabled is unset, which is the
