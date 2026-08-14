@@ -132,7 +132,11 @@ COPY plugins/browser/ /opt/nine/browser/
 COPY --from=node-build /nine-src/plugins/browser/node_modules/ /opt/nine/browser/node_modules/
 
 # Browser plugin launcher: node runs index.js from the baked-in plugin dir.
-RUN printf '#!/bin/sh\nexec node /opt/nine/browser/index.js "$@"\n' \
+# mkdir is required, not decorative: /opt/nine/bin used to be created as a side
+# effect of copying the compiled plugin binaries in, and those are gone now that
+# the Go plugins live in the nine binary. The dev stage does the same.
+RUN mkdir -p /opt/nine/bin && \
+    printf '#!/bin/sh\nexec node /opt/nine/browser/index.js "$@"\n' \
       > /opt/nine/bin/browser && chmod +x /opt/nine/bin/browser
 
 COPY docker/s6/common/user-bundles.d/ /etc/s6-overlay/user-bundles.d/

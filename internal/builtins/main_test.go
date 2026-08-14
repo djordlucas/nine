@@ -17,21 +17,27 @@ import (
 var nineBin string
 
 func TestMain(m *testing.M) {
+	// os.Exit skips deferred calls, so the temp dir is removed explicitly on
+	// every path out. It holds a full nine binary — leaking one per test run
+	// would quietly fill $TMPDIR.
 	tmp, err := os.MkdirTemp("", "nine-builtins-test-*")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "temp dir: %v\n", err)
 		os.Exit(1)
 	}
-	defer os.RemoveAll(tmp) //nolint:errcheck // best-effort
 
 	nineBin = filepath.Join(tmp, "nine")
 	cmd := exec.Command("go", "build", "-o", nineBin, "./cmd/nine")
 	cmd.Dir = moduleRoot()
 	if b, err := cmd.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "build: %v\n%s\n", err, b)
+		os.RemoveAll(tmp) //nolint:errcheck // best-effort
 		os.Exit(1)
 	}
-	os.Exit(m.Run())
+
+	code := m.Run()
+	os.RemoveAll(tmp) //nolint:errcheck // best-effort
+	os.Exit(code)
 }
 
 func moduleRoot() string {
