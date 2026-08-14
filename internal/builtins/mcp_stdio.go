@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"syscall"
+	"time"
 )
 
 // This is the JSON-RPC 2.0 stdio client for talking to an MCP server. It used
@@ -67,6 +69,11 @@ type mcpRPCError struct {
 func dialMCP(command string, args []string, env []string) (*mcpStdio, error) {
 	cmd := exec.Command(command, args...) //nolint:gosec // operator-configured [[mcp.server]] command
 	cmd.Env = append(os.Environ(), env...)
+	// Put the server in its own process group so the whole tree can be signalled
+	// as one. `npx foo` is sh → npm → node: killing the direct child leaves the
+	// node process running, and it accumulates one orphan per daemon restart.
+	// Verified by finding exactly those orphans still alive after teardown.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	// The server's own stderr is worth keeping: it is where an MCP server
 	// explains why it refused to start, and it lands in the daemon's log.
 	cmd.Stderr = os.Stderr
@@ -131,9 +138,19 @@ func (c *mcpStdio) call(method string, params any) (json.RawMessage, error) {
 			ID     json.RawMessage `json:"id"`
 			Result json.RawMessage `json:"result,omitempty"`
 			Error  *mcpRPCError    `json:"error,omitempty"`
+			Method string          `json:"method,omitempty"`
 		}
 		if err := json.Unmarshal(c.stdout.Bytes(), &raw); err != nil {
 			return nil, fmt.Errorf("unmarshal response: %w", err)
+		}
+		// Skip anything that is not a reply to us. A notification has no id; a
+		// server→client *request* (sampling, roots) has both an id and a method,
+		// and without the method check it would be mistaken for our response and
+		// return a nil result. We advertise no capabilities, so a well-behaved
+		// server sends neither — but a reply frame is the wrong place to be
+		// trusting.
+		if raw.Method != "" {
+			continue
 		}
 		if len(raw.ID) == 0 || string(raw.ID) == "null" {
 			continue // a notification, not our reply
@@ -179,6 +196,33 @@ func (c *mcpStdio) stop() error {
 	c.stdin.Close() //nolint:errcheck // best-effort; closing stdin is how an MCP server is asked to exit
 	c.mu.Unlock()
 
-	<-c.done
+	// Closing stdin is a request, not a guarantee. An `npx` server is a shell
+	// wrapping npm wrapping node, and that tree does not reliably exit when its
+	// stdin goes away — leaving one orphaned process per daemon restart, which
+	// is exactly what accumulated in testing. Kill after a grace period, the same
+	// escalation the plugin manager applies to plugins themselves.
+	select {
+	case <-c.done:
+	case <-time.After(mcpStopGrace):
+		c.killGroup()
+		<-c.done
+	}
+	// The direct child has been reaped, but a grandchild in the same group can
+	// still be alive — `npx` exits while node keeps running. Sweep the group
+	// either way, including on the clean path.
+	c.killGroup()
 	return c.waitErr
 }
+
+// killGroup signals the server's whole process group. Negating the pid is what
+// makes it a group signal; it is a no-op once everything has exited.
+func (c *mcpStdio) killGroup() {
+	if c.cmd.Process == nil {
+		return
+	}
+	syscall.Kill(-c.cmd.Process.Pid, syscall.SIGKILL) //nolint:errcheck // best-effort; the group may already be gone
+}
+
+// mcpStopGrace is how long an MCP server gets to exit on its own after stdin
+// closes, before it is killed.
+const mcpStopGrace = 3 * time.Second

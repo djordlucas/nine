@@ -164,8 +164,25 @@ GITHUB_PERSONAL_ACCESS_TOKEN = "ghp_..."
   `[plugins] disabled = ["mcp:github"]`.
 - **`env` goes to that server only.** Nine's own secrets are not inherited by it, the
   same as for every other plugin.
-- **Only stdio servers** are supported today: `command` is spawned and spoken to over
-  its pipes, which is how the great majority of MCP servers ship.
+- **Two transports:** `command` spawns a local server and speaks stdio; `url` reaches a
+  hosted one over streamable HTTP (below).
+
+**Hosted servers.** A server reached at a URL instead of spawned uses `url` and
+`headers` in place of `command` and `env`:
+
+```toml
+[[mcp.server]]
+name = "hosted"
+url  = "https://mcp.example.com/rpc"
+[mcp.server.headers]
+Authorization = "Bearer ..."
+```
+
+This is MCP's **streamable HTTP** transport: each request is a POST, and the server
+answers with either a JSON body or an SSE stream, its choice per request. A session id
+the server issues on connect is echoed on every later request. Exactly one of `command`
+or `url` is set per server; mixing `env` with `url` (or `headers` with `command`) is a
+config error rather than a silently ignored setting.
 
 ---
 

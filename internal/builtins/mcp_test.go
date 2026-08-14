@@ -173,3 +173,37 @@ func TestMCPBridgeDiesWithItsServer(t *testing.T) {
 	}
 	t.Error("bridge still answering after its MCP server died; the daemon would never restart it")
 }
+
+// TestMCPBridgeSurvivesSlowServer is the regression test for the bug that made
+// every real MCP server fail to load.
+//
+// The daemon bounds how long it waits for a plugin's socket (~3s, R-PLUG.3),
+// but plugin.describe has no deadline. The bridge originally completed the MCP
+// handshake *before* listening, so a server slower than 3s to start was
+// declared dead — and `npx`-launched servers take far longer than that. Every
+// bridge test passed anyway, because the fixture is a compiled binary that
+// starts instantly. Delaying it is what makes this test mean anything.
+func TestMCPBridgeSurvivesSlowServer(t *testing.T) {
+	serverBin := filepath.Join(t.TempDir(), "testmcpserver")
+	build := exec.Command("go", "build", "-o", serverBin, "./internal/builtins/testmcpserver")
+	build.Dir = moduleRoot()
+	if b, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build test MCP server: %v\n%s", err, b)
+	}
+	spec, _ := json.Marshal(map[string]any{"name": "slow", "command": serverBin})
+
+	m := plugin.NewManager("")
+	m.SetBuiltinBinary(nineBin)
+	// Comfortably past the socket-ready budget: before the fix this failed with
+	// "plugin socket … not ready".
+	p, err := m.StartBuiltinInstance("mcp", plugin.MCPInstanceName("slow"),
+		"NINE_MCP_SERVER="+string(spec), "MCP_TEST_STARTUP_DELAY=5s")
+	if err != nil {
+		t.Fatalf("slow-starting MCP server failed to load: %v", err)
+	}
+	t.Cleanup(func() { m.Stop(p) }) //nolint:errcheck // test cleanup
+
+	if len(p.Tools) != 1 || p.Tools[0].Name != "slow__mcp_echo" {
+		t.Errorf("tools = %+v, want [slow__mcp_echo]", p.Tools)
+	}
+}

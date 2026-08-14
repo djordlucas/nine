@@ -112,6 +112,7 @@ How to use this file:
 | R-PLUG.5 | Default plugins | `files`, `shell`, `http`, `time`, `browser` start at boot (skills/memory are core-intercepted). |
 | R-PLUG.13 | Built-ins in the `nine` binary | `files`/`shell`/`http`/`time` start as `nine plugin serve <name>` child processes — no per-plugin binary on disk — and still get their own process, sanitized env, cache dir, and `max_concurrent`. `browser` still starts from `[plugins].bin`. |
 | R-PLUG.13a | Plugin child is single-purpose | A plugin child reads no config file (even with one in its cwd or `$HOME`), opens no `nine.log`, and builds no CLI; `plugin serve` without `NINE_PLUGIN_SOCKET` exits non-zero naming the variable. |
+| R-PLUG.15a | MCP transports and startup | A `command` server (stdio) and a `url` server (streamable HTTP, JSON or SSE reply) both load; a server that takes far longer than the socket-ready budget to start still loads, because the bridge listens before handshaking. |
 | R-PLUG.15 | MCP servers are plugins | Each `[[mcp.server]]` runs as its own `mcp:<name>` plugin instance with prefixed tools (`github__create_issue`); it crashes, disables, and reports independently, and the core holds no MCP-specific transport or spawn path. |
 | R-PLUG.14 | `[plugins].disabled` | A named plugin never spawns — built-in, own-binary, or user alike — and no socket or cache dir is created for it; the daemon boots normally and reports it in `plugins_list` with `disabled: true` (`nine plugins` shows `off`). |
 | R-PLUG.6 | Browser plugin | The browser plugin exposes its documented tools. |
