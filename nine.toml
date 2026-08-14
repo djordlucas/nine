@@ -83,6 +83,22 @@ bin = "./dist/bin"
 # overrides this with NINE_PLUGINS_USER_DIR.
 # user_dir = "./plugins.d"
 
+# ── MCP servers ───────────────────────────────────────────────────────────────
+# Each [[mcp.server]] becomes one plugin: Nine starts an `mcp` bridge process
+# per server, so an MCP server behaves like any other plugin — it crashes on its
+# own, shows up in `nine plugins` as `mcp:<name>`, and is switched off with
+# `[plugins] disabled = ["mcp:github"]`.
+#
+# Its tools are prefixed with the server name, so two servers that both expose
+# `search` cannot collide: github__create_issue, filesystem__read_file.
+#
+# [[mcp.server]]
+# name    = "github"
+# command = "npx"
+# args    = ["-y", "@modelcontextprotocol/server-github"]
+# [mcp.server.env]
+# GITHUB_PERSONAL_ACCESS_TOKEN = "ghp_..."
+
 [memory]
 # SQLite database file holding all durable state. Created on first run, along
 # with its parent directory. Defaults to /data/nine.db when the container's

@@ -93,7 +93,8 @@ ranking is bypassed (all candidates returned).
 - The two-method plugin contract (`plugin.describe`, `plugin.call`) served as `POST /rpc`
   over a per-plugin **Unix socket** (`NINE_PLUGIN_SOCKET`), and the `plugin.Serve` server
   loop (in `internal/plugin`) so a plugin's `main` passes `[]ToolDefinition` + a
-  `name → ToolHandler` map. (MCP servers keep the legacy stdio JSON-RPC client.)
+  `name → ToolHandler` map. This is the only transport: an MCP server is reached
+  through the `mcp` bridge plugin (R-PLUG.15), whose stdio client is internal to it.
 - The `Manager`: spawn a binary (env `NINE_PLUGIN_SOCKET`, `NINE_BIN`, plus any per-plugin
   extras), wait for the socket, call `plugin.describe`, track `*Plugin{Name, client,
   Tools}`, and forward `plugin.call` over a pooled `http.Client`.
