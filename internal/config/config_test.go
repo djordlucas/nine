@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -57,6 +58,7 @@ max_concurrent = 2
 
 [plugins]
 bin = "/data/bin"
+disabled = ["shell", "browser"]
 user_dir = "/data/plugins.d"
 
 [memory]
@@ -96,6 +98,7 @@ func TestLoad(t *testing.T) {
 		{"LLM.ContextBudget", cfg.LLM.ContextBudget, 4096},
 		{"LLM.MaxConcurrent", cfg.LLM.MaxConcurrent, 2},
 		{"Plugins.Bin", cfg.Plugins.Bin, "/data/bin"},
+		{"Plugins.Disabled", strings.Join(cfg.Plugins.Disabled, ","), "shell,browser"},
 		{"Plugins.UserDir", cfg.Plugins.UserDir, "/data/plugins.d"},
 		{"Memory.Path", cfg.Memory.Path, "/data/memory.db"},
 		{"Embeddings.Provider", cfg.Embeddings.Provider, "ollama"},
@@ -252,5 +255,33 @@ func TestToolsMaxOutputTokensUnset(t *testing.T) {
 	}
 	if cfg.Tools.MaxOutputTokens != 0 {
 		t.Errorf("Tools.MaxOutputTokens = %d, want 0 (meaning: use the default)", cfg.Tools.MaxOutputTokens)
+	}
+}
+
+// NINE_PLUGINS_DISABLED is the container's way to withhold a plugin without
+// baking a second nine.toml into an image (R-PLUG.14). It replaces the file's
+// list rather than merging, so what the operator sets is what they get.
+func TestPluginsDisabledEnvOverride(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Plugins.Disabled = []string{"http"}
+
+	t.Setenv("NINE_PLUGINS_DISABLED", "shell, browser ,,")
+	config.ApplyEnvOverrides(cfg)
+
+	if got := strings.Join(cfg.Plugins.Disabled, ","); got != "shell,browser" {
+		t.Errorf("Disabled = %q, want %q (trimmed, empties dropped)", got, "shell,browser")
+	}
+}
+
+// An unset variable must leave the file's list alone rather than clearing it.
+func TestPluginsDisabledEnvUnsetKeepsFile(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Plugins.Disabled = []string{"shell"}
+
+	t.Setenv("NINE_PLUGINS_DISABLED", "")
+	config.ApplyEnvOverrides(cfg)
+
+	if got := strings.Join(cfg.Plugins.Disabled, ","); got != "shell" {
+		t.Errorf("Disabled = %q, want the file's value %q", got, "shell")
 	}
 }

@@ -60,6 +60,15 @@ func (m *Manager) loadUserPlugins(dir string) {
 			continue
 		}
 
+		// Checked before Probe, which would otherwise spawn the binary just to
+		// refuse it a moment later (R-PLUG.14).
+		if m.IsDisabled(d.Name) {
+			st.Err = ErrPluginDisabled.Error()
+			slog.Info("skipping user plugin: disabled by config", "name", d.Name)
+			status = append(status, st)
+			continue
+		}
+
 		// Operator settings (docs/plugin-capabilities.md §3) apply to user plugins,
 		// which otherwise receive no environment. Probe gets the manager env plus
 		// the settings; Start prepends the manager env itself, so it gets settings

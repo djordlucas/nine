@@ -483,6 +483,19 @@ type PluginsConfig struct {
 	// model cannot start an unbounded number. 0 uses runtime's default (8).
 	MaxJobsPerConversation int `toml:"max_jobs_per_conversation"`
 
+	// Disabled names plugins that must never start, by their wire name
+	// (`shell`, `browser`, a user plugin's manifest name…). It is the operator's
+	// lever for withholding a capability — most obviously `shell` — and applies
+	// uniformly to built-ins, plugins with their own binary, and user plugins
+	// (spec/contracts/plugin.md R-PLUG.14).
+	//
+	// It exists because the built-ins moved into the nine binary (R-PLUG.13):
+	// before that, a plugin could be withheld by simply not shipping its binary,
+	// and a built-in has no binary to omit. A disabled plugin is reported by
+	// `nine plugins` rather than silently absent. The container overrides this
+	// with NINE_PLUGINS_DISABLED (comma-separated).
+	Disabled []string `toml:"disabled"`
+
 	// UserDir holds operator-supplied plugins, discovered at boot from a
 	// sidecar-manifest layout: an executable `<name>` beside a `<name>.toml`
 	// manifest (name + entrypoint). It is scanned separately from the built-in
