@@ -334,9 +334,32 @@ StartBuiltin(name, extraEnv…):
 ```
 
 `nine plugin serve <name>` is a daemon-internal entry point, not an operator command:
-it is absent from `nine help`, and `plugin.Serve` exits immediately when
-`NINE_PLUGIN_SOCKET` is unset. This is the same self-exec the client already uses to
+it is absent from `nine help`. This is the same self-exec the client already uses to
 auto-start the daemon ([`wire-protocol.md`](wire-protocol.md) R-PROTO.7).
+
+### R-PLUG.13a — A plugin child does plugin work and nothing else
+
+Sharing the binary means a plugin child could otherwise run the whole of nine's
+startup. An implementation **MUST** dispatch `plugin serve` **before** any of it, so a
+plugin process:
+
+- **loads no configuration.** The config search reaches the cwd and `$HOME`, which a
+  plugin inherits, and the file there carries `[embeddings].api_key` and every
+  `[plugin.<name>.settings]` block — *including other plugins' settings*. A plugin that
+  read it would walk straight around `sanitizedHostEnv`, whose whole purpose is to
+  withhold that class of data (R-PLUG.10, R-PLUG.3). A plugin receives exactly the
+  environment the manager hands it, and nothing it fetches for itself.
+- **opens no log file.** Plugin output goes to stderr, which the manager wires to the
+  daemon's. The daemon's log stays one process's account of itself rather than five
+  interleaved.
+- **builds no CLI**, so it never holds a `StartDaemon` or `StartTUI`.
+
+It **MUST** also fail closed: with `NINE_PLUGIN_SOCKET` unset there is no caller to
+answer, so the process exits non-zero naming the missing variable instead of idling.
+
+This is confinement against mistakes, not a sandbox. `shell` runs arbitrary commands
+by design, so no entry-point check bounds what a compromised *handler* can do; what is
+guaranteed is that **starting** a plugin has no effect beyond that plugin.
 
 An implementation **MUST** preserve every property R-PLUG.3/R-PLUG.4 give an
 out-of-binary plugin, because only the packaging changes:
@@ -365,6 +388,8 @@ with `TryStart`.
 
 `internal/builtins/` (`Serve`, `Names`, `Has`; `shell.go`, `files.go`, `http.go`,
 `time.go` — the built-in handlers, R-PLUG.13),
+`cmd/nine/main.go` (`pluginServeArgs`, `servePluginAndExit` — the single-purpose
+plugin entry point, R-PLUG.13a),
 `internal/plugin/manager.go` (`Manager`, `Start`, `StartBuiltin`, `Call`, `JobStatus`,
 `JobCancel`, `PluginByName`, `TryStart`, `TryStartBuiltin`, `launch`/`binaryLaunch`/
 `builtinLaunch`, `spawnAndDescribe`, `Probe`, `SetPluginEnv`, `SetBuiltinBinary`, `SetCacheConfig`,
