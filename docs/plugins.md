@@ -4,6 +4,8 @@ Plugins are the mechanism through which Nine gains most of its capabilities — 
 
 Four of those five — `shell`, `files`, `http`, `time` — are Go, and are compiled **into the `nine` binary** (`internal/builtins`) rather than shipped as separate executables. The daemon starts each by re-executing itself as `nine plugin serve <name>`, so each still runs as its own isolated process; there is simply one artifact to build and ship. `browser` is Node + Chromium, so it keeps its own binary under `[plugins].bin`.
 
+Sharing the binary does not widen what a plugin process does. `plugin serve` is dispatched before nine's normal startup, so a plugin child loads **no config file** (the operator's `nine.toml` carries the embeddings API key and every other plugin's settings), writes **no** `nine.log`, and holds no way to start a daemon or TUI. Its output goes to stderr, which the daemon captures. Run by hand without `NINE_PLUGIN_SOCKET`, it refuses to start.
+
 Several tools (memory, file storage, semantic search, and skills) are **core-intercepted**: built directly into the agent loop rather than served by a subprocess. See [Memory & File Tools](#memory--file-tools-core) and [Skill Tools](#skill-tools-core) below.
 
 ---
