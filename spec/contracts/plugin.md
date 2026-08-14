@@ -439,17 +439,24 @@ An MCP server is reached through a **bridge plugin**, not through a second code 
 the manager. The daemon starts one bridge instance per `[[mcp.server]]`:
 
 ```text
-[[mcp.server]]
-name    = "github"
-command = "npx"
-args    = ["-y", "@modelcontextprotocol/server-github"]
-[mcp.server.env]
+[[mcp.server]]                        [[mcp.server]]
+name    = "github"                    name = "hosted"
+command = "npx"                       url  = "https://mcp.example.com/rpc"
+args    = ["-y", "…server-github"]    [mcp.server.headers]
+[mcp.server.env]                      Authorization = "Bearer …"
 GITHUB_TOKEN = "…"
 
-  → daemon: StartBuiltinInstance("mcp", "mcp:github", NINE_MCP_SERVER={…})
-  → bridge: spawn the server, initialize → notifications/initialized → tools/list
+  → daemon: StartBuiltinInstance("mcp", "mcp:<name>", NINE_MCP_SERVER={…})
+  → bridge: listen, then connect — spawn over stdio, or POST over streamable HTTP
+  → bridge: initialize → notifications/initialized → tools/list
   → bridge: serve those tools over the ordinary plugin contract (R-PLUG.1)
 ```
+
+Two transports are supported, and exactly one is configured per server: `command`
+spawns a local server and speaks JSON-RPC over its stdio pipes; `url` reaches a hosted
+one over **streamable HTTP**, where a server answers each POST with either a JSON body
+or an SSE stream and the client must handle both. Hosted servers never run locally, so
+stdio cannot reach them at all.
 
 An implementation **MUST**:
 
@@ -466,7 +473,14 @@ An implementation **MUST**:
   plugins' secrets;
 - **declare the transport's limits through the contract, not around it.** stdio is
   serial, so the bridge reports `max_concurrent: 1` (R-PLUG.8) and `async_jobs: false`
-  (R-PLUG.12). These are ordinary plugin declarations, not exemptions.
+  (R-PLUG.12). These are ordinary plugin declarations, not exemptions;
+- **listen before handshaking.** The daemon bounds how long it waits for a plugin's
+  socket (~3s, R-PLUG.3) but puts no deadline on `plugin.describe`. An MCP server
+  launched through `npx`/`uvx` routinely needs far longer than the socket budget just
+  to start — a measured 72s in one case — so a bridge that completes the handshake
+  before listening is declared dead for every real server. It **MUST** listen first and
+  resolve its tools inside `describe` (`plugin.ServeDeferred`), under its own finite
+  timeout so a server that never answers cannot hold up boot.
 
 The point is what the core no longer contains. There is one plugin transport, one client
 implementation, and no `except MCP` clause in this contract: the stdio client, the

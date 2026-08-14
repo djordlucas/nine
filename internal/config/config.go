@@ -528,8 +528,8 @@ type MCPServer struct {
 	// cannot collide. It is also the plugin's wire name, as `mcp:<name>`.
 	Name string `toml:"name"`
 
-	// Command is the executable to spawn; Args are its arguments. Most MCP
-	// servers ship as an npx/uvx invocation, e.g.
+	// Command is the executable to spawn, spoken to over stdio; Args are its
+	// arguments. Most MCP servers ship as an npx/uvx invocation, e.g.
 	// command = "npx", args = ["-y", "@modelcontextprotocol/server-github"].
 	Command string   `toml:"command"`
 	Args    []string `toml:"args"`
@@ -539,6 +539,13 @@ type MCPServer struct {
 	// plugins, and follow the same withholding rule as everything else a plugin
 	// receives (the daemon's own secrets are never inherited).
 	Env map[string]string `toml:"env"`
+
+	// URL reaches a server over streamable HTTP instead of spawning one, for
+	// hosted MCP services that never run locally. Exactly one of Command or URL
+	// is set. Headers are sent on every request — typically
+	// Authorization = "Bearer …".
+	URL     string            `toml:"url"`
+	Headers map[string]string `toml:"headers"`
 }
 
 type MemoryConfig struct {
@@ -643,8 +650,16 @@ func validateMCPServers(servers []MCPServer) error {
 			return fmt.Errorf("[[mcp.server]] #%d: name is required", i+1)
 		case !mcpServerNameRe.MatchString(s.Name):
 			return fmt.Errorf("[[mcp.server]] %q: name must be alphanumeric with dashes (it prefixes the server's tool names)", s.Name)
-		case s.Command == "":
-			return fmt.Errorf("[[mcp.server]] %q: command is required", s.Name)
+		case s.Command == "" && s.URL == "":
+			return fmt.Errorf("[[mcp.server]] %q: needs command (a server to spawn) or url (a hosted one)", s.Name)
+		case s.Command != "" && s.URL != "":
+			return fmt.Errorf("[[mcp.server]] %q: set command or url, not both", s.Name)
+		case s.URL != "" && len(s.Env) > 0:
+			// env configures a process; a hosted server has none. Silently ignoring
+			// it would leave an operator believing they had passed a token.
+			return fmt.Errorf("[[mcp.server]] %q: env applies to a spawned server; use headers with url", s.Name)
+		case s.Command != "" && len(s.Headers) > 0:
+			return fmt.Errorf("[[mcp.server]] %q: headers apply to url; use env with command", s.Name)
 		case seen[s.Name]:
 			return fmt.Errorf("[[mcp.server]] %q: duplicate name", s.Name)
 		}

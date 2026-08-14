@@ -304,6 +304,8 @@ func startMCPServers(mgr *plugin.Manager, cfg *config.Config) {
 			"command":      srv.Command,
 			"args":         srv.Args,
 			"env":          srv.Env,
+			"url":          srv.URL,
+			"headers":      srv.Headers,
 			"nine_version": Version,
 		})
 		if err != nil {
