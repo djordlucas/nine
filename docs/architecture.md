@@ -554,8 +554,9 @@ lifecycle. A native plugin speaks a small two-method protocol (`plugin.describe`
 `plugin.call`) over **HTTP on a per-plugin Unix socket** (`NINE_PLUGIN_SOCKET`,
 `POST /rpc`): the manager spawns the process, waits for the socket, and drives it
 with an `http.Client`, which gives free per-request concurrency and
-context-based cancellation (docs/plugins-http-transport.md). External **MCP**
-servers keep the legacy stdio JSON-RPC client.
+context-based cancellation (docs/plugins-http-transport.md). There is no second
+transport: an external **MCP** server is a plugin too, reached through the `mcp`
+bridge, which speaks stdio to the server and this same contract to the daemon.
 
 The Go default plugins are not separate executables: their handlers live in
 `internal/builtins`, and `Manager.StartBuiltin` spawns them by re-executing the

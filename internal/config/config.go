@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -22,6 +23,7 @@ type Config struct {
 	Roles      RolesConfig      `toml:"roles"`
 	Agents     []AgentConfig    `toml:"agent"`
 	Tools      ToolsConfig      `toml:"tools"`
+	MCP        MCPConfig        `toml:"mcp"`
 
 	// Plugin holds per-plugin `[plugin.<name>]` tables (singular), sibling to the
 	// plural `[plugins]` subsystem table above — the same split `[agent]` and
@@ -508,6 +510,44 @@ type PluginsConfig struct {
 	UserDir string `toml:"user_dir"`
 }
 
+// MCPConfig holds the MCP servers Nine should connect to. Each becomes one
+// plugin: the daemon starts an `mcp` bridge instance per server, so an MCP
+// server is a plugin in every respect that matters — its own process, its own
+// crash isolation, its own row in `nine plugins`, and the same disable switch
+// (spec/contracts/plugin.md R-PLUG.15).
+type MCPConfig struct {
+	// Servers are declared as [[mcp.server]] table arrays, following the same
+	// singular-table-in-a-plural-section shape [[agent]] already uses.
+	Servers []MCPServer `toml:"server"`
+}
+
+// MCPServer is one MCP server: a command to spawn and talk to over stdio.
+type MCPServer struct {
+	// Name identifies the server and prefixes its tools (`github` →
+	// `github__create_issue`), so two servers that both advertise `search`
+	// cannot collide. It is also the plugin's wire name, as `mcp:<name>`.
+	Name string `toml:"name"`
+
+	// Command is the executable to spawn, spoken to over stdio; Args are its
+	// arguments. Most MCP servers ship as an npx/uvx invocation, e.g.
+	// command = "npx", args = ["-y", "@modelcontextprotocol/server-github"].
+	Command string   `toml:"command"`
+	Args    []string `toml:"args"`
+
+	// Env are extra environment variables for this server — typically its API
+	// token. They are passed to the server process only, not to Nine's other
+	// plugins, and follow the same withholding rule as everything else a plugin
+	// receives (the daemon's own secrets are never inherited).
+	Env map[string]string `toml:"env"`
+
+	// URL reaches a server over streamable HTTP instead of spawning one, for
+	// hosted MCP services that never run locally. Exactly one of Command or URL
+	// is set. Headers are sent on every request — typically
+	// Authorization = "Bearer …".
+	URL     string            `toml:"url"`
+	Headers map[string]string `toml:"headers"`
+}
+
 type MemoryConfig struct {
 	Path string `toml:"path"` // SQLite database file path (see Config.DatabasePath)
 
@@ -560,6 +600,9 @@ func (cfg *Config) Validate() error {
 			return err
 		}
 	}
+	if err := validateMCPServers(cfg.MCP.Servers); err != nil {
+		return err
+	}
 	if err := validateToolEntry("tools.agent", ToolEntry{Capabilities: cfg.Tools.Agent.Capabilities}); err != nil {
 		return err
 	}
@@ -580,6 +623,43 @@ func (cfg *Config) Validate() error {
 		if a.Name == "" {
 			return fmt.Errorf("[tools.agent.deps]: an allow entry has an empty name")
 		}
+	}
+	return nil
+}
+
+// mcpServerNameRe constrains an MCP server name to what can serve as both a
+// tool-name prefix the model sees (`github__create_issue`) and a path-safe
+// socket filename. Underscore is excluded because `__` is the prefix separator:
+// allowing it would make `a__b__c` ambiguous about where the server name ends.
+var mcpServerNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]*$`)
+
+// validateMCPServers rejects a malformed [[mcp.server]] at load rather than at
+// spawn. A server with no name or command cannot start, and two servers sharing
+// a name would produce colliding tool prefixes and colliding plugin names — all
+// three are config mistakes worth naming precisely instead of surfacing later as
+// a plugin that mysteriously did not appear.
+func validateMCPServers(servers []MCPServer) error {
+	seen := make(map[string]bool, len(servers))
+	for i, s := range servers {
+		switch {
+		case s.Name == "":
+			return fmt.Errorf("[[mcp.server]] #%d: name is required", i+1)
+		case !mcpServerNameRe.MatchString(s.Name):
+			return fmt.Errorf("[[mcp.server]] %q: name must be alphanumeric with dashes (it prefixes the server's tool names)", s.Name)
+		case s.Command == "" && s.URL == "":
+			return fmt.Errorf("[[mcp.server]] %q: needs command (a server to spawn) or url (a hosted one)", s.Name)
+		case s.Command != "" && s.URL != "":
+			return fmt.Errorf("[[mcp.server]] %q: set command or url, not both", s.Name)
+		case s.URL != "" && len(s.Env) > 0:
+			// env configures a process; a hosted server has none. Silently ignoring
+			// it would leave an operator believing they had passed a token.
+			return fmt.Errorf("[[mcp.server]] %q: env applies to a spawned server; use headers with url", s.Name)
+		case s.Command != "" && len(s.Headers) > 0:
+			return fmt.Errorf("[[mcp.server]] %q: headers apply to url; use env with command", s.Name)
+		case seen[s.Name]:
+			return fmt.Errorf("[[mcp.server]] %q: duplicate name", s.Name)
+		}
+		seen[s.Name] = true
 	}
 	return nil
 }

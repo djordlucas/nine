@@ -260,8 +260,10 @@ later user turn *pulls* the most relevant link into context under the token budg
 **Plugin** — A standalone binary that answers two methods — `plugin.describe`
 (returns tool definitions) and `plugin.call` (executes a tool, returns a result)
 — over **HTTP on a per-plugin Unix socket** (`NINE_PLUGIN_SOCKET`, `POST /rpc`;
-see [HTTP transport](plugins-http-transport.md)). External **MCP** servers instead
-speak JSON-RPC 2.0 over stdio. A native plugin may also implement two optional
+see [HTTP transport](plugins-http-transport.md)). That is the only plugin
+transport: an external **MCP** server is reached through the `mcp` bridge plugin,
+which speaks stdio JSON-RPC to the server and the ordinary plugin contract to
+Nine. A plugin may also implement two optional
 job methods (`plugin.job_status` / `plugin.job_cancel`, protocol v2) for
 long-running work. Plugins are compiled into the image at build time; there is no
 runtime generation. See [Plugins](plugins.md) and

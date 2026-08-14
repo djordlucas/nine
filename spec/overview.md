@@ -73,7 +73,7 @@ Three process kinds:
 |---------|--------|------|----------|
 | Client  | `nine` | TUI or one-shot request; connects to the socket | per invocation |
 | Daemon  | `nine` (re-exec) | owns socket, sessions, queue, plugins, DB connection | long-lived |
-| Plugin  | `bin/<name>` | one tool provider, HTTP over a Unix socket (MCP: stdio) | spawned/killed by daemon |
+| Plugin  | `bin/<name>` or the `nine` binary | one tool provider, HTTP over a Unix socket (an MCP server is one, via the `mcp` bridge) | spawned/killed by daemon |
 
 Consequences that shape every contract:
 
