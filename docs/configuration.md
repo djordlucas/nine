@@ -110,13 +110,12 @@ standing_agents_authoritative = false
 
 
 [plugins]
-# Plugin sources, and the directory holding plugins that ship as their own
-# binaries — today just `browser`. The Go built-ins (shell/files/http/time) are
-# compiled into the nine binary and started as `nine plugin serve <name>`, so
-# they are not looked up here at all. `make all` writes browser to ./dist/bin;
-# in Docker it is baked into the image at /opt/nine/bin, which the container
-# sets via NINE_PLUGINS_BIN.
-dir = "./plugins"
+# The directory holding plugins that ship as their own binaries — today just
+# `browser`. The Go built-ins (shell/files/http/time) are compiled into the nine
+# binary and started as `nine plugin serve <name>`, so they are not looked up
+# here at all. `make all` writes browser to ./dist/bin; in Docker it is baked
+# into the image at /opt/nine/bin, which the container sets via
+# NINE_PLUGINS_BIN. Operator-supplied plugins use `user_dir` below, not this.
 bin = "./dist/bin"
 # Your own plugins, discovered at boot from a sidecar-manifest layout — an
 # executable beside a <name>.toml (name + entrypoint). Scanned separately from

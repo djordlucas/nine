@@ -41,7 +41,6 @@ related_sessions_index  = true  # out-of-band related-session indexing + surfaci
 # [[agent]] … config-declared standing agents (see predefined-agents contract)
 
 [plugins]
-dir = ""                        # plugin source/aux dir (if used)
 bin = ""                        # dir of plugins shipping their own binary (browser);
                                 # the Go built-ins live in the nine binary (plugin.md R-PLUG.13)
 # user_dir = ""                 # operator plugins (sidecar-manifest layout); env NINE_PLUGINS_USER_DIR
