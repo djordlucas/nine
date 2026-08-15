@@ -13,9 +13,9 @@ const cfg = {
 
 mock.module('../config.js', () => ({ config: cfg }));
 
-let checkUrl;
+let checkUrl, isBlockedUrl;
 beforeAll(async () => {
-  ({ checkUrl } = await import('../security.js'));
+  ({ checkUrl, isBlockedUrl } = await import('../security.js'));
 });
 
 describe('checkUrl — valid URLs', () => {
@@ -121,5 +121,91 @@ describe('checkUrl — blockUrls list', () => {
     } finally {
       cfg.blockUrls = [];
     }
+  });
+});
+
+describe('checkUrl — link-local and metadata endpoints', () => {
+  // 169.254.169.254 serves instance credentials on AWS, GCP and Azure to
+  // anything that asks. An agent told to "check this URL" is anything.
+  it('blocks the cloud metadata address', () => {
+    expect(() => checkUrl('http://169.254.169.254/latest/meta-data/')).toThrow(/private host/);
+  });
+
+  it('blocks the rest of link-local, not just the metadata address', () => {
+    expect(() => checkUrl('http://169.254.1.1/')).toThrow(/private host/);
+  });
+
+  it('blocks the metadata hostnames that alias it', () => {
+    expect(() => checkUrl('http://metadata.google.internal/computeMetadata/v1/')).toThrow(/private host/);
+    expect(() => checkUrl('http://metadata/')).toThrow(/private host/);
+  });
+
+  it('blocks 0.0.0.0, which routes to the local host', () => {
+    expect(() => checkUrl('http://0.0.0.0:8080/')).toThrow(/private host/);
+  });
+
+  it('blocks unique-local IPv6 across the whole fc00::/7', () => {
+    expect(() => checkUrl('http://[fd00::1]/')).toThrow(/private host/);
+    expect(() => checkUrl('http://[fc00::1]/')).toThrow(/private host/);
+  });
+
+  it('blocks link-local IPv6 beyond the fe80: prefix', () => {
+    expect(() => checkUrl('http://[fe81::1]/')).toThrow(/private host/);
+  });
+
+  it('still allows a public address that merely starts with similar digits', () => {
+    expect(() => checkUrl('https://169.255.1.1/')).not.toThrow();
+    expect(() => checkUrl('https://16.254.1.1/')).not.toThrow();
+  });
+
+  it('honours allowPrivate for deliberate local browsing', () => {
+    cfg.allowPrivate = true;
+    expect(() => checkUrl('http://169.254.169.254/')).not.toThrow();
+    cfg.allowPrivate = false;
+  });
+});
+
+describe('checkUrl — IPv4-mapped IPv6', () => {
+  // The browser normalizes [::ffff:169.254.169.254] to [::ffff:a9fe:a9fe],
+  // which matches no IPv4 rule — so the mapped form bypassed every one of them
+  // and still reached the metadata endpoint.
+  it('blocks the metadata address written as a mapped IPv6 literal', () => {
+    expect(() => checkUrl('http://[::ffff:169.254.169.254]/')).toThrow(/private host/);
+  });
+
+  it('blocks mapped loopback', () => {
+    expect(() => checkUrl('http://[::ffff:127.0.0.1]/')).toThrow(/private host/);
+  });
+
+  it('blocks mapped RFC1918', () => {
+    expect(() => checkUrl('http://[::ffff:192.168.1.1]/')).toThrow(/private host/);
+    expect(() => checkUrl('http://[::ffff:10.0.0.1]/')).toThrow(/private host/);
+  });
+
+  it('still allows a mapped public address', () => {
+    expect(() => checkUrl('http://[::ffff:93.184.216.34]/')).not.toThrow();
+  });
+});
+
+describe('checkUrl — full fe80::/10', () => {
+  it('blocks across the whole range, not just fe8x', () => {
+    for (const h of ['fe80::1', 'fe8f::1', 'fe90::1', 'feaf::1', 'febf::1']) {
+      expect(() => checkUrl(`http://[${h}]/`)).toThrow(/private host/);
+    }
+  });
+
+  it('does not over-block fec0:: and above', () => {
+    expect(() => checkUrl('http://[fec0::1]/')).not.toThrow();
+  });
+});
+
+describe('isBlockedUrl — predicate form for the navigation guard', () => {
+  it('mirrors checkUrl without throwing', () => {
+    expect(isBlockedUrl('https://example.com')).toBe(false);
+    expect(isBlockedUrl('http://169.254.169.254/')).toBe(true);
+  });
+
+  it('treats an unreadable URL as blocked', () => {
+    expect(isBlockedUrl('not a url')).toBe(true);
   });
 });
