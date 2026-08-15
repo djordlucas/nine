@@ -123,3 +123,44 @@ describe('checkUrl — blockUrls list', () => {
     }
   });
 });
+
+describe('checkUrl — link-local and metadata endpoints', () => {
+  // 169.254.169.254 serves instance credentials on AWS, GCP and Azure to
+  // anything that asks. An agent told to "check this URL" is anything.
+  it('blocks the cloud metadata address', () => {
+    expect(() => checkUrl('http://169.254.169.254/latest/meta-data/')).toThrow(/private host/);
+  });
+
+  it('blocks the rest of link-local, not just the metadata address', () => {
+    expect(() => checkUrl('http://169.254.1.1/')).toThrow(/private host/);
+  });
+
+  it('blocks the metadata hostnames that alias it', () => {
+    expect(() => checkUrl('http://metadata.google.internal/computeMetadata/v1/')).toThrow(/private host/);
+    expect(() => checkUrl('http://metadata/')).toThrow(/private host/);
+  });
+
+  it('blocks 0.0.0.0, which routes to the local host', () => {
+    expect(() => checkUrl('http://0.0.0.0:8080/')).toThrow(/private host/);
+  });
+
+  it('blocks unique-local IPv6 across the whole fc00::/7', () => {
+    expect(() => checkUrl('http://[fd00::1]/')).toThrow(/private host/);
+    expect(() => checkUrl('http://[fc00::1]/')).toThrow(/private host/);
+  });
+
+  it('blocks link-local IPv6 beyond the fe80: prefix', () => {
+    expect(() => checkUrl('http://[fe81::1]/')).toThrow(/private host/);
+  });
+
+  it('still allows a public address that merely starts with similar digits', () => {
+    expect(() => checkUrl('https://169.255.1.1/')).not.toThrow();
+    expect(() => checkUrl('https://16.254.1.1/')).not.toThrow();
+  });
+
+  it('honours allowPrivate for deliberate local browsing', () => {
+    cfg.allowPrivate = true;
+    expect(() => checkUrl('http://169.254.169.254/')).not.toThrow();
+    cfg.allowPrivate = false;
+  });
+});
