@@ -96,6 +96,42 @@ testing this stage of the project most needs.
 See [Contributing](#contributing) before opening a pull request.
 
 
+## Roadmap
+
+What is planned but not yet built. Items are not dated, and land in whatever order
+makes sense.
+
+- **REST API / remote access.** Today the daemon speaks a newline-delimited JSON
+  protocol over a Unix socket, which means every client has to live on the same
+  machine. A REST API over HTTP would open the same surface — conversations, goals,
+  workflows, the journal — to clients that do not: a browser UI, a phone, another host
+  on your network. Remote access also brings authentication and transport security
+  with it, so this lands alongside the hardening work, not before it.
+
+- **Durable state for sandboxed tools.** A wasm tool is instantiated fresh for every
+  call and torn down after it, so nothing survives — not a global, not a cached
+  credential, not a parsed index. That isolation is worth keeping, but it currently
+  leaves a tool with no way to remember anything except by writing a file, and only
+  where `fs.write` was granted. A scoped, capability-gated store the host owns would
+  give tools memory between calls without giving them the run of the disk.
+
+- **Long-running sandboxed tools.** Every call runs to completion under a wall-clock
+  deadline — five seconds by default — which makes the tool tier strictly
+  request/response: no background work, no jobs that outlive the turn that started
+  them. Today that work belongs to goals, standing agents, and native plugins, which
+  are whole processes. Letting a sandboxed tool start something and be asked about it
+  later cuts against the per-call teardown the isolation story rests on, so it is a
+  design change rather than a setting, and it needs the design written first.
+
+- **TUI improvements.** The TUI is a capable conversation client with slash commands
+  that surface goals, workflows, tools, skills, memory and the context breakdown — but
+  those views are mostly read-only, and the parts of Nine that reward watching over
+  time have no place in it: the journal `nine trace` reads back, the notifications
+  standing agents raise, background sessions moving while you type. Seeing and steering
+  the autonomous tier from the same screen you converse on, rather than from a second
+  terminal running the CLI, is the direction.
+
+
 ## Note on documentation
 Nine's documentation and specs are available within the "nine" binary.
 They are rendered as markdown when invoke for easy viewing.
