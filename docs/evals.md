@@ -100,8 +100,11 @@ setup:
     /work/data.txt: "alpha\nbeta\n"
   kv:                                # pre-seeded key/value memory
     self/region: "us-west-2"
-  skills:                            # pre-seeded agent skills (name: body)
-    deploy-notes: "# Deploy\n..."
+  skills:                            # pre-seeded skills, indexed like skill_write
+    deploy-notes:
+      description: How to deploy nine  # REQUIRED for skill_search to find it
+      tags: [deploy]
+      content: "# Deploy\n..."
   goals: []                          # pre-seeded goals (rarely needed)
   mcp_servers:                       # MCP servers to bring up, mirroring [[mcp.server]]
     - name: fixture                  # prefixes the server's tools: fixture__mcp_echo
