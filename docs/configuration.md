@@ -110,18 +110,19 @@ standing_agents_authoritative = false
 
 
 [plugins]
-# The directory holding plugins that ship as their own binaries — today just
-# `browser`. The Go built-ins (shell/files/http/time) are compiled into the nine
-# binary and started as `nine plugin serve <name>`, so they are not looked up
-# here at all. `make all` writes browser to ./dist/bin; in Docker it is baked
-# into the image at /opt/nine/bin, which the container sets via
+# The directory holding plugins that ship as their own binaries. Nine ships none:
+# the Go built-ins (shell/files/http/time) are compiled into the nine binary and
+# started as `nine plugin serve <name>`, so they are not looked up here at all.
+# It stays configurable for a plugin of your own that puts its binary here; in
+# Docker the path is /opt/nine/bin, which the container sets via
 # NINE_PLUGINS_BIN. Operator-supplied plugins use `user_dir` below, not this.
 bin = "./dist/bin"
 # Plugins that must never start, by name. This is how a capability is withheld —
 # most obviously `shell`, which runs arbitrary commands. It applies to built-ins,
-# to browser, and to user plugins alike, and a disabled plugin is reported as
-# `off` by `nine plugins` rather than being silently absent. Overridable with
-# NINE_PLUGINS_DISABLED="shell,browser" so a container needs no second config.
+# to MCP servers (as `mcp:<name>`), and to user plugins alike, and a disabled
+# plugin is reported as `off` by `nine plugins` rather than being silently
+# absent. Overridable with NINE_PLUGINS_DISABLED="shell,mcp:github" so a
+# container needs no second config.
 # disabled = ["shell"]
 # Your own plugins, discovered at boot from a sidecar-manifest layout — an
 # executable beside a <name>.toml (name + entrypoint). Scanned separately from
@@ -153,8 +154,8 @@ bin = "./dist/bin"
 # [plugin.weather.settings]
 # WEATHER_API_KEY = "sk-…"
 # UNITS = "metric"
-# [plugin.browser.settings]
-# BROWSER_HEADLESS = "0"   # override a built-in default
+# [plugin.files.settings]
+# NINE_WORKSPACE = "/srv/data"   # override a built-in default
 
 
 # MCP servers. Each entry becomes one plugin (`mcp:<name>`) with its tools
@@ -487,7 +488,7 @@ Environment variables take priority over `nine.toml` values.
 | `NINE_PLUGINS_BIN` | Override `plugins.bin` |
 | `NINE_PLUGINS_USER_DIR` | Override `plugins.user_dir` |
 | `NINE_PLUGINS_CACHE_DIR` | Override `plugins.cache_dir` (the plugin cache-dir root) |
-| `NINE_PLUGINS_DISABLED` | Override `plugins.disabled` — comma-separated plugin names that must never start, e.g. `shell,browser`. Replaces the file's list rather than adding to it. |
+| `NINE_PLUGINS_DISABLED` | Override `plugins.disabled` — comma-separated plugin names that must never start, e.g. `shell,mcp:github`. Replaces the file's list rather than adding to it. |
 | `NINE_WORKSPACE_ROOT` | Override `workspace.root` |
 | `NINE_SKILLS_USER_DIR` | Override `skills.user_dir` |
 | `NINE_TOOLS_USER_DIR` | Override `tools.user_dir` (sandboxed tools). Only the path — `[tools] enabled` is deliberately not env-overridable, so a stray variable cannot switch the subsystem on. |

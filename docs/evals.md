@@ -103,6 +103,15 @@ setup:
   skills:                            # pre-seeded agent skills (name: body)
     deploy-notes: "# Deploy\n..."
   goals: []                          # pre-seeded goals (rarely needed)
+  mcp_servers:                       # MCP servers to bring up, mirroring [[mcp.server]]
+    - name: fixture                  # prefixes the server's tools: fixture__mcp_echo
+      command: "${NINE_EVAL_MCP_FIXTURE}"   # ${VAR} is expanded from the environment
+      args: []
+      env: {}                        # passed to the server process only
+
+# ── Infrastructure this case needs but the suite cannot provide. Unset → the
+#    case is reported as skipped (never as a pass, never fatal). ──
+requires_env: [NINE_EVAL_BROWSER]
 
 # ── The request. Each string is one user turn on the same session. ──
 prompts:
@@ -300,7 +309,7 @@ hardware — are tracked in [model-compatibility.md](model-compatibility.md).
   the judge against ~20 human-labeled samples before trusting it; keep judged cases a
   minority.
 - **Pitfalls**: the store is fail-fast, though evals need no external service;
-  browser cases need Chromium (gate them); small local models are genuinely flaky at
+  cases needing an MCP server (a browser, say) need it installed — gate them; small local models are genuinely flaky at
   multi-step (that's what `expected_pass_min_class` is for); the `nine send` id line
   goes to **stderr**.
 

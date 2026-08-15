@@ -54,7 +54,7 @@ dependencies.
    │                   │ unix socket   │                                    │
    │      ┌────────────┴───────┐       ▼                                    │
    │      ▼     ▼     ▼     ▼   ▼   ┌──────────────────┐                     │
-   │   shell files http time browser│  SQLite (one file)                    │
+   │   shell files http time  mcp:* │  SQLite (one file)                    │
    │   (plugin subprocesses)        │  nine database   │                    │
    │                                └──────────────────┘                    │
    └──────────────────────────────────────────────────────────────────────┘
@@ -62,8 +62,8 @@ dependencies.
 
 `memory`, `files` (durable store), and `skills` are **in-process** capabilities
 of `memory.Store`, not plugin subprocesses. The plugin subprocesses are `shell`,
-`files` (workspace filesystem `read_file`/`write_file`), `http`, `time`, and the
-optional `browser`.
+`files` (workspace filesystem `read_file`/`write_file`), `http`, `time`, one
+`mcp` bridge per declared `[[mcp.server]]`, and any user plugin.
 
 **Sandboxed tools** (`toolvm.Host`, §11) are in-process too, but for the opposite
 reason: not because they are trusted, but because a wasm module needs no process
@@ -110,8 +110,8 @@ which dispatches to either the TUI, the one-shot client, or `runDaemon`
 └── workspace/   files-plugin working directory
 
 /opt/nine             immutable image content (not in a volume)
-├── bin/         browser launcher (the Go plugins live in the nine binary)
-└── browser/     browser plugin JS + node_modules
+└── bin/         empty by default — the built-in plugins live in the nine
+                 binary; a user plugin's binary can be mounted here
 
 /tools.d              developer sandboxed tools, bind-mounted (manifest + .js/.wasm)
                       inert unless the mounted nine.toml sets [tools] enabled
@@ -425,7 +425,7 @@ collision is a load failure, not a silent override:
  shell, read_file,      • memory_embed /        tools.d/*.js|.wasm  (developer)
  write_file, http_get,    memory_query          store rows          (generated)
  web_search, skill_*,   • file_search_semantic  tool_write / tool_delete /
- time, browser_*, …     • run_agent/run_agents    js_eval are themselves core
+ time, mcp tools, …     • run_agent/run_agents    js_eval are themselves core
                         • workflow_* / goal_*
 ```
 
@@ -562,11 +562,12 @@ The Go default plugins are not separate executables: their handlers live in
 `internal/builtins`, and `Manager.StartBuiltin` spawns them by re-executing the
 nine binary as `nine plugin serve <name>`. That is a packaging difference only —
 each still gets its own process, socket, sanitized environment, and crash
-isolation. The `browser` plugin is Node + Chromium and keeps its own binary.
+isolation.
 
 ```
-   Manager.Start(binaryPath, extraEnv…)        (browser, user plugins)
+   Manager.Start(binaryPath, extraEnv…)        (user plugins)
    Manager.StartBuiltin(name, extraEnv…)       (shell/files/http/time)
+   Manager.StartBuiltinInstance("mcp", …)      (one per [[mcp.server]])
         │  spawn process with NINE_PLUGIN_SOCKET (+ NINE_BIN, extra env)
         │  wait for the socket, then use an http.Client on POST /rpc
         ▼
@@ -589,10 +590,12 @@ compiled into the image at build time and started at daemon boot:
    go build (image build) ──► TryStartBuiltin (daemon boot) ──► (in use) ──► SIGTERM
    the nine binary            spawn `nine plugin serve <name>`,  plugin.call  (shutdown)
                               describe, register
-
-   node bundle (image build) ► TryStart (daemon boot) ─────────► (in use) ──► SIGTERM
-   /opt/nine/bin/browser       spawn, describe, register          plugin.call  (shutdown)
 ```
+
+An MCP server is the exception to "compiled into the image": nothing is built for
+it, and the bridge reaches a server that is fetched (`npx`) or hosted elsewhere.
+The bridge process itself is still `nine plugin serve mcp`, so the lifecycle above
+is unchanged from the daemon's side.
 
 Tool definitions are registered with the dispatcher at start time. (Their
 description embeddings for context-builder relevance ranking are computed lazily
@@ -601,7 +604,8 @@ table.) A crashed
 subprocess is isolated from the daemon; restart from the existing binary is the
 manager's responsibility.
 
-Default plugins started at boot: `files`, `shell`, `http`, `time`, `browser`.
+Default plugins started at boot: `files`, `shell`, `http`, `time` — then one
+`mcp` bridge per `[[mcp.server]]`, then user plugins.
 Memory/file/vector operations and the skill tools are **core-intercepted**
 (handled in-process), not a subprocess.
 
@@ -1105,7 +1109,8 @@ Go toolchain, no git, and no source tree.
 ```
  1.  config load  +  ApplyEnvOverrides
  2.  memory.Open(cfg.DatabasePath())                ← the single SQLite store (fail-fast)
- 3.  plugin.NewManager + TryStart(files, shell, http, time, browser)
+ 3.  plugin.NewManager + TryStartBuiltin(files, shell, http, time)
+     + startMCPServers([[mcp.server]])              ← one bridge each, before user plugins
      + LoadUserPlugins([plugins].user_dir)          ← after the built-ins; names reserved
  3a. OpenSandboxedTools(cfg, store, mgr)            ← nil unless [tools] enabled;
      → toolvm.Open (compile QuickJS) → SetAgentConfig → Load → LoadGeneratedTools
