@@ -89,6 +89,27 @@ two apart. Fidelity against a real server is covered out of band by
 `mcp-tool-call` is the worked example: it asserts the model calls the *prefixed*
 tool (`fixture__mcp_echo`) and that its output reaches the answer.
 
+### Cases that need a skill catalog
+
+The built-in skills are seeded into every run's store, exactly as the daemon seeds them
+at boot, so a case sees the same catalog production does.
+
+`setup.skills` adds more. Give each a **description**: `skill_search` ranks the `skills`
+vector namespace by embedded description, so a seeded skill without one is stored but
+invisible to semantic discovery — it can only be reached by name.
+
+```yaml
+setup:
+  skills:
+    pg-restore:
+      description: Recover the production Postgres database after data loss
+      content: "..."
+```
+
+`skill-search` is the worked example, and shows why this matters: a case that has the
+*model* write the catalog cannot then test search, because writing it puts the names in
+the conversation and the model reads by name instead.
+
 ### Cases that need real infrastructure
 
 A fixture proves the bridge works; it cannot prove a *browser* is usable by an agent.
