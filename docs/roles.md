@@ -157,9 +157,23 @@ Ship these as embedded skill files (suggested: `skills/roles/*.md`, still picked
 the existing `//go:embed`). Tool names below are exact (verified against the running
 plugins: `files` → `read_file`/`write_file`; `http` → `http_get`/`http_post`/
 `web_search`/`web_page_read`; `shell` → `shell`; `time` → `time`; core-intercepted →
-`memory_*`, `file_*`, `skill_*`). An MCP server's tools are prefixed with the server
-name (`playwright__browser_navigate`), so a role granting them must name the prefixed
-form — and only works where that server is declared.
+`memory_*`, `file_*`, `skill_*`).
+
+**MCP tools and allowlists.** An MCP server's tools are prefixed with the server name
+(`playwright__browser_navigate`), and the prefix is chosen by the operator in
+`nine.toml`. A tool list is matched exactly — there is no pattern form — so a
+*built-in* role with an allowlist can never name an MCP tool, and will not receive
+one however the deployment is configured. This is why `report-writer` researches over
+HTTP even where a browser is available.
+
+Two ways out, both the operator's:
+
+- Author a role in `skills.d/roles/` naming the prefixed tools, since the operator
+  knows their own server names.
+- Use an `AllTools` role (`tools: "*"`), which receives whatever is loaded.
+
+Extending allowlists to match a prefix pattern would remove the need for both; it is
+not implemented, and would be a change to R-ROLE.2.
 
 ### Structural roots
 

@@ -187,11 +187,15 @@ cd nine
 make all
 ```
 
-This produces `dist/nine` — the CLI, the daemon, and the `shell`/`files`/`http`/`time`
-plugins in one binary (the daemon starts each as a `nine plugin serve <name>` child
-process). Nothing else is built: a capability Nine does not implement itself is
-declared as an `[[mcp.server]]` and fetched or hosted elsewhere — see
-[docs/browser.md](docs/browser.md) for the worked example.
+**Nine ships as a single binary.** That build produces exactly one file, `dist/nine`,
+and it is everything: the CLI, the TUI, the daemon, and the `shell`/`files`/`http`/`time`
+plugins — the daemon starts each by re-executing itself as `nine plugin serve <name>`, so
+they keep their own process and crash isolation without their own artifact. Deploying
+Nine is copying one file.
+
+Nothing else is built because nothing else needs to be: a capability Nine does not
+implement itself is declared as an `[[mcp.server]]` and fetched or hosted elsewhere.
+A browser is the worked example — see [docs/browser.md](docs/browser.md).
 
 Nine looks for its config, in order: `$NINE_CONFIG`, `./nine.toml`, `/nine.toml`,
 then `~/.nine/nine.toml`. The repo's `nine.toml` works as-is against a local Ollama;

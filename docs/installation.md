@@ -132,12 +132,16 @@ cd nine
 make all
 ```
 
-The build produces:
-- `dist/nine` — the main CLI/daemon binary, which also *is* the `shell`, `files`,
-  `http`, and `time` plugins: the daemon starts each as a `nine plugin serve <name>`
-  child process, so they need no build step and no binary of their own
-- `dist/bin/` — empty unless one of your own plugins puts a binary there; Nine ships
-  nothing into it
+The build produces **one file**:
+
+- `dist/nine` — the CLI, the TUI, the daemon, and the `shell`, `files`, `http`, and
+  `time` plugins. The daemon starts each plugin as a `nine plugin serve <name>` child
+  process, so each keeps its own process, socket, and crash isolation while needing no
+  build step and no binary of its own.
+
+There is no second artifact. `dist/bin/` stays empty unless one of your own plugins
+puts a binary there, and a capability Nine does not implement itself arrives as an
+`[[mcp.server]]` rather than something to build (see [Browser Automation](browser.md)).
 
 ### 2. Config
 
