@@ -85,7 +85,6 @@ environment comes from a hard-coded switch in `internal/config/factory.go`:
 func (cfg *Config) PluginEnvs(name string) []string {
 	switch name {
 	case "files":   // NINE_WORKSPACE
-	case "browser": // BROWSER_HEADLESS, BROWSER_TIMEOUT, ...
 	}
 }
 ```
@@ -110,13 +109,13 @@ WEATHER_API_KEY = "sk-…"
 UNITS           = "metric"
 TIMEOUT_MS      = 5000
 
-[plugin.browser.settings]
-BROWSER_HEADLESS = "0"                   # overrides the built-in default
+[plugin.files.settings]
+NINE_WORKSPACE = "/srv/data"             # overrides the built-in default
 ```
 
-- `<name>` is the plugin name as `nine plugins` reports it: the binary basename
-  for built-ins (`files`, `shell`, `http`, `time`, `browser`), the manifest
-  `name` for user plugins.
+- `<name>` is the plugin name as `nine plugins` reports it: the name for
+  built-ins (`files`, `shell`, `http`, `time`), `mcp:<server>` for an MCP
+  server, the manifest `name` for user plugins.
 - In Go: `Plugin map[string]PluginEntry \`toml:"plugin"\`` on `Config`, with
   `PluginEntry{ PersistCache bool; Settings map[string]any }`. The map keys are
   whatever the operator wrote — no field-by-field decoding, so no recompile.
@@ -136,9 +135,9 @@ BROWSER_HEADLESS = "0"                   # overrides the built-in default
   **append order**: the manager builds `cmd.Env` as `os.Environ()` followed by each
   later group, and `os/exec` resolves a duplicate key to its **last** occurrence,
   so later groups win by construction — there is no explicit dedup to get wrong.
-  Operator settings beat built-in defaults, which is what makes
-  `BROWSER_HEADLESS = "0"` work, and which also lets an operator override a
-  `NINE_`-prefixed default such as `NINE_WORKSPACE` through `settings`.
+  Operator settings beat built-in defaults, which is what lets an operator
+  override a `NINE_`-prefixed default such as `NINE_WORKSPACE` through
+  `settings`.
 - **Reserved keys.** The three vars Nine computes freshly per spawn are off-limits
   to `settings`, because overriding one breaks the transport or the cache contract
   rather than merely changing a default. The reserved set is exactly
@@ -248,8 +247,8 @@ on. Files are also simply the right primitive for a half-downloaded tarball.
 `plugin.call` is synchronous: the daemon issues an HTTP request and waits. A
 20-minute download therefore holds the turn open to the daemon's
 `task_timeout_seconds` (default 1800), keeps the model idling on a tool result,
-and — for a plugin advertising `max_concurrent = 1`, like `browser` — occupies
-the plugin's only connection so nothing else can reach it. There is no way to
+and — for a plugin advertising `max_concurrent = 1`, like an MCP bridge —
+occupies the plugin's only connection so nothing else can reach it. There is no way to
 say "started, ask me later."
 
 ### The shape: return a handle, let the daemon poll
@@ -340,8 +339,8 @@ two ids and two goroutines. Three consequences have to be handled deliberately.
 **Jobs must not bypass `max_concurrent`.** The daemon enforces that cap as
 `MaxConnsPerHost` — it bounds *in-flight HTTP requests*, not work. A job start
 returns immediately, so the connection frees at once and the cap stops meaning
-anything: three agents could have three jobs running inside `browser`, which
-advertises `max_concurrent: 1` precisely because it drives one shared browser.
+anything: three agents could have three jobs running inside a plugin that
+advertises `max_concurrent: 1` precisely because it owns one shared resource.
 So **`NewJobs` honours the plugin's declared cap itself**, running jobs through a
 worker pool of that size (unbounded when the plugin declared none). Jobs beyond
 it sit in a new `queued` state, reported as such by `job_status` so the model can

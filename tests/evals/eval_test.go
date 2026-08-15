@@ -19,6 +19,7 @@ package evals_test
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -92,6 +93,12 @@ func TestLiveMatrix(t *testing.T) {
 		t.Fatal("set NINE_EVAL_MODELS to a comma-separated model list")
 	}
 
+	// Cases that declare an MCP server point at this fixture by name
+	// (`${NINE_EVAL_MCP_FIXTURE}`). Built here rather than committed as a binary,
+	// and only on the live path, so TestCasesValidate and TestReplayFixtures stay
+	// infra-free.
+	buildMCPFixture(t)
+
 	cases, err := runner.LoadCases(casesDir)
 	if err != nil {
 		t.Fatalf("load cases: %v", err)
@@ -163,4 +170,44 @@ func filterTier(cases []*runner.Case, tier string) []*runner.Case {
 		}
 	}
 	return out
+}
+
+// buildMCPFixture compiles the in-repo MCP server fixture and exports its path
+// as NINE_EVAL_MCP_FIXTURE for cases that declare `setup.mcp_servers`.
+//
+// A real third-party server (an npx package) would drag network, a package
+// resolve of a minute or more, and someone else's release cadence into a suite
+// that is meant to grade the model. The fixture is hermetic and instant, and the
+// path under test is identical: the daemon cannot tell one MCP server from
+// another. Fidelity against the real thing is covered separately, and
+// deliberately out of band, by internal/builtins/mcp_playwright_test.go.
+func buildMCPFixture(t *testing.T) {
+	t.Helper()
+	bin := filepath.Join(t.TempDir(), "testmcpserver")
+	cmd := exec.Command("go", "build", "-mod=vendor", "-o", bin, "./internal/builtins/testmcpserver")
+	cmd.Dir = moduleRoot(t)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build MCP fixture: %v\n%s", err, out)
+	}
+	t.Setenv("NINE_EVAL_MCP_FIXTURE", bin)
+}
+
+// moduleRoot walks up from the test's working directory to the repo root, so the
+// fixture builds by package path regardless of where the suite is invoked from.
+func moduleRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("go.mod not found above the test directory")
+		}
+		dir = parent
+	}
 }

@@ -111,7 +111,15 @@ Edit (or add) a `.md` file in the repo's `skills/` directory and rebuild. On the
 
 ## How Skills Affect the Agent
 
-Relevant skill names are injected into the self-model block (context priority 5 — dropped first under budget pressure). For complex turns with long histories, the skills hint may be trimmed; if a skill is critical, mention it explicitly:
+Two mechanisms, and the difference matters.
+
+**Passively**, relevant skill *names* are injected into the self-model block (context priority 5 — dropped first under budget pressure). Names only: the body is never preloaded. For complex turns with long histories the hint may be trimmed away entirely.
+
+**Actively**, the system prompt tells the agent to consult skills before a task with an established procedure — `skill_search` with a short description (or `skill_list` where no embedder is configured, since `skill_search` is embedder-gated), then `skill_read` the hit. This is default behaviour, not something a caller has to ask for.
+
+The active path exists because the passive one is not enough on its own. A name is not a procedure, and priority 5 is the first thing dropped under budget pressure — so on exactly the long, complex turns where a skill would help most, the hint is likeliest to be gone. It also carries knowledge the tool descriptions cannot: which tools *this* deployment has for a job, and what to do when it lacks them. `web-research` is the worked example — it branches on whether a browser MCP server is loaded (see [browser.md](browser.md)).
+
+If a skill is critical, you can still name it explicitly:
 
 ```bash
 ./nine "Using the git-workflow skill, help me write a commit message for these changes: ..."

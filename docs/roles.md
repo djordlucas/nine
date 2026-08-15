@@ -156,10 +156,24 @@ regresses if the orchestrator role ships with an empty body.
 Ship these as embedded skill files (suggested: `skills/roles/*.md`, still picked up by
 the existing `//go:embed`). Tool names below are exact (verified against the running
 plugins: `files` → `read_file`/`write_file`; `http` → `http_get`/`http_post`/
-`web_search`/`web_page_read`; `shell` → `shell`; `time` → `time`; `browser` →
-`browser_navigate`/`browser_click`/`browser_fill`/`browser_extract`/`browser_screenshot`/
-`browser_eval`/`browser_wait`/`browser_status`/`browser_reset`; core-intercepted →
+`web_search`/`web_page_read`; `shell` → `shell`; `time` → `time`; core-intercepted →
 `memory_*`, `file_*`, `skill_*`).
+
+**MCP tools and allowlists.** An MCP server's tools are prefixed with the server name
+(`playwright__browser_navigate`), and the prefix is chosen by the operator in
+`nine.toml`. A tool list is matched exactly — there is no pattern form — so a
+*built-in* role with an allowlist can never name an MCP tool, and will not receive
+one however the deployment is configured. This is why `report-writer` researches over
+HTTP even where a browser is available.
+
+Two ways out, both the operator's:
+
+- Author a role in `skills.d/roles/` naming the prefixed tools, since the operator
+  knows their own server names.
+- Use an `AllTools` role (`tools: "*"`), which receives whatever is loaded.
+
+Extending allowlists to match a prefix pattern would remove the need for both; it is
+not implemented, and would be a change to R-ROLE.2.
 
 ### Structural roots
 
@@ -216,8 +230,8 @@ finite, non-interactive leaf. As part of this feature:
 | `report-writer` | `web_search, web_page_read, http_get, read_file, file_store, file_fetch, file_list, file_search_text, memory_get, memory_set, skill_read` (**no `shell`, no `write_file`**) | `web-research` |
 
 All coarse leaf roles are `Delegates:false, SpawnsGoals:false, Persists:false,
-Interactive:false, Profile:nil`. (A `qa`/`browser` role over the `browser_*` tools is an
-obvious later addition; not required for v1.)
+Interactive:false, Profile:nil`. (A `qa`/`browser` role over a browser MCP server's
+`<name>__browser_*` tools is an obvious later addition; not required for v1.)
 
 ---
 

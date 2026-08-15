@@ -6,6 +6,12 @@
   `http.Client` (`internal/plugin/client.go`, `newHTTPClient`). MCP servers keep
   the legacy stdio JSON-RPC client.
 - **Date:** 2026-06-19 (design); implemented since.
+- **Superseded in part:** every reference below to a `browser` plugin is historical.
+  Nine no longer ships one — browser automation is an `[[mcp.server]]`
+  ([browser.md](browser.md)) — so the "plugin with shared mutable state that must
+  declare `max_concurrent: 1`" example is now the MCP bridge rather than `browser`.
+  MCP has also moved behind that same plugin contract (spec R-PLUG.15); it is no
+  longer a separate stdio client in the core.
 - **Motivation:** let a single plugin process handle **many concurrent requests** instead
   of serializing them, without spawning a process pool.
 
