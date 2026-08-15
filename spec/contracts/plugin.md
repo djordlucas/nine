@@ -487,10 +487,26 @@ implementation, and no `except MCP` clause in this contract: the stdio client, t
 `plugin.call ↔ tools/call` adapter, and the second spawn path all live inside one plugin
 that the daemon treats like every other.
 
-Content flattening is the bridge's known limitation: MCP replies can carry images and
-resource links, and only `text` content survives into the single-string result the plugin
-contract returns. This is unchanged from the previous in-core adapter, but it is now one
-plugin's constraint rather than Nine's tool contract's.
+### R-PLUG.15b — Content is flattened, never filtered
+
+An MCP reply is an array of content parts and the plugin contract returns one string, so
+the bridge flattens. It **MUST NOT** drop a part it does not understand.
+
+Text passes through. Binary parts — `image`, `audio`, and a `resource` carrying a blob —
+are decoded and written into the plugin's cache dir (R-PLUG.11), with the path named in
+the returned text; the bytes stay reachable through `read_file` without spending a context
+window on base64. An embedded `resource` carrying text contributes that text, a
+`resource_link` contributes its name and URI, and an unrecognized type is reported as
+unsupported.
+
+Silence is the one forbidden outcome. Text-only flattening made Playwright's
+`browser_take_screenshot` return its summary — *"Screenshot of viewport"*, page title, URL
+— with the image discarded, so the model received a confident account of a picture it
+never got and no way to notice. A part that cannot be delivered **MUST** still be
+described.
+
+A server-supplied name that reaches a path **MUST** be sanitized: tool names come from the
+server, and one called `../escaped` would otherwise write outside the cache dir.
 
 ---
 
