@@ -84,16 +84,31 @@ type Case struct {
 
 // Setup are fixtures written into the isolated store and workspace before the run.
 type Setup struct {
-	Files  map[string]string `yaml:"files"`  // workspace path -> content
-	KV     map[string]string `yaml:"kv"`     // pre-seeded key/value memory
-	Skills map[string]string `yaml:"skills"` // skill name -> body
-	Goals  []string          `yaml:"goals"`  // pre-seeded goal descriptions
+	Files  map[string]string     `yaml:"files"`  // workspace path -> content
+	KV     map[string]string     `yaml:"kv"`     // pre-seeded key/value memory
+	Skills map[string]SkillSetup `yaml:"skills"` // skill name -> skill
+	Goals  []string              `yaml:"goals"`  // pre-seeded goal descriptions
 
 	// MCPServers are MCP servers to bring up for this case, mirroring
 	// [[mcp.server]] in nine.toml. They belong to setup rather than to session
 	// config because they are part of the world the case needs to exist —
 	// tools, not a knob.
 	MCPServers []MCPServerSetup `yaml:"mcp_servers"`
+}
+
+// SkillSetup is one skill pre-seeded into a case's store.
+//
+// Description is not decoration: skill_search ranks the `skills` vector
+// namespace by embedded *description*, so a seeded skill without one is
+// invisible to semantic discovery. It used to be impossible to express — the
+// field was a bare name->body map — which is why the only way to get a
+// searchable catalog was to have the model write it, and that is what made
+// skill-search unpassable (populating the index taught the model the answer's
+// name, so it read by name instead of searching).
+type SkillSetup struct {
+	Description string   `yaml:"description"`
+	Tags        []string `yaml:"tags"`
+	Content     string   `yaml:"content"`
 }
 
 // MCPServerSetup declares one MCP server a case needs. It is the eval-side
