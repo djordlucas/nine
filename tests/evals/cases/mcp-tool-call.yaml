@@ -1,0 +1,39 @@
+id: mcp-tool-call
+description: >
+  Call a tool provided by an MCP server and report what it returned. Covers the
+  path every capability Nine does not implement itself now takes — a browser
+  included — end to end: [[mcp.server]] config, the bridge process, the
+  name-prefixed tool, the agent loop, the answer.
+track: live
+tier: smoke
+tags: [mcp, plugin]
+
+setup:
+  # The in-repo fixture server, built by the suite. Hermetic: no network, no
+  # package resolve, no third-party release cadence in a suite meant to grade the
+  # model. The daemon cannot tell it from any other MCP server.
+  mcp_servers:
+    - name: fixture
+      command: "${NINE_EVAL_MCP_FIXTURE}"
+
+prompts:
+  # The tool is named in full deliberately. The behaviour under test is that a
+  # prefixed MCP tool is callable and its result comes back — not whether a 4b
+  # model can guess that `fixture__mcp_echo` is the echo tool. Tool *discovery*
+  # under prefixing is worth its own case; conflating the two would make this one
+  # fail for the wrong reason.
+  - "Use the fixture__mcp_echo tool with the message `nine-mcp-eval-marker`, then tell me exactly what it returned."
+
+expect:
+  trajectory:
+    # The prefixed name is the assertion: an unprefixed `mcp_echo` reaching the
+    # model would mean two MCP servers could collide and silently lose a tool.
+    tools_all_of: [fixture__mcp_echo]
+    no_stall: true
+  answer:
+    contains: ["nine-mcp-eval-marker"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small
