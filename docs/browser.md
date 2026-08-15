@@ -127,11 +127,22 @@ the server only in the config of the instance that needs it.
 
 Two different mechanisms, worth keeping straight:
 
-**Snapshots** are written by the *server* into its `--output-dir` and returned
-as a **link**, not as inline text. So `browser_navigate` gives you the URL and
-title in the reply, but not the page content. To get page text into the model's
-context, call `browser_evaluate` (e.g. `() => document.body.innerText`) or
-`browser_snapshot` and read the linked file.
+**Snapshots** behave differently depending on how you got one. The snapshot
+*appended to an action's reply* (`browser_navigate`, `browser_click`) is written
+into `--output-dir` and returned as a **link** — so navigate gives you the final
+URL and page title, but not the content. A **direct `browser_snapshot` call
+returns the accessibility tree inline**, with a `[ref=eN]` handle on every
+element:
+
+```yaml
+- heading "Example Domain" [level=1] [ref=e3]
+- link "Learn more" [ref=e6]:
+  - /url: https://iana.org/domains/example
+```
+
+Those refs are what `browser_click`/`browser_type` take as `target` (a CSS
+selector works too). `browser_evaluate` is the alternative when you want raw
+text or a value the tree does not carry.
 
 **Images** — screenshots — come back as MCP image content. Nine decodes them and
 writes them into the plugin's cache dir, then names the file in the text reply
@@ -276,6 +287,25 @@ Other changes:
   no longer installs npm packages or a browser.
 - **Skills and prompts that name `browser_*` tools need updating** for the
   prefix and the renames.
+
+---
+
+## 9. Telling the agent how to use it
+
+Nine's system prompt says nothing about browsers — it cannot, since it does not
+know whether one is configured or what the operator named it. The guidance lives
+in the built-in **`web-research`** skill (`skills/web-research.md`), which is
+retrieved on relevance rather than costing every turn.
+
+That skill teaches the agent to branch on its own tool list: use the browser when
+a `*__browser_navigate` tool is present, fall back to `web_search` /
+`web_page_read` when it is not, and — importantly — report the limit rather than
+passing off a consent wall as the page's content.
+
+Note that a **role with a tool allowlist cannot receive MCP tools**: the list is
+matched exactly and the prefix is yours to choose, so built-in roles like
+`report-writer` stay on the HTTP path even here. See
+[roles.md](roles.md) for the two ways around that.
 
 ---
 
