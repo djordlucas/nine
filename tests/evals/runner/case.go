@@ -65,6 +65,13 @@ type Case struct {
 	Expect Expect `yaml:"expect"`
 
 	// Live-run controls (Track L).
+	// RequiresEnv names environment variables that must be set for this case to
+	// mean anything — infrastructure the suite cannot provide itself, like a
+	// browser for an MCP server to drive. A case missing one is reported as
+	// skipped rather than run and failed, so `make eval-live` does not silently
+	// start requiring a browser on every machine.
+	RequiresEnv []string `yaml:"requires_env"`
+
 	Runs          int    `yaml:"runs"`
 	PassThreshold string `yaml:"pass_threshold"` // e.g. "2/3"
 	TimeoutSecs   int    `yaml:"timeout_seconds"`
@@ -453,4 +460,17 @@ func isKebab(s string) bool {
 		}
 	}
 	return s[0] != '-' && s[len(s)-1] != '-'
+}
+
+// MissingEnv returns the RequiresEnv entries that are unset or empty. A case
+// with any missing is skipped: it needs infrastructure this machine does not
+// have, which is not the same as the model failing it.
+func (c *Case) MissingEnv() []string {
+	var missing []string
+	for _, key := range c.RequiresEnv {
+		if os.Getenv(key) == "" {
+			missing = append(missing, key)
+		}
+	}
+	return missing
 }

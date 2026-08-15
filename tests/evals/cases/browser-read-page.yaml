@@ -1,0 +1,65 @@
+id: browser-read-page
+description: >
+  Read a page with a real browser. Nine ships none, so this runs the upstream
+  Playwright MCP server and grades whether the agent actually drives it — the
+  seam mcp-tool-call does not reach, because a fixture echo tool cannot show
+  whether a browser is usable.
+track: live
+tier: multi_step
+tags: [browser, mcp, web, playwright]
+
+# Needs npx, network for the first package fetch, and an installed browser:
+#   npx @playwright/mcp@0.0.79 install-browser chrome-for-testing
+# Unset, the case is reported as skipped rather than run and failed, so
+# `make eval-live` does not start requiring a browser on every machine.
+requires_env: [NINE_EVAL_BROWSER]
+
+setup:
+  mcp_servers:
+    - name: playwright
+      command: npx
+      args:
+        - "-y"
+        - "@playwright/mcp@0.0.79"
+        - "--headless"
+        # Upstream defaults to the `chrome` channel, which needs a real Google
+        # Chrome install and fails outright without one.
+        - "--browser"
+        - "chromium"
+        - "--isolated"
+        - "--no-sandbox"
+
+prompts:
+  # example.com is the most stable page on the internet and its text is fixed.
+  # A local server would be more hermetic, but this case already requires network
+  # for the npx fetch, so there is nothing to buy by adding one.
+  #
+  # The prompt does NOT name a tool. That is the point: the question is whether
+  # the agent finds and drives the browser on its own, which is what the
+  # web-research skill and the system prompt's skill guidance exist to make
+  # happen. Naming the tool would test the bridge, which mcp-tool-call already
+  # covers.
+  - "Use the browser to open https://example.com and tell me the exact text of the page's main heading and its one paragraph of body text."
+
+expect:
+  trajectory:
+    # Navigating is not enough. browser_navigate returns the URL and title but
+    # NOT the page text — so an agent that stops there has not read the page,
+    # and the read tool is the assertion that matters.
+    tools_all_of: [playwright__browser_navigate]
+    tools_any_of: [playwright__browser_snapshot, playwright__browser_evaluate]
+    no_stall: true
+  answer:
+    contains: ["Example Domain"]
+    # The paragraph text, which is only reachable by actually reading the page —
+    # the title alone (which navigate does return) will not satisfy this.
+    matches: "(?i)documentation examples"
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  # Deliberately not `small`. A 4b model has to notice it has a browser among
+  # ~30 tools, then make two calls in the right order. If that turns out to be
+  # reliable at 4b this should be tightened — but claiming it before measuring
+  # would make every below-class miss look like a regression.
+  expected_pass_min_class: medium
