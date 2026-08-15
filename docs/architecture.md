@@ -20,8 +20,9 @@ Cross-references: [glossary.md](glossary.md) for term definitions,
 Nine is a **daemon/client pair**. A single long-lived daemon process owns all
 state; the `nine` binary is both the thin client and the daemon (it re-execs
 itself with a hidden subcommand). Plugins are independent child processes. The
-The LLM endpoint is the only external
-dependencies.
+LLM endpoint is the only external dependency Nine always has; each declared
+`[[mcp.server]]` adds another, because the bridge reaches a server that is
+fetched (`npx`) or hosted elsewhere (§10).
 
 ```
    ┌──────────────────────────────────────────────────────────────────────┐
@@ -94,7 +95,8 @@ Key consequences of this shape:
 |---------|--------|------|----------|
 | Client  | `nine` | TUI or one-shot request; connects to socket | Per invocation |
 | Daemon  | `nine` (re-exec) | Owns sockets, sessions, queue, plugins, DB connection | Long-lived |
-| Plugin  | `bin/<name>` | One tool provider, HTTP over a unix socket | Spawned by daemon, killed on stop |
+| Plugin  | `bin/<name>`, or `nine` (re-exec) for the built-ins | One tool provider, HTTP over a unix socket | Spawned by daemon, killed on stop |
+| MCP bridge | `nine` (re-exec) | One declared `[[mcp.server]]`: the plugin contract to the daemon, stdio or HTTP to the server | Spawned by daemon, killed on stop |
 | Sandboxed tool | *(none)* | JS/wasm in a wazero instance inside the daemon | One instance per call, closed on return |
 
 The CLI auto-starts the daemon if the socket is dead (`EnsureDaemon` in
@@ -555,8 +557,12 @@ lifecycle. A native plugin speaks a small two-method protocol (`plugin.describe`
 `POST /rpc`): the manager spawns the process, waits for the socket, and drives it
 with an `http.Client`, which gives free per-request concurrency and
 context-based cancellation (docs/plugins-http-transport.md). There is no second
-transport: an external **MCP** server is a plugin too, reached through the `mcp`
-bridge, which speaks stdio to the server and this same contract to the daemon.
+transport on the daemon's side: an external **MCP** server is a plugin too,
+reached through the `mcp` bridge, which speaks this same contract to the daemon.
+How the bridge reaches the server is the part that varies — `dialSpec`
+(`internal/builtins/mcp.go`) opens HTTP when the `[[mcp.server]]` declares a
+`url`, and spawns the `command` over stdio otherwise. Everything past that dial
+is transport-agnostic: one `mcpConn`, one handshake, one tool-prefixing rule.
 
 The Go default plugins are not separate executables: their handlers live in
 `internal/builtins`, and `Manager.StartBuiltin` spawns them by re-executing the
@@ -595,7 +601,9 @@ compiled into the image at build time and started at daemon boot:
 An MCP server is the exception to "compiled into the image": nothing is built for
 it, and the bridge reaches a server that is fetched (`npx`) or hosted elsewhere.
 The bridge process itself is still `nine plugin serve mcp`, so the lifecycle above
-is unchanged from the daemon's side.
+is unchanged from the daemon's side. [Browser automation](browser.md) is the
+worked example: Playwright's MCP server declared in `nine.toml`, no plugin
+written and nothing added to the image.
 
 Tool definitions are registered with the dispatcher at start time. (Their
 description embeddings for context-builder relevance ranking are computed lazily
