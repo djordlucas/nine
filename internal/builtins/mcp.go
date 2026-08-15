@@ -322,10 +322,10 @@ func mcpToolSurface(server string, conn mcpConn, tools []mcpTool) ([]plugin.Tool
 // mcpCall performs one tools/call and flattens the MCP content array to the
 // single string the plugin contract returns.
 //
-// The flattening is lossy — MCP content can carry images and resource links,
-// and only text survives. That was true of the old in-core adapter too, so it
-// is not a regression, but it is now a limitation of one plugin rather than of
-// Nine's tool contract, and can be revisited here alone.
+// Every part survives in some form — see flattenMCPContent. That was not always
+// true: text-only flattening meant a screenshot arrived as a summary saying a
+// screenshot was taken, minus the image, which is a plausible wrong answer
+// rather than a visible failure.
 func mcpCall(ctx context.Context, conn mcpConn, tool string, args json.RawMessage) (string, error) {
 	raw, err := conn.call(ctx, "tools/call", map[string]any{
 		"name":      tool,
@@ -435,13 +435,37 @@ func writeBinaryPart(b *strings.Builder, tool, kind, mime, data string) {
 		fmt.Fprintf(b, "\n[%s: %s, %d bytes, not saved — no plugin cache dir configured]", kind, mime, len(decoded))
 		return
 	}
-	name := fmt.Sprintf("%s-%d%s", tool, time.Now().UnixNano(), extensionForMIME(mime))
+	// The tool name is server-supplied and lands in a path, so it is sanitized
+	// rather than trusted: a server advertising a tool called "../escaped" would
+	// otherwise write its image outside the cache dir, anywhere the daemon can
+	// write. Verified before fixing — the file really did land in the parent.
+	name := fmt.Sprintf("%s-%d%s", safeFileName(tool), time.Now().UnixNano(), extensionForMIME(mime))
 	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, decoded, 0o600); err != nil {
 		fmt.Fprintf(b, "\n[%s: %s, %d bytes, could not be saved: %v]", kind, mime, len(decoded), err)
 		return
 	}
 	fmt.Fprintf(b, "\n[%s: %s, %d bytes, saved to %s]", kind, mime, len(decoded), path)
+}
+
+// safeFileName reduces a server-supplied name to something that cannot steer a
+// path: separators, traversal, and anything outside a conservative set are
+// replaced. Empty or fully-stripped input still yields a usable stem.
+func safeFileName(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	out := strings.Trim(b.String(), "_")
+	if out == "" {
+		return "part"
+	}
+	return out
 }
 
 // extensionForMIME picks a file extension so a saved part is recognisable.

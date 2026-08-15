@@ -13,9 +13,9 @@ const cfg = {
 
 mock.module('../config.js', () => ({ config: cfg }));
 
-let checkUrl;
+let checkUrl, isBlockedUrl;
 beforeAll(async () => {
-  ({ checkUrl } = await import('../security.js'));
+  ({ checkUrl, isBlockedUrl } = await import('../security.js'));
 });
 
 describe('checkUrl — valid URLs', () => {
@@ -162,5 +162,50 @@ describe('checkUrl — link-local and metadata endpoints', () => {
     cfg.allowPrivate = true;
     expect(() => checkUrl('http://169.254.169.254/')).not.toThrow();
     cfg.allowPrivate = false;
+  });
+});
+
+describe('checkUrl — IPv4-mapped IPv6', () => {
+  // The browser normalizes [::ffff:169.254.169.254] to [::ffff:a9fe:a9fe],
+  // which matches no IPv4 rule — so the mapped form bypassed every one of them
+  // and still reached the metadata endpoint.
+  it('blocks the metadata address written as a mapped IPv6 literal', () => {
+    expect(() => checkUrl('http://[::ffff:169.254.169.254]/')).toThrow(/private host/);
+  });
+
+  it('blocks mapped loopback', () => {
+    expect(() => checkUrl('http://[::ffff:127.0.0.1]/')).toThrow(/private host/);
+  });
+
+  it('blocks mapped RFC1918', () => {
+    expect(() => checkUrl('http://[::ffff:192.168.1.1]/')).toThrow(/private host/);
+    expect(() => checkUrl('http://[::ffff:10.0.0.1]/')).toThrow(/private host/);
+  });
+
+  it('still allows a mapped public address', () => {
+    expect(() => checkUrl('http://[::ffff:93.184.216.34]/')).not.toThrow();
+  });
+});
+
+describe('checkUrl — full fe80::/10', () => {
+  it('blocks across the whole range, not just fe8x', () => {
+    for (const h of ['fe80::1', 'fe8f::1', 'fe90::1', 'feaf::1', 'febf::1']) {
+      expect(() => checkUrl(`http://[${h}]/`)).toThrow(/private host/);
+    }
+  });
+
+  it('does not over-block fec0:: and above', () => {
+    expect(() => checkUrl('http://[fec0::1]/')).not.toThrow();
+  });
+});
+
+describe('isBlockedUrl — predicate form for the navigation guard', () => {
+  it('mirrors checkUrl without throwing', () => {
+    expect(isBlockedUrl('https://example.com')).toBe(false);
+    expect(isBlockedUrl('http://169.254.169.254/')).toBe(true);
+  });
+
+  it('treats an unreadable URL as blocked', () => {
+    expect(isBlockedUrl('not a url')).toBe(true);
   });
 });
