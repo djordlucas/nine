@@ -6,7 +6,7 @@
 |-------------|---------|-------|
 | Docker | 24+ | Required — runs the whole stack in one container |
 | Go | 1.26+ | For development (build from source) |
-| Node.js | 18+ | For development (browser plugin) |
+| Node.js | 18+ | Optional — only to run `npx`-launched MCP servers (e.g. a browser) |
 | golangci-lint | Latest | Optional, for `make lint` |
 
 An LLM provider is also required — see [Configuration](configuration.md) for options.
@@ -24,8 +24,10 @@ Inside the container the daemon opens `/data/nine.db` and reaches the host's LLM
 endpoint via `host.docker.internal`.
 
 There are two modes, built from the same `Dockerfile`, both based on
-`debian:bookworm-slim` — enough for chromium and Node, which the browser plugin
-needs. The `nine` binary is pure Go and carries no libc dependency of its own.
+`debian:bookworm-slim`. The `nine` binary is pure Go and carries no libc
+dependency of its own. Neither image ships a browser; the dev image carries
+`nodejs`/`npm` so an `npx`-launched MCP server can be tried out, and the runtime
+image carries neither (see [Browser Automation](browser.md#6-docker)).
 
 That extends to the sandboxed-tool host. Its wasm runtime (wazero) is pure Go,
 and the QuickJS interpreter it runs `js` tools on is **built ahead of time from
@@ -62,9 +64,7 @@ make session           # attaches to nine-dev if nine isn't running
 The hot-reload container (`nine-dev`) uses its own volumes and a cached Go build
 volume; the two modes are separate containers and are not meant to run at once.
 LLM knobs (`NINE_LLM_PROVIDER`/`MODEL`/`ENDPOINT`) pass through (empty = use
-`nine.toml`). The browser plugin (Chromium + Node) is present in **both**
-images — it is Node, so it is baked in as immutable content rather than rebuilt
-from the mounted source, but that applies equally to hot-reload and production.
+`nine.toml`).
 
 ### Inspecting the database
 
@@ -77,9 +77,8 @@ docker exec -it nine sh -c 'sqlite3 /data/nine.db ".tables"'
 
 ### Volume layout
 
-The `nine` binary (with built-in skills embedded), the compiled plugins, and the
-browser plugin code are immutable image content under `/opt/nine` — they are **not**
-stored in a volume. Each mode has **one** named volume for mutable state:
+The `nine` binary (with built-in skills embedded, and serving the built-in
+plugins) is immutable image content — it is **not** stored in a volume. Each mode has **one** named volume for mutable state:
 
 - `nine-data` / `nine-dev-data` — mounted at `/data`, holding both `nine.db`
   (conversations, goals, KV, skills, vectors, and the session event journal) and
@@ -129,15 +128,20 @@ the code from a checkout. For a containerized development loop instead, use
 git clone https://github.com/djordlucas/nine
 cd nine
 
-# Build the nine binary and the browser plugin
+# Build the nine binary
 make all
 ```
 
-The build produces:
-- `dist/nine` — the main CLI/daemon binary, which also *is* the `shell`, `files`,
-  `http`, and `time` plugins: the daemon starts each as a `nine plugin serve <name>`
-  child process, so they need no build step and no binary of their own
-- `dist/bin/browser` — browser plugin launcher (requires Node.js + npm)
+The build produces **one file**:
+
+- `dist/nine` — the CLI, the TUI, the daemon, and the `shell`, `files`, `http`, and
+  `time` plugins. The daemon starts each plugin as a `nine plugin serve <name>` child
+  process, so each keeps its own process, socket, and crash isolation while needing no
+  build step and no binary of its own.
+
+There is no second artifact. `dist/bin/` stays empty unless one of your own plugins
+puts a binary there, and a capability Nine does not implement itself arrives as an
+`[[mcp.server]]` rather than something to build (see [Browser Automation](browser.md)).
 
 ### 2. Config
 
@@ -177,8 +181,7 @@ records which models have been run and how they did.
 | Target | Description |
 |--------|-------------|
 | `make build` | Compile `dist/nine` (which serves the `shell`/`files`/`http`/`time` plugins too) |
-| `make browser-plugin` | Build the browser plugin (requires npm) |
-| `make all` | All of the above |
+| `make all` | Same as `make build` |
 | `make test` | Run all tests. The two live-model tests skip unless `NINE_LIVE_MODEL` names an Ollama tag (e.g. `NINE_LIVE_MODEL=qwen3.5:4b make test`) |
 | `make test-v` | Run tests with verbose output |
 | `make cover` | Generate `dist/coverage.out` |
@@ -226,5 +229,5 @@ Daemon Status
   Agents:   1 active
 
 Loaded Plugins
-  shell, files, http, plugins, skills, nine, time, browser
+  shell, files, http, plugins, skills, nine, time
 ```

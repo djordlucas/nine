@@ -98,12 +98,13 @@ ranking is bypassed (all candidates returned).
 - The `Manager`: spawn a binary (env `NINE_PLUGIN_SOCKET`, `NINE_BIN`, plus any per-plugin
   extras), wait for the socket, call `plugin.describe`, track `*Plugin{Name, client,
   Tools}`, and forward `plugin.call` over a pooled `http.Client`.
-- Default plugins started at boot: `files`, `shell`, `http`, `time`, `browser`. (Skills
+- Default plugins started at boot: `files`, `shell`, `http`, `time`. (Skills
   and memory are core-intercepted, not subprocesses.)
 - The Go four are not separate binaries: they live in the `nine` binary and are spawned
   as `nine plugin serve <name>` (R-PLUG.13), so `StartBuiltin` carries the plugin's name
-  explicitly rather than deriving it from the executable path. `browser` is Node +
-  Chromium and keeps its own artifact.
+  explicitly rather than deriving it from the executable path. Nine ships no other
+  plugin artifact; a capability it does not implement is an `[[mcp.server]]`
+  (R-PLUG.15), including browser automation.
 
 **Wire.** Tool definitions are registered with the dispatcher on start (they are **not**
 embedded — there is no `tools:` vector namespace). A crashed subprocess is isolated

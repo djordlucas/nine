@@ -95,6 +95,17 @@ func (s *Suite) RunLive(ctx context.Context, cases []*Case) []CaseModelResult {
 		if c.Track != TrackLive && c.Track != TrackBoth {
 			continue
 		}
+		// Recorded, not dropped: a case that never ran must not read as a pass.
+		if missing := c.MissingEnv(); len(missing) > 0 {
+			for _, model := range c.ApplicableModels(s.Models) {
+				out = append(out, CaseModelResult{
+					CaseID: c.ID, Model: model, Class: ClassOf(model).String(),
+					Tier: string(c.Tier), Threshold: c.PassThreshold,
+					Skipped: "requires " + strings.Join(missing, ", "),
+				})
+			}
+			continue
+		}
 		for _, model := range c.ApplicableModels(s.Models) {
 			provider, err := s.ProviderFor(model)
 			if err != nil {
@@ -188,6 +199,10 @@ func (r *Report) RenderGrid() string {
 			lc, ok := byCaseModel[id+"\x00"+m]
 			if !ok {
 				fmt.Fprintf(&b, " %-14s", "-")
+				continue
+			}
+			if lc.Skipped != "" {
+				fmt.Fprintf(&b, " %-14s", "skip")
 				continue
 			}
 			cell := lc.PassFraction()

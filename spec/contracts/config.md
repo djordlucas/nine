@@ -41,7 +41,7 @@ related_sessions_index  = true  # out-of-band related-session indexing + surfaci
 # [[agent]] … config-declared standing agents (see predefined-agents contract)
 
 [plugins]
-bin = ""                        # dir of plugins shipping their own binary (browser);
+bin = ""                        # dir of plugins shipping their own binary; Nine ships none —
                                 # the Go built-ins live in the nine binary (plugin.md R-PLUG.13)
 # user_dir = ""                 # operator plugins (sidecar-manifest layout); env NINE_PLUGINS_USER_DIR
 # cache_dir = ""                # per-plugin cache-dir root; default os.UserCacheDir()/nine/plugins; env NINE_PLUGINS_CACHE_DIR
@@ -135,8 +135,8 @@ The runtime separates **mutable state** from **immutable image content**:
 └── workspace/          files-plugin working directory
 
 /opt/nine                   immutable image content (NOT in a volume)
-├── bin/                browser launcher (the Go plugins are inside the nine binary)
-└── browser/            browser plugin JS + node_modules
+└── bin/                empty by default (the built-in plugins are inside the
+                        nine binary); a user plugin's binary may be mounted here
 ```
 
 Primary state is the **SQLite** file at `/data/nine.db`, so the database and the
@@ -157,7 +157,8 @@ and no source tree** (N3).
   database file path.
 - `NINE_BIN` and `NINE_PLUGIN_SOCKET` are passed to every plugin subprocess (the plugin
   binary directory and the per-plugin Unix socket the plugin listens on); some plugins
-  receive extra env (e.g. `BROWSER_*` settings for `browser`).
+  receive extra env (e.g. `NINE_WORKSPACE` for `files`, `NINE_MCP_SERVER` for an
+  `mcp` bridge instance).
 
 ---
 

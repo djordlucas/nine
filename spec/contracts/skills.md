@@ -97,6 +97,14 @@ registered nor advertised, and discovery falls back to `skill_list`.
 Skill tools are never preloaded into context as bulk content; only names/descriptions are
 cheap to surface, keeping context lean for small models.
 
+The system prompt **SHOULD** steer the agent to consult skills before a task with an
+established procedure — discovery followed by `skill_read` — rather than relying on the
+passive name hint alone. That hint is context priority 5 and is dropped first under
+budget pressure, so it is least likely to survive on the long turns where a skill helps
+most. Because `skill_search` is embedder-gated, such steering **MUST NOT** name it as
+the only route: it has to admit `skill_list`, or it names a tool that does not exist on
+an embedder-less deployment.
+
 ---
 
 ## R-SKILL.4 — Indexing hook

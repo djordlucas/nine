@@ -35,6 +35,11 @@ type CaseModelResult struct {
 	// Fatal is true when the model failed the threshold at or above the case's
 	// expected_pass_min_class — a real regression, versus a tolerated below-class miss.
 	Fatal bool `json:"fatal"`
+
+	// Skipped names the unmet requirement when the case did not run at all
+	// (requires_env). A skip is never fatal — it means "not measured here", and
+	// reporting it is what keeps that distinct from "passed".
+	Skipped string `json:"skipped,omitempty"`
 }
 
 // PassFraction returns passes/total as a display string.

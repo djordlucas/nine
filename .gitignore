@@ -12,3 +12,6 @@
 memory.db
 memory.db-shm
 memory.db-wal
+
+# Playwright MCP writes its output dir into the cwd of a browser eval run.
+.playwright-mcp/

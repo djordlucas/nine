@@ -16,8 +16,8 @@ running in the background, holds every conversation, goal, note and journal entr
 SQLite file on your disk, and drives a ReAct loop over a tool surface you assemble. A
 model on its own can only produce text; what makes it *do* something is the tools it is
 handed and somewhere to keep running once you stop typing — so Nine supplies both. It
-gives the model a shell, the filesystem, HTTP, a headless browser and whatever else you
-add, and it hosts that loop in a process that goes on taking turns without you. Anything
+gives the model a shell, the filesystem, HTTP, any MCP server you declare — a browser,
+say — and whatever else you add, and it hosts that loop in a process that goes on taking turns without you. Anything
 a computer can reach is something Nine can be pointed at, to automate outright or to
 work alongside you on.
 
@@ -167,7 +167,7 @@ conversation history. Run `nine` with no arguments for the interactive TUI.
 | Requirement | Version | Notes |
 |-------------|---------|-------|
 | Go | 1.26+ | Native build |
-| Node.js | 18+ | Browser plugin only |
+| Node.js | 18+ | Optional — only for `npx`-launched MCP servers |
 | Docker | 24+ | Container build (one container, no compose) |
 | golangci-lint | latest | Optional, for `make lint` |
 
@@ -187,10 +187,15 @@ cd nine
 make all
 ```
 
-This produces `dist/nine` — the CLI, the daemon, and the `shell`/`files`/`http`/`time`
-plugins in one binary (the daemon starts each as a `nine plugin serve <name>` child
-process). The browser plugin is Node + Chromium, so it stays a separate artifact in
-`dist/bin/` and additionally needs Node and npm.
+**Nine ships as a single binary.** That build produces exactly one file, `dist/nine`,
+and it is everything: the CLI, the TUI, the daemon, and the `shell`/`files`/`http`/`time`
+plugins — the daemon starts each by re-executing itself as `nine plugin serve <name>`, so
+they keep their own process and crash isolation without their own artifact. Deploying
+Nine is copying one file.
+
+Nothing else is built because nothing else needs to be: a capability Nine does not
+implement itself is declared as an `[[mcp.server]]` and fetched or hosted elsewhere.
+A browser is the worked example — see [docs/browser.md](docs/browser.md).
 
 Nine looks for its config, in order: `$NINE_CONFIG`, `./nine.toml`, `/nine.toml`,
 then `~/.nine/nine.toml`. The repo's `nine.toml` works as-is against a local Ollama;
@@ -216,8 +221,9 @@ native code at runtime. That still holds with sandboxed tools in the picture: th
 wasm interpreter they run on is a pre-built artifact committed to the repo, and the
 JavaScript bundler used when a generated tool pulls in a dependency is a pure-Go
 library compiled into the binary. Hot-reload mode bind-mounts the source and rebuilds
-via `inotifywait` — this is the development path. The browser plugin ships in both
-images, and `tools.d/` is mounted at `/tools.d` — though the subsystem still needs
+via `inotifywait` — this is the development path. Neither image ships a browser (the
+dev image does carry Node for `npx` MCP servers), and `tools.d/` is mounted at
+`/tools.d` — though the subsystem still needs
 `[tools] enabled = true` in the `nine.toml` you mount, which no environment variable
 can flip on.
 
@@ -338,7 +344,7 @@ message, prints the reply. Everything long-lived is in the daemon.
 │  │  ┌──────────────────┐  ┌─────────────────────┐ │ │
 │  │  │ Plugin Manager   │  │ Sandboxed Tool Host │ │ │
 │  │  │ shell files http │  │ wasm, in-process    │ │ │
-│  │  │ time browser     │  │ tools.d + generated │ │ │
+│  │  │ time mcp:*       │  │ tools.d + generated │ │ │
 │  │  │ (subprocesses,   │  │ (capabilities are   │ │ │
 │  │  │  unix sockets)   │  │  conferred by cfg)  │ │ │
 │  │  └──────────────────┘  └─────────────────────┘ │ │
@@ -396,10 +402,14 @@ invariants that hold it together — is in [docs/architecture.md](docs/architect
 
 ## Plugins
 
-Nine ships five plugins — `shell`, `files`, `http`, `time`, and the optional
-`browser` (headless Chromium: navigate, screenshot, extract, interact). They are
-separate binaries, spawned by the daemon, and the built-in set is fixed at build time.
-A crashing plugin is isolated from the daemon and from active conversations.
+Nine ships four plugins — `shell`, `files`, `http`, and `time`. They are served out of
+the `nine` binary itself, spawned by the daemon as child processes, and the built-in set
+is fixed at build time. A crashing plugin is isolated from the daemon and from active
+conversations.
+
+Beyond those, an **MCP server** declared as an `[[mcp.server]]` becomes a plugin too —
+its own process, its own roster row, tools prefixed with the server's name. That is how
+Nine drives a browser: see [docs/browser.md](docs/browser.md).
 
 Memory, durable file storage, semantic search, and skills are **not** plugins — they
 are core-intercepted, wired into the agent loop and calling the store in-process.
