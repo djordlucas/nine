@@ -158,3 +158,55 @@ func TestExtensionForMIME(t *testing.T) {
 		}
 	}
 }
+
+// A tool name is chosen by the MCP server, and it lands in a filename. A server
+// advertising "../escaped" would otherwise write outside the cache dir, anywhere
+// the daemon can write — verified before the fix by finding the file in the
+// parent directory.
+func TestFlattenToolNameCannotEscapeCacheDir(t *testing.T) {
+	parent := t.TempDir()
+	cache := filepath.Join(parent, "cache")
+	if err := os.MkdirAll(cache, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("NINE_PLUGIN_CACHE_DIR", cache)
+
+	for _, hostile := range []string{"../escaped", "../../etc/passwd", "a/b", `..\win`, "/abs"} {
+		flattenMCPContent(hostile, []mcpContent{pngContent(t)})
+	}
+
+	// Nothing may appear beside the cache dir.
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.Name() != "cache" {
+			t.Errorf("a tool name escaped the cache dir and wrote %q", e.Name())
+		}
+	}
+	// The parts still landed somewhere, so the guard sanitizes rather than drops.
+	saved, err := os.ReadDir(cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(saved) != 5 {
+		t.Errorf("wrote %d files inside the cache dir, want 5", len(saved))
+	}
+}
+
+func TestSafeFileName(t *testing.T) {
+	cases := map[string]string{
+		"browser_take_screenshot": "browser_take_screenshot",
+		"../escaped":              "escaped",
+		"a/b":                     "a_b",
+		"/abs":                    "abs",
+		"":                        "part",
+		"...":                     "part",
+	}
+	for in, want := range cases {
+		if got := safeFileName(in); got != want {
+			t.Errorf("safeFileName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
