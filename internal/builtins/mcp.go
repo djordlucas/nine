@@ -2,9 +2,11 @@ package builtins
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -334,29 +336,131 @@ func mcpCall(ctx context.Context, conn mcpConn, tool string, args json.RawMessag
 	}
 
 	var result struct {
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-		IsError bool `json:"isError"`
+		Content []mcpContent `json:"content"`
+		IsError bool         `json:"isError"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
 		return "", fmt.Errorf("parse tools/call response: %w", err)
 	}
 
-	var text strings.Builder
-	for _, c := range result.Content {
-		if c.Type == "text" {
-			text.WriteString(c.Text)
-		}
-	}
+	text := flattenMCPContent(tool, result.Content)
+
 	// An MCP tool reports failure in-band via isError; the plugin contract wants
 	// a Go error, so the model sees a failed tool call rather than prose that
 	// happens to describe a failure.
 	if result.IsError {
-		return "", fmt.Errorf("%s: %s", tool, text.String())
+		return "", fmt.Errorf("%s: %s", tool, text)
 	}
-	return text.String(), nil
+	return text, nil
+}
+
+// mcpContent is one item of a tools/call result. MCP defines several kinds and
+// a server may return a mix — Playwright's browser_take_screenshot answers with
+// a text summary *and* an image in the same response.
+type mcpContent struct {
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	Data     string `json:"data,omitempty"`     // image/audio: base64
+	MimeType string `json:"mimeType,omitempty"` // image/audio
+	URI      string `json:"uri,omitempty"`      // resource_link
+	Name     string `json:"name,omitempty"`     // resource_link
+	Resource *struct {
+		URI      string `json:"uri,omitempty"`
+		MimeType string `json:"mimeType,omitempty"`
+		Text     string `json:"text,omitempty"`
+		Blob     string `json:"blob,omitempty"` // base64
+	} `json:"resource,omitempty"`
+}
+
+// flattenMCPContent renders a tools/call result as the single string the plugin
+// contract returns.
+//
+// Everything that is not text used to be dropped on the floor. That is worse
+// than it sounds: a screenshot came back as a text summary saying a screenshot
+// was taken, plus the image — so the model was handed a confident description
+// of a picture it never received, and had no way to tell. Nothing is silently
+// discarded now. Binary parts are written to the plugin's cache dir and named
+// in the text, so the bytes stay reachable (read_file) without spending a
+// context window on base64.
+func flattenMCPContent(tool string, content []mcpContent) string {
+	var b strings.Builder
+	for _, c := range content {
+		switch c.Type {
+		case "text":
+			b.WriteString(c.Text)
+
+		case "image", "audio":
+			writeBinaryPart(&b, tool, c.Type, c.MimeType, c.Data)
+
+		case "resource":
+			switch {
+			case c.Resource == nil:
+				fmt.Fprintf(&b, "\n[%s: empty resource]", c.Type)
+			case c.Resource.Text != "":
+				b.WriteString(c.Resource.Text)
+			case c.Resource.Blob != "":
+				writeBinaryPart(&b, tool, "resource", c.Resource.MimeType, c.Resource.Blob)
+			default:
+				fmt.Fprintf(&b, "\n[resource: %s]", c.Resource.URI)
+			}
+
+		case "resource_link":
+			fmt.Fprintf(&b, "\n[resource: %s %s]", c.Name, c.URI)
+
+		default:
+			// An unknown kind is still reported rather than dropped: a future MCP
+			// content type should look like something missing, not like nothing.
+			fmt.Fprintf(&b, "\n[unsupported MCP content type %q]", c.Type)
+		}
+	}
+	return b.String()
+}
+
+// writeBinaryPart saves a base64 part beside the plugin's cache dir and notes
+// where it went. With no cache dir configured it says what was received and
+// that it was not kept — still better than silence.
+func writeBinaryPart(b *strings.Builder, tool, kind, mime, data string) {
+	if data == "" {
+		fmt.Fprintf(b, "\n[%s: empty]", kind)
+		return
+	}
+	decoded, err := base64.StdEncoding.DecodeString(data)
+	if err != nil {
+		fmt.Fprintf(b, "\n[%s: undecodable base64 (%d chars)]", kind, len(data))
+		return
+	}
+
+	dir := os.Getenv("NINE_PLUGIN_CACHE_DIR")
+	if dir == "" {
+		fmt.Fprintf(b, "\n[%s: %s, %d bytes, not saved — no plugin cache dir configured]", kind, mime, len(decoded))
+		return
+	}
+	name := fmt.Sprintf("%s-%d%s", tool, time.Now().UnixNano(), extensionForMIME(mime))
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, decoded, 0o600); err != nil {
+		fmt.Fprintf(b, "\n[%s: %s, %d bytes, could not be saved: %v]", kind, mime, len(decoded), err)
+		return
+	}
+	fmt.Fprintf(b, "\n[%s: %s, %d bytes, saved to %s]", kind, mime, len(decoded), path)
+}
+
+// extensionForMIME picks a file extension so a saved part is recognisable.
+func extensionForMIME(mime string) string {
+	// Strip any parameters ("image/png; charset=..."), then take the subtype.
+	mime, _, _ = strings.Cut(mime, ";")
+	_, sub, ok := strings.Cut(strings.TrimSpace(mime), "/")
+	if !ok || sub == "" {
+		return ".bin"
+	}
+	if i := strings.LastIndex(sub, "+"); i >= 0 { // image/svg+xml → xml
+		sub = sub[i+1:]
+	}
+	for _, r := range sub {
+		if !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9') {
+			return ".bin"
+		}
+	}
+	return "." + sub
 }
 
 // exitWhenServerDies ends the bridge when its MCP server exits on its own.
