@@ -109,6 +109,10 @@ setup:
       args: []
       env: {}                        # passed to the server process only
 
+# ── Infrastructure this case needs but the suite cannot provide. Unset → the
+#    case is reported as skipped (never as a pass, never fatal). ──
+requires_env: [NINE_EVAL_BROWSER]
+
 # ── The request. Each string is one user turn on the same session. ──
 prompts:
   - "Remember my prod DB host is db.prod.example.com"

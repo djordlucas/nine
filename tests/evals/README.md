@@ -86,4 +86,22 @@ release cadence into a suite meant to grade the model; the daemon cannot tell th
 two apart. Fidelity against a real server is covered out of band by
 `internal/builtins/mcp_playwright_test.go` (see [browser.md](../../docs/browser.md) §7).
 
-`mcp-tool-call` is the worked example.
+`mcp-tool-call` is the worked example: it asserts the model calls the *prefixed*
+tool (`fixture__mcp_echo`) and that its output reaches the answer.
+
+### Cases that need real infrastructure
+
+A fixture proves the bridge works; it cannot prove a *browser* is usable by an agent.
+`browser-read-page` runs the real upstream Playwright MCP server and grades whether the
+agent finds and drives it without being told the tool name — the seam `mcp-tool-call`
+does not reach.
+
+Such a case declares `requires_env`, and is reported as **skipped** when the variable is
+unset rather than run and failed, so `make eval-live` does not start requiring a browser
+on every machine. A skip is never fatal, and it is recorded in the report rather than
+dropped — a case that never ran must not read as a pass.
+
+```sh
+npx @playwright/mcp@0.0.79 install-browser chrome-for-testing
+NINE_EVAL_BROWSER=1 NINE_EVAL_MODELS=qwen3.5:4b make eval-live
+```
