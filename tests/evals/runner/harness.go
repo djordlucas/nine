@@ -117,12 +117,28 @@ func (h *Harness) Run(ctx context.Context, c *Case, provider llm.Provider) (res 
 	r.Workspace = workspace
 	r.cleanups = append(r.cleanups, func() { os.RemoveAll(workspace) })
 
-	// 3. Apply setup fixtures to the fresh store + workspace.
-	if err := applySetup(store, workspace, c.Setup); err != nil {
+	// 3. Seed the built-in skills, exactly as cmd/nine/daemon.go does at boot,
+	//    then layer the case's own fixtures on top (production order: built-ins,
+	//    then user skills).
+	//
+	//    Without this the eval world had *no* built-in skills at all: `nine`
+	//    ships a dozen, production seeds and embeds them on every boot, and a
+	//    case saw none of them. That silently put the whole built-in corpus
+	//    beyond reach of the suite — no case could exercise the guidance in
+	//    web-research, git-workflow, or any other, which is precisely the
+	//    knowledge those skills exist to carry. It also left the `skills` vector
+	//    namespace empty, so skill_search had nothing to rank unless the case's
+	//    own model wrote something first.
+	if err := runtime.SeedSkills(store, h.Embedder); err != nil {
+		return nil, fmt.Errorf("seed built-in skills: %w", err)
+	}
+
+	// 4. Apply setup fixtures to the fresh store + workspace.
+	if err := applySetup(store, h.Embedder, workspace, c.Setup); err != nil {
 		return nil, fmt.Errorf("apply setup: %w", err)
 	}
 
-	// 4. Plugins (optional). Each gets the workspace as its root so file writes
+	// 5. Plugins (optional). Each gets the workspace as its root so file writes
 	//    and setup.files line up. A failed start is logged and skipped by
 	//    TryStartBuiltin.
 	pluginMgr := plugin.NewManager("")
@@ -134,7 +150,7 @@ func (h *Harness) Run(ctx context.Context, c *Case, provider llm.Provider) (res 
 		pluginMgr.TryStartBuiltin("shell")
 		pluginMgr.TryStartBuiltin("http")
 		pluginMgr.TryStartBuiltin("time")
-		// 4b. MCP servers the case declares, mirroring startMCPServers in
+		// 5b. MCP servers the case declares, mirroring startMCPServers in
 		//     cmd/nine/daemon.go. This is not an optional extra: a capability Nine
 		//     does not implement itself now arrives this way and no other, so a
 		//     harness that skipped it could not exercise a browser, or any other
@@ -143,7 +159,7 @@ func (h *Harness) Run(ctx context.Context, c *Case, provider llm.Provider) (res 
 	}
 	r.cleanups = append(r.cleanups, func() { pluginMgr.StopAll() }) //nolint:errcheck
 
-	// 5. Assemble the daemon core — the same wiring cmd/nine/daemon.go uses, minus
+	// 6. Assemble the daemon core — the same wiring cmd/nine/daemon.go uses, minus
 	//    the production-only bootstrap (resume, standing agents, self-reflection,
 	//    subscribers). The store, plugins, provider queue, and per-case knobs are
 	//    injected; the runner serializes runs because Assemble registers the
@@ -290,15 +306,34 @@ func driveTurns(ctx context.Context, sock string, client *protocol.Client, agent
 }
 
 // applySetup seeds the isolated store and workspace with the case's fixtures.
-func applySetup(store *memory.Store, workspace string, s Setup) error {
+// embedder may be nil, in which case seeded skills are stored but not indexed —
+// and so are not reachable by skill_search.
+func applySetup(store *memory.Store, embedder embed.Embedder, workspace string, s Setup) error {
 	for k, v := range s.KV {
 		if err := store.Set(k, v); err != nil {
 			return fmt.Errorf("seed kv %q: %w", k, err)
 		}
 	}
-	for name, body := range s.Skills {
-		if err := store.SkillUpsert(memory.Skill{Name: name, Content: body, Source: "eval"}); err != nil {
+	for name, sk := range s.Skills {
+		if err := store.SkillUpsert(memory.Skill{
+			Name:        name,
+			Description: sk.Description,
+			Tags:        sk.Tags,
+			Content:     sk.Content,
+			Source:      "eval",
+		}); err != nil {
 			return fmt.Errorf("seed skill %q: %w", name, err)
+		}
+		// Index it the same way skill_write does, or the skill exists but no
+		// skill_search can find it.
+		if embedder != nil && sk.Description != "" {
+			vec, err := embedder.Embed(context.Background(), sk.Description)
+			if err != nil {
+				return fmt.Errorf("embed seeded skill %q: %w", name, err)
+			}
+			if err := store.VectorStore("skills:"+name, "skills", name, vec); err != nil {
+				return fmt.Errorf("index seeded skill %q: %w", name, err)
+			}
 		}
 	}
 	for _, desc := range s.Goals {
