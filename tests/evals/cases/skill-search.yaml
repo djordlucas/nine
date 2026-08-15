@@ -1,23 +1,68 @@
 id: skill-search
-description: "Save several skills, then find one by meaning rather than by name. The later turn's phrasing never names the target skill, so the model must skill_search the vector-indexed catalog (populated by skill_write) and skill_read the hit, not enumerate with skill_list."
+description: >
+  Find a skill by meaning rather than by name. The catalog is pre-seeded, so the
+  model has never seen these skills and cannot know what they are called — it has
+  to skill_search the vector-indexed descriptions and skill_read the hit.
 track: live
 tier: multi_step
 tags: [skills, search, vectors, semantic]
 
+# Seeded rather than written by the model in an earlier turn.
+#
+# This case used to open with "save three skills for me", then ask about one of
+# them on the next turn. That could not pass: writing the skills put their names
+# in the conversation, so the model correctly went straight to
+# skill_read pg-restore and was marked wrong for not searching for a name it
+# already knew. Traced on qwen3.5:4b and on the then-current main, skill_search
+# was never called in 3/3 runs either way. Seeding is what makes the search
+# necessary — and it needs `description`, since skill_search ranks embedded
+# descriptions, not content.
+#
+# skill_write coverage is not lost: skill-write-recall exercises write-then-recall.
+setup:
+  skills:
+    pg-restore:
+      description: Recover the production Postgres database after data loss
+      tags: [database, disaster-recovery]
+      content: |
+        # Restoring production Postgres
+
+        Recover from the nightly S3 snapshot:
+
+        ```
+        pg_restore --clean --if-exists -d production /snapshots/nightly.dump
+        ```
+    redis-flush:
+      description: Safely clear the Redis cache without dropping traffic
+      tags: [cache, redis]
+      content: |
+        # Flushing Redis
+
+        Drain clients first, then `redis-cli FLUSHDB` one shard at a time.
+    cert-renew:
+      description: Renew the TLS certificates before they expire
+      tags: [tls, certificates]
+      content: |
+        # Renewing TLS certificates
+
+        Run `certbot renew --deploy-hook "systemctl reload nginx"`.
+
 prompts:
-  - "Save three separate skills for me, each with its own name, a one-line description, and the content. (1) name 'pg-restore', how to recover the production Postgres database — run `pg_restore` from the nightly S3 snapshot. (2) name 'redis-flush', how to safely flush the Redis cache. (3) name 'cert-renew', how to renew the TLS certificates."
+  # Never names the skill, and never uses a word from its title. "recovering the
+  # production database after data loss" has to be matched against the seeded
+  # description semantically.
   - "Search your saved skills for the one about recovering the production database after data loss, and tell me the exact command it says to run."
 
 expect:
-  side_effects:
-    vectors: { namespace: skills, min: 3 }
   trajectory:
-    tools_all_of: [skill_write, skill_search]
-    tools_any_of: [skill_read]
+    # The point of the case. skill_read alone would mean the model guessed a
+    # name; skill_list alone would mean it enumerated instead of searching.
+    tools_all_of: [skill_search]
     no_stall: true
   answer:
     contains: ["pg_restore"]
-    not_contains: ["redis", "cert"]
+    # Proves it returned the right skill rather than summarising the catalog.
+    not_contains: ["redis", "certbot"]
 
 runs: 3
 pass_threshold: "2/3"
