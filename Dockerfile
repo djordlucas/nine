@@ -7,21 +7,12 @@ COPY . .
 
 # One binary: the shell/files/http/time plugins are served out of nine itself
 # (`nine plugin serve <name>`, internal/builtins), so there is no per-plugin
-# build loop and nothing to copy into /opt/nine/bin but the browser launcher.
+# build loop and nothing to copy into /opt/nine/bin at all.
 RUN go build -mod=vendor -o /usr/local/bin/nine ./cmd/nine
 
-# ── Node build stage (browser plugin npm deps) ───────────────────────────────
-# Shared by both dev and runtime: the browser plugin is Node, so its deps are
-# installed here rather than built from the mounted source.
-FROM node:alpine AS node-build
-
-WORKDIR /nine-src/plugins/browser
-COPY plugins/browser/package.json plugins/browser/package-lock.json ./
-RUN npm ci --production
-
 # ── s6-overlay fetch stage (shared by dev + runtime) ──────────────────────────
-# s6-overlay supervises the daemon (docs/single-container.md): it reaps the
-# zombies the browser plugin's chromium leaves behind, forwards docker stop's
+# s6-overlay supervises the daemon (docs/single-container.md): it reaps orphaned
+# children (an MCP server's process tree, for one), forwards docker stop's
 # SIGTERM, and restarts the service if it exits. Fetched once here and copied
 # into both final stages rather than downloaded twice.
 FROM debian:bookworm-slim AS s6-fetch
@@ -68,11 +59,20 @@ COPY --from=s6-fetch /out/ /
 # stages.
 COPY --from=go-build /usr/local/go /usr/local/go
 
+# nodejs + npm are here for `npx`-launched MCP servers, which is how the dev
+# image reaches anything Nine does not build itself — a browser included
+# (docs/browser.md). The dev image carries them where runtime does not, because
+# this is where an operator experiments with a server before committing to it.
+# No browser: `npx @playwright/mcp@<ver> install-browser chrome-for-testing`
+# fetches a matched build on first use, into the /data volume via
+# PLAYWRIGHT_BROWSERS_PATH, so it survives a container restart without bloating
+# the image for everyone who never browses. (That is the command, not `npx
+# playwright install chromium` — see docs/browser.md §1.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git \
       inotify-tools \
-      chromium \
       nodejs \
+      npm \
       ca-certificates \
       fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
@@ -81,20 +81,12 @@ ENV PATH=/usr/local/go/bin:$PATH \
     GOFLAGS=-mod=vendor \
     GOCACHE=/root/.cache/go-build \
     NINE_BIN=/opt/nine/bin \
-    PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
-    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+    PLAYWRIGHT_BROWSERS_PATH=/data/.playwright
 
-# The browser plugin is Node, so the hot-reload loop cannot rebuild it from the
-# mounted source the way it rebuilds the Go plugins. Bake it in as immutable
-# image content exactly as runtime does, under /opt/nine (never the /nine-src
-# mount): the daemon then finds /opt/nine/bin/browser on every start, and the
-# hot-reload loop neither rebuilds nor restarts it. Editing plugins/browser/
-# therefore needs an image rebuild, which is the same deal as production.
-COPY plugins/browser/ /opt/nine/browser/
-COPY --from=node-build /nine-src/plugins/browser/node_modules/ /opt/nine/browser/node_modules/
-RUN mkdir -p /opt/nine/bin && \
-    printf '#!/bin/sh\nexec node /opt/nine/browser/index.js "$@"\n' \
-      > /opt/nine/bin/browser && chmod +x /opt/nine/bin/browser
+# /opt/nine/bin is the standalone-plugin directory ([plugins].bin, NINE_BIN).
+# Nothing ships into it now that the Go built-ins live in the nine binary, but
+# the daemon still resolves it, and a user plugin mounted at runtime lands here.
+RUN mkdir -p /opt/nine/bin
 
 COPY docker/s6/common/user-bundles.d/ /etc/s6-overlay/user-bundles.d/
 COPY docker/s6/dev/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
@@ -111,33 +103,26 @@ FROM debian:bookworm-slim AS runtime
 
 COPY --from=s6-fetch /out/ /
 
-# Chromium, system deps, and Node.js runtime for the browser plugin.
-# No Go toolchain, git, or source tree: Nine no longer modifies itself.
+# No Go toolchain, git, or source tree: Nine no longer modifies itself. No Node
+# and no chromium either — the runtime image ships what Nine itself needs, and
+# an MCP server is by definition something Nine does not build. An operator who
+# wants one in production derives an image from this and installs its runtime,
+# or points a [[mcp.server]] at a hosted url. docs/browser.md walks through both
+# for the browser case.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      chromium \
-      nodejs \
       ca-certificates \
-      fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
-ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
-    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
-    NINE_BIN=/opt/nine/bin
+ENV NINE_BIN=/opt/nine/bin
 
 COPY --from=go-build /usr/local/bin/nine /usr/local/bin/nine
 
-# Browser plugin code is immutable image content under /opt/nine — not seeded
-# into the /data volume. It is the only plugin left with its own artifact.
-COPY plugins/browser/ /opt/nine/browser/
-COPY --from=node-build /nine-src/plugins/browser/node_modules/ /opt/nine/browser/node_modules/
-
-# Browser plugin launcher: node runs index.js from the baked-in plugin dir.
-# mkdir is required, not decorative: /opt/nine/bin used to be created as a side
-# effect of copying the compiled plugin binaries in, and those are gone now that
-# the Go plugins live in the nine binary. The dev stage does the same.
-RUN mkdir -p /opt/nine/bin && \
-    printf '#!/bin/sh\nexec node /opt/nine/browser/index.js "$@"\n' \
-      > /opt/nine/bin/browser && chmod +x /opt/nine/bin/browser
+# /opt/nine/bin is the standalone-plugin directory ([plugins].bin, NINE_BIN).
+# mkdir is required, not decorative: it used to be created as a side effect of
+# copying compiled plugin binaries in, and those are gone now that the built-ins
+# live in the nine binary. The daemon still resolves the path, and a user plugin
+# mounted at runtime lands here. The dev stage does the same.
+RUN mkdir -p /opt/nine/bin
 
 COPY docker/s6/common/user-bundles.d/ /etc/s6-overlay/user-bundles.d/
 COPY docker/s6/runtime/s6-rc.d/ /etc/s6-overlay/s6-rc.d/

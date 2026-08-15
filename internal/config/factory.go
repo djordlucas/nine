@@ -296,13 +296,6 @@ func (cfg *Config) pluginDefaults(name string) []string {
 			return []string{"NINE_WORKSPACE=" + cfg.Workspace.Root}
 		}
 		return nil
-	case "browser":
-		return []string{
-			"BROWSER_HEADLESS=1",
-			"BROWSER_TIMEOUT=30000",
-			"BROWSER_VIEWPORT_WIDTH=1280",
-			"BROWSER_VIEWPORT_HEIGHT=800",
-		}
 	default:
 		return nil
 	}

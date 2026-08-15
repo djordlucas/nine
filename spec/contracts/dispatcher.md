@@ -77,7 +77,7 @@ See [`../../docs/tool-output-spill.md`](../../docs/tool-output-spill.md).
 ```text
 TOOL CALL
    ├── PLUGIN TOOLS  (RegisterPlugin)        handler → manager.Call(plugin, …) → JSON-RPC
-   │      shell, read_file, write_file, http_*, web_*, skill_*, time, browser_*
+   │      shell, read_file, write_file, http_*, web_*, skill_*, time, <mcp>__*
    ├── SANDBOXED TOOLS (RegisterSandboxed)   handler → toolvm.Host.Call → wasm, in-process
    │      operator-installed, from [tools].user_dir (see toolvm.md)
    └── CORE-INTERCEPTED TOOLS (Register* at build) handled in-process, no subprocess:

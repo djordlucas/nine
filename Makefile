@@ -1,9 +1,12 @@
 BINARY   := nine
 CMD      := ./cmd/nine
 DIST     := dist
-# BIN_DIR holds plugins that ship as their own artifacts. Since the Go built-ins
-# (shell/files/http/time) moved into the nine binary as `nine plugin serve
-# <name>` (internal/builtins), that is the browser plugin alone.
+# BIN_DIR holds plugins that ship as their own artifacts. The Go built-ins
+# (shell/files/http/time) are served out of the nine binary as `nine plugin
+# serve <name>` (internal/builtins), and browser automation is now an ordinary
+# MCP server declared in nine.toml (docs/browser.md) rather than a plugin we
+# build — so nothing here builds into it. It stays as the directory a user
+# plugin drops its binary in ([plugins].bin).
 BIN_DIR  := $(DIST)/bin
 
 GO       := go
@@ -18,7 +21,7 @@ LDFLAGS  := -ldflags "-X main.Version=$(VERSION)"
 
 .PHONY: all dev build test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-generate quickjs-wasm quickjs-verify
 
-dev: build browser-plugin
+dev: build
 
 all: dev
 
@@ -32,18 +35,6 @@ build:
 	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(DIST)/$(BINARY) $(CMD)
 
 FORCE:
-
-# ── browser plugin ────────────────────────────────────────────────────────────
-
-browser-plugin: $(BIN_DIR)/browser
-
-$(BIN_DIR)/browser: FORCE
-	@mkdir -p $(BIN_DIR)
-	cd plugins/browser && npm install
-	cd plugins/browser && npx playwright install chromium
-	cd plugins/browser && sh build.sh ../../$(BIN_DIR)/browser
-
-.PHONY: browser-plugin
 
 # ── sandboxed tools: the QuickJS blob ─────────────────────────────────────────
 # Deliberately NOT part of `dev` or `build` (docs/sandboxed-tools.md §10.1). The

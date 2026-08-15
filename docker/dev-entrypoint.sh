@@ -11,9 +11,9 @@
 # out of the nine binary as `nine plugin serve <name>` (internal/builtins), so
 # restarting the daemon picks up plugin edits with no separate build step.
 #
-# The browser plugin is not part of this loop: it is Node, and the `dev` stage
-# bakes it under /opt/nine/browser as immutable image content. Rebuilding it
-# needs an image rebuild, so its source is excluded from the watch below.
+# Nothing else is built here. A capability Nine does not implement itself is an
+# [[mcp.server]] (docs/browser.md), which this loop never builds or restarts:
+# the daemon respawns its bridge on the next start like any other plugin.
 set -eu
 
 # s6 run scripts execute with cwd "/", not the Dockerfile's last WORKDIR, so
@@ -56,7 +56,7 @@ while :; do
 	# shutdown entirely. `wait` on a backgrounded pid is interrupted by a
 	# trapped signal immediately, so shutdown while idle here stays prompt.
 	inotifywait -qq -r -e modify,create,delete,move \
-		--exclude '(/\.git/|/vendor/|/dist/|/tmp/|/docs/|/spec/|/plugins/browser/)' /nine-src &
+		--exclude '(/\.git/|/vendor/|/dist/|/tmp/|/docs/|/spec/)' /nine-src &
 	WATCH=$!
 	wait "$WATCH" || break
 	# Coalesce editor save bursts.

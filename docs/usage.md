@@ -165,8 +165,11 @@ Loaded Plugins
   files     2 tools
   http      4 tools
   time      1 tool
-  browser   9 tools
 ```
+
+An MCP server appears here too, under `mcp:<name>` (e.g. `mcp:playwright  24 tools`),
+as does any plugin from `plugins.d/`. A plugin withheld by `[plugins].disabled` is
+shown as `off` rather than omitted.
 
 (Memory, file, vector, and skill tools are core-intercepted, not plugins.)
 
@@ -368,7 +371,8 @@ so `./nine spec wire-protocol | less` and `./nine docs usage > usage.txt` both w
 
 ### 3. Web Research
 
-Nine uses the browser plugin for web research by default — it opens a real Chromium instance and can handle JavaScript-rendered pages, authentication, and dynamic content.
+Out of the box, web research goes through `web_search` and `web_page_read` — plain
+HTTP, no JavaScript.
 
 ```bash
 ./nine "Search the web for the latest release of Go and tell me what changed"
@@ -382,7 +386,12 @@ Nine uses the browser plugin for web research by default — it opens a real Chr
 ./nine "Search for 'best practices for SQLite indexing' and give me a summary"
 ```
 
-The browser plugin must be built (`make browser-plugin`) and available in `dist/bin/browser`. If the browser is unavailable, Nine falls back to `web_search` (DuckDuckGo by default; set `SEARCH_PROVIDER=brave|serpapi` with `SEARCH_API_KEY` for another backend) or `web_page_read`.
+`web_search` uses DuckDuckGo by default; set `SEARCH_PROVIDER=brave|serpapi` with
+`SEARCH_API_KEY` for another backend.
+
+For pages that need JavaScript, a login, or interaction, add a real browser by declaring
+Playwright's MCP server in `nine.toml` — see [Browser Automation](browser.md). Nine ships
+no browser of its own.
 
 ### 4. Memory and State
 

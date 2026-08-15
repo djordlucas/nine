@@ -58,12 +58,12 @@ func runDaemon() {
 	pluginManager.SweepCache()
 	// The Go built-ins are served by this same binary (`nine plugin serve <name>`,
 	// internal/builtins) — still one process each, just no separate artifact to
-	// ship or keep in protocol lockstep. The browser plugin is Node + Chromium,
-	// so it stays a real binary resolved under [plugins].bin.
+	// ship or keep in protocol lockstep. Nothing else starts by name: a capability
+	// Nine does not implement itself arrives as an [[mcp.server]] below, browser
+	// automation included (docs/browser.md).
 	for _, name := range builtins.AutoStart() {
 		pluginManager.TryStartBuiltin(name, cfg.PluginEnvs(name)...)
 	}
-	browserPlug := pluginManager.TryStart("browser", cfg.PluginEnvs("browser")...)
 
 	// One MCP server, one plugin. Each [[mcp.server]] gets its own `mcp` bridge
 	// instance (R-PLUG.15), so an MCP server has the same failure domain and the
@@ -180,7 +180,7 @@ func runDaemon() {
 		GeneratedApproval: cfg.Tools.Agent.ApprovalMode(),
 		Embedder:          embedder,
 		ContextBudget:     cfg.ContextBudget(),
-		SystemPrompt:      runtime.BuildSystemPrompt(browserPlug != nil),
+		SystemPrompt:      runtime.BuildSystemPrompt(),
 		// Pull-surface related prior sessions only when the out-of-band indexer
 		// that populates the store is enabled.
 		RelatedSessions: cfg.Daemon.RelatedSessionsIndexEnabled(),

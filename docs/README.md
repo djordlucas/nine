@@ -31,7 +31,7 @@ features built on top of that architecture.
 
 13. [Plugins](plugins.md) — Built-in plugins, writing custom plugins, the plugin lifecycle
 14. [Plugins — HTTP transport](plugins-http-transport.md) — The HTTP/SSE plugin transport
-15. [Browser Plugin](browser.md) — Headless Chromium: navigate, screenshot, extract, interact
+15. [Browser Automation](browser.md) — Driving a browser via Playwright's MCP server; the worked MCP example
 16. [Writing sandboxed tools](writing-sandboxed-tools.md) — Add a JS or wasm tool with two files, run in a capability-scoped sandbox
 17. [Sandboxed tools — design](sandboxed-tools.md) — The wasm tool host: why it exists, the capability model, and what is deliberately unbuilt
 18. [Skills](skills.md) — What skills are, creating and managing skills

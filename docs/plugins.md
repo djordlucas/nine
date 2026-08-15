@@ -1,10 +1,12 @@
 # Plugins
 
-Plugins are the mechanism through which Nine gains most of its capabilities — running shell commands, reading/writing files, searching the web. Nine ships with five default plugins, fixed at build time. Plugins are not generated or loaded at runtime; to add one, add it to the source repo and rebuild the image.
+Plugins are the mechanism through which Nine gains most of its capabilities — running shell commands, reading/writing files, searching the web. Nine ships with four default plugins, fixed at build time. Built-in plugins are not generated or loaded at runtime; to add one, add it to the source repo and rebuild the image.
 
-Four of those five — `shell`, `files`, `http`, `time` — are Go, and are compiled **into the `nine` binary** (`internal/builtins`) rather than shipped as separate executables. The daemon starts each by re-executing itself as `nine plugin serve <name>`, so each still runs as its own isolated process; there is simply one artifact to build and ship. `browser` is Node + Chromium, so it keeps its own binary under `[plugins].bin`.
+All four — `shell`, `files`, `http`, `time` — are Go, and are compiled **into the `nine` binary** (`internal/builtins`) rather than shipped as separate executables. The daemon starts each by re-executing itself as `nine plugin serve <name>`, so each still runs as its own isolated process; there is simply one artifact to build and ship.
 
-**Withholding a plugin.** `[plugins] disabled = ["shell"]` (or `NINE_PLUGINS_DISABLED=shell`) stops a plugin from ever starting — no process, no socket, no tools registered. It works by name and covers built-ins, `browser`, and your own plugins alike. This is how you run without `shell`, which executes arbitrary commands. A disabled plugin is reported by `nine plugins` as `off` rather than silently missing, so a tool that has gone absent is traceable to the decision that removed it. It is an operator setting read at boot; no agent or wire message can switch a plugin on or off.
+Capabilities Nine does not implement itself arrive two other ways, both of which present as ordinary plugins: an **MCP server** declared in `[[mcp.server]]` (see [MCP servers](#mcp-servers)), and a **user plugin** dropped in `[plugins].user_dir`. Browser automation is the worked example of the first — see [Browser Automation](browser.md).
+
+**Withholding a plugin.** `[plugins] disabled = ["shell"]` (or `NINE_PLUGINS_DISABLED=shell`) stops a plugin from ever starting — no process, no socket, no tools registered. It works by name and covers built-ins, MCP servers (as `mcp:<name>`), and your own plugins alike. This is how you run without `shell`, which executes arbitrary commands. A disabled plugin is reported by `nine plugins` as `off` rather than silently missing, so a tool that has gone absent is traceable to the decision that removed it. It is an operator setting read at boot; no agent or wire message can switch a plugin on or off.
 
 Sharing the binary does not widen what a plugin process does. `plugin serve` is dispatched before nine's normal startup, so a plugin child loads **no config file** (the operator's `nine.toml` carries the embeddings API key and every other plugin's settings), writes **no** `nine.log`, and holds no way to start a daemon or TUI. Its output goes to stderr, which the daemon captures. Run by hand without `NINE_PLUGIN_SOCKET`, it refuses to start.
 
@@ -120,8 +122,9 @@ Search the web for "golang context best practices" and summarize the top 3 resul
 - `SEARCH_PROVIDER=brave` + `SEARCH_API_KEY` — Brave Search API
 - `SEARCH_PROVIDER=serpapi` + `SEARCH_API_KEY` — SerpAPI
 
-`web_search` is a fallback: when the browser plugin is available, `browser_navigate` +
-`browser_extract` are preferred.
+`web_search` and `web_page_read` are plain HTTP and see only the raw response. When a
+browser MCP server is loaded ([Browser Automation](browser.md)), prefer its navigate and
+snapshot tools for anything needing JavaScript, a login, or interaction.
 
 ---
 
@@ -186,33 +189,40 @@ config error rather than a silently ignored setting.
 
 ---
 
-### `browser` — Headless Browser
+## MCP servers
 
-A Playwright/Chromium plugin for web automation and extraction. See [Browser Plugin](browser.md) for the full reference.
+An [MCP](https://modelcontextprotocol.io) server is a capability Nine does not build.
+Declare one in `nine.toml` and it becomes a plugin in every respect — its own process,
+its own crash isolation, its own row in `nine plugins`, its own entry in
+`[plugins].disabled`:
 
-| Tool | Description |
-|------|-------------|
-| `browser_navigate` | Navigate to a URL and wait for load |
-| `browser_screenshot` | Capture the current page as PNG or JPEG |
-| `browser_extract` | Extract text or attribute values from the page |
-| `browser_click` | Click an element |
-| `browser_fill` | Fill a form field |
-| `browser_eval` | Execute JavaScript in the page context |
-| `browser_wait` | Wait for a selector, text, or URL pattern |
-| `browser_status` | Report current URL, title, and viewport |
-| `browser_reset` | Clear cookies and session state |
-
-**Example prompts:**
-```
-Navigate to https://news.ycombinator.com and summarize the top 5 stories.
-Take a screenshot of https://example.com and describe the layout.
-Fill in the login form at https://myapp.internal/login with the credentials from memory.
+```toml
+[[mcp.server]]
+name    = "github"
+command = "npx"
+args    = ["-y", "@modelcontextprotocol/server-github"]
+[mcp.server.env]
+GITHUB_PERSONAL_ACCESS_TOKEN = "ghp_..."
 ```
 
-**Notes:**
-- The plugin starts automatically if `dist/bin/browser` exists. Build it with `make browser-plugin` (requires Node.js and npm).
-- Private and loopback addresses are blocked by default. Set `BROWSER_ALLOW_PRIVATE=1` to allow them.
-- In Docker, the Alpine system Chromium is used (`/usr/bin/chromium-browser`).
+The daemon starts one `mcp` bridge process per server. Its tools arrive **prefixed with
+the server name** — `github__create_issue` — so two servers exposing the same tool name
+cannot collide and silently lose one. The plugin itself is named `mcp:github`.
+
+A hosted server is reached by `url` instead of `command` (MCP streamable HTTP), with
+`headers` for auth in place of `env`.
+
+Two things to know before relying on one:
+
+- **stdio is serial.** The bridge advertises `max_concurrent: 1`, because a stdio
+  response can only be matched to its request by owning the stream for the whole round
+  trip. Calls to one server queue.
+- **Nine does not vet a server's arguments.** Declaring an MCP server is trusting it. See
+  the security section of [Browser Automation](browser.md#5-security) for what that means
+  in the case where it bites hardest.
+
+**Browser automation** is the worked example: [Browser Automation](browser.md) walks
+through Playwright's MCP server end to end.
 
 ---
 
@@ -367,11 +377,12 @@ See `plugins.d/README.md` for an operator walkthrough.
 
 ```
 build time            built-in:  go build ./cmd/nine    (handlers linked into nine)
-                      browser:   node bundle → /opt/nine/bin/browser
+                      MCP:       nothing — the server is fetched or hosted elsewhere
      │
 daemon start          built-in:  TryStartBuiltin → spawn `nine plugin serve <name>`
-                      browser:   TryStart → spawn /opt/nine/bin/browser
-                      then both: plugin.describe → register tools
+                      MCP:       one `nine plugin serve mcp` bridge per [[mcp.server]]
+                      user:      spawn the manifest's entrypoint binary
+                      then all:  plugin.describe → register tools
      │
 [in use]              Dispatcher routes tool calls via plugin.call
      │
@@ -395,7 +406,8 @@ The plugin manager passes these to each subprocess:
 | `NINE_PLUGIN_CACHE_PERSISTENT` | `0`/`1` | Whether the cache dir persists |
 
 Individual plugins also receive their built-in defaults (e.g. `NINE_WORKSPACE`
-for `files`, the `BROWSER_*` settings for `browser`) plus any operator settings.
+for `files`) plus any operator settings. An MCP bridge additionally receives
+`NINE_MCP_SERVER`, the JSON spec of the one server it fronts.
 
 ### Operator settings (no rebuild needed)
 
@@ -410,8 +422,8 @@ key or tuning is set in config, not code:
 WEATHER_API_KEY = "sk-…"
 UNITS           = "metric"
 
-[plugin.browser.settings]
-BROWSER_HEADLESS = "0"   # operator settings override a built-in default
+[plugin.files.settings]
+NINE_WORKSPACE = "/srv/data"   # operator settings override a built-in default
 ```
 
 Keys are used verbatim as env-var names (a malformed key is a config error at

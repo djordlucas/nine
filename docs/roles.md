@@ -156,10 +156,10 @@ regresses if the orchestrator role ships with an empty body.
 Ship these as embedded skill files (suggested: `skills/roles/*.md`, still picked up by
 the existing `//go:embed`). Tool names below are exact (verified against the running
 plugins: `files` → `read_file`/`write_file`; `http` → `http_get`/`http_post`/
-`web_search`/`web_page_read`; `shell` → `shell`; `time` → `time`; `browser` →
-`browser_navigate`/`browser_click`/`browser_fill`/`browser_extract`/`browser_screenshot`/
-`browser_eval`/`browser_wait`/`browser_status`/`browser_reset`; core-intercepted →
-`memory_*`, `file_*`, `skill_*`).
+`web_search`/`web_page_read`; `shell` → `shell`; `time` → `time`; core-intercepted →
+`memory_*`, `file_*`, `skill_*`). An MCP server's tools are prefixed with the server
+name (`playwright__browser_navigate`), so a role granting them must name the prefixed
+form — and only works where that server is declared.
 
 ### Structural roots
 
@@ -216,8 +216,8 @@ finite, non-interactive leaf. As part of this feature:
 | `report-writer` | `web_search, web_page_read, http_get, read_file, file_store, file_fetch, file_list, file_search_text, memory_get, memory_set, skill_read` (**no `shell`, no `write_file`**) | `web-research` |
 
 All coarse leaf roles are `Delegates:false, SpawnsGoals:false, Persists:false,
-Interactive:false, Profile:nil`. (A `qa`/`browser` role over the `browser_*` tools is an
-obvious later addition; not required for v1.)
+Interactive:false, Profile:nil`. (A `qa`/`browser` role over a browser MCP server's
+`<name>__browser_*` tools is an obvious later addition; not required for v1.)
 
 ---
 
