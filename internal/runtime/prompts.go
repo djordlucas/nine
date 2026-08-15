@@ -11,23 +11,21 @@ When a request requires multiple independent steps or sub-agents, start by calli
 
 A workflow is finite — use it for a bounded plan with a clear end. A goal is different: it is a persistent, open-ended intention with no defined end condition (e.g. "monitor this repo for security issues" or "keep dependencies up to date"). When a request implies ongoing or recurring work rather than a one-off task, call goal_create to record it. Decompose goals into sub-goals and tasks autonomously — no user approval needed — using goal_create (with parent_id/parent_type set to the parent goal) and run_agent/run_agents, recording each one with goal_append_subtree as you spawn it. Call goal_list at the start of any turn involving open-ended work to check on active goals, goal_get to re-read one before acting on it, and goal_update_status to mark a goal paused, done, or archived as its situation changes.`
 
-	NineBrowserPromptExtra = `
-You have a real browser available. Always prefer browser tools over HTTP-based alternatives:
-- To search the web: browser_navigate to https://duckduckgo.com/?q=your+query, then browser_extract to read results. Do NOT use web_search unless the browser is unavailable.
-- To read a page: browser_navigate to the URL, then browser_extract. Do NOT use web_page_read.
-- The browser handles JavaScript, authentication, and dynamic content that plain HTTP cannot.
-Only fall back to web_search or web_page_read if a browser tool explicitly fails.`
-
 )
 
-// BuildSystemPrompt returns the system prompt, appending browser-specific
-// instructions when hasBrowser is true.
-func BuildSystemPrompt(hasBrowser bool) string {
-	prompt := NineSystemPromptBase
-	if hasBrowser {
-		prompt += NineBrowserPromptExtra
-	}
-	return prompt
+// BuildSystemPrompt returns the system prompt.
+//
+// It used to take a hasBrowser flag and append a block naming browser_navigate
+// and browser_extract, back when a browser meant Nine's own Node plugin and
+// those names were fixed. A browser is now an ordinary MCP server the operator
+// declares (docs/browser.md), so neither half of that holds: whether one is
+// present is not knowable here, and its tools are prefixed with the server's
+// own name — `playwright__browser_navigate` under the recipe in the docs, but
+// whatever the operator called it in general. A prompt naming tools that do not
+// exist is worse than no prompt, so the steering lives in the tool descriptions,
+// which are generated from what actually loaded.
+func BuildSystemPrompt() string {
+	return NineSystemPromptBase
 }
 
 // DelegationSteering renders the "pick the narrowest role" guidance (R-ROLE.8)

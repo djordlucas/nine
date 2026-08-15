@@ -171,7 +171,7 @@ func (h *Harness) Run(ctx context.Context, c *Case, provider llm.Provider) (res 
 		Embedder:            h.Embedder,
 		ContextBudget:       budget,
 		MaxToolOutputTokens: maxToolOutputTokens(h.MaxToolOutputTokens, c),
-		SystemPrompt:        runtime.BuildSystemPrompt(false),
+		SystemPrompt:        runtime.BuildSystemPrompt(),
 		RelatedSessions:     h.Embedder != nil,
 		SurfaceMemories:     h.Embedder != nil,
 		Queue:               llm.NewQueue(provider, 4),

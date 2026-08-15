@@ -51,7 +51,7 @@ func serveHTTP() {
 			{
 				Name:        "web_search",
 				DisplayName: "Web Search",
-				Description: "FALLBACK ONLY: use browser_navigate + browser_extract instead whenever the browser plugin is available. Only call this when the browser plugin has explicitly failed or is unavailable. Searches via DuckDuckGo by default; set SEARCH_PROVIDER=brave|serpapi and SEARCH_API_KEY for a different backend.",
+				Description: "Search the web and return result titles, URLs, and snippets. Searches via DuckDuckGo by default; set SEARCH_PROVIDER=brave|serpapi and SEARCH_API_KEY for a different backend. If a browser MCP server is loaded, prefer its navigate/snapshot tools for anything needing JavaScript, a login, or interaction — this tool is plain HTTP and sees only the raw response.",
 				InputSchema: plugin.Schema(`{
 					"type":"object","required":["query"],
 					"properties":{
@@ -63,7 +63,7 @@ func serveHTTP() {
 			{
 				Name:        "web_page_read",
 				DisplayName: "Read Web Page",
-				Description: "FALLBACK ONLY: use browser_navigate + browser_extract instead whenever the browser plugin is available. Only call this when the browser plugin has explicitly failed or is unavailable.",
+				Description: "Fetch a URL and return its readable text content. If a browser MCP server is loaded, prefer its navigate/snapshot tools for anything needing JavaScript, a login, or interaction — this tool is plain HTTP and sees only the raw response.",
 				InputSchema: plugin.Schema(`{
 					"type":"object","required":["url"],
 					"properties":{

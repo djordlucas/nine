@@ -132,7 +132,6 @@ Started at daemon boot from immutable content:
 | `shell` | `shell` (run an arbitrary command) | the `nine` binary (R-PLUG.13) |
 | `http` | `http_get`, `http_post`, `web_search`, `web_page_read` | the `nine` binary (R-PLUG.13) |
 | `time` | `time` | the `nine` binary (R-PLUG.13) |
-| `browser` | headless-Chromium tools (R-PLUG.6) | its own binary under `[plugins].bin` |
 
 > **Memory/file/vector operations are NOT a subprocess plugin.** `memory_*`, `file_*`,
 > and the vector tools are **core-intercepted** (handled in-process by the dispatcher,
@@ -152,23 +151,29 @@ Started at daemon boot from immutable content:
 
 ---
 
-## R-PLUG.6 — Browser plugin
+## R-PLUG.6 — Browser automation is not a plugin
 
-A Playwright/Chromium plugin (reference build uses Bun, so no Node/npm at runtime)
-exposing: `browser_navigate`, `browser_screenshot`, `browser_extract`, `browser_click`,
-`browser_fill`, `browser_eval`, `browser_wait`, `browser_status`, `browser_reset`.
+An implementation **MUST NOT** ship a browser as a default plugin. Browser automation is
+obtained by declaring a browser MCP server as an `[[mcp.server]]` (R-PLUG.15); its tools
+arrive prefixed with the server name and are otherwise indistinguishable from any other
+plugin's.
 
-- It declares `max_concurrent: 1` (single shared page) — the one default plugin that
-  must stay serial (R-PLUG.8).
-- **SSRF protection:** private/loopback URLs are blocked by default; allow/block glob
-  lists are configurable.
-- Web research uses the browser by default; if it is unavailable, Nine falls back to
-  `web_search` (DuckDuckGo by default; `SEARCH_PROVIDER`+`SEARCH_API_KEY` for
-  brave/serpapi) or `web_page_read`.
+Earlier revisions specified a Playwright/Chromium plugin here — `browser_navigate`,
+`browser_extract`, and seven siblings — with in-process SSRF protection (private and
+loopback URLs blocked by default, configurable allow/block globs). That plugin is
+**withdrawn**, and with it the guarantee:
 
-The browser plugin is **MAY**-grade for a minimal conforming implementation, but the
-fallbacks (`web_search`/`web_page_read`) **SHOULD** exist so web research degrades
-gracefully.
+- **No URL policy is enforced** on a browser MCP server. Nine does not inspect or filter
+  an MCP server's arguments, and the upstream Playwright server documents its own
+  `--allowed-origins`/`--blocked-origins` as *not* a security boundary and *not* applied
+  to redirects. An implementation **MUST NOT** represent them as one.
+- A deployment whose agent browses untrusted pages **SHOULD** place the control at the
+  network layer instead. See [`../../docs/browser.md`](../../docs/browser.md) §5.
+
+`web_search` and `web_page_read` (R-PLUG.5, the `http` plugin) **MUST** remain available
+as the no-browser path for web research: DuckDuckGo by default, `SEARCH_PROVIDER` +
+`SEARCH_API_KEY` for brave/serpapi. They are plain HTTP and **MUST NOT** be described to
+the model as a fallback to a browser that may not be present.
 
 ---
 
@@ -232,7 +237,7 @@ A plugin advertises `max_concurrent` in its `describe` result; the manager maps 
 the per-plugin HTTP transport's `MaxConnsPerHost`. The value `0` (or omitted) means
 **unbounded** — the default, and the correct choice for stateless handlers
 (`shell`/`http`/`files`/`time`). A plugin with shared mutable state **MUST** declare a
-finite cap (`browser` uses `1`). Bounding on the client side means the server needs no
+finite cap (the `mcp` bridge uses `1`). Bounding on the client side means the server needs no
 semaphore.
 
 Transport-level concurrency is **orthogonal to handler safety**: a cap of N lets N calls
@@ -258,7 +263,7 @@ declares them, so no rebuild is needed to configure a third-party plugin.
   array value is a config error.
 - **Precedence** (later wins): OS env → `NINE_BIN` → Nine-owned vars → `PluginEnvs`
   built-in defaults → operator `settings`. Operator settings therefore override a
-  built-in default (e.g. `BROWSER_HEADLESS`).
+  built-in default (e.g. `NINE_WORKSPACE`).
 - **Reserved:** `NINE_PLUGIN_SOCKET`, `NINE_PLUGIN_CACHE_DIR`, and
   `NINE_PLUGIN_CACHE_PERSISTENT` **MUST NOT** be set via `settings` (config error) —
   not the whole `NINE_` prefix, so `NINE_WORKSPACE` stays overridable.
@@ -379,9 +384,9 @@ The protocol-version check (R-PLUG.3) still runs for built-ins but can no longer
 for them — daemon and plugin are the same build. It remains load-bearing for user
 plugins (R-PLUG.9) and MCP servers, which are genuinely separate artifacts.
 
-**`browser` is deliberately excluded.** It is Node + Chromium, so it cannot live in a
-Go binary; it stays a separate artifact resolved through `[plugins].bin` and started
-with `TryStart`.
+No default plugin is excluded: all four are Go and all four live in the binary. A
+capability that cannot (a browser) or should not (a third-party service) live in the Go
+binary is an `[[mcp.server]]` instead (R-PLUG.15), not a second artifact to ship.
 
 A built-in has no binary to omit, so the implicit lever an operator used to have —
 suppress a plugin by not shipping `dist/bin/<name>` — no longer exists for these four.
@@ -392,7 +397,7 @@ R-PLUG.14 replaces it with an explicit one.
 ## R-PLUG.14 — `[plugins].disabled`
 
 `[plugins] disabled = ["shell"]` names plugins that **MUST NOT** start. Entries are
-wire names (`shell`, `browser`, a user plugin's manifest name), and the list applies
+wire names (`shell`, `mcp:<server>`, a user plugin's manifest name), and the list applies
 uniformly to **every** start path — built-ins (R-PLUG.13), plugins with their own
 binary, and user plugins (R-PLUG.9). `NINE_PLUGINS_DISABLED` (comma-separated)
 overrides it, so a container can withhold a plugin without a second config file.
@@ -531,5 +536,6 @@ client, R-PLUG.15),
 `internal/memory/plugin_jobs.go` (the `plugin_jobs` registry), `internal/runtime/plugin_jobs.go`
 (job starter + sweeper), `internal/runtime/job_tools.go` (model-facing tools + surfacing),
 `internal/agent/register_jobs.go` (`job_wait`/`job_check`/`job_list`/`job_cancel`),
-`plugins/browser/`, `cmd/nine/daemon.go` (`LoadUserPlugins`, job
+`internal/builtins/mcp_playwright_test.go` (the opt-in end-to-end check against the real
+upstream Playwright MCP server), `cmd/nine/daemon.go` (`LoadUserPlugins`, `startMCPServers`, job
 sweeper, graceful shutdown at boot), `internal/cli/plugins.go` (`nine plugins` / `nine plugin validate`).

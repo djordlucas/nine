@@ -65,9 +65,12 @@ Two patterns are easy to half-complete — do the whole checklist:
 
 ## Tests & toolchain
 
-- Go **1.26**. Build with `make build` (or `make dev` to also build plugins);
-  `make test`, `make lint`, `make integration-test`. The browser plugin needs
-  `make browser-plugin`.
+- Go **1.26**. Build with `make build` (`make dev` and `make all` are the same
+  thing — nothing ships as its own artifact any more); `make test`, `make lint`,
+  `make integration-test`.
+- Browser automation is an `[[mcp.server]]`, not a plugin (`docs/browser.md`).
+  Its end-to-end test is opt-in and needs `npx` plus an installed browser:
+  `NINE_PLAYWRIGHT_TEST=1 go test ./internal/builtins/ -run Playwright`.
 - Daemon tests use the harness in `internal/runtime/daemon_test.go`
   (`startDaemon` / `dial` / `seqProvider`) with in-memory stores. Sockets go in
   `/tmp`, not `t.TempDir()`, because macOS caps Unix-socket paths at 104 bytes.
