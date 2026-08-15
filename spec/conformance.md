@@ -109,14 +109,14 @@ How to use this file:
 | R-PLUG.2 | `plugin.Serve` ergonomics | A plugin passing `[]ToolDefinition` + a handler map serves the full contract via the shared loop. |
 | R-PLUG.3 | Manager lifecycle | Spawn (env `NINE_PLUGIN_SOCKET` + `NINE_BIN` + extras), await socket, describe, track `*Plugin`, forward calls over an HTTP client. |
 | R-PLUG.4 | Crash isolation (I9) | Killing a plugin subprocess mid-run is reported without crashing the daemon. |
-| R-PLUG.5 | Default plugins | `files`, `shell`, `http`, `time`, `browser` start at boot (skills/memory are core-intercepted). |
-| R-PLUG.13 | Built-ins in the `nine` binary | `files`/`shell`/`http`/`time` start as `nine plugin serve <name>` child processes — no per-plugin binary on disk — and still get their own process, sanitized env, cache dir, and `max_concurrent`. `browser` still starts from `[plugins].bin`. |
+| R-PLUG.5 | Default plugins | `files`, `shell`, `http`, `time` start at boot (skills/memory are core-intercepted). |
+| R-PLUG.13 | Built-ins in the `nine` binary | `files`/`shell`/`http`/`time` start as `nine plugin serve <name>` child processes — no per-plugin binary on disk — and still get their own process, sanitized env, cache dir, and `max_concurrent`. Nine ships nothing into `[plugins].bin`. |
 | R-PLUG.13a | Plugin child is single-purpose | A plugin child reads no config file (even with one in its cwd or `$HOME`), opens no `nine.log`, and builds no CLI; `plugin serve` without `NINE_PLUGIN_SOCKET` exits non-zero naming the variable. |
 | R-PLUG.15b | MCP content flattening | An image part is saved to the plugin cache dir and its path named in the tool result — never dropped; a tool named `../escaped` cannot write outside that dir. |
 | R-PLUG.15a | MCP transports and startup | A `command` server (stdio) and a `url` server (streamable HTTP, JSON or SSE reply) both load; a server that takes far longer than the socket-ready budget to start still loads, because the bridge listens before handshaking. |
 | R-PLUG.15 | MCP servers are plugins | Each `[[mcp.server]]` runs as its own `mcp:<name>` plugin instance with prefixed tools (`github__create_issue`); it crashes, disables, and reports independently, and the core holds no MCP-specific transport or spawn path. |
 | R-PLUG.14 | `[plugins].disabled` | A named plugin never spawns — built-in, own-binary, or user alike — and no socket or cache dir is created for it; the daemon boots normally and reports it in `plugins_list` with `disabled: true` (`nine plugins` shows `off`). |
-| R-PLUG.6 | Browser plugin | The browser plugin exposes its documented tools. |
+| R-PLUG.6 | Browser automation is not a plugin | No browser ships as a default plugin; a browser MCP server declared as `[[mcp.server]]` supplies `<name>__browser_*` tools, and no URL policy is enforced on it. `web_search`/`web_page_read` remain available and are not described as a fallback to an absent browser. |
 | R-PLUG.7 | No runtime plugin mutation (N1) | No path generates, compiles, or hot-swaps a plugin; recovery is restart-from-binary only. |
 
 ---

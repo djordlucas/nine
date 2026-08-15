@@ -72,20 +72,23 @@ generated tool adds no compiler to the runtime image — the agent writes JavaSc
 pre-supplied interpreter, never anything that is built.
 
 Because of this, the runtime container carries **no Go toolchain, no git, and no
-source tree** — only the compiled `nine` binary, the compiled default plugins, and
-the browser plugin's JavaScript. Configuration changes are made by editing
+source tree** — only the compiled `nine` binary, which is also the default
+plugins. Configuration changes are made by editing
 `nine.toml` and restarting the daemon.
 
 ---
 
 ## Plugins are fixed
 
-Nine still runs a set of **default plugins** (`shell`, `files`, `http`, `time`,
-`browser`), but they are immutable image content built at `docker build` time: the
-Go four are compiled into the `nine` binary and served as `nine plugin serve
-<name>`, and `browser` runs from `/opt/nine/bin`. There is no mechanism for an agent to add, build, or
-replace a plugin at runtime. To add a capability, add a plugin to the source repo
-and rebuild the image.
+Nine still runs a set of **default plugins** (`shell`, `files`, `http`, `time`),
+but they are immutable image content built at `docker build` time: all four are
+compiled into the `nine` binary and served as `nine plugin serve <name>`. There
+is no mechanism for an agent to add, build, or replace a plugin at runtime. To
+add a built-in capability, add a plugin to the source repo and rebuild the image.
+
+An `[[mcp.server]]` is the operator's escape hatch from that, not the agent's: it
+adds a capability without a rebuild, but only by editing `nine.toml` and
+restarting. Nothing an agent does at runtime can declare one.
 
 A plugin remains an isolation boundary: each runs as a subprocess, so a crash takes
 down only that plugin, not the daemon. Recovery (restarting a crashed plugin from its

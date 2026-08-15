@@ -346,25 +346,31 @@ is now done inline by `skill_write`/`skill_modify` in `RegisterSkillTools`, not
 via a hook.)
 
 **Plugin lifecycle** — Built into the image (the Go built-ins into the `nine`
-binary itself; `browser` into `/opt/nine/bin/browser`) → started at daemon boot
-(`TryStartBuiltin` spawns `nine plugin serve <name>`, `TryStart` spawns a plugin
-binary; then `plugin.describe`, register tools)
+binary itself) → started at daemon boot (`TryStartBuiltin` spawns `nine plugin
+serve <name>`, one `mcp` bridge instance per `[[mcp.server]]`, `TryStart` spawns
+a user plugin's binary; then `plugin.describe`, register tools)
 → in use via `plugin.call` → SIGTERM on shutdown. A crashed
 subprocess is isolated from the daemon; restart from the existing binary is the
 plugin manager's responsibility. See [Plugins § Plugin Lifecycle](plugins.md#plugin-lifecycle).
 
 **Default plugins** — Shipped with Nine and auto-loaded at startup: `shell`
 (`shell`), `files` (`read_file`, `write_file`), `http` (`http_get`,
-`http_post`, `web_search`, `web_page_read`), `time` (`time`), and
-`browser` (headless Chromium). Memory/file/vector and skill tools are
-core-intercepted, not a subprocess plugin. See [Plugins](plugins.md).
+`http_post`, `web_search`, `web_page_read`), and `time` (`time`).
+Memory/file/vector and skill tools are core-intercepted, not a subprocess
+plugin. See [Plugins](plugins.md).
 
-**Browser plugin** — Playwright/Chromium-based plugin (compiled with Bun, no
-Node/npm needed at runtime) providing `browser_navigate`, `browser_screenshot`,
-`browser_extract`, `browser_click`, `browser_fill`, `browser_eval`,
-`browser_wait`, `browser_status`, `browser_reset`. Blocks private/loopback
-URLs by default (SSRF protection); supports allow/block glob lists. See
-[Browser Plugin](browser.md).
+**MCP server** — A capability Nine does not build, declared as an
+`[[mcp.server]]` and reached through an `mcp` bridge plugin — one process per
+server, named `mcp:<name>`, tools prefixed `<name>__<tool>`. Either spawned over
+stdio (`command`) or hosted over streamable HTTP (`url`). See
+[Plugins § MCP servers](plugins.md#mcp-servers).
+
+**Browser automation** — Not a plugin. Nine drives a browser by declaring
+[Playwright's MCP server](https://github.com/microsoft/playwright-mcp) as an
+`[[mcp.server]]`; its tools arrive as `playwright__browser_navigate` and so on.
+Nine enforces no URL policy on it. This replaced a built-in Playwright plugin
+that did block private/loopback URLs — see [Browser Automation](browser.md) for
+the migration and the security consequences.
 
 **`plugin.Serve`** — Helper in `internal/plugin` (`serve.go`) that implements the
 JSON-RPC server loop for a plugin, so a plugin's `main` only passes its
@@ -373,7 +379,7 @@ JSON-RPC server loop for a plugin, so a plugin's `main` only passes its
 
 **`NINE_BIN`** — Environment variable passed to every plugin subprocess: the
 plugin binary directory. Individual plugins may receive extra env vars at
-startup: the built-in defaults (e.g. `BROWSER_*` for `browser`), an operator's
+startup: the built-in defaults (e.g. `NINE_WORKSPACE` for `files`), an operator's
 `[plugin.<name>.settings]` (passed through verbatim), and the cache-dir vars
 below. See [Plugin capabilities](plugin-capabilities.md).
 

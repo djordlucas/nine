@@ -300,7 +300,7 @@ hardware — are tracked in [model-compatibility.md](model-compatibility.md).
   the judge against ~20 human-labeled samples before trusting it; keep judged cases a
   minority.
 - **Pitfalls**: the store is fail-fast, though evals need no external service;
-  browser cases need Chromium (gate them); small local models are genuinely flaky at
+  cases needing an MCP server (a browser, say) need it installed — gate them; small local models are genuinely flaky at
   multi-step (that's what `expected_pass_min_class` is for); the `nine send` id line
   goes to **stderr**.
 

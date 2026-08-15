@@ -33,24 +33,30 @@ func envMap(kvs []string) map[string]string {
 }
 
 // Operator settings layer on top of built-in defaults, and win on a duplicate
-// key — the property that makes `BROWSER_HEADLESS = "0"` override the default.
+// key — the property that lets an operator redirect the files plugin's workspace
+// without editing [workspace].
+//
+// This used to be written against the browser plugin's BROWSER_* defaults. Those
+// are gone with the plugin itself (browser automation is an [[mcp.server]] now,
+// docs/browser.md), so it runs against `files`, which is the remaining plugin
+// Nine ships a default for. The property under test is unchanged.
 func TestPluginEnvsSettingsOverrideDefaults(t *testing.T) {
 	cfg, err := loadTOML(t, `
-[plugin.browser.settings]
-BROWSER_HEADLESS = "0"
-EXTRA_FLAG       = "on"
+[workspace]
+root = "/srv/default"
+
+[plugin.files.settings]
+NINE_WORKSPACE = "/srv/override"
+EXTRA_FLAG     = "on"
 `)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
 
-	env := cfg.PluginEnvs("browser")
+	env := cfg.PluginEnvs("files")
 	got := envMap(env)
-	if got["BROWSER_HEADLESS"] != "0" {
-		t.Errorf("BROWSER_HEADLESS = %q, want 0 (operator override)", got["BROWSER_HEADLESS"])
-	}
-	if got["BROWSER_TIMEOUT"] != "30000" {
-		t.Errorf("BROWSER_TIMEOUT = %q, want built-in default 30000", got["BROWSER_TIMEOUT"])
+	if got["NINE_WORKSPACE"] != "/srv/override" {
+		t.Errorf("NINE_WORKSPACE = %q, want /srv/override (operator override)", got["NINE_WORKSPACE"])
 	}
 	if got["EXTRA_FLAG"] != "on" {
 		t.Errorf("EXTRA_FLAG = %q, want on", got["EXTRA_FLAG"])
@@ -61,9 +67,9 @@ EXTRA_FLAG       = "on"
 	defIdx, setIdx := -1, -1
 	for i, kv := range env {
 		switch kv {
-		case "BROWSER_HEADLESS=1":
+		case "NINE_WORKSPACE=/srv/default":
 			defIdx = i
-		case "BROWSER_HEADLESS=0":
+		case "NINE_WORKSPACE=/srv/override":
 			setIdx = i
 		}
 	}

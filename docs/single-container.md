@@ -1,5 +1,13 @@
 # Single-container Nine — design & implementation plan
 
+> **Superseded in part:** the browser plugin this document bakes into both images
+> no longer exists. Nine ships no browser: the runtime image carries neither Node
+> nor Chromium, and browser automation is an `[[mcp.server]]`
+> ([browser.md](browser.md)). Every `chromium` / `/opt/nine/browser` /
+> `node_modules` step below is historical, as is the checklist item asserting the
+> browser plugin runs in both modes. The s6-overlay reaping argument still holds —
+> an MCP server's process tree orphans the same way Chromium did.
+>
 > Status: **implemented**, and since **simplified**. This document plans (and
 > records) collapsing the former multi-container docker-compose stack (Postgres +
 > daemon + pgAdmin) into one image, keeping the two modes — *normal* (the
