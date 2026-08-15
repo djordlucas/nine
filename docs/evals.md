@@ -103,6 +103,11 @@ setup:
   skills:                            # pre-seeded agent skills (name: body)
     deploy-notes: "# Deploy\n..."
   goals: []                          # pre-seeded goals (rarely needed)
+  mcp_servers:                       # MCP servers to bring up, mirroring [[mcp.server]]
+    - name: fixture                  # prefixes the server's tools: fixture__mcp_echo
+      command: "${NINE_EVAL_MCP_FIXTURE}"   # ${VAR} is expanded from the environment
+      args: []
+      env: {}                        # passed to the server process only
 
 # ── The request. Each string is one user turn on the same session. ──
 prompts:

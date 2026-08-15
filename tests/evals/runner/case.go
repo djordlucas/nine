@@ -81,6 +81,27 @@ type Setup struct {
 	KV     map[string]string `yaml:"kv"`     // pre-seeded key/value memory
 	Skills map[string]string `yaml:"skills"` // skill name -> body
 	Goals  []string          `yaml:"goals"`  // pre-seeded goal descriptions
+
+	// MCPServers are MCP servers to bring up for this case, mirroring
+	// [[mcp.server]] in nine.toml. They belong to setup rather than to session
+	// config because they are part of the world the case needs to exist —
+	// tools, not a knob.
+	MCPServers []MCPServerSetup `yaml:"mcp_servers"`
+}
+
+// MCPServerSetup declares one MCP server a case needs. It is the eval-side
+// mirror of config.MCPServer; the harness starts one bridge per entry exactly as
+// the daemon's startMCPServers does.
+//
+// Command and Args go through ExpandEnv, so a case can name a fixture the suite
+// builds at run time (`${NINE_EVAL_MCP_FIXTURE}`) without hardcoding a temp
+// path. An unset variable expands to empty and fails validation at start rather
+// than spawning something surprising.
+type MCPServerSetup struct {
+	Name    string            `yaml:"name"`
+	Command string            `yaml:"command"`
+	Args    []string          `yaml:"args"`
+	Env     map[string]string `yaml:"env"`
 }
 
 // Session configures the driven session (all optional).
@@ -317,6 +338,21 @@ func (c *Case) validate() error {
 	}
 	if c.Session.Interactive && len(c.HumanAnswers) == 0 {
 		return fmt.Errorf("interactive session requires human_answers")
+	}
+	// Caught at load, not at spawn: a nameless or command-less MCP server would
+	// otherwise surface as a missing tool mid-run, which reads like a model
+	// failure rather than a broken case.
+	seenMCP := map[string]bool{}
+	for i, srv := range c.Setup.MCPServers {
+		switch {
+		case srv.Name == "":
+			return fmt.Errorf("setup.mcp_servers[%d]: name is required (it prefixes the server's tools)", i)
+		case srv.Command == "":
+			return fmt.Errorf("setup.mcp_servers[%q]: command is required", srv.Name)
+		case seenMCP[srv.Name]:
+			return fmt.Errorf("setup.mcp_servers: duplicate name %q", srv.Name)
+		}
+		seenMCP[srv.Name] = true
 	}
 	if !c.Expect.hasAny() {
 		return fmt.Errorf("at least one assertion is required")

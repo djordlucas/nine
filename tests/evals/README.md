@@ -63,3 +63,27 @@ Write a `cases/<id>.yaml` per the schema in docs/evals.md §2, forcing the targe
 behavior via `prompts` and asserting with the **strongest** available check
 (side-effect > trajectory > answer). For a Track-R case, record its fixture once
 (`make eval-generate`, or capture a live run's journal).
+
+### Cases that need an MCP server
+
+`setup.mcp_servers` brings up one bridge per entry, the same way the daemon's
+`startMCPServers` does — that is how a case reaches any capability Nine does not
+implement itself, a browser included. `command` and `args` are environment-expanded,
+so a case names a fixture the suite builds rather than a temp path:
+
+```yaml
+setup:
+  mcp_servers:
+    - name: fixture
+      command: "${NINE_EVAL_MCP_FIXTURE}"
+```
+
+`NINE_EVAL_MCP_FIXTURE` is the in-repo server under
+`internal/builtins/testmcpserver`, compiled by `TestLiveMatrix` on the live path
+only — `make eval-replay` stays infra-free. It is hermetic where a real `npx`
+server would drag network, a minute-plus package resolve, and someone else's
+release cadence into a suite meant to grade the model; the daemon cannot tell the
+two apart. Fidelity against a real server is covered out of band by
+`internal/builtins/mcp_playwright_test.go` (see [browser.md](../../docs/browser.md) §7).
+
+`mcp-tool-call` is the worked example.
