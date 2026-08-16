@@ -8,9 +8,12 @@ plugins provide. Built-ins and plugins are unaffected — this is purely additiv
 tools.d/
   csvstats.toml    the manifest (the gate)
   csvstats.js      the code
-  imageresize.toml
-  imageresize.wasm
+  sha256.toml
+  sha256.wasm
 ```
+
+Both of those ship here as working examples: `csvstats` is the `js` kind, `sha256`
+the `wasm` kind.
 
 A `.js` or `.wasm` file with **no manifest beside it is never loaded**.
 
@@ -94,7 +97,11 @@ Nine never resolves a dependency: no package manager, no lockfile, no network at
 load time. `import` resolves against a closed allowlist which, for tools in this
 directory, is empty — so a tool that still contains an `import` will fail.
 
-You can also ship a `.wasm` built from Rust, TinyGo, Zig, or C (`kind = "wasm"`).
+You can also ship a `.wasm` built from Rust, TinyGo, Zig, or C (`kind = "wasm"`),
+which links no interpreter and gets full speed. `sha256.*` here is a worked
+example in C — hashing being precisely what a language model cannot do by
+reasoning about it. The `.wasm` is committed, so copying it needs no C
+toolchain; `make tools-wasm` rebuilds it if you edit `sha256.c`.
 
 ## Capabilities
 
