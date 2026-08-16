@@ -58,10 +58,15 @@ links a parent to its children across the flat, per-`agent_id` log.
   read-only). With `--sub-agents`, each `sub_agent_start` event expands into the spawned
   sub-agent's own journal (fetched by `sub_id`), nested and indented beneath the marker,
   recursing to any delegation depth.
-- **`nine replay <agent-id> --turn N`** deterministically re-executes a recorded session:
-  `internal/replay` (`FromEvents` → `Recorded`) rebuilds the loop on a **recorded**
-  provider and dispatcher, so replay makes **no live LLM or tool calls** and reproduces
-  the recorded answer.
+- **`nine replay <agent-id> --turn N`** renders one recorded turn in full detail — each
+  inner LLM request/response and every tool's I/O with timing, attempts and errors. Like
+  `trace` it reads the journal and **MUST** work with the daemon down. It is
+  **observational**: rendering the record, making no LLM or tool call.
+- **Deterministic re-execution** is a separate, programmatic surface, not a CLI command:
+  `internal/replay` (`FromEvents` → `Recorded` → `Session`) rebuilds the loop on a
+  **recorded** provider and dispatcher, so a recorded session re-runs with **no live LLM
+  or tool calls** and reproduces the recorded answers. It backs the record-then-replay
+  gate (`TestRecordThenReplay`) and the eval suite's replay track.
 - **Journal-backed reattach**: a revived session's real history is reconstructed from the
   journal, so `nine attach` shows what actually happened.
 
