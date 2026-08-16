@@ -1,0 +1,6 @@
+name         = "sha256"
+kind         = "wasm"
+entrypoint   = "./sha256.wasm"
+display_name = "SHA-256"
+description  = "Compute the SHA-256 hash of a string and return it as a 64-character lowercase hex digest. Use this whenever an exact hash or checksum of some text is asked for — never guess a digest."
+input_schema = "./sha256.schema.json"

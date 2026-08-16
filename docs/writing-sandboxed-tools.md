@@ -320,6 +320,63 @@ reclaimed at once and you need not track lifetimes.
 The same tiny shape works from C, Rust, TinyGo, or Zig: allocate a buffer, read JSON in,
 write JSON out. No runtime, no imports, no capabilities you did not declare.
 
+### A worked example
+
+`tools.d/sha256.*` is a complete one — SHA-256 in dependency-free C, in the four files a
+wasm tool ships as:
+
+```text
+tools.d/
+  sha256.toml          the manifest — kind = "wasm"
+  sha256.schema.json   { text: string }
+  sha256.c             the source
+  sha256.wasm          the artifact, 10 KiB, committed
+```
+
+Hashing is the honest demonstration of why this tier exists: it is exactly the work a
+language model cannot do by reasoning about it, and the answer is checkable to the byte.
+
+```console
+$ nine "What is the SHA-256 hash of the exact string: hello nine"
+The SHA-256 hash of "hello nine" is
+50ce1f9527a47956e94d826d924578d9717c755b14a300ff85a517884d52d035
+
+$ printf 'hello nine' | shasum -a 256
+50ce1f9527a47956e94d826d924578d9717c755b14a300ff85a517884d52d035  -
+```
+
+`nine replay <agent-id> --turn 1` shows the model reaching for it rather than reciting it,
+which is the part worth seeing:
+
+```text
+response: stop=tool_use
+  → call sha256 {"text":"hello nine"}
+
+tool sha256  (0ms, 1 attempt(s), ok)
+  output: 50ce1f9527a47956e94d826d924578d9717c755b14a300ff85a517884d52d035
+```
+
+**The `.wasm` is committed, so copying the example needs no C toolchain.** Only editing the
+C does, and `make tools-wasm` then rebuilds it with the SDK `make quickjs-wasm` fetches:
+
+```console
+$ make tools-wasm
+```
+
+The build line itself is no more than this, if you would rather not go through `make`:
+
+```console
+$ SDK=internal/toolvm/quickjs/.build/wasi-sdk-33
+$ "$SDK/bin/clang" --target=wasm32-wasip1 --sysroot="$SDK/share/wasi-sysroot" \
+    -mexec-model=reactor -Os -o tools.d/sha256.wasm tools.d/sha256.c \
+    -Wl,--export=nine_alloc -Wl,--export=nine_run -Wl,--strip-all -Wl,--gc-sections
+```
+
+Two details in `sha256.c` generalize to any language. It reads its argument straight out of
+the input JSON rather than linking a parser — which is what keeps a raw-wasm tool a few
+KiB instead of a few hundred — and it never frees anything, because there is no `free` in
+the ABI and the instance is destroyed when the call returns.
+
 ---
 
 ## What to expect at runtime
