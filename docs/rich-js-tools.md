@@ -1,66 +1,177 @@
-# Design note — Rich JavaScript for sandboxed tools
+# Design note — Richer sandboxed tools: the JS environment, and what belongs beneath it
 
-**Status:** Draft, nothing built · **Roadmap:** the "missing JS globals" and "FS/env
-gaps" halves of *Improve sandboxed tools* · **Precedes:** durable state, long-running
-tools
+**Status:** Draft, nothing built · **Roadmap:** the "missing JS globals", "FS/env gaps",
+"binary data support", and "structured tool errors" parts of *Improve sandboxed tools* ·
+**Precedes:** durable state, long-running tools
 
-This note is about the `js` tool kind's *guest environment* — what a tool author can
-actually call. It changes no capability boundary and asks for no new operator trust: every
-gap below is either a surface that was granted and cannot be reached, or an API absent for
-no reason other than that nobody has written it yet.
+This note is about what a tool author can actually *call*. It changes no capability
+boundary and asks for no new operator trust: every gap below is either a surface that was
+granted and cannot be reached, or an API absent for no reason other than that nobody has
+written it yet.
 
-Everything asserted here was measured against the committed blob (quickjs-ng v0.16.1,
-`internal/toolvm/quickjs/VERSION`), not read off a compatibility table.
+It started as a JS-only investigation and did not stay one. Roughly half of what looked
+like a JavaScript problem is really a problem in the ABI or the host, where the fix serves
+the `wasm` kind equally — and the `wasm` kind turns out to have gaps of its own, in the
+opposite direction. **The organizing rule of this note is: fix each gap at the lowest layer
+that serves both kinds.**
+
+Everything asserted here was measured — against the committed blob (quickjs-ng v0.16.1,
+`internal/toolvm/quickjs/VERSION`) for the JS side, and against purpose-built C modules
+compiled with the wasi-sdk for the wasm side. Nothing is read off a compatibility table.
 
 ---
 
-## 1. The finding
+## 1. The finding, in one table
 
-**The language is current. The platform around it is missing, and three capabilities the
-operator can grant cannot be used from JavaScript at all.**
+Which capabilities can a tool of each kind actually *use*, once granted?
 
-That second half is the part that should be uncomfortable. `fs.read`, `fs.write`, and
-`env` are declarable in a manifest, grantable in `nine.toml`, validated at load, and
-printed by `nine tools` — and a `js` tool handed any of them has no API with which to use
-them. The grant is real, the enforcement is real, the surface does not exist.
+| Capability | `wasm` | `js` |
+|---|---|---|
+| `log` | ✅ `nine.log` host import | ✅ `console.*` |
+| `clock`, `random` | ✅ WASI | ✅ `Date`, `Math.random` |
+| `net.http` | ✅ `nine.http` host import — **undocumented** | ✅ `fetch` |
+| `fs.read` / `fs.write` | ✅ libc → WASI pre-opens | ❌ **no API exists** |
+| `env` | ✅ `getenv` | ❌ **no API exists** |
+
+Verified end to end. A raw C module, granted everything, in one call:
 
 ```text
-$ # a js tool granted fs.read over a real directory
-STATUS reader loaded=true caps=fs.read /tmp/xxx=>/data
-FS PROBE out="reachable file APIs: NONE"
+WASM CAPS => log=called fs.read=OK(from-host) readdir=OK(3) fs.write=OK
+             env=Europe/Paris ungranted_env=absent
+```
 
-$ # a js tool granted env DEMO_TZ
+The same probes from JavaScript:
+
+```text
+STATUS reader  loaded=true caps=fs.read /tmp/xxx=>/data
+FS PROBE  out="reachable file APIs: NONE"
+
 STATUS envtool loaded=true caps=env DEMO_TZ
 ENV PROBE out="reachable env APIs: NONE"
 ```
 
-Both tools load. Both report their capability. Neither can do anything with it. Nothing
-warns anyone — not the author, not the operator, not `nine tool validate`.
+**`fs.read`, `fs.write`, and `env` are declarable, grantable, validated at load, and
+printed by `nine tools` — and unreachable from the kind nearly every tool is written in.**
+Both JS tools above load successfully and report their capability. Nothing warns anyone:
+not the author, not the operator, not `nine tool validate`.
 
-The cause is structural rather than an oversight. `moduleConfig` (`internal/toolvm/host.go:385`)
-implements `fs` as a wazero pre-open and `env` via `WithEnv`, which are **WASI-level**
-facilities: a raw `.wasm` tool reaches them through `fopen` and `getenv`. The `js` kind is
-the shared QuickJS blob, and that blob deliberately links neither `std` nor `os`
-(`I-TVM.5`), which is where quickjs-libc keeps its filesystem bindings. So the capability
-lands on the module, and the interpreter has no JavaScript-visible way to touch it.
+The cause is structural rather than an oversight. `moduleConfig` (`host.go:385`) implements
+`fs` as a wazero pre-open and `env` via `WithEnv` — **WASI-level** facilities that a raw
+`.wasm` tool reaches through `fopen` and `getenv`. The `js` kind is the shared QuickJS
+blob, which deliberately links neither `std` nor `os` (`I-TVM.5`), where quickjs-libc keeps
+its filesystem bindings. The capability lands on the module and the interpreter has no
+JavaScript-visible way to touch it.
 
-The `wasm` kind can use all five capability types. The `js` kind — the one nearly every
-tool will be written in — can use two.
+The scoping, at least, is correct on the side that works: a key the operator did *not*
+grant is genuinely invisible (`ungranted_env=absent`), and an ungranted tool calling
+`nine.http` from C gets `blocked: this tool was not granted the net.http capability` rather
+than a connection.
 
 ---
 
-## 2. What is actually there
+## 2. The three layers
 
-Measured by enumerating `globalThis` inside a live call:
+Sorting the gaps by where they live is what keeps this from becoming two parallel piles of
+work.
+
+| Layer | What lives there | Serves |
+|---|---|---|
+| **L1 — the ABI envelope** | `nine_alloc`/`nine_run`, the JSON crossing in and out, `Result{ok,output,error}` | **Both kinds** |
+| **L2 — host imports** | `nine.log`, `nine.http`, and anything added beside them | **Both kinds** |
+| **L3 — guest environment** | Web-platform APIs for JS; libc for wasm | One kind each |
+
+Read that way, the roadmap's "missing JS globals" splits cleanly:
+
+- **Binary data, structured errors, the oversized-result message, and knowing your own
+  grant are L1/L2 problems** that present as JS problems only because JS is where people
+  hit them first. Fixing them in the harness would fix them for one kind and leave the
+  other broken in exactly the same way.
+- **`TextEncoder`, `URL`, `structuredClone`, timers, `crypto`** are genuinely L3 and
+  genuinely JS-only. A wasm author has libc and needs none of them.
+- **`fs` and `env` for JS are L3**, and the right shape for them is "make JavaScript see
+  what C already sees," not "invent a Nine filesystem API."
+
+---
+
+## 3. What the `wasm` kind is missing
+
+The kind that can reach everything is also the kind nobody can find out how to use.
+
+**The host imports are real, work, and are undocumented.** A raw C module can import
+`nine.log` and `nine.http` and use both — verified:
+
+```text
+WASM HTTP (granted)   => raw-wasm saw: {"status":200,"headers":{…},"body":"{\"hi\":\"there\"}"}
+WASM HTTP (ungranted) => raw-wasm saw: {"error":"blocked: this tool was not granted the net.http capability"}
+```
+
+Meanwhile `docs/writing-sandboxed-tools.md` tells a wasm author they get "No runtime, no
+imports, no capabilities you did not declare," and documents only `nine_alloc`/`nine_run`.
+Both `fetch`-equivalent networking and logging are available to them and effectively
+undiscoverable. An author reading the guide would reasonably conclude that a wasm tool
+cannot log, and write a pure function that cannot tell them why it failed.
+
+**There is no header.** A wasm author reconstructs the import attributes, the packing
+convention, and the result envelope from prose. The two-export ABI is small enough that
+this is survivable and large enough that everyone will get the `(offset << 32) | length`
+packing wrong once.
+
+**A wasm tool cannot ask what it was granted.** For a `js` tool the input is an envelope
+with room to add to; for a `wasm` tool `input()` (`js.go:87`) passes the model's arguments
+through *verbatim* — there is nowhere to put a capability summary without changing what
+every existing module parses. This is the one place where the two kinds cannot be fixed
+the same way, and §6.3 proposes the way out.
+
+---
+
+## 4. Three places the environment is silently wrong
+
+Absence is survivable — an author hits `TextEncoder is not defined` and works around it.
+These are worse, because the tool returns a confident wrong answer. **The first two are L1,
+and hit both kinds.**
+
+**Binary HTTP responses are corrupted, not refused.** `httpResponse.Body` is a Go `string`
+(`nethttp.go:61`) marshalled into JSON, so every byte that is not valid UTF-8 becomes
+U+FFFD before any guest sees it. Fetching a PNG:
+
+```text
+sent:     [137 80 78 71 13 10 26 10 255 254 0 1]
+received: [65533 80 78 71 13 10 26 10 65533 65533 0 1]
+```
+
+Three bytes destroyed, `res.ok` true, no error. This happens on the *host* side of
+`nine.http`, so a raw wasm tool reading `body` out of that JSON gets the identical damage —
+it is not a harness bug, and cannot be fixed in the harness.
+
+**Binary request bodies are stringified.** `harness.js:62` does `String(init.body)`, so
+`fetch(url, { body: new Uint8Array([1,2,3,255]) })` puts the nine characters `1,2,3,255` on
+the wire. Verified against a real server. The JS half is a harness bug; the *envelope*
+having no way to express bytes is the L1 half, and a wasm tool has the same problem in the
+other direction.
+
+**`toLocaleString` accepts options it ignores** (JS only). Without `Intl`, QuickJS falls
+back to a non-localized implementation that still accepts the arguments:
+
+```text
+new Date(0).toLocaleString("en-US", { timeZone: "Europe/Paris" })  =>  "01/01/1970, 12:00:00 AM"
+(1234567.891).toLocaleString("de-DE")                              =>  "1234567.891"
+```
+
+The first is UTC — the requested zone dropped, an hour off, no diagnostic. A
+timezone-conversion tool built on this is wrong in a way that only shows up in production.
+`Intl.DateTimeFormat` at least fails loudly.
+
+---
+
+## 5. The JS guest environment (L3)
 
 **Present, and more current than the docs claim.** The authoring guide says "ES2023, and
-nothing else." It undersells the blob. Every TypedArray including `Float16Array`,
-`BigInt64Array`, `SharedArrayBuffer`, `WeakRef`, `FinalizationRegistry`, `Proxy`,
-`Reflect`, iterator helpers, `DisposableStack`/`AsyncDisposableStack`, `SuppressedError`,
-`DOMException`, `Object.groupBy`, `Array.prototype.toSorted`, `Promise.withResolvers`,
-`RegExp.escape` (ES2025), unicode property escapes, `Error` `cause`, and
-`String.prototype.normalize` all work. `atob`/`btoa`, `performance`, and `queueMicrotask`
-are there too, as are `console` and `fetch` from the harness.
+nothing else." It undersells the blob: every TypedArray including `Float16Array`,
+`SharedArrayBuffer`, `WeakRef`, `FinalizationRegistry`, `Proxy`, `Reflect`, iterator
+helpers, `DisposableStack`, `Object.groupBy`, `Array.prototype.toSorted`,
+`Promise.withResolvers`, `RegExp.escape` (ES2025), unicode property escapes, `Error`
+`cause`, and `normalize` all work — as do `atob`/`btoa`, `performance`, and
+`queueMicrotask`.
 
 **Absent:**
 
@@ -68,255 +179,202 @@ are there too, as are `console` and `fetch` from the harness.
 |---|---|
 | `TextEncoder` / `TextDecoder` | No UTF-8 ↔ bytes. With `btoa` being Latin-1 only, base64 of any non-ASCII string is impossible: `btoa("中")` throws *String contains an invalid character*. |
 | `URL` / `URLSearchParams` | Every tool that builds a query string does it by hand, wrongly. |
-| `crypto` | No `getRandomValues`, no `randomUUID`. `Math.random()` is correctly seeded per call, but is not a CSPRNG and should not be used as one. |
+| `crypto` | No `getRandomValues`, no `randomUUID`. `Math.random()` is correctly seeded per call (verified) but is not a CSPRNG. |
 | `setTimeout` / `clearTimeout` / `setInterval` | Any bundled dependency that debounces, retries with backoff, or polls fails at call time. |
-| `structuredClone` | Deep copy by `JSON.parse(JSON.stringify(x))`, with its usual lies about `Date` and `undefined`. |
-| `Intl` | See §3 — it is not merely absent, it is silently wrong. |
-| `Blob`, `AbortController`, `process`, `Buffer`, `Temporal` | Absent, and mostly correctly so (§6). |
+| `structuredClone` | Deep copy via `JSON.parse(JSON.stringify(x))`, with its usual lies about `Date` and `undefined`. |
+| `Intl` | §4 — not merely absent, silently wrong. |
+| `Blob`, `AbortController`, `process`, `Buffer`, `Temporal` | Absent, and mostly correctly so (§7). |
 
-The shape of that list is the point: **none of these are ECMAScript.** They are the web
-platform layer, which QuickJS has never claimed to provide and which nobody has written
-for this blob. The fix is not a newer interpreter.
+None of these are ECMAScript. They are the web platform layer, which QuickJS has never
+claimed to provide. **A newer interpreter fixes none of it.**
 
----
-
-## 3. Three places the current environment is silently wrong
-
-Absence is survivable — an author hits `TextEncoder is not defined` and works around it.
-These are worse, because the tool returns a confident wrong answer.
-
-**Binary HTTP responses are corrupted, not refused.** `httpResponse.Body` is a Go `string`
-(`internal/toolvm/nethttp.go:61`) marshalled into JSON, so every byte that is not valid
-UTF-8 becomes U+FFFD before the guest sees it. Fetching a PNG:
-
-```text
-sent:     [137 80 78 71 13 10 26 10 255 254 0 1]
-received: [65533 80 78 71 13 10 26 10 65533 65533 0 1]
-```
-
-Three bytes destroyed, `res.ok` true, no error anywhere. A tool that hashes, decodes, or
-forwards a binary body produces garbage and reports success.
-
-**Binary request bodies are stringified.** `harness.js:62` does `String(init.body)`, so
-`fetch(url, { body: new Uint8Array([1,2,3,255]) })` puts the nine characters `1,2,3,255`
-on the wire. Verified against a real server.
-
-**`toLocaleString` accepts options it ignores.** Without `Intl`, QuickJS falls back to a
-non-localized implementation that still accepts the arguments:
-
-```text
-new Date(0).toLocaleString("en-US", { timeZone: "Europe/Paris" })  =>  "01/01/1970, 12:00:00 AM"
-(1234567.891).toLocaleString("de-DE")                              =>  "1234567.891"
-```
-
-The first is UTC — the requested zone was dropped, an hour off, with no diagnostic. The
-second ignores the locale entirely. A timezone-conversion tool built on this is wrong in a
-way that only shows up in production, and `Intl.DateTimeFormat` at least fails loudly
-(*Intl is not defined*).
-
----
-
-## 4. Four papercuts with the same root
+### Four JS papercuts
 
 **Module-level `console.log` throws.** `harness.js` installs `console` and `fetch` in its
-own module body, but reaches the tool through a *static* `import tool from "nine:tool"` —
-and ES semantics evaluate an imported module **before** the importing module's body. So at
-tool module scope both globals are still undefined:
+own module body but reaches the tool through a *static* `import tool from "nine:tool"` —
+and ES semantics evaluate an imported module **before** the importing module's body:
 
 ```text
 typeof console at module scope was: undefined
-typeof fetch at module scope was: undefined
 console.log("hi") at module scope  =>  tool "m": console is not defined
 ```
 
-A top-of-file `console.log` is the first thing anyone writes when debugging. It fails with
-an error that suggests the sandbox forbids logging, when logging is granted by default.
+A top-of-file `console.log` is the first thing anyone writes when debugging, and it fails
+with an error implying the sandbox forbids logging — which it does not.
 
 **The `nine:*` stdlib is withheld from developer tools.** `nine:csv`, `nine:date`, and
-`nine:diff` are embedded, pure-ES, and dependency-free — and importable only by generated
-tools, because `imports` is populated from `stdlibModules()` in `generated.go` alone. A
-hand-written tool gets *module "nine:csv" is not available to this tool*. The comment
+`nine:diff` are embedded, pure-ES, and importable only by *generated* tools, because
+`imports` is populated from `stdlibModules()` in `generated.go` alone. The comment
 explaining this (`js.go:77`) says the stdlib "exists for the *generated* tier, which does
-not yet exist here" — written before that tier landed. The restriction is a leftover, not
-a decision, and it is exactly backwards: the developer tool is the one whose author cannot
-ask Nine to write a CSV parser for them.
+not yet exist here" — written before that tier landed. A leftover, not a decision, and
+backwards: the hand-writing author is the one who cannot ask Nine to write them a CSV
+parser.
 
 **Harness internals are writable globals.** `__nine_log`, `__nine_http`, `__nine_args`, and
-`__nine_result` all sit on `globalThis`, enumerable and replaceable. Not a security
-boundary — the host enforces every policy on its own side, and a tool forging its own
-output gains nothing — but they are visible to `Object.keys(globalThis)`, collide with
-author code, and invite tools to bind to internals we want to keep changing.
+`__nine_result` sit on `globalThis`, enumerable and replaceable. Not a security boundary —
+the host enforces every policy on its own side — but they collide with author code and
+invite tools to bind to internals we want to keep changing.
 
-**An oversized result reports `out of memory`.** Returning 8 MiB under the default 16 MiB
-cap fails with a bare *tool "big": out of memory*, naming neither the limit, nor
-`memory_mb`, nor the fact that the JSON envelope roughly doubles a string on its way out.
-1 MiB works, 8 MiB does not, and nothing tells you where the line is.
-
----
-
-## 5. The lever: two extension points, very different costs
-
-This is the fact that should drive sequencing.
-
-| | `harness.js` | `qjs_host.c` |
-|---|---|---|
-| Ships as | Embedded source (`js.go:20`) | The 1 MB committed `qjs.wasm` |
-| To change | `make build` | `make quickjs-wasm`, new `qjs.wasm.sha256`, `VERSION` bump, reviewed as a binary diff |
-| Can add | Anything expressible in pure JS | Anything reaching libc/WASI |
-
-**Most of what is missing is pure JavaScript.** `TextEncoder`/`TextDecoder`, `URL`,
-`URLSearchParams`, `structuredClone`, UTF-8-safe base64, the module-order fix, and the
-internals cleanup are all a few hundred lines in the harness, with no blob rebuild and no
-new host import. That is a cheap, reviewable, self-contained first change.
-
-The genuinely host-shaped items — the filesystem, the environment, and a real CSPRNG —
-need the blob. And they need less of it than expected, because of something easy to miss:
-**wasi-libc is already linked.** The blob is built with the wasi-sdk against
-`wasi-sysroot` as a reactor; what is *not* linked is quickjs-libc's `std`/`os` JS bindings.
-So `fopen`, `readdir`, `getenv`, and `getentropy` are all available to C in `qjs_host.c`
-right now, and they route through WASI to exactly the pre-opens and env pairs
-`moduleConfig` already configures.
-
-That matters for more than convenience. It means the filesystem capability keeps the
-property the design note currently boasts about (`host.go:416`) — *"the one capability
-wazero enforces itself: a pre-open is a real capability primitive, and a tool scoped to
-/srv/data cannot walk out of it without our writing a single check."* Exposing files to
-JavaScript through libc preserves that. Routing them through a new `nine.fs_read` host
-function would not: containment would become our path-checking code, reviewed by us,
-bug-for-bug ours. **We should not add a host function for the filesystem.**
+**An oversized result reports `out of memory`** (L1, both kinds). Returning 8 MiB under the
+default 16 MiB cap fails with a bare *tool "big": out of memory*, naming neither the limit,
+nor `memory_mb`, nor the fact that the JSON envelope roughly doubles a string on its way
+out. 1 MiB works, 8 MiB does not, and nothing says where the line is.
 
 ---
 
-## 6. What we deliberately do not add
+## 6. The design
 
-Worth stating, because each will be proposed eventually.
+### 6.1 L1 — the envelope, for both kinds
 
-- **No Node compatibility.** No `require`, no `process`, no `Buffer`, no `fs` module by
-  that name. Anything reaching for a Node builtin fails to bundle today, and that rules out
-  a large share of npm before policy enters the picture — which is a feature.
-- **No `Intl`.** ICU is megabytes of tables against a 1 MB interpreter, and the blob is
-  compiled into every `nine` binary. §3's problem is *silence*, not absence, and is fixed by
-  making the fallback loud plus pointing at `nine:date`.
-- **No `crypto.subtle`.** A large asynchronous surface. `getRandomValues` and `randomUUID`
-  cover what tools actually need; a tool wanting AES-GCM can bundle a pure-JS implementation.
-- **No real timers.** See the open question in §8 — `setTimeout` should exist, but a
-  sandboxed pure function under a 5-second wall clock must not be able to *sleep*.
-- **No general filesystem.** `nine:fs` is `readFile`/`writeFile`/`readDir`/`stat` over the
-  granted mounts. No `chmod`, no symlink games, no `..` traversal — none of which we
-  implement, because WASI does not hand them to us.
+**Binary data.** `httpResponse` gains `body_b64`, set instead of `body` when the response
+is not valid UTF-8; the decision is the host's, where the bytes still exist. Request bodies
+gain `body_b64` in the same shape. A tool of either kind may return
+`{"ok":true,"output_b64":"…"}` to hand back bytes. On the JS side the harness builds
+`fetch`'s `arrayBuffer()`/`bytes()` on top, makes `text()` throw on a binary body rather
+than return mojibake, and accepts `Uint8Array`/`ArrayBuffer` for `init.body`. **The wasm
+author gets the same capability for free, by reading one more field.**
 
----
+**Structured errors.** `Result` gains an optional structured error — `name`, `code`, and a
+`cause` chain — so the model can distinguish "your argument was malformed, fix it" from
+"the upstream is down, do not retry." Today everything flattens to a bare string; verified
+that `code`, `retryable`, `cause`, and thrown non-`Error` objects all collapse to
+`.message`. The harness fills it from the `Error` object it already holds; a wasm tool
+fills it by writing two more JSON fields.
 
-## 7. The design
+**The oversized-result message** maps the guest OOM to something naming `memory_mb` and the
+observed size.
 
-### 7.1 `nine:fs` and `nine:env` — closing the granted-but-unreachable gap
+### 6.2 L2 — host imports, for both kinds
 
-Two new C-implemented modules in `qjs_host.c`, over ordinary libc calls:
+Whatever is added beside `nine.log` and `nine.http` should be added *there*, not in the
+harness, so both kinds get it at once. That is the argument against putting the filesystem
+here, though — see §6.4.
+
+### 6.3 Letting a tool ask what it was granted
+
+Both kinds currently guess. A JS tool granted nothing gets `ENOENT`-shaped confusion; a
+wasm tool has no envelope to carry a summary in.
+
+Add **`nine.caps`**, a host import returning the calling tool's resolved grant as JSON.
+It works for both kinds, needs no ABI change, and — because a module that does not import
+it is completely unaffected — breaks no existing tool. The harness uses it to say
+`fs.read is not granted to this tool` before attempting anything, and a wasm author can
+call it directly.
+
+**It is for error messages and self-description only. Enforcement stays exactly where it
+is:** in wazero's pre-opens and in the host's per-call grant lookup. A tool learning its
+own grant learns nothing it could not already discover by trying.
+
+### 6.4 L3 — `nine:fs` and `nine:env` for JavaScript
+
+The goal is to make JavaScript see **what C already sees**, so there is one mental model
+rather than two:
 
 ```js
 import { readFile, writeFile, readDir, stat } from "nine:fs";
 import { get } from "nine:env";
 
 export default ({ name }) => {
-  const raw = readFile(`/data/${name}`);       // guest path, as mounted
+  const raw = readFile(`/data/${name}`);       // the guest path, exactly as a wasm tool uses it
   return { bytes: raw.length, tz: get("TZ") };
 };
 ```
 
-Design rules, each doing real work:
+Implemented as C functions in `qjs_host.c` over ordinary libc — **not** as new host
+imports. This is the most important call in the note, and it rests on something easy to
+miss: **wasi-libc is already linked.** The blob is built with the wasi-sdk against
+`wasi-sysroot` as a reactor; what is *not* linked is quickjs-libc's `std`/`os` JS bindings.
+So `fopen`, `readdir`, `getenv`, and `getentropy` are available to `qjs_host.c` today and
+route through WASI to exactly the pre-opens `moduleConfig` already configures.
 
-- **Guest paths only.** A tool sees `/data`, never the host path. The operator can move or
-  narrow the mount without the tool changing — the property the grant table already promises.
-- **`readFile` returns a `Uint8Array`; `readFileText` decodes UTF-8.** Defaulting to bytes
-  is what stops §3's corruption class from being reintroduced one layer down.
-- **Ungranted is a clear refusal, not an obscure errno.** With no pre-opens, `fopen`
-  returns `ENOENT` and an author sees "no such file" for a file that plainly exists. The
-  envelope should carry a capability *summary* — for message wording only, never for
-  enforcement — so the module can say `fs.read is not granted to this tool` before trying.
-- **`nine:env` sees only granted keys**, for free: `WithEnv` passes nothing else, so
-  `getenv` cannot observe a key the operator did not name. No filtering code to get wrong.
+That preserves the property the code currently boasts about (`host.go:416`) — *"the one
+capability wazero enforces itself: a pre-open is a real capability primitive, and a tool
+scoped to /srv/data cannot walk out of it without our writing a single check."* Routing
+files through a `nine.fs_read` host function instead would make containment **our**
+path-checking code, reviewed by us, bug-for-bug ours. It is the one case where the
+serves-both-kinds instinct gives the wrong answer: wasm already has this through libc, and
+JS should get it the same way rather than both being rebuilt on a weaker foundation.
 
-Enforcement stays entirely in wazero. We add no path checks, and `I-TVM.5` is untouched —
-we link no `std`, no `os`, and expose no `exec`, no `urlGet`, no `evalScript`.
+Rules: guest paths only; `readFile` returns a `Uint8Array` and `readFileText` decodes UTF-8
+(defaulting to bytes is what stops §4's corruption class reappearing one layer down);
+`nine:env` sees only granted keys for free, since `WithEnv` passes nothing else.
 
-### 7.2 Binary data, end to end
+`I-TVM.5` is untouched — no `std`, no `os`, no `exec`, no `urlGet`, no `evalScript`.
 
-- `httpResponse` gains `body_b64`, set instead of `body` when the response is not valid
-  UTF-8. The decision is the host's, where the bytes still exist.
-- `fetch` gains `arrayBuffer()` and `bytes()`; `text()` on a binary body throws rather than
-  returning mojibake.
-- `init.body` accepts `Uint8Array`/`ArrayBuffer` and base64-encodes it for the host, instead
-  of `String()`-ing it into nonsense.
-- A tool may return a `Uint8Array`; `render()` base64-encodes it under a declared envelope
-  rather than serializing an object with numeric keys.
-
-### 7.3 The web-platform layer, in the harness
+### 6.5 L3 — the web-platform layer
 
 `TextEncoder`, `TextDecoder` (UTF-8 only), `URL`, `URLSearchParams`, `structuredClone`, and
-UTF-8-safe `btoa`/`atob` helpers — pure JS, no blob rebuild.
+UTF-8-safe base64 helpers: pure JS in the harness, no blob rebuild. Plus `crypto`
+(`getRandomValues` in C over `getentropy`, `randomUUID` layered in JS; no `subtle`).
 
-### 7.4 `crypto`
+### 6.6 L3 — the JS papercuts
 
-`getRandomValues` in C over `getentropy` (WASI `random_get`, already fed from
-`crypto/rand` by `WithRandSource`), with `randomUUID` layered in JS. No `subtle`.
+Replace the static `import tool from "nine:tool"` with `await import("nine:tool")` *after*
+the globals are installed; populate `imports` from `stdlibModules()` for developer tools
+too; capture `__nine_log`/`__nine_http` into closures and `delete` them from `globalThis`.
 
-### 7.5 The papercuts
+### 6.7 Documenting the `wasm` kind
 
-- **Module order:** replace the static `import tool from "nine:tool"` with
-  `await import("nine:tool")` *after* the globals are installed. Pure harness change, and it
-  makes module-scope `console.log` work as every author expects.
-- **Stdlib for developer tools:** populate `imports` from `stdlibModules()` for the
-  developer tier too. Roughly a one-line change; the reasoning that excluded it has expired.
-- **Internals:** capture `__nine_log`/`__nine_http` into closures and `delete` them from
-  `globalThis`; move `__nine_args`/`__nine_result` behind a `Symbol` or a single
-  non-enumerable internal object.
-- **Result size:** map the guest OOM to a message naming `memory_mb` and the observed
-  output size.
+Ship **`tools.d/nine.h`** — the two exports, the import attributes for `nine.log`,
+`nine.http`, and `nine.caps`, the packing macros, and the result envelope, as a header an
+author includes instead of transcribing. It pairs with the `sha256` example already in
+`tools.d/`, and it is the cheapest item in this note by a wide margin.
 
-### 7.6 Structured errors
+Then correct the guide: a wasm tool *does* get imports, and can log and make HTTP requests.
 
-The harness already holds the `Error` object and throws away everything but `.message`.
-Verified: `code`, `retryable`, `cause`, and thrown non-Error objects all flatten to a bare
-string. `Result` should carry an optional structured error — `name`, `code`, `cause` chain
-— so the model can distinguish "your argument was malformed, fix it" from "the upstream
-service is down, do not retry." This is listed separately on the roadmap; it belongs here
-because the harness is where the information is lost.
+---
+
+## 7. What we deliberately do not add
+
+- **No Node compatibility.** No `require`, no `process`, no `Buffer`. Anything reaching for
+  a Node builtin fails to bundle today, and that rules out a large share of npm before
+  policy enters the picture — a feature.
+- **No `Intl`.** ICU is megabytes of tables against a 1 MB interpreter compiled into every
+  `nine` binary. §4's problem is *silence*, not absence.
+- **No `crypto.subtle`.** Large asynchronous surface; `getRandomValues` and `randomUUID`
+  cover what tools need, and a tool wanting AES-GCM can bundle a pure-JS implementation.
+- **No real timers.** §8.
+- **No general filesystem.** `nine:fs` is `readFile`/`writeFile`/`readDir`/`stat` over the
+  granted mounts. No `chmod`, no symlink games, no `..` traversal — none of which we
+  implement, because WASI does not hand them to us.
 
 ---
 
 ## 8. Open questions — decisions needed before building
 
 1. **Timers.** A tool must not sleep, so `setTimeout(fn, 1000)` cannot mean a second. The
-   honest options are (a) a *virtual-time* queue drained in deadline order after the tool's
-   promise settles, so ordering semantics hold and no wall clock is burned; (b) treat every
-   delay as zero, i.e. `queueMicrotask`; (c) leave it absent. (a) is the most compatible with
-   bundled dependencies and the most surprising if someone measures elapsed time. **Leaning
-   (a), documented loudly.** This is the one genuine semantic choice in the note.
-2. **Whether `toLocaleString` should throw** when handed options it cannot honor. It
-   converts a silent wrong answer into a loud failure, at the cost of breaking any tool
-   currently getting away with it. **Leaning yes.**
-3. **Whether `nine:fs` should exist when ungranted.** Importable-and-refusing matches
+   options are (a) a *virtual-time* queue drained in deadline order after the tool's promise
+   settles, so ordering holds and no wall clock is burned; (b) treat every delay as zero;
+   (c) leave it absent. (a) is the most compatible with bundled dependencies and the most
+   surprising to anyone measuring elapsed time. **Leaning (a), documented loudly.** The one
+   genuine semantic choice here.
+2. **Whether `toLocaleString` should throw** on options it cannot honor — converting a
+   silent wrong answer into a loud failure, at the cost of breaking tools currently getting
+   away with it. **Leaning yes.**
+3. **Whether `body_b64` and `output_b64` warrant an `ABIVersion` bump.** `ABIVersion`
+   versions the two-export contract, which does not change; but the host↔guest JSON does,
+   and a wasm tool parses that JSON by hand. Additive fields break no existing parser.
+   **Leaning no**, but it deserves a decision rather than an assumption.
+4. **Whether `nine:fs` should exist when ungranted.** Importable-and-refusing matches
    `fetch` and keeps one code path; absent-entirely is arguably clearer. **Leaning
-   importable**, for consistency with §8's existing treatment of `net.http`.
-4. **Whether any of this warrants an `ABIVersion` bump.** Everything above is additive to
-   the guest environment, and `ABIVersion` versions the two-export contract, which does not
-   change. **Leaning no** — but `body_b64` changes the *host↔guest JSON*, which is worth an
-   explicit decision rather than an assumption.
+   importable**, consistent with how `net.http` already behaves.
 
 ---
 
 ## 9. Milestones
 
-| | Scope | Blob rebuild | Notes |
-|---|---|---|---|
-| **M1** | Harness-only: §7.3, §7.5, §7.6 | No | The cheap, self-contained majority. Ships alone. |
-| **M2** | `nine:fs` + `nine:env` (§7.1) | **Yes** | Closes the granted-but-unreachable gap. The substantive change. |
-| **M3** | Binary data (§7.2) | No | Host-side JSON + harness. Independent of M2. |
-| **M4** | `crypto` (§7.4) | **Yes** | Fold into M2's rebuild rather than paying for a second one. |
-| **M5** | Docs + spec reconciliation | No | See §10. |
+| | Scope | Layer | Blob rebuild | Serves |
+|---|---|---|---|---|
+| **M1** | `nine.h` + correcting the wasm guide (§6.7) | docs | No | wasm |
+| **M2** | Structured errors, OOM message (§6.1) | L1 | No | both |
+| **M3** | Binary data end to end (§6.1) | L1 + harness | No | both |
+| **M4** | Web-platform layer + papercuts (§6.5, §6.6) | L3 | No | js |
+| **M5** | `nine:fs`, `nine:env`, `crypto`, `nine.caps` (§6.3, §6.4) | L2 + L3 | **Yes** | both |
 
-M1 and M3 are independent of the blob and of each other. M2 and M4 should be one PR, since
-the expensive, carefully-reviewed artifact in both is the same `qjs.wasm`.
+M1 is an afternoon and unblocks the kind that currently has the most capability and the
+least documentation. M2–M4 need no blob rebuild and are mutually independent. M5 is the
+only entry that touches `qjs.wasm`, so everything requiring a rebuild is deliberately
+pooled into one carefully-reviewed artifact change.
 
 ---
 
@@ -324,13 +382,14 @@ the expensive, carefully-reviewed artifact in both is the same `qjs.wasm`.
 
 - `spec/contracts/toolvm.md` — `R-TVM.9`/`I-TVM.5` need re-wording, not weakening: the
   interpreter still links no `std`/`os`, but it now exposes a narrow, capability-gated fs
-  and env surface. A new invariant is worth stating: *`nine:fs` reaches only the operator's
+  and env surface. Worth stating as a new invariant: *`nine:fs` reaches only the operator's
   pre-opens, enforced by wazero, not by a path check of ours.*
-- `docs/sandboxed-tools.md` §4.1 — the "they were never built" paragraph needs to
-  distinguish quickjs-libc's `std`/`os` from our own narrow modules.
+- The host-import surface (`nine.log`, `nine.http`, and `nine.caps`) should be specified as
+  part of the guest contract for **both** kinds, not described only in the JS narrative.
+- `docs/sandboxed-tools.md` §4.1 — the "they were never built" paragraph must distinguish
+  quickjs-libc's `std`/`os` from our own narrow modules.
 - `docs/writing-sandboxed-tools.md` — "**QuickJS-NG — ES2023, and nothing else**" is
-  already inaccurate (§2) and would become more so. It should name what is present, what is
-  absent, and why `Intl` is absent on purpose.
+  already inaccurate (§5); the wasm section's "no imports" is actively misleading (§3).
 - The capability table in both guides should stop implying `fs`/`env` work for `js` tools
-  until M2 lands. **This is worth doing immediately, ahead of any code** — the documentation
+  until M5 lands. **This is worth doing immediately, ahead of any code** — the documentation
   currently promises a working surface that does not exist.

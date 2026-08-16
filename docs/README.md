@@ -34,7 +34,7 @@ features built on top of that architecture.
 15. [Browser Automation](browser.md) — Driving a browser via Playwright's MCP server; the worked MCP example
 16. [Writing sandboxed tools](writing-sandboxed-tools.md) — Add a JS or wasm tool with two files, run in a capability-scoped sandbox
 17. [Sandboxed tools — design](sandboxed-tools.md) — The wasm tool host: why it exists, the capability model, and what is deliberately unbuilt
-18. [Rich JS for sandboxed tools — design](rich-js-tools.md) — Draft: what the `js` guest environment is missing, and the capabilities it cannot reach
+18. [Richer sandboxed tools — design](rich-js-tools.md) — Draft: the JS guest environment, the capabilities it cannot reach, and what belongs in the ABI instead
 19. [Skills](skills.md) — What skills are, creating and managing skills
 20. [Self-Documentation](self-documentation.md) — How Nine retrieves its own bundled docs and spec to answer questions about itself
 21. [Workflows](workflows.md) — Persistent multi-step execution plans for sub-agent delegation
