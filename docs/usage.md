@@ -57,8 +57,9 @@ nine trace <agent-id> [--turn N] [--sub-agents]
                                  Print a session's event journal (or one turn);
                                  --sub-agents nests delegated sub-agent traces
                                  inline; works even with the daemon down
-nine replay <agent-id> --turn N  Deterministically re-run a recorded turn
-                                 (no live LLM or tool calls)
+nine replay <agent-id> --turn N  Reconstruct one recorded turn in full detail —
+                                 every LLM call and tool I/O; works with the
+                                 daemon down
 ```
 
 ---
@@ -308,15 +309,29 @@ default `nine trace` shows only the parent's `sub_agent_start`/`sub_agent_end`
 markers; `--sub-agents` expands each marker into that sub-agent's full trace,
 indented beneath it, recursing to any delegation depth.
 
-### `nine replay` — deterministically re-run a turn
+### `nine replay` — reconstruct one turn in full detail
 
-`nine replay` reconstructs a recorded turn from the journal and re-executes it on a
-real agent loop wired to a *recorded* provider and dispatcher — **no live LLM or
-tool calls** — so it reproduces exactly what happened. Useful for debugging:
+`nine replay` reprints a single recorded turn from the journal, in the detail
+`nine trace` has no room for: each inner LLM call with its token budget, message
+window and tool names; each response with its stop reason, text and tool calls;
+each tool's output with timing, attempt count and errors. Like `trace` it reads
+the journal directly, so it works with the daemon down.
+
+It is **observational** — it renders the record, it does not re-execute. No LLM
+or tool call is made:
 
 ```bash
 ./nine replay a1b2c3d4-... --turn 3
 ```
+
+The pair works zoomed out to zoomed in: `nine trace` to find the turn that went
+wrong, `nine replay --turn N` to read it.
+
+Deterministic **re-execution** — rebuilding the agent loop on a *recorded*
+provider and dispatcher so a recorded session runs again with no live LLM or tool
+calls and reproduces its answers — is a separate, programmatic surface
+(`internal/replay`). It backs the record-then-replay test gate and the eval
+suite's replay track ([evals](evals.md)); no CLI command exposes it.
 
 ### `nine docs` / `nine spec` — read the bundled docs
 
