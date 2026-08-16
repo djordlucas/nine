@@ -176,7 +176,7 @@ root     = "./workspace" # Filesystem root, use a bind mount for external access
 
 [tools]                   # sandboxed tools, off unless enabled
 enabled  = true
-user_dir = "./tools.d"    # ships with a working csv_stats example
+user_dir = "./tools.d"    # ships working csv_stats (js) and sha256 (wasm) examples
 
 [llm]                     # model configuration
 provider       = "ollama"
