@@ -4,17 +4,18 @@ Drop your own tools here. Nine discovers this directory at boot and runs them in
 a **wasm sandbox**, alongside the tools built into the binary and the ones
 plugins provide. Built-ins and plugins are unaffected — this is purely additive.
 
+**This directory ships empty, and that is deliberate.** Anything in it becomes a
+tool your model can call, so what lives here should be what *you* put here. The
+worked examples are in [`examples/tools/`](../examples/tools/) — copy one in when
+you want it.
+
 ```
 tools.d/
   csvstats.toml    the manifest (the gate)
   csvstats.js      the code
-  sha256.toml
-  sha256.wasm
-  nine.h           the C ABI header, for wasm tools
+  mytool.toml
+  mytool.wasm
 ```
-
-Both of those ship here as working examples: `csvstats` is the `js` kind, `sha256`
-the `wasm` kind.
 
 A `.js` or `.wasm` file with **no manifest beside it is never loaded**.
 
@@ -32,10 +33,9 @@ enabled  = true
 user_dir = "./tools.d"
 ```
 
-Under Docker this directory is mounted at `/tools.d` (see the Makefile's
-`up`/`up-hot` targets), but you still need `enabled = true` in the `nine.toml`
-you mount — whether the subsystem runs at all is a deliberate decision, not
-something an environment variable should flip on.
+Under Docker this path is wired as `/tools.d` (`NINE_TOOLS_USER_DIR`) but **not
+mounted** — add `-v /my/tools.d:/tools.d:ro` to get your own tools in, so the
+container runs the tools you chose rather than whatever the repo carried.
 
 This directory is scanned at boot; re-scan a running daemon with `nine tools
 reload`. An absent or empty directory just means "no sandboxed tools".
@@ -80,7 +80,7 @@ Default-export a function. Return a string (passed through untouched) or any
 value (JSON-stringified). `async` works. A thrown error reaches the model as an
 ordinary tool failure carrying your message.
 
-`csvstats.*` in this directory is a complete working example — copy it.
+`examples/tools/csvstats.*` is a complete working example — copy it.
 
 ## What you get, and what you don't
 
@@ -99,15 +99,17 @@ load time. `import` resolves against a closed allowlist which, for tools in this
 directory, is empty — so a tool that still contains an `import` will fail.
 
 You can also ship a `.wasm` built from Rust, TinyGo, Zig, or C (`kind = "wasm"`),
-which links no interpreter and gets full speed. `sha256.*` here is a worked
-example in C — hashing being precisely what a language model cannot do by
-reasoning about it. The `.wasm` is committed, so copying it needs no C
-toolchain; `make tools-wasm` rebuilds it if you edit `sha256.c`.
+which links no interpreter and gets full speed. In C, start from the ABI header
+the binary emits:
 
-In C, include **`nine.h`**: it is the ABI as a header — the two exports, the
-`(offset << 32) | length` packing, the `nine.log` and `nine.http` host imports,
-and envelope builders that escape your output so a stray quote cannot corrupt
-the JSON the host is about to parse.
+```console
+$ nine tool header > nine.h
+```
+
+It carries the two exports, the `(offset << 32) | length` packing, the
+`nine.log` and `nine.http` host imports, and envelope builders that escape your
+output so a stray quote cannot corrupt the JSON the host is about to parse.
+`examples/tools/sha256.*` is a worked example built against it.
 
 ## Capabilities
 
