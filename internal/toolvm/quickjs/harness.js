@@ -53,17 +53,76 @@ function safeStringify(v) {
 //
 // It is defined unconditionally because the underlying import must exist for the
 // module to instantiate at all; permission is checked per call by the host.
-globalThis.fetch = async (url, init = {}) => {
-  const raw = __nine_http(
-    JSON.stringify({
-      url: String(url),
-      method: init.method ?? "GET",
-      headers: init.headers ?? {},
-      body: init.body == null ? "" : String(init.body),
-    }),
-  );
+// Bytes cross the boundary base64-encoded, because everything crossing it is
+// UTF-8 JSON and a JSON string cannot hold arbitrary bytes. atob/btoa are the
+// right primitives for that here despite their reputation: they are Latin-1, i.e.
+// byte-oriented, which is exactly what is wanted when the payload is bytes rather
+// than text. (Their reputation comes from being used on *text*, where Latin-1
+// silently mangles anything non-ASCII.)
+function bytesToB64(u8) {
+  let s = "";
+  // Chunked to avoid a huge apply() argument list on a 1 MiB body.
+  for (let i = 0; i < u8.length; i += 8192) {
+    s += String.fromCharCode.apply(null, u8.subarray(i, i + 8192));
+  }
+  return btoa(s);
+}
 
-  const res = JSON.parse(raw);
+function b64ToBytes(b64) {
+  const s = atob(b64);
+  const u8 = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) u8[i] = s.charCodeAt(i);
+  return u8;
+}
+
+// Minimal UTF-8 encoder, so bytes() works on a text response too. TextEncoder
+// proper is M4 (docs/rich-js-tools.md §6.5); this is the private subset needed
+// to keep bytes() from having a hole in it.
+function utf8Encode(str) {
+  const out = [];
+  for (const ch of str) {
+    let c = ch.codePointAt(0);
+    if (c < 0x80) out.push(c);
+    else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f));
+    else if (c < 0x10000)
+      out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
+    else
+      out.push(
+        0xf0 | (c >> 18),
+        0x80 | ((c >> 12) & 0x3f),
+        0x80 | ((c >> 6) & 0x3f),
+        0x80 | (c & 0x3f),
+      );
+  }
+  return new Uint8Array(out);
+}
+
+globalThis.fetch = async (url, init = {}) => {
+  const req = {
+    url: String(url),
+    method: init.method ?? "GET",
+    headers: init.headers ?? {},
+    body: "",
+  };
+
+  // A binary body used to be String()-ed, which put the characters "1,2,3,255"
+  // on the wire for a Uint8Array — wrong, and silently so.
+  const b = init.body;
+  if (b == null) {
+    req.body = "";
+  } else if (b instanceof Uint8Array) {
+    req.body_b64 = bytesToB64(b);
+  } else if (b instanceof ArrayBuffer) {
+    req.body_b64 = bytesToB64(new Uint8Array(b));
+  } else if (ArrayBuffer.isView(b)) {
+    req.body_b64 = bytesToB64(
+      new Uint8Array(b.buffer, b.byteOffset, b.byteLength),
+    );
+  } else {
+    req.body = String(b);
+  }
+
+  const res = JSON.parse(__nine_http(JSON.stringify(req)));
   if (res.error) {
     // A refusal is a thrown error rather than a status code: it is not a
     // response, and letting it look like one invites `if (res.ok)` to swallow a
@@ -71,13 +130,42 @@ globalThis.fetch = async (url, init = {}) => {
     throw new Error(res.error);
   }
 
+  // Exactly one of these is set by the host: body for a valid-UTF-8 response,
+  // body_b64 for anything else. The binary case used to arrive as body with every
+  // invalid byte replaced by U+FFFD, and nothing said so.
+  const isBinary = typeof res.body_b64 === "string";
   const body = res.body ?? "";
+
   return {
     status: res.status,
     ok: res.status >= 200 && res.status < 300,
     headers: res.headers ?? {},
-    text: () => body,
-    json: () => JSON.parse(body),
+    // Throwing beats returning mojibake. A tool that asks for text and gets a
+    // PNG has a bug, and the bug should surface here rather than three
+    // transformations later as a wrong answer.
+    text: () => {
+      if (isBinary) {
+        throw new Error(
+          "response body is not valid UTF-8 text; use bytes() or arrayBuffer()",
+        );
+      }
+      return body;
+    },
+    json: () => {
+      if (isBinary) {
+        throw new Error(
+          "response body is not valid UTF-8 text and cannot be JSON; use bytes()",
+        );
+      }
+      return JSON.parse(body);
+    },
+    bytes: () => (isBinary ? b64ToBytes(res.body_b64) : utf8Encode(body)),
+    arrayBuffer: () => {
+      const u8 = isBinary ? b64ToBytes(res.body_b64) : utf8Encode(body);
+      // Sliced so the caller cannot reach past its own view into whatever else
+      // the decoder's buffer happens to hold.
+      return u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
+    },
   };
 };
 
