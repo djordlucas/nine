@@ -121,6 +121,14 @@ func (h *Host) compile(ctx context.Context, d discovered, grant Grant) (*Tool, e
 	if d.Manifest.Kind == KindJS {
 		t.module = h.qjs
 		t.source = string(d.Source)
+		// The `nine:*` standard library, which used to reach only generated tools.
+		// That was a leftover rather than a decision: the comment excluding it
+		// described the generated tier as not yet existing. It is embedded,
+		// pure-ES, dependency-free, and resolved host-side before the call, so
+		// admitting a hand-written tool costs nothing and removes the oddity that
+		// the author who cannot ask Nine to write them a CSV parser was the one
+		// denied the CSV parser.
+		t.imports = stdlibModules()
 		return t, nil
 	}
 
