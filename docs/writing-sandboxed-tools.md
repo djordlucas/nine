@@ -126,13 +126,19 @@ $ nine tools
   SKIP  weather            js     net.http declared but not granted; add [tool.weather.capabilities.net.http]
 ```
 
-| Capability | You get | Granted by default |
-|---|---|---|
-| `clock`, `random` | `Date.now()`, `Math.random()` | ✅ |
-| `log` | `console.*` | ✅ |
-| `fs.read` / `fs.write` | mounted directories | ❌ declare + grant |
-| `env` | named keys only | ❌ declare + grant |
-| `net.http` | `fetch()` | ❌ declare + grant |
+| Capability | In a `js` tool | In a `wasm` tool | Granted by default |
+|---|---|---|---|
+| `clock`, `random` | `Date.now()`, `Math.random()` | WASI | ✅ |
+| `log` | `console.*` | `nine.log` | ✅ |
+| `net.http` | `fetch()` | `nine.http` | ❌ declare + grant |
+| `fs.read` / `fs.write` | **not yet reachable** | `fopen`, `readdir` | ❌ declare + grant |
+| `env` | **not yet reachable** | `getenv` | ❌ declare + grant |
+
+> **`fs` and `env` do not work from JavaScript yet.** They are implemented as WASI
+> facilities, which a `wasm` tool reaches through libc and the QuickJS interpreter has no
+> binding for. A `js` tool that declares either will *load*, and `nine tools` will report
+> the capability, and no API will exist to use it. Write such a tool as `kind = "wasm"`
+> until this is closed — the design and the plan are in `nine docs rich-js-tools`.
 
 `NINE_*` and `*_API_KEY` environment keys can never be granted: the daemon's environment
 holds the LLM provider credentials.
@@ -318,19 +324,73 @@ There is no `free` — the instance is destroyed when the call returns, so every
 reclaimed at once and you need not track lifetimes.
 
 The same tiny shape works from C, Rust, TinyGo, or Zig: allocate a buffer, read JSON in,
-write JSON out. No runtime, no imports, no capabilities you did not declare.
+write JSON out. No runtime, and no capabilities you did not declare.
+
+### In C, use the header
+
+`tools.d/nine.h` is that ABI as a header — the exports, the `(offset << 32) | length`
+packing, the host imports below, and envelope builders that escape your output properly.
+Include it and write one function:
+
+```c
+#include "nine.h"
+
+NINE_TOOL(args, len) {
+    char name[256];
+    if (nine_arg_str(NINE_ARGS(args), len, "name", name, sizeof(name)) < 0)
+        return nine_fail("expected a string argument 'name'");
+    nine_log("greeting someone");
+    return nine_ok(name);
+}
+```
+
+`nine_ok` and `nine_fail` exist because hand-building the envelope with `sprintf` breaks
+the moment your output contains a quote or a newline — a failure that depends on your data
+rather than your code, which is the worst kind to debug.
+
+### The two host imports
+
+A wasm tool is not import-free. It may import one module, `nine`, holding exactly two
+functions — the same two the `js` kind's `console` and `fetch` are built on:
+
+| Import | Capability | In `nine.h` |
+|---|---|---|
+| `nine.log(ptr, len)` | `log`, granted to everyone | `nine_log(msg)` |
+| `nine.http(ptr, len) -> packed` | `net.http`, declared + granted | `nine_http(req, &len)` |
+
+```c
+uint32_t n;
+const char *resp = nine_http("{\"url\":\"https://api.example/v1\",\"method\":\"GET\","
+                             "\"headers\":{},\"body\":\"\"}", &n);
+```
+
+The request and response are the JSON shapes documented in `nine.h`. Every policy decision
+— the method and host allowlists, SSRF rejection on the resolved address, per-redirect
+revalidation, the response cap — is enforced on the host side of that call, so an ungranted
+tool gets `{"error":"blocked: this tool was not granted the net.http capability"}` back
+rather than a connection. The import exists either way, because a wasm module's imports are
+fixed at compile time; the permission is checked per call.
+
+**A response body is a JSON string, so a response that is not valid UTF-8 does not survive
+it intact.** Binary bodies are a known gap for both tool kinds — see
+`nine docs rich-js-tools` — not something to work around here.
+
+`fs.read`, `fs.write`, and `env` need no import at all: they are WASI facilities, so
+`fopen`, `readdir`, and `getenv` work directly against whatever the operator mounted or
+named. Your code sees the guest path (`/data`), never the host path.
 
 ### A worked example
 
-`tools.d/sha256.*` is a complete one — SHA-256 in dependency-free C, in the four files a
-wasm tool ships as:
+`tools.d/sha256.*` is a complete one — SHA-256 in dependency-free C, written against the
+header, in the files a wasm tool ships as:
 
 ```text
 tools.d/
+  nine.h               the ABI, shared by every C tool
   sha256.toml          the manifest — kind = "wasm"
   sha256.schema.json   { text: string }
   sha256.c             the source
-  sha256.wasm          the artifact, 10 KiB, committed
+  sha256.wasm          the artifact, 11 KiB, committed
 ```
 
 Hashing is the honest demonstration of why this tier exists: it is exactly the work a
@@ -373,9 +433,9 @@ $ "$SDK/bin/clang" --target=wasm32-wasip1 --sysroot="$SDK/share/wasi-sysroot" \
 ```
 
 Two details in `sha256.c` generalize to any language. It reads its argument straight out of
-the input JSON rather than linking a parser — which is what keeps a raw-wasm tool a few
-KiB instead of a few hundred — and it never frees anything, because there is no `free` in
-the ABI and the instance is destroyed when the call returns.
+the input JSON via `nine_arg_str` rather than linking a parser — which is what keeps a
+raw-wasm tool a few KiB instead of a few hundred — and it never frees anything, because
+there is no `free` in the ABI and the instance is destroyed when the call returns.
 
 ---
 

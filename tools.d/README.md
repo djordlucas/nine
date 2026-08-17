@@ -10,6 +10,7 @@ tools.d/
   csvstats.js      the code
   sha256.toml
   sha256.wasm
+  nine.h           the C ABI header, for wasm tools
 ```
 
 Both of those ship here as working examples: `csvstats` is the `js` kind, `sha256`
@@ -103,6 +104,11 @@ example in C — hashing being precisely what a language model cannot do by
 reasoning about it. The `.wasm` is committed, so copying it needs no C
 toolchain; `make tools-wasm` rebuilds it if you edit `sha256.c`.
 
+In C, include **`nine.h`**: it is the ABI as a header — the two exports, the
+`(offset << 32) | length` packing, the `nine.log` and `nine.http` host imports,
+and envelope builders that escape your output so a stray quote cannot corrupt
+the JSON the host is about to parse.
+
 ## Capabilities
 
 The default is **nothing**: no filesystem, no network, no environment. Most good
@@ -126,7 +132,13 @@ Your code sees the guest path (`/data`). Declaring something ungranted fails to
 load — and so does being granted something you did not declare. A manifest never
 grants anything; only the operator's config does.
 
-`clock`, `randomness`, and `console.*` are always available. They leak nothing.
+`clock`, `randomness`, and logging are always available. They leak nothing.
+
+**`fs` and `env` do not work from a `js` tool yet.** They are WASI facilities a
+`wasm` tool reaches through `fopen` and `getenv`, and the interpreter has no
+binding for them — so a `js` tool declaring either loads, reports the
+capability, and finds no API to use it. Write it as `kind = "wasm"` until that
+closes (`nine docs rich-js-tools`).
 
 For network access, declare `net = ["http"]` and have the operator grant the hosts; then
 `fetch` works. It is a subset — `status`, `ok`, `headers`, `text()`, `json()` — and a
