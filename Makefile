@@ -126,16 +126,22 @@ NINE_ENV = \
 	-e NINE_PLUGINS_USER_DIR=/plugins.d \
 	-e NINE_TOOLS_USER_DIR=/tools.d \
 	-e NINE_LOG_FILE=off
-# /tools.d is deliberately NOT mounted. The env var above wires the path, so an
-# operator who wants sandboxed tools in the container adds their own
-# `-v /my/tools.d:/tools.d:ro` and gets exactly the tools they chose. Mounting
-# the repo's directory here would install whatever it happens to contain as live
-# capability on every `make up`, which is not a decision this Makefile should be
-# making on an operator's behalf. The worked examples live in examples/tools/.
+# None of the three user directories is mounted. The env vars above wire the
+# paths — /skills.d, /plugins.d, /tools.d — and an operator who wants any of them
+# adds their own `-v /my/skills.d:/skills.d:ro`, getting exactly what they chose.
+#
+# Mounting the repo's copies would install whatever they happen to contain on
+# every `make up`: sandboxed tools become live capability the model is offered,
+# and skills become instructions the agent is seeded with. That is not a decision
+# this Makefile should be making on an operator's behalf, and it is the reason
+# all three directories ship empty. Worked tool examples are in examples/tools/.
+#
+# For plugins there is a second reason: a plugin is an executable, and one built
+# on the host does not run in this debian container unless it happens to be a
+# linux binary for the same architecture. Mounting the host's plugins.d offered
+# an arrangement that mostly could not work.
 NINE_MOUNTS = \
-	-v $(CURDIR)/nine.toml:/nine.toml:ro \
-	-v $(CURDIR)/skills.d:/skills.d:ro \
-	-v $(CURDIR)/plugins.d:/plugins.d:ro
+	-v $(CURDIR)/nine.toml:/nine.toml:ro
 NINE_RUN_FLAGS = --add-host host.docker.internal:host-gateway --restart unless-stopped
 
 # The 32k context window is requested per-call via num_ctx (nine.toml), so the
