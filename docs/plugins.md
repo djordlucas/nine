@@ -320,9 +320,11 @@ to every tool, including MCP servers, with no plugin involvement
 
 Built-in plugins are baked into the image. **User plugins** are operator-supplied
 executables Nine discovers at boot from `[plugins].user_dir` (env
-`NINE_PLUGINS_USER_DIR`; mounted at `/plugins.d` under Docker). They are purely
-additive — built-ins are never affected — and the directory is never required:
-empty or absent means "no user plugins".
+`NINE_PLUGINS_USER_DIR`, wired to `/plugins.d` under Docker but not mounted —
+add `-v /my/plugins.d:/plugins.d:ro` yourself, and note a plugin only runs in
+the container if it was built for it). They are purely additive — built-ins are
+never affected — and the directory is never required: empty or absent means "no
+user plugins".
 
 Discovery is boot-only, mirroring skills (`docs/skills.md`), with a live
 convenience path: `nine plugins reload` re-scans without a restart.

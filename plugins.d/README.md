@@ -14,8 +14,13 @@ plugins.d/
 
 This directory is scanned at boot; re-scan a running daemon with
 `nine plugins reload` (see below). An absent or empty directory just means "no
-user plugins". Under Docker it is mounted at `/plugins.d` (see the Makefile's
-`up`/`up-hot` targets).
+user plugins" — and it ships empty, because a plugin is a subprocess Nine
+executes, so what runs here should be what you put here.
+
+Under Docker the path `/plugins.d` is wired (`NINE_PLUGINS_USER_DIR`) but **not
+mounted**: add `-v /my/plugins.d:/plugins.d:ro` yourself. Note that a plugin is
+an executable — one built on your host only runs in the container if it is a
+Linux binary for the same architecture, so cross-building is on you.
 
 Enable it for the native layout in `nine.toml`:
 

@@ -21,8 +21,11 @@ Enable it in `nine.toml`:
 user_dir = "./skills.d"
 ```
 
-Under Docker this is already mounted at `/skills.d` (see the Makefile's
-`up`/`up-hot` targets).
+This directory ships empty. A skill is seeded into the agent's store and becomes
+instructions it can act on, so what lives here should be what you put here.
+
+Under Docker the path `/skills.d` is wired (`NINE_SKILLS_USER_DIR`) but **not
+mounted** — add `-v /my/skills.d:/skills.d:ro` to the run to seed your own.
 
 ## A skill
 

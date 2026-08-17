@@ -302,7 +302,9 @@ Notes for the implementer:
   comes back with all state.
 - Everything the compose file used to declare — the two volumes, `--add-host
   host.docker.internal:host-gateway`, `NINE_CONFIG=/nine.toml`,
-  `NINE_LOG_FILE=off`, the `nine.toml`/`skills.d`/`plugins.d` read-only mounts,
+  `NINE_LOG_FILE=off`, the read-only `nine.toml` mount (the `skills.d`,
+  `plugins.d`, and `tools.d` paths are wired by env but deliberately unmounted —
+  an operator supplies their own),
   `--restart unless-stopped` — moves onto the `docker run` line in the target.
   §7/§8 show the shape; the full flag set is mechanical.
 - **Restart policy:** pass `--restart unless-stopped` on `docker run` to preserve
