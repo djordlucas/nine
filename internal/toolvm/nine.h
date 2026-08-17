@@ -9,7 +9,12 @@
  * `nine docs writing-sandboxed-tools`. Where this file and those disagree, they
  * are the source of truth and this is a bug.
  *
- * Include it and write one function:
+ * Get it from the binary that implements the ABI it describes, so the two
+ * cannot drift:
+ *
+ *     nine tool header > nine.h
+ *
+ * Then include it and write one function:
  *
  *     #include "nine.h"
  *
@@ -17,12 +22,13 @@
  *         return nine_ok("hello");
  *     }
  *
- * Build (from the repo root, with the SDK `make quickjs-wasm` fetches):
+ * Build it with any wasi-sdk clang:
  *
- *     SDK=internal/toolvm/quickjs/.build/wasi-sdk-33
- *     "$SDK/bin/clang" --target=wasm32-wasip1 --sysroot="$SDK/share/wasi-sysroot" \
+ *     clang --target=wasm32-wasip1 --sysroot="$WASI_SDK/share/wasi-sysroot" \
  *       -mexec-model=reactor -Os -o mytool.wasm mytool.c \
  *       -Wl,--export=nine_alloc -Wl,--export=nine_run -Wl,--strip-all -Wl,--gc-sections
+ *
+ * Drop mytool.wasm and a mytool.toml manifest into [tools].user_dir.
  *
  * There is no `free` anywhere in this ABI, and that is deliberate: the module
  * instance is destroyed when the call returns, so every allocation is reclaimed
