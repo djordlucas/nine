@@ -38,22 +38,31 @@ const toolArgs = globalThis.__nine_args;
 // nine more enumerable globals. This is hygiene, not a boundary — every one of
 // them is enforced host-side, and a tool that finds them gains nothing it could
 // not get by importing the module.
+// Captured by value, not looked up lazily: the globals are deleted below, so a
+// closure reading globalThis at call time would find nothing.
+const hostCaps = globalThis.__nine_caps;
+const hostFSRead = globalThis.__nine_fs_read;
+const hostFSWrite = globalThis.__nine_fs_write;
+const hostFSReadDir = globalThis.__nine_fs_readdir;
+const hostFSStat = globalThis.__nine_fs_stat;
+const hostEnv = globalThis.__nine_env;
+const hostRandom = globalThis.__nine_random;
+
 let capsCache;
 globalThis[Symbol.for("nine.internal")] = Object.freeze({
-  caps: () => (capsCache ??= JSON.parse(globalThis.__nine_caps())),
-  fsRead: (p) => globalThis.__nine_fs_read(p),
-  fsWrite: (p, d) => globalThis.__nine_fs_write(p, d),
-  fsReadDir: (p) => globalThis.__nine_fs_readdir(p),
-  fsStat: (p) => globalThis.__nine_fs_stat(p),
-  env: (n) => globalThis.__nine_env(n),
-  random: (n) => globalThis.__nine_random(n),
+  caps: () => (capsCache ??= JSON.parse(hostCaps())),
+  fsRead: (p) => hostFSRead(p),
+  fsWrite: (p, d) => hostFSWrite(p, d),
+  fsReadDir: (p) => hostFSReadDir(p),
+  fsStat: (p) => hostFSStat(p),
+  env: (n) => hostEnv(n),
+  random: (n) => hostRandom(n),
 });
 
 // crypto, built on the host's randomness rather than Math.random. getentropy is
 // wasi-libc's wrapper over WASI random_get, which the host feeds from
 // crypto/rand — so this is a real CSPRNG. There is no `subtle`: it is a large
 // asynchronous surface, and a tool needing AES-GCM can bundle an implementation.
-const hostRandom = globalThis.__nine_random;
 globalThis.crypto = Object.freeze({
   getRandomValues(view) {
     if (!ArrayBuffer.isView(view)) {
@@ -79,9 +88,20 @@ globalThis.crypto = Object.freeze({
   },
 });
 
+// Every host binding goes, leaving only __nine_result — which has to stay,
+// because qjs_host.c reads the result back off the global object after
+// evaluation. TestHarnessInternalsAreNotExposed asserts the whole set rather
+// than a list someone has to remember to extend.
 delete globalThis.__nine_log;
 delete globalThis.__nine_http;
 delete globalThis.__nine_args;
+delete globalThis.__nine_caps;
+delete globalThis.__nine_fs_read;
+delete globalThis.__nine_fs_write;
+delete globalThis.__nine_fs_readdir;
+delete globalThis.__nine_fs_stat;
+delete globalThis.__nine_env;
+delete globalThis.__nine_random;
 
 // The `log` capability (§6.2), granted by default. QuickJS itself has no
 // console: the stock one comes from quickjs-libc's js_std_add_helpers, which
