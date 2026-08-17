@@ -23,6 +23,12 @@ var stdlibSpecifiers = map[string]string{
 	"nine:csv":  "stdlib/csv.js",
 	"nine:date": "stdlib/date.js",
 	"nine:diff": "stdlib/diff.js",
+	// fs and env are capability-gated rather than pure, which makes them
+	// different in kind from the three above. They still belong here: importing
+	// one grants nothing, the modules are equally embedded and dependency-free,
+	// and a tool with no grant gets a sentence saying so rather than reach.
+	"nine:fs":  "stdlib/fs.js",
+	"nine:env": "stdlib/env.js",
 }
 
 var (

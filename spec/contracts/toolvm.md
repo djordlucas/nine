@@ -274,6 +274,21 @@ wazero's denials are the backstop, not the control. Under WASI `os.exec` has no
 granted `fs.read` on one directory would silently gain a second, undeclared file API over
 it.
 
+**This is about `std`/`os`, not about having a filesystem API at all.** The blob does
+expose a narrow one — `nine:fs` and `nine:env`, built on ordinary libc calls in
+`qjs_host.c` — and that is compatible with the requirement above for the reason it exists:
+those calls route through WASI to exactly the pre-opens and env pairs the host configured,
+so a tool with no grant sees an empty filesystem and an empty environment. What R-TVM.9
+forbids is an interpreter-supplied API that arrives *alongside* the capability table
+without appearing in it, together with `exec` and `evalScript`. What `nine:fs` provides is
+the capability table's own `fs.read`/`fs.write`, reachable at last from the kind of tool
+most people write.
+
+**The confinement is wazero's, and MUST stay wazero's.** `nine:fs` performs no path
+validation, and no host function is permitted to grow one: a pre-open is a real capability
+primitive, and re-implementing containment as a check of Nine's own would trade an
+enforced boundary for a reviewed one.
+
 The interpreter is built from a pinned tag by `internal/toolvm/quickjs/build.sh`,
 committed with a recorded SHA-256, and rebuilt only on a deliberate bump
 (`make quickjs-wasm`). CI re-checks the hash (`make quickjs-verify`). An ordinary
@@ -384,6 +399,12 @@ body rather than return the replacement-character rendering.
 
 Both fields are additive, and a guest that ignores `body_b64` behaves as it did before it
 existed — hence no `ABIVersion` bump (docs/rich-js-tools.md §8).
+
+The host module also exports `caps`, which returns the calling tool's resolved grant as
+JSON — guest paths only, never the operator's host paths. It exists so a guest can say
+`fs.read is not granted to this tool` rather than surface an `ENOENT` for a file that
+plainly exists, and it **MUST NOT** be read back by anything making an enforcement decision
+(I-TVM.8).
 
 The host module exports `http` unconditionally, because a wasm module's imports are fixed
 at compile time and the QuickJS blob is shared by every `js` tool. That is not a leak: the
@@ -608,7 +629,12 @@ stubbed or refused-by-name.
 - **I-TVM.3** — No state survives a call.
 - **I-TVM.4** — A tool name resolves to exactly one implementation. Sandboxed tools never
   override built-ins or plugin tools.
-- **I-TVM.5** — The committed interpreter links neither `std` nor `os`.
+- **I-TVM.5** — The committed interpreter links neither `std` nor `os`. The narrow
+  `nine:fs`/`nine:env` surface it does expose reaches only the operator's pre-opens and
+  granted env keys, enforced by wazero rather than by a path check of Nine's own, and
+  exposes no `exec`, no `urlGet`, and no `evalScript` (R-TVM.9).
+- **I-TVM.8** — `nine.caps` describes a grant and never confers one. Nothing reads it back
+  to make an enforcement decision.
 - **I-TVM.6** — `[tools] enabled` unset ⇒ no host, no tools, and loops identical to those
   built before this subsystem existed.
 - **I-TVM.7** — A sandboxed tool cannot reach a loopback, link-local, or private address,

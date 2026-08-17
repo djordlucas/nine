@@ -139,15 +139,35 @@ func TestNoFilesystemWithoutAGrant(t *testing.T) {
 	if err := os.WriteFile(secret, []byte("classified"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	// There is no filesystem API in the interpreter at all once std and os are
-	// unlinked, so this is really asserting the compounding of the two: no API,
-	// and no mount behind it either.
+	// quickjs-libc's std and os stay unlinked, so the ambient filesystem API a
+	// stock qjs would have does not exist here.
 	out, err := probe(t, `typeof std === "undefined" && typeof os === "undefined" ? "no-fs-api" : "has-fs-api"`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if out != "no-fs-api" {
 		t.Errorf("got %q: the guest has a filesystem API with no grant", out)
+	}
+
+	// Since nine:fs exists (docs/rich-js-tools.md §6.4), the stronger claim is
+	// the one that matters: bypassing the module's own capability check and
+	// calling the primitive directly must still reach nothing, because with no
+	// grant the instance has no pre-opens and there is nothing to open. What
+	// protects the filesystem is wazero, not the JavaScript in fs.js.
+	out, err = probe(t, `(() => {
+    const I = globalThis[Symbol.for("nine.internal")];
+    if (!I) return "no internals";
+    for (const p of ["`+secret+`", "/etc/passwd", "/", "/data"]) {
+      try { I.fsRead(p); return "READ " + p; } catch (e) { /* expected */ }
+      try { I.fsReadDir(p); return "LISTED " + p; } catch (e) { /* expected */ }
+    }
+    return "nothing reachable";
+  })()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "nothing reachable" {
+		t.Errorf("the guest reached the filesystem with no grant: %s", out)
 	}
 }
 
@@ -194,7 +214,10 @@ description = "probe"
 	h := openHost(t, dir, nil)
 
 	got := h.Get("probe").Imports()
-	want := map[string]bool{"nine:csv": true, "nine:date": true, "nine:diff": true}
+	want := map[string]bool{
+		"nine:csv": true, "nine:date": true, "nine:diff": true,
+		"nine:fs": true, "nine:env": true,
+	}
 	if len(got) != len(want) {
 		t.Fatalf("Imports() = %v, want exactly the nine:* stdlib", got)
 	}
@@ -212,7 +235,7 @@ func TestDeveloperToolCannotImportOutsideTheStdlib(t *testing.T) {
 	// "nine:tool" is deliberately absent from this list: it resolves to the
 	// calling tool's own source, so importing it is a self-reference rather than
 	// a way to reach anything (js.go).
-	for _, spec := range []string{"lodash", "./helper.js", "/etc/passwd", "https://x.example/m.js", "nine:fs"} {
+	for _, spec := range []string{"lodash", "./helper.js", "/etc/passwd", "https://x.example/m.js", "nine:sqlite"} {
 		t.Run(spec, func(t *testing.T) {
 			dir := t.TempDir()
 			writeTool(t, dir, "probe", `

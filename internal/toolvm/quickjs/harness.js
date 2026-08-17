@@ -30,6 +30,55 @@
 const hostLog = globalThis.__nine_log;
 const hostHTTP = globalThis.__nine_http;
 const toolArgs = globalThis.__nine_args;
+
+// The capability-backed primitives, handed to the nine:fs and nine:env modules
+// rather than to author code. They are stashed under a Symbol instead of staying
+// as `__nine_*` globals for the same reason as the two above: a module needs to
+// reach them, an author does not, and a well-known key is a lesser evil than
+// nine more enumerable globals. This is hygiene, not a boundary — every one of
+// them is enforced host-side, and a tool that finds them gains nothing it could
+// not get by importing the module.
+let capsCache;
+globalThis[Symbol.for("nine.internal")] = Object.freeze({
+  caps: () => (capsCache ??= JSON.parse(globalThis.__nine_caps())),
+  fsRead: (p) => globalThis.__nine_fs_read(p),
+  fsWrite: (p, d) => globalThis.__nine_fs_write(p, d),
+  fsReadDir: (p) => globalThis.__nine_fs_readdir(p),
+  fsStat: (p) => globalThis.__nine_fs_stat(p),
+  env: (n) => globalThis.__nine_env(n),
+  random: (n) => globalThis.__nine_random(n),
+});
+
+// crypto, built on the host's randomness rather than Math.random. getentropy is
+// wasi-libc's wrapper over WASI random_get, which the host feeds from
+// crypto/rand — so this is a real CSPRNG. There is no `subtle`: it is a large
+// asynchronous surface, and a tool needing AES-GCM can bundle an implementation.
+const hostRandom = globalThis.__nine_random;
+globalThis.crypto = Object.freeze({
+  getRandomValues(view) {
+    if (!ArrayBuffer.isView(view)) {
+      throw new TypeError("getRandomValues expects a typed array");
+    }
+    if (view instanceof Float32Array || view instanceof Float64Array) {
+      throw new TypeError("getRandomValues does not accept a float array");
+    }
+    const bytes = hostRandom(view.byteLength);
+    new Uint8Array(view.buffer, view.byteOffset, view.byteLength).set(bytes);
+    return view;
+  },
+  randomUUID() {
+    const b = hostRandom(16);
+    b[6] = (b[6] & 0x0f) | 0x40; // version 4
+    b[8] = (b[8] & 0x3f) | 0x80; // variant 1
+    const h = [...b].map((x) => x.toString(16).padStart(2, "0"));
+    return (
+      h.slice(0, 4).join("") + "-" + h.slice(4, 6).join("") + "-" +
+      h.slice(6, 8).join("") + "-" + h.slice(8, 10).join("") + "-" +
+      h.slice(10, 16).join("")
+    );
+  },
+});
+
 delete globalThis.__nine_log;
 delete globalThis.__nine_http;
 delete globalThis.__nine_args;

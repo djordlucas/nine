@@ -390,12 +390,14 @@ will want to argue with.
    two-export contract, which does not change, and the new envelope fields are additive — a
    wasm tool that ignores them behaves exactly as it does now. Bumping would fail every
    existing `abi = 1` manifest to buy nothing.
-4. **Still open: whether `nine:fs` should exist when ungranted.** Importable-and-refusing
-   matches how `net.http` already behaves and keeps one code path; absent-entirely is
-   arguably clearer. It only becomes urgent at M5. **Leaning importable.**
+4. **Settled at M5: `nine:fs` is importable when ungranted**, matching how `net.http`
+   already behaves, and a call throws `fs.read is not granted to this tool`. The refusal is
+   a message rather than a mechanism — with no pre-opens there is nothing to open, which a
+   test asserts by bypassing the module and calling the primitive directly.
 
-**Build order:** M1–M4 are shipped. M5 is next and is the only one needing a `qjs.wasm`
-rebuild; M3b needs a decision before it is worth starting.
+**Build order:** M1–M5 are shipped, closing every gap this note opened with. M3b is the
+remainder: its destination question was settled (the file store, with the model receiving a
+path), and it is the last row.
 
 ---
 
@@ -406,9 +408,9 @@ rebuild; M3b needs a decision before it is worth starting.
 | **M1** ✅ done | `nine.h` + correcting the wasm guide (§6.7) | docs | No | wasm |
 | **M2** ✅ done | Structured errors, OOM message (§6.1) | L1 | No | both |
 | **M3** ✅ done | Binary data over HTTP (§6.1) | L1 + harness | No | both |
-| **M3b** | A tool returning bytes — needs a destination decision (§6.1) | L1 + agent | No | both |
+| **M3b** ◀ next | A tool returning bytes → the file store, model gets a path (§6.1) | L1 + agent | No | both |
 | **M4** ✅ done | Web-platform layer + papercuts (§6.5, §6.6) | L3 | No | js |
-| **M5** ◀ next | `nine:fs`, `nine:env`, `crypto`, `nine.caps` (§6.3, §6.4) | L2 + L3 | **Yes** | both |
+| **M5** ✅ done | `nine:fs`, `nine:env`, `crypto`, `nine.caps` (§6.3, §6.4) | L2 + L3 | **Yes** | both |
 
 M1 is an afternoon and unblocks the kind that currently has the most capability and the
 least documentation. M2–M4 need no blob rebuild and are mutually independent. M5 is the
