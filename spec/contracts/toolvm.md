@@ -54,6 +54,31 @@ A `false` result is surfaced to the model as an **ordinary tool error**, distinc
 host failing to run the tool at all — the model can read it and retry with different
 arguments.
 
+A failure **MAY** carry structure alongside the message:
+
+```json
+{"ok": false, "error": "weather API timed out",
+ "error_detail": {"name": "TypeError", "code": "E_UPSTREAM",
+                  "retryable": true, "cause": ["connect ETIMEDOUT"]}}
+```
+
+| Field | Meaning |
+|---|---|
+| `name` | The error's class. Diagnostic; `"Error"` is not surfaced, being the default. |
+| `code` | The tool's own stable identifier, e.g. `"E_RANGE"`. Stable across rewordings. |
+| `retryable` | Whether trying again could plausibly work. **Absent is not `false`** — one is the tool declining to say, the other is it saying no. |
+| `cause` | The chain behind the failure, outermost first, flattened to messages. |
+
+Every field is optional, and `error` remains the message, so a guest that sets none of them
+produces exactly the envelope it produced before `error_detail` existed. This is why the
+addition **does not** bump `ABIVersion`: the two-export contract is unchanged and no
+existing parser breaks (docs/rich-js-tools.md §8).
+
+The host renders these into the error the model reads, since the dispatcher's channel for a
+tool failure is one string. A `js` tool's harness fills them from the thrown `Error`
+(`name`, the conventional `code`, and the ES2022 `cause` chain); a `wasm` tool writes the
+fields itself, or calls `nine_fail_code` from `nine.h`.
+
 `ABIVersion` is independent of `plugin.ProtocolVersion` (`docs/versioning.md`). A module
 declaring an unsupported ABI **MUST** be refused at load, not called.
 

@@ -61,6 +61,42 @@ Default-export a function. Return whatever you like:
   which is exactly what you want for `throw new Error("date is not ISO-8601")` — the model
   can read it and retry with better arguments.
 
+### Say whether it is worth retrying
+
+"The upstream is down" and "your argument was malformed" read the same as prose and call for
+opposite behavior. Attach that to the error and the model is told rather than left guessing:
+
+```js
+const e = new Error("weather API timed out");
+e.code = "E_UPSTREAM";   // your own stable identifier; survives rewording
+e.retryable = true;      // false means "trying again cannot help"
+throw e;
+```
+
+`name`, `code`, `retryable`, and the ES2022 `cause` chain are all carried through and
+rendered into what the model reads:
+
+```text
+tool "weather": weather API timed out (code E_UPSTREAM, retryable)
+tool "parse": date is not ISO-8601 (code E_ARGS, not retryable); caused by: unexpected token
+```
+
+**`retryable: false` does more than inform the model: Nine stops retrying.** A failed tool
+call is normally attempted three times, on the assumption that a failure is a flake. Saying
+the failure is not retryable takes your tool out of that loop the way a human's refusal of
+an approval already is — one attempt, then the model is told:
+
+```text
+Tool "weather" failed after 1 attempt(s): tool "weather": city must be a string
+(code E_ARGS, not retryable). The tool reports this cannot succeed on retry;
+change the arguments or use a different tool.
+```
+
+**Omitting `retryable` is not the same as `false`** — one says you have no opinion, the
+other says trying again will not work, and only the second changes the retry behavior. A
+plain `throw new Error("…")` still produces exactly the message it always did and is still
+retried three times, so none of this is required.
+
 `console.log` works and goes to the daemon log. It is the only way out of the sandbox you
 have without a grant.
 
@@ -354,6 +390,18 @@ NINE_TOOL(args, len) {
 `nine_ok` and `nine_fail` exist because hand-building the envelope with `sprintf` breaks
 the moment your output contains a quote or a newline — a failure that depends on your data
 rather than your code, which is the worst kind to debug.
+
+For the retry distinction described above, `nine_fail_code` carries it from C:
+
+```c
+return nine_fail_code("weather API timed out", "E_UPSTREAM", NINE_RETRY_YES);
+return nine_fail_code("date is not ISO-8601",  "E_ARGS",     NINE_RETRY_NO);
+return nine_fail_code("something specific",    "E_ODD",      NINE_RETRY_UNSET);
+```
+
+`NINE_RETRY_UNSET` is distinct from `NINE_RETRY_NO` for the same reason omitting
+`retryable` is distinct from setting it false. `examples/tools/sha256.c` uses this for its
+missing-argument path.
 
 ### The two host imports
 
