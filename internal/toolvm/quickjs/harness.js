@@ -92,6 +92,43 @@ function render(value) {
   return safeStringify(value);
 }
 
+// The structured half of a failure (§6.1 of docs/rich-js-tools.md). A thrown
+// Error already carries more than a sentence — its class, a `code` by widespread
+// convention, and since ES2022 a `cause` chain — and all of it used to be
+// discarded here in favor of `.message` alone. That made "your argument was
+// malformed" and "the upstream is down" the same instruction to the model.
+//
+// Every field is optional and omitted when absent, so a tool that throws a plain
+// Error produces exactly the envelope it produced before.
+function detail(e) {
+  if (!e || typeof e !== "object") return undefined;
+  const d = {};
+
+  if (typeof e.name === "string" && e.name) d.name = e.name;
+  // `code` is not standard, but it is the convention across Node, V8, and most
+  // libraries, and a tool author reaching for a stable identifier reaches for it.
+  if (typeof e.code === "string" && e.code) d.code = e.code;
+  else if (typeof e.code === "number") d.code = String(e.code);
+  if (typeof e.retryable === "boolean") d.retryable = e.retryable;
+
+  // Walk the cause chain, outermost first. Bounded because a cycle here would
+  // otherwise spin until the wall clock kills the call — and a self-referential
+  // cause is a bug in the tool, not something to hang on.
+  const cause = [];
+  let seen = new Set([e]);
+  let cur = e.cause;
+  while (cur != null && cause.length < 8 && !seen.has(cur)) {
+    seen.add(cur);
+    cause.push(
+      typeof cur === "object" && cur.message ? String(cur.message) : String(cur),
+    );
+    cur = typeof cur === "object" ? cur.cause : undefined;
+  }
+  if (cause.length) d.cause = cause;
+
+  return Object.keys(d).length ? d : undefined;
+}
+
 try {
   if (typeof tool !== "function") {
     throw new TypeError(
@@ -107,5 +144,6 @@ try {
   globalThis.__nine_result = JSON.stringify({
     ok: false,
     error: e && e.message ? String(e.message) : String(e),
+    error_detail: detail(e),
   });
 }
