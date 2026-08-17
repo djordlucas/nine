@@ -84,11 +84,16 @@ ordinary tool failure carrying your message.
 
 ## What you get, and what you don't
 
-The runtime is **QuickJS-NG: ES2023 and nothing else**. There is no Node standard
-library — no `fs`, `http`, `path`, `Buffer`, `process`, `crypto` — and no
-`fetch`, `setTimeout`, or `require`.
+The runtime is **QuickJS-NG plus a small platform layer**: `console`, `fetch`,
+`TextEncoder`/`TextDecoder`, `URL`/`URLSearchParams`, `structuredClone`, and
+timers that run in *virtual time* (they order correctly but never sleep). There
+is no Node standard library — no `fs`, `http`, `path`, `Buffer`, `process`, or
+`require` — and no `crypto` or `Intl`. Passing a locale to `toLocaleString`
+throws rather than silently ignoring it. Full list: `nine docs
+writing-sandboxed-tools`.
 
-**Bundle your dependencies yourself**, at development time:
+**Bundle your third-party dependencies yourself**, at development time (the
+embedded `nine:csv`, `nine:date`, and `nine:diff` are importable as-is):
 
 ```console
 $ npx esbuild tool.js --bundle --format=esm --platform=neutral --outfile=csvstats.js
