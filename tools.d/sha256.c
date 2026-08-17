@@ -1,25 +1,22 @@
 /*
  * sha256.c — a raw `wasm` tool: SHA-256 over a string, in C.
  *
- * Build (from the repo root, after `make quickjs-wasm` has fetched the SDK):
+ * Build with `make tools-wasm`, or by hand:
  *
- *   SDK=internal/toolvm/quickjs/.build/wasi-sdk-33 \
+ *   SDK=internal/toolvm/quickjs/.build/wasi-sdk-33
  *   "$SDK/bin/clang" --target=wasm32-wasip1 --sysroot="$SDK/share/wasi-sysroot" \
  *     -mexec-model=reactor -Os -o tools.d/sha256.wasm tools.d/sha256.c \
  *     -Wl,--export=nine_alloc -Wl,--export=nine_run -Wl,--strip-all -Wl,--gc-sections
  *
  * It links no interpreter and knows nothing about JavaScript: it satisfies the
- * same two-export ABI a Rust, TinyGo, or Zig tool would (docs/sandboxed-tools.md
- * §4). It takes {"text": "..."} and returns the hex digest.
+ * same ABI a Rust, TinyGo, or Zig tool would (docs/sandboxed-tools.md §4), via
+ * the nine.h header beside it. It takes {"text": "..."} and returns the hex
+ * digest.
  */
 
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
+#include "nine.h"
 
-__attribute__((export_name("nine_alloc"))) uint32_t nine_alloc(uint32_t size) {
-    return (uint32_t)(uintptr_t)malloc(size ? size : 1);
-}
+#include <stdint.h>
 
 /* ── SHA-256 (FIPS 180-4) ─────────────────────────────────────────────────── */
 
@@ -84,74 +81,28 @@ static void sha256(const uint8_t *msg, uint32_t len, uint8_t out[32]) {
     }
 }
 
-/* ── the ABI ──────────────────────────────────────────────────────────────── */
+/* ── the tool ─────────────────────────────────────────────────────────────── */
 
-/* Pull "text" out of the input JSON, undoing the escapes a JSON string may
- * carry. Kept dependency-free so the built artifact stays a couple of KiB and
- * its behavior is obvious by inspection; \u escapes are refused rather than
- * half-handled. Returns the decoded byte count, or -1. */
-static int32_t find_text(const char *in, uint32_t len, uint8_t *out) {
-    const char *key = "\"text\"";
-    for (uint32_t i = 0; i + 6 <= len; i++) {
-        if (memcmp(in + i, key, 6) != 0) continue;
-        uint32_t j = i + 6;
-        while (j < len && (in[j] == ' ' || in[j] == ':')) j++;
-        if (j >= len || in[j] != '"') return -1;
-        j++;
-        int32_t n = 0;
-        while (j < len && in[j] != '"') {
-            if (in[j] != '\\') { out[n++] = (uint8_t)in[j++]; continue; }
-            if (++j >= len) return -1;
-            switch (in[j]) {
-            case 'n':  out[n++] = '\n'; break;
-            case 't':  out[n++] = '\t'; break;
-            case 'r':  out[n++] = '\r'; break;
-            case 'b':  out[n++] = '\b'; break;
-            case 'f':  out[n++] = '\f'; break;
-            case '"':  out[n++] = '"';  break;
-            case '\\': out[n++] = '\\'; break;
-            case '/':  out[n++] = '/';  break;
-            default: return -1;
-            }
-            j++;
-        }
-        return n;
-    }
-    return -1;
-}
+/* Bounded because a tool's whole input is bounded: the host writes the call's
+ * arguments into memory this module caps at [tools] memory_mb. */
+#define MAX_TEXT 65536
 
-static uint64_t fail(const char *err) {
-    uint32_t n = (uint32_t)strlen(err);
-    char *buf = malloc(n);
-    memcpy(buf, err, n);
-    return ((uint64_t)(uint32_t)(uintptr_t)buf << 32) | n;
-}
-
-__attribute__((export_name("nine_run"))) uint64_t nine_run(uint32_t ptr, uint32_t len) {
-    const char *in = (const char *)(uintptr_t)ptr;
-
-    uint8_t *text = malloc(len ? len : 1);
-    int32_t text_len = find_text(in, len, text);
-    if (text_len < 0)
-        return fail("{\"ok\":false,\"error\":\"expected a string argument 'text' "
-                    "(\\\\u escapes are not supported)\"}");
+NINE_TOOL(args, len) {
+    static char text[MAX_TEXT];
+    int32_t n = nine_arg_str(NINE_ARGS(args), len, "text", text, sizeof(text));
+    if (n < 0)
+        return nine_fail("expected a string argument 'text' (\\u escapes are not supported)");
 
     uint8_t digest[32];
-    sha256(text, (uint32_t)text_len, digest);
+    sha256((const uint8_t *)text, (uint32_t)n, digest);
 
-    /* {"ok":true,"output":"<64 hex chars>"} — hex needs no JSON escaping. */
-    const char *pre = "{\"ok\":true,\"output\":\"";
-    const char *post = "\"}";
-    uint32_t pre_n = (uint32_t)strlen(pre), post_n = (uint32_t)strlen(post);
-    char *buf = malloc(pre_n + 64 + post_n);
-    memcpy(buf, pre, pre_n);
-    const char *hex = "0123456789abcdef";
+    static char hexout[65];
+    static const char hex[] = "0123456789abcdef";
     for (int i = 0; i < 32; i++) {
-        buf[pre_n + i * 2] = hex[digest[i] >> 4];
-        buf[pre_n + i * 2 + 1] = hex[digest[i] & 0xf];
+        hexout[i * 2] = hex[digest[i] >> 4];
+        hexout[i * 2 + 1] = hex[digest[i] & 0xf];
     }
-    memcpy(buf + pre_n + 64, post, post_n);
+    hexout[64] = 0;
 
-    uint32_t total = pre_n + 64 + post_n;
-    return ((uint64_t)(uint32_t)(uintptr_t)buf << 32) | total;
+    return nine_ok(hexout);
 }
