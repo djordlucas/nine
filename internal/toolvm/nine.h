@@ -136,9 +136,11 @@ static inline void nine_log(const char *msg) {
  * enforced on the host side of this call. A refusal arrives as {"error":…}
  * rather than as a status code, because a refusal is not a response.
  *
- * Note the body is a JSON string: a response that is not valid UTF-8 does not
- * survive it intact. Binary responses are a known gap (`nine docs
- * rich-js-tools`), not something to work around here.
+ * A response that is not valid UTF-8 comes back as "body_b64" (base64) INSTEAD OF
+ * "body" — never both, so branch on which key is present. Decode it with
+ * nine_b64_decode below. Send bytes the same way, as "body_b64" in the request.
+ * The split exists because everything crossing this boundary is UTF-8 JSON, and
+ * putting a PNG in a JSON string destroys it.
  */
 static inline const char *nine_http(const char *request_json, uint32_t *out_len) {
     uint64_t packed = nine_host_http((const uint8_t *)request_json,
@@ -285,6 +287,57 @@ static inline uint64_t nine_fail_code(const char *message, const char *code,
  * nine_alloc/malloc, never a local. */
 static inline uint64_t nine_raw(const void *bytes, size_t len) {
     return NINE_PACK(bytes, len);
+}
+
+/* ── base64, for bytes ────────────────────────────────────────────────────
+ * Bytes reach a tool as base64 (an HTTP response's "body_b64"), because the ABI
+ * carries UTF-8 JSON and a JSON string cannot hold arbitrary bytes. These are
+ * here so that "read one more field" is the whole job rather than "read one more
+ * field and also write a base64 decoder".
+ */
+
+static const char nine__b64_alpha[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/* Decode `in` into `out`, writing at most `cap` bytes. Returns the number
+ * written, or -1 if the input is not valid base64 or does not fit. Whitespace is
+ * skipped, so a wrapped encoding works. */
+static inline int32_t nine_b64_decode(const char *in, uint8_t *out, size_t cap) {
+    uint32_t acc = 0;
+    int bits = 0;
+    size_t n = 0;
+    for (; *in; in++) {
+        char c = *in;
+        if (c == '\n' || c == '\r' || c == ' ' || c == '\t') continue;
+        if (c == '=') break;
+        const char *p = strchr(nine__b64_alpha, c);
+        if (!p || c == 0) return -1;
+        acc = (acc << 6) | (uint32_t)(p - nine__b64_alpha);
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            if (n >= cap) return -1;
+            out[n++] = (uint8_t)((acc >> bits) & 0xff);
+        }
+    }
+    return (int32_t)n;
+}
+
+/* Encode `len` bytes of `in` into `out`, which must hold at least
+ * 4*((len+2)/3)+1 bytes. NUL-terminates. Returns the encoded length. */
+static inline size_t nine_b64_encode(const uint8_t *in, size_t len, char *out) {
+    size_t o = 0;
+    for (size_t i = 0; i < len; i += 3) {
+        uint32_t v = (uint32_t)in[i] << 16;
+        if (i + 1 < len) v |= (uint32_t)in[i + 1] << 8;
+        if (i + 2 < len) v |= in[i + 2];
+        out[o++] = nine__b64_alpha[(v >> 18) & 0x3f];
+        out[o++] = nine__b64_alpha[(v >> 12) & 0x3f];
+        out[o++] = i + 1 < len ? nine__b64_alpha[(v >> 6) & 0x3f] : '=';
+        out[o++] = i + 2 < len ? nine__b64_alpha[v & 0x3f] : '=';
+    }
+    out[o] = 0;
+    return o;
 }
 
 /* ── reading arguments ────────────────────────────────────────────────────

@@ -201,16 +201,47 @@ export default async ({ city }) => {
 ```
 
 It is a **subset** of the `fetch` you know, not a polyfill. You get `status`, `ok`,
-`headers`, `text()`, and `json()`. There is no streaming, no `AbortController`, no cookie
-jar, and no `Request`/`Headers`/`Response` classes.
+`headers`, `text()`, `json()`, `bytes()`, and `arrayBuffer()`. There is no streaming, no
+`AbortController`, no cookie jar, and no `Request`/`Headers`/`Response` classes.
 
-Two behaviors differ from browser `fetch` and are worth knowing:
+Three behaviors differ from browser `fetch` and are worth knowing:
 
 - **A blocked request throws**, it does not return a non-ok response. A refusal is not a
   response, and letting it look like one invites `if (res.ok)` to quietly swallow a
   decision the operator made. The message says why.
 - **Redirects are followed but re-checked.** Every hop must independently satisfy the
   allowlist, and `Authorization`/`Cookie` are stripped when a hop crosses origins.
+- **`text()` on a binary body throws** rather than returning mojibake. See below.
+
+### Binary bodies
+
+Everything crossing the sandbox boundary is UTF-8 JSON, and a JSON string cannot hold
+arbitrary bytes — so bytes are handled explicitly rather than squeezed through a text field:
+
+```js
+const res = await fetch(url);
+const bytes = await res.bytes();        // Uint8Array, whatever the body was
+await fetch(other, { method: "POST", body: bytes });   // sent as bytes, not "1,2,3"
+```
+
+`bytes()` and `arrayBuffer()` work on any response. `text()` and `json()` work on a
+response that is valid UTF-8 and **throw** on one that is not, naming the alternative:
+
+```text
+response body is not valid UTF-8 text; use bytes() or arrayBuffer()
+```
+
+That is deliberate. Previously a PNG arrived through `text()` with every invalid byte
+replaced by U+FFFD, `res.ok` true and nothing reporting it — so a tool that hashed or
+forwarded a binary body produced garbage and called it success. A throw puts the failure
+where the mistake is.
+
+A `Uint8Array`, `ArrayBuffer`, or any typed-array view passed as `init.body` is sent as
+bytes. A string is still sent as text.
+
+From C, the same split appears in the JSON: a non-UTF-8 response comes back as `body_b64`
+**instead of** `body`, and `nine_b64_decode` in `nine.h` decodes it. Send bytes by setting
+`body_b64` on the request.
 
 What you cannot reach, regardless of `allow_hosts`: loopback, link-local (including
 `169.254.169.254`, the cloud instance-metadata endpoint), RFC 1918, and the other

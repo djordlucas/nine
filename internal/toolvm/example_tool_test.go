@@ -77,6 +77,35 @@ func TestShippedWasmExample(t *testing.T) {
 		}
 	})
 
+	// nine.h's base64 decoder, exercised from a real compiled module — the same
+	// path an author takes to read an HTTP response's body_b64. The expected
+	// digest is independently checkable:
+	//
+	//   printf '\x89PNG\r\n\x1a\n\xff\xfe\x00\x01' | shasum -a 256
+	t.Run("binary input via base64", func(t *testing.T) {
+		got, err := h.Call(context.Background(), "sha256",
+			json.RawMessage(`{"text_b64":"iVBORw0KGgr//gAB"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		const want = "e4851a87a1aa6379d2af6581a08518c6f014c6afb662c61f7fbaa3b89c6bf7a4"
+		if got != want {
+			t.Errorf("got  %s\nwant %s", got, want)
+		}
+	})
+
+	t.Run("invalid base64 is refused, not hashed", func(t *testing.T) {
+		_, err := h.Call(context.Background(), "sha256",
+			json.RawMessage(`{"text_b64":"not!valid!base64"}`))
+		if err == nil {
+			t.Fatal("invalid base64 was accepted")
+		}
+		var ce *CallError
+		if errors.As(err, &ce) && ce.Code() != "E_ARGS" {
+			t.Errorf("Code() = %q, want E_ARGS", ce.Code())
+		}
+	})
+
 	// This is the wasm half of structured errors: proof that nine_fail_code emits
 	// an envelope the host parses, from a real compiled module.
 	t.Run("structured failure from C", func(t *testing.T) {
