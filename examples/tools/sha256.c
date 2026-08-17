@@ -89,16 +89,37 @@ static void sha256(const uint8_t *msg, uint32_t len, uint8_t out[32]) {
 
 NINE_TOOL(args, len) {
     static char text[MAX_TEXT];
+    static uint8_t raw[MAX_TEXT];
+    const uint8_t *msg;
+    uint32_t msg_len;
+
+    /* Two ways in. `text` is the ordinary one; `text_b64` exists because hashing
+     * is one of the few things you genuinely want to do to *bytes*, and bytes
+     * cannot travel in a JSON string — so they arrive base64, exactly as an HTTP
+     * response body does. nine_b64_decode is in nine.h for this reason. */
     int32_t n = nine_arg_str(NINE_ARGS(args), len, "text", text, sizeof(text));
-    if (n < 0)
-        /* A malformed argument is the textbook non-retryable failure: calling
-         * again with the same thing cannot work, and saying so is what stops a
-         * model from trying. */
-        return nine_fail_code("expected a string argument 'text' (\\u escapes are not supported)",
-                              "E_ARGS", NINE_RETRY_NO);
+    if (n >= 0) {
+        msg = (const uint8_t *)text;
+        msg_len = (uint32_t)n;
+    } else {
+        static char b64[MAX_TEXT];
+        int32_t bn = nine_arg_str(NINE_ARGS(args), len, "text_b64", b64, sizeof(b64));
+        if (bn < 0)
+            /* A malformed argument is the textbook non-retryable failure: calling
+             * again with the same thing cannot work, and saying so is what stops a
+             * model from trying. */
+            return nine_fail_code("expected a string argument 'text' or 'text_b64' "
+                                  "(\\u escapes are not supported)",
+                                  "E_ARGS", NINE_RETRY_NO);
+        int32_t rn = nine_b64_decode(b64, raw, sizeof(raw));
+        if (rn < 0)
+            return nine_fail_code("text_b64 is not valid base64", "E_ARGS", NINE_RETRY_NO);
+        msg = raw;
+        msg_len = (uint32_t)rn;
+    }
 
     uint8_t digest[32];
-    sha256((const uint8_t *)text, (uint32_t)n, digest);
+    sha256(msg, msg_len, digest);
 
     static char hexout[65];
     static const char hex[] = "0123456789abcdef";
