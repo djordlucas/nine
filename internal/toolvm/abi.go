@@ -88,4 +88,41 @@ type Result struct {
 	OK     bool   `json:"ok"`
 	Output string `json:"output,omitempty"`
 	Error  string `json:"error,omitempty"`
+
+	// ErrorDetail is optional structure behind Error. It exists because "the
+	// upstream is down" and "your argument was malformed" are different
+	// instructions to the model, and a bare sentence makes them the same one.
+	//
+	// Additive on purpose: `error` stays the message, so a guest that never sets
+	// this — every tool written before it existed — behaves exactly as it did.
+	// That is why it needs no ABIVersion bump (docs/rich-js-tools.md §8).
+	ErrorDetail *ErrorDetail `json:"error_detail,omitempty"`
+}
+
+// ErrorDetail is the structured half of a failure. Every field is optional; a
+// guest fills in what it knows.
+//
+// For a `js` tool the harness populates it from the thrown Error — which already
+// carries `name`, and by convention `code`, and since ES2022 a `cause` chain that
+// was previously discarded. For a `wasm` tool it is two more fields in the JSON
+// the tool already writes (see nine_fail_code in nine.h).
+type ErrorDetail struct {
+	// Name is the error's class — "RangeError", "TypeError". Diagnostic rather
+	// than actionable, but it distinguishes a bug in the tool from a bad argument.
+	Name string `json:"name,omitempty"`
+
+	// Code is the tool's own stable identifier for this failure, e.g. "E_RANGE".
+	// Stable is the point: a model that saw it once can recognize it again, and an
+	// operator can grep for it, neither of which survives a reworded sentence.
+	Code string `json:"code,omitempty"`
+
+	// Retryable, when set, says whether trying again could plausibly work. This is
+	// the field that carries the distinction the whole type exists for, so it is a
+	// pointer: unset means "the tool did not say", which is different from "no".
+	Retryable *bool `json:"retryable,omitempty"`
+
+	// Cause is the chain behind the failure, outermost first, flattened to
+	// messages. Flattened rather than nested because the consumer is a language
+	// model reading a sentence, not a debugger walking a tree.
+	Cause []string `json:"cause,omitempty"`
 }

@@ -485,9 +485,20 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 			observation := result.Output
 			errStr := ""
 			if dispErr != nil {
+				// `attempts`, not maxToolRetries+1: the loop returns early for a
+				// refused approval and for a non-retryable failure, and claiming
+				// three tries when one happened misleads both the model and anyone
+				// reading the journal.
+				advice := "Try a different approach or tool."
+				if retryable, stated := statedRetryable(dispErr); stated && !retryable {
+					// Without this the model is told to "try a different approach"
+					// by text that reads like generic encouragement, and may simply
+					// re-issue the same call. The tool has already ruled that out.
+					advice = "The tool reports this cannot succeed on retry; change the arguments or use a different tool."
+				}
 				observation = fmt.Sprintf(
-					"Tool %q failed after %d attempt(s): %v. Try a different approach or tool.",
-					tc.Name, maxToolRetries+1, dispErr,
+					"Tool %q failed after %d attempt(s): %v. %s",
+					tc.Name, attempts, dispErr, advice,
 				)
 				errStr = dispErr.Error()
 				toolErrs = append(toolErrs, fmt.Sprintf("%s: %v", tc.Name, dispErr))
@@ -588,6 +599,22 @@ const maxEmptyAnswerRetries = 2
 // the first success. Each failed attempt is logged. On final failure the last
 // error is returned so the caller can build an instructive observation. The
 // returned int is the total number of attempts made (1 = succeeded first try).
+// statedRetryable asks an error whether trying again could work, and whether it
+// said so at all.
+//
+// Deliberately an interface rather than a concrete type: a sandboxed tool's
+// *toolvm.CallError satisfies it today, and a plugin error can opt in later
+// without this package learning about either. The two return values are the
+// whole point — "did not say" must not collapse into "said no", because only one
+// of those is a claim the tool made.
+func statedRetryable(err error) (retryable, stated bool) {
+	var r interface{ Retryable() (bool, bool) }
+	if !errors.As(err, &r) {
+		return false, false
+	}
+	return r.Retryable()
+}
+
 func (l *Loop) dispatchWithRetry(ctx context.Context, name string, input json.RawMessage) (CallResult, int, time.Duration, error) {
 	var (
 		result  CallResult
@@ -614,6 +641,19 @@ func (l *Loop) dispatchWithRetry(ctx context.Context, name string, input json.Ra
 		var approvalErr *ApprovalError
 		if errors.As(err, &approvalErr) {
 			slog.Info("tool call not approved, not retrying",
+				"tool", name,
+				"err", err,
+				"duration_ms", elapsed.Milliseconds(),
+			)
+			return result, attempt + 1, elapsed, err
+		}
+		// A tool that says the failure is not retryable is making the same kind of
+		// statement: a malformed argument does not become well-formed on the second
+		// attempt, so retrying only burns the turn's budget and the operator's
+		// tokens. Stated is checked separately from the value because a tool that
+		// said nothing has not made this claim, and must keep the old behavior.
+		if retryable, stated := statedRetryable(err); stated && !retryable {
+			slog.Info("tool reported a non-retryable failure, not retrying",
 				"tool", name,
 				"err", err,
 				"duration_ms", elapsed.Milliseconds(),
