@@ -141,11 +141,11 @@ grants anything; only the operator's config does.
 
 `clock`, `randomness`, and logging are always available. They leak nothing.
 
-**`fs` and `env` do not work from a `js` tool yet.** They are WASI facilities a
-`wasm` tool reaches through `fopen` and `getenv`, and the interpreter has no
-binding for them — so a `js` tool declaring either loads, reports the
-capability, and finds no API to use it. Write it as `kind = "wasm"` until that
-closes (`nine docs rich-js-tools`).
+From JavaScript, reach a granted capability through the embedded modules:
+`import { readFileText } from "nine:fs"` and `import { get } from "nine:env"`.
+You address the guest path (`/data`), and confinement is the wazero pre-open
+rather than anything in those modules. From C, `fopen` and `getenv` work
+directly.
 
 For network access, declare `net = ["http"]` and have the operator grant the hosts; then
 `fetch` works. It is a subset — `status`, `ok`, `headers`, `text()`, `json()` — and a
