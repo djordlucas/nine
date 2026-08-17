@@ -225,7 +225,19 @@ static JSValue js_nine_fs_read(JSContext *ctx, JSValueConst this_val, int argc,
             buf = nb; cap = ncap;
         }
         size_t n = fread(buf + len, 1, cap - len, f);
-        if (n == 0) break;
+        if (n == 0) {
+            /* Distinguish end-of-file from an I/O error: without this, a failed
+             * read returns a silently truncated file as success, which is the
+             * exact failure mode this whole surface exists to avoid. */
+            if (ferror(f)) {
+                free(buf);
+                fclose(f);
+                JSValue e = JS_ThrowTypeError(ctx, "error reading %s", path);
+                JS_FreeCString(ctx, path);
+                return e;
+            }
+            break;
+        }
         len += n;
     }
     fclose(f);
@@ -252,11 +264,22 @@ static JSValue js_nine_fs_write(JSContext *ctx, JSValueConst this_val, int argc,
 
     if (JS_IsString(argv[1])) {
         as_str = JS_ToCStringLen(ctx, &len, argv[1]);
+        if (!as_str) {
+            JS_FreeCString(ctx, path);
+            return JS_EXCEPTION; /* the pending exception is the caller's answer */
+        }
         data = (const uint8_t *)as_str;
     } else {
         ab = JS_GetTypedArrayBuffer(ctx, argv[1], &offset, &len, &bytes_per);
         if (JS_IsException(ab)) {
             JS_FreeValue(ctx, ab);
+            /* Not a typed array is not an error here — a plain ArrayBuffer is a
+             * legitimate argument, and we are about to try it. But the probe left
+             * a "not a TypedArray" exception pending on the context (quickjs.c,
+             * get_typed_array), and returning a *value* while an exception is set
+             * is a contract violation that surfaces later as an unrelated
+             * failure. Discard it before taking the second path. */
+            JS_FreeValue(ctx, JS_GetException(ctx));
             size_t sz = 0;
             uint8_t *raw = JS_GetArrayBuffer(ctx, &sz, argv[1]);
             if (!raw) {
