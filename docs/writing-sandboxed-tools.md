@@ -328,9 +328,16 @@ write JSON out. No runtime, and no capabilities you did not declare.
 
 ### In C, use the header
 
-`tools.d/nine.h` is that ABI as a header — the exports, the `(offset << 32) | length`
-packing, the host imports below, and envelope builders that escape your output properly.
-Include it and write one function:
+The binary emits that ABI as a C header — the exports, the `(offset << 32) | length`
+packing, the host imports below, and envelope builders that escape your output properly:
+
+```console
+$ nine tool header > nine.h
+```
+
+It comes from `nine` rather than from a file in the repository for the reason the docs you
+are reading are also inside the binary: a header describing the ABI must match the build
+that implements it, and a copy on disk drifts silently. Include it and write one function:
 
 ```c
 #include "nine.h"
@@ -381,17 +388,20 @@ named. Your code sees the guest path (`/data`), never the host path.
 
 ### A worked example
 
-`tools.d/sha256.*` is a complete one — SHA-256 in dependency-free C, written against the
-header, in the files a wasm tool ships as:
+`examples/tools/sha256.*` is a complete one — SHA-256 in dependency-free C, written
+against the header, in the files a wasm tool ships as:
 
 ```text
-tools.d/
-  nine.h               the ABI, shared by every C tool
+examples/tools/
   sha256.toml          the manifest — kind = "wasm"
   sha256.schema.json   { text: string }
   sha256.c             the source
   sha256.wasm          the artifact, 11 KiB, committed
 ```
+
+`examples/tools/` is not a tool directory — nothing there is loaded. Copy what you want
+into your own `[tools].user_dir`, which ships empty so that what runs in it is what you
+chose.
 
 Hashing is the honest demonstration of why this tier exists: it is exactly the work a
 language model cannot do by reasoning about it, and the answer is checkable to the byte.
@@ -428,7 +438,7 @@ The build line itself is no more than this, if you would rather not go through `
 ```console
 $ SDK=internal/toolvm/quickjs/.build/wasi-sdk-33
 $ "$SDK/bin/clang" --target=wasm32-wasip1 --sysroot="$SDK/share/wasi-sysroot" \
-    -mexec-model=reactor -Os -o tools.d/sha256.wasm tools.d/sha256.c \
+    -mexec-model=reactor -Os -o examples/tools/sha256.wasm examples/tools/sha256.c \
     -Wl,--export=nine_alloc -Wl,--export=nine_run -Wl,--strip-all -Wl,--gc-sections
 ```
 

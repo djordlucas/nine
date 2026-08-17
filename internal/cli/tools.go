@@ -13,6 +13,20 @@ import (
 	"nine/internal/toolvm"
 )
 
+// ToolHeader writes nine.h — the tool ABI as a C header — to stdout, so an
+// author can redirect it beside their source:
+//
+//	nine tool header > nine.h
+//
+// It comes out of the binary rather than out of the repository on purpose. The
+// header describes the ABI that this `nine` implements, and a copy checked in
+// somewhere drifts from it silently — the same argument that puts docs/ and
+// spec/ inside the binary. No daemon is needed: this is a constant of the build.
+func (c *CLI) ToolHeader() error {
+	_, err := io.WriteString(c.Out, toolvm.CHeader)
+	return err
+}
+
 // Tools prints the daemon's sandboxed-tool roster: every tool loaded from
 // [tools].user_dir with the capabilities it actually runs with, plus any that
 // were skipped at load with the reason. It requires a running daemon — the

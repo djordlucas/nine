@@ -78,7 +78,7 @@ Check files before restarting:
 ./nine skills validate skills.d/my-skill.md   # a single file
 ```
 
-It runs the same validation the daemon runs at boot and reports every problem per file, so a file that passes here is a file that will seed. In Docker the directory is mounted at `/skills.d` (`NINE_SKILLS_USER_DIR`).
+It runs the same validation the daemon runs at boot and reports every problem per file, so a file that passes here is a file that will seed. In Docker the path `/skills.d` is wired (`NINE_SKILLS_USER_DIR`) but not mounted: add `-v /my/skills.d:/skills.d:ro` to seed your own, so the container runs the skills you chose rather than whatever the repo carried.
 
 ---
 

@@ -160,6 +160,10 @@ root = "./dist"
 #   tools.d/csvstats.toml    the manifest (the gate)
 #   tools.d/csvstats.js      the code
 #
+# tools.d/ ships EMPTY: anything in it becomes a tool the model can call, so it
+# holds what you put there. Worked examples for both kinds are in
+# examples/tools/ (copy one in); `nine tool header > nine.h` emits the C ABI.
+#
 # OFF by default. Leaving `enabled` unset means no host, no tools, and agent
 # loops exactly as they were. See tools.d/README.md for a working example, and
 # `nine tools` for the roster (including anything that failed to load, and why).
