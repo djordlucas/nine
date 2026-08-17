@@ -320,15 +320,27 @@ Rules: guest paths only; `readFile` returns a `Uint8Array` and `readFileText` de
 
 ### 6.5 L3 — the web-platform layer
 
-`TextEncoder`, `TextDecoder` (UTF-8 only), `URL`, `URLSearchParams`, `structuredClone`, and
-UTF-8-safe base64 helpers: pure JS in the harness, no blob rebuild. Plus `crypto`
-(`getRandomValues` in C over `getentropy`, `randomUUID` layered in JS; no `subtle`).
+**Done (M4)**, all pure JS in the harness with no blob rebuild: `TextEncoder`/`TextDecoder`
+(UTF-8 only, other labels refused), `URL`/`URLSearchParams` (a documented subset — absolute
+URLs and base resolution, no IDNA or full WHATWG state machine), `structuredClone`
+(cycle-safe), and timers in **virtual time** per §8.1 — deadline ordering with no real time
+spent, and a budget so an endless `setInterval` fails legibly instead of hanging.
+
+`toLocaleString` and friends now throw when passed a locale or options (§8.2). Separate
+UTF-8 base64 helpers were dropped as unnecessary: with `TextEncoder` present, `btoa` over
+encoded bytes is the standard idiom, and adding non-standard globals to avoid one line is a
+worse trade.
+
+`crypto` stays in M5 — `getRandomValues` needs `getentropy` from C, which is a blob
+rebuild.
 
 ### 6.6 L3 — the JS papercuts
 
-Replace the static `import tool from "nine:tool"` with `await import("nine:tool")` *after*
-the globals are installed; populate `imports` from `stdlibModules()` for developer tools
-too; capture `__nine_log`/`__nine_http` into closures and `delete` them from `globalThis`.
+**Done (M4).** The tool is imported dynamically, after the platform is installed, so
+module-scope `console.log` works. Developer tools now get `stdlibModules()` — the exclusion
+was a leftover, and the allowlist still refuses everything else. `__nine_log`,
+`__nine_http`, and `__nine_args` are captured into closures and deleted from `globalThis`;
+`__nine_result` has to stay, since qjs_host.c reads the result back off the global object.
 
 ### 6.7 Documenting the `wasm` kind
 
@@ -382,9 +394,8 @@ will want to argue with.
    matches how `net.http` already behaves and keeps one code path; absent-entirely is
    arguably clearer. It only becomes urgent at M5. **Leaning importable.**
 
-**Build order:** M1 (`nine.h` + the guide correction), M2 (structured errors, the OOM
-message), and M3 (binary data over HTTP) are shipped. M4 is next; M3b needs a decision
-before it is worth starting.
+**Build order:** M1–M4 are shipped. M5 is next and is the only one needing a `qjs.wasm`
+rebuild; M3b needs a decision before it is worth starting.
 
 ---
 
@@ -396,8 +407,8 @@ before it is worth starting.
 | **M2** ✅ done | Structured errors, OOM message (§6.1) | L1 | No | both |
 | **M3** ✅ done | Binary data over HTTP (§6.1) | L1 + harness | No | both |
 | **M3b** | A tool returning bytes — needs a destination decision (§6.1) | L1 + agent | No | both |
-| **M4** ◀ next | Web-platform layer + papercuts (§6.5, §6.6) | L3 | No | js |
-| **M5** | `nine:fs`, `nine:env`, `crypto`, `nine.caps` (§6.3, §6.4) | L2 + L3 | **Yes** | both |
+| **M4** ✅ done | Web-platform layer + papercuts (§6.5, §6.6) | L3 | No | js |
+| **M5** ◀ next | `nine:fs`, `nine:env`, `crypto`, `nine.caps` (§6.3, §6.4) | L2 + L3 | **Yes** | both |
 
 M1 is an afternoon and unblocks the kind that currently has the most capability and the
 least documentation. M2–M4 need no blob rebuild and are mutually independent. M5 is the
