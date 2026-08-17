@@ -366,6 +366,25 @@ turns every sandboxed tool into an SSRF primitive with a manifest.
 JSON request; the daemon makes the request. In a `js` tool this is surfaced as a `fetch`
 subset (no streaming, no AbortController, no cookie jar, no Request/Headers classes).
 
+**Bodies are text or bytes, never text pretending to be bytes.** The transport is UTF-8
+JSON, so a body that is not valid UTF-8 cannot travel in a JSON string:
+
+| Direction | Field | When |
+|---|---|---|
+| response | `body` | the body is valid UTF-8 |
+| response | `body_b64` | it is not — set **instead of** `body`, never both |
+| request | `body` | sending text |
+| request | `body_b64` | sending bytes; wins over `body` if both are set |
+
+The host decides the response direction, because the host is the last place the original
+bytes exist. Encoding them into `body` would replace every invalid byte with U+FFFD before
+any guest could observe it, leaving `ok` true and the corruption silent. A `js` tool reads
+this through `bytes()`/`arrayBuffer()`, and `text()`/`json()` **MUST** throw on a binary
+body rather than return the replacement-character rendering.
+
+Both fields are additive, and a guest that ignores `body_b64` behaves as it did before it
+existed — hence no `ABIVersion` bump (docs/rich-js-tools.md §8).
+
 The host module exports `http` unconditionally, because a wasm module's imports are fixed
 at compile time and the QuickJS blob is shared by every `js` tool. That is not a leak: the
 **grant** is resolved per call, and a tool without one is refused before the request is

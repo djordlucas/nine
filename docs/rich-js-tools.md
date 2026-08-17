@@ -226,13 +226,21 @@ out. 1 MiB works, 8 MiB does not, and nothing says where the line is.
 
 ### 6.1 L1 — the envelope, for both kinds
 
-**Binary data.** `httpResponse` gains `body_b64`, set instead of `body` when the response
-is not valid UTF-8; the decision is the host's, where the bytes still exist. Request bodies
-gain `body_b64` in the same shape. A tool of either kind may return
-`{"ok":true,"output_b64":"…"}` to hand back bytes. On the JS side the harness builds
-`fetch`'s `arrayBuffer()`/`bytes()` on top, makes `text()` throw on a binary body rather
-than return mojibake, and accepts `Uint8Array`/`ArrayBuffer` for `init.body`. **The wasm
-author gets the same capability for free, by reading one more field.**
+**Binary data over HTTP — done (M3).** `httpResponse` carries `body_b64` instead of `body`
+when the response is not valid UTF-8; the decision is the host's, where the bytes still
+exist. Requests take `body_b64` the same way. The harness builds `bytes()`/`arrayBuffer()`
+on top, makes `text()`/`json()` throw on a binary body rather than return mojibake, and
+sends a `Uint8Array`, `ArrayBuffer`, or typed-array view as bytes. A wasm author reads one
+more field, and `nine_b64_decode`/`nine_b64_encode` are in `nine.h` so that is the whole
+job — `examples/tools/sha256.c` takes `text_b64` through exactly that path.
+
+**A tool *returning* bytes is deferred, and the note was wrong to bundle it here.** It
+reads like the same change and is not: `output_b64` needs a destination, and the existing
+overflow sink is `SpillFn func(ctx, toolName string, output string) (string, error)` —
+string-typed, feeding a file store the model reads back *by path*. Bytes through that
+either become base64 text in a file (useless to the model) or get corrupted on the way.
+Deciding where a tool's bytes land, and what the model is told about them, is a design
+question of its own rather than a fourth field. Nothing else in this note depends on it.
 
 **Structured errors — done (M2).** `Result.ErrorDetail` carries `name`, `code`,
 `retryable`, and a flattened `cause` chain. `retryable` is a pointer precisely because
@@ -374,8 +382,9 @@ will want to argue with.
    matches how `net.http` already behaves and keeps one code path; absent-entirely is
    arguably clearer. It only becomes urgent at M5. **Leaning importable.**
 
-**Build order:** M1 (`nine.h` + the guide correction) and M2 (structured errors, the OOM
-message) are shipped. M3 is next.
+**Build order:** M1 (`nine.h` + the guide correction), M2 (structured errors, the OOM
+message), and M3 (binary data over HTTP) are shipped. M4 is next; M3b needs a decision
+before it is worth starting.
 
 ---
 
@@ -385,8 +394,9 @@ message) are shipped. M3 is next.
 |---|---|---|---|---|
 | **M1** ✅ done | `nine.h` + correcting the wasm guide (§6.7) | docs | No | wasm |
 | **M2** ✅ done | Structured errors, OOM message (§6.1) | L1 | No | both |
-| **M3** ◀ next | Binary data end to end (§6.1) | L1 + harness | No | both |
-| **M4** | Web-platform layer + papercuts (§6.5, §6.6) | L3 | No | js |
+| **M3** ✅ done | Binary data over HTTP (§6.1) | L1 + harness | No | both |
+| **M3b** | A tool returning bytes — needs a destination decision (§6.1) | L1 + agent | No | both |
+| **M4** ◀ next | Web-platform layer + papercuts (§6.5, §6.6) | L3 | No | js |
 | **M5** | `nine:fs`, `nine:env`, `crypto`, `nine.caps` (§6.3, §6.4) | L2 + L3 | **Yes** | both |
 
 M1 is an afternoon and unblocks the kind that currently has the most capability and the

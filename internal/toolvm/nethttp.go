@@ -1,7 +1,9 @@
 package toolvm
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +14,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 )
 
 // Defaults for the net.http capability, applied when a grant leaves them unset.
@@ -51,6 +54,11 @@ type httpRequest struct {
 	Method  string            `json:"method"`
 	Headers map[string]string `json:"headers"`
 	Body    string            `json:"body"`
+
+	// BodyB64 sends bytes rather than text. Everything crossing the ABI is UTF-8
+	// JSON, so a string field cannot carry arbitrary bytes — a PNG put in `body`
+	// arrives mangled or not at all. When set it wins over Body.
+	BodyB64 string `json:"body_b64,omitempty"`
 }
 
 // httpResponse is what comes back. An `error` field carries a refusal, so the
@@ -60,6 +68,18 @@ type httpResponse struct {
 	Headers map[string]string `json:"headers,omitempty"`
 	Body    string            `json:"body,omitempty"`
 	Error   string            `json:"error,omitempty"`
+
+	// BodyB64 carries a response body that is not valid UTF-8, and is set
+	// *instead of* Body when so — never both, so a guest branches on which field
+	// is present rather than guessing.
+	//
+	// This decision is made here, on the host, because here is the last place the
+	// original bytes exist. Marshalling them into Body would replace every
+	// invalid byte with U+FFFD before any guest could see them: a PNG's leading
+	// 0x89 becomes 0xEF 0xBF 0xBD, `res.ok` stays true, and nothing reports a
+	// problem. Silent corruption is worse than a refusal and much worse than a
+	// second field.
+	BodyB64 string `json:"body_b64,omitempty"`
 }
 
 // forbiddenRequestHeaders are headers the guest may not set. Host and the
@@ -207,7 +227,14 @@ func (h *Host) doHTTP(ctx context.Context, toolName string, grant HTTPGrant, raw
 	}
 
 	var body io.Reader
-	if req.Body != "" {
+	switch {
+	case req.BodyB64 != "":
+		raw, err := base64.StdEncoding.DecodeString(req.BodyB64)
+		if err != nil {
+			return httpResponse{Error: "invalid request: body_b64 is not valid base64"}
+		}
+		body = bytes.NewReader(raw)
+	case req.Body != "":
 		body = strings.NewReader(req.Body)
 	}
 	hreq, err := http.NewRequestWithContext(ctx, method, u.String(), body)
@@ -265,7 +292,16 @@ func (h *Host) doHTTP(ctx context.Context, toolName string, grant HTTPGrant, raw
 	out := httpResponse{
 		Status:  resp.StatusCode,
 		Headers: flattenHeaders(resp.Header),
-		Body:    string(buf),
+	}
+	// Text stays text — the overwhelmingly common case, and one no tool should
+	// have to decode. Anything else goes back as bytes rather than through a
+	// lossy conversion nobody asked for. A truncated body is checked as it
+	// stands: cutting a multi-byte rune in half genuinely does make the result
+	// not-UTF-8, and handing back the bytes is the honest answer there too.
+	if utf8.Valid(buf) {
+		out.Body = string(buf)
+	} else {
+		out.BodyB64 = base64.StdEncoding.EncodeToString(buf)
 	}
 	if truncated {
 		out.Headers["x-nine-truncated"] = fmt.Sprintf("body capped at %d bytes", maxBytes)
