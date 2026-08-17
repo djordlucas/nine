@@ -52,6 +52,10 @@ nine tools reload                Re-scan [tools].user_dir and reload sandboxed
 nine tool validate [path]        Check a sandboxed tool's manifest, entrypoint,
                                  schema, and ABI exports (defaults to
                                  [tools].user_dir; works with the daemon down)
+nine tool header                 Print nine.h, the tool ABI as a C header, for
+                                 writing a `wasm` tool in C — it describes the
+                                 ABI this binary implements, so it cannot drift
+                                 (`nine tool header > nine.h`)
 
 nine trace <agent-id> [--turn N] [--sub-agents]
                                  Print a session's event journal (or one turn);
