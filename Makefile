@@ -53,23 +53,29 @@ quickjs-verify:
 	cd internal/toolvm/quickjs && shasum -a 256 -c qjs.wasm.sha256
 
 # ── sandboxed tools: the raw-wasm example ─────────────────────────────────────
-# Rebuilds tools.d/sha256.wasm, the worked `kind = "wasm"` example
+# Rebuilds examples/tools/sha256.wasm, the worked `kind = "wasm"` example
 # (docs/writing-sandboxed-tools.md). Deliberately NOT part of `dev` or `build`,
 # for the same reason as quickjs-wasm above: the artifact is committed so that
 # copying the example needs no C toolchain — only *editing the C* does.
 #
 # It reuses the SDK `make quickjs-wasm` fetches. Point WASI_SDK at your own to
 # skip that step.
+#
+# The header comes out of the freshly-built binary via `nine tool header`, which
+# is exactly how an author gets it — so this target also proves that what we
+# hand people actually compiles.
 
 WASI_SDK ?= internal/toolvm/quickjs/.build/wasi-sdk-33
 
-tools-wasm:
+tools-wasm: build
+	@mkdir -p $(DIST)/include
+	./$(DIST)/$(BINARY) tool header > $(DIST)/include/nine.h
 	$(WASI_SDK)/bin/clang \
 	  --target=wasm32-wasip1 --sysroot=$(WASI_SDK)/share/wasi-sysroot \
-	  -mexec-model=reactor -Os \
-	  -o tools.d/sha256.wasm tools.d/sha256.c \
+	  -mexec-model=reactor -Os -I $(DIST)/include \
+	  -o examples/tools/sha256.wasm examples/tools/sha256.c \
 	  -Wl,--export=nine_alloc -Wl,--export=nine_run -Wl,--strip-all -Wl,--gc-sections
-	@shasum -a 256 tools.d/sha256.wasm
+	@shasum -a 256 examples/tools/sha256.wasm
 
 # ── tests ─────────────────────────────────────────────────────────────────────
 
@@ -120,11 +126,16 @@ NINE_ENV = \
 	-e NINE_PLUGINS_USER_DIR=/plugins.d \
 	-e NINE_TOOLS_USER_DIR=/tools.d \
 	-e NINE_LOG_FILE=off
+# /tools.d is deliberately NOT mounted. The env var above wires the path, so an
+# operator who wants sandboxed tools in the container adds their own
+# `-v /my/tools.d:/tools.d:ro` and gets exactly the tools they chose. Mounting
+# the repo's directory here would install whatever it happens to contain as live
+# capability on every `make up`, which is not a decision this Makefile should be
+# making on an operator's behalf. The worked examples live in examples/tools/.
 NINE_MOUNTS = \
 	-v $(CURDIR)/nine.toml:/nine.toml:ro \
 	-v $(CURDIR)/skills.d:/skills.d:ro \
-	-v $(CURDIR)/plugins.d:/plugins.d:ro \
-	-v $(CURDIR)/tools.d:/tools.d:ro
+	-v $(CURDIR)/plugins.d:/plugins.d:ro
 NINE_RUN_FLAGS = --add-host host.docker.internal:host-gateway --restart unless-stopped
 
 # The 32k context window is requested per-call via num_ctx (nine.toml), so the

@@ -22,6 +22,19 @@
 //     bypass rather than a check to defeat.
 package toolvm
 
+import _ "embed"
+
+// CHeader is nine.h: this ABI rendered as a C header, for tools written in C.
+//
+// It is embedded rather than shipped as a file to copy, for the reason docs/
+// and spec/ are (docs/embed.go): a header describing the ABI must match the
+// binary that implements it, and a copy on disk drifts silently. `nine tool
+// header` writes the one belonging to the running version, and
+// TestCHeaderMatchesABIVersion keeps its NINE_ABI_VERSION honest.
+//
+//go:embed nine.h
+var CHeader string
+
 // ABIVersion is the version of the guest contract: the exported functions
 // below, their signatures, and the meaning of the bytes crossing between them.
 //
