@@ -66,11 +66,18 @@ func TestQuickJSBlobImportsAndExportsAreClosed(t *testing.T) {
 			sawWASI = true
 		case hostModule:
 			sawNine = true
-			// The whole host surface. `log` is granted to every tool; `http` is
-			// checked per call against the tool's grant (host.hostHTTP). Anything
-			// else appearing here is reach the capability table does not describe.
-			if name != "log" && name != "http" {
-				t.Errorf("blob imports %s.%s; the host module is only log and http", module, name)
+			// The whole host surface, and it is meant to stay this short. `log`
+			// is granted to every tool; `http` is checked per call against the
+			// tool's grant (host.hostHTTP); `caps` only describes a grant and
+			// confers nothing (host.hostCaps). Anything else appearing here is
+			// reach the capability table does not describe.
+			//
+			// Note what is NOT here: the filesystem and the environment. Those
+			// reach a `js` tool through libc and WASI — pre-opens wazero enforces
+			// itself — precisely so that containment never becomes a check of ours
+			// in a host function (docs/rich-js-tools.md §6.4).
+			if name != "log" && name != "http" && name != "caps" {
+				t.Errorf("blob imports %s.%s; the host module is only log, http, and caps", module, name)
 			}
 		default:
 			t.Errorf("blob imports an unexpected module: %s.%s", module, name)

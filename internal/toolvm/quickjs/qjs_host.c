@@ -39,6 +39,16 @@ nine_host_log(const uint8_t *ptr, int32_t len);
 __attribute__((import_module("nine"), import_name("http"))) extern uint64_t
 nine_host_http(const uint8_t *ptr, int32_t len);
 
+/* The calling tool's resolved capability grant, as JSON. It confers nothing —
+ * every capability is enforced elsewhere, by wazero's pre-opens or by the host's
+ * per-call grant lookup — and exists so a guest can say "fs.read is not granted
+ * to this tool" instead of surfacing an ENOENT for a file that plainly exists.
+ *
+ * Returns (offset << 32) | length of a JSON document the host allocated through
+ * nine_alloc, or 0. */
+__attribute__((import_module("nine"), import_name("caps"))) extern uint64_t
+nine_host_caps(void);
+
 /* ── ABI: allocation ──────────────────────────────────────────────────────
  * The host calls nine_alloc, writes the envelope into the returned offset,
  * then calls nine_run. There is no nine_free: the instance is destroyed when
@@ -163,6 +173,236 @@ static JSValue js_nine_http(JSContext *ctx, JSValueConst this_val, int argc,
     return res;
 }
 
+/* ── filesystem, environment, randomness ──────────────────────────────────
+ *
+ * These exist because a `js` tool could not reach three capabilities an operator
+ * can grant it. `fs` and `env` are WASI facilities — wazero pre-opens and
+ * WithEnv — which a raw .wasm tool reaches through libc, while this interpreter
+ * deliberately links no quickjs-libc and therefore had no binding for either
+ * (docs/rich-js-tools.md §1). The grant was real, the enforcement was real, and
+ * nothing in JavaScript could use it.
+ *
+ * They are ordinary libc calls, NOT new host functions, and that is the whole
+ * design. wasi-libc is already linked here; fopen and getenv route through WASI
+ * to exactly the pre-opens and env pairs the host configured. So containment
+ * stays wazero's — a tool scoped to /srv/data cannot walk out of it without our
+ * writing a single check — instead of becoming a path-checking function of ours
+ * that we would then own the bugs in (§6.4).
+ *
+ * Nothing here linked std or os; a tool with no grant sees an empty filesystem
+ * and an empty environment, because that is what the host handed the instance.
+ */
+
+#include <stdio.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+/* Read a whole file. Returns a Uint8Array — bytes rather than text, so that a
+ * tool reading a PNG does not get the U+FFFD treatment binary HTTP bodies used
+ * to get. Decoding is the caller's choice, via TextDecoder. */
+static JSValue js_nine_fs_read(JSContext *ctx, JSValueConst this_val, int argc,
+                               JSValueConst *argv) {
+    (void)this_val;
+    if (argc < 1) return JS_ThrowTypeError(ctx, "readFile requires a path");
+    const char *path = JS_ToCString(ctx, argv[0]);
+    if (!path) return JS_EXCEPTION;
+
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        JSValue e = JS_ThrowTypeError(ctx, "cannot read %s", path);
+        JS_FreeCString(ctx, path);
+        return e;
+    }
+    size_t cap = 65536, len = 0;
+    uint8_t *buf = malloc(cap);
+    if (!buf) { fclose(f); JS_FreeCString(ctx, path); return JS_ThrowOutOfMemory(ctx); }
+    for (;;) {
+        if (len == cap) {
+            size_t ncap = cap * 2;
+            uint8_t *nb = realloc(buf, ncap);
+            if (!nb) { free(buf); fclose(f); JS_FreeCString(ctx, path); return JS_ThrowOutOfMemory(ctx); }
+            buf = nb; cap = ncap;
+        }
+        size_t n = fread(buf + len, 1, cap - len, f);
+        if (n == 0) break;
+        len += n;
+    }
+    fclose(f);
+    JS_FreeCString(ctx, path);
+
+    JSValue out = JS_NewUint8ArrayCopy(ctx, buf, len);
+    free(buf);
+    return out;
+}
+
+/* Write a file. Accepts a string (written as UTF-8) or any ArrayBuffer/view. */
+static JSValue js_nine_fs_write(JSContext *ctx, JSValueConst this_val, int argc,
+                                JSValueConst *argv) {
+    (void)this_val;
+    if (argc < 2) return JS_ThrowTypeError(ctx, "writeFile requires a path and data");
+    const char *path = JS_ToCString(ctx, argv[0]);
+    if (!path) return JS_EXCEPTION;
+
+    const uint8_t *data = NULL;
+    size_t len = 0;
+    const char *as_str = NULL;
+    size_t offset = 0, bytes_per = 0;
+    JSValue ab = JS_UNDEFINED;
+
+    if (JS_IsString(argv[1])) {
+        as_str = JS_ToCStringLen(ctx, &len, argv[1]);
+        data = (const uint8_t *)as_str;
+    } else {
+        ab = JS_GetTypedArrayBuffer(ctx, argv[1], &offset, &len, &bytes_per);
+        if (JS_IsException(ab)) {
+            JS_FreeValue(ctx, ab);
+            size_t sz = 0;
+            uint8_t *raw = JS_GetArrayBuffer(ctx, &sz, argv[1]);
+            if (!raw) {
+                JS_FreeCString(ctx, path);
+                return JS_ThrowTypeError(ctx, "writeFile data must be a string or bytes");
+            }
+            data = raw;
+            len = sz;
+            ab = JS_UNDEFINED;
+        } else {
+            size_t sz = 0;
+            uint8_t *raw = JS_GetArrayBuffer(ctx, &sz, ab);
+            if (!raw) {
+                JS_FreeValue(ctx, ab);
+                JS_FreeCString(ctx, path);
+                return JS_ThrowTypeError(ctx, "writeFile data must be a string or bytes");
+            }
+            data = raw + offset;
+        }
+    }
+
+    FILE *f = fopen(path, "wb");
+    if (!f) {
+        if (as_str) JS_FreeCString(ctx, as_str);
+        JS_FreeValue(ctx, ab);
+        JSValue e = JS_ThrowTypeError(ctx, "cannot write %s", path);
+        JS_FreeCString(ctx, path);
+        return e;
+    }
+    size_t wrote = len ? fwrite(data, 1, len, f) : 0;
+    fclose(f);
+    if (as_str) JS_FreeCString(ctx, as_str);
+    JS_FreeValue(ctx, ab);
+
+    if (wrote != len) {
+        JSValue e = JS_ThrowTypeError(ctx, "short write to %s", path);
+        JS_FreeCString(ctx, path);
+        return e;
+    }
+    JS_FreeCString(ctx, path);
+    return JS_UNDEFINED;
+}
+
+/* List a directory. Names only, no recursion: a tool that wants a tree can walk
+ * it, and the flat form is what a pre-open makes cheap and obvious. */
+static JSValue js_nine_fs_readdir(JSContext *ctx, JSValueConst this_val, int argc,
+                                  JSValueConst *argv) {
+    (void)this_val;
+    if (argc < 1) return JS_ThrowTypeError(ctx, "readDir requires a path");
+    const char *path = JS_ToCString(ctx, argv[0]);
+    if (!path) return JS_EXCEPTION;
+
+    DIR *d = opendir(path);
+    if (!d) {
+        JSValue e = JS_ThrowTypeError(ctx, "cannot read directory %s", path);
+        JS_FreeCString(ctx, path);
+        return e;
+    }
+    JSValue arr = JS_NewArray(ctx);
+    uint32_t i = 0;
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
+        JS_SetPropertyUint32(ctx, arr, i++, JS_NewString(ctx, ent->d_name));
+    }
+    closedir(d);
+    JS_FreeCString(ctx, path);
+    return arr;
+}
+
+/* stat, reduced to what a tool acts on: does it exist, how big is it, is it a
+ * directory. Mode bits and ownership are not meaningful inside a pre-open. */
+static JSValue js_nine_fs_stat(JSContext *ctx, JSValueConst this_val, int argc,
+                               JSValueConst *argv) {
+    (void)this_val;
+    if (argc < 1) return JS_ThrowTypeError(ctx, "stat requires a path");
+    const char *path = JS_ToCString(ctx, argv[0]);
+    if (!path) return JS_EXCEPTION;
+
+    struct stat st;
+    int rc = stat(path, &st);
+    JS_FreeCString(ctx, path);
+    if (rc != 0) return JS_NULL;
+
+    JSValue o = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, o, "size", JS_NewInt64(ctx, (int64_t)st.st_size));
+    JS_SetPropertyStr(ctx, o, "isDirectory", JS_NewBool(ctx, S_ISDIR(st.st_mode) ? 1 : 0));
+    JS_SetPropertyStr(ctx, o, "isFile", JS_NewBool(ctx, S_ISREG(st.st_mode) ? 1 : 0));
+    JS_SetPropertyStr(ctx, o, "mtimeMs", JS_NewFloat64(ctx, (double)st.st_mtime * 1000.0));
+    return o;
+}
+
+/* One environment variable. The host passes only the keys the operator named, so
+ * this cannot observe a key that was not granted — the filtering is wazero's, not
+ * a check here that could be wrong. */
+static JSValue js_nine_env(JSContext *ctx, JSValueConst this_val, int argc,
+                           JSValueConst *argv) {
+    (void)this_val;
+    if (argc < 1) return JS_ThrowTypeError(ctx, "get requires a name");
+    const char *name = JS_ToCString(ctx, argv[0]);
+    if (!name) return JS_EXCEPTION;
+    const char *v = getenv(name);
+    JS_FreeCString(ctx, name);
+    return v ? JS_NewString(ctx, v) : JS_UNDEFINED;
+}
+
+/* Cryptographic randomness. getentropy is wasi-libc's wrapper over WASI
+ * random_get, which the host feeds from crypto/rand — so this is a real CSPRNG
+ * and not Math.random with a better name. */
+static JSValue js_nine_random(JSContext *ctx, JSValueConst this_val, int argc,
+                              JSValueConst *argv) {
+    (void)this_val;
+    if (argc < 1) return JS_ThrowTypeError(ctx, "randomBytes requires a length");
+    int64_t n = 0;
+    if (JS_ToInt64(ctx, &n, argv[0])) return JS_EXCEPTION;
+    if (n < 0 || n > 65536) {
+        return JS_ThrowRangeError(ctx, "randomBytes length must be 0..65536");
+    }
+    uint8_t *buf = malloc((size_t)n ? (size_t)n : 1);
+    if (!buf) return JS_ThrowOutOfMemory(ctx);
+    /* getentropy caps at 256 bytes per call. */
+    for (int64_t off = 0; off < n; off += 256) {
+        size_t chunk = (size_t)(n - off < 256 ? n - off : 256);
+        if (getentropy(buf + off, chunk) != 0) {
+            free(buf);
+            return JS_ThrowInternalError(ctx, "randomness is unavailable");
+        }
+    }
+    JSValue out = JS_NewUint8ArrayCopy(ctx, buf, (size_t)n);
+    free(buf);
+    return out;
+}
+
+/* The calling tool's grant, as a JSON string. */
+static JSValue js_nine_caps(JSContext *ctx, JSValueConst this_val, int argc,
+                            JSValueConst *argv) {
+    (void)this_val; (void)argc; (void)argv;
+    uint64_t packed = nine_host_caps();
+    if (packed == 0) return JS_NewString(ctx, "{}");
+    const char *out = (const char *)(uintptr_t)(uint32_t)(packed >> 32);
+    uint32_t out_len = (uint32_t)(packed & 0xffffffff);
+    JSValue res = JS_NewStringLen(ctx, out, out_len);
+    free((void *)out);
+    return res;
+}
+
 /* ── error reporting ─────────────────────────────────────────────────────── */
 
 /* Render the pending exception as the ABI's failure envelope. Building it with
@@ -247,6 +487,20 @@ __attribute__((export_name("nine_run"))) uint64_t nine_run(uint32_t ptr, uint32_
                       JS_NewCFunction(ctx, js_nine_log, "__nine_log", 1));
     JS_SetPropertyStr(ctx, global, "__nine_http",
                       JS_NewCFunction(ctx, js_nine_http, "__nine_http", 1));
+    JS_SetPropertyStr(ctx, global, "__nine_caps",
+                      JS_NewCFunction(ctx, js_nine_caps, "__nine_caps", 0));
+    JS_SetPropertyStr(ctx, global, "__nine_fs_read",
+                      JS_NewCFunction(ctx, js_nine_fs_read, "__nine_fs_read", 1));
+    JS_SetPropertyStr(ctx, global, "__nine_fs_write",
+                      JS_NewCFunction(ctx, js_nine_fs_write, "__nine_fs_write", 2));
+    JS_SetPropertyStr(ctx, global, "__nine_fs_readdir",
+                      JS_NewCFunction(ctx, js_nine_fs_readdir, "__nine_fs_readdir", 1));
+    JS_SetPropertyStr(ctx, global, "__nine_fs_stat",
+                      JS_NewCFunction(ctx, js_nine_fs_stat, "__nine_fs_stat", 1));
+    JS_SetPropertyStr(ctx, global, "__nine_env",
+                      JS_NewCFunction(ctx, js_nine_env, "__nine_env", 1));
+    JS_SetPropertyStr(ctx, global, "__nine_random",
+                      JS_NewCFunction(ctx, js_nine_random, "__nine_random", 1));
     JS_FreeValue(ctx, global);
 
     JSValue harness = JS_GetPropertyStr(ctx, envelope, "harness");

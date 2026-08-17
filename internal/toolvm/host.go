@@ -202,6 +202,9 @@ func (h *Host) registerHostFunctions(ctx context.Context) error {
 		NewFunctionBuilder().
 		WithFunc(h.hostHTTP).
 		Export("http").
+		NewFunctionBuilder().
+		WithFunc(h.hostCaps).
+		Export("caps").
 		Instantiate(ctx)
 	if err != nil {
 		return fmt.Errorf("toolvm: export host functions: %w", err)
@@ -239,6 +242,33 @@ func (h *Host) hostHTTP(ctx context.Context, mod api.Module, ptr, size uint32) u
 	return writeGuest(ctx, mod, h.doHTTP(ctx, name, *grant, raw))
 }
 
+// hostCaps is the guest's `nine.caps`: the calling tool's resolved grant, as
+// JSON.
+//
+// It confers nothing. Every capability is enforced somewhere else — the
+// filesystem by wazero's pre-opens, the environment by what WithEnv passed,
+// net.http by the per-call grant lookup in hostHTTP — and a tool learning its own
+// grant learns nothing it could not discover by trying. What it buys is a decent
+// error: `fs.read is not granted to this tool` instead of an ENOENT for a file
+// that plainly exists, which is a genuinely confusing way to find out.
+func (h *Host) hostCaps(ctx context.Context, mod api.Module) uint64 {
+	grant, _ := ctx.Value(grantKey{}).(*Grant)
+	var out []byte
+	if grant == nil {
+		out = []byte(`{}`)
+	} else {
+		var err error
+		out, err = json.Marshal(grant.describe())
+		if err != nil {
+			out = []byte(`{}`)
+		}
+	}
+	return writeGuestBytes(ctx, mod, out)
+}
+
+// grantKey carries the calling tool's whole resolved grant into host functions.
+type grantKey struct{}
+
 // writeGuest marshals resp and hands it back through the guest's own allocator,
 // returning it packed the same way nine_run's result is. Calling back into
 // nine_alloc is how a host function returns variable-length data without a
@@ -248,6 +278,12 @@ func writeGuest(ctx context.Context, mod api.Module, resp httpResponse) uint64 {
 	if err != nil {
 		out = []byte(`{"error":"could not encode response"}`)
 	}
+	return writeGuestBytes(ctx, mod, out)
+}
+
+// writeGuestBytes hands `out` back through the guest's own allocator, packed the
+// same way nine_run's result is.
+func writeGuestBytes(ctx context.Context, mod api.Module, out []byte) uint64 {
 	alloc := mod.ExportedFunction(exportAlloc)
 	if alloc == nil {
 		return 0
@@ -344,6 +380,10 @@ func (h *Host) call(ctx context.Context, t *Tool, args json.RawMessage) (string,
 	if t.Grant.HTTP != nil {
 		ctx = context.WithValue(ctx, httpGrantKey{}, t.Grant.HTTP)
 	}
+	// The whole grant, for nine.caps. Read-only and descriptive: it is what the
+	// guest is told, never what it is allowed.
+	grant := t.Grant
+	ctx = context.WithValue(ctx, grantKey{}, &grant)
 
 	input, err := t.input(args)
 	if err != nil {

@@ -164,17 +164,55 @@ $ nine tools
 
 | Capability | In a `js` tool | In a `wasm` tool | Granted by default |
 |---|---|---|---|
-| `clock`, `random` | `Date.now()`, `Math.random()` | WASI | ✅ |
+| `clock`, `random` | `Date.now()`, `crypto.getRandomValues()` | WASI | ✅ |
 | `log` | `console.*` | `nine.log` | ✅ |
 | `net.http` | `fetch()` | `nine.http` | ❌ declare + grant |
-| `fs.read` / `fs.write` | **not yet reachable** | `fopen`, `readdir` | ❌ declare + grant |
-| `env` | **not yet reachable** | `getenv` | ❌ declare + grant |
+| `fs.read` / `fs.write` | `import … from "nine:fs"` | `fopen`, `readdir` | ❌ declare + grant |
+| `env` | `import { get } from "nine:env"` | `getenv` | ❌ declare + grant |
 
-> **`fs` and `env` do not work from JavaScript yet.** They are implemented as WASI
-> facilities, which a `wasm` tool reaches through libc and the QuickJS interpreter has no
-> binding for. A `js` tool that declares either will *load*, and `nine tools` will report
-> the capability, and no API will exist to use it. Write such a tool as `kind = "wasm"`
-> until this is closed — the design and the plan are in `nine docs rich-js-tools`.
+### The filesystem, from JavaScript
+
+```js
+import { readFileText, writeFile, readDir, stat, mounts } from "nine:fs";
+
+export default ({ name }) => {
+  const rows = readFileText(`/data/${name}`);      // the GUEST path
+  writeFile("/out/summary.txt", `${rows.length} bytes`);
+  return { files: readDir("/data"), granted: mounts() };
+};
+```
+
+You address the **guest** path (`/data`), never the host path — which is what lets the
+operator move or narrow the mount without your tool changing, and `mounts()` tells you what
+you actually got rather than leaving you to hardcode a guess.
+
+`readFile` returns a `Uint8Array` and `readFileText` decodes UTF-8. Bytes are the default
+deliberately: a tool reading a PNG should not have to discover that its data was mangled on
+the way in.
+
+**Nothing here is what confines you.** The mount is a wazero pre-open, so a tool scoped to
+`/data` cannot climb out of it — `..`, an absolute path, and a symlink all fail — without
+Nine writing a single check. The capability checks in `nine:fs` exist only so that an
+ungranted call says `fs.read is not granted to this tool` instead of reporting that a file
+which plainly exists cannot be found.
+
+### The environment
+
+```js
+import { get, keys } from "nine:env";
+export default () => ({ tz: get("TZ"), granted: keys() });
+```
+
+Only the keys the operator named are passed into the instance at all, so an ungranted key
+is not hidden but absent; asking for one throws and names what *was* granted. `NINE_*` and
+`*_API_KEY` can never be granted.
+
+### Randomness
+
+`crypto.getRandomValues()` and `crypto.randomUUID()` are real CSPRNG output — WASI's
+`random_get`, which the daemon feeds from Go's `crypto/rand` — rather than `Math.random`
+with a better name. There is no `crypto.subtle`: it is a large asynchronous surface, and a
+tool needing AES-GCM can bundle an implementation.
 
 `NINE_*` and `*_API_KEY` environment keys can never be granted: the daemon's environment
 holds the LLM provider credentials.
@@ -276,7 +314,7 @@ Around it, the host objects a tool actually reaches for:
 | `atob` / `btoa`, `performance`, `queueMicrotask` | As you expect. `btoa` is Latin-1, so base64 UTF-8 via `TextEncoder`. |
 
 **No Node standard library**: no `fs`, `http`, `path`, `Buffer`, `process`, or `require`.
-No `crypto` yet, and no `Intl` — see below.
+`crypto` is `getRandomValues`/`randomUUID` only, and there is no `Intl` — see below.
 
 ### Timers do not sleep
 
@@ -322,6 +360,8 @@ embedded in the binary, pure ES, and dependency-free, so there is nothing to res
 import { parse, format } from "nine:csv";
 import { parseDate, isoWeek, formatISODate } from "nine:date";
 import { lineDiff, unified } from "nine:diff";
+import { readFileText, writeFile } from "nine:fs";    // needs the fs grant
+import { get } from "nine:env";                        // needs the env grant
 ```
 
 Bundle at development time instead:

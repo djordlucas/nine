@@ -274,3 +274,39 @@ func resolveCeiling(decl Declaration, ceiling Ceiling) (Grant, error) {
 	}
 	return g, nil
 }
+
+// grantDescription is what `nine.caps` tells a guest about itself. It is
+// deliberately a *description* and never a grant: the fields below are already
+// enforced elsewhere — the filesystem by wazero's pre-opens, the environment by
+// what WithEnv passed, net.http by the per-call lookup in hostHTTP — and nothing
+// reads this back to make a decision.
+//
+// Host paths are not included. A tool sees the guest path it was mounted at, and
+// telling it where that lives on the operator's disk would leak the one detail
+// the mapping exists to hide.
+type grantDescription struct {
+	FSRead  []string `json:"fs_read,omitempty"`
+	FSWrite []string `json:"fs_write,omitempty"`
+	Env     []string `json:"env,omitempty"`
+	HTTP    *struct {
+		AllowHosts []string `json:"allow_hosts"`
+		Methods    []string `json:"methods"`
+	} `json:"net_http,omitempty"`
+}
+
+func (g Grant) describe() grantDescription {
+	d := grantDescription{Env: g.Env}
+	for _, m := range g.FSRead {
+		d.FSRead = append(d.FSRead, m.Guest)
+	}
+	for _, m := range g.FSWrite {
+		d.FSWrite = append(d.FSWrite, m.Guest)
+	}
+	if g.HTTP != nil {
+		d.HTTP = &struct {
+			AllowHosts []string `json:"allow_hosts"`
+			Methods    []string `json:"methods"`
+		}{AllowHosts: g.HTTP.AllowHosts, Methods: g.HTTP.Methods}
+	}
+	return d
+}
