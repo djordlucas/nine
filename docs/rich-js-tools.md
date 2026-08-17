@@ -315,10 +315,12 @@ too; capture `__nine_log`/`__nine_http` into closures and `delete` them from `gl
 
 ### 6.7 Documenting the `wasm` kind
 
-Ship **`tools.d/nine.h`** — the two exports, the import attributes for `nine.log`,
-`nine.http`, and `nine.caps`, the packing macros, and the result envelope, as a header an
-author includes instead of transcribing. It pairs with the `sha256` example already in
-`tools.d/`, and it is the cheapest item in this note by a wide margin.
+**Done (M1).** `nine.h` — the two exports, the import attributes for `nine.log` and
+`nine.http`, the packing macros, argument reach-in, and escaping envelope builders — is
+embedded in the binary and written out by `nine tool header`. It comes from the binary
+rather than a repository file for the reason docs/ and spec/ do: a header describing the
+ABI must match the build implementing it. `nine.caps` is deliberately absent from it until
+§6.3 lands, since declaring an import the host does not export fails at instantiation.
 
 Then correct the guide: a wasm tool *does* get imports, and can log and make HTTP requests.
 
@@ -363,9 +365,8 @@ will want to argue with.
    matches how `net.http` already behaves and keeps one code path; absent-entirely is
    arguably clearer. It only becomes urgent at M5. **Leaning importable.**
 
-**Build order: M1 first** — `nine.h` and the guide correction (§6.7). It is an afternoon,
-it needs no rebuild, and it unblocks the kind that today has the most capability and the
-least documentation.
+**Build order: M1 first** — `nine.h` and the guide correction (§6.7). Shipped; M2 and M3
+are next and are independent of each other.
 
 ---
 
@@ -373,7 +374,7 @@ least documentation.
 
 | | Scope | Layer | Blob rebuild | Serves |
 |---|---|---|---|---|
-| **M1** ◀ next | `nine.h` + correcting the wasm guide (§6.7) | docs | No | wasm |
+| **M1** ✅ done | `nine.h` + correcting the wasm guide (§6.7) | docs | No | wasm |
 | **M2** | Structured errors, OOM message (§6.1) | L1 | No | both |
 | **M3** | Binary data end to end (§6.1) | L1 + harness | No | both |
 | **M4** | Web-platform layer + papercuts (§6.5, §6.6) | L3 | No | js |
