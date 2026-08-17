@@ -234,15 +234,24 @@ gain `body_b64` in the same shape. A tool of either kind may return
 than return mojibake, and accepts `Uint8Array`/`ArrayBuffer` for `init.body`. **The wasm
 author gets the same capability for free, by reading one more field.**
 
-**Structured errors.** `Result` gains an optional structured error — `name`, `code`, and a
-`cause` chain — so the model can distinguish "your argument was malformed, fix it" from
-"the upstream is down, do not retry." Today everything flattens to a bare string; verified
-that `code`, `retryable`, `cause`, and thrown non-`Error` objects all collapse to
-`.message`. The harness fills it from the `Error` object it already holds; a wasm tool
-fills it by writing two more JSON fields.
+**Structured errors — done (M2).** `Result.ErrorDetail` carries `name`, `code`,
+`retryable`, and a flattened `cause` chain. `retryable` is a pointer precisely because
+absent must not read as false: one is the tool declining to say, the other is it saying no.
+The harness fills it from the thrown `Error`; a wasm tool calls `nine_fail_code`. The host
+renders it into the one string the dispatcher gives the model —
+`tool "weather": timed out (code E_UPSTREAM, retryable)` — and `*CallError` is
+type-assertable for anything wanting the fields rather than the prose.
 
-**The oversized-result message** maps the guest OOM to something naming `memory_mb` and the
-observed size.
+The agent loop *consumes* `retryable: false`, rather than only passing it along: such a
+call is attempted once instead of three times, exactly as a refused approval already was.
+Without that the structure would have been inert — the loop would still burn three attempts
+on an argument that cannot become valid, and then hand the model generic encouragement to
+"try a different approach" that reads like it applies to any failure. The check is against
+an `interface{ Retryable() (bool, bool) }` so a plugin error can opt in later without the
+agent package learning about toolvm.
+
+**The oversized-result message — done (M2).** A guest OOM now names the cap, the input
+size, and the fact that the JSON envelope roughly doubles a string on the way out.
 
 ### 6.2 L2 — host imports, for both kinds
 
@@ -365,8 +374,8 @@ will want to argue with.
    matches how `net.http` already behaves and keeps one code path; absent-entirely is
    arguably clearer. It only becomes urgent at M5. **Leaning importable.**
 
-**Build order: M1 first** — `nine.h` and the guide correction (§6.7). Shipped; M2 and M3
-are next and are independent of each other.
+**Build order:** M1 (`nine.h` + the guide correction) and M2 (structured errors, the OOM
+message) are shipped. M3 is next.
 
 ---
 
@@ -375,8 +384,8 @@ are next and are independent of each other.
 | | Scope | Layer | Blob rebuild | Serves |
 |---|---|---|---|---|
 | **M1** ✅ done | `nine.h` + correcting the wasm guide (§6.7) | docs | No | wasm |
-| **M2** | Structured errors, OOM message (§6.1) | L1 | No | both |
-| **M3** | Binary data end to end (§6.1) | L1 + harness | No | both |
+| **M2** ✅ done | Structured errors, OOM message (§6.1) | L1 | No | both |
+| **M3** ◀ next | Binary data end to end (§6.1) | L1 + harness | No | both |
 | **M4** | Web-platform layer + papercuts (§6.5, §6.6) | L3 | No | js |
 | **M5** | `nine:fs`, `nine:env`, `crypto`, `nine.caps` (§6.3, §6.4) | L2 + L3 | **Yes** | both |
 

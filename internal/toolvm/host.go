@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -106,6 +107,9 @@ type Host struct {
 	cfg     Config
 	rt      wazero.Runtime
 	timeout time.Duration
+	// memoryMB is the resolved per-call memory cap, kept so a failure can name
+	// the limit it hit rather than leaving an author to guess at it.
+	memoryMB int
 
 	mu     sync.RWMutex
 	tools  map[string]*Tool
@@ -160,7 +164,7 @@ func Open(ctx context.Context, cfg Config) (*Host, error) {
 		return nil, fmt.Errorf("toolvm: instantiate wasi: %w", err)
 	}
 
-	h := &Host{cfg: cfg, rt: rt, timeout: timeout, tools: map[string]*Tool{}}
+	h := &Host{cfg: cfg, rt: rt, timeout: timeout, memoryMB: memMB, tools: map[string]*Tool{}}
 
 	if err := h.registerHostFunctions(ctx); err != nil {
 		rt.Close(ctx) //nolint:errcheck
@@ -374,9 +378,30 @@ func (h *Host) call(ctx context.Context, t *Tool, args json.RawMessage) (string,
 		// The tool's own failure, surfaced as an ordinary tool error: the model
 		// can read it and try different arguments, which is exactly what it
 		// should do with "date is not a valid ISO-8601 string".
-		return "", fmt.Errorf("tool %q: %s", name, res.Error)
+		return "", &CallError{Tool: name, Message: h.explainOOM(res.Error, len(input)), Detail: res.ErrorDetail}
 	}
 	return res.Output, nil
+}
+
+// explainOOM adds the operator-facing context a bare allocation failure lacks.
+//
+// A guest that exhausts its linear memory reports whatever its own runtime says —
+// for QuickJS, the sentence "out of memory" — which tells an author nothing about
+// *which* limit they hit or where it is configured. 1 MiB of output works and
+// 8 MiB does not, and nothing in that message says where the line is.
+//
+// Matching on the interpreter's wording is not something to be proud of, and it
+// is acceptable here for one reason: the match only ever *adds* advisory context
+// to a message that is already a failure. No control flow depends on it, and a
+// future QuickJS that rewords this loses the hint rather than breaking the tool.
+func (h *Host) explainOOM(msg string, inputLen int) string {
+	if !strings.Contains(strings.ToLower(msg), "out of memory") {
+		return msg
+	}
+	return fmt.Sprintf(
+		"%s — this call is capped at %d MiB of memory ([tools] memory_mb) and its input was %d bytes; "+
+			"note the result is JSON-encoded on the way out, so a large string costs roughly twice its length",
+		msg, h.memoryMB, inputLen)
 }
 
 // moduleConfig builds the per-call wazero configuration from a resolved grant.

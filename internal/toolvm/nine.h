@@ -218,6 +218,68 @@ static inline uint64_t nine_fail(const char *message) {
     return nine__envelope(0, "error", message);
 }
 
+/* Values for nine_fail_code's `retryable`. UNSET is not the same as NO: one says
+ * the tool has no opinion, the other says trying again will not help, and a model
+ * should act differently on each. */
+#define NINE_RETRY_UNSET (-1)
+#define NINE_RETRY_NO    0
+#define NINE_RETRY_YES   1
+
+/*
+ * Fail with structure behind the message.
+ *
+ *   code       a stable identifier for this failure, e.g. "E_RANGE", or NULL.
+ *              Stable is the point: a reworded sentence is a different string,
+ *              but a code a model saw once it can recognize again.
+ *   retryable  one of the NINE_RETRY_* values above.
+ *
+ * This is the difference between "the upstream is down, wait" and "your argument
+ * was malformed, fix it" — which read identically as prose and call for opposite
+ * behavior.
+ *
+ *     return nine_fail_code("weather API timed out", "E_UPSTREAM", NINE_RETRY_YES);
+ *     return nine_fail_code("date is not ISO-8601", "E_ARGS", NINE_RETRY_NO);
+ */
+static inline uint64_t nine_fail_code(const char *message, const char *code,
+                                      int retryable) {
+    size_t mn = strlen(message);
+    size_t cn = code ? strlen(code) : 0;
+    size_t cap = (mn + cn) * 6 + 128;
+    char *buf = (char *)malloc(cap);
+    if (!buf) return 0;
+
+    const char *head = "{\"ok\":false,\"error\":\"";
+    size_t at = strlen(head);
+    memcpy(buf, head, at);
+    at = nine_json_escape(buf, at, cap, message);
+    buf[at++] = '"';
+
+    if (cn || retryable != NINE_RETRY_UNSET) {
+        const char *d = ",\"error_detail\":{";
+        size_t dn = strlen(d);
+        memcpy(buf + at, d, dn); at += dn;
+        int first = 1;
+        if (cn) {
+            const char *k = "\"code\":\"";
+            size_t kn = strlen(k);
+            memcpy(buf + at, k, kn); at += kn;
+            at = nine_json_escape(buf, at, cap, code);
+            buf[at++] = '"';
+            first = 0;
+        }
+        if (retryable != NINE_RETRY_UNSET) {
+            if (!first) buf[at++] = ',';
+            const char *k = retryable ? "\"retryable\":true" : "\"retryable\":false";
+            size_t kn = strlen(k);
+            memcpy(buf + at, k, kn); at += kn;
+        }
+        buf[at++] = '}';
+    }
+
+    buf[at++] = '}';
+    return NINE_PACK(buf, at);
+}
+
 /* Return an envelope you built yourself. `bytes` must be valid UTF-8 JSON of
  * the shape above and must outlive the call — a static buffer or something from
  * nine_alloc/malloc, never a local. */

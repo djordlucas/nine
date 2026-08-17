@@ -91,7 +91,11 @@ NINE_TOOL(args, len) {
     static char text[MAX_TEXT];
     int32_t n = nine_arg_str(NINE_ARGS(args), len, "text", text, sizeof(text));
     if (n < 0)
-        return nine_fail("expected a string argument 'text' (\\u escapes are not supported)");
+        /* A malformed argument is the textbook non-retryable failure: calling
+         * again with the same thing cannot work, and saying so is what stops a
+         * model from trying. */
+        return nine_fail_code("expected a string argument 'text' (\\u escapes are not supported)",
+                              "E_ARGS", NINE_RETRY_NO);
 
     uint8_t digest[32];
     sha256((const uint8_t *)text, (uint32_t)n, digest);
