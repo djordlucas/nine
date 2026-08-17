@@ -1,8 +1,8 @@
 # Design note — Richer sandboxed tools: the JS environment, and what belongs beneath it
 
-**Status:** Draft, nothing built · **Roadmap:** the "missing JS globals", "FS/env gaps",
-"binary data support", and "structured tool errors" parts of *Improve sandboxed tools* ·
-**Precedes:** durable state, long-running tools
+**Status:** Design agreed (§8), nothing built · **Roadmap:** the "missing JS globals",
+"FS/env gaps", "binary data support", and "structured tool errors" parts of *Improve
+sandboxed tools* · **Precedes:** durable state, long-running tools
 
 This note is about what a tool author can actually *call*. It changes no capability
 boundary and asks for no new operator trust: every gap below is either a surface that was
@@ -340,24 +340,32 @@ Then correct the guide: a wasm tool *does* get imports, and can log and make HTT
 
 ---
 
-## 8. Open questions — decisions needed before building
+## 8. Decisions
 
-1. **Timers.** A tool must not sleep, so `setTimeout(fn, 1000)` cannot mean a second. The
-   options are (a) a *virtual-time* queue drained in deadline order after the tool's promise
-   settles, so ordering holds and no wall clock is burned; (b) treat every delay as zero;
-   (c) leave it absent. (a) is the most compatible with bundled dependencies and the most
-   surprising to anyone measuring elapsed time. **Leaning (a), documented loudly.** The one
-   genuine semantic choice here.
-2. **Whether `toLocaleString` should throw** on options it cannot honor — converting a
-   silent wrong answer into a loud failure, at the cost of breaking tools currently getting
-   away with it. **Leaning yes.**
-3. **Whether `body_b64` and `output_b64` warrant an `ABIVersion` bump.** `ABIVersion`
-   versions the two-export contract, which does not change; but the host↔guest JSON does,
-   and a wasm tool parses that JSON by hand. Additive fields break no existing parser.
-   **Leaning no**, but it deserves a decision rather than an assumption.
-4. **Whether `nine:fs` should exist when ungranted.** Importable-and-refusing matches
-   `fetch` and keeps one code path; absent-entirely is arguably clearer. **Leaning
-   importable**, consistent with how `net.http` already behaves.
+Settled 2026-08-16. Each kept its reasoning, because the reasoning is what a later reader
+will want to argue with.
+
+1. **Timers: a virtual-time queue.** A tool must not sleep, so `setTimeout(fn, 1000)` cannot
+   mean a second. Callbacks queue and drain in *deadline order* after the tool's promise
+   settles, so relative ordering holds and no wall clock is burned. This is the most
+   compatible with bundled dependencies that debounce or back off, and the most surprising
+   to anyone who measures elapsed time and sees zero — so it must be documented loudly
+   rather than quietly shimmed. The one genuine semantic choice in this note.
+2. **`toLocaleString` throws** on options it cannot honor. It converts a silent wrong answer
+   into a loud failure the model can read and route around. It breaks any tool currently
+   getting away with it, which is the point: those tools are already wrong, and today they
+   have no way to find out.
+3. **No `ABIVersion` bump** for `body_b64`/`output_b64`. `ABIVersion` versions the
+   two-export contract, which does not change, and the new envelope fields are additive — a
+   wasm tool that ignores them behaves exactly as it does now. Bumping would fail every
+   existing `abi = 1` manifest to buy nothing.
+4. **Still open: whether `nine:fs` should exist when ungranted.** Importable-and-refusing
+   matches how `net.http` already behaves and keeps one code path; absent-entirely is
+   arguably clearer. It only becomes urgent at M5. **Leaning importable.**
+
+**Build order: M1 first** — `nine.h` and the guide correction (§6.7). It is an afternoon,
+it needs no rebuild, and it unblocks the kind that today has the most capability and the
+least documentation.
 
 ---
 
@@ -365,7 +373,7 @@ Then correct the guide: a wasm tool *does* get imports, and can log and make HTT
 
 | | Scope | Layer | Blob rebuild | Serves |
 |---|---|---|---|---|
-| **M1** | `nine.h` + correcting the wasm guide (§6.7) | docs | No | wasm |
+| **M1** ◀ next | `nine.h` + correcting the wasm guide (§6.7) | docs | No | wasm |
 | **M2** | Structured errors, OOM message (§6.1) | L1 | No | both |
 | **M3** | Binary data end to end (§6.1) | L1 + harness | No | both |
 | **M4** | Web-platform layer + papercuts (§6.5, §6.6) | L3 | No | js |
