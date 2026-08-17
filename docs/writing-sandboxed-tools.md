@@ -255,19 +255,74 @@ You also cannot set `Host`, `Content-Length`, or hop-by-hop headers, and only `h
 
 ## What JavaScript you get
 
-QuickJS-NG — **ES2023, and nothing else**. There is no Node standard library: no `fs`,
-`http`, `path`, `Buffer`, `process`, or `crypto`, and no `require`. There is also no
-`fetch`, `setTimeout`, or `URL`.
+**QuickJS-NG, plus a small platform layer, and no Node.**
 
-Everything you would reach for from ES2023 itself is there: `JSON`, `Map`/`Set`,
-`Intl`-free `Date`, regular expressions, generators, `async`/`await`, optional chaining,
-`Array.prototype.at`, and so on.
+The language is current — more current than "ES2023" suggests. Alongside the obvious
+(`JSON`, `Map`/`Set`, regular expressions, generators, `async`/`await`) you get every
+TypedArray, `Proxy`/`Reflect`, `WeakRef`, iterator helpers, `Object.groupBy`,
+`Array.prototype.toSorted`, `Promise.withResolvers`, `Error` `cause`, unicode property
+escapes, and `RegExp.escape`.
+
+Around it, the host objects a tool actually reaches for:
+
+| | Notes |
+|---|---|
+| `console.*` | Goes to the daemon log. |
+| `fetch` | A subset, with the `net.http` grant. See above. |
+| `TextEncoder` / `TextDecoder` | **UTF-8 only.** Another label throws rather than quietly producing UTF-8. |
+| `URL` / `URLSearchParams` | A pragmatic subset — absolute URLs and resolution against a base. No IDNA, no full WHATWG state machine. |
+| `structuredClone` | Handles cycles, `Date`, `Map`/`Set`, `RegExp`, TypedArrays. |
+| `setTimeout` / `setInterval` / `clear*` | **Virtual time** — see below. |
+| `atob` / `btoa`, `performance`, `queueMicrotask` | As you expect. `btoa` is Latin-1, so base64 UTF-8 via `TextEncoder`. |
+
+**No Node standard library**: no `fs`, `http`, `path`, `Buffer`, `process`, or `require`.
+No `crypto` yet, and no `Intl` — see below.
+
+### Timers do not sleep
+
+A tool runs inside one turn under a wall-clock deadline that is also the only CPU bound
+there is, so it must never sleep. Timers therefore run in **virtual time**: the queue
+executes in deadline order, and no real time passes.
+
+```js
+setTimeout(() => order.push("second"), 200);
+setTimeout(() => order.push("first"), 100);
+await new Promise((r) => setTimeout(r, 300));   // returns immediately
+```
+
+Ordering — which is what a bundled dependency that debounces or backs off actually depends
+on — works. What does not is measuring elapsed time: `Date.now()` will show roughly zero
+across that 300 ms wait, because the clock is real and the timer is not. A `setInterval`
+that never stops fails with a clear message rather than hanging until the deadline.
+
+### `Intl` is absent, and formatting says so
+
+ICU is megabytes of tables against a 1 MB interpreter compiled into every `nine` binary.
+The problem with the fallback is not that it is missing but that it *lied*: it accepted a
+locale and an options bag and ignored them, so
+
+```js
+new Date(0).toLocaleString("en-US", { timeZone: "Europe/Paris" })   // was "01/01/1970, 12:00:00 AM"
+```
+
+returned UTC, an hour off, with no diagnostic. **Passing a locale or options now throws.**
+Calling it with no arguments still works, because the default format is not a lie. For real
+formatting, `import { formatISODate } from "nine:date"`.
 
 ### Dependencies: bundle them yourself
 
 **For a developer tool, Nine never resolves a dependency** — that is your job, at build
-time. A `.js` file that still contains an `import` when Nine loads it will fail at call
+time. A `.js` file that still imports a *package* when Nine loads it will fail at call
 time. (Generated tools are the exception, and get their own resolver — see below.)
+
+The one exception is the `nine:*` standard library, which any tool may import. It is
+embedded in the binary, pure ES, and dependency-free, so there is nothing to resolve:
+
+```js
+import { parse, format } from "nine:csv";
+import { parseDate, isoWeek, formatISODate } from "nine:date";
+import { lineDiff, unified } from "nine:diff";
+```
 
 Bundle at development time instead:
 
@@ -308,8 +363,8 @@ read = [{ host = "${NINE_WORKSPACE}", guest = "/workspace" }]
 
 ### The `nine:*` standard library
 
-A generated tool may always import a small, curated set of pure-JavaScript modules — no
-config, no bundling, no network:
+Available to every tool, generated or hand-written (above) — a small, curated set of
+pure-JavaScript modules, with no config, no bundling, and no network:
 
 ```js
 import { parse, format } from "nine:csv";

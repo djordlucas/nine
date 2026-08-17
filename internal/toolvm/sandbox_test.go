@@ -178,10 +178,12 @@ description = "probe"
 	}
 }
 
-// A developer tool's import allowlist is empty (§4.2/§4.3): its dependencies are
-// pre-bundled at development time, so by the time Nine loads the file it has no
-// imports left. The curated nine:* set belongs to the generated tier.
-func TestDeveloperToolHasAnEmptyImportAllowlist(t *testing.T) {
+// A developer tool's import allowlist is the curated nine:* set and nothing else
+// (§4.2/§4.3). Third-party dependencies are still pre-bundled at development
+// time — Nine resolves nothing — but the embedded, pure-ES stdlib is admitted:
+// withholding it from hand-written tools was a leftover from before the
+// generated tier existed, not a decision (docs/rich-js-tools.md §6.6).
+func TestDeveloperToolImportsAreTheStdlibAndNothingElse(t *testing.T) {
 	dir := t.TempDir()
 	writeTool(t, dir, "probe", `
 name = "probe"
@@ -191,8 +193,40 @@ description = "probe"
 `, `export default () => "ok";`)
 	h := openHost(t, dir, nil)
 
-	if got := h.Get("probe").Imports(); len(got) != 0 {
-		t.Errorf("Imports() = %v, want empty", got)
+	got := h.Get("probe").Imports()
+	want := map[string]bool{"nine:csv": true, "nine:date": true, "nine:diff": true}
+	if len(got) != len(want) {
+		t.Fatalf("Imports() = %v, want exactly the nine:* stdlib", got)
+	}
+	for _, spec := range got {
+		if !want[spec] {
+			t.Errorf("Imports() includes %q, which is not part of the stdlib", spec)
+		}
+	}
+}
+
+// The point of the allowlist is what it excludes. A developer tool importing
+// anything outside it must still fail, which is what keeps "Nine resolves no
+// dependencies" true.
+func TestDeveloperToolCannotImportOutsideTheStdlib(t *testing.T) {
+	// "nine:tool" is deliberately absent from this list: it resolves to the
+	// calling tool's own source, so importing it is a self-reference rather than
+	// a way to reach anything (js.go).
+	for _, spec := range []string{"lodash", "./helper.js", "/etc/passwd", "https://x.example/m.js", "nine:fs"} {
+		t.Run(spec, func(t *testing.T) {
+			dir := t.TempDir()
+			writeTool(t, dir, "probe", `
+name = "probe"
+kind = "js"
+entrypoint = "./probe.js"
+description = "probe"
+`, `import x from "`+spec+`";
+export default () => "ok";`)
+			h := openHost(t, dir, nil)
+			if _, err := h.Call(context.Background(), "probe", json.RawMessage(`{}`)); err == nil {
+				t.Errorf("importing %q was allowed", spec)
+			}
+		})
 	}
 }
 
