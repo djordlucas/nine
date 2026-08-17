@@ -102,6 +102,71 @@ export default () => {
 	}
 }
 
+// writeFile takes three data shapes and only one of them is obvious. The two
+// below were correct but unpinned, and both fail in the silent-wrong-bytes way
+// rather than the loud way if they ever regress.
+func TestJSWriteAcceptsEveryByteShape(t *testing.T) {
+	for name, tc := range map[string]struct {
+		expr string
+		want []byte
+	}{
+		"plain ArrayBuffer": {`new Uint8Array([7,8,9]).buffer`, []byte{7, 8, 9}},
+		// A view with a byteOffset exercises the offset arithmetic in
+		// js_nine_fs_write; getting it wrong writes the wrong window of memory.
+		"view with byteOffset": {`new Uint8Array(new Uint8Array([9,9,1,2,3]).buffer, 2, 3)`, []byte{1, 2, 3}},
+		"Uint8Array":           {`new Uint8Array([1,2,255])`, []byte{1, 2, 255}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			out := t.TempDir()
+			call := jsTool(t, `
+[capabilities]
+fs = ["write"]
+`, `import { writeFile } from "nine:fs";
+export default () => { writeFile("/out/f.bin", `+tc.expr+`); return "ok"; };`,
+				map[string]Grant{"t": {FSWrite: []Mount{{Host: out, Guest: "/out"}}}})
+
+			if _, err := call(`{}`); err != nil {
+				t.Fatal(err)
+			}
+			got, err := os.ReadFile(filepath.Join(out, "f.bin"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("wrote %v, want %v", got, tc.want)
+			}
+			for i := range tc.want {
+				if got[i] != tc.want[i] {
+					t.Fatalf("wrote %v, want %v", got, tc.want)
+				}
+			}
+		})
+	}
+}
+
+// fs.js admits a read against a write-only grant, since a write mount is
+// readable. Asserted because it is a deliberate asymmetry, not an accident.
+func TestJSCanReadThroughAWriteMount(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "seed.txt"), []byte("readable"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	call := jsTool(t, `
+[capabilities]
+fs = ["write"]
+`, `import { readFileText } from "nine:fs";
+export default () => readFileText("/out/seed.txt");`,
+		map[string]Grant{"t": {FSWrite: []Mount{{Host: dir, Guest: "/out"}}}})
+
+	out, err := call(`{}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "readable" {
+		t.Errorf("got %q, want %q", out, "readable")
+	}
+}
+
 // The capability model is unchanged: the module exists, and without a grant it
 // says so rather than reaching anything.
 func TestJSFSWithoutAGrantIsRefusedClearly(t *testing.T) {
