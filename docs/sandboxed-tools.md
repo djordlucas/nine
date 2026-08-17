@@ -208,6 +208,18 @@ silently gets a whole second, undeclared file API over it. Defence in depth is
 real here, but a capability table that says `fs.read` while the guest also holds
 `std.loadFile` and `os.stat` is a table that lies.
 
+**This is a rule about `std`/`os`, not about a filesystem existing at all.** The
+blob does expose a narrow, capability-gated `nine:fs` and `nine:env`, added once
+it was clear that `fs` and `env` were grantable and unreachable from the kind of
+tool most people write (`nine docs rich-js-tools`). Two things keep that
+consistent with the rule above. They are built on ordinary libc calls in
+`qjs_host.c`, which route through WASI to exactly the pre-opens and env pairs the
+host configured — so a tool with no grant sees an empty filesystem, and
+confinement stays wazero's rather than becoming a path check of ours. And they
+carry none of what made `std`/`os` unacceptable: no `exec`, no `urlGet`, no
+`evalScript`. The objection was never "a tool can read a file it was granted"; it
+was "a tool holds an API the capability table does not describe."
+
 This is also the sharpest argument for building the blob ourselves (§10.1): the
 prebuilt QuickJS wasm modules are built as **`qjs` CLI replacements**, so they
 link `std` and `os` by design. Grabbing one and shipping it would import exactly
