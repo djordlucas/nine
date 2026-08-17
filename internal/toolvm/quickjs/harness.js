@@ -30,9 +30,78 @@
 const hostLog = globalThis.__nine_log;
 const hostHTTP = globalThis.__nine_http;
 const toolArgs = globalThis.__nine_args;
+
+// The capability-backed primitives, handed to the nine:fs and nine:env modules
+// rather than to author code. They are stashed under a Symbol instead of staying
+// as `__nine_*` globals for the same reason as the two above: a module needs to
+// reach them, an author does not, and a well-known key is a lesser evil than
+// nine more enumerable globals. This is hygiene, not a boundary — every one of
+// them is enforced host-side, and a tool that finds them gains nothing it could
+// not get by importing the module.
+// Captured by value, not looked up lazily: the globals are deleted below, so a
+// closure reading globalThis at call time would find nothing.
+const hostCaps = globalThis.__nine_caps;
+const hostFSRead = globalThis.__nine_fs_read;
+const hostFSWrite = globalThis.__nine_fs_write;
+const hostFSReadDir = globalThis.__nine_fs_readdir;
+const hostFSStat = globalThis.__nine_fs_stat;
+const hostEnv = globalThis.__nine_env;
+const hostRandom = globalThis.__nine_random;
+
+let capsCache;
+globalThis[Symbol.for("nine.internal")] = Object.freeze({
+  caps: () => (capsCache ??= JSON.parse(hostCaps())),
+  fsRead: (p) => hostFSRead(p),
+  fsWrite: (p, d) => hostFSWrite(p, d),
+  fsReadDir: (p) => hostFSReadDir(p),
+  fsStat: (p) => hostFSStat(p),
+  env: (n) => hostEnv(n),
+  random: (n) => hostRandom(n),
+});
+
+// crypto, built on the host's randomness rather than Math.random. getentropy is
+// wasi-libc's wrapper over WASI random_get, which the host feeds from
+// crypto/rand — so this is a real CSPRNG. There is no `subtle`: it is a large
+// asynchronous surface, and a tool needing AES-GCM can bundle an implementation.
+globalThis.crypto = Object.freeze({
+  getRandomValues(view) {
+    if (!ArrayBuffer.isView(view)) {
+      throw new TypeError("getRandomValues expects a typed array");
+    }
+    if (view instanceof Float32Array || view instanceof Float64Array) {
+      throw new TypeError("getRandomValues does not accept a float array");
+    }
+    const bytes = hostRandom(view.byteLength);
+    new Uint8Array(view.buffer, view.byteOffset, view.byteLength).set(bytes);
+    return view;
+  },
+  randomUUID() {
+    const b = hostRandom(16);
+    b[6] = (b[6] & 0x0f) | 0x40; // version 4
+    b[8] = (b[8] & 0x3f) | 0x80; // variant 1
+    const h = [...b].map((x) => x.toString(16).padStart(2, "0"));
+    return (
+      h.slice(0, 4).join("") + "-" + h.slice(4, 6).join("") + "-" +
+      h.slice(6, 8).join("") + "-" + h.slice(8, 10).join("") + "-" +
+      h.slice(10, 16).join("")
+    );
+  },
+});
+
+// Every host binding goes, leaving only __nine_result — which has to stay,
+// because qjs_host.c reads the result back off the global object after
+// evaluation. TestHarnessInternalsAreNotExposed asserts the whole set rather
+// than a list someone has to remember to extend.
 delete globalThis.__nine_log;
 delete globalThis.__nine_http;
 delete globalThis.__nine_args;
+delete globalThis.__nine_caps;
+delete globalThis.__nine_fs_read;
+delete globalThis.__nine_fs_write;
+delete globalThis.__nine_fs_readdir;
+delete globalThis.__nine_fs_stat;
+delete globalThis.__nine_env;
+delete globalThis.__nine_random;
 
 // The `log` capability (§6.2), granted by default. QuickJS itself has no
 // console: the stock one comes from quickjs-libc's js_std_add_helpers, which
