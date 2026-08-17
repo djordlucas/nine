@@ -359,17 +359,24 @@ func TestLocaleFormattingWithoutArgumentsStillWorks(t *testing.T) {
 
 // The internals are ours. Leaving them on globalThis collided with author code
 // and invited tools to bind to things we want to keep changing.
+//
+// Enumerated rather than listed by name on purpose: the first version of this
+// checked three specific globals, so when M5 added seven more host bindings it
+// stayed green while every one of them leaked. Asking "what is left?" cannot go
+// stale as bindings are added.
 func TestHarnessInternalsAreNotExposed(t *testing.T) {
-	for _, name := range []string{"__nine_log", "__nine_http", "__nine_args"} {
-		t.Run(name, func(t *testing.T) {
-			out, err := probe(t, "typeof globalThis."+name)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if out != "undefined" {
-				t.Errorf("%s is still reachable (%s)", name, out)
-			}
-		})
+	out, err := probe(t, `Object.getOwnPropertyNames(globalThis)
+		.filter((n) => n.startsWith("__nine"))
+		.sort()
+		.join(",")`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// __nine_result is the one exception and has to stay: qjs_host.c reads the
+	// result back off the global object after evaluation.
+	if out != "__nine_result" {
+		t.Errorf("harness internals are reachable from tool code: %s\n"+
+			"(only __nine_result may survive; capture the rest into closures and delete them)", out)
 	}
 }
 
