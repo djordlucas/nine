@@ -237,6 +237,18 @@ func (a ToolsAgentConfig) ApprovalMode() string {
 // to a tool does so to a tool they have read.
 type ToolEntry struct {
 	Capabilities ToolCapabilities `toml:"capabilities"`
+
+	// Timeout overrides `[tools] timeout` for this one tool. Empty inherits it.
+	//
+	// It exists because one slow tool otherwise sets the deadline for every tool:
+	// raising the global bound to accommodate a tool that legitimately takes
+	// twenty seconds also hands twenty seconds to a tool with an infinite loop,
+	// and the deadline is the only CPU bound the host has. Naming the tool keeps
+	// the exception where it belongs.
+	//
+	// It is a resource bound rather than a capability, which is why it sits here
+	// and not under [capabilities] (spec/contracts/toolvm.md R-TVM.4).
+	Timeout string `toml:"timeout"`
 }
 
 // ToolCapabilities is the grant side of the capability model. Every field

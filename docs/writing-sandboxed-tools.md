@@ -574,7 +574,19 @@ Copy either into your `[tools].user_dir`; nothing in `examples/` is loaded.
 - **Every call is a fresh instance.** No global survives, no module-level cache works, and
   two calls cannot observe each other. Do not try to memoize across calls — write a pure
   function.
-- **Five seconds, 16 MiB.** Both are operator-tunable (`[tools] timeout`, `memory_mb`).
+- **Five seconds, 16 MiB.** Both are operator-tunable (`[tools] timeout`, `memory_mb`), and
+  the deadline can be set for one tool alone:
+
+  ```toml
+  [tool.slow_report]
+  timeout = "30s"      # this tool only; everything else keeps [tools] timeout
+  ```
+
+  Worth asking for if your tool legitimately needs it, and worth *not* asking for otherwise:
+  the deadline is the only CPU bound there is, so a global value has to accommodate the
+  slowest tool, and naming yours is what keeps that from applying to everything. An outbound
+  HTTP request is bounded at four fifths of whatever the call has left, so raising the
+  deadline raises that too.
   There is no CPU metering, so an infinite loop is killed by the wall clock, not by a work
   budget.
 - **Large results are spilled**, not lost — a result over the per-call token cap is written
