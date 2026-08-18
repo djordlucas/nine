@@ -115,6 +115,7 @@ func (h *Host) compile(ctx context.Context, d discovered, grant Grant) (*Tool, e
 		InputSchema:  d.SchemaJSON,
 		Kind:         d.Manifest.Kind,
 		Grant:        grant,
+		Timeout:      h.cfg.Timeouts[d.Manifest.Name],
 		ManifestPath: d.ManifestPath,
 	}
 

@@ -43,10 +43,17 @@ func OpenSandboxedTools(ctx context.Context, cfg *config.Config, store *memory.S
 		return nil
 	}
 
+	timeouts, err := toolTimeouts(cfg)
+	if err != nil {
+		slog.Error("sandboxed tools disabled: bad per-tool timeout", "err", err)
+		return nil
+	}
+
 	host, err := toolvm.Open(ctx, toolvm.Config{
 		UserDir:  cfg.Tools.UserDir,
 		Grants:   toolGrants(cfg),
 		Timeout:  timeout,
+		Timeouts: timeouts,
 		MemoryMB: cfg.Tools.MemoryMB,
 		// Usage bookkeeping for LRU eviction (§9.2). Best-effort and after the
 		// fact: a touch failure must not fail the tool call the model is waiting on.
@@ -209,6 +216,30 @@ func toolGrants(cfg *config.Config) map[string]toolvm.Grant {
 		}
 	}
 	return out
+}
+
+// toolTimeouts collects the per-tool `[tool.<name>] timeout` overrides.
+//
+// A bad duration here disables the whole subsystem rather than being skipped,
+// matching how a bad `[tools] timeout` behaves: a resource bound the operator
+// wrote and Nine silently ignored is worse than a daemon that says why it will
+// not start with this config.
+func toolTimeouts(cfg *config.Config) (map[string]time.Duration, error) {
+	var out map[string]time.Duration
+	for name, entry := range cfg.Tool {
+		if entry.Timeout == "" {
+			continue
+		}
+		d, err := parseToolTimeout(entry.Timeout)
+		if err != nil {
+			return nil, fmt.Errorf("[tool.%s] timeout: %w", name, err)
+		}
+		if out == nil {
+			out = make(map[string]time.Duration, len(cfg.Tool))
+		}
+		out[name] = d
+	}
+	return out, nil
 }
 
 // httpGrant translates the operator's net.http table. Config.Validate has

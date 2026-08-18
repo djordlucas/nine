@@ -174,6 +174,7 @@ root = "./dist"
 # enabled   = true
 # user_dir  = "./tools.d"
 # timeout   = "5s"     # the only CPU bound there is; wazero has no fuel metering
+#                      # override for one tool with [tool.<name>] timeout below
 # memory_mb = 16
 
 # Capability grants, per named tool. A tool's manifest DECLARES what it needs;
@@ -182,6 +183,13 @@ root = "./dist"
 # randomness, and logging are always on. There is no wildcard [tool."*"].
 # [tool.csv_stats.capabilities.fs]
 # read = [{ host = "/srv/data", guest = "/data" }]   # host path must be absolute
+
+# A per-tool wall-clock deadline, overriding [tools] timeout for this tool only.
+# A resource bound rather than a capability, so it sits outside [capabilities].
+# Raising it lets one genuinely slow tool have the time without handing the same
+# budget to a tool with an infinite loop; lowering it pins a risky one down.
+# [tool.slow_report]
+# timeout = "30s"
 
 # Outbound HTTP. The hostname must match allow_hosts AND the address actually
 # dialed must be publicly routable — loopback, link-local (169.254.169.254, where
