@@ -2,7 +2,7 @@
 
 - **Status:** **Review** (rev 2 — §7.1 corrected: the `goal`+`workflow` merge
   proposed in rev 1 is **withdrawn**, see
-  [`concept-consolidation.md`](concept-consolidation.md) §2).
+  [`concept-consolidation.md`](concept-consolidation.md) §4).
   Non-normative: this note records an assessment,
   not a contract. Nothing here changes behavior, so no `spec/` requirement moves
   on account of it. Findings are given stable IDs (`F1`…`F12`) so they can be
@@ -361,7 +361,7 @@ must not have one.
 What is genuinely wrong is the *framing*: `spec/overview.md` §3.2 presents them as
 siblings ("durable structures imposed over sessions"), and that false parallelism
 is the whole reason they read as duplicates. The fix is docs-only — see
-`concept-consolidation.md` §7b.
+`concept-consolidation.md` `C7`.
 
 **7.2 `session plan`/`stage` — an unreachable capability, not dead weight.** All
 three plan constructors produce **exactly one stage**, and one of the three
@@ -379,12 +379,12 @@ ownership by first-match, and a fairness fix in `handleIdle`, which returns afte
 the first due stage in array order and can starve a longer-interval one.
 
 **Multi-stage sessions have since been adopted as a direction**, so the work is to
-finish the capability rather than remove it. `concept-consolidation.md` §4 carries
-it.
+finish the capability rather than remove it. `concept-consolidation.md` `C1`–`C3`
+carries it.
 
-**Recommendation.** Act on `concept-consolidation.md`, not on this section. Its
-first two moves need **no schema change** and are unblocked today; only the two
-deletions (the `reflections` table, `goal.subtree`) wait on **F4**.
+**Recommendation.** Act on `concept-consolidation.md`, not on this section. Five of
+its seven changes need **no schema change** and are unblocked today; only the two
+deletions (`C5` the `reflections` table, `C6` `goal.subtree`) wait on **F4**.
 
 ---
 
@@ -402,7 +402,7 @@ Ordered by leverage-per-unit-risk, not by severity alone.
 | 6 | **F6** — protocol and client tests | Follows F2 naturally; typed messages make the tests worth writing. |
 | 7 | **F10, F12** | Small hygiene; fold into whatever branch is nearby. |
 | 8 | **F2 (steps 2–3)**, **F7**, **F11** | Larger, independent, and none is urgent. |
-| 9 | **F8** — the four moves in [`concept-consolidation.md`](concept-consolidation.md) | Its Moves 1, 2 and 4b need no schema change and can start now; the two deletions wait on F4. Only the `stage`→`aspect` rename is deliberately last. |
+| 9 | **F8** — the seven changes in [`concept-consolidation.md`](concept-consolidation.md) | Five of the seven need no schema change and can start now; only the two deletions (`C5`, `C6`) wait on F4. The `stage`→`aspect` rename is deliberately last. |
 
 ---
 
@@ -447,7 +447,7 @@ Ordered by leverage-per-unit-risk, not by severity alone.
   **multi-stage sessions are wanted** (so the capability is completed, not
   collapsed), and **reflection history is bounded** (no scrub exemption — the
   durable product of a reflection turn is the `self/*` KV write, which nothing
-  scrubs). See `concept-consolidation.md` §2 and §6.3.
+  scrubs). See `concept-consolidation.md` `C5` and §4.
 
 ---
 
@@ -460,7 +460,7 @@ Ordered by leverage-per-unit-risk, not by severity alone.
    surface?**~~ **Answered (rev 2): no, and the merge is withdrawn** — the axis is
    autonomy, not ordering (§7.1). Of the three questions it raised in turn, two
    are now settled — multi-stage is wanted, reflection history is bounded — and
-   the remainder are `concept-consolidation.md` §11: what the second aspect
+   the remainder are `concept-consolidation.md` §5: what the second aspect
    concretely is, whether the `stage`→`aspect` rename earns its churn, and whether
    an operator may delete the reflection aspect from the default profile.
 3. **Should implemented design notes stay in `docs/` and stay embedded?** (F11.)
