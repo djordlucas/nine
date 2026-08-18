@@ -1,45 +1,56 @@
-# Concept consolidation — stages, self-reflection, and goal bookkeeping
+# Concept consolidation — multi-stage sessions, reflection, and goal bookkeeping
 
-- **Status:** **Proposed.** Four independent moves, each shippable alone. No
-  behavior an operator or the model can observe is removed by Moves 1–3; Move 4a
-  removes one agent tool.
+- **Status:** **Proposed (rev 2).** Rev 1 proposed collapsing `session_plans.stages[]`
+  into a single behavior column. **That move is withdrawn**: multi-stage sessions
+  are wanted (decision, §2), and reading the scheduler shows they are already
+  most of the way built. Rev 2 replaces it with the work to *finish* them.
 - **Date:** 2026-08-18.
 - **Depends on:** **F4** (the schema migration runner) from
-  [`architecture-review.md`](architecture-review.md) — Moves 1, 3, and 4a all
-  change the schema and none can land before it. Also `session-plans.md`,
-  `roles.md`, `predefined-agents.md`, `workflows.md`.
+  [`architecture-review.md`](architecture-review.md) — Moves 3 and 4a change the
+  schema. Move 1 no longer does. Also `session-plans.md`, `roles.md`,
+  `predefined-agents.md`, `workflows.md`.
 - **Supersedes:** [`architecture-review.md`](architecture-review.md) §7.1's
-  suggestion that `goal` and `workflow` merge into one structure with an
-  `ordered` flag. **That was wrong**; §2 records why, and the review has been
-  corrected.
-- **Motivation:** F8 in the review named ~20 first-class nouns and pointed at two
-  candidate collapses. Reading the code rather than the docs moves the finding: the
-  goal/workflow pair is *fine* and mis-framed, while `session plan` + `stage` is a
-  genuine over-generalization — a registry, a factory, and an interface built to
-  hold an array that is **always length 1**, over an enum with **two** real values.
+  `goal`+`workflow` merge (withdrawn, §3), and rev 1 of this note's Move 1.
+- **Motivation:** F8 in the review counted ~20 first-class nouns. Rev 1 read that
+  as "delete the generality". Two decisions and a closer reading of
+  `agent_worker.go` invert it: the generality is **wanted and already works** —
+  what is missing is precedence, reachability, and a name that matches the
+  semantics.
 
 ---
 
 ## 1. TL;DR — four moves
 
-| # | Move | Deletes | Schema? |
+| # | Move | Shape | Schema? |
 |---|---|---|---|
-| **1** | Collapse `session_plans.stages[]` into behavior columns on the session | `StageRegistry`, `StageFactory`, `initStages`, `activeStage`, `stageRole`, the stage loop in 4 functions | yes |
-| **2** | Ship self-reflection as a standing agent, not a built-in stage | `stage_idle_reflection.go`, `BootstrapSelfReflection`, one enum value, one role case | no |
-| **3** | Delete the `reflections` table; derive the view from the journal | a table, 2 store methods, 1 daemon interface method | yes |
-| **4a** | Delete `goal.subtree` and `goal_append_subtree` | 1 column, 1 agent tool, 2 prompt clauses | yes |
-| **4b** | Re-frame `workflow` as a delegation ledger, not a peer of `goal` | nothing — docs and spec only | no |
+| **1** | **Finish multi-stage sessions** — define precedence, fix starvation, make multi-stage plans reachable, rename `stage` to match its actual semantics | additive | no |
+| **2** | Make `reflect` an **aspect attachable to any session**, not a dedicated session kind | additive | no |
+| **3** | Delete the `reflections` table; derive the view from the journal | deletion | yes |
+| **4a** | Delete `goal.subtree` and `goal_append_subtree` | deletion | yes |
+| **4b** | Re-frame `workflow` as a delegation ledger, not a peer of `goal` | docs only | no |
 
-**Net: 8 nouns → 4.** Before: session plan, stage, goal, subtree, workflow, step,
-self-reflection, standing agent. After: session (carrying a `behavior`), goal,
-workflow/step, standing agent.
+Moves 1 and 2 compose: once `reflect` is an aspect, the *first real use* of
+multi-stage is a standing agent that both pursues its goal and periodically
+reflects on how it is doing — on one session, which is exactly what the existing
+scheduler supports.
 
 ---
 
-## 2. Correction — `goal` and `workflow` must not merge
+## 2. Decisions taken as input to this rev
 
-The review proposed these were "one structure with an `ordered` flag". The code
-says the distinguishing axis is not ordering but **autonomy**:
+Two calls were made on rev 1's open questions, and both changed the design:
+
+1. **Multi-stage sessions are wanted.** Rev 1's Move 1 (collapse `stages[]` to a
+   column) is withdrawn. §4 is its replacement.
+2. **Reflection history is bounded**, sharing the journal's retention. §6 records
+   why this costs nothing — the answer turned out to be stronger than "acceptable".
+
+---
+
+## 3. Correction carried forward — `goal` and `workflow` do not merge
+
+The review proposed these were "one structure with an `ordered` flag". Withdrawn.
+The distinguishing axis is **autonomy**, not ordering:
 
 | | `goal` | `workflow` |
 |---|---|---|
@@ -47,102 +58,94 @@ says the distinguishing axis is not ordering but **autonomy**:
 | wakes itself | yes, interval or cron | no |
 | advanced by | its own pursue session, *between* turns | the calling model, *inside* a turn |
 | lifecycle | open-ended | finite; auto-closes when every step is terminal |
-| driver code | `pursueStage` + the idle scheduler | none — `workflow.Service` is pure record-keeping |
+| driver code | `pursueStage` + the idle scheduler | none — `workflow.Service` is record-keeping |
 
-`internal/workflow` has no scheduler, no driver, and no session. A goal is a
-**machine**; a workflow is a **record**. Merging them would put a scheduler behind
-something that must not have one.
-
-What is actually wrong is the framing, which §7 (Move 4b) fixes.
+A goal is a **machine**; a workflow is a **record**. Merging them puts a scheduler
+behind something that must not have one. The framing fix is Move 4b.
 
 ---
 
-## 3. The finding — `stages[]` is a registry for a two-valued enum
+## 4. Move 1 — finish multi-stage sessions
 
-Three constructors build a session plan. **Every one produces exactly one stage:**
+### 4.1 Correction: the machinery is already multi-stage
 
-| Constructor | Stages produced |
-|---|---|
-| `defaultProfile` (`session_plan.go:60`) | `["active"]` — 1 |
-| `newIdleCapablePlan` (`:289`) | `[]SessionStage{{…}}` — 1 |
-| `newStandingPursuePlan` (`:317`) | `[]SessionStage{{…}}` — 1 |
+Rev 1 of this note described the four stage-reading functions as "written as
+though several stages could coexist", implying the plurality was fiction. **That
+undersold what is built.** `agent_worker.go` handles plurality properly:
 
-Three kinds are registered, and one is a no-op whose own comment states it exists
-only to have something to seed (`session_plan.go:50`):
+| Mechanism | Location | Multi-stage today? |
+|---|---|---|
+| Per-stage last-fire tracking | `w.idleSince[st.Name]` map | **yes** |
+| Per-stage wake computation (interval *or* cron) | `stageNextWake` (`session_plan.go:235`) | **yes** |
+| Timer armed to the **earliest** wake across active stages | `armIdleTimer:418–430` | **yes** |
+| One turn at a time when several are due (I1-safe) | `handleIdle:446–465` | **yes** |
+| `OnTurnEnd` fanned out to **all** active stages | `notifyStages:355–367` | **yes** |
+| Independent per-stage `Status` and retirement | `SessionStage.Status` | **yes** |
 
-```go
-// activeStage is the trivial stage every ordinary [active] conversation gets:
-// it never has work of its own, but gives loadOrCreatePlan something to seed
-func (activeStage) Init(...) error            { return nil }
-func (activeStage) OnTurnEnd(...) error       { return nil }
-func (activeStage) OnIdle(...) (string, bool) { return "", false }
-```
+This is not speculative generality. It is a working per-stage scheduler that
+nothing currently exercises.
 
-So the machinery — a JSON array column, a global `StageRegistry`, a
-`StageFactory` indirection, a three-method `StageHandler`, `initStages`, and
-`sessionPlanState` — exists to express **one enum with two real values**.
+### 4.2 What is actually missing
 
-**The tax is visible and quantifiable.** Four functions each loop the
-always-length-1 array and re-parse its JSON config:
+Four gaps, only one of which is a real bug:
 
-| Function | Location |
-|---|---|
-| `planOwnsGoal` | `session_plan.go:198` |
-| `planDelegates` | `session_plan.go:213` |
-| `planNeedsResume` | `session_plan.go:347` |
-| `roleNameForPlan` | `roles.go:318` |
+**(a) No multi-stage plan is reachable.** `loadOrCreatePlan` already ranges over
+`profile []string` creating one stage per entry (`session_plan.go:112`) — it
+supports N today. But all three constructors pass exactly one:
+`defaultProfile = ["active"]` (`:60`), `newIdleCapablePlan` (`:289`),
+`newStandingPursuePlan` (`:317`). **The capability has no caller.**
 
-Each is written as though several stages could coexist and one of them wins —
-with **no defined precedence** if that ever happened. `roleNameForPlan` simply
-returns on the first `pursue` or `idle-reflection` it encounters.
+**(b) Precedence is undefined.** `roleNameForPlan` (`roles.go:318`),
+`planOwnsGoal` (`:198`) and `planDelegates` (`:213`) each loop the array and
+**return on first match**. With two stages the answer depends on array order,
+silently. A session with `pursue` + `reflect` gets a role decided by JSON
+ordering.
 
-**This generality was never planned.** `docs/session-plans.md` contains no
-"sequential", "multi-stage", or "future stage" language anywhere; its "Built-in
-stages" section lists exactly the three above. Four pilots have shipped without a
-second stage.
+**(c) Starvation — the one real bug.** `handleIdle` iterates in array order and
+`return`s after the first stage that yields work, updating `idleSince` for **only
+that stage**. Given a 60-second stage ahead of a 3600-second stage, the short one
+is due again before the long one is ever reached, and the long one may never fire.
+Invisible today because no plan has two stages; a guaranteed defect the moment one
+does.
 
----
+**(d) The name is wrong.** "Stage" implies sequence — stage 1, then stage 2. The
+implementation is **concurrent aspects** that retire independently. `CLAUDE.md`
+already warns that Nine's worker vocabulary is overloaded; this is one of the
+offenders.
 
-## 4. Move 1 — behavior columns instead of a stage array
+### 4.3 The work
 
-Replace `session_plans(id, status, stages TEXT)` with explicit columns:
+1. **Define precedence explicitly.** Exactly one stage may carry `role`,
+   `delegates`, and goal ownership. Enforce at plan-construction and at load:
+   a second role-bearing stage is a load error, not a silent first-match. This
+   turns (b) from undefined behavior into a validated invariant.
+2. **Fix starvation.** In `handleIdle`, among stages whose wake has elapsed, pick
+   the one **longest overdue** (largest negative remaining) rather than the first
+   in array order. One comparison; makes fairness independent of JSON ordering.
+3. **Make it reachable.** Add a profile with two stages — the natural first one is
+   `["pursue", "reflect"]` from Move 2 — and let `[[agent]]` declare a stage list
+   rather than a single implied one.
+4. **Retire `activeStage` where it is redundant.** It exists only to give
+   `loadOrCreatePlan` something to seed. Keep it as the lone stage of an ordinary
+   conversation; drop it from any profile that has a real stage, so it stops being
+   a slot that means nothing.
+5. **Rename `stage` → `aspect`** (recommended, separable). `SessionStage` →
+   `SessionAspect`, `StageHandler` → `AspectHandler`, `stages` column →
+   `aspects`. Costs a column rename and a glossary entry; buys a name that stops
+   implying a sequence that does not exist. **Do this last and alone** — it is
+   pure churn mixed into anything else.
 
-```sql
-behavior         TEXT    NOT NULL DEFAULT 'interactive'  -- 'interactive' | 'pursue'
-wake_interval_s  INTEGER NOT NULL DEFAULT 0
-wake_cron        TEXT    NOT NULL DEFAULT ''
-role             TEXT    NOT NULL DEFAULT ''
-delegates        INTEGER NOT NULL DEFAULT 0
-```
-
-`StageHandler` survives as `Behavior` with the same three methods (`Init`,
-`OnTurnEnd`, `OnIdle`) — the interface is good and the two implementations stay
-as they are. What goes is the *plurality*: one behavior per session, selected by
-a `switch` rather than looked up in a mutable global registry.
-
-**Deleted:** `activeStage`, `StageRegistry`, `StageFactory`, `initStages`,
-`stageRole`, `stageConfig` JSON round-tripping, and the stage loop inside all
-four functions in §3 — each becomes a column read.
-
-**Preserved:** every observable behavior. Same resume rule (`wake_interval_s > 0
-|| wake_cron != ''` replaces `stageScheduled`), same idle scheduling, same role
-resolution, same eager-vs-lazy persistence.
-
-**Note on the registry.** `StageRegistry` is a package-level mutable map written
-from two places at boot (`assembly.go:176`, `cmd/nine/daemon.go:138`). Removing it
-also removes an initialization-order dependency between the daemon binary and the
-runtime package, which is a second, quieter win.
+Items 1–3 are the substance; 4 is tidying; 5 is optional and independent.
 
 ---
 
-## 5. Move 2 — self-reflection becomes a standing agent
+## 5. Move 2 — `reflect` becomes an attachable aspect
 
-`docs/predefined-agents.md` §2 already names `BootstrapSelfReflection` as the
-template that standing agents follow. **Invert that relationship:** ship
-self-reflection as a default `[[agent]]` entry with `role = "reflection"`, the
-configured interval, and the existing `ReflectionPrompt`.
+Rev 1 proposed making self-reflection a *standing agent* (its own session).
+Multi-stage offers something strictly better: make `reflect` an **aspect any
+session can carry**.
 
-The stage is thin enough that almost nothing is lost. Its entire `OnIdle` is:
+The stage is thin enough to be reusable as-is — its entire `OnIdle` is:
 
 ```go
 func (s *idleReflectionStage) OnIdle(context.Context, string) (string, bool) {
@@ -150,176 +153,209 @@ func (s *idleReflectionStage) OnIdle(context.Context, string) (string, bool) {
 }
 ```
 
-and its `OnTurnEnd` writes the `reflections` row that Move 3 removes.
+**What changes:** the dedicated reflection session becomes just
+`profile = ["reflect"]` — the current behavior, unchanged, expressed in the general
+mechanism. What is *new* is that a pursue session, a standing agent, or the
+orchestrator can add `reflect` as a second aspect and reflect on its own recent
+activity on its own cadence.
 
-**Deleted:** `stage_idle_reflection.go`, `BootstrapSelfReflection`, the
-`idle-reflection` case in `roleNameForPlan` (`roles.go:329`), and one value from
-Move 1's `behavior` enum — because a standing agent *is* a pursue shell with a
-narrowed role, which is exactly what `newStandingPursuePlan` already builds.
+**What this deletes:** `BootstrapSelfReflection` (`reconcileStandingAgents` plus a
+default profile covers it) and the special-cased `idle-reflection` branch in
+`roleNameForPlan` (`roles.go:329`) — reflection stops being a session *kind* and
+becomes an aspect with a role, resolved by Move 1's precedence rule.
 
-**Effect:** self-reflection stops being a concept and becomes a config row. It
-also makes the standing-agent mechanism load-bearing instead of a second path
-that happens to resemble the first.
+**What this keeps:** `stage_idle_reflection.go`, now reusable rather than
+single-purpose. Rev 1 deleted it; rev 2 does not, and that is the better outcome.
 
 ---
 
-## 6. Move 3 — the `reflections` table is a journal projection
+## 6. Move 3 — delete `reflections`; bounded retention costs nothing
 
-The table has three columns (`db.go:349`):
+### 6.1 The table
 
 ```sql
-CREATE TABLE reflections (id TEXT PRIMARY KEY, ran_at TEXT, summary TEXT)
+CREATE TABLE reflections (id TEXT PRIMARY KEY, ran_at TEXT, summary TEXT)  -- db.go:349
 ```
 
-It is written in **exactly one place** (`idleReflectionStage.OnTurnEnd`) and read
-in **exactly one** (`list_reflections` → `nine reflections`). Its content is "the
-result text of a turn by a known agent, with a timestamp" — which
-`session_events` already records as `(agent_id, turn, type, ts, payload)`, and
-which I11 makes append-only and authoritative.
+Written in exactly one place (`idleReflectionStage.OnTurnEnd`), read in exactly
+one (`list_reflections` → `nine reflections`).
+
+### 6.2 Move 2 makes it unrepresentable
+
+**The table has no `agent_id` column.** That is survivable while exactly one
+session ever reflects. The moment `reflect` is an attachable aspect (Move 2), N
+sessions reflect and the table cannot say which one produced a row.
+
+So Move 3 is not merely a tidy-up any more — **Move 2 requires it**. The
+alternative is adding `agent_id` to a table whose every column is already in
+`session_events`.
+
+### 6.3 The retention question, answered
+
+> *Is reflection history still required once reflection is an aspect?*
+
+**No — and the reason is stronger than "bounded is acceptable".** Look at what a
+reflection turn actually produces (`prompts.go:66`):
+
+```
+You have been idle. Reflect on your recent sessions. Use memory_set to update:
+- `self/capabilities`: a concise description of what you can currently do
+- `self/learned`: append a short dated entry with key insights from recent activity
+```
+
+The **durable product of a reflection turn is a KV write** to `self/capabilities`
+and `self/learned` — which `selfmodel.Assembler.Build` reads back into the system
+prompt every turn, and which **nothing scrubs**. The `reflections` row is a
+transcript of the turn that performed the write, not the state the write produced.
+
+So the state survives regardless of retention. What becomes bounded is the
+*transcript*, which is exactly what the journal is for and exactly what
+`SessionEventsScrub` (`events.go:63`) already bounds for every other agent.
+
+**Decision: accept bounded retention; no scrub exemption.** The escape hatch
+proposed in rev 1 (a `WHERE` clause exempting the reflection agent) is **not
+needed and should not be built** — it would preserve transcripts while the actual
+self-model state was never at risk.
+
+Worth noting: `reflections` grows without bound today, since nothing prunes it.
+Bounded retention is a fix, not a regression.
+
+### 6.4 What lands
 
 **Deleted:** the table, `ReflectionCreate` / `ReflectionList`, the `ReflectionList`
-method on the daemon's store interface (`daemon.go:73`), and — with Move 2 — the
-last reason `idleReflectionStage` exists.
-
-**Generalizes for free.** `nine reflections` becomes `nine log <agent>`, a journal
-query filtered by agent id. That works for *every* standing agent, not just the
-reflection one — today a standing agent's output history has no equivalent view
-at all.
-
-### The trade-off, stated plainly
-
-`SessionEventsScrub` (`events.go:63`) prunes the journal on two axes — keep the
-last N turns per agent, and drop anything older than `maxAge`. **Nothing prunes
-`reflections`**: it grows without bound today.
-
-So the move trades unbounded-and-permanent for bounded-and-uniform. Two readings:
-
-- **Recommended:** accept bounded history. An unbounded table of model-written
-  summaries that only one CLI command reads is a leak, not a feature, and the
-  current behavior is better described as an oversight than a guarantee.
-- **Escape hatch:** if reflection history must be permanent, exempt the reflection
-  agent in the scrub's `WHERE` clause. One predicate, no new table.
-
-Deciding this is a prerequisite to landing the move, not a follow-up.
+method on the daemon store interface (`daemon.go:73`).
+**Generalized:** `nine reflections` becomes `nine log <agent>` — a journal query
+filtered by agent id, which works for **every** aspect-bearing session. Today a
+standing agent's output history has no equivalent view at all.
 
 ---
 
-## 7. Move 4 — goal's double bookkeeping, and the workflow re-frame
+## 7. Move 4 — goal bookkeeping and the workflow re-frame
 
 ### 7a. Delete `goal.subtree` and `goal_append_subtree`
 
-`goals` carries **two parallel representations of the same parent/child
-relation**:
+`goals` carries **two parallel representations of one relation**:
 
-- `parent_id` + `parent_type` — the authoritative back-edge, written by
-  `goal_create`, enforced by the schema.
-- `subtree` — a free-text, append-only JSON array of strings, described by its own
-  tool as "typically a sub-goal or task ID".
+- `parent_id` + `parent_type` — authoritative, written by `goal_create`.
+- `subtree` — a free-text append-only JSON array, described by its own tool as
+  "typically a sub-goal or task ID".
 
 **Nothing in the code reads `subtree`.** It reaches the model only by riding along
-in `goal_get`'s JSON. And the orchestrator prompt (`prompts.go:14`) instructs the
+in `goal_get`'s JSON, and the orchestrator prompt (`prompts.go:14`) instructs the
 model to maintain both by hand:
 
 > "…using `goal_create` (with parent_id/parent_type set to the parent goal) …
 > recording each one with `goal_append_subtree` as you spawn it"
 
-That is asking a language model to keep a denormalized index of a relation the
-database already stores — reliably wrong at some rate, unverifiable, and costing a
-tool slot in every context that has goal tools.
+That asks a language model to keep a denormalized index of a relation the schema
+already enforces — wrong at some rate, unverifiable, and costing a tool slot in
+every context carrying goal tools.
 
-**Replace with:** a `GoalListChildren(parentID)` query, with `goal_get` returning
-derived children under the same `subtree` JSON key so the model-facing shape does
-not change. Then drop the column, the tool, and both prompt clauses
-(`prompts.go:14` and the `PursuePromptTemplate` at `:75`).
-
-Goal tools go 5 → 4.
+**Replace with** a `GoalListChildren(parentID)` query, with `goal_get` returning
+derived children under the same `subtree` JSON key so the model-facing shape is
+unchanged. Then drop the column, the tool, and both prompt clauses
+(`prompts.go:14`, `:75`). Goal tools 5 → 4.
 
 ### 7b. Re-frame `workflow` as a delegation ledger
 
 `spec/overview.md` §3.2 presents `goal` and `workflow` as siblings — "durable
-structures imposed *over* sessions" — and that parallelism is the entire reason
-they read as duplicates. §2 shows they are not siblings.
+structures imposed *over* sessions" — and that false parallelism is the entire
+reason they read as duplicates (§3 shows they are not siblings).
 
-Since `Step.AgentID` means a workflow is literally *an ordered record of sub-agent
-delegations*, move it out of §3.2 and into §3.1 beside the sub-agent:
+Since `Step.AgentID` makes a workflow literally *an ordered record of sub-agent
+delegations*, move it out of §3.2 into §3.1 beside the sub-agent:
 
-- **goal** — a standing intention that owns a worker. Belongs with sessions and
+- **goal** — a standing intention that owns a worker. Sits with sessions and
   standing agents.
 - **workflow** — a ledger the model keeps, inside a turn, of work it delegated.
-  Belongs with sub-agents and `run_agent` / `run_agents`.
+  Sits with sub-agents and `run_agent` / `run_agents`.
 
-Docs and spec only; no code, no schema. Worth doing **first** if the clarity is
-wanted before any of the code moves land.
+Docs and spec only. Worth doing **first** if the clarity is wanted before code
+moves.
 
 ---
 
 ## 8. Net effect
 
+Rev 1 claimed 8 nouns → 4 by deletion. Rev 2 keeps multi-stage, so the count moves
+differently — and more honestly:
+
 | | Before | After |
 |---|---|---|
-| Nouns | session plan, stage, goal, subtree, workflow, step, self-reflection, standing agent (**8**) | session (+`behavior`), goal, workflow/step, standing agent (**4**) |
-| Tables touched | `session_plans`, `reflections`, `goals` | `session_plans` reshaped; `reflections` gone; `goals` −1 column |
-| Registries | `StageRegistry` (mutable, written at boot from 2 packages) | none |
-| Agent tools | 5 goal + 5 workflow | 4 goal + 5 workflow |
-| Wire messages | includes `list_reflections` | `list_reflections` → generalized `nine log <agent>` |
+| session plan + stage | two nouns, one unreachable capability | one noun (`aspect`), reachable and fair |
+| self-reflection | a session *kind*, special-cased in 3 places | an *aspect* any session may carry |
+| reflections | a table with no `agent_id` | a journal query, per agent |
+| goal edges | `parent_id` **and** a model-maintained `subtree` | `parent_id` only |
+| workflow | a false sibling of `goal` | a delegation ledger beside sub-agents |
+
+Net: **−1 table, −1 column, −1 agent tool, −1 wire message, −1 session kind, −1
+bootstrap function**, and one previously-unreachable capability made real. The
+noun count drops by 3 (stage/self-reflection/subtree fold away) rather than 4 —
+`aspect` survives because it is now load-bearing.
 
 ---
 
 ## 9. Phases
 
-Each phase is independently shippable. Moves 1, 3, and 4a change the schema and
-are therefore **all blocked on F4**.
-
 | # | Phase | Blocked on |
 |---|---|---|
-| 0 | **F4** — the migration step runner | — |
-| 1 | **Move 4b** — the docs/spec re-frame | nothing; do it whenever |
-| 2 | **Move 3** — reflections → journal, plus the retention decision (§6) | F4 |
-| 3 | **Move 2** — reflection as a standing agent | Move 3 |
-| 4 | **Move 1** — stages → behavior columns | Move 2 (which shrinks the enum first) |
-| 5 | **Move 4a** — subtree removal | F4 |
+| 1 | **Move 4b** — docs/spec re-frame | nothing |
+| 2 | **Move 1 items 1–3** — precedence, starvation fix, a reachable two-aspect profile | nothing (no schema change) |
+| 3 | **Move 2** — `reflect` as an attachable aspect | Move 1 (needs the precedence rule) |
+| 4 | **F4** — the migration step runner | — |
+| 5 | **Move 3** — reflections → journal | F4, Move 2 |
+| 6 | **Move 4a** — subtree removal | F4 |
+| 7 | **Move 1 item 5** — the `stage` → `aspect` rename | everything above; land alone |
 
-Move 3 is deliberately first among the schema changes: it is the smallest, and it
-exercises the new migration runner on something low-risk before Move 1 reshapes a
-table the daemon reads at boot.
+Note the change from rev 1: **Moves 1 and 2 no longer touch the schema**, so they
+are not blocked on F4 and can start immediately. Only Moves 3 and 4a wait.
 
 ---
 
 ## 10. Decisions taken
 
-- **`goal` and `workflow` do not merge.** The review's §7.1 suggestion is
-  withdrawn; the distinguishing axis is autonomy, not ordering, and merging would
-  put a scheduler behind a passive record.
-- **`stage` is removed as a concept, not generalized further.** The array is
-  always length 1, one of three kinds is a no-op, and no document has ever
-  proposed a second stage.
-- **`StageHandler` survives as `Behavior`.** The three-method shape is right; only
-  the plurality and the registry go.
-- **Self-reflection is an instance of standing agent, not a peer of it.**
-  `docs/predefined-agents.md` already says so; this makes the code agree.
-- **`reflections` is a projection, not a store.** Its data is already in the
-  journal, which I11 makes authoritative.
-- **Bounded reflection history is accepted** (§6), with a one-predicate scrub
-  exemption as the escape hatch if that proves wrong.
+- **Multi-stage sessions are kept and completed**, not collapsed. Rev 1's Move 1
+  is withdrawn.
+- **The existing scheduler is multi-stage-correct** (per-stage `idleSince`,
+  earliest-wake arming, one turn at a time, `OnTurnEnd` fan-out). Rev 1 undersold
+  this; it is the reason Move 1 is now cheap.
+- **Exactly one stage may carry role, delegation, and goal ownership**, enforced
+  at load. First-match-wins becomes a validated invariant instead of undefined
+  behavior.
+- **Idle dispatch picks the longest-overdue stage**, not the first in array order —
+  fairness must not depend on JSON ordering.
+- **`reflect` becomes an attachable aspect, not a session kind.** Strictly more
+  useful than rev 1's "make it a standing agent", and it is the first real
+  consumer of multi-stage.
+- **`stage_idle_reflection.go` survives** (rev 1 deleted it) — as a reusable aspect
+  rather than a single-purpose one.
+- **Reflection history is bounded, with no scrub exemption.** The durable product
+  of a reflection turn is the `self/*` KV write, which nothing scrubs; the
+  transcript is journal data like any other.
+- **Move 2 requires Move 3.** `reflections` has no `agent_id` and cannot represent
+  more than one reflecting session.
+- **`goal` and `workflow` do not merge**; the axis is autonomy, and the fix is
+  framing.
 - **`parent_id` is the only goal edge.** `subtree` is model-maintained
   denormalization of a relation the schema already enforces.
-- **`goal_get`'s response shape is preserved** across 4a — children are derived
-  and returned under the same key, so no prompt or eval changes on that account.
-- **Move 4b may land first.** It is docs-only and unblocks nothing, but it is the
-  cheapest clarity in the list.
+- **`goal_get`'s response shape is preserved** across 4a — children are derived and
+  returned under the same key, so no prompt or eval changes on that account.
+- **The `stage` → `aspect` rename lands alone, last**, or not at all. It is pure
+  churn if mixed into a behavioral change.
 
 ---
 
 ## 11. Open questions
 
-1. **Does anything want a genuinely multi-stage session** — one that moves through
-   phases with a different tool surface per phase? Move 1 forecloses it. Roles plus
-   sub-agents already cover the cases we know of, and nothing has used the array in
-   four pilots, but this is a door closing deliberately and should be an explicit
-   call rather than a side effect.
-2. **May an operator delete the reflection agent?** Move 2 makes it a config row,
-   so `[daemon] standing_agents_authoritative` (subtractive reconciliation) could
-   remove it. Needs a shipped-enabled default and a decision on whether the
-   reflection agent is exempt from subtractive reconciliation.
-3. **Is permanent reflection history a requirement?** (§6.) If yes, the scrub
-   exemption lands with Move 3; if no, nothing extra is needed.
+1. **What is the second aspect, concretely?** `["pursue", "reflect"]` is the
+   obvious first profile, but Move 1 item 3 is only worth landing if a real
+   deployment wants it. Candidates beyond reflect: a cron `report` aspect emitting
+   a digest via `notify_user`, or a `compaction` aspect that periodically summarizes
+   its own history.
+2. **Is the `stage` → `aspect` rename worth the churn?** It removes a genuinely
+   misleading name (the code implements concurrent aspects, the word implies a
+   sequence), at the cost of a column rename and every doc mentioning stages.
+3. **May an operator delete the reflection aspect from the default profile?**
+   Carried over from rev 1 and unchanged by these decisions: `[daemon]
+   standing_agents_authoritative` could remove it. Needs a shipped-enabled default
+   and a decision on exemption from subtractive reconciliation.

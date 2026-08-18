@@ -30,7 +30,7 @@
 | **F5** | `agent.Loop` carries 12 post-construction observer setters; a Loop is never fully valid until N unordered calls have happened | Medium | M |
 | **F6** | Test coverage is inverted at the boundary: `protocol` 0.24, `tui` 0.27, `cli` 0.33 against 0.87 elsewhere | Medium | M |
 | **F7** | The four built-in plugins hold ambient authority that the capability model exists to remove | Medium | L |
-| **F8** | ~20 first-class nouns; `session plan`+`stage` is a registry for a two-valued enum (`goal`+`workflow` examined and **not** collapsible — §7.1) | Medium | L |
+| **F8** | ~20 first-class nouns; `stage` is a working multi-stage capability with no caller, no precedence rule, and a starvation bug (`goal`+`workflow` examined and **not** collapsible — §7.1) | Medium | L |
 | **F9** | One provider behind a generalized `Provider` + `ThinkingAware` abstraction — decide whether local-first is a goal or a stopgap | Medium | S |
 | **F10** | `internal/selfmodel`: 84 LOC, zero tests, `/.dockerenv` probe, swallowed query error | Low | S |
 | **F11** | `docs/` + `spec/` is 57% of production code size; implemented design notes are maintained rather than frozen | Low | M |
@@ -363,19 +363,28 @@ siblings ("durable structures imposed over sessions"), and that false parallelis
 is the whole reason they read as duplicates. The fix is docs-only — see
 `concept-consolidation.md` §7b.
 
-**7.2 `session plan`/`stage` — this is the real over-generalization.** All three
-plan constructors produce **exactly one stage**; three kinds are registered and
-one (`active`) is a no-op that exists only to give `loadOrCreatePlan` something to
-seed. Four functions (`planOwnsGoal`, `planDelegates`, `planNeedsResume`,
-`roleNameForPlan`) each loop that always-length-1 array with no defined
-precedence, and `docs/session-plans.md` has never proposed a second stage. A
-registry, a factory, and a three-method interface hold an enum with two real
-values.
+**7.2 `session plan`/`stage` — an unreachable capability, not dead weight.** All
+three plan constructors produce **exactly one stage**, and one of the three
+registered kinds (`active`) is a no-op that exists only to give
+`loadOrCreatePlan` something to seed. That reads at first like speculative
+generality to delete.
+
+It is not. The scheduler underneath is genuinely multi-stage: per-stage last-fire
+tracking (`w.idleSince`), per-stage interval-or-cron wake computation
+(`stageNextWake`), a timer armed to the **earliest** wake across active stages,
+one turn at a time when several are due, and `OnTurnEnd` fanned out to all of
+them. What is missing is a *caller* — no profile has two stages — plus a
+precedence rule for the three functions that resolve role, delegation, and goal
+ownership by first-match, and a fairness fix in `handleIdle`, which returns after
+the first due stage in array order and can starve a longer-interval one.
+
+**Multi-stage sessions have since been adopted as a direction**, so the work is to
+finish the capability rather than remove it. `concept-consolidation.md` §4 carries
+it.
 
 **Recommendation.** Act on `concept-consolidation.md`, not on this section. Its
-four moves take the noun count for this cluster from 8 to 4, and three of the four
-are blocked on **F4** — which is a useful corroboration of §8's ordering rather
-than a coincidence.
+first two moves need **no schema change** and are unblocked today; only the two
+deletions (the `reflections` table, `goal.subtree`) wait on **F4**.
 
 ---
 
@@ -393,7 +402,7 @@ Ordered by leverage-per-unit-risk, not by severity alone.
 | 6 | **F6** — protocol and client tests | Follows F2 naturally; typed messages make the tests worth writing. |
 | 7 | **F10, F12** | Small hygiene; fold into whatever branch is nearby. |
 | 8 | **F2 (steps 2–3)**, **F7**, **F11** | Larger, independent, and none is urgent. |
-| 9 | **F8** — the four moves in [`concept-consolidation.md`](concept-consolidation.md) | Three of the four are blocked on F4 anyway. Its Move 4b (the docs re-frame) is free and can land at any point; the code moves come after the seams are tight. |
+| 9 | **F8** — the four moves in [`concept-consolidation.md`](concept-consolidation.md) | Its Moves 1, 2 and 4b need no schema change and can start now; the two deletions wait on F4. Only the `stage`→`aspect` rename is deliberately last. |
 
 ---
 
@@ -433,7 +442,12 @@ Ordered by leverage-per-unit-risk, not by severity alone.
   "write the merge sketch, then either act or record why not". The sketch is
   [`concept-consolidation.md`](concept-consolidation.md): it withdraws the
   `goal`+`workflow` merge with reasons (§7.1) and relocates the finding to
-  `session plan`/`stage`, with four moves and a phase order.
+  `stage`, with four moves and a phase order.
+- **Two owner decisions were taken against that sketch**, and both narrowed it:
+  **multi-stage sessions are wanted** (so the capability is completed, not
+  collapsed), and **reflection history is bounded** (no scrub exemption — the
+  durable product of a reflection turn is the `self/*` KV write, which nothing
+  scrubs). See `concept-consolidation.md` §2 and §6.3.
 
 ---
 
@@ -444,10 +458,11 @@ Ordered by leverage-per-unit-risk, not by severity alone.
    usage plumbing.
 2. ~~**Does the `goal` + `workflow` merge survive the `workflow_*` tool
    surface?**~~ **Answered (rev 2): no, and the merge is withdrawn** — the axis is
-   autonomy, not ordering (§7.1). The questions it raised in turn are now
-   `concept-consolidation.md` §11: whether any session wants multiple stages,
-   whether an operator may delete the reflection agent, and whether reflection
-   history must be permanent.
+   autonomy, not ordering (§7.1). Of the three questions it raised in turn, two
+   are now settled — multi-stage is wanted, reflection history is bounded — and
+   the remainder are `concept-consolidation.md` §11: what the second aspect
+   concretely is, whether the `stage`→`aspect` rename earns its churn, and whether
+   an operator may delete the reflection aspect from the default profile.
 3. **Should implemented design notes stay in `docs/` and stay embedded?** (F11.)
    Freezing them to `docs/adr/` trades `nine docs` discoverability for a smaller
    sync burden; which side that lands on depends on how often the rationale is
