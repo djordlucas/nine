@@ -1,6 +1,9 @@
 # Architecture review — findings and sequencing
 
-- **Status:** **Review** (rev 1). Non-normative: this note records an assessment,
+- **Status:** **Review** (rev 2 — §7.1 corrected: the `goal`+`workflow` merge
+  proposed in rev 1 is **withdrawn**, see
+  [`concept-consolidation.md`](concept-consolidation.md) §2).
+  Non-normative: this note records an assessment,
   not a contract. Nothing here changes behavior, so no `spec/` requirement moves
   on account of it. Findings are given stable IDs (`F1`…`F12`) so they can be
   lifted into a roadmap without being restated.
@@ -27,7 +30,7 @@
 | **F5** | `agent.Loop` carries 12 post-construction observer setters; a Loop is never fully valid until N unordered calls have happened | Medium | M |
 | **F6** | Test coverage is inverted at the boundary: `protocol` 0.24, `tui` 0.27, `cli` 0.33 against 0.87 elsewhere | Medium | M |
 | **F7** | The four built-in plugins hold ambient authority that the capability model exists to remove | Medium | L |
-| **F8** | ~20 first-class nouns; `goal`+`workflow` and `session plan`+`role` are candidate collapses | Medium | L |
+| **F8** | ~20 first-class nouns; `session plan`+`stage` is a registry for a two-valued enum (`goal`+`workflow` examined and **not** collapsible — §7.1) | Medium | L |
 | **F9** | One provider behind a generalized `Provider` + `ThinkingAware` abstraction — decide whether local-first is a goal or a stopgap | Medium | S |
 | **F10** | `internal/selfmodel`: 84 LOC, zero tests, `/.dockerenv` probe, swallowed query error | Low | S |
 | **F11** | `docs/` + `spec/` is 57% of production code size; implemented design notes are maintained rather than frozen | Low | M |
@@ -340,30 +343,39 @@ says so itself: a **549-line glossary**, and a `CLAUDE.md` that warns "terms lik
 agent / session / conversation / sub-agent / goal / workflow / role are
 overloaded and the distinctions matter."
 
-Two pairs look genuinely collapsible.
+Two pairs looked collapsible on a first reading. **The merge sketch this section
+originally called for has since been written**
+([`concept-consolidation.md`](concept-consolidation.md)), and it moved the
+finding — so what follows is the corrected version.
 
-**7.1 `goal` + `workflow`.** Both are durable structures layered over sessions,
-both are mutated exclusively through tool calls, both carry their own status
-vocabulary, and both have their own `*_stop` / `*_fail` wire messages. The stated
-difference is that a workflow is an *ordered* plan of sub-agent steps while a goal
-is an *unordered* intention with a subtree. That reads as one structure with an
-`ordered` flag — and `spec/overview.md` §3.2 visibly works to justify the split.
-Collapsing them would remove a table, a set of tools, two wire messages, and a
-glossary section.
+**7.1 `goal` + `workflow` — do not merge.** *(Rev 1 of this note proposed these
+were "one structure with an `ordered` flag". That was wrong and is withdrawn.)*
+The distinguishing axis is not ordering but **autonomy**: a goal owns a session
+1:1 (`agentID == goalID`, `stage_pursue.go`), wakes itself on an interval or cron,
+and is advanced by that session *between* turns. A workflow has no session, no
+scheduler, and no driver — `internal/workflow.Service` is pure record-keeping —
+and is advanced by the calling model *inside* a turn. A goal is a machine; a
+workflow is a record. Merging them would put a scheduler behind something that
+must not have one.
 
-**7.2 `session plan`/`stage` + `role`.** Both answer "what kind of worker is
-this" — one structurally (does it persist, run stages, own HITL), one by tool
-surface (an enforced allowlist). Expressing a single idea, "a standing agent",
-currently requires *both* plus a config reconcile loop; `docs/predefined-agents.md`
-says outright that this is "not a new primitive", which is true and is also the
-tell.
+What is genuinely wrong is the *framing*: `spec/overview.md` §3.2 presents them as
+siblings ("durable structures imposed over sessions"), and that false parallelism
+is the whole reason they read as duplicates. The fix is docs-only — see
+`concept-consolidation.md` §7b.
 
-**Recommendation.** Do not act on this in the same cycle as F1–F4. Instead write
-the merge sketch for 7.1 and see whether it survives contact with the
-`workflow_*` tool surface; if it does, it is the largest simplification available
-to the project. If it does not, record *why* in this section and stop paying
-attention to it. Either outcome is progress; leaving it as an open irritation is
-not.
+**7.2 `session plan`/`stage` — this is the real over-generalization.** All three
+plan constructors produce **exactly one stage**; three kinds are registered and
+one (`active`) is a no-op that exists only to give `loadOrCreatePlan` something to
+seed. Four functions (`planOwnsGoal`, `planDelegates`, `planNeedsResume`,
+`roleNameForPlan`) each loop that always-length-1 array with no defined
+precedence, and `docs/session-plans.md` has never proposed a second stage. A
+registry, a factory, and a three-method interface hold an enum with two real
+values.
+
+**Recommendation.** Act on `concept-consolidation.md`, not on this section. Its
+four moves take the noun count for this cluster from 8 to 4, and three of the four
+are blocked on **F4** — which is a useful corroboration of §8's ordering rather
+than a coincidence.
 
 ---
 
@@ -381,7 +393,7 @@ Ordered by leverage-per-unit-risk, not by severity alone.
 | 6 | **F6** — protocol and client tests | Follows F2 naturally; typed messages make the tests worth writing. |
 | 7 | **F10, F12** | Small hygiene; fold into whatever branch is nearby. |
 | 8 | **F2 (steps 2–3)**, **F7**, **F11** | Larger, independent, and none is urgent. |
-| 9 | **F8** — write the `goal`+`workflow` merge sketch | Deliberately last: a simplification attempted while the seams are still loose will be blamed on the wrong thing. |
+| 9 | **F8** — the four moves in [`concept-consolidation.md`](concept-consolidation.md) | Three of the four are blocked on F4 anyway. Its Move 4b (the docs re-frame) is free and can land at any point; the code moves come after the seams are tight. |
 
 ---
 
@@ -417,8 +429,11 @@ Ordered by leverage-per-unit-risk, not by severity alone.
 - **§3 is a constraint on §5–§7, not decoration.** Any proposal that would erode
   the embedded spec, the pull-not-push discipline, the two-way capability check,
   or self-improvement-as-data is out of scope regardless of what it fixes.
-- **F8 is explicitly deferred**, and deferred with a defined exit: write the merge
-  sketch, then either act or record why not. It is not left open-ended.
+- **F8's defined exit has been taken.** Rev 1 deferred it with the condition
+  "write the merge sketch, then either act or record why not". The sketch is
+  [`concept-consolidation.md`](concept-consolidation.md): it withdraws the
+  `goal`+`workflow` merge with reasons (§7.1) and relocates the finding to
+  `session plan`/`stage`, with four moves and a phase order.
 
 ---
 
@@ -427,8 +442,12 @@ Ordered by leverage-per-unit-risk, not by severity alone.
 1. **Is local-first a goal or a stopgap?** (F9.) This is the one question in the
    review that cannot be answered from the code, and it changes the shape of F1's
    usage plumbing.
-2. **Does the `goal` + `workflow` merge survive the `workflow_*` tool surface?**
-   (F8/7.1.) Answerable only by writing the sketch.
+2. ~~**Does the `goal` + `workflow` merge survive the `workflow_*` tool
+   surface?**~~ **Answered (rev 2): no, and the merge is withdrawn** — the axis is
+   autonomy, not ordering (§7.1). The questions it raised in turn are now
+   `concept-consolidation.md` §11: whether any session wants multiple stages,
+   whether an operator may delete the reflection agent, and whether reflection
+   history must be permanent.
 3. **Should implemented design notes stay in `docs/` and stay embedded?** (F11.)
    Freezing them to `docs/adr/` trades `nine docs` discoverability for a smaller
    sync burden; which side that lands on depends on how often the rationale is
