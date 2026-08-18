@@ -80,7 +80,8 @@ Default-export a function. Return a string (passed through untouched) or any
 value (JSON-stringified). `async` works. A thrown error reaches the model as an
 ordinary tool failure carrying your message.
 
-`examples/tools/csvstats.*` is a complete working example — copy it.
+`examples/tools/` holds two complete examples — `csvstats` (no capabilities)
+and `linkcheck` (fs.read + net.http). Copy one.
 
 ## What you get, and what you don't
 
@@ -103,18 +104,11 @@ Nine never resolves a dependency: no package manager, no lockfile, no network at
 load time. `import` resolves against a closed allowlist which, for tools in this
 directory, is empty — so a tool that still contains an `import` will fail.
 
-You can also ship a `.wasm` built from Rust, TinyGo, Zig, or C (`kind = "wasm"`),
-which links no interpreter and gets full speed. In C, start from the ABI header
-the binary emits:
-
-```console
-$ nine tool header > nine.h
-```
-
-It carries the two exports, the `(offset << 32) | length` packing, the
-`nine.log` and `nine.http` host imports, and envelope builders that escape your
-output so a stray quote cannot corrupt the JSON the host is about to parse.
-`examples/tools/sha256.*` is a worked example built against it.
+**JavaScript is the supported language.** A `.wasm` module built from Rust,
+TinyGo, Zig, or C also runs (`kind = "wasm"`) and is worth it for CPU-bound work
+— roughly 200× on a hashing benchmark — but Nine ships no header, example, or
+build tooling for it, and you are on your own. The contract is specified and
+stable: `nine spec toolvm`, R-TVM.3.
 
 ## Capabilities
 

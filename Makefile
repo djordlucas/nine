@@ -19,7 +19,7 @@ GOFLAGS  := -mod=vendor
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS  := -ldflags "-X main.Version=$(VERSION)"
 
-.PHONY: all dev build test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-generate quickjs-wasm quickjs-verify tools-wasm
+.PHONY: all dev build test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-generate quickjs-wasm quickjs-verify
 
 dev: build
 
@@ -51,31 +51,6 @@ quickjs-wasm:
 # CI, where it runs on every build.
 quickjs-verify:
 	cd internal/toolvm/quickjs && shasum -a 256 -c qjs.wasm.sha256
-
-# ── sandboxed tools: the raw-wasm example ─────────────────────────────────────
-# Rebuilds examples/tools/sha256.wasm, the worked `kind = "wasm"` example
-# (docs/writing-sandboxed-tools.md). Deliberately NOT part of `dev` or `build`,
-# for the same reason as quickjs-wasm above: the artifact is committed so that
-# copying the example needs no C toolchain — only *editing the C* does.
-#
-# It reuses the SDK `make quickjs-wasm` fetches. Point WASI_SDK at your own to
-# skip that step.
-#
-# The header comes out of the freshly-built binary via `nine tool header`, which
-# is exactly how an author gets it — so this target also proves that what we
-# hand people actually compiles.
-
-WASI_SDK ?= internal/toolvm/quickjs/.build/wasi-sdk-33
-
-tools-wasm: build
-	@mkdir -p $(DIST)/include
-	./$(DIST)/$(BINARY) tool header > $(DIST)/include/nine.h
-	$(WASI_SDK)/bin/clang \
-	  --target=wasm32-wasip1 --sysroot=$(WASI_SDK)/share/wasi-sysroot \
-	  -mexec-model=reactor -Os -I $(DIST)/include \
-	  -o examples/tools/sha256.wasm examples/tools/sha256.c \
-	  -Wl,--export=nine_alloc -Wl,--export=nine_run -Wl,--strip-all -Wl,--gc-sections
-	@shasum -a 256 examples/tools/sha256.wasm
 
 # ── tests ─────────────────────────────────────────────────────────────────────
 

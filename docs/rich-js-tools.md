@@ -231,8 +231,8 @@ when the response is not valid UTF-8; the decision is the host's, where the byte
 exist. Requests take `body_b64` the same way. The harness builds `bytes()`/`arrayBuffer()`
 on top, makes `text()`/`json()` throw on a binary body rather than return mojibake, and
 sends a `Uint8Array`, `ArrayBuffer`, or typed-array view as bytes. A wasm author reads one
-more field, and `nine_b64_decode`/`nine_b64_encode` are in `nine.h` so that is the whole
-job — `examples/tools/sha256.c` takes `text_b64` through exactly that path.
+more field. (The C helpers that made that convenient went with `nine.h`; the envelope
+field is unchanged and specified.)
 
 **A tool *returning* bytes — done (M3b).** Deferred from M3 because it needed a
 destination, which was then decided: the file store, with the model handed a path.
@@ -351,12 +351,13 @@ was a leftover, and the allowlist still refuses everything else. `__nine_log`,
 
 ### 6.7 Documenting the `wasm` kind
 
-**Done (M1).** `nine.h` — the two exports, the import attributes for `nine.log` and
-`nine.http`, the packing macros, argument reach-in, and escaping envelope builders — is
-embedded in the binary and written out by `nine tool header`. It comes from the binary
-rather than a repository file for the reason docs/ and spec/ do: a header describing the
-ABI must match the build implementing it. `nine.caps` is deliberately absent from it until
-§6.3 lands, since declaring an import the host does not export fails at instantiation.
+**Done (M1), then removed.** `nine.h` shipped as an embedded C header emitted by `nine
+tool header`, and was deleted once M4 and M5 finished closing the JS gaps: with no
+capability left that a `js` tool cannot reach, the remaining reason to write C is
+CPU-bound work, and maintaining a second language's ergonomics for that case is not a good
+trade. The **contract** stays specified (R-TVM.3) so anyone who needs it can implement it
+unaided. The measurement that justifies keeping the kind at all: 3.4 ms versus 706 ms to
+hash 64 KiB.
 
 Then correct the guide: a wasm tool *does* get imports, and can log and make HTTP requests.
 
@@ -411,7 +412,7 @@ closed, and §8's four questions are all answered.
 
 | | Scope | Layer | Blob rebuild | Serves |
 |---|---|---|---|---|
-| **M1** ✅ done | `nine.h` + correcting the wasm guide (§6.7) | docs | No | wasm |
+| **M1** ✅ done, later removed | `nine.h` + correcting the wasm guide (§6.7) | docs | No | wasm |
 | **M2** ✅ done | Structured errors, OOM message (§6.1) | L1 | No | both |
 | **M3** ✅ done | Binary data over HTTP (§6.1) | L1 + harness | No | both |
 | **M3b** ✅ done | A tool returning bytes → the file store, model gets a path (§6.1) | L1 + agent | No | both |

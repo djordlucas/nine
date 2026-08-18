@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -29,106 +30,8 @@ func stageExample(t *testing.T, name string, files ...string) string {
 	return dir
 }
 
-// The committed sha256.wasm is the only artifact that exercises nine.h end to
-// end — the header is C, so nothing else in the Go suite can reach it. Asserting
-// against the shipped binary means a header change that breaks the envelope
-// cannot land with green tests, and it needs no C toolchain to run.
-func TestShippedWasmExample(t *testing.T) {
-	dir := stageExample(t, "sha256", "sha256.wasm", "sha256.toml", "sha256.schema.json")
-	h := openHost(t, dir, nil)
-	for _, s := range h.Status() {
-		if !s.Loaded {
-			t.Fatalf("shipped example did not load: %s: %s", s.Name, s.Err)
-		}
-	}
-
-	t.Run("digests", func(t *testing.T) {
-		// Independently checkable: `printf '<in>' | shasum -a 256`.
-		for in, want := range map[string]string{
-			"":           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-			"hello nine": "50ce1f9527a47956e94d826d924578d9717c755b14a300ff85a517884d52d035",
-			"The quick brown fox jumps over the lazy dog": "d7a8fbb307d7809469ca9abcb0082e4f8d5651e46d3cdb762d02d0bf37c9e592",
-		} {
-			args, err := json.Marshal(map[string]string{"text": in})
-			if err != nil {
-				t.Fatal(err)
-			}
-			got, err := h.Call(context.Background(), "sha256", args)
-			if err != nil {
-				t.Fatalf("sha256(%q): %v", in, err)
-			}
-			if got != want {
-				t.Errorf("sha256(%q) = %s, want %s", in, got, want)
-			}
-		}
-	})
-
-	// The escapes go through nine_arg_str, and getting them wrong produces a
-	// plausible-looking wrong digest rather than an error — so this is checked
-	// against the real thing rather than assumed.
-	t.Run("escaped input", func(t *testing.T) {
-		got, err := h.Call(context.Background(), "sha256", json.RawMessage(`{"text":"a\"b\nc"}`))
-		if err != nil {
-			t.Fatal(err)
-		}
-		const want = "92d80d9fbccd9c8c8f7e2cadaea972af1ebdefe71bd557129d663a90d5b67ab4"
-		if got != want {
-			t.Errorf("got %s, want %s", got, want)
-		}
-	})
-
-	// nine.h's base64 decoder, exercised from a real compiled module — the same
-	// path an author takes to read an HTTP response's body_b64. The expected
-	// digest is independently checkable:
-	//
-	//   printf '\x89PNG\r\n\x1a\n\xff\xfe\x00\x01' | shasum -a 256
-	t.Run("binary input via base64", func(t *testing.T) {
-		got, err := h.Call(context.Background(), "sha256",
-			json.RawMessage(`{"text_b64":"iVBORw0KGgr//gAB"}`))
-		if err != nil {
-			t.Fatal(err)
-		}
-		const want = "e4851a87a1aa6379d2af6581a08518c6f014c6afb662c61f7fbaa3b89c6bf7a4"
-		if got != want {
-			t.Errorf("got  %s\nwant %s", got, want)
-		}
-	})
-
-	t.Run("invalid base64 is refused, not hashed", func(t *testing.T) {
-		_, err := h.Call(context.Background(), "sha256",
-			json.RawMessage(`{"text_b64":"not!valid!base64"}`))
-		if err == nil {
-			t.Fatal("invalid base64 was accepted")
-		}
-		var ce *CallError
-		if errors.As(err, &ce) && ce.Code() != "E_ARGS" {
-			t.Errorf("Code() = %q, want E_ARGS", ce.Code())
-		}
-	})
-
-	// This is the wasm half of structured errors: proof that nine_fail_code emits
-	// an envelope the host parses, from a real compiled module.
-	t.Run("structured failure from C", func(t *testing.T) {
-		_, err := h.Call(context.Background(), "sha256", json.RawMessage(`{"nope":1}`))
-		if err == nil {
-			t.Fatal("expected a failure for a missing argument")
-		}
-		var ce *CallError
-		if !errors.As(err, &ce) {
-			t.Fatalf("error is %T, not *CallError", err)
-		}
-		if ce.Code() != "E_ARGS" {
-			t.Errorf("Code() = %q, want E_ARGS", ce.Code())
-		}
-		retry, stated := ce.Retryable()
-		if retry || !stated {
-			t.Errorf("Retryable() = (%v, %v), want (false, true) — a bad argument is not retryable",
-				retry, stated)
-		}
-	})
-}
-
-// The js example ships beside it and must keep working too.
+// The shipped examples are what a new author copies, so they are tested as
+// shipped rather than as a paraphrase of themselves.
 func TestShippedJSExample(t *testing.T) {
 	dir := stageExample(t, "csvstats", "csvstats.js", "csvstats.toml", "csvstats.schema.json")
 	h := openHost(t, dir, nil)
@@ -145,4 +48,97 @@ func TestShippedJSExample(t *testing.T) {
 		t.Error("csv_stats returned nothing")
 	}
 	t.Logf("csv_stats => %s", out)
+}
+
+// link_check is the worked example: it declares capabilities, so it also proves
+// the shipped manifest and the shipped code agree about what it needs.
+func TestShippedLinkCheckExample(t *testing.T) {
+	dir := stageExample(t, "linkcheck", "linkcheck.js", "linkcheck.toml", "linkcheck.schema.json")
+
+	t.Run("loads with its declared grants", func(t *testing.T) {
+		h := openHost(t, dir, map[string]Grant{
+			"link_check": {
+				FSRead: []Mount{{Host: t.TempDir(), Guest: "/data"}},
+				HTTP:   &HTTPGrant{AllowHosts: []string{"example.com"}, Methods: []string{"GET"}},
+			},
+		})
+		for _, s := range h.Status() {
+			if !s.Loaded {
+				t.Fatalf("shipped example did not load: %s", s.Err)
+			}
+		}
+	})
+
+	// The asymmetry the capability model exists for: declaring without a grant is
+	// a load failure, not a tool that half-works.
+	t.Run("is skipped when the grants are missing", func(t *testing.T) {
+		h := openHost(t, dir, nil)
+		for _, s := range h.Status() {
+			if s.Loaded {
+				t.Error("loaded with none of its declared capabilities granted")
+			}
+			if !strings.Contains(s.Err, "fs.read") && !strings.Contains(s.Err, "net.http") {
+				t.Errorf("skip reason names neither capability: %s", s.Err)
+			}
+		}
+	})
+
+	// A model reads "/data" in the description and passes "data/urls.txt" as
+	// often as "urls.txt" — observed on a live turn, which is why the example
+	// normalizes rather than lecturing. Pinned here because a worked example
+	// getting this wrong teaches everyone who copies it.
+	t.Run("tolerates the prefixes a model actually sends", func(t *testing.T) {
+		mount := t.TempDir()
+		if err := os.WriteFile(filepath.Join(mount, "urls.txt"), []byte("# none\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		h := openHost(t, dir, map[string]Grant{
+			"link_check": {
+				FSRead: []Mount{{Host: mount, Guest: "/data"}},
+				HTTP:   &HTTPGrant{AllowHosts: []string{"example.com"}, Methods: []string{"GET"}},
+			},
+		})
+		for _, name := range []string{"urls.txt", "data/urls.txt", "/data/urls.txt"} {
+			args, _ := json.Marshal(map[string]string{"file": name})
+			_, err := h.Call(context.Background(), "link_check", json.RawMessage(args))
+			// The file exists but holds no URLs, so E_EMPTY means it was FOUND.
+			var ce *CallError
+			if !errors.As(err, &ce) || ce.Code() != "E_EMPTY" {
+				t.Errorf("file=%q: got %v, want the file to be found", name, err)
+			}
+		}
+		// …and traversal is still named rather than silently normalized.
+		args, _ := json.Marshal(map[string]string{"file": "../etc/passwd"})
+		_, err := h.Call(context.Background(), "link_check", json.RawMessage(args))
+		var ce *CallError
+		if !errors.As(err, &ce) || ce.Code() != "E_ARGS" {
+			t.Errorf("traversal: got %v, want E_ARGS", err)
+		}
+	})
+
+	// Its argument handling is the part a model gets wrong, and every failure
+	// there is non-retryable — so the example should demonstrate saying so.
+	t.Run("bad arguments are refused as non-retryable", func(t *testing.T) {
+		h := openHost(t, dir, map[string]Grant{
+			"link_check": {
+				FSRead: []Mount{{Host: t.TempDir(), Guest: "/data"}},
+				HTTP:   &HTTPGrant{AllowHosts: []string{"example.com"}, Methods: []string{"GET"}},
+			},
+		})
+		for _, args := range []string{`{}`, `{"urls":[]}`, `{"file":"nope.txt"}`} {
+			_, err := h.Call(context.Background(), "link_check", json.RawMessage(args))
+			if err == nil {
+				t.Errorf("%s was accepted", args)
+				continue
+			}
+			var ce *CallError
+			if !errors.As(err, &ce) {
+				t.Errorf("%s: error is %T, not *CallError", args, err)
+				continue
+			}
+			if retry, stated := ce.Retryable(); retry || !stated {
+				t.Errorf("%s: Retryable() = (%v, %v), want (false, true)", args, retry, stated)
+			}
+		}
+	})
 }
