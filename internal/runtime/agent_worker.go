@@ -12,6 +12,7 @@ import (
 	ninectx "nine/internal/context"
 	"nine/internal/memory"
 	"nine/internal/protocol"
+	"nine/internal/toolvm"
 )
 
 type turnReq struct {
@@ -286,7 +287,10 @@ func (w *AgentWorker) processTurn(req turnReq) {
 	w.wireJournalHooks(turn)
 	slog.Debug("turn_start", "agent_id", w.id, "turn_n", turn)
 	w.loop.SetForceThinkNextTurn(req.forceThink)
-	result, err := w.loop.Run(req.ctx, text)
+	// The sandboxed-tool host is daemon-wide, so the journal destination for a
+	// tool's outbound HTTP has to travel with the turn rather than be configured
+	// once at boot.
+	result, err := w.loop.Run(toolvm.WithHTTPAudit(req.ctx, w.httpAuditor(turn)), text)
 	w.loop.SetOnContextUpdate(nil)
 	w.loop.SetOnToolStart(nil)
 	w.loop.SetOnToolEnd(nil)
