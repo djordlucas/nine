@@ -230,5 +230,15 @@ func (h *Host) EvalGenerated(ctx context.Context, source string, decl Declaratio
 		// less-persistent tier, not a softer one.
 		imports: stdlibModules(),
 	}
-	return h.call(ctx, t, args)
+	out, err := h.call(ctx, t, args)
+	if err != nil {
+		return "", err
+	}
+	if out.Bytes != nil {
+		// js_eval is a scratchpad that persists nothing, so there is no file
+		// store path to hand back and nowhere for bytes to live. Say so rather
+		// than returning base64 that reads like a result.
+		return "", fmt.Errorf("js_eval returned %d bytes; write a tool if you need a binary result", len(out.Bytes))
+	}
+	return out.Text, nil
 }

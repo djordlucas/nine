@@ -54,6 +54,24 @@ A `false` result is surfaced to the model as an **ordinary tool error**, distinc
 host failing to run the tool at all — the model can read it and retry with different
 arguments.
 
+A **success MAY** be bytes instead of text:
+
+```json
+{"ok": true, "output_b64": "<base64>", "media_type": "image/png"}
+```
+
+`output_b64` is set instead of `output`, never alongside it. The dispatcher writes the
+decoded bytes to the file store — base64-encoded, since that store is a TEXT column that
+strips NULs — and replaces the result with a path plus a description, because a language
+model cannot read bytes and inlining them would consume the output budget to no purpose.
+This requires no `fs.write` grant: the file store is Nine's, not the operator's filesystem.
+
+`media_type` is advisory and **MUST** be treated as untrusted: it is interpolated into text
+the model reads in Nine's own voice, so anything outside an RFC 6838 token is dropped.
+
+With no spill sink registered, a byte result is an **error** rather than a degraded
+success — unlike over-cap text, there is no smaller-but-valid form of a truncated blob.
+
 A failure **MAY** carry structure alongside the message:
 
 ```json

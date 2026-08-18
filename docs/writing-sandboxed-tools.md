@@ -61,6 +61,36 @@ Default-export a function. Return whatever you like:
   which is exactly what you want for `throw new Error("date is not ISO-8601")` — the model
   can read it and retry with better arguments.
 
+### Returning bytes
+
+A tool can produce something that is not text — a rendered image, a compressed archive.
+Return it and say what it is:
+
+```js
+export default () => ({ bytes: png, mediaType: "image/png" });   // png is a Uint8Array
+```
+
+A bare `Uint8Array`, `ArrayBuffer`, or typed-array view works too; the wrapper only adds the
+label. From C, `nine_ok_bytes(data, len, "image/png")`.
+
+**The model never sees the bytes.** It cannot read them, and inlining base64 would blow the
+output budget while teaching it nothing. They are written to the memory file store and the
+model is handed a path plus a description:
+
+```text
+[nine: this tool returned 67 bytes of image/png, which is not text and is not shown here.
+The bytes are saved in the memory file store, base64-encoded, at this path:
+    spill/<session>/make_icon-ee1a9e04.txt
+...]
+```
+
+It can pass that path to another tool's `*_ref` argument to hand over the whole content, or
+read the base64 with `file_fetch` if it genuinely needs the encoding.
+
+They are stored base64-encoded because the file store is a text column that replaces NUL
+bytes with U+FFFD — raw bytes would not survive it, and base64 survives exactly. Returning
+bytes needs **no `fs.write` grant**: the store is Nine's, not the operator's filesystem.
+
 ### Say whether it is worth retrying
 
 "The upstream is down" and "your argument was malformed" read the same as prose and call for

@@ -1,6 +1,6 @@
 # Design note — Richer sandboxed tools: the JS environment, and what belongs beneath it
 
-**Status:** Design agreed (§8), nothing built · **Roadmap:** the "missing JS globals",
+**Status:** Complete — M1–M5 and M3b shipped · **Roadmap:** the "missing JS globals",
 "FS/env gaps", "binary data support", and "structured tool errors" parts of *Improve
 sandboxed tools* · **Precedes:** durable state, long-running tools
 
@@ -234,13 +234,20 @@ sends a `Uint8Array`, `ArrayBuffer`, or typed-array view as bytes. A wasm author
 more field, and `nine_b64_decode`/`nine_b64_encode` are in `nine.h` so that is the whole
 job — `examples/tools/sha256.c` takes `text_b64` through exactly that path.
 
-**A tool *returning* bytes is deferred, and the note was wrong to bundle it here.** It
-reads like the same change and is not: `output_b64` needs a destination, and the existing
-overflow sink is `SpillFn func(ctx, toolName string, output string) (string, error)` —
-string-typed, feeding a file store the model reads back *by path*. Bytes through that
-either become base64 text in a file (useless to the model) or get corrupted on the way.
-Deciding where a tool's bytes land, and what the model is told about them, is a design
-question of its own rather than a fourth field. Nothing else in this note depends on it.
+**A tool *returning* bytes — done (M3b).** Deferred from M3 because it needed a
+destination, which was then decided: the file store, with the model handed a path.
+
+The store turned out to be the constraint that shaped it. `FileStore` is a TEXT column that
+replaces NUL with U+FFFD (`TestFileStoreStripsNULBytes` explains why — SQLite's `length()`
+and `substr()` treat a NUL as end-of-value, so a stored NUL silently truncates every
+windowed read past it). Raw bytes cannot survive that; base64 survives exactly, so bytes are
+stored encoded and the banner says so. The model gets a path it can hand to another tool's
+`*_ref`, never the payload.
+
+Two consequences worth keeping: it needs **no `fs.write` grant**, since the store is Nine's
+rather than the operator's filesystem — which is what makes it usable by a pure tool. And a
+failed store is an **error**, not a degraded success, because truncated base64 is not a
+smaller answer but a corrupt one.
 
 **Structured errors — done (M2).** `Result.ErrorDetail` carries `name`, `code`,
 `retryable`, and a flattened `cause` chain. `retryable` is a pointer precisely because
@@ -395,9 +402,8 @@ will want to argue with.
    a message rather than a mechanism — with no pre-opens there is nothing to open, which a
    test asserts by bypassing the module and calling the primitive directly.
 
-**Build order:** M1–M5 are shipped, closing every gap this note opened with. M3b is the
-remainder: its destination question was settled (the file store, with the model receiving a
-path), and it is the last row.
+**Build order:** all of M1–M5 and M3b are shipped. Every gap this note opened with is
+closed, and §8's four questions are all answered.
 
 ---
 
@@ -408,7 +414,7 @@ path), and it is the last row.
 | **M1** ✅ done | `nine.h` + correcting the wasm guide (§6.7) | docs | No | wasm |
 | **M2** ✅ done | Structured errors, OOM message (§6.1) | L1 | No | both |
 | **M3** ✅ done | Binary data over HTTP (§6.1) | L1 + harness | No | both |
-| **M3b** ◀ next | A tool returning bytes → the file store, model gets a path (§6.1) | L1 + agent | No | both |
+| **M3b** ✅ done | A tool returning bytes → the file store, model gets a path (§6.1) | L1 + agent | No | both |
 | **M4** ✅ done | Web-platform layer + papercuts (§6.5, §6.6) | L3 | No | js |
 | **M5** ✅ done | `nine:fs`, `nine:env`, `crypto`, `nine.caps` (§6.3, §6.4) | L2 + L3 | **Yes** | both |
 

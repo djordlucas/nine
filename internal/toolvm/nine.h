@@ -98,6 +98,12 @@ NINE_EXPORT(nine_alloc) uint32_t nine_alloc(uint32_t size) {
 /* Inside a NINE_TOOL body, the input as a NUL-terminated C string. */
 #define NINE_ARGS(args_name) ((const char *)(uintptr_t)(args_name##_ptr))
 
+/* A tool that takes no arguments still receives them, and -Wextra will warn
+ * about the unused parameter under a name the macro produced rather than one you
+ * wrote. This silences it: NINE_NO_ARGS(args, len); */
+#define NINE_NO_ARGS(args_name, len_name) \
+    do { (void)NINE_ARGS(args_name); (void)(len_name); } while (0)
+
 /* ── host imports ─────────────────────────────────────────────────────────
  * The one module a guest may import. `log` is granted to every tool; `http`
  * requires the net.http capability, declared in your manifest and granted by
@@ -338,6 +344,43 @@ static inline size_t nine_b64_encode(const uint8_t *in, size_t len, char *out) {
     }
     out[o] = 0;
     return o;
+}
+
+/*
+ * Succeed with BYTES rather than text — a rendered image, a compressed archive.
+ *
+ * `media_type` may be NULL, or something like "image/png"; it is advisory, shown
+ * to the model and used to name the stored file.
+ *
+ * The model never sees these bytes: they are not text, and there is nothing
+ * useful it could do with them inline. The daemon writes them to its file store
+ * and hands the model a path it can pass to another tool. That is the whole
+ * point of returning bytes rather than base64 in `output` — you get somewhere to
+ * put an artifact without inventing a location or needing an fs.write grant.
+ */
+static inline uint64_t nine_ok_bytes(const uint8_t *bytes, size_t len,
+                                     const char *media_type) {
+    size_t b64_len = 4 * ((len + 2) / 3) + 1;
+    size_t mt = media_type ? strlen(media_type) : 0;
+    size_t cap = b64_len + mt * 6 + 96;
+    char *buf = (char *)malloc(cap);
+    if (!buf) return 0;
+
+    const char *head = "{\"ok\":true,\"output_b64\":\"";
+    size_t at = strlen(head);
+    memcpy(buf, head, at);
+    at += nine_b64_encode(bytes, len, buf + at);
+    buf[at++] = '"';
+
+    if (mt) {
+        const char *k = ",\"media_type\":\"";
+        size_t kn = strlen(k);
+        memcpy(buf + at, k, kn); at += kn;
+        at = nine_json_escape(buf, at, cap, media_type);
+        buf[at++] = '"';
+    }
+    buf[at++] = '}';
+    return NINE_PACK(buf, at);
 }
 
 /* ── reading arguments ────────────────────────────────────────────────────
