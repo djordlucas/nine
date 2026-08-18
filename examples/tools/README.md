@@ -1,59 +1,70 @@
 # Worked sandboxed-tool examples
 
-Two complete tools, one per kind. **Nothing here is loaded** — this directory is
-not a `[tools].user_dir` and Nine never scans it. Copy what you want into your
-own `tools.d/`, which ships empty precisely so that what runs there is what you
+Two complete tools. **Nothing here is loaded** — this directory is not a
+`[tools].user_dir` and Nine never scans it. Copy what you want into your own
+`tools.d/`, which ships empty precisely so that what runs there is what you
 chose.
 
 ```text
-csvstats.toml        the manifest — kind = "js"
-csvstats.schema.json { csv: string }
-csvstats.js          the code
+csvstats.toml          the manifest
+csvstats.schema.json   { csv: string }
+csvstats.js            the code
 
-sha256.toml          the manifest — kind = "wasm"
-sha256.schema.json   { text: string }
-sha256.c             the source
-sha256.wasm          the artifact, 11 KiB, committed
+linkcheck.toml         the manifest — declares fs.read and net.http
+linkcheck.schema.json  { urls: string[] } or { file: string }
+linkcheck.js           the code
 ```
 
-## `csv_stats` — the `js` kind
+Both are `kind = "js"`, which is the supported language: no build step, no
+toolchain, and since `nine:fs`, `nine:env`, and `crypto` landed there is no
+capability a JavaScript tool cannot reach.
 
-Default-export a function; return a string and it reaches the model untouched,
-return anything else and it is JSON-stringified, throw and the model reads your
-message as an ordinary tool failure. No build step.
+## `csv_stats` — the shape most tools should be
 
-## `sha256` — the `wasm` kind
-
-C compiled to wasm, linking no interpreter. Hashing is the honest demonstration
-of why this tier exists: it is exactly the work a language model cannot do by
-reasoning about it, and the answer is checkable to the byte.
+A pure transform over its arguments, declaring **no capabilities**. It runs
+anywhere, needs nothing from the operator, and cannot do anything surprising.
+Reach for this shape first.
 
 ```console
-$ printf 'hello nine' | shasum -a 256
-50ce1f9527a47956e94d826d924578d9717c755b14a300ff85a517884d52d035  -
-```
-
-It is written against the ABI header, which the binary emits so that it always
-matches the ABI that binary implements:
-
-```console
-$ nine tool header > nine.h
-```
-
-**The `.wasm` is committed, so copying this example needs no C toolchain.** Only
-editing `sha256.c` does — `make tools-wasm` then rebuilds it with the wasi-sdk
-that `make quickjs-wasm` fetches.
-
-## Using one
-
-```console
-$ cp examples/tools/sha256.* tools.d/
+$ cp examples/tools/csvstats.* tools.d/
 $ nine tool validate ./tools.d
-  ok    sha256             wasm   declares: none
+  ok    csv_stats          js     declares: none
 ```
 
-Then turn the subsystem on in `nine.toml` (`[tools] enabled = true`) and restart,
-or `nine tools reload` a running daemon.
+## `link_check` — the one that needs reach
+
+Reads a list of URLs from a mounted file, fetches each concurrently, and reports
+what came back. It is the example to read when you need the rest of the surface:
+
+- **`nine:fs`** — `readFileText` and `exists`, addressing the *guest* path `/data`
+- **`fetch`** — the subset, with a blocked request throwing rather than returning
+  a non-ok response
+- **`URL`** — validating and normalizing before the request
+- **`Promise.all`** — concurrent, because the deadline is wall-clock
+- **structured errors, both directions** — a bad argument as `E_ARGS` with
+  `retryable: false`, which takes the call out of Nine's retry loop; every host
+  being unreachable as `E_UPSTREAM` with `retryable: true`, which is the opposite
+  instruction
+
+It declares `fs.read` and `net.http`, so it **will not load until the operator
+grants both** — that asymmetry is the point, and `nine tools` names whichever is
+missing:
+
+```toml
+# in the operator's nine.toml
+[tool.link_check.capabilities]
+[tool.link_check.capabilities.fs]
+read = [{ host = "/srv/urls", guest = "/data" }]
+[tool.link_check.capabilities.net.http]
+allow_hosts = ["example.com", "*.example.org"]
+methods     = ["GET"]
+```
+
+```console
+$ cp examples/tools/linkcheck.* tools.d/
+$ nine tool validate ./tools.d
+  ok    link_check         js     declares: fs.read, net.http (must be granted in nine.toml before this tool will load)
+```
 
 ---
 

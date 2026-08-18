@@ -1,0 +1,12 @@
+name         = "link_check"
+kind         = "js"
+entrypoint   = "./linkcheck.js"
+display_name = "Link check"
+input_schema = "./linkcheck.schema.json"
+description  = "Check whether URLs are reachable and report each one's HTTP status. Pass urls as a list, or file to read a newline-separated list from the data directory."
+
+# Declared here; the operator grants them in nine.toml. Both are needed:
+# fs.read to load a list from a file, net.http to make the requests.
+[capabilities]
+fs  = ["read"]
+net = ["http"]
