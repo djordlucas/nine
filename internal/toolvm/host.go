@@ -51,12 +51,6 @@ type Config struct {
 	// TouchGenerated, when set, records that a generated tool was called, for LRU
 	// eviction. The daemon wires it to the store; this package has none.
 	TouchGenerated func(name string)
-
-	// AuditHTTP, when set, receives every outbound request a granted tool makes
-	// (docs/sandboxed-tools.md §8 item 8). The host always logs; this is the hook
-	// the daemon uses to also reach the event journal, which it can do and this
-	// package cannot.
-	AuditHTTP func(HTTPCall)
 }
 
 // Tool is one loaded sandboxed tool, ready to dispatch.
