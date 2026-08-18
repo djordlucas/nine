@@ -474,13 +474,18 @@ standard way past a filter that only knows `127.0.0.0/8`.
 A refusal reaches the tool as a thrown error carrying the reason, never as a status code:
 letting a policy decision look like a response invites `if (res.ok)` to swallow it.
 
-> **On item 8, precisely.** Every call is written to the daemon log with structured
-> fields, unconditionally. It does **not** yet reach the `session_events` journal
-> (`docs/event-log.md`), because attribution needs a session id that the tool host does
-> not have — the dispatcher does not carry one into a tool call. `toolvm.Config.AuditHTTP`
-> is the hook for that, and it is currently unwired. "What did this tool reach" is
-> answerable today from the log; "which turn asked for it" is not, and that gap should be
-> closed when session context reaches the dispatcher.
+> **On item 8, precisely.** Every call is audited, **whatever its outcome** — a request
+> refused at the host allowlist, at the SSRF gate, or on a redirect hop is recorded with
+> its reason, exactly like one that returned 200. An audit that recorded only successes
+> would answer "what did this tool fetch" while leaving "did this tool try to reach the
+> instance-metadata endpoint" unanswerable, which is the question an operator has.
+>
+> Each call goes to the daemon log with structured fields, unconditionally, and to the
+> `session_events` journal as a `tool_http` event attributed to the session, the turn, and
+> the span of the tool call that made it. The hook travels on the **context**, installed by
+> whoever is running the turn (`toolvm.WithHTTPAudit`), because a Host is daemon-wide and
+> built once at boot while an audit record belongs to a session — a hook configured at Open
+> could not know one.
 
 **There is no bare `"*"`.** An operator who wants unrestricted egress should write a
 native plugin, where that intent is explicit and reviewed. Config validation refuses it.
@@ -567,10 +572,7 @@ the wire (`spec/contracts/wire-protocol.md`).
 its source, declared capabilities, and result — is already recorded in the `session_events`
 journal (`spec/contracts/event-journal.md`), attributed to the session and turn. The daemon
 **additionally** logs each write/delete with the tool name, its declared reach, and its
-resolved packages, as a greppable operator breadcrumb that survives a journal scrub. The
-audit gap R-TVM.12 item 8 describes is **specific to `net.http`**: that call happens inside
-the wasm host, below the dispatcher, with no session id — it does **not** apply to the
-meta-tools, which run in the loop's own context.
+resolved packages, as a greppable operator breadcrumb that survives a journal scrub.
 
 ---
 
