@@ -500,9 +500,8 @@ net = ["http"]
 
 	ctx := context.Background()
 	h, err := Open(ctx, Config{
-		UserDir:   dir,
-		Grants:    map[string]Grant{"fetcher": {HTTP: &HTTPGrant{AllowHosts: []string{"127.0.0.1"}, Methods: []string{"GET"}}}},
-		AuditHTTP: func(c HTTPCall) { calls = append(calls, c) },
+		UserDir: dir,
+		Grants:  map[string]Grant{"fetcher": {HTTP: &HTTPGrant{AllowHosts: []string{"127.0.0.1"}, Methods: []string{"GET"}}}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -510,7 +509,14 @@ net = ["http"]
 	defer h.Close(ctx) //nolint:errcheck
 	h.Load(ctx, nil)
 
-	if _, err := callTool(t, h, map[string]string{"url": "http://127.0.0.1:" + port + "/thing"}); err != nil {
+	// The hook rides the call's context rather than the host's config: a Host is
+	// daemon-wide, and an audit record belongs to whoever is running the turn.
+	audited := WithHTTPAudit(ctx, func(c HTTPCall) { calls = append(calls, c) })
+	args, err := json.Marshal(map[string]string{"url": "http://127.0.0.1:" + port + "/thing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Call(audited, "fetcher", args); err != nil {
 		t.Fatalf("Call: %v", err)
 	}
 
@@ -523,5 +529,77 @@ net = ["http"]
 	}
 	if c.Bytes != 2 {
 		t.Errorf("Bytes = %d, want 2", c.Bytes)
+	}
+}
+
+// An audit that records only successes answers "what did this tool fetch" while
+// leaving "did this tool try to reach the metadata endpoint" unanswerable — and
+// the second is the question an operator actually has. Every refusal path must
+// produce a record.
+//
+// This was a real gap: the audit sat at the end of the checklist, after nine
+// early returns, so no blocked request was ever recorded anywhere.
+func TestBlockedCallsAreAudited(t *testing.T) {
+	allowTestLoopback(t)
+	dir := t.TempDir()
+	writeTool(t, dir, "fetcher", `
+name = "fetcher"
+kind = "js"
+entrypoint = "./fetcher.js"
+description = "Fetches."
+
+[capabilities]
+net = ["http"]
+`, fetchSource)
+
+	ctx := context.Background()
+	h, err := Open(ctx, Config{
+		UserDir: dir,
+		Grants: map[string]Grant{"fetcher": {HTTP: &HTTPGrant{
+			AllowHosts: []string{"allowed.example"}, Methods: []string{"GET"}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close(ctx) //nolint:errcheck
+	h.Load(ctx, nil)
+
+	for name, tc := range map[string]struct{ url, wantHost string }{
+		"host not on the allowlist": {"https://evil.example/x", "evil.example"},
+		"cloud metadata endpoint":   {"http://169.254.169.254/latest/meta-data/", "169.254.169.254"},
+		"private address":           {"http://10.0.0.1/admin", "10.0.0.1"},
+		"unsupported scheme":        {"file:///etc/passwd", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var calls []HTTPCall
+			audited := WithHTTPAudit(ctx, func(c HTTPCall) { calls = append(calls, c) })
+			args, err := json.Marshal(map[string]string{"url": tc.url})
+			if err != nil {
+				t.Fatal(err)
+			}
+			// The tool sees a refusal; that is not what is under test here.
+			_, _ = h.Call(audited, "fetcher", args)
+
+			if len(calls) != 1 {
+				t.Fatalf("audited %d calls, want 1 — a blocked request left no record", len(calls))
+			}
+			c := calls[0]
+			if c.Error == "" {
+				t.Errorf("audit record has no reason: %+v", c)
+			}
+			if c.Status != 0 {
+				t.Errorf("Status = %d, want 0 for a call that never got a response", c.Status)
+			}
+			// What the tool *asked for* is the point of the record.
+			if c.URL != tc.url {
+				t.Errorf("URL = %q, want the attempted %q", c.URL, tc.url)
+			}
+			if tc.wantHost != "" && c.Host != tc.wantHost {
+				t.Errorf("Host = %q, want %q", c.Host, tc.wantHost)
+			}
+			if c.Tool != "fetcher" {
+				t.Errorf("Tool = %q", c.Tool)
+			}
+		})
 	}
 }

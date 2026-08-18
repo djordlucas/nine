@@ -186,18 +186,48 @@ func checkRequestURL(u *url.URL, grant HTTPGrant) error {
 	return allowHost(u.Hostname(), grant.AllowHosts)
 }
 
-// doHTTP runs one guest request through the whole §8 checklist and returns the
-// response the guest sees. It never returns a Go error: a refusal is a value in
-// httpResponse.Error, so a blocked call reaches the tool as something it can
-// branch on and report, not as a crash.
+// doHTTP runs one guest request and audits it, whatever the outcome.
+//
+// The audit is here, in a wrapper, rather than at the end of the checklist,
+// because the checklist has nine early returns and every one of them is a
+// refusal. An audit that records only what succeeded answers "what did this tool
+// fetch" while leaving "did this tool try to reach the metadata endpoint"
+// unanswerable — which is the question an operator actually has.
 func (h *Host) doHTTP(ctx context.Context, toolName string, grant HTTPGrant, raw []byte) httpResponse {
+	call := HTTPCall{Tool: toolName}
+	start := time.Now()
+
+	resp := h.attemptHTTP(ctx, grant, raw, &call)
+
+	call.Duration = time.Since(start)
+	call.Error = resp.Error
+	h.auditHTTP(ctx, call)
+	return resp
+}
+
+// attemptHTTP is the §8 checklist. It fills `call` as it learns things, so the
+// wrapper above can audit a request that never got past gate 1 as faithfully as
+// one that returned 200.
+//
+// It never returns a Go error: a refusal is a value in httpResponse.Error, so a
+// blocked call reaches the tool as something it can branch on and report, not as
+// a crash.
+func (h *Host) attemptHTTP(ctx context.Context, grant HTTPGrant, raw []byte, call *HTTPCall) httpResponse {
 	var req httpRequest
 	if err := json.Unmarshal(raw, &req); err != nil {
 		return httpResponse{Error: "malformed request: " + err.Error()}
 	}
+	// Recorded before any check runs: the attempt is the thing worth auditing,
+	// and what the tool *asked for* is what a reviewer needs even — especially —
+	// when it was refused.
+	call.Method = strings.ToUpper(strings.TrimSpace(req.Method))
+	call.URL = req.URL
+	if u, err := url.Parse(req.URL); err == nil {
+		call.Host = u.Hostname()
+	}
 
 	// 1. Method allowlist.
-	method := strings.ToUpper(strings.TrimSpace(req.Method))
+	method := call.Method
 	if method == "" {
 		method = http.MethodGet
 	}
@@ -248,14 +278,13 @@ func (h *Host) doHTTP(ctx context.Context, toolName string, grant HTTPGrant, raw
 		hreq.Header.Set(k, v)
 	}
 	if hreq.Header.Get("User-Agent") == "" {
-		hreq.Header.Set("User-Agent", "nine-sandboxed-tool/"+toolName)
+		hreq.Header.Set("User-Agent", "nine-sandboxed-tool/"+call.Tool)
 	}
 
 	client := newHTTPClient(timeout)
 	// 5–6. Per-hop revalidation and credential stripping.
 	client.CheckRedirect = checkRedirect(grant)
 
-	start := time.Now()
 	resp, err := client.Do(hreq)
 	if err != nil {
 		// A refusal from Control or CheckRedirect arrives wrapped in a
@@ -276,18 +305,13 @@ func (h *Host) doHTTP(ctx context.Context, toolName string, grant HTTPGrant, raw
 		return httpResponse{Error: "reading response: " + readErr.Error()}
 	}
 
-	// 8. Journal the call: tool, method, host, status, bytes. "What did this tool
-	// reach, and what came back" must be answerable after the fact.
-	h.auditHTTP(HTTPCall{
-		Tool:      toolName,
-		Method:    method,
-		URL:       resp.Request.URL.Redacted(),
-		Host:      resp.Request.URL.Hostname(),
-		Status:    resp.StatusCode,
-		Bytes:     len(buf),
-		Truncated: truncated,
-		Duration:  time.Since(start),
-	})
+	// 8. Upgrade the audit record to what actually happened: the URL after any
+	// redirects, credential-redacted, and the response's shape.
+	call.URL = resp.Request.URL.Redacted()
+	call.Host = resp.Request.URL.Hostname()
+	call.Status = resp.StatusCode
+	call.Bytes = len(buf)
+	call.Truncated = truncated
 
 	out := httpResponse{
 		Status:  resp.StatusCode,
@@ -319,24 +343,45 @@ type HTTPCall struct {
 	Bytes     int
 	Truncated bool
 	Duration  time.Duration
+	// Error is the refusal or failure reason, empty on success. A blocked
+	// request is the most audit-worthy thing a tool does, so it is recorded
+	// rather than dropped.
+	Error string `json:"error,omitempty"`
+}
+
+// HTTPAuditFn receives every outbound request a granted tool makes.
+//
+// It travels on the *context* rather than sitting in Config, and that is the
+// whole reason this is wired at all. A Host is daemon-wide and is built once at
+// boot; a journal entry belongs to a session, a turn, and the tool span that
+// caused it. A hook installed at Open cannot know any of those. One installed
+// per turn, by the worker running it, knows all three without this package
+// learning what a session is — it still has no store and still should not grow
+// one.
+type HTTPAuditFn func(HTTPCall)
+
+type httpAuditKey struct{}
+
+// WithHTTPAudit returns a context whose sandboxed-tool HTTP calls are reported
+// to fn. Whoever is running the turn installs it; a context without one just
+// logs, which is what a direct `nine tools` invocation or a test does.
+func WithHTTPAudit(ctx context.Context, fn HTTPAuditFn) context.Context {
+	if fn == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, httpAuditKey{}, fn)
 }
 
 // auditHTTP records an outbound call. The structured log line is unconditional
-// and is what ships.
-//
-// Config.AuditHTTP is the hook for routing the same record into the session
-// event journal (docs/event-log.md), which this package cannot do — it has no
-// store and should not grow one. It is currently unwired by the daemon, because
-// a journal entry wants a session id and the dispatcher does not carry one into
-// a tool call. So "what did this tool reach" is answerable from the log today;
-// "which turn asked for it" is not.
-func (h *Host) auditHTTP(c HTTPCall) {
+// and is what ships; the context hook is what makes "which turn asked for this"
+// answerable after the fact (docs/event-log.md).
+func (h *Host) auditHTTP(ctx context.Context, c HTTPCall) {
 	slog.Info("sandboxed tool http",
 		"tool", c.Tool, "method", c.Method, "host", c.Host, "url", c.URL,
 		"status", c.Status, "bytes", c.Bytes, "truncated", c.Truncated,
-		"duration_ms", c.Duration.Milliseconds())
-	if h.cfg.AuditHTTP != nil {
-		h.cfg.AuditHTTP(c)
+		"duration_ms", c.Duration.Milliseconds(), "error", c.Error)
+	if fn, ok := ctx.Value(httpAuditKey{}).(HTTPAuditFn); ok && fn != nil {
+		fn(c)
 	}
 }
 

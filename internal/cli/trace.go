@@ -132,6 +132,20 @@ type toolEndPayload struct {
 	Error       string `json:"error"`
 }
 
+// toolHTTPPayload mirrors runtime.toolHTTPPayload — one outbound request a
+// sandboxed tool made, nested under the tool call that made it.
+type toolHTTPPayload struct {
+	Tool       string `json:"tool"`
+	Method     string `json:"method"`
+	Host       string `json:"host"`
+	URL        string `json:"url"`
+	Status     int    `json:"status,omitempty"`
+	Bytes      int    `json:"bytes"`
+	Truncated  bool   `json:"truncated,omitempty"`
+	DurationMs int64  `json:"duration_ms"`
+	Error      string `json:"error,omitempty"`
+}
+
 type toolStartPayload struct {
 	Name  string          `json:"name"`
 	Input json.RawMessage `json:"input"`
@@ -312,6 +326,18 @@ func traceSummary(e memory.SessionEvent) string {
 		var p toolEndPayload
 		unpack(e, &p)
 		return fmt.Sprintf("%s · %dms · %s%s", p.Name, p.DurationMs, okOrErr(p.Error), attemptsSuffix(p.Attempts))
+	case "tool_http":
+		var p toolHTTPPayload
+		unpack(e, &p)
+		if p.Error != "" {
+			// The refusal reason is the whole value of the record here.
+			return fmt.Sprintf("%s %s ✗ %s", p.Method, trunc(p.URL, 50), trunc(p.Error, 60))
+		}
+		out := fmt.Sprintf("%s %s → %d · %dB · %dms", p.Method, trunc(p.URL, 60), p.Status, p.Bytes, p.DurationMs)
+		if p.Truncated {
+			out += " · truncated"
+		}
+		return out
 	case "context_update":
 		var p contextPayload
 		unpack(e, &p)
@@ -390,6 +416,17 @@ func formatReplay(w io.Writer, agentID string, all []memory.SessionEvent, turn i
 			case p.Truncated:
 				fmt.Fprintf(w, "  truncated: %d chars, full output not retained\n", p.OutputChars)
 			}
+		case "tool_http":
+			// Printed before its tool_end, which is the order it happened in:
+			// the request is part of how that call produced its output.
+			var p toolHTTPPayload
+			unpack(e, &p)
+			if p.Error != "" {
+				fmt.Fprintf(w, "  http:   %s %s ✗ %s\n", p.Method, trunc(p.URL, 80), trunc(p.Error, 90))
+				break
+			}
+			fmt.Fprintf(w, "  http:   %s %s → %d · %d bytes · %dms\n",
+				p.Method, trunc(p.URL, 100), p.Status, p.Bytes, p.DurationMs)
 		case "sub_agent_start":
 			var p subAgentPayload
 			unpack(e, &p)
