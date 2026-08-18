@@ -29,6 +29,13 @@ const (
 	// than as the whole tool being killed.
 	DefaultHTTPTimeout = 4 * time.Second
 
+	// httpTimeoutShare generalizes that relationship, which matters once a tool
+	// can carry its own deadline: 4s of 5s is four fifths, and the point was
+	// never the number but that the HTTP layer reports first. A tool granted 30s
+	// gets 24s per request rather than being held to a 4s bound its operator
+	// never asked for.
+	httpTimeoutShare = 4.0 / 5.0
+
 	// maxRedirects bounds redirect chasing. Every hop is fully re-validated, so
 	// this is about bounding work, not safety.
 	maxRedirects = 5
@@ -247,10 +254,10 @@ func (h *Host) attemptHTTP(ctx context.Context, grant HTTPGrant, raw []byte, cal
 		return httpResponse{Error: err.Error()}
 	}
 
-	timeout := DefaultHTTPTimeout
-	if h.timeout > 0 && h.timeout < timeout {
-		timeout = h.timeout
-	}
+	// From the context, not from config: it already carries this call's deadline,
+	// and what matters is the time actually left rather than what the tool was
+	// originally granted.
+	timeout := httpTimeoutFor(ctx)
 	maxBytes := grant.MaxBytes
 	if maxBytes <= 0 {
 		maxBytes = DefaultHTTPMaxBytes
@@ -383,6 +390,27 @@ func (h *Host) auditHTTP(ctx context.Context, c HTTPCall) {
 	if fn, ok := ctx.Value(httpAuditKey{}).(HTTPAuditFn); ok && fn != nil {
 		fn(c)
 	}
+}
+
+// httpTimeoutFor derives one request's bound from the time this call has left,
+// keeping it just under so a slow host surfaces as an HTTP timeout the tool can
+// catch and report rather than as the whole call being killed out from under it.
+//
+// It reads the context rather than a configured duration because the remaining
+// time is the honest bound: a tool that has already spent four of its five
+// seconds has one second left, whatever its timeout says.
+func httpTimeoutFor(ctx context.Context) time.Duration {
+	dl, ok := ctx.Deadline()
+	if !ok {
+		return DefaultHTTPTimeout
+	}
+	remaining := time.Until(dl)
+	if remaining <= 0 {
+		// Already out of time. Return something positive so the request fails as
+		// a timeout rather than as a confusing zero-duration client error.
+		return time.Millisecond
+	}
+	return time.Duration(float64(remaining) * httpTimeoutShare)
 }
 
 // unwrapBlocked pulls our own refusal text out of the transport's error
