@@ -143,11 +143,8 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 		}
 		return c.Tools(cfg)
 	case "tool":
-		if len(args) >= 2 && args[1] == "header" {
-			return c.ToolHeader()
-		}
 		if len(args) < 2 || args[1] != "validate" {
-			return fmt.Errorf("usage: nine tool [validate [path]|header]")
+			return fmt.Errorf("usage: nine tool validate [path]")
 		}
 		p := ""
 		if len(args) > 2 {

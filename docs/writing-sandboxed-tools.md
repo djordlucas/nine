@@ -2,7 +2,12 @@
 
 A **sandboxed tool** lets you add a permanent tool to Nine without writing a plugin,
 building a binary, or rebuilding the image. You drop two files in a directory; the daemon
-runs your code in a wasm sandbox with exactly the capabilities the operator granted it.
+runs your **JavaScript** in a wasm sandbox with exactly the capabilities the operator
+granted it.
+
+JavaScript is the supported language, and there is no build step. A `.wasm` module built
+from another language also runs, on a specified but unsupported contract — see
+[the `wasm` kind](#the-wasm-kind--unsupported-but-specified).
 
 > **Who grants what.** You write the code and *declare* what it needs. The operator
 > running Nine writes the *grant*. These are never the same person, and a manifest that
@@ -60,6 +65,36 @@ Default-export a function. Return whatever you like:
 - a **thrown error** reaches the model as an ordinary tool failure carrying your message,
   which is exactly what you want for `throw new Error("date is not ISO-8601")` — the model
   can read it and retry with better arguments.
+
+### Returning bytes
+
+A tool can produce something that is not text — a rendered image, a compressed archive.
+Return it and say what it is:
+
+```js
+export default () => ({ bytes: png, mediaType: "image/png" });   // png is a Uint8Array
+```
+
+A bare `Uint8Array`, `ArrayBuffer`, or typed-array view works too; the wrapper only adds the
+label.
+
+**The model never sees the bytes.** It cannot read them, and inlining base64 would blow the
+output budget while teaching it nothing. They are written to the memory file store and the
+model is handed a path plus a description:
+
+```text
+[nine: this tool returned 67 bytes of image/png, which is not text and is not shown here.
+The bytes are saved in the memory file store, base64-encoded, at this path:
+    spill/<session>/make_icon-ee1a9e04.txt
+...]
+```
+
+It can pass that path to another tool's `*_ref` argument to hand over the whole content, or
+read the base64 with `file_fetch` if it genuinely needs the encoding.
+
+They are stored base64-encoded because the file store is a text column that replaces NUL
+bytes with U+FFFD — raw bytes would not survive it, and base64 survives exactly. Returning
+bytes needs **no `fs.write` grant**: the store is Nine's, not the operator's filesystem.
 
 ### Say whether it is worth retrying
 
@@ -162,13 +197,13 @@ $ nine tools
   SKIP  weather            js     net.http declared but not granted; add [tool.weather.capabilities.net.http]
 ```
 
-| Capability | In a `js` tool | In a `wasm` tool | Granted by default |
-|---|---|---|---|
-| `clock`, `random` | `Date.now()`, `crypto.getRandomValues()` | WASI | ✅ |
-| `log` | `console.*` | `nine.log` | ✅ |
-| `net.http` | `fetch()` | `nine.http` | ❌ declare + grant |
-| `fs.read` / `fs.write` | `import … from "nine:fs"` | `fopen`, `readdir` | ❌ declare + grant |
-| `env` | `import { get } from "nine:env"` | `getenv` | ❌ declare + grant |
+| Capability | How you reach it | Granted by default |
+|---|---|---|
+| `clock`, `random` | `Date.now()`, `crypto.getRandomValues()` | ✅ |
+| `log` | `console.*` | ✅ |
+| `net.http` | `fetch()` | ❌ declare + grant |
+| `fs.read` / `fs.write` | `import … from "nine:fs"` | ❌ declare + grant |
+| `env` | `import { get } from "nine:env"` | ❌ declare + grant |
 
 ### The filesystem, from JavaScript
 
@@ -277,9 +312,7 @@ where the mistake is.
 A `Uint8Array`, `ArrayBuffer`, or any typed-array view passed as `init.body` is sent as
 bytes. A string is still sent as text.
 
-From C, the same split appears in the JSON: a non-UTF-8 response comes back as `body_b64`
-**instead of** `body`, and `nine_b64_decode` in `nine.h` decodes it. Send bytes by setting
-`body_b64` on the request.
+(At the ABI level this is `body_b64` **instead of** `body`, in both directions.)
 
 What you cannot reach, regardless of `allow_hosts`: loopback, link-local (including
 `169.254.169.254`, the cloud instance-metadata endpoint), RFC 1918, and the other
@@ -465,163 +498,76 @@ $ nine tools show due_date
 
 ---
 
-## The `wasm` kind
+## The `wasm` kind — unsupported, but specified
 
-If you want full speed or another language, ship a `.wasm` module directly. Export two
-functions:
+**JavaScript is the supported language.** Everything above works with no build step, and
+since `nine:fs`, `nine:env`, and `crypto` landed there is no capability a `js` tool cannot
+reach.
+
+A tool may still be a `.wasm` module you built yourself, from Rust, TinyGo, Zig, or C.
+Nine ships no header, no example, and no build tooling for that path — **you are on your
+own**, deliberately: maintaining a second language's ergonomics for a case few tools need
+is not a good trade. What Nine does provide is a specified contract that will not move
+under you (`nine spec toolvm`, R-TVM.3).
+
+The whole of it is two exports and a JSON envelope:
 
 ```text
-nine_alloc(size i32) -> i32     # reserve size bytes; return the offset
-nine_run(ptr i32, len i32) -> i64   # run; return (offset << 32) | length
+nine_alloc(size i32) -> i32          reserve size bytes; return the offset
+nine_run(ptr i32, len i32) -> i64    run; return (offset << 32) | length
 ```
 
-`nine_run` receives your arguments as UTF-8 JSON and returns UTF-8 JSON:
+`nine_run` receives its arguments as UTF-8 JSON and returns UTF-8 JSON:
 
 ```json
 {"ok": true,  "output": "..."}
-{"ok": false, "error":  "..."}
+{"ok": true,  "output_b64": "...", "media_type": "image/png"}
+{"ok": false, "error": "...", "error_detail": {"code": "E_ARGS", "retryable": false}}
 ```
 
-There is no `free` — the instance is destroyed when the call returns, so everything is
-reclaimed at once and you need not track lifetimes.
+There is no `free` — the instance is destroyed when the call returns. The host writes one
+byte more than the input and NULs it, so the input is both length-delimited and
+NUL-terminated. A module may import `nine.log`, `nine.http`, and `nine.caps`; the
+filesystem and environment arrive through WASI, so libc's `fopen` and `getenv` work
+directly against whatever the operator mounted.
 
-The same tiny shape works from C, Rust, TinyGo, or Zig: allocate a buffer, read JSON in,
-write JSON out. No runtime, and no capabilities you did not declare.
+### When it is worth it
 
-### In C, use the header
+One reason, and it is a real one: **CPU-bound work**. Measured on one host, hashing 64 KiB
+with the same algorithm either side:
 
-The binary emits that ABI as a C header — the exports, the `(offset << 32) | length`
-packing, the host imports below, and envelope builders that escape your output properly:
+| | per call |
+|---|---|
+| `wasm` | 3.4 ms |
+| `js` | 706 ms |
 
-```console
-$ nine tool header > nine.h
-```
+A `js` tool also pays ~5.7 ms of fixed overhead per call, since each call instantiates a
+fresh 1 MB interpreter — irrelevant against a model turn that takes seconds. The ~200×
+compute gap is not irrelevant: a JS tool hashing a megabyte would exhaust the five-second
+deadline. If your tool does that kind of work, build a `.wasm`. Otherwise write JavaScript.
 
-It comes from `nine` rather than from a file in the repository for the reason the docs you
-are reading are also inside the binary: a header describing the ABI must match the build
-that implements it, and a copy on disk drifts silently. Include it and write one function:
+---
 
-```c
-#include "nine.h"
+## A worked example
 
-NINE_TOOL(args, len) {
-    char name[256];
-    if (nine_arg_str(NINE_ARGS(args), len, "name", name, sizeof(name)) < 0)
-        return nine_fail("expected a string argument 'name'");
-    nine_log("greeting someone");
-    return nine_ok(name);
-}
-```
-
-`nine_ok` and `nine_fail` exist because hand-building the envelope with `sprintf` breaks
-the moment your output contains a quote or a newline — a failure that depends on your data
-rather than your code, which is the worst kind to debug.
-
-For the retry distinction described above, `nine_fail_code` carries it from C:
-
-```c
-return nine_fail_code("weather API timed out", "E_UPSTREAM", NINE_RETRY_YES);
-return nine_fail_code("date is not ISO-8601",  "E_ARGS",     NINE_RETRY_NO);
-return nine_fail_code("something specific",    "E_ODD",      NINE_RETRY_UNSET);
-```
-
-`NINE_RETRY_UNSET` is distinct from `NINE_RETRY_NO` for the same reason omitting
-`retryable` is distinct from setting it false. `examples/tools/sha256.c` uses this for its
-missing-argument path.
-
-### The two host imports
-
-A wasm tool is not import-free. It may import one module, `nine`, holding exactly two
-functions — the same two the `js` kind's `console` and `fetch` are built on:
-
-| Import | Capability | In `nine.h` |
-|---|---|---|
-| `nine.log(ptr, len)` | `log`, granted to everyone | `nine_log(msg)` |
-| `nine.http(ptr, len) -> packed` | `net.http`, declared + granted | `nine_http(req, &len)` |
-
-```c
-uint32_t n;
-const char *resp = nine_http("{\"url\":\"https://api.example/v1\",\"method\":\"GET\","
-                             "\"headers\":{},\"body\":\"\"}", &n);
-```
-
-The request and response are the JSON shapes documented in `nine.h`. Every policy decision
-— the method and host allowlists, SSRF rejection on the resolved address, per-redirect
-revalidation, the response cap — is enforced on the host side of that call, so an ungranted
-tool gets `{"error":"blocked: this tool was not granted the net.http capability"}` back
-rather than a connection. The import exists either way, because a wasm module's imports are
-fixed at compile time; the permission is checked per call.
-
-**A response body is a JSON string, so a response that is not valid UTF-8 does not survive
-it intact.** Binary bodies are a known gap for both tool kinds — see
-`nine docs rich-js-tools` — not something to work around here.
-
-`fs.read`, `fs.write`, and `env` need no import at all: they are WASI facilities, so
-`fopen`, `readdir`, and `getenv` work directly against whatever the operator mounted or
-named. Your code sees the guest path (`/data`), never the host path.
-
-### A worked example
-
-`examples/tools/sha256.*` is a complete one — SHA-256 in dependency-free C, written
-against the header, in the files a wasm tool ships as:
+`examples/tools/linkcheck.*` is a complete tool that uses most of what is described above:
 
 ```text
 examples/tools/
-  sha256.toml          the manifest — kind = "wasm"
-  sha256.schema.json   { text: string }
-  sha256.c             the source
-  sha256.wasm          the artifact, 11 KiB, committed
+  linkcheck.toml         the manifest, declaring fs.read and net.http
+  linkcheck.schema.json  its arguments
+  linkcheck.js           the code
 ```
 
-`examples/tools/` is not a tool directory — nothing there is loaded. Copy what you want
-into your own `[tools].user_dir`, which ships empty so that what runs in it is what you
-chose.
+It reads a list of URLs from a mounted file, fetches each concurrently, and reports what
+came back — so it exercises `nine:fs`, `fetch`, `URL`, `Promise.all`, and both kinds of
+failure: a bad argument thrown as `E_ARGS` with `retryable: false`, and an all-hosts-down
+result thrown as `E_UPSTREAM` with `retryable: true`.
 
-Hashing is the honest demonstration of why this tier exists: it is exactly the work a
-language model cannot do by reasoning about it, and the answer is checkable to the byte.
+`examples/tools/csvstats.*` is the smaller one — a pure transform, no capabilities, the
+shape most tools should be.
 
-```console
-$ nine "What is the SHA-256 hash of the exact string: hello nine"
-The SHA-256 hash of "hello nine" is
-50ce1f9527a47956e94d826d924578d9717c755b14a300ff85a517884d52d035
-
-$ printf 'hello nine' | shasum -a 256
-50ce1f9527a47956e94d826d924578d9717c755b14a300ff85a517884d52d035  -
-```
-
-`nine replay <agent-id> --turn 1` shows the model reaching for it rather than reciting it,
-which is the part worth seeing:
-
-```text
-response: stop=tool_use
-  → call sha256 {"text":"hello nine"}
-
-tool sha256  (0ms, 1 attempt(s), ok)
-  output: 50ce1f9527a47956e94d826d924578d9717c755b14a300ff85a517884d52d035
-```
-
-**The `.wasm` is committed, so copying the example needs no C toolchain.** Only editing the
-C does, and `make tools-wasm` then rebuilds it with the SDK `make quickjs-wasm` fetches:
-
-```console
-$ make tools-wasm
-```
-
-The build line itself is no more than this, if you would rather not go through `make`:
-
-```console
-$ SDK=internal/toolvm/quickjs/.build/wasi-sdk-33
-$ "$SDK/bin/clang" --target=wasm32-wasip1 --sysroot="$SDK/share/wasi-sysroot" \
-    -mexec-model=reactor -Os -o examples/tools/sha256.wasm examples/tools/sha256.c \
-    -Wl,--export=nine_alloc -Wl,--export=nine_run -Wl,--strip-all -Wl,--gc-sections
-```
-
-Two details in `sha256.c` generalize to any language. It reads its argument straight out of
-the input JSON via `nine_arg_str` rather than linking a parser — which is what keeps a
-raw-wasm tool a few KiB instead of a few hundred — and it never frees anything, because
-there is no `free` in the ABI and the instance is destroyed when the call returns.
-
----
+Copy either into your `[tools].user_dir`; nothing in `examples/` is loaded.
 
 ## What to expect at runtime
 

@@ -22,19 +22,6 @@
 //     bypass rather than a check to defeat.
 package toolvm
 
-import _ "embed"
-
-// CHeader is nine.h: this ABI rendered as a C header, for tools written in C.
-//
-// It is embedded rather than shipped as a file to copy, for the reason docs/
-// and spec/ are (docs/embed.go): a header describing the ABI must match the
-// binary that implements it, and a copy on disk drifts silently. `nine tool
-// header` writes the one belonging to the running version, and
-// TestCHeaderMatchesABIVersion keeps its NINE_ABI_VERSION honest.
-//
-//go:embed nine.h
-var CHeader string
-
 // ABIVersion is the version of the guest contract: the exported functions
 // below, their signatures, and the meaning of the bytes crossing between them.
 //
@@ -88,6 +75,22 @@ type Result struct {
 	OK     bool   `json:"ok"`
 	Output string `json:"output,omitempty"`
 	Error  string `json:"error,omitempty"`
+
+	// OutputB64 is a result that is bytes rather than text, base64-encoded
+	// because the envelope is UTF-8 JSON and a JSON string cannot hold arbitrary
+	// bytes. Set instead of Output, never alongside it.
+	//
+	// Bytes are not something a language model can read, so this does not reach
+	// it directly: the dispatcher writes them to the file store and hands the
+	// model a path (docs/tool-output-spill.md). What a tool gets is a way to
+	// produce an artifact — a rendered image, a compressed archive — and hand it
+	// onward without inventing a place to put it.
+	OutputB64 string `json:"output_b64,omitempty"`
+
+	// MediaType optionally describes those bytes ("image/png"). Advisory: it is
+	// shown to the model and used to pick a file extension, and nothing branches
+	// on it.
+	MediaType string `json:"media_type,omitempty"`
 
 	// ErrorDetail is optional structure behind Error. It exists because "the
 	// upstream is down" and "your argument was malformed" are different
