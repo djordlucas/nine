@@ -48,6 +48,12 @@ type Config struct {
 	Timeout  time.Duration
 	MemoryMB int
 
+	// Timeouts overrides Timeout for named tools, from `[tool.<name>] timeout`.
+	// One tool that legitimately takes twenty seconds should not force twenty
+	// seconds onto a tool with an infinite loop, and this deadline is the only
+	// CPU bound there is.
+	Timeouts map[string]time.Duration
+
 	// TouchGenerated, when set, records that a generated tool was called, for LRU
 	// eviction. The daemon wires it to the store; this package has none.
 	TouchGenerated func(name string)
@@ -63,6 +69,9 @@ type Tool struct {
 	// Grant is the resolved, effective capability set — what the operator
 	// conferred, never what the manifest asked for.
 	Grant Grant
+	// Timeout is this tool's per-call deadline: the operator's override for it,
+	// or zero to use the host's. Resolved at load so a call reads one field.
+	Timeout time.Duration
 	// ManifestPath is where this tool came from, for `nine tools show`. Empty for
 	// a generated tool, which came from the store rather than a file.
 	ManifestPath string
@@ -407,8 +416,9 @@ func (h *Host) CallOutput(ctx context.Context, name string, args json.RawMessage
 // ephemeral evaluation cannot diverge from a catalogued tool's behavior.
 func (h *Host) call(ctx context.Context, t *Tool, args json.RawMessage) (Output, error) {
 	name := t.Name
+	timeout := t.effectiveTimeout(h.timeout)
 
-	ctx, cancel := context.WithTimeout(ctx, h.timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	ctx = context.WithValue(ctx, toolNameKey{}, name)
 	// The net.http grant travels on the context so the shared host import
@@ -432,7 +442,7 @@ func (h *Host) call(ctx context.Context, t *Tool, args json.RawMessage) (Output,
 		// instantiation failure, which would send the model looking for a bug in
 		// its arguments. Name the real cause.
 		if ctx.Err() != nil {
-			return Output{}, fmt.Errorf("tool %q timed out after %s", name, h.timeout)
+			return Output{}, fmt.Errorf("tool %q timed out after %s", name, timeout)
 		}
 		return Output{}, fmt.Errorf("tool %q failed to start: %w", name, err)
 	}
@@ -441,7 +451,7 @@ func (h *Host) call(ctx context.Context, t *Tool, args json.RawMessage) (Output,
 	out, err := callGuest(ctx, mod, input)
 	if err != nil {
 		if ctx.Err() != nil {
-			return Output{}, fmt.Errorf("tool %q timed out after %s", name, h.timeout)
+			return Output{}, fmt.Errorf("tool %q timed out after %s", name, timeout)
 		}
 		return Output{}, fmt.Errorf("tool %q: %w", name, err)
 	}
@@ -485,6 +495,14 @@ func (h *Host) explainOOM(msg string, inputLen int) string {
 		"%s — this call is capped at %d MiB of memory ([tools] memory_mb) and its input was %d bytes; "+
 			"note the result is JSON-encoded on the way out, so a large string costs roughly twice its length",
 		msg, h.memoryMB, inputLen)
+}
+
+// effectiveTimeout is this tool's deadline: its own override, or the host's.
+func (t *Tool) effectiveTimeout(hostDefault time.Duration) time.Duration {
+	if t.Timeout > 0 {
+		return t.Timeout
+	}
+	return hostDefault
 }
 
 // moduleConfig builds the per-call wazero configuration from a resolved grant.
