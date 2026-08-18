@@ -136,10 +136,26 @@ session.
 
 | Bound | Mechanism | Default |
 |---|---|---|
-| Wall clock | context deadline + `WithCloseOnContextDone(true)` | 5s (`[tools] timeout`) |
+| Wall clock | context deadline + `WithCloseOnContextDone(true)` | 5s (`[tools] timeout`, overridable per tool) |
 | Memory | `WithMemoryLimitPages` | 16 MiB (`[tools] memory_mb`) |
 | Output | the dispatcher's existing cap + spill (R-DISP.2) | 2048 tokens |
 | CPU | **none — see below** | — |
+
+The wall clock **MAY** be overridden for a named tool with `[tool.<name>] timeout`, which
+takes precedence over `[tools] timeout` for that tool alone. It is a resource bound, not a
+capability, so it sits outside `[capabilities]` and confers nothing.
+
+The override exists in both directions and both matter. Raising it lets one tool that
+legitimately takes twenty seconds have them without handing twenty seconds to a tool with
+an infinite loop; lowering it pins a risky tool below the global bound. Since this deadline
+is the only CPU bound there is, a single global value forces the most permissive tool's
+requirement onto every other tool.
+
+**A `net.http` request is bounded at four fifths of the time the call has left**, so a slow
+host surfaces as an HTTP timeout the tool can catch and report rather than as the whole
+call being killed under it. That ratio generalizes the fixed 4s-of-5s default rather than
+replacing it, and it is computed from the context deadline, so a tool that has already
+spent most of its budget does not get a request bound longer than its remaining life.
 
 wazero has **no fuel/gas metering**. The wall-clock deadline is the only CPU bound, and it
 is enforced by closing the module out from under the guest. This is adequate — a spinning
