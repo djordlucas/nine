@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "urls": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "URLs to check. Use this when you already have the list."
+    },
+    "file": {
+      "type": "string",
+      "description": "Filename inside the mounted data directory holding one URL per line. Lines starting with # are ignored."
+    }
+  },
+  "additionalProperties": false
+}
