@@ -180,6 +180,12 @@ type SandboxedToolStatus struct {
 	Description  string `json:"description,omitempty"`
 	ManifestPath string `json:"manifest_path,omitempty"`
 	Error        string `json:"error,omitempty"`
+	// Timeout is this tool's per-call deadline, as a duration string, set only
+	// when `[tool.<name>] timeout` overrides the global one. Empty means it
+	// inherits `[tools] timeout` — reported rather than inferred, because the
+	// deadline is the only CPU bound the host has and an operator checking it
+	// should not have to cross-reference two tables. Additive/optional field.
+	Timeout string `json:"timeout,omitempty"`
 	// Deps is the external npm packages a generated tool's bundle carries, as
 	// "name@version" entries (docs/sandboxed-tools.md §4.4). Empty for a tool with
 	// no external dependencies — the common case. Additive/optional field.

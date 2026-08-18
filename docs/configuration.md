@@ -321,6 +321,22 @@ memory_mb = 16
 #
 # There is deliberately no wildcard `[tool."*"]`: an operator granting filesystem
 # access does so to a tool they have read.
+#
+# `[tool.<name>]` also carries `timeout`, which is a resource bound rather than a
+# capability and so sits outside `[capabilities]`. It overrides `[tools] timeout`
+# for that tool alone — in either direction:
+#
+#   [tool.slow_report]
+#   timeout = "30s"        # this tool needs longer
+#
+#   [tool.untrusted]
+#   timeout = "1s"         # and this one should have less
+#
+# Worth having because the deadline is the only CPU bound the host has: a single
+# global value has to accommodate the slowest tool, which then hands that same
+# budget to a tool with an infinite loop. An outbound HTTP request is bounded at
+# four fifths of the time the call has left, so raising the deadline raises that
+# with it. `nine tools show <name>` prints the override when one is set.
 
 [tool.csv_stats.capabilities.fs]
 # Host paths must be absolute. The guest path is what the tool's own code sees,

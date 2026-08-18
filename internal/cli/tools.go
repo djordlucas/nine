@@ -56,6 +56,11 @@ func (c *CLI) ToolsShow(cfg *config.Config, name string) error {
 		fmt.Fprintf(c.Out, "  kind          %s\n", provenance(t))
 		fmt.Fprintf(c.Out, "  status        %s\n", loadedLabel(t))
 		fmt.Fprintf(c.Out, "  capabilities  %s\n", orNone(t.Capabilities))
+		if t.Timeout != "" {
+			// Shown only when overridden: a tool on the global deadline should not
+			// imply it has one of its own.
+			fmt.Fprintf(c.Out, "  timeout       %s (overrides [tools] timeout)\n", t.Timeout)
+		}
 		if t.Generated {
 			fmt.Fprintf(c.Out, "  source        generated (in the store)\n")
 			fmt.Fprintf(c.Out, "  dependencies  %s\n", orNone(strings.Join(t.Deps, ", ")))

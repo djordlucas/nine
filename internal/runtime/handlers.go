@@ -638,8 +638,12 @@ func (d *Daemon) sandboxedToolStatuses() []protocol.SandboxedToolStatus {
 		return out
 	}
 	descriptions := map[string]string{}
+	timeouts := map[string]string{}
 	for _, t := range d.tools.Tools() {
 		descriptions[t.Name] = t.Description
+		if t.Timeout > 0 {
+			timeouts[t.Name] = t.Timeout.String()
+		}
 	}
 	// A generated tool's dependency lockfile lives in the store, not the host, so
 	// join it in by name for the roster (R-TVM.14). Best-effort: a store read
@@ -662,6 +666,7 @@ func (d *Daemon) sandboxedToolStatuses() []protocol.SandboxedToolStatus {
 			Description:  descriptions[st.Name],
 			ManifestPath: st.ManifestPath,
 			Error:        st.Err,
+			Timeout:      timeouts[st.Name],
 			Deps:         depsByTool[st.Name],
 		})
 	}
