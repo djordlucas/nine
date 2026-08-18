@@ -136,7 +136,7 @@ func (d *Dispatcher) RegisterPlugin(m *plugin.Manager, p *plugin.Plugin) {
 // without one.
 type SandboxedHost interface {
 	Tools() []*toolvm.Tool
-	Call(ctx context.Context, name string, args json.RawMessage) (string, error)
+	CallOutput(ctx context.Context, name string, args json.RawMessage) (toolvm.Output, error)
 }
 
 // RegisterSandboxed indexes every tool the sandboxed host holds, so it can be
@@ -156,7 +156,14 @@ func (d *Dispatcher) RegisterSandboxed(h SandboxedHost) {
 		toolName := t.Name
 		d.declareRefParams(toolName, t.InputSchema)
 		d.handlers[toolName] = func(ctx context.Context, args json.RawMessage) (string, error) {
-			return h.Call(ctx, toolName, args)
+			out, err := h.CallOutput(ctx, toolName, args)
+			if err != nil {
+				return "", err
+			}
+			if out.Bytes != nil {
+				return d.storeToolBytes(ctx, toolName, out)
+			}
+			return out.Text, nil
 		}
 	}
 }

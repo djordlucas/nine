@@ -3,6 +3,7 @@ package toolvm
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -345,7 +346,48 @@ func (h *Host) Status() []Status {
 // Close releases the runtime and every compiled module.
 func (h *Host) Close(ctx context.Context) error { return h.rt.Close(ctx) }
 
-// Call runs one tool against args and returns the output the model sees.
+// Output is one call's result. A tool returns text or bytes, never both.
+//
+// Bytes exist as a separate field rather than as a string because there is
+// nowhere honest to put them in one: the envelope is UTF-8 JSON, and the file
+// store they end up in is a TEXT column that strips NULs
+// (memory.Store.FileStore). Keeping them as []byte up to the point of encoding
+// means exactly one component decides how they are represented, instead of each
+// layer guessing.
+type Output struct {
+	// Text is the string the model reads. Empty when the tool returned bytes.
+	Text string
+	// Bytes is a binary result, nil for the ordinary text case.
+	Bytes []byte
+	// MediaType describes Bytes, if the tool said ("image/png"). Advisory.
+	MediaType string
+}
+
+// Call runs one tool and returns its text output, for callers that have nowhere
+// to put bytes — the wire protocol's direct `plugin_call`, principally. A tool
+// that returned bytes is reported as an error rather than silently rendered,
+// since the alternative is handing back base64 that reads like a result.
+func (h *Host) Call(ctx context.Context, name string, args json.RawMessage) (string, error) {
+	out, err := h.CallOutput(ctx, name, args)
+	if err != nil {
+		return "", err
+	}
+	if out.Bytes != nil {
+		return "", fmt.Errorf(
+			"tool %q returned %d bytes of %s; this surface has nowhere to put them — call it through an agent turn, where they are written to the file store",
+			name, len(out.Bytes), mediaOrBinary(out.MediaType))
+	}
+	return out.Text, nil
+}
+
+func mediaOrBinary(mediaType string) string {
+	if mediaType == "" {
+		return "binary data"
+	}
+	return mediaType
+}
+
+// CallOutput runs one tool against args and returns the output the model sees.
 //
 // The lifecycle here is the strongest property in the design: a module is
 // compiled once, but *instantiated per call* and closed when the call returns.
@@ -353,10 +395,10 @@ func (h *Host) Close(ctx context.Context) error { return h.rt.Close(ctx) }
 // prototype, not a half-freed heap. Two calls to the same tool cannot observe
 // each other, and a tool cannot accumulate anything across a session. That is
 // true by construction rather than by review.
-func (h *Host) Call(ctx context.Context, name string, args json.RawMessage) (string, error) {
+func (h *Host) CallOutput(ctx context.Context, name string, args json.RawMessage) (Output, error) {
 	t := h.Get(name)
 	if t == nil {
-		return "", fmt.Errorf("unknown sandboxed tool: %s", name)
+		return Output{}, fmt.Errorf("unknown sandboxed tool: %s", name)
 	}
 	out, err := h.call(ctx, t, args)
 	if err == nil && t.Generated && h.cfg.TouchGenerated != nil {
@@ -367,9 +409,9 @@ func (h *Host) Call(ctx context.Context, name string, args json.RawMessage) (str
 	return out, err
 }
 
-// call is the execution path both Call and EvalGenerated go through, so an
+// call is the execution path both CallOutput and EvalGenerated go through, so an
 // ephemeral evaluation cannot diverge from a catalogued tool's behavior.
-func (h *Host) call(ctx context.Context, t *Tool, args json.RawMessage) (string, error) {
+func (h *Host) call(ctx context.Context, t *Tool, args json.RawMessage) (Output, error) {
 	name := t.Name
 
 	ctx, cancel := context.WithTimeout(ctx, h.timeout)
@@ -387,7 +429,7 @@ func (h *Host) call(ctx context.Context, t *Tool, args json.RawMessage) (string,
 
 	input, err := t.input(args)
 	if err != nil {
-		return "", err
+		return Output{}, err
 	}
 
 	mod, err := h.rt.InstantiateModule(ctx, t.module, h.moduleConfig(t))
@@ -396,31 +438,38 @@ func (h *Host) call(ctx context.Context, t *Tool, args json.RawMessage) (string,
 		// instantiation failure, which would send the model looking for a bug in
 		// its arguments. Name the real cause.
 		if ctx.Err() != nil {
-			return "", fmt.Errorf("tool %q timed out after %s", name, h.timeout)
+			return Output{}, fmt.Errorf("tool %q timed out after %s", name, h.timeout)
 		}
-		return "", fmt.Errorf("tool %q failed to start: %w", name, err)
+		return Output{}, fmt.Errorf("tool %q failed to start: %w", name, err)
 	}
 	defer mod.Close(context.WithoutCancel(ctx)) //nolint:errcheck // teardown of a discarded instance
 
 	out, err := callGuest(ctx, mod, input)
 	if err != nil {
 		if ctx.Err() != nil {
-			return "", fmt.Errorf("tool %q timed out after %s", name, h.timeout)
+			return Output{}, fmt.Errorf("tool %q timed out after %s", name, h.timeout)
 		}
-		return "", fmt.Errorf("tool %q: %w", name, err)
+		return Output{}, fmt.Errorf("tool %q: %w", name, err)
 	}
 
 	var res Result
 	if err := json.Unmarshal(out, &res); err != nil {
-		return "", fmt.Errorf("tool %q returned a malformed result: %w", name, err)
+		return Output{}, fmt.Errorf("tool %q returned a malformed result: %w", name, err)
 	}
 	if !res.OK {
 		// The tool's own failure, surfaced as an ordinary tool error: the model
 		// can read it and try different arguments, which is exactly what it
 		// should do with "date is not a valid ISO-8601 string".
-		return "", &CallError{Tool: name, Message: h.explainOOM(res.Error, len(input)), Detail: res.ErrorDetail}
+		return Output{}, &CallError{Tool: name, Message: h.explainOOM(res.Error, len(input)), Detail: res.ErrorDetail}
 	}
-	return res.Output, nil
+	if res.OutputB64 != "" {
+		raw, decErr := base64.StdEncoding.DecodeString(res.OutputB64)
+		if decErr != nil {
+			return Output{}, fmt.Errorf("tool %q returned output_b64 that is not valid base64", name)
+		}
+		return Output{Bytes: raw, MediaType: res.MediaType}, nil
+	}
+	return Output{Text: res.Output}, nil
 }
 
 // explainOOM adds the operator-facing context a bare allocation failure lacks.
