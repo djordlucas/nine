@@ -8,6 +8,7 @@ import (
 	"nine/internal/agent"
 	"nine/internal/llm"
 	"nine/internal/memory"
+	"nine/internal/toolvm"
 )
 
 // This file holds the AgentWorker → EventSink journaling path: the typed event
@@ -80,6 +81,25 @@ type subAgentPayload struct {
 	Task   string `json:"task,omitempty"`
 	Status string `json:"status,omitempty"`
 	Role   string `json:"role,omitempty"`
+}
+
+// toolHTTPPayload records one outbound request a sandboxed tool made
+// (docs/sandboxed-tools.md §8). The URL is already redacted of credentials by
+// the host; the host allowlist and SSRF checks that permitted it are not
+// repeated here, because this records what happened rather than why it was
+// allowed.
+type toolHTTPPayload struct {
+	Tool       string `json:"tool"`
+	Method     string `json:"method"`
+	Host       string `json:"host"`
+	URL        string `json:"url"`
+	Status     int    `json:"status,omitempty"`
+	Bytes      int    `json:"bytes"`
+	Truncated  bool   `json:"truncated,omitempty"`
+	DurationMs int64  `json:"duration_ms"`
+	// Error carries the refusal reason. A blocked request is the most
+	// audit-worthy thing a tool does, so it is journaled rather than dropped.
+	Error string `json:"error,omitempty"`
 }
 
 // turnSpan returns the span id of a turn's root.
@@ -163,6 +183,33 @@ func (w *AgentWorker) journalToolStart(turn int, name string, input json.RawMess
 		Name:  name,
 		Input: input,
 	})
+}
+
+// httpAuditor returns the hook a turn installs on its context so a sandboxed
+// tool's outbound requests land in the journal.
+//
+// It parents each request to the span of the tool call in flight — w.toolN is
+// the tool most recently started, and an HTTP call can only happen inside one —
+// so `nine trace` nests the request under the call that made it rather than
+// listing it beside the turn.
+//
+// Called from the guest's goroutine while the worker is blocked in loop.Run, so
+// it reads w.toolN without a lock for the same reason the other journal hooks do.
+func (w *AgentWorker) httpAuditor(turn int) toolvm.HTTPAuditFn {
+	return func(c toolvm.HTTPCall) {
+		w.journal(turn, "tool_http", toolSpan(turn, w.toolN)+".http", toolSpan(turn, w.toolN),
+			toolHTTPPayload{
+				Tool:       c.Tool,
+				Method:     c.Method,
+				Host:       c.Host,
+				URL:        c.URL,
+				Status:     c.Status,
+				Bytes:      c.Bytes,
+				Truncated:  c.Truncated,
+				DurationMs: c.Duration.Milliseconds(),
+				Error:      c.Error,
+			})
+	}
 }
 
 // journalToolEnd records a tool_end for the tool most recently started this turn.
