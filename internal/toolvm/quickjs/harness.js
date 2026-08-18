@@ -673,6 +673,30 @@ function render(value) {
   return safeStringify(value);
 }
 
+// A tool that returns bytes means it: JSON-stringifying a Uint8Array produces
+// {"0":137,"1":80,…}, which is not what anyone wanted and is silently useless.
+// Returning { bytes, mediaType } lets a tool label them.
+function asBytes(value) {
+  if (value instanceof Uint8Array) return { u8: value, mediaType: "" };
+  if (value instanceof ArrayBuffer) return { u8: new Uint8Array(value), mediaType: "" };
+  if (ArrayBuffer.isView(value)) {
+    return {
+      u8: new Uint8Array(value.buffer, value.byteOffset, value.byteLength),
+      mediaType: "",
+    };
+  }
+  if (value && typeof value === "object" && value.bytes !== undefined) {
+    const inner = asBytes(value.bytes);
+    if (inner) {
+      return {
+        u8: inner.u8,
+        mediaType: typeof value.mediaType === "string" ? value.mediaType : "",
+      };
+    }
+  }
+  return null;
+}
+
 // The structured half of a failure (§6.1 of docs/rich-js-tools.md). A thrown
 // Error already carries more than a sentence — its class, a `code` by widespread
 // convention, and since ES2022 a `cause` chain — and all of it used to be
@@ -749,7 +773,14 @@ try {
     );
   }
   const value = await run(tool);
-  globalThis.__nine_result = JSON.stringify({ ok: true, output: render(value) });
+  const bytes = asBytes(value);
+  globalThis.__nine_result = bytes
+    ? JSON.stringify({
+        ok: true,
+        output_b64: bytesToB64(bytes.u8),
+        media_type: bytes.mediaType || undefined,
+      })
+    : JSON.stringify({ ok: true, output: render(value) });
 } catch (e) {
   globalThis.__nine_result = JSON.stringify({
     ok: false,
