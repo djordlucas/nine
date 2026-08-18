@@ -237,3 +237,81 @@ func TestBinaryRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// A tool returning bytes must produce bytes, not the {"0":137,"1":80,…} that
+// JSON.stringify makes of a Uint8Array — which is silently useless.
+func TestJSToolCanReturnBytes(t *testing.T) {
+	for name, tc := range map[string]struct {
+		expr      string
+		wantBytes []byte
+		wantMedia string
+	}{
+		"Uint8Array":   {`new Uint8Array([137,80,78,71,0,255])`, []byte{137, 80, 78, 71, 0, 255}, ""},
+		"ArrayBuffer":  {`new Uint8Array([1,2,3]).buffer`, []byte{1, 2, 3}, ""},
+		"offset view":  {`new Uint8Array(new Uint8Array([9,9,1,2,3]).buffer, 2, 3)`, []byte{1, 2, 3}, ""},
+		"with a label": {`({ bytes: new Uint8Array([1,2]), mediaType: "image/png" })`, []byte{1, 2}, "image/png"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeTool(t, dir, "b", `
+name = "b"
+kind = "js"
+entrypoint = "./b.js"
+description = "b"
+`, `export default () => `+tc.expr+`;`)
+			h := openHost(t, dir, nil)
+
+			out, err := h.CallOutput(context.Background(), "b", json.RawMessage(`{}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if out.Text != "" {
+				t.Errorf("bytes arrived as text: %q", out.Text)
+			}
+			if len(out.Bytes) != len(tc.wantBytes) {
+				t.Fatalf("got %v, want %v", out.Bytes, tc.wantBytes)
+			}
+			for i := range tc.wantBytes {
+				if out.Bytes[i] != tc.wantBytes[i] {
+					t.Fatalf("got %v, want %v", out.Bytes, tc.wantBytes)
+				}
+			}
+			if out.MediaType != tc.wantMedia {
+				t.Errorf("MediaType = %q, want %q", out.MediaType, tc.wantMedia)
+			}
+		})
+	}
+}
+
+// Everything that is not bytes must keep going through the text path untouched.
+func TestJSToolTextResultsAreUnchanged(t *testing.T) {
+	for name, tc := range map[string]struct{ expr, want string }{
+		"string": {`"plain"`, "plain"},
+		"object": {`({a:1})`, `{"a":1}`},
+		"array":  {`[1,2,3]`, `[1,2,3]`},
+		"null":   {`null`, ``},
+		// An object with a `bytes` key that is not bytes is an ordinary object.
+		"bytes-ish object": {`({ bytes: "not really" })`, `{"bytes":"not really"}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeTool(t, dir, "b", `
+name = "b"
+kind = "js"
+entrypoint = "./b.js"
+description = "b"
+`, `export default () => `+tc.expr+`;`)
+			h := openHost(t, dir, nil)
+			out, err := h.CallOutput(context.Background(), "b", json.RawMessage(`{}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if out.Bytes != nil {
+				t.Fatalf("a text result was treated as bytes: %v", out.Bytes)
+			}
+			if out.Text != tc.want {
+				t.Errorf("Text = %q, want %q", out.Text, tc.want)
+			}
+		})
+	}
+}

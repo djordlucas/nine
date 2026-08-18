@@ -1,6 +1,6 @@
 # Design note — Richer sandboxed tools: the JS environment, and what belongs beneath it
 
-**Status:** Design agreed (§8), nothing built · **Roadmap:** the "missing JS globals",
+**Status:** Complete — M1–M5 and M3b shipped · **Roadmap:** the "missing JS globals",
 "FS/env gaps", "binary data support", and "structured tool errors" parts of *Improve
 sandboxed tools* · **Precedes:** durable state, long-running tools
 
@@ -231,16 +231,23 @@ when the response is not valid UTF-8; the decision is the host's, where the byte
 exist. Requests take `body_b64` the same way. The harness builds `bytes()`/`arrayBuffer()`
 on top, makes `text()`/`json()` throw on a binary body rather than return mojibake, and
 sends a `Uint8Array`, `ArrayBuffer`, or typed-array view as bytes. A wasm author reads one
-more field, and `nine_b64_decode`/`nine_b64_encode` are in `nine.h` so that is the whole
-job — `examples/tools/sha256.c` takes `text_b64` through exactly that path.
+more field. (The C helpers that made that convenient went with `nine.h`; the envelope
+field is unchanged and specified.)
 
-**A tool *returning* bytes is deferred, and the note was wrong to bundle it here.** It
-reads like the same change and is not: `output_b64` needs a destination, and the existing
-overflow sink is `SpillFn func(ctx, toolName string, output string) (string, error)` —
-string-typed, feeding a file store the model reads back *by path*. Bytes through that
-either become base64 text in a file (useless to the model) or get corrupted on the way.
-Deciding where a tool's bytes land, and what the model is told about them, is a design
-question of its own rather than a fourth field. Nothing else in this note depends on it.
+**A tool *returning* bytes — done (M3b).** Deferred from M3 because it needed a
+destination, which was then decided: the file store, with the model handed a path.
+
+The store turned out to be the constraint that shaped it. `FileStore` is a TEXT column that
+replaces NUL with U+FFFD (`TestFileStoreStripsNULBytes` explains why — SQLite's `length()`
+and `substr()` treat a NUL as end-of-value, so a stored NUL silently truncates every
+windowed read past it). Raw bytes cannot survive that; base64 survives exactly, so bytes are
+stored encoded and the banner says so. The model gets a path it can hand to another tool's
+`*_ref`, never the payload.
+
+Two consequences worth keeping: it needs **no `fs.write` grant**, since the store is Nine's
+rather than the operator's filesystem — which is what makes it usable by a pure tool. And a
+failed store is an **error**, not a degraded success, because truncated base64 is not a
+smaller answer but a corrupt one.
 
 **Structured errors — done (M2).** `Result.ErrorDetail` carries `name`, `code`,
 `retryable`, and a flattened `cause` chain. `retryable` is a pointer precisely because
@@ -344,12 +351,13 @@ was a leftover, and the allowlist still refuses everything else. `__nine_log`,
 
 ### 6.7 Documenting the `wasm` kind
 
-**Done (M1).** `nine.h` — the two exports, the import attributes for `nine.log` and
-`nine.http`, the packing macros, argument reach-in, and escaping envelope builders — is
-embedded in the binary and written out by `nine tool header`. It comes from the binary
-rather than a repository file for the reason docs/ and spec/ do: a header describing the
-ABI must match the build implementing it. `nine.caps` is deliberately absent from it until
-§6.3 lands, since declaring an import the host does not export fails at instantiation.
+**Done (M1), then removed.** `nine.h` shipped as an embedded C header emitted by `nine
+tool header`, and was deleted once M4 and M5 finished closing the JS gaps: with no
+capability left that a `js` tool cannot reach, the remaining reason to write C is
+CPU-bound work, and maintaining a second language's ergonomics for that case is not a good
+trade. The **contract** stays specified (R-TVM.3) so anyone who needs it can implement it
+unaided. The measurement that justifies keeping the kind at all: 3.4 ms versus 706 ms to
+hash 64 KiB.
 
 Then correct the guide: a wasm tool *does* get imports, and can log and make HTTP requests.
 
@@ -395,9 +403,8 @@ will want to argue with.
    a message rather than a mechanism — with no pre-opens there is nothing to open, which a
    test asserts by bypassing the module and calling the primitive directly.
 
-**Build order:** M1–M5 are shipped, closing every gap this note opened with. M3b is the
-remainder: its destination question was settled (the file store, with the model receiving a
-path), and it is the last row.
+**Build order:** all of M1–M5 and M3b are shipped. Every gap this note opened with is
+closed, and §8's four questions are all answered.
 
 ---
 
@@ -405,10 +412,10 @@ path), and it is the last row.
 
 | | Scope | Layer | Blob rebuild | Serves |
 |---|---|---|---|---|
-| **M1** ✅ done | `nine.h` + correcting the wasm guide (§6.7) | docs | No | wasm |
+| **M1** ✅ done, later removed | `nine.h` + correcting the wasm guide (§6.7) | docs | No | wasm |
 | **M2** ✅ done | Structured errors, OOM message (§6.1) | L1 | No | both |
 | **M3** ✅ done | Binary data over HTTP (§6.1) | L1 + harness | No | both |
-| **M3b** ◀ next | A tool returning bytes → the file store, model gets a path (§6.1) | L1 + agent | No | both |
+| **M3b** ✅ done | A tool returning bytes → the file store, model gets a path (§6.1) | L1 + agent | No | both |
 | **M4** ✅ done | Web-platform layer + papercuts (§6.5, §6.6) | L3 | No | js |
 | **M5** ✅ done | `nine:fs`, `nine:env`, `crypto`, `nine.caps` (§6.3, §6.4) | L2 + L3 | **Yes** | both |
 
