@@ -10,6 +10,7 @@ import (
 
 	"nine/internal/agent"
 	ninectx "nine/internal/context"
+	"nine/internal/llm"
 	"nine/internal/memory"
 	"nine/internal/protocol"
 	"nine/internal/toolvm"
@@ -258,50 +259,14 @@ func (w *AgentWorker) processTurn(req turnReq) {
 		trigger = "user"
 	}
 	w.journal(turn, "turn_start", turnSpan(turn), "", turnStartPayload{Input: text, Trigger: trigger})
-	w.loop.SetOnContextUpdate(func(used, budget int) {
-		w.emitEvent(protocol.NewContextUpdateMsg(w.id, used, budget))
-		w.journal(turn, "context_update", turnSpan(turn), "", contextPayload{Used: used, Budget: budget})
-	})
-	w.loop.SetOnToolStart(func(name, displayName string, input json.RawMessage) {
-		w.emitEvent(protocol.NewToolStartMsg(w.id, name, displayName, input))
-		w.journalToolStart(turn, name, input)
-	})
-	w.loop.SetOnToolEnd(func(name, displayName string, input json.RawMessage, out agent.ToolOutcome) {
-		w.emitEvent(protocol.NewToolEndMsg(w.id, name, displayName, input, out.Output))
-		w.journalToolEnd(turn, name, input, out)
-	})
-	w.loop.SetOnChunk(func(chunk string) {
-		w.emitEvent(protocol.NewResponseChunkMsg(w.id, chunk))
-	})
-	w.loop.SetOnThinkingChunk(func(chunk string) {
-		w.emitEvent(protocol.NewThinkingChunkMsg(w.id, chunk))
-	})
-	w.loop.SetOnThinking(func(n int, think bool) {
-		w.emitEvent(protocol.NewThinkingMsg(w.id, n, think))
-		w.journal(turn, "thinking", llmSpan(turn, n), turnSpan(turn), thinkingPayload{LLMCallN: n, Think: think})
-	})
-	w.loop.SetOnStage(func(label string) { w.emitEvent(protocol.NewStageMsg(w.id, label)) })
-	w.loop.SetOnPlanStart(func() { w.emitEvent(protocol.NewPlanStartMsg(w.id)) })
-	w.loop.SetOnPlanEnd(func() { w.emitEvent(protocol.NewPlanEndMsg(w.id)) })
-	w.loop.SetOnNotice(func(text string) { w.emitEvent(protocol.NewNoticeMsg(w.id, text)) })
-	w.wireJournalHooks(turn)
+	w.loop.SetHooks(w.turnHooks(turn))
 	slog.Debug("turn_start", "agent_id", w.id, "turn_n", turn)
 	w.loop.SetForceThinkNextTurn(req.forceThink)
 	// The sandboxed-tool host is daemon-wide, so the journal destination for a
 	// tool's outbound HTTP has to travel with the turn rather than be configured
 	// once at boot.
 	result, err := w.loop.Run(toolvm.WithHTTPAudit(req.ctx, w.httpAuditor(turn)), text)
-	w.loop.SetOnContextUpdate(nil)
-	w.loop.SetOnToolStart(nil)
-	w.loop.SetOnToolEnd(nil)
-	w.loop.SetOnChunk(nil)
-	w.loop.SetOnThinkingChunk(nil)
-	w.loop.SetOnThinking(nil)
-	w.loop.SetOnPlanStart(nil)
-	w.loop.SetOnPlanEnd(nil)
-	w.loop.SetOnNotice(nil)
-	w.loop.SetOnStage(nil)
-	w.clearJournalHooks()
+	w.loop.ClearHooks()
 	w.journal(turn, "turn_end", turnSpan(turn), "", turnEndPayload{
 		Result:     result,
 		Error:      errString(err),
@@ -326,6 +291,73 @@ func (w *AgentWorker) processTurn(req turnReq) {
 	req.respCh <- turnResp{text: result, err: err}
 	if w.onComplete != nil {
 		w.onComplete(w.id)
+	}
+}
+
+// turnHooks assembles the full observer set for one turn: the progress events a
+// client sees live, and the journal events that outlive the session. Both are
+// built here because both close over `turn` — the number every span id derives
+// from — and the Loop takes them as one set.
+//
+// These run on the worker goroutine (the loop calls them synchronously), so
+// llmCallN/toolN need no locking. The one exception is OnStage, which the Loop
+// guards itself because a queue wait is reported from the queue's goroutine.
+func (w *AgentWorker) turnHooks(turn int) agent.Hooks {
+	root := turnSpan(turn)
+	return agent.Hooks{
+		OnContextUpdate: func(used, budget int) {
+			w.emitEvent(protocol.NewContextUpdateMsg(w.id, used, budget))
+			w.journal(turn, "context_update", root, "", contextPayload{Used: used, Budget: budget})
+		},
+		OnToolStart: func(name, displayName string, input json.RawMessage) {
+			w.emitEvent(protocol.NewToolStartMsg(w.id, name, displayName, input))
+			w.journalToolStart(turn, name, input)
+		},
+		OnToolEnd: func(name, displayName string, input json.RawMessage, out agent.ToolOutcome) {
+			w.emitEvent(protocol.NewToolEndMsg(w.id, name, displayName, input, out.Output))
+			w.journalToolEnd(turn, name, input, out)
+		},
+		OnChunk: func(chunk string) {
+			w.emitEvent(protocol.NewResponseChunkMsg(w.id, chunk))
+		},
+		OnThinkingChunk: func(chunk string) {
+			w.emitEvent(protocol.NewThinkingChunkMsg(w.id, chunk))
+		},
+		OnThinking: func(n int, think bool) {
+			w.emitEvent(protocol.NewThinkingMsg(w.id, n, think))
+			w.journal(turn, "thinking", llmSpan(turn, n), root, thinkingPayload{LLMCallN: n, Think: think})
+		},
+		OnStage:     func(label string) { w.emitEvent(protocol.NewStageMsg(w.id, label)) },
+		OnPlanStart: func() { w.emitEvent(protocol.NewPlanStartMsg(w.id)) },
+		OnPlanEnd:   func() { w.emitEvent(protocol.NewPlanEndMsg(w.id)) },
+		OnNotice:    func(text string) { w.emitEvent(protocol.NewNoticeMsg(w.id, text)) },
+
+		OnLLMRequest: func(req *llm.Request, tokensUsed, budget, llmCallN int) {
+			w.llmCallN = llmCallN
+			names := make([]string, len(req.Tools))
+			for i, t := range req.Tools {
+				names[i] = t.Name
+			}
+			w.journal(turn, "llm_request", llmSpan(turn, llmCallN), root, llmRequestPayload{
+				System:     req.System,
+				Messages:   req.Messages,
+				ToolNames:  names,
+				MaxTokens:  req.MaxTokens,
+				TokensUsed: tokensUsed,
+				Budget:     budget,
+				LLMCallN:   llmCallN,
+			})
+		},
+		OnLLMResponse: func(resp *llm.Response, llmCallN int) {
+			w.journal(turn, "llm_response", llmSpan(turn, llmCallN), root, llmResponsePayload{
+				Text:         resp.Text,
+				ToolCalls:    resp.ToolCalls,
+				StopReason:   resp.StopReason,
+				LLMCallN:     llmCallN,
+				InputTokens:  resp.Usage.InputTokens,
+				OutputTokens: resp.Usage.OutputTokens,
+			})
+		},
 	}
 }
 

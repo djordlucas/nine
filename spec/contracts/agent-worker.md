@@ -114,7 +114,8 @@ empty `StallConfig{}` (no stall detection) since they are short-lived and synchr
 Separately from the **in-memory** progress stream (R-WORK.5) and reattach ring
 (R-WORK.6), each worker records its full trajectory to the **durable** `session_events`
 journal when an `EventSink` is configured. Per-turn journal hooks
-(`wireJournalHooks`/`clearJournalHooks`) emit, off the turn's critical path via an async
+(`turnHooks`, attached via `Loop.SetHooks` and detached with `ClearHooks`) emit, off
+the turn's critical path via an async
 batched sink: `turn_start`, `llm_request` (with the exact assembled system prompt and
 messages), `llm_response`, `tool_start`/`tool_end`, `context_update`, and `turn_end`
 (carrying the answer). Events are keyed by `agent_id` and ordered by a DB-assigned `seq`,
@@ -129,6 +130,7 @@ subscriptions (see [`event-journal.md`](event-journal.md) and
 
 `internal/runtime/agent_worker.go` (`AgentWorker`, `processTurn`, `checkStall`,
 `replayBuffer`, `armIdleTimer`/`handleIdle`, `prependNotifications`),
-`internal/runtime/journal.go` (`wireJournalHooks`, the event payloads),
+`internal/runtime/journal.go` (the event payloads),
+`internal/runtime/agent_worker.go` (`turnHooks`),
 `internal/runtime/eventsink.go` (`NewSQLEventSink`),
 `internal/runtime/subagent.go` (sub-agent worker construction).
