@@ -105,8 +105,12 @@ child's worker role (default `executor`; see [Roles](roles.md)). Available to
 delegating roles only, with the delegation depth guard as recursion backstop.
 See `internal/agent/register_subagents.go`.
 
-**Workflow** — A named, persistent multi-step execution plan the LLM creates
-before delegating to sub-agents. Has a `name`, ordered `steps`
+**Workflow** — A **ledger of delegated work** the LLM keeps: a named, persistent
+record of the multi-step plan it created before delegating to sub-agents.
+Passive — it has no session, no scheduler, and no driver, so it advances only
+when a model calls a `workflow_*` tool inside a turn. That is what separates it
+from a **Goal**, which owns a session and wakes itself; the axis is autonomy, not
+ordering (`spec/overview.md` §3.1). Has a `name`, ordered `steps`
 (`pending`/`running`/`done`/`failed`/`skipped`), and an overall `status`
 (`active`/`done`/`failed`/`cancelled`). Auto-closes when all steps reach a
 terminal state. LLM tools: `workflow_create`, `workflow_update`,

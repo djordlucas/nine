@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"nine/internal/cron"
@@ -109,6 +110,47 @@ func initStages(ctx context.Context, agentID string, stages []memory.SessionStag
 //
 // store may be nil, in which case the plan is purely in-memory (no
 // persistence, no resume).
+// roleBearingKinds are the stage kinds that decide a session's role. A session
+// has exactly one role, fixed at loop-build time (docs/roles.md), so at most one
+// stage may claim it.
+var roleBearingKinds = map[string]bool{"pursue": true, "idle-reflection": true}
+
+// validateStages rejects a plan whose stages would make role, delegation, or
+// goal ownership depend on their order in the array.
+//
+// roleNameForPlan returns the role of the *first* role-bearing stage it finds, so
+// with two of them the session's role — and therefore its tool boundary — is
+// decided by JSON serialization order. That is not a rule anyone could infer from
+// the code, and it is not one worth having: it makes an operator's profile behave
+// differently depending on how it was written down.
+//
+// Goal ownership is bounded for a stronger reason: a pursue session owns its goal
+// 1:1 (agentID == goalID), so two pursue stages describe a session that owns two
+// goals, which the identity relation cannot express.
+//
+// Checked at both construction and load. Load matters most — a plan predating this
+// rule, or one written directly to the store, reaches the same code paths.
+func validateStages(agentID string, stages []memory.SessionStage) error {
+	var roleBearing, pursue []string
+	for _, st := range stages {
+		if st.Kind == "pursue" {
+			pursue = append(pursue, st.Name)
+		}
+		if roleBearingKinds[st.Kind] || stageRole(st.Config) != "" {
+			roleBearing = append(roleBearing, st.Name)
+		}
+	}
+	if len(pursue) > 1 {
+		return fmt.Errorf("session plan %s has %d goal-owning stages (%s); a pursue session owns exactly one goal",
+			agentID, len(pursue), strings.Join(pursue, ", "))
+	}
+	if len(roleBearing) > 1 {
+		return fmt.Errorf("session plan %s has %d role-bearing stages (%s); at most one stage may set the session's role",
+			agentID, len(roleBearing), strings.Join(roleBearing, ", "))
+	}
+	return nil
+}
+
 func loadOrCreatePlan(ctx context.Context, store PlanStore, agentID string, profile []string, eager bool) (*sessionPlanState, error) {
 	if store != nil {
 		existing, err := store.SessionPlanGet(agentID)
@@ -116,6 +158,9 @@ func loadOrCreatePlan(ctx context.Context, store PlanStore, agentID string, prof
 			return nil, fmt.Errorf("load session plan %s: %w", agentID, err)
 		}
 		if existing != nil {
+			if err := validateStages(agentID, existing.Stages); err != nil {
+				return nil, err
+			}
 			handlers, err := initStages(ctx, agentID, existing.Stages)
 			if err != nil {
 				return nil, err
@@ -139,6 +184,11 @@ func loadOrCreatePlan(ctx context.Context, store PlanStore, agentID string, prof
 			Status:    "active",
 			UpdatedAt: now,
 		})
+	}
+	// Reject a bad profile at construction, where the error names the caller's
+	// mistake, rather than at the next load when its origin is gone.
+	if err := validateStages(agentID, stages); err != nil {
+		return nil, err
 	}
 	handlers, err := initStages(ctx, agentID, stages)
 	if err != nil {
@@ -233,6 +283,30 @@ func planDelegates(plan *sessionPlanState) bool {
 // a non-idle stage or an unparseable schedule. Duration is clamped at 0 when the
 // stage is already due (docs/scheduling.md).
 func stageNextWake(cfg json.RawMessage, lastFire, now time.Time) (remaining time.Duration, scheduled bool) {
+	d, ok := stageWakeDelta(cfg, lastFire, now)
+	return max(d, 0), ok
+}
+
+// stageOverdueBy reports how long a stage has been due, and whether it is due at
+// all. A stage due exactly now is overdue by zero and still due.
+//
+// It exists because stageNextWake clamps: every overdue stage reports 0 there, so
+// two stages that are both late are indistinguishable, and "which is later" — the
+// question fairness turns on — cannot be asked. This reads the same schedule
+// unclamped.
+func stageOverdueBy(cfg json.RawMessage, lastFire, now time.Time) (overdue time.Duration, due bool) {
+	d, ok := stageWakeDelta(cfg, lastFire, now)
+	if !ok || d > 0 {
+		return 0, false
+	}
+	return -d, true
+}
+
+// stageWakeDelta is the shared, unclamped schedule reading: the signed time until
+// the stage is next due, negative meaning overdue by that much. Callers take
+// either the clamped view (stageNextWake, for arming a timer, which cannot be
+// negative) or the overdue view (stageOverdueBy, for choosing between stages).
+func stageWakeDelta(cfg json.RawMessage, lastFire, now time.Time) (delta time.Duration, scheduled bool) {
 	if len(cfg) == 0 {
 		return 0, false
 	}
@@ -242,7 +316,7 @@ func stageNextWake(cfg json.RawMessage, lastFire, now time.Time) (remaining time
 	}
 	if c.IdleIntervalSeconds > 0 {
 		interval := time.Duration(c.IdleIntervalSeconds) * time.Second
-		return max(interval-now.Sub(lastFire), 0), true
+		return interval - now.Sub(lastFire), true
 	}
 	if c.Schedule != "" {
 		sched, err := cron.Parse(c.Schedule)
@@ -254,7 +328,7 @@ func stageNextWake(cfg json.RawMessage, lastFire, now time.Time) (remaining time
 		if next.IsZero() {
 			return 0, false // a schedule that can never fire
 		}
-		return max(next.Sub(now), 0), true
+		return next.Sub(now), true
 	}
 	return 0, false
 }
