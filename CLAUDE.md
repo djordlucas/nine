@@ -74,5 +74,7 @@ Two patterns are easy to half-complete — do the whole checklist:
 - Daemon tests use the harness in `internal/runtime/daemon_test.go`
   (`startDaemon` / `dial` / `seqProvider`) with in-memory stores. Sockets go in
   `/tmp`, not `t.TempDir()`, because macOS caps Unix-socket paths at 104 bytes.
-- `TestRegisterPlugin` (`internal/agent`) is a known plugin-socket timing
-  flake — it passes on re-run; don't chase it as a real failure.
+- `TestRegisterPlugin` (`internal/agent`) **was** a known plugin-socket timing
+  flake. The amnesty is withdrawn: plugin startup now detects a process that dies
+  before listening (instead of waiting out the budget and blaming the socket), and
+  the readiness budget is 30s rather than 3s. **Treat a failure there as real.**

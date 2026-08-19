@@ -93,7 +93,8 @@ Start(binaryPath, extraEnv…)         — a plugin shipped as its own binary
 StartBuiltin(name, extraEnv…)        — a plugin served by the nine binary (R-PLUG.13)
    allocate a per-plugin Unix socket path; pass it via NINE_PLUGIN_SOCKET
      (+ NINE_BIN, the cache-dir vars (R-PLUG.11), operator settings (R-PLUG.10), extras)
-   spawn process; dial the socket with bounded retry (~3s budget)
+   spawn process; dial the socket until it accepts, the process exits, or the
+     budget expires (R-PLUG.14)
    → plugin.describe  → {tool defs, max_concurrent, async_jobs}
    set the per-plugin HTTP transport's MaxConnsPerHost from max_concurrent (0 = unbounded; R-PLUG.8)
    track *Plugin{Name, client, Tools, AsyncJobs}
@@ -539,3 +540,31 @@ client, R-PLUG.15),
 `internal/builtins/mcp_playwright_test.go` (the opt-in end-to-end check against the real
 upstream Playwright MCP server), `cmd/nine/daemon.go` (`LoadUserPlugins`, `startMCPServers`, job
 sweeper, graceful shutdown at boot), `internal/cli/plugins.go` (`nine plugins` / `nine plugin validate`).
+
+---
+
+## R-PLUG.14 — Startup readiness: distinguish dead from slow
+
+A spawned plugin is reachable only once it listens, so the manager polls its socket
+after spawning. That wait **MUST** end on **either** of two conditions, not just one:
+
+- the socket accepts a connection — the plugin is up; or
+- **the process has exited** — the plugin is dead, and the manager **MUST** report
+  that, with the exit status, rather than continuing to poll.
+
+An implementation that only polls until a deadline reports every startup failure as
+"socket not ready". That names the symptom and hides the cause — a missing library, a
+bad argument, an immediate panic all look identical to a slow start — and it pays the
+entire budget to reach a conclusion it could have drawn at once.
+
+Because death is detected directly, the budget governs only the remaining case:
+**alive, but not yet listening**. It **SHOULD** therefore be generous. The wait is a
+poll that returns the instant the dial succeeds, so a longer budget costs a healthy
+plugin nothing; it only delays the verdict on a genuinely stuck one. The reference uses
+**30s**, after a 3s budget produced a recurring spurious failure in CI-like parallel
+load despite a measured startup of ~13ms warm and ~205ms for a freshly-built binary.
+
+Reaping is the constraint that shapes this: a process may be waited on only once, and
+both startup and stop need the exit status. An implementation **MUST** reap exactly
+once and make the result available to every reader (the reference uses a `procWatch`
+whose closed channel publishes the result), rather than letting the two race for it.

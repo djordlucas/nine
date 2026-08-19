@@ -122,6 +122,7 @@ How to use this file:
 | R-PLUG.14 | `[plugins].disabled` | A named plugin never spawns — built-in, own-binary, or user alike — and no socket or cache dir is created for it; the daemon boots normally and reports it in `plugins_list` with `disabled: true` (`nine plugins` shows `off`). |
 | R-PLUG.6 | Browser automation is not a plugin | No browser ships as a default plugin; a browser MCP server declared as `[[mcp.server]]` supplies `<name>__browser_*` tools, and no URL policy is enforced on it. `web_search`/`web_page_read` remain available and are not described as a fallback to an absent browser. |
 | R-PLUG.7 | No runtime plugin mutation (N1) | No path generates, compiles, or hot-swaps a plugin; recovery is restart-from-binary only. |
+| R-PLUG.14 | Startup readiness: dead vs slow | A plugin that exits before listening is reported as exited (with status) immediately, not as a socket timeout; the readiness budget bounds only a live-but-silent process; the process is reaped exactly once and the result is readable by both startup and stop. |
 
 ---
 
