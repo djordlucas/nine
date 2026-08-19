@@ -400,3 +400,67 @@ func TestOllamaPerRequestThinkOverride(t *testing.T) {
 		t.Errorf("wire think = %v, want false", decoded.Think)
 	}
 }
+
+func TestOllamaReportsUsage(t *testing.T) {
+	var body []byte
+	srv := ndjsonServer(t, &body, 0,
+		`{"message":{"role":"assistant","content":"Hi"},"done":false}`,
+		`{"message":{"role":"assistant","content":""},"done":true,"done_reason":"stop","prompt_eval_count":1234,"eval_count":56}`,
+	)
+
+	p := ollama.New("qwen3", srv.URL, 0, false, 0)
+	resp, err := p.Complete(context.Background(), llm.Request{
+		Messages: []llm.Message{{Role: "user", Text: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if resp.Usage.InputTokens != 1234 {
+		t.Errorf("Usage.InputTokens = %d, want 1234", resp.Usage.InputTokens)
+	}
+	if resp.Usage.OutputTokens != 56 {
+		t.Errorf("Usage.OutputTokens = %d, want 56", resp.Usage.OutputTokens)
+	}
+}
+
+// A server that reports no counts must leave Usage zero rather than inventing
+// one: zero means "not reported", and a consumer reconciling the context
+// builder's estimate against it has to be able to tell the difference.
+func TestOllamaUsageAbsentIsZero(t *testing.T) {
+	var body []byte
+	srv := ndjsonServer(t, &body, 0,
+		`{"message":{"role":"assistant","content":"Hi"},"done":true,"done_reason":"stop"}`,
+	)
+
+	p := ollama.New("qwen3", srv.URL, 0, false, 0)
+	resp, err := p.Complete(context.Background(), llm.Request{
+		Messages: []llm.Message{{Role: "user", Text: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if resp.Usage != (llm.Usage{}) {
+		t.Errorf("Usage = %+v, want zero when the provider reports no counts", resp.Usage)
+	}
+}
+
+// Counts ride only on the final chunk; a delta carrying stray counts must not
+// win over the done chunk's authoritative totals.
+func TestOllamaUsageTakenFromFinalChunk(t *testing.T) {
+	var body []byte
+	srv := ndjsonServer(t, &body, 0,
+		`{"message":{"role":"assistant","content":"a"},"done":false,"prompt_eval_count":1,"eval_count":1}`,
+		`{"message":{"role":"assistant","content":"b"},"done":true,"done_reason":"stop","prompt_eval_count":900,"eval_count":12}`,
+	)
+
+	p := ollama.New("qwen3", srv.URL, 0, false, 0)
+	resp, err := p.Complete(context.Background(), llm.Request{
+		Messages: []llm.Message{{Role: "user", Text: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if resp.Usage.InputTokens != 900 || resp.Usage.OutputTokens != 12 {
+		t.Errorf("Usage = %+v, want {900 12} from the final chunk", resp.Usage)
+	}
+}

@@ -89,7 +89,8 @@ How to use this file:
 | R-LLM.4 | Priorities | With `max_concurrent=1` and one in flight, queued requests at priority 3/2/1 are served 1→2→3. |
 | R-LLM.5 | Cancellation & timeout | A cancelled/expired context aborts the call and frees its queue slot. |
 | R-LLM.6 | Token counting | Budgeting uses the builder's 4-chars≈1-token estimate; the provider interface carries no token-counting method. |
-| R-LLM.7 | Ollama adapter (required) | `/api/chat` streaming accumulates to `Text` + `OnChunk`; tool calls surface; `done_reason`→`StopReason` mapped; `num_ctx` applied; HTTP/in-stream errors surfaced — covered by a hermetic `httptest` unit test. |
+| R-LLM.7 | Ollama adapter (required) | `/api/chat` streaming accumulates to `Text` + `OnChunk`; tool calls surface; `done_reason`→`StopReason` mapped; `num_ctx` applied; `prompt_eval_count`/`eval_count` from the final chunk surface as `Usage`; HTTP/in-stream errors surfaced — covered by a hermetic `httptest` unit test. |
+| R-LLM.8 | Reported usage | `Response.Usage` carries provider-reported input/output token counts; zero means *not reported* and is never synthesized; usage is reported, never enforced. |
 
 ### Embedder — [`embedder.md`](contracts/embedder.md)
 

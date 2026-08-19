@@ -14,6 +14,14 @@ tokenizer dependency. The budget is `context_budget` (falling back to `num_ctx` 
 unset). A conforming implementation **MUST NOT** require a real tokenizer for budgeting;
 the approximation is the contract.
 
+The approximation is **observable, not blind**: the estimate the builder returns from
+`BuildWithUsage` is journaled as `llm_request.tokens_used`, and the provider's measured
+count arrives as `llm_response.input_tokens` under the same span
+([`event-journal.md`](event-journal.md), [`llm-provider.md`](llm-provider.md) R-LLM.8).
+The divisor stays fixed and no measurement feeds back into assembly — reconciliation
+informs a future change to the constant, it does not adjust it at runtime, so assembly
+stays deterministic for a given input (R-CTX.4).
+
 ---
 
 ## R-CTX.2 — Priority allocation
