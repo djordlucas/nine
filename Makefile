@@ -190,10 +190,17 @@ eval-replay:
 # the shell/files/http/time plugins now live. Override the models with
 # NINE_EVAL_MODELS.
 #   NINE_EVAL_MODELS=qwen3.5:4b,qwen3.5:9b make eval-live
+#
+# The timeout is per *matrix*, not per case, so it scales with the model list:
+# the 18-case suite takes ~33 min for one small local model, and the previous
+# 1800s bound cut that off 9% short of the finish — with the whole run lost,
+# because the grid renders only at the end. NINE_EVAL_TIMEOUT overrides it for a
+# long matrix (several models, or a slower host).
+NINE_EVAL_TIMEOUT ?= 7200s
 eval-live: build
 	NINE_EVALS_LIVE=1 \
 	NINE_BINARY=$(abspath $(DIST)/$(BINARY)) \
-	$(GO) test $(GOFLAGS) -v -count=1 -timeout 1800s -run TestLiveMatrix ./tests/evals/
+	$(GO) test $(GOFLAGS) -v -count=1 -timeout $(NINE_EVAL_TIMEOUT) -run TestLiveMatrix ./tests/evals/
 
 # Regenerate the committed Track-R fixtures from scripted runs.
 eval-generate:

@@ -43,7 +43,7 @@ func TestSessionNameSetOnFirstTurn(t *testing.T) {
 
 	var gotName string
 	_, err = c.TurnWithProgress(id, "help me write a test", func(evt protocol.ProgressEvent) {
-		if evt.Type == "set_name" {
+		if evt.Type == protocol.TypeSetName {
 			gotName = evt.Text
 		}
 	})

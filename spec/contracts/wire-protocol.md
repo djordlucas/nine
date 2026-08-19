@@ -15,6 +15,18 @@ There is a single flat envelope type, `Msg`. Every message — request or event 
 `Msg`. Implementations **MUST** use one flat object with a `type` discriminator and
 omit-empty fields, not a tagged union per direction.
 
+The discriminator is a **named string type** (`MsgType`) with one declared constant per
+message, not a bare string. This is a source-level requirement with **no wire effect** —
+a `MsgType` encodes and decodes as the same JSON string — and a conforming implementation
+in a language without named string types satisfies it with whatever its equivalent is
+(an enum, a symbol) or with plain constants.
+
+The intent is that no message name is written as a literal outside the constant
+declarations. Note what this does **not** buy in Go: an untyped constant converts
+implicitly, so `msg.Type == "typo"` still compiles, and a declared constant that is never
+added to the dispatch switch is not a compile error either. Those gaps are closed by
+test, not by the type — see R-PROTO.9.
+
 ```schema
 Msg {
   type              string   // discriminator; required
@@ -236,3 +248,21 @@ the daemon (G1).
 `internal/protocol/protocol.go` (`Msg`, `ProgressEvent`, `StatusInfo`, constructors),
 `internal/protocol/client.go` (`EnsureDaemon`, typed request methods),
 `internal/runtime/daemon.go` (`handleConn`, `dispatch`).
+
+---
+
+## R-PROTO.9 — Every client message type is dispatched
+
+The daemon **MUST** route every message type a client is documented to send, and an
+implementation **MUST** carry a check that this holds — the set of client-sendable types
+and the set the dispatcher handles cannot be allowed to drift apart silently.
+
+The reference keeps the first set as an exported value (`protocol.ClientMsgTypes`) and
+sends each member to a running daemon, asserting the reply is not the dispatcher's
+`unknown message type` error. The assertion is deliberately weak on semantics: a
+validation error or "no such conversation" **passes**, because it proves the message
+reached a handler. Only the default branch fails.
+
+This is what makes the typed discriminator (R-PROTO.1) load-bearing rather than a
+convention. Without it, a message type can be declared, documented, and sent by a client
+while the daemon has no case for it, and nothing reports that until a user hits it.
