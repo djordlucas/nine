@@ -34,7 +34,7 @@
 | **F9** | ~~One provider behind a generalized `Provider` + `ThinkingAware` abstraction — decide whether local-first is a goal or a stopgap~~ **Decided** — local-first is a commitment **and** multi-backend; the abstraction stays (G8/N5) | Medium | S |
 | **F10** | `internal/selfmodel`: 84 LOC, zero tests, `/.dockerenv` probe, swallowed query error | Low | S |
 | **F11** | `docs/` + `spec/` is 57% of production code size; implemented design notes are maintained rather than frozen | Low | M |
-| **F12** | The `TestRegisterPlugin` flake is documented as inherent; a socket-timing flake usually means a missing readiness handshake | Low | S |
+| **F12** | ~~The `TestRegisterPlugin` flake is documented as inherent; a socket-timing flake usually means a missing readiness handshake~~ **Investigated and fixed** — the handshake existed; the real defect was that it could not tell a dead plugin from a slow one (R-PLUG.14) | Low | S |
 
 **F1–F4 are the seams. None of them is in the concepts — they are in wire types,
 assembly wiring, schema evolution, and token accounting.** That is the summary
@@ -476,6 +476,39 @@ re-run. That is honest, and permanent amnesty is still the wrong resting state: 
 socket-timing flake is usually a missing readiness handshake rather than an
 inherent race. Worth one investigation before it becomes load-bearing folklore.
 
+**Investigated. The guess was wrong; the investigation was still worth it.**
+
+There *is* a readiness handshake — `waitForSocket` polls `net.Dial` until the
+socket accepts, on a 3s budget. So the flake was never a missing handshake.
+
+What the measurement showed: a warm plugin binary listens in **~13ms**; a
+freshly-built one takes **~205ms**, the ~15x difference being the first-execution
+cost the OS charges for a binary it has not seen (code-signing assessment on
+darwin). The test rebuilds its fixture plugin every run, and does so while every
+other package builds and runs in parallel. 3s was ~15x the worst observed case
+and still failed, which says the tail under load is far longer than the median.
+**The flake could not be reproduced on demand** — 25 runs under 2x CPU saturation
+all passed — so the tail is rare rather than reachable by brute force.
+
+**The real defect the investigation found is not the timeout at all.** The poll
+was blind: a plugin that *died* during startup — missing library, bad argument,
+immediate panic — was polled at for the full budget and then reported as
+`socket not ready`. That names the symptom, hides the cause, and pays the entire
+budget to reach a conclusion available immediately. Demonstrated by mutation:
+without the fix a dead process takes **30.01s and reports the wrong thing**; with
+it, **0.55s and the exit status**.
+
+Fixing that required settling reaping. `exec.Cmd` permits one `Wait`, and both
+startup and stop need the exit status; they previously could not both have it. A
+`procWatch` now reaps once and publishes the result over a closed channel, so
+either can read it without racing.
+
+With death detected directly, the budget bounds only "alive but not yet
+listening", where waiting longer is close to free — it is a poll that returns the
+instant the dial succeeds, not a sleep. Raised to 30s. Normative as **R-PLUG.14**.
+
+The `CLAUDE.md` amnesty is withdrawn: a failure there is now a real failure.
+
 ---
 
 ## 7. F8 — The conceptual surface · Medium · L
@@ -553,7 +586,7 @@ Ordered by leverage-per-unit-risk, not by severity alone.
 | 4 | ~~**F2 (step 1)** — typed `MsgType` constants~~ **done** | Mechanical, removes the literal-typo class, and makes F6 tractable. (It does not remove that class — see §5 F2 — but it does make F6 tractable, which was the load-bearing half.) |
 | 5 | ~~**F9** — decide local-first, then document or add a provider~~ **done** — decided: local-first *and* multi-backend (G8/N5) | A decision, not a build. Blocks nothing, unblocks F1's shape. |
 | 6 | **F6** — protocol and client tests | Follows F2 naturally; typed messages make the tests worth writing. |
-| 7 | **F10, F12** | Small hygiene; fold into whatever branch is nearby. |
+| 7 | **F10**, ~~**F12**~~ **F12 done** | Small hygiene; fold into whatever branch is nearby. (F12 was not hygiene — it hid a real startup-diagnostic defect, R-PLUG.14.) |
 | 8 | **F2 (steps 2–3)**, **F7**, **F11** | Larger, independent, and none is urgent. |
 | 9 | **F8** — the seven changes in [`concept-consolidation.md`](concept-consolidation.md) | Five of the seven need no schema change and can start now; only the two deletions (`C5`, `C6`) wait on F4. The `stage`→`aspect` rename is deliberately last. |
 
