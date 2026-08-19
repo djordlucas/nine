@@ -23,12 +23,23 @@ import (
 // it. It is a directory and does not collide with the daemon's own socket file.
 const socketDir = "/tmp/nine"
 
-// socketReadyTimeout bounds how long Start waits for a spawned plugin to start
-// listening before giving up. It only bounds the failure path — a healthy plugin
-// listens within milliseconds — so it is set generously enough that a spawn under
-// heavy parallel load (many plugins building and starting at once, as the test
-// suite does) is not spuriously declared dead.
-const socketReadyTimeout = 3 * time.Second
+// socketReadyTimeout bounds how long Start waits for a plugin that is alive but
+// has not yet listened. A plugin that *dies* during startup no longer waits this
+// out — waitForSocket notices the exit and fails immediately with the cause — so
+// this governs only the slow-but-healthy case.
+//
+// Measured on an idle machine: ~13ms for a warm binary, ~205ms for a
+// freshly-built one, the difference being the first-execution cost the OS charges
+// for a binary it has not seen before (code-signing assessment on darwin). The
+// test suite pays that cost every run, since it rebuilds its fixture plugin, and
+// does so while every other package is building and running in parallel.
+//
+// 3s was ~15x the observed worst case and still produced a recurring flake
+// (TestRegisterPlugin), which says the tail is much longer than the median under
+// load. Raising it is close to free: this is a poll that returns the moment the
+// dial succeeds, not a sleep, so a healthy plugin is unaffected and only a
+// genuinely stuck one waits longer before being declared dead.
+const socketReadyTimeout = 30 * time.Second
 
 // Plugin is a running plugin process with its advertised tools.
 type Plugin struct {
@@ -331,7 +342,7 @@ func (m *Manager) start(l launch, extraEnv ...string) (*Plugin, error) {
 		env = append(env, "NINE_PLUGIN_CACHE_DIR="+cacheDir, "NINE_PLUGIN_CACHE_PERSISTENT="+persistentEnv(!ephemeral))
 	}
 
-	cmd, socketPath, desc, err := spawnAndDescribe(l, env)
+	cmd, watch, socketPath, desc, err := spawnAndDescribe(l, env)
 	if err != nil {
 		if ephemeral && cacheDir != "" {
 			os.RemoveAll(cacheDir) //nolint:errcheck // spawn failed; reclaim the dir we just made
@@ -339,7 +350,7 @@ func (m *Manager) start(l launch, extraEnv ...string) (*Plugin, error) {
 		return nil, err
 	}
 
-	c := newHTTPClient(name, socketPath, cmd, desc.MaxConcurrent)
+	c := newHTTPClient(name, socketPath, cmd, watch, desc.MaxConcurrent)
 	p := &Plugin{Name: name, client: c, Tools: desc.Tools, AsyncJobs: desc.AsyncJobs,
 		MaxConcurrent: desc.MaxConcurrent, cacheDir: cacheDir, cacheEphemeral: ephemeral}
 	m.track(p)
@@ -412,15 +423,15 @@ func (m *Manager) builtinBinary() (string, error) {
 // returns the error; on success the caller owns cmd and must eventually stop it
 // and remove socketPath. env is the full extra environment (NINE_PLUGIN_SOCKET is
 // appended here).
-func spawnAndDescribe(l launch, env []string) (*exec.Cmd, string, DescribeResult, error) {
+func spawnAndDescribe(l launch, env []string) (*exec.Cmd, *procWatch, string, DescribeResult, error) {
 	name := l.name
 
 	if err := os.MkdirAll(socketDir, 0o700); err != nil {
-		return nil, "", DescribeResult{}, fmt.Errorf("create socket dir: %w", err)
+		return nil, nil, "", DescribeResult{}, fmt.Errorf("create socket dir: %w", err)
 	}
 	socketPath, err := allocSocketPath(name)
 	if err != nil {
-		return nil, "", DescribeResult{}, err
+		return nil, nil, "", DescribeResult{}, err
 	}
 
 	env = append([]string{}, env...)
@@ -430,18 +441,22 @@ func spawnAndDescribe(l launch, env []string) (*exec.Cmd, string, DescribeResult
 	cmd.Env = append(sanitizedHostEnv(), env...)
 	cmd.Stderr = os.Stderr // surface plugin startup/listen errors
 	if err := cmd.Start(); err != nil {
-		return nil, "", DescribeResult{}, fmt.Errorf("start plugin: %w", err)
+		return nil, nil, "", DescribeResult{}, fmt.Errorf("start plugin: %w", err)
 	}
+
+	// Claim the process's single Wait up front, so startup can tell a plugin that
+	// died from one that is merely slow, and so stop has a result to consume.
+	watch := watchProcess(cmd)
 
 	cleanup := func() {
 		cmd.Process.Kill() //nolint:errcheck // best-effort
-		cmd.Wait()         //nolint:errcheck
+		watch.wait()       //nolint:errcheck // reaped by watchProcess
 		os.Remove(socketPath)
 	}
 
-	if err := waitForSocket(socketPath, socketReadyTimeout); err != nil {
+	if err := waitForSocket(socketPath, socketReadyTimeout, watch); err != nil {
 		cleanup()
-		return nil, "", DescribeResult{}, err
+		return nil, nil, "", DescribeResult{}, err
 	}
 
 	// Read max_concurrent on a throwaway client first: net/http forbids mutating
@@ -450,15 +465,15 @@ func spawnAndDescribe(l launch, env []string) (*exec.Cmd, string, DescribeResult
 	desc, err := describeOverSocket(context.Background(), socketPath)
 	if err != nil {
 		cleanup()
-		return nil, "", DescribeResult{}, fmt.Errorf("plugin.describe: %w", err)
+		return nil, nil, "", DescribeResult{}, fmt.Errorf("plugin.describe: %w", err)
 	}
 
 	if err := checkProtocolVersion(name, desc.ProtocolVersion); err != nil {
 		cleanup()
-		return nil, "", DescribeResult{}, err
+		return nil, nil, "", DescribeResult{}, err
 	}
 
-	return cmd, socketPath, desc, nil
+	return cmd, watch, socketPath, desc, nil
 }
 
 // Probe runs binaryPath through the same handshake Start uses — spawn, wait for
@@ -477,12 +492,12 @@ func Probe(binaryPath string, env ...string) (DescribeResult, error) {
 			"NINE_PLUGIN_CACHE_DIR="+cacheDir,
 			"NINE_PLUGIN_CACHE_PERSISTENT=0")
 	}
-	cmd, socketPath, desc, err := spawnAndDescribe(binaryLaunch(binaryPath), env)
+	cmd, watch, socketPath, desc, err := spawnAndDescribe(binaryLaunch(binaryPath), env)
 	if err != nil {
 		return DescribeResult{}, err
 	}
 	cmd.Process.Kill() //nolint:errcheck // best-effort
-	cmd.Wait()         //nolint:errcheck
+	watch.wait()       //nolint:errcheck // reaped by watchProcess
 	os.Remove(socketPath)
 	return desc, nil
 }
