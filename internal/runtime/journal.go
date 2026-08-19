@@ -140,49 +140,6 @@ func (w *AgentWorker) journal(turn int, typ, span, parent string, payload any) {
 	})
 }
 
-// wireJournalHooks registers the loop callbacks that feed the journal for the
-// in-flight turn. It returns the loop's existing progress callbacks untouched;
-// callers set both the progress emit and these journal hooks. turn is the
-// stable turn number for the duration of the loop run.
-//
-// The llm/tool/context/thinking journal hooks run on the worker goroutine (the
-// loop calls them synchronously), so llmCallN/toolN need no locking.
-func (w *AgentWorker) wireJournalHooks(turn int) {
-	root := turnSpan(turn)
-	w.loop.SetOnLLMRequest(func(req *llm.Request, tokensUsed, budget, llmCallN int) {
-		w.llmCallN = llmCallN
-		names := make([]string, len(req.Tools))
-		for i, t := range req.Tools {
-			names[i] = t.Name
-		}
-		w.journal(turn, "llm_request", llmSpan(turn, llmCallN), root, llmRequestPayload{
-			System:     req.System,
-			Messages:   req.Messages,
-			ToolNames:  names,
-			MaxTokens:  req.MaxTokens,
-			TokensUsed: tokensUsed,
-			Budget:     budget,
-			LLMCallN:   llmCallN,
-		})
-	})
-	w.loop.SetOnLLMResponse(func(resp *llm.Response, llmCallN int) {
-		w.journal(turn, "llm_response", llmSpan(turn, llmCallN), root, llmResponsePayload{
-			Text:         resp.Text,
-			ToolCalls:    resp.ToolCalls,
-			StopReason:   resp.StopReason,
-			LLMCallN:     llmCallN,
-			InputTokens:  resp.Usage.InputTokens,
-			OutputTokens: resp.Usage.OutputTokens,
-		})
-	})
-}
-
-// clearJournalHooks detaches the loop's journal callbacks after a turn.
-func (w *AgentWorker) clearJournalHooks() {
-	w.loop.SetOnLLMRequest(nil)
-	w.loop.SetOnLLMResponse(nil)
-}
-
 // journalToolStart records a tool_start under the current LLM call and advances
 // the per-turn tool counter. Runs on the worker goroutine.
 func (w *AgentWorker) journalToolStart(turn int, name string, input json.RawMessage) {

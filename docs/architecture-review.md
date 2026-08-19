@@ -25,9 +25,9 @@
 |---|---|---|---|
 | **F1** | ~~Token budgeting is a `chars/4` estimate and is never reconciled against actual usage — the provider never returns a count~~ **Landed** — `Response.Usage` (R-LLM.8) is journaled and joins the estimate on span; calibration awaits data | **High** | S |
 | **F2** | The wire protocol is a stringly-typed fat union: 29 optional `Msg` fields with validity in comments, dispatch on raw string literals | **High** | M |
-| **F3** | Daemon assembly is duplicated between production and the eval harness; the refactor that removes it is still *Proposed* | **High** | M |
+| **F3** | ~~Daemon assembly is duplicated between production and the eval harness; the refactor that removes it is still *Proposed*~~ **Finding was wrong** — `runtime.Assemble` shipped in `cea290d`, *before* this review's own scope commit; residue handled | **High** | M |
 | **F4** | ~~No schema migration path — `user_version = 1` plus one ad-hoc `ALTER`~~ **Landed** — versioned step runner, atomic per step (R-MEM.10); unblocks `C5`/`C6` | **High** | S |
-| **F5** | `agent.Loop` carries 12 post-construction observer setters; a Loop is never fully valid until N unordered calls have happened | Medium | M |
+| **F5** | ~~`agent.Loop` carries 12 post-construction observer setters; a Loop is never fully valid until N unordered calls have happened~~ **Landed** as a per-turn `Hooks` struct — the premise (construction-time config) was wrong, the ceremony was real | Medium | M |
 | **F6** | Test coverage is inverted at the boundary: `protocol` 0.24, `tui` 0.27, `cli` 0.33 against 0.87 elsewhere | Medium | M |
 | **F7** | The four built-in plugins hold ambient authority that the capability model exists to remove | Medium | L |
 | **F8** | ~20 first-class nouns; `stage` is a working multi-stage capability with no caller, no precedence rule, and a starvation bug (`goal`+`workflow` examined and **not** collapsible — §7.1) | Medium | L |
@@ -206,6 +206,33 @@ not prevention**.
 command's reason to exist, and converts "the harness reproduces production" from
 a review-time reminder into a compile error. Highest-leverage cleanup available.
 
+**This finding was wrong, and instructively so.** `runtime.Assemble` had already
+shipped in `cea290d` — *before* `5ef3203`, the commit this review states as its
+own scope. Both `cmd/nine/daemon.go` and `tests/evals/runner/harness.go` were
+already calling it. What was still marked *Proposed* was the **design note's
+`Status:` header**, not the work.
+
+The review's stated method is "read the code first and the docs second… where the
+docs and the code disagree the code is reported and the disagreement is itself
+the finding." For F3 it did the reverse: it took a stale header as the state of
+the tree. The disagreement *was* the finding — it was just the opposite of the
+one recorded. Worth remembering when reading the rest of this document.
+
+**The residue, now handled.** Migration step 5 (retire the drift tooling) had not
+been done, and doing it as written would have been a mistake. The note claimed a
+new `AssemblyDeps` field "still forces a decision at both call sites — but that
+is a compile error, not a silent gap". It is not: `AssemblyConfig` is a
+named-field struct, and a Go composite literal need not be exhaustive, so a field
+added and passed only by production compiles cleanly at the harness call site and
+silently takes the zero value.
+
+So the guard hook was **retargeted rather than deleted** — from
+`cmd/nine/daemon.go` + `internal/runtime/builder.go` (the duplicated wiring,
+which genuinely cannot drift any more) to `internal/runtime/assembly.go` (the
+config surface, which still can). `/sync-evals` stays, with its job narrowed. The
+refactor's real gain is that the guard went from broad to narrow, not from
+present to unnecessary.
+
 ### F4 — No schema migration path · **High** · S
 
 `internal/memory/db.go` applies the schema idempotently on every `Open`, sets
@@ -270,6 +297,34 @@ also a significant part of why `build` (F3) is 280 lines.
 the three dynamic setters as methods; fold the 12 observers into the struct. F3
 and F5 should be done together — F5 is a meaningful share of what makes F3 large,
 and both edit the same call site.
+
+**Landed, but not as proposed — the diagnosis was wrong in two ways.**
+
+*The observers are not construction-time configuration.* `internal/runtime/builder.go`
+contains **zero** `SetOn*` calls. All twelve are attached by `AgentWorker.processTurn`
+immediately before `loop.Run` and detached immediately after, because each closure
+captures that turn's number (every span id derives from it) and its emit
+destination. Passing them to `NewLoop`, as proposed, would have been wrong: they
+are per-turn by necessity, not by accident. They are also order-independent —
+twelve independent observer slots, not a wiring sequence.
+
+*F5 therefore contributes nothing to F3's size*, and "both edit the same call
+site" is false — they share no file. The two were done separately.
+
+*What was real* is the ceremony: 12 setters plus 12 nil assignments, where a
+forgotten observer silently does nothing and a partial detach leaves callbacks
+attached across turns. The fix is a `Hooks` struct set through **one**
+`SetHooks(Hooks)` before the turn and **one** `ClearHooks()` after, with
+`OnStage`'s mutex discipline preserved inside `SetHooks` (it alone is read from
+the queue's goroutine). `wireJournalHooks`/`clearJournalHooks` fold into the same
+set, so the journal and progress observers are no longer attached through two
+separate mechanisms.
+
+That trade introduces one new failure mode — a `Hooks` field that `SetHooks`
+forgets to assign — which is guarded reflectively:
+`TestSetHooksWiresEveryField` sets one field at a time and asserts exactly one
+`Loop` callback is wired, and `TestEveryLoopObserverIsReachableFromHooks` catches
+the converse. Both are mutation-tested.
 
 ### F6 — Coverage is inverted at the boundary · Medium · M
 
@@ -464,7 +519,7 @@ Ordered by leverage-per-unit-risk, not by severity alone.
 |---|---|---|
 | 1 | ~~**F1** — provider usage + estimate reconciliation~~ **done** | Small, self-contained, and it instruments the system's headline constraint. Everything else is easier to reason about once budget error is measurable. |
 | 2 | ~~**F4** — migration step runner~~ **done** | Small, and its value is entirely in being written *before* it is needed. Cheapest insurance in the list. |
-| 3 | **F3 + F5** — assembly refactor and Loop hooks, together | F5 is most of what makes F3 large; done as one change they delete a hook, a slash command's rationale, and ~200 lines of wiring. |
+| 3 | ~~**F3 + F5** — assembly refactor and Loop hooks, together~~ **done, separately** — F3 had already shipped; F5 shares no file with it | The stated rationale ("F5 is most of what makes F3 large") was false: `builder.go` contains no `SetOn*` calls at all. |
 | 4 | **F2 (step 1)** — typed `MsgType` constants | Mechanical, removes the literal-typo class, and makes F6 tractable. |
 | 5 | ~~**F9** — decide local-first, then document or add a provider~~ **done** — decided: local-first *and* multi-backend (G8/N5) | A decision, not a build. Blocks nothing, unblocks F1's shape. |
 | 6 | **F6** — protocol and client tests | Follows F2 naturally; typed messages make the tests worth writing. |
