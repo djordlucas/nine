@@ -132,25 +132,45 @@ zero or more tool calls in its ReAct inner loop. The hierarchy is therefore:
 session ──► turn ──► tool call
 ```
 
+**Workflow** — a **ledger of delegated work**, kept by the model *inside* a turn (a row
+in `workflows`, whose steps carry `Step.AgentID`). It sits here, beside the sub-agent,
+rather than with the goal below, because that is what it records: a workflow step *is* a
+sub-agent delegation, and `workflow_*` tool calls are how the model writes down what it
+delegated and how far it got.
+
+It is passive. A workflow has **no session, no scheduler, and no driver** —
+`workflow.Service` is pure record-keeping — so it advances only when a model calls a
+tool. That is the whole difference from a goal (§3.2): a goal is a **machine**, a
+workflow is a **record**. Presenting the two as siblings, as this document previously
+did, is why they read as duplicates of each other; the axis that separates them is
+**autonomy**, not ordering.
+
 ### 3.2 Organizing structures
 
-These are **not** work units — they are durable structures imposed *over* sessions and
-their tool calls, and are manipulated through tool calls.
+This is a durable structure imposed *over* sessions, and manipulated through tool calls.
 
 - **Goal** — an open-ended *intention* (a row in `goals`, with a sub-goal/sub-work
   subtree). It is not itself a session: the `goals` record persists independently of
   whether its background **goal-pursue session** is currently running (a goal can be
   `paused` with no live session). Top-level goals own one pursue session each.
-- **Workflow** — a durable, ordered *plan* (a row in `workflows`). Its **steps** are
-  executed by **sub-agents** (`Step.AgentID`), and the plan is advanced with
-  `workflow_*` tool calls. A workflow is one layer above tool calls: a structured group
-  of steps, each run by a sub-agent, which in turn issues tool calls.
+
+A goal is the only member of this category, because it is the only structure that
+**owns a worker and wakes itself**: `agentID == goalID`, an interval or cron decides
+when it next runs, and its own pursue session advances it *between* turns. Nothing else
+in the taxonomy has a scheduler behind it.
+
+**Workflow used to be listed here and is not one of these.** It has no session and no
+scheduler; it is advanced by the calling model inside a turn, which is why it now sits
+in §3.1 beside the sub-agent whose delegations it records. The distinction matters
+because merging the two — an appealing idea, since both are "an ordered thing a session
+works through" — would put a scheduler behind something that must not have one. See
+`docs/concept-consolidation.md` §4.
 
 ### 3.3 Relationships
 
 ```text
 Conversation ──creates──► Goal        (open-ended intention; owns a pursue session)
-Conversation ──creates──► Workflow    (ordered plan over sub-agent steps)
+Conversation ──keeps────► Workflow    (a ledger of its own delegations; no session)
 Goal         ──spawns───► Goal        (sub-goals, no user approval)
 Session      ──delegates► Sub-agent   (run_agent / run_agents, depth-capped — I6)
 Workflow step─runs-as───► Sub-agent   (Step.AgentID)

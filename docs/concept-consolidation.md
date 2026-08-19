@@ -19,13 +19,13 @@
 
 | # | Change | Why | Schema? |
 |---|---|---|---|
-| **C1** | `handleIdle` picks the **longest-overdue** stage, not the first in array order | A real bug: a short-interval stage listed first starves a long-interval one | no |
-| **C2** | **Exactly one stage** may carry `role` / `delegates` / goal-ownership, validated at load | Three functions resolve these by first-match, so with two stages behavior depends on JSON array order | no |
+| **C1** | ~~`handleIdle` picks the **longest-overdue** stage, not the first in array order~~ **done** | A real bug: a short-interval stage listed first starves a long-interval one | no |
+| **C2** | ~~**Exactly one stage** may carry `role` / `delegates` / goal-ownership, validated at load~~ **done** | Three functions resolve these by first-match, so with two stages behavior depends on JSON array order | no |
 | **C3** | Add a **two-stage profile**; let `[[agent]]` declare a stage list | `loadOrCreatePlan` already supports N stages and nothing passes more than one — the capability has no caller | no |
 | **C4** | Make **`reflect` an aspect any session can carry** | Reflection is special-cased as a session *kind* in three places; as an aspect, any pursue session or standing agent can reflect on its own progress | no |
 | **C5** | Delete the **`reflections` table**; `nine reflections` → `nine log <agent>` | No `agent_id` column, so it breaks under `C4`; its content is already in the journal; the durable output of a reflection turn is a KV write | **yes** |
 | **C6** | Delete **`goal.subtree`** and **`goal_append_subtree`** | `parent_id` is the authoritative edge; `subtree` is a free-text copy nothing reads, which the prompt asks the model to maintain by hand | **yes** |
-| **C7** | Move **`workflow`** beside the sub-agent in `spec/overview.md` | §3.2 presents goal and workflow as siblings; they are not, and that false parallelism is why they read as duplicates | no (docs) |
+| **C7** | ~~Move **`workflow`** beside the sub-agent in `spec/overview.md`~~ **done** | §3.2 presents goal and workflow as siblings; they are not, and that false parallelism is why they read as duplicates | no (docs) |
 
 **Optional, and only on its own:** rename `stage` → `aspect`. The code implements
 concurrent aspects that retire independently; the word implies a sequence. Real
@@ -48,6 +48,22 @@ Invisible today because no plan has two stages; a guaranteed defect the moment
 overdue** (largest negative remaining) rather than the first. One comparison, and
 it makes fairness independent of JSON ordering.
 
+**Done — but not as one comparison.** `stageNextWake` ends in `max(…, 0)`, so
+`remaining` is **never negative**: every overdue stage reports exactly `0` and
+"largest negative remaining" is not a quantity the code can produce. The clamp is
+documented behavior and `armIdleTimer` depends on it (a negative duration would
+arm a timer in the past), so it stays. The unclamped reading was factored out as
+`stageWakeDelta`, with `stageNextWake` (clamped, for arming) and `stageOverdueBy`
+(for choosing) as the two views of it.
+
+Two further details the sketch did not cover. Selection is a **stable sort**, not
+a single pick, so a stage that is due but whose `OnIdle` declines yields to the
+next-most-overdue rather than costing the whole tick — and equal overdueness
+falls back to array order, so single-stage plans behave exactly as before. And
+every stage *considered* is marked as fired, not only the one that runs:
+otherwise a declining stage stays maximally overdue, wins the sort forever, and
+starves the others in a new way.
+
 ### C2 — Define stage precedence
 
 `roleNameForPlan` (`roles.go:318`), `planOwnsGoal` (`session_plan.go:198`) and
@@ -59,6 +75,17 @@ Require that **at most one stage** carries `role`, `delegates`, or goal ownershi
 and reject a plan violating it at construction and at load. This turns undefined
 behavior into a validated invariant rather than leaving a rule to be inferred from
 iteration order.
+
+**Done, with the claim narrowed.** Only `roleNameForPlan` is actually
+order-dependent — it returns the role of the *first* role-bearing stage.
+`planOwnsGoal` and `planDelegates` are existence checks (`any stage has kind
+pursue`), so their result does not depend on order at all. The invariant is still
+the right one, for two different reasons: at most one **role-bearing** stage,
+because a session has exactly one role and it must not be decided by
+serialization order; and at most one **pursue** stage, because a pursue session
+owns its goal 1:1 (`agentID == goalID`) and two would describe something the
+identity relation cannot express. `validateStages` enforces both, at construction
+and at load.
 
 ### C3 — Make multi-stage reachable
 
