@@ -34,9 +34,48 @@ const defaultIdleConns = 64
 type httpClient struct {
 	name       string // plugin name, for log correlation
 	cmd        *exec.Cmd
+	watch      *procWatch // the single reaper for cmd; see procWatch
 	socketPath string
 	hc         *http.Client
 	stopped    atomic.Bool
+}
+
+// procWatch owns the one permitted Wait on a spawned plugin process.
+//
+// exec.Cmd allows Wait to be called exactly once, which used to make the exit
+// status unavailable to anyone but the caller who reaped it. Startup needs it
+// (a plugin that dies before listening must be reported as dead, not as slow)
+// and so does stop. Reaping once here and fanning the result out over a closed
+// channel gives both, without either racing the other for the single Wait.
+type procWatch struct {
+	done chan struct{} // closed once the process has exited and been reaped
+	err  error         // the Wait result; safe to read only after done is closed
+}
+
+// watchProcess reaps cmd in the background. Call it immediately after Start.
+func watchProcess(cmd *exec.Cmd) *procWatch {
+	w := &procWatch{done: make(chan struct{})}
+	go func() {
+		w.err = cmd.Wait()
+		close(w.done) // publishes w.err to every later reader
+	}()
+	return w
+}
+
+// exited reports whether the process is already gone, without blocking.
+func (w *procWatch) exited() bool {
+	select {
+	case <-w.done:
+		return true
+	default:
+		return false
+	}
+}
+
+// wait blocks until the process exits and returns the Wait result.
+func (w *procWatch) wait() error {
+	<-w.done
+	return w.err
 }
 
 // dialUnix returns a DialContext that always dials socketPath over AF_UNIX.
@@ -49,7 +88,7 @@ func dialUnix(socketPath string) func(context.Context, string, string) (net.Conn
 
 // newHTTPClient builds the real per-plugin client. maxConcurrent maps onto
 // MaxConnsPerHost (0 = unbounded).
-func newHTTPClient(name, socketPath string, cmd *exec.Cmd, maxConcurrent int) *httpClient {
+func newHTTPClient(name, socketPath string, cmd *exec.Cmd, watch *procWatch, maxConcurrent int) *httpClient {
 	idle := maxConcurrent
 	if idle == 0 {
 		idle = defaultIdleConns
@@ -57,6 +96,7 @@ func newHTTPClient(name, socketPath string, cmd *exec.Cmd, maxConcurrent int) *h
 	return &httpClient{
 		name:       name,
 		cmd:        cmd,
+		watch:      watch,
 		socketPath: socketPath,
 		hc: &http.Client{
 			Transport: &http.Transport{
@@ -96,8 +136,10 @@ func (c *httpClient) stop() error {
 		c.cmd.Process.Signal(syscall.SIGTERM) //nolint:errcheck // best-effort; fall through to Wait/Kill
 	}
 
+	// The process is reaped by its procWatch, not here: exec.Cmd permits only one
+	// Wait, and startup already claimed it.
 	done := make(chan error, 1)
-	go func() { done <- c.cmd.Wait() }()
+	go func() { done <- c.watch.wait() }()
 
 	var err error
 	select {
@@ -165,9 +207,19 @@ func postRPC(ctx context.Context, hc *http.Client, method string, params any) (j
 	return reply.Result, nil
 }
 
-// waitForSocket dials the plugin socket until it accepts a connection or the
-// budget expires, so Start fails cleanly if the plugin never comes up.
-func waitForSocket(socketPath string, timeout time.Duration) error {
+// waitForSocket dials the plugin socket until it accepts a connection, the
+// process dies, or the budget expires.
+//
+// Watching for death matters as much as the timeout. A plugin that exits during
+// startup — a missing shared library, a bad argument, an immediate panic — used
+// to be reported only after the full budget elapsed, and reported as "socket not
+// ready", which describes the symptom and hides the cause. Now it fails at once
+// and says the process exited.
+//
+// The budget therefore only governs the remaining case: alive, but not listening
+// yet. Waiting longer there costs nothing when things are healthy, because this
+// returns as soon as the dial succeeds — it is a poll, not a sleep.
+func waitForSocket(socketPath string, timeout time.Duration, watch *procWatch) error {
 	deadline := time.Now().Add(timeout)
 	for {
 		conn, err := net.Dial("unix", socketPath)
@@ -175,8 +227,12 @@ func waitForSocket(socketPath string, timeout time.Duration) error {
 			conn.Close() //nolint:errcheck
 			return nil
 		}
+		if watch != nil && watch.exited() {
+			return fmt.Errorf("plugin exited during startup before listening on %s: %w",
+				socketPath, watch.wait())
+		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("plugin socket %s not ready: %w", socketPath, err)
+			return fmt.Errorf("plugin socket %s not ready after %s: %w", socketPath, timeout, err)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
