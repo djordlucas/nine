@@ -888,9 +888,11 @@ func TestLoopPlanEventsAndNotice(t *testing.T) {
 	}, newTestBuilder(), llm.NewQueue(prov, 1), newEchoDispatcher())
 
 	var starts, ends, notices int
-	loop.SetOnPlanStart(func() { starts++ })
-	loop.SetOnPlanEnd(func() { ends++ })
-	loop.SetOnNotice(func(string) { notices++ })
+	loop.SetHooks(agent.Hooks{
+		OnPlanStart: func() { starts++ },
+		OnPlanEnd:   func() { ends++ },
+		OnNotice:    func(string) { notices++ },
+	})
 
 	for range 2 {
 		if _, err := loop.Run(context.Background(), "hi"); err != nil {

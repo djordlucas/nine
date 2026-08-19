@@ -27,7 +27,8 @@ daemon-private, R-MEM.4).
 Events are produced by `runtime.NewSQLEventSink`, an **async, batched** writer wired into
 each `AgentWorker`. Writing **MUST** stay off the turn's critical path (a slow or failed
 journal write must not stall a user turn). Per-turn loop hooks
-(`wireJournalHooks`/`clearJournalHooks`) emit at least these types:
+(`AgentWorker.turnHooks`, attached via `Loop.SetHooks` and detached with
+`ClearHooks`) emit at least these types:
 
 ```text
 turn_start      {input}
