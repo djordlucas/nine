@@ -83,7 +83,7 @@ func TestSpawnStandingSessionSeedsRoleAndInterval(t *testing.T) {
 	d, _ := startDaemon(t, makeFactory(seqProvider(nil)), nil, nil)
 	d.ConfigurePlanStore(store)
 
-	spawned, err := d.SpawnStandingSession(context.Background(), "sec-watch", "monitor", false, time.Hour, "")
+	spawned, err := d.SpawnStandingSession(context.Background(), "sec-watch", "monitor", false, time.Hour, "", nil)
 	if err != nil {
 		t.Fatalf("SpawnStandingSession: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestSpawnStandingSessionSeedsRoleAndInterval(t *testing.T) {
 	}
 
 	// Idempotent for an already-running standing session.
-	spawned, err = d.SpawnStandingSession(context.Background(), "sec-watch", "monitor", false, time.Hour, "")
+	spawned, err = d.SpawnStandingSession(context.Background(), "sec-watch", "monitor", false, time.Hour, "", nil)
 	if err != nil || !spawned {
 		t.Errorf("SpawnStandingSession (second call) = (%v, %v), want (true, nil)", spawned, err)
 	}
@@ -134,7 +134,7 @@ func TestTeardownStandingSession(t *testing.T) {
 	d, _ := startDaemon(t, makeFactory(seqProvider(nil)), nil, nil)
 	d.ConfigurePlanStore(store)
 
-	if _, err := d.SpawnStandingSession(context.Background(), "sec-watch", "monitor", false, time.Hour, ""); err != nil {
+	if _, err := d.SpawnStandingSession(context.Background(), "sec-watch", "monitor", false, time.Hour, "", nil); err != nil {
 		t.Fatalf("SpawnStandingSession: %v", err)
 	}
 	if got := d.ActiveGoalSessionCountForTest(); got != 1 {

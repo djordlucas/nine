@@ -110,10 +110,18 @@ func initStages(ctx context.Context, agentID string, stages []memory.SessionStag
 //
 // store may be nil, in which case the plan is purely in-memory (no
 // persistence, no resume).
-// roleBearingKinds are the stage kinds that decide a session's role. A session
-// has exactly one role, fixed at loop-build time (docs/roles.md), so at most one
-// stage may claim it.
-var roleBearingKinds = map[string]bool{"pursue": true, "idle-reflection": true}
+// roleBearingKinds are the stage kinds that decide a session's role by kind
+// alone. A session has exactly one role, fixed at loop-build time
+// (docs/roles.md), so at most one stage may claim it.
+//
+// Only `pursue` is here, and deliberately: for every other stage the role is
+// *data* (stageConfig.Role), not an implication of the kind. That is what lets
+// the same kind be a session's whole purpose in one plan and a passenger in
+// another — a reflection stage carries the reflection role when it is the
+// session, and carries none when it rides alongside a pursue shell. Encoding
+// the role in the kind made those two cases indistinguishable, so a reflecting
+// pursue session was unrepresentable.
+var roleBearingKinds = map[string]bool{"pursue": true}
 
 // validateStages rejects a plan whose stages would make role, delegation, or
 // goal ownership depend on their order in the array.
@@ -360,8 +368,11 @@ func stageScheduled(cfg json.RawMessage) bool {
 // BootstrapSelfReflection and SpawnGoalSession to seed idle-capable profiles
 // ([idle-reflection], [pursue]) that loadOrCreatePlan's generic profile
 // seeding (which sets no Config) can't produce.
-func newIdleCapablePlan(id, stageKind string, idleInterval time.Duration) (*memory.SessionPlan, error) {
-	cfg, err := json.Marshal(map[string]int{"idle_interval_seconds": int(idleInterval.Seconds())})
+func newIdleCapablePlan(id, stageKind, role string, idleInterval time.Duration) (*memory.SessionPlan, error) {
+	cfg, err := json.Marshal(stageConfig{
+		Role:                role,
+		IdleIntervalSeconds: int(idleInterval.Seconds()),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("marshal %s config: %w", stageKind, err)
 	}
@@ -388,7 +399,7 @@ func newIdleCapablePlan(id, stageKind string, idleInterval time.Duration) (*memo
 // roleNameForPlan / planDelegates resolve the agent's narrowed role while
 // keeping the pursue shell. The stage's wake trigger is a cron schedule when
 // schedule is non-empty, otherwise the fixed idleInterval.
-func newStandingPursuePlan(id, role string, delegates bool, idleInterval time.Duration, schedule string) (*memory.SessionPlan, error) {
+func newStandingPursuePlan(id, role string, delegates bool, idleInterval time.Duration, schedule string, aspects []StageAspect) (*memory.SessionPlan, error) {
 	sc := stageConfig{Role: role, Delegates: delegates}
 	if schedule != "" {
 		sc.Schedule = schedule
@@ -400,19 +411,95 @@ func newStandingPursuePlan(id, role string, delegates bool, idleInterval time.Du
 		return nil, fmt.Errorf("marshal standing pursue config: %w", err)
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	return &memory.SessionPlan{
-		ID:     id,
-		Status: "active",
-		Stages: []memory.SessionStage{{
-			Name:      "pursue",
-			Kind:      "pursue",
+
+	stages := []memory.SessionStage{{
+		Name:      "pursue",
+		Kind:      "pursue",
+		Status:    "active",
+		Config:    cfg,
+		UpdatedAt: now,
+	}}
+	// Additional aspects wake on their own cadence beside the pursue shell.
+	// None carries a role: the pursue stage is the session's one role-bearing
+	// stage, and validateStages rejects a second claimant.
+	for _, a := range aspects {
+		ac := stageConfig{}
+		if a.Schedule != "" {
+			ac.Schedule = a.Schedule
+		} else {
+			ac.IdleIntervalSeconds = int(a.Interval.Seconds())
+		}
+		b, err := json.Marshal(ac)
+		if err != nil {
+			return nil, fmt.Errorf("marshal aspect %q config: %w", a.Kind, err)
+		}
+		stages = append(stages, memory.SessionStage{
+			Name:      a.Kind,
+			Kind:      a.Kind,
 			Status:    "active",
-			Config:    cfg,
+			Config:    b,
 			UpdatedAt: now,
-		}},
+		})
+	}
+
+	plan := &memory.SessionPlan{
+		ID:        id,
+		Status:    "active",
+		Stages:    stages,
 		CreatedAt: now,
 		UpdatedAt: now,
-	}, nil
+	}
+	// Fail here rather than at the next load: this is where the operator's
+	// config becomes a plan, so this is where the error can name their mistake.
+	if err := validateStages(id, plan.Stages); err != nil {
+		return nil, err
+	}
+	return plan, nil
+}
+
+// StageAspect is one additional stage requested on a standing agent's session,
+// resolved from an [[agent.aspect]] entry. Exactly one of Interval or Schedule
+// is set; an aspect with neither would never wake, which ValidateAspects
+// rejects before it can become a stage that quietly does nothing.
+type StageAspect struct {
+	Kind     string
+	Interval time.Duration
+	Schedule string
+}
+
+// ValidateAspects checks operator-declared aspects before they become stages.
+//
+// Every failure here is one that would otherwise be silent: an unregistered kind
+// produces a stage with no handler (it is scheduled, wakes, finds nothing to run,
+// and rearms forever), a missing cadence produces a stage that never wakes at
+// all, and a duplicate kind produces two stages with the same name, which
+// idleSince keys on.
+func ValidateAspects(aspects []StageAspect) error {
+	seen := map[string]bool{}
+	for _, a := range aspects {
+		if a.Kind == "" {
+			return errors.New("aspect has no kind")
+		}
+		// Checked before the registry lookup so the specific reason wins: pursue
+		// is a registered kind, just not one an aspect may ask for.
+		if a.Kind == "pursue" {
+			return errors.New(`aspect "pursue" duplicates the session's own pursue shell`)
+		}
+		if _, ok := StageRegistry[a.Kind]; !ok {
+			return fmt.Errorf("aspect %q is not a registered stage kind", a.Kind)
+		}
+		if seen[a.Kind] {
+			return fmt.Errorf("aspect %q declared twice", a.Kind)
+		}
+		seen[a.Kind] = true
+		if a.Interval <= 0 && a.Schedule == "" {
+			return fmt.Errorf("aspect %q has neither interval nor schedule, so it would never wake", a.Kind)
+		}
+		if a.Interval > 0 && a.Schedule != "" {
+			return fmt.Errorf("aspect %q sets both interval and schedule; they are mutually exclusive", a.Kind)
+		}
+	}
+	return nil
 }
 
 // planNeedsResume reports whether p has at least one active, idle-capable

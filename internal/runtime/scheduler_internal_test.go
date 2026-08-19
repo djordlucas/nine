@@ -70,7 +70,7 @@ func TestPlanNeedsResumeCron(t *testing.T) {
 }
 
 func TestNewStandingPursuePlanCron(t *testing.T) {
-	plan, err := newStandingPursuePlan("sec-watch", "monitor", false, 0, "0 9 * * 1-5")
+	plan, err := newStandingPursuePlan("sec-watch", "monitor", false, 0, "0 9 * * 1-5", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

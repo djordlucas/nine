@@ -305,10 +305,16 @@ func trustedRoleSource(source string) bool {
 // purely restrictive: defining a role must never become an escalation path.
 var trustedRoleSources = []string{memory.SkillSourceUser}
 
-// roleNameForPlan maps a session plan's stage profile to the role its worker
-// runs (docs/roles.md §6): pursue sessions run the pursue role,
-// idle-reflection sessions the reflection role, everything else (ordinary
-// [active] conversations, nil plans) the orchestrator.
+// roleNameForPlan maps a session plan's stages to the role its worker runs
+// (docs/roles.md §6). The role is data: a stage that declares one in its config
+// supplies it, whatever its kind. Failing that, a pursue shell runs the pursue
+// role, and everything else — ordinary [active] conversations, nil plans — the
+// orchestrator.
+//
+// Resolving by config rather than by kind is what lets a stage kind mean
+// different things in different plans: a reflection stage is the session's whole
+// purpose when it stands alone (and declares the reflection role), and a
+// passenger when it rides beside a pursue shell (and declares none).
 //
 // A pursue stage may carry an explicit work-role name in its config (seeded by
 // SpawnStandingSession for pre-defined agents, docs/predefined-agents.md §5
@@ -319,15 +325,17 @@ func roleNameForPlan(plan *sessionPlanState) string {
 	if plan == nil || plan.plan == nil {
 		return OrchestratorRole
 	}
+	// A role declared in stage config wins wherever it appears; validateStages
+	// guarantees at most one stage declares one.
 	for _, st := range plan.plan.Stages {
-		switch st.Kind {
-		case "pursue":
-			if role := stageRole(st.Config); role != "" {
-				return role
-			}
+		if role := stageRole(st.Config); role != "" {
+			return role
+		}
+	}
+	// Otherwise a pursue shell runs the default pursue role.
+	for _, st := range plan.plan.Stages {
+		if st.Kind == "pursue" {
 			return PursueRole
-		case "idle-reflection":
-			return ReflectionRole
 		}
 	}
 	return OrchestratorRole
