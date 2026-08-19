@@ -126,10 +126,10 @@ func (d db) QueryRow(query string, args ...any) *sql.Row {
 	return d.pool(query).QueryRow(query, args...)
 }
 
-// BeginWrite starts a transaction on the writer pool. Nothing in the package
-// needs one today; it exists so that the first caller to reach for a
-// transaction gets the writer (a transaction on the read-only pool would fail
-// confusingly) and _txlock=immediate's safe locking semantics for free.
+// BeginWrite starts a transaction on the writer pool, so a caller gets the
+// writer (a transaction on the read-only pool would fail confusingly) and
+// _txlock=immediate's safe locking semantics for free. The schema migration
+// runner uses it to apply each step and its user_version bump atomically.
 func (d db) BeginWrite() (*sql.Tx, error) { return d.w.Begin() }
 
 // Store wraps the database and exposes typed methods for every domain.
@@ -229,6 +229,14 @@ func (s *Store) Close() error {
 }
 
 func initSchema(d db) error {
+	// Read the version before any DDL runs, so a database SQLite just created
+	// (user_version 0, no tables) is distinguishable from one in the field.
+	before, err := userVersion(d)
+	if err != nil {
+		return err
+	}
+	fresh := before == 0 && !hasTable(d, "conversations")
+
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS kv (
 			key        TEXT PRIMARY KEY,
@@ -445,52 +453,38 @@ func initSchema(d db) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS plugin_jobs_owner ON plugin_jobs (owner_id)`,
 		`CREATE INDEX IF NOT EXISTS plugin_jobs_state ON plugin_jobs (state)`,
-		// The schema is still applied idempotently on every Open rather than by
-		// migration, but user_version gives that a version to reason about — and
-		// is where the bookkeeping goes the day the FTS tokenizer changes and the
-		// index needs an INSERT INTO files_fts(files_fts) VALUES('rebuild').
-		`PRAGMA user_version = 1`,
 	}
 	for _, s := range stmts {
 		if _, err := d.Exec(s); err != nil {
 			return fmt.Errorf("create schema: %w", err)
 		}
 	}
-	// The `tools` table shipped in v2.1.0 without a lockfile column; a database
-	// created then needs it added, which CREATE TABLE IF NOT EXISTS cannot do. The
-	// schema is otherwise migration-free, so this is the one idempotent ALTER —
-	// kept explicit rather than growing a migration framework for a single column.
-	if err := addColumnIfMissing(d, "tools", "lockfile", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
-		return fmt.Errorf("create schema: %w", err)
+
+	// CREATE TABLE IF NOT EXISTS above handles new tables and indexes and nothing
+	// else. Everything it cannot express — a column added to an existing table, a
+	// backfill, an FTS rebuild after a tokenizer change — is a numbered step in
+	// migrate.go, applied here.
+	//
+	// A fresh database is stamped at the current version without running any
+	// step: the statements above already built the current shape, and a step that
+	// renames or rewrites a column would fail against it.
+	if fresh {
+		return setUserVersion(d, schemaVersion())
 	}
-	return nil
+	return migrate(d, before)
 }
 
-// addColumnIfMissing adds column to table only when it is absent, so it is safe
-// to run on every Open. Needed for a column added to a table that predates it;
-// CREATE TABLE IF NOT EXISTS is a no-op against an existing table.
-func addColumnIfMissing(d db, table, column, def string) error {
-	rows, err := d.Query("PRAGMA table_info(" + table + ")")
-	if err != nil {
-		return err
-	}
-	defer rows.Close() //nolint:errcheck
-	for rows.Next() {
-		var (
-			cid, notnull, pk int
-			name, ctype      string
-			dflt             sql.NullString
-		)
-		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
-			return err
-		}
-		if name == column {
-			return rows.Close()
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	_, err = d.Exec("ALTER TABLE " + table + " ADD COLUMN " + column + " " + def)
-	return err
+// hasTable reports whether a user table of this name exists. Used only to tell a
+// database SQLite has just created from one that predates version stamping;
+// both report user_version 0.
+//
+// It goes to d.w directly rather than through d.QueryRow. This runs inside
+// initSchema, which Open calls *before* it opens the reader pool — so d.r is
+// still nil, and the pool router sends anything starting with SELECT there.
+func hasTable(d db, name string) bool {
+	var n int
+	err := d.w.QueryRow(
+		`SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, name,
+	).Scan(&n)
+	return err == nil && n > 0
 }

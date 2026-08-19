@@ -4,10 +4,9 @@
   Five need no schema change. Nothing an operator or the model can observe is
   removed except one redundant agent tool (`C6`).
 - **Date:** 2026-08-18.
-- **Depends on:** **F4** (the schema migration runner) from
-  [`architecture-review.md`](architecture-review.md) — required by `C5` and `C6`
-  only. Also `session-plans.md`, `roles.md`, `predefined-agents.md`,
-  `workflows.md`.
+- **Depends on:** ~~**F4** (the schema migration runner)~~ **landed** as R-MEM.10 —
+  it gated `C5` and `C6` only, so both are now unblocked. Also `session-plans.md`,
+  `roles.md`, `predefined-agents.md`, `workflows.md`.
 - **Context:** F8 in the review counted ~20 first-class nouns in the worker
   vocabulary. This note is the resolution for the session-plan / stage / goal /
   workflow / reflection cluster. Two directional decisions shaped it: **multi-stage
