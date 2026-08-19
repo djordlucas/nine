@@ -21,7 +21,7 @@
 |---|---|---|---|
 | **C1** | ~~`handleIdle` picks the **longest-overdue** stage, not the first in array order~~ **done** | A real bug: a short-interval stage listed first starves a long-interval one | no |
 | **C2** | ~~**Exactly one stage** may carry `role` / `delegates` / goal-ownership, validated at load~~ **done** | Three functions resolve these by first-match, so with two stages behavior depends on JSON array order | no |
-| **C3** | Add a **two-stage profile**; let `[[agent]]` declare a stage list | `loadOrCreatePlan` already supports N stages and nothing passes more than one — the capability has no caller | no |
+| **C3** | ~~Add a **two-stage profile**; let `[[agent]]` declare a stage list~~ **done** (`[[agent.aspect]]`) | `loadOrCreatePlan` already supports N stages and nothing passes more than one — the capability has no caller | no |
 | **C4** | Make **`reflect` an aspect any session can carry** | Reflection is special-cased as a session *kind* in three places; as an aspect, any pursue session or standing agent can reflect on its own progress | no |
 | **C5** | Delete the **`reflections` table**; `nine reflections` → `nine log <agent>` | No `agent_id` column, so it breaks under `C4`; its content is already in the journal; the durable output of a reflection turn is a KV write | **yes** |
 | **C6** | Delete **`goal.subtree`** and **`goal_append_subtree`** | `parent_id` is the authoritative edge; `subtree` is a free-text copy nothing reads, which the prompt asks the model to maintain by hand | **yes** |
@@ -108,6 +108,33 @@ pass exactly one.
 Add a two-stage profile — `["pursue", "reflect"]` from `C4` is the natural first —
 and let an `[[agent]]` entry declare a stage list instead of a single implied
 stage.
+
+**Done as `[[agent.aspect]]`**: a nested table array, so the existing single-stage
+shape is untouched and each aspect carries its own `interval`/`schedule`.
+`ValidateAspects` rejects the declarations that would otherwise fail silently — an
+unregistered kind (scheduled, wakes, finds no handler, rearms forever), a missing
+cadence (never wakes at all), a duplicate kind (two stages sharing the name
+`idleSince` keys on), and `pursue` (which duplicates the shell).
+
+**C3 turned out to require part of C4.** The only registered second aspect,
+`idle-reflection`, was *role-bearing by kind*, so `["pursue", "idle-reflection"]`
+was rejected by `C2`'s own rule — C3's mechanism would have shipped with no aspect
+it could legally combine. The fix is C4's underlying idea, landed here: **the role
+is data, not an implication of the kind.** `roleBearingKinds` keeps only `pursue`;
+`roleNameForPlan` resolves a role declared in any stage's config, falling back to
+the pursue default. The dedicated reflection session now declares
+`role = "reflection"` in its stage config (`BootstrapSelfReflection`), so it is
+unchanged, while the same kind rides role-free beside a pursue shell.
+
+That is what makes a kind mean different things in different plans: a reflection
+stage is the session's whole purpose when it stands alone, and a passenger when it
+does not. Encoding the role in the kind made those indistinguishable, so a
+reflecting pursue session was simply unrepresentable.
+
+**Still outstanding from `C4`:** deleting `BootstrapSelfReflection` and moving the
+dedicated reflection session onto a default profile. That is a boot-path change
+touching `reconcileStandingAgents` and resume, and folding it in here would have
+made both halves harder to review.
 
 Also drop `activeStage` from any profile that has a real stage. It exists only to
 give `loadOrCreatePlan` something to seed, and once profiles carry real stages it

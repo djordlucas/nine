@@ -51,7 +51,10 @@ func BootstrapSelfReflection(store PlanStore, idleInterval time.Duration) error 
 		return nil // already bootstrapped
 	}
 
-	plan, err := newIdleCapablePlan(SelfReflectionAgentID, "idle-reflection", idleInterval)
+	// The role is stamped into the stage config rather than implied by the kind,
+	// so this session keeps the reflection role while the same kind can ride
+	// role-free beside a pursue shell elsewhere.
+	plan, err := newIdleCapablePlan(SelfReflectionAgentID, "idle-reflection", ReflectionRole, idleInterval)
 	if err != nil {
 		return err
 	}
