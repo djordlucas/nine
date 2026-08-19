@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -82,15 +83,61 @@ func (s *Suite) RunReplay(ctx context.Context, cases []*Case) []ReplayCaseResult
 			rc.Divergence = rr.Divergence
 		}
 		out = append(out, rc)
+		switch {
+		case rc.Err != "":
+			slog.Error("replay case errored", "case", c.ID, "err", rc.Err)
+		case !rc.Pass:
+			slog.Error("replay case DIVERGED", "case", c.ID, "divergence", rc.Divergence)
+		default:
+			slog.Info("replay case ok", "case", c.ID)
+		}
 	}
 	return out
+}
+
+// logLiveProgress reports one finished case/model verdict.
+//
+// The grid renders only after every case completes, so without this a run that
+// is interrupted — most often by the test binary's own -timeout — reports
+// nothing at all, however far it got. Emitting a line per verdict makes a
+// partial run still worth reading, and gives a sense of pace while a long matrix
+// is in flight.
+func logLiveProgress(i, total int, r CaseModelResult, elapsed time.Duration) {
+	switch {
+	case r.Skipped != "":
+		slog.Info("eval case skipped",
+			"n", fmt.Sprintf("%d/%d", i, total), "case", r.CaseID, "model", r.Model,
+			"reason", r.Skipped)
+	case r.Fatal:
+		slog.Error("eval case FAILED",
+			"n", fmt.Sprintf("%d/%d", i, total), "case", r.CaseID, "model", r.Model,
+			"passes", r.PassFraction(), "threshold", r.Threshold, "took", elapsed.Round(time.Second))
+	case !r.ThresholdOK:
+		slog.Warn("eval case below threshold (tolerated: under expected class)",
+			"n", fmt.Sprintf("%d/%d", i, total), "case", r.CaseID, "model", r.Model,
+			"passes", r.PassFraction(), "threshold", r.Threshold, "took", elapsed.Round(time.Second))
+	default:
+		slog.Info("eval case ok",
+			"n", fmt.Sprintf("%d/%d", i, total), "case", r.CaseID, "model", r.Model,
+			"passes", r.PassFraction(), "threshold", r.Threshold, "took", elapsed.Round(time.Second))
+	}
 }
 
 // RunLive executes every Track-L (live/both) case against its applicable models
 // and returns the aggregated verdicts. A model with no provider (e.g. missing
 // API key) yields a fatal-free error result so the grid still renders.
+//
+// Each verdict is logged as it lands (logLiveProgress) so an interrupted run
+// still reports what it measured.
 func (s *Suite) RunLive(ctx context.Context, cases []*Case) []CaseModelResult {
 	var out []CaseModelResult
+	total := 0
+	for _, c := range cases {
+		if c.Track == TrackLive || c.Track == TrackBoth {
+			total += len(c.ApplicableModels(s.Models))
+		}
+	}
+	done := 0
 	for _, c := range cases {
 		if c.Track != TrackLive && c.Track != TrackBoth {
 			continue
@@ -98,25 +145,36 @@ func (s *Suite) RunLive(ctx context.Context, cases []*Case) []CaseModelResult {
 		// Recorded, not dropped: a case that never ran must not read as a pass.
 		if missing := c.MissingEnv(); len(missing) > 0 {
 			for _, model := range c.ApplicableModels(s.Models) {
-				out = append(out, CaseModelResult{
+				r := CaseModelResult{
 					CaseID: c.ID, Model: model, Class: ClassOf(model).String(),
 					Tier: string(c.Tier), Threshold: c.PassThreshold,
 					Skipped: "requires " + strings.Join(missing, ", "),
-				})
+				}
+				out = append(out, r)
+				done++
+				logLiveProgress(done, total, r, 0)
 			}
 			continue
 		}
 		for _, model := range c.ApplicableModels(s.Models) {
 			provider, err := s.ProviderFor(model)
 			if err != nil {
-				out = append(out, CaseModelResult{
+				r := CaseModelResult{
 					CaseID: c.ID, Model: model, Class: ClassOf(model).String(),
 					Tier: string(c.Tier), Threshold: c.PassThreshold,
 					Runs: []RunOutcome{{Err: err.Error()}},
-				})
+				}
+				out = append(out, r)
+				done++
+				slog.Error("eval case has no provider",
+					"n", fmt.Sprintf("%d/%d", done, total), "case", c.ID, "model", model, "err", err)
 				continue
 			}
-			out = append(out, RunCaseModel(ctx, s.Harness, c, model, provider, s.JudgeFn))
+			started := time.Now()
+			r := RunCaseModel(ctx, s.Harness, c, model, provider, s.JudgeFn)
+			out = append(out, r)
+			done++
+			logLiveProgress(done, total, r, time.Since(started))
 		}
 	}
 	return out
