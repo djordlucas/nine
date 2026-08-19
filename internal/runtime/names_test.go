@@ -3,9 +3,9 @@ package runtime_test
 import (
 	"testing"
 
+	"nine/internal/llm"
 	"nine/internal/protocol"
 	"nine/internal/runtime"
-	"nine/internal/llm"
 )
 
 func TestNameFromPrompt(t *testing.T) {

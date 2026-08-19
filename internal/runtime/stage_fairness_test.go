@@ -83,9 +83,13 @@ func TestStageOverdueByIgnoresUnscheduledStages(t *testing.T) {
 // C2: at most one stage may decide the session's role. Two would make the role —
 // and so the tool boundary — depend on JSON array order.
 func TestValidateStagesRejectsTwoRoleBearingStages(t *testing.T) {
+	// One claims the role by kind (pursue), the other by config. Two different
+	// routes to the same claim, which is exactly the case that must be caught —
+	// a kind-only check would miss it.
 	err := validateStages("a1", []memory.SessionStage{
 		{Name: "pursue", Kind: "pursue", Status: "active"},
-		{Name: "reflect", Kind: "idle-reflection", Status: "active"},
+		{Name: "reflect", Kind: "idle-reflection", Status: "active",
+			Config: cfgJSON(t, stageConfig{Role: "reflection"})},
 	})
 	if err == nil {
 		t.Fatal("validateStages accepted two role-bearing stages")
@@ -126,6 +130,12 @@ func TestValidateStagesAcceptsValidPlans(t *testing.T) {
 		{"pursue plus a role-free companion", []memory.SessionStage{
 			{Name: "pursue", Kind: "pursue"},
 			{Name: "report", Kind: "report"},
+		}},
+		// The shape C3 exists to make possible: a pursue shell with a reflection
+		// aspect riding alongside, the aspect declaring no role of its own.
+		{"pursue plus a role-free reflection aspect", []memory.SessionStage{
+			{Name: "pursue", Kind: "pursue"},
+			{Name: "idle-reflection", Kind: "idle-reflection"},
 		}},
 	}
 	for _, tc := range cases {
