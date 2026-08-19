@@ -4,7 +4,7 @@ package selfmodel
 import (
 	"context"
 	"fmt"
-	"os"
+	"log/slog"
 	"strings"
 
 	"nine/internal/embed"
@@ -17,18 +17,25 @@ type Assembler struct {
 	store    *memory.Store
 	embedder embed.Embedder
 	getTools func() []string
+	runtime  string
 }
 
 // New creates an Assembler.
 //   - store is used to read KV keys and query skill vectors.
 //   - embedder is used for semantic skill ranking; nil disables the skills section.
 //   - getTools returns the current list of loaded tool names (called each turn).
+//   - runtime describes where the daemon is running (config.RuntimeLabel), shown
+//     in the Environment block. It is passed in rather than detected here: the
+//     answer cannot change while the process runs, so probing the filesystem on
+//     every turn was both wasted work and environment detection living inside
+//     prompt assembly. Empty omits the line rather than guessing.
 func New(
 	store *memory.Store,
 	embedder embed.Embedder,
 	getTools func() []string,
+	runtime string,
 ) *Assembler {
-	return &Assembler{store: store, embedder: embedder, getTools: getTools}
+	return &Assembler{store: store, embedder: embedder, getTools: getTools, runtime: runtime}
 }
 
 // Build assembles and returns the self-model block. queryVec is the embedding
@@ -42,10 +49,8 @@ func (a *Assembler) Build(_ context.Context, queryVec []float32) string {
 	if len(tools) > 0 {
 		fmt.Fprintf(&sb, "Tools (%d): %s\n", len(tools), strings.Join(tools, ", "))
 	}
-	if _, err := os.Stat("/.dockerenv"); err == nil {
-		sb.WriteString("Runtime: Docker container\n")
-	} else {
-		sb.WriteString("Runtime: host\n")
+	if a.runtime != "" {
+		fmt.Fprintf(&sb, "Runtime: %s\n", a.runtime)
 	}
 
 	// Self-knowledge from KV
@@ -74,6 +79,11 @@ func (a *Assembler) Build(_ context.Context, queryVec []float32) string {
 func (a *Assembler) querySkills(queryVec []float32) []string {
 	results, err := a.store.VectorQuery("skills", queryVec, 3)
 	if err != nil {
+		// Degrade rather than fail — a turn without the skills section is far
+		// better than no turn — but say so. Silently returning nil made a broken
+		// vector store look exactly like "no skills matched", which is the state
+		// this system spends most of its time in and would never be questioned.
+		slog.Warn("self-model skill query failed; omitting the skills section", "err", err)
 		return nil
 	}
 	out := make([]string, 0, len(results))
