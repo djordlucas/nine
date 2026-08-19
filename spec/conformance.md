@@ -77,6 +77,7 @@ How to use this file:
 | R-PROTO.7 | `EnsureDaemon` / auto-start | With a dead socket, a client auto-starts the daemon (re-exec) and connects. |
 | R-PROTO.8 | Connection & concurrency | Each connection handled concurrently and independently; concurrent clients are served in parallel. |
 | R-PROTO.9 | Every client message type is dispatched | Each member of the documented client-sendable set reaches a handler; none falls to the dispatcher's `unknown message type` default. |
+| R-PROTO.10 | A reply echoes its request's type | Every reply-reading client method rejects a non-`error` reply of the wrong type instead of returning a zero value; a wrong-typed reply produces an error naming both types. |
 
 ---
 
