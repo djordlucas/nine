@@ -25,12 +25,22 @@ ToolCall { ID string; Name string; Input json }
 
 Adding a backend is therefore a **one-method** job. Streaming is delivered through the
 request's optional `OnChunk` callback — there is no separate streaming method. The only
-adapter is **Ollama** (R-LLM.7), and it is required: Nine targets local models, so a
-hosted-API backend is deliberately absent rather than merely unimplemented. (There is no
-OpenAI *chat* adapter either — `internal/llm/openai` is an empty placeholder; OpenAI is
-available for embeddings only. A `[llm].provider` value other than `ollama` is reported
-as unknown and the Ollama adapter is built anyway, so a stale config still boots.) A
-conforming implementation **MUST** keep the provider behind the queue.
+adapter shipped today is **Ollama** (R-LLM.7), and it is required.
+
+The single implementation is **not** a reason to collapse the interface. Nine is
+local-first as a commitment (**G8**) and expects to be **multi-backend within that
+commitment** — llama.cpp and vLLM are planned, with model routing across them a stated
+direction. Note that a self-hosted server speaking a hosted provider's wire format is
+still local-first (N5): vLLM serves the OpenAI chat API, so the currently-empty
+`internal/llm/openai` placeholder is the likely home of that adapter rather than a
+hosted-OpenAI integration. Today OpenAI is available for **embeddings only**.
+
+A `[llm].provider` value other than `ollama` is reported as unknown and the Ollama
+adapter is built anyway, so a stale config still boots. **This fallback is safe only
+while one adapter exists**; once a second ships, silently serving Ollama to an operator
+who asked for something else is a misconfiguration worth failing on rather than logging.
+
+A conforming implementation **MUST** keep the provider behind the queue.
 
 ---
 
