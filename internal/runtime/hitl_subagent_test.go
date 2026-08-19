@@ -38,7 +38,7 @@ func (g *gateRecorder) snapshot() ([]protocol.Msg, []string) {
 // with reply, so a gated tool call unblocks instead of waiting out the timeout.
 func answerWith(hitl *runtime.HITL, g *gateRecorder, reply string) {
 	hitl.SetEmit(func(agentID string, msg protocol.Msg) {
-		if msg.Type != "human_input_required" {
+		if msg.Type != protocol.TypeHumanInputRequired {
 			return
 		}
 		g.record(agentID, msg)
@@ -272,7 +272,7 @@ func TestParallelSubAgentGatesGetDistinctRequests(t *testing.T) {
 	var mu sync.Mutex
 	var held []string
 	hitl.SetEmit(func(agentID string, msg protocol.Msg) {
-		if msg.Type != "human_input_required" {
+		if msg.Type != protocol.TypeHumanInputRequired {
 			return
 		}
 		g.record(agentID, msg)

@@ -419,7 +419,7 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 // dispatch routes one client message to the appropriate handler.
 func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.Msg) {
 	switch msg.Type {
-	case "new_conversation":
+	case protocol.TypeNewConversation:
 		id, err := d.newConversation(msg.Interactive)
 		if err != nil {
 			enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
@@ -434,7 +434,7 @@ func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.M
 		d.mu.RUnlock()
 		enc.Encode(cid) //nolint:errcheck
 
-	case "attach":
+	case protocol.TypeAttach:
 		resolved := d.resolveID(msg.AgentID)
 		if err := d.attach(resolved); err != nil {
 			enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
@@ -469,34 +469,34 @@ func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.M
 		}
 		enc.Encode(ok) //nolint:errcheck
 
-	case "set_plan_mode":
+	case protocol.TypeSetPlanMode:
 		d.setPlanMode(enc, msg.AgentID, msg.Text)
 
-	case "user_turn":
+	case protocol.TypeUserTurn:
 		d.userTurn(ctx, enc, msg.AgentID, msg.Text, msg.ForceThink)
 
-	case "status":
+	case protocol.TypeStatus:
 		d.handleStatus(enc)
 
-	case "context":
+	case protocol.TypeContext:
 		d.handleContext(ctx, enc, msg.AgentID)
 
-	case "session_stop":
+	case protocol.TypeSessionStop:
 		d.handleSessionStop(enc, msg.AgentID, msg.Text == "--all")
 
-	case "list_goals":
+	case protocol.TypeListGoals:
 		d.handleListGoals(enc)
 
-	case "list_reflections":
+	case protocol.TypeListReflections:
 		d.handleListReflections(enc)
 
-	case "list_notifications":
+	case protocol.TypeListNotifications:
 		d.handleListNotifications(enc, msg.Text)
 
-	case "list_workflows":
+	case protocol.TypeListWorkflows:
 		d.handleListWorkflows(enc)
 
-	case "workflow_stop":
+	case protocol.TypeWorkflowStop:
 		if d.store == nil {
 			enc.Encode(protocol.NewErrorMsg("workflow stop not available")) //nolint:errcheck
 			return
@@ -504,10 +504,10 @@ func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.M
 		if _, err := d.store.WorkflowCancel(msg.Text); err != nil {
 			enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
 		} else {
-			enc.Encode(protocol.NewTextMsg("workflow_stop", "stopped")) //nolint:errcheck
+			enc.Encode(protocol.NewTextMsg(protocol.TypeWorkflowStop, "stopped")) //nolint:errcheck
 		}
 
-	case "workflow_fail":
+	case protocol.TypeWorkflowFail:
 		if d.store == nil {
 			enc.Encode(protocol.NewErrorMsg("workflow fail not available")) //nolint:errcheck
 			return
@@ -520,32 +520,32 @@ func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.M
 		if _, err := d.store.WorkflowFail(id, all); err != nil {
 			enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
 		} else {
-			enc.Encode(protocol.NewTextMsg("workflow_fail", "failed")) //nolint:errcheck
+			enc.Encode(protocol.NewTextMsg(protocol.TypeWorkflowFail, "failed")) //nolint:errcheck
 		}
 
-	case "list_tools":
+	case protocol.TypeListTools:
 		d.handleListTools(enc)
 
-	case "plugin_call":
+	case protocol.TypePluginCall:
 		d.handlePluginCall(ctx, enc, msg.ToolName, msg.ToolInput)
 
-	case "plugins_list":
+	case protocol.TypePluginsList:
 		d.handlePluginsList(enc)
 
-	case "plugins_reload":
+	case protocol.TypePluginsReload:
 		d.handlePluginsReload(enc)
 
-	case "tools_list":
+	case protocol.TypeToolsList:
 		d.handleToolsList(enc)
 
-	case "tools_reload":
+	case protocol.TypeToolsReload:
 		d.handleToolsReload(enc)
 
-	case "human_input_answer":
+	case protocol.TypeHumanInputAnswer:
 		d.handleHumanAnswer(enc, msg)
 
 	default:
-		enc.Encode(protocol.NewErrorMsg("unknown message type: " + msg.Type)) //nolint:errcheck
+		enc.Encode(protocol.NewErrorMsg("unknown message type: " + string(msg.Type))) //nolint:errcheck
 	}
 }
 

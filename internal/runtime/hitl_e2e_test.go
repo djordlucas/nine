@@ -70,7 +70,7 @@ func TestHITLEndToEnd(t *testing.T) {
 	reqIDCh := make(chan string, 1)
 	go func() {
 		text, terr := c.TurnWithProgress(id, "hi", func(evt protocol.ProgressEvent) {
-			if evt.Type == "human_input_required" && evt.HumanRequest != nil {
+			if evt.Type == protocol.TypeHumanInputRequired && evt.HumanRequest != nil {
 				select {
 				case reqIDCh <- evt.HumanRequest.RequestID:
 				default:

@@ -143,11 +143,15 @@ func (w *AgentWorker) emitEvent(msg protocol.Msg) {
 	// journal on the worker goroutine and pass turn directly). The sub-agent is
 	// its own span, parented to the current turn root.
 	switch msg.Type {
-	case "sub_agent_start", "sub_agent_end":
+	case protocol.TypeSubAgentStart, protocol.TypeSubAgentEnd:
 		w.mu.Lock()
 		turn := w.turnN
 		w.mu.Unlock()
-		w.journal(turn, msg.Type, msg.SubAgentID, turnSpan(turn), subAgentPayload{
+		// Crossing namespaces: a wire message type is reused verbatim as the
+		// journal event type. The two vocabularies are separate and only
+		// coincide on these names, so the conversion is written out rather than
+		// implied.
+		w.journal(turn, string(msg.Type), msg.SubAgentID, turnSpan(turn), subAgentPayload{
 			SubID:  msg.SubAgentID,
 			Task:   msg.Text,
 			Status: msg.Status,
