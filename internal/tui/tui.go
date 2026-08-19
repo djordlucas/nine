@@ -163,7 +163,7 @@ func startStream(c *protocol.Client, agentID, text string, forceThink bool) *str
 	s := &streamConn{ch: make(chan tea.Msg, 64)}
 	go func() {
 		onProgress := func(evt protocol.ProgressEvent) {
-			if evt.Type == "response_chunk" {
+			if evt.Type == protocol.TypeResponseChunk {
 				s.ch <- chunkMsg{text: evt.Text}
 			} else {
 				s.ch <- progressMsg{evt: evt}

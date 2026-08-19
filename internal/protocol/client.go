@@ -101,10 +101,10 @@ func (c *Client) NewConversationInteractive(interactive bool) (id, role, instanc
 	if err != nil {
 		return "", "", "", err
 	}
-	if reply.Type == "error" {
+	if reply.Type == TypeError {
 		return "", "", "", fmt.Errorf("daemon: %s", reply.Text)
 	}
-	if reply.Type != "conversation_id" {
+	if reply.Type != TypeConversationID {
 		return "", "", "", fmt.Errorf("unexpected reply: %s", reply.Type)
 	}
 	return reply.ID, reply.Role, reply.InstanceName, nil
@@ -121,10 +121,10 @@ func (c *Client) Attach(agentID string) (AttachResult, error) {
 	if err != nil {
 		return AttachResult{}, err
 	}
-	if reply.Type == "error" {
+	if reply.Type == TypeError {
 		return AttachResult{}, fmt.Errorf("daemon: %s", reply.Text)
 	}
-	if reply.Type != "ok" {
+	if reply.Type != TypeOK {
 		return AttachResult{}, fmt.Errorf("unexpected reply: %s", reply.Type)
 	}
 	resolved := reply.AgentID
@@ -183,7 +183,7 @@ func (c *Client) turnWithProgress(agentID, text string, forceThink bool, onProgr
 			// Consume the trailing "done" message.
 			if done, err := c.recv(); err != nil {
 				return "", err
-			} else if done.Type == "error" {
+			} else if done.Type == TypeError {
 				return "", fmt.Errorf("daemon: %s", done.Text)
 			}
 			return msg.Text, nil
@@ -206,7 +206,7 @@ func (c *Client) AnswerHuman(agentID, requestID, answer string) error {
 	if err != nil {
 		return err
 	}
-	if reply.Type == "error" {
+	if reply.Type == TypeError {
 		return fmt.Errorf("daemon: %s", reply.Text)
 	}
 	return nil
@@ -214,14 +214,14 @@ func (c *Client) AnswerHuman(agentID, requestID, answer string) error {
 
 // Status requests daemon status information.
 func (c *Client) Status() (*StatusInfo, error) {
-	if err := c.send(NewQueryMsg("status")); err != nil {
+	if err := c.send(NewQueryMsg(TypeStatus)); err != nil {
 		return nil, err
 	}
 	reply, err := c.recv()
 	if err != nil {
 		return nil, err
 	}
-	if reply.Type == "error" {
+	if reply.Type == TypeError {
 		return nil, fmt.Errorf("daemon: %s", reply.Text)
 	}
 	var info StatusInfo
@@ -233,19 +233,19 @@ func (c *Client) Status() (*StatusInfo, error) {
 
 // ListGoals requests the goal list from the daemon. Returns raw JSON.
 func (c *Client) ListGoals() (string, error) {
-	return c.queryList("list_goals")
+	return c.queryList(TypeListGoals)
 }
 
 // ListReflections requests the reflection history from the daemon. Returns raw JSON.
 func (c *Client) ListReflections() (string, error) {
-	return c.queryList("list_reflections")
+	return c.queryList(TypeListReflections)
 }
 
 // ListNotifications requests the human-facing notification feed. When all is
 // true the full history is returned and nothing is marked seen; otherwise only
 // unseen entries are returned and they are marked seen. Returns raw JSON.
 func (c *Client) ListNotifications(all bool) (string, error) {
-	m := NewQueryMsg("list_notifications")
+	m := NewQueryMsg(TypeListNotifications)
 	if all {
 		m.Text = "--all"
 	}
@@ -256,7 +256,7 @@ func (c *Client) ListNotifications(all bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if reply.Type == "error" {
+	if reply.Type == TypeError {
 		return "", fmt.Errorf("daemon: %s", reply.Text)
 	}
 	return reply.Text, nil
@@ -264,7 +264,7 @@ func (c *Client) ListNotifications(all bool) (string, error) {
 
 // ListWorkflows requests the workflow list from the daemon. Returns raw JSON.
 func (c *Client) ListWorkflows() (string, error) {
-	return c.queryList("list_workflows")
+	return c.queryList(TypeListWorkflows)
 }
 
 // StopWorkflow sends a workflow_stop message to cancel an active workflow.
@@ -276,7 +276,7 @@ func (c *Client) StopWorkflow(id string) error {
 	if err != nil {
 		return err
 	}
-	if reply.Type == "error" {
+	if reply.Type == TypeError {
 		return fmt.Errorf("daemon: %s", reply.Text)
 	}
 	return nil
@@ -295,7 +295,7 @@ func (c *Client) FailWorkflow(id string, all bool) error {
 	if err != nil {
 		return err
 	}
-	if reply.Type == "error" {
+	if reply.Type == TypeError {
 		return fmt.Errorf("daemon: %s", reply.Text)
 	}
 	return nil
@@ -311,13 +311,13 @@ func (c *Client) StopSession(id string, all bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if reply.Type == "error" {
+	if reply.Type == TypeError {
 		return "", fmt.Errorf("daemon: %s", reply.Text)
 	}
 	return reply.Text, nil
 }
 
-func (c *Client) queryList(msgType string) (string, error) {
+func (c *Client) queryList(msgType MsgType) (string, error) {
 	if err := c.send(NewQueryMsg(msgType)); err != nil {
 		return "", err
 	}
@@ -325,7 +325,7 @@ func (c *Client) queryList(msgType string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if reply.Type == "error" {
+	if reply.Type == TypeError {
 		return "", fmt.Errorf("daemon: %s", reply.Text)
 	}
 	return reply.Text, nil
@@ -341,7 +341,7 @@ func (c *Client) Context(agentID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if reply.Type == "error" {
+	if reply.Type == TypeError {
 		return "", fmt.Errorf("daemon: %s", reply.Text)
 	}
 	return reply.Text, nil
@@ -349,14 +349,14 @@ func (c *Client) Context(agentID string) (string, error) {
 
 // ListTools requests all tool definitions from all loaded plugins.
 func (c *Client) ListTools() ([]ToolSummary, error) {
-	if err := c.send(NewQueryMsg("list_tools")); err != nil {
+	if err := c.send(NewQueryMsg(TypeListTools)); err != nil {
 		return nil, err
 	}
 	reply, err := c.recv()
 	if err != nil {
 		return nil, err
 	}
-	if reply.Type == "error" {
+	if reply.Type == TypeError {
 		return nil, fmt.Errorf("daemon: %s", reply.Text)
 	}
 	var tools []ToolSummary
@@ -369,29 +369,29 @@ func (c *Client) ListTools() ([]ToolSummary, error) {
 // ListPlugins requests the daemon's plugin roster: built-in and user plugins,
 // each with its tools, plus any user plugins that were skipped with a reason.
 func (c *Client) ListPlugins() ([]PluginStatus, error) {
-	return c.pluginStatusQuery("plugins_list")
+	return c.pluginStatusQuery(TypePluginsList)
 }
 
 // ReloadPlugins asks the daemon to re-scan the user-plugin directory and reload
 // it, returning the resulting roster.
 func (c *Client) ReloadPlugins() ([]PluginStatus, error) {
-	return c.pluginStatusQuery("plugins_reload")
+	return c.pluginStatusQuery(TypePluginsReload)
 }
 
 // ListSandboxedTools requests the sandboxed-tool roster: every tool loaded from
 // [tools].user_dir with its resolved capabilities, plus any that were skipped
 // with the reason.
 func (c *Client) ListSandboxedTools() ([]SandboxedToolStatus, error) {
-	return c.sandboxedToolQuery("tools_list")
+	return c.sandboxedToolQuery(TypeToolsList)
 }
 
 // ReloadSandboxedTools asks the daemon to re-scan the sandboxed-tool directory
 // and reload it, returning the resulting roster.
 func (c *Client) ReloadSandboxedTools() ([]SandboxedToolStatus, error) {
-	return c.sandboxedToolQuery("tools_reload")
+	return c.sandboxedToolQuery(TypeToolsReload)
 }
 
-func (c *Client) sandboxedToolQuery(msgType string) ([]SandboxedToolStatus, error) {
+func (c *Client) sandboxedToolQuery(msgType MsgType) ([]SandboxedToolStatus, error) {
 	if err := c.send(NewQueryMsg(msgType)); err != nil {
 		return nil, err
 	}
@@ -399,7 +399,7 @@ func (c *Client) sandboxedToolQuery(msgType string) ([]SandboxedToolStatus, erro
 	if err != nil {
 		return nil, err
 	}
-	if reply.Type == "error" {
+	if reply.Type == TypeError {
 		return nil, fmt.Errorf("daemon: %s", reply.Text)
 	}
 	var tools []SandboxedToolStatus
@@ -409,7 +409,7 @@ func (c *Client) sandboxedToolQuery(msgType string) ([]SandboxedToolStatus, erro
 	return tools, nil
 }
 
-func (c *Client) pluginStatusQuery(msgType string) ([]PluginStatus, error) {
+func (c *Client) pluginStatusQuery(msgType MsgType) ([]PluginStatus, error) {
 	if err := c.send(NewQueryMsg(msgType)); err != nil {
 		return nil, err
 	}
@@ -417,7 +417,7 @@ func (c *Client) pluginStatusQuery(msgType string) ([]PluginStatus, error) {
 	if err != nil {
 		return nil, err
 	}
-	if reply.Type == "error" {
+	if reply.Type == TypeError {
 		return nil, fmt.Errorf("daemon: %s", reply.Text)
 	}
 	var plugins []PluginStatus
@@ -436,7 +436,7 @@ func (c *Client) PluginCall(tool string, args json.RawMessage) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if reply.Type == "error" {
+	if reply.Type == TypeError {
 		return "", fmt.Errorf("daemon: %s", reply.Text)
 	}
 	return reply.Text, nil
@@ -468,7 +468,7 @@ func (c *Client) SetPlanMode(agentID, mode string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if reply.Type == "error" {
+	if reply.Type == TypeError {
 		return "", fmt.Errorf("daemon: %s", reply.Text)
 	}
 	return reply.Text, nil

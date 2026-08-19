@@ -271,6 +271,29 @@ pass fraction ≥ `pass_threshold`. Everything in §1–§3 applies. Requirement
 - **Driving turns**: `nine send [--id <id>] <prompt>` (the id is printed to stderr as
   `id=<agent-id>`) or the protocol client `c.Turn(id, text)` as the existing
   `tests/integration` tests do.
+- **Wall-clock budget**: the `-timeout` is per *matrix*, not per case, so it scales
+  with the model list. The full 18-case suite takes **~33 minutes** for one small
+  local model, so the default is `7200s`; override with `NINE_EVAL_TIMEOUT` for a
+  longer matrix or a slower host:
+
+  ```sh
+  NINE_EVAL_TIMEOUT=4h NINE_EVAL_MODELS=qwen3.5:4b,qwen3.5:9b make eval-live
+  ```
+
+  Size this generously. A matrix that overruns is killed by the test binary and the
+  run is **lost**, not truncated — see below.
+- **Progress is reported per case**, as each verdict lands:
+
+  ```text
+  INFO eval case ok n=4/18 case=kv-roundtrip model=qwen3.5:4b passes=3/3 threshold=2/3 took=6m51s
+  ```
+
+  This matters because the grid renders only after the whole matrix finishes. Without
+  the per-case line an interrupted run reports **nothing at all**, however far it got
+  — which is exactly when partial results are most wanted. A case below threshold logs
+  at WARN (tolerated, under expected class) or ERROR (fatal), so a failure is greppable
+  without waiting for the grid. Note that `go test` only shows this with `-v`, which
+  `make eval-live` passes.
 
 ---
 

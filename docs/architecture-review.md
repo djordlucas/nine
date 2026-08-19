@@ -24,7 +24,7 @@
 | ID | Finding | Impact | Effort |
 |---|---|---|---|
 | **F1** | ~~Token budgeting is a `chars/4` estimate and is never reconciled against actual usage — the provider never returns a count~~ **Landed** — `Response.Usage` (R-LLM.8) is journaled and joins the estimate on span; calibration awaits data | **High** | S |
-| **F2** | The wire protocol is a stringly-typed fat union: 29 optional `Msg` fields with validity in comments, dispatch on raw string literals | **High** | M |
+| **F2** | The wire protocol is a stringly-typed fat union: 29 optional `Msg` fields with validity in comments, dispatch on raw string literals | **High** | M | *(step 1 landed: typed `MsgType` + R-PROTO.9; steps 2–3 open)* |
 | **F3** | ~~Daemon assembly is duplicated between production and the eval harness; the refactor that removes it is still *Proposed*~~ **Finding was wrong** — `runtime.Assemble` shipped in `cea290d`, *before* this review's own scope commit; residue handled | **High** | M |
 | **F4** | ~~No schema migration path — `user_version = 1` plus one ad-hoc `ALTER`~~ **Landed** — versioned step runner, atomic per step (R-MEM.10); unblocks `C5`/`C6` | **High** | S |
 | **F5** | ~~`agent.Loop` carries 12 post-construction observer setters; a Loop is never fully valid until N unordered calls have happened~~ **Landed** as a per-turn `Hooks` struct — the premise (construction-time config) was wrong, the ceremony was real | Medium | M |
@@ -182,6 +182,36 @@ component that has a published contract and a compatibility story.
 
 1. Typed `MsgType` constants and a switch over them (mechanical, removes the
    literal-typo class entirely).
+
+   **Landed — but "removes the literal-typo class entirely" is wrong**, and the
+   difference matters for what step 2 still has to do. Go's untyped constants
+   convert implicitly, so with `type MsgType string` declared, `msg.Type ==
+   "typo"` **still compiles**, and a constant declared but never added to the
+   dispatch switch is **not** a compile error either. What the named type does
+   buy is real but narrower: a `string` variable can no longer be passed where a
+   `MsgType` is expected, which is what forced `NewQueryMsg`, `NewTextMsg`, and
+   three `Client` query helpers to be typed, and what surfaced the namespace
+   crossing below.
+
+   The remaining gap is closed by test, not by the compiler: `ClientMsgTypes` is
+   now an exported set, and **R-PROTO.9** requires every member to reach a
+   handler — asserted by sending each one to a running daemon and checking the
+   reply is not `unknown message type`. Mutation-tested.
+
+   **A second namespace surfaced during the conversion.** The event journal has
+   its own type vocabulary (`turn_start`, `llm_request`, …) that overlaps the
+   wire vocabulary by coincidence on four names — `tool_start`, `tool_end`,
+   `sub_agent_start`, `sub_agent_end`. They are not interchangeable. An
+   automated first pass over this codebase converted three journal call sites to
+   wire constants because the literals were identical; the compiler accepted all
+   three, and only reading each receiver caught them. `agent_worker.go` does
+   genuinely cross the two (a wire type reused verbatim as a journal event
+   type), and that crossing is now written as an explicit `string(msg.Type)`
+   conversion with a comment rather than passing silently.
+
+   That overlap is the strongest argument for step 3: per-message payload
+   structs would make the two vocabularies structurally distinct instead of
+   distinguishable only by knowing which struct a `.Type` field belongs to.
 2. A generated or hand-written table mapping each type to its required fields,
    validated on ingress — turns the comments into a check.
 3. Per-message payload structs behind a `Type` discriminator, with `Msg` reduced
@@ -520,7 +550,7 @@ Ordered by leverage-per-unit-risk, not by severity alone.
 | 1 | ~~**F1** — provider usage + estimate reconciliation~~ **done** | Small, self-contained, and it instruments the system's headline constraint. Everything else is easier to reason about once budget error is measurable. |
 | 2 | ~~**F4** — migration step runner~~ **done** | Small, and its value is entirely in being written *before* it is needed. Cheapest insurance in the list. |
 | 3 | ~~**F3 + F5** — assembly refactor and Loop hooks, together~~ **done, separately** — F3 had already shipped; F5 shares no file with it | The stated rationale ("F5 is most of what makes F3 large") was false: `builder.go` contains no `SetOn*` calls at all. |
-| 4 | **F2 (step 1)** — typed `MsgType` constants | Mechanical, removes the literal-typo class, and makes F6 tractable. |
+| 4 | ~~**F2 (step 1)** — typed `MsgType` constants~~ **done** | Mechanical, removes the literal-typo class, and makes F6 tractable. (It does not remove that class — see §5 F2 — but it does make F6 tractable, which was the load-bearing half.) |
 | 5 | ~~**F9** — decide local-first, then document or add a provider~~ **done** — decided: local-first *and* multi-backend (G8/N5) | A decision, not a build. Blocks nothing, unblocks F1's shape. |
 | 6 | **F6** — protocol and client tests | Follows F2 naturally; typed messages make the tests worth writing. |
 | 7 | **F10, F12** | Small hygiene; fold into whatever branch is nearby. |

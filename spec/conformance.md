@@ -76,6 +76,7 @@ How to use this file:
 | R-PROTO.6 | Display names never reach the LLM (I8) | The model receives canonical tool names; display names appear only in client-facing events. |
 | R-PROTO.7 | `EnsureDaemon` / auto-start | With a dead socket, a client auto-starts the daemon (re-exec) and connects. |
 | R-PROTO.8 | Connection & concurrency | Each connection handled concurrently and independently; concurrent clients are served in parallel. |
+| R-PROTO.9 | Every client message type is dispatched | Each member of the documented client-sendable set reaches a handler; none falls to the dispatcher's `unknown message type` default. |
 
 ---
 
