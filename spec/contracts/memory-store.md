@@ -10,8 +10,8 @@ with no database server and nothing to provision. The store opens a file path
 (`[memory].path`), creating the file and its parent directory if absent, **fails fast**
 if the database is unusable (it holds primary state, so an unopenable database is a
 startup error, not a degraded mode), and applies its schema idempotently on `Open`
-(`CREATE TABLE IF NOT EXISTS`) — there is **no migration table**, though `PRAGMA
-user_version` records a schema generation for the day one is needed.
+(`CREATE TABLE IF NOT EXISTS`), followed by any outstanding schema migrations
+(**R-MEM.10**).
 
 Because SQLite serializes writes, the store owns **two connection pools**: a
 single-connection read-write pool and a concurrent read-only pool, with each statement
@@ -227,3 +227,36 @@ builder), `vectors.go` (blob encoding + cosine ranking), `skills.go`, `conversat
 `plugin_jobs.go` (plugin job registry). Driver: `modernc.org/sqlite` (pure Go, no cgo).
 Backend: one SQLite file, on the container's `/data` volume or at `~/.nine/nine.db`
 natively.
+
+---
+
+## R-MEM.10 — Schema versioning and migration
+
+`PRAGMA user_version` records which schema generation a database is at, and `Open`
+brings it up to date before returning. `CREATE TABLE IF NOT EXISTS` covers new tables
+and indexes; everything it cannot express — a column added to an existing table, a
+backfill, an FTS rebuild after a tokenizer change — is a numbered **migration step**.
+
+Steps form an append-only ordered list where entry *i* migrates a database from version
+*i* to *i+1*, so the current schema version **MUST** be the number of steps rather than a
+separately-declared constant: two sources for one fact desynchronize silently, and the
+symptom is a step that never runs. Renumbering or reordering an existing entry is
+forbidden — databases in the field have already recorded which steps ran.
+
+A conforming implementation **MUST**:
+
+- **Apply each step and its version bump atomically.** They commit or roll back
+  together, so an interrupted migration leaves the database at the last version that
+  *fully* applied — never part-way through a step — and re-opening resumes correctly.
+- **Skip every step for a freshly created database**, stamping it at the current
+  version directly. The idempotent schema above already builds the current shape, and a
+  step written against an older one (a rename, a rewrite) would fail against it. A step
+  therefore need only be correct for databases at its own "from" version.
+- **Refuse a database newer than the binary understands**, rather than operating on a
+  shape it does not know. Downgrading is not supported; the error **MUST** say so and
+  **MUST NOT** rewrite the version.
+- **Not offer down-steps.** A reversal cannot restore data a destructive step dropped,
+  so the honest recovery is to restore the file and apply a corrected forward step.
+
+`OpenReadOnly` skips this entirely (as it skips schema creation), so a stale CLI process
+can never run DDL against a running daemon's database.
