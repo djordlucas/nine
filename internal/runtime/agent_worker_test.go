@@ -10,8 +10,8 @@ import (
 
 	"nine/internal/agent"
 	ninectx "nine/internal/context"
-	"nine/internal/runtime"
 	"nine/internal/llm"
+	"nine/internal/runtime"
 )
 
 // workerLoop creates an agent.Loop backed by provider.

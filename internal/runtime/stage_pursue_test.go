@@ -126,8 +126,8 @@ func TestPursueStageOnTurnEndSyncsStatus(t *testing.T) {
 	h := runtime.NewPursueStage(store)
 
 	cases := []struct {
-		goalStatus  string
-		wantStage   string
+		goalStatus string
+		wantStage  string
 	}{
 		{"active", "active"},
 		{"paused", "paused"},
