@@ -23,7 +23,7 @@
 
 | ID | Finding | Impact | Effort |
 |---|---|---|---|
-| **F1** | Token budgeting is a `chars/4` estimate and is never reconciled against actual usage — the provider never returns a count | **High** | S |
+| **F1** | ~~Token budgeting is a `chars/4` estimate and is never reconciled against actual usage — the provider never returns a count~~ **Landed** — `Response.Usage` (R-LLM.8) is journaled and joins the estimate on span; calibration awaits data | **High** | S |
 | **F2** | The wire protocol is a stringly-typed fat union: 29 optional `Msg` fields with validity in comments, dispatch on raw string literals | **High** | M |
 | **F3** | Daemon assembly is duplicated between production and the eval harness; the refactor that removes it is still *Proposed* | **High** | M |
 | **F4** | No schema migration path — `user_version = 1` plus one ad-hoc `ALTER` | **High** | S |
@@ -151,6 +151,16 @@ it from the ollama response; record estimate-vs-actual per turn on the existing
 journal; calibrate the divisor per content class once there is data. This is the
 cheapest high-value change in the review — it converts the system's primary
 constraint from dead reckoning to measurement.
+
+**Status: landed**, as proposed except that no new event type was added. `Usage`
+is normative as **R-LLM.8**; the Ollama adapter reads `prompt_eval_count` /
+`eval_count` off the final stream chunk; `llm_response` carries
+`input_tokens` / `output_tokens`, which join `llm_request.tokens_used` on the
+shared LLM-call `span_id` rather than duplicating the estimate. Zero means *not
+reported*, never *nothing consumed*, so an unreporting provider cannot be
+mistaken for a total overestimate. **The divisor is unchanged** — calibration is
+a separate change once real turns have accumulated, which is the point of
+landing the measurement first.
 
 ### F2 — The wire protocol is a stringly-typed fat union · **High** · M
 
@@ -394,7 +404,7 @@ Ordered by leverage-per-unit-risk, not by severity alone.
 
 | # | Item | Why here |
 |---|---|---|
-| 1 | **F1** — provider usage + estimate reconciliation | Small, self-contained, and it instruments the system's headline constraint. Everything else is easier to reason about once budget error is measurable. |
+| 1 | ~~**F1** — provider usage + estimate reconciliation~~ **done** | Small, self-contained, and it instruments the system's headline constraint. Everything else is easier to reason about once budget error is measurable. |
 | 2 | **F4** — migration step runner | Small, and its value is entirely in being written *before* it is needed. Cheapest insurance in the list. |
 | 3 | **F3 + F5** — assembly refactor and Loop hooks, together | F5 is most of what makes F3 large; done as one change they delete a hook, a slash command's rationale, and ~200 lines of wiring. |
 | 4 | **F2 (step 1)** — typed `MsgType` constants | Mechanical, removes the literal-typo class, and makes F6 tractable. |

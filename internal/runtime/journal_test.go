@@ -162,3 +162,127 @@ func TestJournalReconstructsTurn(t *testing.T) {
 		t.Errorf("turn_end = %+v", te)
 	}
 }
+
+// Provider-reported token usage reaches the journal, and reconciles against the
+// context builder's pre-send estimate through the shared LLM-call span: the
+// estimate lives on llm_request, the actual on llm_response, and the two are
+// joined on span_id rather than duplicated onto one event.
+func TestJournalRecordsTokenUsage(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	provider := scriptedResponses(llm.Response{
+		Text:       "done",
+		StopReason: "end_turn",
+		Usage:      llm.Usage{InputTokens: 4321, OutputTokens: 21},
+	})
+
+	builder := ninectx.New(ninectx.Config{Budget: 100_000})
+	loop := agent.NewLoop(agent.Config{
+		SystemCore: "test-core",
+		Priority:   llm.PriorityConversation,
+	}, builder, llm.NewQueue(provider, 1), agent.New())
+
+	sink := runtime.NewSQLEventSinkForTest(store)
+	w := runtime.NewAgentWorkerWithSinkForTest("agent-usage", loop, sink)
+	if _, err := w.TurnAgentWorker(context.Background(), "hello"); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+	w.StopAgentWorker()
+	if err := sink.Close(); err != nil {
+		t.Fatalf("sink close: %v", err)
+	}
+
+	evs, err := store.SessionEventsByAgent("agent-usage")
+	if err != nil {
+		t.Fatalf("read journal: %v", err)
+	}
+
+	var reqEv, respEv *memory.SessionEvent
+	for i, e := range evs {
+		switch e.Type {
+		case "llm_request":
+			reqEv = &evs[i]
+		case "llm_response":
+			respEv = &evs[i]
+		}
+	}
+	if reqEv == nil || respEv == nil {
+		t.Fatalf("missing llm_request/llm_response in %d events", len(evs))
+	}
+	if reqEv.SpanID != respEv.SpanID {
+		t.Fatalf("span ids differ (%q vs %q); estimate and actual are not joinable",
+			reqEv.SpanID, respEv.SpanID)
+	}
+
+	var resp struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+	}
+	if err := json.Unmarshal(respEv.Payload, &resp); err != nil {
+		t.Fatalf("unmarshal llm_response: %v", err)
+	}
+	if resp.InputTokens != 4321 || resp.OutputTokens != 21 {
+		t.Errorf("llm_response usage = {%d %d}, want {4321 21}", resp.InputTokens, resp.OutputTokens)
+	}
+
+	// The other half of the reconciliation: the estimate is on llm_request.
+	var req struct {
+		TokensUsed int `json:"tokens_used"`
+		Budget     int `json:"budget"`
+	}
+	if err := json.Unmarshal(reqEv.Payload, &req); err != nil {
+		t.Fatalf("unmarshal llm_request: %v", err)
+	}
+	if req.TokensUsed <= 0 || req.Budget != 100_000 {
+		t.Errorf("llm_request estimate = {used %d, budget %d}, want a positive estimate against a 100000 budget",
+			req.TokensUsed, req.Budget)
+	}
+}
+
+// A provider that reports no counts must leave the usage keys off the payload
+// entirely, so a zero is never mistaken for a measured zero.
+func TestJournalOmitsUnreportedUsage(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	provider := scriptedResponses(llm.Response{Text: "done", StopReason: "end_turn"})
+	loop := agent.NewLoop(agent.Config{
+		SystemCore: "test-core",
+		Priority:   llm.PriorityConversation,
+	}, ninectx.New(ninectx.Config{Budget: 100_000}), llm.NewQueue(provider, 1), agent.New())
+
+	sink := runtime.NewSQLEventSinkForTest(store)
+	w := runtime.NewAgentWorkerWithSinkForTest("agent-nousage", loop, sink)
+	if _, err := w.TurnAgentWorker(context.Background(), "hello"); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+	w.StopAgentWorker()
+	if err := sink.Close(); err != nil {
+		t.Fatalf("sink close: %v", err)
+	}
+
+	evs, err := store.SessionEventsByAgent("agent-nousage")
+	if err != nil {
+		t.Fatalf("read journal: %v", err)
+	}
+	for _, e := range evs {
+		if e.Type != "llm_response" {
+			continue
+		}
+		var keys map[string]json.RawMessage
+		if err := json.Unmarshal(e.Payload, &keys); err != nil {
+			t.Fatalf("unmarshal llm_response: %v", err)
+		}
+		if _, ok := keys["input_tokens"]; ok {
+			t.Errorf("llm_response carries input_tokens when the provider reported none: %s", e.Payload)
+		}
+		if _, ok := keys["output_tokens"]; ok {
+			t.Errorf("llm_response carries output_tokens when the provider reported none: %s", e.Payload)
+		}
+	}
+}
