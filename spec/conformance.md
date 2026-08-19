@@ -10,7 +10,7 @@ How to use this file:
 - Each row names a requirement ID, the property, and a concrete check you can run or
   observe. The check is the conformance test; the contract is the normative text.
 - IDs are stable (`R-<area>.<n>`). Do not renumber; append.
-- The **invariants** (I1–I10) and **non-goals** (N1–N4) from
+- The **invariants** (I1–I11) and **non-goals** (N1–N5) from
   [`overview.md`](overview.md) are cross-cutting; § 0 below maps each to the requirement
   rows that enforce it, so they can be checked as a set.
 
@@ -35,6 +35,7 @@ How to use this file:
 | N2 | No runtime config rewrite | R-CFG.3; R-SKILL.5 |
 | N3 | No self-rebuild from source | R-SKILL.5 |
 | N4 | No tool access to daemon-private state | R-MEM.4 |
+| N5 | No hosted LLM API required to function | R-LLM.1; R-LLM.7 |
 
 ---
 

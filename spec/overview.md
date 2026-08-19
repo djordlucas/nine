@@ -24,6 +24,13 @@ every later contract assumes.
   behind a uniform contract; a plugin crash never takes down the daemon.
 - **G7 — Self-improvement as data, not code.** Nine grows its knowledge by writing
   skills; its executable shape is fixed.
+- **G8 — Local-first, and plural.** Nine runs against models the operator hosts. This
+  is a **commitment, not a stopgap**: G5's token budgeting exists to serve it, and a
+  hosted-API backend stays out of scope (see N5). It does **not** imply a single
+  backend — llama.cpp and vLLM are planned alongside Ollama, and routing different work
+  to different models within one deployment is a stated direction. The `Provider`
+  interface is therefore justified by **plurality inside local-first**, not by an
+  anticipated hosted provider; the two were never in tension.
 
 ### Non-goals (explicit MUST NOTs)
 
@@ -33,6 +40,10 @@ every later contract assumes.
   runtime. The runtime container ships **no Go toolchain, no git, and no source tree**.
 - **N4.** Agents **MUST NOT** be given direct tool access to operational/daemon-private
   state (conversation rows, goal rows, the plugin registry, etc.).
+- **N5.** Nine **MUST NOT** require a hosted LLM API to function. Speaking a hosted
+  provider's *wire format* is permitted where a self-hosted server uses it (vLLM serves
+  the OpenAI chat API), because that is an operator-hosted endpoint; depending on a
+  third-party service to run at all is not.
 
 (N1–N3 are the boundary covered in [`contracts/skills.md`](contracts/skills.md). They
 are deliberate: a daemon that changes its own form at runtime drifts from its source and

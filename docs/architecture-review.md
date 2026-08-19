@@ -31,7 +31,7 @@
 | **F6** | Test coverage is inverted at the boundary: `protocol` 0.24, `tui` 0.27, `cli` 0.33 against 0.87 elsewhere | Medium | M |
 | **F7** | The four built-in plugins hold ambient authority that the capability model exists to remove | Medium | L |
 | **F8** | ~20 first-class nouns; `stage` is a working multi-stage capability with no caller, no precedence rule, and a starvation bug (`goal`+`workflow` examined and **not** collapsible — §7.1) | Medium | L |
-| **F9** | One provider behind a generalized `Provider` + `ThinkingAware` abstraction — decide whether local-first is a goal or a stopgap | Medium | S |
+| **F9** | ~~One provider behind a generalized `Provider` + `ThinkingAware` abstraction — decide whether local-first is a goal or a stopgap~~ **Decided** — local-first is a commitment **and** multi-backend; the abstraction stays (G8/N5) | Medium | S |
 | **F10** | `internal/selfmodel`: 84 LOC, zero tests, `/.dockerenv` probe, swallowed query error | Low | S |
 | **F11** | `docs/` + `spec/` is 57% of production code size; implemented design notes are maintained rather than frozen | Low | M |
 | **F12** | The `TestRegisterPlugin` flake is documented as inherent; a socket-timing flake usually means a missing readiness handshake | Low | S |
@@ -285,6 +285,37 @@ This is a fork, and it is the owner's call:
 
 Doing neither is the only bad option.
 
+**Resolved — and the fork above was a false one.** The roadmap (`README.md`)
+carries *"Add different LLM backends — add llama.cpp and vllm"* and *"Model
+routing — route different work to different models within one deployment"*. Both
+of those backends are **self-hosted**, so local-first is a commitment **and** the
+`Provider` interface is justified — by plurality *inside* local-first, not by an
+anticipated hosted provider. This review assumed the two were mutually exclusive;
+they are not. Recorded as **G8** with **N5** as its non-goal, and in R-LLM.1.
+`ThinkingAware` stays: llama.cpp and vLLM differ from Ollama in reasoning
+support, which is exactly the variation it exists to absorb.
+
+**Two consequences this exposes, neither of which F9 asked about:**
+
+1. **`max_concurrent` is a per-backend property, and the queue has one.**
+   `Queue` holds a single `provider` and a single `maxConcurrent`
+   (`internal/llm/queue.go:49`), and R-LLM.4 specifies one `[llm].max_concurrent`.
+   A llama.cpp process on one GPU and a vLLM server with continuous batching have
+   very different sane slot counts, and one global number cannot express both.
+   Model routing is therefore a **queue** change, not merely a second adapter —
+   and I2 ("the LLM is reachable only through the queue") means a router must sit
+   *behind* the queue or *be* it, never beside it. Design not yet written.
+2. **The unknown-provider fallback becomes a hazard.** `config/factory.go:218`
+   logs *"unknown [llm].provider; using ollama"* and builds Ollama anyway. Harmless
+   with one adapter; actively misleading the moment an operator writes
+   `provider = "vllm"` and silently gets Ollama. Should fail rather than warn once
+   a second adapter ships.
+
+**F1 is validated by this, not complicated by it.** All three backends report
+prompt/completion token counts, so `Usage{InputTokens, OutputTokens}` (R-LLM.8)
+carries across unchanged — and *"zero means not reported"* earns more of its keep
+with three adapters than it did with one.
+
 ### F10 — `internal/selfmodel` · Low · S
 
 84 LOC, **zero tests** — the only package in the tree with none. It probes
@@ -398,7 +429,7 @@ Ordered by leverage-per-unit-risk, not by severity alone.
 | 2 | **F4** — migration step runner | Small, and its value is entirely in being written *before* it is needed. Cheapest insurance in the list. |
 | 3 | **F3 + F5** — assembly refactor and Loop hooks, together | F5 is most of what makes F3 large; done as one change they delete a hook, a slash command's rationale, and ~200 lines of wiring. |
 | 4 | **F2 (step 1)** — typed `MsgType` constants | Mechanical, removes the literal-typo class, and makes F6 tractable. |
-| 5 | **F9** — decide local-first, then document or add a provider | A decision, not a build. Blocks nothing, unblocks F1's shape. |
+| 5 | ~~**F9** — decide local-first, then document or add a provider~~ **done** — decided: local-first *and* multi-backend (G8/N5) | A decision, not a build. Blocks nothing, unblocks F1's shape. |
 | 6 | **F6** — protocol and client tests | Follows F2 naturally; typed messages make the tests worth writing. |
 | 7 | **F10, F12** | Small hygiene; fold into whatever branch is nearby. |
 | 8 | **F2 (steps 2–3)**, **F7**, **F11** | Larger, independent, and none is urgent. |
@@ -453,9 +484,12 @@ Ordered by leverage-per-unit-risk, not by severity alone.
 
 ## 11. Open questions
 
-1. **Is local-first a goal or a stopgap?** (F9.) This is the one question in the
-   review that cannot be answered from the code, and it changes the shape of F1's
-   usage plumbing.
+1. ~~**Is local-first a goal or a stopgap?**~~ **Answered: a goal** (F9) — and the
+   question was mis-posed. Local-first and a plural `Provider` interface are not
+   alternatives, because the planned second and third backends (llama.cpp, vLLM)
+   are self-hosted. See **G8**/**N5**. What replaces it as open: **how model
+   routing divides `max_concurrent` per backend without breaking I2** — the queue
+   holds one provider and one slot count today.
 2. ~~**Does the `goal` + `workflow` merge survive the `workflow_*` tool
    surface?**~~ **Answered (rev 2): no, and the merge is withdrawn** — the axis is
    autonomy, not ordering (§7.1). Of the three questions it raised in turn, two
