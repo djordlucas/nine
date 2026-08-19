@@ -44,6 +44,12 @@ type llmResponsePayload struct {
 	ToolCalls  []llm.ToolCall `json:"tool_calls,omitempty"`
 	StopReason string         `json:"stop_reason"`
 	LLMCallN   int            `json:"llm_call_n"`
+	// Provider-reported token accounting, omitted when the provider reports
+	// none. The estimate it reconciles against — tokens_used and budget — is on
+	// the llm_request event sharing this event's span id, so estimate-vs-actual
+	// is a join on span rather than a duplicated field.
+	InputTokens  int `json:"input_tokens,omitempty"`
+	OutputTokens int `json:"output_tokens,omitempty"`
 }
 
 type toolStartPayload struct {
@@ -161,10 +167,12 @@ func (w *AgentWorker) wireJournalHooks(turn int) {
 	})
 	w.loop.SetOnLLMResponse(func(resp *llm.Response, llmCallN int) {
 		w.journal(turn, "llm_response", llmSpan(turn, llmCallN), root, llmResponsePayload{
-			Text:       resp.Text,
-			ToolCalls:  resp.ToolCalls,
-			StopReason: resp.StopReason,
-			LLMCallN:   llmCallN,
+			Text:         resp.Text,
+			ToolCalls:    resp.ToolCalls,
+			StopReason:   resp.StopReason,
+			LLMCallN:     llmCallN,
+			InputTokens:  resp.Usage.InputTokens,
+			OutputTokens: resp.Usage.OutputTokens,
 		})
 	})
 }

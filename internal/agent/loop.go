@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -424,6 +425,22 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 			"n_tool_calls", len(resp.ToolCalls),
 			"has_text", resp.Text != "",
 		)
+		// Reconcile the pre-send estimate against what the provider charged.
+		// countTokens is a chars/4 approximation and drifts most on exactly the
+		// content a turn is made of (JSON tool schemas, code, tool results), so
+		// the error is worth surfacing per call rather than inferred later. A
+		// provider that reports no counts leaves InputTokens zero; skip it
+		// instead of recording a spurious -100%.
+		if resp.Usage.InputTokens > 0 {
+			slog.Debug("token_reconciliation",
+				"llm_call_n", llmCallN,
+				"estimated_input", tokensUsed,
+				"actual_input", resp.Usage.InputTokens,
+				"error_pct", int(math.Round(float64(tokensUsed-resp.Usage.InputTokens)/float64(resp.Usage.InputTokens)*100)),
+				"output", resp.Usage.OutputTokens,
+				"budget", l.builder.Budget(),
+			)
+		}
 		if l.onLLMResponse != nil {
 			l.onLLMResponse(&resp, llmCallN)
 		}
