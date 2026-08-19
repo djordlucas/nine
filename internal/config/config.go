@@ -433,6 +433,12 @@ type DaemonConfig struct {
 	TaskTimeoutSeconds int    `toml:"task_timeout_seconds"` // default 1800 (30 min)
 	MaxGoalSessions    int    `toml:"max_goal_sessions"`    // default runtime.DefaultMaxGoalSessions when <= 0
 
+	// Runtime overrides where the daemon reports itself as running, which reaches
+	// the model in the self-model's Environment block. Empty auto-detects
+	// (DetectRuntime). Set it when detection cannot see the sandbox, or to say
+	// something more useful than "container".
+	Runtime string `toml:"runtime"`
+
 	// InstanceName is the display name for this Nine instance, shown in the TUI
 	// top bar. When set here it is authoritative and fixed. When empty, the
 	// daemon reuses a previously generated name persisted in the store, or — on a

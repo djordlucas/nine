@@ -58,8 +58,14 @@ type AssemblyConfig struct {
 	GeneratedApproval string
 
 	// Loop / builder behavior.
-	ContextBudget   int
-	SystemPrompt    string
+	ContextBudget int
+	SystemPrompt  string
+
+	// Runtime describes where the daemon is running (config.RuntimeLabel), shown
+	// to the model in the self-model's Environment block. Empty omits the line —
+	// which is what the eval harness wants, since a case's environment is the
+	// harness's, not the operator's.
+	Runtime         string
 	RelatedSessions bool
 	SurfaceMemories bool
 	// MaxToolOutputTokens mirrors [tools] max_output_tokens; 0 keeps the default.
@@ -96,7 +102,7 @@ func Assemble(c AssemblyConfig) *Assembly {
 	supervisor := NewSupervisor(64)
 	supervisor.Attach(c.Store)
 
-	assembler := selfmodel.New(c.Store, c.Embedder, c.Plugins.ListRunning)
+	assembler := selfmodel.New(c.Store, c.Embedder, c.Plugins.ListRunning, c.Runtime)
 
 	builder := NewAgentBuilder(AgentBuilderConfig{
 		Loop: LoopConfig{
