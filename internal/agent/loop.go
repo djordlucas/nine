@@ -96,7 +96,7 @@ const (
 	PlanModeAlways   = "always"
 )
 
-// Stage labels reported via SetOnStage. They name the phases of a turn that run
+// Stage labels reported via Hooks.OnStage. They name the phases of a turn that run
 // before the model produces anything, so the UI isn't blank while they happen.
 // An empty label means no phase is active and the client falls back to its own
 // status text — runAnalysisPass relies on this to surface a queue wait without
@@ -173,10 +173,94 @@ func (l *Loop) SetForceThinkNextTurn(v bool) { l.forceThinkNextTurn = v }
 // Safe to call between turns; not safe during Run.
 func (l *Loop) SetQueue(q *llm.Queue) { l.queue = q }
 
-// SetOnContextUpdate registers a callback invoked after each context assembly,
-// reporting the estimated tokens used and the total budget.
-// Pass nil to clear. Safe to call between turns; not safe during Run.
-func (l *Loop) SetOnContextUpdate(fn func(used, budget int)) { l.onContextUpdate = fn }
+// Hooks are the observer callbacks a caller attaches to a turn. Every field is
+// optional; a nil field is simply not called.
+//
+// They are per-turn, not construction-time configuration: the agent worker binds
+// a fresh set before each Run because the closures capture that turn's number
+// for span ids and its emit destination, then detaches them with ClearHooks
+// afterwards. That is why they are a struct passed to SetHooks rather than
+// arguments to NewLoop.
+//
+// Grouping them this way is not cosmetic. Attaching twelve callbacks through
+// twelve setters made a forgotten one silently do nothing, and detaching meant
+// twelve more calls that had to stay in step with the first twelve. A struct
+// makes an unset callback a visible zero field, and ClearHooks detaches all of
+// them or none.
+type Hooks struct {
+	// OnContextUpdate reports the estimated tokens used and the total budget
+	// after each context assembly.
+	OnContextUpdate func(used, budget int)
+
+	// OnToolStart fires before each tool call is dispatched, OnToolEnd after it
+	// completes. displayName is the human-friendly label, falling back to name.
+	OnToolStart func(name, displayName string, input json.RawMessage)
+	OnToolEnd   func(name, displayName string, input json.RawMessage, out ToolOutcome)
+
+	// OnLLMRequest fires with the fully-assembled request for each inner LLM
+	// call just before it is submitted, along with the estimated tokens used,
+	// the context budget, and the 1-based call number. OnLLMResponse fires with
+	// the raw response of that call.
+	OnLLMRequest  func(req *llm.Request, tokensUsed, budget, llmCallN int)
+	OnLLMResponse func(resp *llm.Response, llmCallN int)
+
+	// OnChunk receives each streamed text token; OnThinkingChunk each streamed
+	// reasoning token, when the provider surfaces extended thinking. Reasoning
+	// is a separate channel and is never folded into the reply text.
+	OnChunk         func(string)
+	OnThinkingChunk func(string)
+
+	// OnThinking fires at the start of each inner LLM call, before the request
+	// is submitted. llmCallN is 1-based; think reports whether the call will
+	// actually stream reasoning, which is false both when the policy declines to
+	// think and when the model cannot.
+	OnThinking func(llmCallN int, think bool)
+
+	// OnPlanStart and OnPlanEnd bracket the no-tool request-analysis pass.
+	OnPlanStart func()
+	OnPlanEnd   func()
+
+	// OnNotice receives a session-level notice, e.g. a capability downgrade or
+	// context pressure.
+	OnNotice func(text string)
+
+	// OnStage reports entry into a named waiting phase (the Stage* constants).
+	// Unlike the others it may fire from the LLM queue's goroutine, so the Loop
+	// guards it with a mutex; see SetHooks.
+	OnStage func(string)
+}
+
+// SetHooks attaches h for subsequent turns, replacing any previously attached
+// set wholesale — there is no merging, so a caller assembles the full set it
+// wants in one literal.
+//
+// Safe to call between turns; not safe during Run, with the single exception of
+// OnStage, which is guarded because the queue reports a wait from its own
+// goroutine.
+func (l *Loop) SetHooks(h Hooks) {
+	l.onContextUpdate = h.OnContextUpdate
+	l.onToolStart = h.OnToolStart
+	l.onToolEnd = h.OnToolEnd
+	l.onLLMRequest = h.OnLLMRequest
+	l.onLLMResponse = h.OnLLMResponse
+	l.onChunk = h.OnChunk
+	l.onThinkingChunk = h.OnThinkingChunk
+	l.onThinking = h.OnThinking
+	l.onPlanStart = h.OnPlanStart
+	l.onPlanEnd = h.OnPlanEnd
+	l.onNotice = h.OnNotice
+
+	// onStage alone is read from the LLM queue's goroutine, so it may be written
+	// here while a just-finished turn's queue wait is still reporting.
+	l.stageMu.Lock()
+	l.onStage = h.OnStage
+	l.stageMu.Unlock()
+}
+
+// ClearHooks detaches every callback. It is the exact inverse of SetHooks, so a
+// caller cannot leave some attached and some not — the failure mode when
+// detaching was twelve separate nil assignments.
+func (l *Loop) ClearHooks() { l.SetHooks(Hooks{}) }
 
 // maybeWarnContext emits a session notice when assembled context usage crosses
 // contextWarnFraction of the budget, re-arming once usage falls back below it.
@@ -201,63 +285,6 @@ func (l *Loop) maybeWarnContext(used, budget int) {
 		l.contextWarnLatched = false
 	}
 }
-
-// SetOnToolStart registers a callback invoked before each tool call is dispatched.
-// displayName is the human-friendly label for the tool (falls back to name if unset).
-// Pass nil to clear. Safe to call between turns; not safe during Run.
-func (l *Loop) SetOnToolStart(fn func(name, displayName string, input json.RawMessage)) {
-	l.onToolStart = fn
-}
-
-// SetOnToolEnd registers a callback invoked after each tool call completes.
-// displayName is the human-friendly label for the tool (falls back to name if unset).
-// Pass nil to clear. Safe to call between turns; not safe during Run.
-func (l *Loop) SetOnToolEnd(fn func(name, displayName string, input json.RawMessage, out ToolOutcome)) {
-	l.onToolEnd = fn
-}
-
-// SetOnLLMRequest registers a callback invoked with the fully-assembled request
-// for each inner LLM call, just before it is submitted, along with the estimated
-// tokens used, the context budget, and the 1-based call number. Pass nil to
-// clear. Safe to call between turns; not safe during Run.
-func (l *Loop) SetOnLLMRequest(fn func(req *llm.Request, tokensUsed, budget, llmCallN int)) {
-	l.onLLMRequest = fn
-}
-
-// SetOnLLMResponse registers a callback invoked with the raw response of each
-// inner LLM call. Pass nil to clear. Safe to call between turns; not safe during
-// Run.
-func (l *Loop) SetOnLLMResponse(fn func(resp *llm.Response, llmCallN int)) {
-	l.onLLMResponse = fn
-}
-
-// SetOnChunk registers a callback invoked with each streamed text token from
-// the LLM. Pass nil to clear. Safe to call between turns; not safe during Run.
-func (l *Loop) SetOnChunk(fn func(string)) { l.onChunk = fn }
-
-// SetOnThinkingChunk registers a callback invoked with each streamed reasoning
-// ("thinking") token from the LLM, when the provider surfaces extended thinking.
-// Pass nil to clear. Safe to call between turns; not safe during Run.
-func (l *Loop) SetOnThinkingChunk(fn func(string)) { l.onThinkingChunk = fn }
-
-// SetOnThinking registers a callback invoked at the start of each inner-loop
-// LLM call, before the request is submitted. llmCallN is 1-based; think reports
-// whether the call will stream reasoning, which is false both when the policy
-// declines to think and when the model cannot. Pass nil to clear. Safe to call
-// between turns; not safe during Run.
-func (l *Loop) SetOnThinking(fn func(llmCallN int, think bool)) { l.onThinking = fn }
-
-// SetOnPlanStart registers a callback invoked when the no-tool request-analysis
-// (planning) pass begins. Pass nil to clear. Safe to call between turns; not safe during Run.
-func (l *Loop) SetOnPlanStart(fn func()) { l.onPlanStart = fn }
-
-// SetOnPlanEnd registers a callback invoked when the request-analysis pass ends.
-// Pass nil to clear. Safe to call between turns; not safe during Run.
-func (l *Loop) SetOnPlanEnd(fn func()) { l.onPlanEnd = fn }
-
-// SetOnNotice registers a callback invoked with a session-level notice, e.g. a
-// capability downgrade. Pass nil to clear. Safe to call between turns; not safe during Run.
-func (l *Loop) SetOnNotice(fn func(string)) { l.onNotice = fn }
 
 // LastRunToolCount returns the number of tool calls dispatched during the
 // most recent Run(). Zero means the agent answered without using any tools.
@@ -804,16 +831,6 @@ func (l *Loop) PlanMode() string {
 
 // Role returns the resolved role name this loop runs. Fixed at build time.
 func (l *Loop) Role() string { return l.cfg.Role }
-
-// SetOnStage registers a callback invoked when the turn enters a named waiting
-// phase (see the Stage* constants). Pass nil to clear. Unlike the other
-// callbacks this one is concurrency-safe: a queue wait is reported from the LLM
-// queue's goroutine, so it may be read while the worker clears it after Run.
-func (l *Loop) SetOnStage(fn func(string)) {
-	l.stageMu.Lock()
-	defer l.stageMu.Unlock()
-	l.onStage = fn
-}
 
 func (l *Loop) stage(label string) {
 	l.stageMu.Lock()
