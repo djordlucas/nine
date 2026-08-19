@@ -32,7 +32,7 @@
 | **F7** | The four built-in plugins hold ambient authority that the capability model exists to remove | Medium | L |
 | **F8** | ~20 first-class nouns; `stage` is a working multi-stage capability with no caller, no precedence rule, and a starvation bug (`goal`+`workflow` examined and **not** collapsible — §7.1) | Medium | L |
 | **F9** | ~~One provider behind a generalized `Provider` + `ThinkingAware` abstraction — decide whether local-first is a goal or a stopgap~~ **Decided** — local-first is a commitment **and** multi-backend; the abstraction stays (G8/N5) | Medium | S |
-| **F10** | `internal/selfmodel`: 84 LOC, zero tests, `/.dockerenv` probe, swallowed query error | Low | S |
+| **F10** | ~~`internal/selfmodel`: 84 LOC, zero tests, `/.dockerenv` probe, swallowed query error~~ **Landed** — all four addressed; 0% → 78.6% coverage | Low | S |
 | **F11** | `docs/` + `spec/` is 57% of production code size; implemented design notes are maintained rather than frozen | Low | M |
 | **F12** | ~~The `TestRegisterPlugin` flake is documented as inherent; a socket-timing flake usually means a missing readiness handshake~~ **Investigated and fixed** — the handshake existed; the real defect was that it could not tell a dead plugin from a slow one (R-PLUG.14) | Low | S |
 
@@ -474,6 +474,31 @@ discards the error from `VectorQuery` silently. Environment detection inside
 prompt assembly is also the wrong home: the container fact belongs in config,
 resolved once at boot.
 
+**Landed, all four.** Verified first: 84 LOC and 0.0% statement coverage, both
+exact.
+
+*Detection moved to config* (`config.DetectRuntime` / `RuntimeLabel`) and is
+resolved once at boot, with the label injected into the `Assembler`. The old code
+re-probed the filesystem on every turn for an answer that cannot change while the
+process runs.
+
+*The misreporting is the part that mattered.* The failure was not "says Docker
+when it is Podman" — it was **"says `host` when it is confined"**, since Podman
+and several Kubernetes runtimes create no `/.dockerenv`. Telling the model it is
+on the host when it is sandboxed invites it to reason about the operator's
+machine. Detection now checks Kubernetes (via `KUBERNETES_SERVICE_HOST`), then
+Docker and Podman marker files, then PID 1's cgroup as a catch-all — so an
+unrecognized container still reports as a container, just without a brand — and
+`[daemon].runtime` lets an operator override a heuristic they always know better
+than. An empty label omits the line rather than guessing.
+
+*The swallowed error now logs.* It still degrades rather than fails — a turn
+without the skills section beats no turn — but silently returning nil made a
+broken vector store indistinguishable from "no skills matched", which is the
+state the system is in most of the time and would never be questioned.
+
+*Coverage 0.0% → 78.6%*, plus tests for detection and the override.
+
 ### F11 — Doc mass and design-note maintenance · Low · M
 
 17,904 lines of `docs/` + `spec/` against ~31,400 lines of production Go. For a
@@ -613,7 +638,7 @@ Ordered by leverage-per-unit-risk, not by severity alone.
 | 4 | ~~**F2 (step 1)** — typed `MsgType` constants~~ **done** | Mechanical, removes the literal-typo class, and makes F6 tractable. (It does not remove that class — see §5 F2 — but it does make F6 tractable, which was the load-bearing half.) |
 | 5 | ~~**F9** — decide local-first, then document or add a provider~~ **done** — decided: local-first *and* multi-backend (G8/N5) | A decision, not a build. Blocks nothing, unblocks F1's shape. |
 | 6 | **F6** — protocol and client tests — **`protocol` done**, `cli`/`tui` open | Follows F2 naturally; typed messages make the tests worth writing. (They did: the tests found two silent-failure bugs, now R-PROTO.10.) |
-| 7 | **F10**, ~~**F12**~~ **F12 done** | Small hygiene; fold into whatever branch is nearby. (F12 was not hygiene — it hid a real startup-diagnostic defect, R-PLUG.14.) |
+| 7 | ~~**F10**, **F12**~~ **both done** | Small hygiene; fold into whatever branch is nearby. (Neither was hygiene: F12 hid a startup-diagnostic defect, R-PLUG.14, and F10 could tell the model it was on the host while confined.) |
 | 8 | **F2 (steps 2–3)**, **F7**, **F11** | Larger, independent, and none is urgent. |
 | 9 | **F8** — the seven changes in [`concept-consolidation.md`](concept-consolidation.md) | Five of the seven need no schema change and can start now; only the two deletions (`C5`, `C6`) wait on F4. The `stage`→`aspect` rename is deliberately last. |
 

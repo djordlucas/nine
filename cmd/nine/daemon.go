@@ -181,6 +181,7 @@ func runDaemon() {
 		Embedder:          embedder,
 		ContextBudget:     cfg.ContextBudget(),
 		SystemPrompt:      runtime.BuildSystemPrompt(),
+		Runtime:           cfg.RuntimeLabel(),
 		// Pull-surface related prior sessions only when the out-of-band indexer
 		// that populates the store is enabled.
 		RelatedSessions: cfg.Daemon.RelatedSessionsIndexEnabled(),
