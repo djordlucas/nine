@@ -28,7 +28,7 @@
 | **F3** | ~~Daemon assembly is duplicated between production and the eval harness; the refactor that removes it is still *Proposed*~~ **Finding was wrong** — `runtime.Assemble` shipped in `cea290d`, *before* this review's own scope commit; residue handled | **High** | M |
 | **F4** | ~~No schema migration path — `user_version = 1` plus one ad-hoc `ALTER`~~ **Landed** — versioned step runner, atomic per step (R-MEM.10); unblocks `C5`/`C6` | **High** | S |
 | **F5** | ~~`agent.Loop` carries 12 post-construction observer setters; a Loop is never fully valid until N unordered calls have happened~~ **Landed** as a per-turn `Hooks` struct — the premise (construction-time config) was wrong, the ceremony was real | Medium | M |
-| **F6** | Test coverage is inverted at the boundary: `protocol` 0.24, `tui` 0.27, `cli` 0.33 against 0.87 elsewhere | Medium | M |
+| **F6** | ~~Test coverage is inverted at the boundary: `protocol` 0.24, `tui` 0.27, `cli` 0.33 against 0.87 elsewhere~~ **`protocol` done** — 12.6% → 67.0% statement coverage, and it found two real bugs (R-PROTO.10); `cli`/`tui` still open | Medium | M |
 | **F7** | The four built-in plugins hold ambient authority that the capability model exists to remove | Medium | L |
 | **F8** | ~20 first-class nouns; `stage` is a working multi-stage capability with no caller, no precedence rule, and a starvation bug (`goal`+`workflow` examined and **not** collapsible — §7.1) | Medium | L |
 | **F9** | ~~One provider behind a generalized `Provider` + `ThinkingAware` abstraction — decide whether local-first is a goal or a stopgap~~ **Decided** — local-first is a commitment **and** multi-backend; the abstraction stays (G8/N5) | Medium | S |
@@ -365,6 +365,33 @@ consumers — and it is the thinnest-tested thing in the tree. F2 and F6 are the
 same problem seen from two directions; typed messages make the tests easy to
 write.
 
+**`protocol` done: 12.6% → 67.0% statement coverage.** Note the figures above are
+test:code *line ratios*; measured as statement coverage `protocol` was **12.6%**,
+so the finding was understated rather than overstated.
+
+**The number was not the point — the tests found two real bugs.** `client.go`
+already had substantial *integration* coverage through `internal/runtime`'s daemon
+tests (22 call sites), so its statements were exercised. What no test reached was
+the client's behavior against a daemon that answers *incorrectly*, because every
+existing exercise ran against a correct one. A scriptable fake daemon reaches
+exactly that, and immediately turned up:
+
+- **`Context` returned `("", nil)` for any non-error reply.** A wrong-typed reply
+  has an empty `Text`, so the caller got a silent, successful-looking empty
+  string — blank output in the TUI with no error anywhere.
+- **`Status` failed with `decode status: unexpected end of JSON input`**, naming
+  neither the request nor the mismatch.
+
+Surveying the rest: **13 of 16** reply-reading methods screened only for `error`
+and accepted any other type. Two checked properly. That non-uniformity *is* the
+defect — the convention that a reply echoes its request's type was real, honored
+by every daemon handler, and written down nowhere. It is now **R-PROTO.10**, with
+one `expectReply` helper used by all 19 reply-reading methods and a test that
+exercises every one of them.
+
+**`cli` (31.2%) and `tui` (27.2%) remain**, and are a different problem: both are
+thin clients over this one, so the leverage was here.
+
 ### F7 — The built-ins hold ambient authority the capability model removes · Medium · L
 
 `files` (`read_file` / `write_file`, whole disk), `http` (`http_get` /
@@ -585,7 +612,7 @@ Ordered by leverage-per-unit-risk, not by severity alone.
 | 3 | ~~**F3 + F5** — assembly refactor and Loop hooks, together~~ **done, separately** — F3 had already shipped; F5 shares no file with it | The stated rationale ("F5 is most of what makes F3 large") was false: `builder.go` contains no `SetOn*` calls at all. |
 | 4 | ~~**F2 (step 1)** — typed `MsgType` constants~~ **done** | Mechanical, removes the literal-typo class, and makes F6 tractable. (It does not remove that class — see §5 F2 — but it does make F6 tractable, which was the load-bearing half.) |
 | 5 | ~~**F9** — decide local-first, then document or add a provider~~ **done** — decided: local-first *and* multi-backend (G8/N5) | A decision, not a build. Blocks nothing, unblocks F1's shape. |
-| 6 | **F6** — protocol and client tests | Follows F2 naturally; typed messages make the tests worth writing. |
+| 6 | **F6** — protocol and client tests — **`protocol` done**, `cli`/`tui` open | Follows F2 naturally; typed messages make the tests worth writing. (They did: the tests found two silent-failure bugs, now R-PROTO.10.) |
 | 7 | **F10**, ~~**F12**~~ **F12 done** | Small hygiene; fold into whatever branch is nearby. (F12 was not hygiene — it hid a real startup-diagnostic defect, R-PLUG.14.) |
 | 8 | **F2 (steps 2–3)**, **F7**, **F11** | Larger, independent, and none is urgent. |
 | 9 | **F8** — the seven changes in [`concept-consolidation.md`](concept-consolidation.md) | Five of the seven need no schema change and can start now; only the two deletions (`C5`, `C6`) wait on F4. The `stage`→`aspect` rename is deliberately last. |
