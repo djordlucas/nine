@@ -247,7 +247,10 @@ captured anywhere durable):
 - `turn_start` — trigger (`user`|`idle`|`cron`|`reconcile`|`hitl`), input text, role
 - **`llm_request`** — system, message window, advertised tool names, max_tokens,
   priority, `tokens_used`/`budget`, `llm_call_n`
-- **`llm_response`** — text, tool_calls, stop_reason
+- **`llm_response`** — text, tool_calls, stop_reason, and the provider's reported
+  token usage (`input_tokens` / `output_tokens`, omitted when unreported). Paired with
+  `llm_request`'s `tokens_used` under the same span, this makes the context builder's
+  chars/4 estimate measurable against what the model actually charged.
 - `tool_start` — name, input
 - `tool_end` — name, **output**, **truncated**, **spill_path**, **output_chars**,
   **duration_ms**, **error**, **retries**. On an over-cap result `output` is the

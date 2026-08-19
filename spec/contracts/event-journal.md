@@ -32,7 +32,7 @@ journal write must not stall a user turn). Per-turn loop hooks
 ```text
 turn_start      {input}
 llm_request     {system, messages, tool_names, max_tokens, tokens_used, budget, llm_call_n}
-llm_response    {text, tool_calls, stop_reason, llm_call_n}
+llm_response    {text, tool_calls, stop_reason, llm_call_n, input_tokens?, output_tokens?}
 tool_start      {name, input}
 tool_end        {name, input, output, truncated, duration_ms, attempts, err}
 context_update  {tokens_used, budget}
@@ -42,6 +42,13 @@ supervisor      {kind, agent_id, payload}   // control-plane events (see supervi
 
 `span_id`/`parent_span_id` form a per-turn tree: the turn root, each LLM call, and each
 tool call get spans.
+
+**Token reconciliation.** `llm_request.tokens_used` is the context builder's pre-send
+estimate and `llm_response.input_tokens` is what the provider actually charged; the two
+events share one LLM-call `span_id`, so estimate-vs-actual is a **join on span** and
+**MUST NOT** be duplicated onto a single event. The usage keys are omitted when the
+provider reports none (R-LLM.8), so a reader **MUST** treat an absent key as unmeasured
+rather than as zero tokens.
 
 A delegated sub-agent runs as its own `AgentWorker` and **MUST** be given the same sink
 (`AgentBuilder.SetEventSink` → `RunSubAgentSync`), so it journals its full trajectory
