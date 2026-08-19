@@ -94,7 +94,7 @@ func (c *Client) NewConversation() (string, error) {
 // (HITL-eligible) when interactive is true. Only the TUI sets this. Returns the
 // new conversation's ID, its resolved role, and the daemon's instance name.
 func (c *Client) NewConversationInteractive(interactive bool) (id, role, instanceName string, err error) {
-	if err := c.send(Msg{Type: "new_conversation", Interactive: interactive}); err != nil {
+	if err := c.send(Msg{Type: TypeNewConversation, Interactive: interactive}); err != nil {
 		return "", "", "", err
 	}
 	reply, err := c.recv()
@@ -179,7 +179,7 @@ func (c *Client) turnWithProgress(agentID, text string, forceThink bool, onProgr
 			continue
 		}
 		switch msg.Type {
-		case "response":
+		case TypeResponse:
 			// Consume the trailing "done" message.
 			if done, err := c.recv(); err != nil {
 				return "", err
@@ -187,7 +187,7 @@ func (c *Client) turnWithProgress(agentID, text string, forceThink bool, onProgr
 				return "", fmt.Errorf("daemon: %s", done.Text)
 			}
 			return msg.Text, nil
-		case "error":
+		case TypeError:
 			return "", fmt.Errorf("daemon: %s", msg.Text)
 		default:
 			return "", fmt.Errorf("unexpected reply: %s", msg.Type)
@@ -206,10 +206,7 @@ func (c *Client) AnswerHuman(agentID, requestID, answer string) error {
 	if err != nil {
 		return err
 	}
-	if reply.Type == TypeError {
-		return fmt.Errorf("daemon: %s", reply.Text)
-	}
-	return nil
+	return expectReply(reply, TypeHumanInputAnswer)
 }
 
 // Status requests daemon status information.
@@ -221,8 +218,8 @@ func (c *Client) Status() (*StatusInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	if reply.Type == TypeError {
-		return nil, fmt.Errorf("daemon: %s", reply.Text)
+	if err := expectReply(reply, TypeStatus); err != nil {
+		return nil, err
 	}
 	var info StatusInfo
 	if err := json.Unmarshal([]byte(reply.Text), &info); err != nil {
@@ -256,8 +253,8 @@ func (c *Client) ListNotifications(all bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if reply.Type == TypeError {
-		return "", fmt.Errorf("daemon: %s", reply.Text)
+	if err := expectReply(reply, TypeListNotifications); err != nil {
+		return "", err
 	}
 	return reply.Text, nil
 }
@@ -276,10 +273,7 @@ func (c *Client) StopWorkflow(id string) error {
 	if err != nil {
 		return err
 	}
-	if reply.Type == TypeError {
-		return fmt.Errorf("daemon: %s", reply.Text)
-	}
-	return nil
+	return expectReply(reply, TypeWorkflowStop)
 }
 
 // FailWorkflow sends a workflow_fail message to mark workflow(s) as failed.
@@ -295,10 +289,7 @@ func (c *Client) FailWorkflow(id string, all bool) error {
 	if err != nil {
 		return err
 	}
-	if reply.Type == TypeError {
-		return fmt.Errorf("daemon: %s", reply.Text)
-	}
-	return nil
+	return expectReply(reply, TypeWorkflowFail)
 }
 
 // StopSession terminates a session by ID (or every session when all is true),
@@ -311,8 +302,8 @@ func (c *Client) StopSession(id string, all bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if reply.Type == TypeError {
-		return "", fmt.Errorf("daemon: %s", reply.Text)
+	if err := expectReply(reply, TypeSessionStop); err != nil {
+		return "", err
 	}
 	return reply.Text, nil
 }
@@ -325,8 +316,8 @@ func (c *Client) queryList(msgType MsgType) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if reply.Type == TypeError {
-		return "", fmt.Errorf("daemon: %s", reply.Text)
+	if err := expectReply(reply, msgType); err != nil {
+		return "", err
 	}
 	return reply.Text, nil
 }
@@ -341,8 +332,8 @@ func (c *Client) Context(agentID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if reply.Type == TypeError {
-		return "", fmt.Errorf("daemon: %s", reply.Text)
+	if err := expectReply(reply, TypeContext); err != nil {
+		return "", err
 	}
 	return reply.Text, nil
 }
@@ -356,8 +347,8 @@ func (c *Client) ListTools() ([]ToolSummary, error) {
 	if err != nil {
 		return nil, err
 	}
-	if reply.Type == TypeError {
-		return nil, fmt.Errorf("daemon: %s", reply.Text)
+	if err := expectReply(reply, TypeListTools); err != nil {
+		return nil, err
 	}
 	var tools []ToolSummary
 	if err := json.Unmarshal([]byte(reply.Text), &tools); err != nil {
@@ -399,8 +390,8 @@ func (c *Client) sandboxedToolQuery(msgType MsgType) ([]SandboxedToolStatus, err
 	if err != nil {
 		return nil, err
 	}
-	if reply.Type == TypeError {
-		return nil, fmt.Errorf("daemon: %s", reply.Text)
+	if err := expectReply(reply, msgType); err != nil {
+		return nil, err
 	}
 	var tools []SandboxedToolStatus
 	if err := json.Unmarshal([]byte(reply.Text), &tools); err != nil {
@@ -417,8 +408,8 @@ func (c *Client) pluginStatusQuery(msgType MsgType) ([]PluginStatus, error) {
 	if err != nil {
 		return nil, err
 	}
-	if reply.Type == TypeError {
-		return nil, fmt.Errorf("daemon: %s", reply.Text)
+	if err := expectReply(reply, msgType); err != nil {
+		return nil, err
 	}
 	var plugins []PluginStatus
 	if err := json.Unmarshal([]byte(reply.Text), &plugins); err != nil {
@@ -436,10 +427,29 @@ func (c *Client) PluginCall(tool string, args json.RawMessage) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if reply.Type == TypeError {
-		return "", fmt.Errorf("daemon: %s", reply.Text)
+	if err := expectReply(reply, TypePluginCall); err != nil {
+		return "", err
 	}
 	return reply.Text, nil
+}
+
+// expectReply validates a reply before a caller reads its payload: a daemon
+// error becomes a Go error, and anything other than want is refused.
+//
+// Every daemon handler answers a request by echoing its type back with the
+// payload in Text (R-PROTO.10), so the expected type is always known. Checking
+// it matters because the alternative is silent: a reply of the wrong type has an
+// empty Text, so a method that only screened for "error" would hand its caller a
+// successful-looking zero value. That is how a version skew or a routing bug
+// reaches a user as blank output rather than as a failure.
+func expectReply(reply Msg, want MsgType) error {
+	if reply.Type == TypeError {
+		return fmt.Errorf("daemon: %s", reply.Text)
+	}
+	if reply.Type != want {
+		return fmt.Errorf("unexpected reply: got %q, want %q", reply.Type, want)
+	}
+	return nil
 }
 
 func (c *Client) send(m Msg) error { return c.enc.Encode(m) }
@@ -468,8 +478,8 @@ func (c *Client) SetPlanMode(agentID, mode string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if reply.Type == TypeError {
-		return "", fmt.Errorf("daemon: %s", reply.Text)
+	if err := expectReply(reply, TypeSetPlanMode); err != nil {
+		return "", err
 	}
 	return reply.Text, nil
 }
