@@ -1,6 +1,10 @@
 # Daemon assembly refactor — share one wiring path
 
-**Status:** Proposed / not yet implemented · **Purpose:** eliminate the
+**Status:** **Built** (shipped in `cea290d`; `runtime.Assemble` in
+`internal/runtime/assembly.go`, called by both `cmd/nine/daemon.go` and
+`tests/evals/runner/harness.go`). Migration steps 1–4 are done. Step 5 is done
+with one deliberate change: the drift guard was **retargeted, not retired** —
+see *Retiring the drift tooling* below. · **Purpose:** eliminate the
 hand-maintained duplication between the production daemon boot (`runDaemon`) and
 the in-process eval harness by extracting one shared assembly function, so that
 "the harness reproduces production" becomes a compile-time guarantee instead of a
@@ -147,9 +151,16 @@ go supervisor.Run(dctx)
 go a.Daemon.Start(dctx)
 ```
 
-Now any new wiring added inside `Assemble` reaches both callers automatically. A
-new *dependency* (a new `AssemblyDeps` field) still forces a decision at both call
-sites — but that is a compile error, not a silent gap.
+Now any new wiring added inside `Assemble` reaches both callers automatically.
+
+> **Correction (post-implementation).** This note originally claimed a new
+> `AssemblyDeps` field "still forces a decision at both call sites — but that is
+> a compile error, not a silent gap." **That is wrong.** `AssemblyConfig` is a
+> struct with named fields, and Go does not require a composite literal to
+> mention every one: adding a field and passing it from `cmd/nine/daemon.go`
+> compiles cleanly at the harness call site, which silently receives the zero
+> value. The refactor removed duplicated *wiring*, which was the bulk of the
+> risk; it did not remove drift in the config *surface*. Hence step 5 below.
 
 ## Migration steps
 
@@ -165,11 +176,28 @@ sites — but that is a compile error, not a silent gap.
 4. Run `make eval-replay` and `go test ./tests/evals/...` — the
    harness self-tests already exercise the full path, so they are the regression
    gate for this refactor.
-5. Once the harness calls `Assemble`, retire the drift tooling: delete
-   `.claude/hooks/eval-harness-guard.sh`, unregister it from
-   `.claude/settings.json`, and delete `.claude/commands/sync-evals.md` (or shrink
-   `/sync-evals` to "add the new field at both `Assemble` call sites"). Update
-   `tests/evals/README.md`.
+5. ~~Once the harness calls `Assemble`, retire the drift tooling~~ — **revised.**
+   The guard was **retargeted instead of deleted**, for the reason in the
+   correction above: it now watches `internal/runtime/assembly.go` (the config
+   surface that can still drift) rather than `cmd/nine/daemon.go` +
+   `internal/runtime/builder.go` (the wiring, which no longer can). `/sync-evals`
+   stays for the same reason, with its job narrowed to "decide what the harness
+   passes for the new `AssemblyConfig` field".
+
+## Retiring the drift tooling
+
+The original plan was to delete `.claude/hooks/eval-harness-guard.sh`,
+unregister it from `.claude/settings.json`, and drop
+`.claude/commands/sync-evals.md`, on the theory that the compiler would take
+over. It will not — a named-field struct literal does not have to be exhaustive,
+so the one remaining drift vector is invisible to it.
+
+What the refactor genuinely bought is a much **narrower** guard: before, any new
+setter or dependency anywhere in `runDaemon` was a silent gap; now only a new
+`AssemblyConfig` field is. The hook's trigger moved accordingly, and its message
+names the specific hazard instead of asking for a general reconciliation.
+
+Deleting it outright would trade a real (if narrow) check for nothing.
 
 ## Risks & notes
 
