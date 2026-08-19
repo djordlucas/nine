@@ -45,7 +45,7 @@ func TestHITLAskAnswered(t *testing.T) {
 	// Wait for the question to be emitted, then deliver the answer by request ID.
 	var emitted protocol.Msg
 	deadline := time.After(2 * time.Second)
-	for emitted.Type != "human_input_required" {
+	for emitted.Type != protocol.TypeHumanInputRequired {
 		select {
 		case emitted = <-emitCh:
 		case <-deadline:

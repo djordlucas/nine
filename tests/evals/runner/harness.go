@@ -276,7 +276,7 @@ func driveTurns(ctx context.Context, sock string, client *protocol.Client, agent
 		defer replier.Close() //nolint:errcheck
 		var mu sync.Mutex
 		onProgress = func(evt protocol.ProgressEvent) {
-			if evt.Type != "human_input_required" || evt.HumanRequest == nil {
+			if evt.Type != protocol.TypeHumanInputRequired || evt.HumanRequest == nil {
 				return
 			}
 			mu.Lock()
