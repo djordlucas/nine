@@ -266,3 +266,29 @@ reached a handler. Only the default branch fails.
 This is what makes the typed discriminator (R-PROTO.1) load-bearing rather than a
 convention. Without it, a message type can be declared, documented, and sent by a client
 while the daemon has no case for it, and nothing reports that until a user hits it.
+
+---
+
+## R-PROTO.10 — A reply echoes its request's type
+
+Every request that expects an answer is answered with a message of **the same type**,
+carrying the payload in `text` (JSON-encoded where structured). `status` answers
+`status`, `list_goals` answers `list_goals`, and so on. The exceptions are the two
+requests that create or join a session — `new_conversation` answers `conversation_id`
+and `attach` answers `ok` — and `user_turn`, which streams progress and ends with
+`response` then `done`. A failure answers `error` in every case.
+
+A client **MUST** verify the type before reading the payload, and **MUST NOT** treat any
+non-`error` reply as success.
+
+The reason is that the failure is otherwise **silent**. Fields are `omitempty` and the
+envelope is flat, so a reply of the wrong type decodes cleanly with an empty `text` — a
+client that screened only for `error` would hand its caller a successful-looking zero
+value. In the reference this had already happened: `Context` returned `("", nil)` for any
+non-error reply, and `Status` failed with a JSON decode error naming neither the request
+nor the mismatch. Both would surface to a user as blank output rather than as a fault,
+and both are the kind of thing a version skew produces.
+
+The reference centralizes the check in one `expectReply(reply, want)` used by every
+reply-reading method, because the defect it replaced was precisely non-uniformity — two
+methods checked, thirteen did not.
