@@ -114,6 +114,10 @@ type streamChunk struct {
 	DoneReason string      `json:"done_reason"`
 	Done       bool        `json:"done"`
 	Error      string      `json:"error,omitempty"`
+	// Token accounting. Ollama reports these only on the final (done) chunk;
+	// they are absent and therefore zero on every delta.
+	PromptEvalCount int `json:"prompt_eval_count"`
+	EvalCount       int `json:"eval_count"`
 }
 
 // Response from /api/show, used to detect model capabilities (e.g. thinking support).
@@ -205,6 +209,7 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 		content    strings.Builder
 		doneReason string
 		toolCalls  []llm.ToolCall
+		usage      llm.Usage
 	)
 
 	// Process streaming chunks from the Ollama API. Each chunk may contain text, tool calls, and/or thinking tokens.
@@ -244,6 +249,12 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 		}
 		if chunk.Done {
 			doneReason = chunk.DoneReason
+			// Counts ride on the final chunk only. eval_count covers generated
+			// tokens including thinking, which is what the model was charged for.
+			usage = llm.Usage{
+				InputTokens:  chunk.PromptEvalCount,
+				OutputTokens: chunk.EvalCount,
+			}
 			break
 		}
 	}
@@ -255,6 +266,7 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 		Text:         content.String(),
 		ToolCalls:    toolCalls,
 		ThinkingUsed: thinkingOn,
+		Usage:        usage,
 	}
 
 	// Stop reason detection

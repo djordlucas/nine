@@ -18,7 +18,8 @@ Provider {
 }
 
 Request  { System string; Messages []Message; Tools []ToolDef; MaxTokens int; Think *bool; OnChunk func(string); OnThinkingChunk func(string); OnQueued func(); OnDequeued func() }
-Response { Text string; ToolCalls []ToolCall; StopReason string }  // "end_turn" | "tool_use" | "max_tokens"
+Response { Text string; ToolCalls []ToolCall; StopReason string; Usage Usage }  // "end_turn" | "tool_use" | "max_tokens"
+Usage    { InputTokens int; OutputTokens int }  // zero == not reported (R-LLM.8)
 Message  { Role ("user"|"assistant"); Text string; ToolCalls []ToolCall; ToolResults []ToolResult }
 ToolCall { ID string; Name string; Input json }
 ```
@@ -103,7 +104,29 @@ Sub-agent group timeouts are enforced one layer up (see
 
 Token budgeting uses a 4-chars-≈-1-token approximation in the context builder (see
 [`context-builder.md`](context-builder.md)); the provider interface carries no
-token-counting method.
+token-counting method. It carries a token *reporting* field instead — `Response.Usage`,
+R-LLM.8 — because an estimate that is never compared against a measurement cannot be
+calibrated.
+
+---
+
+## R-LLM.8 — Reported usage
+
+`Response.Usage` carries the provider's own accounting for the completion:
+`InputTokens` for the assembled prompt (system + messages + tool definitions) and
+`OutputTokens` for what the model generated, **including thinking tokens** when
+extended thinking ran.
+
+A provider that does not report counts **MUST** leave the fields zero. **Zero therefore
+means "not reported", never "nothing consumed"** — a consumer reconciling the builder's
+estimate against the actual **MUST** skip a zero `InputTokens` rather than record it as a
+total overestimate. Providers **MUST NOT** synthesize a count they were not given; an
+estimate dressed as a measurement defeats the purpose of the field.
+
+Usage is **reported, never enforced**: nothing in the queue or the loop rejects,
+retries, or trims a turn on account of it. The budget is imposed before the call by the
+context builder; `Usage` exists so that budget can be measured against reality (see
+[`event-journal.md`](event-journal.md) for where the two meet).
 
 ---
 
@@ -119,6 +142,9 @@ conforming implementation **MUST** provide the **Ollama** adapter over Ollama's 
   (with a synthesized id when the model omits one);
 - map Ollama's `done_reason` to `StopReason` (`tool_calls`→`tool_use`, `length`→
   `max_tokens`, else `end_turn`; any tool call forces `tool_use`);
+- report `prompt_eval_count` / `eval_count` from the **final** (`done`) chunk as
+  `Response.Usage`, leaving it zero when the chunk omits them (R-LLM.8); counts on a
+  non-final delta are not authoritative and **MUST NOT** override the final chunk;
 - apply `[llm].num_ctx` as the request's `options.num_ctx` when > 0;
 - when `[llm].thinking` is enabled, send `think: true` (instead of prepending
   `/no_think`) and mirror each streamed `message.thinking` delta to
@@ -134,7 +160,7 @@ so it runs in CI without a live model. Tests that need a real model **MUST** be 
 
 ## Reference symbols
 
-`internal/llm/provider.go` (`Provider`, `Request`, `Response`, `Message`, `ToolCall`,
-`ToolResult`, priority constants), `internal/llm/queue.go` (`Queue`, `Submit`),
+`internal/llm/provider.go` (`Provider`, `Request`, `Response`, `Usage`, `Message`,
+`ToolCall`, `ToolResult`, priority constants), `internal/llm/queue.go` (`Queue`, `Submit`),
 `internal/llm/ollama/` (adapter + `ollama_test.go`, a hermetic `httptest` unit test).
 (`internal/llm/openai/` is an empty placeholder.)
