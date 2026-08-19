@@ -31,7 +31,7 @@ func TestMemoryEnrichmentSurfacesRelevantMemories(t *testing.T) {
 			{Key: "prefers-tabs", Score: 0.72},
 		},
 		values: map[string]string{
-			"prefers-postgres": "user runs Postgres, not SQLite",
+			"prefers-postgres":  "user runs Postgres, not SQLite",
 			"stale-below-floor": "irrelevant",
 			"prefers-tabs":      "indent with tabs",
 		},

@@ -32,7 +32,8 @@ func (d *Daemon) SetMaxGoalSessions(n int) {
 // daemon is at its MaxGoalSessions cap, it returns (false, nil); the goal
 // itself is still recorded by the caller (goal_create) either way.
 func (d *Daemon) SpawnGoalSession(_ context.Context, goalID string) (bool, error) {
-	plan, err := newIdleCapablePlan(goalID, "pursue", PursueIdleInterval)
+	// No explicit role: a plain pursue shell runs the default pursue role.
+	plan, err := newIdleCapablePlan(goalID, "pursue", "", PursueIdleInterval)
 	if err != nil {
 		return false, err
 	}
@@ -43,16 +44,17 @@ func (d *Daemon) SpawnGoalSession(_ context.Context, goalID string) (bool, error
 // a pre-defined standing agent (docs/predefined-agents.md). It mirrors
 // SpawnGoalSession but seeds the plan with the configured work role, delegation
 // opt-in, and wake trigger so the session runs under a narrowed role while
-// keeping the pursue shell. The trigger is a cron schedule when schedule is
-// non-empty, otherwise the fixed interval (interval <= 0 with no schedule uses
+// keeping the pursue shell. aspects are additional stages the session carries
+// alongside the pursue shell, each with its own wake cadence. The trigger is a
+// cron schedule when schedule is non-empty, otherwise the fixed interval (interval <= 0 with no schedule uses
 // PursueIdleInterval). Idempotent — a no-op if the session is already running;
 // otherwise it (re)writes the plan, so config edits to role/delegates/trigger
 // take effect on the next boot.
-func (d *Daemon) SpawnStandingSession(_ context.Context, goalID, role string, delegates bool, interval time.Duration, schedule string) (bool, error) {
+func (d *Daemon) SpawnStandingSession(_ context.Context, goalID, role string, delegates bool, interval time.Duration, schedule string, aspects []StageAspect) (bool, error) {
 	if interval <= 0 && schedule == "" {
 		interval = PursueIdleInterval
 	}
-	plan, err := newStandingPursuePlan(goalID, role, delegates, interval, schedule)
+	plan, err := newStandingPursuePlan(goalID, role, delegates, interval, schedule, aspects)
 	if err != nil {
 		return false, err
 	}

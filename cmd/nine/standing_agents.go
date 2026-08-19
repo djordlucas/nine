@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -55,6 +56,16 @@ func reconcileStandingAgents(ctx context.Context, store *memory.Store, daemon *r
 			}
 		}
 
+		// Additional aspects, each with its own cadence. A bad aspect skips the
+		// whole agent rather than silently dropping one stage: an operator who
+		// asked for a reflecting monitor and got a plain monitor has no signal
+		// that half their config was ignored.
+		aspects, err := resolveAspects(a)
+		if err != nil {
+			slog.Warn("skipping [[agent]]: invalid aspect", "id", a.ID, "err", err)
+			continue
+		}
+
 		role := a.Role
 		if role == "" {
 			role = defaultStandingRole
@@ -72,7 +83,7 @@ func reconcileStandingAgents(ctx context.Context, store *memory.Store, daemon *r
 				slog.Warn("standing agent reconcile: goal create failed", "id", a.ID, "err", err)
 				continue
 			}
-			if _, err := daemon.SpawnStandingSession(ctx, a.ID, role, a.Delegates, interval, a.Schedule); err != nil {
+			if _, err := daemon.SpawnStandingSession(ctx, a.ID, role, a.Delegates, interval, a.Schedule, aspects); err != nil {
 				slog.Warn("standing agent reconcile: spawn failed", "id", a.ID, "err", err)
 				continue
 			}
@@ -97,7 +108,7 @@ func reconcileStandingAgents(ctx context.Context, store *memory.Store, daemon *r
 		// The agent owns run-state: only an active goal is (re)spawned; a paused
 		// or finished agent keeps its status and is not resurrected (§4).
 		if goal.Status == "active" {
-			if _, err := daemon.SpawnStandingSession(ctx, a.ID, role, a.Delegates, interval, a.Schedule); err != nil {
+			if _, err := daemon.SpawnStandingSession(ctx, a.ID, role, a.Delegates, interval, a.Schedule, aspects); err != nil {
 				slog.Warn("standing agent reconcile: spawn failed", "id", a.ID, "err", err)
 			}
 		} else {
@@ -167,4 +178,35 @@ func removedConfigGoals(goals []memory.Goal, desired map[string]bool) []memory.G
 		out = append(out, g)
 	}
 	return out
+}
+
+// resolveAspects converts an agent's [[agent.aspect]] entries into StageAspects,
+// parsing and validating each cadence. It returns the first error rather than
+// collecting them: the caller skips the agent either way, and one clear reason
+// beats a list.
+func resolveAspects(a config.AgentConfig) ([]runtime.StageAspect, error) {
+	if len(a.Aspects) == 0 {
+		return nil, nil
+	}
+	out := make([]runtime.StageAspect, 0, len(a.Aspects))
+	for _, asp := range a.Aspects {
+		sa := runtime.StageAspect{Kind: asp.Kind, Schedule: asp.Schedule}
+		if asp.Interval != "" {
+			d, err := time.ParseDuration(asp.Interval)
+			if err != nil || d <= 0 {
+				return nil, fmt.Errorf("aspect %q: invalid interval %q", asp.Kind, asp.Interval)
+			}
+			sa.Interval = d
+		}
+		if asp.Schedule != "" {
+			if _, err := cron.Parse(asp.Schedule); err != nil {
+				return nil, fmt.Errorf("aspect %q: invalid cron schedule %q: %w", asp.Kind, asp.Schedule, err)
+			}
+		}
+		out = append(out, sa)
+	}
+	if err := runtime.ValidateAspects(out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
