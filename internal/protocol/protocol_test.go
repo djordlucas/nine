@@ -68,7 +68,7 @@ func TestClientMessageConstructors(t *testing.T) {
 func TestProgressEventConversion(t *testing.T) {
 	cases := []struct {
 		msg      protocol.Msg
-		wantType string
+		wantType protocol.MsgType
 		wantOK   bool
 	}{
 		{protocol.NewToolStartMsg("a", "shell", "Shell", nil), "tool_start", true},

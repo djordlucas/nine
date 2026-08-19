@@ -46,7 +46,7 @@ func (d *Daemon) handleStatus(enc *json.Encoder) {
 		LLMQueue:  queue,
 	}
 	data, _ := json.Marshal(info)
-	enc.Encode(protocol.NewTextMsg("status", string(data))) //nolint:errcheck
+	enc.Encode(protocol.NewTextMsg(protocol.TypeStatus, string(data))) //nolint:errcheck
 }
 
 // handleContext returns a JSON-encoded breakdown of a session's currently
@@ -78,13 +78,13 @@ func (d *Daemon) handleContext(ctx context.Context, enc *json.Encoder, agentID s
 		return
 	}
 	data, _ := json.Marshal(rep)
-	enc.Encode(protocol.NewTextMsg("context", string(data))) //nolint:errcheck
+	enc.Encode(protocol.NewTextMsg(protocol.TypeContext, string(data))) //nolint:errcheck
 }
 
 // handleListGoals returns a JSON-encoded goal list.
 func (d *Daemon) handleListGoals(enc *json.Encoder) {
 	if d.store == nil {
-		enc.Encode(protocol.NewTextMsg("list_goals", `[]`)) //nolint:errcheck
+		enc.Encode(protocol.NewTextMsg(protocol.TypeListGoals, `[]`)) //nolint:errcheck
 		return
 	}
 	goals, err := d.store.GoalList()
@@ -93,13 +93,13 @@ func (d *Daemon) handleListGoals(enc *json.Encoder) {
 		return
 	}
 	data, _ := json.Marshal(map[string]any{"goals": goals})
-	enc.Encode(protocol.NewTextMsg("list_goals", string(data))) //nolint:errcheck
+	enc.Encode(protocol.NewTextMsg(protocol.TypeListGoals, string(data))) //nolint:errcheck
 }
 
 // handleListReflections returns a JSON-encoded reflection list.
 func (d *Daemon) handleListReflections(enc *json.Encoder) {
 	if d.store == nil {
-		enc.Encode(protocol.NewTextMsg("list_reflections", `[]`)) //nolint:errcheck
+		enc.Encode(protocol.NewTextMsg(protocol.TypeListReflections, `[]`)) //nolint:errcheck
 		return
 	}
 	refs, err := d.store.ReflectionList()
@@ -108,7 +108,7 @@ func (d *Daemon) handleListReflections(enc *json.Encoder) {
 		return
 	}
 	data, _ := json.Marshal(map[string]any{"reflections": refs})
-	enc.Encode(protocol.NewTextMsg("list_reflections", string(data))) //nolint:errcheck
+	enc.Encode(protocol.NewTextMsg(protocol.TypeListReflections, string(data))) //nolint:errcheck
 }
 
 // handleListNotifications returns the human-facing notification feed as JSON.
@@ -117,7 +117,7 @@ func (d *Daemon) handleListReflections(enc *json.Encoder) {
 // nothing.
 func (d *Daemon) handleListNotifications(enc *json.Encoder, flag string) {
 	if d.store == nil {
-		enc.Encode(protocol.NewTextMsg("list_notifications", `{"notifications":[]}`)) //nolint:errcheck
+		enc.Encode(protocol.NewTextMsg(protocol.TypeListNotifications, `{"notifications":[]}`)) //nolint:errcheck
 		return
 	}
 	all := flag == "--all"
@@ -134,13 +134,13 @@ func (d *Daemon) handleListNotifications(enc *json.Encoder, flag string) {
 		}
 	}
 	data, _ := json.Marshal(map[string]any{"notifications": ns})
-	enc.Encode(protocol.NewTextMsg("list_notifications", string(data))) //nolint:errcheck
+	enc.Encode(protocol.NewTextMsg(protocol.TypeListNotifications, string(data))) //nolint:errcheck
 }
 
 // handleListWorkflows returns a JSON-encoded workflow list.
 func (d *Daemon) handleListWorkflows(enc *json.Encoder) {
 	if d.store == nil {
-		enc.Encode(protocol.NewTextMsg("list_workflows", `[]`)) //nolint:errcheck
+		enc.Encode(protocol.NewTextMsg(protocol.TypeListWorkflows, `[]`)) //nolint:errcheck
 		return
 	}
 	workflows, err := d.store.WorkflowList("")
@@ -149,7 +149,7 @@ func (d *Daemon) handleListWorkflows(enc *json.Encoder) {
 		return
 	}
 	data, _ := json.Marshal(map[string]any{"workflows": workflows})
-	enc.Encode(protocol.NewTextMsg("list_workflows", string(data))) //nolint:errcheck
+	enc.Encode(protocol.NewTextMsg(protocol.TypeListWorkflows, string(data))) //nolint:errcheck
 }
 
 // newConversation creates a AgentWorker with a fresh agent loop and registers
@@ -186,7 +186,7 @@ func (d *Daemon) handleHumanAnswer(enc *json.Encoder, msg protocol.Msg) {
 		enc.Encode(protocol.NewErrorMsg("no pending question for that request")) //nolint:errcheck
 		return
 	}
-	enc.Encode(protocol.NewTextMsg("human_input_answer", "ok")) //nolint:errcheck
+	enc.Encode(protocol.NewTextMsg(protocol.TypeHumanInputAnswer, "ok")) //nolint:errcheck
 }
 
 // attach restores an existing conversation from its checkpoint if not already
@@ -369,7 +369,7 @@ func (d *Daemon) handleSessionStop(enc *json.Encoder, agentID string, all bool) 
 		for _, id := range ids {
 			d.forgetSession(id)
 		}
-		enc.Encode(protocol.NewTextMsg("session_stop", fmt.Sprintf("stopped %d session(s)", len(ids)))) //nolint:errcheck
+		enc.Encode(protocol.NewTextMsg(protocol.TypeSessionStop, fmt.Sprintf("stopped %d session(s)", len(ids)))) //nolint:errcheck
 		return
 	}
 
@@ -392,7 +392,7 @@ func (d *Daemon) handleSessionStop(enc *json.Encoder, agentID string, all bool) 
 		return
 	}
 	slog.Info("session stopped", "id", resolved)
-	enc.Encode(protocol.NewTextMsg("session_stop", "stopped "+resolved)) //nolint:errcheck
+	enc.Encode(protocol.NewTextMsg(protocol.TypeSessionStop, "stopped "+resolved)) //nolint:errcheck
 }
 
 // forgetSession deletes a session's durable state: its checkpoint and, when a
@@ -446,7 +446,7 @@ func (d *Daemon) handleListTools(enc *json.Encoder) {
 		tools = []protocol.ToolSummary{}
 	}
 	data, _ := json.Marshal(tools)
-	enc.Encode(protocol.NewTextMsg("list_tools", string(data))) //nolint:errcheck
+	enc.Encode(protocol.NewTextMsg(protocol.TypeListTools, string(data))) //nolint:errcheck
 }
 
 // handlePluginCall routes a tool call directly to its handler: the core
@@ -472,7 +472,7 @@ func (d *Daemon) handlePluginCall(ctx context.Context, enc *json.Encoder, toolNa
 			enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
 			return
 		}
-		enc.Encode(protocol.NewTextMsg("plugin_call", out)) //nolint:errcheck
+		enc.Encode(protocol.NewTextMsg(protocol.TypePluginCall, out)) //nolint:errcheck
 		return
 	}
 	if d.core != nil && d.core.Has(toolName) {
@@ -481,7 +481,7 @@ func (d *Daemon) handlePluginCall(ctx context.Context, enc *json.Encoder, toolNa
 			enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
 			return
 		}
-		enc.Encode(protocol.NewTextMsg("plugin_call", result.Output)) //nolint:errcheck
+		enc.Encode(protocol.NewTextMsg(protocol.TypePluginCall, result.Output)) //nolint:errcheck
 		return
 	}
 	if d.mgr == nil {
@@ -496,7 +496,7 @@ func (d *Daemon) handlePluginCall(ctx context.Context, enc *json.Encoder, toolNa
 					enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
 					return
 				}
-				enc.Encode(protocol.NewTextMsg("plugin_call", result.Output)) //nolint:errcheck
+				enc.Encode(protocol.NewTextMsg(protocol.TypePluginCall, result.Output)) //nolint:errcheck
 				return
 			}
 		}
@@ -508,7 +508,7 @@ func (d *Daemon) handlePluginCall(ctx context.Context, enc *json.Encoder, toolNa
 // running, plus user plugins that were skipped at load with the reason.
 func (d *Daemon) handlePluginsList(enc *json.Encoder) {
 	data, _ := json.Marshal(d.pluginStatuses())
-	enc.Encode(protocol.NewTextMsg("plugins_list", string(data))) //nolint:errcheck
+	enc.Encode(protocol.NewTextMsg(protocol.TypePluginsList, string(data))) //nolint:errcheck
 }
 
 // handlePluginsReload re-scans the user-plugin directory (stopping and restarting
@@ -520,7 +520,7 @@ func (d *Daemon) handlePluginsReload(enc *json.Encoder) {
 	}
 	d.mgr.ReloadUserPlugins()
 	data, _ := json.Marshal(d.pluginStatuses())
-	enc.Encode(protocol.NewTextMsg("plugins_reload", string(data))) //nolint:errcheck
+	enc.Encode(protocol.NewTextMsg(protocol.TypePluginsReload, string(data))) //nolint:errcheck
 }
 
 // pluginStatuses assembles the plugin roster from the manager: every running
@@ -599,7 +599,7 @@ func (d *Daemon) setPlanMode(enc *json.Encoder, agentID, mode string) {
 		return
 	}
 	w.setPlanMode(mode)
-	enc.Encode(protocol.NewTextMsg("set_plan_mode", "plan mode: "+mode)) //nolint:errcheck
+	enc.Encode(protocol.NewTextMsg(protocol.TypeSetPlanMode, "plan mode: "+mode)) //nolint:errcheck
 }
 
 // handleToolsList returns the sandboxed-tool roster: every tool loaded from
@@ -611,7 +611,7 @@ func (d *Daemon) setPlanMode(enc *json.Encoder, agentID, mode string) {
 // is only kept if the operator can read the failure somewhere.
 func (d *Daemon) handleToolsList(enc *json.Encoder) {
 	data, _ := json.Marshal(d.sandboxedToolStatuses())
-	enc.Encode(protocol.NewTextMsg("tools_list", string(data))) //nolint:errcheck
+	enc.Encode(protocol.NewTextMsg(protocol.TypeToolsList, string(data))) //nolint:errcheck
 }
 
 // handleToolsReload re-scans the sandboxed-tool directory and returns the
@@ -625,7 +625,7 @@ func (d *Daemon) handleToolsReload(enc *json.Encoder) {
 	}
 	ReloadSandboxedTools(context.Background(), d.tools, d.mgr)
 	data, _ := json.Marshal(d.sandboxedToolStatuses())
-	enc.Encode(protocol.NewTextMsg("tools_reload", string(data))) //nolint:errcheck
+	enc.Encode(protocol.NewTextMsg(protocol.TypeToolsReload, string(data))) //nolint:errcheck
 }
 
 // sandboxedToolStatuses assembles the roster from the host, folding the loaded
