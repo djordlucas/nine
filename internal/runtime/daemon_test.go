@@ -444,7 +444,7 @@ func TestInvalidJSON(t *testing.T) {
 	if err := scanner.Decode(&reply); err != nil {
 		t.Fatalf("decode reply: %v", err)
 	}
-	if reply.Type != "error" {
+	if reply.Type != protocol.TypeError {
 		t.Errorf("reply.Type = %q, want 'error'", reply.Type)
 	}
 }

@@ -5,8 +5,115 @@ import (
 	"time"
 )
 
+// MsgType names a wire message. It is a distinct type rather than a bare string
+// so that a mistyped literal is a compile error rather than a message the daemon
+// silently fails to route — the switch in runtime.Daemon dispatches on these, and
+// an unrecognized type reaches the default branch at runtime with no other signal.
+//
+// The underlying type is string, so the JSON encoding is unchanged: a MsgType
+// marshals and unmarshals exactly as the literal it replaces. This is a
+// compile-time change only and does not move the wire format.
+//
+// Note that these are *wire* message types. The event journal has its own type
+// vocabulary (`turn_start`, `llm_request`, …) which overlaps this one by
+// coincidence on a few names and is not interchangeable with it; see
+// spec/contracts/event-journal.md.
+type MsgType string
+
+// Client → daemon.
+const (
+	TypeNewConversation MsgType = "new_conversation"
+	TypeAttach          MsgType = "attach"
+	TypeSetPlanMode     MsgType = "set_plan_mode"
+	TypeUserTurn        MsgType = "user_turn"
+	TypeSessionStop     MsgType = "session_stop"
+	TypeWorkflowStop    MsgType = "workflow_stop"
+	TypeWorkflowFail    MsgType = "workflow_fail"
+	TypePluginCall      MsgType = "plugin_call"
+
+	// Queries. Each is echoed back as the type of its own reply, with the
+	// payload in Text — so these appear in both directions.
+	TypeStatus            MsgType = "status"
+	TypeContext           MsgType = "context"
+	TypeListGoals         MsgType = "list_goals"
+	TypeListReflections   MsgType = "list_reflections"
+	TypeListWorkflows     MsgType = "list_workflows"
+	TypeListNotifications MsgType = "list_notifications"
+	TypeListTools         MsgType = "list_tools"
+	TypePluginsList       MsgType = "plugins_list"
+	TypePluginsReload     MsgType = "plugins_reload"
+	TypeToolsList         MsgType = "tools_list"
+	TypeToolsReload       MsgType = "tools_reload"
+)
+
+// Daemon → client.
+const (
+	TypeConversationID  MsgType = "conversation_id"
+	TypeOK              MsgType = "ok"
+	TypeResponse        MsgType = "response"
+	TypeDone            MsgType = "done"
+	TypeError           MsgType = "error"
+	TypeHistoryUser     MsgType = "history_user"
+	TypeSetName         MsgType = "set_name"
+	TypeSetInstanceName MsgType = "set_instance_name"
+
+	// Turn progress.
+	TypeToolStart     MsgType = "tool_start"
+	TypeToolEnd       MsgType = "tool_end"
+	TypeContextUpdate MsgType = "context_update"
+	TypeResponseChunk MsgType = "response_chunk"
+	TypeThinkingChunk MsgType = "thinking_chunk"
+	TypeThinking      MsgType = "thinking"
+	TypeSubAgentStart MsgType = "sub_agent_start"
+	TypeSubAgentEnd   MsgType = "sub_agent_end"
+	TypeStage         MsgType = "stage"
+	TypePlanStart     MsgType = "plan_start"
+	TypePlanEnd       MsgType = "plan_end"
+	TypeNotice        MsgType = "notice"
+)
+
+// ClientMsgTypes is every message type a client may send to the daemon. The
+// daemon's dispatch switch must handle all of them; anything else reaches its
+// default branch and comes back as "unknown message type".
+//
+// This exists so that requirement is testable rather than assumed: a constant
+// added above but never wired into the switch is otherwise invisible until a
+// client sends it. Keep it in step with the two const blocks above — the
+// dispatch test is what makes forgetting it fail.
+var ClientMsgTypes = []MsgType{
+	TypeNewConversation,
+	TypeAttach,
+	TypeSetPlanMode,
+	TypeUserTurn,
+	TypeSessionStop,
+	TypeWorkflowStop,
+	TypeWorkflowFail,
+	TypePluginCall,
+	TypeStatus,
+	TypeContext,
+	TypeListGoals,
+	TypeListReflections,
+	TypeListWorkflows,
+	TypeListNotifications,
+	TypeListTools,
+	TypePluginsList,
+	TypePluginsReload,
+	TypeToolsList,
+	TypeToolsReload,
+	TypeHumanInputAnswer,
+}
+
+// Human-in-the-loop travels in both directions: the daemon asks, the client answers.
+const (
+	TypeHumanInputRequired MsgType = "human_input_required"
+	TypeHumanInputAnswer   MsgType = "human_input_answer"
+)
+
 // Msg is the flat JSON envelope for all daemon ↔ client communication.
 // Messages are exchanged as newline-delimited JSON (one object per line).
+//
+// The types below are named by the MsgType constants above; the list here
+// documents which fields each one carries, which the envelope cannot express.
 //
 // Client → daemon:
 //
@@ -53,7 +160,7 @@ import (
 //	"stage"            — the turn entered a named waiting phase; Text carries the label
 type Msg struct {
 	AgentID         string          `json:"agent_id,omitempty"`
-	Type            string          `json:"type"`
+	Type            MsgType         `json:"type"`
 	Text            string          `json:"text,omitempty"`
 	ID              string          `json:"id,omitempty"`
 	Name            string          `json:"name,omitempty"`
@@ -118,7 +225,7 @@ type HumanRequest struct {
 // ProgressEvent is a structured progress update delivered to the TUI client
 // during a turn. It is constructed by the client from streaming Msgs.
 type ProgressEvent struct {
-	Type            string // "tool_start" | "tool_end" | "context_update" | "response_chunk" | "thinking_chunk" | "sub_agent_start" | "sub_agent_end" | "thinking" | "plan_start" | "plan_end" | "notice" | "set_instance_name"
+	Type            MsgType // "tool_start" | "tool_end" | "context_update" | "response_chunk" | "thinking_chunk" | "sub_agent_start" | "sub_agent_end" | "thinking" | "plan_start" | "plan_end" | "notice" | "set_instance_name"
 	ToolName        string
 	ToolDisplayName string
 	ToolInput       json.RawMessage
@@ -229,79 +336,79 @@ type StatusInfo struct {
 // "new_conversation", "status", "list_goals", "list_reflections",
 // "list_workflows", "list_tools", "plugins_list", "plugins_reload",
 // "tools_list", and "tools_reload".
-func NewQueryMsg(msgType string) Msg { return Msg{Type: msgType} }
+func NewQueryMsg(msgType MsgType) Msg { return Msg{Type: msgType} }
 
 // NewAttachMsg requests reattachment to an existing conversation.
 func NewAttachMsg(agentID string) Msg {
-	return Msg{Type: "attach", AgentID: agentID}
+	return Msg{Type: TypeAttach, AgentID: agentID}
 }
 
 // NewContextMsg requests a breakdown of a session's assembled context. The
 // daemon replies with a "context" text message carrying a JSON ninectx.Report.
 // It performs no LLM call.
 func NewContextMsg(agentID string) Msg {
-	return Msg{Type: "context", AgentID: agentID}
+	return Msg{Type: TypeContext, AgentID: agentID}
 }
 
 // NewUserTurnMsg sends a user message to agentID.
 func NewUserTurnMsg(agentID, text string) Msg {
-	return Msg{Type: "user_turn", AgentID: agentID, Text: text}
+	return Msg{Type: TypeUserTurn, AgentID: agentID, Text: text}
 }
 
 // NewWorkflowStopMsg requests cancellation of workflow id.
 func NewWorkflowStopMsg(id string) Msg {
-	return Msg{Type: "workflow_stop", Text: id}
+	return Msg{Type: TypeWorkflowStop, Text: id}
 }
 
 // NewWorkflowFailMsg requests marking workflow(s) as failed; text is a
 // workflow ID or "--all".
 func NewWorkflowFailMsg(text string) Msg {
-	return Msg{Type: "workflow_fail", Text: text}
+	return Msg{Type: TypeWorkflowFail, Text: text}
 }
 
 // NewSessionStopMsg requests termination of a session. Pass an agent ID to stop
 // one session, or all=true to stop every active session.
 func NewSessionStopMsg(agentID string, all bool) Msg {
 	if all {
-		return Msg{Type: "session_stop", Text: "--all"}
+		return Msg{Type: TypeSessionStop, Text: "--all"}
 	}
-	return Msg{Type: "session_stop", AgentID: agentID}
+	return Msg{Type: TypeSessionStop, AgentID: agentID}
 }
 
 // NewPluginCallMsg invokes a tool directly, bypassing the LLM agent. Despite
 // the name it is not plugin-only: the daemon resolves the name against the
 // core-intercepted tools (memory/file/skill/doc) first, then the plugin roster.
 func NewPluginCallMsg(tool string, args json.RawMessage) Msg {
-	return Msg{Type: "plugin_call", ToolName: tool, ToolInput: args}
+	return Msg{Type: TypePluginCall, ToolName: tool, ToolInput: args}
 }
 
 // --- Daemon → client response constructors ---
 
 // NewErrorMsg builds a generic error response.
 func NewErrorMsg(text string) Msg {
-	return Msg{Type: "error", Text: text}
+	return Msg{Type: TypeError, Text: text}
 }
 
 // NewAgentErrorMsg builds an error response scoped to one conversation.
 func NewAgentErrorMsg(agentID, text string) Msg {
-	return Msg{Type: "error", AgentID: agentID, Text: text}
+	return Msg{Type: TypeError, AgentID: agentID, Text: text}
 }
 
 // NewConversationIDMsg announces a newly created conversation.
 func NewConversationIDMsg(id string) Msg {
-	return Msg{Type: "conversation_id", ID: id}
+	return Msg{Type: TypeConversationID, ID: id}
 }
 
 // NewOKMsg acknowledges a successful attach.
 func NewOKMsg(agentID, name string) Msg {
-	return Msg{Type: "ok", AgentID: agentID, Name: name}
+	return Msg{Type: TypeOK, AgentID: agentID, Name: name}
 }
 
 // NewOKMsgWithReplay acknowledges a successful attach and includes recent
 // session events and the last completed response for the TUI to replay.
 func NewOKMsgWithReplay(agentID, name string, replay []Msg, pendingResponse string) Msg {
 	return Msg{
-		Type:            "ok",
+		Type:            TypeOK,
 		AgentID:         agentID,
 		Name:            name,
 		ReplayEvents:    replay,
@@ -327,35 +434,35 @@ type AttachResult struct {
 // distinct from "user_turn" (client → daemon) so the client can tell a
 // replayed prompt from a live one.
 func NewHistoryUserMsg(agentID, text string) Msg {
-	return Msg{Type: "history_user", AgentID: agentID, Text: text}
+	return Msg{Type: TypeHistoryUser, AgentID: agentID, Text: text}
 }
 
 // NewTextMsg builds a response carrying msgType and a text/JSON payload —
 // used for "status", "list_goals", "list_reflections", "list_workflows",
 // "list_tools", "plugin_call", "workflow_stop", and "workflow_fail" responses.
-func NewTextMsg(msgType, text string) Msg {
+func NewTextMsg(msgType MsgType, text string) Msg {
 	return Msg{Type: msgType, Text: text}
 }
 
 // NewSetNameMsg announces the inferred display name for a conversation.
 func NewSetNameMsg(agentID, name string) Msg {
-	return Msg{Type: "set_name", AgentID: agentID, Name: name}
+	return Msg{Type: TypeSetName, AgentID: agentID, Name: name}
 }
 
 // NewSetInstanceNameMsg announces the daemon's display name (instance name),
 // broadcast to active sessions when it is resolved or updated asynchronously.
 func NewSetInstanceNameMsg(name string) Msg {
-	return Msg{Type: "set_instance_name", InstanceName: name}
+	return Msg{Type: TypeSetInstanceName, InstanceName: name}
 }
 
 // NewResponseMsg carries the assistant's final reply for a turn.
 func NewResponseMsg(agentID, text string) Msg {
-	return Msg{Type: "response", AgentID: agentID, Text: text}
+	return Msg{Type: TypeResponse, AgentID: agentID, Text: text}
 }
 
 // NewDoneMsg signals that a turn has completed.
 func NewDoneMsg(agentID string) Msg {
-	return Msg{Type: "done", AgentID: agentID}
+	return Msg{Type: TypeDone, AgentID: agentID}
 }
 
 // --- Streaming progress constructors (session worker) ---
@@ -363,7 +470,7 @@ func NewDoneMsg(agentID string) Msg {
 // NewToolStartMsg announces that a tool call has started.
 func NewToolStartMsg(agentID, toolName, toolDisplayName string, toolInput json.RawMessage) Msg {
 	return Msg{
-		Type:            "tool_start",
+		Type:            TypeToolStart,
 		AgentID:         agentID,
 		ToolName:        toolName,
 		ToolDisplayName: toolDisplayName,
@@ -375,7 +482,7 @@ func NewToolStartMsg(agentID, toolName, toolDisplayName string, toolInput json.R
 // NewToolEndMsg announces that a tool call has finished.
 func NewToolEndMsg(agentID, toolName, toolDisplayName string, toolInput json.RawMessage, toolOutput string) Msg {
 	return Msg{
-		Type:            "tool_end",
+		Type:            TypeToolEnd,
 		AgentID:         agentID,
 		ToolName:        toolName,
 		ToolDisplayName: toolDisplayName,
@@ -388,7 +495,7 @@ func NewToolEndMsg(agentID, toolName, toolDisplayName string, toolInput json.Raw
 // NewContextUpdateMsg reports updated context-window usage.
 func NewContextUpdateMsg(agentID string, used, budget int) Msg {
 	return Msg{
-		Type:          "context_update",
+		Type:          TypeContextUpdate,
 		AgentID:       agentID,
 		ContextUsed:   used,
 		ContextBudget: budget,
@@ -398,7 +505,7 @@ func NewContextUpdateMsg(agentID string, used, budget int) Msg {
 // NewResponseChunkMsg carries one streamed token of the assistant's reply.
 func NewResponseChunkMsg(agentID, text string) Msg {
 	return Msg{
-		Type:      "response_chunk",
+		Type:      TypeResponseChunk,
 		AgentID:   agentID,
 		Text:      text,
 		Timestamp: time.Now().UnixMilli(),
@@ -409,7 +516,7 @@ func NewResponseChunkMsg(agentID, text string) Msg {
 // response_chunk it is ephemeral — a live trace, never journaled.
 func NewThinkingChunkMsg(agentID, text string) Msg {
 	return Msg{
-		Type:      "thinking_chunk",
+		Type:      TypeThinkingChunk,
 		AgentID:   agentID,
 		Text:      text,
 		Timestamp: time.Now().UnixMilli(),
@@ -421,7 +528,7 @@ func NewThinkingChunkMsg(agentID, text string) Msg {
 // the TUI so the user can see which kind of agent is doing the work.
 func NewSubAgentStartMsg(agentID, subAgentID, task, role string) Msg {
 	return Msg{
-		Type:       "sub_agent_start",
+		Type:       TypeSubAgentStart,
 		AgentID:    agentID,
 		SubAgentID: subAgentID,
 		Text:       task,
@@ -434,7 +541,7 @@ func NewSubAgentStartMsg(agentID, subAgentID, task, role string) Msg {
 // status is "done", "failed", or "timed_out"; role is its resolved leaf role.
 func NewSubAgentEndMsg(agentID, subAgentID, task, status, role string) Msg {
 	return Msg{
-		Type:       "sub_agent_end",
+		Type:       TypeSubAgentEnd,
 		AgentID:    agentID,
 		SubAgentID: subAgentID,
 		Text:       task,
@@ -450,7 +557,7 @@ func NewSubAgentEndMsg(agentID, subAgentID, task, status, role string) Msg {
 // the sub-agent then, and is empty otherwise).
 func NewHumanInputRequiredMsg(agentID, requestID, question string, options []string, timeoutSeconds int, origin string) Msg {
 	return Msg{
-		Type:           "human_input_required",
+		Type:           TypeHumanInputRequired,
 		AgentID:        agentID,
 		RequestID:      requestID,
 		Question:       question,
@@ -466,7 +573,7 @@ func NewHumanInputRequiredMsg(agentID, requestID, question string, options []str
 // ask_human call and does not start a new agent loop.
 func NewHumanInputAnswerMsg(agentID, requestID, answer string) Msg {
 	return Msg{
-		Type:      "human_input_answer",
+		Type:      TypeHumanInputAnswer,
 		AgentID:   agentID,
 		RequestID: requestID,
 		Answer:    answer,
@@ -479,7 +586,7 @@ func NewHumanInputAnswerMsg(agentID, requestID, answer string) Msg {
 // asked not to think, or can't.
 func NewThinkingMsg(agentID string, llmCallN int, think bool) Msg {
 	return Msg{
-		Type:     "thinking",
+		Type:     TypeThinking,
 		AgentID:  agentID,
 		LLMCallN: llmCallN,
 		Think:    think,
@@ -490,7 +597,7 @@ func NewThinkingMsg(agentID string, llmCallN int, think bool) Msg {
 // has begun — the graceful-degradation substitute for native thinking on models
 // that lack it. Surfaced in the TUI like thinking; ephemeral, never journaled.
 func NewPlanStartMsg(agentID string) Msg {
-	return Msg{Type: "plan_start", AgentID: agentID, Timestamp: time.Now().UnixMilli()}
+	return Msg{Type: TypePlanStart, AgentID: agentID, Timestamp: time.Now().UnixMilli()}
 }
 
 // NewStageMsg announces that the turn entered a named waiting phase — memory
@@ -499,12 +606,12 @@ func NewPlanStartMsg(agentID string) Msg {
 // the current phase. Ephemeral, never journaled; clients that don't recognise
 // it ignore it.
 func NewStageMsg(agentID, label string) Msg {
-	return Msg{Type: "stage", AgentID: agentID, Text: label, Timestamp: time.Now().UnixMilli()}
+	return Msg{Type: TypeStage, AgentID: agentID, Text: label, Timestamp: time.Now().UnixMilli()}
 }
 
 // NewPlanEndMsg announces that the request-analysis pass has finished.
 func NewPlanEndMsg(agentID string) Msg {
-	return Msg{Type: "plan_end", AgentID: agentID, Timestamp: time.Now().UnixMilli()}
+	return Msg{Type: TypePlanEnd, AgentID: agentID, Timestamp: time.Now().UnixMilli()}
 }
 
 // NewNoticeMsg carries a session-level notice for the user — e.g. a capability
@@ -512,7 +619,7 @@ func NewPlanEndMsg(agentID string) Msg {
 // Informational and ephemeral; never journaled. Distinct from the user
 // notification tool (RegisterNotifyUser), which is a durable, model-invoked feed.
 func NewNoticeMsg(agentID, text string) Msg {
-	return Msg{Type: "notice", AgentID: agentID, Text: text, Timestamp: time.Now().UnixMilli()}
+	return Msg{Type: TypeNotice, AgentID: agentID, Text: text, Timestamp: time.Now().UnixMilli()}
 }
 
 // ToProgressEvent converts a streaming Msg ("tool_start", "tool_end",
@@ -583,5 +690,5 @@ func (m Msg) ToProgressEvent() (ProgressEvent, bool) {
 
 // NewSetPlanModeMsg builds a set_plan_mode command; the new mode rides in Text.
 func NewSetPlanModeMsg(agentID, mode string) Msg {
-	return Msg{Type: "set_plan_mode", AgentID: agentID, Text: mode}
+	return Msg{Type: TypeSetPlanMode, AgentID: agentID, Text: mode}
 }

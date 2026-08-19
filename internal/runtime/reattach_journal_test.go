@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"nine/internal/memory"
+	"nine/internal/protocol"
 	"nine/internal/runtime"
 )
 
@@ -39,7 +40,10 @@ func TestJournalReplayReattach(t *testing.T) {
 		t.Errorf("response = %q, want last turn's result", response)
 	}
 	// Only the last turn's replayable events, in order, no turn_start/turn_end.
-	wantTypes := []string{"tool_start", "tool_end", "sub_agent_start", "sub_agent_end"}
+	wantTypes := []protocol.MsgType{
+		protocol.TypeToolStart, protocol.TypeToolEnd,
+		protocol.TypeSubAgentStart, protocol.TypeSubAgentEnd,
+	}
 	if len(msgs) != len(wantTypes) {
 		t.Fatalf("got %d msgs, want %d: %+v", len(msgs), len(wantTypes), msgs)
 	}
@@ -90,17 +94,17 @@ func TestJournalHistoryReattach(t *testing.T) {
 	msgs := d.JournalHistoryForTest("agent-x")
 
 	type want struct {
-		typ  string
+		typ  protocol.MsgType
 		text string
 	}
 	wants := []want{
-		{"history_user", "first"},
-		{"tool_start", ""},
-		{"tool_end", ""},
-		{"response", "answer one"},
-		{"response", "background note"}, // idle turn: response but no user bubble
-		{"history_user", "second"},
-		{"response", "answer two"},
+		{protocol.TypeHistoryUser, "first"},
+		{protocol.TypeToolStart, ""},
+		{protocol.TypeToolEnd, ""},
+		{protocol.TypeResponse, "answer one"},
+		{protocol.TypeResponse, "background note"}, // idle turn: response but no user bubble
+		{protocol.TypeHistoryUser, "second"},
+		{protocol.TypeResponse, "answer two"},
 	}
 	if len(msgs) != len(wants) {
 		t.Fatalf("got %d msgs, want %d: %+v", len(msgs), len(wants), msgs)
