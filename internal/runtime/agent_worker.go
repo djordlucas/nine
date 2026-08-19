@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -469,26 +470,51 @@ func (w *AgentWorker) armIdleTimer() {
 	}
 }
 
-// handleIdle is called when the idle timer fires. It finds the first active,
-// idle-capable stage whose interval has elapsed, calls its OnIdle, and (if
-// it has work to do) runs the returned text as the session's next turn.
-// Either way, the scheduler is rearmed for the next cycle.
+// handleIdle is called when the idle timer fires. It runs at most one turn, from
+// the due stage that has been waiting longest, and rearms either way.
+//
+// Order is by overdueness, not by position in the Stages array. I1 allows only
+// one turn at a time, so when several stages are due one must be chosen, and
+// choosing by array order starves the others: a 60s stage listed before a 3600s
+// one comes due again long before the slow stage is ever reached, so the slow
+// stage can wait indefinitely. Whether a session makes progress on all its
+// aspects would otherwise depend on the order its stages happened to be
+// serialized in.
+//
+// A stage that is due but has no work still yields to the next-most-overdue one,
+// which is why this is a sorted walk rather than a single pick.
 func (w *AgentWorker) handleIdle() {
 	if w.plan == nil {
 		return
 	}
 	ctx := context.Background()
 	now := time.Now()
+
+	type dueStage struct {
+		name    string
+		overdue time.Duration
+	}
+	var due []dueStage
 	for _, st := range w.plan.plan.Stages {
 		if st.Status != "active" {
 			continue
 		}
-		remaining, ok := stageNextWake(st.Config, w.idleSince[st.Name], now)
-		if !ok || remaining > 0 {
+		overdue, ok := stageOverdueBy(st.Config, w.idleSince[st.Name], now)
+		if !ok {
 			continue
 		}
-		w.idleSince[st.Name] = now
-		h, ok := w.plan.handlers[st.Name]
+		due = append(due, dueStage{name: st.Name, overdue: overdue})
+	}
+	// Longest-waiting first. Equal overdueness keeps the array order, so a
+	// single-stage plan and simultaneous wakes behave exactly as before.
+	sort.SliceStable(due, func(i, j int) bool { return due[i].overdue > due[j].overdue })
+
+	for _, d := range due {
+		// Mark every stage considered as fired, not just the one that runs.
+		// Otherwise a stage whose OnIdle declines stays overdue and keeps
+		// winning the sort, and the stages behind it never run.
+		w.idleSince[d.name] = now
+		h, ok := w.plan.handlers[d.name]
 		if !ok {
 			continue
 		}
