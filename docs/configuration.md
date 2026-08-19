@@ -75,6 +75,15 @@ max_goal_sessions = 10
 # "adjective-noun" name. Once generated, the name stays stable across restarts.
 # instance_name = "atlas"
 
+# Where the daemon reports itself as running, shown to the model in the
+# self-model's Environment block. Unset auto-detects: Kubernetes (via
+# KUBERNETES_SERVICE_HOST), then Docker (/.dockerenv) and Podman
+# (/run/.containerenv), then PID 1's cgroup for anything else, falling back to
+# "host". Set this when the sandbox leaves no trace detection can see, or to say
+# something more precise than "container" — an operator always knows better than
+# the heuristic.
+# runtime = "Firecracker microVM"
+
 # Treat the [[agent]] list as the full desired state for pre-defined agents
 # (docs/predefined-agents.md §7 v3). When true, a config-origin goal no longer
 # listed in [[agent]] is archived and its session stopped on boot;
