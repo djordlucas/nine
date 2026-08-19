@@ -628,7 +628,7 @@ func NewNoticeMsg(agentID, text string) Msg {
 // ok is false for message types that aren't progress events.
 func (m Msg) ToProgressEvent() (ProgressEvent, bool) {
 	switch m.Type {
-	case "tool_start", "tool_end":
+	case TypeToolStart, TypeToolEnd:
 		at := time.Now()
 		if m.Timestamp > 0 {
 			at = time.UnixMilli(m.Timestamp)
@@ -641,19 +641,19 @@ func (m Msg) ToProgressEvent() (ProgressEvent, bool) {
 			ToolOutput:      m.ToolOutput,
 			At:              at,
 		}, true
-	case "context_update":
+	case TypeContextUpdate:
 		return ProgressEvent{
 			Type:          m.Type,
 			ContextUsed:   m.ContextUsed,
 			ContextBudget: m.ContextBudget,
 		}, true
-	case "response_chunk", "thinking_chunk":
+	case TypeResponseChunk, TypeThinkingChunk:
 		return ProgressEvent{Type: m.Type, Text: m.Text}, true
-	case "set_name":
+	case TypeSetName:
 		return ProgressEvent{Type: m.Type, Text: m.Name}, true
-	case "set_instance_name":
+	case TypeSetInstanceName:
 		return ProgressEvent{Type: m.Type, Text: m.InstanceName}, true
-	case "sub_agent_start", "sub_agent_end":
+	case TypeSubAgentStart, TypeSubAgentEnd:
 		at := time.Now()
 		if m.Timestamp > 0 {
 			at = time.UnixMilli(m.Timestamp)
@@ -666,13 +666,13 @@ func (m Msg) ToProgressEvent() (ProgressEvent, bool) {
 			Role:       m.Role,
 			At:         at,
 		}, true
-	case "thinking":
+	case TypeThinking:
 		return ProgressEvent{Type: m.Type, LLMCallN: m.LLMCallN, Think: m.Think}, true
-	case "plan_start", "plan_end":
+	case TypePlanStart, TypePlanEnd:
 		return ProgressEvent{Type: m.Type}, true
-	case "notice", "stage":
+	case TypeNotice, TypeStage:
 		return ProgressEvent{Type: m.Type, Text: m.Text}, true
-	case "human_input_required":
+	case TypeHumanInputRequired:
 		return ProgressEvent{
 			Type: m.Type,
 			HumanRequest: &HumanRequest{
