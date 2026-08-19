@@ -26,7 +26,7 @@
 | **F1** | ~~Token budgeting is a `chars/4` estimate and is never reconciled against actual usage — the provider never returns a count~~ **Landed** — `Response.Usage` (R-LLM.8) is journaled and joins the estimate on span; calibration awaits data | **High** | S |
 | **F2** | The wire protocol is a stringly-typed fat union: 29 optional `Msg` fields with validity in comments, dispatch on raw string literals | **High** | M |
 | **F3** | Daemon assembly is duplicated between production and the eval harness; the refactor that removes it is still *Proposed* | **High** | M |
-| **F4** | No schema migration path — `user_version = 1` plus one ad-hoc `ALTER` | **High** | S |
+| **F4** | ~~No schema migration path — `user_version = 1` plus one ad-hoc `ALTER`~~ **Landed** — versioned step runner, atomic per step (R-MEM.10); unblocks `C5`/`C6` | **High** | S |
 | **F5** | `agent.Loop` carries 12 post-construction observer setters; a Loop is never fully valid until N unordered calls have happened | Medium | M |
 | **F6** | Test coverage is inverted at the boundary: `protocol` 0.24, `tui` 0.27, `cli` 0.33 against 0.87 elsewhere | Medium | M |
 | **F7** | The four built-in plugins hold ambient authority that the capability model exists to remove | Medium | L |
@@ -224,6 +224,33 @@ indexed by `user_version`, run inside a transaction, bumping the pragma as it
 goes. The existing `addColumnIfMissing` becomes step 1. Write it **before** it is
 needed; a migration runner authored under pressure against a user's live database
 is the worst version of this code.
+
+**Status: landed** as **R-MEM.10** (`internal/memory/migrate.go`), with three
+deviations from the sketch, each of which the implementation forced:
+
+1. **The version is derived, not declared.** `schemaVersion()` returns
+   `len(migrations)`. A hand-maintained constant beside the list is a second
+   source of truth for one fact, and it desynchronizes *silently* — a step past
+   the constant simply never runs. This was not theoretical: the first draft used
+   a constant and the tests that exercised the runner could not move it.
+2. **A fresh database skips every step**, stamped at the current version
+   directly. `initSchema` already builds the current shape, so a future step
+   written against an older one (a rename, a rewrite) would fail against a new
+   file. Steps therefore only ever have to be correct for their own "from"
+   version — a much weaker obligation than "idempotent against anything".
+3. **A database newer than the binary is refused**, not silently operated on.
+   Not in the sketch, and cheap: an old binary opening a migrated file is the
+   most likely way this code meets a shape it does not understand.
+
+Two hazards specific to this call site are documented in the step-authoring
+comment because both are silent: a step that reaches for the enclosing `db`
+rather than its `sqlExec` **deadlocks** (the writer pool is one connection, held
+by the step's own transaction), and a step issuing a `SELECT` **panics**
+(migrations run from `initSchema`, before the reader pool opens, and the pool
+router sends `SELECT` there). The first was found by running it.
+
+The atomicity guarantee is mutation-tested: committing the partial write instead
+of rolling it back makes `TestFailedStepRollsBackWithItsVersionBump` fail.
 
 ### F5 — `agent.Loop` is configured by 12 observer setters · Medium · M
 
@@ -436,7 +463,7 @@ Ordered by leverage-per-unit-risk, not by severity alone.
 | # | Item | Why here |
 |---|---|---|
 | 1 | ~~**F1** — provider usage + estimate reconciliation~~ **done** | Small, self-contained, and it instruments the system's headline constraint. Everything else is easier to reason about once budget error is measurable. |
-| 2 | **F4** — migration step runner | Small, and its value is entirely in being written *before* it is needed. Cheapest insurance in the list. |
+| 2 | ~~**F4** — migration step runner~~ **done** | Small, and its value is entirely in being written *before* it is needed. Cheapest insurance in the list. |
 | 3 | **F3 + F5** — assembly refactor and Loop hooks, together | F5 is most of what makes F3 large; done as one change they delete a hook, a slash command's rationale, and ~200 lines of wiring. |
 | 4 | **F2 (step 1)** — typed `MsgType` constants | Mechanical, removes the literal-typo class, and makes F6 tractable. |
 | 5 | ~~**F9** — decide local-first, then document or add a provider~~ **done** — decided: local-first *and* multi-backend (G8/N5) | A decision, not a build. Blocks nothing, unblocks F1's shape. |
