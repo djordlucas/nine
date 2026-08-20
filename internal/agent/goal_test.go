@@ -289,30 +289,3 @@ func TestWireGoalCreateSpawnFnError(t *testing.T) {
 		t.Error("expected error when spawnFn fails, got nil")
 	}
 }
-
-func TestWireGoalAppendSubtree(t *testing.T) {
-	store := newGoalStore(t)
-	if err := store.GoalCreate("goal-1", "test goal", "", ""); err != nil {
-		t.Fatalf("create: %v", err)
-	}
-
-	d := agent.New()
-	agent.RegisterGoalTools(d, "agent-1", store, nil)
-
-	res, err := d.Dispatch(context.Background(), "goal_append_subtree",
-		json.RawMessage(fmt.Sprintf(`{"goal_id":"goal-1","entry":%q}`, "sub-goal-1")))
-	if err != nil {
-		t.Fatalf("goal_append_subtree: %v", err)
-	}
-	if res.Output != "ok" {
-		t.Errorf("output = %q, want 'ok'", res.Output)
-	}
-
-	g, err := store.GoalGet("goal-1")
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if len(g.Subtree) != 1 || g.Subtree[0] != "sub-goal-1" {
-		t.Errorf("subtree = %v, want ['sub-goal-1']", g.Subtree)
-	}
-}

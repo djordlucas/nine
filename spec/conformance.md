@@ -208,15 +208,15 @@ How to use this file:
 | R-PLAN.6 | `active` stage | All-no-op stage behaves trivially. |
 | R-PLAN.7 | `idle-reflection` stage | Attachable to any session; updates self KV. The turn is recorded by the journal like any other — there is no dedicated reflections store. |
 | R-PLAN.8 | Self-model (`SystemSelf`) | `self/identity`+`self/capabilities`+`self/learned` injected as P2.5, capped ~600 tokens. |
-| R-PLAN.9 | `pursue` stage | 5-min interval; reads goal+subtree, acts, syncs status, pauses goal on stall. |
+| R-PLAN.9 | `pursue` stage | 5-min interval; reads the goal and its derived children, acts, syncs status, pauses goal on stall. |
 
 ### Goals — [`orchestration.md`](contracts/orchestration.md) (§ Goals)
 
 | ID | Property | Observable check |
 |----|----------|------------------|
 | R-ORCH.10 | What a goal is | Goal data model + store methods as specified. |
-| R-ORCH.11 | Tools (depth < 2) | `goal_create`/`goal_get`/`goal_list`/`goal_update_status`/`goal_append_subtree`, depth-capped. |
-| R-ORCH.12 | Pursue spawning (depth 0 only) | Top-level `goal_create` spawns one pursue session; duplicate is a no-op; at `max_goal_sessions` (10) it reports `limit_reached`. `nine goals` lists goals/subtrees. |
+| R-ORCH.11 | Tools (depth < 2) | `goal_create`/`goal_get`/`goal_list`/`goal_update_status`, depth-capped. |
+| R-ORCH.12 | Pursue spawning (depth 0 only) | Top-level `goal_create` spawns one pursue session; duplicate is a no-op; at `max_goal_sessions` (10) it reports `limit_reached`. `nine goals` lists goals. |
 
 ---
 
@@ -240,6 +240,7 @@ How to use this file:
 | R-ORCH.7 | Auto-close | A workflow auto-closes `done` when its last step completes. |
 | R-ORCH.8 | Operator commands | `workflow_stop` (live cancel: pending→skipped, running→failed) and `workflow_fail` (post-mortem, works daemon-down). |
 | R-ORCH.9 | Startup scrub | After an unclean restart, orphaned `running` steps become `failed (interrupted)`; now-terminal workflows auto-close; those with `pending` stay `active`. |
+| R-ORCH.13 | One representation of the goal tree | `goal_get`'s `subtree` is derived from children's `parent_id`; no column stores it and no tool writes it. |
 
 ---
 
