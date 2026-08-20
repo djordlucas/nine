@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"testing"
+	"time"
 
 	"nine/internal/config"
 )
@@ -65,5 +66,43 @@ func TestDetectRuntimeIdentifiesKubernetes(t *testing.T) {
 func TestDetectRuntimeIsStable(t *testing.T) {
 	if a, b := config.DetectRuntime(), config.DetectRuntime(); a != b {
 		t.Errorf("DetectRuntime() returned %q then %q", a, b)
+	}
+}
+
+// Reflection ships on: it is how Nine maintains its own self-model, so an unset
+// value means the default rather than off.
+func TestSelfReflectionIntervalDefaultsOn(t *testing.T) {
+	var cfg config.Config
+	if got := cfg.SelfReflectionInterval(); got != config.DefaultSelfReflectionInterval {
+		t.Errorf("SelfReflectionInterval() = %v, want the default %v", got, config.DefaultSelfReflectionInterval)
+	}
+}
+
+// An operator may remove reflection, spelled several plausible ways.
+func TestSelfReflectionIntervalOff(t *testing.T) {
+	for _, v := range []string{"off", "OFF", "none", "false", "0", "0s", "-5m", " off "} {
+		var cfg config.Config
+		cfg.Daemon.SelfReflection = v
+		if got := cfg.SelfReflectionInterval(); got != 0 {
+			t.Errorf("self_reflection=%q → %v, want 0 (removed)", v, got)
+		}
+	}
+}
+
+func TestSelfReflectionIntervalCustomCadence(t *testing.T) {
+	var cfg config.Config
+	cfg.Daemon.SelfReflection = "45m"
+	if got := cfg.SelfReflectionInterval(); got != 45*time.Minute {
+		t.Errorf("SelfReflectionInterval() = %v, want 45m", got)
+	}
+}
+
+// A typo must not silently disable a background behavior — it falls back to the
+// default and says so.
+func TestSelfReflectionIntervalRejectsGarbage(t *testing.T) {
+	var cfg config.Config
+	cfg.Daemon.SelfReflection = "every so often"
+	if got := cfg.SelfReflectionInterval(); got != config.DefaultSelfReflectionInterval {
+		t.Errorf("SelfReflectionInterval() = %v, want the default on an unparseable value", got)
 	}
 }
