@@ -291,3 +291,27 @@ and both are the kind of thing a version skew produces.
 The reference centralizes the check in one `expectReply(reply, want)` used by every
 reply-reading method, because the defect it replaced was precisely non-uniformity — two
 methods checked, thirteen did not.
+
+---
+
+## R-PROTO.11 — Required fields are checked on ingress
+
+The envelope is flat and every field is `omitempty`, so which fields a given type
+actually needs cannot be expressed in the schema. An implementation **MUST** carry that
+as data — a table from message type to required fields — and check it **before routing**,
+rejecting a message that cannot be served with an error naming **the type and the missing
+field**.
+
+Scope is **presence, not meaning**. Whether an agent id names a live session, or a mode
+string is one of the legal modes, belongs to the handler that knows; this only rejects a
+message no handler could serve.
+
+The requirements **MUST** be derived from what handlers read, not from prose describing
+the protocol — the prose is unverified by construction. Deriving them in the reference
+found a real defect: `attach` tolerated an empty `agent_id`, and the resolver falls back
+to a prefix match, where **every id has `""` as a prefix**. An empty agent id therefore
+attached the client to whichever session the runtime's randomized map iteration yielded
+first. Requiring the field turns an arbitrary outcome into a clear error.
+
+A type with no requirements, and a type the dispatcher does not route, both pass — the
+latter is R-PROTO.9's to report, and one fault should not be reported in two voices.
