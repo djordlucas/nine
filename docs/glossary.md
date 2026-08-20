@@ -133,8 +133,9 @@ their own resumable background sessions.
 **Self-reflection session (`idle-reflection` stage)** — A single fixed
 session (agent ID `self-reflection`) that wakes every 2 minutes and asks the
 model to update `self/capabilities` and `self/learned` via `memory_set`. Each
-result is recorded in the `reflections` table (`nine reflections` /
-`/reflections`). See [Session Plans § idle-reflection](session-plans.md#idle-reflection--self-reflection-session).
+turn is recorded by the journal under its own `agent_id`, read back with
+`nine reflections [agent-id]` (or `/reflections`). It is a stage kind, not a
+session kind: any session can carry it as an aspect. See [Session Plans § idle-reflection](session-plans.md#idle-reflection--self-reflection-session).
 
 **Pursue session (`pursue` stage)** — Background session spawned 1:1 for
 every top-level goal (`agentID == goalID`), waking every 5 minutes to
@@ -199,7 +200,7 @@ SQLite serializes writes). Agent-facing K/V (`memory_get/set/delete/list`), file
 (`file_store/fetch/list`, `file_search_text`), and (core-intercepted) vector ops
 (`memory_embed`/`memory_query`/`file_search_semantic`) are exposed as tools.
 Operational tables (`conversations`, `goals`, `notifications`,
-`user_notifications`, `reflections`, `workflows`, `session_plans`,
+`user_notifications`, `workflows`, `session_plans`,
 `human_requests`, `interactive_sessions`, `session_events`, `event_cursors`,
 `related_sessions`) are accessed only by the daemon, never exposed as agent tools.
 (There is no `tasks` or `plugin_registry` table.)

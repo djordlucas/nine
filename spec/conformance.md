@@ -206,7 +206,7 @@ How to use this file:
 | R-PLAN.4 | Idle scheduling | `armIdleTimer` picks the soonest interval; on fire, `handleIdle` runs the due `OnIdle`, and any returned text runs as a turn. |
 | R-PLAN.5 | Resume on restart (I7) | Idle-capable plans restart at boot; ordinary conversations attach on demand. |
 | R-PLAN.6 | `active` stage | All-no-op stage behaves trivially. |
-| R-PLAN.7 | `idle-reflection` stage | Fixed `self-reflection` session, 2-min interval, updates self KV and writes a `reflections` row. |
+| R-PLAN.7 | `idle-reflection` stage | Attachable to any session; updates self KV. The turn is recorded by the journal like any other — there is no dedicated reflections store. |
 | R-PLAN.8 | Self-model (`SystemSelf`) | `self/identity`+`self/capabilities`+`self/learned` injected as P2.5, capped ~600 tokens. |
 | R-PLAN.9 | `pursue` stage | 5-min interval; reads goal+subtree, acts, syncs status, pauses goal on stall. |
 
@@ -313,7 +313,7 @@ How to use this file:
 
 | Check | Observable |
 |-------|------------|
-| List verbs | `goals`/`reflections`/`workflows` render the matching read-only daemon query. |
+| List verbs | `goals`/`workflows` render the matching read-only daemon query; `reflections` reads the journal directly. |
 | `workflow stop\|fail [--all]` | Operator workflow commands act as in R-ORCH.8. |
 | Slash commands | `/help`, `/status`, `/config`, `/context [id]`, `/plan-mode <mode>`, `/sessions`, `/tools [filter]`, `/skills [name]`, `/memory [key]`, `/goals`, `/workflows`, `/new`, `/clear` run with no LLM call. |
 | Command picker | Typing `/` at the start of the TUI input opens a picker listing every command with its description; typing filters it by name prefix, and it closes when the leading `/` is deleted, when an argument is started, when nothing matches, or on Esc. Suppressed while an `ask_human` question is on screen. |

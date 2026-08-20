@@ -116,8 +116,8 @@ resumed every restart.
   `memory_set`:
   - `self/capabilities` — a concise description of what it can currently do
   - `self/learned` — a short, dated entry of key insights from recent activity
-- `OnTurnEnd` records each successful reflection's result as a new `reflections` row
-  (`nine reflections`).
+- `OnTurnEnd` does nothing: the turn is recorded by the journal under the session's own
+  `agent_id`, and `nine reflections [agent-id]` reads it back from there.
 
 ---
 

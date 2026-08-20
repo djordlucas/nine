@@ -36,7 +36,6 @@ const (
 	TypeStatus            MsgType = "status"
 	TypeContext           MsgType = "context"
 	TypeListGoals         MsgType = "list_goals"
-	TypeListReflections   MsgType = "list_reflections"
 	TypeListWorkflows     MsgType = "list_workflows"
 	TypeListNotifications MsgType = "list_notifications"
 	TypeListTools         MsgType = "list_tools"
@@ -92,7 +91,6 @@ var ClientMsgTypes = []MsgType{
 	TypeStatus,
 	TypeContext,
 	TypeListGoals,
-	TypeListReflections,
 	TypeListWorkflows,
 	TypeListNotifications,
 	TypeListTools,
@@ -123,7 +121,6 @@ const (
 //	"user_turn"        — send a message; AgentID + Text set
 //	"status"           — request daemon status; no extra fields
 //	"list_goals"        — request goal list; no extra fields
-//	"list_reflections"  — request reflection history; no extra fields
 //	"list_workflows"    — request workflow list; no extra fields
 //	"workflow_stop"    — cancel an active workflow; Text = workflow ID
 //	"workflow_fail"    — mark workflow(s) as failed; Text = workflow ID or "--all"
@@ -142,7 +139,6 @@ const (
 //	"error"            — failure; Text carries the error message
 //	"status"           — daemon status; Text carries JSON-encoded StatusInfo
 //	"list_goals"        — goal list; Text carries JSON-encoded goal array
-//	"list_reflections"  — reflection history; Text carries JSON-encoded reflection array
 //	"list_workflows"    — workflow list; Text carries JSON-encoded workflow array
 //	"workflow_stop"    — stop result; Text = "stopped"
 //	"workflow_fail"    — fail result; Text = "failed"
@@ -333,7 +329,7 @@ type StatusInfo struct {
 // --- Client → daemon request constructors ---
 
 // NewQueryMsg builds a request consisting of only a Type field — used for
-// "new_conversation", "status", "list_goals", "list_reflections",
+// "new_conversation", "status", "list_goals",
 // "list_workflows", "list_tools", "plugins_list", "plugins_reload",
 // "tools_list", and "tools_reload".
 func NewQueryMsg(msgType MsgType) Msg { return Msg{Type: msgType} }
@@ -438,7 +434,7 @@ func NewHistoryUserMsg(agentID, text string) Msg {
 }
 
 // NewTextMsg builds a response carrying msgType and a text/JSON payload —
-// used for "status", "list_goals", "list_reflections", "list_workflows",
+// used for "status", "list_goals", "list_workflows",
 // "list_tools", "plugin_call", "workflow_stop", and "workflow_fail" responses.
 func NewTextMsg(msgType MsgType, text string) Msg {
 	return Msg{Type: msgType, Text: text}
