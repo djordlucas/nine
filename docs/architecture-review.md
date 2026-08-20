@@ -726,8 +726,16 @@ Ordered by leverage-per-unit-risk, not by severity alone.
 | 5 | ~~**F9** — decide local-first, then document or add a provider~~ **done** — decided: local-first *and* multi-backend (G8/N5) | A decision, not a build. Blocks nothing, unblocks F1's shape. |
 | 6 | ~~**F6** — protocol and client tests~~ **done** | Follows F2 naturally; typed messages make the tests worth writing. (They did: four real bugs across `protocol`, `cli` and `tui` — two silent failures, now R-PROTO.10, and two panics.) |
 | 7 | ~~**F10**, **F12**~~ **both done** | Small hygiene; fold into whatever branch is nearby. (Neither was hygiene: F12 hid a startup-diagnostic defect, R-PLUG.14, and F10 could tell the model it was on the host while confined.) |
-| 8 | **F2 (steps 2–3)**, **F7**, **F11** | Larger, independent, and none is urgent. |
-| 9 | **F8** — the seven changes in [`concept-consolidation.md`](concept-consolidation.md) | Five of the seven need no schema change and can start now; only the two deletions (`C5`, `C6`) wait on F4. The `stage`→`aspect` rename is deliberately last. |
+| 8 | **F2 (steps 2–3)** and **F7** remain; ~~**F11**~~ **decided — no move** | Larger, independent, and none is urgent. |
+| 9 | ~~**F8** — the seven changes in [`concept-consolidation.md`](concept-consolidation.md)~~ **done** | All seven landed; six needed correction on contact with the code. The `stage`→`aspect` rename is still deferred and is now the one open item in that note. |
+
+**Everything above except F2 steps 2–3 and F7 is closed.** What the sequence
+produced, beyond the changes themselves: four findings were wrong or materially
+misstated on inspection — F3 had already shipped before this review's own scope
+commit, F5's observers were per-turn rather than construction-time, F2 step 1 does
+not remove the literal-typo class it claims to, and F11's premise was not supported
+by the git history. Verifying each finding against the code before implementing it
+turned out to be the single most useful habit in working through this list.
 
 ---
 
