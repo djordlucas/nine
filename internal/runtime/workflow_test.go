@@ -25,7 +25,6 @@ type mockStore struct {
 
 func (m *mockStore) GoalList() ([]memory.Goal, error)                   { return nil, nil }
 func (m *mockStore) GeneratedToolList() ([]memory.GeneratedTool, error) { return nil, nil }
-func (m *mockStore) ReflectionList() ([]memory.Reflection, error)       { return nil, nil }
 func (m *mockStore) WorkflowList(id string) ([]workflow.Workflow, error) {
 	if m.workflowListFn != nil {
 		return m.workflowListFn(id)

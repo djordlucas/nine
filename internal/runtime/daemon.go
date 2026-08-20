@@ -70,7 +70,6 @@ type NotifStore interface {
 // between the Unix-socket clients and the shared backend.
 type queryBackend interface {
 	GoalList() ([]memory.Goal, error)
-	ReflectionList() ([]memory.Reflection, error)
 	WorkflowList(agentID string) ([]workflow.Workflow, error)
 	WorkflowCancel(id string) (int, error)
 	WorkflowFail(id string, all bool) (int, error)
@@ -486,9 +485,6 @@ func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.M
 
 	case protocol.TypeListGoals:
 		d.handleListGoals(enc)
-
-	case protocol.TypeListReflections:
-		d.handleListReflections(enc)
 
 	case protocol.TypeListNotifications:
 		d.handleListNotifications(enc, msg.Text)

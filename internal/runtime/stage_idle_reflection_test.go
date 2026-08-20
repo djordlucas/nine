@@ -19,7 +19,7 @@ func TestIdleReflectionStageOnIdleAlwaysHasWork(t *testing.T) {
 	}
 	defer store.Close() //nolint:errcheck
 
-	h := runtime.NewIdleReflectionStage(store)
+	h := runtime.NewIdleReflectionStage()
 	text, ok := h.OnIdle(context.Background(), "self-reflection")
 	if !ok {
 		t.Fatal("OnIdle ok = false, want true")
@@ -29,51 +29,28 @@ func TestIdleReflectionStageOnIdleAlwaysHasWork(t *testing.T) {
 	}
 }
 
-func TestIdleReflectionStageOnTurnEndRecordsResult(t *testing.T) {
-	store, err := memtest.Open(t)
-	if err != nil {
-		t.Fatal(err)
+// OnTurnEnd is a no-op now: a reflection turn is recorded by the journal like
+// any other, under its own agent_id. The dedicated `reflections` table it used
+// to write recorded no agent id at all, which broke as soon as more than one
+// session could reflect (docs/concept-consolidation.md C5).
+func TestIdleReflectionOnTurnEndIsANoOp(t *testing.T) {
+	h := runtime.NewIdleReflectionStage()
+	cases := []struct {
+		name   string
+		result string
+		err    error
+	}{
+		{"stalled", "", runtime.ErrStall},
+		{"empty result", "", nil},
+		{"turn error", "result", errors.New("boom")},
+		{"successful reflection", "I learned something", nil},
 	}
-	defer store.Close() //nolint:errcheck
-
-	h := runtime.NewIdleReflectionStage(store)
-	if err := h.OnTurnEnd(context.Background(), "self-reflection", "updated self/learned", nil); err != nil {
-		t.Fatalf("OnTurnEnd: %v", err)
-	}
-
-	refs, err := store.ReflectionList()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(refs) != 1 || refs[0].Summary != "updated self/learned" {
-		t.Errorf("ReflectionList = %+v, want one entry with summary %q", refs, "updated self/learned")
-	}
-}
-
-func TestIdleReflectionStageOnTurnEndIgnoresErrorsAndEmptyResults(t *testing.T) {
-	store, err := memtest.Open(t)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close() //nolint:errcheck
-
-	h := runtime.NewIdleReflectionStage(store)
-	if err := h.OnTurnEnd(context.Background(), "self-reflection", "", runtime.ErrStall); err != nil {
-		t.Fatalf("OnTurnEnd(ErrStall): %v", err)
-	}
-	if err := h.OnTurnEnd(context.Background(), "self-reflection", "", nil); err != nil {
-		t.Fatalf("OnTurnEnd(empty result): %v", err)
-	}
-	if err := h.OnTurnEnd(context.Background(), "self-reflection", "result", errors.New("boom")); err != nil {
-		t.Fatalf("OnTurnEnd(turn error): %v", err)
-	}
-
-	refs, err := store.ReflectionList()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(refs) != 0 {
-		t.Errorf("ReflectionList = %+v, want no entries", refs)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := h.OnTurnEnd(context.Background(), "self-reflection", tc.result, tc.err); err != nil {
+				t.Errorf("OnTurnEnd = %v, want nil", err)
+			}
+		})
 	}
 }
 

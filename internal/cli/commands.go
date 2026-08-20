@@ -67,7 +67,11 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 	case "goals":
 		return c.Goals(cfg)
 	case "reflections":
-		return c.Reflections(cfg)
+		var agentID string
+		if len(args) > 1 {
+			agentID = args[1]
+		}
+		return c.Reflections(cfg, agentID)
 	case "notifications":
 		all := len(args) > 1 && args[1] == "--all"
 		return c.Notifications(cfg, all)
@@ -508,19 +512,40 @@ func (c *CLI) Goals(cfg *config.Config) error {
 	return nil
 }
 
-// Reflections fetches and prints the reflection history.
-func (c *CLI) Reflections(cfg *config.Config) error {
-	cl, err := c.connect(cfg)
+// selfReflectionAgentID is the dedicated self-reflection session, and the
+// default subject of `nine reflections`. Duplicated from runtime rather than
+// imported: the CLI reads the store directly and must not pull the daemon in.
+const selfReflectionAgentID = "self-reflection"
+
+// Reflections prints a session's reflection history, newest last.
+//
+// It reads the journal rather than a dedicated table. Reflection turns used to be
+// copied into `reflections`, which carried no agent id — fine while exactly one
+// session reflected, wrong as soon as any session can carry a reflect aspect
+// (docs/concept-consolidation.md C5). The journal already records every turn under
+// its own agent_id, so this generalizes to any agent: a standing agent's output
+// history had no view at all before.
+//
+// Like `nine trace`, it opens the store read-only and needs no running daemon.
+func (c *CLI) Reflections(cfg *config.Config, agentID string) error {
+	if agentID == "" {
+		agentID = selfReflectionAgentID
+	}
+	dbPath, err := cfg.DatabasePath()
 	if err != nil {
 		return err
 	}
-	defer cl.Close() //nolint:errcheck
-
-	raw, err := cl.ListReflections()
+	store, err := memory.OpenReadOnly(dbPath)
 	if err != nil {
-		return fmt.Errorf("list reflections: %w", err)
+		return fmt.Errorf("open memory store: %w", err)
 	}
-	printReflections(c.Out, raw)
+	defer store.Close() //nolint:errcheck
+
+	events, err := store.SessionEventsByAgent(agentID)
+	if err != nil {
+		return fmt.Errorf("read session events: %w", err)
+	}
+	printReflections(c.Out, agentID, events)
 	return nil
 }
 

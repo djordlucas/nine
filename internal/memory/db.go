@@ -1,6 +1,6 @@
 // Package memory provides a SQLite-backed store for all persistent nine data:
 // key-value pairs, files, vectors, conversations, goals, notifications,
-// reflections, workflows, the plugin registry, and the session event journal.
+// workflows, the plugin registry, and the session event journal.
 //
 // The database is a single file — nine ships with no database server, so the
 // daemon has nothing to wait for and nothing to provision.
@@ -353,11 +353,6 @@ func initSchema(d db) error {
 			updated_at     TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			last_called_at TEXT NOT NULL DEFAULT '',
 			call_count     INTEGER NOT NULL DEFAULT 0
-		)`,
-		`CREATE TABLE IF NOT EXISTS reflections (
-			id       TEXT PRIMARY KEY,
-			ran_at   TEXT NOT NULL DEFAULT ` + nowExpr + `,
-			summary  TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE TABLE IF NOT EXISTS workflows (
 			id         TEXT PRIMARY KEY,

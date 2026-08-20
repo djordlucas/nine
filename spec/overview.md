@@ -229,7 +229,7 @@ checklist tests them. They are the rules that keep an implementation coherent.
   a writer pool of exactly one connection plus a concurrent read-only pool.
 - **I4 — Operational tables are daemon-private.** Agents get K/V, files, vectors, and
   skills as tools. They **never** get `conversations`, `goals`, `workflows`,
-  `notifications`, `user_notifications`, `reflections`, `session_plans`, the HITL tables
+  `notifications`, `user_notifications`, `session_plans`, the HITL tables
   (`human_requests`, `interactive_sessions`), or the journal tables (`session_events`,
   `event_cursors`, `related_sessions`) as tools. Those are reached only via
   daemon-internal methods. (Enforces N4.)

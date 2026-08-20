@@ -136,7 +136,7 @@ func runDaemon() {
 	// self-reflection session's plan exists (one-time; subsequent boots pick
 	// it up via daemon.ResumeSessions).
 	runtime.StageRegistry["idle-reflection"] = func() runtime.StageHandler {
-		return runtime.NewIdleReflectionStage(store)
+		return runtime.NewIdleReflectionStage()
 	}
 	if err := runtime.BootstrapSelfReflection(store, 2*time.Minute); err != nil {
 		slog.Error("bootstrap self-reflection session", "err", err)
