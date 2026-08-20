@@ -233,11 +233,6 @@ func (c *Client) ListGoals() (string, error) {
 	return c.queryList(TypeListGoals)
 }
 
-// ListReflections requests the reflection history from the daemon. Returns raw JSON.
-func (c *Client) ListReflections() (string, error) {
-	return c.queryList(TypeListReflections)
-}
-
 // ListNotifications requests the human-facing notification feed. When all is
 // true the full history is returned and nothing is marked seen; otherwise only
 // unseen entries are returned and they are marked seen. Returns raw JSON.
