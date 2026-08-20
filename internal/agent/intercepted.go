@@ -28,4 +28,3 @@ func concatToolDefs(groups ...[]llm.ToolDef) []llm.ToolDef {
 	}
 	return all
 }
-

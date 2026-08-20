@@ -310,7 +310,6 @@ func initSchema(d db) error {
 			status      TEXT NOT NULL DEFAULT 'active',
 			parent_id   TEXT,
 			parent_type TEXT,
-			subtree     TEXT NOT NULL DEFAULT '[]',
 			created_at  TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			updated_at  TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,

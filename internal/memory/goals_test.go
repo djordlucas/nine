@@ -30,8 +30,8 @@ func TestGoalCreateGetUpdate(t *testing.T) {
 	if g.Status != "active" {
 		t.Errorf("default status = %q, want active", g.Status)
 	}
-	if g.Subtree == nil || len(g.Subtree) != 0 {
-		t.Errorf("fresh subtree = %v, want empty non-nil", g.Subtree)
+	if len(g.Subtree) != 0 {
+		t.Errorf("fresh subtree = %v, want empty", g.Subtree)
 	}
 
 	if err := store.GoalUpdateStatus("g1", "done"); err != nil {
@@ -40,10 +40,12 @@ func TestGoalCreateGetUpdate(t *testing.T) {
 	if err := store.GoalUpdateDescription("g1", "monitor + triage"); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.GoalAppendSubtree("g1", "sub-goal-A"); err != nil {
+	// Children are created as goals with parent_id, which is the authoritative
+	// edge; subtree is derived from it rather than appended to by hand.
+	if err := store.GoalCreate("sub-goal-A", "first child", "g1", "goal"); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.GoalAppendSubtree("g1", "task-B"); err != nil {
+	if err := store.GoalCreate("task-B", "second child", "g1", "goal"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -53,6 +55,72 @@ func TestGoalCreateGetUpdate(t *testing.T) {
 	}
 	if len(g.Subtree) != 2 || g.Subtree[0] != "sub-goal-A" || g.Subtree[1] != "task-B" {
 		t.Errorf("subtree = %v, want [sub-goal-A task-B] in order", g.Subtree)
+	}
+
+	// A child's own subtree is empty, and it is not confused for its parent's.
+	child, err := store.GoalGet("sub-goal-A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(child.Subtree) != 0 {
+		t.Errorf("child subtree = %v, want empty", child.Subtree)
+	}
+	if child.ParentID != "g1" {
+		t.Errorf("child parent_id = %q, want g1", child.ParentID)
+	}
+}
+
+// The subtree a model sees is derived from parent_id at read time, so it cannot
+// drift from the relation the schema enforces — which is the whole reason the
+// stored copy went away (docs/concept-consolidation.md C6).
+func TestGoalSubtreeIsDerivedFromParentID(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.GoalCreate("root", "root goal", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"c1", "c2", "c3"} {
+		if err := store.GoalCreate(id, "child "+id, "root", "goal"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A grandchild belongs to its own parent, not the root.
+	if err := store.GoalCreate("gc1", "grandchild", "c1", "goal"); err != nil {
+		t.Fatal(err)
+	}
+
+	root, err := store.GoalGet("root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(root.Subtree) != 3 {
+		t.Errorf("root subtree = %v, want its 3 direct children only", root.Subtree)
+	}
+	for _, id := range root.Subtree {
+		if id == "gc1" {
+			t.Error("root subtree contains a grandchild; it must list direct children only")
+		}
+	}
+
+	c1, err := store.GoalGet("c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c1.Subtree) != 1 || c1.Subtree[0] != "gc1" {
+		t.Errorf("c1 subtree = %v, want [gc1]", c1.Subtree)
+	}
+
+	children, err := store.GoalListChildren("root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(children) != 3 {
+		t.Errorf("GoalListChildren = %v, want 3", children)
+	}
+	if got, _ := store.GoalListChildren("no-such-goal"); len(got) != 0 {
+		t.Errorf("GoalListChildren(unknown) = %v, want empty", got)
 	}
 }
 

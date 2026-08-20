@@ -53,7 +53,6 @@ func TestDispatchUnknownTool(t *testing.T) {
 	}
 }
 
-
 func TestDispatchOutputTruncation(t *testing.T) {
 	// Output larger than maxOutputTokens (2048 tokens ≈ 8192 chars).
 	bigOutput := strings.Repeat("a", 10000)
@@ -233,7 +232,6 @@ func TestWireFileSearchSemanticDefaultTopK(t *testing.T) {
 }
 
 // ---- run_agent / run_agents ----
-
 
 func TestWireRunAgentSuccess(t *testing.T) {
 	var gotTask, gotExtraCtx string

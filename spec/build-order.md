@@ -251,8 +251,8 @@ self-model block.
 
 **Build.** → [`contracts/orchestration.md`](contracts/orchestration.md) (§ Goals)
 - Goal data model and store methods; the core-intercepted tools `goal_create`,
-  `goal_get`, `goal_list`, `goal_update_status`, `goal_append_subtree` (depth-capped).
-- The `pursue` stage (idle interval **5 min**): `OnIdle` reads the goal + subtree and
+  `goal_get`, `goal_list`, `goal_update_status` (depth-capped).
+- The `pursue` stage (idle interval **5 min**): `OnIdle` reads the goal + its derived children and
   acts; `OnTurnEnd` syncs the stage status from `goals.status` and pauses the goal on
   stall.
 - `SpawnGoalSession`: idempotent, capped by `max_goal_sessions` (default **10**), wired
@@ -260,7 +260,7 @@ self-model block.
 
 **Gate.** `goal_create` for a top-level goal records the goal and spawns one pursue
 session; a duplicate spawn is a no-op; at the cap, the goal is recorded but no session
-spawns and the response says `limit_reached`. `nine goals` lists goals and subtrees.
+spawns and the response says `limit_reached`. `nine goals` lists goals.
 
 ---
 
