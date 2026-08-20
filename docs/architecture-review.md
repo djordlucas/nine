@@ -508,8 +508,45 @@ The tools where this pays are `files` and `http` — the ones with real capabili
 to confer, and in `http`'s case the SSRF checklist and audit trail that already
 exist for sandboxed tools and not for the plugin.
 
-**Remaining:** `files` (273 LOC, filesystem grants) and `http` (585 LOC, the full
-SSRF surface). `shell` stays a plugin as proposed — it needs real `exec`.
+**Remaining, and they are not equally reachable.**
+
+**`files` is blocked on a missing host primitive.** Attempted and reverted rather
+than shipped. Two behavior changes surface, and only the first is a matter of
+policy:
+
+1. *Reads narrow to the mount.* The plugin's `read_file` deliberately read **any
+   absolute path** — its own comment says "leaving other absolute paths as given
+   so reads outside the workspace still work", and confinement was write-only. A
+   sandboxed tool reads only what it is mounted. This one is a deliberate
+   posture choice and was taken: workspace-only, with anything else an
+   operator-granted mount.
+2. *Writes can no longer create parent directories.* The plugin's `write_file`
+   creates them ("creating parent directories as needed", in its own
+   description). The host's write is `fopen(path, "wb")`, which creates a file
+   and not a directory, and **`nine:fs` exports no `mkdir`**. So a model writing
+   `src/foo.go` into a fresh workspace fails — and cannot fix it, because there
+   is no way to make the directory either.
+
+The second is not a policy question and cannot be worked around inside the tool.
+It needs `mkdir` in the wasm host, which means rebuilding `qjs.wasm` — a
+committed artifact whose build script says it runs "only on a deliberate version
+bump … and review the resulting hash change in the bump PR", and which needs a
+`wasi-sdk` toolchain the ordinary build deliberately does not have. That is the
+right way to add it, and it is a separate change from this one.
+
+Shipping `files` without it would give the `software-dev` and `sysadmin` roles —
+both of which list `write_file` — a tool that cannot write into a directory tree.
+The `files-write-read` eval would still pass, because it writes to the workspace
+root; that is a reason to distrust the eval as evidence here, not a reason to
+ship.
+
+**`http` is not blocked.** `net.http` is already a complete host capability
+(R-TVM.12) with `fetch` in the harness and the SSRF checklist, response caps, and
+audit trail enforced host-side. Migrating it needs **no new primitive** — and it
+is where the capability model pays most, since those checks exist for sandboxed
+tools and not for the plugin.
+
+`shell` stays a plugin as proposed — it needs real `exec`.
 
 **Cost, stated honestly:** `toolvm` has two source tiers today — developer
 (file + manifest on disk) and generated (row in `tools`). Shipping tools inside
