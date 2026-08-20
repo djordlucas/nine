@@ -675,3 +675,36 @@ stubbed or refused-by-name.
   built before this subsystem existed.
 - **I-TVM.7** — A sandboxed tool cannot reach a loopback, link-local, or private address,
   whatever its `allow_hosts` says and whatever any hostname resolves to.
+
+---
+
+## R-TVM.16 — The shipped tier (first-party tools in the binary)
+
+A third source tier, after developer (R-TVM.10) and generated (R-TVM.14): tools whose
+source is **compiled into the daemon binary**. They run through the same host, the same
+ABI (R-TVM.1), the same instance model (R-TVM.3), and the same bounds (R-TVM.4) as every
+other tool.
+
+It exists so that capabilities Nine ships with are subject to the capability model. Before
+it, the built-in capabilities were **plugins** — subprocesses inheriting the daemon's uid,
+so a tool that read a clock had, in principle, the reach to read the operator's home
+directory. Not because anyone wanted that, but because a subprocess inherits it.
+
+A shipped tool is **granted what it declares**. That is the one way this tier differs from
+the other two, and it is a reduction rather than a new trust: a developer tool is granted
+by an operator who did not write it, and a generated tool is capped by a ceiling because
+Nine wrote it, but a shipped tool is first-party code the operator already ran with
+*strictly more* authority. The grant **MUST** still appear in the tool roster, and the host
+**MUST** refuse a declaration it cannot actually enforce rather than registering a tool
+whose capability silently does nothing.
+
+Shipped tools **MUST** load **before** the other tiers. The namespace rule is
+first-registered-wins, so loading them last would let a developer or generated tool take a
+first-party name and silently replace its behavior.
+
+**A shipped tool has no more access to host state than any other.** This is the tier's
+sharpest constraint and the easiest to forget, because the code is first-party. The
+reference's `time` reports **UTC**, where the plugin it replaced reported the daemon's
+local time and zone: the guest has no timezone database, and a tool cannot know the host's
+zone unless the host confers it. Migrating a built-in to this tier therefore **MAY** change
+what it returns, and that change **MUST** be documented rather than papered over.
