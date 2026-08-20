@@ -28,7 +28,7 @@
 | **F3** | ~~Daemon assembly is duplicated between production and the eval harness; the refactor that removes it is still *Proposed*~~ **Finding was wrong** — `runtime.Assemble` shipped in `cea290d`, *before* this review's own scope commit; residue handled | **High** | M |
 | **F4** | ~~No schema migration path — `user_version = 1` plus one ad-hoc `ALTER`~~ **Landed** — versioned step runner, atomic per step (R-MEM.10); unblocks `C5`/`C6` | **High** | S |
 | **F5** | ~~`agent.Loop` carries 12 post-construction observer setters; a Loop is never fully valid until N unordered calls have happened~~ **Landed** as a per-turn `Hooks` struct — the premise (construction-time config) was wrong, the ceremony was real | Medium | M |
-| **F6** | ~~Test coverage is inverted at the boundary: `protocol` 0.24, `tui` 0.27, `cli` 0.33 against 0.87 elsewhere~~ **`protocol` done** — 12.6% → 67.0% statement coverage, and it found two real bugs (R-PROTO.10); `cli`/`tui` still open | Medium | M |
+| **F6** | ~~Test coverage is inverted at the boundary: `protocol` 0.24, `tui` 0.27, `cli` 0.33 against 0.87 elsewhere~~ **Done.** `protocol` 12.6→67.0%; `cli` 30.8→32.5%; `tui` 27.2→28.0%. The numbers are beside the point — the tests found four real bugs across the three, including two panics | Medium | M |
 | **F7** | The four built-in plugins hold ambient authority that the capability model exists to remove | Medium | L |
 | **F8** | ~20 first-class nouns; `stage` is a working multi-stage capability with no caller, no precedence rule, and a starvation bug (`goal`+`workflow` examined and **not** collapsible — §7.1) | Medium | L |
 | **F9** | ~~One provider behind a generalized `Provider` + `ThinkingAware` abstraction — decide whether local-first is a goal or a stopgap~~ **Decided** — local-first is a commitment **and** multi-backend; the abstraction stays (G8/N5) | Medium | S |
@@ -389,8 +389,37 @@ by every daemon handler, and written down nowhere. It is now **R-PROTO.10**, wit
 one `expectReply` helper used by all 19 reply-reading methods and a test that
 exercises every one of them.
 
-**`cli` (31.2%) and `tui` (27.2%) remain**, and are a different problem: both are
-thin clients over this one, so the leverage was here.
+**`cli` and `tui`: done, and they were not a different problem after all.**
+Coverage moved little — `cli` 30.8 → 32.5%, `tui` 27.2 → 28.0% — because most of
+what remains uncovered are command wrappers that need a live daemon and are
+already exercised by `tests/integration`. The number was never the point.
+
+What the tests found is one defect class replicated **twelve times**: truncating
+strings at a fixed *byte* offset.
+
+- **Invalid UTF-8.** A goal description, workflow name, or step label is free text
+  a model or user wrote. Cut at a byte offset it splits a rune and the terminal
+  renders a replacement character:
+  `日本語のゴールの説明でありこれは非常に長いテキストです` truncated at byte 37
+  became `日本語のゴールの説明であ\xe3...`.
+- **Two panics.** `sa.ID[:8]` in `cli.printStatus` and `id[:8]` in `tui` crash on
+  an id shorter than the offset — and ids arrive from the daemon over the wire, so
+  a malformed or truncated one took the client down rather than printing a short
+  id. Both confirmed by mutation: `slice bounds out of range [:8] with length 2`.
+- **A rune-unaware mask.** The TUI's `maskKey` starred out `len(k)-4` *bytes*, so a
+  non-ASCII key was masked to its encoded length rather than its own.
+
+Fixed with `clip` (rune-aware, keeps each package's existing ellipsis) and
+`shortID` (rune-aware, no ellipsis, cannot panic). Both are duplicated across the
+two leaf packages rather than extracted — twenty lines in two places beat a
+package that exists to hold them, and the comment says to extract on a third
+caller.
+
+**The pattern across all of F6 is worth keeping.** Three packages, three coverage
+numbers that barely moved or moved hugely, and in every case the value was the
+same: writing the first test against untested formatting or error-handling code
+immediately surfaced defects that had been shipping. Coverage located them; it did
+not measure them.
 
 ### F7 — The built-ins hold ambient authority the capability model removes · Medium · L
 
@@ -680,7 +709,7 @@ Ordered by leverage-per-unit-risk, not by severity alone.
 | 3 | ~~**F3 + F5** — assembly refactor and Loop hooks, together~~ **done, separately** — F3 had already shipped; F5 shares no file with it | The stated rationale ("F5 is most of what makes F3 large") was false: `builder.go` contains no `SetOn*` calls at all. |
 | 4 | ~~**F2 (step 1)** — typed `MsgType` constants~~ **done** | Mechanical, removes the literal-typo class, and makes F6 tractable. (It does not remove that class — see §5 F2 — but it does make F6 tractable, which was the load-bearing half.) |
 | 5 | ~~**F9** — decide local-first, then document or add a provider~~ **done** — decided: local-first *and* multi-backend (G8/N5) | A decision, not a build. Blocks nothing, unblocks F1's shape. |
-| 6 | **F6** — protocol and client tests — **`protocol` done**, `cli`/`tui` open | Follows F2 naturally; typed messages make the tests worth writing. (They did: the tests found two silent-failure bugs, now R-PROTO.10.) |
+| 6 | ~~**F6** — protocol and client tests~~ **done** | Follows F2 naturally; typed messages make the tests worth writing. (They did: four real bugs across `protocol`, `cli` and `tui` — two silent failures, now R-PROTO.10, and two panics.) |
 | 7 | ~~**F10**, **F12**~~ **both done** | Small hygiene; fold into whatever branch is nearby. (Neither was hygiene: F12 hid a startup-diagnostic defect, R-PLUG.14, and F10 could tell the model it was on the host while confined.) |
 | 8 | **F2 (steps 2–3)**, **F7**, **F11** | Larger, independent, and none is urgent. |
 | 9 | **F8** — the seven changes in [`concept-consolidation.md`](concept-consolidation.md) | Five of the seven need no schema change and can start now; only the two deletions (`C5`, `C6`) wait on F4. The `stage`→`aspect` rename is deliberately last. |
