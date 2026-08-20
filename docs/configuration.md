@@ -127,17 +127,17 @@ standing_agents_authoritative = false
 # delegates   = false            # optional; default false. Opt into sub-agent fan-out.
 # schedule    = "0 9 * * 1-5"    # cron (5-field, docs/scheduling.md) …XOR… interval = "24h"
 #
-# Additional aspects the session carries alongside its pursue shell, each waking
-# on its own cadence. A session runs one turn at a time, so when several aspects
+# Additional routines the session carries alongside its pursue shell, each waking
+# on its own cadence. A session runs one turn at a time, so when several routines
 # are due the one waiting longest goes first — fairness does not depend on the
 # order they are written here.
 #
-# The pursue shell stays the session's role-bearing aspect: an aspect never sets a
+# The pursue shell stays the session's role-bearing routine: a routine never sets a
 # role, because a session has exactly one and two claimants would make it depend
-# on ordering. `kind` must be a registered aspect kind, and exactly one of
-# interval/schedule must be set — an aspect with neither would never wake.
+# on ordering. `kind` must be a registered routine kind, and exactly one of
+# interval/schedule must be set — a routine with neither would never wake.
 #
-#   [[agent.aspect]]
+#   [[agent.routine]]
 #   kind     = "idle-reflection"
 #   interval = "1h"
 

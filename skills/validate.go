@@ -21,9 +21,9 @@ var NamePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // for actual work.
 const MaxDescriptionLen = 200
 
-// KnownAspectKinds are the aspect kinds a role's profile may name. A profile
+// KnownRoutineKinds are the routine kinds a role's profile may name. A profile
 // naming anything else would silently never run.
-var KnownAspectKinds = []string{"active", "pursue", "idle-reflection"}
+var KnownRoutineKinds = []string{"active", "pursue", "idle-reflection"}
 
 // ErrNotMarkdown is returned by LoadFile for a path that is not a .md file.
 var ErrNotMarkdown = errors.New("not a .md file")
@@ -86,8 +86,8 @@ func validateRole(r RoleSpec) []error {
 		}
 	}
 	for _, kind := range r.Profile {
-		if !slices.Contains(KnownAspectKinds, kind) {
-			errs = append(errs, fmt.Errorf("profile names unknown aspect kind %q (known: %s)", kind, strings.Join(KnownAspectKinds, ", ")))
+		if !slices.Contains(KnownRoutineKinds, kind) {
+			errs = append(errs, fmt.Errorf("profile names unknown routine kind %q (known: %s)", kind, strings.Join(KnownRoutineKinds, ", ")))
 		}
 	}
 	return errs

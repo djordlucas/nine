@@ -193,13 +193,13 @@ default, or any agent id:
 
 ```bash
 ./nine reflections                 # the dedicated self-reflection session
-./nine reflections sec-watch       # a standing agent that carries a reflect aspect
+./nine reflections sec-watch       # a standing agent that carries a reflect routine
 ```
 
 It reads the **journal**, not a dedicated table, so it needs no running daemon (like
 `nine trace`) and works for every session that reflects. Reflection used to be a session
-*kind* writing to a `reflections` table with no agent id; now it is a aspect kind any
-session can carry as an aspect (`[[agent.aspect]]`), so the history has to be per-agent.
+*kind* writing to a `reflections` table with no agent id; now it is a routine kind any
+session can carry as a routine (`[[agent.routine]]`), so the history has to be per-agent.
 
 For the full trace of a session — tool calls, LLM requests, timings — use
 `nine trace <agent-id>`; this is the digest view of the same events.

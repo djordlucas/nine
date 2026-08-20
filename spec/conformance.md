@@ -200,15 +200,15 @@ How to use this file:
 
 | ID | Property | Observable check |
 |----|----------|------------------|
-| R-PLAN.1 | Data model | `session_plans` rows persist aspect kind + state. |
-| R-PLAN.2 | AspectHandler interface | `Init`/`OnTurnEnd`/`OnIdle` invoked at the right points. |
+| R-PLAN.1 | Data model | `session_plans` rows persist routine kind + state. |
+| R-PLAN.2 | RoutineHandler interface | `Init`/`OnTurnEnd`/`OnIdle` invoked at the right points. |
 | R-PLAN.3 | Lazy vs eager persistence (I7) | `[active]` plans are lazy; idle-capable plans are eager-persisted. |
 | R-PLAN.4 | Idle scheduling | `armIdleTimer` picks the soonest interval; on fire, `handleIdle` runs the due `OnIdle`, and any returned text runs as a turn. |
 | R-PLAN.5 | Resume on restart (I7) | Idle-capable plans restart at boot; ordinary conversations attach on demand. |
-| R-PLAN.6 | `active` aspect | All-no-op aspect behaves trivially. |
-| R-PLAN.7 | `idle-reflection` aspect | Attachable to any session; updates self KV. The turn is recorded by the journal like any other — there is no dedicated reflections store. |
+| R-PLAN.6 | `active` routine | All-no-op routine behaves trivially. |
+| R-PLAN.7 | `idle-reflection` routine | Attachable to any session; updates self KV. The turn is recorded by the journal like any other — there is no dedicated reflections store. |
 | R-PLAN.8 | Self-model (`SystemSelf`) | `self/identity`+`self/capabilities`+`self/learned` injected as P2.5, capped ~600 tokens. |
-| R-PLAN.9 | `pursue` aspect | 5-min interval; reads the goal and its derived children, acts, syncs status, pauses goal on stall. |
+| R-PLAN.9 | `pursue` routine | 5-min interval; reads the goal and its derived children, acts, syncs status, pauses goal on stall. |
 
 ### Goals — [`orchestration.md`](contracts/orchestration.md) (§ Goals)
 

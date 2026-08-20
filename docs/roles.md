@@ -23,7 +23,7 @@ difference between that agent and a sub-agent is faked with two proxies:
   gets delegation tools; `depth == 2` is a pure leaf. These "depths" are really *roles*
   in disguise (orchestrator vs executor).
 - **The `AgentWorker` vs `subagent.go` split.** A `AgentWorker` persists
-  (checkpoints), runs a **aspect plan**, and owns user I/O + HITL. A sub-agent
+  (checkpoints), runs a **routine plan**, and owns user I/O + HITL. A sub-agent
   (`RunSubAgentSync`/`SpawnSubAgent`) is an ephemeral one-shot `turn()` with `nil` plan,
   `nil` save, `nil` notif.
 
@@ -42,7 +42,7 @@ A **Role** makes worker-kind first-class data. A role bundles:
 2. the **"what"** — an enforced **tool allowlist** (a skill cannot do this — it is
    advisory context, droppable under budget pressure; the tool boundary must be enforced
    at loop-build time), and
-3. **structural wiring** — does this worker persist? run aspects? own HITL? spawn
+3. **structural wiring** — does this worker persist? run routines? own HITL? spawn
    goal-sessions? delegate?
 
 With roles, the top-level `AgentWorker` is simply the worker running the **orchestrator
@@ -95,7 +95,7 @@ type Role struct {
     Persists     bool      // saveFn/checkpointing wired         (AgentWorker vs sub-agent)
     Interactive  bool      // HITL: ask_human (approval gates follow the owning
                            // session instead — R-HITL.5)
-    Profile      []string  // aspect kinds; nil ⇒ ephemeral leaf (no aspects)
+    Profile      []string  // routine kinds; nil ⇒ ephemeral leaf (no routines)
 }
 ```
 
@@ -192,7 +192,7 @@ not implemented, and would be a change to R-ROLE.2.
 > and `executor` reproduce prior behavior exactly. See §8 phase 1 and §12 gate 6.
 
 `executor` reproduces today's sub-agent *toolset* (full toolset minus depth-gated tools,
-no persistence, no aspects) and is the default when a delegation call names no role — the
+no persistence, no routines) and is the default when a delegation call names no role — the
 backward-compat anchor (§8). It does **not** reproduce today's sub-agent *persona*, which
 is a latent bug this feature fixes (R-ROLE.10).
 
@@ -420,7 +420,7 @@ role) to delegate safely, but cannot use roles as an escalation path.
   registered) + nothing else. Legal but near-useless; the picker SHOULD avoid it. Not an
   error.
 - **Empty vs omitted `profile`**: an empty (`profile: []`) or absent `profile` key is
-  equivalent to `nil` — an ephemeral leaf with no aspects. (Unlike `tools`, there is no
+  equivalent to `nil` — an ephemeral leaf with no routines. (Unlike `tools`, there is no
   wildcard distinction for `profile`; `[]` and `nil` mean the same thing.)
 - **`depthGuard` exhausted with a delegating role**: delegation tools simply aren't
   registered; the worker behaves as a leaf. No error.
@@ -447,7 +447,7 @@ Both are `MAY`; the defaults reproduce current behavior.
 ## 12. Acceptance gates (for `spec/conformance.md`)
 
 1. Delegating with no `role` produces a leaf identical to today's sub-agent (same tools,
-   no persistence, no aspects).
+   no persistence, no routines).
 2. Delegating with `role:"report-writer"` produces a leaf that **cannot** call `shell`:
    the tool is absent from the advertised list *and* `Dispatch("shell", …)` returns
    `unknown tool`.
@@ -519,6 +519,6 @@ role blocks are purely restrictive.
   and pass it through (`active` → orchestrator / `idle-reflection` → reflection / `pursue`
   → pursue); the sub-agent spawn passes executor.
 - `internal/runtime/prompts.go` — unaffected: `ReflectionPrompt`/`PursuePromptTemplate`
-  are aspect *turn texts*, not system prompts, and stay as-is.
+  are routine *turn texts*, not system prompts, and stay as-is.
 </content>
 </invoke>

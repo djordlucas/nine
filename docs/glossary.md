@@ -118,26 +118,26 @@ terminal state. LLM tools: `workflow_create`, `workflow_update`,
 `run_agent`). Operator commands: `nine workflow stop|fail`. See
 [Workflows](workflows.md).
 
-**Session Plan** — Persistent state machine of **aspects** attached to every
+**Session Plan** — Persistent state machine of **routines** attached to every
 `AgentWorker` (ordinary conversation, the self-reflection session, or a
 goal's pursue session). Stored as one row per agent ID in `session_plans`.
 Drives autonomous between-turn behavior via `OnTurnEnd` (every turn) and
-`OnIdle` (per-aspect idle scheduler). See [Session Plans & Aspects](session-plans.md).
+`OnIdle` (per-routine idle scheduler). See [Session Plans & Routines](session-plans.md).
 
-**Aspect / AspectHandler** — The extension point for session plans. Each
+**Routine / RoutineHandler** — The extension point for session plans. Each
 `kind` (`active`, `idle-reflection`, `pursue`) implements `Init`,
-`OnTurnEnd`, and `OnIdle`. `active` is a no-op trivial aspect every
+`OnTurnEnd`, and `OnIdle`. `active` is a no-op trivial routine every
 conversation gets; `idle-reflection` and `pursue` are idle-capable and get
 their own resumable background sessions.
 
-**Self-reflection session (`idle-reflection` aspect)** — A single fixed
+**Self-reflection session (`idle-reflection` routine)** — A single fixed
 session (agent ID `self-reflection`) that wakes every 2 minutes and asks the
 model to update `self/capabilities` and `self/learned` via `memory_set`. Each
 turn is recorded by the journal under its own `agent_id`, read back with
-`nine reflections [agent-id]` (or `/reflections`). It is a aspect kind, not a
-session kind: any session can carry it as an aspect. See [Session Plans § idle-reflection](session-plans.md#idle-reflection--self-reflection-session).
+`nine reflections [agent-id]` (or `/reflections`). It is a routine kind, not a
+session kind: any session can carry it as a routine. See [Session Plans § idle-reflection](session-plans.md#idle-reflection--self-reflection-session).
 
-**Pursue session (`pursue` aspect)** — Background session spawned 1:1 for
+**Pursue session (`pursue` routine)** — Background session spawned 1:1 for
 every top-level goal (`agentID == goalID`), waking every 5 minutes to
 `goal_get`, act on the goal, and call `goal_update_status`/
 `goal_append_subtree`. Capped by `daemon.max_goal_sessions` (default 10);
@@ -189,7 +189,7 @@ namespace scan.
 `internal/selfmodel.Assembler` from the `self/identity`, `self/capabilities`,
 and `self/learned` KV keys, injected into every turn at priority 2.5 (capped
 ~600 tokens). Seeded by `BootstrapSelfKV`; `self/learned` and
-`self/capabilities` are refreshed by the idle-reflection aspect.
+`self/capabilities` are refreshed by the idle-reflection routine.
 
 **`internal/memory.Store`** — The single, in-process **SQLite** interface for all of
 Nine's persistent state — *not* a plugin subprocess. Opens a file
