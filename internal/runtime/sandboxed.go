@@ -69,6 +69,10 @@ func OpenSandboxedTools(ctx context.Context, cfg *config.Config, store *memory.S
 	// register anything while the tier is off.
 	host.SetAgentConfig(agentConfig(cfg))
 
+	// First-party tools first: the namespace rule is first-registered wins, so a
+	// developer or generated tool must not be able to take a shipped tool's name
+	// and silently replace first-party behavior.
+	host.LoadShipped(ctx, pluginCollides(mgr))
 	host.Load(ctx, pluginCollides(mgr))
 	// Project the stored catalog into the host, so tools the agent wrote in a
 	// previous run are callable from this one's first turn.

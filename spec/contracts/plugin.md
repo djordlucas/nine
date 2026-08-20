@@ -329,8 +329,9 @@ terminal and distinct from `failed`. `progress` is free text.
 
 ## R-PLUG.13 — Built-in plugins are served by the `nine` binary
 
-The Go default plugins (`files`, `shell`, `http`, `time`) ship **inside the `nine`
-binary**, not as separate executables. The manager starts one by re-executing that
+The Go default plugins (`files`, `shell`, `http`) ship **inside the `nine` binary**, not
+as separate executables. (`time` was one of them and is now a shipped sandboxed tool —
+R-TVM.16 — because reading a clock does not need a subprocess holding the daemon's uid.) The manager starts one by re-executing that
 binary:
 
 ```text
