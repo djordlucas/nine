@@ -14,6 +14,49 @@ import (
 	"nine/internal/memory"
 )
 
+// clip shortens s to at most max characters, appending an ellipsis when it had
+// to cut. It counts *runes*, not bytes.
+//
+// Byte slicing was the previous behavior and it corrupts output: a goal
+// description or workflow name is free text a model or user wrote, so a cut at a
+// fixed byte offset lands mid-rune for anything outside ASCII and emits invalid
+// UTF-8, which a terminal renders as a replacement character. "日本語のゴールの
+// 説明でありこれは非常に長いテキストです" cut at byte 37 produced
+// "日本語のゴールの説明であ\xe3...".
+//
+// Note this still pads by rune count, not display width, so a table of
+// full-width CJK text is aligned loosely. Fixing that needs a width table; this
+// fixes the correctness half.
+func clip(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	if max <= 3 {
+		return string(r[:max])
+	}
+	return string(r[:max-3]) + "..."
+}
+
+// shortID cuts an identifier to at most max runes with no ellipsis, matching how
+// ID columns have always rendered.
+//
+// It also cannot panic. `sa.ID[:8]` did: the id arrives from the daemon over the
+// wire, and a short or empty one — a malformed reply, a truncated record — took
+// the whole CLI down rather than printing a short id. Slicing a string by a
+// fixed offset is only safe when something guarantees the length, and nothing
+// here did.
+func shortID(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max])
+}
+
 func printGoals(w io.Writer, raw string) {
 	var result struct {
 		Goals []struct {
@@ -29,15 +72,7 @@ func printGoals(w io.Writer, raw string) {
 	fmt.Fprintf(w, "%-12s  %-10s  %s\n", "ID", "STATUS", "DESCRIPTION")
 	fmt.Fprintln(w, strings.Repeat("-", 60))
 	for _, g := range result.Goals {
-		id := g.ID
-		if len(id) > 12 {
-			id = id[:12]
-		}
-		desc := g.Description
-		if len(desc) > 40 {
-			desc = desc[:37] + "..."
-		}
-		fmt.Fprintf(w, "%-12s  %-10s  %s\n", id, g.Status, desc)
+		fmt.Fprintf(w, "%-12s  %-10s  %s\n", shortID(g.ID, 12), g.Status, clip(g.Description, 40))
 	}
 }
 
@@ -116,21 +151,9 @@ func printWorkflows(w io.Writer, raw string) {
 		if i > 0 {
 			fmt.Fprintln(w)
 		}
-		id := wf.ID
-		if len(id) > 12 {
-			id = id[:12]
-		}
-		name := wf.Name
-		if len(name) > 40 {
-			name = name[:37] + "..."
-		}
-		fmt.Fprintf(w, "%-12s  [%s]  %s\n", id, wf.Status, name)
+		fmt.Fprintf(w, "%-12s  [%s]  %s\n", shortID(wf.ID, 12), wf.Status, clip(wf.Name, 40))
 		for _, s := range wf.Steps {
-			label := s.Label
-			if len(label) > 52 {
-				label = label[:49] + "..."
-			}
-			fmt.Fprintf(w, "  [%-7s] %s: %s\n", s.Status, s.ID, label)
+			fmt.Fprintf(w, "  [%-7s] %s: %s\n", s.Status, s.ID, clip(s.Label, 52))
 		}
 	}
 }
@@ -143,10 +166,7 @@ func printStatus(w io.Writer, info *protocol.StatusInfo) {
 	}
 	fmt.Fprintf(w, "Agents:   %d active\n", len(info.Agents))
 	for _, a := range info.Agents {
-		short := a.ID
-		if len(short) > 8 {
-			short = short[:8]
-		}
+		short := shortID(a.ID, 8)
 		role := a.Role
 		if role == "" {
 			role = "-"
@@ -160,15 +180,12 @@ func printStatus(w io.Writer, info *protocol.StatusInfo) {
 	if len(info.SubAgents) > 0 {
 		fmt.Fprintf(w, "Sub-agents: %d running\n", len(info.SubAgents))
 		for _, sa := range info.SubAgents {
-			desc := sa.Description
-			if len(desc) > 40 {
-				desc = desc[:40] + "..."
-			}
 			role := sa.Role
 			if role == "" {
 				role = "-"
 			}
-			fmt.Fprintf(w, "          %-8s  %-12s  %s\n", sa.ID[:8], role, desc)
+			fmt.Fprintf(w, "          %-8s  %-12s  %s\n",
+				shortID(sa.ID, 8), role, clip(sa.Description, 40))
 		}
 	}
 	sort.Strings(info.Plugins)
