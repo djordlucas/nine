@@ -1,9 +1,14 @@
 # Nine — Conformance Checklist
 
-This is the acceptance checklist: every numbered requirement from the
-[`contracts/`](contracts/) mapped to an **observable** test. An implementation "is Nine"
-when it passes every row below. All contracts are currently `Built` (HITL now ships, and
-the event journal + subscriptions are present).
+This is the acceptance checklist: every numbered requirement from a **`Built`**
+contract in [`contracts/`](contracts/), mapped to an **observable** test. An
+implementation "is Nine" when it passes every row below.
+
+One contract is **not** `Built` and so has no rows here: [`agent-policy.md`](contracts/agent-policy.md)
+is `Planned`, and a requirement with no implementation has no observable check. That is
+the only permitted reason for a requirement to be absent — if a `Built` contract's
+requirement has no row, the omission is a defect in this file, not a statement about the
+requirement.
 
 How to use this file:
 
@@ -66,6 +71,26 @@ How to use this file:
 | R-MEM.9 | The `spill/` namespace is daemon-owned | `file_store` refuses a path under `spill/` while it stays agent-readable; nothing under `spill/` enters the vector pool; spills are swept on a retention window. |
 | R-MEM.10 | Schema versioning and migration | `user_version` tracks the schema generation and equals the step count; each step and its bump commit atomically (a failing step leaves the version untouched); a fresh database is stamped without running steps; a database newer than the binary is refused, not rewritten. |
 
+### Sandboxed tools — [`toolvm.md`](contracts/toolvm.md)
+
+| ID | Property | Observable check |
+|----|----------|------------------|
+| R-TVM.1 | ABI | A tool module exports exactly `nine_alloc` and the call entrypoint at `ABIVersion` 1; a module missing either is refused at load. |
+| R-TVM.2 | Two module kinds | A `wasm` tool is the developer's own module; a `js` tool runs the pre-supplied QuickJS-NG interpreter over its source. Nothing is compiled at install time. |
+| R-TVM.3 | Compile once, instantiate per call | The module is compiled once and a fresh instance is created per call and closed when it returns; no state survives between calls of the same tool. |
+| R-TVM.4 | Resource bounds | Each call is bounded by wall clock (default 5s, per-tool overridable), memory pages (default 16 MiB), and is torn down when the context is done. |
+| R-TVM.5 | Default-empty capabilities | With no grant, a tool has no filesystem pre-open and no host functions: a denied capability is **structurally absent**, not refused at call time — there is no function to call. |
+| R-TVM.6 | Declaration ≠ grant | A manifest declares a need; only `nine.toml` grants. A capability declared but not granted is absent, **and one granted but not declared is refused** — the check runs both ways. |
+| R-TVM.7 | Grant table shape | Grants live in a singular `[tool.<name>]` table beside the plural `[tools]` subsystem table, mirroring R-PLUG.10. |
+| R-TVM.8 | Imports resolve in the host | Module resolution happens host-side against a closed allowlist **before instantiation**; the guest never receives a resolver, so `import` cannot reach disk or network. |
+| R-TVM.9 | Trimmed interpreter surface | The QuickJS `std` and `os` modules are not linked: no filesystem API, no `os.exec`, no `std.urlGet`, and no `std.evalScript`/`loadScript` eval hooks are reachable from a tool. |
+| R-TVM.10 | Loading | Developer tools load from `[tools].user_dir` in the same sidecar-manifest layout as user plugins (R-PLUG.9); a module without its manifest does not load. |
+| R-TVM.11 | Visibility and reload | A newly loaded tool appears to **subsequently built** loops only; a turn in flight keeps the tool set it started with, so the turn stays replayable. |
+| R-TVM.12 | `net.http` | Network access is a host function with no wazero primitive beneath it, so the host enforces it: the SSRF checklist (address/redirect/DNS-rebinding/credential handling) applies to every request a tool makes. |
+| R-TVM.13 | Fully built | Every feature the design specifies is implemented — the `nine:*` stdlib, external dependencies, and the deps/`net.http` interlock — with nothing stubbed or refused by name. |
+| R-TVM.14 | Generated tools | A tool Nine wrote via `tool_write` is a row in `tools` carrying source, schema, and a capability **declaration with no grant**; it runs through the same host, ABI, and instance model, and is capped by the generated ceiling. |
+| R-TVM.15 | Dependencies and the `nine:*` stdlib | Both `nine:*` and external npm imports resolve **before** the call, never by the guest and never at call time. |
+
 ### Wire protocol — [`wire-protocol.md`](contracts/wire-protocol.md)
 
 | ID | Property | Observable check |
@@ -127,6 +152,11 @@ How to use this file:
 | R-PLUG.6 | Browser automation is not a plugin | No browser ships as a default plugin; a browser MCP server declared as `[[mcp.server]]` supplies `<name>__browser_*` tools, and no URL policy is enforced on it. `web_search`/`web_page_read` remain available and are not described as a fallback to an absent browser. |
 | R-PLUG.7 | No runtime plugin mutation (N1) | No path generates, compiles, or hot-swaps a plugin; recovery is restart-from-binary only. |
 | R-PLUG.14 | Startup readiness: dead vs slow | A plugin that exits before listening is reported as exited (with status) immediately, not as a socket timeout; the readiness budget bounds only a live-but-silent process; the process is reaped exactly once and the result is readable by both startup and stop. |
+| R-PLUG.8 | Per-plugin concurrency | `describe`'s `max_concurrent` maps onto the transport's `MaxConnsPerHost`; 0/omitted is unbounded, and a declared cap bounds in-flight calls to that plugin client-side. |
+| R-PLUG.9 | User plugins | Executables under `[plugins].user_dir` load only with a sidecar `<name>.toml` declaring name and entrypoint; no manifest means no load, and built-ins are untouched. |
+| R-PLUG.10 | Operator settings pass-through | `[plugin.<name>.settings]` keys reach the process verbatim as environment variables at spawn; a key outside `[A-Za-z_][A-Za-z0-9_]*` is rejected. |
+| R-PLUG.11 | Per-plugin cache directory | Each plugin process gets `NINE_PLUGIN_CACHE_DIR` (existing, mode 0700) plus `NINE_PLUGIN_CACHE_PERSISTENT`; Nine never reads the directory, and an ephemeral one is removed with the process. |
+| R-PLUG.12 | Long-running jobs (opt-in) | A tool may return `job_id` + ack only when the plugin advertised `async_jobs`; a `job_id` from a plugin that did not is rejected. |
 
 ---
 
@@ -343,11 +373,14 @@ How to use this file:
 | R-EVT.2 | Async batched producer | A completed turn's exact model I/O and tool trajectory are reconstructable from the journal; journal writes never stall a turn. |
 | R-EVT.3 | Trace & replay | `nine trace` renders the journal with the daemon down; `nine replay` reproduces a recorded turn's answer with **no** live LLM/tool calls. |
 | R-EVT.4 | Retention | A boot scrub bounds the journal by `event_retention_turns`/`event_retention_days`, leaving a replayable prefix. |
+| R-EVT.5 | Read methods | `SessionEventsAppend`/`ByAgent`/`After`/`Scrub` and `LatestTurnResult` exist; ByAgent returns the full trajectory in `seq` order, After scans forward from a cursor, Scrub bounds by turns and age. |
 | R-SUB.1 | Subscription primitive | A `Handler` resumes from its durable cursor (`event_cursors`), receives filtered events in `seq` order at-least-once; a poison event is skipped, not wedged. |
 | R-SUB.2 | Wake + catch-up | An in-process wake delivers promptly; a subscriber that was down catches up from its cursor on restart. |
 | R-SUB.3 | Out-of-band discipline (I11) | A subscriber makes no generative LLM call and never mutates an active session; it writes only derived stores. |
 | R-SUB.4 | Related-session indexer | On `turn_end` (with an embedder), topically-similar prior sessions are linked in `related_sessions` (threshold-gated, deduped); no generative call; a no-op without an embedder. |
 | R-SUB.5 | Pull surfacing | A later on-topic turn surfaces one recorded link as `SystemEnrichment` under relevance + budget; an off-topic turn surfaces nothing. |
+| R-SUB.6 | Supervisor as a subscriber | Supervisor lifecycle events are posted as journal `supervisor` events and consumed through a cursor-backed subscription that survives restart. |
+| R-SUB.7 | Deferred by decision | No generative-LLM reaction and no autonomous session injection exists; reactions stay programmatic and out-of-band. |
 
 ---
 
