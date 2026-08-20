@@ -417,6 +417,14 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 
 // dispatch routes one client message to the appropriate handler.
 func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.Msg) {
+	// Presence check before routing. A message that cannot possibly be served —
+	// an attach naming no session, a user_turn with no text — is rejected here
+	// with the missing field named, rather than reaching a handler that reads an
+	// empty string and does something arbitrary with it.
+	if err := msg.ValidateClient(); err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
 	switch msg.Type {
 	case protocol.TypeNewConversation:
 		id, err := d.newConversation(msg.Interactive)
