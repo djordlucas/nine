@@ -540,11 +540,37 @@ The `files-write-read` eval would still pass, because it writes to the workspace
 root; that is a reason to distrust the eval as evidence here, not a reason to
 ship.
 
-**`http` is not blocked.** `net.http` is already a complete host capability
-(R-TVM.12) with `fetch` in the harness and the SSRF checklist, response caps, and
-audit trail enforced host-side. Migrating it needs **no new primitive** — and it
-is where the capability model pays most, since those checks exist for sandboxed
-tools and not for the plugin.
+**`http` is not blocked on a primitive, but it does not divide cleanly.**
+`net.http` is a complete host capability (R-TVM.12) — `fetch` in the harness, the
+SSRF checklist, response caps and audit trail all enforced host-side — so
+`http_get` and `http_post` could be migrated today with nothing new.
+
+Its other two tools cannot. `web_search` scrapes DuckDuckGo's HTML endpoint and
+`web_page_read` renders a page to text, and both go through `extractText`, a DOM
+walk over `golang.org/x/net/html`. That is a real HTML5 parser doing the work
+HTML5 parsers exist for — implicit tags, unclosed elements, the malformed markup
+that is most of the web. Reimplementing it in JS by hand would be materially
+worse at exactly the inputs that matter, so it wants a parser bundled at build
+time, as this finding's own cost note said. The deps/esbuild pipeline that could
+do that (§4.4) exists **for the generated tier only**; extending it to shipped
+tools is the groundwork.
+
+**Half a plugin is worth less than it looks.** Migrating `http_get`/`http_post`
+alone leaves the plugin running for the other two, so the ambient authority F7
+exists to remove is still there — and "http tools" then live in two places at
+once. The gain is two tools under the capability model; the cost is a split
+surface and a plugin that still has the daemon's uid. That trade is worth making
+only as a step toward finishing, not as a resting state.
+
+**So both remaining migrations need groundwork rather than more of the same
+work**, and each is a deliberate change with its own review:
+
+| Blocker | What it needs |
+|---|---|
+| `files` — `write_file` cannot create directories | `mkdir` in the wasm host → a reviewed `qjs.wasm` bump |
+| `http` — no HTML parser in the guest | the deps/esbuild pipeline extended to the shipped tier |
+
+The tier itself is done and proven (R-TVM.16). `shell` stays a plugin as proposed.
 
 `shell` stays a plugin as proposed — it needs real `exec`.
 
