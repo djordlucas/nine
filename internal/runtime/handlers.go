@@ -100,12 +100,11 @@ func (d *Daemon) handleListGoals(enc *json.Encoder) {
 // By default it returns unseen entries and marks them seen (an inbox that
 // drains as it is read); flag "--all" returns the full history and marks
 // nothing.
-func (d *Daemon) handleListNotifications(enc *json.Encoder, flag string) {
+func (d *Daemon) handleListNotifications(enc *json.Encoder, all bool) {
 	if d.store == nil {
 		enc.Encode(protocol.NewTextMsg(protocol.TypeListNotifications, `{"notifications":[]}`)) //nolint:errcheck
 		return
 	}
-	all := flag == "--all"
 	ns, err := d.store.UserNotificationList(!all)
 	if err != nil {
 		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
@@ -158,16 +157,12 @@ func (d *Daemon) newConversation(interactive bool) (string, error) {
 // handleHumanAnswer routes a human's answer to the blocked ask_human call for
 // its RequestID. It is a top-level message, not a turn — it never starts a new
 // agent loop (R-HITL.6).
-func (d *Daemon) handleHumanAnswer(enc *json.Encoder, msg protocol.Msg) {
+func (d *Daemon) handleHumanAnswer(enc *json.Encoder, req protocol.HumanAnswerReq) {
 	if d.hitl == nil {
 		enc.Encode(protocol.NewErrorMsg("human-in-the-loop not available")) //nolint:errcheck
 		return
 	}
-	if msg.RequestID == "" {
-		enc.Encode(protocol.NewErrorMsg("human_input_answer: request_id required")) //nolint:errcheck
-		return
-	}
-	if !d.hitl.Answer(msg.RequestID, msg.Answer) {
+	if !d.hitl.Answer(req.RequestID, req.Answer) {
 		enc.Encode(protocol.NewErrorMsg("no pending question for that request")) //nolint:errcheck
 		return
 	}

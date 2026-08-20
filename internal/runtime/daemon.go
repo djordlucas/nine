@@ -417,17 +417,18 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 
 // dispatch routes one client message to the appropriate handler.
 func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.Msg) {
-	// Presence check before routing. A message that cannot possibly be served —
-	// an attach naming no session, a user_turn with no text — is rejected here
-	// with the missing field named, rather than reaching a handler that reads an
-	// empty string and does something arbitrary with it.
-	if err := msg.ValidateClient(); err != nil {
+	// Decode the flat wire union into the typed request it represents. This both
+	// validates presence (R-PROTO.11 — an attach naming no session, a user_turn
+	// with no text) and rejects an unroutable type, so every branch below reads
+	// a struct carrying exactly its own fields, already populated.
+	req, err := protocol.DecodeRequest(msg)
+	if err != nil {
 		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
 		return
 	}
-	switch msg.Type {
-	case protocol.TypeNewConversation:
-		id, err := d.newConversation(msg.Interactive)
+	switch r := req.(type) {
+	case protocol.NewConversationReq:
+		id, err := d.newConversation(r.Interactive)
 		if err != nil {
 			enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
 			return
@@ -441,8 +442,8 @@ func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.M
 		d.mu.RUnlock()
 		enc.Encode(cid) //nolint:errcheck
 
-	case protocol.TypeAttach:
-		resolved := d.resolveID(msg.AgentID)
+	case protocol.AttachReq:
+		resolved := d.resolveID(r.AgentID)
 		if err := d.attach(resolved); err != nil {
 			enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
 			return
@@ -476,80 +477,70 @@ func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.M
 		}
 		enc.Encode(ok) //nolint:errcheck
 
-	case protocol.TypeSetPlanMode:
-		d.setPlanMode(enc, msg.AgentID, msg.Text)
+	case protocol.SetPlanModeReq:
+		d.setPlanMode(enc, r.AgentID, r.Mode)
 
-	case protocol.TypeUserTurn:
-		d.userTurn(ctx, enc, msg.AgentID, msg.Text, msg.ForceThink)
+	case protocol.UserTurnReq:
+		d.userTurn(ctx, enc, r.AgentID, r.Text, r.ForceThink)
 
-	case protocol.TypeStatus:
-		d.handleStatus(enc)
+	case protocol.ContextReq:
+		d.handleContext(ctx, enc, r.AgentID)
 
-	case protocol.TypeContext:
-		d.handleContext(ctx, enc, msg.AgentID)
+	case protocol.SessionStopReq:
+		d.handleSessionStop(enc, r.AgentID, r.All)
 
-	case protocol.TypeSessionStop:
-		d.handleSessionStop(enc, msg.AgentID, msg.Text == "--all")
+	case protocol.ListNotificationsReq:
+		d.handleListNotifications(enc, r.All)
 
-	case protocol.TypeListGoals:
-		d.handleListGoals(enc)
-
-	case protocol.TypeListNotifications:
-		d.handleListNotifications(enc, msg.Text)
-
-	case protocol.TypeListWorkflows:
-		d.handleListWorkflows(enc)
-
-	case protocol.TypeWorkflowStop:
+	case protocol.WorkflowStopReq:
 		if d.store == nil {
 			enc.Encode(protocol.NewErrorMsg("workflow stop not available")) //nolint:errcheck
 			return
 		}
-		if _, err := d.store.WorkflowCancel(msg.Text); err != nil {
+		if _, err := d.store.WorkflowCancel(r.ID); err != nil {
 			enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
 		} else {
 			enc.Encode(protocol.NewTextMsg(protocol.TypeWorkflowStop, "stopped")) //nolint:errcheck
 		}
 
-	case protocol.TypeWorkflowFail:
+	case protocol.WorkflowFailReq:
 		if d.store == nil {
 			enc.Encode(protocol.NewErrorMsg("workflow fail not available")) //nolint:errcheck
 			return
 		}
-		all := msg.Text == "--all"
-		id := ""
-		if !all {
-			id = msg.Text
-		}
-		if _, err := d.store.WorkflowFail(id, all); err != nil {
+		if _, err := d.store.WorkflowFail(r.ID, r.All); err != nil {
 			enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
 		} else {
 			enc.Encode(protocol.NewTextMsg(protocol.TypeWorkflowFail, "failed")) //nolint:errcheck
 		}
 
-	case protocol.TypeListTools:
-		d.handleListTools(enc)
+	case protocol.PluginCallReq:
+		d.handlePluginCall(ctx, enc, r.Tool, r.Args)
 
-	case protocol.TypePluginCall:
-		d.handlePluginCall(ctx, enc, msg.ToolName, msg.ToolInput)
+	case protocol.HumanAnswerReq:
+		d.handleHumanAnswer(enc, r)
 
-	case protocol.TypePluginsList:
-		d.handlePluginsList(enc)
-
-	case protocol.TypePluginsReload:
-		d.handlePluginsReload(enc)
-
-	case protocol.TypeToolsList:
-		d.handleToolsList(enc)
-
-	case protocol.TypeToolsReload:
-		d.handleToolsReload(enc)
-
-	case protocol.TypeHumanInputAnswer:
-		d.handleHumanAnswer(enc, msg)
-
-	default:
-		enc.Encode(protocol.NewErrorMsg("unknown message type: " + string(msg.Type))) //nolint:errcheck
+	// The field-less verbs. They share one request type, so the inner switch is
+	// on which verb rather than on which shape — there is only one shape.
+	case protocol.QueryReq:
+		switch r.Kind {
+		case protocol.TypeStatus:
+			d.handleStatus(enc)
+		case protocol.TypeListGoals:
+			d.handleListGoals(enc)
+		case protocol.TypeListWorkflows:
+			d.handleListWorkflows(enc)
+		case protocol.TypeListTools:
+			d.handleListTools(enc)
+		case protocol.TypePluginsList:
+			d.handlePluginsList(enc)
+		case protocol.TypePluginsReload:
+			d.handlePluginsReload(enc)
+		case protocol.TypeToolsList:
+			d.handleToolsList(enc)
+		case protocol.TypeToolsReload:
+			d.handleToolsReload(enc)
+		}
 	}
 }
 

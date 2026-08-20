@@ -27,6 +27,11 @@ implicitly, so `msg.Type == "typo"` still compiles, and a declared constant that
 added to the dispatch switch is not a compile error either. Those gaps are closed by
 test, not by the type — see R-PROTO.9.
 
+**The flat envelope is the wire, not the programming model.** R-PROTO.12 requires the
+daemon to decode it into a per-message struct before dispatching, so handlers program
+against a type carrying only their own fields. That is a source-level shape and changes
+nothing here: a decoded request marshals back to exactly this flat object.
+
 ```schema
 Msg {
   type              string   // discriminator; required
@@ -315,3 +320,31 @@ first. Requiring the field turns an arbitrary outcome into a clear error.
 
 A type with no requirements, and a type the dispatcher does not route, both pass — the
 latter is R-PROTO.9's to report, and one fault should not be reported in two voices.
+
+---
+
+## R-PROTO.12 — Requests decode to per-message types before dispatch
+
+A daemon **MUST NOT** dispatch on the envelope. It **MUST** first decode an inbound client
+message into a **per-message request type** carrying only the fields that message has, and
+route on that.
+
+The envelope is a union of every field any message might need — 29 in the reference — so
+dispatching on it means each handler reaches into a shared bag and knows *by convention*
+which fields its own message populates. That convention is unwritten, uncheckable, and the
+reason the reference's own contributor guide carries a five-place lockstep checklist for
+adding a message.
+
+Decoding **MUST** also validate (R-PROTO.11) and **MUST** reject an unroutable type, so a
+handler receives a request that is not merely typed but populated, and the router needs no
+"unknown" branch.
+
+This is a **source-level** requirement with **no wire effect**, exactly as R-PROTO.1's
+named discriminator is. A decoded request marshals back to the same flat object it came
+from, and an implementation in a language without sum types satisfies it with whatever it
+has — a tagged record, a class per message, a match on a variant. What is forbidden is
+handing every handler the union.
+
+Requests that carry no fields of their own (the status and list/reload verbs) **MAY** share
+a single type distinguished by the message name; there is only one shape between them, and
+a type apiece would be names differing in nothing.
