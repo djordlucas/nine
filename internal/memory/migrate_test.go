@@ -421,7 +421,7 @@ func TestMigrationDropGoalSubtreeIsSafeWhenAbsent(t *testing.T) {
 
 // The rename moves only the column; the stored JSON array and its object keys
 // are untouched, so an existing plan must load unchanged afterwards.
-func TestMigrationRenamesStagesToAspects(t *testing.T) {
+func TestMigrationRenamesStagesToRoutines(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nine.db")
 	const stored = `[{"name":"pursue","kind":"pursue","status":"active"}]`
 
@@ -448,8 +448,8 @@ func TestMigrationRenamesStagesToAspects(t *testing.T) {
 	if hasColumn(t, path, "session_plans", "stages") {
 		t.Error("the stages column survived the rename")
 	}
-	if !hasColumn(t, path, "session_plans", "aspects") {
-		t.Fatal("no aspects column after the rename")
+	if !hasColumn(t, path, "session_plans", "routines") {
+		t.Fatal("no routines column after the rename")
 	}
 
 	plan, err := store.SessionPlanGet("a1")
@@ -459,13 +459,13 @@ func TestMigrationRenamesStagesToAspects(t *testing.T) {
 	if plan == nil {
 		t.Fatal("plan vanished across the rename")
 	}
-	if len(plan.Aspects) != 1 || plan.Aspects[0].Kind != "pursue" || plan.Aspects[0].Status != "active" {
-		t.Errorf("aspects = %+v, want the stored pursue aspect unchanged", plan.Aspects)
+	if len(plan.Routines) != 1 || plan.Routines[0].Kind != "pursue" || plan.Routines[0].Status != "active" {
+		t.Errorf("routines = %+v, want the stored pursue routine unchanged", plan.Routines)
 	}
 }
 
 // A fresh database has the new name and never the old one.
-func TestFreshDatabaseUsesAspectsColumn(t *testing.T) {
+func TestFreshDatabaseUsesRoutinesColumn(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nine.db")
 	store, err := Open(path)
 	if err != nil {
@@ -476,7 +476,49 @@ func TestFreshDatabaseUsesAspectsColumn(t *testing.T) {
 	if hasColumn(t, path, "session_plans", "stages") {
 		t.Error("a fresh database created the old stages column")
 	}
-	if !hasColumn(t, path, "session_plans", "aspects") {
-		t.Error("a fresh database is missing the aspects column")
+	if !hasColumn(t, path, "session_plans", "routines") {
+		t.Error("a fresh database is missing the routines column")
+	}
+}
+
+// A database migrated by the intervening build sits at version 5 with an
+// `aspects` column. It must reach `routines` without passing through the
+// stages→aspects step, which no longer applies to it.
+func TestMigrationRenamesAspectsToRoutines(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nine.db")
+	const stored = `[{"name":"pursue","kind":"pursue","status":"active"}]`
+
+	func() {
+		w := openRaw(t, path)
+		mustExec(t, w, `CREATE TABLE conversations (id TEXT PRIMARY KEY)`)
+		mustExec(t, w, `CREATE TABLE session_plans (
+			id         TEXT PRIMARY KEY,
+			status     TEXT NOT NULL DEFAULT 'active',
+			aspects    TEXT NOT NULL DEFAULT '[]',
+			created_at TEXT NOT NULL DEFAULT '',
+			updated_at TEXT NOT NULL DEFAULT ''
+		)`)
+		mustExec(t, w, `INSERT INTO session_plans (id, status, aspects) VALUES ('a1','active','`+stored+`')`)
+		mustExec(t, w, `PRAGMA user_version = 5`)
+	}()
+
+	store, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer store.Close() //nolint:errcheck
+
+	if hasColumn(t, path, "session_plans", "aspects") {
+		t.Error("the aspects column survived")
+	}
+	if !hasColumn(t, path, "session_plans", "routines") {
+		t.Fatal("no routines column")
+	}
+	plan, err := store.SessionPlanGet("a1")
+	if err != nil || plan == nil {
+		t.Fatalf("SessionPlanGet = %v, %v", plan, err)
+	}
+	if len(plan.Routines) != 1 || plan.Routines[0].Kind != "pursue" {
+		t.Errorf("routines = %+v, want the stored pursue routine intact", plan.Routines)
 	}
 }

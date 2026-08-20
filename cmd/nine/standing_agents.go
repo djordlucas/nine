@@ -56,13 +56,13 @@ func reconcileStandingAgents(ctx context.Context, store *memory.Store, daemon *r
 			}
 		}
 
-		// Additional aspects, each with its own cadence. A bad aspect skips the
+		// Additional routines, each with its own cadence. A bad routine skips the
 		// whole agent rather than silently dropping one stage: an operator who
 		// asked for a reflecting monitor and got a plain monitor has no signal
 		// that half their config was ignored.
-		aspects, err := resolveAspects(a)
+		routines, err := resolveRoutines(a)
 		if err != nil {
-			slog.Warn("skipping [[agent]]: invalid aspect", "id", a.ID, "err", err)
+			slog.Warn("skipping [[agent]]: invalid routine", "id", a.ID, "err", err)
 			continue
 		}
 
@@ -83,7 +83,7 @@ func reconcileStandingAgents(ctx context.Context, store *memory.Store, daemon *r
 				slog.Warn("standing agent reconcile: goal create failed", "id", a.ID, "err", err)
 				continue
 			}
-			if _, err := daemon.SpawnStandingSession(ctx, a.ID, role, a.Delegates, interval, a.Schedule, aspects); err != nil {
+			if _, err := daemon.SpawnStandingSession(ctx, a.ID, role, a.Delegates, interval, a.Schedule, routines); err != nil {
 				slog.Warn("standing agent reconcile: spawn failed", "id", a.ID, "err", err)
 				continue
 			}
@@ -108,7 +108,7 @@ func reconcileStandingAgents(ctx context.Context, store *memory.Store, daemon *r
 		// The agent owns run-state: only an active goal is (re)spawned; a paused
 		// or finished agent keeps its status and is not resurrected (§4).
 		if goal.Status == "active" {
-			if _, err := daemon.SpawnStandingSession(ctx, a.ID, role, a.Delegates, interval, a.Schedule, aspects); err != nil {
+			if _, err := daemon.SpawnStandingSession(ctx, a.ID, role, a.Delegates, interval, a.Schedule, routines); err != nil {
 				slog.Warn("standing agent reconcile: spawn failed", "id", a.ID, "err", err)
 			}
 		} else {
@@ -180,32 +180,32 @@ func removedConfigGoals(goals []memory.Goal, desired map[string]bool) []memory.G
 	return out
 }
 
-// resolveAspects converts an agent's [[agent.aspect]] entries into StageAspects,
+// resolveRoutines converts an agent's [[agent.routine]] entries into StageRoutines,
 // parsing and validating each cadence. It returns the first error rather than
 // collecting them: the caller skips the agent either way, and one clear reason
 // beats a list.
-func resolveAspects(a config.AgentConfig) ([]runtime.AspectDecl, error) {
-	if len(a.Aspects) == 0 {
+func resolveRoutines(a config.AgentConfig) ([]runtime.RoutineDecl, error) {
+	if len(a.Routines) == 0 {
 		return nil, nil
 	}
-	out := make([]runtime.AspectDecl, 0, len(a.Aspects))
-	for _, asp := range a.Aspects {
-		sa := runtime.AspectDecl{Kind: asp.Kind, Schedule: asp.Schedule}
+	out := make([]runtime.RoutineDecl, 0, len(a.Routines))
+	for _, asp := range a.Routines {
+		sa := runtime.RoutineDecl{Kind: asp.Kind, Schedule: asp.Schedule}
 		if asp.Interval != "" {
 			d, err := time.ParseDuration(asp.Interval)
 			if err != nil || d <= 0 {
-				return nil, fmt.Errorf("aspect %q: invalid interval %q", asp.Kind, asp.Interval)
+				return nil, fmt.Errorf("routine %q: invalid interval %q", asp.Kind, asp.Interval)
 			}
 			sa.Interval = d
 		}
 		if asp.Schedule != "" {
 			if _, err := cron.Parse(asp.Schedule); err != nil {
-				return nil, fmt.Errorf("aspect %q: invalid cron schedule %q: %w", asp.Kind, asp.Schedule, err)
+				return nil, fmt.Errorf("routine %q: invalid cron schedule %q: %w", asp.Kind, asp.Schedule, err)
 			}
 		}
 		out = append(out, sa)
 	}
-	if err := runtime.ValidateAspectDecls(out); err != nil {
+	if err := runtime.ValidateRoutineDecls(out); err != nil {
 		return nil, err
 	}
 	return out, nil

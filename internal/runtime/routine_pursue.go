@@ -11,28 +11,28 @@ import (
 	"nine/internal/memory"
 )
 
-// pursueAspect implements the "pursue" AspectHandler (see
+// pursueRoutine implements the "pursue" RoutineHandler (see
 // docs/goal-sessions.md and docs/session-plans.md Pilot 2): each pursue
 // session is keyed 1:1 to a goal (agentID == goalID). OnIdle prompts the
 // session to assess and act on that goal; OnTurnEnd reads the goal back and
-// syncs this stage's Status from goals.status, so the idle scheduler stops
+// syncs this routine's Status from goals.status, so the idle scheduler stops
 // arming further turns once the goal is no longer active.
-type pursueAspect struct {
+type pursueRoutine struct {
 	store *memory.Store
 }
 
-// NewPursueAspect creates the "pursue" AspectHandler.
-func NewPursueAspect(store *memory.Store) AspectHandler {
-	return &pursueAspect{store: store}
+// NewPursueRoutine creates the "pursue" RoutineHandler.
+func NewPursueRoutine(store *memory.Store) RoutineHandler {
+	return &pursueRoutine{store: store}
 }
 
-func (s *pursueAspect) Init(context.Context, string, json.RawMessage) error { return nil }
+func (s *pursueRoutine) Init(context.Context, string, json.RawMessage) error { return nil }
 
-// OnTurnEnd syncs this stage's Status from goals.status (Pilot 4's mapping:
+// OnTurnEnd syncs this routine's Status from goals.status (Pilot 4's mapping:
 // active->active, paused->paused, done/archived->done). On ErrStall, it also
 // pauses the goal — a stalled pursue session frees its slot under
 // MaxGoalSessions (docs/goal-sessions.md "Resource bounds").
-func (s *pursueAspect) OnTurnEnd(_ context.Context, agentID string, _ string, err error) error {
+func (s *pursueRoutine) OnTurnEnd(_ context.Context, agentID string, _ string, err error) error {
 	if errors.Is(err, ErrStall) {
 		if uerr := s.store.GoalUpdateStatus(agentID, "paused"); uerr != nil {
 			return uerr
@@ -51,14 +51,14 @@ func (s *pursueAspect) OnTurnEnd(_ context.Context, agentID string, _ string, er
 // OnIdle prompts the session to assess and act on its goal, unless the goal
 // is missing or no longer active.
 //
-// When the goal is no longer active, OnIdle also syncs this stage's Status
+// When the goal is no longer active, OnIdle also syncs this routine's Status
 // before returning. Without this, a goal paused/finished/archived (e.g. via
 // goal_update_status) while the session sat idle would never reach OnTurnEnd —
-// which only fires after a turn — so the pursue aspect would linger in "active":
+// which only fires after a turn — so the pursue routine would linger in "active":
 // the idle scheduler would re-arm forever and the session would keep counting
 // against MaxGoalSessions. Syncing here retires the stage on the idle path too,
 // mirroring OnTurnEnd. A missing goal collapses to "done".
-func (s *pursueAspect) OnIdle(_ context.Context, agentID string) (string, bool) {
+func (s *pursueRoutine) OnIdle(_ context.Context, agentID string) (string, bool) {
 	goal, err := s.store.GoalGet(agentID)
 	if err != nil {
 		return "", false
@@ -69,14 +69,14 @@ func (s *pursueAspect) OnIdle(_ context.Context, agentID string) (string, bool) 
 			status = pursueStageStatus(goal.Status)
 		}
 		if serr := s.syncStatus(agentID, status); serr != nil {
-			slog.Warn("pursue aspect idle status sync failed", "agent_id", agentID, "err", serr)
+			slog.Warn("pursue routine idle status sync failed", "agent_id", agentID, "err", serr)
 		}
 		return "", false
 	}
 	return fmt.Sprintf(PursuePromptTemplate, agentID, goal.Description), true
 }
 
-// pursueStageStatus maps goals.status to this stage's SessionAspect.Status
+// pursueStageStatus maps goals.status to this routine's SessionRoutine.Status
 // (docs/session-plans.md Pilot 4, "Reconciling the three status enums"):
 // active->active, paused->paused, and both done and archived collapse to
 // done — the stage only needs a binary "more to do / no more to do"
@@ -94,7 +94,7 @@ func pursueStageStatus(goalStatus string) string {
 
 // syncStatus updates the "pursue" stage's Status in agentID's session_plans
 // row if it differs from status, and persists the change.
-func (s *pursueAspect) syncStatus(agentID, status string) error {
+func (s *pursueRoutine) syncStatus(agentID, status string) error {
 	plan, err := s.store.SessionPlanGet(agentID)
 	if err != nil {
 		return err
@@ -104,13 +104,13 @@ func (s *pursueAspect) syncStatus(agentID, status string) error {
 	}
 	changed := false
 	now := time.Now().UTC().Format(time.RFC3339)
-	for i := range plan.Aspects {
-		if plan.Aspects[i].Kind != "pursue" {
+	for i := range plan.Routines {
+		if plan.Routines[i].Kind != "pursue" {
 			continue
 		}
-		if plan.Aspects[i].Status != status {
-			plan.Aspects[i].Status = status
-			plan.Aspects[i].UpdatedAt = now
+		if plan.Routines[i].Status != status {
+			plan.Routines[i].Status = status
+			plan.Routines[i].UpdatedAt = now
 			changed = true
 		}
 	}

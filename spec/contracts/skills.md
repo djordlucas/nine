@@ -71,7 +71,7 @@ Seeding **MUST**:
 
 Validation covers name shape (`^[a-z0-9]+(-[a-z0-9]+)*$`), a required non-empty
 description, a non-empty body for non-role skills (a role body **MAY** be empty — that is
-the R-ROLE.3 daemon-prompt fallback), and known aspect kinds in a role `profile`. Tool
+the R-ROLE.3 daemon-prompt fallback), and known routine kinds in a role `profile`. Tool
 names in a role allowlist are **NOT** validated: core-intercepted tools are not registered
 with the plugin manager, so any name-based check would reject valid allowlists. An
 implementation **SHOULD** expose this validator as an offline command (`nine skills
