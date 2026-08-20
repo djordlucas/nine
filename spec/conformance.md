@@ -106,6 +106,7 @@ How to use this file:
 | R-PROTO.9 | Every client message type is dispatched | Each member of the documented client-sendable set reaches a handler; none falls to the dispatcher's `unknown message type` default. |
 | R-PROTO.10 | A reply echoes its request's type | Every reply-reading client method rejects a non-`error` reply of the wrong type instead of returning a zero value; a wrong-typed reply produces an error naming both types. |
 | R-PROTO.11 | Required fields checked on ingress | A client message missing a field its type requires is rejected before routing, with the type and missing field named; a type with no requirements passes. |
+| R-PROTO.12 | Requests decode to per-message types | The dispatcher routes on a decoded request type, not the envelope; no handler reads a field belonging to another message; decoding validates and rejects unroutable types, so the router has no unknown branch. |
 
 ---
 

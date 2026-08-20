@@ -24,7 +24,7 @@
 | ID | Finding | Impact | Effort |
 |---|---|---|---|
 | **F1** | ~~Token budgeting is a `chars/4` estimate and is never reconciled against actual usage — the provider never returns a count~~ **Landed** — `Response.Usage` (R-LLM.8) is journaled and joins the estimate on span; calibration awaits data | **High** | S |
-| **F2** | The wire protocol is a stringly-typed fat union: 29 optional `Msg` fields with validity in comments, dispatch on raw string literals | **High** | M | *(step 1 landed: typed `MsgType` + R-PROTO.9; steps 2–3 open)* |
+| **F2** | The wire protocol is a stringly-typed fat union: 29 optional `Msg` fields with validity in comments, dispatch on raw string literals | **High** | M | *(steps 1–2 landed; step 3 done for client→daemon — R-PROTO.9/11/12. Daemon→client events still on the union.)* |
 | **F3** | ~~Daemon assembly is duplicated between production and the eval harness; the refactor that removes it is still *Proposed*~~ **Finding was wrong** — `runtime.Assemble` shipped in `cea290d`, *before* this review's own scope commit; residue handled | **High** | M |
 | **F4** | ~~No schema migration path — `user_version = 1` plus one ad-hoc `ALTER`~~ **Landed** — versioned step runner, atomic per step (R-MEM.10); unblocks `C5`/`C6` | **High** | S |
 | **F5** | ~~`agent.Loop` carries 12 post-construction observer setters; a Loop is never fully valid until N unordered calls have happened~~ **Landed** as a per-turn `Hooks` struct — the premise (construction-time config) was wrong, the ceremony was real | Medium | M |
@@ -233,20 +233,36 @@ component that has a published contract and a compatibility story.
 3. Per-message payload structs behind a `Type` discriminator, with `Msg` reduced
    to an envelope. Largest change; retires most of the checklist.
 
-   **Blocked, and not by effort.** This contradicts a `MUST` in the contract this
-   review is reviewing. R-PROTO.1: *"Implementations **MUST** use one flat object
-   with a `type` discriminator and omit-empty fields, **not a tagged union per
-   direction**."* Per-message payload structs are exactly a tagged union.
+   **Landed for the client→daemon half as R-PROTO.12 — and the conflict I
+   predicted with R-PROTO.1 did not materialize.**
 
-   So step 3 cannot be implemented as a refactor. It requires amending R-PROTO.1
-   first, which is a normative decision and an owner's call — §10 already puts
-   "any proposal that would erode the embedded spec" out of scope regardless of
-   what it fixes.
+   I recorded earlier that this step contradicted R-PROTO.1's `MUST` ("one flat
+   object … **not a tagged union per direction**") and so needed a normative
+   decision first. That reading was too literal. R-PROTO.1 is a statement about
+   **the bytes**; the step's value is at **source level**. Typed request structs
+   that decode from, and marshal back to, the same flat object leave the wire
+   exactly as specified — so the requirement is untouched and nothing had to be
+   amended.
 
-   That the review proposed it without noticing belongs alongside the four
-   findings it already got wrong: the flat envelope is not an implementation
-   detail here, it is a requirement with a stated rationale, and proposing to
-   invert it should have meant arguing against that rationale.
+   That distinction also decided the design. There is no version negotiation on
+   this protocol, so a nested payload would strand any client built against an
+   older daemon and buy nothing the typed structs do not already give. The wire
+   stays flat because breaking it has a cost and no benefit, not because a rule
+   forbids it.
+
+   **What changed:** `DecodeRequest` turns the union into one of twelve request
+   types, and `Daemon.dispatch` is now a type switch over those. The dispatch
+   body reads **zero** fields off the envelope — verified, not asserted. Decoding
+   also validates (R-PROTO.11) and rejects an unroutable type, so a handler gets
+   a request that is populated rather than merely typed, and the router needs no
+   "unknown" branch. The eight field-less verbs share one `QueryReq`, since a
+   type apiece would be eight names differing in nothing.
+
+   **Still on the union:** the daemon→client events. They are the other ~23 types,
+   they have no dispatch switch to make exhaustive, and the recursive
+   `History []Msg` / `ReplayEvents []Msg` fields are where the real difficulty
+   sits — a heterogeneous slice needs an interface and custom marshalling to keep
+   the wire byte-identical. Worth doing, and a separate change.
 
 Even (1) is worth doing immediately and independently.
 
@@ -816,7 +832,7 @@ Ordered by leverage-per-unit-risk, not by severity alone.
 | 5 | ~~**F9** — decide local-first, then document or add a provider~~ **done** — decided: local-first *and* multi-backend (G8/N5) | A decision, not a build. Blocks nothing, unblocks F1's shape. |
 | 6 | ~~**F6** — protocol and client tests~~ **done** | Follows F2 naturally; typed messages make the tests worth writing. (They did: four real bugs across `protocol`, `cli` and `tui` — two silent failures, now R-PROTO.10, and two panics.) |
 | 7 | ~~**F10**, **F12**~~ **both done** | Small hygiene; fold into whatever branch is nearby. (Neither was hygiene: F12 hid a startup-diagnostic defect, R-PLUG.14, and F10 could tell the model it was on the host while confined.) |
-| 8 | **F2 (step 3)** and **F7** remain — **both gated on a normative decision**, not on effort; ~~**F2 step 2**~~ **done**, ~~**F11**~~ **decided — no move** | F2 step 3 contradicts R-PROTO.1's `MUST`; F7 amends R-PLUG.13 and R-TVM.2. Each needs a requirement moved before any code is written. |
+| 8 | **F7** remains; ~~**F2 step 2**~~ **done**, **F2 step 3** **done for client→daemon** (R-PROTO.12; events still on the union), ~~**F11**~~ **decided — no move** | F7 amends R-PLUG.13 and R-TVM.2, so it still needs a requirement moved first. F2 step 3 turned out *not* to need one — R-PROTO.1 constrains the wire, and the typed requests are source-level. |
 | 9 | ~~**F8** — the seven changes in [`concept-consolidation.md`](concept-consolidation.md)~~ **done** | All seven landed; six needed correction on contact with the code. The `stage`→`aspect` rename is still deferred and is now the one open item in that note. |
 
 **Everything above except F2 steps 2–3 and F7 is closed.** What the sequence
