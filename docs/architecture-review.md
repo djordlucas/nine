@@ -34,6 +34,7 @@
 | **F9** | ~~One provider behind a generalized `Provider` + `ThinkingAware` abstraction — decide whether local-first is a goal or a stopgap~~ **Decided** — local-first is a commitment **and** multi-backend; the abstraction stays (G8/N5) | Medium | S |
 | **F10** | ~~`internal/selfmodel`: 84 LOC, zero tests, `/.dockerenv` probe, swallowed query error~~ **Landed** — all four addressed; 0% → 78.6% coverage | Low | S |
 | **F11** | ~~`docs/` + `spec/` is 57% of production code size; implemented design notes are maintained rather than frozen~~ **Decided: no move.** The premise is not supported — the notes are already frozen in practice; the churn is in the *tracking* notes, this one included | Low | M |
+| **F13** | `spec/conformance.md` claims to map *every* contract requirement to a check, but 33 of 163 have no row — including all 15 of `toolvm` and all 10 of `agent-policy` | **High** | M |
 | **F12** | ~~The `TestRegisterPlugin` flake is documented as inherent; a socket-timing flake usually means a missing readiness handshake~~ **Investigated and fixed** — the handshake existed; the real defect was that it could not tell a dead plugin from a slow one (R-PLUG.14) | Low | S |
 
 **F1–F4 are the seams. None of them is in the concepts — they are in wire types,
@@ -456,6 +457,46 @@ audit trail.
 the binary needs a **third**, with its own default-grant story, and
 `web_search` / `web_page_read` need HTML parsing bundled at build time. This is
 real work, not a refactor. It is listed Medium/L for that reason.
+
+---
+
+### F13 — The conformance checklist is 20% incomplete, and says otherwise · **High** · M
+
+`spec/conformance.md` opens by claiming it maps "**every** numbered requirement
+from the `contracts/` … An implementation *is Nine* when it passes every row
+below."
+
+Measured: **130 rows against 163 requirements.** The 33 without one are not
+scattered — two entire contracts are absent:
+
+| Contract | Missing |
+|---|---|
+| `toolvm` | **all 15** (R-TVM.1–15) |
+| `agent-policy` | **all 10** (R-POLICY.1–10) |
+| `plugin` | 5 (R-PLUG.8–12) |
+| `subscriptions` | 2 (R-SUB.6–7) |
+| `event-journal` | 1 (R-EVT.5) |
+
+So an implementation could pass every row and have **no sandboxed-tool host at
+all** — no wasm, no capability grants, no two-way `resolveGrant` check. §3.1 of
+this review calls the embedded spec-as-contract the mechanism that produces the
+repo's zero-TODO count; §3.4 calls the two-way capability check the thing "nearly
+everyone" gets wrong. Neither is reachable from the checklist that claims to
+define conformance.
+
+This is worse than an ordinary documentation gap because of what the file asserts
+about itself. A reader cannot tell a requirement that is deliberately unchecked
+from one that was forgotten, and the header tells them there are none of either.
+
+**Proposal.** Add the 33 rows. `plugin`, `subscriptions` and `event-journal` are
+mechanical. `toolvm` and `agent-policy` are not: they are the security-relevant
+contracts, and a vague row there is worse than an absent one — it converts "not
+checked" into "checked badly" without anyone noticing. Those two deserve what the
+rest of this review got: reading the code and writing the check against what it
+actually does.
+
+Found while filling a smaller gap (R-MEM.8/9, noticed during F4), which is its
+own small lesson about how these accumulate.
 
 ---
 
