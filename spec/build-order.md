@@ -236,7 +236,7 @@ autonomous turn to run ~1s after the last turn, going through the full turn pipe
   idle interval **2 min**, whose `OnIdle` asks the model to update `self/capabilities`
   and `self/learned`. The turn itself is recorded by the journal, like any other.
 
-**Wire.** Register the stage; `BootstrapSelfReflection` creates the session once;
+**Wire.** Register the stage; `ReconcileSelfReflection` creates the session once;
 `ResumeSessions` (Phase 17) restarts it on every boot.
 
 **Gate.** With the reflection interval shortened, the session fires a reflection turn
@@ -397,7 +397,7 @@ restores background autonomy.
 plugin manager + default plugins. 4. Build checkpoint/notification stores. 5. Build the
 embedder. 6. Build the supervisor and `Attach(store)` (durable bus). 7. Build the
 self-model assembler. 8. `BootstrapSelfKV`. 9. Register `idle-reflection` +
-`BootstrapSelfReflection(2m)`. 10. Register `pursue`. 11. Startup scrubs: `WorkflowScrub`
+`ReconcileSelfReflection(2m)`. 10. Register `pursue`. 11. Startup scrubs: `WorkflowScrub`
 + `SessionEventsScrub(retention)`. 12. Build HITL (`NewHITL` + `ExpireStale`). 13. Build
 the agent builder (loop factory) with task timeout + `RelatedSessions`. 14. Construct the
 daemon. 15. Build the `EventSink` and `SetEventSink`. 16. Configure it (HITL, store,

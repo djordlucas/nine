@@ -233,6 +233,39 @@ func (cfg *Config) BuildProvider() llm.Provider {
 	return llmollama.New(model, endpoint, cfg.LLM.NumCtx, cfg.LLM.ThinkingEnabled(), cfg.LLM.TimeoutSeconds)
 }
 
+// DefaultSelfReflectionInterval is the cadence of the dedicated self-reflection
+// session when [daemon].self_reflection is unset.
+const DefaultSelfReflectionInterval = 2 * time.Minute
+
+// SelfReflectionInterval returns the self-reflection cadence, or 0 when the
+// operator has turned it off.
+//
+// Unset means enabled at the default — reflection is how Nine maintains its own
+// self-model (G3), so it ships on. "off", "none", "0" and any non-positive
+// duration all mean removed; an unparseable value is reported and treated as the
+// default rather than silently disabling a background behavior on a typo.
+func (cfg *Config) SelfReflectionInterval() time.Duration {
+	v := strings.TrimSpace(cfg.Daemon.SelfReflection)
+	if v == "" {
+		return DefaultSelfReflectionInterval
+	}
+	switch strings.ToLower(v) {
+	case "off", "none", "false", "0":
+		return 0
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		// operator-controlled value, not an untrusted source
+		slog.Warn("invalid [daemon].self_reflection; using the default", //nolint:gosec
+			"value", v, "default", DefaultSelfReflectionInterval)
+		return DefaultSelfReflectionInterval
+	}
+	if d <= 0 {
+		return 0
+	}
+	return d
+}
+
 // HITLTimeout returns the ask_human wait duration, defaulting to 5 minutes.
 func (cfg *Config) HITLTimeout() time.Duration {
 	if cfg.HITL.TimeoutSeconds > 0 {

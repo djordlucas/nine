@@ -22,7 +22,7 @@
 | **C1** | ~~`handleIdle` picks the **longest-overdue** stage, not the first in array order~~ **done** | A real bug: a short-interval stage listed first starves a long-interval one | no |
 | **C2** | ~~**Exactly one stage** may carry `role` / `delegates` / goal-ownership, validated at load~~ **done** | Three functions resolve these by first-match, so with two stages behavior depends on JSON array order | no |
 | **C3** | ~~Add a **two-stage profile**; let `[[agent]]` declare a stage list~~ **done** (`[[agent.aspect]]`) | `loadOrCreatePlan` already supports N stages and nothing passes more than one — the capability has no caller | no |
-| **C4** | Make **`reflect` an aspect any session can carry** | Reflection is special-cased as a session *kind* in three places; as an aspect, any pursue session or standing agent can reflect on its own progress | no |
+| **C4** | ~~Make **`reflect` an aspect any session can carry**~~ **done** | Reflection is special-cased as a session *kind* in three places; as an aspect, any pursue session or standing agent can reflect on its own progress | no |
 | **C5** | ~~Delete the **`reflections` table**; `nine reflections` → `nine log <agent>`~~ **done** (kept the verb, repointed at the journal) | No `agent_id` column, so it breaks under `C4`; its content is already in the journal; the durable output of a reflection turn is a KV write | **yes** |
 | **C6** | Delete **`goal.subtree`** and **`goal_append_subtree`** | `parent_id` is the authoritative edge; `subtree` is a free-text copy nothing reads, which the prompt asks the model to maintain by hand | **yes** |
 | **C7** | ~~Move **`workflow`** beside the sub-agent in `spec/overview.md`~~ **done** | §3.2 presents goal and workflow as siblings; they are not, and that false parallelism is why they read as duplicates | no (docs) |
@@ -157,6 +157,26 @@ second aspect to reflect on its own recent activity on its own cadence.
 profile covers it) and the `idle-reflection` branch in `roleNameForPlan` — the role
 now resolves through `C2`'s precedence rule like any other stage.
 **Keeps:** `stage_idle_reflection.go`, now reusable rather than single-purpose.
+
+**Done in two parts.** The `roleNameForPlan` branch and the role-as-data change
+landed with `C3`, which could not ship without them. This is the boot-path half.
+
+`BootstrapSelfReflection` is replaced by `ReconcileSelfReflection`, not by
+`reconcileStandingAgents`. Routing it through the standing-agent path would have
+required reflection to be a **goal** — standing agents are goals — and a session
+that reflects on itself is not an intention anyone holds. It would also have
+collided with `C2`'s one-pursue-stage rule.
+
+**Open question 3 is answered: an operator may remove reflection.**
+`[daemon].self_reflection` takes a cadence or `"off"`, defaulting to on, since
+reflection is how the self-model is maintained (G3).
+
+The part worth care is that removal had to be **subtractive**. A plan row outlives
+the boot that created it, so a bootstrap that merely stopped creating one would
+leave every machine that had ever run reflection still running it, and the setting
+would appear to do nothing. Turning it off now deactivates an existing session —
+plan and stages out of `active`, so `planNeedsResume` is false thereafter. The row
+is kept rather than deleted, so `nine reflections` still reads its history.
 
 ### C5 — Delete `reflections`; derive the view from the journal
 
@@ -295,6 +315,9 @@ Recorded so these do not get re-proposed.
   scheduler underneath genuinely handles plurality (`C3`'s table). Multi-stage
   sessions were adopted as a direction, so the work is to finish the capability —
   `C1`–`C3` — not remove it.
+- **Requiring reflection to stay enabled.** Open question 3 resolved the other
+  way: an operator may remove it. The obligation that came with that answer is
+  that removal must be subtractive, or the setting is decorative.
 - **A scrub exemption preserving reflection history permanently.** Unnecessary. The
   self-model lives in `self/*` KV, which nothing prunes; only transcripts become
   bounded (`C5`, *Retention*).
