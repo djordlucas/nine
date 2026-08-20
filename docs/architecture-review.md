@@ -233,6 +233,21 @@ component that has a published contract and a compatibility story.
 3. Per-message payload structs behind a `Type` discriminator, with `Msg` reduced
    to an envelope. Largest change; retires most of the checklist.
 
+   **Blocked, and not by effort.** This contradicts a `MUST` in the contract this
+   review is reviewing. R-PROTO.1: *"Implementations **MUST** use one flat object
+   with a `type` discriminator and omit-empty fields, **not a tagged union per
+   direction**."* Per-message payload structs are exactly a tagged union.
+
+   So step 3 cannot be implemented as a refactor. It requires amending R-PROTO.1
+   first, which is a normative decision and an owner's call — §10 already puts
+   "any proposal that would erode the embedded spec" out of scope regardless of
+   what it fixes.
+
+   That the review proposed it without noticing belongs alongside the four
+   findings it already got wrong: the flat envelope is not an implementation
+   detail here, it is a requirement with a stated rationale, and proposing to
+   invert it should have meant arguing against that rationale.
+
 Even (1) is worth doing immediately and independently.
 
 ### F3 — Assembly is duplicated; the fix is written but not landed · **High** · M
@@ -457,6 +472,21 @@ audit trail.
 the binary needs a **third**, with its own default-grant story, and
 `web_search` / `web_page_read` need HTML parsing bundled at build time. This is
 real work, not a refactor. It is listed Medium/L for that reason.
+
+**It also moves two normative requirements**, which the cost note does not
+mention:
+
+- **R-PLUG.13** states that `files`, `shell`, `http` and `time` ship inside the
+  `nine` binary and start as `nine plugin serve <name>`. Migrating three of those
+  four out of the plugin transport changes what that requirement says.
+- **R-TVM.2** is titled *"Two kinds, one contract"*. A shipped-in-binary tier
+  makes it three, and "nothing is compiled at install time" needs re-reading
+  against a tier compiled at *build* time.
+
+Neither blocks the work — both would simply be amended as part of it — but it
+makes F7 a **spec change with an implementation**, not an implementation that
+happens to touch docs. That is the same class of decision as F9 and F11, and
+belongs to the owner rather than to whoever picks up the work.
 
 ---
 
@@ -786,7 +816,7 @@ Ordered by leverage-per-unit-risk, not by severity alone.
 | 5 | ~~**F9** — decide local-first, then document or add a provider~~ **done** — decided: local-first *and* multi-backend (G8/N5) | A decision, not a build. Blocks nothing, unblocks F1's shape. |
 | 6 | ~~**F6** — protocol and client tests~~ **done** | Follows F2 naturally; typed messages make the tests worth writing. (They did: four real bugs across `protocol`, `cli` and `tui` — two silent failures, now R-PROTO.10, and two panics.) |
 | 7 | ~~**F10**, **F12**~~ **both done** | Small hygiene; fold into whatever branch is nearby. (Neither was hygiene: F12 hid a startup-diagnostic defect, R-PLUG.14, and F10 could tell the model it was on the host while confined.) |
-| 8 | **F2 (steps 2–3)** and **F7** remain; ~~**F11**~~ **decided — no move** | Larger, independent, and none is urgent. |
+| 8 | **F2 (step 3)** and **F7** remain — **both gated on a normative decision**, not on effort; ~~**F2 step 2**~~ **done**, ~~**F11**~~ **decided — no move** | F2 step 3 contradicts R-PROTO.1's `MUST`; F7 amends R-PLUG.13 and R-TVM.2. Each needs a requirement moved before any code is written. |
 | 9 | ~~**F8** — the seven changes in [`concept-consolidation.md`](concept-consolidation.md)~~ **done** | All seven landed; six needed correction on contact with the code. The `stage`→`aspect` rename is still deferred and is now the one open item in that note. |
 
 **Everything above except F2 steps 2–3 and F7 is closed.** What the sequence
