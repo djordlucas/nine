@@ -184,13 +184,13 @@ func removedConfigGoals(goals []memory.Goal, desired map[string]bool) []memory.G
 // parsing and validating each cadence. It returns the first error rather than
 // collecting them: the caller skips the agent either way, and one clear reason
 // beats a list.
-func resolveAspects(a config.AgentConfig) ([]runtime.StageAspect, error) {
+func resolveAspects(a config.AgentConfig) ([]runtime.AspectDecl, error) {
 	if len(a.Aspects) == 0 {
 		return nil, nil
 	}
-	out := make([]runtime.StageAspect, 0, len(a.Aspects))
+	out := make([]runtime.AspectDecl, 0, len(a.Aspects))
 	for _, asp := range a.Aspects {
-		sa := runtime.StageAspect{Kind: asp.Kind, Schedule: asp.Schedule}
+		sa := runtime.AspectDecl{Kind: asp.Kind, Schedule: asp.Schedule}
 		if asp.Interval != "" {
 			d, err := time.ParseDuration(asp.Interval)
 			if err != nil || d <= 0 {
@@ -205,7 +205,7 @@ func resolveAspects(a config.AgentConfig) ([]runtime.StageAspect, error) {
 		}
 		out = append(out, sa)
 	}
-	if err := runtime.ValidateAspects(out); err != nil {
+	if err := runtime.ValidateAspectDecls(out); err != nil {
 		return nil, err
 	}
 	return out, nil

@@ -365,7 +365,7 @@ type AgentConfig struct {
 	// several stages per session; until this existed nothing could ask for more
 	// than one (docs/session-plans.md).
 	//
-	// The pursue shell stays the session's role-bearing stage, so an aspect
+	// The pursue shell stays the session's role-bearing aspect, so an aspect
 	// never sets a role — a session has exactly one, and two claimants would
 	// make it depend on ordering.
 	Aspects []AgentAspect `toml:"aspect"`
@@ -374,7 +374,7 @@ type AgentConfig struct {
 // AgentAspect is one additional stage on a standing agent's session, declared
 // as a [[agent.aspect]] table.
 type AgentAspect struct {
-	Kind     string `toml:"kind"`     // registered stage kind (e.g. "idle-reflection")
+	Kind     string `toml:"kind"`     // registered aspect kind (e.g. "idle-reflection")
 	Interval string `toml:"interval"` // wake cadence (Go duration) — XOR Schedule
 	Schedule string `toml:"schedule"` // cron expression — XOR Interval
 }

@@ -59,7 +59,7 @@ The daemon reaches Postgres by compose service name (`postgres:5432`) via
 attached with `docker exec -it <nine|nine-dev> nine`. Named volumes hold
 mutable state only: `nine-pgdata`, `nine-data` / `nine-dev-data`, `nine-pgadmin`.
 
-The `Dockerfile` is already multi-stage with `go-build`, `node-build`, `dev`,
+The `Dockerfile` is already multi-aspect with `go-build`, `node-build`, `dev`,
 and `runtime` targets — a good foundation to extend rather than rewrite.
 
 ### What already makes this easy
@@ -148,7 +148,7 @@ replacing compose's health-gated `depends_on`. Both are gone.)*
 
 ## 6. Image layout (Dockerfile plan)
 
-Extend the existing multi-stage file.
+Extend the existing multi-aspect file.
 
 - **Base choice:** `debian:bookworm-slim`. Node.js and Chromium (browser plugin)
   install cleanly from Debian repos, and the `nine` binary is pure Go — the

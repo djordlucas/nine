@@ -10,13 +10,13 @@ import (
 // roleNameForPlan maps session-plan profiles to roles (docs/roles.md §6).
 func TestRoleNameForPlan(t *testing.T) {
 	planWith := func(kinds ...string) *sessionPlanState {
-		stages := make([]memory.SessionStage, len(kinds))
+		stages := make([]memory.SessionAspect, len(kinds))
 		for i, k := range kinds {
-			stages[i] = memory.SessionStage{Name: k, Kind: k, Status: "active"}
+			stages[i] = memory.SessionAspect{Name: k, Kind: k, Status: "active"}
 		}
-		return &sessionPlanState{plan: &memory.SessionPlan{ID: "x", Stages: stages}}
+		return &sessionPlanState{plan: &memory.SessionPlan{ID: "x", Aspects: stages}}
 	}
-	// standingPlan is a pursue stage whose config carries an explicit work role
+	// standingPlan is a pursue aspect whose config carries an explicit work role
 	// (as SpawnStandingSession seeds for a pre-defined agent).
 	standingPlan := func(role string) *sessionPlanState {
 		plan, err := newStandingPursuePlan("sec-watch", role, false, PursueIdleInterval, "", nil)
@@ -43,12 +43,12 @@ func TestRoleNameForPlan(t *testing.T) {
 	}{
 		{"nil plan", nil, OrchestratorRole},
 		{"active conversation", planWith("active"), OrchestratorRole},
-		// A bare idle-reflection stage no longer implies the reflection role:
+		// A bare idle-reflection aspect no longer implies the reflection role:
 		// the role is data now, so a stage that declares none gets the default.
 		// The dedicated reflection session declares it (BootstrapSelfReflection),
 		// which is what keeps it running as the reflection role while the same
 		// kind can ride role-free beside a pursue shell.
-		{"bare reflection stage, no declared role", planWith("idle-reflection"), OrchestratorRole},
+		{"bare reflection aspect, no declared role", planWith("idle-reflection"), OrchestratorRole},
 		{"reflection session as bootstrapped", reflectionPlan(), ReflectionRole},
 		{"pursue session", planWith("pursue"), PursueRole},
 		{"mixed active+pursue", planWith("active", "pursue"), PursueRole},
