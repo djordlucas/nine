@@ -132,14 +132,15 @@ func runDaemon() {
 		slog.Error("bootstrap self KV", "err", err)
 	}
 
-	// Register the idle-reflection stage handler and ensure the dedicated
-	// self-reflection session's plan exists (one-time; subsequent boots pick
-	// it up via daemon.ResumeSessions).
+	// Register the idle-reflection stage handler, then reconcile the dedicated
+	// self-reflection session against config — creating it, or deactivating it
+	// when the operator has turned reflection off. Later boots pick a live one up
+	// via daemon.ResumeSessions.
 	runtime.StageRegistry["idle-reflection"] = func() runtime.StageHandler {
 		return runtime.NewIdleReflectionStage()
 	}
-	if err := runtime.BootstrapSelfReflection(store, 2*time.Minute); err != nil {
-		slog.Error("bootstrap self-reflection session", "err", err)
+	if err := runtime.ReconcileSelfReflection(store, cfg.SelfReflectionInterval()); err != nil {
+		slog.Error("reconcile self-reflection session", "err", err)
 	}
 
 	// Scrub old workflows on startup, to prevent unbounded growth of the workflow store.

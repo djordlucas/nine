@@ -140,7 +140,7 @@ alongside.
 
 A single, fixed session with agent ID `self-reflection`
 (`SelfReflectionAgentID`) runs the `idle-reflection` stage. It's created once by
-`BootstrapSelfReflection` on first daemon start, with `idle_interval_seconds` set to
+`ReconcileSelfReflection` on first daemon start, with `idle_interval_seconds` set to
 2 minutes, and resumed on every subsequent restart via `ResumeSessions`.
 
 - **`OnIdle`** always has work: it returns `ReflectionPrompt`, which asks the model to
@@ -208,6 +208,6 @@ Each pursue session's idle interval (`PursueIdleInterval`) is 5 minutes.
 | `internal/runtime/stage_idle_reflection.go` | `idle-reflection` stage |
 | `internal/runtime/stage_pursue.go` | `pursue` stage |
 | `internal/runtime/goal_session.go` | `SpawnGoalSession`, `MaxGoalSessions` cap |
-| `internal/runtime/bootstrap.go` | `BootstrapSelfKV`, `BootstrapSelfReflection` |
+| `internal/runtime/bootstrap.go` | `BootstrapSelfKV`, `ReconcileSelfReflection` |
 | `internal/memory/session_plans.go` | `session_plans` table accessors |
 | `internal/selfmodel/assembler.go` | Builds the `SystemSelf` context block from `self/*` KV keys |
