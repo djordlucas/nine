@@ -98,7 +98,7 @@ func TestFormatTraceTreeNestsSubAgents(t *testing.T) {
 
 	for _, want := range []string{
 		"session parent-1 — 4 events across 1 turn(s)",
-		"    └─ sub-agent child-1 — 4 events across 1 turn(s)",       // one level in
+		"    └─ sub-agent child-1 — 4 events across 1 turn(s)",          // one level in
 		"        └─ sub-agent grandchild-1 — 6 events across 1 turn(s)", // two levels in
 		`user: "what is it?"`, // a grandchild event, proving full-depth recursion
 	} {

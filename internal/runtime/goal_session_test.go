@@ -11,13 +11,13 @@ import (
 	"nine/internal/runtime"
 )
 
-// registerPursueStage registers the real "pursue" StageHandler factory for
+// registerPursueStage registers the real "pursue" AspectHandler factory for
 // the duration of the test, mirroring cmd/nine/daemon.go's wiring. Required
 // for SpawnGoalSession's plan to load successfully.
 func registerPursueStage(t *testing.T, store *memory.Store) {
 	t.Helper()
-	runtime.StageRegistry["pursue"] = func() runtime.StageHandler { return runtime.NewPursueStage(store) }
-	t.Cleanup(func() { delete(runtime.StageRegistry, "pursue") })
+	runtime.AspectRegistry["pursue"] = func() runtime.AspectHandler { return runtime.NewPursueAspect(store) }
+	t.Cleanup(func() { delete(runtime.AspectRegistry, "pursue") })
 }
 
 func TestSpawnGoalSessionRequiresPlanStore(t *testing.T) {
@@ -52,8 +52,8 @@ func TestSpawnGoalSessionCreatesAndIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan == nil || len(plan.Stages) != 1 || plan.Stages[0].Kind != "pursue" || plan.Stages[0].Status != "active" {
-		t.Fatalf("SessionPlanGet(goal-1) = %+v, want one active pursue stage", plan)
+	if plan == nil || len(plan.Aspects) != 1 || plan.Aspects[0].Kind != "pursue" || plan.Aspects[0].Status != "active" {
+		t.Fatalf("SessionPlanGet(goal-1) = %+v, want one active pursue aspect", plan)
 	}
 	if got := d.ActiveGoalSessionCountForTest(); got != 1 {
 		t.Errorf("ActiveGoalSessionCount = %d, want 1", got)
@@ -95,16 +95,16 @@ func TestSpawnStandingSessionSeedsRoleAndInterval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan == nil || len(plan.Stages) != 1 || plan.Stages[0].Kind != "pursue" {
-		t.Fatalf("SessionPlanGet(sec-watch) = %+v, want one pursue stage", plan)
+	if plan == nil || len(plan.Aspects) != 1 || plan.Aspects[0].Kind != "pursue" {
+		t.Fatalf("SessionPlanGet(sec-watch) = %+v, want one pursue aspect", plan)
 	}
-	// The seeded stage config carries the work role and the configured interval.
+	// The seeded aspect config carries the work role and the configured interval.
 	var cfg struct {
 		IdleIntervalSeconds int    `json:"idle_interval_seconds"`
 		Role                string `json:"role"`
 	}
-	if err := json.Unmarshal(plan.Stages[0].Config, &cfg); err != nil {
-		t.Fatalf("unmarshal stage config: %v", err)
+	if err := json.Unmarshal(plan.Aspects[0].Config, &cfg); err != nil {
+		t.Fatalf("unmarshal aspect config: %v", err)
 	}
 	if cfg.Role != "monitor" {
 		t.Errorf("stage role = %q, want %q", cfg.Role, "monitor")

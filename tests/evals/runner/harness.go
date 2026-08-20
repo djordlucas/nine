@@ -30,7 +30,7 @@ import (
 //
 // A Harness is reusable and stateless across runs; each Run allocates and tears
 // down its own store, workspace, plugins, and daemon. Runs are not safe to
-// execute concurrently on one process because the pursue stage handler is a
+// execute concurrently on one process because the pursue aspect handler is a
 // package global (see Run); the runner executes them sequentially.
 type Harness struct {
 	// NineBin is the path to a built nine binary. Its built-in plugins
@@ -163,7 +163,7 @@ func (h *Harness) Run(ctx context.Context, c *Case, provider llm.Provider) (res 
 	//    the production-only bootstrap (resume, standing agents, self-reflection,
 	//    subscribers). The store, plugins, provider queue, and per-case knobs are
 	//    injected; the runner serializes runs because Assemble registers the
-	//    pursue stage handler over this run's store (a package global).
+	//    pursue aspect handler over this run's store (a package global).
 	budget := h.ContextBudget
 	if budget == 0 {
 		budget = 100_000
