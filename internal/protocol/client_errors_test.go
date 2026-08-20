@@ -75,7 +75,6 @@ func TestClientRejectsWrongReplyType(t *testing.T) {
 		{"Status", func(c *protocol.Client) error { _, err := c.Status(); return err }},
 		{"Context", func(c *protocol.Client) error { _, err := c.Context("a1"); return err }},
 		{"ListGoals", func(c *protocol.Client) error { _, err := c.ListGoals(); return err }},
-		{"ListReflections", func(c *protocol.Client) error { _, err := c.ListReflections(); return err }},
 		{"ListWorkflows", func(c *protocol.Client) error { _, err := c.ListWorkflows(); return err }},
 		{"ListNotifications", func(c *protocol.Client) error { _, err := c.ListNotifications(false); return err }},
 		{"ListTools", func(c *protocol.Client) error { _, err := c.ListTools(); return err }},

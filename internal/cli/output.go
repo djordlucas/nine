@@ -6,9 +6,12 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 
 	ninectx "nine/internal/context"
 	"nine/internal/protocol"
+
+	"nine/internal/memory"
 )
 
 func printGoals(w io.Writer, raw string) {
@@ -60,24 +63,34 @@ func printNotifications(w io.Writer, raw string) {
 	}
 }
 
-func printReflections(w io.Writer, raw string) {
-	var result struct {
-		Reflections []struct {
-			ID      string `json:"id"`
-			RanAt   string `json:"ran_at"`
-			Summary string `json:"summary"`
-		} `json:"reflections"`
+// printReflections renders a session's reflection turns from its journal.
+//
+// A reflection is a turn like any other, so the record is `turn_end` and its
+// result is the reflection's text. Turns that produced nothing, or ended in an
+// error, are skipped — those were never recorded under the old table either.
+func printReflections(w io.Writer, agentID string, events []memory.SessionEvent) {
+	type turnEnd struct {
+		Result string `json:"result"`
+		Error  string `json:"error"`
 	}
-	if err := json.Unmarshal([]byte(raw), &result); err != nil || len(result.Reflections) == 0 {
-		fmt.Fprintln(w, "no reflections")
-		return
-	}
-	for i, r := range result.Reflections {
-		if i > 0 {
+	shown := 0
+	for _, e := range events {
+		if e.Type != "turn_end" {
+			continue
+		}
+		var p turnEnd
+		if err := json.Unmarshal(e.Payload, &p); err != nil || p.Error != "" || p.Result == "" {
+			continue
+		}
+		if shown > 0 {
 			fmt.Fprintln(w)
 		}
-		fmt.Fprintf(w, "[%s]\n", r.RanAt)
-		fmt.Fprintln(w, r.Summary)
+		fmt.Fprintf(w, "[%s]\n", e.TS.Format(time.RFC3339))
+		fmt.Fprintln(w, p.Result)
+		shown++
+	}
+	if shown == 0 {
+		fmt.Fprintf(w, "no reflections for %s\n", agentID)
 	}
 }
 

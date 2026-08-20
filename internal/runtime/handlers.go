@@ -96,21 +96,6 @@ func (d *Daemon) handleListGoals(enc *json.Encoder) {
 	enc.Encode(protocol.NewTextMsg(protocol.TypeListGoals, string(data))) //nolint:errcheck
 }
 
-// handleListReflections returns a JSON-encoded reflection list.
-func (d *Daemon) handleListReflections(enc *json.Encoder) {
-	if d.store == nil {
-		enc.Encode(protocol.NewTextMsg(protocol.TypeListReflections, `[]`)) //nolint:errcheck
-		return
-	}
-	refs, err := d.store.ReflectionList()
-	if err != nil {
-		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
-		return
-	}
-	data, _ := json.Marshal(map[string]any{"reflections": refs})
-	enc.Encode(protocol.NewTextMsg(protocol.TypeListReflections, string(data))) //nolint:errcheck
-}
-
 // handleListNotifications returns the human-facing notification feed as JSON.
 // By default it returns unseen entries and marks them seen (an inbox that
 // drains as it is read); flag "--all" returns the full history and marks

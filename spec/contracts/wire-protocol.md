@@ -65,7 +65,6 @@ Msg {
 | `status` | — | request daemon status |
 | `context` | `agent_id` | request a session's assembled-context breakdown, **no LLM call** |
 | `list_goals` | — | request goal list |
-| `list_reflections` | — | request reflection history |
 | `list_workflows` | — | request workflow list |
 | `list_tools` | — | request all tools grouped by plugin |
 | `workflow_stop` | `text` = workflow ID | live-cancel a workflow |
