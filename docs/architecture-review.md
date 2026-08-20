@@ -34,7 +34,7 @@
 | **F9** | ~~One provider behind a generalized `Provider` + `ThinkingAware` abstraction — decide whether local-first is a goal or a stopgap~~ **Decided** — local-first is a commitment **and** multi-backend; the abstraction stays (G8/N5) | Medium | S |
 | **F10** | ~~`internal/selfmodel`: 84 LOC, zero tests, `/.dockerenv` probe, swallowed query error~~ **Landed** — all four addressed; 0% → 78.6% coverage | Low | S |
 | **F11** | ~~`docs/` + `spec/` is 57% of production code size; implemented design notes are maintained rather than frozen~~ **Decided: no move.** The premise is not supported — the notes are already frozen in practice; the churn is in the *tracking* notes, this one included | Low | M |
-| **F13** | `spec/conformance.md` claims to map *every* contract requirement to a check, but 33 of 163 have no row — including all 15 of `toolvm` and all 10 of `agent-policy` | **High** | M |
+| **F13** | ~~`spec/conformance.md` claims to map *every* contract requirement to a check, but 33 of 163 have no row~~ **Fixed** — the real gap was 23, not 33 (the other 10 are a `Planned` contract and correctly absent); all `Built` requirements now have rows | **High** | M |
 | **F12** | ~~The `TestRegisterPlugin` flake is documented as inherent; a socket-timing flake usually means a missing readiness handshake~~ **Investigated and fixed** — the handshake existed; the real defect was that it could not tell a dead plugin from a slow one (R-PLUG.14) | Low | S |
 
 **F1–F4 are the seams. None of them is in the concepts — they are in wire types,
@@ -497,6 +497,25 @@ actually does.
 
 Found while filling a smaller gap (R-MEM.8/9, noticed during F4), which is its
 own small lesson about how these accumulate.
+
+**Fixed — and the finding as first written overstated the gap.** Ten of the
+thirty-three are `agent-policy`, whose contract is **`Planned`**, not `Built`. A
+requirement with no implementation has no observable check, so those rows are
+*correctly* absent and always were. Checking each contract's own `Status:` before
+counting would have caught that; I did not, and filed the number.
+
+The real gap was **23**, and it was the more serious part: all 15 of `toolvm` —
+the `Built` contract behind the capability model — plus `R-PLUG.8`–`12`,
+`R-SUB.6`–`7` and `R-EVT.5`. All now have rows, and every requirement of every
+`Built` contract is covered: **153 of 153**.
+
+**A second error surfaced in the same file, and it caused the first.**
+`conformance.md`'s header asserted "All contracts are currently `Built`". That is
+false — `agent-policy` is `Planned` — and it is exactly why the absence of ten
+rows read as a defect rather than as correct behavior. The header now says which
+contract is not built, and states that a `Planned` contract having no rows is the
+*only* permitted reason for a requirement to be missing, so the next reader can
+tell a deliberate omission from a forgotten one without recounting.
 
 ---
 
