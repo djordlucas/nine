@@ -323,7 +323,7 @@ var subAgentToolNames = []string{
 // (role.OwnsGoal) or delegating role, bypassing an allowlist role's own tool
 // set the way gap_report does (docs/predefined-agents.md §3.1).
 var goalSelfMgmtToolNames = []string{
-	"goal_get", "goal_list", "goal_update_status", "goal_append_subtree",
+	"goal_get", "goal_list", "goal_update_status",
 }
 
 // appendInterceptedTools appends the agent.InterceptedDefs entries whose

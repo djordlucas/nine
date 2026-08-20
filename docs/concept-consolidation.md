@@ -24,7 +24,7 @@
 | **C3** | ~~Add a **two-stage profile**; let `[[agent]]` declare a stage list~~ **done** (`[[agent.aspect]]`) | `loadOrCreatePlan` already supports N stages and nothing passes more than one — the capability has no caller | no |
 | **C4** | Make **`reflect` an aspect any session can carry** | Reflection is special-cased as a session *kind* in three places; as an aspect, any pursue session or standing agent can reflect on its own progress | no |
 | **C5** | ~~Delete the **`reflections` table**; `nine reflections` → `nine log <agent>`~~ **done** (kept the verb, repointed at the journal) | No `agent_id` column, so it breaks under `C4`; its content is already in the journal; the durable output of a reflection turn is a KV write | **yes** |
-| **C6** | Delete **`goal.subtree`** and **`goal_append_subtree`** | `parent_id` is the authoritative edge; `subtree` is a free-text copy nothing reads, which the prompt asks the model to maintain by hand | **yes** |
+| **C6** | ~~Delete **`goal.subtree`** and **`goal_append_subtree`**~~ **done** (R-ORCH.13) | `parent_id` is the authoritative edge; `subtree` is a free-text copy nothing reads, which the prompt asks the model to maintain by hand | **yes** |
 | **C7** | ~~Move **`workflow`** beside the sub-agent in `spec/overview.md`~~ **done** | §3.2 presents goal and workflow as siblings; they are not, and that false parallelism is why they read as duplicates | no (docs) |
 
 **Optional, and only on its own:** rename `stage` → `aspect`. The code implements
@@ -234,6 +234,24 @@ Replace with a `GoalListChildren(parentID)` query, with `goal_get` returning
 derived children **under the same `subtree` JSON key** so the model-facing shape
 does not change and no prompt or eval moves on that account. Then drop the column,
 the tool, and both prompt clauses (`prompts.go:14`, `:75`). Goal tools 5 → 4.
+
+**Done as written**, which is worth saying because it is the only change in this
+note that needed no correction on contact with the code. Verified first that
+nothing in the daemon reads `subtree`: it is written by one tool, and reaches the
+model only by riding along in `goal_get`.
+
+Two details worth recording. `GoalGet` derives the children, `GoalList` does not —
+listing would otherwise be a query per goal for a field the list view never shows.
+And the drop is guarded by a column check rather than issued blind, so the step is
+safe against a database that never had the column, matching every other step's
+"correct for its own from-version" obligation.
+
+The migration test asserts the point of the change directly: a fixture whose stored
+`subtree` said `["stale-entry"]` while its real child was `child` comes back from
+`goal_get` as `[child]`. The stored copy could disagree with the schema; the derived
+one cannot.
+
+Normative as **R-ORCH.13**.
 
 ### C7 — Re-frame `workflow` as a delegation ledger
 

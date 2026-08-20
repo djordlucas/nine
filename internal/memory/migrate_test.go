@@ -349,3 +349,72 @@ func TestFreshDatabaseHasNoReflectionsTable(t *testing.T) {
 		t.Error("a fresh database created the reflections table")
 	}
 }
+
+// C6: the subtree column is dropped from a database that has one, without
+// disturbing the rows or the parent_id edge that replaces it.
+func TestMigrationDropsGoalSubtreeColumn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nine.db")
+
+	func() {
+		w := openRaw(t, path)
+		mustExec(t, w, `CREATE TABLE conversations (id TEXT PRIMARY KEY)`)
+		mustExec(t, w, `CREATE TABLE goals (
+			id          TEXT PRIMARY KEY,
+			description TEXT NOT NULL DEFAULT '',
+			status      TEXT NOT NULL DEFAULT 'active',
+			subtree     TEXT NOT NULL DEFAULT '[]',
+			parent_id   TEXT,
+			parent_type TEXT,
+			created_at  TEXT NOT NULL DEFAULT '',
+			updated_at  TEXT NOT NULL DEFAULT ''
+		)`)
+		mustExec(t, w, `INSERT INTO goals (id, description, subtree, parent_id)
+		                VALUES ('root', 'a goal', '["stale-entry"]', NULL)`)
+		mustExec(t, w, `INSERT INTO goals (id, description, parent_id, parent_type)
+		                VALUES ('child', 'a child', 'root', 'goal')`)
+		mustExec(t, w, `PRAGMA user_version = 3`)
+	}()
+
+	store, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer store.Close() //nolint:errcheck
+
+	if hasColumn(t, path, "goals", "subtree") {
+		t.Error("goals.subtree survived the migration")
+	}
+
+	// The rows are intact, and the edge that replaces the column still resolves —
+	// including for a parent whose stored subtree said something else entirely.
+	g, err := store.GoalGet("root")
+	if err != nil {
+		t.Fatalf("GoalGet: %v", err)
+	}
+	if g == nil || g.Description != "a goal" {
+		t.Fatalf("root goal = %+v, want it preserved", g)
+	}
+	if len(g.Subtree) != 1 || g.Subtree[0] != "child" {
+		t.Errorf("derived subtree = %v, want [child] — not the stale stored value", g.Subtree)
+	}
+}
+
+// The step is safe against a database that never had the column.
+func TestMigrationDropGoalSubtreeIsSafeWhenAbsent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nine.db")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	store.Close() //nolint:errcheck
+
+	if hasColumn(t, path, "goals", "subtree") {
+		t.Error("a fresh database created goals.subtree")
+	}
+	// Re-opening runs the runner again against a database already at the target.
+	store2, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	store2.Close() //nolint:errcheck
+}

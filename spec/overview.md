@@ -150,7 +150,8 @@ did, is why they read as duplicates of each other; the axis that separates them 
 This is a durable structure imposed *over* sessions, and manipulated through tool calls.
 
 - **Goal** — an open-ended *intention* (a row in `goals`, with a sub-goal/sub-work
-  subtree). It is not itself a session: the `goals` record persists independently of
+  children, reached through their `parent_id`). It is not itself a session: the `goals`
+  record persists independently of
   whether its background **goal-pursue session** is currently running (a goal can be
   `paused` with no live session). Top-level goals own one pursue session each.
 

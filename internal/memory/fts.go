@@ -42,7 +42,7 @@ type rawTok struct {
 // syntax-error class, rather than blacklisting characters one at a time.
 //
 // Returns "" when nothing searchable is left; the caller reports no results
-// instead of running the query, because MATCH '' is itself a syntax error.
+// instead of running the query, because MATCH ” is itself a syntax error.
 func ftsQuery(raw string) string {
 	terms, negs := parseWebSearch(raw)
 	if len(terms) == 0 {
