@@ -78,6 +78,7 @@ How to use this file:
 | R-PROTO.8 | Connection & concurrency | Each connection handled concurrently and independently; concurrent clients are served in parallel. |
 | R-PROTO.9 | Every client message type is dispatched | Each member of the documented client-sendable set reaches a handler; none falls to the dispatcher's `unknown message type` default. |
 | R-PROTO.10 | A reply echoes its request's type | Every reply-reading client method rejects a non-`error` reply of the wrong type instead of returning a zero value; a wrong-typed reply produces an error naming both types. |
+| R-PROTO.11 | Required fields checked on ingress | A client message missing a field its type requires is rejected before routing, with the type and missing field named; a type with no requirements passes. |
 
 ---
 
