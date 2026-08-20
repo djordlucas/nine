@@ -1,8 +1,18 @@
 # Concept consolidation — stages, reflection, and goal bookkeeping
 
-- **Status:** **Proposed.** Seven changes (`C1`–`C7`), each independently shippable.
-  Five need no schema change. Nothing an operator or the model can observe is
-  removed except one redundant agent tool (`C6`).
+- **Status:** **Complete** (2026-08-19). All seven changes (`C1`–`C7`) shipped.
+  This note is now a record, not a plan: it is frozen and will not be edited
+  further, per the rule adopted in [`architecture-review.md`](architecture-review.md)
+  F11 — a note is frozen by its programme finishing, not by its directory.
+
+  Six of the seven needed correction on contact with the code: `C1`'s fix was not
+  expressible as written (the clamp made "largest negative remaining" always
+  zero), `C2`'s claim was overstated (only one of the three functions was
+  order-dependent), `C3` could not ship without part of `C4`, `C4` could not use
+  the standing-agent path it named, `C5` became urgent rather than optional once
+  `C3` landed, and `C7` was docs-only as predicted. Only `C6` landed exactly as
+  specified. The reasoning held up well throughout; the specific prescriptions
+  mostly did not.
 - **Date:** 2026-08-18.
 - **Depends on:** ~~**F4** (the schema migration runner)~~ **landed** as R-MEM.10 —
   it gated `C5` and `C6` only, so both are now unblocked. Also `session-plans.md`,
