@@ -44,17 +44,17 @@ func (d *Daemon) SpawnGoalSession(_ context.Context, goalID string) (bool, error
 // a pre-defined standing agent (docs/predefined-agents.md). It mirrors
 // SpawnGoalSession but seeds the plan with the configured work role, delegation
 // opt-in, and wake trigger so the session runs under a narrowed role while
-// keeping the pursue shell. aspects are additional stages the session carries
+// keeping the pursue shell. routines are additional stages the session carries
 // alongside the pursue shell, each with its own wake cadence. The trigger is a
 // cron schedule when schedule is non-empty, otherwise the fixed interval (interval <= 0 with no schedule uses
 // PursueIdleInterval). Idempotent — a no-op if the session is already running;
 // otherwise it (re)writes the plan, so config edits to role/delegates/trigger
 // take effect on the next boot.
-func (d *Daemon) SpawnStandingSession(_ context.Context, goalID, role string, delegates bool, interval time.Duration, schedule string, aspects []AspectDecl) (bool, error) {
+func (d *Daemon) SpawnStandingSession(_ context.Context, goalID, role string, delegates bool, interval time.Duration, schedule string, routines []RoutineDecl) (bool, error) {
 	if interval <= 0 && schedule == "" {
 		interval = PursueIdleInterval
 	}
-	plan, err := newStandingPursuePlan(goalID, role, delegates, interval, schedule, aspects)
+	plan, err := newStandingPursuePlan(goalID, role, delegates, interval, schedule, routines)
 	if err != nil {
 		return false, err
 	}
@@ -93,9 +93,9 @@ func (d *Daemon) TeardownStandingSession(_ context.Context, goalID string) error
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	plan.Status = "archived"
-	for i := range plan.Aspects {
-		plan.Aspects[i].Status = "done"
-		plan.Aspects[i].UpdatedAt = now
+	for i := range plan.Routines {
+		plan.Routines[i].Status = "done"
+		plan.Routines[i].UpdatedAt = now
 	}
 	plan.UpdatedAt = now
 	if err := d.plans.SessionPlanSave(plan); err != nil {
@@ -156,7 +156,7 @@ func (d *Daemon) activeGoalSessionCount() int {
 		if w.plan == nil {
 			continue
 		}
-		for _, st := range w.plan.plan.Aspects {
+		for _, st := range w.plan.plan.Routines {
 			if st.Kind == "pursue" && st.Status == "active" {
 				n++
 				break

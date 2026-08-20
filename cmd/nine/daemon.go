@@ -132,12 +132,12 @@ func runDaemon() {
 		slog.Error("bootstrap self KV", "err", err)
 	}
 
-	// Register the idle-reflection aspect handler, then reconcile the dedicated
+	// Register the idle-reflection routine handler, then reconcile the dedicated
 	// self-reflection session against config — creating it, or deactivating it
 	// when the operator has turned reflection off. Later boots pick a live one up
 	// via daemon.ResumeSessions.
-	runtime.AspectRegistry["idle-reflection"] = func() runtime.AspectHandler {
-		return runtime.NewIdleReflectionAspect()
+	runtime.RoutineRegistry["idle-reflection"] = func() runtime.RoutineHandler {
+		return runtime.NewIdleReflectionRoutine()
 	}
 	if err := runtime.ReconcileSelfReflection(store, cfg.SelfReflectionInterval()); err != nil {
 		slog.Error("reconcile self-reflection session", "err", err)
@@ -265,7 +265,7 @@ func runDaemon() {
 	reconcileStandingAgents(ctx, store, daemon, cfg.Agents, cfg.Daemon.StandingAgentsAuthoritative)
 
 	// Resume any session (e.g. a goal's pursue session, once that lands) whose
-	// plan was active with an idle-capable aspect when the daemon last stopped.
+	// plan was active with an idle-capable routine when the daemon last stopped.
 	if err := daemon.ResumeSessions(ctx); err != nil {
 		slog.Warn("resume sessions", "err", err)
 	}

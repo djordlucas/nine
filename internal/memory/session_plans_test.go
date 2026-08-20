@@ -34,7 +34,7 @@ func TestSessionPlanSaveAndGet(t *testing.T) {
 	plan := &memory.SessionPlan{
 		ID:     "agent-1",
 		Status: "active",
-		Aspects: []memory.SessionAspect{
+		Routines: []memory.SessionRoutine{
 			{Name: "active", Kind: "active", Status: "active", UpdatedAt: "2026-06-11T00:00:00Z"},
 		},
 	}
@@ -52,8 +52,8 @@ func TestSessionPlanSaveAndGet(t *testing.T) {
 	if got.ID != "agent-1" || got.Status != "active" {
 		t.Errorf("got = %+v", got)
 	}
-	if len(got.Aspects) != 1 || got.Aspects[0].Kind != "active" {
-		t.Errorf("got.Aspects = %+v", got.Aspects)
+	if len(got.Routines) != 1 || got.Routines[0].Kind != "active" {
+		t.Errorf("got.Routines = %+v", got.Routines)
 	}
 }
 
@@ -61,16 +61,16 @@ func TestSessionPlanSaveUpdatesExisting(t *testing.T) {
 	s := openTestStore(t)
 
 	plan := &memory.SessionPlan{
-		ID:      "agent-1",
-		Status:  "active",
-		Aspects: []memory.SessionAspect{{Name: "active", Kind: "active", Status: "active"}},
+		ID:       "agent-1",
+		Status:   "active",
+		Routines: []memory.SessionRoutine{{Name: "active", Kind: "active", Status: "active"}},
 	}
 	if err := s.SessionPlanSave(plan); err != nil {
 		t.Fatalf("SessionPlanSave (insert): %v", err)
 	}
 
 	plan.Status = "paused"
-	plan.Aspects[0].Status = "paused"
+	plan.Routines[0].Status = "paused"
 	if err := s.SessionPlanSave(plan); err != nil {
 		t.Fatalf("SessionPlanSave (update): %v", err)
 	}
@@ -79,7 +79,7 @@ func TestSessionPlanSaveUpdatesExisting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SessionPlanGet: %v", err)
 	}
-	if got.Status != "paused" || got.Aspects[0].Status != "paused" {
+	if got.Status != "paused" || got.Routines[0].Status != "paused" {
 		t.Errorf("got = %+v, want status/stage paused", got)
 	}
 }
@@ -87,8 +87,8 @@ func TestSessionPlanSaveUpdatesExisting(t *testing.T) {
 func TestSessionPlanListActive(t *testing.T) {
 	s := openTestStore(t)
 
-	active := &memory.SessionPlan{ID: "active-1", Status: "active", Aspects: []memory.SessionAspect{{Name: "active", Kind: "active", Status: "active"}}}
-	paused := &memory.SessionPlan{ID: "paused-1", Status: "paused", Aspects: []memory.SessionAspect{{Name: "active", Kind: "active", Status: "active"}}}
+	active := &memory.SessionPlan{ID: "active-1", Status: "active", Routines: []memory.SessionRoutine{{Name: "active", Kind: "active", Status: "active"}}}
+	paused := &memory.SessionPlan{ID: "paused-1", Status: "paused", Routines: []memory.SessionRoutine{{Name: "active", Kind: "active", Status: "active"}}}
 	if err := s.SessionPlanSave(active); err != nil {
 		t.Fatal(err)
 	}

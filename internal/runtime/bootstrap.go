@@ -64,9 +64,9 @@ func ReconcileSelfReflection(store PlanStore, idleInterval time.Duration) error 
 		}
 		now := time.Now().UTC().Format(time.RFC3339)
 		existing.Status = "archived"
-		for i := range existing.Aspects {
-			existing.Aspects[i].Status = "done"
-			existing.Aspects[i].UpdatedAt = now
+		for i := range existing.Routines {
+			existing.Routines[i].Status = "done"
+			existing.Routines[i].UpdatedAt = now
 		}
 		existing.UpdatedAt = now
 		if err := store.SessionPlanSave(existing); err != nil {
@@ -80,7 +80,7 @@ func ReconcileSelfReflection(store PlanStore, idleInterval time.Duration) error 
 		return nil // already present; cadence changes apply to a fresh plan only
 	}
 
-	// The role is stamped into the aspect config rather than implied by the kind,
+	// The role is stamped into the routine config rather than implied by the kind,
 	// so this session keeps the reflection role while the same kind can ride
 	// role-free beside a pursue shell elsewhere.
 	plan, err := newIdleCapablePlan(SelfReflectionAgentID, "idle-reflection", ReflectionRole, idleInterval)
