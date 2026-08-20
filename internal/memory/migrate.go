@@ -85,6 +85,55 @@ var migrations = []migrationStep{
 		_, err := q.Exec(`DROP TABLE IF EXISTS reflections`)
 		return err
 	}},
+
+	// 3 → 4: drop `goals.subtree`. The parent/child edge is `parent_id`, written
+	// by goal_create; `subtree` was a second, free-text copy of the same relation
+	// that nothing in the code read, reaching the model only by riding along in
+	// goal_get. Keeping it meant asking a language model to maintain a
+	// denormalized index of a relation the schema already enforces — wrong at
+	// some rate and unverifiable (docs/concept-consolidation.md C6).
+	//
+	// goal_get still returns a `subtree` key, now derived from parent_id, so
+	// nothing the model sees changes shape.
+	{name: "drop_goal_subtree", fn: func(q sqlExec) error {
+		return dropColumnIfPresent(q, "goals", "subtree")
+	}},
+}
+
+// dropColumnIfPresent removes a column only when it is there, so the step is
+// safe against a database that never had it. SQLite has supported
+// ALTER TABLE ... DROP COLUMN since 3.35.
+func dropColumnIfPresent(q sqlExec, table, column string) error {
+	has, err := hasColumnTx(q, table, column)
+	if err != nil || !has {
+		return err
+	}
+	_, err = q.Exec("ALTER TABLE " + table + " DROP COLUMN " + column)
+	return err
+}
+
+// hasColumnTx reports whether table has column, using the passed handle so it
+// participates in the migration's transaction.
+func hasColumnTx(q sqlExec, table, column string) (bool, error) {
+	rows, err := q.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close() //nolint:errcheck
+	for rows.Next() {
+		var (
+			cid, notnull, pk int
+			name, ctype      string
+			dflt             sql.NullString
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, rows.Close()
+		}
+	}
+	return false, rows.Err()
 }
 
 // userVersion reads PRAGMA user_version. A database SQLite has just created

@@ -11,7 +11,7 @@ Before searching for anything time-sensitive (news, current events, recent relea
 
 When a request requires multiple independent steps or sub-agents, start by calling workflow_create with a name and step list. Assign sub-agents to steps using run_agent or run_agents, then call workflow_update after each result. At the start of any turn, call workflow_list first — if an active workflow exists, call workflow_get to re-read the current plan before deciding what to do next. This also handles recovery after a restart: interrupted steps will appear as failed and can be retried with workflow_retry_step.
 
-A workflow is finite — use it for a bounded plan with a clear end. A goal is different: it is a persistent, open-ended intention with no defined end condition (e.g. "monitor this repo for security issues" or "keep dependencies up to date"). When a request implies ongoing or recurring work rather than a one-off task, call goal_create to record it. Decompose goals into sub-goals and tasks autonomously — no user approval needed — using goal_create (with parent_id/parent_type set to the parent goal) and run_agent/run_agents, recording each one with goal_append_subtree as you spawn it. Call goal_list at the start of any turn involving open-ended work to check on active goals, goal_get to re-read one before acting on it, and goal_update_status to mark a goal paused, done, or archived as its situation changes.`
+A workflow is finite — use it for a bounded plan with a clear end. A goal is different: it is a persistent, open-ended intention with no defined end condition (e.g. "monitor this repo for security issues" or "keep dependencies up to date"). When a request implies ongoing or recurring work rather than a one-off task, call goal_create to record it. Decompose goals into sub-goals and tasks autonomously — no user approval needed — using goal_create (with parent_id/parent_type set to the parent goal) and run_agent/run_agents. Call goal_list at the start of any turn involving open-ended work to check on active goals, goal_get to re-read one before acting on it, and goal_update_status to mark a goal paused, done, or archived as its situation changes.`
 )
 
 // BuildSystemPrompt returns the system prompt.
@@ -71,6 +71,6 @@ Be brief and factual. Do not ask questions.`
 	// PursuePromptTemplate is the OnIdle turn text for a "pursue" session
 	// (docs/goal-sessions.md). %s placeholders are the goal ID and
 	// description; the LLM does the actual assess/act/check-attainment work
-	// using goal_get/goal_list/goal_append_subtree/goal_update_status.
-	PursuePromptTemplate = `Check on goal %s ("%s") and its subtree (goal_get). Take any useful action toward it, including spawning sub-goals or sub-agents and recording them with goal_append_subtree. If its status should change (e.g. done once attained, or paused if you're stuck), call goal_update_status.`
+	// using goal_get/goal_list/goal_update_status.
+	PursuePromptTemplate = `Check on goal %s ("%s") and its subtree (goal_get). Take any useful action toward it, including spawning sub-goals or sub-agents. If its status should change (e.g. done once attained, or paused if you're stuck), call goal_update_status.`
 )

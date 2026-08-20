@@ -413,7 +413,7 @@ func TestMonitorPursueShellToolSurface(t *testing.T) {
 	tools := toolNames(p.call(1))
 	// Goal self-management and notify_user are granted by the pursue shell
 	// regardless of the monitor allowlist (which lists none of these).
-	for _, want := range []string{"goal_get", "goal_list", "goal_update_status", "goal_append_subtree", "notify_user"} {
+	for _, want := range []string{"goal_get", "goal_list", "goal_update_status", "notify_user"} {
 		if !tools[want] {
 			t.Errorf("monitor pursue shell missing shell tool %q", want)
 		}
