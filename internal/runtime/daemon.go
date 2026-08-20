@@ -577,9 +577,9 @@ func (d *Daemon) ConfigurePlanStore(plans PlanStore) {
 }
 
 // ResumeSessions starts session workers for every session_plans row with
-// status "active" and at least one active, idle-capable stage (Pilot 4's
+// status "active" and at least one active, idle-capable aspect (Pilot 4's
 // general resume rule), so background sessions survive a daemon restart.
-// Ordinary [active] conversations have no idle-capable stage and stay
+// Ordinary [active] conversations have no idle-capable aspect and stay
 // attach-on-demand. Safe to call once at startup, after ConfigurePlanStore.
 func (d *Daemon) ResumeSessions(ctx context.Context) error {
 	if d.plans == nil {

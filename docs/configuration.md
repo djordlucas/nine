@@ -132,9 +132,9 @@ standing_agents_authoritative = false
 # are due the one waiting longest goes first — fairness does not depend on the
 # order they are written here.
 #
-# The pursue shell stays the session's role-bearing stage: an aspect never sets a
+# The pursue shell stays the session's role-bearing aspect: an aspect never sets a
 # role, because a session has exactly one and two claimants would make it depend
-# on ordering. `kind` must be a registered stage kind, and exactly one of
+# on ordering. `kind` must be a registered aspect kind, and exactly one of
 # interval/schedule must be set — an aspect with neither would never wake.
 #
 #   [[agent.aspect]]

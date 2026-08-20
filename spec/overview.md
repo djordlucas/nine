@@ -201,7 +201,7 @@ answer. Every session — interactive or autonomous — does its work as a seque
 turns. A turn is produced by exactly one of:
 
 - a **user message** (interactive conversation),
-- an **idle trigger** from a session stage (reflection, goal pursuit),
+- an **idle trigger** from a session aspect (reflection, goal pursuit),
 - a **notification-prepended** continuation,
 - a **sub-agent** invocation (a fresh loop at depth+1).
 

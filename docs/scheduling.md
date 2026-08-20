@@ -4,12 +4,12 @@
 
 A background session (a pursue goal session, the self-reflection session, or a
 pre-defined standing agent) does work between human turns because its session
-plan carries an **idle-capable stage** with a wake **trigger**. The
-`AgentWorker`'s idle timer fires when a stage is due, calls the stage's `OnIdle`,
+plan carries an **idle-capable aspect** with a wake **trigger**. The
+`AgentWorker`'s idle timer fires when a aspect is due, calls the aspect's `OnIdle`,
 and submits the returned text as the session's next turn
 ([session-plans.md](session-plans.md)).
 
-There are two trigger kinds, set in a stage's `Config` and **mutually
+There are two trigger kinds, set in a aspect's `Config` and **mutually
 exclusive**:
 
 | Trigger | Config field | Meaning |
@@ -51,8 +51,8 @@ either trigger to a single "how long until due" duration:
 - cron: `max(Schedule.Next(lastFire) − now, 0)`
 
 `armIdleTimer` arms the worker's timer for the **minimum** remaining across the
-session's active idle-capable stages; `handleIdle` fires every stage that is due
-(`remaining == 0`). `planNeedsResume` (via `stageScheduled`) treats a stage with
+session's active idle-capable aspects; `handleIdle` fires every aspect that is due
+(`remaining == 0`). `planNeedsResume` (via `stageScheduled`) treats a aspect with
 either a positive interval or a valid cron as idle-capable, so the daemon revives
 it on restart.
 
@@ -63,6 +63,6 @@ it on restart.
   replayed — the session simply waits for the next occurrence.
 - **Minute granularity.** Cron resolves to the minute; the timer may fire a few
   seconds late, which is fine for standing-agent cadences.
-- **One trigger per stage.** A standing agent declares `interval` **xor**
+- **One trigger per aspect.** A standing agent declares `interval` **xor**
   `schedule` in `nine.toml`; setting both is a config error and the agent is
   skipped with a warning.

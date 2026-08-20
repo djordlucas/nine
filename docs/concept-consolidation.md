@@ -41,6 +41,18 @@
 concurrent aspects that retire independently; the word implies a sequence. Real
 clarity, pure churn — land it alone, last, or not at all.
 
+**Done, alone and last** — and it was not pure churn. The stronger reason only
+became visible from inside the code: `stage` named **two unrelated things**. A
+session's concurrent, independently-retiring behaviors were stages, and so were
+the phases *within a single turn* that make a user wait (`StageContext` =
+"building context", `StageModel` = "waiting for the model", the `stage` wire
+event). Nothing distinguished them but context.
+
+Only the first is renamed. `stage` now means a turn phase and nothing else;
+`aspect` means a session behavior and nothing else. `C3` had already made the
+inconsistency operator-visible by shipping `[[agent.aspect]]` against a schema
+column named `stages`.
+
 ---
 
 ## 2. Detail
