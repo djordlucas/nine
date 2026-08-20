@@ -489,20 +489,33 @@ the binary needs a **third**, with its own default-grant story, and
 `web_search` / `web_page_read` need HTML parsing bundled at build time. This is
 real work, not a refactor. It is listed Medium/L for that reason.
 
-**It also moves two normative requirements**, which the cost note does not
-mention:
+**It touches the spec, but less than I first claimed.** An earlier revision of
+this note said F7 "moves two normative requirements" and was therefore an owner's
+decision before any code. Re-checked, that was overstated in the same way the
+F2 step 3 claim was:
 
-- **R-PLUG.13** states that `files`, `shell`, `http` and `time` ship inside the
-  `nine` binary and start as `nine plugin serve <name>`. Migrating three of those
-  four out of the plugin transport changes what that requirement says.
-- **R-TVM.2** is titled *"Two kinds, one contract"*. A shipped-in-binary tier
-  makes it three, and "nothing is compiled at install time" needs re-reading
-  against a tier compiled at *build* time.
+- **R-TVM.2 needs no amendment.** It is titled "Two kinds, one contract" and
+  counts **module kinds** — `wasm` and `js` — not source tiers. Its own text says
+  so: *"QuickJS is an implementation detail of one kind, not an architectural
+  layer."* A shipped-in-binary tool is still one of those two kinds. Source tiers
+  are governed separately, by R-TVM.10 (developer) and R-TVM.14 (generated), so a
+  third tier is a **new** requirement, not a contradiction of an existing one.
+- **R-PLUG.13 does need its list updated** — it names `files`, `shell`, `http`
+  and `time` as the Go built-ins, and three of those four would leave. That is a
+  factual amendment, not a conflict.
 
-Neither blocks the work — both would simply be amended as part of it — but it
-makes F7 a **spec change with an implementation**, not an implementation that
-happens to touch docs. That is the same class of decision as F9 and F11, and
-belongs to the owner rather than to whoever picks up the work.
+So F7 is **not gated**; it is ordinary work that carries its own spec impact, as
+§10 already says every change here does. The distinction matters because "touches
+the spec" is not the same as "blocked on a decision", and this note has now made
+that mistake twice.
+
+**A sequencing note, since the cost is unevenly distributed.** The three plugins
+are ~890 LOC: `time` 33, `files` 273, `http` 585. They also carry very different
+risk. `time` needs **no capability at all**, so migrating it first establishes the
+shipped-in-binary tier — its grant story, its registration, its tests — against
+the simplest possible tool, before either the filesystem grants (`files`) or the
+SSRF surface (`http`) is in play. Doing `http` first would mean designing the tier
+and re-implementing the most security-sensitive code in the same change.
 
 ---
 
@@ -832,7 +845,7 @@ Ordered by leverage-per-unit-risk, not by severity alone.
 | 5 | ~~**F9** — decide local-first, then document or add a provider~~ **done** — decided: local-first *and* multi-backend (G8/N5) | A decision, not a build. Blocks nothing, unblocks F1's shape. |
 | 6 | ~~**F6** — protocol and client tests~~ **done** | Follows F2 naturally; typed messages make the tests worth writing. (They did: four real bugs across `protocol`, `cli` and `tui` — two silent failures, now R-PROTO.10, and two panics.) |
 | 7 | ~~**F10**, **F12**~~ **both done** | Small hygiene; fold into whatever branch is nearby. (Neither was hygiene: F12 hid a startup-diagnostic defect, R-PLUG.14, and F10 could tell the model it was on the host while confined.) |
-| 8 | **F7** remains; ~~**F2 step 2**~~ **done**, **F2 step 3** **done for client→daemon** (R-PROTO.12; events still on the union), ~~**F11**~~ **decided — no move** | F7 amends R-PLUG.13 and R-TVM.2, so it still needs a requirement moved first. F2 step 3 turned out *not* to need one — R-PROTO.1 constrains the wire, and the typed requests are source-level. |
+| 8 | **F7** remains — large, but **not gated**; ~~**F2 steps 2–3**~~ **done** (step 3 for client→daemon; events still on the union), ~~**F11**~~ **decided — no move** | Both "spec-blocked" claims this note made turned out to be misreadings: R-PROTO.1 constrains the wire, not the programming model, and R-TVM.2 counts module kinds, not source tiers. F7 updates one list (R-PLUG.13) and adds one requirement. Suggested order: `time` (33 LOC, no capabilities) to establish the tier, then `files`, then `http`. |
 | 9 | ~~**F8** — the seven changes in [`concept-consolidation.md`](concept-consolidation.md)~~ **done** | All seven landed; six needed correction on contact with the code. The `stage`→`aspect` rename is still deferred and is now the one open item in that note. |
 
 **Everything above except F2 steps 2–3 and F7 is closed.** What the sequence
