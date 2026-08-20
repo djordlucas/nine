@@ -75,6 +75,12 @@ type Tool struct {
 	// ManifestPath is where this tool came from, for `nine tools show`. Empty for
 	// a generated tool, which came from the store rather than a file.
 	ManifestPath string
+	// Shipped marks a first-party tool compiled into the binary (the shipped
+	// tier). Like Generated it changes nothing about how the tool runs — same
+	// sandbox, same bounds, same capability resolution — only where its source
+	// and its grant came from.
+	Shipped bool
+
 	// Generated marks a tool Nine wrote itself (§5.2) rather than one an operator
 	// installed. It changes nothing about how the tool runs — same sandbox, same
 	// bounds, same capability resolution — only where its code and its ceiling
@@ -100,6 +106,7 @@ type Status struct {
 	ManifestPath string `json:"manifest_path"`
 	Loaded       bool   `json:"loaded"`
 	Generated    bool   `json:"generated,omitempty"`
+	Shipped      bool   `json:"shipped,omitempty"`
 	Kind         string `json:"kind,omitempty"`
 	Capabilities string `json:"capabilities,omitempty"`
 	Err          string `json:"err,omitempty"`
@@ -121,6 +128,9 @@ type Host struct {
 	// generatedStatus is kept apart from status so reloading the developer-tool
 	// directory does not erase the generated tier's outcomes, or vice versa.
 	generatedStatus []Status
+	// shippedStatus is likewise kept apart, so neither a developer-tool reload
+	// nor a generated-tool reload erases the first-party set.
+	shippedStatus []Status
 	agent           AgentConfig
 
 	// qjs is the compiled QuickJS blob, shared by every `js` tool. Compiling it
@@ -340,7 +350,8 @@ func (h *Host) Get(name string) *Tool {
 func (h *Host) Status() []Status {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	out := make([]Status, 0, len(h.status)+len(h.generatedStatus))
+	out := make([]Status, 0, len(h.status)+len(h.generatedStatus)+len(h.shippedStatus))
+	out = append(out, h.shippedStatus...)
 	out = append(out, h.status...)
 	out = append(out, h.generatedStatus...)
 	return out

@@ -149,7 +149,6 @@ func (h *Harness) Run(ctx context.Context, c *Case, provider llm.Provider) (res 
 		pluginMgr.TryStartBuiltin("files", "NINE_WORKSPACE="+workspace)
 		pluginMgr.TryStartBuiltin("shell")
 		pluginMgr.TryStartBuiltin("http")
-		pluginMgr.TryStartBuiltin("time")
 		// 5b. MCP servers the case declares, mirroring startMCPServers in
 		//     cmd/nine/daemon.go. This is not an optional extra: a capability Nine
 		//     does not implement itself now arrives this way and no other, so a
