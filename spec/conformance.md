@@ -62,6 +62,8 @@ How to use this file:
 | R-MEM.5 | Checkpoints | `{history, scratchpad}` saves and reloads exactly; reload reconstructs session state. |
 | R-MEM.6 | Vectors and namespaces | Put/query under `tools:`/`skills:` namespaces returns ranked matches scoped to the namespace. |
 | R-MEM.7 | JSON convenience variants | JSON set/get variants marshal/unmarshal symmetrically. |
+| R-MEM.8 | Memory surfacing (KV pull-surfacing) | `memory_set` also mirrors the value into the `memories` vector pool and `memory_delete` removes it, both best-effort — an embed failure never fails the KV write; once per turn the builder injects up to N over a similarity floor as advisory enrichment that yields under budget pressure. |
+| R-MEM.9 | The `spill/` namespace is daemon-owned | `file_store` refuses a path under `spill/` while it stays agent-readable; nothing under `spill/` enters the vector pool; spills are swept on a retention window. |
 | R-MEM.10 | Schema versioning and migration | `user_version` tracks the schema generation and equals the step count; each step and its bump commit atomically (a failing step leaves the version untouched); a fresh database is stamped without running steps; a database newer than the binary is refused, not rewritten. |
 
 ### Wire protocol — [`wire-protocol.md`](contracts/wire-protocol.md)
