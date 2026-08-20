@@ -483,6 +483,34 @@ and the MCP bridge on the process transport. This collapses four built-in plugin
 to one and puts the most-called tools under the capability model and the HTTP
 audit trail.
 
+**Started: the shipped tier exists (R-TVM.16) and `time` is migrated.** The tier
+is the third source of tools, after developer and generated — source compiled
+into the binary, running through the same host, ABI, instance model and bounds,
+granted what it declares. `time` now declares **nothing**, where as a plugin it
+was a subprocess holding the daemon's uid in order to read a clock.
+
+**What the first migration taught, which the proposal did not anticipate:**
+
+*A shipped tool has no more access to host state than any other tool.* Obvious in
+retrospect, easy to forget because the code is first-party. `time` now reports
+**UTC**; the plugin reported the daemon's local time and zone. The guest has no
+timezone database — QuickJS ships no `Intl`, and `nine:date` is UTC-only by
+design — so a tool cannot know the host's zone unless the host confers it, which
+is precisely what the sandbox exists to withhold. Migrating a built-in can
+therefore *change what it returns*, and R-TVM.16 now says that must be documented
+rather than papered over.
+
+*`time` was also the wrong tool to judge the tier by.* `ambientCore` already puts
+`Current time: <RFC3339 UTC>` in every turn's system prompt (R-LOOP.1), so the
+migrated tool returns what the model has already been told. The migration proves
+the tier end-to-end, which is what it was for; it does not, by itself, buy much.
+The tools where this pays are `files` and `http` — the ones with real capabilities
+to confer, and in `http`'s case the SSRF checklist and audit trail that already
+exist for sandboxed tools and not for the plugin.
+
+**Remaining:** `files` (273 LOC, filesystem grants) and `http` (585 LOC, the full
+SSRF surface). `shell` stays a plugin as proposed — it needs real `exec`.
+
 **Cost, stated honestly:** `toolvm` has two source tiers today — developer
 (file + manifest on disk) and generated (row in `tools`). Shipping tools inside
 the binary needs a **third**, with its own default-grant story, and

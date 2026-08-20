@@ -90,6 +90,7 @@ How to use this file:
 | R-TVM.13 | Fully built | Every feature the design specifies is implemented — the `nine:*` stdlib, external dependencies, and the deps/`net.http` interlock — with nothing stubbed or refused by name. |
 | R-TVM.14 | Generated tools | A tool Nine wrote via `tool_write` is a row in `tools` carrying source, schema, and a capability **declaration with no grant**; it runs through the same host, ABI, and instance model, and is capped by the generated ceiling. |
 | R-TVM.15 | Dependencies and the `nine:*` stdlib | Both `nine:*` and external npm imports resolve **before** the call, never by the guest and never at call time. |
+| R-TVM.16 | The shipped tier | First-party tools compiled into the binary run through the same host, ABI, and bounds; they are granted what they declare, that grant is visible in the roster, a declaration the host cannot enforce is refused, and they load before the other tiers so neither can take their names. |
 
 ### Wire protocol — [`wire-protocol.md`](contracts/wire-protocol.md)
 
