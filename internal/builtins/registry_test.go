@@ -13,17 +13,23 @@ import (
 // at boot (cmd/nine/daemon.go); spec/contracts/plugin.md R-PLUG.5 lists the same
 // set, so a plugin added or dropped here is a contract change.
 //
-// Two deliberate absences. `browser` is Node + Chromium, not Go, so it still
+// Three deliberate absences. `browser` is Node + Chromium, not Go, so it still
 // ships as its own artifact under [plugins].bin. `mcp` is a built-in but is not
 // auto-started: it runs once per [[mcp.server]] with that server's spec in its
-// environment (R-PLUG.15), and a bare `mcp` would have nothing to bridge.
+// environment (R-PLUG.15), and a bare `mcp` would have nothing to bridge. `time`
+// is no longer a plugin at all — it is a shipped sandboxed tool
+// (internal/toolvm/shipped.go), because reading a clock does not need a
+// subprocess holding the daemon's uid authority.
 func TestAutoStartMatchesDaemonRoster(t *testing.T) {
-	want := []string{"files", "http", "shell", "time"}
+	want := []string{"files", "http", "shell"}
 	if got := builtins.AutoStart(); !slices.Equal(got, want) {
 		t.Errorf("AutoStart() = %v, want %v", got, want)
 	}
 	if builtins.Has("browser") {
 		t.Error("browser must not be a built-in: it is Node + Chromium, not Go")
+	}
+	if builtins.Has("time") {
+		t.Error("time must not be a built-in: it is a shipped sandboxed tool")
 	}
 }
 
@@ -88,8 +94,8 @@ func TestStartBuiltinUnknownName(t *testing.T) {
 // The executable is "nine" for every built-in, so a name derived from the path
 // would label them all "nine" in `nine plugins` and status.
 func TestStartBuiltinNamesPlugin(t *testing.T) {
-	p, _ := start(t, "time")
-	if p.Name != "time" {
-		t.Errorf("plugin name = %q, want %q", p.Name, "time")
+	p, _ := start(t, "shell")
+	if p.Name != "shell" {
+		t.Errorf("plugin name = %q, want %q", p.Name, "shell")
 	}
 }
