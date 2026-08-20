@@ -75,6 +75,16 @@ max_goal_sessions = 10
 # "adjective-noun" name. Once generated, the name stays stable across restarts.
 # instance_name = "atlas"
 
+# The dedicated self-reflection session: a Go duration for its cadence, or "off"
+# to remove it. Unset ships enabled at 2m — reflection is how Nine maintains its
+# own self-model, so it is on by default.
+#
+# Removal is subtractive, not merely "stop creating it": an existing session is
+# deactivated on the next boot, so turning reflection off takes effect on a
+# machine that has already been running it. The plan row is kept rather than
+# deleted, so `nine reflections` still reads its history back from the journal.
+# self_reflection = "off"
+
 # Where the daemon reports itself as running, shown to the model in the
 # self-model's Environment block. Unset auto-detects: Kubernetes (via
 # KUBERNETES_SERVICE_HOST), then Docker (/.dockerenv) and Podman
