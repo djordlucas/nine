@@ -451,6 +451,15 @@ type DaemonConfig struct {
 	TaskTimeoutSeconds int    `toml:"task_timeout_seconds"` // default 1800 (30 min)
 	MaxGoalSessions    int    `toml:"max_goal_sessions"`    // default runtime.DefaultMaxGoalSessions when <= 0
 
+	// SelfReflection controls the dedicated self-reflection session: a Go
+	// duration for its cadence, or "off" to remove it. Empty uses the default.
+	//
+	// Removal is subtractive, not merely "do not create": an existing session is
+	// deactivated so the resume pass stops reviving it. Otherwise turning
+	// reflection off would only ever take effect on a machine that had never
+	// run it.
+	SelfReflection string `toml:"self_reflection"`
+
 	// Runtime overrides where the daemon reports itself as running, which reaches
 	// the model in the self-model's Environment block. Empty auto-detects
 	// (DetectRuntime). Set it when detection cannot see the sandbox, or to say
