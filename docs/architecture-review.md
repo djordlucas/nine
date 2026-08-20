@@ -33,7 +33,7 @@
 | **F8** | ~20 first-class nouns; `stage` is a working multi-stage capability with no caller, no precedence rule, and a starvation bug (`goal`+`workflow` examined and **not** collapsible — §7.1) | Medium | L |
 | **F9** | ~~One provider behind a generalized `Provider` + `ThinkingAware` abstraction — decide whether local-first is a goal or a stopgap~~ **Decided** — local-first is a commitment **and** multi-backend; the abstraction stays (G8/N5) | Medium | S |
 | **F10** | ~~`internal/selfmodel`: 84 LOC, zero tests, `/.dockerenv` probe, swallowed query error~~ **Landed** — all four addressed; 0% → 78.6% coverage | Low | S |
-| **F11** | `docs/` + `spec/` is 57% of production code size; implemented design notes are maintained rather than frozen | Low | M |
+| **F11** | ~~`docs/` + `spec/` is 57% of production code size; implemented design notes are maintained rather than frozen~~ **Decided: no move.** The premise is not supported — the notes are already frozen in practice; the churn is in the *tracking* notes, this one included | Low | M |
 | **F12** | ~~The `TestRegisterPlugin` flake is documented as inherent; a socket-timing flake usually means a missing readiness handshake~~ **Investigated and fixed** — the handshake existed; the real defect was that it could not tell a dead plugin from a slow one (R-PLUG.14) | Low | S |
 
 **F1–F4 are the seams. None of them is in the concepts — they are in wire types,
@@ -521,6 +521,49 @@ preserves the reasoning (which is genuinely valuable) without paying to keep it
 in sync forever. Candidates today: `sandboxed-tools.md`, `plugin-capabilities.md`,
 `roles.md`, `predefined-agents.md`.
 
+**Decided: do not move them. The premise does not survive measurement.**
+
+The finding assumes implemented design notes are "maintained rather than frozen".
+Git history says otherwise — every candidate's edits cluster at implementation
+time and then stop:
+
+| Candidate | Commits ever | Last touched |
+|---|---|---|
+| `sandboxed-tools.md` | 6, all during the toolvm build stages | 2026-08-17 |
+| `plugin-capabilities.md` | 5, all during that build | 2026-08-15 |
+| `roles.md` | 6 | 2026-08-15 |
+| `predefined-agents.md` | **1** | 2026-07-17 |
+
+They already behave like ADRs. Formalizing that would cost 13 inbound `spec/`
+links and remove 2,506 lines from `nine docs <topic>` — buying a sync reduction
+that measurement puts at approximately zero.
+
+**The stronger evidence is a natural experiment.** The twelve commits that closed
+F1, F3–F6, F9, F10, F12 and `C1`–`C7` touched **none** of the four candidates.
+What they did churn was:
+
+```text
+12  docs/architecture-review.md      ← tracking note
+ 7  spec/conformance.md              ← normative; F11 correctly says keep live
+ 7  docs/concept-consolidation.md    ← tracking note
+ 3  spec/overview.md                 ← normative
+```
+
+Nineteen of roughly forty-four documentation edits went to the two **tracking**
+notes. So the write amplification F11 identifies is real, but it is not where F11
+looks for it — and this document, which raised the finding about doc mass, was the
+single most-edited file in the repository while the finding was being acted on.
+
+**The rule adopted instead**, which is what the candidates already do
+unprompted: *a note is frozen by its programme finishing, not by its directory.*
+When the work a note describes is done, it gets a terminal `Status:` and stops
+being edited; it stays in `docs/`, stays embedded, and stays linked. That costs
+nothing, keeps the reasoning discoverable at runtime, and applies to the notes
+that actually churn rather than the ones that do not.
+
+Applied immediately to [`concept-consolidation.md`](concept-consolidation.md)
+(`C1`–`C7` complete), and to this note once §8 is exhausted.
+
 ### F12 — The plugin-socket flake · Low · S
 
 `CLAUDE.md` documents `TestRegisterPlugin` as a known timing flake that passes on
@@ -704,7 +747,9 @@ Ordered by leverage-per-unit-risk, not by severity alone.
    the remainder are `concept-consolidation.md` §5: what the second aspect
    concretely is, whether the `stage`→`aspect` rename earns its churn, and whether
    an operator may delete the reflection aspect from the default profile.
-3. **Should implemented design notes stay in `docs/` and stay embedded?** (F11.)
-   Freezing them to `docs/adr/` trades `nine docs` discoverability for a smaller
-   sync burden; which side that lands on depends on how often the rationale is
-   actually read at runtime.
+3. ~~**Should implemented design notes stay in `docs/` and stay embedded?**~~
+   **Answered: yes, they stay** (F11). The question framed it as a trade against
+   sync burden; the burden was then measured at approximately zero, because those
+   notes are already frozen in practice. What is *not* frozen is the tracking
+   notes — so the rule became "a note is frozen by its programme finishing, not
+   by its directory."
