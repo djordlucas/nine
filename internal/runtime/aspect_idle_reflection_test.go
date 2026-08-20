@@ -19,7 +19,7 @@ func TestIdleReflectionStageOnIdleAlwaysHasWork(t *testing.T) {
 	}
 	defer store.Close() //nolint:errcheck
 
-	h := runtime.NewIdleReflectionStage()
+	h := runtime.NewIdleReflectionAspect()
 	text, ok := h.OnIdle(context.Background(), "self-reflection")
 	if !ok {
 		t.Fatal("OnIdle ok = false, want true")
@@ -34,7 +34,7 @@ func TestIdleReflectionStageOnIdleAlwaysHasWork(t *testing.T) {
 // to write recorded no agent id at all, which broke as soon as more than one
 // session could reflect (docs/concept-consolidation.md C5).
 func TestIdleReflectionOnTurnEndIsANoOp(t *testing.T) {
-	h := runtime.NewIdleReflectionStage()
+	h := runtime.NewIdleReflectionAspect()
 	cases := []struct {
 		name   string
 		result string
@@ -77,15 +77,15 @@ func TestReconcileSelfReflectionCreatesPlan(t *testing.T) {
 	if plan.Status != "active" {
 		t.Errorf("plan.Status = %q, want active", plan.Status)
 	}
-	if len(plan.Stages) != 1 || plan.Stages[0].Kind != "idle-reflection" || plan.Stages[0].Status != "active" {
-		t.Fatalf("plan.Stages = %+v", plan.Stages)
+	if len(plan.Aspects) != 1 || plan.Aspects[0].Kind != "idle-reflection" || plan.Aspects[0].Status != "active" {
+		t.Fatalf("plan.Aspects = %+v", plan.Aspects)
 	}
 
 	var cfg struct {
 		IdleIntervalSeconds int `json:"idle_interval_seconds"`
 	}
-	if err := json.Unmarshal(plan.Stages[0].Config, &cfg); err != nil {
-		t.Fatalf("unmarshal stage config: %v", err)
+	if err := json.Unmarshal(plan.Aspects[0].Config, &cfg); err != nil {
+		t.Fatalf("unmarshal aspect config: %v", err)
 	}
 	if cfg.IdleIntervalSeconds != 120 {
 		t.Errorf("idle_interval_seconds = %d, want 120", cfg.IdleIntervalSeconds)
@@ -100,9 +100,9 @@ func TestReconcileSelfReflectionNoOpIfExists(t *testing.T) {
 	defer store.Close() //nolint:errcheck
 
 	existing := &memory.SessionPlan{
-		ID:     runtime.SelfReflectionAgentID,
-		Status: "paused",
-		Stages: []memory.SessionStage{{Name: "idle-reflection", Kind: "idle-reflection", Status: "done", Result: "custom"}},
+		ID:      runtime.SelfReflectionAgentID,
+		Status:  "paused",
+		Aspects: []memory.SessionAspect{{Name: "idle-reflection", Kind: "idle-reflection", Status: "done", Result: "custom"}},
 	}
 	if err := store.SessionPlanSave(existing); err != nil {
 		t.Fatal(err)
@@ -116,7 +116,7 @@ func TestReconcileSelfReflectionNoOpIfExists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Status != "paused" || plan.Stages[0].Status != "done" || plan.Stages[0].Result != "custom" {
+	if plan.Status != "paused" || plan.Aspects[0].Status != "done" || plan.Aspects[0].Result != "custom" {
 		t.Errorf("existing plan was overwritten: %+v", plan)
 	}
 }
@@ -148,7 +148,7 @@ func TestReconcileSelfReflectionDeactivatesWhenTurnedOff(t *testing.T) {
 	if plan.Status == "active" {
 		t.Errorf("plan.Status = %q, want it out of active so resume stops reviving it", plan.Status)
 	}
-	for _, st := range plan.Stages {
+	for _, st := range plan.Aspects {
 		if st.Status == "active" {
 			t.Errorf("stage %q left active", st.Name)
 		}

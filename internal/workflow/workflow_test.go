@@ -11,8 +11,8 @@ type fakeRepo struct {
 	notifs    []notif
 
 	// optional error injection
-	loadErr  error
-	saveErr  error
+	loadErr   error
+	saveErr   error
 	insertErr error
 }
 

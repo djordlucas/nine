@@ -13,16 +13,16 @@ import (
 	"nine/internal/memory"
 )
 
-// ErrStall is passed to StageHandler.OnTurnEnd as err when the session's
+// ErrStall is passed to AspectHandler.OnTurnEnd as err when the session's
 // stall detector fires (AgentWorker.checkStall), in place of a real turn
 // error. Handlers that care about stalls (e.g. pursue) check
 // errors.Is(err, ErrStall); others ignore it.
 var ErrStall = errors.New("session stalled")
 
-// StageHandler is the extension point for session-plan stages. See
+// AspectHandler is the extension point for session-plan stages. See
 // docs/session-plans.md for the full design and rationale for these three
 // methods.
-type StageHandler interface {
+type AspectHandler interface {
 	// Init is called once when a stage is loaded (whether freshly created or
 	// restored from a session_plans row), so handlers can validate cfg or
 	// capture any dependencies they need.
@@ -30,34 +30,34 @@ type StageHandler interface {
 	// OnTurnEnd is called after every turn completes, and also when the
 	// session's stall detector fires (result == "", err == ErrStall). Stages
 	// use it to sync their own state from domain data and to react to
-	// stalls. A stage that mutates its own SessionStage.Status/Result does so
+	// stalls. A stage that mutates its own SessionAspect.Status/Result does so
 	// by reading and writing its session_plans row directly.
 	OnTurnEnd(ctx context.Context, agentID string, result string, err error) error
-	// OnIdle is called by the per-stage idle scheduler when this stage's
+	// OnIdle is called by the per-aspect idle scheduler when this stage's
 	// idle_interval elapses. If the stage has work to do, it returns the text
 	// for AgentWorker to submit as the next turn (ok=true). If there's
 	// nothing to do, ok=false and no turn is submitted.
 	OnIdle(ctx context.Context, agentID string) (turnText string, ok bool)
 }
 
-// StageFactory creates a new StageHandler instance for a stage Kind.
-type StageFactory func() StageHandler
+// AspectFactory creates a new AspectHandler instance for a stage Kind.
+type AspectFactory func() AspectHandler
 
-// StageRegistry maps a SessionStage.Kind to the factory for its handler.
-var StageRegistry = map[string]StageFactory{
-	"active": func() StageHandler { return activeStage{} },
+// AspectRegistry maps a SessionAspect.Kind to the factory for its handler.
+var AspectRegistry = map[string]AspectFactory{
+	"active": func() AspectHandler { return activeAspect{} },
 }
 
-// activeStage is the trivial stage every ordinary [active] conversation gets:
+// activeAspect is the trivial stage every ordinary [active] conversation gets:
 // it never has work of its own, but gives loadOrCreatePlan something to seed
 // and is the slot future per-conversation stages get added alongside.
-type activeStage struct{}
+type activeAspect struct{}
 
-func (activeStage) Init(context.Context, string, json.RawMessage) error    { return nil }
-func (activeStage) OnTurnEnd(context.Context, string, string, error) error { return nil }
-func (activeStage) OnIdle(context.Context, string) (string, bool)          { return "", false }
+func (activeAspect) Init(context.Context, string, json.RawMessage) error    { return nil }
+func (activeAspect) OnTurnEnd(context.Context, string, string, error) error { return nil }
+func (activeAspect) OnIdle(context.Context, string) (string, bool)          { return "", false }
 
-// defaultProfile is the stage list for an ordinary user conversation.
+// defaultProfile is the aspect list for an ordinary user conversation.
 var defaultProfile = []string{"active"}
 
 // PlanStore is the persistence seam loadOrCreatePlan and the daemon-startup
@@ -73,20 +73,20 @@ type PlanStore interface {
 // sync.
 type sessionPlanState struct {
 	plan      *memory.SessionPlan
-	handlers  map[string]StageHandler // keyed by SessionStage.Name
+	handlers  map[string]AspectHandler // keyed by SessionAspect.Name
 	persisted bool
 	save      func(*memory.SessionPlan) error
 	load      func(string) (*memory.SessionPlan, error)
 }
 
-// initStages instantiates a StageHandler for each stage from StageRegistry
+// initAspects instantiates a AspectHandler for each stage from AspectRegistry
 // and calls Init on it.
-func initStages(ctx context.Context, agentID string, stages []memory.SessionStage) (map[string]StageHandler, error) {
-	handlers := make(map[string]StageHandler, len(stages))
+func initAspects(ctx context.Context, agentID string, stages []memory.SessionAspect) (map[string]AspectHandler, error) {
+	handlers := make(map[string]AspectHandler, len(stages))
 	for _, st := range stages {
-		factory, ok := StageRegistry[st.Kind]
+		factory, ok := AspectRegistry[st.Kind]
 		if !ok {
-			return nil, fmt.Errorf("unknown stage kind %q", st.Kind)
+			return nil, fmt.Errorf("unknown aspect kind %q", st.Kind)
 		}
 		h := factory()
 		if err := h.Init(ctx, agentID, st.Config); err != nil {
@@ -102,7 +102,7 @@ func initStages(ctx context.Context, agentID string, stages []memory.SessionStag
 // Status: "active" — loadOrCreatePlan always has something to give the idle
 // scheduler and OnTurnEnd/OnIdle hooks immediately.
 //
-// eager profiles (those with an idle-capable stage, e.g. idle-reflection or
+// eager profiles (those with an idle-capable aspect, e.g. idle-reflection or
 // pursue) are persisted immediately, since creating the row is itself the
 // signal that the session exists. Lazy profiles (ordinary [active]
 // conversations) are returned unpersisted; the worker persists them on its
@@ -110,50 +110,50 @@ func initStages(ctx context.Context, agentID string, stages []memory.SessionStag
 //
 // store may be nil, in which case the plan is purely in-memory (no
 // persistence, no resume).
-// roleBearingKinds are the stage kinds that decide a session's role by kind
+// roleBearingKinds are the aspect kinds that decide a session's role by kind
 // alone. A session has exactly one role, fixed at loop-build time
 // (docs/roles.md), so at most one stage may claim it.
 //
 // Only `pursue` is here, and deliberately: for every other stage the role is
-// *data* (stageConfig.Role), not an implication of the kind. That is what lets
+// *data* (aspectConfig.Role), not an implication of the kind. That is what lets
 // the same kind be a session's whole purpose in one plan and a passenger in
-// another — a reflection stage carries the reflection role when it is the
+// another — a reflection aspect carries the reflection role when it is the
 // session, and carries none when it rides alongside a pursue shell. Encoding
 // the role in the kind made those two cases indistinguishable, so a reflecting
 // pursue session was unrepresentable.
 var roleBearingKinds = map[string]bool{"pursue": true}
 
-// validateStages rejects a plan whose stages would make role, delegation, or
+// validateAspects rejects a plan whose stages would make role, delegation, or
 // goal ownership depend on their order in the array.
 //
-// roleNameForPlan returns the role of the *first* role-bearing stage it finds, so
+// roleNameForPlan returns the role of the *first* role-bearing aspect it finds, so
 // with two of them the session's role — and therefore its tool boundary — is
 // decided by JSON serialization order. That is not a rule anyone could infer from
 // the code, and it is not one worth having: it makes an operator's profile behave
 // differently depending on how it was written down.
 //
 // Goal ownership is bounded for a stronger reason: a pursue session owns its goal
-// 1:1 (agentID == goalID), so two pursue stages describe a session that owns two
+// 1:1 (agentID == goalID), so two pursue aspects describe a session that owns two
 // goals, which the identity relation cannot express.
 //
 // Checked at both construction and load. Load matters most — a plan predating this
 // rule, or one written directly to the store, reaches the same code paths.
-func validateStages(agentID string, stages []memory.SessionStage) error {
+func validateAspects(agentID string, stages []memory.SessionAspect) error {
 	var roleBearing, pursue []string
 	for _, st := range stages {
 		if st.Kind == "pursue" {
 			pursue = append(pursue, st.Name)
 		}
-		if roleBearingKinds[st.Kind] || stageRole(st.Config) != "" {
+		if roleBearingKinds[st.Kind] || aspectRole(st.Config) != "" {
 			roleBearing = append(roleBearing, st.Name)
 		}
 	}
 	if len(pursue) > 1 {
-		return fmt.Errorf("session plan %s has %d goal-owning stages (%s); a pursue session owns exactly one goal",
+		return fmt.Errorf("session plan %s has %d goal-owning aspects (%s); a pursue session owns exactly one goal",
 			agentID, len(pursue), strings.Join(pursue, ", "))
 	}
 	if len(roleBearing) > 1 {
-		return fmt.Errorf("session plan %s has %d role-bearing stages (%s); at most one stage may set the session's role",
+		return fmt.Errorf("session plan %s has %d role-bearing aspects (%s); at most one stage may set the session's role",
 			agentID, len(roleBearing), strings.Join(roleBearing, ", "))
 	}
 	return nil
@@ -166,10 +166,10 @@ func loadOrCreatePlan(ctx context.Context, store PlanStore, agentID string, prof
 			return nil, fmt.Errorf("load session plan %s: %w", agentID, err)
 		}
 		if existing != nil {
-			if err := validateStages(agentID, existing.Stages); err != nil {
+			if err := validateAspects(agentID, existing.Aspects); err != nil {
 				return nil, err
 			}
-			handlers, err := initStages(ctx, agentID, existing.Stages)
+			handlers, err := initAspects(ctx, agentID, existing.Aspects)
 			if err != nil {
 				return nil, err
 			}
@@ -184,9 +184,9 @@ func loadOrCreatePlan(ctx context.Context, store PlanStore, agentID string, prof
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	stages := make([]memory.SessionStage, 0, len(profile))
+	stages := make([]memory.SessionAspect, 0, len(profile))
 	for _, kind := range profile {
-		stages = append(stages, memory.SessionStage{
+		stages = append(stages, memory.SessionAspect{
 			Name:      kind,
 			Kind:      kind,
 			Status:    "active",
@@ -195,17 +195,17 @@ func loadOrCreatePlan(ctx context.Context, store PlanStore, agentID string, prof
 	}
 	// Reject a bad profile at construction, where the error names the caller's
 	// mistake, rather than at the next load when its origin is gone.
-	if err := validateStages(agentID, stages); err != nil {
+	if err := validateAspects(agentID, stages); err != nil {
 		return nil, err
 	}
-	handlers, err := initStages(ctx, agentID, stages)
+	handlers, err := initAspects(ctx, agentID, stages)
 	if err != nil {
 		return nil, err
 	}
 	plan := &memory.SessionPlan{
 		ID:        agentID,
 		Status:    "active",
-		Stages:    stages,
+		Aspects:   stages,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -224,26 +224,26 @@ func loadOrCreatePlan(ctx context.Context, store PlanStore, agentID string, prof
 	return state, nil
 }
 
-// stageConfig is the common shape of SessionStage.Config that the idle
+// aspectConfig is the common shape of SessionAspect.Config that the idle
 // scheduler and role resolver understand. Stage-specific fields live alongside
 // it and are read by the stage's own handler. Role and Delegates are set on a
-// pursue stage seeded for a pre-defined standing agent
+// pursue aspect seeded for a pre-defined standing agent
 // (docs/predefined-agents.md §5 piece 5): they carry the configured work role
 // and delegation opt-in into the pursue shell.
-type stageConfig struct {
+type aspectConfig struct {
 	IdleIntervalSeconds int    `json:"idle_interval_seconds,omitempty"`
 	Schedule            string `json:"schedule,omitempty"` // cron expr — XOR IdleIntervalSeconds
 	Role                string `json:"role,omitempty"`
 	Delegates           bool   `json:"delegates,omitempty"`
 }
 
-// stageRole returns the configured work-role name carried by a stage's config,
+// aspectRole returns the configured work-role name carried by a stage's config,
 // or "" when none is set.
-func stageRole(cfg json.RawMessage) string {
+func aspectRole(cfg json.RawMessage) string {
 	if len(cfg) == 0 {
 		return ""
 	}
-	var c stageConfig
+	var c aspectConfig
 	if err := json.Unmarshal(cfg, &c); err != nil {
 		return ""
 	}
@@ -257,7 +257,7 @@ func planOwnsGoal(plan *sessionPlanState) bool {
 	if plan == nil || plan.plan == nil {
 		return false
 	}
-	for _, st := range plan.plan.Stages {
+	for _, st := range plan.plan.Aspects {
 		if st.Kind == "pursue" {
 			return true
 		}
@@ -272,11 +272,11 @@ func planDelegates(plan *sessionPlanState) bool {
 	if plan == nil || plan.plan == nil {
 		return false
 	}
-	for _, st := range plan.plan.Stages {
+	for _, st := range plan.plan.Aspects {
 		if st.Kind != "pursue" || len(st.Config) == 0 {
 			continue
 		}
-		var c stageConfig
+		var c aspectConfig
 		if err := json.Unmarshal(st.Config, &c); err == nil && c.Delegates {
 			return true
 		}
@@ -284,41 +284,41 @@ func planDelegates(plan *sessionPlanState) bool {
 	return false
 }
 
-// stageNextWake reports how long until an idle-capable stage is next due to
+// aspectNextWake reports how long until an idle-capable aspect is next due to
 // wake, given lastFire (when it last fired) and the current time. A stage is
 // scheduled either by a fixed idle interval (remaining = interval − elapsed) or
 // by a cron expression (remaining = nextCronTime − now); scheduled is false for
 // a non-idle stage or an unparseable schedule. Duration is clamped at 0 when the
 // stage is already due (docs/scheduling.md).
-func stageNextWake(cfg json.RawMessage, lastFire, now time.Time) (remaining time.Duration, scheduled bool) {
-	d, ok := stageWakeDelta(cfg, lastFire, now)
+func aspectNextWake(cfg json.RawMessage, lastFire, now time.Time) (remaining time.Duration, scheduled bool) {
+	d, ok := aspectWakeDelta(cfg, lastFire, now)
 	return max(d, 0), ok
 }
 
-// stageOverdueBy reports how long a stage has been due, and whether it is due at
+// aspectOverdueBy reports how long a stage has been due, and whether it is due at
 // all. A stage due exactly now is overdue by zero and still due.
 //
-// It exists because stageNextWake clamps: every overdue stage reports 0 there, so
+// It exists because aspectNextWake clamps: every overdue stage reports 0 there, so
 // two stages that are both late are indistinguishable, and "which is later" — the
 // question fairness turns on — cannot be asked. This reads the same schedule
 // unclamped.
-func stageOverdueBy(cfg json.RawMessage, lastFire, now time.Time) (overdue time.Duration, due bool) {
-	d, ok := stageWakeDelta(cfg, lastFire, now)
+func aspectOverdueBy(cfg json.RawMessage, lastFire, now time.Time) (overdue time.Duration, due bool) {
+	d, ok := aspectWakeDelta(cfg, lastFire, now)
 	if !ok || d > 0 {
 		return 0, false
 	}
 	return -d, true
 }
 
-// stageWakeDelta is the shared, unclamped schedule reading: the signed time until
+// aspectWakeDelta is the shared, unclamped schedule reading: the signed time until
 // the stage is next due, negative meaning overdue by that much. Callers take
-// either the clamped view (stageNextWake, for arming a timer, which cannot be
-// negative) or the overdue view (stageOverdueBy, for choosing between stages).
-func stageWakeDelta(cfg json.RawMessage, lastFire, now time.Time) (delta time.Duration, scheduled bool) {
+// either the clamped view (aspectNextWake, for arming a timer, which cannot be
+// negative) or the overdue view (aspectOverdueBy, for choosing between stages).
+func aspectWakeDelta(cfg json.RawMessage, lastFire, now time.Time) (delta time.Duration, scheduled bool) {
 	if len(cfg) == 0 {
 		return 0, false
 	}
-	var c stageConfig
+	var c aspectConfig
 	if err := json.Unmarshal(cfg, &c); err != nil {
 		return 0, false
 	}
@@ -329,7 +329,7 @@ func stageWakeDelta(cfg json.RawMessage, lastFire, now time.Time) (delta time.Du
 	if c.Schedule != "" {
 		sched, err := cron.Parse(c.Schedule)
 		if err != nil {
-			slog.Warn("invalid cron schedule in stage config", "schedule", c.Schedule, "err", err)
+			slog.Warn("invalid cron schedule in aspect config", "schedule", c.Schedule, "err", err)
 			return 0, false
 		}
 		next := sched.Next(lastFire)
@@ -347,7 +347,7 @@ func stageScheduled(cfg json.RawMessage) bool {
 	if len(cfg) == 0 {
 		return false
 	}
-	var c stageConfig
+	var c aspectConfig
 	if err := json.Unmarshal(cfg, &c); err != nil {
 		return false
 	}
@@ -369,7 +369,7 @@ func stageScheduled(cfg json.RawMessage) bool {
 // ([idle-reflection], [pursue]) that loadOrCreatePlan's generic profile
 // seeding (which sets no Config) can't produce.
 func newIdleCapablePlan(id, stageKind, role string, idleInterval time.Duration) (*memory.SessionPlan, error) {
-	cfg, err := json.Marshal(stageConfig{
+	cfg, err := json.Marshal(aspectConfig{
 		Role:                role,
 		IdleIntervalSeconds: int(idleInterval.Seconds()),
 	})
@@ -380,7 +380,7 @@ func newIdleCapablePlan(id, stageKind, role string, idleInterval time.Duration) 
 	return &memory.SessionPlan{
 		ID:     id,
 		Status: "active",
-		Stages: []memory.SessionStage{{
+		Aspects: []memory.SessionAspect{{
 			Name:      stageKind,
 			Kind:      stageKind,
 			Status:    "active",
@@ -394,13 +394,13 @@ func newIdleCapablePlan(id, stageKind, role string, idleInterval time.Duration) 
 
 // newStandingPursuePlan builds a fresh pursue-shell SessionPlan for a
 // pre-defined standing agent (docs/predefined-agents.md). Like
-// newIdleCapablePlan it seeds a single active pursue stage, but it also stamps
-// the configured work-role name and delegation flag into the stage config so
+// newIdleCapablePlan it seeds a single active pursue aspect, but it also stamps
+// the configured work-role name and delegation flag into the aspect config so
 // roleNameForPlan / planDelegates resolve the agent's narrowed role while
 // keeping the pursue shell. The stage's wake trigger is a cron schedule when
 // schedule is non-empty, otherwise the fixed idleInterval.
-func newStandingPursuePlan(id, role string, delegates bool, idleInterval time.Duration, schedule string, aspects []StageAspect) (*memory.SessionPlan, error) {
-	sc := stageConfig{Role: role, Delegates: delegates}
+func newStandingPursuePlan(id, role string, delegates bool, idleInterval time.Duration, schedule string, aspects []AspectDecl) (*memory.SessionPlan, error) {
+	sc := aspectConfig{Role: role, Delegates: delegates}
 	if schedule != "" {
 		sc.Schedule = schedule
 	} else {
@@ -412,7 +412,7 @@ func newStandingPursuePlan(id, role string, delegates bool, idleInterval time.Du
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	stages := []memory.SessionStage{{
+	stages := []memory.SessionAspect{{
 		Name:      "pursue",
 		Kind:      "pursue",
 		Status:    "active",
@@ -420,10 +420,10 @@ func newStandingPursuePlan(id, role string, delegates bool, idleInterval time.Du
 		UpdatedAt: now,
 	}}
 	// Additional aspects wake on their own cadence beside the pursue shell.
-	// None carries a role: the pursue stage is the session's one role-bearing
-	// stage, and validateStages rejects a second claimant.
+	// None carries a role: the pursue aspect is the session's one role-bearing
+	// stage, and validateAspects rejects a second claimant.
 	for _, a := range aspects {
-		ac := stageConfig{}
+		ac := aspectConfig{}
 		if a.Schedule != "" {
 			ac.Schedule = a.Schedule
 		} else {
@@ -433,7 +433,7 @@ func newStandingPursuePlan(id, role string, delegates bool, idleInterval time.Du
 		if err != nil {
 			return nil, fmt.Errorf("marshal aspect %q config: %w", a.Kind, err)
 		}
-		stages = append(stages, memory.SessionStage{
+		stages = append(stages, memory.SessionAspect{
 			Name:      a.Kind,
 			Kind:      a.Kind,
 			Status:    "active",
@@ -445,36 +445,36 @@ func newStandingPursuePlan(id, role string, delegates bool, idleInterval time.Du
 	plan := &memory.SessionPlan{
 		ID:        id,
 		Status:    "active",
-		Stages:    stages,
+		Aspects:   stages,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
 	// Fail here rather than at the next load: this is where the operator's
 	// config becomes a plan, so this is where the error can name their mistake.
-	if err := validateStages(id, plan.Stages); err != nil {
+	if err := validateAspects(id, plan.Aspects); err != nil {
 		return nil, err
 	}
 	return plan, nil
 }
 
-// StageAspect is one additional stage requested on a standing agent's session,
+// AspectDecl is one additional stage requested on a standing agent's session,
 // resolved from an [[agent.aspect]] entry. Exactly one of Interval or Schedule
-// is set; an aspect with neither would never wake, which ValidateAspects
+// is set; an aspect with neither would never wake, which ValidateAspectDecls
 // rejects before it can become a stage that quietly does nothing.
-type StageAspect struct {
+type AspectDecl struct {
 	Kind     string
 	Interval time.Duration
 	Schedule string
 }
 
-// ValidateAspects checks operator-declared aspects before they become stages.
+// ValidateAspectDecls checks operator-declared aspects before they become stages.
 //
 // Every failure here is one that would otherwise be silent: an unregistered kind
 // produces a stage with no handler (it is scheduled, wakes, finds nothing to run,
 // and rearms forever), a missing cadence produces a stage that never wakes at
 // all, and a duplicate kind produces two stages with the same name, which
 // idleSince keys on.
-func ValidateAspects(aspects []StageAspect) error {
+func ValidateAspectDecls(aspects []AspectDecl) error {
 	seen := map[string]bool{}
 	for _, a := range aspects {
 		if a.Kind == "" {
@@ -485,8 +485,8 @@ func ValidateAspects(aspects []StageAspect) error {
 		if a.Kind == "pursue" {
 			return errors.New(`aspect "pursue" duplicates the session's own pursue shell`)
 		}
-		if _, ok := StageRegistry[a.Kind]; !ok {
-			return fmt.Errorf("aspect %q is not a registered stage kind", a.Kind)
+		if _, ok := AspectRegistry[a.Kind]; !ok {
+			return fmt.Errorf("aspect %q is not a registered aspect kind", a.Kind)
 		}
 		if seen[a.Kind] {
 			return fmt.Errorf("aspect %q declared twice", a.Kind)
@@ -509,7 +509,7 @@ func planNeedsResume(p memory.SessionPlan) bool {
 	if p.Status != "active" {
 		return false
 	}
-	for _, st := range p.Stages {
+	for _, st := range p.Aspects {
 		if st.Status != "active" {
 			continue
 		}
