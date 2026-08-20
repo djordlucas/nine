@@ -109,7 +109,7 @@ as the slot where future per-conversation stages can be added.
 ## R-PLAN.7 — Built-in stage: `idle-reflection` (self-reflection)
 
 A single fixed session, agent ID `"self-reflection"`, profile `["idle-reflection"]`,
-idle interval **2 minutes**. Created once by `BootstrapSelfReflection` on first start;
+idle interval **2 minutes**. Created once by `ReconcileSelfReflection` on first start;
 resumed every restart.
 
 - `OnIdle` **always** has work: it returns the reflection prompt, asking the model to

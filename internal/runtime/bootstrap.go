@@ -37,18 +37,47 @@ func BootstrapSelfKV(store *memory.Store, loadedPlugins []string) error {
 	return nil
 }
 
-// BootstrapSelfReflection ensures the self-reflection session_plans row
-// exists, seeded with profile [idle-reflection] and the given idle interval.
-// A no-op if the row already exists (docs/session-plans.md, Pilot 4's
-// one-time bootstrap — every subsequent boot is handled by the general
-// resume pass instead).
-func BootstrapSelfReflection(store PlanStore, idleInterval time.Duration) error {
+// ReconcileSelfReflection brings the dedicated self-reflection session in line
+// with the operator's configuration, in both directions.
+//
+// interval > 0 ensures the plan exists (a no-op once it does; later boots pick it
+// up through the general resume pass). interval == 0 means the operator removed
+// reflection, and an existing session is **deactivated** — not merely left
+// uncreated. That distinction is the whole reason this replaced a one-shot
+// bootstrap: a plan row outlives the boot that made it, so "stop creating it"
+// would leave every machine that had ever run reflection still running it, and
+// the setting would appear to do nothing.
+//
+// Deactivation mirrors TeardownStandingSession: the plan and its stages leave
+// "active", which makes planNeedsResume false on every later boot. The row is
+// kept rather than deleted so the history stays readable with
+// `nine reflections`.
+func ReconcileSelfReflection(store PlanStore, idleInterval time.Duration) error {
 	existing, err := store.SessionPlanGet(SelfReflectionAgentID)
 	if err != nil {
 		return fmt.Errorf("check self-reflection session plan: %w", err)
 	}
+
+	if idleInterval <= 0 {
+		if existing == nil || existing.Status != "active" {
+			return nil
+		}
+		now := time.Now().UTC().Format(time.RFC3339)
+		existing.Status = "archived"
+		for i := range existing.Stages {
+			existing.Stages[i].Status = "done"
+			existing.Stages[i].UpdatedAt = now
+		}
+		existing.UpdatedAt = now
+		if err := store.SessionPlanSave(existing); err != nil {
+			return fmt.Errorf("deactivate self-reflection session plan: %w", err)
+		}
+		slog.Info("self-reflection disabled by config; session deactivated")
+		return nil
+	}
+
 	if existing != nil {
-		return nil // already bootstrapped
+		return nil // already present; cadence changes apply to a fresh plan only
 	}
 
 	// The role is stamped into the stage config rather than implied by the kind,
@@ -61,6 +90,6 @@ func BootstrapSelfReflection(store PlanStore, idleInterval time.Duration) error 
 	if err := store.SessionPlanSave(plan); err != nil {
 		return fmt.Errorf("create self-reflection session plan: %w", err)
 	}
-	slog.Info("bootstrapped self-reflection session")
+	slog.Info("self-reflection session created", "interval", idleInterval)
 	return nil
 }
