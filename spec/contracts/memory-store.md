@@ -54,7 +54,7 @@ tables to be agent-visible (R-MEM.4).
 | `skills` | skill records (name, description, tags, body, source) | mixed |
 | `tools` | generated sandboxed tools Nine authored (name, description, input_schema, `js` source, capability **declaration**, usage counters) — code and declaration only, never a grant (see [`toolvm.md`](toolvm.md) R-TVM.14) | daemon-private |
 | `conversations` | message history, scratchpad checkpoint, status, display name | daemon-private |
-| `goals` | open-ended intentions; status; parent; `subtree` JSON | daemon-private |
+| `goals` | open-ended intentions; status; parent (`parent_id` is the only edge) | daemon-private |
 | `workflows` | multi-step plans; steps as a JSON array on the row | daemon-private |
 | `notifications` | pending push messages to the next active turn | daemon-private |
 | `user_notifications` | human-facing feed posted by background agents (`nine notifications`) | daemon-private |

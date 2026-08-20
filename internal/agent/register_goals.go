@@ -34,16 +34,10 @@ var goalToolDefs = []llm.ToolDef{
 		Description: "Update a goal's status.",
 		InputSchema: json.RawMessage(`{"type":"object","required":["goal_id","status"],"properties":{"goal_id":{"type":"string"},"status":{"type":"string","enum":["active","paused","done","archived"],"description":"active = in progress, paused = temporarily on hold, done = completed or resolved, archived = retired without completion."}}}`),
 	},
-	{
-		Name:        "goal_append_subtree",
-		DisplayName: "Goal Subtree",
-		Description: "Append an entry (typically a sub-goal or task ID) to a goal's append-only subtree log, recording what it has spawned.",
-		InputSchema: json.RawMessage(`{"type":"object","required":["goal_id","entry"],"properties":{"goal_id":{"type":"string"},"entry":{"type":"string","description":"The sub-goal or task ID (or short description) to record."}}}`),
-	},
 }
 
-// RegisterGoalTools registers all five goal handlers into d (goal_create plus
-// the four self-management tools). It is the combined convenience used where a
+// RegisterGoalTools registers all four goal handlers into d (goal_create plus
+// the three self-management tools). It is the combined convenience used where a
 // role gets both delegation and goal-ownership; the daemon's loop builder wires
 // the two subsets independently (docs/predefined-agents.md §3.1).
 func RegisterGoalTools(d *Dispatcher, agentID string, store *memory.Store, spawnFn GoalSessionSpawnFn) {
@@ -59,7 +53,7 @@ func RegisterGoalTools(d *Dispatcher, agentID string, store *memory.Store, spawn
 //
 // goal_create is a delegation/orchestration tool: it is gated behind a role's
 // Delegates flag. The goal *self-management* tools (goal_get, goal_list,
-// goal_update_status, goal_append_subtree) are registered separately by
+// goal_update_status) are registered separately by
 // RegisterGoalManagement, since a standing agent must steer its own goal
 // regardless of whether it can delegate (docs/predefined-agents.md §3.1).
 func RegisterGoalCreate(d *Dispatcher, agentID string, store *memory.Store, spawnFn GoalSessionSpawnFn) {
@@ -118,7 +112,7 @@ func RegisterGoalCreate(d *Dispatcher, agentID string, store *memory.Store, spaw
 }
 
 // RegisterGoalManagement registers the goal self-management handlers into d:
-// goal_get, goal_list, goal_update_status, and goal_append_subtree. These are
+// goal_get, goal_list, and goal_update_status. These are
 // the tools a goal-owning session uses to steer its own goal (read status,
 // pause/finish itself, record findings). They carry no delegation authority and
 // are registered for every pursue-shell session regardless of role
@@ -167,20 +161,6 @@ func RegisterGoalManagement(d *Dispatcher, store *memory.Store) {
 			return "", fmt.Errorf("goal_update_status: %w", err)
 		}
 		if err := store.GoalUpdateStatus(req.GoalID, req.Status); err != nil {
-			return "", err
-		}
-		return "ok", nil
-	}
-
-	d.handlers["goal_append_subtree"] = func(_ context.Context, args json.RawMessage) (string, error) {
-		var req struct {
-			GoalID string `json:"goal_id"`
-			Entry  string `json:"entry"`
-		}
-		if err := json.Unmarshal(args, &req); err != nil {
-			return "", fmt.Errorf("goal_append_subtree: %w", err)
-		}
-		if err := store.GoalAppendSubtree(req.GoalID, req.Entry); err != nil {
 			return "", err
 		}
 		return "ok", nil

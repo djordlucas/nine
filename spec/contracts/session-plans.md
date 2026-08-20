@@ -141,8 +141,8 @@ Each top-level goal gets a `pursue` session keyed 1:1 by `agentID == goalID`, pr
 `["pursue"]`, idle interval **5 minutes**.
 
 - `OnIdle` — if the goal is still `active`, return a prompt asking the session to
-  `goal_get` the goal + subtree, take useful action (including spawning sub-goals/
-  sub-agents and recording them via `goal_append_subtree`), and call `goal_update_status`
+  `goal_get` the goal and its children, take useful action (including spawning sub-goals/
+  sub-agents), and call `goal_update_status`
   if the status should change. If the goal is missing/inactive, sync the stage status
   the same way `OnTurnEnd` does (missing goal → `done`) and return `ok=false` — this
   retires the stage on the idle path when a goal is paused/finished/archived while the

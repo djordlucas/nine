@@ -105,7 +105,8 @@ for security issues"). Stored in `goals`:
 
 ```schema
 Goal { id, description, status ("active"|"paused"|"done"|"archived"),
-       parent_id, parent_type ("conversation"|"goal"), subtree []json (append-only) }
+       parent_id, parent_type ("conversation"|"goal") }
+       // `subtree` is returned by goal_get, derived from children's parent_id — not stored
 ```
 
 The LLM creates and decomposes goals **autonomously** — no user approval to spawn
@@ -113,7 +114,7 @@ sub-goals or tasks.
 
 ### R-ORCH.11 — Tools (delegating roles)
 
-`goal_create`, `goal_get`, `goal_list`, `goal_update_status`, `goal_append_subtree`.
+`goal_create`, `goal_get`, `goal_list`, `goal_update_status`.
 `goal_create` defaults `parent_id`/`parent_type` to the owning conversation when no parent
 is given. `goal_list` is also reachable as a read-only daemon proxy (`nine goals`) without
 an agent loop.
@@ -142,3 +143,25 @@ function, so only top-level goals get background sessions (R-ROLE.1).
 `Repository`), `internal/memory/workflows.go`, `internal/agent/register_*.go` (`goal_*`,
 `workflow_*` wiring), `internal/runtime/goal_session.go` (`SpawnGoalSession`,
 `DefaultMaxGoalSessions`, `PursueIdleInterval`).
+
+---
+
+## R-ORCH.13 — The goal tree has exactly one representation
+
+A goal's parent is `parent_id` (with `parent_type`), written when the child is created.
+That edge is the **only** stored form of the relation: an implementation **MUST NOT**
+keep a second, parent-side copy of its children.
+
+`goal_get` still returns a `subtree` array — the child ids — but it is **derived** from
+`parent_id` at read time, and there is no tool for writing it.
+
+The rule exists because the alternative was tried. A stored `subtree` column was
+append-only free text, written solely by a `goal_append_subtree` tool, read by nothing in
+the daemon, and reaching the model only by riding along in `goal_get`. Keeping it in step
+with `parent_id` was therefore delegated to the model, by an orchestrator prompt that
+asked it to record every spawn twice. That is a denormalized index of a relation the
+schema already enforces: **wrong at some rate, unverifiable, and costing a tool slot in
+every context that carries goal tools.**
+
+Deriving it instead makes the two impossible to disagree, and leaves the model-facing
+shape of `goal_get` unchanged.

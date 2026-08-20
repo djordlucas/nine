@@ -54,7 +54,7 @@ type Role struct {
 
 	// OwnsGoal marks a pursue-shell session that steers its own goal: it grants
 	// the goal self-management tools (goal_get/goal_list/goal_update_status/
-	// goal_append_subtree) regardless of the role's own allowlist, exactly as
+	// goal_update_status) regardless of the role's own allowlist, exactly as
 	// gap_report is always granted (docs/predefined-agents.md §3.1). It is
 	// conferred by the shell (the daemon), not declared in a role skill, and is
 	// a root-only structural flag — ResolveLeaf strips it.
