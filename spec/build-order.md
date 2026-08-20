@@ -234,13 +234,13 @@ autonomous turn to run ~1s after the last turn, going through the full turn pipe
 - `BootstrapSelfKV` to seed `self/identity` and `self/capabilities`.
 - The `idle-reflection` stage: a single fixed session (`agentID = "self-reflection"`),
   idle interval **2 min**, whose `OnIdle` asks the model to update `self/capabilities`
-  and `self/learned`, and whose `OnTurnEnd` records a row in `reflections`.
+  and `self/learned`. The turn itself is recorded by the journal, like any other.
 
 **Wire.** Register the stage; `BootstrapSelfReflection` creates the session once;
 `ResumeSessions` (Phase 17) restarts it on every boot.
 
 **Gate.** With the reflection interval shortened, the session fires a reflection turn
-that writes `self/learned` and appends a `reflections` row; subsequent turns include the
+that writes `self/learned`; subsequent turns include the
 self-model block.
 
 ---

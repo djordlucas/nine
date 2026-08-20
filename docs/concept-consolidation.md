@@ -23,7 +23,7 @@
 | **C2** | ~~**Exactly one stage** may carry `role` / `delegates` / goal-ownership, validated at load~~ **done** | Three functions resolve these by first-match, so with two stages behavior depends on JSON array order | no |
 | **C3** | ~~Add a **two-stage profile**; let `[[agent]]` declare a stage list~~ **done** (`[[agent.aspect]]`) | `loadOrCreatePlan` already supports N stages and nothing passes more than one — the capability has no caller | no |
 | **C4** | Make **`reflect` an aspect any session can carry** | Reflection is special-cased as a session *kind* in three places; as an aspect, any pursue session or standing agent can reflect on its own progress | no |
-| **C5** | Delete the **`reflections` table**; `nine reflections` → `nine log <agent>` | No `agent_id` column, so it breaks under `C4`; its content is already in the journal; the durable output of a reflection turn is a KV write | **yes** |
+| **C5** | ~~Delete the **`reflections` table**; `nine reflections` → `nine log <agent>`~~ **done** (kept the verb, repointed at the journal) | No `agent_id` column, so it breaks under `C4`; its content is already in the journal; the durable output of a reflection turn is a KV write | **yes** |
 | **C6** | Delete **`goal.subtree`** and **`goal_append_subtree`** | `parent_id` is the authoritative edge; `subtree` is a free-text copy nothing reads, which the prompt asks the model to maintain by hand | **yes** |
 | **C7** | ~~Move **`workflow`** beside the sub-agent in `spec/overview.md`~~ **done** | §3.2 presents goal and workflow as siblings; they are not, and that false parallelism is why they read as duplicates | no (docs) |
 
@@ -182,6 +182,28 @@ Written in exactly one place (`idleReflectionStage.OnTurnEnd`), read in exactly 
 **Generalizes:** `nine reflections` becomes `nine log <agent>`, a journal query by
 agent id that works for **every** aspect-bearing session — today a standing
 agent's output history has no equivalent view at all.
+
+**Done, with one deviation: the verb stays `nine reflections`.** `nine log <agent>`
+would have duplicated `nine trace <agent-id>`, which is already a journal query by
+agent id and is strictly more capable (turn filtering, sub-agent trees). What was
+actually missing is not a second raw-journal view but the *digest* one — so
+`nine reflections [agent-id]` keeps the verb, takes an optional agent, and reads
+the journal instead of the table. Operator muscle memory survives, and the new
+capability (any agent's reflection history) arrives without a redundant command.
+
+Like `nine trace`, it reads the store read-only and needs no running daemon — which
+is why the `list_reflections` **wire message and its handler are deleted** rather
+than repointed, matching the note's own "−1 wire message".
+
+**C5 became urgent rather than optional once `C3` landed.** `OnTurnEnd` received the
+agent id and discarded it (`ReflectionCreate(newUUID(), result)`), so the moment an
+operator could attach a reflect aspect to a standing agent — which `C3` shipped —
+several sessions could write into a table that cannot say which produced what.
+
+**The drop is destructive**, and is the first migration step that is. Rows written
+before the journal existed have no equivalent elsewhere and are lost. That is the
+accepted cost recorded in §4 ("adding `agent_id` … would entrench a projection as a
+store"), not an oversight.
 
 **Retention.** `SessionEventsScrub` (`events.go:63`) bounds the journal; nothing
 bounds `reflections`, which grows forever today. Moving to journal-backed history

@@ -70,6 +70,21 @@ var migrations = []migrationStep{
 	{name: "tools_lockfile", fn: func(q sqlExec) error {
 		return addColumnIfMissing(q, "tools", "lockfile", "TEXT NOT NULL DEFAULT '{}'")
 	}},
+
+	// 2 → 3: drop the `reflections` table. It recorded a reflection turn's text
+	// with no agent id, which was survivable while exactly one session could
+	// reflect and wrong as soon as any session can carry a reflect aspect. The
+	// journal already holds every turn under its own agent_id, and the durable
+	// product of a reflection is the `self/*` KV write the prompt asks for — not
+	// the transcript, which nothing read back (docs/concept-consolidation.md C5).
+	//
+	// This is the first destructive step: rows written before the journal existed
+	// have no equivalent elsewhere and are lost. That is the accepted cost of the
+	// change, not an oversight.
+	{name: "drop_reflections", fn: func(q sqlExec) error {
+		_, err := q.Exec(`DROP TABLE IF EXISTS reflections`)
+		return err
+	}},
 }
 
 // userVersion reads PRAGMA user_version. A database SQLite has just created
