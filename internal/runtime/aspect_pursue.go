@@ -11,28 +11,28 @@ import (
 	"nine/internal/memory"
 )
 
-// pursueStage implements the "pursue" StageHandler (see
+// pursueAspect implements the "pursue" AspectHandler (see
 // docs/goal-sessions.md and docs/session-plans.md Pilot 2): each pursue
 // session is keyed 1:1 to a goal (agentID == goalID). OnIdle prompts the
 // session to assess and act on that goal; OnTurnEnd reads the goal back and
 // syncs this stage's Status from goals.status, so the idle scheduler stops
 // arming further turns once the goal is no longer active.
-type pursueStage struct {
+type pursueAspect struct {
 	store *memory.Store
 }
 
-// NewPursueStage creates the "pursue" StageHandler.
-func NewPursueStage(store *memory.Store) StageHandler {
-	return &pursueStage{store: store}
+// NewPursueAspect creates the "pursue" AspectHandler.
+func NewPursueAspect(store *memory.Store) AspectHandler {
+	return &pursueAspect{store: store}
 }
 
-func (s *pursueStage) Init(context.Context, string, json.RawMessage) error { return nil }
+func (s *pursueAspect) Init(context.Context, string, json.RawMessage) error { return nil }
 
 // OnTurnEnd syncs this stage's Status from goals.status (Pilot 4's mapping:
 // active->active, paused->paused, done/archived->done). On ErrStall, it also
 // pauses the goal — a stalled pursue session frees its slot under
 // MaxGoalSessions (docs/goal-sessions.md "Resource bounds").
-func (s *pursueStage) OnTurnEnd(_ context.Context, agentID string, _ string, err error) error {
+func (s *pursueAspect) OnTurnEnd(_ context.Context, agentID string, _ string, err error) error {
 	if errors.Is(err, ErrStall) {
 		if uerr := s.store.GoalUpdateStatus(agentID, "paused"); uerr != nil {
 			return uerr
@@ -54,11 +54,11 @@ func (s *pursueStage) OnTurnEnd(_ context.Context, agentID string, _ string, err
 // When the goal is no longer active, OnIdle also syncs this stage's Status
 // before returning. Without this, a goal paused/finished/archived (e.g. via
 // goal_update_status) while the session sat idle would never reach OnTurnEnd —
-// which only fires after a turn — so the pursue stage would linger in "active":
+// which only fires after a turn — so the pursue aspect would linger in "active":
 // the idle scheduler would re-arm forever and the session would keep counting
 // against MaxGoalSessions. Syncing here retires the stage on the idle path too,
 // mirroring OnTurnEnd. A missing goal collapses to "done".
-func (s *pursueStage) OnIdle(_ context.Context, agentID string) (string, bool) {
+func (s *pursueAspect) OnIdle(_ context.Context, agentID string) (string, bool) {
 	goal, err := s.store.GoalGet(agentID)
 	if err != nil {
 		return "", false
@@ -69,14 +69,14 @@ func (s *pursueStage) OnIdle(_ context.Context, agentID string) (string, bool) {
 			status = pursueStageStatus(goal.Status)
 		}
 		if serr := s.syncStatus(agentID, status); serr != nil {
-			slog.Warn("pursue stage idle status sync failed", "agent_id", agentID, "err", serr)
+			slog.Warn("pursue aspect idle status sync failed", "agent_id", agentID, "err", serr)
 		}
 		return "", false
 	}
 	return fmt.Sprintf(PursuePromptTemplate, agentID, goal.Description), true
 }
 
-// pursueStageStatus maps goals.status to this stage's SessionStage.Status
+// pursueStageStatus maps goals.status to this stage's SessionAspect.Status
 // (docs/session-plans.md Pilot 4, "Reconciling the three status enums"):
 // active->active, paused->paused, and both done and archived collapse to
 // done — the stage only needs a binary "more to do / no more to do"
@@ -94,7 +94,7 @@ func pursueStageStatus(goalStatus string) string {
 
 // syncStatus updates the "pursue" stage's Status in agentID's session_plans
 // row if it differs from status, and persists the change.
-func (s *pursueStage) syncStatus(agentID, status string) error {
+func (s *pursueAspect) syncStatus(agentID, status string) error {
 	plan, err := s.store.SessionPlanGet(agentID)
 	if err != nil {
 		return err
@@ -104,13 +104,13 @@ func (s *pursueStage) syncStatus(agentID, status string) error {
 	}
 	changed := false
 	now := time.Now().UTC().Format(time.RFC3339)
-	for i := range plan.Stages {
-		if plan.Stages[i].Kind != "pursue" {
+	for i := range plan.Aspects {
+		if plan.Aspects[i].Kind != "pursue" {
 			continue
 		}
-		if plan.Stages[i].Status != status {
-			plan.Stages[i].Status = status
-			plan.Stages[i].UpdatedAt = now
+		if plan.Aspects[i].Status != status {
+			plan.Aspects[i].Status = status
+			plan.Aspects[i].UpdatedAt = now
 			changed = true
 		}
 	}

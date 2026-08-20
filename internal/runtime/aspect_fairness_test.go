@@ -9,7 +9,7 @@ import (
 	"nine/internal/memory"
 )
 
-func cfgJSON(t *testing.T, c stageConfig) json.RawMessage {
+func cfgJSON(t *testing.T, c aspectConfig) json.RawMessage {
 	t.Helper()
 	b, err := json.Marshal(c)
 	if err != nil {
@@ -18,26 +18,26 @@ func cfgJSON(t *testing.T, c stageConfig) json.RawMessage {
 	return b
 }
 
-// stageNextWake clamps at 0, which is why fairness needs its own reading: two
+// aspectNextWake clamps at 0, which is why fairness needs its own reading: two
 // stages overdue by wildly different amounts are indistinguishable through it.
 func TestStageOverdueByDistinguishesLateStages(t *testing.T) {
 	now := time.Now()
-	short := cfgJSON(t, stageConfig{IdleIntervalSeconds: 60})
-	long := cfgJSON(t, stageConfig{IdleIntervalSeconds: 3600})
+	short := cfgJSON(t, aspectConfig{IdleIntervalSeconds: 60})
+	long := cfgJSON(t, aspectConfig{IdleIntervalSeconds: 3600})
 
 	// Both last fired 2h ago: the 60s stage is ~119m late, the 3600s one ~60m.
 	lastFire := now.Add(-2 * time.Hour)
 
-	shortRemaining, _ := stageNextWake(short, lastFire, now)
-	longRemaining, _ := stageNextWake(long, lastFire, now)
+	shortRemaining, _ := aspectNextWake(short, lastFire, now)
+	longRemaining, _ := aspectNextWake(long, lastFire, now)
 	if shortRemaining != 0 || longRemaining != 0 {
-		t.Fatalf("stageNextWake = %v/%v, want both clamped to 0", shortRemaining, longRemaining)
+		t.Fatalf("aspectNextWake = %v/%v, want both clamped to 0", shortRemaining, longRemaining)
 	}
 
-	shortOverdue, ok1 := stageOverdueBy(short, lastFire, now)
-	longOverdue, ok2 := stageOverdueBy(long, lastFire, now)
+	shortOverdue, ok1 := aspectOverdueBy(short, lastFire, now)
+	longOverdue, ok2 := aspectOverdueBy(long, lastFire, now)
 	if !ok1 || !ok2 {
-		t.Fatal("both stages are past due; stageOverdueBy should report both as due")
+		t.Fatal("both stages are past due; aspectOverdueBy should report both as due")
 	}
 	if shortOverdue <= longOverdue {
 		t.Errorf("overdue: short=%v long=%v, want the 60s stage to be further past due", shortOverdue, longOverdue)
@@ -47,8 +47,8 @@ func TestStageOverdueByDistinguishesLateStages(t *testing.T) {
 // A stage that is not yet due is not due, and reports no overdueness.
 func TestStageOverdueByRejectsFutureStages(t *testing.T) {
 	now := time.Now()
-	cfg := cfgJSON(t, stageConfig{IdleIntervalSeconds: 300})
-	if overdue, due := stageOverdueBy(cfg, now.Add(-10*time.Second), now); due {
+	cfg := cfgJSON(t, aspectConfig{IdleIntervalSeconds: 300})
+	if overdue, due := aspectOverdueBy(cfg, now.Add(-10*time.Second), now); due {
 		t.Errorf("due = true (overdue %v) for a stage with 290s left", overdue)
 	}
 }
@@ -56,8 +56,8 @@ func TestStageOverdueByRejectsFutureStages(t *testing.T) {
 // A stage due exactly now is due, with zero overdueness.
 func TestStageOverdueByAtExactlyDue(t *testing.T) {
 	now := time.Now()
-	cfg := cfgJSON(t, stageConfig{IdleIntervalSeconds: 300})
-	overdue, due := stageOverdueBy(cfg, now.Add(-300*time.Second), now)
+	cfg := cfgJSON(t, aspectConfig{IdleIntervalSeconds: 300})
+	overdue, due := aspectOverdueBy(cfg, now.Add(-300*time.Second), now)
 	if !due {
 		t.Fatal("a stage due exactly now should be due")
 	}
@@ -71,10 +71,10 @@ func TestStageOverdueByIgnoresUnscheduledStages(t *testing.T) {
 	now := time.Now()
 	for _, cfg := range []json.RawMessage{
 		nil,
-		cfgJSON(t, stageConfig{}),
-		cfgJSON(t, stageConfig{Schedule: "not a cron"}),
+		cfgJSON(t, aspectConfig{}),
+		cfgJSON(t, aspectConfig{Schedule: "not a cron"}),
 	} {
-		if _, due := stageOverdueBy(cfg, now.Add(-24*time.Hour), now); due {
+		if _, due := aspectOverdueBy(cfg, now.Add(-24*time.Hour), now); due {
 			t.Errorf("cfg %s reported due; an unscheduled stage never is", cfg)
 		}
 	}
@@ -86,13 +86,13 @@ func TestValidateStagesRejectsTwoRoleBearingStages(t *testing.T) {
 	// One claims the role by kind (pursue), the other by config. Two different
 	// routes to the same claim, which is exactly the case that must be caught —
 	// a kind-only check would miss it.
-	err := validateStages("a1", []memory.SessionStage{
+	err := validateAspects("a1", []memory.SessionAspect{
 		{Name: "pursue", Kind: "pursue", Status: "active"},
 		{Name: "reflect", Kind: "idle-reflection", Status: "active",
-			Config: cfgJSON(t, stageConfig{Role: "reflection"})},
+			Config: cfgJSON(t, aspectConfig{Role: "reflection"})},
 	})
 	if err == nil {
-		t.Fatal("validateStages accepted two role-bearing stages")
+		t.Fatal("validateAspects accepted two role-bearing aspects")
 	}
 	for _, want := range []string{"role-bearing", "pursue", "reflect"} {
 		if !strings.Contains(err.Error(), want) {
@@ -101,47 +101,47 @@ func TestValidateStagesRejectsTwoRoleBearingStages(t *testing.T) {
 	}
 }
 
-// A pursue session owns its goal 1:1 (agentID == goalID), so two pursue stages
+// A pursue session owns its goal 1:1 (agentID == goalID), so two pursue aspects
 // describe something the identity relation cannot express.
 func TestValidateStagesRejectsTwoGoalOwningStages(t *testing.T) {
-	err := validateStages("a1", []memory.SessionStage{
+	err := validateAspects("a1", []memory.SessionAspect{
 		{Name: "pursue-a", Kind: "pursue", Status: "active"},
 		{Name: "pursue-b", Kind: "pursue", Status: "active"},
 	})
 	if err == nil {
-		t.Fatal("validateStages accepted two goal-owning stages")
+		t.Fatal("validateAspects accepted two goal-owning aspects")
 	}
 	if !strings.Contains(err.Error(), "goal-owning") {
 		t.Errorf("error = %v, want it to name the goal-ownership conflict", err)
 	}
 }
 
-// The shapes that must keep working: today's single-stage plans, and the
-// two-stage profile C3 is about to introduce.
+// The shapes that must keep working: today's single-aspect plans, and the
+// two-aspect profile C3 is about to introduce.
 func TestValidateStagesAcceptsValidPlans(t *testing.T) {
 	cases := []struct {
 		name   string
-		stages []memory.SessionStage
+		stages []memory.SessionAspect
 	}{
 		{"empty", nil},
-		{"single active stage", []memory.SessionStage{{Name: "active", Kind: "active"}}},
-		{"single pursue", []memory.SessionStage{{Name: "pursue", Kind: "pursue"}}},
-		{"single reflection", []memory.SessionStage{{Name: "reflect", Kind: "idle-reflection"}}},
-		{"pursue plus a role-free companion", []memory.SessionStage{
+		{"single active stage", []memory.SessionAspect{{Name: "active", Kind: "active"}}},
+		{"single pursue", []memory.SessionAspect{{Name: "pursue", Kind: "pursue"}}},
+		{"single reflection", []memory.SessionAspect{{Name: "reflect", Kind: "idle-reflection"}}},
+		{"pursue plus a role-free companion", []memory.SessionAspect{
 			{Name: "pursue", Kind: "pursue"},
 			{Name: "report", Kind: "report"},
 		}},
 		// The shape C3 exists to make possible: a pursue shell with a reflection
 		// aspect riding alongside, the aspect declaring no role of its own.
-		{"pursue plus a role-free reflection aspect", []memory.SessionStage{
+		{"pursue plus a role-free reflection aspect", []memory.SessionAspect{
 			{Name: "pursue", Kind: "pursue"},
 			{Name: "idle-reflection", Kind: "idle-reflection"},
 		}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := validateStages("a1", tc.stages); err != nil {
-				t.Errorf("validateStages rejected a valid plan: %v", err)
+			if err := validateAspects("a1", tc.stages); err != nil {
+				t.Errorf("validateAspects rejected a valid plan: %v", err)
 			}
 		})
 	}

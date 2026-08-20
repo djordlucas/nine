@@ -40,7 +40,7 @@ type RoleSpec struct {
 	SpawnsGoals bool     // gets the background pursue-session spawn fn
 	Persists    bool     // checkpointing worker (sessionWorker) vs ephemeral leaf
 	Interactive bool     // eligible for HITL tools (effective only with an interactive caller)
-	Profile     []string // stage kinds; empty ⇒ ephemeral leaf, no stages
+	Profile     []string // aspect kinds; empty ⇒ ephemeral leaf, no stages
 }
 
 // Defaults parses and returns all embedded built-in skills, including the

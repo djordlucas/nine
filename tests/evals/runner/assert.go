@@ -196,7 +196,7 @@ func matchWorkflow(wfs []workflow.Workflow, w *WorkflowExpect) bool {
 	return false
 }
 
-// pursueSpawned reports whether an active session plan carries a pursue stage,
+// pursueSpawned reports whether an active session plan carries a pursue aspect,
 // the durable marker that goal_create spawned a background pursue session
 // (docs/goal-sessions.md).
 func pursueSpawned(store *memory.Store) bool {
@@ -205,7 +205,7 @@ func pursueSpawned(store *memory.Store) bool {
 		return false
 	}
 	for _, p := range plans {
-		for _, st := range p.Stages {
+		for _, st := range p.Aspects {
 			if st.Name == "pursue" || st.Kind == "pursue" {
 				return true
 			}

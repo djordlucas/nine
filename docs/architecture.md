@@ -264,7 +264,7 @@ AgentWorker
  ├─ stall       StallConfig {Limit, OnStall}
  ├─ stallN      int                           ← consecutive no-tool turns
  ├─ plan        *sessionPlanState             ← stages + persistence
- ├─ idleTimer   *time.Timer                   ← per-stage idle scheduler
+ ├─ idleTimer   *time.Timer                   ← per-aspect idle scheduler
  ├─ idleSince   map[stage]time.Time
  ├─ replay      replayBuffer (ring, cap 200)  ← for reattach
  └─ progressFn  func(protocol.Msg)            ← set during a live turn
@@ -880,8 +880,8 @@ between-turn autonomy.
 The idle scheduler lives in the worker's `select`:
 
 ```
-   armIdleTimer():  next = min remaining idle_interval across active idle-capable stages
-                    (no idle-capable stage → no timer; plan paused → no timer)
+   armIdleTimer():  next = min remaining idle_interval across active idle-capable aspects
+                    (no idle-capable aspect → no timer; plan paused → no timer)
 
    run() select:
      case <-inbox:      processTurn        ← real turn
@@ -909,7 +909,7 @@ The idle scheduler lives in the worker's `select`:
 ```
 
 On daemon restart, `ResumeSessions` walks `session_plans` and restarts every
-`active` plan that has an idle-capable stage (`planNeedsResume`) — so background
+`active` plan that has an idle-capable aspect (`planNeedsResume`) — so background
 autonomy survives reboots. Ordinary `[active]` conversations are not auto-resumed;
 they come back on demand via `attach`.
 

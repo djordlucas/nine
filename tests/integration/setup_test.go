@@ -21,8 +21,8 @@ import (
 )
 
 const (
-	imageTag  = "nine-inttest"
-	llmModel  = "gemma4:e4b"
+	imageTag     = "nine-inttest"
+	llmModel     = "gemma4:e4b"
 	queryTimeout = 120 * time.Second
 )
 
@@ -141,8 +141,8 @@ func waitForDaemon(timeout time.Duration) error {
 }
 
 func stopContainer() {
-	exec.Command("docker", "stop", containerID).Run()  //nolint:errcheck
-	exec.Command("docker", "rm", containerID).Run()    //nolint:errcheck
+	exec.Command("docker", "stop", containerID).Run() //nolint:errcheck
+	exec.Command("docker", "rm", containerID).Run()   //nolint:errcheck
 }
 
 func dumpLogs() {

@@ -50,7 +50,7 @@ func (d *Daemon) SpawnGoalSession(_ context.Context, goalID string) (bool, error
 // PursueIdleInterval). Idempotent — a no-op if the session is already running;
 // otherwise it (re)writes the plan, so config edits to role/delegates/trigger
 // take effect on the next boot.
-func (d *Daemon) SpawnStandingSession(_ context.Context, goalID, role string, delegates bool, interval time.Duration, schedule string, aspects []StageAspect) (bool, error) {
+func (d *Daemon) SpawnStandingSession(_ context.Context, goalID, role string, delegates bool, interval time.Duration, schedule string, aspects []AspectDecl) (bool, error) {
 	if interval <= 0 && schedule == "" {
 		interval = PursueIdleInterval
 	}
@@ -93,9 +93,9 @@ func (d *Daemon) TeardownStandingSession(_ context.Context, goalID string) error
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	plan.Status = "archived"
-	for i := range plan.Stages {
-		plan.Stages[i].Status = "done"
-		plan.Stages[i].UpdatedAt = now
+	for i := range plan.Aspects {
+		plan.Aspects[i].Status = "done"
+		plan.Aspects[i].UpdatedAt = now
 	}
 	plan.UpdatedAt = now
 	if err := d.plans.SessionPlanSave(plan); err != nil {
@@ -156,7 +156,7 @@ func (d *Daemon) activeGoalSessionCount() int {
 		if w.plan == nil {
 			continue
 		}
-		for _, st := range w.plan.plan.Stages {
+		for _, st := range w.plan.plan.Aspects {
 			if st.Kind == "pursue" && st.Status == "active" {
 				n++
 				break
