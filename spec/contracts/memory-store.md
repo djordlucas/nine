@@ -58,7 +58,6 @@ tables to be agent-visible (R-MEM.4).
 | `workflows` | multi-step plans; steps as a JSON array on the row | daemon-private |
 | `notifications` | pending push messages to the next active turn | daemon-private |
 | `user_notifications` | human-facing feed posted by background agents (`nine notifications`) | daemon-private |
-| `reflections` | idle-reflection summaries (one row per reflection) | daemon-private |
 | `session_plans` | per-session stage state + idle config | daemon-private |
 | `human_requests` | HITL question/answer state (see [`hitl.md`](hitl.md)) | daemon-private |
 | `interactive_sessions` | which sessions are HITL-eligible | daemon-private |
@@ -102,7 +101,7 @@ empty result.
 
 The following are reachable only by the daemon/runtime, never advertised as agent tools.
 An agent **MUST NOT** be able to mutate its own conversation row, the goal/workflow
-tables, notifications, session plans, or reflections through a tool call.
+tables, notifications, or session plans through a tool call.
 
 | Group | Methods (reference) |
 |-------|---------------------|
@@ -222,7 +221,7 @@ it by design.
 timestamp format), `kv.go`, `files.go` (FTS5 search), `fts.go` (the MATCH-expression
 builder), `vectors.go` (blob encoding + cosine ranking), `skills.go`, `conversations.go`,
 `goals.go`, `workflows.go` (delegates to `internal/workflow.Service`), `notifications.go`,
-`user_notifications.go`, `reflections.go`, `session_plans.go`, `hitl.go`, `events.go`
+`user_notifications.go`, `session_plans.go`, `hitl.go`, `events.go`
 (journal), `cursors.go` (subscriber cursors), `related.go` (related sessions),
 `plugin_jobs.go` (plugin job registry). Driver: `modernc.org/sqlite` (pure Go, no cgo).
 Backend: one SQLite file, on the container's `/data` volume or at `~/.nine/nine.db`

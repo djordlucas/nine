@@ -291,3 +291,61 @@ func mustExec(t *testing.T, w *sql.DB, query string) {
 		t.Fatalf("exec %q: %v", query, err)
 	}
 }
+
+// C5: the reflections table is dropped from a database that has one, and its
+// absence is not mistaken for a fresh install.
+func TestMigrationDropsReflectionsTable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nine.db")
+
+	// A database as an earlier binary left it: reflections present, stamped at
+	// the version before the drop.
+	func() {
+		w := openRaw(t, path)
+		mustExec(t, w, `CREATE TABLE conversations (id TEXT PRIMARY KEY)`)
+		mustExec(t, w, `CREATE TABLE reflections (id TEXT PRIMARY KEY, ran_at TEXT, summary TEXT)`)
+		mustExec(t, w, `INSERT INTO reflections (id, summary) VALUES ('r1', 'old reflection')`)
+		mustExec(t, w, `PRAGMA user_version = 2`)
+	}()
+
+	store, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	store.Close() //nolint:errcheck
+
+	w := openRaw(t, path)
+	var n int
+	if err := w.QueryRow(
+		`SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'reflections'`,
+	).Scan(&n); err != nil {
+		t.Fatalf("check table: %v", err)
+	}
+	if n != 0 {
+		t.Error("reflections table survived the migration")
+	}
+	if got := versionAt(t, path); got != schemaVersion() {
+		t.Errorf("user_version = %d, want %d", got, schemaVersion())
+	}
+}
+
+// A fresh database never creates the table in the first place, so the drop step
+// is skipped entirely (fresh databases run no steps) and nothing is left behind.
+func TestFreshDatabaseHasNoReflectionsTable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nine.db")
+	store, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	store.Close() //nolint:errcheck
+
+	w := openRaw(t, path)
+	var n int
+	if err := w.QueryRow(
+		`SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'reflections'`,
+	).Scan(&n); err != nil {
+		t.Fatalf("check table: %v", err)
+	}
+	if n != 0 {
+		t.Error("a fresh database created the reflections table")
+	}
+}

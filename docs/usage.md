@@ -22,7 +22,7 @@ nine stop <agent-id>             Terminate a session (stops the worker and
 nine stop --all                  Terminate every active session
 
 nine goals                       List active goals
-nine reflections                 List idle-reflection history
+nine reflections [agent-id]      Reflection history from the journal (default: self-reflection)
 nine notifications [--all]       Show the human-facing notification feed
                                  (--all includes already-seen entries)
 nine workflows                   List workflows (active and recent)
@@ -188,11 +188,21 @@ Active Goals
 
 ### `nine reflections`
 
-Lists the daemon's idle self-reflection summaries (one per reflection run):
+Prints a session's reflection turns, oldest first — the self-reflection session by
+default, or any agent id:
 
 ```bash
-./nine reflections
+./nine reflections                 # the dedicated self-reflection session
+./nine reflections sec-watch       # a standing agent that carries a reflect aspect
 ```
+
+It reads the **journal**, not a dedicated table, so it needs no running daemon (like
+`nine trace`) and works for every session that reflects. Reflection used to be a session
+*kind* writing to a `reflections` table with no agent id; now it is a stage kind any
+session can carry as an aspect (`[[agent.aspect]]`), so the history has to be per-agent.
+
+For the full trace of a session — tool calls, LLM requests, timings — use
+`nine trace <agent-id>`; this is the digest view of the same events.
 
 ### `nine notifications`
 
