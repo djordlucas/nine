@@ -97,9 +97,9 @@ const (
 )
 
 // Stage labels reported via Hooks.OnStage. These name the phases *within one
-// turn* that can make a user wait, and are unrelated to a session's **aspects**
+// turn* that can make a user wait, and are unrelated to a session's **routines**
 // (internal/runtime), which are the concurrent behaviors a session carries across
-// turns. Both were called "stage" until the aspect rename; each word now means
+// turns. Both were called "stage" until the routine rename; each word now means
 // exactly one thing.
 //
 // They name the phases of a turn that run

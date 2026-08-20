@@ -59,7 +59,7 @@ func LoadOrCreatePlanForTest(store PlanStore, agentID string, profile []string, 
 
 // NewAgentWorkerWithPlanForTest creates a AgentWorker whose plan is
 // loaded/created via loadOrCreatePlan, for testing OnTurnEnd/idle-scheduler
-// wiring against custom StageHandlers registered in AspectRegistry.
+// wiring against custom StageHandlers registered in RoutineRegistry.
 func NewAgentWorkerWithPlanForTest(
 	id string,
 	loop *agent.Loop,

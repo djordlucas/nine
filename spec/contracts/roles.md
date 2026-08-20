@@ -4,7 +4,7 @@
 
 A **role** makes worker-kind first-class data: a persona (skill body), an **enforced
 tool allowlist**, and structural wiring (persistence, delegation, goal-spawning, HITL
-eligibility, aspect profile). Roles carry all tool gating: the top-level worker is the
+eligibility, routine profile). Roles carry all tool gating: the top-level worker is the
 **orchestrator** role, a sub-agent is a worker running a **leaf** role, and `depth` is a
 recursion guardrail. Full design rationale and the
 implementation handoff live in [`../../docs/roles.md`](../../docs/roles.md); this file
@@ -25,7 +25,7 @@ role:
   spawns_goals: bool          # background pursue-session spawn fn
   persists: bool              # checkpointing session worker vs ephemeral leaf
   interactive: bool           # HITL-eligible (effective only with an interactive caller)
-  profile: [aspect-kind, ...]  # [] / absent ⇒ ephemeral leaf, no aspects
+  profile: [routine-kind, ...]  # [] / absent ⇒ ephemeral leaf, no routines
 ```
 
 A malformed role block **MUST NOT** fail skill loading — the skill degrades to a plain
