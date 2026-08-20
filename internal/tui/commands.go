@@ -145,7 +145,7 @@ func cmdSessions(client *protocol.Client) (string, error) {
 	for _, a := range info.Agents {
 		short := a.ID
 		if len(short) > 8 {
-			short = short[:8]
+			short = shortID(short, 8)
 		}
 		if a.Name != "" {
 			fmt.Fprintf(&sb, "  %-10s  %s\n", short, a.Name)
@@ -167,7 +167,7 @@ func cmdStatus(client *protocol.Client) (string, error) {
 	for _, a := range info.Agents {
 		short := a.ID
 		if len(short) > 8 {
-			short = short[:8]
+			short = shortID(short, 8)
 		}
 		mode := ""
 		if a.PlanMode != "" {
@@ -184,11 +184,11 @@ func cmdStatus(client *protocol.Client) (string, error) {
 		for _, sa := range info.SubAgents {
 			short := sa.ID
 			if len(short) > 8 {
-				short = short[:8]
+				short = shortID(short, 8)
 			}
 			desc := sa.Description
 			if len(desc) > 48 {
-				desc = desc[:48] + "…"
+				desc = clip(desc, 49)
 			}
 			fmt.Fprintf(&sb, "           %s  %s\n", short, desc)
 		}
@@ -233,14 +233,50 @@ func cmdContext(client *protocol.Client, arg, curAgentID string) (string, error)
 	return sb.String(), nil
 }
 
+// clip and shortID mirror the helpers in internal/cli, for the same reason: a
+// fixed byte offset cuts free text mid-rune and emits invalid UTF-8, and a fixed
+// slice on an id panics when the id is shorter than the offset. Descriptions,
+// names, and step labels are model- or user-authored, so non-ASCII is ordinary
+// input.
+//
+// Duplicated rather than shared: two ten-line helpers in two leaf packages beat
+// a package that exists to hold them. If a third caller appears, extract them.
+func clip(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	if max <= 1 {
+		return string(r[:max])
+	}
+	return string(r[:max-1]) + "…"
+}
+
+// shortID cuts an identifier to at most max runes, with no ellipsis, and cannot
+// panic on a short id.
+func shortID(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max])
+}
+
 func cmdConfig(cfg *config.Config) string {
 	if cfg == nil {
 		return "(no config loaded)"
 	}
 
+	// Shows the first four characters so an operator can tell which key is
+	// configured, and masks the rest. Counts runes: a byte cut could split one,
+	// and a byte-length mask would leak the encoded size rather than the key's.
 	maskKey := func(k string) string {
-		if len(k) > 4 {
-			return k[:4] + strings.Repeat("*", len(k)-4)
+		r := []rune(k)
+		if len(r) > 4 {
+			return string(r[:4]) + strings.Repeat("*", len(r)-4)
 		}
 		if k != "" {
 			return "****"
@@ -325,7 +361,7 @@ func cmdTools(client *protocol.Client, filter string) (string, error) {
 		}
 		desc := t.Description
 		if len(desc) > 72 {
-			desc = desc[:72] + "…"
+			desc = clip(desc, 73)
 		}
 		fmt.Fprintf(&sb, "  %-28s %s\n", t.Name, desc)
 	}
@@ -397,7 +433,7 @@ func formatSkillList(raw string) string {
 			fmt.Fprintf(&sb, "  %s\n", name)
 		} else {
 			if len(desc) > 60 {
-				desc = desc[:60] + "…"
+				desc = clip(desc, 61)
 			}
 			fmt.Fprintf(&sb, "  %-24s %s\n", name, desc)
 		}
@@ -432,17 +468,17 @@ func cmdWorkflows(client *protocol.Client) (string, error) {
 		}
 		id := w.ID
 		if len(id) > 12 {
-			id = id[:12]
+			id = shortID(id, 12)
 		}
 		name := w.Name
 		if len(name) > 40 {
-			name = name[:37] + "…"
+			name = clip(name, 38)
 		}
 		fmt.Fprintf(&sb, "%-12s [%s] %s\n", id, w.Status, name)
 		for _, s := range w.Steps {
 			label := s.Label
 			if len(label) > 50 {
-				label = label[:47] + "…"
+				label = clip(label, 48)
 			}
 			fmt.Fprintf(&sb, "  [%-7s] %s: %s\n", s.Status, s.ID, label)
 		}
