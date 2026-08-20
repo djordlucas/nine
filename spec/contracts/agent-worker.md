@@ -35,7 +35,7 @@ turnReq on inbox
   → wire journal hooks  → EventSink.Append (turn_start/llm_request/llm_response/tool_*/turn_end) (R-WORK.8)
   → result, err = loop.Run(ctx, text) // streams progress as it goes
   → unwire callbacks + journal hooks
-  → notifyStages(result, err)          // AspectHandler.OnTurnEnd for each active aspect, then persist plan
+  → notifyStages(result, err)          // RoutineHandler.OnTurnEnd for each active routine, then persist plan
   → checkStall(ctx)                    // if LastRunToolCount()==0 → stallN++
   → checkpoint()                       // loop.SaveState() → ckpt.Save(id, data)   (I5)
   → armIdleTimer()                     // recompute next idle wake-up
@@ -43,7 +43,7 @@ turnReq on inbox
   → onComplete(id)                     // Supervisor EventAgentCompletes
 ```
 
-The order is normative: aspects are notified, **then** stall is checked, **then** the
+The order is normative: routines are notified, **then** stall is checked, **then** the
 checkpoint is written, **then** the idle timer is re-armed, **then** the response is
 returned.
 
@@ -71,8 +71,8 @@ The production `Limit` is **5** (configured by the daemon when wiring the superv
 `OnStall` posts `EventGoalStalls` to the supervisor. Stall detection is **disabled** when
 `Limit == 0` or `OnStall == nil`. (Tests use smaller limits; 5 is the runtime default.)
 
-On stall, aspects are also notified via `OnTurnEnd(result="", err=ErrStall)` so a aspect
-can react (e.g. the pursue aspect pauses its goal).
+On stall, routines are also notified via `OnTurnEnd(result="", err=ErrStall)` so a routine
+can react (e.g. the pursue routine pauses its goal).
 
 ---
 

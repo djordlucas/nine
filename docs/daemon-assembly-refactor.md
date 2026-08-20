@@ -102,7 +102,7 @@ type Assembled struct {
 }
 
 // Assemble builds and fully wires a daemon from deps, registering the pursue /
-// idle-reflection aspects and starting nothing (the caller owns supervisor.Run
+// idle-reflection routines and starting nothing (the caller owns supervisor.Run
 // and daemon.Start). It performs no production-only bootstrap (seeding, resume,
 // standing agents, scrub, instance name) — those stay in runDaemon.
 func Assemble(deps AssemblyDeps) (*Assembled, error)

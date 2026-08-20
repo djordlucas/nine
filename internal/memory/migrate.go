@@ -73,7 +73,7 @@ var migrations = []migrationStep{
 
 	// 2 → 3: drop the `reflections` table. It recorded a reflection turn's text
 	// with no agent id, which was survivable while exactly one session could
-	// reflect and wrong as soon as any session can carry a reflect aspect. The
+	// reflect and wrong as soon as any session can carry a reflect routine. The
 	// journal already holds every turn under its own agent_id, and the durable
 	// product of a reflection is the `self/*` KV write the prompt asks for — not
 	// the transcript, which nothing read back (docs/concept-consolidation.md C5).
@@ -99,7 +99,7 @@ var migrations = []migrationStep{
 		return dropColumnIfPresent(q, "goals", "subtree")
 	}},
 
-	// 4 → 5: session_plans.stages becomes session_plans.aspects.
+	// 4 → 5: session_plans.stages becomes session_plans.routines.
 	//
 	// "Stage" named two unrelated things: a session's concurrent, independently
 	// retiring behaviors, and the phases within one turn that make a user wait
@@ -113,6 +113,34 @@ var migrations = []migrationStep{
 			return err
 		}
 		_, err = q.Exec(`ALTER TABLE session_plans RENAME COLUMN stages TO aspects`)
+		return err
+	}},
+
+	// 5 → 6: aspects becomes routines.
+	//
+	// A second rename of the same column, which is worth explaining rather than
+	// hiding. "Aspect" fixed the previous name's real problem — "stage" implied a
+	// sequence and named two unrelated things — but introduced one of its own: an
+	// *aspect* of something is a facet, a way of looking at it, whereas these wake
+	// themselves on a timer and cause turns to run. The word is also taken, by
+	// aspect-oriented programming, where it means a cross-cutting concern woven
+	// into code.
+	//
+	// "Routine" carries what was actually missing: recurrence and self-direction.
+	// It also tolerates the dormant `active` kind, which never fires — a routine
+	// you do not currently perform is still a routine, whereas a "periodic task"
+	// that never runs is a contradiction.
+	//
+	// Steps 5 and 6 stay separate rather than collapsing into one. A database
+	// migrated by the intervening build is already at 5 with an `aspects` column;
+	// rewriting step 5 to pretend otherwise would strand it. **The names in a
+	// landed step are history and must not be edited** — R-MEM.10.
+	{name: "rename_aspects_to_routines", fn: func(q sqlExec) error {
+		has, err := hasColumnTx(q, "session_plans", "aspects")
+		if err != nil || !has {
+			return err
+		}
+		_, err = q.Exec(`ALTER TABLE session_plans RENAME COLUMN aspects TO routines`)
 		return err
 	}},
 }

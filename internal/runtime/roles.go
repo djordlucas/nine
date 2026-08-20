@@ -50,7 +50,7 @@ type Role struct {
 	SpawnsGoals bool     // background pursue-session spawn fn (was: depth == 0)
 	Persists    bool     // checkpointing session worker vs ephemeral leaf
 	Interactive bool     // HITL-eligible; effective only when the caller is interactive
-	Profile     []string // aspect kinds; empty ⇒ ephemeral leaf
+	Profile     []string // routine kinds; empty ⇒ ephemeral leaf
 
 	// OwnsGoal marks a pursue-shell session that steers its own goal: it grants
 	// the goal self-management tools (goal_get/goal_list/goal_update_status/
@@ -305,18 +305,18 @@ func trustedRoleSource(source string) bool {
 // purely restrictive: defining a role must never become an escalation path.
 var trustedRoleSources = []string{memory.SkillSourceUser}
 
-// roleNameForPlan maps a session plan's aspects to the role its worker runs
+// roleNameForPlan maps a session plan's routines to the role its worker runs
 // (docs/roles.md §6). The role is data: a stage that declares one in its config
 // supplies it, whatever its kind. Failing that, a pursue shell runs the pursue
 // role, and everything else — ordinary [active] conversations, nil plans — the
 // orchestrator.
 //
-// Resolving by config rather than by kind is what lets a aspect kind mean
-// different things in different plans: a reflection aspect is the session's whole
+// Resolving by config rather than by kind is what lets a routine kind mean
+// different things in different plans: a reflection routine is the session's whole
 // purpose when it stands alone (and declares the reflection role), and a
 // passenger when it rides beside a pursue shell (and declares none).
 //
-// A pursue aspect may carry an explicit work-role name in its config (seeded by
+// A pursue routine may carry an explicit work-role name in its config (seeded by
 // SpawnStandingSession for pre-defined agents, docs/predefined-agents.md §5
 // piece 5); when present, that role's tools/persona run in place of the default
 // pursue role, while the pursue shell itself (persistence, goal ownership) is
@@ -325,15 +325,15 @@ func roleNameForPlan(plan *sessionPlanState) string {
 	if plan == nil || plan.plan == nil {
 		return OrchestratorRole
 	}
-	// A role declared in aspect config wins wherever it appears; validateAspects
+	// A role declared in routine config wins wherever it appears; validateRoutines
 	// guarantees at most one stage declares one.
-	for _, st := range plan.plan.Aspects {
-		if role := aspectRole(st.Config); role != "" {
+	for _, st := range plan.plan.Routines {
+		if role := routineRole(st.Config); role != "" {
 			return role
 		}
 	}
 	// Otherwise a pursue shell runs the default pursue role.
-	for _, st := range plan.plan.Aspects {
+	for _, st := range plan.plan.Routines {
 		if st.Kind == "pursue" {
 			return PursueRole
 		}

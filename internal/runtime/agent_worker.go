@@ -182,8 +182,8 @@ func newAgentWorker(
 		plan = defaultPlanState()
 	}
 	now := time.Now()
-	idleSince := make(map[string]time.Time, len(plan.plan.Aspects))
-	for _, st := range plan.plan.Aspects {
+	idleSince := make(map[string]time.Time, len(plan.plan.Routines))
+	for _, st := range plan.plan.Routines {
 		idleSince[st.Name] = now
 	}
 	w := &AgentWorker{
@@ -210,13 +210,13 @@ func defaultPlanState() *sessionPlanState {
 	now := time.Now().UTC().Format(time.RFC3339)
 	plan := &memory.SessionPlan{
 		Status: "active",
-		Aspects: []memory.SessionAspect{
+		Routines: []memory.SessionRoutine{
 			{Name: "active", Kind: "active", Status: "active", UpdatedAt: now},
 		},
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	handlers, _ := initAspects(context.Background(), "", plan.Aspects) //nolint:errcheck // "active" is always registered
+	handlers, _ := initRoutines(context.Background(), "", plan.Routines) //nolint:errcheck // "active" is always registered
 	return &sessionPlanState{plan: plan, handlers: handlers, persisted: true}
 }
 
@@ -289,7 +289,7 @@ func (w *AgentWorker) processTurn(req turnReq) {
 			"duration_ms", time.Since(turnStart).Milliseconds(),
 		)
 	}
-	w.notifyAspects(req.ctx, result, err)
+	w.notifyRoutines(req.ctx, result, err)
 	w.checkStall(req.ctx)
 	w.checkpoint()
 	w.armIdleTimer()
@@ -375,7 +375,7 @@ func (w *AgentWorker) checkStall(ctx context.Context) {
 		if w.stallN >= w.stall.Limit {
 			slog.Warn("agent stalled", "agent_id", w.id, "consecutive_no_tool_turns", w.stallN)
 			w.stallN = 0
-			w.notifyAspects(ctx, "", ErrStall)
+			w.notifyRoutines(ctx, "", ErrStall)
 			if w.stall.OnStall != nil {
 				w.stall.OnStall(w.id)
 			}
@@ -385,15 +385,15 @@ func (w *AgentWorker) checkStall(ctx context.Context) {
 	}
 }
 
-// notifyAspects calls OnTurnEnd on every stage with Status == "active",
+// notifyRoutines calls OnTurnEnd on every stage with Status == "active",
 // then persists/refreshes the plan. Stages that mutate their own
 // Status/Result do so by writing their session_plans row directly; the
 // refresh picks up those changes so the idle scheduler sees them.
-func (w *AgentWorker) notifyAspects(ctx context.Context, result string, err error) {
+func (w *AgentWorker) notifyRoutines(ctx context.Context, result string, err error) {
 	if w.plan == nil {
 		return
 	}
-	for _, st := range w.plan.plan.Aspects {
+	for _, st := range w.plan.plan.Routines {
 		if st.Status != "active" {
 			continue
 		}
@@ -438,7 +438,7 @@ func (w *AgentWorker) persistPlan() error {
 }
 
 // armIdleTimer (re)computes the worker's idle timer from the minimum
-// remaining idle_interval across this session's active, idle-capable aspects.
+// remaining idle_interval across this session's active, idle-capable routines.
 // It stops any existing timer first; if the plan is paused/archived or no
 // stage qualifies, no timer is armed.
 func (w *AgentWorker) armIdleTimer() {
@@ -452,11 +452,11 @@ func (w *AgentWorker) armIdleTimer() {
 	now := time.Now()
 	var next time.Duration
 	have := false
-	for _, st := range w.plan.plan.Aspects {
+	for _, st := range w.plan.plan.Routines {
 		if st.Status != "active" {
 			continue
 		}
-		remaining, ok := aspectNextWake(st.Config, w.idleSince[st.Name], now)
+		remaining, ok := routineNextWake(st.Config, w.idleSince[st.Name], now)
 		if !ok {
 			continue
 		}
@@ -475,10 +475,10 @@ func (w *AgentWorker) armIdleTimer() {
 //
 // Order is by overdueness, not by position in the Stages array. I1 allows only
 // one turn at a time, so when several stages are due one must be chosen, and
-// choosing by array order starves the others: a 60s aspect listed before a 3600s
+// choosing by array order starves the others: a 60s routine listed before a 3600s
 // one comes due again long before the slow stage is ever reached, so the slow
 // stage can wait indefinitely. Whether a session makes progress on all its
-// aspects would otherwise depend on the order its stages happened to be
+// routines would otherwise depend on the order its stages happened to be
 // serialized in.
 //
 // A stage that is due but has no work still yields to the next-most-overdue one,
@@ -490,23 +490,23 @@ func (w *AgentWorker) handleIdle() {
 	ctx := context.Background()
 	now := time.Now()
 
-	type dueAspect struct {
+	type dueRoutine struct {
 		name    string
 		overdue time.Duration
 	}
-	var due []dueAspect
-	for _, st := range w.plan.plan.Aspects {
+	var due []dueRoutine
+	for _, st := range w.plan.plan.Routines {
 		if st.Status != "active" {
 			continue
 		}
-		overdue, ok := aspectOverdueBy(st.Config, w.idleSince[st.Name], now)
+		overdue, ok := routineOverdueBy(st.Config, w.idleSince[st.Name], now)
 		if !ok {
 			continue
 		}
-		due = append(due, dueAspect{name: st.Name, overdue: overdue})
+		due = append(due, dueRoutine{name: st.Name, overdue: overdue})
 	}
 	// Longest-waiting first. Equal overdueness keeps the array order, so a
-	// single-aspect plan and simultaneous wakes behave exactly as before.
+	// single-routine plan and simultaneous wakes behave exactly as before.
 	sort.SliceStable(due, func(i, j int) bool { return due[i].overdue > due[j].overdue })
 
 	for _, d := range due {
@@ -526,7 +526,7 @@ func (w *AgentWorker) handleIdle() {
 		return
 	}
 	// No stage produced idle work. Refresh the cached plan so any stage-status
-	// change an OnIdle handler wrote directly (e.g. the pursue aspect retiring
+	// change an OnIdle handler wrote directly (e.g. the pursue routine retiring
 	// itself once its goal is no longer active) is reflected before we decide
 	// whether to re-arm — otherwise a since-retired stage keeps arming the timer
 	// and keeps counting against MaxGoalSessions (activeGoalSessionCount reads
