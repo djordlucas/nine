@@ -27,7 +27,7 @@ func TestValidateRejects(t *testing.T) {
 		{"uppercase name", "---\nname: BadName\ndescription: Something.\n---\n\nBody.\n", "must be lowercase"},
 		{"underscore name", "---\nname: bad_name\ndescription: Something.\n---\n\nBody.\n", "must be lowercase"},
 		{"long description", "---\nname: a-skill\ndescription: " + strings.Repeat("x", 250) + "\n---\n\nBody.\n", "characters; keep it under"},
-		{"bad aspect kind", "---\nname: a-role\ndescription: A role.\nrole:\n  tools: [shell]\n  profile: [nonsense]\n---\n\nBody.\n", "unknown aspect kind"},
+		{"bad routine kind", "---\nname: a-role\ndescription: A role.\nrole:\n  tools: [shell]\n  profile: [nonsense]\n---\n\nBody.\n", "unknown routine kind"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

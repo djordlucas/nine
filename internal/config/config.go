@@ -360,21 +360,21 @@ type AgentConfig struct {
 	Interval    string `toml:"interval"`    // idle cadence (Go duration) — XOR Schedule
 	Schedule    string `toml:"schedule"`    // cron expression — XOR Interval
 
-	// Aspects are additional stages the session carries alongside its pursue
+	// Routines are additional stages the session carries alongside its pursue
 	// shell, each waking on its own cadence. The scheduler has always supported
 	// several stages per session; until this existed nothing could ask for more
 	// than one (docs/session-plans.md).
 	//
-	// The pursue shell stays the session's role-bearing aspect, so an aspect
+	// The pursue shell stays the session's role-bearing routine, so a routine
 	// never sets a role — a session has exactly one, and two claimants would
 	// make it depend on ordering.
-	Aspects []AgentAspect `toml:"aspect"`
+	Routines []AgentRoutine `toml:"routine"`
 }
 
-// AgentAspect is one additional stage on a standing agent's session, declared
-// as a [[agent.aspect]] table.
-type AgentAspect struct {
-	Kind     string `toml:"kind"`     // registered aspect kind (e.g. "idle-reflection")
+// AgentRoutine is one additional stage on a standing agent's session, declared
+// as a [[agent.routine]] table.
+type AgentRoutine struct {
+	Kind     string `toml:"kind"`     // registered routine kind (e.g. "idle-reflection")
 	Interval string `toml:"interval"` // wake cadence (Go duration) — XOR Schedule
 	Schedule string `toml:"schedule"` // cron expression — XOR Interval
 }

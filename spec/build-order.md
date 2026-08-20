@@ -204,27 +204,27 @@ daemon restart, `attach` rebuilds the session from its checkpoint.
 
 ---
 
-## Phase 8 — Session plans and the aspect framework
+## Phase 8 — Session plans and the routine framework
 
 **Goal.** Sessions can run autonomous turns on an idle timer.
 
 **Build.** → [`contracts/session-plans.md`](contracts/session-plans.md)
-- The `AspectHandler` interface (`Init`, `OnTurnEnd`, `OnIdle`) and a `AspectRegistry`
-  keyed by aspect kind.
+- The `RoutineHandler` interface (`Init`, `OnTurnEnd`, `OnIdle`) and a `RoutineRegistry`
+  keyed by routine kind.
 - Plan persistence in `session_plans` (lazy for ordinary `[active]` conversations,
   eager for idle-capable plans).
 - The worker's idle scheduler: `armIdleTimer` computes the soonest remaining interval;
-  on fire, `handleIdle` runs the due aspect's `OnIdle`, and if it returns work, runs that
+  on fire, `handleIdle` runs the due routine's `OnIdle`, and if it returns work, runs that
   text as the next turn (same pipeline as a user turn).
-- The trivial `active` aspect (all no-ops).
+- The trivial `active` routine (all no-ops).
 
-**Gate.** A test aspect with a 1s idle interval that returns fixed text causes an
+**Gate.** A test routine with a 1s idle interval that returns fixed text causes an
 autonomous turn to run ~1s after the last turn, going through the full turn pipeline
 (checkpointed, `OnTurnEnd` fired).
 
 ---
 
-## Phase 9 — Self-model and the reflection aspect
+## Phase 9 — Self-model and the reflection routine
 
 **Goal.** Nine keeps a current self-description and reflects on a timer.
 
@@ -232,11 +232,11 @@ autonomous turn to run ~1s after the last turn, going through the full turn pipe
 - The self-model assembler reading `self/identity`, `self/capabilities`, `self/learned`
   from K/V and injecting them as P2.5 of the context (cap ~600 tokens).
 - `BootstrapSelfKV` to seed `self/identity` and `self/capabilities`.
-- The `idle-reflection` aspect: a single fixed session (`agentID = "self-reflection"`),
+- The `idle-reflection` routine: a single fixed session (`agentID = "self-reflection"`),
   idle interval **2 min**, whose `OnIdle` asks the model to update `self/capabilities`
   and `self/learned`. The turn itself is recorded by the journal, like any other.
 
-**Wire.** Register the aspect; `ReconcileSelfReflection` creates the session once;
+**Wire.** Register the routine; `ReconcileSelfReflection` creates the session once;
 `ResumeSessions` (Phase 17) restarts it on every boot.
 
 **Gate.** With the reflection interval shortened, the session fires a reflection turn
@@ -252,8 +252,8 @@ self-model block.
 **Build.** → [`contracts/orchestration.md`](contracts/orchestration.md) (§ Goals)
 - Goal data model and store methods; the core-intercepted tools `goal_create`,
   `goal_get`, `goal_list`, `goal_update_status` (depth-capped).
-- The `pursue` aspect (idle interval **5 min**): `OnIdle` reads the goal + its derived children and
-  acts; `OnTurnEnd` syncs the aspect status from `goals.status` and pauses the goal on
+- The `pursue` routine (idle interval **5 min**): `OnIdle` reads the goal + its derived children and
+  acts; `OnTurnEnd` syncs the routine status from `goals.status` and pauses the goal on
   stall.
 - `SpawnGoalSession`: idempotent, capped by `max_goal_sessions` (default **10**), wired
   only at depth 0. `goal_create` reports `pursue_session: "spawned" | "limit_reached"`.
@@ -405,7 +405,7 @@ plugins, supervisor, plan store, `max_goal_sessions`); if `related_sessions_inde
 on) and an embedder is present, `AddSubscriber(RelatedIndexer)`. 17. Inject the
 goal-session spawn fn and the progress-emit fn — these close over the now-existing daemon.
 18. Start the supervisor loop. 19. `reconcileStandingAgents`. 20. `ResumeSessions` (restart
-every `active` plan with an idle-capable aspect). 21. Start the accept loop.
+every `active` plan with an idle-capable routine). 21. Start the accept loop.
 
 **Gate.** Cold boot seeds self KV and the reflection session, scrubs stale workflows and
 journal events, seeds config-declared standing agents, and resumes any idle-capable
