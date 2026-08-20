@@ -456,7 +456,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 									m.conn.instanceName = instanceName
 								}
 								m.chat.messages = m.chat.messages[:0]
-								m.appendSystem("new conversation: " + id[:8])
+								m.appendSystem("new conversation: " + shortID(id, 8))
 							}
 						default:
 							result, err := runCmd(cmd, arg, m.conn.client, m.cfg, m.conn.agentID)
@@ -753,7 +753,7 @@ func (m model) View() string {
 	} else if m.conn.agentID != "" {
 		short := m.conn.agentID
 		if len(short) > 8 {
-			short = short[:8]
+			short = shortID(short, 8)
 		}
 		if m.conn.sessionName != "" {
 			label = m.conn.sessionName + "  (" + short + ")"
