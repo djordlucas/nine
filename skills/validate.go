@@ -21,9 +21,9 @@ var NamePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // for actual work.
 const MaxDescriptionLen = 200
 
-// KnownStageKinds are the stage kinds a role's profile may name. A profile
+// KnownAspectKinds are the aspect kinds a role's profile may name. A profile
 // naming anything else would silently never run.
-var KnownStageKinds = []string{"active", "pursue", "idle-reflection"}
+var KnownAspectKinds = []string{"active", "pursue", "idle-reflection"}
 
 // ErrNotMarkdown is returned by LoadFile for a path that is not a .md file.
 var ErrNotMarkdown = errors.New("not a .md file")
@@ -86,8 +86,8 @@ func validateRole(r RoleSpec) []error {
 		}
 	}
 	for _, kind := range r.Profile {
-		if !slices.Contains(KnownStageKinds, kind) {
-			errs = append(errs, fmt.Errorf("profile names unknown stage kind %q (known: %s)", kind, strings.Join(KnownStageKinds, ", ")))
+		if !slices.Contains(KnownAspectKinds, kind) {
+			errs = append(errs, fmt.Errorf("profile names unknown aspect kind %q (known: %s)", kind, strings.Join(KnownAspectKinds, ", ")))
 		}
 	}
 	return errs

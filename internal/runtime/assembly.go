@@ -177,10 +177,10 @@ func Assemble(c AssemblyConfig) *Assembly {
 	daemon.SetMaxGoalSessions(c.MaxGoalSessions)
 
 	// goal_create spawns a background pursue session for each new top-level goal
-	// (docs/goal-sessions.md); the stage handler closes over c.Store, so callers
+	// (docs/goal-sessions.md); the aspect handler closes over c.Store, so callers
 	// that share process state (the eval runner) must serialize runs.
-	StageRegistry["pursue"] = func() StageHandler {
-		return NewPursueStage(c.Store)
+	AspectRegistry["pursue"] = func() AspectHandler {
+		return NewPursueAspect(c.Store)
 	}
 	builder.SetGoalSessionSpawnFn(daemon.SpawnGoalSession)
 	builder.SetEmitProgressFn(daemon.EmitProgress)

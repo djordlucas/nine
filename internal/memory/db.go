@@ -365,7 +365,7 @@ func initSchema(d db) error {
 		`CREATE TABLE IF NOT EXISTS session_plans (
 			id         TEXT PRIMARY KEY,
 			status     TEXT NOT NULL DEFAULT 'active',
-			stages     TEXT NOT NULL DEFAULT '[]',
+			aspects    TEXT NOT NULL DEFAULT '[]',
 			created_at TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			updated_at TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,

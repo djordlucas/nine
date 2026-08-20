@@ -28,8 +28,8 @@ func TestLoadOrCreatePlanNoStore(t *testing.T) {
 	if plan.Status != "active" {
 		t.Errorf("plan.Status = %q, want active", plan.Status)
 	}
-	if len(plan.Stages) != 1 || plan.Stages[0].Kind != "active" || plan.Stages[0].Status != "active" {
-		t.Errorf("plan.Stages = %+v", plan.Stages)
+	if len(plan.Aspects) != 1 || plan.Aspects[0].Kind != "active" || plan.Aspects[0].Status != "active" {
+		t.Errorf("plan.Aspects = %+v", plan.Aspects)
 	}
 }
 
@@ -89,9 +89,9 @@ func TestLoadOrCreatePlanLoadsExisting(t *testing.T) {
 	defer store.Close() //nolint:errcheck
 
 	existing := &memory.SessionPlan{
-		ID:     "agent-4",
-		Status: "active",
-		Stages: []memory.SessionStage{{Name: "active", Kind: "active", Status: "done", Result: "all done"}},
+		ID:      "agent-4",
+		Status:  "active",
+		Aspects: []memory.SessionAspect{{Name: "active", Kind: "active", Status: "done", Result: "all done"}},
 	}
 	if err := store.SessionPlanSave(existing); err != nil {
 		t.Fatal(err)
@@ -104,22 +104,22 @@ func TestLoadOrCreatePlanLoadsExisting(t *testing.T) {
 	if !persisted {
 		t.Error("persisted = false, want true for an existing row")
 	}
-	if len(plan.Stages) != 1 || plan.Stages[0].Status != "done" || plan.Stages[0].Result != "all done" {
-		t.Errorf("plan.Stages = %+v, want existing row preserved", plan.Stages)
+	if len(plan.Aspects) != 1 || plan.Aspects[0].Status != "done" || plan.Aspects[0].Result != "all done" {
+		t.Errorf("plan.Aspects = %+v, want existing row preserved", plan.Aspects)
 	}
 }
 
 func TestLoadOrCreatePlanUnknownStageKind(t *testing.T) {
 	_, _, err := runtime.LoadOrCreatePlanForTest(nil, "agent-5", []string{"no-such-kind"}, false)
 	if err == nil {
-		t.Fatal("expected error for unregistered stage kind")
+		t.Fatal("expected error for unregistered aspect kind")
 	}
 }
 
 // ---- the trivial [active] stage ----
 
 func TestActiveStageIsTrivial(t *testing.T) {
-	h := runtime.StageRegistry["active"]()
+	h := runtime.AspectRegistry["active"]()
 	ctx := context.Background()
 
 	if err := h.Init(ctx, "agent-1", nil); err != nil {
@@ -148,22 +148,22 @@ func TestPlanNeedsResume(t *testing.T) {
 	}{
 		{
 			name: "plain active conversation",
-			plan: memory.SessionPlan{Status: "active", Stages: []memory.SessionStage{{Status: "active"}}},
+			plan: memory.SessionPlan{Status: "active", Aspects: []memory.SessionAspect{{Status: "active"}}},
 			want: false,
 		},
 		{
-			name: "active idle-capable stage",
-			plan: memory.SessionPlan{Status: "active", Stages: []memory.SessionStage{{Status: "active", Config: idleCfg}}},
+			name: "active idle-capable aspect",
+			plan: memory.SessionPlan{Status: "active", Aspects: []memory.SessionAspect{{Status: "active", Config: idleCfg}}},
 			want: true,
 		},
 		{
 			name: "idle-capable but stage not active",
-			plan: memory.SessionPlan{Status: "active", Stages: []memory.SessionStage{{Status: "done", Config: idleCfg}}},
+			plan: memory.SessionPlan{Status: "active", Aspects: []memory.SessionAspect{{Status: "done", Config: idleCfg}}},
 			want: false,
 		},
 		{
 			name: "idle-capable but plan paused",
-			plan: memory.SessionPlan{Status: "paused", Stages: []memory.SessionStage{{Status: "active", Config: idleCfg}}},
+			plan: memory.SessionPlan{Status: "paused", Aspects: []memory.SessionAspect{{Status: "active", Config: idleCfg}}},
 			want: false,
 		},
 	}
@@ -196,10 +196,10 @@ func (s recordingStage) OnIdle(context.Context, string) (string, bool) { return 
 func TestOnTurnEndFanOutAndStall(t *testing.T) {
 	var mu sync.Mutex
 	var calls []error
-	runtime.StageRegistry["recording-test"] = func() runtime.StageHandler {
+	runtime.AspectRegistry["recording-test"] = func() runtime.AspectHandler {
 		return recordingStage{mu: &mu, calls: &calls}
 	}
-	t.Cleanup(func() { delete(runtime.StageRegistry, "recording-test") })
+	t.Cleanup(func() { delete(runtime.AspectRegistry, "recording-test") })
 
 	loop := workerLoop(constProvider("no tools"))
 	stall := runtime.StallConfig{Limit: 2}
@@ -247,10 +247,10 @@ func (s idleStage) OnIdle(context.Context, string) (string, bool) {
 
 func TestIdleSchedulerRunsOnIdleTurn(t *testing.T) {
 	var calls atomic.Int32
-	runtime.StageRegistry["idle-test"] = func() runtime.StageHandler {
+	runtime.AspectRegistry["idle-test"] = func() runtime.AspectHandler {
 		return idleStage{calls: &calls}
 	}
-	t.Cleanup(func() { delete(runtime.StageRegistry, "idle-test") })
+	t.Cleanup(func() { delete(runtime.AspectRegistry, "idle-test") })
 
 	store, err := memtest.Open(t)
 	if err != nil {
@@ -260,9 +260,9 @@ func TestIdleSchedulerRunsOnIdleTurn(t *testing.T) {
 
 	cfg, _ := json.Marshal(map[string]int{"idle_interval_seconds": 1})
 	plan := &memory.SessionPlan{
-		ID:     "agent-idle",
-		Status: "active",
-		Stages: []memory.SessionStage{{Name: "idle-test", Kind: "idle-test", Status: "active", Config: cfg}},
+		ID:      "agent-idle",
+		Status:  "active",
+		Aspects: []memory.SessionAspect{{Name: "idle-test", Kind: "idle-test", Status: "active", Config: cfg}},
 	}
 	if err := store.SessionPlanSave(plan); err != nil {
 		t.Fatal(err)
@@ -306,8 +306,8 @@ func (quietIdleStage) OnTurnEnd(context.Context, string, string, error) error { 
 func (quietIdleStage) OnIdle(context.Context, string) (string, bool)          { return "", false }
 
 func TestResumeSessionsStartsIdleCapableSessions(t *testing.T) {
-	runtime.StageRegistry["quiet-idle-test"] = func() runtime.StageHandler { return quietIdleStage{} }
-	t.Cleanup(func() { delete(runtime.StageRegistry, "quiet-idle-test") })
+	runtime.AspectRegistry["quiet-idle-test"] = func() runtime.AspectHandler { return quietIdleStage{} }
+	t.Cleanup(func() { delete(runtime.AspectRegistry, "quiet-idle-test") })
 
 	store, err := memtest.Open(t)
 	if err != nil {
@@ -317,14 +317,14 @@ func TestResumeSessionsStartsIdleCapableSessions(t *testing.T) {
 
 	cfg, _ := json.Marshal(map[string]int{"idle_interval_seconds": 60})
 	resumable := &memory.SessionPlan{
-		ID:     "resume-agent",
-		Status: "active",
-		Stages: []memory.SessionStage{{Name: "quiet-idle-test", Kind: "quiet-idle-test", Status: "active", Config: cfg}},
+		ID:      "resume-agent",
+		Status:  "active",
+		Aspects: []memory.SessionAspect{{Name: "quiet-idle-test", Kind: "quiet-idle-test", Status: "active", Config: cfg}},
 	}
 	plain := &memory.SessionPlan{
-		ID:     "plain-agent",
-		Status: "active",
-		Stages: []memory.SessionStage{{Name: "active", Kind: "active", Status: "active"}},
+		ID:      "plain-agent",
+		Status:  "active",
+		Aspects: []memory.SessionAspect{{Name: "active", Kind: "active", Status: "active"}},
 	}
 	if err := store.SessionPlanSave(resumable); err != nil {
 		t.Fatal(err)

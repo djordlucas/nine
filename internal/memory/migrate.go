@@ -98,6 +98,23 @@ var migrations = []migrationStep{
 	{name: "drop_goal_subtree", fn: func(q sqlExec) error {
 		return dropColumnIfPresent(q, "goals", "subtree")
 	}},
+
+	// 4 → 5: session_plans.stages becomes session_plans.aspects.
+	//
+	// "Stage" named two unrelated things: a session's concurrent, independently
+	// retiring behaviors, and the phases within one turn that make a user wait
+	// ("building context", "waiting for the model"). The first is renamed so each
+	// word means one thing. The stored JSON is an array of objects whose own keys
+	// are unchanged, so only the column moves — the values are untouched
+	// (docs/concept-consolidation.md, the deferred rename).
+	{name: "rename_stages_to_aspects", fn: func(q sqlExec) error {
+		has, err := hasColumnTx(q, "session_plans", "stages")
+		if err != nil || !has {
+			return err
+		}
+		_, err = q.Exec(`ALTER TABLE session_plans RENAME COLUMN stages TO aspects`)
+		return err
+	}},
 }
 
 // dropColumnIfPresent removes a column only when it is there, so the step is
