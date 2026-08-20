@@ -214,6 +214,21 @@ component that has a published contract and a compatibility story.
    distinguishable only by knowing which struct a `.Type` field belongs to.
 2. A generated or hand-written table mapping each type to its required fields,
    validated on ingress — turns the comments into a check.
+
+   **Landed as R-PROTO.11**, hand-written rather than generated: eleven types
+   carry requirements and a generator would be more machinery than the thing it
+   produces.
+
+   The requirements were derived from **what the handlers read**, not from the
+   doc comment — the comment is unverified by construction, which is the whole
+   complaint — and doing it that way found a defect. `attach` tolerated an empty
+   `agent_id`, and `resolveID` falls back to a prefix match where **every id has
+   `""` as a prefix**, so an empty agent id attached the client to whichever
+   session Go's randomized map iteration yielded first. Requiring the field turns
+   an arbitrary outcome into a clear error.
+
+   Scope is deliberately presence, not meaning: whether an agent id names a live
+   session stays with the handler that knows.
 3. Per-message payload structs behind a `Type` discriminator, with `Msg` reduced
    to an envelope. Largest change; retires most of the checklist.
 
