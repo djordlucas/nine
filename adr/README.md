@@ -43,6 +43,8 @@ remains here is the reasoning.
   hybrid won.
 - **rich-js-tools.md** — what a sandboxed-tool author can actually call: the JS
   environment, and what belongs beneath it.
+- **roles-design.md** — why worker kinds became data, the migration off
+  depth-based gating, and the acceptance gates for it.
 - **thinking-and-planning.md** — thinking and planning modes, M1–M7.
 - **architecture-wiring.md** — the boot order, end-to-end data flows, and the
   component relationship map. Names types and call sites, which is what tracing

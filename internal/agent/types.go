@@ -16,7 +16,7 @@ type GoalSessionSpawnFn func(ctx context.Context, goalID string) (spawned bool, 
 
 // SubAgentTask is one task entry passed to RegisterRunAgents. Role optionally
 // names the worker role for the sub-agent; empty resolves to the default leaf
-// role (docs/roles.md R-ROLE.8).
+// role (spec/contracts/roles.md R-ROLE.8).
 type SubAgentTask struct {
 	Task    string
 	Context string
