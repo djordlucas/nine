@@ -82,9 +82,9 @@ type RoutineHandler interface {
   `["pursue"]`) are persisted immediately, since creating the row is itself the signal
   that the background session exists.
 
-### Per-turn: `notifyStages`
+### Per-turn: routine notification
 
-After every turn (and on stall), `AgentWorker.notifyStages` calls `OnTurnEnd` on
+After every turn (and on stall), the session worker notifies each active routine, calling `OnTurnEnd` on
 every routine with `status == "active"`, then persists or refreshes the plan row. This
 is how a routine's status changes (e.g. pursue syncing from its goal's status) become
 visible to the idle scheduler.
@@ -99,7 +99,7 @@ fires, `handleIdle`:
 2. Calls its `OnIdle`.
 3. If `OnIdle` returns `ok == true`, runs the returned text as the session's next turn
    (going through the normal turn pipeline — context assembly, tool calls,
-   checkpointing, `notifyStages`, re-arming the timer).
+   checkpointing, notifying routines, re-arming the timer).
 4. If `OnIdle` returns `ok == false` (nothing to do), the worker refreshes its
    cached plan from the store and re-arms for the next cycle. The refresh matters
    because a routine may retire *itself* from within `OnIdle` by writing its plan
@@ -113,7 +113,7 @@ trigger idle turns.
 ### Stall interaction
 
 When the stall detector fires (`StallConfig.Limit` consecutive no-tool turns),
-`notifyStages` is called with `result == ""` and `err == ErrStall` instead of a real
+routines are notified with an empty result and a stall error instead of a real
 turn result. Routines that care about stalls (currently only `pursue`) react to this —
 see below.
 
@@ -197,17 +197,3 @@ goal gets its own background session running the `pursue` routine, keyed 1:1 by
 
 Each pursue session's idle interval (`PursueIdleInterval`) is 5 minutes.
 
----
-
-## Source files
-
-| File | Responsibility |
-|------|---------------|
-| `internal/runtime/session_plan.go` | `SessionPlan`/`SessionRoutine`-adjacent types, `RoutineHandler`, `RoutineRegistry`, `loadOrCreatePlan`, idle-interval helpers |
-| `internal/runtime/session_worker.go` | Per-session loop: turns, stall detection, checkpointing, `notifyStages`, idle scheduler (`armIdleTimer`/`handleIdle`) |
-| `internal/runtime/stage_idle_reflection.go` | `idle-reflection` routine |
-| `internal/runtime/stage_pursue.go` | `pursue` routine |
-| `internal/runtime/goal_session.go` | `SpawnGoalSession`, `MaxGoalSessions` cap |
-| `internal/runtime/bootstrap.go` | `BootstrapSelfKV`, `ReconcileSelfReflection` |
-| `internal/memory/session_plans.go` | `session_plans` table accessors |
-| `internal/selfmodel/assembler.go` | Builds the `SystemSelf` context block from `self/*` KV keys |
