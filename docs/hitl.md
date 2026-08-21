@@ -1,9 +1,11 @@
 # Human-in-the-Loop (HITL)
 
-Nine can pause mid-task and wait for human input. This covers two cases:
+Nine can pause mid-task and wait for human input. This is how you approve a
+dangerous tool call before it runs, and how Nine asks you a question when it is
+stuck. Two cases:
 
 - **LLM-initiated**: Nine calls `ask_human` when it needs clarification, a decision, or approval before it can safely proceed.
-- **Automatic gates**: The dispatcher intercepts a configured set of tools before running them and asks for explicit approval.
+- **Automatic gates**: a tool call you have marked as requiring approval is intercepted before it runs, and you are asked to permit or refuse it.
 
 Both cases route through the same mechanism — `ask_human` — so the TUI has one rendering path and the protocol has one pair of message types.
 
