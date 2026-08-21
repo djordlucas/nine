@@ -216,7 +216,7 @@ description = "probe"
 	got := h.Get("probe").Imports()
 	want := map[string]bool{
 		"nine:csv": true, "nine:date": true, "nine:diff": true,
-		"nine:fs": true, "nine:env": true,
+		"nine:html": true, "nine:fs": true, "nine:env": true,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("Imports() = %v, want exactly the nine:* stdlib", got)
