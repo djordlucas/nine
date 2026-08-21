@@ -99,10 +99,9 @@ Key consequences of this shape:
 | MCP bridge | `nine` (re-exec) | One declared `[[mcp.server]]`: the plugin contract to the daemon, stdio or HTTP to the server | Spawned by daemon, killed on stop |
 | Sandboxed tool | *(none)* | JS/wasm in a wazero instance inside the daemon | One instance per call, closed on return |
 
-The CLI auto-starts the daemon if the socket is dead (`EnsureDaemon` in
-`internal/protocol/client.go`). Everything funnels through `cmd/nine/main.go`,
-which dispatches to either the TUI, the one-shot client, or `runDaemon`
-(`cmd/nine/daemon.go`).
+The CLI auto-starts the daemon if the socket is dead. One binary is the entry
+point for everything: it dispatches to the TUI, the one-shot client, or the
+daemon, depending on how it was invoked.
 
 ### Volume layout (Docker)
 
@@ -145,7 +144,7 @@ Config is resolved in order: `$NINE_CONFIG` → `./nine.toml` → `/nine.toml`
 
 ## 3. The daemon: socket server & message router
 
-`runtime.Daemon` (`internal/runtime/daemon.go`) is a Unix-socket server. Its
+`runtime.Daemon` is a Unix-socket server. Its
 core state:
 
 ```
@@ -248,7 +247,7 @@ queue serializes *everything*, ordered by priority.
 
 ## 5. The AgentWorker — session lifecycle
 
-`runtime.AgentWorker` (`internal/runtime/agent_worker.go`) wraps one
+`runtime.AgentWorker` wraps one
 `agent.Loop` and is the unit of session liveness. It is used identically for
 interactive conversations, the self-reflection session, goal pursue sessions,
 and (indirectly) checkpoints.
@@ -332,7 +331,7 @@ the recent history and any answer it missed while disconnected.
 
 ## 6. The agent loop (ReAct)
 
-`agent.Loop` (`internal/agent/loop.go`) implements Reason → Act → Observe. One
+`agent.Loop` implements Reason → Act → Observe. One
 `Run` call = one user turn = possibly many LLM round-trips (inner loop).
 
 ```
@@ -392,7 +391,7 @@ Salient details:
 
 ## 7. Tool dispatch & the tool taxonomy
 
-`agent.Dispatcher` (`internal/agent/dispatcher.go`) is a name → handler map with
+`agent.Dispatcher` is a name → handler map with
 post-call hooks and a hard output cap.
 
 ```
@@ -465,7 +464,7 @@ the dispatcher handler set.
 
 ## 8. Context assembly & token budgeting
 
-`ninectx.Builder` (`internal/context/builder.go`) packs one LLM request into a
+`ninectx.Builder` packs one LLM request into a
 fixed token budget (`context_budget`, defaults to `num_ctx`). Token counting is
 a deliberate approximation: **4 characters ≈ 1 token**, no tokenizer dependency.
 
@@ -515,7 +514,7 @@ the `vectors` table (which holds skills, `session-index`, and agent embeddings).
 
 ## 9. The LLM queue
 
-`llm.Queue` (`internal/llm/queue.go`) is a **priority min-heap** in front of the
+`llm.Queue` is a **priority min-heap** in front of the
 provider, bounding in-flight calls to `maxConcurrent`.
 
 ```
@@ -533,7 +532,7 @@ provider, bounding in-flight calls to `maxConcurrent`.
             inflight++ ; go run(next)
 ```
 
-Priority constants (`internal/llm/provider.go`), lower = served first:
+Priority constants, lower = served first:
 
 | Value | Constant | Who |
 |-------|----------|-----|
@@ -551,7 +550,7 @@ separate method.
 
 ## 10. Plugin subsystem
 
-`plugin.Manager` (`internal/plugin/manager.go`) owns plugin subprocess
+`plugin.Manager` owns plugin subprocess
 lifecycle. A native plugin speaks a small two-method protocol (`plugin.describe`,
 `plugin.call`) over **HTTP on a per-plugin Unix socket** (`NINE_PLUGIN_SOCKET`,
 `POST /rpc`): the manager spawns the process, waits for the socket, and drives it
@@ -560,12 +559,12 @@ context-based cancellation (plugins-http-transport.md). There is no second
 transport on the daemon's side: an external **MCP** server is a plugin too,
 reached through the `mcp` bridge, which speaks this same contract to the daemon.
 How the bridge reaches the server is the part that varies — `dialSpec`
-(`internal/builtins/mcp.go`) opens HTTP when the `[[mcp.server]]` declares a
+(`mcp`) opens HTTP when the `[[mcp.server]]` declares a
 `url`, and spawns the `command` over stdio otherwise. Everything past that dial
 is transport-agnostic: one `mcpConn`, one handshake, one tool-prefixing rule.
 
 The Go default plugins are not separate executables: their handlers live in
-`internal/builtins`, and `Manager.StartBuiltin` spawns them by re-executing the
+`builtins`, and `Manager.StartBuiltin` spawns them by re-executing the
 nine binary as `nine plugin serve <name>`. That is a packaging difference only —
 each still gets its own process, socket, sanitized environment, and crash
 isolation.
@@ -624,13 +623,13 @@ Memory/file/vector operations and the skill tools are **core-intercepted**
 
 ## 11. Sandboxed tools — the in-process wasm host
 
-`toolvm.Host` (`internal/toolvm/host.go`) is the dispatcher's **third backend**,
+`toolvm.Host` is the dispatcher's **third backend**,
 and the only one that is neither a subprocess nor a core handler: JS and wasm
 tools run **inside the daemon process**, in a wazero sandbox, with exactly the
 capabilities the operator conferred — by default, none.
 
 The subsystem is additive by construction. `runtime.OpenSandboxedTools`
-(`internal/runtime/sandboxed.go`) returns **nil** unless `[tools] enabled` is
+(`sandboxed`) returns **nil** unless `[tools] enabled` is
 set, every consumer downstream treats a nil host as "no sandboxed tools", and a
 failure to open the wasm runtime is logged and degraded to nil rather than
 aborting the boot — an operator whose sandbox will not start should lose the
@@ -726,7 +725,7 @@ differs from a developer tool in provenance, not in enforcement.
  js_eval     ─► same sandbox, same rules, persists nothing
 ```
 
-`agent.RegisterGeneratedTools` (`internal/agent/register_tools.go`) registers the
+`agent.RegisterGeneratedTools` registers the
 three meta-tools only when the tier is on, and `js_eval` additionally needs its
 own `eval` switch. With the tier off they are neither registered nor advertised,
 and a loop is identical to one built before the tier existed.
@@ -771,7 +770,7 @@ design rationale is [sandboxed-tools.md](sandboxed-tools.md).
 ## 12. Memory & persistence
 
 A single **SQLite** database file (driver: `modernc.org/sqlite` via `database/sql`
-— pure Go, no cgo) holds everything. `internal/memory.Store` is the **sole owner**
+— pure Go, no cgo) holds everything. `Store` is the **sole owner**
 of the database handles — the "single gateway" invariant. Since SQLite serializes
 writes, that is a one-connection writer pool plus a concurrent read-only pool, with
 statements routed by leading keyword. The schema is applied idempotently on `Open`
@@ -827,19 +826,19 @@ messages), `tool_start`/`tool_end`, `context_update`, and `turn_end`.
 Three consumers sit on top of the journal:
 
 - **Read / replay.** `nine trace <agent-id>` renders a session's trajectory
-  straight from the table (works with the daemon down). `internal/replay`
+  straight from the table (works with the daemon down). `replay`
   reconstructs a session and re-executes it on a real `agent.Loop` wired to a
   *recorded* provider/dispatcher — deterministic, no live LLM/tool calls
   (`nine replay`). Journal-backed reattach lets a revived session show real
   history. Design: [event log](event-journal.md).
 - **Retention.** `store.SessionEventsScrub(keepTurns, maxAge)` runs at boot to
   bound growth (`[daemon] event_retention_turns` / `event_retention_days`).
-- **Subscriptions.** `internal/subscribe` gives each `Handler` a durable cursor
+- **Subscriptions.** `subscribe` gives each `Handler` a durable cursor
   (`event_cursors`) over `seq`, an in-process wake (from the sink's flush) plus
   catch-up on restart, at-least-once delivery, and poison-event skip. Subscribers
   are programmatic and **out-of-band** — they enrich derived stores, never make a
   generative LLM call and never touch the active session. Two exist:
-  `subscribers.RelatedIndexer` (`internal/subscribers`) links topically-similar
+  `subscribers.RelatedIndexer` links topically-similar
   sessions into `related_sessions` (surfaced back into context on a later turn —
   pull, not push; on by default when an embedder is configured), and the
   Supervisor itself (its control-plane bus folded onto the journal). Design:
@@ -868,7 +867,7 @@ Every `AgentWorker` carries a **session plan**: a small state machine of
 between-turn autonomy.
 
 ```
-   StageHandler interface (internal/runtime/session_plan.go)
+   RoutineHandler interface
      Init(ctx, agentID, cfg)
      OnTurnEnd(ctx, agentID, result, err)   ← after every turn (and on stall)
      OnIdle(ctx, agentID) (turnText, ok)    ← when this routine's idle interval elapses
@@ -940,7 +939,7 @@ they come back on demand via `attach`.
      lifecycle streamed to parent: sub_agent_start / sub_agent_end
      run_agents fans out: one goroutine per task, WaitGroup join, ≥300s timeout
 
-   WORKFLOWS (internal/workflow.Service)
+   WORKFLOWS
      named multi-step plans; steps as JSON on the row; auto-close when all
      steps terminal; startup scrub marks interrupted "running" steps failed.
 
@@ -979,7 +978,7 @@ Two write paths reach it, and only one of them is agent-reachable:
 `workflow_update` **auto-closes**: marking a step `done` or `failed` checks whether
 every step is terminal and, if so, closes the workflow as `done` (all succeeded) or
 `failed` (any failed), so the model never needs an explicit close call. At boot,
-`internal/workflow.scrub` marks any step still `running` as `failed` with reason
+a scrub marks any step still `running` as `failed` with reason
 `interrupted` — the ungraceful-shutdown case — while workflows that still hold
 `pending` steps stay `active` so a later turn can resume them.
 
@@ -1049,159 +1048,13 @@ Go toolchain, no git, and no source tree.
 
 ---
 
-## 16. End-to-end data flows
+> **Wiring detail** — the boot order, the end-to-end data flows, and the
+> component relationship map live in
+> [adr/architecture-wiring.md](../adr/architecture-wiring.md). They name types
+> and call sites, which is what tracing a flow needs and what this document
+> deliberately avoids.
 
-### A. Interactive user turn
-
-```
- TUI ── user_turn{agentID,text} ──► daemon.dispatch ──► userTurn
-                                                          │
-   register progressFn (→ progressCh, cap 256)            │
-   r.turnAsync(text) ──► AgentWorker.inbox                │
-                              │                            │
-   ┌──── connection goroutine selects ────┐               │
-   │  progressCh → enc.Encode(event)  ◄────┼── emitEvent ◄─┤  worker goroutine:
-   │  respCh     → final response + done   │               │  processTurn → loop.Run
-   └────────────────────────────────────────┘             │     ├─ thinking
-                                                           │     ├─ context_update
-   loop.Run inner iterations:                              │     ├─ tool_start
-     build context → queue.Submit → LLM                    │     ├─ tool_end
-     dispatch tool calls → scratchpad                      │     ├─ thinking_chunk (reasoning trace)
-                                                           │     └─ response_chunk
-     final answer ─────────────────────────────────────────┘
-                                                           ▼
-                              notifyStages → checkStall → checkpoint → armIdleTimer
-                                                           │
-                              respCh ◄────────────────────┘
- TUI ◄── response{text} ── done ──────────────────────────
-```
-
-### B. Idle reflection (no client involved)
-
-```
- idleTimer fires (2 min) ──► handleIdle
-        │  find "idle-reflection" routine, interval elapsed
-        ▼
-   OnIdle() returns the reflection prompt, ok=true
-        ▼
-   processTurn(prompt)  ── same path as a user turn, Priority=Background ──► LLM
-        ▼
-   model calls memory_set self/capabilities, self/learned
-        ▼
-   the turn's result is recorded in the journal
-        ▼
-   armIdleTimer (re-arm for the next cycle)
-```
-
-### C. Sub-agent fan-out (`run_agents`)
-
-```
- parent loop dispatches run_agents([t1,t2,t3], timeout)
-        │  registerSubAgentTools → spawnOne per task
-        ▼
-   ctx, cancel = WithTimeout(≥300s)
-   go spawnOne(t1) ─┐
-   go spawnOne(t2) ─┼─► each: emit sub_agent_start (→ parent progress feed)
-   go spawnOne(t3) ─┘           build child loop in its leaf role, depthGuard-1
-                                RunSubAgentSync(child)
-                                emit sub_agent_end{status}
-        ▼  WaitGroup.Wait()
-   results[] returned to the parent loop as the tool observation
-```
-
----
-
-## 17. Startup sequence
-
-`runDaemon` (`cmd/nine/daemon.go`) wires the object graph in this order:
-
-```
- 1.  config load  +  ApplyEnvOverrides
- 2.  memory.Open(cfg.DatabasePath())                ← the single SQLite store (fail-fast)
- 3.  plugin.NewManager + TryStartBuiltin(shell)
-     + startMCPServers([[mcp.server]])              ← one bridge each, before user plugins
-     + LoadUserPlugins([plugins].user_dir)          ← after the built-ins; names reserved
- 3a. OpenSandboxedTools(cfg, store, mgr)            ← nil unless [tools] enabled;
-     → toolvm.Open (compile QuickJS) → SetAgentConfig → Load → LoadGeneratedTools
-     after the plugins, so a colliding sandboxed tool is skipped, not honored
- 3b. NewGeneratedToolStore(store, host, mgr, NewDepsBundler(cfg), …)
-     ← the tool_write/tool_delete/js_eval backend; inert when [tools.agent] is off
- 4.  NewStores(store) → checkpoint, notif, notifAdd
- 5.  embed.Build(...)                               ← embedder (keyword default)
- 6.  NewSupervisor(64)  +  supervisor.Attach(store) ← durable, journal-backed bus
- 7.  selfmodel.New(store, embedder, listPlugins)    ← self-model assembler
- 8.  BootstrapSelfKV(store, plugins)                ← seed self/identity, self/capabilities
- 9.  StageRegistry["idle-reflection"] = …  +  BootstrapSelfReflection(2 min)
-10.  StageRegistry["pursue"] = …
-11.  store.WorkflowScrub()  +  store.SessionEventsScrub(turns, age)  ← bound workflow + journal growth
-12.  NewHITL(store, timeout)  +  hitl.ExpireStale()
-13.  NewAgentBuilder(AgentBuilderConfig{Loop{…, RelatedSessions}, …})
-14.  runtime.New(socket, agentBuilder.BuildForRole, ckpt, notif)   ← the daemon
-15.  NewSQLEventSink(store, daemon.NotifySubscribers) + daemon.SetEventSink   ← journal writer
-16.  daemon.Configure{HITL, Memory, Plugins, Supervisor, PlanStore}
-     daemon.SetMaxGoalSessions
-17.  if related_sessions_index (default on) && embedder: daemon.AddSubscriber(RelatedIndexer)
-18.  agentBuilder.SetGoalSessionSpawnFn(daemon.SpawnGoalSession)   ← goal-spawning roles only
-     agentBuilder.SetEmitProgressFn(daemon.EmitProgress)          ← sub-agent events
-19.  go supervisor.Run(ctx)
-20.  reconcileStandingAgents(...)                   ← seed config-owned [[agent]] goals
-21.  daemon.ResumeSessions(ctx)                     ← restart idle-capable sessions
-22.  daemon.Start(ctx)                              ← accept loop (blocks)
-```
-
-The ordering matters: the builder is constructed before the daemon, but the
-goal-spawn and progress-emit functions are injected *after* the daemon exists
-(they close over the daemon's session registry), and only then are sessions
-resumed.
-
----
-
-## 18. Component relationship map
-
-```
-                         cmd/nine (main, daemon)
-                                  │ wires
-                                  ▼
-   ┌──────────────────────── runtime.Daemon ────────────────────────┐
-   │  factory ─────────────► runtime.AgentBuilder ──builds──► agent.Loop
-   │  sessions[] ──────────► runtime.AgentWorker ──wraps────► agent.Loop
-   │  plans ───────────────► PlanStore / sessionPlanState ─► StageHandler
-   │  sup ─────────────────► runtime.Supervisor
-   │  mgr ─────────────────► plugin.Manager ──spawns──────► plugin subprocs
-   │  tools ───────────────► toolvm.Host ──instantiates──► wazero (in-process)
-   │  ckpt / notif / store ► memory.Store  (sole handle → SQLite file)
-   │  sink ─────────────────► EventSink ──► session_events journal
-   │  subscribers[] ────────► RelatedIndexer (out-of-band, cursor-backed)
-   └─────────────────────────────────────────────────────────────────┘
-            │                       │                      │
-            ▼                       ▼                      ▼
-     agent.Dispatcher       ninectx.Builder          llm.Queue ──► llm.Provider
-     (tool routing)         (context budget)         (priority)    (ollama)
-            │
-            ├─ plugin tools  ──► plugin.Manager.Call
-            ├─ core tools    ──► in-process handlers
-            │                    (memory, embed, run_agent,
-            │                     workflow_*, goal_*, gap_report)
-            └─ sandboxed     ──► toolvm.Host.Call
-                                 (developer tools.d + generated store rows)
-
-   embed.Embedder ──► used by: ninectx tool ranking, skill search,
-                                memory_query / file_search_semantic,
-                                selfmodel.Assembler
-```
-
-Dependency direction is acyclic and downward: `cmd` → `runtime` →
-{`agent`, `plugin`, `memory`, `llm`, `context`, `selfmodel`, `embed`,
-`workflow`, `toolvm`}. The `protocol` package is shared by both the daemon and
-the client/TUI but depends on neither, so client code never pulls in the runtime.
-`agent` reaches the sandbox only through the two-method `SandboxedHost`
-interface — it imports `toolvm` for the `Tool` type but never touches the wazero
-API itself, which is what lets a dispatcher test substitute a fake host with no
-wasm runtime in it.
-
----
-
-## 19. Key invariants (the rules that keep it coherent)
+## 16. Key invariants (the rules that keep it coherent)
 
 1. **One session, one goroutine, serialized turns.** `agent.Loop` is never
    touched concurrently; the `AgentWorker` goroutine enforces it.
