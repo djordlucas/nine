@@ -131,7 +131,10 @@ type Host struct {
 	// shippedStatus is likewise kept apart, so neither a developer-tool reload
 	// nor a generated-tool reload erases the first-party set.
 	shippedStatus []Status
-	agent           AgentConfig
+	// shippedWorkspace is the host directory shipped tools that declare fs are
+	// mounted at, under the fixed guest path /work.
+	shippedWorkspace ShippedWorkspace
+	agent            AgentConfig
 
 	// qjs is the compiled QuickJS blob, shared by every `js` tool. Compiling it
 	// is by far the most expensive thing this package does (~1 MB of wasm), so it

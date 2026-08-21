@@ -43,6 +43,7 @@ const toolArgs = globalThis.__nine_args;
 const hostCaps = globalThis.__nine_caps;
 const hostFSRead = globalThis.__nine_fs_read;
 const hostFSWrite = globalThis.__nine_fs_write;
+const hostFSMkdir = globalThis.__nine_fs_mkdir;
 const hostFSReadDir = globalThis.__nine_fs_readdir;
 const hostFSStat = globalThis.__nine_fs_stat;
 const hostEnv = globalThis.__nine_env;
@@ -53,6 +54,7 @@ globalThis[Symbol.for("nine.internal")] = Object.freeze({
   caps: () => (capsCache ??= JSON.parse(hostCaps())),
   fsRead: (p) => hostFSRead(p),
   fsWrite: (p, d) => hostFSWrite(p, d),
+  fsMkdir: (p) => hostFSMkdir(p),
   fsReadDir: (p) => hostFSReadDir(p),
   fsStat: (p) => hostFSStat(p),
   env: (n) => hostEnv(n),
@@ -98,6 +100,7 @@ delete globalThis.__nine_args;
 delete globalThis.__nine_caps;
 delete globalThis.__nine_fs_read;
 delete globalThis.__nine_fs_write;
+delete globalThis.__nine_fs_mkdir;
 delete globalThis.__nine_fs_readdir;
 delete globalThis.__nine_fs_stat;
 delete globalThis.__nine_env;
