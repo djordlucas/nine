@@ -758,10 +758,12 @@ func validateHTTPGrant(table string, g *ToolHTTPGrant) error {
 		case h == "":
 			return fmt.Errorf("[%s]: net.http allow_hosts has an empty entry", table)
 		case h == "*":
-			// An operator who wants an unrestricted egress tool should write a
-			// native plugin, where that intent is explicit and reviewed
-			// (docs/sandboxed-tools.md §8).
-			return fmt.Errorf("[%s]: net.http allow_hosts may not be a bare %q; name the hosts, or write a native plugin if you need unrestricted egress", table, "*")
+			// Permitted, and deliberately the only pattern that has to be written
+			// out in full. It grants any *host*; it does not grant any *address* —
+			// loopback, link-local, private ranges and multicast stay blocked at
+			// dial time whatever the allowlist says (internal/toolvm/ssrf.go).
+			// Refusing it used to point operators at a native plugin instead,
+			// which has the daemon's uid and none of those checks.
 		case strings.Contains(h, "://"), strings.Contains(h, "/"):
 			return fmt.Errorf("[%s]: net.http allow_hosts entry %q must be a hostname, not a URL", table, h)
 		case strings.Count(h, "*") > 1, strings.Contains(h, "*") && !strings.HasPrefix(h, "*."):

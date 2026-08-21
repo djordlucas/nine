@@ -86,7 +86,7 @@ How to use this file:
 | R-TVM.9 | Trimmed interpreter surface | The QuickJS `std` and `os` modules are not linked: no filesystem API, no `os.exec`, no `std.urlGet`, and no `std.evalScript`/`loadScript` eval hooks are reachable from a tool. |
 | R-TVM.10 | Loading | Developer tools load from `[tools].user_dir` in the same sidecar-manifest layout as user plugins (R-PLUG.9); a module without its manifest does not load. |
 | R-TVM.11 | Visibility and reload | A newly loaded tool appears to **subsequently built** loops only; a turn in flight keeps the tool set it started with, so the turn stays replayable. |
-| R-TVM.12 | `net.http` | Network access is a host function with no wazero primitive beneath it, so the host enforces it: the SSRF checklist (address/redirect/DNS-rebinding/credential handling) applies to every request a tool makes. |
+| R-TVM.12 | `net.http` | Network access is a host function the host enforces: the SSRF checklist applies to every request. `allow_hosts` may be a bare `*`, which grants any host and no additional address — loopback, link-local, private and multicast stay refused at dial time regardless. |
 | R-TVM.13 | Fully built | Every feature the design specifies is implemented — the `nine:*` stdlib, external dependencies, and the deps/`net.http` interlock — with nothing stubbed or refused by name. |
 | R-TVM.14 | Generated tools | A tool Nine wrote via `tool_write` is a row in `tools` carrying source, schema, and a capability **declaration with no grant**; it runs through the same host, ABI, and instance model, and is capped by the generated ceiling. |
 | R-TVM.15 | Dependencies and the `nine:*` stdlib | Both `nine:*` and external npm imports resolve **before** the call, never by the guest and never at call time. |

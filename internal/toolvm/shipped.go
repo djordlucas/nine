@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 )
@@ -45,6 +46,13 @@ type shippedTool struct {
 	// filesystem pre-open and no host functions beyond the ABI — the tool can
 	// compute and nothing else.
 	Declaration Declaration
+	// AllowHosts is the net.http host allowlist, when the tool declares net.
+	// First-party tools name their own, because they are the only ones that know:
+	// web_search talks to three search endpoints, while the fetching tools exist
+	// to retrieve whatever URL a model chose and therefore need "*".
+	AllowHosts []string
+	// Methods is the permitted HTTP method allowlist. Empty means GET only.
+	Methods []string
 }
 
 // shippedTools is the catalog. Adding one is this entry plus its .js file.
@@ -75,6 +83,51 @@ var shippedTools = []shippedTool{
 		Schema:      `{"type":"object","required":["path","content"],"properties":{"path":{"type":"string"},"content":{"type":"string"}}}`,
 		File:        "shipped/write_file.js",
 		Declaration: Declaration{FS: []string{"write"}},
+	},
+	{
+		Name:        "http_get",
+		DisplayName: "HTTP GET",
+		Description: "Fetch a URL and return its status and body.",
+		Schema:      `{"type":"object","required":["url"],"properties":{"url":{"type":"string"},"headers":{"type":"object"}}}`,
+		File:        "shipped/http_get.js",
+		Declaration: Declaration{Net: []string{"http"}},
+		// The tool exists to fetch whatever URL the model chose, which no host
+		// list expresses. "*" grants any host; the dial-time address checks still
+		// refuse loopback, link-local, private ranges and multicast (R-TVM.12).
+		AllowHosts: []string{"*"},
+		Methods:    []string{"GET"},
+	},
+	{
+		Name:        "http_post",
+		DisplayName: "HTTP POST",
+		Description: "POST a body to a URL and return the status and response.",
+		Schema:      `{"type":"object","required":["url"],"properties":{"url":{"type":"string"},"body":{},"headers":{"type":"object"}}}`,
+		File:        "shipped/http_post.js",
+		Declaration: Declaration{Net: []string{"http"}},
+		AllowHosts:  []string{"*"},
+		Methods:     []string{"POST"},
+	},
+	{
+		Name:        "web_page_read",
+		DisplayName: "Read Web Page",
+		Description: "Fetch a web page and return its readable text, with markup and scripts stripped.",
+		Schema:      `{"type":"object","required":["url"],"properties":{"url":{"type":"string"}}}`,
+		File:        "shipped/web_page_read.js",
+		Declaration: Declaration{Net: []string{"http"}},
+		AllowHosts:  []string{"*"},
+		Methods:     []string{"GET"},
+	},
+	{
+		Name:        "web_search",
+		DisplayName: "Web Search",
+		Description: "Search the web and return result titles, URLs, and snippets. Uses DuckDuckGo by default; set SEARCH_PROVIDER=brave|serpapi and SEARCH_API_KEY for another backend.",
+		Schema:      `{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"limit":{"type":"integer"}}}`,
+		File:        "shipped/web_search.js",
+		// Unlike the fetching tools this one has a real allowlist: three known
+		// search endpoints. The tool that can be constrained is constrained.
+		Declaration: Declaration{Net: []string{"http"}, Env: []string{"SEARCH_PROVIDER", "SEARCH_API_KEY"}},
+		AllowHosts:  []string{"html.duckduckgo.com", "api.search.brave.com", "serpapi.com"},
+		Methods:     []string{"GET"},
 	},
 }
 
@@ -121,7 +174,7 @@ func (h *Host) LoadShipped(ctx context.Context, collides Collides) {
 		ws := h.shippedWorkspace
 		h.mu.RUnlock()
 
-		grant, err := resolveShipped(s.Declaration, ws)
+		grant, err := resolveShipped(s.Declaration, ws, s.AllowHosts, s.Methods)
 		if err != nil {
 			status = append(status, skip(st, err, "grant"))
 			continue
@@ -179,7 +232,7 @@ func (h *Host) LoadShipped(ctx context.Context, collides Collides) {
 // something unsupported is refused rather than silently dropped. A tool that
 // declares nothing gets nothing, which is the common case and the reason `time`
 // was the right one to migrate first.
-func resolveShipped(d Declaration, ws ShippedWorkspace) (Grant, error) {
+func resolveShipped(d Declaration, ws ShippedWorkspace, allowHosts, allowMethods []string) (Grant, error) {
 	var g Grant
 	if len(d.FS) > 0 {
 		if ws.Host == "" {
@@ -200,8 +253,18 @@ func resolveShipped(d Declaration, ws ShippedWorkspace) (Grant, error) {
 			}
 		}
 	}
-	if len(d.Net) > 0 {
-		return Grant{}, fmt.Errorf("shipped tool declares net %v, which needs an allowlist the shipped tier does not yet define", d.Net)
+	for _, verb := range d.Net {
+		if verb != "http" {
+			return Grant{}, fmt.Errorf("unknown net capability %q", verb)
+		}
+		if len(allowHosts) == 0 {
+			return Grant{}, errors.New("shipped tool declares net.http with no allow_hosts")
+		}
+		methods := allowMethods
+		if len(methods) == 0 {
+			methods = []string{"GET"}
+		}
+		g.HTTP = &HTTPGrant{AllowHosts: allowHosts, Methods: methods}
 	}
 	g.Env = append(g.Env, d.Env...)
 	return g, nil

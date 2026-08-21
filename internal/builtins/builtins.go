@@ -36,7 +36,6 @@ import (
 // Each entry blocks until the plugin process is told to stop.
 var serveFuncs = map[string]func(){
 	"shell":        serveShell,
-	"http":         serveHTTP,
 	MCPBuiltinName: serveMCP,
 }
 
@@ -52,11 +51,12 @@ const MCPBuiltinName = "mcp"
 // (R-PLUG.15); a bare `mcp` has nothing to bridge and would do nothing but fail
 // on every boot. Servable and startable are different questions, and this is the
 // one built-in where they diverge.
-// time and files are absent: they are shipped sandboxed tools now
-// (internal/toolvm/shipped.go), not plugins. Neither needs a subprocess holding
-// the daemon's uid authority — which is what a built-in plugin is, and which for
-// files meant read_file could read any absolute path on the host.
-var autoStart = []string{"http", "shell"}
+// Only shell remains. time, files and http are shipped sandboxed tools now
+// (internal/toolvm/shipped.go). None of them needed a subprocess holding the
+// daemon's uid — which is what a built-in plugin is, and which meant read_file
+// could read any absolute path and http_get could reach cloud instance
+// metadata. shell stays because it needs real exec.
+var autoStart = []string{"shell"}
 
 // AutoStart returns the built-ins to start at daemon boot, in a stable order.
 func AutoStart() []string {

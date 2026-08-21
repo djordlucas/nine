@@ -13,22 +13,23 @@ import (
 // at boot (cmd/nine/daemon.go); spec/contracts/plugin.md R-PLUG.5 lists the same
 // set, so a plugin added or dropped here is a contract change.
 //
-// Four deliberate absences. `browser` is Node + Chromium, not Go, so it still
+// Only shell is left. `browser` is Node + Chromium, not Go, so it still
 // ships as its own artifact under [plugins].bin. `mcp` is a built-in but is not
 // auto-started: it runs once per [[mcp.server]] with that server's spec in its
-// environment (R-PLUG.15), and a bare `mcp` would have nothing to bridge. `time` and
-// `files` are no longer plugins at all — they are shipped sandboxed tools
-// (internal/toolvm/shipped.go). Neither needs a subprocess holding the daemon's
-// uid authority, which for files meant read_file could read any absolute path.
+// environment (R-PLUG.15), and a bare `mcp` would have nothing to bridge. `time`,
+// `files` and `http` are no longer plugins at all — they are shipped sandboxed
+// tools (internal/toolvm/shipped.go). None needed a subprocess holding the
+// daemon's uid, which meant read_file could read any absolute path and http_get
+// could reach cloud instance metadata with none of ssrf.go in the way.
 func TestAutoStartMatchesDaemonRoster(t *testing.T) {
-	want := []string{"http", "shell"}
+	want := []string{"shell"}
 	if got := builtins.AutoStart(); !slices.Equal(got, want) {
 		t.Errorf("AutoStart() = %v, want %v", got, want)
 	}
 	if builtins.Has("browser") {
 		t.Error("browser must not be a built-in: it is Node + Chromium, not Go")
 	}
-	for _, name := range []string{"time", "files"} {
+	for _, name := range []string{"time", "files", "http"} {
 		if builtins.Has(name) {
 			t.Errorf("%s must not be a built-in: it is a shipped sandboxed tool", name)
 		}
