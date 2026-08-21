@@ -51,7 +51,7 @@ func linkNine(t *testing.T) string {
 // environment — a cwd and $HOME that both contain a config file — and returns
 // the binary path, the combined output, and the exit error (nil if it was still
 // running and had to be killed).
-func serveChild(t *testing.T, name string, env ...string) (bin, output string, waitErr error) {
+func serveChild(t *testing.T, name string, budget time.Duration, env ...string) (bin, output string, waitErr error) {
 	t.Helper()
 	bin = linkNine(t)
 	workdir := t.TempDir()
@@ -78,12 +78,48 @@ func serveChild(t *testing.T, name string, env ...string) (bin, output string, w
 	go func() { done <- cmd.Wait() }()
 	select {
 	case waitErr = <-done:
-	case <-time.After(2 * time.Second):
-		// Still serving, which is the healthy case for a valid invocation.
+	case <-time.After(budget):
+		// Still serving. For a valid invocation that is the healthy case; for one
+		// that should have refused, it is the failure the caller is testing for,
+		// and waitErr stays nil to say so.
 		cmd.Process.Kill() //nolint:errcheck // best-effort
 		<-done
 	}
 	return bin, buf.String(), waitErr
+}
+
+// waitBudget is how long serveChild gives the child before calling it "still
+// serving". The two cases want opposite budgets, which is why the caller picks.
+//
+// A child that should *refuse* exits in milliseconds, so waiting longer costs
+// nothing on the happy path and only buys tolerance for a slow start — and slow
+// starts happen: the binary is freshly hardlinked, so its first execution pays
+// the code-signing assessment macOS charges for a binary it has not seen, on top
+// of spawn contention when the suite runs in parallel. The old fixed 2s was the
+// flake in TestServeChildRequiresSocket: a child exiting at 2.001s was reported
+// as "kept running", which is the same mistake R-PLUG.14 fixed in the daemon —
+// a fixed wall-clock budget that cannot tell dead from slow.
+//
+// A child that should *keep serving* is confirmed alive by the budget elapsing,
+// so there the budget is pure cost and stays short.
+type waitBudget = time.Duration
+
+const (
+	// expectExit: the child should refuse and exit. Generous.
+	expectExit = 30 * time.Second
+	// expectServing: the child should still be running. Paid in full every time.
+	expectServing = 2 * time.Second
+)
+
+// mustHaveRun fails when the child never got as far as doing the thing under
+// test. Both config tests assert an *absence*, so a child that exited instantly —
+// because the name stopped being a built-in, say — would satisfy them without
+// testing anything. Removing `time` from the roster did exactly that, silently.
+func mustHaveRun(t *testing.T, name, out string) {
+	t.Helper()
+	if strings.Contains(out, "unknown built-in plugin") {
+		t.Fatalf("child never served: %q is not a built-in any more, so this test proves nothing:\n%s", name, out)
+	}
 }
 
 // TestServeChildReadsNoOperatorConfig is the one that matters. The operator's
@@ -96,7 +132,8 @@ func TestServeChildReadsNoOperatorConfig(t *testing.T) {
 	// NINE_LOG_FILE=off forces slog to stderr. Without it a config-load warning
 	// would land in nine.log instead, where this test cannot see it — and the
 	// check would pass even for a child that did read the config.
-	bin, out, _ := serveChild(t, "time", "NINE_PLUGIN_SOCKET="+sock, "NINE_LOG_FILE=off")
+	bin, out, _ := serveChild(t, "shell", expectServing, "NINE_PLUGIN_SOCKET="+sock, "NINE_LOG_FILE=off")
+	mustHaveRun(t, "shell", out)
 
 	if strings.Contains(out, "ignoring unusable config file") {
 		t.Errorf("plugin child parsed a config file it should never look for; output:\n%s", out)
@@ -116,7 +153,8 @@ func TestServeChildReadsNoOperatorConfig(t *testing.T) {
 // manager wires to the daemon's.
 func TestServeChildWritesNoLogFile(t *testing.T) {
 	sock := filepath.Join(t.TempDir(), "p.sock")
-	bin, _, _ := serveChild(t, "time", "NINE_PLUGIN_SOCKET="+sock)
+	bin, out, _ := serveChild(t, "shell", expectServing, "NINE_PLUGIN_SOCKET="+sock)
+	mustHaveRun(t, "shell", out)
 
 	logPath := filepath.Join(filepath.Dir(bin), "nine.log")
 	if _, err := os.Stat(logPath); err == nil {
@@ -130,7 +168,9 @@ func TestServeChildWritesNoLogFile(t *testing.T) {
 // TestServeChildRequiresSocket checks the fail-closed guard: run by hand rather
 // than spawned by the manager, a built-in must refuse rather than sit there.
 func TestServeChildRequiresSocket(t *testing.T) {
-	_, out, err := serveChild(t, "time") // no NINE_PLUGIN_SOCKET
+	// The socket guard runs before the name is resolved, so any name reaches it —
+	// including one that is no longer a built-in, which is the point being made.
+	_, out, err := serveChild(t, "shell", expectExit) // no NINE_PLUGIN_SOCKET
 
 	if err == nil {
 		t.Error("plugin serve with no NINE_PLUGIN_SOCKET kept running; want a non-zero exit")
@@ -144,7 +184,7 @@ func TestServeChildRequiresSocket(t *testing.T) {
 // reported as the CLI's `plugin validate` usage — the two commands share a verb.
 func TestServeChildRejectsUnknownName(t *testing.T) {
 	sock := filepath.Join(t.TempDir(), "p.sock")
-	_, out, err := serveChild(t, "nope", "NINE_PLUGIN_SOCKET="+sock)
+	_, out, err := serveChild(t, "nope", expectExit, "NINE_PLUGIN_SOCKET="+sock)
 
 	if err == nil {
 		t.Error("plugin serve with an unknown name kept running; want a non-zero exit")
