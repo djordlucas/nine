@@ -182,3 +182,26 @@ func TestBlockReasonsAreLegible(t *testing.T) {
 		t.Errorf("error %q should name the reason", err)
 	}
 }
+
+// A wildcard allowlist grants any host. It must not grant any address: the
+// dial-time checks run whatever the allowlist says, which is the whole reason
+// permitting "*" is not the escalation the old refusal treated it as.
+func TestWildcardAllowlistStillBlocksPrivateAddresses(t *testing.T) {
+	// The allowlist itself admits anything.
+	for _, host := range []string{"example.com", "localhost", "169.254.169.254", "10.0.0.1"} {
+		if err := allowHost(host, []string{"*"}); err != nil {
+			t.Errorf("allowHost(%q, [*]) = %v, want it admitted by the allowlist", host, err)
+		}
+	}
+	// And the address checks refuse the ones that matter, independently.
+	for _, addr := range []string{
+		"127.0.0.1:80",       // loopback
+		"169.254.169.254:80", // cloud instance metadata
+		"10.0.0.1:80",        // private
+		"0.0.0.0:80",         // unspecified
+	} {
+		if err := checkAddr(addr); err == nil {
+			t.Errorf("checkAddr(%q) = nil; a wildcard host grant must not reach it", addr)
+		}
+	}
+}

@@ -132,11 +132,11 @@ func TestLoadShippedYieldsToAnExistingOwner(t *testing.T) {
 // resolveShipped refuses a declaration the tier cannot actually confer, rather
 // than registering a tool whose capability silently does nothing.
 func TestResolveShippedRefusesUnbackedCapabilities(t *testing.T) {
-	if _, err := resolveShipped(Declaration{FS: []string{"read"}}, ShippedWorkspace{}); err == nil {
+	if _, err := resolveShipped(Declaration{FS: []string{"read"}}, ShippedWorkspace{}, nil, nil); err == nil {
 		t.Error("a shipped fs declaration was accepted with no workspace to back it")
 	}
 	// With a workspace it resolves, and only to that workspace.
-	g2, err := resolveShipped(Declaration{FS: []string{"read", "write"}}, ShippedWorkspace{Host: "/tmp/ws"})
+	g2, err := resolveShipped(Declaration{FS: []string{"read", "write"}}, ShippedWorkspace{Host: "/tmp/ws"}, nil, nil)
 	if err != nil {
 		t.Fatalf("fs with a workspace should resolve: %v", err)
 	}
@@ -146,10 +146,10 @@ func TestResolveShippedRefusesUnbackedCapabilities(t *testing.T) {
 	if len(g2.FSWrite) != 1 || g2.FSWrite[0].Host != "/tmp/ws" {
 		t.Errorf("write mount = %+v", g2.FSWrite)
 	}
-	if _, err := resolveShipped(Declaration{Net: []string{"http"}}, ShippedWorkspace{}); err == nil {
+	if _, err := resolveShipped(Declaration{Net: []string{"http"}}, ShippedWorkspace{}, nil, nil); err == nil {
 		t.Error("a shipped net.http declaration was accepted with no allowlist")
 	}
-	if g, err := resolveShipped(Declaration{}, ShippedWorkspace{}); err != nil {
+	if g, err := resolveShipped(Declaration{}, ShippedWorkspace{}, nil, nil); err != nil {
 		t.Errorf("an empty declaration should resolve: %v", err)
 	} else if len(g.capabilities()) != 0 {
 		t.Errorf("empty declaration conferred %v", g.capabilities())
@@ -241,5 +241,69 @@ func TestShippedFilesAcceptWorkAlias(t *testing.T) {
 	out, err := h.Call(ctx, "read_file", json.RawMessage(`{"path":"/work/out.txt"}`))
 	if err != nil || out != "aliased" {
 		t.Errorf("read via /work = %q, %v", out, err)
+	}
+}
+
+// The four http tools, and the point of migrating them: the plugin they replace
+// was a subprocess with the daemon's uid and none of ssrf.go, so it would fetch
+// cloud instance metadata and hand it to the model.
+func TestShippedHTTPToolsAreGrantedAndConstrained(t *testing.T) {
+	ctx := context.Background()
+	h, err := Open(ctx, Config{UserDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer h.Close(ctx) //nolint:errcheck
+	h.LoadShipped(ctx, nil)
+
+	// The fetching tools need "*": they exist to retrieve whatever URL the model
+	// chose, and no host list expresses that.
+	for _, name := range []string{"http_get", "http_post", "web_page_read"} {
+		tool := h.Get(name)
+		if tool == nil {
+			t.Fatalf("%s did not register: %+v", name, h.Status())
+		}
+		if tool.Grant.HTTP == nil {
+			t.Fatalf("%s has no net.http grant", name)
+		}
+		if got := tool.Grant.HTTP.AllowHosts; len(got) != 1 || got[0] != "*" {
+			t.Errorf("%s allow_hosts = %v, want the wildcard", name, got)
+		}
+	}
+
+	// web_search can be constrained, so it is. This is the distinction that makes
+	// the wildcard a considered exception rather than a blanket.
+	search := h.Get("web_search")
+	if search == nil {
+		t.Fatal("web_search did not register")
+	}
+	hosts := search.Grant.HTTP.AllowHosts
+	if len(hosts) != 3 {
+		t.Fatalf("web_search allow_hosts = %v, want its three search endpoints", hosts)
+	}
+	for _, h := range hosts {
+		if h == "*" {
+			t.Errorf("web_search was granted a wildcard; its hosts are knowable")
+		}
+	}
+
+	// None of them gets the filesystem.
+	for _, name := range []string{"http_get", "http_post", "web_page_read", "web_search"} {
+		g := h.Get(name).Grant
+		if len(g.FSRead) != 0 || len(g.FSWrite) != 0 {
+			t.Errorf("%s was granted filesystem access: %+v", name, g)
+		}
+	}
+}
+
+// A wildcard host grant must not reach a blocked address. This is the property
+// that makes migrating these tools an improvement rather than a wash — the
+// plugin had no such check at any layer.
+func TestShippedHTTPWildcardStillBlocksMetadataEndpoint(t *testing.T) {
+	if err := allowHost("169.254.169.254", []string{"*"}); err != nil {
+		t.Fatalf("the allowlist should admit it: %v", err)
+	}
+	if err := checkAddr("169.254.169.254:80"); err == nil {
+		t.Fatal("cloud instance metadata was reachable under a wildcard grant")
 	}
 }

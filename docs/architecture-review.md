@@ -29,7 +29,7 @@
 | **F4** | ~~No schema migration path — `user_version = 1` plus one ad-hoc `ALTER`~~ **Landed** — versioned step runner, atomic per step (R-MEM.10); unblocks `C5`/`C6` | **High** | S |
 | **F5** | ~~`agent.Loop` carries 12 post-construction observer setters; a Loop is never fully valid until N unordered calls have happened~~ **Landed** as a per-turn `Hooks` struct — the premise (construction-time config) was wrong, the ceremony was real | Medium | M |
 | **F6** | ~~Test coverage is inverted at the boundary: `protocol` 0.24, `tui` 0.27, `cli` 0.33 against 0.87 elsewhere~~ **Done.** `protocol` 12.6→67.0%; `cli` 30.8→32.5%; `tui` 27.2→28.0%. The numbers are beside the point — the tests found four real bugs across the three, including two panics | Medium | M |
-| **F7** | The four built-in plugins hold ambient authority that the capability model exists to remove | Medium | L |
+| **F7** | ~~The four built-in plugins hold ambient authority that the capability model exists to remove~~ **Done** — `time`, `files` and `http` are shipped sandboxed tools; only `shell` remains a plugin | Medium | L |
 | **F8** | ~20 first-class nouns; `stage` is a working multi-stage capability with no caller, no precedence rule, and a starvation bug (`goal`+`workflow` examined and **not** collapsible — §7.1) | Medium | L |
 | **F9** | ~~One provider behind a generalized `Provider` + `ThinkingAware` abstraction — decide whether local-first is a goal or a stopgap~~ **Decided** — local-first is a commitment **and** multi-backend; the abstraction stays (G8/N5) | Medium | S |
 | **F10** | ~~`internal/selfmodel`: 84 LOC, zero tests, `/.dockerenv` probe, swallowed query error~~ **Landed** — all four addressed; 0% → 78.6% coverage | Low | S |
@@ -575,10 +575,12 @@ work**, and each is a deliberate change with its own review:
 | the shipped tier | **done** (R-TVM.16) |
 | `time` | **migrated** — UTC, and redundant with the ambient time line |
 | `files` | **migrated** — reads confined to `/work`, `mkdir` added (R-TVM.17) |
-| `http` | **blocked on the capability model itself** — see below |
+| `http` | **migrated** — R-TVM.12 amended to permit a deliberate `*` |
 | `shell` | stays a plugin as proposed — it needs real `exec` |
 
-**`http` cannot migrate without eroding the thing F7 exists to strengthen.**
+**`http` migrated, and the rule it collided with was amended rather than
+bypassed.** What follows is the analysis that led there; the resolution is at the
+end of it.
 The obstacle is not the one this finding named, and not the one I named after it.
 
 HTML parsing turned out to be solvable in-house: `nine:html` is a **tokenizer**,
@@ -602,12 +604,29 @@ both are bad: grant a wildcard, which deletes a rule the capability model
 deliberately enforces, or confine to an operator allowlist, which removes the
 tool's purpose.
 
-Worth naming the irony: as a *plugin* these tools have strictly more reach —
-any host, and none of `ssrf.go`'s checks. The capability model is stricter than
-the thing it would replace, which is why they cannot move into it unchanged.
-Resolving that is a deliberate decision about R-TVM.12, not an implementation
-detail — and §10 puts any proposal that would erode the capability model out of
-scope regardless of what it fixes.
+Worth naming the irony, because it is what resolved the question: as a *plugin*
+these tools have strictly more reach — any host, and **none** of `ssrf.go`'s
+checks. The rule's own escape hatch said an operator wanting unrestricted egress
+should "write a native plugin, where that intent is explicit and reviewed" — and
+that pointed at *less* safety, not more.
+
+**Decided: `allow_hosts` may be a bare `*`.** It grants any *host* and no
+additional *address*: the checks live in the dialer's `Control` hook, so
+loopback, link-local, private ranges and multicast stay refused whatever the
+allowlist says — and being at dial time rather than on the URL, that also
+survives redirects and DNS rebinding. Amended in R-TVM.12 with the reasoning
+attached, since a future reader will otherwise see only a weakened rule.
+
+The wildcard is an exception, not a default, and the split proves it:
+`http_get`, `http_post` and `web_page_read` get `*` because they exist to fetch
+whatever URL a model chose; **`web_search` is granted exactly its three search
+endpoints**, because its hosts are knowable. A tool that can be constrained is
+constrained.
+
+Net effect: **four built-in plugins become one.** `shell` alone remains, because
+it needs real `exec`. Everything else Nine ships now runs under the capability
+model, with the SSRF checklist and the HTTP audit trail it never had as a
+plugin.
 
 **A gap the migration exposed in the eval harness.** It never set `Tools` in its
 `AssemblyConfig`, so cases ran with **no sandboxed-tool host at all** — fine
