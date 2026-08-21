@@ -23,6 +23,10 @@ var stdlibSpecifiers = map[string]string{
 	"nine:csv":  "stdlib/csv.js",
 	"nine:date": "stdlib/date.js",
 	"nine:diff": "stdlib/diff.js",
+	// html is text extraction, not a DOM: a tokenizer that flattens a page and
+	// pulls out elements by class. Enough for the two things Nine does with
+	// HTML, and honest about not being a parser (see the module's own header).
+	"nine:html": "stdlib/html.js",
 	// fs and env are capability-gated rather than pure, which makes them
 	// different in kind from the three above. They still belong here: importing
 	// one grants nothing, the modules are equally embedded and dependency-free,
