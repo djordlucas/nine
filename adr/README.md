@@ -44,6 +44,9 @@ remains here is the reasoning.
 - **rich-js-tools.md** — what a sandboxed-tool author can actually call: the JS
   environment, and what belongs beneath it.
 - **thinking-and-planning.md** — thinking and planning modes, M1–M7.
+- **architecture-wiring.md** — the boot order, end-to-end data flows, and the
+  component relationship map. Names types and call sites, which is what tracing
+  a flow needs and what the architecture doc deliberately avoids.
 - **daemon-assembly-refactor.md** — collapsing two wiring paths into one.
 - **single-container.md** — the single-container design. Partly superseded:
   the browser plugin it assumes no longer exists.
