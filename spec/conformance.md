@@ -91,6 +91,7 @@ How to use this file:
 | R-TVM.14 | Generated tools | A tool Nine wrote via `tool_write` is a row in `tools` carrying source, schema, and a capability **declaration with no grant**; it runs through the same host, ABI, and instance model, and is capped by the generated ceiling. |
 | R-TVM.15 | Dependencies and the `nine:*` stdlib | Both `nine:*` and external npm imports resolve **before** the call, never by the guest and never at call time. |
 | R-TVM.16 | The shipped tier | First-party tools compiled into the binary run through the same host, ABI, and bounds; they are granted what they declare, that grant is visible in the roster, a declaration the host cannot enforce is refused, and they load before the other tiers so neither can take their names. |
+| R-TVM.17 | `fs.write` includes directory creation | A tool granted `fs.write` can create a directory and its missing parents, recursively and idempotently; creation is confined to the mount by the pre-open, and a tool without `fs.write` is refused. |
 
 ### Wire protocol — [`wire-protocol.md`](contracts/wire-protocol.md)
 
