@@ -76,7 +76,7 @@ var migrations = []migrationStep{
 	// reflect and wrong as soon as any session can carry a reflect routine. The
 	// journal already holds every turn under its own agent_id, and the durable
 	// product of a reflection is the `self/*` KV write the prompt asks for — not
-	// the transcript, which nothing read back (docs/concept-consolidation.md C5).
+	// the transcript, which nothing read back (adr/concept-consolidation.md C5).
 	//
 	// This is the first destructive step: rows written before the journal existed
 	// have no equivalent elsewhere and are lost. That is the accepted cost of the
@@ -91,7 +91,7 @@ var migrations = []migrationStep{
 	// that nothing in the code read, reaching the model only by riding along in
 	// goal_get. Keeping it meant asking a language model to maintain a
 	// denormalized index of a relation the schema already enforces — wrong at
-	// some rate and unverifiable (docs/concept-consolidation.md C6).
+	// some rate and unverifiable (adr/concept-consolidation.md C6).
 	//
 	// goal_get still returns a `subtree` key, now derived from parent_id, so
 	// nothing the model sees changes shape.
@@ -106,7 +106,7 @@ var migrations = []migrationStep{
 	// ("building context", "waiting for the model"). The first is renamed so each
 	// word means one thing. The stored JSON is an array of objects whose own keys
 	// are unchanged, so only the column moves — the values are untouched
-	// (docs/concept-consolidation.md, the deferred rename).
+	// (adr/concept-consolidation.md, the deferred rename).
 	{name: "rename_stages_to_aspects", fn: func(q sqlExec) error {
 		has, err := hasColumnTx(q, "session_plans", "stages")
 		if err != nil || !has {

@@ -72,7 +72,7 @@ func TestGoalCreateGetUpdate(t *testing.T) {
 
 // The subtree a model sees is derived from parent_id at read time, so it cannot
 // drift from the relation the schema enforces — which is the whole reason the
-// stored copy went away (docs/concept-consolidation.md C6).
+// stored copy went away (adr/concept-consolidation.md C6).
 func TestGoalSubtreeIsDerivedFromParentID(t *testing.T) {
 	store, err := memtest.Open(t)
 	if err != nil {

@@ -114,7 +114,7 @@ func startContainer() string {
 		// No nine.toml is mounted, so these two must come from the environment
 		// or every plugin silently fails to start (config.DatabasePath's sibling
 		// pluginBinPath falls back to a stale "/data/bin" that has never existed
-		// in any image layout — see docs/single-container.md; plugins live under
+		// in any image layout — see adr/single-container.md; plugins live under
 		// /opt/nine/bin, the workspace under /data/workspace).
 		"-e", "NINE_PLUGINS_BIN=/opt/nine/bin",
 		"-e", "NINE_WORKSPACE_ROOT=/data/workspace",

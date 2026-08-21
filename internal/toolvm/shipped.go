@@ -20,7 +20,7 @@ import (
 // read the operator's home directory — not because anyone wanted that, but
 // because a subprocess inherits it. Moving them under the capability model
 // replaces ambient authority with a declared, operator-visible grant, which is
-// what the model exists for (F7 in docs/architecture-review.md).
+// what the model exists for (F7 in adr/architecture-review.md).
 //
 // A shipped tool is granted what it declares. That is the one way this tier
 // differs from the other two, and it is not a weakening: a developer tool is

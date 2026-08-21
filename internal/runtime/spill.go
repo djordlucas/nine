@@ -24,7 +24,7 @@ const SpillRetention = 7 * 24 * time.Hour
 const spillSweepInterval = time.Hour
 
 // registerLargeOutput wires the dispatcher's two large-output paths to the
-// memory store (docs/tool-output-spill.md):
+// memory store (adr/tool-output-spill.md):
 //
 //   - the spill sink, which writes an over-cap tool result to the file store
 //     under spill/<agentID>/ and hands the model back a path;

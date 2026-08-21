@@ -68,7 +68,7 @@ The preview **MUST**:
 A spill failure **MUST NOT** fail the tool call: a store outage degrades output
 quality, it does not break the turn.
 
-See [`../../docs/tool-output-spill.md`](../../docs/tool-output-spill.md).
+See [`../../adr/tool-output-spill.md`](../../adr/tool-output-spill.md).
 
 ---
 
@@ -189,7 +189,7 @@ Rules:
 
 With no resolver registered, ref arguments pass through unchanged.
 
-See [`../../docs/tool-output-spill.md`](../../docs/tool-output-spill.md) §5.
+See [`../../adr/tool-output-spill.md`](../../adr/tool-output-spill.md) §5.
 
 ---
 

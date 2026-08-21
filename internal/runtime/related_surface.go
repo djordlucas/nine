@@ -30,7 +30,7 @@ type relatedReader interface {
 }
 
 // relatedEnrichmentFn builds the per-turn pull-surfacing function for one
-// session (docs/reactive-events.md phase 3). It reads the recorded
+// session (adr/reactive-events.md phase 3). It reads the recorded
 // related_sessions links the out-of-band indexer maintains and surfaces the one
 // most relevant to the current query, as a compact note the context builder
 // places under its token budget. It never calls a generative LLM and never

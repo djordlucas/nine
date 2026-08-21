@@ -4,7 +4,7 @@
 ## container layouts. It is written for a native run against a local Ollama and
 ## works as-is after `make all` — there is no database to provision.
 ##
-## The container (docs/single-container.md) overrides what differs via
+## The container (adr/single-container.md) overrides what differs via
 ## environment variables (see the Makefile's `up`/`up-hot` targets) rather than
 ## a second config file:
 ##   NINE_LLM_ENDPOINT     http://host.docker.internal:11434
@@ -51,7 +51,7 @@ task_timeout_seconds = 1800  # 30 minutes
 # touched. Default false — removing an entry just stops reconciling it.
 # standing_agents_authoritative = false
 # Links topically-similar sessions out-of-band and lets a later turn pull a
-# related prior session into context (docs/reactive-events.md). On by default;
+# related prior session into context (adr/reactive-events.md). On by default;
 # requires an embedder (a no-op when [embeddings] is disabled). Uncomment to
 # disable.
 # related_sessions_index = false
@@ -231,7 +231,7 @@ root = "./dist"
 # gate_sub_agents  = true
 
 [planning]
-# Plan-before-execute policy (docs/thinking-and-planning.md). Both keys have a
+# Plan-before-execute policy (adr/thinking-and-planning.md). Both keys have a
 # live per-session override via the /plan-mode command.
 # plan_mode — how the agent reasons before acting:
 #   off        no native thinking and no analysis pass

@@ -522,7 +522,7 @@ const selfReflectionAgentID = "self-reflection"
 // It reads the journal rather than a dedicated table. Reflection turns used to be
 // copied into `reflections`, which carried no agent id — fine while exactly one
 // session reflected, wrong as soon as any session can carry a reflect routine
-// (docs/concept-consolidation.md C5). The journal already records every turn under
+// (adr/concept-consolidation.md C5). The journal already records every turn under
 // its own agent_id, so this generalizes to any agent: a standing agent's output
 // history had no view at all before.
 //

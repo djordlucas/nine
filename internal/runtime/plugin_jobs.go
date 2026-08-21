@@ -35,7 +35,7 @@ const DefaultMaxJobsPerConversation = 8
 
 // jobInlineCap is how many characters of a job's terminal output are kept inline
 // in the registry row; a larger result is spilled to the file store, mirroring
-// tool-output handling (docs/tool-output-spill.md).
+// tool-output handling (adr/tool-output-spill.md).
 const jobInlineCap = 8192
 
 // newJobHandle returns a short, stable, model-facing job id (job_<8 hex>).

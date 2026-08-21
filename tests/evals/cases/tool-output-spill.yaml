@@ -13,7 +13,7 @@ tags: [spill, shell, large-output]
 # Asking for "the last number" makes the model find one integer among ~8000
 # newline-escaped integers in a single-line JSON blob — that grades numeric
 # attention, not spilling, and small models fail it even though the observation
-# demonstrably contains the answer (docs/tool-output-spill.md §8).
+# demonstrably contains the answer (adr/tool-output-spill.md §8).
 prompts:
   - "Use the shell to run `seq 1 20000; echo DONE-TOKEN-4b19`, then tell me the exact marker it printed at the very end."
 

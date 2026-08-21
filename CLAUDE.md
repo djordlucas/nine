@@ -63,6 +63,16 @@ Two patterns are easy to half-complete — do the whole checklist:
   skips the embedded docs silently drifts — reconcile it via `/sync-nine`
   (see above).
 
+- **`docs/` describes the present; `adr/` records how it got there.** `docs/`
+  holds only what is currently true — how Nine works, the architecture, and
+  guides — written for users and operators, so it names **components and
+  concepts rather than source files and symbols**. Someone should be able to
+  read it without opening the code. Design notes, investigation reports,
+  implementation plans and reviews live in `adr/`, which is *not* embedded in
+  the binary and may cite code freely. When a plan in `adr/` ships, its
+  behavior is absorbed into `docs/` and the plan stays put as the record — do
+  not leave a finished plan in `docs/` describing the future in present tense.
+
 ## Tests & toolchain
 
 - Go **1.26**. Build with `make build` (`make dev` and `make all` are the same

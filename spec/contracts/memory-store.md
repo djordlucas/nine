@@ -114,7 +114,7 @@ tables, notifications, or session plans through a tool call.
 | HITL | `human_requests` / `interactive_sessions` state (see [`hitl.md`](hitl.md)) |
 | Event journal | `SessionEventsAppend`, `SessionEventsByAgent`, `SessionEventsAfter`, `SessionEventsScrub`, `LatestTurnResult` (see [`event-journal.md`](event-journal.md)) |
 | Subscriptions | `EventCursorGet/Set`, `RelatedSessionAdd`, `RelatedSessions` (see [`subscriptions.md`](subscriptions.md)) |
-| Spill retention | `FileDeleteOlderThan(pathPrefix, age)` — the sweep for spilled tool output. **MUST** reject an empty prefix and a non-positive age, so it can never clear the store (see [`../../docs/tool-output-spill.md`](../../docs/tool-output-spill.md) §6) |
+| Spill retention | `FileDeleteOlderThan(pathPrefix, age)` — the sweep for spilled tool output. **MUST** reject an empty prefix and a non-positive age, so it can never clear the store (see [`../../adr/tool-output-spill.md`](../../adr/tool-output-spill.md) §6) |
 
 > The `goal_*` and `workflow_*` tools *appear* in the agent's tool list, but they are
 > **core-intercepted**: the dispatcher validates and routes them to these daemon-private
