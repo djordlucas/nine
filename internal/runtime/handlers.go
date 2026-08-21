@@ -212,7 +212,7 @@ func (d *Daemon) attach(agentID string) error {
 // checkpointData. interactive enables the loop's human-in-the-loop tools.
 // The session's plan is loaded first so its profile picks the worker's role
 // (active → orchestrator, idle-reflection → reflection, pursue → pursue;
-// docs/roles.md §6).
+// adr/roles-design.md §6).
 func (d *Daemon) makeAgentWorker(id string, checkpointData []byte, interactive bool) *AgentWorker {
 	plan, err := loadOrCreatePlan(context.Background(), d.plans, id, defaultProfile, false)
 	if err != nil {

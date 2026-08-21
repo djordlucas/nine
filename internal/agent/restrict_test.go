@@ -10,7 +10,7 @@ import (
 )
 
 // RestrictTo prunes handlers outside the allowlist so a disallowed tool
-// dispatches as unknown (docs/roles.md R-ROLE.4, boundary 2).
+// dispatches as unknown (spec/contracts/roles.md R-ROLE.4, boundary 2).
 func TestDispatcherRestrictTo(t *testing.T) {
 	d := agent.New()
 	ok := func(_ context.Context, _ json.RawMessage) (string, error) { return "ok", nil }

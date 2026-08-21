@@ -3,7 +3,7 @@
 // the memory store on every boot and cannot be modified at runtime. Nine can
 // still author and update its own skills — those live only in the store.
 //
-// A skill MAY carry a `role:` frontmatter block (docs/roles.md R-ROLE.1); such
+// A skill MAY carry a `role:` frontmatter block (spec/contracts/roles.md R-ROLE.1); such
 // a skill is also a role: its body is the role's persona and the block declares
 // the role's tool boundary and structural wiring. Built-in role skills live
 // under roles/.
@@ -93,7 +93,7 @@ func BuiltinNames() (map[string]bool, error) {
 // description, tags, optional role block) and its body. A document without a
 // leading `---` block is treated as all body. A malformed role block never
 // fails the parse — unrecognized lines are skipped and the skill degrades to
-// a plain knowledge skill (docs/roles.md §10).
+// a plain knowledge skill (adr/roles-design.md §10).
 func Parse(raw string) Skill {
 	var s Skill
 	if !strings.HasPrefix(raw, "---\n") {

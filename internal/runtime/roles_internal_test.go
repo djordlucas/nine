@@ -7,7 +7,7 @@ import (
 	"nine/internal/memory"
 )
 
-// roleNameForPlan maps session-plan profiles to roles (docs/roles.md §6).
+// roleNameForPlan maps session-plan profiles to roles (adr/roles-design.md §6).
 func TestRoleNameForPlan(t *testing.T) {
 	planWith := func(kinds ...string) *sessionPlanState {
 		stages := make([]memory.SessionRoutine, len(kinds))
