@@ -90,7 +90,7 @@ The picker stays out of the way while Nine is waiting on an answer to an
 | `/status` | Daemon uptime, active agents, loaded plugins | `/status` |
 | `/config` | Show running configuration (the embeddings API key, the only one left, is masked) | `/config` |
 | `/context [id]` | Assembled-context token breakdown for the current (or given) session | `/context` |
-| `/tools [filter]` | List all available tools, grouped by plugin (optional name filter) | `/tools http` |
+| `/tools [filter]` | List all available tools, grouped by provider (optional name filter) | `/tools shell` |
 | `/skills [name]` | List skills, or show the full content of a specific skill | `/skills git-workflow` |
 | `/memory [key]` | List all KV memory keys, or show the value at a specific key | `/memory self/identity` |
 | `/goals` | List active goals | `/goals` |
@@ -176,7 +176,7 @@ shown as `off` rather than omitted.
 
 ### `nine goals`
 
-Lists top-level goals and their sub-goal/sub-work subtree:
+Lists top-level goals and their sub-goals:
 
 ```
 Active Goals
@@ -352,8 +352,8 @@ to print it:
 
 ```bash
 ./nine docs                       # list every documentation topic
-./nine docs workflows             # print docs/workflows.md
-./nine docs hitl                  # print docs/hitl.md
+./nine docs workflows             # print workflows.md
+./nine docs hitl                  # print hitl.md
 
 ./nine spec                       # list every specification topic
 ./nine spec event-journal         # print spec/contracts/event-journal.md

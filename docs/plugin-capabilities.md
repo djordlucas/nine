@@ -2,13 +2,13 @@
 
 - **Status:** **Implemented** (rev 3). All three capabilities are built; the
   normative contract is `spec/contracts/plugin.md` (R-PLUG.10/11/12) and the
-  authoring guide is `docs/plugins.md`. This note is kept as the design rationale.
+  authoring guide is `plugins.md`. This note is kept as the design rationale.
 - **Date:** 2026-07-30 (rev 1: 2026-07-25).
 - **Two small deviations from the design, both behaviour-preserving:** the sweeper
   polls on an age-based backoff computed in SQL (`PluginJobsDueForPoll`) rather
   than per-job timers, and `job_wait` blocks on a sweeper-signalled `JobWaiters`
   channel with a poll fallback (the eval harness wires no signaller).
-- **Supersedes:** the rev-1 proposal, `docs/plugin-host-api.md` (renamed to this
+- **Supersedes:** the rev-1 proposal, `plugin-host-api.md` (renamed to this
   file), which added a *host API* — a reverse channel letting a plugin call back
   into the daemon to read and write memory. **That feature is dropped** (§2). What remains, and what this rev
   proposes, are three additive capabilities that a plugin gets *without* any new
@@ -19,7 +19,7 @@
   started it — a download, a scan, a long script — and let the agent either wait
   for it or check back later.
 - **Depends on:** the plugin HTTP-over-Unix-socket transport
-  (`docs/plugins-http-transport.md`, `spec/contracts/plugin.md`), the notification
+  (`plugins-http-transport.md`, `spec/contracts/plugin.md`), the notification
   feed (`internal/memory/notifications.go`), the tool-output spill
   (`tool-output.md`) for large job results, and the pull-not-push
   discipline of `event-journal.md` for how a finished job reaches the model.
@@ -415,7 +415,7 @@ supporting both postures.
 
 **Naming.** `job_*`, not `task_*`: "task" already means the daemon's per-turn unit
 (`task_timeout_seconds`) and reads like a sub-agent delegation. A *job* is
-detached work inside a plugin process. `docs/glossary.md` gains the entry.
+detached work inside a plugin process. `glossary.md` gains the entry.
 
 ### Remembering across turns
 
@@ -437,7 +437,7 @@ owner's next turn, which always comes:
 
 - an **interactive conversation** delivers on the human's next message;
 - a **standing/goal agent** already runs on its own cadence — `armIdleTimer` /
-  `handleIdle` fire its plan's idle stages on their `interval` or `schedule` — so
+  `handleIdle` fire its plan's idle routines on their `interval` or `schedule` — so
   it picks the notification up on the next tick without any new wake path.
 
 This is `event-journal.md`'s discipline applied unchanged: a background
@@ -458,7 +458,7 @@ future refinement could instead deliver a sub-agent's job result back to its
 today, so the human feed is the v1 answer.) Otherwise the human feed stays
 untouched: whether a finished
 job is worth telling a human about is the agent's judgement, made with
-`notify_user` on its next turn, exactly as `docs/predefined-agents.md` §5 has it.
+`notify_user` on its next turn, exactly as `predefined-agents.md` §5 has it.
 A plugin cannot reach the human's feed on its own — that would be the pushy
 reverse channel §2 removed, arriving by another door.
 
@@ -523,9 +523,9 @@ supported set `{1, 2}`**, with v1 plugins treated as lacking async jobs. The
 
 Docs and spec to update (via `/sync-nine`): `spec/contracts/plugin.md` (R-PLUG.1
 gains the two methods; new rules for settings, cache dir, and jobs),
-`docs/plugins.md` (authoring: settings, cache dir, the job SDK),
-`docs/configuration.md` (`[plugin.<name>]`, `cache_dir`, job knobs),
-`docs/glossary.md` (*job*), `docs/versioning.md` (the protocol bump), and this
+`plugins.md` (authoring: settings, cache dir, the job SDK),
+`configuration.md` (`[plugin.<name>]`, `cache_dir`, job knobs),
+`glossary.md` (*job*), `versioning.md` (the protocol bump), and this
 note flipping to Implemented. `spec/contracts/wire-protocol.md` is **untouched** —
 none of this reaches the daemon↔client protocol.
 
@@ -564,7 +564,7 @@ Each phase is independently shippable and independently useful.
 The unit and integration tests in §7 prove the *mechanism* works — a plugin can
 detach work, the daemon can poll and surface it. What they do not exercise is the
 **model behaviour** the feature exists to shape: posture, memory, and escalation.
-Those belong in the in-process eval harness (`docs/evals.md`), one scenario each,
+Those belong in the in-process eval harness (`evals.md`), one scenario each,
 asserting on the transcript rather than on daemon state:
 
 1. **Posture — wait vs move on.** Given a job whose ack reads as fast, the model
