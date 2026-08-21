@@ -32,9 +32,9 @@ image carries neither (see [Browser Automation](browser.md#6-docker)).
 That extends to the sandboxed-tool host. Its wasm runtime (wazero) is pure Go,
 and the QuickJS interpreter it runs `js` tools on is **built ahead of time from
 pinned tags and committed** as `internal/toolvm/quickjs/qjs.wasm`
-(`docs/sandboxed-tools.md` §10.1). So an ordinary `make build` needs **no
+(`sandboxed-tools.md` §10.1). So an ordinary `make build` needs **no
 wasi-sdk, no clang, and no clone**, and the runtime image gains no toolchain —
-which is the property `docs/self-modification.md` insists on and the reason the
+which is the property `self-modification.md` insists on and the reason the
 blob is committed rather than built on demand. `make quickjs-wasm` rebuilds it
 and is invoked only on a deliberate version bump; `make quickjs-verify` re-checks
 the recorded hash and runs in CI.
@@ -82,7 +82,7 @@ plugins) is immutable image content — it is **not** stored in a volume. Each m
 
 - `nine-data` / `nine-dev-data` — mounted at `/data`, holding both `nine.db`
   (conversations, goals, KV, skills, vectors, and the session event journal) and
-  the files-plugin workspace at `/data/workspace`
+  the sandboxed tools' workspace at `/data/workspace`
 
 > Backing up the database means copying `nine.db` **and** its `-wal` and `-shm`
 > sidecars together, or running `VACUUM INTO` to produce a single consistent file.
@@ -134,10 +134,11 @@ make all
 
 The build produces **one file**:
 
-- `dist/nine` — the CLI, the TUI, the daemon, and the `shell`, `files`, `http`, and
-  `time` plugins. The daemon starts each plugin as a `nine plugin serve <name>` child
-  process, so each keeps its own process, socket, and crash isolation while needing no
-  build step and no binary of its own.
+- `dist/nine` — the CLI, the TUI, the daemon, and the `shell` plugin. The daemon
+  starts a plugin as a `nine plugin serve <name>` child process, so it keeps its
+  own process, socket, and crash isolation while needing no build step and no
+  binary of its own. Files, HTTP and the clock are sandboxed tools rather than
+  plugins, and need no subprocess at all.
 
 There is no second artifact. `dist/bin/` stays empty unless one of your own plugins
 puts a binary there, and a capability Nine does not implement itself arrives as an
@@ -180,7 +181,7 @@ records which models have been run and how they did.
 
 | Target | Description |
 |--------|-------------|
-| `make build` | Compile `dist/nine` (which serves the `shell`/`files`/`http`/`time` plugins too) |
+| `make build` | Compile `dist/nine` (which serves the `shell` plugin too) |
 | `make all` | Same as `make build` |
 | `make test` | Run all tests. The two live-model tests skip unless `NINE_LIVE_MODEL` names an Ollama tag (e.g. `NINE_LIVE_MODEL=qwen3.5:4b make test`) |
 | `make test-v` | Run tests with verbose output |
@@ -224,10 +225,8 @@ nine status
 Expected output from `nine status`:
 
 ```
-Daemon Status
-  Uptime:   2m34s
-  Agents:   1 active
-
-Loaded Plugins
-  shell, files, http, plugins, skills, nine, time
+Uptime:   2m34s
+LLM queue: 0 inflight, 0 waiting  (max 1 concurrent)
+Agents:   1 active
+Plugins:  mcp, shell
 ```

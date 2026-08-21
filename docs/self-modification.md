@@ -80,7 +80,7 @@ plugins. Configuration changes are made by editing
 
 ## Plugins are fixed
 
-Nine still runs a set of **default plugins** (`shell`, `files`, `http`, `time`),
+Nine still runs the **`shell` plugin**, alongside its sandboxed tools,
 but they are immutable image content built at `docker build` time: all four are
 compiled into the `nine` binary and served as `nine plugin serve <name>`. There
 is no mechanism for an agent to add, build, or replace a plugin at runtime. To
