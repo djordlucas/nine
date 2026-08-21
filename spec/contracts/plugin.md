@@ -329,10 +329,11 @@ terminal and distinct from `failed`. `progress` is free text.
 
 ## R-PLUG.13 — Built-in plugins are served by the `nine` binary
 
-The Go default plugins (`shell`, `http`) ship **inside the `nine` binary**, not as
-separate executables. (`time` and `files` were among them and are now shipped sandboxed
-tools — R-TVM.16. Neither needs a subprocess holding the daemon's uid, which for `files`
-meant `read_file` could read any absolute path on the host.) The manager starts one by re-executing that
+The one Go default plugin, `shell`, ships **inside the `nine` binary**, not as a separate
+executable. (`time`, `files` and `http` were among them and are now shipped sandboxed tools
+— R-TVM.16. None needed a subprocess holding the daemon's uid, which meant `read_file`
+could read any absolute path and `http_get` could reach cloud instance metadata with none
+of the SSRF checks in the way. `shell` stays because it needs real `exec`.) The manager starts one by re-executing that
 binary:
 
 ```text

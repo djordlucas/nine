@@ -406,6 +406,24 @@ entrypoint presence, schema validity, and ABI exports.
 
 ## R-TVM.12 — `net.http`
 
+> **Amendment.** `allow_hosts` **MAY** be a bare `*`, meaning any host. It previously
+> could not, on the reasoning that an operator wanting unrestricted egress should write a
+> native plugin instead — but that escape hatch pointed at *less* safety: a plugin is a
+> subprocess with the daemon's uid and none of the checks below. Nine's own fetching tools
+> are the case in point, since they exist to retrieve whatever URL a model chose, which no
+> host list expresses.
+>
+> The wildcard grants any **host**. It does not grant any **address**. Every connection is
+> checked at dial time, so loopback, link-local (cloud instance metadata), private ranges
+> and multicast remain refused whatever the allowlist says — and being at dial time rather
+> than on the URL, that check also survives redirects and DNS rebinding. An implementation
+> **MUST NOT** let the allowlist short-circuit the address checks.
+>
+> A tool whose hosts *are* knowable **MUST** name them. `web_search` talks to three search
+> endpoints and is granted exactly those; the wildcard is for the tools that genuinely
+> cannot be constrained, not a default.
+
+
 The filesystem is easy: a wazero pre-open is a capability primitive wazero enforces
 without our help. The network has none — wazero has no network at all — so `net.http` is
 entirely a host function, and its security is entirely Nine's problem. Getting it wrong

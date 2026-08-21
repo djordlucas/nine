@@ -175,10 +175,20 @@ func splitHostPort(address string) (host, port string, err error) {
 // wants both writes both. Getting a host they did not intend is the failure that
 // matters here; having to write one more line is not.
 //
-// There is no bare "*". An operator who wants an unrestricted egress tool should
-// write a native plugin, where that intent is explicit and reviewed
-// (docs/sandboxed-tools.md §8). Config validation refuses it outright, so this
-// function never has to decide what it would mean.
+// A bare "*" permits any hostname, and is the one pattern an operator has to
+// write deliberately. It used to be refused here, on the reasoning that anyone
+// wanting unrestricted egress should write a native plugin instead — but that
+// escape hatch pointed at *less* safety, not more: a plugin is a subprocess with
+// the daemon's uid and none of this file's checks. Nine's own fetching tools are
+// the case in point; they exist to retrieve whatever URL a model chose, which no
+// host list expresses (R-TVM.12).
+//
+// It stays safe because the allowlist is not what makes egress safe. Every
+// connection is checked at dial time by checkAddr, in the dialer's Control hook,
+// so "*" permits arbitrary *public hosts* and never arbitrary *addresses*:
+// loopback, link-local (cloud instance metadata), private ranges and multicast
+// remain blocked, and being at dial time the check also survives DNS rebinding
+// and redirects.
 func allowHost(hostname string, allow []string) error {
 	h := strings.ToLower(strings.TrimSuffix(hostname, "."))
 	if h == "" {
@@ -189,6 +199,8 @@ func allowHost(hostname string, allow []string) error {
 		p := strings.ToLower(strings.TrimSpace(pattern))
 		switch {
 		case p == "": // ignore blank entries rather than matching everything
+		case p == "*":
+			return nil // any host; the address checks still apply at dial time
 		case strings.HasPrefix(p, "*."):
 			if strings.HasSuffix(h, p[1:]) && len(h) > len(p)-1 {
 				return nil
