@@ -1,23 +1,12 @@
 # Pre-defined agents — long-running goals seeded from config
 
-**Status:** shipped (v1a–v3) · **Depends on:** goals/pursue sessions, session-plans, roles, config · **Supersedes:** nothing (additive)
+An operator can declare **pre-defined, long-running agents** in `nine.toml`.
+They come up on daemon boot, without a human first opening a session.
 
-> **Implementation note.** All phases are implemented and tested: the reconcile
-> loop, the read-only `monitor` role, the pursue-shell goal-tool decoupling
-> (`role.OwnsGoal`), the per-plan role override, `Daemon.SpawnStandingSession`,
-> **cron scheduling** (`internal/cron` + `schedule=`, see
-> [scheduling.md](scheduling.md)), the **human-output surface** (`notify_user`
-> core tool → `user_notifications` feed → `nine notifications`), end-to-end
-> **delegation** via `[[agent]].delegates` (a narrow role that opts in gets
-> `run_agent`/`run_agents` shell-conferred), and opt-in **subtractive
-> reconciliation** (`[daemon] standing_agents_authoritative`, §7 v3).
-
-This note proposes letting an operator declare
-**pre-defined, long-running agents** in `nine.toml` that come up on daemon boot
-without a human first opening a session. The core claim: a "pre-defined agent"
-is **not a new primitive** — it is a **goal seeded from configuration**, running
-the **pursue structural shell** (persistence + scheduler + non-interactive) with
-a **narrowed role** that supplies only its tools and persona.
+A pre-defined agent is **not a new primitive**. It is a **goal seeded from
+configuration**, running the **pursue structural shell** — persistence,
+scheduler, non-interactive — with a **narrowed role** supplying only its tools
+and persona.
 
 ---
 
@@ -89,13 +78,11 @@ A running standing agent is two layers, resolved separately:
 Two consequences of this split, both important:
 
 - **Goal self-management tools are part of the shell, always-on.** A standing
-  agent's whole job is to steer its own goal: `goal_get`, `goal_list`,
-  `goal_update_status` (how it pauses/finishes itself — §4), and
-  `goal_append_subtree` (how it records findings). Today these live in
-  `subAgentToolNames` gated by `role.Delegates`, so a narrowed
-  (`Delegates:false`) role would lose them. **They must be decoupled** and
-  registered for every pursue-shell session regardless of role — like
-  `gap_report` is (§5, piece 4).
+  agent's whole job is to steer its own goal: `goal_get`, `goal_list` and
+  `goal_update_status` (how it pauses or finishes itself — §4). These are
+  granted to any goal-owning shell independently of delegation, so a narrowed
+  role keeps them. Findings are recorded as sub-goals under the agent's own
+  goal, and in memory.
 - **Delegation is separate and opt-in.** `run_agent`/`run_agents` stay gated;
   a standing agent gets them only when its `[[agent]].delegates` flag is true
   (default false — §4).
@@ -130,7 +117,7 @@ type Config struct {
 }
 
 // AgentConfig declares a pre-defined long-running agent — a goal seeded at boot
-// and run under the pursue shell with a narrowed role (docs/predefined-agents.md).
+// and run under the pursue shell with a narrowed role (predefined-agents.md).
 type AgentConfig struct {
     ID          string `toml:"id"`          // stable goal ID; reconciliation keys on it
     Description string `toml:"description"`  // the standing intention the agent pursues
@@ -212,7 +199,7 @@ self-contained enough to ship (and spec) on their own.
    idle scheduler is interval-only. Add a trigger that computes next-wake from a
    cron expression. Each agent is `interval` **XOR** `schedule`. Likely a small
    cron-parsing dependency plus a scheduler variant on the plan. Deserves its
-   own note if it grows — `docs/scheduling.md`.
+   own note if it grows — `scheduling.md`.
 2. **Daemon-level notification feed** *(independently shippable)*. A background
    agent has no conversation, and today's `NotifAdd(agentID, text)` posts to a
    *session's own* next turn (`agent_worker.go` `prependNotifications`), not a
@@ -221,10 +208,10 @@ self-contained enough to ship (and spec) on their own.
    it. This is the "human sees findings" surface.
 3. **`monitor` role** — new `skills/roles/monitor.md` (§6). Read-only work tools,
    no shell/write/delegation. The safe default.
-4. **Goal-tool decoupling** — split `goal_get`/`goal_list`/`goal_update_status`/
-   `goal_append_subtree` out of the `Delegates`-gated `subAgentToolNames` and
-   register them for every pursue-shell session regardless of role (§3.1). Keep
-   `run_agent`/`run_agents`/`workflow_*`/`goal_create` on the delegation gate.
+4. **Goal-tool decoupling** — `goal_get`/`goal_list`/`goal_update_status` are
+   granted to every goal-owning shell regardless of role (§3.1), while
+   `run_agent`/`run_agents`/`workflow_*`/`goal_create` stay on the delegation
+   gate.
 5. **Per-plan role override** — `roleNameForPlan` (`internal/runtime/roles.go`)
    hardcodes `pursue → PursueRole`. The seeded plan must carry the configured
    role name so `build()` resolves *that* role's tools/persona while keeping the
@@ -259,8 +246,8 @@ role:
 You are Nine operating as a standing monitoring agent. You watch a specific,
 open-ended concern over time. Each time you wake: read your goal (goal_get),
 gather current information from the web and stored files, compare it against
-what you recorded before (memory_get / your goal subtree), and record what
-changed (goal_append_subtree, memory_set). If something warrants human
+what you recorded before (memory_get, and the sub-goals under your goal), and
+record what changed (memory_set, and a sub-goal for a new finding). If something warrants human
 attention, call notify_user with a concise summary. You cannot run shell
 commands or write to the host filesystem. Be terse; do not repeat findings you
 have already reported.
@@ -281,8 +268,8 @@ Each phase is independently shippable with its own gate.
    `[[agent]]` seeds a goal, runs it under a narrowed role on the *interval*
    scheduler, reconciles definition-in-place, and respects agent-owned status.
    *Gate:* a `monitor` agent declared in `nine.toml` is running after a cold
-   boot with no human input; it can `goal_append_subtree` and
-   `goal_update_status` but `Dispatch("shell", …)` returns `unknown tool`
+   boot with no human input; it can call `goal_update_status` but the `shell`
+   tool is not in its reach and returns `unknown tool`
    (R-ROLE.4); editing its description in config and restarting updates it in
    place; a goal the agent marked `done` is not resurrected.
 2. **v1b — cron scheduling** (piece 1). `schedule` triggers per cron. *Gate:*
@@ -304,8 +291,8 @@ Each phase is independently shippable with its own gate.
    archives that agent's goal and stops its session, while a goal created in a
    conversation is left untouched.
 
-   **Limitation.** Teardown archives (does not delete) the goal, preserving its
-   subtree history. Because goal status is agent/authority-owned (§4), re-adding
+   **Limitation.** Teardown archives (does not delete) the goal, preserving it
+   and its sub-goals. Because goal status is agent/authority-owned (§4), re-adding
    a removed agent does **not** auto-resurrect it — its goal stays `archived`;
    reactivate it manually (`goal_update_status <id> active`) to bring it back.
 
