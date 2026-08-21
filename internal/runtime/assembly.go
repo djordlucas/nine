@@ -150,7 +150,7 @@ func Assemble(c AssemblyConfig) *Assembly {
 
 	daemon := New(c.SocketPath, factory, ckpt, notif)
 
-	// Durable session-event journal (docs/event-log.md): every new session worker
+	// Durable session-event journal (adr/event-log.md): every new session worker
 	// writes its full execution trajectory through this async batched sink.
 	sink := NewSQLEventSink(c.Store, daemon.NotifySubscribers)
 	daemon.SetEventSink(sink)

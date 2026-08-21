@@ -58,7 +58,7 @@ type Dispatcher struct {
 	gated    map[string]bool
 	approve  ApprovalFn
 
-	// Large-output plumbing (docs/tool-output-spill.md): spill writes over-cap
+	// Large-output plumbing (adr/tool-output-spill.md): spill writes over-cap
 	// results out to the file store, resolveRef reads them back into the
 	// arguments of tools that declare a ref parameter, and refParams indexes
 	// which arguments those are.

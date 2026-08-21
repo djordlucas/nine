@@ -13,7 +13,7 @@ import (
 	"nine/internal/runtime"
 )
 
-// TestRecordThenReplay is the v3 gate (docs/event-log.md §11): a recorded real
+// TestRecordThenReplay is the v3 gate (adr/event-log.md §11): a recorded real
 // session replays deterministically with no live LLM or tool calls. It records
 // a genuine worker turn to Postgres via the sink, then rebuilds the session from
 // the durable journal and re-executes it through the replay harness, asserting

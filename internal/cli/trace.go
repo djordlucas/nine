@@ -12,7 +12,7 @@ import (
 )
 
 // Trace prints the session event journal for agentID as a compact one-line-per-
-// event timeline (docs/event-log.md §10). With turn > 0 only that turn is shown.
+// event timeline (adr/event-log.md §10). With turn > 0 only that turn is shown.
 // It reads session_events directly from the store, so it works after a restart
 // and with the daemon down — the post-hoc debugging case. The store is opened
 // read-only: this runs in a second process that may well be sharing the file
@@ -46,7 +46,7 @@ func (c *CLI) Trace(cfg *config.Config, agentID string, turn int, subAgents bool
 
 // Replay reconstructs a single turn of agentID from the journal: each inner LLM
 // request → response → tool call I/O, with token usage and timings
-// (docs/event-log.md §10). turn must be > 0.
+// (adr/event-log.md §10). turn must be > 0.
 func (c *CLI) Replay(cfg *config.Config, agentID string, turn int) error {
 	if turn <= 0 {
 		return fmt.Errorf("usage: nine replay <agent-id> --turn <N>")

@@ -82,7 +82,7 @@ type Result struct {
 	//
 	// Bytes are not something a language model can read, so this does not reach
 	// it directly: the dispatcher writes them to the file store and hands the
-	// model a path (docs/tool-output-spill.md). What a tool gets is a way to
+	// model a path (adr/tool-output-spill.md). What a tool gets is a way to
 	// produce an artifact — a rendered image, a compressed archive — and hand it
 	// onward without inventing a place to put it.
 	OutputB64 string `json:"output_b64,omitempty"`
@@ -98,7 +98,7 @@ type Result struct {
 	//
 	// Additive on purpose: `error` stays the message, so a guest that never sets
 	// this — every tool written before it existed — behaves exactly as it did.
-	// That is why it needs no ABIVersion bump (docs/rich-js-tools.md §8).
+	// That is why it needs no ABIVersion bump (adr/rich-js-tools.md §8).
 	ErrorDetail *ErrorDetail `json:"error_detail,omitempty"`
 }
 

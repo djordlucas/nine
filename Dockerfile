@@ -11,7 +11,7 @@ COPY . .
 RUN go build -mod=vendor -o /usr/local/bin/nine ./cmd/nine
 
 # ── s6-overlay fetch stage (shared by dev + runtime) ──────────────────────────
-# s6-overlay supervises the daemon (docs/single-container.md): it reaps orphaned
+# s6-overlay supervises the daemon (adr/single-container.md): it reaps orphaned
 # children (an MCP server's process tree, for one), forwards docker stop's
 # SIGTERM, and restarts the service if it exits. Fetched once here and copied
 # into both final stages rather than downloaded twice.

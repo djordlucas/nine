@@ -83,7 +83,7 @@ lint:
 	golangci-lint run ./...
 
 # ── container deployment ──────────────────────────────────────────────────────
-# The container runs the daemon alone under s6-overlay (docs/single-container.md)
+# The container runs the daemon alone under s6-overlay (adr/single-container.md)
 # — its database is a file on the /data volume, so there is no second service to
 # orchestrate and no compose stack. Just `docker run`, wrapped below for the
 # env/volume/flag boilerplate. `up` builds and runs the immutable runtime image;

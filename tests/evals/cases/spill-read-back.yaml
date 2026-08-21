@@ -15,7 +15,7 @@ tags: [spill, files, search, large-output]
 #     alternative (generating ~128 KB) makes every run slow and floods the
 #     observation with noise that small models drown in.
 #  3. SINGLE TURN. The loop clears the scratchpad each turn, so a spill path is
-#     addressable only inside the turn that produced it (docs/tool-output-spill.md
+#     addressable only inside the turn that produced it (adr/tool-output-spill.md
 #     §4). A two-turn version is unwinnable.
 #
 # With max_output_tokens=150 (600 chars) the preview shows ~400 chars of head

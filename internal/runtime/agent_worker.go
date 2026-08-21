@@ -103,7 +103,7 @@ type AgentWorker struct {
 	onComplete func(agentID string) // called after each successful turn
 	turnN      int                  // 1-based count of turns processed
 	replay     replayBuffer
-	sink       EventSink // durable session-event journal (docs/event-log.md); nil = disabled
+	sink       EventSink // durable session-event journal (adr/event-log.md); nil = disabled
 
 	// Per-turn span cursors for the journal, touched only on the worker
 	// goroutine during loop.Run: the current inner-LLM-call number and the

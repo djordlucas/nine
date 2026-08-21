@@ -409,7 +409,7 @@ func waitForSocket(sock string, timeout time.Duration) error {
 // case's `session.config` override if present, else the harness default (0 =
 // agent.DefaultMaxOutputTokens). Cases that exercise the large-output path use
 // it to make a modest tool result exceed the cap without generating megabytes
-// (docs/tool-output-spill.md).
+// (adr/tool-output-spill.md).
 func maxToolOutputTokens(harnessDefault int, c *Case) int {
 	v, ok := c.Session.Config["tools.max_output_tokens"]
 	if !ok {

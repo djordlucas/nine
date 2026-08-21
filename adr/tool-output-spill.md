@@ -9,7 +9,7 @@
   result to another tool without the bytes passing through its context.
 - **Depends on:** the dispatcher (`spec/contracts/dispatcher.md`), the memory
   file store (`internal/memory/files.go`, `spec/contracts/memory-store.md`), the
-  session journal (`docs/event-log.md`).
+  session journal (`event-log.md`).
 - **Not this:** plugin capabilities (`docs/plugin-capabilities.md`) — settings, a
   cache dir, and long-running jobs. That note once proposed a reverse channel
   letting a plugin call *into* Nine; the reverse channel was dropped. See §7.

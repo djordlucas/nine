@@ -383,7 +383,7 @@ func initSchema(d db) error {
 		`CREATE TABLE IF NOT EXISTS interactive_sessions (
 			id TEXT PRIMARY KEY
 		)`,
-		// session_events: append-only execution journal (docs/event-log.md §6).
+		// session_events: append-only execution journal (adr/event-log.md §6).
 		//
 		// AUTOINCREMENT is required, not stylistic. A plain INTEGER PRIMARY KEY
 		// is a rowid alias, and SQLite assigns max(rowid)+1 — so it *reuses*
@@ -410,13 +410,13 @@ func initSchema(d db) error {
 		`CREATE INDEX IF NOT EXISTS session_events_type ON session_events (type)`,
 		// event_cursors: each journal subscriber's durable position, so a
 		// subscriber resumes from where it left off after a restart
-		// (docs/reactive-events.md §3).
+		// (adr/reactive-events.md §3).
 		`CREATE TABLE IF NOT EXISTS event_cursors (
 			subscriber_id TEXT PRIMARY KEY,
 			seq           INTEGER NOT NULL DEFAULT 0
 		)`,
 		// related_sessions: a derived index maintained by the related-session
-		// subscriber (docs/reactive-events.md §4) — a link from a session to a
+		// subscriber (adr/reactive-events.md §4) — a link from a session to a
 		// topically-similar prior session, surfaced on later turns (pull, not push).
 		`CREATE TABLE IF NOT EXISTS related_sessions (
 			agent_id         TEXT NOT NULL,

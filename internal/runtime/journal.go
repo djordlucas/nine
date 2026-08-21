@@ -12,7 +12,7 @@ import (
 )
 
 // This file holds the AgentWorker → EventSink journaling path: the typed event
-// payloads (docs/event-log.md §6) and the helpers that build session_events rows
+// payloads (adr/event-log.md §6) and the helpers that build session_events rows
 // from loop callbacks. Span ids are derived from the turn number so a turn's
 // tree (turn root → llm calls → tool calls) is reconstructable from the flat
 // log via parent_span_id.
@@ -64,7 +64,7 @@ type toolEndPayload struct {
 	Truncated bool            `json:"truncated,omitempty"`
 	// SpillPath / OutputChars describe an over-cap result: Output holds the
 	// preview the model saw, and these say where the full text lives and how
-	// long it was (docs/tool-output-spill.md §4).
+	// long it was (adr/tool-output-spill.md §4).
 	SpillPath   string `json:"spill_path,omitempty"`
 	OutputChars int    `json:"output_chars,omitempty"`
 	DurationMs  int64  `json:"duration_ms"`
