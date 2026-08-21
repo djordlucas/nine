@@ -10,7 +10,7 @@ import (
 )
 
 // DefaultRoleEnum is the fallback leaf-role list for the `role` field on
-// run_agent/run_agents (docs/roles.md R-ROLE.8), naming the built-in leaf
+// run_agent/run_agents (spec/contracts/roles.md R-ROLE.8), naming the built-in leaf
 // roles shipped in skills/roles/. A live daemon renders the real list — which
 // also covers operator- and agent-authored role skills — from the role
 // registry and passes it to SubAgentDefs; this constant only serves storeless
