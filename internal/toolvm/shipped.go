@@ -71,7 +71,7 @@ var shippedTools = []shippedTool{
 	{
 		Name:        "read_file",
 		DisplayName: "Read File",
-		Description: "Read a file from the workspace. Paths resolve under /work; a relative path is taken as relative to it.",
+		Description: "Read a file from the WORKSPACE FILESYSTEM. Paths resolve under /work; a relative path is taken as relative to it. This is not the memory file store — use file_fetch for a path you stored with file_store.",
 		Schema:      `{"type":"object","required":["path"],"properties":{"path":{"type":"string","description":"Path under the workspace, e.g. notes.txt or /work/notes.txt"}}}`,
 		File:        "shipped/read_file.js",
 		Declaration: Declaration{FS: []string{"read"}},
@@ -79,7 +79,11 @@ var shippedTools = []shippedTool{
 	{
 		Name:        "write_file",
 		DisplayName: "Write File",
-		Description: "Write content to a file in the workspace, creating parent directories as needed. Paths resolve under /work.",
+		// Names file_store explicitly. Both tools answer to "store a file at this
+		// path", and the memory file store already disambiguates itself against
+		// read_file — the pointer needs to go both ways, or a prompt phrased as
+		// "store two files" lands here and the searchable copy is never made.
+		Description: "Write content to a file on the WORKSPACE FILESYSTEM, creating parent directories as needed. Paths resolve under /work. This is not the memory file store: a file written here is not full-text searchable and file_search_text will not find it — use file_store for anything you intend to look up later.",
 		Schema:      `{"type":"object","required":["path","content"],"properties":{"path":{"type":"string"},"content":{"type":"string"}}}`,
 		File:        "shipped/write_file.js",
 		Declaration: Declaration{FS: []string{"write"}},

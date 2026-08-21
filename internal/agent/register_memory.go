@@ -40,7 +40,7 @@ var memoryToolDefs = []llm.ToolDef{
 	{
 		Name:        "file_store",
 		DisplayName: "File Store",
-		Description: "Store a file by path and content, in the memory file store (separate from the workspace filesystem that shell and read_file use). To copy an already-stored file — a spilled tool output, typically — to a new path without reading it, pass content_ref instead of content.",
+		Description: "Store a file by path and content, in the memory file store (separate from the workspace filesystem that shell, read_file and write_file use). To copy an already-stored file — a spilled tool output, typically — to a new path without reading it, pass content_ref instead of content.",
 		InputSchema: json.RawMessage(`{"type":"object","required":["path"],"properties":{"path":{"type":"string"},"content":{"type":"string"},"content_ref":{"type":"string","x-nine-ref":true,"description":"A MEMORY FILE-STORE path whose content to store at path, e.g. a spill/... path from a truncated tool result. NOT a filesystem path: a file created by shell or write_file is not in the store. Used instead of content; the data never passes through your context."}}}`),
 	},
 	{
