@@ -678,6 +678,23 @@ stubbed or refused-by-name.
 
 ---
 
+## R-TVM.17 — `fs.write` includes directory creation
+
+The filesystem host functions **MUST** include creating a directory and its missing
+parents, gated by the same `fs.write` grant as writing a file.
+
+It is not a convenience. Without it a granted tool can write `a.txt` and cannot write
+`notes/a.txt`, because the write primitive creates a file and not a path — and the tool
+cannot recover, since there is no other way to make the directory either. That gap is what
+kept the first-party `files` tools on the plugin transport: their `write_file` promises to
+create parent directories, and a sandboxed replacement that could not would have been a
+downgrade for every role carrying the tool.
+
+Creation is **recursive and idempotent**: an existing directory is success, so a tool may
+call it before every write. Containment remains the pre-open's — the implementation walks
+path components and each resolves inside the mount because the guest has nothing else to
+resolve against. Nothing in the guest enforces this, and nothing in the guest could.
+
 ## R-TVM.16 — The shipped tier (first-party tools in the binary)
 
 A third source tier, after developer (R-TVM.10) and generated (R-TVM.14): tools whose
@@ -701,6 +718,12 @@ whose capability silently does nothing.
 Shipped tools **MUST** load **before** the other tiers. The namespace rule is
 first-registered-wins, so loading them last would let a developer or generated tool take a
 first-party name and silently replace its behavior.
+
+A shipped tool that declares `fs` is mounted at the operator's workspace
+(`[workspace].root`), under the fixed guest path `/work` — the alias the `files`
+plugin already accepted, so a model that learned `/work/notes.txt` keeps working. A tool
+declaring `fs` with no workspace configured **MUST** fail to load rather than register with
+a capability that silently does nothing.
 
 **A shipped tool has no more access to host state than any other.** This is the tier's
 sharpest constraint and the easiest to forget, because the code is first-party. The

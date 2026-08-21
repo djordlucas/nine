@@ -43,6 +43,18 @@ export function writeFile(path, data) {
   return I.fsWrite(String(path), data);
 }
 
+/** Create a directory and any missing parents. Requires fs.write.
+ *
+ * Recursive because that is the case that comes up: writing
+ * "notes/2026/today.md" into an empty mount needs two directories made, and a
+ * tool should not have to loop over path components it cannot see the root of.
+ * An existing directory is success, so calling this before a write is cheap.
+ */
+export function mkdir(path) {
+  need(caps.fs_write, "fs.write");
+  return I.fsMkdir(String(path));
+}
+
 /** List a directory: names only, no recursion. */
 export function readDir(path) {
   if (!caps.fs_read?.length && !caps.fs_write?.length) {
