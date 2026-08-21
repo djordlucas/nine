@@ -1,8 +1,19 @@
 # Architecture review — findings and sequencing
 
-- **Status:** **Review** (rev 2 — §7.1 corrected: the `goal`+`workflow` merge
-  proposed in rev 1 is **withdrawn**, see
-  [`concept-consolidation.md`](concept-consolidation.md) §4).
+- **Status:** **Complete** (2026-08-21). Every finding `F1`–`F13` is resolved,
+  so §8 is exhausted and this note is frozen: it is a record, not a plan, and
+  will not be edited further. Per its own F11 — a note is frozen by its
+  programme finishing.
+
+  One clause of F11 has since been overtaken by a decision outside this review:
+  it argued these notes should stay in `docs/` and stay embedded, on the
+  measurement that they already behave like ADRs without being filed as such.
+  `docs/` was subsequently narrowed to hold only what is currently true, and
+  this note moved to `adr/`. F11's measurement still stands; its conclusion
+  about *where* the notes live does not.
+
+  (rev 2 — §7.1 corrected: the `goal`+`workflow` merge proposed in rev 1 is
+  **withdrawn**, see [`concept-consolidation.md`](concept-consolidation.md) §4.)
   Non-normative: this note records an assessment,
   not a contract. Nothing here changes behavior, so no `spec/` requirement moves
   on account of it. Findings are given stable IDs (`F1`…`F12`) so they can be
@@ -265,6 +276,38 @@ component that has a published contract and a compatibility story.
    the wire byte-identical. Worth doing, and a separate change.
 
 Even (1) is worth doing immediately and independently.
+
+
+   **The daemon→client half landed as a different change, because the defect
+   was not where the step assumed.**
+
+   The step is written as if both directions shared the union problem. They do
+   not. Every daemon→client message is already built through a typed
+   constructor — `NewResponseMsg`, `NewToolStartMsg`, and eighteen more — and
+   the whole `internal/runtime` tree contains exactly one raw `protocol.Msg{…}`
+   literal, in a test. There was no fat-union construction left to retire on
+   that side, so adding payload structs would have been machinery wrapped
+   around a problem already solved.
+
+   The real gap was at the other end. The TUI matched **twenty** wire types as
+   bare string literals — `case "tool_start"`, `case "thinking"` — which is
+   precisely the literal-typo class step 1 was supposed to remove, surviving
+   because step 1 only converted the daemon. Those are now the typed constants.
+
+   Constants alone do not close it, for the reason step 1 already recorded: a
+   fresh literal still compiles. So the direction now has the mirror of
+   R-PROTO.9 — `ServerMsgTypes`, and a test requiring every member to be
+   rendered by the TUI or listed as deliberately unrendered with a reason.
+   Mutation-tested both ways: a type that stops being mentioned fails, and a
+   wholesale regression to string literals trips a vacuity guard rather than
+   passing silently.
+
+   The asymmetry is worth stating, because it is the reason the step reads as
+   half-done otherwise. An unhandled *client* message is loud — the daemon
+   replies "unknown message type". An unhandled *daemon* message is silent: the
+   client renders nothing and the feature looks unimplemented rather than
+   unwired. The louder direction got the decoder; the quieter one needed the
+   coverage test.
 
 ### F3 — Assembly is duplicated; the fix is written but not landed · **High** · M
 

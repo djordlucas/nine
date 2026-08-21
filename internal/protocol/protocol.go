@@ -71,6 +71,39 @@ const (
 	TypeNotice        MsgType = "notice"
 )
 
+// ServerMsgTypes is every message type the daemon may send to a client.
+//
+// The mirror of ClientMsgTypes, and it exists for the mirror-image failure: a
+// type the daemon emits that no client renders is invisible in exactly the way
+// an unhandled client message is not. The daemon gets an "unknown message type"
+// reply; a client that ignores a progress event just quietly shows nothing, and
+// the feature looks unimplemented rather than unwired.
+//
+// Kept in step with the const block above by the TUI's coverage test.
+var ServerMsgTypes = []MsgType{
+	TypeConversationID,
+	TypeOK,
+	TypeResponse,
+	TypeDone,
+	TypeError,
+	TypeHistoryUser,
+	TypeSetName,
+	TypeSetInstanceName,
+	TypeToolStart,
+	TypeToolEnd,
+	TypeContextUpdate,
+	TypeResponseChunk,
+	TypeThinkingChunk,
+	TypeThinking,
+	TypeSubAgentStart,
+	TypeSubAgentEnd,
+	TypeStage,
+	TypePlanStart,
+	TypePlanEnd,
+	TypeNotice,
+	TypeHumanInputRequired,
+}
+
 // ClientMsgTypes is every message type a client may send to the daemon. The
 // daemon's dispatch switch must handle all of them; anything else reaches its
 // default branch and comes back as "unknown message type".
