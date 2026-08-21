@@ -97,7 +97,7 @@ func TestParseRoleEmptyToolsListIsEmptyAllowlist(t *testing.T) {
 		t.Fatal("role block not parsed")
 	}
 	if s.Role.AllTools {
-		t.Error("tools: [] is an (empty) allowlist, not a wildcard (docs/roles.md §10)")
+		t.Error("tools: [] is an (empty) allowlist, not a wildcard (adr/roles-design.md §10)")
 	}
 	if len(s.Role.Tools) != 0 {
 		t.Errorf("tools = %v, want empty", s.Role.Tools)

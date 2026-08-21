@@ -42,7 +42,7 @@ func TestRegistryBuiltinRoots(t *testing.T) {
 
 	refl := reg.Resolve("reflection")
 	if refl.AllTools || refl.Delegates || refl.SpawnsGoals {
-		t.Errorf("reflection = %+v; must be narrowed (docs/roles.md §4)", refl)
+		t.Errorf("reflection = %+v; must be narrowed (adr/roles-design.md §4)", refl)
 	}
 	for _, want := range []string{"memory_get", "memory_set", "skill_read"} {
 		found := false
@@ -77,7 +77,7 @@ func TestRegistryUnknownFallsBackToDefaultLeaf(t *testing.T) {
 	}
 }
 
-// Gate 3 (docs/roles.md §12): an agent-authored skill with a role block is
+// Gate 3 (adr/roles-design.md §12): an agent-authored skill with a role block is
 // purely restrictive — structural flags are ignored and forced to leaf
 // defaults (R-ROLE.7).
 func TestRegistryAgentAuthoredRoleIsPurelyRestrictive(t *testing.T) {
@@ -145,7 +145,7 @@ func TestResolveLeafForcesLeafFlags(t *testing.T) {
 	}
 	// executor keeps Delegates (backward compat: a depth-1 leaf may sub-delegate).
 	if exec := reg.ResolveLeaf("executor"); !exec.Delegates {
-		t.Error("executor leaf must keep Delegates=true (docs/roles.md §4)")
+		t.Error("executor leaf must keep Delegates=true (adr/roles-design.md §4)")
 	}
 	if sd := reg.ResolveLeaf("software-dev"); sd.Delegates {
 		t.Error("coarse leaf roles must not delegate")

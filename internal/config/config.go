@@ -379,7 +379,7 @@ type AgentRoutine struct {
 	Schedule string `toml:"schedule"` // cron expression — XOR Interval
 }
 
-// RolesConfig controls worker-role resolution for delegation (docs/roles.md §11).
+// RolesConfig controls worker-role resolution for delegation (adr/roles-design.md §11).
 type RolesConfig struct {
 	DefaultLeaf        string `toml:"default_leaf"`         // role used when a delegation names none; default "executor"
 	MaxDelegationDepth int    `toml:"max_delegation_depth"` // depthGuard seed; default 2

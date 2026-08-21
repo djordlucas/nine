@@ -33,7 +33,7 @@ var ErrNotMarkdown = errors.New("not a .md file")
 // just the first, so a user fixing a file sees the whole list at once.
 //
 // Validation applies to operator-supplied skills only. Parse itself stays
-// infallible by design (docs/roles.md §10): a malformed built-in degrades to a
+// infallible by design (adr/roles-design.md §10): a malformed built-in degrades to a
 // plain knowledge skill rather than breaking boot. Validate is the stricter
 // gate we can apply to files a human is actively editing.
 func Validate(s Skill) []error {
