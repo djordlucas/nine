@@ -1,9 +1,9 @@
 # Event subscriptions — reacting to the session journal
 
 **Status:** Proposed (design note) · **Depends on:** the session event journal
-(docs/event-log.md v1–v3), the supervisor bus, the vector store + the embedder (phase 0),
+(event-log.md v1–v3), the supervisor bus, the vector store + the embedder (phase 0),
 the `llm.Queue` priority tiers, the context builder, the notification feed ·
-**Downstream of:** docs/event-log.md (this builds on the durable journal; it does
+**Downstream of:** event-log.md (this builds on the durable journal; it does
 not replace it)
 
 This note proposes making the session event journal **subscribable**, so Nine
@@ -18,7 +18,7 @@ than invasive.
 
 ## 1. TL;DR — recommendation
 
-The journal (docs/event-log.md) is already append-only, ordered, and typed. Add a
+The journal (event-log.md) is already append-only, ordered, and typed. Add a
 **subscription layer** on top of it: durable per-subscriber cursors over `seq`,
 live wake via an in-process notify, catch-up-after-restart from the last
 cursor. Subscribers are **programmatic** handlers that run **off the turn path**
@@ -60,7 +60,7 @@ draws a hard line: **enrich, don't interject.**
 - **Subscribability is decoupled from event-sourcing of state.** This feature
   needs a durable, typed, ordered, *subscribable* stream — not state modeled as a
   projection of events. It can ship without converting any aggregate to CQRS
-  (docs/event-log.md §8a v5 remains a separate, optional track).
+  (event-log.md §8a v5 remains a separate, optional track).
 
 ### Explicitly rejected / deferred (and why)
 
@@ -82,7 +82,7 @@ draws a hard line: **enrich, don't interject.**
 
 ## 2. The reframe: record → stream
 
-docs/event-log.md v1–v3 treat the journal as a **record**: write once, read back
+event-log.md v1–v3 treat the journal as a **record**: write once, read back
 later for replay/audit/debug. Nothing consumes it live. "Listening" adds a second
 consumer class that reads the stream **as it grows** and acts on it — the "log as
 integration backbone" pattern.
@@ -153,7 +153,7 @@ only when the user's own question makes it relevant.
 - **A durable, replayable control-plane** — the supervisor bus
   (`agent_completes`, `goal_stalls`, `gap_reported`, `plugin_crashed`) is a
   subscriber over persisted lifecycle events; its reactions survive restart
-  (docs/event-log.md §8a's first ES step, reached from the subscription side).
+  (event-log.md §8a's first ES step, reached from the subscription side).
 - **Extensibility without touching the loop** — new passive behaviors are new
   subscribers, not core-loop changes.
 - **The substrate for proactive IO plugins / "free will"** — present, but the
@@ -165,7 +165,7 @@ only when the user's own question makes it relevant.
   its cursor bounds correctness but not freshness. Acceptable for enrichment
   (eventually-consistent by design), but monitor lag.
 - **Index growth / staleness.** Derived stores grow unbounded and can go stale;
-  they need the same retention discipline as the journal (docs/event-log.md v4
+  they need the same retention discipline as the journal (event-log.md v4
   prune-below-checkpoint) and a rebuild path (re-fold from `seq`).
 - **Poison events.** A handler that errors on one event must not wedge the cursor;
   log-and-skip (or a dead-letter mark) with idempotent retry.
@@ -178,7 +178,7 @@ only when the user's own question makes it relevant.
 
 ## 8. Phasing
 
-Each phase is independently shippable and downstream of docs/event-log.md.
+Each phase is independently shippable and downstream of event-log.md.
 
 1. **Subscription primitive. ✅ Done (2026-07-07).** `internal/subscribe`: a
    `Handler` (id = durable cursor key, opt-in `Types`, idempotent `Handle`) driven

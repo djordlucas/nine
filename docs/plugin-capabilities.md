@@ -21,8 +21,8 @@
 - **Depends on:** the plugin HTTP-over-Unix-socket transport
   (`docs/plugins-http-transport.md`, `spec/contracts/plugin.md`), the notification
   feed (`internal/memory/notifications.go`), the tool-output spill
-  (`docs/tool-output-spill.md`) for large job results, and the pull-not-push
-  discipline of `docs/reactive-events.md` for how a finished job reaches the model.
+  (`tool-output.md`) for large job results, and the pull-not-push
+  discipline of `event-journal.md` for how a finished job reaches the model.
 
 ---
 
@@ -58,7 +58,7 @@ long job is done."* Without it, that signal becomes **daemon-pulled**: the plugi
 hands back a job id and keeps the answer until it is asked for it, and the daemon
 asks — over `plugin.job_status`, on the socket it already owns. §5 is built
 around that inversion. It is a strictly better fit for the rest of the system:
-`docs/reactive-events.md` already argues that a background result should *enrich
+`event-journal.md` already argues that a background result should *enrich
 a later turn's context*, not interrupt a live one, and a pull loop is exactly
 that discipline expressed in the transport.
 
@@ -68,7 +68,7 @@ Second-order consequences of the removal:
   **cache dir** (§4) rather than a memory namespace. This is the better home:
   plain files, no schema, no risk of a plugin's private data ever being reachable
   by the context builder.
-- `docs/tool-output-spill.md` mentions a deferred `host.memory.set` as a possible
+- `tool-output.md` mentions a deferred `host.memory.set` as a possible
   socket-throughput optimization. That option no longer exists; a plugin with a
   large result returns it and the daemon spills it, which is the shipped path.
 
@@ -440,7 +440,7 @@ owner's next turn, which always comes:
   `handleIdle` fire its plan's idle stages on their `interval` or `schedule` — so
   it picks the notification up on the next tick without any new wake path.
 
-This is `docs/reactive-events.md`'s discipline applied unchanged: a background
+This is `event-journal.md`'s discipline applied unchanged: a background
 result enriches a later turn, it does not interrupt a live one. If a case ever
 demands sooner delivery the mechanism is already there (re-arm the idle timer on
 completion), so this is a one-line change later, not an architectural bet.
@@ -601,7 +601,7 @@ phase 6 (completion delivery), and `/sync-evals` reconciles the harness after.
   capability tokens, no plugin access to memory in either direction. The daemon
   dials the plugin and nothing dials the daemon.
 - **Completion is pulled, not pushed.** The plugin holds the answer; the daemon
-  asks. This follows the same discipline as `docs/reactive-events.md`.
+  asks. This follows the same discipline as `event-journal.md`.
 - **Plugin config is schema-less pass-through**, because operators install plugins
   Nine has never heard of and must not have to rebuild Nine to configure them.
 - **Settings keys are verbatim env-var names**, so they match what a plugin's own

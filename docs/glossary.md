@@ -39,7 +39,7 @@ priority than background work but lower than active conversations. See
 to its registered handler: plugin tools via `plugin.call`, core-intercepted
 tools in-process. Fires post-call hooks on success and caps every result at
 ~2048 tokens, spilling larger output to the file store
-([tool-output-spill.md](tool-output-spill.md)). Handlers are registered at
+([tool-output-spill.md](tool-output.md)). Handlers are registered at
 loop-build time via `RegisterPlugin` and the `Register*` functions.
 See [Agent Loop § Dispatcher](agent-loop.md#dispatcher).
 
@@ -222,7 +222,7 @@ one row per step (`turn_start`, `llm_request`/`llm_response` with the exact
 assembled prompt, `tool_start`/`tool_end`, `context_update`, `turn_end`,
 `supervisor`), ordered by a `seq` BIGSERIAL and grouped by `span_id`. It is the
 source of truth for observation, replay, and subscriptions. Design:
-[event log](event-log.md).
+[event log](event-journal.md).
 
 **EventSink (`runtime.NewSQLEventSink`)** — The async, batched writer that
 persists journal events off the turn's critical path. Its flush also wakes
@@ -249,7 +249,7 @@ skipped, never wedging the cursor.
 **Subscriber (`internal/subscribers`)** — A programmatic, **out-of-band** handler
 that reacts to journal events to enrich *derived* stores — never a generative LLM
 call, never a write into the active session (enrich, don't interject). Design:
-[reactive events](reactive-events.md).
+[reactive events](event-journal.md).
 
 **Related-session indexer / `related_sessions`** — The first subscriber: on each
 `turn_end` it embeds the answer, links topically-similar prior sessions into the

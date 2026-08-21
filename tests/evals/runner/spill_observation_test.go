@@ -17,7 +17,7 @@ import (
 //
 // It exists because a live-model eval cannot distinguish "the spill machinery
 // broke" from "the model failed to read its own observation"
-// (docs/tool-output-spill.md §8).
+// (adr/tool-output-spill.md §8).
 func TestSpillObservationFromRealTool(t *testing.T) {
 	nineBin := os.Getenv("NINE_BINARY")
 	if nineBin == "" {
@@ -85,7 +85,7 @@ func TestSpillObservationFromRealTool(t *testing.T) {
 
 	// 2. The observation is a SMALL preview, far under the 8192-char cap: once
 	//    the output is retrievable, spending context on it is waste (and enough
-	//    of it drowns the request). See docs/tool-output-spill.md §3.
+	//    of it drowns the request). See adr/tool-output-spill.md §3.
 	const cap8k = 2048 * 4
 	if len(p.Output) > cap8k/2 {
 		t.Errorf("observation is %d bytes; a spilled preview should be far under the %d-char cap",

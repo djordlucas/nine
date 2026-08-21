@@ -17,7 +17,7 @@ An LLM provider is also required — see [Configuration](configuration.md) for o
 
 Nine's durable state is a SQLite file, so the deployment unit is **one
 container** running the daemon alone under s6-overlay (see
-[Single-container Nine](single-container.md) for the full design). There is no
+[Single-container Nine](../adr/single-container.md) for the full design). There is no
 docker-compose file and no database service to orchestrate; `docker run` is
 wrapped in a handful of Makefile targets for the env/volume/flag boilerplate.
 Inside the container the daemon opens `/data/nine.db` and reaches the host's LLM

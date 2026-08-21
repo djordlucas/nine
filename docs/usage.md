@@ -304,7 +304,7 @@ In the TUI, `/context` targets the current session (or `/context <id>` another o
 ### `nine trace` — inspect a session's journal
 
 Every session's execution is recorded to a durable event journal
-([event log](event-log.md)). `nine trace` prints that timeline — turn boundaries,
+([event log](event-journal.md)). `nine trace` prints that timeline — turn boundaries,
 exact LLM requests/responses, tool calls with timing, and the final answer. It
 reads the journal directly, so it **works with the daemon down**:
 

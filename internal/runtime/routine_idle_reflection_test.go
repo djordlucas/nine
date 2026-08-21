@@ -32,7 +32,7 @@ func TestIdleReflectionStageOnIdleAlwaysHasWork(t *testing.T) {
 // OnTurnEnd is a no-op now: a reflection turn is recorded by the journal like
 // any other, under its own agent_id. The dedicated `reflections` table it used
 // to write recorded no agent id at all, which broke as soon as more than one
-// session could reflect (docs/concept-consolidation.md C5).
+// session could reflect (adr/concept-consolidation.md C5).
 func TestIdleReflectionOnTurnEndIsANoOp(t *testing.T) {
 	h := runtime.NewIdleReflectionRoutine()
 	cases := []struct {

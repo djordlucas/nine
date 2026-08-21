@@ -1,6 +1,6 @@
 // nine:fs — the filesystem, as far as the operator granted it.
 //
-// This closes the gap that motivated docs/rich-js-tools.md: `fs.read` and
+// This closes the gap that motivated adr/rich-js-tools.md: `fs.read` and
 // `fs.write` were declarable, grantable, validated at load, and printed by
 // `nine tools`, and a `js` tool handed either had no API with which to use them.
 //

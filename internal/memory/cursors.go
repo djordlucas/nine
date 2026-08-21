@@ -4,7 +4,7 @@ import "database/sql"
 
 // SessionEventsAfter returns up to limit events with seq > afterSeq, in seq
 // (causal) order across all agents. It is the forward read path for cursor-based
-// journal subscribers (docs/reactive-events.md §3); pass the last processed seq
+// journal subscribers (adr/reactive-events.md §3); pass the last processed seq
 // to get the next batch.
 func (s *Store) SessionEventsAfter(afterSeq int64, limit int) ([]SessionEvent, error) {
 	if limit <= 0 {

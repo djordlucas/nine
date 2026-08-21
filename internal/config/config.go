@@ -59,7 +59,7 @@ type PluginEntry struct {
 // ToolsConfig tunes the tool-dispatch boundary. It is `[tools]` rather than
 // `[agent]` because `[[agent]]` is already the standing-agent table array.
 type ToolsConfig struct {
-	// MaxOutputTokens is the per-result output cap (docs/tool-output-spill.md).
+	// MaxOutputTokens is the per-result output cap (adr/tool-output-spill.md).
 	// A result over it is spilled to the memory file store and replaced by a
 	// short preview naming the path, so raising this is rarely needed — the data
 	// is not lost either way. Raise it when a model should routinely see more of
@@ -311,7 +311,7 @@ type ToolHTTPGrant struct {
 }
 
 // PlanningConfig controls the plan-before-execute policy
-// (docs/thinking-and-planning.md). Config sets the session default; PlanMode
+// (adr/thinking-and-planning.md). Config sets the session default; PlanMode
 // has a live equivalent via the set_plan_mode command.
 type PlanningConfig struct {
 	// PlanMode gates the reasoning policy: off | plan-only | always.
@@ -482,7 +482,7 @@ type DaemonConfig struct {
 	StandingAgentsAuthoritative bool `toml:"standing_agents_authoritative"`
 
 	// EventRetentionTurns bounds the session_events journal per agent: the number
-	// of most-recent turns kept at boot (docs/event-log.md v4). 0 → default
+	// of most-recent turns kept at boot (adr/event-log.md v4). 0 → default
 	// (DefaultEventRetentionTurns); negative → keep all turns.
 	EventRetentionTurns int `toml:"event_retention_turns"`
 	// EventRetentionDays caps the age of any journaled event in days. 0 → no age
@@ -491,7 +491,7 @@ type DaemonConfig struct {
 
 	// RelatedSessionsIndex enables the out-of-band subscriber that links
 	// topically-similar sessions and the context-builder surfacing that pulls
-	// from it (docs/reactive-events.md). On by default; set
+	// from it (adr/reactive-events.md). On by default; set
 	// `related_sessions_index = false` to disable. Requires an embedder — it is a
 	// no-op (skipped with a warning) when embeddings are disabled. A *bool so an
 	// unset value can default to on while an explicit false still disables it.

@@ -52,12 +52,12 @@ recovers without a second call.
 `doc_read` returns Markdown behind an address header rather than JSON. A whole
 document can exceed the dispatcher's output cap, and truncated Markdown is still
 readable where a truncated JSON object is unparseable
-([tool-output-spill.md](tool-output-spill.md)).
+([tool-output-spill.md](tool-output.md)).
 
 ### Availability
 
 **Neither tool requires an embedder**, which is what sets this pair apart from
-`tool_search` and `skill_search` ([tool-exposition.md](tool-exposition.md)).
+`tool_search` and `skill_search` ([tool-exposition.md](tool-selection.md)).
 Those rank catalogs that exist only in the store, so without an embedder they
 have nothing to rank and the daemon omits them. The documentation is compiled
 into the binary, so it can be ranked lexically with no outside help: a

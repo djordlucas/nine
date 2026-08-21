@@ -10,7 +10,7 @@ import (
 )
 
 // TestJournalReplayReattach verifies the journal-backed reattach snapshot
-// (docs/event-log.md §7.6): with an empty in-memory ring — the state after a
+// (adr/event-log.md §7.6): with an empty in-memory ring — the state after a
 // daemon restart — attach sources the last turn's tool trajectory and final
 // response from the durable journal.
 func TestJournalReplayReattach(t *testing.T) {

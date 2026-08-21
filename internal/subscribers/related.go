@@ -1,5 +1,5 @@
 // Package subscribers holds optional, config-gated journal subscribers that
-// react to session events out-of-band (docs/reactive-events.md §4). They are
+// react to session events out-of-band (adr/reactive-events.md §4). They are
 // registered on the daemon, never wired into the agent loop, and enrich derived
 // stores that later user-initiated turns pull from — enrich, don't interject.
 package subscribers
@@ -30,7 +30,7 @@ type RelatedStore interface {
 // embeds the answer, links the session to topically-similar prior sessions
 // (recorded in related_sessions), and adds this turn's vector to the index. It
 // makes no generative LLM call and never touches the active session — the value
-// surfaces only when a later turn pulls related_sessions (docs/reactive-events.md
+// surfaces only when a later turn pulls related_sessions (adr/reactive-events.md
 // §5).
 type RelatedIndexer struct {
 	store     RelatedStore

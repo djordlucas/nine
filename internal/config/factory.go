@@ -21,7 +21,7 @@ import (
 const DefaultSocketPath = "/tmp/nine.sock"
 
 // DefaultEventRetentionTurns is the per-agent turn window kept in the
-// session_events journal when none is configured (docs/event-log.md v4).
+// session_events journal when none is configured (adr/event-log.md v4).
 const DefaultEventRetentionTurns = 200
 
 // LoadDefault finds and loads nine.toml from standard locations, applying

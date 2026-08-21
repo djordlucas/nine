@@ -121,7 +121,7 @@ sequenceDiagram
 
 ## Dispatcher
 
-The `Dispatcher` is a registry of `handlers` (tool name → function). It routes every tool call, expands `x-nine-ref` arguments, runs post-call hooks, and caps output at 2048 tokens (~8 000 chars) — spilling anything larger to the file store and returning a head+tail preview naming the path ([tool-output-spill.md](tool-output-spill.md)).
+The `Dispatcher` is a registry of `handlers` (tool name → function). It routes every tool call, expands `x-nine-ref` arguments, runs post-call hooks, and caps output at 2048 tokens (~8 000 chars) — spilling anything larger to the file store and returning a head+tail preview naming the path ([tool-output-spill.md](tool-output.md)).
 
 ### Tool Categories
 

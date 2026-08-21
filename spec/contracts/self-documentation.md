@@ -97,7 +97,7 @@ suite as a regression floor, and **SHOULD NOT** prune that suite to the cases it
 already passes.
 
 **Neither tool may require an embedder.** This is the point of divergence from
-`tool_search`/`skill_search` ([`../../docs/tool-exposition.md`](../../docs/tool-exposition.md)),
+`tool_search`/`skill_search` ([`../../adr/tool-exposition.md`](../../adr/tool-exposition.md)),
 which rank store-resident catalogs and are therefore omitted without one: the documentation
 is embedded in the binary, so a conforming implementation **MUST** still serve `doc_search`
 with no embedder configured, ranking by whatever retriever remains available.

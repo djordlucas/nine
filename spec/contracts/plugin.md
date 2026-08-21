@@ -314,7 +314,7 @@ terminal and distinct from `failed`. `progress` is free text.
   for the first minute, then ~30s) and, on a terminal state, cap-or-spills the
   output into the row, journals the event, and posts a notification to the owner —
   so the completion enriches a **later** turn (pull, not push; per
-  `docs/reactive-events.md`). A boot marks orphaned `running` rows `lost`;
+  `adr/reactive-events.md`). A boot marks orphaned `running` rows `lost`;
   `job_max_seconds` expires an over-age job; `max_jobs_per_conversation` caps a
   conversation on admission.
 - **Model-facing tools** (core-intercepted, granted whenever the registry is wired):
