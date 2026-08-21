@@ -147,8 +147,9 @@ func (h *Harness) Run(ctx context.Context, c *Case, provider llm.Provider) (res 
 		// os.Executable() here is the test binary, which has no `plugin serve`
 		// subcommand — point the manager at the nine binary under test instead.
 		pluginMgr.SetBuiltinBinary(h.NineBin)
+		// shell is the only built-in plugin left; time, files and http are shipped
+		// sandboxed tools now, loaded by the toolvm host above.
 		pluginMgr.TryStartBuiltin("shell")
-		pluginMgr.TryStartBuiltin("http")
 		// 5b. MCP servers the case declares, mirroring startMCPServers in
 		//     cmd/nine/daemon.go. This is not an optional extra: a capability Nine
 		//     does not implement itself now arrives this way and no other, so a
