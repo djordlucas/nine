@@ -75,7 +75,7 @@ func rolesTestBuilder(t *testing.T, p *scriptedProvider, mutate func(*runtime.Ag
 	return runtime.NewAgentBuilder(cfg)
 }
 
-// Gates 1 + 7 (docs/roles.md §12): a delegation naming no role runs the
+// Gates 1 + 7 (adr/roles-design.md §12): a delegation naming no role runs the
 // executor — same tool surface as the parent minus nothing (it may still
 // sub-delegate at depth 1) — and its system prompt is the executor persona,
 // never the orchestrator's daemon prompt.
@@ -384,7 +384,7 @@ func TestReflectionRoleIsNarrowed(t *testing.T) {
 	}
 	for _, banned := range []string{"run_agent", "goal_create", "skill_write", "file_store"} {
 		if tools[banned] {
-			t.Errorf("reflection advertises %q; role must narrow it away (docs/roles.md §4)", banned)
+			t.Errorf("reflection advertises %q; role must narrow it away (adr/roles-design.md §4)", banned)
 		}
 	}
 	if !strings.Contains(p.call(1).System, "ROOT-DAEMON-PROMPT") {

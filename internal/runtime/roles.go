@@ -23,12 +23,12 @@ const (
 )
 
 // DefaultMaxDelegationDepth is the depthGuard seed: how many delegation hops
-// a root worker's subtree may make (docs/roles.md R-ROLE.6). It reproduces
+// a root worker's subtree may make (spec/contracts/roles.md R-ROLE.6). It reproduces
 // the old `depth < 2` rule.
 const DefaultMaxDelegationDepth = 2
 
 // Role is a worker kind: persona + enforced tool boundary + structural
-// wiring (docs/roles.md §2). It subsumes the old depth-based gating and the
+// wiring (adr/roles-design.md §2). It subsumes the old depth-based gating and the
 // sessionWorker/sub-agent fork of identity. Persists and Profile describe the
 // worker shell a role runs in (session worker vs ephemeral leaf); they are
 // realized by the daemon's session machinery, not by the loop builder.
@@ -306,7 +306,7 @@ func trustedRoleSource(source string) bool {
 var trustedRoleSources = []string{memory.SkillSourceUser}
 
 // roleNameForPlan maps a session plan's routines to the role its worker runs
-// (docs/roles.md §6). The role is data: a stage that declares one in its config
+// (adr/roles-design.md §6). The role is data: a stage that declares one in its config
 // supplies it, whatever its kind. Failing that, a pursue shell runs the pursue
 // role, and everything else — ordinary [active] conversations, nil plans — the
 // orchestrator.

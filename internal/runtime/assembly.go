@@ -141,7 +141,7 @@ func Assemble(c AssemblyConfig) *Assembly {
 	})
 
 	// The daemon resolves each session's role from its plan profile and passes it
-	// to the factory (docs/roles.md §6). RoleFactory lets a caller intercept that
+	// to the factory (adr/roles-design.md §6). RoleFactory lets a caller intercept that
 	// — the harness forces a case's role before delegating to BuildForRole.
 	factory := LoopFactory(builder.BuildForRole)
 	if c.RoleFactory != nil {

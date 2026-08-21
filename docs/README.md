@@ -23,7 +23,7 @@ features built on top of that architecture.
 7. [Agent Loop](agent-loop.md) — The ReAct (reason → act → observe) implementation
 8. [Context Builder](context-builder.md) — Token budgeting, message trimming, and tool relevance ranking
 9. [Session Plans & Routines](session-plans.md) — Per-session routines, idle scheduling, self-reflection, and background goal pursuit
-10. [Roles](roles.md) — Role-gated tool allowlists, delegation, depth guards
+10. [Roles](roles.md) — Worker kinds as data: the persona, the enforced tool allowlist, and the roles Nine ships
 11. [The event journal](event-journal.md) — The append-only record of every model exchange and tool call, and subscribing to it
 12. [How tools reach a turn](tool-selection.md) — Ranking, mid-turn lookup, and why a tool's description is its retrieval surface
 13. [Goal sessions](goal-sessions.md) — The background session paired with each top-level goal: its cycle, and the bounds on it
