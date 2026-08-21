@@ -165,7 +165,7 @@ scheduler; it is advanced by the calling model inside a turn, which is why it no
 in §3.1 beside the sub-agent whose delegations it records. The distinction matters
 because merging the two — an appealing idea, since both are "an ordered thing a session
 works through" — would put a scheduler behind something that must not have one. See
-`docs/concept-consolidation.md` §4.
+`adr/concept-consolidation.md` §4.
 
 ### 3.3 Relationships
 

@@ -42,7 +42,7 @@ type BuildInput struct {
 	SystemExtras string // priority 5: dropped when budget is tight
 	SystemSelf   string // priority 2.5: self-model, capped at 600 tokens
 	// SystemEnrichment is out-of-band pull-surfaced context (a related prior
-	// session; docs/reactive-events.md §5). Priority 2.6: capped small and
+	// session; adr/reactive-events.md §5). Priority 2.6: capped small and
 	// dropped when budget is tight, so enrichment never crowds out the turn.
 	SystemEnrichment string
 	Tools            []ToolWithVector  // priority 2: relevance-filtered

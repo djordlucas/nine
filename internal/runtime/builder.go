@@ -46,7 +46,7 @@ type LoopConfig struct {
 	Assembler     *selfmodel.Assembler
 	// RelatedSessions mirrors [daemon] related_sessions_index: when on (and an
 	// embedder is configured), each loop pull-surfaces a recorded related prior
-	// session relevant to the current turn (docs/reactive-events.md §5). On by
+	// session relevant to the current turn (adr/reactive-events.md §5). On by
 	// default; the read costs nothing when disabled.
 	RelatedSessions bool
 	// SurfaceMemories mirrors [memory] surface_memories: when on (and an embedder
@@ -451,7 +451,7 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 
 	// Catalog meta-tools let the model query the full tool/skill catalogs on
 	// demand, covering the once-per-turn ranking blind spot
-	// (docs/tool-exposition.md). Granted regardless of the role allowlist — like
+	// (adr/tool-exposition.md). Granted regardless of the role allowlist — like
 	// gap_report — so they are advertised, always-included, and survive
 	// RestrictTo. tool_list is the query-free enumeration and needs no embedder;
 	// the *_search pair does, since without one there is nothing to rank
@@ -549,7 +549,7 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		selfModelFn = lc.Assembler.Build
 	}
 
-	// Pull-surface a recorded related prior session (docs/reactive-events.md §5),
+	// Pull-surface a recorded related prior session (adr/reactive-events.md §5),
 	// only when the indexer that populates the store is itself enabled and an
 	// embedder is present to rank relevance to the current query.
 	var relatedFn func(ctx context.Context, queryVec []float32) string

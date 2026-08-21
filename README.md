@@ -615,7 +615,7 @@ the database is created on first run at `~/.nine/nine.db`.
 ### Docker (single container)
 
 The deployment unit is **one container** running the daemon under s6-overlay
-([docs/single-container.md](docs/single-container.md)). Its database is a file on
+([adr/single-container.md](adr/single-container.md)). Its database is a file on
 the `/data` volume, so there is no second service to orchestrate and no
 docker-compose file; `docker run` is wrapped in Makefile targets:
 
@@ -672,8 +672,8 @@ Highlights:
 
 - [CLI usage](docs/usage.md) — commands, TUI, slash commands, background tasks
 - [Agent loop](docs/agent-loop.md) and [context builder](docs/context-builder.md)
-- [Event log](docs/event-log.md) and [reactive events](docs/reactive-events.md)
-- [Session plans & stages](docs/session-plans.md) — idle scheduling, reflection, goal pursuit
+- [The event journal](docs/event-journal.md) — the record of every exchange, and subscribing to it
+- [Session plans & routines](docs/session-plans.md) — idle scheduling, reflection, goal pursuit
 - [Roles](docs/roles.md) — role-gated tool allowlists, delegation, depth guards
 - [Writing sandboxed tools](docs/writing-sandboxed-tools.md) and the
   [design behind them](docs/sandboxed-tools.md) — the wasm host and its capability model

@@ -75,7 +75,7 @@ func TestQuickJSBlobImportsAndExportsAreClosed(t *testing.T) {
 			// Note what is NOT here: the filesystem and the environment. Those
 			// reach a `js` tool through libc and WASI — pre-opens wazero enforces
 			// itself — precisely so that containment never becomes a check of ours
-			// in a host function (docs/rich-js-tools.md §6.4).
+			// in a host function (adr/rich-js-tools.md §6.4).
 			if name != "log" && name != "http" && name != "caps" {
 				t.Errorf("blob imports %s.%s; the host module is only log, http, and caps", module, name)
 			}

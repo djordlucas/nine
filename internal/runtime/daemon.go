@@ -81,7 +81,7 @@ type queryBackend interface {
 	GeneratedToolList() ([]memory.GeneratedTool, error)
 	SessionEventsByAgent(agentID string) ([]memory.SessionEvent, error)
 	// Journal subscription read surface (satisfies subscribe.Store) so the
-	// daemon can host cursor-backed subscribers (docs/reactive-events.md).
+	// daemon can host cursor-backed subscribers (adr/reactive-events.md).
 	SessionEventsAfter(afterSeq int64, limit int) ([]memory.SessionEvent, error)
 	EventCursorGet(subscriberID string) (int64, error)
 	EventCursorSet(subscriberID string, seq int64) error
@@ -126,7 +126,7 @@ type Daemon struct {
 	listSubAgents func() []protocol.SubAgentInfo
 	queueDepth    func() (pending, inflight, maxConcurrent int)
 
-	subs []*subscribe.Subscription // optional journal subscribers (docs/reactive-events.md)
+	subs []*subscribe.Subscription // optional journal subscribers (adr/reactive-events.md)
 
 	mu       sync.RWMutex
 	sessions map[string]*AgentWorker
@@ -152,7 +152,7 @@ func New(socketPath string, factory LoopFactory, ckpt CheckpointStore, notif Not
 func (d *Daemon) SetStallConfig(cfg StallConfig) { d.stall = cfg }
 
 // SetEventSink registers the durable session-event journal handed to every new
-// AgentWorker (docs/event-log.md). Must be called before the first conversation
+// AgentWorker (adr/event-log.md). Must be called before the first conversation
 // is created. Passing nil disables journaling.
 func (d *Daemon) SetEventSink(sink EventSink) { d.sink = sink }
 
@@ -167,7 +167,7 @@ func (d *Daemon) SetQueueStatFn(fn func() (pending, inflight, maxConcurrent int)
 // journalReplay reconstructs a reattach snapshot from the durable journal: the
 // most recent turn's tool and sub-agent events (as protocol.Msgs, matching what
 // the in-memory ring holds) plus that turn's final response. Used when the live
-// ring is empty — e.g. a session revived after a daemon restart (docs/event-log.md
+// ring is empty — e.g. a session revived after a daemon restart (adr/event-log.md
 // §7.6). Best-effort: any error yields an empty snapshot.
 func (d *Daemon) journalReplay(agentID string) ([]protocol.Msg, string) {
 	events, err := d.store.SessionEventsByAgent(agentID)
@@ -460,7 +460,7 @@ func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.M
 		}
 		// After a daemon restart the worker's in-memory ring is empty; source the
 		// reattach replay from the durable journal so it still shows real history
-		// (docs/event-log.md §7.6).
+		// (adr/event-log.md §7.6).
 		if len(replayEvents) == 0 && pendingResponse == "" && d.store != nil {
 			replayEvents, pendingResponse = d.journalReplay(resolved)
 		}
@@ -612,7 +612,7 @@ func (d *Daemon) ResumeSessions(ctx context.Context) error {
 	return nil
 }
 
-// AddSubscriber registers an optional journal subscriber (docs/reactive-events.md).
+// AddSubscriber registers an optional journal subscriber (adr/reactive-events.md).
 // Subscribers are hosted off the turn path and started by Start; a nil store
 // (unconfigured) makes this a no-op. Call before Start.
 func (d *Daemon) AddSubscriber(h subscribe.Handler) {

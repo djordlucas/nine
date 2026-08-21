@@ -38,7 +38,7 @@ func (s *Store) FileFetch(path string) (string, bool, error) {
 	return content, true, nil
 }
 
-// FileSlice is a windowed read of a stored file (docs/tool-output-spill.md).
+// FileSlice is a windowed read of a stored file (adr/tool-output-spill.md).
 type FileSlice struct {
 	Content string `json:"content"`
 	Offset  int    `json:"offset"` // character offset the window starts at
@@ -91,7 +91,7 @@ func (s *Store) FileFetchRange(path string, offset, limit int) (FileSlice, bool,
 // FileDeleteOlderThan removes files under pathPrefix last stored more than
 // olderThan ago, returning how many rows it deleted. It is the retention sweep
 // for spilled tool output, which is per-session debris: without it the files
-// table grows without bound (docs/tool-output-spill.md §5). An empty prefix is
+// table grows without bound (adr/tool-output-spill.md §5). An empty prefix is
 // rejected — this must never be able to clear the whole store.
 func (s *Store) FileDeleteOlderThan(pathPrefix string, olderThan time.Duration) (int64, error) {
 	if pathPrefix == "" {
@@ -151,7 +151,7 @@ func (s *Store) FileSearchText(query string, limit int) ([]FileSearchResult, err
 // FileSearchTextScoped is FileSearchText confined to paths under pathPrefix.
 // Passing an exact path narrows the search to a single file, which is how an
 // agent locates the relevant region of one large spilled output rather than
-// searching the whole store (docs/tool-output-spill.md §3). An empty prefix
+// searching the whole store (adr/tool-output-spill.md §3). An empty prefix
 // searches everything.
 func (s *Store) FileSearchTextScoped(query, pathPrefix string, limit int) ([]FileSearchResult, error) {
 	if limit <= 0 {

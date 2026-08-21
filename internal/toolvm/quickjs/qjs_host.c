@@ -181,7 +181,7 @@ static JSValue js_nine_http(JSContext *ctx, JSValueConst this_val, int argc,
  * can grant it. `fs` and `env` are WASI facilities — wazero pre-opens and
  * WithEnv — which a raw .wasm tool reaches through libc, while this interpreter
  * deliberately links no quickjs-libc and therefore had no binding for either
- * (docs/rich-js-tools.md §1). The grant was real, the enforcement was real, and
+ * (adr/rich-js-tools.md §1). The grant was real, the enforcement was real, and
  * nothing in JavaScript could use it.
  *
  * They are ordinary libc calls, NOT new host functions, and that is the whole

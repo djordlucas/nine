@@ -274,7 +274,7 @@ a 1011-line file — the assembly god-function. `runDaemon`
 construct a fully-wired daemon from the same dependencies twice, and the Go
 compiler only catches *signature* drift, never *additive* drift.
 
-`docs/daemon-assembly-refactor.md` diagnoses this exactly right and is still
+`daemon-assembly-refactor.md` diagnoses this exactly right and is still
 marked **Proposed**. Its own framing is the argument for landing it: the Stop
 hook (`.claude/hooks/eval-harness-guard.sh`) and `/sync-evals` are **detection,
 not prevention**.
@@ -861,9 +861,9 @@ F1, F3–F6, F9, F10, F12 and `C1`–`C7` touched **none** of the four candidate
 What they did churn was:
 
 ```text
-12  docs/architecture-review.md      ← tracking note
+12  architecture-review.md      ← tracking note
  7  spec/conformance.md              ← normative; F11 correctly says keep live
- 7  docs/concept-consolidation.md    ← tracking note
+ 7  concept-consolidation.md    ← tracking note
  3  spec/overview.md                 ← normative
 ```
 

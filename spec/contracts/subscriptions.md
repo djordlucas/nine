@@ -5,7 +5,7 @@
 The event journal ([`event-journal.md`](event-journal.md)) is **subscribable**: durable
 per-subscriber cursors let programmatic handlers react to events as they land. The scope
 is deliberately narrow — reactions are **out-of-band** and **enrich derived stores** that
-later user-initiated turns *pull* from. Full design: `docs/reactive-events.md`.
+later user-initiated turns *pull* from. Full design: `adr/reactive-events.md`.
 
 ---
 
@@ -111,4 +111,4 @@ multi-process build would need a transport of its own.
 (`SessionEventsAfter`, `EventCursorGet/Set`), `internal/memory/related.go`
 (`RelatedSessionAdd`, `RelatedSessions`), `internal/runtime/related_surface.go`
 (`relatedEnrichmentFn` — the pull-surfacing seam), `internal/runtime/supervisor.go`
-(supervisor-as-subscriber). Design: `docs/reactive-events.md`.
+(supervisor-as-subscriber). Design: `adr/reactive-events.md`.

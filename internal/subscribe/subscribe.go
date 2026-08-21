@@ -1,5 +1,5 @@
 // Package subscribe drives programmatic subscribers over the durable session
-// event journal (docs/reactive-events.md). A Subscription reads events forward
+// event journal (adr/reactive-events.md). A Subscription reads events forward
 // from a subscriber's persisted cursor, delivers each to its Handler, and
 // advances the cursor — so a subscriber resumes where it left off after a daemon
 // restart (catch-up) and never loses the window. Delivery is at-least-once:

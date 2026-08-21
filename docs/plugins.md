@@ -302,7 +302,7 @@ InputSchema: plugin.Schema(`{
 Your handler still receives `content` as a plain string — now holding the bytes. The
 model only ever handles the path, so a 400 KB payload costs it ~40 characters of
 context. Paths typically come from a spilled tool result (`spill/<agent>/…`, see
-[tool-output-spill.md](tool-output-spill.md)), but any stored path works.
+[tool-output-spill.md](tool-output.md)), but any stored path works.
 
 Only marked properties are expanded, so a tool whose arguments are genuinely paths is
 unaffected. One expansion is capped at 8 MiB.
@@ -312,7 +312,7 @@ unaffected. One expansion is capped at 8 MiB.
 You do not need to do anything about large *output*. A result over the dispatcher's cap
 is spilled to the file store automatically and the model is handed a path — this applies
 to every tool, including MCP servers, with no plugin involvement
-([tool-output-spill.md](tool-output-spill.md)).
+([tool-output-spill.md](tool-output.md)).
 
 ---
 

@@ -10,7 +10,7 @@
 // passes through and anything else is stringified — lives here, in JavaScript,
 // where it is legible.
 //
-// It is also where the web-platform layer lives (docs/rich-js-tools.md §6.5).
+// It is also where the web-platform layer lives (adr/rich-js-tools.md §6.5).
 // QuickJS implements ECMAScript, and ECMAScript has no TextEncoder, URL,
 // structuredClone, or timers — those are the platform around the language, and
 // on a browser or in Node they come from the host. Here they come from this file,
@@ -481,7 +481,7 @@ globalThis.URLSearchParams = URLSearchParams;
 // A timezone conversion built on that is wrong in a way that only shows up in
 // production. So a call that passes arguments we cannot honor throws, and a call
 // that passes none keeps working, because the default format is not a lie
-// (docs/rich-js-tools.md §8.2, decided).
+// (adr/rich-js-tools.md §8.2, decided).
 function guardLocale(proto, name) {
   const original = proto[name];
   proto[name] = function (...args) {
@@ -504,7 +504,7 @@ guardLocale(BigInt.prototype, "toLocaleString");
 // ── timers ────────────────────────────────────────────────────────────────
 // A tool must never sleep: it runs inside one turn, under a wall-clock deadline
 // that is also the only CPU bound there is. So these are *virtual time* — the
-// queue runs in deadline order, and no real time passes (docs/rich-js-tools.md
+// queue runs in deadline order, and no real time passes (adr/rich-js-tools.md
 // §8.1, decided).
 //
 // That makes ordering work, which is what bundled dependencies that debounce or
@@ -572,7 +572,7 @@ function b64ToBytes(b64) {
 }
 
 // Minimal UTF-8 encoder, so bytes() works on a text response too. TextEncoder
-// proper is M4 (docs/rich-js-tools.md §6.5); this is the private subset needed
+// proper is M4 (adr/rich-js-tools.md §6.5); this is the private subset needed
 // to keep bytes() from having a hole in it.
 function utf8Encode(str) {
   const out = [];
@@ -700,7 +700,7 @@ function asBytes(value) {
   return null;
 }
 
-// The structured half of a failure (§6.1 of docs/rich-js-tools.md). A thrown
+// The structured half of a failure (§6.1 of adr/rich-js-tools.md). A thrown
 // Error already carries more than a sentence — its class, a `code` by widespread
 // convention, and since ES2022 a `cause` chain — and all of it used to be
 // discarded here in favor of `.message` alone. That made "your argument was
