@@ -9,7 +9,7 @@ import (
 )
 
 // EventSink persists session execution events to the durable journal
-// (docs/event-log.md). For observability-tier events (the v1 taxonomy: turn
+// (adr/event-log.md). For observability-tier events (the v1 taxonomy: turn
 // boundaries, LLM request/response, tool calls, context updates, sub-agent
 // lifecycle) Append is non-blocking and best-effort — it must never stall a
 // turn — so a full buffer drops the event rather than blocking. Close drains
@@ -40,7 +40,7 @@ const (
 
 // sqlEventSink is an async, batched, best-effort EventSink backed by a
 // sessionEventStore. A single writer goroutine coalesces events into batched
-// inserts so persistence never blocks the worker goroutine (docs/event-log.md
+// inserts so persistence never blocks the worker goroutine (adr/event-log.md
 // §7.4).
 type sqlEventSink struct {
 	store   sessionEventStore
@@ -53,7 +53,7 @@ type sqlEventSink struct {
 // NewSQLEventSink starts an async batched sink writing to store. onFlush (may be
 // nil) is called after each batch is written, so journal subscribers can wake
 // and drain — the in-process wake for the subscription primitive
-// (docs/reactive-events.md §3). It is set at construction, before the writer
+// (adr/reactive-events.md §3). It is set at construction, before the writer
 // goroutine starts, so it needs no synchronization.
 func NewSQLEventSink(store sessionEventStore, onFlush func()) EventSink {
 	s := &sqlEventSink{

@@ -149,7 +149,7 @@ func TestNoFilesystemWithoutAGrant(t *testing.T) {
 		t.Errorf("got %q: the guest has a filesystem API with no grant", out)
 	}
 
-	// Since nine:fs exists (docs/rich-js-tools.md §6.4), the stronger claim is
+	// Since nine:fs exists (adr/rich-js-tools.md §6.4), the stronger claim is
 	// the one that matters: bypassing the module's own capability check and
 	// calling the primitive directly must still reach nothing, because with no
 	// grant the instance has no pre-opens and there is nothing to open. What
@@ -202,7 +202,7 @@ description = "probe"
 // (§4.2/§4.3). Third-party dependencies are still pre-bundled at development
 // time — Nine resolves nothing — but the embedded, pure-ES stdlib is admitted:
 // withholding it from hand-written tools was a leftover from before the
-// generated tier existed, not a decision (docs/rich-js-tools.md §6.6).
+// generated tier existed, not a decision (adr/rich-js-tools.md §6.6).
 func TestDeveloperToolImportsAreTheStdlibAndNothingElse(t *testing.T) {
 	dir := t.TempDir()
 	writeTool(t, dir, "probe", `

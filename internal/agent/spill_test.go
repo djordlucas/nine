@@ -84,7 +84,7 @@ func TestSpillPreviewKeepsHeadAndTail(t *testing.T) {
 // top of the head/tail slices that total the cap. It is deliberately generous
 // (~256 tokens): the banner earns its size by being explicit and imperative
 // about which tools to call, which is what makes a model actually retrieve the
-// rest instead of guessing (docs/tool-output-spill.md §3). The bound exists to
+// rest instead of guessing (adr/tool-output-spill.md §3). The bound exists to
 // stop that from drifting, not to keep it minimal.
 const maxPreviewOverhead = 1024
 

@@ -117,7 +117,7 @@ every turn. Against a small local model at `num_ctx = 32768` — Nine's default 
 conversation.
 
 Nine ranks tools by relevance when an embedder is configured
-(`[embeddings]`, see [tool-exposition.md](tool-exposition.md)), which limits the
+(`[embeddings]`, see [tool-exposition.md](tool-selection.md)), which limits the
 damage. If you are running a small model and browsing rarely, consider declaring
 the server only in the config of the instance that needs it.
 
@@ -313,5 +313,5 @@ matched exactly and the prefix is yours to choose, so built-in roles like
 
 - [plugins.md](plugins.md) — the plugin model, and MCP servers in general
 - [configuration.md](configuration.md) — `[[mcp.server]]` reference
-- [tool-exposition.md](tool-exposition.md) — how tools are ranked into context
+- [tool-exposition.md](tool-selection.md) — how tools are ranked into context
 - [spec/contracts/plugin.md](../spec/contracts/plugin.md) — R-PLUG.15, the MCP bridge

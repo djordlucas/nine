@@ -7,7 +7,7 @@ Every session's execution trajectory is recorded to an append-only journal (the
 **substrate** the subscription layer reacts to ([`subscriptions.md`](subscriptions.md)).
 It is written off the turn's critical path and is distinct from the in-memory progress
 stream and reattach ring (see [`agent-worker.md`](agent-worker.md) R-WORK.5/6/8). Full
-design: `docs/event-log.md`.
+design: `adr/event-log.md`.
 
 ---
 
@@ -108,4 +108,4 @@ valid, replayable prefix per agent.
 `internal/memory/cursors.go` (`SessionEventsAfter`), `internal/runtime/eventsink.go`
 (`NewSQLEventSink`), `internal/runtime/journal.go` (hooks + payloads),
 `internal/replay/replay.go` (`FromEvents`, `Recorded`, `Session`),
-`internal/cli/` (`trace`, `replay`). Design: `docs/event-log.md`.
+`internal/cli/` (`trace`, `replay`). Design: `adr/event-log.md`.

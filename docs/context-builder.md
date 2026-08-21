@@ -80,7 +80,7 @@ Budget (e.g. 200 000 tokens)
   - SystemCore          [P1] always present (current time + session ID + identity)
   - Tool definitions    [P2] always-include + top-N under the cap (see note below)
   - SystemSelf          [P2.5] capped at 600 tokens; skipped if too costly
-  - SystemEnrichment    [P2.6] related prior session; capped at 300 tokens; dropped first when tight (reactive-events.md)
+  - SystemEnrichment    [P2.6] related prior session; capped at 300 tokens; dropped first when tight (event-journal.md)
   - History messages    [P3] tail kept; oldest dropped by trimFront
   - Scratchpad entries  [P4] tail kept; oldest dropped by trimFront
   - SystemExtras        [P5] included only if remaining >= extrasBudget (default 200)

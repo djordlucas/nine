@@ -47,7 +47,7 @@ type Config struct {
 	SelfModelFn  func(ctx context.Context, queryVec []float32) string // nil = no self-model
 	// EnrichmentFn optionally returns pull-surfaced enrichment for the current
 	// query — e.g. a related prior session recorded out-of-band by the reactive
-	// subscriber (docs/reactive-events.md §5) and/or stored memories relevant to
+	// subscriber (adr/reactive-events.md §5) and/or stored memories relevant to
 	// the turn, composed by the runtime. It returns "" when nothing is relevant.
 	// nil = no enrichment. Computed once per turn, off no extra path.
 	EnrichmentFn func(ctx context.Context, queryVec []float32) string
@@ -152,7 +152,7 @@ type Loop struct {
 }
 
 // ToolOutcome carries the full result of a dispatched tool call for observers
-// (the durable event journal, docs/event-log.md §7.3). Output is exactly what
+// (the durable event journal, adr/event-log.md §7.3). Output is exactly what
 // the model saw as the observation — the tool's text on success, or the
 // instructive failure notice when Err is set.
 type ToolOutcome struct {
@@ -162,7 +162,7 @@ type ToolOutcome struct {
 	// and OutputChars how long that output was. The journal records the pointer
 	// rather than the payload: the bytes already live in the file store, so
 	// duplicating them into the event log would double the cost of every large
-	// result (docs/tool-output-spill.md §4).
+	// result (adr/tool-output-spill.md §4).
 	SpillPath   string
 	OutputChars int
 	DurationMs  int64

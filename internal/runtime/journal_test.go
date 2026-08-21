@@ -25,7 +25,7 @@ func scriptedResponses(responses ...llm.Response) llm.Provider {
 	})
 }
 
-// TestJournalReconstructsTurn is the v1 gate (docs/event-log.md §11): after a
+// TestJournalReconstructsTurn is the v1 gate (adr/event-log.md §11): after a
 // turn runs, its exact LLM request/response and full tool trajectory are
 // reconstructable from the durable journal, independent of the live worker.
 func TestJournalReconstructsTurn(t *testing.T) {

@@ -1,7 +1,7 @@
 // Package replay reconstructs a Nine session from its durable event journal and
 // re-executes it deterministically, feeding the recorded llm.Responses and tool
 // outputs back into a real agent loop instead of hitting a live LLM or running
-// real tools (docs/event-log.md §3(2), §10, §11 v3).
+// real tools (adr/event-log.md §3(2), §10, §11 v3).
 //
 // This is "re-execution from recorded responses", not "press play against
 // production": a RecordedProvider returns the logged response for each inner LLM

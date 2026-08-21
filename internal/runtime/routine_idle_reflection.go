@@ -10,7 +10,7 @@ import (
 // by the journal like any other turn's.
 //
 // It is a routine kind, not a session kind: any session may carry it as a routine
-// beside its own work (docs/concept-consolidation.md C3/C4).
+// beside its own work (adr/concept-consolidation.md C3/C4).
 type idleReflectionRoutine struct{}
 
 // NewIdleReflectionRoutine creates the "idle-reflection" RoutineHandler.
@@ -26,7 +26,7 @@ func (s *idleReflectionRoutine) Init(context.Context, string, json.RawMessage) e
 // records every turn under its own agent_id (`turn_end.result`), and the durable
 // product of a reflection is the `self/*` KV write the prompt asks for, not the
 // transcript. So there is nothing left for this hook to do
-// (docs/concept-consolidation.md C5).
+// (adr/concept-consolidation.md C5).
 func (s *idleReflectionRoutine) OnTurnEnd(context.Context, string, string, error) error { return nil }
 
 // OnIdle always has work to do: prompt the session to reflect on its recent

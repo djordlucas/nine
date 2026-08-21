@@ -30,7 +30,7 @@ description = "t"
 	}
 }
 
-// THE headline finding of docs/rich-js-tools.md: fs.read was declarable,
+// THE headline finding of adr/rich-js-tools.md: fs.read was declarable,
 // grantable, validated, reported by `nine tools` — and unreachable from the kind
 // nearly every tool is written in.
 func TestJSCanReadAGrantedMount(t *testing.T) {
@@ -202,7 +202,7 @@ export default () => { writeFile("/data/new.txt", "nope"); return "wrote"; };`,
 
 // A tool cannot climb out of its pre-open. This is wazero's guarantee, not a
 // path check of ours — which is exactly why fs went through libc rather than a
-// host function (docs/rich-js-tools.md §6.4).
+// host function (adr/rich-js-tools.md §6.4).
 func TestJSCannotEscapeTheMount(t *testing.T) {
 	host := t.TempDir()
 	secret := filepath.Join(t.TempDir(), "secret.txt")

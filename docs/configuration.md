@@ -14,7 +14,7 @@ There is one `nine.toml` for every deployment. It is written for the native layo
 differ — `NINE_LLM_ENDPOINT`, `NINE_PLUGINS_BIN`, `NINE_WORKSPACE_ROOT` — rather than
 shipping a second file. The database path needs no override there: it defaults to
 `/data/nine.db` whenever the container's `/data` volume is present
-([Single-container Nine](single-container.md)). See [Environment Variables](#environment-variables).
+([Single-container Nine](../adr/single-container.md)). See [Environment Variables](#environment-variables).
 
 ---
 
@@ -101,7 +101,7 @@ max_goal_sessions = 10
 # entry just stops reconciling it, leaving the goal for manual archival.
 standing_agents_authoritative = false
 
-# Session event journal retention (docs/event-log.md), applied by a boot-time
+# Session event journal retention (event-journal.md), applied by a boot-time
 # scrub. Keep the last N turns per agent; 0 uses the built-in default, negative
 # keeps all turns. event_retention_days additionally drops events older than N
 # days (0 = no age limit).
@@ -109,7 +109,7 @@ standing_agents_authoritative = false
 # event_retention_days  = 0
 
 # Link topically-similar sessions out-of-band and surface a related prior session
-# on a later turn (docs/reactive-events.md). On by default; requires an embedder
+# on a later turn (event-journal.md). On by default; requires an embedder
 # (a no-op when [embeddings] is disabled). Set false to disable.
 # related_sessions_index = false
 
@@ -292,7 +292,7 @@ require_approval = []
 gate_sub_agents = true
 
 [planning]
-# Plan-before-execute policy (docs/thinking-and-planning.md). Both keys have a
+# Plan-before-execute policy (../adr/thinking-and-planning.md). Both keys have a
 # live per-session override via the TUI /plan-mode command.
 #
 # plan_mode — how the agent reasons before acting:
@@ -310,7 +310,7 @@ plan_mode = "plan-only"
 plan_approval = "on-risky"
 
 [tools]
-# max_output_tokens — the per-result tool output cap (docs/tool-output-spill.md).
+# max_output_tokens — the per-result tool output cap (tool-output.md).
 # A result larger than this is written whole to the memory file store under
 # spill/<agent-id>/ and replaced in context by a short preview naming the path,
 # which the agent can read back with file_fetch(offset, limit) or search with

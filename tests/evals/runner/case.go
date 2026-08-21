@@ -150,7 +150,7 @@ type SideEffects struct {
 	// some stored file under that prefix matches. A prefix rather than an exact
 	// path because spilled tool outputs get a random suffix
 	// (spill/<agent>/<tool>-<rand>.txt) that a case cannot predict
-	// (docs/tool-output-spill.md §6).
+	// (adr/tool-output-spill.md §6).
 	StoredFiles   map[string]StringMatch `yaml:"stored_files"`
 	KV            map[string]StringMatch `yaml:"kv"`
 	Workflows     *WorkflowExpect        `yaml:"workflows"`
@@ -206,7 +206,7 @@ type Trajectory struct {
 
 	// Spills asserts how many tool results exceeded the output cap and were
 	// spilled to the file store — a `tool_end` event carrying a spill_path
-	// (docs/tool-output-spill.md §4). Use it to prove a case really exercised
+	// (adr/tool-output-spill.md §4). Use it to prove a case really exercised
 	// the large-output path instead of getting a conveniently small result.
 	Spills *CountExpect `yaml:"spills"`
 }

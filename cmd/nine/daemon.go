@@ -148,7 +148,7 @@ func runDaemon() {
 		slog.Warn("workflow scrub", "err", err)
 	}
 
-	// Bound the session_events journal on startup (docs/event-log.md v4): keep the
+	// Bound the session_events journal on startup (adr/event-log.md v4): keep the
 	// last N turns per agent (and optionally drop events older than M days) so the
 	// verbose execution journal cannot grow without limit.
 	if turns, age := cfg.EventRetention(); turns > 0 || age > 0 {
@@ -206,7 +206,7 @@ func runDaemon() {
 	supervisor := asm.Supervisor
 	defer asm.EventSink.Close() //nolint:errcheck // best-effort drain on shutdown
 
-	// Out-of-band subscribers (docs/reactive-events.md): on by default, but a
+	// Out-of-band subscribers (adr/reactive-events.md): on by default, but a
 	// no-op without an embedder and never on the agent loop. Set
 	// related_sessions_index = false to disable. Intentionally omitted from the
 	// shared assembly and the eval harness — it needs an embedder to be useful.
@@ -244,7 +244,7 @@ func runDaemon() {
 
 	// Spilled tool outputs are session debris: sweep the expired ones on boot
 	// and hourly thereafter so large results cannot grow the file store without
-	// bound (docs/tool-output-spill.md §5).
+	// bound (adr/tool-output-spill.md §5).
 	go runtime.RunSpillSweeper(ctx, store)
 
 	// Any plugin job still marked running belongs to a plugin the previous daemon

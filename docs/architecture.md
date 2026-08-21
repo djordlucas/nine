@@ -121,7 +121,7 @@ which dispatches to either the TUI, the one-shot client, or `runDaemon`
 
 Primary state is the SQLite file on that same `/data` volume, so one volume carries
 the database and the workspace together (see
-[Single-container Nine](single-container.md)). Point the daemon elsewhere with
+[Single-container Nine](../adr/single-container.md)). Point the daemon elsewhere with
 `[memory].path` or `NINE_DB_PATH`; with no override it resolves to `/data/nine.db`
 whenever that volume is present, and `~/.nine/nine.db` natively. Note that a backup
 must capture the `-wal` and `-shm` sidecars alongside `nine.db`, or use
@@ -829,7 +829,7 @@ Three consumers sit on top of the journal:
   reconstructs a session and re-executes it on a real `agent.Loop` wired to a
   *recorded* provider/dispatcher — deterministic, no live LLM/tool calls
   (`nine replay`). Journal-backed reattach lets a revived session show real
-  history. Design: [event log](event-log.md).
+  history. Design: [event log](event-journal.md).
 - **Retention.** `store.SessionEventsScrub(keepTurns, maxAge)` runs at boot to
   bound growth (`[daemon] event_retention_turns` / `event_retention_days`).
 - **Subscriptions.** `internal/subscribe` gives each `Handler` a durable cursor
@@ -841,7 +841,7 @@ Three consumers sit on top of the journal:
   sessions into `related_sessions` (surfaced back into context on a later turn —
   pull, not push; on by default when an embedder is configured), and the
   Supervisor itself (its control-plane bus folded onto the journal). Design:
-  [reactive events](reactive-events.md).
+  [reactive events](event-journal.md).
 
 ### Checkpoints
 
@@ -952,7 +952,7 @@ reflection but it never blocks. Its bus is **durable**: `Post` synchronously
 appends each control-plane event to the journal (the `supervisor` event type),
 and the supervisor consumes them via a cursor-backed subscription that resumes
 from its last position on boot, so reactions survive a restart (see
-[reactive events](reactive-events.md) phase 4).
+[reactive events](event-journal.md) phase 4).
 
 ### Workflows — state and write paths
 

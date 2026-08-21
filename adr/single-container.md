@@ -3,7 +3,7 @@
 > **Superseded in part:** the browser plugin this document bakes into both images
 > no longer exists. Nine ships no browser: the runtime image carries neither Node
 > nor Chromium, and browser automation is an `[[mcp.server]]`
-> ([browser.md](browser.md)). Every `chromium` / `/opt/nine/browser` /
+> ([browser.md](../docs/browser.md)). Every `chromium` / `/opt/nine/browser` /
 > `node_modules` step below is historical, as is the checklist item asserting the
 > browser plugin runs in both modes. The s6-overlay reaping argument still holds —
 > an MCP server's process tree orphans the same way Chromium did.
@@ -465,7 +465,7 @@ and real tool-calling agent turns:
    prerequisite), update `docs/README.md` quick-start and the top-level
    `README.md` to describe the single-container model, and sweep the stale
    compose references in `docs/configuration.md`,
-   `docs/architecture.md`, and `docs/event-log.md`. This doc is the
+   `docs/architecture.md`, and `event-log.md`. This doc is the
    design of record; installation becomes the how-to.
 9. **Verify** the §13 checklist, including `make integration-test`, on both
    targets before merging.

@@ -10,8 +10,8 @@ features built on top of that architecture.
 
 ### Getting Started
 
-1. [Installation](installation.md) — Build from source, Docker, first run (see also
-   [Single-container Nine](single-container.md) for the container's design)
+1. [Installation](installation.md) — Build from source, Docker, first run (the container's
+   design rationale is recorded in [adr/](../adr/single-container.md))
 2. [CLI Usage](usage.md) — Commands, interactive TUI, slash commands, background tasks, examples
 3. [Configuration](configuration.md) — `nine.toml` reference, LLM providers, environment variables
 
@@ -22,10 +22,10 @@ features built on top of that architecture.
 6. [Runner Architecture](runner.md) — Per-conversation agent loop wrapper, stall detection, checkpointing
 7. [Agent Loop](agent-loop.md) — The ReAct (reason → act → observe) implementation
 8. [Context Builder](context-builder.md) — Token budgeting, message trimming, and tool relevance ranking
-9. [Session Plans & Stages](session-plans.md) — Per-session stages, idle scheduling, self-reflection, and background goal pursuit
+9. [Session Plans & Routines](session-plans.md) — Per-session routines, idle scheduling, self-reflection, and background goal pursuit
 10. [Roles](roles.md) — Role-gated tool allowlists, delegation, depth guards
-11. [Event Log](event-log.md) — The append-only session event journal, trace, and deterministic replay
-12. [Reactive Events](reactive-events.md) — Journal subscriptions and out-of-band enrichment (related sessions)
+11. [The event journal](event-journal.md) — The append-only record of every model exchange and tool call, and subscribing to it
+12. [How tools reach a turn](tool-selection.md) — Ranking, mid-turn lookup, and why a tool's description is its retrieval surface
 
 ### Features
 
@@ -34,7 +34,7 @@ features built on top of that architecture.
 15. [Browser Automation](browser.md) — Driving a browser via Playwright's MCP server; the worked MCP example
 16. [Writing sandboxed tools](writing-sandboxed-tools.md) — Add a JS or wasm tool with two files, run in a capability-scoped sandbox
 17. [Sandboxed tools — design](sandboxed-tools.md) — The wasm tool host: why it exists, the capability model, and what is deliberately unbuilt
-18. [Richer sandboxed tools — design](rich-js-tools.md) — Draft: the JS guest environment, the capabilities it cannot reach, and what belongs in the ABI instead
+18. [Large tool output](tool-output.md) — Caps, spilling an oversized result to the store, reading it back, and passing a payload by reference
 19. [Skills](skills.md) — What skills are, creating and managing skills
 20. [Self-Documentation](self-documentation.md) — How Nine retrieves its own bundled docs and spec to answer questions about itself
 21. [Workflows](workflows.md) — Persistent multi-step execution plans for sub-agent delegation
@@ -54,8 +54,7 @@ features built on top of that architecture.
 
 ### Docker (recommended)
 
-The daemon runs as one container ([Single-container
-Nine](single-container.md)) — no docker-compose:
+The daemon runs as one container — no docker-compose:
 
 ```bash
 # 1. Build + run — the daemon (edit nine.toml for your LLM)

@@ -5,7 +5,7 @@ top-K layer already existed (`selectTools`, `ToolTopN` = 20 tool defs; the
 assembler's top-3 skills); this change added the active layer on top —
 `tool_search` and `skill_search` let the model query the full catalogs mid-turn,
 and `doc_search`/`doc_read` extend the same pattern to Nine's own bundled
-documentation ([self-documentation.md](self-documentation.md)).
+documentation ([self-documentation.md](../docs/self-documentation.md)).
 The two coexist, which is the hybrid. The remaining open item is **Option 1**
 (re-rank the passive top-K against the evolving scratchpad, not just the opening
 query) — orthogonal to the hybrid: it makes the always-on layer fresher, whereas
@@ -33,7 +33,7 @@ the search tools compensate for its staleness reactively. See "Implemented".
 - `doc_search(query, top_k, bundle)` / `doc_read(ref)` —
   `internal/agent/register_docs.go`. The same shape applied to a third catalog:
   the documentation and specification embedded in the binary
-  ([self-documentation.md](self-documentation.md)). `doc_search` fuses the
+  ([self-documentation.md](../docs/self-documentation.md)). `doc_search` fuses the
   `docs` vector namespace with a BM25 index of the same sections and returns
   section addresses plus snippets; `doc_read` exchanges an address for exact
   text. `doc_read` is the query-free

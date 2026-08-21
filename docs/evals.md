@@ -27,7 +27,7 @@ A single case may target `both`: its Track-L recording becomes the Track-R fixtu
 
 Two models phrase the same correct outcome completely differently, so **never grade
 free text with exact matches.** Nine records every session to a durable event
-journal (`session_events`, see [event-log.md](event-log.md)); a case is graded by
+journal (`session_events`, see [event-log.md](event-journal.md)); a case is graded by
 reading that journal plus real side-effects. Prefer assertions in this order (most
 robust first):
 
@@ -209,7 +209,7 @@ Mappings:
 - **`sub_agents.count`** → `sub_agent_start` progress events (or `run_agent`/`run_agents` tool calls).
 - **`spills.min`** → count of `tool_end` events with a non-empty `spill_path`. Use it to
   prove a large-output case really exercised the spill path rather than getting a
-  conveniently small result (see [tool-output-spill.md](tool-output-spill.md)).
+  conveniently small result (see [tool-output-spill.md](tool-output.md)).
 - **`side_effects.stored_files`** → `store.FileList(prefix)` + `FileFetch`, passing if
   *any* file under the prefix matches. A prefix rather than an exact path because a
   spill path carries a random suffix (`spill/<agent>/<tool>-<rand>.txt`) a case cannot
