@@ -575,8 +575,39 @@ work**, and each is a deliberate change with its own review:
 | the shipped tier | **done** (R-TVM.16) |
 | `time` | **migrated** — UTC, and redundant with the ambient time line |
 | `files` | **migrated** — reads confined to `/work`, `mkdir` added (R-TVM.17) |
-| `http` | remaining: needs the deps/esbuild pipeline extended to the shipped tier |
+| `http` | **blocked on the capability model itself** — see below |
 | `shell` | stays a plugin as proposed — it needs real `exec` |
+
+**`http` cannot migrate without eroding the thing F7 exists to strengthen.**
+The obstacle is not the one this finding named, and not the one I named after it.
+
+HTML parsing turned out to be solvable in-house: `nine:html` is a **tokenizer**,
+and both jobs Nine does with HTML — flatten a page to text, pull out elements by
+class — need to know where tags begin and end, not how a browser repairs
+mis-nesting. Implicit `<tbody>` and unclosed `<p>` change a DOM's shape; they do
+not change which characters are text. I had called hand-rolling this "materially
+worse at exactly the inputs that matter", which conflated *parsing* with
+*extraction*. It ships, with the cases that separate a tokenizer from a regex —
+raw-text `<script>`, `>` inside a quoted attribute, comments, entities — tested
+against the real blob.
+
+The real obstacle is `net.http`'s grant:
+
+> `AllowHosts` is the hostname allowlist. **Never empty for a granted tool, and
+> never a bare `*`** — config validation refuses both.
+
+`http_get`, `http_post` and `web_page_read` exist to fetch **whatever URL the
+model chose**. No allowlist expresses that. So the migration has two exits and
+both are bad: grant a wildcard, which deletes a rule the capability model
+deliberately enforces, or confine to an operator allowlist, which removes the
+tool's purpose.
+
+Worth naming the irony: as a *plugin* these tools have strictly more reach —
+any host, and none of `ssrf.go`'s checks. The capability model is stricter than
+the thing it would replace, which is why they cannot move into it unchanged.
+Resolving that is a deliberate decision about R-TVM.12, not an implementation
+detail — and §10 puts any proposal that would erode the capability model out of
+scope regardless of what it fixes.
 
 **A gap the migration exposed in the eval harness.** It never set `Tools` in its
 `AssemblyConfig`, so cases ran with **no sandboxed-tool host at all** — fine

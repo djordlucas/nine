@@ -3,6 +3,7 @@ package toolvm
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -113,5 +114,124 @@ func TestStdlibRejectsUnknownImport(t *testing.T) {
 	// fails at call time.
 	if _, err := h.Call(context.Background(), "bad", json.RawMessage(`{}`)); err == nil {
 		t.Fatal("importing an npm package resolved with no deps pipeline")
+	}
+}
+
+// nine:html is a tokenizer, not a tree builder, and these are the cases that
+// distinguish a working tokenizer from a regex that looks like one. Each runs
+// under the real committed blob.
+func TestStdlibHTMLTextExtraction(t *testing.T) {
+	h := stdlibHost(t)
+	src := `import { textOf } from "nine:html";
+	         export default ({ html }) => ({ text: textOf(html) });`
+
+	cases := []struct {
+		name    string
+		html    string
+		want    []string
+		notWant []string
+	}{
+		{
+			// Inside <script>, "<" does not open a tag. Treating it as one is how
+			// a naive stripper swallows the rest of a page.
+			name:    "raw text is not markup",
+			html:    `<p>before</p><script>if (a<b) { f("</p>") }</script><p>after</p>`,
+			want:    []string{"before", "after"},
+			notWant: []string{"a<b", "f("},
+		},
+		{
+			name:    "style is dropped",
+			html:    `<style>.x{content:"<p>"}</style><p>visible</p>`,
+			want:    []string{"visible"},
+			notWant: []string{"content", "{"},
+		},
+		{
+			// A quoted attribute value may contain ">"; the tag has not ended.
+			name:    "gt inside a quoted attribute",
+			html:    `<a title="a > b">link</a> tail`,
+			want:    []string{"link", "tail"},
+			notWant: []string{"a > b"},
+		},
+		{
+			name:    "comments are not text",
+			html:    `<p>keep</p><!-- <p>drop</p> -->`,
+			want:    []string{"keep"},
+			notWant: []string{"drop"},
+		},
+		{
+			name:    "doctype is skipped",
+			html:    `<!DOCTYPE html><p>body</p>`,
+			want:    []string{"body"},
+			notWant: []string{"DOCTYPE"},
+		},
+		{
+			name: "entities decode",
+			html: `<p>a &amp; b &lt;c&gt; &#39;d&#39;</p>`,
+			want: []string{"a & b <c> 'd'"},
+		},
+		{
+			name:    "unclosed tags do not eat the document",
+			html:    `<div><p>one<p>two<div>three`,
+			want:    []string{"one", "two", "three"},
+			notWant: []string{"<"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			args, err := json.Marshal(map[string]string{"html": tc.html})
+			if err != nil {
+				t.Fatal(err)
+			}
+			out := loadGen(t, h, "html_"+t.Name(), src, string(args))
+			// Assert against the extracted text, not the JSON envelope: the
+			// envelope's own braces and quotes would match a notWant probe.
+			var got struct {
+				Text string `json:"text"`
+			}
+			if err := json.Unmarshal([]byte(out), &got); err != nil {
+				t.Fatalf("unmarshal %q: %v", out, err)
+			}
+			for _, w := range tc.want {
+				if !strings.Contains(got.Text, w) {
+					t.Errorf("text missing %q: %q", w, got.Text)
+				}
+			}
+			for _, w := range tc.notWant {
+				if strings.Contains(got.Text, w) {
+					t.Errorf("text leaked %q: %q", w, got.Text)
+				}
+			}
+		})
+	}
+}
+
+// findByClass is what a scraping tool needs: elements by class token, in
+// document order, with their text and attributes.
+func TestStdlibHTMLFindByClass(t *testing.T) {
+	h := stdlibHost(t)
+	src := `import { findByClass } from "nine:html";
+	        export default ({ html, cls }) => ({ hits: findByClass(html, cls) });`
+
+	page := `<div>
+	   <a class="result__a js-x" href="/l/?uddg=one"><b>Ti</b>tle One</a>
+	   <div class="result__snippet">Snippet one</div>
+	   <a class="result__anchor" href="/no">not a match</a>
+	   <a class="result__a" href="/two">Title Two</a>
+	 </div>`
+
+	args, _ := json.Marshal(map[string]string{"html": page, "cls": "result__a"})
+	out := loadGen(t, h, "html_class", src, string(args))
+
+	// Nested markup inside the element still yields its text.
+	if !strings.Contains(out, "Title One") || !strings.Contains(out, "Title Two") {
+		t.Errorf("missing a matched element:\n%s", out)
+	}
+	// The href comes back so a scraper can follow it.
+	if !strings.Contains(out, "uddg=one") {
+		t.Errorf("attributes not returned:\n%s", out)
+	}
+	// A class token match, not a prefix match: result__anchor is not result__a.
+	if strings.Contains(out, "not a match") {
+		t.Errorf("prefix class matched:\n%s", out)
 	}
 }
