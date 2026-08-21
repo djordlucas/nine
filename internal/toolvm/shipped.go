@@ -60,6 +60,42 @@ var shippedTools = []shippedTool{
 		// has none.
 		Declaration: Declaration{},
 	},
+	{
+		Name:        "read_file",
+		DisplayName: "Read File",
+		Description: "Read a file from the workspace. Paths resolve under /work; a relative path is taken as relative to it.",
+		Schema:      `{"type":"object","required":["path"],"properties":{"path":{"type":"string","description":"Path under the workspace, e.g. notes.txt or /work/notes.txt"}}}`,
+		File:        "shipped/read_file.js",
+		Declaration: Declaration{FS: []string{"read"}},
+	},
+	{
+		Name:        "write_file",
+		DisplayName: "Write File",
+		Description: "Write content to a file in the workspace, creating parent directories as needed. Paths resolve under /work.",
+		Schema:      `{"type":"object","required":["path","content"],"properties":{"path":{"type":"string"},"content":{"type":"string"}}}`,
+		File:        "shipped/write_file.js",
+		Declaration: Declaration{FS: []string{"write"}},
+	},
+}
+
+// ShippedWorkspace is the host directory a shipped tool's fs grant points at.
+//
+// The guest path is fixed at /work because that is the alias the `files` plugin
+// already accepted, so a model that learned "/work/notes.txt" keeps working. The
+// host side comes from the daemon (NINE_WORKSPACE, or the eval harness's
+// per-case dir). Empty means no workspace, and a tool declaring fs then fails to
+// load rather than registering with a capability that silently does nothing.
+type ShippedWorkspace struct{ Host string }
+
+// shippedWorkspaceGuest is where the workspace appears inside the sandbox.
+const shippedWorkspaceGuest = "/work"
+
+// SetShippedWorkspace installs the mount used by shipped tools that declare fs.
+// Must be called before LoadShipped.
+func (h *Host) SetShippedWorkspace(w ShippedWorkspace) {
+	h.mu.Lock()
+	h.shippedWorkspace = w
+	h.mu.Unlock()
 }
 
 // LoadShipped registers the first-party tools compiled into the binary.
@@ -81,7 +117,11 @@ func (h *Host) LoadShipped(ctx context.Context, collides Collides) {
 			continue
 		}
 
-		grant, err := resolveShipped(s.Declaration)
+		h.mu.RLock()
+		ws := h.shippedWorkspace
+		h.mu.RUnlock()
+
+		grant, err := resolveShipped(s.Declaration, ws)
 		if err != nil {
 			status = append(status, skip(st, err, "grant"))
 			continue
@@ -139,13 +179,29 @@ func (h *Host) LoadShipped(ctx context.Context, collides Collides) {
 // something unsupported is refused rather than silently dropped. A tool that
 // declares nothing gets nothing, which is the common case and the reason `time`
 // was the right one to migrate first.
-func resolveShipped(d Declaration) (Grant, error) {
+func resolveShipped(d Declaration, ws ShippedWorkspace) (Grant, error) {
 	var g Grant
 	if len(d.FS) > 0 {
-		return g, fmt.Errorf("shipped tool declares fs %v, which needs a mount the shipped tier does not define", d.FS)
+		if ws.Host == "" {
+			return Grant{}, fmt.Errorf("shipped tool declares fs %v but no workspace is configured", d.FS)
+		}
+		m := Mount{Host: ws.Host, Guest: shippedWorkspaceGuest}
+		for _, verb := range d.FS {
+			switch verb {
+			case "read":
+				g.FSRead = append(g.FSRead, m)
+			case "write":
+				// A write mount is readable too (nine:fs treats either grant as
+				// admitting a read), so a tool that writes can read back what it
+				// wrote — which the plugin could, and which write_file needs.
+				g.FSWrite = append(g.FSWrite, m)
+			default:
+				return Grant{}, fmt.Errorf("unknown fs capability %q", verb)
+			}
+		}
 	}
 	if len(d.Net) > 0 {
-		return g, fmt.Errorf("shipped tool declares net %v, which needs an allowlist the shipped tier does not yet define", d.Net)
+		return Grant{}, fmt.Errorf("shipped tool declares net %v, which needs an allowlist the shipped tier does not yet define", d.Net)
 	}
 	g.Env = append(g.Env, d.Env...)
 	return g, nil
