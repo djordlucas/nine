@@ -36,7 +36,7 @@ type LoopFactory func(agentID string, params RoleParams) *agent.Loop
 // RoleParams carries the per-session role-resolution inputs the daemon derives
 // from a session plan and passes to the loop factory.
 type RoleParams struct {
-	// Role is the role name to resolve (docs/roles.md §6).
+	// Role is the role name to resolve (adr/roles-design.md §6).
 	Role string
 	// Interactive enables human-in-the-loop tools; effective only for
 	// HITL-eligible roles (R-HITL.1). AND-ed with the role's Interactive flag.

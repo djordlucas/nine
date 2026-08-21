@@ -214,7 +214,7 @@ func (f *AgentBuilder) Build(agentID string, interactive bool) *agent.Loop {
 // BuildForRole creates a root agent loop for agentID from p. Satisfies
 // LoopFactory. Unknown role names resolve to the default leaf role (R-ROLE.9).
 // p.Interactive is effective only for HITL-eligible roles (AND-ed with the
-// role's Interactive flag, docs/roles.md §6); p.OwnsGoal and p.Delegates layer
+// role's Interactive flag, adr/roles-design.md §6); p.OwnsGoal and p.Delegates layer
 // the pursue-shell's goal ownership and delegation opt-in over the resolved
 // role (docs/predefined-agents.md §3.1).
 func (f *AgentBuilder) BuildForRole(agentID string, p RoleParams) *agent.Loop {
