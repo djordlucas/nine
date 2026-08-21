@@ -26,12 +26,31 @@ func TestPluginsLoaded(t *testing.T) {
 	t.Logf("status output:\n%s", out)
 
 	// memory and skills are in-process capabilities of memory.Store, never
-	// plugin subprocesses (docs/architecture.md §1), so they never
-	// appear in the Plugins: line — only check the actual subprocess plugins.
-	required := []string{"shell", "files", "http", "time"}
-	for _, p := range required {
-		if !strings.Contains(out, p) {
-			t.Errorf("plugin %q not found in nine status output", p)
+	// plugin subprocesses (docs/architecture.md §1), so they never appear in the
+	// Plugins: line. Neither do time, files and http any more: they are shipped
+	// sandboxed tools, and shell is the last built-in plugin standing.
+	//
+	// Scoped to the Plugins: line rather than the whole output, because a
+	// substring search over all of `nine status` passes for the wrong reason —
+	// "time" matches "uptime".
+	var plugins string
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "Plugins:") {
+			plugins = line
+			break
+		}
+	}
+	if plugins == "" {
+		t.Fatalf("no Plugins: line in nine status output:\n%s", out)
+	}
+	for _, p := range []string{"shell"} {
+		if !strings.Contains(plugins, p) {
+			t.Errorf("plugin %q not found in %q", p, plugins)
+		}
+	}
+	for _, gone := range []string{"files", "http", "time"} {
+		if strings.Contains(plugins, gone) {
+			t.Errorf("%q is a shipped tool now, but still starts as a plugin: %q", gone, plugins)
 		}
 	}
 }
