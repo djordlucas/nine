@@ -54,8 +54,15 @@ quickjs-verify:
 
 # ── tests ─────────────────────────────────────────────────────────────────────
 
+# The per-package timeout is explicit rather than Go's 10m default. internal/toolvm
+# runs ~4 minutes on its own — it compiles wasm modules — so the default leaves
+# little headroom, and a loaded machine has blown through it. A killed package
+# reports a goroutine dump rather than a test failure, which is the least useful
+# way to learn a suite is slow. Override for a slow host:
+#   NINE_TEST_TIMEOUT=30m make test
+NINE_TEST_TIMEOUT ?= 20m
 test:
-	$(GO) test $(GOFLAGS) ./...
+	$(GO) test $(GOFLAGS) -timeout $(NINE_TEST_TIMEOUT) ./...
 
 test-v:
 	$(GO) test $(GOFLAGS) -v ./...

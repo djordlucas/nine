@@ -92,10 +92,11 @@ max_bytes   = 1048576
 }
 
 // The egress allowlist is only meaningful if the operator must be specific. Each
-// of these is a way of accidentally saying "anywhere".
+// of these is a way of *accidentally* saying "anywhere". A bare "*" is not among
+// them: it says "anywhere" deliberately and in full, and is accepted — see
+// TestNetHTTPGrantAcceptsDeliberateWildcard.
 func TestNetHTTPGrantRejectsVagueAllowlists(t *testing.T) {
 	for _, tc := range []struct{ name, table, want string }{
-		{"bare wildcard", "allow_hosts = [\"*\"]\nmethods = [\"GET\"]", "native plugin"},
 		{"no allow_hosts", "methods = [\"GET\"]", "needs allow_hosts"},
 		{"no methods", "allow_hosts = [\"api.example.com\"]", "needs methods"},
 		{"a URL rather than a hostname", "allow_hosts = [\"https://api.example.com/v1\"]\nmethods = [\"GET\"]", "must be a hostname"},
@@ -180,5 +181,24 @@ func TestToolsEnabledIsNotEnvOverridable(t *testing.T) {
 
 	if cfg.Tools.Enabled {
 		t.Error("[tools] enabled was switched on by an environment variable")
+	}
+}
+
+// A bare "*" is the one pattern an operator has to write out, so it is accepted
+// where the vague forms above are not.
+//
+// It grants any *host*. It does not grant any *address*: the dial-time checks in
+// internal/toolvm/ssrf.go run whatever the allowlist says, which is why
+// permitting this is not the escalation the old refusal treated it as. The
+// refusal pointed operators at a native plugin instead — a subprocess with the
+// daemon's uid and none of those checks.
+func TestNetHTTPGrantAcceptsDeliberateWildcard(t *testing.T) {
+	cfg, err := loadTOML(t, "[tool.fetcher.capabilities.net.http]\nallow_hosts = [\"*\"]\nmethods = [\"GET\"]\n")
+	if err != nil {
+		t.Fatalf("a bare wildcard was refused: %v", err)
+	}
+	g := cfg.Tool["fetcher"].Capabilities.Net.HTTP
+	if g == nil || len(g.AllowHosts) != 1 || g.AllowHosts[0] != "*" {
+		t.Errorf("allow_hosts = %+v, want the wildcard preserved", g)
 	}
 }
