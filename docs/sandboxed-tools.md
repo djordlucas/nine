@@ -3,7 +3,7 @@
 - **Status:** **Stages 1–6 built** (rev 1) — the design is fully implemented. This
   note remains the design rationale; the normative contract for what exists is
   `spec/contracts/toolvm.md` (`R-TVM.*`) and the authoring guide is
-  `docs/writing-sandboxed-tools.md`. Stage 6 (the `nine:*` stdlib, §4.2, and
+  `writing-sandboxed-tools.md`. Stage 6 (the `nine:*` stdlib, §4.2, and
   external npm dependencies with the write-time esbuild bundler, §4.4, incl. the
   `deps`+`net.http` interlock) is `R-TVM.15`.
   **Built:** the wazero host and ABI (§3–§4), the `js` kind with a trimmed
@@ -31,7 +31,7 @@
   enables none of it behaves exactly as it does today.
 - **Depends on:** the tool dispatcher (`spec/contracts/dispatcher.md`), the memory
   store (generated tools are rows), the event journal (`event-journal.md`, audit),
-  HITL approval gates (`docs/hitl.md`, optional review), and the pull-not-push
+  HITL approval gates (`hitl.md`, optional review), and the pull-not-push
   discipline of `event-journal.md` (how a new tool becomes visible).
 
 ---
@@ -57,10 +57,10 @@
 This does not let Nine modify Nine. There is no path here by which the agent
 edits Go source, rebuilds the binary, alters `nine.toml`, writes a native plugin,
 or changes a built-in skill. Every one of those stays removed
-(`docs/self-modification.md`). Nine's executable shape remains fixed.
+(`self-modification.md`). Nine's executable shape remains fixed.
 
 What changes is narrower and needs to be stated precisely, because
-`docs/self-modification.md` and `R-PLUG.7` currently forbid it in passing:
+`self-modification.md` and `R-PLUG.7` currently forbid it in passing:
 
 > **R-PLUG.7:** No agent-reachable tool or path may write plugin source, build a
 > plugin, start a new plugin binary, hot-swap, or roll back a plugin. This is a
@@ -153,7 +153,7 @@ module exporting `run`, and there are two ways to get one:
 
 This is what makes generated tools tractable. An LLM writes correct JavaScript
 far better than it writes Rust that compiles to wasm, and — decisively — **there
-is no build step**, so no toolchain in the runtime image (`docs/self-modification.md`
+is no build step**, so no toolchain in the runtime image (`self-modification.md`
 is emphatic that there is none, and this design does not add one).
 
 Both kinds are the same to everything downstream: same ABI, same capability
@@ -180,7 +180,7 @@ boundary. Everything crossing the boundary is a UTF-8 JSON byte slice.
 
 **ABI versioning.** This introduces `toolvm.ABIVersion`, independent of
 `plugin.ProtocolVersion` (which this design does not touch — see
-`docs/versioning.md`). A module declaring an unsupported ABI is refused at load.
+`versioning.md`). A module declaring an unsupported ABI is refused at load.
 
 ### 4.1 The interpreter surface must be trimmed
 
@@ -235,7 +235,7 @@ work fine.
 
 Nine therefore **never resolves a dependency**. It has no package manager, no
 lockfile, no registry client, and no network at load time — and adding any of
-those to the runtime image would undo `docs/self-modification.md` exactly as a
+those to the runtime image would undo `self-modification.md` exactly as a
 compiler would. Instead, the split follows the two authors again:
 
 | | Developer tool | Generated tool |
@@ -504,7 +504,7 @@ A new core-intercepted tool, `tool_write`, in the shape of `skill_write`:
 ```
 
 The row lands in a `tools` table with `source = agent`, mirroring how skills
-already split built-in from agent-authored (`docs/self-modification.md`). Kind is
+already split built-in from agent-authored (`self-modification.md`). Kind is
 always `js` — the agent cannot supply a `.wasm` blob, because a binary blob is
 not reviewable and there is no reason to accept one.
 
@@ -685,7 +685,7 @@ Four properties worth stating:
 Shipping `fs.read` over the workspace as the default ceiling is a deliberate
 choice for usefulness, and it has one consequence worth naming precisely.
 
-It grants the *agent* no new reach: the `files` plugin already reads the
+It grants the *agent* no new reach: file reading already covered the
 workspace, so nothing becomes visible to Nine that was not already. What changes
 is the reach of **a tool's dependencies** (§4.4). With an empty ceiling, a hostile
 npm package can only return a wrong answer. With workspace read, it can *see the
@@ -795,7 +795,7 @@ show <name>` prints source, grants, and provenance.
 ### 9.4 Human review
 
 `[tools.agent].require_approval` selects when `tool_write` and `js_eval` route
-through the existing HITL approval gate (`docs/hitl.md`, R-HITL.5). The gate is
+through the existing HITL approval gate (`hitl.md`, R-HITL.5). The gate is
 reused wholesale — no new prompt surface.
 
 | Value | Gates when |
@@ -894,7 +894,7 @@ Three properties this has to hold:
 - **Not in the default build.** `make quickjs-wasm` is a separate target,
   invoked only on a version bump. The blob is committed, so an ordinary
   `make build` needs no wasi-sdk, no clang, no clone — and critically **the
-  runtime image gains no toolchain**, which `docs/self-modification.md` insists
+  runtime image gains no toolchain**, which `self-modification.md` insists
   on and this design must not quietly undo.
 - **Verified, not trusted.** CI re-checks `qjs.wasm.sha256` on every run, and the
   version bump PR is where a human reviews the diff. A binary artifact in the
@@ -964,18 +964,18 @@ Reconciled via `/sync-nine` when the code lands, not before:
 
 | Document | Change |
 |---|---|
-| `docs/self-modification.md` | Amend "Generate / build / hot-swap plugins — Removed". Native plugins stay removed; add generated *sandboxed tools* as permitted, with the code/capabilities split of §2 as the rationale. |
+| `self-modification.md` | Amend "Generate / build / hot-swap plugins — Removed". Native plugins stay removed; add generated *sandboxed tools* as permitted, with the code/capabilities split of §2 as the rationale. |
 | `spec/contracts/plugin.md` (R-PLUG.7) | Narrow to native plugins. "Nine cannot grant itself capabilities" stays **unchanged** — it remains true and is now load-bearing for two subsystems. |
 | `spec/contracts/toolvm.md` | **New.** `R-TVM.*`: ABI, capability set, grant resolution, load sequence, collision rules, resource bounds. |
 | `spec/contracts/dispatcher.md` (R-DISP.3/4) | Tool taxonomy gains a third branch: plugin / core-intercepted / **sandboxed**. |
-| `docs/configuration.md` | `[tools]`, `[tool.<name>]`, `[tools.agent]`, `[tools.agent.deps]`. |
-| `docs/usage.md` (deps) | `nine tools deps`, lockfile inspection, freeze/thaw. |
-| `docs/versioning.md` | `toolvm.ABIVersion` alongside `plugin.ProtocolVersion`. |
-| `docs/glossary.md` | *sandboxed tool*, *generated tool*, *capability grant*, *`nine:*` stdlib* — the overloading warning in CLAUDE.md applies with force here. |
-| `docs/writing-sandboxed-tools.md` | **New.** Authoring guide: manifest format, the ABI, bundling deps with esbuild (§4.2), the `nine:*` set, and what QuickJS does *not* provide. |
-| `docs/usage.md` | `nine tools list/show/reload`, `nine tool validate`. |
-| `docs/hitl.md` | `require_approval = "on_capability"` as a new gate trigger (§9.4). |
+| `configuration.md` | `[tools]`, `[tool.<name>]`, `[tools.agent]`, `[tools.agent.deps]`. |
+| `usage.md` (deps) | `nine tools deps`, lockfile inspection, freeze/thaw. |
+| `versioning.md` | `toolvm.ABIVersion` alongside `plugin.ProtocolVersion`. |
+| `glossary.md` | *sandboxed tool*, *generated tool*, *capability grant*, *`nine:*` stdlib* — the overloading warning in CLAUDE.md applies with force here. |
+| `writing-sandboxed-tools.md` | **New.** Authoring guide: manifest format, the ABI, bundling deps with esbuild (§4.2), the `nine:*` set, and what QuickJS does *not* provide. |
+| `usage.md` | `nine tools list/show/reload`, `nine tool validate`. |
+| `hitl.md` | `require_approval = "on_capability"` as a new gate trigger (§9.4). |
 | `spec/contracts/dispatcher.md` (R-DISP.3) | `tool_write` and `js_eval` join the core-intercepted tool list. |
 | `docs/README.md` | Index entry. |
 | `Makefile` / CI | `make quickjs-wasm` (bump-only, §10.1) and the `qjs.wasm.sha256` verification step. |
-| `docs/installation.md` | Note that the committed blob means no wasi-sdk for an ordinary build. |
+| `installation.md` | Note that the committed blob means no wasi-sdk for an ordinary build. |

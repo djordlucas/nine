@@ -1,10 +1,24 @@
 # Plugins
 
-Plugins are the mechanism through which Nine gains most of its capabilities — running shell commands, reading/writing files, searching the web. Nine ships with four default plugins, fixed at build time. Built-in plugins are not generated or loaded at runtime; to add one, add it to the source repo and rebuild the image.
+A plugin is a **subprocess** that provides tools. It is the right shape for a
+capability that genuinely needs the daemon's own authority on the host —
+running shell commands is the example, and `shell` is the one built-in plugin
+Nine ships.
 
-All four — `shell`, `files`, `http`, `time` — are Go, and are compiled **into the `nine` binary** (`internal/builtins`) rather than shipped as separate executables. The daemon starts each by re-executing itself as `nine plugin serve <name>`, so each still runs as its own isolated process; there is simply one artifact to build and ship.
+Most capabilities do not need that. Reading and writing files, fetching over
+HTTP and reading the clock are [sandboxed tools](sandboxed-tools.md): they run
+inside the wasm tool host with only the capabilities they are granted, and no
+subprocess at all. A tool that needs a workspace directory is given that
+directory and nothing else, which is a much narrower grant than a process
+running as the daemon's user.
 
-Capabilities Nine does not implement itself arrive two other ways, both of which present as ordinary plugins: an **MCP server** declared in `[[mcp.server]]` (see [MCP servers](#mcp-servers)), and a **user plugin** dropped in `[plugins].user_dir`. Browser automation is the worked example of the first — see [Browser Automation](browser.md).
+Built-in plugins are fixed at build time — not generated or loaded at runtime.
+`shell` is Go, compiled **into the `nine` binary** rather than shipped as a
+separate executable; the daemon starts it by re-executing itself as
+`nine plugin serve shell`, so it still runs as its own isolated process while
+there is only one artifact to build and ship.
+
+Capabilities Nine does not implement itself arrive two further ways, both of which present as ordinary plugins: an **MCP server** declared in `[[mcp.server]]` (see [MCP servers](#mcp-servers)), and a **user plugin** dropped in `[plugins].user_dir`. Browser automation is the worked example of the first — see [Browser Automation](browser.md).
 
 **Withholding a plugin.** `[plugins] disabled = ["shell"]` (or `NINE_PLUGINS_DISABLED=shell`) stops a plugin from ever starting — no process, no socket, no tools registered. It works by name and covers built-ins, MCP servers (as `mcp:<name>`), and your own plugins alike. This is how you run without `shell`, which executes arbitrary commands. A disabled plugin is reported by `nine plugins` as `off` rather than silently missing, so a tool that has gone absent is traceable to the decision that removed it. It is an operator setting read at boot; no agent or wire message can switch a plugin on or off.
 
@@ -326,7 +340,7 @@ the container if it was built for it). They are purely additive — built-ins ar
 never affected — and the directory is never required: empty or absent means "no
 user plugins".
 
-Discovery is boot-only, mirroring skills (`docs/skills.md`), with a live
+Discovery is boot-only, mirroring skills (`skills.md`), with a live
 convenience path: `nine plugins reload` re-scans without a restart.
 
 ### Layout — sidecar manifest

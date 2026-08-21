@@ -1,9 +1,9 @@
 # Roles — worker kinds as data
 
-**Status:** Built (2026-07-04) · **Depends on:** skills, dispatcher, builder, orchestration, session-plans · **Supersedes:** the `depth int` mechanism in the loop builder and the `AgentWorker`/sub-agent fork of identity
+How Nine models worker kinds — what a session is allowed to do, and who it may
+delegate to — as data rather than as branches in the loop.
 
-This document was the **implementation handoff** and is kept as design rationale. The
-normative requirements now live in [`spec/contracts/roles.md`](../spec/contracts/roles.md)
+The normative requirements live in [`spec/contracts/roles.md`](../spec/contracts/roles.md)
 (with the R-ROLE.* deltas applied to `dispatcher.md`, `orchestration.md`, `skills.md`,
 and the gates added to `spec/conformance.md`) — where this document and the spec
 disagree, the spec wins. The implementation lives in `internal/runtime/roles.go`,
@@ -125,7 +125,7 @@ role:
   tools: [shell, read_file, write_file, file_store, file_fetch, file_list,
           file_search_text, memory_get, memory_set, memory_list, skill_read, skill_list]
   # structural flags below are honored for operator-authored skills — built-in
-  # and user (docs/skills.md) alike (R-ROLE.7); for agent-authored skills they
+  # and user (skills.md) alike (R-ROLE.7); for agent-authored skills they
   # are ignored and forced to leaf defaults.
   delegates: false
   spawns_goals: false
@@ -154,10 +154,10 @@ regresses if the orchestrator role ships with an empty body.
 ## 4. Built-in roles (seeded from `skills/`)
 
 Ship these as embedded skill files (suggested: `skills/roles/*.md`, still picked up by
-the existing `//go:embed`). Tool names below are exact (verified against the running
-plugins: `files` → `read_file`/`write_file`; `http` → `http_get`/`http_post`/
-`web_search`/`web_page_read`; `shell` → `shell`; `time` → `time`; core-intercepted →
-`memory_*`, `file_*`, `skill_*`).
+the existing `//go:embed`). Tool names below are exact: sandboxed tools →
+`read_file`/`write_file`, `http_get`/`http_post`, `web_search`/`web_page_read`,
+`time`; the `shell` plugin → `shell`; core-intercepted → `memory_*`, `file_*`,
+`skill_*`.
 
 **MCP tools and allowlists.** An MCP server's tools are prefixed with the server name
 (`playwright__browser_navigate`), and the prefix is chosen by the operator in
