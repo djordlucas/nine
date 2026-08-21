@@ -19,6 +19,7 @@ import (
 	"nine/internal/plugin"
 	"nine/internal/protocol"
 	"nine/internal/runtime"
+	"nine/internal/toolvm"
 )
 
 // Harness stands up a real Nine daemon in-process — the production wiring from
@@ -146,7 +147,6 @@ func (h *Harness) Run(ctx context.Context, c *Case, provider llm.Provider) (res 
 		// os.Executable() here is the test binary, which has no `plugin serve`
 		// subcommand — point the manager at the nine binary under test instead.
 		pluginMgr.SetBuiltinBinary(h.NineBin)
-		pluginMgr.TryStartBuiltin("files", "NINE_WORKSPACE="+workspace)
 		pluginMgr.TryStartBuiltin("shell")
 		pluginMgr.TryStartBuiltin("http")
 		// 5b. MCP servers the case declares, mirroring startMCPServers in
@@ -186,8 +186,22 @@ func (h *Harness) Run(ctx context.Context, c *Case, provider llm.Provider) (res 
 		}
 	}
 
+	// The sandboxed-tool host, with the case's workspace as the mount for shipped
+	// tools that declare fs. Cases used to get read_file/write_file from the
+	// `files` plugin; those are shipped tools now, so without this a case that
+	// touches a file has no tool to do it with — and eval-replay would not catch
+	// it, because the file cases are Track L.
+	toolHost, terr := toolvm.Open(ctx, toolvm.Config{UserDir: filepath.Join(workspace, ".tools")})
+	if terr != nil {
+		return nil, fmt.Errorf("open sandboxed tool host: %w", terr)
+	}
+	toolHost.SetShippedWorkspace(toolvm.ShippedWorkspace{Host: workspace})
+	toolHost.LoadShipped(ctx, nil)
+	r.cleanups = append(r.cleanups, func() { toolHost.Close(ctx) }) //nolint:errcheck
+
 	sock := filepath.Join(workspace, "d.sock")
 	asm := runtime.Assemble(runtime.AssemblyConfig{
+		Tools:               toolHost,
 		SocketPath:          sock,
 		Store:               store,
 		Plugins:             pluginMgr,

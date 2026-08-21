@@ -3,6 +3,9 @@ package toolvm
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -129,15 +132,114 @@ func TestLoadShippedYieldsToAnExistingOwner(t *testing.T) {
 // resolveShipped refuses a declaration the tier cannot actually confer, rather
 // than registering a tool whose capability silently does nothing.
 func TestResolveShippedRefusesUnbackedCapabilities(t *testing.T) {
-	if _, err := resolveShipped(Declaration{FS: []string{"read"}}); err == nil {
-		t.Error("a shipped fs declaration was accepted with no mount to back it")
+	if _, err := resolveShipped(Declaration{FS: []string{"read"}}, ShippedWorkspace{}); err == nil {
+		t.Error("a shipped fs declaration was accepted with no workspace to back it")
 	}
-	if _, err := resolveShipped(Declaration{Net: []string{"http"}}); err == nil {
+	// With a workspace it resolves, and only to that workspace.
+	g2, err := resolveShipped(Declaration{FS: []string{"read", "write"}}, ShippedWorkspace{Host: "/tmp/ws"})
+	if err != nil {
+		t.Fatalf("fs with a workspace should resolve: %v", err)
+	}
+	if len(g2.FSRead) != 1 || g2.FSRead[0].Host != "/tmp/ws" || g2.FSRead[0].Guest != "/work" {
+		t.Errorf("read mount = %+v, want /tmp/ws at /work", g2.FSRead)
+	}
+	if len(g2.FSWrite) != 1 || g2.FSWrite[0].Host != "/tmp/ws" {
+		t.Errorf("write mount = %+v", g2.FSWrite)
+	}
+	if _, err := resolveShipped(Declaration{Net: []string{"http"}}, ShippedWorkspace{}); err == nil {
 		t.Error("a shipped net.http declaration was accepted with no allowlist")
 	}
-	if g, err := resolveShipped(Declaration{}); err != nil {
+	if g, err := resolveShipped(Declaration{}, ShippedWorkspace{}); err != nil {
 		t.Errorf("an empty declaration should resolve: %v", err)
 	} else if len(g.capabilities()) != 0 {
 		t.Errorf("empty declaration conferred %v", g.capabilities())
+	}
+}
+
+// The reason this migration waited for a qjs.wasm bump: the plugin's write_file
+// created parent directories, and a sandboxed tool had no way to. A write_file
+// that cannot make a directory is a downgrade for the software-dev and sysadmin
+// roles, both of which carry it.
+func TestShippedWriteFileCreatesParentDirectories(t *testing.T) {
+	ctx := context.Background()
+	ws := t.TempDir()
+	h, err := Open(ctx, Config{UserDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer h.Close(ctx) //nolint:errcheck
+	h.SetShippedWorkspace(ShippedWorkspace{Host: ws})
+	h.LoadShipped(ctx, nil)
+
+	// Two levels deep into an empty workspace — the case that used to fail.
+	if _, err := h.Call(ctx, "write_file",
+		json.RawMessage(`{"path":"notes/2026/today.md","content":"hello"}`)); err != nil {
+		t.Fatalf("write_file into a new tree: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(ws, "notes", "2026", "today.md"))
+	if err != nil {
+		t.Fatalf("file was not written to the host: %v", err)
+	}
+	if string(got) != "hello" {
+		t.Errorf("content = %q, want hello", got)
+	}
+
+	// And it reads back through the tool.
+	out, err := h.Call(ctx, "read_file", json.RawMessage(`{"path":"notes/2026/today.md"}`))
+	if err != nil {
+		t.Fatalf("read_file: %v", err)
+	}
+	if out != "hello" {
+		t.Errorf("read_file = %q, want hello", out)
+	}
+}
+
+// The narrowing you chose: reads are confined to the mount, where the plugin
+// read any absolute path on the host.
+func TestShippedReadFileIsConfinedToTheWorkspace(t *testing.T) {
+	ctx := context.Background()
+	ws := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(outside, []byte("not yours"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	h, err := Open(ctx, Config{UserDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer h.Close(ctx) //nolint:errcheck
+	h.SetShippedWorkspace(ShippedWorkspace{Host: ws})
+	h.LoadShipped(ctx, nil)
+
+	_, err = h.Call(ctx, "read_file", json.RawMessage(`{"path":`+strconv.Quote(outside)+`}`))
+	if err == nil {
+		t.Fatal("read_file reached a file outside the workspace")
+	}
+	if !strings.Contains(err.Error(), "outside this tool's workspace") {
+		t.Errorf("error = %v, want it to explain the confinement", err)
+	}
+}
+
+// /work is the alias the plugin accepted, so a model that learned it keeps working.
+func TestShippedFilesAcceptWorkAlias(t *testing.T) {
+	ctx := context.Background()
+	ws := t.TempDir()
+	h, err := Open(ctx, Config{UserDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer h.Close(ctx) //nolint:errcheck
+	h.SetShippedWorkspace(ShippedWorkspace{Host: ws})
+	h.LoadShipped(ctx, nil)
+
+	if _, err := h.Call(ctx, "write_file",
+		json.RawMessage(`{"path":"/work/out.txt","content":"aliased"}`)); err != nil {
+		t.Fatalf("write via /work: %v", err)
+	}
+	out, err := h.Call(ctx, "read_file", json.RawMessage(`{"path":"/work/out.txt"}`))
+	if err != nil || out != "aliased" {
+		t.Errorf("read via /work = %q, %v", out, err)
 	}
 }

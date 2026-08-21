@@ -510,8 +510,9 @@ exist for sandboxed tools and not for the plugin.
 
 **Remaining, and they are not equally reachable.**
 
-**`files` is blocked on a missing host primitive.** Attempted and reverted rather
-than shipped. Two behavior changes surface, and only the first is a matter of
+**`files` is migrated. The blocker was removed rather than worked around.**
+
+The first attempt was reverted, for a reason worth keeping: Two behavior changes surface, and only the first is a matter of
 policy:
 
 1. *Reads narrow to the mount.* The plugin's `read_file` deliberately read **any
@@ -527,18 +528,22 @@ policy:
    `src/foo.go` into a fresh workspace fails — and cannot fix it, because there
    is no way to make the directory either.
 
-The second is not a policy question and cannot be worked around inside the tool.
-It needs `mkdir` in the wasm host, which means rebuilding `qjs.wasm` — a
-committed artifact whose build script says it runs "only on a deliberate version
-bump … and review the resulting hash change in the bump PR", and which needs a
-`wasi-sdk` toolchain the ordinary build deliberately does not have. That is the
-right way to add it, and it is a separate change from this one.
+The second was not a policy question and could not be worked around inside the
+tool. It needed `mkdir` in the wasm host — and that is what was done: `qjs.wasm`
+was rebuilt with a recursive, idempotent `fs.mkdir`, gated by the same `fs.write`
+grant, and `nine:fs` exports it. Normative as **R-TVM.17**.
 
-Shipping `files` without it would give the `software-dev` and `sysadmin` roles —
-both of which list `write_file` — a tool that cannot write into a directory tree.
-The `files-write-read` eval would still pass, because it writes to the workspace
-root; that is a reason to distrust the eval as evidence here, not a reason to
-ship.
+I had also said the bump was impractical here because it "needs a `wasi-sdk`
+toolchain the ordinary build deliberately does not have". Half right: the
+ordinary build does not have it, but `build.sh` **downloads it on demand**, so
+the bump was always doable. That was a fourth claim of mine that did not survive
+being checked.
+
+Shipping `files` *without* `mkdir` would have given the `software-dev` and
+`sysadmin` roles — both of which list `write_file` — a tool that cannot write
+into a directory tree. **The `files-write-read` eval would not have caught it**,
+because it writes to the workspace root. That is a reason to distrust that eval
+as evidence, not a reason to have shipped.
 
 **`http` is not blocked on a primitive, but it does not divide cleanly.**
 `net.http` is a complete host capability (R-TVM.12) — `fetch` in the harness, the
@@ -565,12 +570,21 @@ only as a step toward finishing, not as a resting state.
 **So both remaining migrations need groundwork rather than more of the same
 work**, and each is a deliberate change with its own review:
 
-| Blocker | What it needs |
+| | Status |
 |---|---|
-| `files` — `write_file` cannot create directories | `mkdir` in the wasm host → a reviewed `qjs.wasm` bump |
-| `http` — no HTML parser in the guest | the deps/esbuild pipeline extended to the shipped tier |
+| the shipped tier | **done** (R-TVM.16) |
+| `time` | **migrated** — UTC, and redundant with the ambient time line |
+| `files` | **migrated** — reads confined to `/work`, `mkdir` added (R-TVM.17) |
+| `http` | remaining: needs the deps/esbuild pipeline extended to the shipped tier |
+| `shell` | stays a plugin as proposed — it needs real `exec` |
 
-The tier itself is done and proven (R-TVM.16). `shell` stays a plugin as proposed.
+**A gap the migration exposed in the eval harness.** It never set `Tools` in its
+`AssemblyConfig`, so cases ran with **no sandboxed-tool host at all** — fine
+while every built-in was a plugin, and silently fatal the moment one was not.
+`eval-replay` would not have caught it either, since the file cases are Track L.
+The harness now opens a host and mounts the case's workspace. Worth remembering
+as the same class of problem F3 was about: the harness reproducing production
+only as far as someone remembered to make it.
 
 `shell` stays a plugin as proposed — it needs real `exec`.
 

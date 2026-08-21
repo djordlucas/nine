@@ -18,6 +18,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <errno.h>
 
 #include "quickjs.h"
 
@@ -323,6 +325,58 @@ static JSValue js_nine_fs_write(JSContext *ctx, JSValueConst this_val, int argc,
     return JS_UNDEFINED;
 }
 
+/* Create a directory and any missing parents, like `mkdir -p`.
+ *
+ * The recursive form is the one that is actually needed: a tool asked to write
+ * "notes/2026/today.md" into an empty workspace has to make two directories, and
+ * a non-recursive mkdir would make the tool implement the loop itself against a
+ * path syntax it cannot see the root of.
+ *
+ * Containment is the pre-open's, exactly as for write: this walks the path
+ * creating components, and every one of them resolves inside the mount because
+ * wazero gave the guest nothing else to resolve against. An existing directory
+ * is success, so calling it before every write is cheap and idempotent.
+ */
+static JSValue js_nine_fs_mkdir(JSContext *ctx, JSValueConst this_val, int argc,
+                                JSValueConst *argv) {
+    (void)this_val;
+    if (argc < 1) return JS_ThrowTypeError(ctx, "mkdir requires a path");
+    const char *path = JS_ToCString(ctx, argv[0]);
+    if (!path) return JS_EXCEPTION;
+
+    size_t n = strlen(path);
+    if (n == 0) {
+        JS_FreeCString(ctx, path);
+        return JS_ThrowTypeError(ctx, "mkdir requires a non-empty path");
+    }
+
+    char *buf = malloc(n + 1);
+    if (!buf) {
+        JS_FreeCString(ctx, path);
+        return JS_ThrowInternalError(ctx, "out of memory");
+    }
+    memcpy(buf, path, n + 1);
+
+    /* Walk the components, creating each. Start at 1 so a leading '/' is part of
+     * the first component rather than an empty one. */
+    for (size_t i = 1; i <= n; i++) {
+        if (buf[i] != '/' && buf[i] != '\0') continue;
+        char saved = buf[i];
+        buf[i] = '\0';
+        if (mkdir(buf, 0777) != 0 && errno != EEXIST) {
+            JSValue e = JS_ThrowTypeError(ctx, "cannot create directory %s", buf);
+            free(buf);
+            JS_FreeCString(ctx, path);
+            return e;
+        }
+        buf[i] = saved;
+    }
+
+    free(buf);
+    JS_FreeCString(ctx, path);
+    return JS_UNDEFINED;
+}
+
 /* List a directory. Names only, no recursion: a tool that wants a tree can walk
  * it, and the flat form is what a pre-open makes cheap and obvious. */
 static JSValue js_nine_fs_readdir(JSContext *ctx, JSValueConst this_val, int argc,
@@ -516,6 +570,8 @@ __attribute__((export_name("nine_run"))) uint64_t nine_run(uint32_t ptr, uint32_
                       JS_NewCFunction(ctx, js_nine_fs_read, "__nine_fs_read", 1));
     JS_SetPropertyStr(ctx, global, "__nine_fs_write",
                       JS_NewCFunction(ctx, js_nine_fs_write, "__nine_fs_write", 2));
+    JS_SetPropertyStr(ctx, global, "__nine_fs_mkdir",
+                      JS_NewCFunction(ctx, js_nine_fs_mkdir, "__nine_fs_mkdir", 1));
     JS_SetPropertyStr(ctx, global, "__nine_fs_readdir",
                       JS_NewCFunction(ctx, js_nine_fs_readdir, "__nine_fs_readdir", 1));
     JS_SetPropertyStr(ctx, global, "__nine_fs_stat",
