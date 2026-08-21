@@ -131,7 +131,7 @@ The `Dispatcher` is a registry of `handlers` (tool name → function). It routes
 | Catalog | `tool_list` (full enumeration of the advertised tool set), `tool_search`, `skill_search` (embedder-gated catalog search) |
 | Sub-agents | `run_agent`, `run_agents` |
 | Workflows | `workflow_create`, `workflow_get`, `workflow_update`, `workflow_list`, `workflow_retry_step` |
-| Goals | `goal_create`, `goal_get`, `goal_list`, `goal_update_status`, `goal_append_subtree` |
+| Goals | `goal_create`, `goal_get`, `goal_list`, `goal_update_status` |
 | Supervision | `gap_report` |
 | Plugin tools | any tool registered via `RegisterPlugin` |
 

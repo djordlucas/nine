@@ -110,7 +110,7 @@ No request `id` — correlation is per-connection now, which is the point.
     `runtime/daemon.go`: `os.Remove(path)` before `net.Listen("unix", …)`.
 - **Concurrency:** a plugin advertises `max_concurrent` in its `describe` result, mapped
   straight onto `Transport.MaxConnsPerHost` — including Go's native `0` = **unbounded**.
-  Stateless plugins (`shell`/`http`/`files`/`time`) advertise `0`: their handlers are safe
+  A stateless plugin such as `shell` advertises `0`: its handlers are safe
   to run fully concurrent, so there's no reason to cap them at an arbitrary N. Only a
   plugin with shared mutable state declares a finite cap — `browser` sets `1` (single
   page). Bounding on the client side means the server needs no semaphore.
@@ -265,6 +265,6 @@ Tests:
   ctx thread in Phase 5).
 - Docs: `spec/contracts/plugin.md` is updated up-front with the HTTP transport, the
   envelope, and `max_concurrent` (R-PLUG.8), carrying a "Transport migration" note so it
-  describes the target while the reference tree still ships stdio. `docs/plugins.md` is
+  describes the target while the reference tree still ships stdio. `plugins.md` is
   still to update once shipped. `spec/contracts/wire-protocol.md` is **not** affected — it
   covers the daemon↔client `Msg` stream, not the daemon↔plugin transport.

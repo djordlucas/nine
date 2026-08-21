@@ -144,7 +144,7 @@ standing_agents_authoritative = false
 
 [plugins]
 # The directory holding plugins that ship as their own binaries. Nine ships none:
-# the Go built-ins (shell/files/http/time) are compiled into the nine binary and
+# the Go built-in (shell) is compiled into the nine binary and
 # started as `nine plugin serve <name>`, so they are not looked up here at all.
 # It stays configurable for a plugin of your own that puts its binary here; in
 # Docker the path is /opt/nine/bin, which the container sets via
@@ -310,7 +310,7 @@ plan_mode = "plan-only"
 plan_approval = "on-risky"
 
 [tools]
-# max_output_tokens — the per-result tool output cap (tool-output.md).
+# max_output_tokens — the per-result tool output cap (docs/tool-output.md).
 # A result larger than this is written whole to the memory file store under
 # spill/<agent-id>/ and replaced in context by a short preview naming the path,
 # which the agent can read back with file_fetch(offset, limit) or search with

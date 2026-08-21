@@ -147,8 +147,9 @@ A single, fixed session with agent ID `self-reflection`
   call `memory_set` to update:
   - `self/capabilities` — a concise description of what it can currently do
   - `self/learned` — a short, dated entry with key insights from recent activity
-- **`OnTurnEnd`** records each successful reflection turn's result text as a new row
-  in the `reflections` table (`nine reflections` / `/reflections`).
+- Each successful reflection turn's result is recorded in the **event journal**
+  under the session's own agent id, and read back with `nine reflections` (or
+  `/reflections`).
 
 This is how the agent's self-model stays current without user interaction. The
 `internal/selfmodel.Assembler` reads `self/identity`, `self/capabilities`, and
@@ -163,11 +164,10 @@ See [Goals](architecture.md#goals--state-write-paths-status) for the LLM-facing 
 goal gets its own background session running the `pursue` routine, keyed 1:1 by
 `agentID == goalID`.
 
-- **`OnIdle`** — if the goal is still `active`, returns a prompt
-  (`PursuePromptTemplate`) asking the session to `goal_get` the goal and its subtree,
-  take any useful action (including spawning sub-goals/sub-agents and recording them
-  via `goal_append_subtree`), and call `goal_update_status` if its status should
-  change. If the goal is missing or no longer active, `OnIdle` returns `ok == false`
+- **On idle** — if the goal is still `active`, the session is prompted to fetch
+  the goal and its sub-goals, take any useful action (including spawning
+  sub-goals and sub-agents, which are recorded by creating them under the
+  goal), and update the goal's status if it should change. If the goal is missing or no longer active, `OnIdle` returns `ok == false`
   **and** syncs the routine's `status` the same way `OnTurnEnd` does (a missing goal
   collapses to `done`). This matters when a goal is paused/finished/archived (e.g.
   via `goal_update_status`) while the session sits idle: `OnTurnEnd` only fires
