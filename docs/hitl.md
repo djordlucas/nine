@@ -82,7 +82,7 @@ The question format is tool-aware: `shell` shows `command`, `write_file` shows `
 
 ### The generated-tools gate
 
-The generated tier (`docs/sandboxed-tools.md` §9.4, `spec/contracts/toolvm.md` R-TVM.14) reuses this same gate for `tool_write` and `js_eval`, but keyed off its own switch, `[tools.agent].require_approval`, rather than the `[hitl]` list — and with a per-call decision the `[hitl]` list does not have:
+The generated tier (`sandboxed-tools.md` §9.4, `spec/contracts/toolvm.md` R-TVM.14) reuses this same gate for `tool_write` and `js_eval`, but keyed off its own switch, `[tools.agent].require_approval`, rather than the `[hitl]` list — and with a per-call decision the `[hitl]` list does not have:
 
 | `[tools.agent].require_approval` | Gates |
 |---|---|

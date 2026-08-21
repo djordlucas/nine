@@ -1,6 +1,7 @@
 # Scheduling — how idle-capable sessions decide when to wake
 
-**Status:** shipped · **Used by:** [predefined-agents.md](predefined-agents.md) (standing agents), goal-sessions, self-reflection
+Used by standing agents ([predefined-agents.md](predefined-agents.md)), goal
+sessions, and self-reflection.
 
 A background session (a pursue goal session, the self-reflection session, or a
 pre-defined standing agent) does work between human turns because its session

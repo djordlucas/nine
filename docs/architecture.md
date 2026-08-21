@@ -109,7 +109,7 @@ which dispatches to either the TUI, the one-shot client, or `runDaemon`
 ```
 /data                 mutable state only (the "nine-data" volume)
 ├── nine.db      the SQLite database (+ its -wal/-shm sidecars)
-└── workspace/   files-plugin working directory
+└── workspace/   the workspace sandboxed tools read and write
 
 /opt/nine             immutable image content (not in a volume)
 └── bin/         empty by default — the built-in plugins live in the nine
@@ -263,9 +263,9 @@ AgentWorker
  ├─ getNotif    func(id) []string             ← pending notifications
  ├─ stall       StallConfig {Limit, OnStall}
  ├─ stallN      int                           ← consecutive no-tool turns
- ├─ plan        *sessionPlanState             ← stages + persistence
+ ├─ plan        *sessionPlanState             ← routines + persistence
  ├─ idleTimer   *time.Timer                   ← per-routine idle scheduler
- ├─ idleSince   map[stage]time.Time
+ ├─ idleSince   map[routine]time.Time
  ├─ replay      replayBuffer (ring, cap 200)  ← for reattach
  └─ progressFn  func(protocol.Msg)            ← set during a live turn
 ```
@@ -292,7 +292,7 @@ AgentWorker
  unwire callbacks
         │
         ▼
- notifyStages(result, err)         ← StageHandler.OnTurnEnd for each active stage
+ notifyRoutines(result, err)       ← RoutineHandler.OnTurnEnd for each active routine
         │                            then persist/refresh session_plans row
         ▼
  checkStall(ctx)                   ← if LastRunToolCount()==0, stallN++
@@ -556,7 +556,7 @@ lifecycle. A native plugin speaks a small two-method protocol (`plugin.describe`
 `plugin.call`) over **HTTP on a per-plugin Unix socket** (`NINE_PLUGIN_SOCKET`,
 `POST /rpc`): the manager spawns the process, waits for the socket, and drives it
 with an `http.Client`, which gives free per-request concurrency and
-context-based cancellation (docs/plugins-http-transport.md). There is no second
+context-based cancellation (plugins-http-transport.md). There is no second
 transport on the daemon's side: an external **MCP** server is a plugin too,
 reached through the `mcp` bridge, which speaks this same contract to the daemon.
 How the bridge reaches the server is the part that varies — `dialSpec`
@@ -572,7 +572,7 @@ isolation.
 
 ```
    Manager.Start(binaryPath, extraEnv…)        (user plugins)
-   Manager.StartBuiltin(name, extraEnv…)       (shell/files/http/time)
+   Manager.StartBuiltin(name, extraEnv…)       (shell)
    Manager.StartBuiltinInstance("mcp", …)      (one per [[mcp.server]])
         │  spawn process with NINE_PLUGIN_SOCKET (+ NINE_BIN, extra env)
         │  wait for the socket, then use an http.Client on POST /rpc
@@ -612,8 +612,11 @@ table.) A crashed
 subprocess is isolated from the daemon; restart from the existing binary is the
 manager's responsibility.
 
-Default plugins started at boot: `files`, `shell`, `http`, `time` — then one
-`mcp` bridge per `[[mcp.server]]`, then user plugins.
+Default plugins started at boot: `shell` — then one `mcp` bridge per
+`[[mcp.server]]`, then user plugins. Reading and writing files, fetching over
+HTTP and reading the clock are **sandboxed tools**, not plugins: they run in
+the wasm tool host with only the capabilities they are granted, rather than as
+subprocesses holding the daemon's own authority.
 Memory/file/vector operations and the skill tools are **core-intercepted**
 (handled in-process), not a subprocess.
 
@@ -781,13 +784,12 @@ cannot be opened.
    ├─ files              content + FTS5 index      (file_store/fetch/list/search_text)
    ├─ vectors            float32 blob embeddings   (skills, session-index, agent namespaces)
    ├─ conversations      message history, scratchpad, status
-   ├─ goals              open-ended intentions, subtree JSON
+   ├─ goals              open-ended intentions, parent link for sub-goals
    ├─ notifications      pending push messages → next active turn
    ├─ user_notifications human-facing feed (nine notifications)
-   ├─ reflections        idle-reflection summaries
    ├─ workflows          multi-step plans (steps as JSON array on the row)
    ├─ skills             built-in (seeded) + agent-authored skills, by source
-   ├─ session_plans      per-session stage state + idle config
+   ├─ session_plans      per-session routine state + idle config
    ├─ human_requests     HITL question/answer state
    ├─ interactive_sessions  which sessions are HITL-eligible
    ├─ session_events     append-only execution journal (seq, span, JSONB payload)
@@ -800,7 +802,7 @@ Two access tiers:
 - **Agent-facing tools**: K/V, file storage, skills, and (core-intercepted)
   vector ops are exposed to the model as tools.
 - **Daemon-only `internal.*` methods**: `conversations`, `goals`,
-  `notifications`, `reflections`, `workflows`, `session_plans`, and the HITL
+  `notifications`, `workflows`, `session_plans`, and the HITL
   tables are touched only by the daemon — never advertised as tools. This stops
   an agent from directly rewriting its own conversation state. (There is no
   `tasks` table — finite work is a sub-agent or a workflow step.)
@@ -859,10 +861,10 @@ a session is fully reconstructable from its serialized loop state plus its
 
 ---
 
-## 13. Session plans & stages — the autonomy substrate
+## 13. Session plans & routines — the autonomy substrate
 
 Every `AgentWorker` carries a **session plan**: a small state machine of
-**stages** persisted in `session_plans`. This is the single mechanism behind all
+**routines** persisted in `session_plans`. This is the single mechanism behind all
 between-turn autonomy.
 
 ```
@@ -872,7 +874,7 @@ between-turn autonomy.
      OnIdle(ctx, agentID) (turnText, ok)    ← when this routine's idle interval elapses
 
    StageRegistry (kind → factory):
-     "active"          → trivial no-op stage (every conversation)
+     "active"          → trivial no-op routine (every conversation)
      "idle-reflection" → self-reflection session    (registered at boot)
      "pursue"          → per-goal background session (registered at boot)
 ```
@@ -885,7 +887,7 @@ The idle scheduler lives in the worker's `select`:
 
    run() select:
      case <-inbox:      processTurn        ← real turn
-     case <-idleTimer:  handleIdle         ← find the due stage, OnIdle(),
+     case <-idleTimer:  handleIdle         ← find the due routine, OnIdle(),
                                              run returned text as a turn if ok
 ```
 
@@ -898,7 +900,7 @@ The idle scheduler lives in the worker's `select`:
                  ┌──────── self-reflection session ───────┐
    agentID:      │ "self-reflection"  (fixed)             │  wakes every 2 min,
    profile:      │ [idle-reflection]                      │  updates self/* KV,
-                 │ eager-persisted, resumed at boot       │  writes reflections row
+                 │ eager-persisted, resumed at boot       │  records to the journal
                  └────────────────────────────────────────┘
 
                  ┌──────── goal pursue session ───────────┐
@@ -985,12 +987,11 @@ every step is terminal and, if so, closes the workflow as `done` (all succeeded)
 
 Goal state lives in the `goals` table: a description, a status, an optional
 `parent_id`/`parent_type` (the conversation or goal that spawned it; null for a
-top-level goal), and an append-only `subtree` JSON array recording the sub-goals and
-sub-work it has spawned.
+top-level goal). Sub-goals are goals naming this one as their parent, so the
+hierarchy is read from the parent link rather than kept in a second place.
 
-1. **LLM tools** — `goal_create`, `goal_get`, `goal_list`, `goal_update_status`,
-   `goal_append_subtree`, registered through `RegisterGoalTools`
-   (`RegisterGoalCreate` + `RegisterGoalManagement`). Delegating roles only, gated as
+1. **LLM tools** — `goal_create`, `goal_get`, `goal_list`, `goal_update_status`.
+   Delegating roles only, gated as
    the workflow tools and `run_agent` are. `goal_create` defaults
    `parent_id`/`parent_type` to the owning conversation when no parent is given.
 2. **Daemon read path** — `list_goals` is a thin handler proxying to
@@ -1079,7 +1080,7 @@ Go toolchain, no git, and no source tree.
 
 ```
  idleTimer fires (2 min) ──► handleIdle
-        │  find "idle-reflection" stage, interval elapsed
+        │  find "idle-reflection" routine, interval elapsed
         ▼
    OnIdle() returns the reflection prompt, ok=true
         ▼
@@ -1087,7 +1088,7 @@ Go toolchain, no git, and no source tree.
         ▼
    model calls memory_set self/capabilities, self/learned
         ▼
-   OnTurnEnd records a row in `reflections`
+   the turn's result is recorded in the journal
         ▼
    armIdleTimer (re-arm for the next cycle)
 ```
@@ -1117,7 +1118,7 @@ Go toolchain, no git, and no source tree.
 ```
  1.  config load  +  ApplyEnvOverrides
  2.  memory.Open(cfg.DatabasePath())                ← the single SQLite store (fail-fast)
- 3.  plugin.NewManager + TryStartBuiltin(files, shell, http, time)
+ 3.  plugin.NewManager + TryStartBuiltin(shell)
      + startMCPServers([[mcp.server]])              ← one bridge each, before user plugins
      + LoadUserPlugins([plugins].user_dir)          ← after the built-ins; names reserved
  3a. OpenSandboxedTools(cfg, store, mgr)            ← nil unless [tools] enabled;

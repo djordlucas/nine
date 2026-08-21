@@ -1,11 +1,11 @@
 # Evals — testing Nine with replays and live models
 
-**Status:** Implemented (`tests/evals`, `make eval-replay` / `eval-live`) ·
-**Purpose:** define how we test Nine's
-behavior end-to-end against real (and recorded) LLM infrastructure, and specify a
-**machine-usable case schema** precise enough that new test cases can be generated
-from this document — by a person or by an LLM — to cover features and guard
-against regressions.
+How Nine is tested end-to-end against real — and recorded — model
+infrastructure. The case schema below is deliberately precise enough that new
+cases can be generated from this document, by a person or by a model, to cover
+features and guard against regressions.
+
+Run them with `make eval-replay` and `make eval-live`.
 
 There are **two tracks**, and every case declares which it belongs to:
 
@@ -368,9 +368,9 @@ strongest available assertion for that feature.
 
 | Subsystem | Behavior to test | Assert via | Tier |
 |-----------|------------------|-----------|------|
-| time plugin | current time | `tools_all_of:[time]` + answer regex | smoke |
+| time (sandboxed tool) | current time | `tools_all_of:[time]` + answer regex | smoke |
 | shell | run a safe command | `tools_all_of:[shell]` + answer | smoke/basic |
-| files (plugin) | read/write a path | side-effect: file content | basic |
+| files (sandboxed tools) | read/write a path | side-effect: file content | basic |
 | files (store) | `file_store`→`file_search_text` | side-effect + tool trajectory | basic |
 | http/web | fetch/search a page | `tools_any_of:[http_get,web_search,web_page_read]` | basic |
 | KV memory | set→get roundtrip; list | side-effect `kv` + answer | basic |

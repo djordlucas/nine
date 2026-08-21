@@ -17,7 +17,7 @@ tool definitions. Documentation enters a turn only when the model asks for it,
 and it asks for a section, not a document.
 
 The index holds **no document text**. A vector's key is an address —
-`docs/skills.md#tools` — and the text is sliced back out of the embedded
+`skills.md#tools` — and the text is sliced back out of the embedded
 filesystem when it is read. There is no second copy to drift, which means the
 docs Nine cites are always the docs its own version ships (see
 [versioning.md](versioning.md)).
@@ -33,18 +33,18 @@ docs Nine cites are always the docs its own version ships (see
 
 ```
 doc_search({"query": "how does a turn reach a worker", "top_k": 5, "bundle": "docs"})
-# → {"count": 5, "results": [{"addr": "docs/daemon.md#request-routing",
+# → {"count": 5, "results": [{"addr": "daemon.md#request-routing",
 #                             "title": "Daemon Architecture", "heading": "Request Routing",
 #                             "snippet": "…", "score": 0.71}, …]}
 
-doc_read({"ref": "docs/daemon.md#request-routing"})
+doc_read({"ref": "daemon.md#request-routing"})
 ```
 
 Both are **core-intercepted** tools (handled in-process against the embedded FS
 and the memory store), not a plugin subprocess.
 
 `doc_read` accepts any address a caller might plausibly hold: a `doc_search`
-result (`docs/skills.md#tools`), a topic name (`agent-loop`), a bundle path
+result (`skills.md#tools`), a topic name (`agent-loop`), a bundle path
 (`spec/contracts/wire-protocol`), with or without `.md`. An unresolvable
 reference returns an error that lists the whole catalog, so a wrong guess
 recovers without a second call.
@@ -78,7 +78,7 @@ Nine can do, and reading the manual is read-only. See [roles.md](roles.md).
 
 An address is `<bundle>/<path>#<anchor>`, where the anchor is a slug of the
 section heading. Addresses are stable, human-meaningful, and resolve on the CLI:
-a section Nine cites as `docs/configuration.md#daemon` is one you can open with
+a section Nine cites as `configuration.md#daemon` is one you can open with
 `nine docs configuration`.
 
 Documents are chunked at their `##` headings, the unit these docs are written

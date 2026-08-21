@@ -91,11 +91,11 @@ either a sub-agent (transient) or a workflow step (durable), and
 [overview.md §3](../spec/overview.md).
 
 **Goal** — A persistent, open-ended intention with no defined end condition
-(e.g. "monitor this repo for security issues"). Stored in the `goals` table
-with `status` (`active`/`paused`/`done`/`archived`), an optional
-`parent_id`/`parent_type`, and an append-only `subtree` of spawned
-sub-goals and sub-work. LLM tools: `goal_create`, `goal_get`, `goal_list`,
-`goal_update_status`, `goal_append_subtree` (role-gated like `run_agent`).
+(e.g. "monitor this repo for security issues"). A goal carries a status
+(`active`/`paused`/`done`/`archived`) and an optional parent. Sub-goals are
+ordinary goals naming their parent, so the parent link *is* the hierarchy —
+there is no separate list to maintain. LLM tools: `goal_create`, `goal_get`,
+`goal_list`, `goal_update_status` (role-gated like `run_agent`).
 See [Architecture § 14 Goals](architecture.md#goals--state-write-paths-status).
 
 **Sub-agent (`run_agent` / `run_agents`)** — Core-intercepted tools that spawn
@@ -139,8 +139,8 @@ session kind: any session can carry it as a routine. See [Session Plans § idle-
 
 **Pursue session (`pursue` routine)** — Background session spawned 1:1 for
 every top-level goal (`agentID == goalID`), waking every 5 minutes to
-`goal_get`, act on the goal, and call `goal_update_status`/
-`goal_append_subtree`. Capped by `daemon.max_goal_sessions` (default 10);
+`goal_get`, act on the goal, record what it finds as sub-goals, and call
+`goal_update_status`. Capped by `daemon.max_goal_sessions` (default 10);
 `goal_create` reports `pursue_session: "spawned"` or `"limit_reached"`. See
 [Session Plans § pursue](session-plans.md#pursue--background-goal-pursuit).
 
@@ -306,7 +306,7 @@ gains nothing*. The two must name the same capabilities or the tool does not
 load. Contrast **plugin settings**, which are configuration, not capability.
 
 **Generated tool** — A sandboxed tool authored by Nine itself, via the
-core-intercepted `tool_write` (`docs/sandboxed-tools.md` §5.2, R-TVM.14). A row in
+core-intercepted `tool_write` (`sandboxed-tools.md` §5.2, R-TVM.14). A row in
 the store's `tools` table holding the tool's `js` source and its capability
 **declaration** — never a grant. It runs through the exact same sandbox, ABI, and
 bounds as a **developer tool**; the differences are that the *agent* wrote the code
@@ -324,14 +324,14 @@ than leaving it running. Distinct from a **capability grant**, which is per name
 developer tool.
 
 **`js_eval`** — Runs one JavaScript snippet under the generated-tool rules and
-persists **nothing** — no name, no row, no catalog entry (`docs/sandboxed-tools.md`
+persists **nothing** — no name, no row, no catalog entry (`sandboxed-tools.md`
 §5.3). Not a softer trust tier than `tool_write`, only a less persistent one; it
 exists so iterating on an idea does not accrete single-use tools into the catalog.
 Switched on separately by `[tools.agent] eval`.
 
 **`nine:*` stdlib** — A small, pinned, vendored set of pure-JavaScript modules a
 generated tool may import with no config and no network — `nine:csv`, `nine:date`,
-`nine:diff` (`docs/sandboxed-tools.md` §4.2, R-TVM.15). Embedded in the binary and
+`nine:diff` (`sandboxed-tools.md` §4.2, R-TVM.15). Embedded in the binary and
 served host-side; authored in-house rather than pulled from npm, so each is known
 to run under the trimmed interpreter and carries no transitive surface.
 
@@ -426,7 +426,7 @@ exact-key-lookup, per-session/dynamic *data* the agent fetches explicitly.
 **Self-documentation (`doc_search` / `doc_read`)** — The `docs/` and `spec/`
 trees embedded in the binary, indexed at boot into the `docs` vector namespace
 as one vector per `##` section and retrieved on demand. The index stores
-addresses (`docs/skills.md#tools`), never text: a read slices the section back
+addresses (`skills.md#tools`), never text: a read slices the section back
 out of the embedded filesystem, so what Nine cites always matches its own
 version. Never preloaded — the standing context cost is two tool definitions.
 See [Self-Documentation](self-documentation.md).
@@ -490,7 +490,7 @@ running `pursue` sessions, default 10 (`DefaultMaxGoalSessions`).
 context builder (no tokenizer dependency).
 
 **Volume layout (`/data/`)** — Holds `nine.db` (the SQLite database, plus its
-`-wal`/`-shm` sidecars) and `workspace/` (files-plugin working dir). All primary
+`-wal`/`-shm` sidecars) and `workspace/` (the sandboxed tools' workspace). All primary
 state is therefore on one volume. The `nine` binary (with built-in skills
 embedded) and plugins are immutable image content under `/opt/nine`.
 
@@ -513,7 +513,7 @@ session by its agent ID (restores from checkpoint if not already running).
 plugins (and tool counts).
 
 **`nine goals` / `nine reflections` / `nine workflows`** —
-List goals (with their sub-goal/sub-work subtree), idle-reflection history,
+List goals (with their sub-goals), idle-reflection history,
 and active/recent workflows respectively. TUI equivalents: `/goals`,
 `/reflections`, `/workflows`. (There is no `tasks` verb.)
 
