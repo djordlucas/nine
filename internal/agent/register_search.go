@@ -18,7 +18,7 @@ import (
 // skills): when the task drifts mid-turn or the user asks what tools/skills
 // exist, the model can query the full catalog on demand rather than being
 // limited to the top-K selected against the opening query
-// (docs/tool-exposition.md). Each catalog has a query-driven search and a
+// (adr/tool-exposition.md). Each catalog has a query-driven search and a
 // query-free enumeration: tool_search/tool_list here, skill_search/skill_list
 // with the other skill tools in register_skills.go.
 var searchToolDefs = []llm.ToolDef{toolSearchDef, toolListDef}

@@ -210,7 +210,7 @@ func TestPlanApprovalMode(t *testing.T) {
 }
 
 // TestToolsMaxOutputTokens covers the dispatcher output-cap knob
-// (docs/tool-output-spill.md). It lives under [tools] rather than [agent]
+// (adr/tool-output-spill.md). It lives under [tools] rather than [agent]
 // because [[agent]] is already the standing-agent table array — a regression
 // here would silently move the key.
 func TestToolsMaxOutputTokens(t *testing.T) {

@@ -140,7 +140,7 @@ The runtime separates **mutable state** from **immutable image content**:
 ```
 
 Primary state is the **SQLite** file at `/data/nine.db`, so the database and the
-workspace share one volume (docs/single-container.md) and the container runs a
+workspace share one volume (adr/single-container.md) and the container runs a
 single process. Built-in skills are embedded in the `nine` binary (`//go:embed`) and
 seeded into the `skills` table on every boot; there is **no** skills directory in
 the image or either volume. The runtime image carries **no Go toolchain, no git,

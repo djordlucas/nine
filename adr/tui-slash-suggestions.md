@@ -4,7 +4,7 @@
 daemon, or persistence changes.
 
 > This records the design and the reasoning behind it. The behaviour itself is
-> documented in [usage.md](usage.md#tui-slash-commands) and pinned by
+> documented in [usage.md](../docs/usage.md#tui-slash-commands) and pinned by
 > `spec/conformance.md` §10.
 
 ## Goal

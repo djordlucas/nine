@@ -381,7 +381,7 @@ func WithHTTPAudit(ctx context.Context, fn HTTPAuditFn) context.Context {
 
 // auditHTTP records an outbound call. The structured log line is unconditional
 // and is what ships; the context hook is what makes "which turn asked for this"
-// answerable after the fact (docs/event-log.md).
+// answerable after the fact (adr/event-log.md).
 func (h *Host) auditHTTP(ctx context.Context, c HTTPCall) {
 	slog.Info("sandboxed tool http",
 		"tool", c.Tool, "method", c.Method, "host", c.Host, "url", c.URL,

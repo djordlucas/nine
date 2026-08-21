@@ -8,7 +8,7 @@ import (
 )
 
 // SessionEvent is one row of the append-only session execution journal
-// (docs/event-log.md §6). It captures a single step of a session's execution —
+// (adr/event-log.md §6). It captures a single step of a session's execution —
 // a turn boundary, an LLM request/response, a tool call, a context update, or a
 // sub-agent lifecycle event — as a durable, causally-ordered record. Seq and TS
 // are assigned by the database on insert.
@@ -54,7 +54,7 @@ func (s *Store) SessionEventsAppend(evs []SessionEvent) error {
 	return err
 }
 
-// SessionEventsScrub bounds journal growth (docs/event-log.md §9, v4). It prunes,
+// SessionEventsScrub bounds journal growth (adr/event-log.md §9, v4). It prunes,
 // per agent, every event that falls outside the most recent keepTurns turns, and
 // (independently) every event older than maxAge. A row is removed if it violates
 // either bound. keepTurns <= 0 disables turn-based pruning; maxAge <= 0 disables
@@ -94,7 +94,7 @@ func (s *Store) SessionEventsScrub(keepTurns int, maxAge time.Duration) (int, er
 // LatestTurnResult returns the answer text of the most recent completed turn
 // (the last turn_end event) for agentID, or "" if it has none. It backs the
 // related-session enrichment the context builder surfaces on a later turn
-// (docs/reactive-events.md §5): a one-line gist of what a linked prior session
+// (adr/reactive-events.md §5): a one-line gist of what a linked prior session
 // concluded, so the surfaced link is meaningful rather than an opaque id.
 func (s *Store) LatestTurnResult(agentID string) (string, error) {
 	var payload []byte
@@ -118,7 +118,7 @@ func (s *Store) LatestTurnResult(agentID string) (string, error) {
 }
 
 // SessionEventsByAgent returns every journaled event for agentID in causal
-// (seq) order. It is the read path behind observational replay (docs/event-log.md
+// (seq) order. It is the read path behind observational replay (adr/event-log.md
 // §3, §10).
 func (s *Store) SessionEventsByAgent(agentID string) ([]SessionEvent, error) {
 	rows, err := s.db.Query(

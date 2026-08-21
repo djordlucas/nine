@@ -30,9 +30,9 @@
   are a *second* backend behind the *same* dispatcher, and a deployment that
   enables none of it behaves exactly as it does today.
 - **Depends on:** the tool dispatcher (`spec/contracts/dispatcher.md`), the memory
-  store (generated tools are rows), the event journal (`docs/event-log.md`, audit),
+  store (generated tools are rows), the event journal (`event-journal.md`, audit),
   HITL approval gates (`docs/hitl.md`, optional review), and the pull-not-push
-  discipline of `docs/reactive-events.md` (how a new tool becomes visible).
+  discipline of `event-journal.md` (how a new tool becomes visible).
 
 ---
 
@@ -410,7 +410,7 @@ Four properties do the real work, and they compound:
    a mystery.
 4. **Everything is pinned, hashed, and journalled.** Each resolution records
    name, version, resolved integrity, and the requesting tool into a lockfile and
-   the event journal (`docs/event-log.md`). `nine tools deps` lists the whole
+   the event journal (`event-journal.md`). `nine tools deps` lists the whole
    set; `nine tools show <name>` prints a tool's lockfile. "What third-party code
    is in this daemon, and who asked for it" has an exact answer.
 
@@ -760,9 +760,9 @@ This needs no new machinery, because the semantics already exist. From
 is built. A sandboxed tool registered in the store is picked up the same way, so:
 **write it this turn, use it next turn.** In-flight turns keep the tool set they
 started with, which is exactly right — a tool set that mutated mid-turn would
-make a turn unreplayable, and `docs/event-log.md` depends on replay.
+make a turn unreplayable, and `event-journal.md` depends on replay.
 
-It is also precisely the pull-not-push discipline of `docs/reactive-events.md`:
+It is also precisely the pull-not-push discipline of `event-journal.md`:
 new capability *enriches a later turn's context* rather than interrupting a live
 one.
 
@@ -776,7 +776,7 @@ everything, not just at the generated tools.
 
 So generated tools are capped (`[tools.agent].max_tools`, default 64) with LRU
 eviction on last-called-at, and `tool_write` on an existing name replaces rather
-than duplicates. The `tool_search` path (`docs/tool-exposition.md`) is the
+than duplicates. The `tool_search` path (`tool-selection.md`) is the
 intended discovery route once the catalog is non-trivial.
 
 This argues for a deliberately **high bar in the `tool_write` prompt guidance**:
@@ -788,7 +788,7 @@ computation the agent could have done inline. The eval that matters here is not
 
 Every generated-tool write, every load failure, every capability-gated host call
 (`net.http` target and status, `fs` mount grants) is journalled
-(`docs/event-log.md`). A generated tool is store state, so "what code ran, with
+(`event-journal.md`). A generated tool is store state, so "what code ran, with
 what reach, on whose authority" must be answerable after the fact. `nine tools
 show <name>` prints source, grants, and provenance.
 

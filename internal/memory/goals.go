@@ -17,7 +17,7 @@ type Goal struct {
 	// time. It is not stored: the edge lives on the child, and a second copy on
 	// the parent was a denormalized index the model was asked to maintain by
 	// hand — wrong at some rate, and unverifiable
-	// (docs/concept-consolidation.md C6). The JSON key is unchanged so the
+	// (adr/concept-consolidation.md C6). The JSON key is unchanged so the
 	// model-facing shape of goal_get is what it always was.
 	Subtree   []string `json:"subtree"`
 	CreatedAt string   `json:"created_at"`

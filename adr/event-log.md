@@ -523,7 +523,7 @@ prerequisite for everything after it.
    persist the supervisor bus.* Supervisor
    events are durably journaled on `Post` and consumed via a cursor-backed
    subscription that resumes on restart (built on the subscription primitive,
-   docs/reactive-events.md §8; `internal/runtime/supervisor.go`). This is the
+   reactive-events.md §8; `internal/runtime/supervisor.go`). This is the
    two-tier model's authoritative side: control-plane events commit synchronously,
    not through the best-effort async sink. *Remaining:* make goal-lifecycle status
    a projection of `GoalStatusChanged` events (command/event split + goals

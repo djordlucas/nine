@@ -90,7 +90,7 @@ A failure **MAY** carry structure alongside the message:
 Every field is optional, and `error` remains the message, so a guest that sets none of them
 produces exactly the envelope it produced before `error_detail` existed. This is why the
 addition **does not** bump `ABIVersion`: the two-export contract is unchanged and no
-existing parser breaks (docs/rich-js-tools.md §8).
+existing parser breaks (adr/rich-js-tools.md §8).
 
 The host renders these into the error the model reads, since the dispatcher's channel for a
 tool failure is one string. A `js` tool's harness fills them from the thrown `Error`
@@ -372,7 +372,7 @@ silently meaning nothing is the worst available failure mode.
 A newly-loaded tool is picked up by **subsequently-built agent loops**; turns already in
 flight keep the tool set they started with. This is exactly `plugins reload` semantics
 (R-PLUG.9) and needs no new push machinery — a tool set that mutated mid-turn would make
-the turn unreplayable, and `docs/event-log.md` depends on replay.
+the turn unreplayable, and `adr/event-log.md` depends on replay.
 
 Sandboxed tools are advertised on the same footing as plugin tools and intersected with a
 role's allowlist the same way (boundary 1 of R-ROLE.4).
@@ -450,7 +450,7 @@ this through `bytes()`/`arrayBuffer()`, and `text()`/`json()` **MUST** throw on 
 body rather than return the replacement-character rendering.
 
 Both fields are additive, and a guest that ignores `body_b64` behaves as it did before it
-existed — hence no `ABIVersion` bump (docs/rich-js-tools.md §8).
+existed — hence no `ABIVersion` bump (adr/rich-js-tools.md §8).
 
 The host module also exports `caps`, which returns the calling tool's resolved grant as
 JSON — guest paths only, never the operator's host paths. It exists so a guest can say
