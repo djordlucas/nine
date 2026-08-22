@@ -23,7 +23,8 @@ shipping a second file. The database path needs no override there: it defaults t
 ```toml
 [llm]
 # Chat LLM backend to use. Ollama is the only one: Nine runs on local models.
-# Any other value is reported at boot and Ollama is used anyway.
+# Leave it unset for the default; any other value is refused at startup rather
+# than quietly served by a different backend.
 provider = "ollama"
 
 # Model name. Examples: qwen3.5:4b, qwen3.5:9b, gemma4:e2b, llama3.2
