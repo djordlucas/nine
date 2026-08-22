@@ -33,6 +33,11 @@ var stdlibSpecifiers = map[string]string{
 	// and a tool with no grant gets a sentence saying so rather than reach.
 	"nine:fs":  "stdlib/fs.js",
 	"nine:env": "stdlib/env.js",
+	// state is capability-gated like fs and env, and is the one module here that
+	// can outlive the call. Importing it still grants nothing: the store is the
+	// host's, the namespace is this tool's, and a tool with no grant gets a
+	// sentence saying so.
+	"nine:state": "stdlib/state.js",
 }
 
 var (

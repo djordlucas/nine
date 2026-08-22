@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"nine/internal/agent"
+	"nine/internal/memory"
 	"nine/internal/memory/memtest"
 )
 
@@ -148,5 +150,39 @@ func TestRegisterLargeOutputWithNilStore(t *testing.T) {
 	}
 	if !res.Truncated {
 		t.Error("without a store the output should still be capped")
+	}
+}
+
+// The sweeper reclaims expired durable state as well as expired spills. Expiry
+// is applied on read too, so a ttl is honoured between ticks — but nothing else
+// deletes the row, so without this a tool using ttl would grow the database
+// forever.
+func TestSweeperReclaimsExpiredToolState(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	brief := memory.ToolStateQuota{TTL: time.Millisecond}
+	if err := store.ToolStateSet("watcher", "", "seen", "v", brief); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ToolStateSet("watcher", "", "keep", "v", memory.ToolStateQuota{}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	sweepToolState(store)
+
+	// The expired row is gone from the table, not merely filtered on read.
+	keys, _, err := store.ToolStateUsage("watcher", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if keys != 1 {
+		t.Fatalf("after the sweep the scope holds %d keys, want 1 — the expired row was not reclaimed", keys)
+	}
+	if _, found, _ := store.ToolStateGet("watcher", "", "keep"); !found {
+		t.Fatal("the sweep took a row with no ttl")
 	}
 }

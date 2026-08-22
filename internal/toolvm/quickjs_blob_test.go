@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -58,6 +59,10 @@ func TestQuickJSBlobImportsAndExportsAreClosed(t *testing.T) {
 		t.Fatalf("compile: %v", err)
 	}
 
+	// Adding to this list is a deliberate act: each entry is reach a guest gains
+	// that the capability table has to describe.
+	hostFunctions := []string{"log", "http", "caps", "state"}
+
 	sawWASI, sawNine := false, false
 	for _, fn := range mod.ImportedFunctions() {
 		module, name, _ := fn.Import()
@@ -67,17 +72,25 @@ func TestQuickJSBlobImportsAndExportsAreClosed(t *testing.T) {
 		case hostModule:
 			sawNine = true
 			// The whole host surface, and it is meant to stay this short. `log`
-			// is granted to every tool; `http` is checked per call against the
-			// tool's grant (host.hostHTTP); `caps` only describes a grant and
-			// confers nothing (host.hostCaps). Anything else appearing here is
-			// reach the capability table does not describe.
+			// is granted to every tool; `http` and `state` are checked per call
+			// against the tool's grant (host.hostHTTP, host.hostState); `caps`
+			// only describes a grant and confers nothing (host.hostCaps).
+			// Anything else appearing here is reach the capability table does not
+			// describe.
 			//
 			// Note what is NOT here: the filesystem and the environment. Those
 			// reach a `js` tool through libc and WASI — pre-opens wazero enforces
 			// itself — precisely so that containment never becomes a check of ours
 			// in a host function (adr/rich-js-tools.md §6.4).
-			if name != "log" && name != "http" && name != "caps" {
-				t.Errorf("blob imports %s.%s; the host module is only log, http, and caps", module, name)
+			//
+			// `state` cannot follow them, and that is worth being explicit about:
+			// there is no WASI facility for a scoped key/value store, and the
+			// scoping is a primary key in Nine's own database rather than
+			// something an operating system enforces. So it is a host function,
+			// and Nine owns the bugs in it.
+			if !slices.Contains(hostFunctions, name) {
+				t.Errorf("blob imports %s.%s, which is not in the host module's surface %v",
+					module, name, hostFunctions)
 			}
 		default:
 			t.Errorf("blob imports an unexpected module: %s.%s", module, name)

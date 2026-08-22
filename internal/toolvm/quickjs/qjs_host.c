@@ -41,6 +41,17 @@ nine_host_log(const uint8_t *ptr, int32_t len);
 __attribute__((import_module("nine"), import_name("http"))) extern uint64_t
 nine_host_http(const uint8_t *ptr, int32_t len);
 
+/* The `state` capability: a host-owned key/value store scoped to this tool, so a
+ * tool can remember across calls without anything surviving the instance. Like
+ * http the import exists unconditionally — imports are fixed at compile time and
+ * this blob is shared by every `js` tool — and the grant is checked host-side per
+ * call, so a tool without one gets a refusal envelope rather than a store.
+ *
+ * Takes a JSON op ({"op":"get","key":"…"}) and returns (offset << 32) | length of
+ * a JSON response the host allocated through nine_alloc, or 0. */
+__attribute__((import_module("nine"), import_name("state"))) extern uint64_t
+nine_host_state(const uint8_t *ptr, int32_t len);
+
 /* The calling tool's resolved capability grant, as JSON. It confers nothing —
  * every capability is enforced elsewhere, by wazero's pre-opens or by the host's
  * per-call grant lookup — and exists so a guest can say "fs.read is not granted
@@ -167,6 +178,27 @@ static JSValue js_nine_http(JSContext *ctx, JSValueConst this_val, int argc,
     JS_FreeCString(ctx, req);
 
     if (packed == 0) return JS_ThrowInternalError(ctx, "http: no response from host");
+
+    const char *out = (const char *)(uintptr_t)(uint32_t)(packed >> 32);
+    uint32_t out_len = (uint32_t)(packed & 0xffffffff);
+    JSValue res = JS_NewStringLen(ctx, out, out_len);
+    free((void *)out);
+    return res;
+}
+
+static JSValue js_nine_state(JSContext *ctx, JSValueConst this_val, int argc,
+                             JSValueConst *argv) {
+    (void)this_val;
+    if (argc < 1) return JS_ThrowTypeError(ctx, "state requires a request object");
+
+    size_t len = 0;
+    const char *req = JS_ToCStringLen(ctx, &len, argv[0]);
+    if (!req) return JS_EXCEPTION;
+
+    uint64_t packed = nine_host_state((const uint8_t *)req, (int32_t)len);
+    JS_FreeCString(ctx, req);
+
+    if (packed == 0) return JS_ThrowInternalError(ctx, "state: no response from host");
 
     const char *out = (const char *)(uintptr_t)(uint32_t)(packed >> 32);
     uint32_t out_len = (uint32_t)(packed & 0xffffffff);
@@ -566,6 +598,8 @@ __attribute__((export_name("nine_run"))) uint64_t nine_run(uint32_t ptr, uint32_
                       JS_NewCFunction(ctx, js_nine_http, "__nine_http", 1));
     JS_SetPropertyStr(ctx, global, "__nine_caps",
                       JS_NewCFunction(ctx, js_nine_caps, "__nine_caps", 0));
+    JS_SetPropertyStr(ctx, global, "__nine_state",
+                      JS_NewCFunction(ctx, js_nine_state, "__nine_state", 1));
     JS_SetPropertyStr(ctx, global, "__nine_fs_read",
                       JS_NewCFunction(ctx, js_nine_fs_read, "__nine_fs_read", 1));
     JS_SetPropertyStr(ctx, global, "__nine_fs_write",
