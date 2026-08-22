@@ -75,6 +75,8 @@ Msg {
 | `workflow_stop` | `text` = workflow ID | live-cancel a workflow |
 | `workflow_fail` | `text` = ID or `--all` | post-mortem fail |
 | `session_stop` | `agent_id`, or `text` = `--all` | terminate a session (stop its worker + delete its persisted state) |
+| `session_delete` | `agent_id` (**required**; no `--all`) | erase a session: the conversation and every row keyed to it |
+| `sessions_list` | — | the session roster |
 | `plugin_call` | `tool_name`, `tool_input` | invoke a tool directly, **bypassing the LLM** |
 | `plugins_list` | — | request the plugin roster (built-in + user, with skip reasons) |
 | `plugins_reload` | — | re-scan `[plugins].user_dir` and reload user plugins live (built-ins untouched) |
@@ -103,6 +105,8 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `context` | `text` = JSON `ninectx.Report` | per-section token breakdown + assembled prompt/messages |
 | `workflow_stop` / `workflow_fail` | `text` = `"stopped"` / `"failed"` | operator-command result |
 | `session_stop` | `text` = human-readable outcome (`stopped <id>`, `stopped N session(s)`) | terminate result (or `error` when the id is unknown) |
+| `session_delete` | `text` = what was removed, by count | erase result (or `error` when the id is unknown) |
+| `sessions_list` | `text` = JSON `[]SessionInfo` | roster: id, name, status, age, events, protected, attached |
 | `set_plan_mode` | `text` = `"plan mode: <mode>"` | mode change acknowledged (or `error` on an unknown mode) |
 
 **Streaming progress** (emitted during a turn, before `response`+`done`):

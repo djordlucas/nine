@@ -230,6 +230,47 @@ natively.
 
 ---
 
+## R-MEM.11 — Session deletion
+
+A session may be **erased**: the `conversations` row and every row keyed to it —
+`session_events`, `notifications`, `user_notifications`, `session_plans`,
+`related_sessions`, `human_requests`, `interactive_sessions`, the session's
+`tool_state` scope, its `jobs`, and its display-name key in `kv`.
+
+The cascade **MUST** be one transaction. A partial cascade leaves journal rows
+pointing at a conversation that no longer exists, which is worse than either
+completing or not starting.
+
+It **MUST** report what it removed, per table. This is the only operation in the
+store that destroys history rather than bounding it (contrast `SessionEventsScrub`,
+R-EVT.4), and "deleted session X" is not an auditable statement.
+
+**Tool state is removed for the conversation scope only** — rows whose
+`scope_key` is the session id. Tool-scoped state (`scope_key = ''`) is shared
+across every caller of a tool and is nobody's session to delete
+([`toolvm.md`](toolvm.md) R-TVM.18).
+
+### Retention
+
+Sessions older than a retention window **MAY** be deleted automatically. Age
+**MUST** be measured from last activity (`updated_at`), not creation.
+
+Two kinds of session **MUST NOT** be selected, whatever their age:
+
+- one whose id matches an **active goal** — a pursue session's id *is* its goal
+  id, so this is an exact test rather than a heuristic;
+- one carrying an **active session plan**, which covers standing agents.
+
+Both are idle by design. A standing agent that wakes weekly looks abandoned after
+ten days precisely because it is working correctly, and reaping either would
+silently dismantle configured behaviour.
+
+Retention has three distinguishable states — unset (the default applies), a
+number, and `0` (disabled) — so the configuration **MUST NOT** collapse the first
+and last.
+
+---
+
 ## R-MEM.10 — Schema versioning and migration
 
 `PRAGMA user_version` records which schema generation a database is at, and `Open`

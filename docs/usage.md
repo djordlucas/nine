@@ -20,6 +20,10 @@ nine attach <agent-id>           Reconnect to an existing conversation/session
 nine stop <agent-id>             Terminate a session (stops the worker and
                                  deletes its saved state)
 nine stop --all                  Terminate every active session
+nine sessions                    List sessions: age, journal size, retention
+nine session show <agent-id>     One session in full
+nine session delete <agent-id>   Erase a session and everything keyed to it
+                                 (asks first; --force skips the prompt)
 
 nine goals                       List active goals
 nine reflections [agent-id]      Reflection history from the journal (default: self-reflection)
@@ -278,6 +282,34 @@ mistyped command:
 
 `stop` acts on running state, so it needs the daemon up; with none running there
 is nothing to stop.
+
+### `nine sessions` / `nine session delete` — the roster, and erasing one
+
+`stop` ends a session and keeps its history. **`session delete` destroys it** —
+the transcript, the journal, the notifications, the session's tool state, and
+its background jobs all go, in one transaction. It is the only command in Nine
+that removes history rather than bounding it, so it asks you to type the id back
+before it acts (`--force` skips that).
+
+```bash
+./nine sessions                       # the roster, with age and journal size
+./nine session show a1b2c3d4-...      # one session in full
+./nine session delete a1b2c3d4-...    # erase it, after confirming
+```
+
+Sessions are also deleted automatically once they have gone
+`[daemon] session_retention_days` without activity — ten days by default, `0` to
+switch it off. Two things are never taken, whatever their age:
+
+- a session whose id matches an **active goal** (a goal's pursue session), and
+- a session carrying an **active session plan** (a standing agent, for example).
+
+Both are idle *by design*: a standing agent that wakes weekly looks abandoned
+after ten days precisely because it is working correctly. `nine sessions` marks
+them `kept`, so an old session that is not being reaped explains itself.
+
+Age is measured from **last activity**, not creation — a conversation you have
+had running for a year and used this morning is never stale.
 
 > **Typos don't start sessions.** A mistyped command that closely matches a real
 > one (e.g. `nine staus`) is reported as an error with a suggestion and the usage
