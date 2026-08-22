@@ -204,6 +204,7 @@ $ nine tools
 | `net.http` | `fetch()` | ❌ declare + grant |
 | `fs.read` / `fs.write` | `import … from "nine:fs"` | ❌ declare + grant |
 | `env` | `import { get } from "nine:env"` | ❌ declare + grant |
+| `state` | `import { get, set } from "nine:state"` | ❌ declare + grant |
 
 ### The filesystem, from JavaScript
 
@@ -230,6 +231,83 @@ the way in.
 Nine writing a single check. The capability checks in `nine:fs` exist only so that an
 ungranted call says `fs.read is not granted to this tool` instead of reporting that a file
 which plainly exists cannot be found.
+
+### Remembering between calls
+
+Your tool is built from scratch for every call and thrown away after it. Nothing in the
+interpreter survives — not a global, not a cached credential, not a parsed index — and
+that is deliberate: two calls cannot observe each other through the machine.
+
+The `state` capability is the one way past it, and it is not a hole in that. What you get
+is a store the **host** owns: keys scoped to your tool, bounded by a quota, readable by
+nothing else.
+
+```toml
+# your manifest — a need, with no parameters attached
+[capabilities]
+state = true
+```
+
+```toml
+# the operator's nine.toml — the parameters are theirs
+[tool.geocode.capabilities.state]
+scope        = "tool"     # required: "tool" or "conversation"
+max_keys     = 512
+max_value_kb = 8
+ttl          = "24h"      # optional; omit for no expiry
+```
+
+```js
+import { get, set, remove, keys, swap, getJSON, setJSON } from "nine:state";
+
+export default function ({ place }) {
+  const hit = getJSON(`geo:${place}`);
+  if (hit) return `${hit.lat},${hit.lon} (cached)`;
+  const fresh = lookUp(place);
+  setJSON(`geo:${place}`, fresh);
+  return `${fresh.lat},${fresh.lon}`;
+}
+```
+
+**Values are strings.** `getJSON` / `setJSON` are the convenience over
+`JSON.parse` / `JSON.stringify`; there is no other type.
+
+**Scope is the operator's decision and you cannot change it.** `scope = "tool"` gives one
+namespace shared by every caller; `scope = "conversation"` gives a separate namespace per
+conversation. A cache is correct under either, but "remember this user's preference"
+means something different under each — so if it matters to your tool, read it back:
+
+```js
+import { scope } from "nine:state";
+const shared = scope() === "tool";
+```
+
+**Use `swap` instead of read-modify-write.** Two turns calling your tool at once is
+ordinary, so `get` then `set` is a lost update waiting to happen: both calls read the same
+value and the second overwrites the first. `swap` is the only operation that closes that
+window.
+
+```js
+let ok = false;
+while (!ok) {
+  const cur = get("count");
+  ok = swap("count", cur, String(Number(cur ?? 0) + 1));
+}
+```
+
+**Hitting your quota is a normal thing to handle.** It throws with `code` set to
+`E_STATE_QUOTA` and `retryable: true`, which is deliberately distinguishable from the
+store being unreachable — evict something and try again.
+
+```js
+try {
+  set(key, value);
+} catch (e) {
+  if (e.code !== "E_STATE_QUOTA") throw e;
+  for (const k of keys("cache:").slice(0, 10)) remove(k);
+  set(key, value);
+}
+```
 
 ### The environment
 
