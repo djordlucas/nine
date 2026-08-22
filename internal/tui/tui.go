@@ -561,7 +561,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case progressMsg:
 		evt := msg.evt
 		switch evt.Type {
-		case "tool_start":
+		case protocol.TypeToolStart:
 			// The intermediate text the model emitted before this call is its ReAct
 			// "thought". Retain it on the tool event so it persists in the transcript
 			// instead of being discarded, then clear the live streaming buffer.
@@ -575,14 +575,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			})
 			m.chat.streamingText = ""
 			m.chat.thinkingTrace = ""
-		case "tool_end":
+		case protocol.TypeToolEnd:
 			for i := len(m.chat.pendingToolEvts) - 1; i >= 0; i-- {
 				if m.chat.pendingToolEvts[i].name == evt.ToolName && m.chat.pendingToolEvts[i].outputStr == "" {
 					m.chat.pendingToolEvts[i].outputStr = truncateOutput(evt.ToolOutput)
 					break
 				}
 			}
-		case "thinking":
+		case protocol.TypeThinking:
 			m.chat.thinkingStep = evt.LLMCallN
 			m.chat.thinkingThink = evt.Think
 			// The analysis pass (if any) is done once the exec loop's first call starts.
@@ -590,27 +590,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Each inner LLM call starts a fresh reasoning trace.
 			m.chat.thinkingTrace = ""
 			m.chat.stage = ""
-		case "stage":
+		case protocol.TypeStage:
 			m.chat.stage = evt.Text
-		case "plan_start":
+		case protocol.TypePlanStart:
 			m.chat.planning = true
-		case "plan_end":
+		case protocol.TypePlanEnd:
 			m.chat.planning = false
-		case "notice":
+		case protocol.TypeNotice:
 			m.appendSystem(evt.Text)
-		case "thinking_chunk":
+		case protocol.TypeThinkingChunk:
 			m.chat.thinkingTrace += evt.Text
 			m.chat.stage = ""
-		case "context_update":
+		case protocol.TypeContextUpdate:
 			m.display.contextUsed = evt.ContextUsed
 			m.display.contextBudget = evt.ContextBudget
-		case "set_name":
+		case protocol.TypeSetName:
 			m.conn.sessionName = evt.Text
-		case "set_instance_name":
+		case protocol.TypeSetInstanceName:
 			if evt.Text != "" {
 				m.conn.instanceName = evt.Text
 			}
-		case "sub_agent_start":
+		case protocol.TypeSubAgentStart:
 			m.chat.pendingToolEvts = append(m.chat.pendingToolEvts, toolEvent{
 				inputStr:     truncateOutput(evt.Text),
 				at:           evt.At,
@@ -618,7 +618,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				subAgentID:   evt.SubAgentID,
 				subAgentRole: evt.Role,
 			})
-		case "sub_agent_end":
+		case protocol.TypeSubAgentEnd:
 			for i := len(m.chat.pendingToolEvts) - 1; i >= 0; i-- {
 				te := &m.chat.pendingToolEvts[i]
 				if te.subAgent && te.subAgentID == evt.SubAgentID && te.outputStr == "" {
@@ -626,7 +626,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
-		case "human_input_required":
+		case protocol.TypeHumanInputRequired:
 			if evt.HumanRequest != nil {
 				// Only the head of the queue is rendered; a question arriving while
 				// another is unanswered (parallel sub-agents each hitting a gate)
@@ -1173,21 +1173,21 @@ func replayToToolEvents(msgs []protocol.Msg) []toolEvent {
 			at = time.UnixMilli(msg.Timestamp)
 		}
 		switch msg.Type {
-		case "tool_start":
+		case protocol.TypeToolStart:
 			evts = append(evts, toolEvent{
 				name:        msg.ToolName,
 				displayName: msg.ToolDisplayName,
 				inputStr:    formatInput(msg.ToolInput),
 				at:          at,
 			})
-		case "tool_end":
+		case protocol.TypeToolEnd:
 			for i := len(evts) - 1; i >= 0; i-- {
 				if evts[i].name == msg.ToolName && evts[i].outputStr == "" {
 					evts[i].outputStr = truncateOutput(msg.ToolOutput)
 					break
 				}
 			}
-		case "sub_agent_start":
+		case protocol.TypeSubAgentStart:
 			evts = append(evts, toolEvent{
 				inputStr:     truncateOutput(msg.Text),
 				at:           at,
@@ -1195,7 +1195,7 @@ func replayToToolEvents(msgs []protocol.Msg) []toolEvent {
 				subAgentID:   msg.SubAgentID,
 				subAgentRole: msg.Role,
 			})
-		case "sub_agent_end":
+		case protocol.TypeSubAgentEnd:
 			for i := len(evts) - 1; i >= 0; i-- {
 				te := &evts[i]
 				if te.subAgent && te.subAgentID == msg.SubAgentID && te.outputStr == "" {
@@ -1246,10 +1246,10 @@ func historyToChatMsgs(msgs []protocol.Msg) []chatMsg {
 	}
 	for _, m := range msgs {
 		switch m.Type {
-		case "history_user":
+		case protocol.TypeHistoryUser:
 			flushNine("", time.Time{}) // close any open nine turn before the next prompt
 			out = append(out, chatMsg{role: "user", text: m.Text, at: msgAt(m)})
-		case "response":
+		case protocol.TypeResponse:
 			flushNine(m.Text, msgAt(m))
 		case "tool_start", "tool_end", "sub_agent_start", "sub_agent_end":
 			if len(segment) == 0 {
