@@ -132,6 +132,7 @@ makes sense.
 | **Hardening** | Ensure Nine is as safe as possible. |
 | **Model routing** | Route different work to different models within one deployment. Currently, Nine only uses one model at a time. |
 | **Add different LLM backends** | Add llama.cpp and vLLM. Both speak an OpenAI-compatible API, so one adapter covers them. Two things already point at this: an unrecognized `[llm].provider` is refused at startup rather than silently falling back, so a new backend registers there; and the context budget's bytes-per-token estimate is calibrated against one tokenizer, so a second backend needs its own measurement — the estimate-vs-actual reconciliation is in place to produce it. |
+| **Standing tools** | Recurring deterministic work has no cheap home: every way to run something on a cadence — standing agents, goal sessions, session-plan routines — puts an LLM turn in the loop, so watching a file every ten seconds costs thousands of turns a day to be told nothing happened. A sandboxed tool run indefinitely by the daemon, declared in config or generated on request, does that work with no model in the loop and under the capability model a cron script and a native plugin both sit outside of. Designed in `adr/standing-tools.md`. |
 | **More built-in plugins** | — |
 
 ## AI Use / Methodology
