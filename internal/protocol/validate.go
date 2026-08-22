@@ -67,6 +67,10 @@ var clientMsgSpecs = map[MsgType]clientMsgSpec{
 		altDesc:     `text "--all"`,
 	},
 
+	// No --all escape hatch, unlike session_stop. Erasing every session at once
+	// is not an operation anyone should reach by a flag.
+	TypeSessionDelete: {required: []fieldRule{needAgentID}},
+
 	TypePluginCall:       {required: []fieldRule{needToolName}},
 	TypeHumanInputAnswer: {required: []fieldRule{needRequestID}},
 }

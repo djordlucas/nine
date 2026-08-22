@@ -674,3 +674,78 @@ func lockfilePackages(raw json.RawMessage) []string {
 	}
 	return out
 }
+
+// handleSessionsList returns the session roster: every conversation with its
+// age, journal size, and whether the retention reaper may take it.
+//
+// Attached is filled from the daemon's live map rather than the store, because
+// "running right now" is not something the database knows.
+func (d *Daemon) handleSessionsList(enc *json.Encoder) {
+	if d.store == nil {
+		enc.Encode(protocol.NewErrorMsg("sessions require a configured store")) //nolint:errcheck
+		return
+	}
+	sessions, err := d.store.SessionList()
+	if err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+
+	d.mu.RLock()
+	live := make(map[string]bool, len(d.sessions))
+	for id := range d.sessions {
+		live[id] = true
+	}
+	names := make(map[string]string, len(d.names))
+	for id, n := range d.names {
+		names[id] = n
+	}
+	d.mu.RUnlock()
+
+	out := make([]protocol.SessionInfo, 0, len(sessions))
+	for _, s := range sessions {
+		name := s.Name
+		if name == "" {
+			name = names[s.ID]
+		}
+		out = append(out, protocol.SessionInfo{
+			ID:         s.ID,
+			Name:       name,
+			Status:     s.Status,
+			AgeSeconds: s.AgeSeconds,
+			Events:     s.Events,
+			Protected:  s.Protected,
+			Attached:   live[s.ID],
+		})
+	}
+	payload, err := json.Marshal(out)
+	if err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	enc.Encode(protocol.NewTextMsg(protocol.TypeSessionsList, string(payload))) //nolint:errcheck
+}
+
+// handleSessionDelete erases a session and reports what it removed.
+//
+// The reply names the counts rather than saying "deleted": this is the one
+// operation in Nine that destroys history, and an operator who has just run it
+// should be told what went, not reassured.
+func (d *Daemon) handleSessionDelete(enc *json.Encoder, agentID string) {
+	// Resolved before the delete, not after: resolveID prefix-matches against the
+	// live session map, and by the time DeleteSession returns the entry is gone —
+	// so resolving afterwards would echo back the operator's prefix instead of
+	// the session it actually removed.
+	resolved := d.resolveID(agentID)
+
+	counts, err := d.DeleteSession(context.Background(), resolved)
+	if err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	msg := fmt.Sprintf(
+		"deleted %s — %d rows: %d journal events, %d notifications, %d tool-state keys, %d jobs",
+		resolved, counts.Total(), counts.Events,
+		counts.Notifications+counts.UserNotifications, counts.ToolState, counts.Jobs)
+	enc.Encode(protocol.NewTextMsg(protocol.TypeSessionDelete, msg)) //nolint:errcheck
+}
