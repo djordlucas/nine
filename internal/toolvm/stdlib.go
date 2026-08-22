@@ -38,6 +38,10 @@ var stdlibSpecifiers = map[string]string{
 	// host's, the namespace is this tool's, and a tool with no grant gets a
 	// sentence saying so.
 	"nine:state": "stdlib/state.js",
+	// job is neither pure nor capability-gated: it is how a tool declared
+	// `resumable` ends a call with "ask me again". Importing it grants nothing —
+	// a tool whose manifest does not say resumable has its envelope refused.
+	"nine:job": "stdlib/job.js",
 }
 
 var (

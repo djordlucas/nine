@@ -623,6 +623,33 @@ wrong; which one applies is why the parameter is required and has no default.
 The full reasoning, including what the amended invariant gives up and what it keeps, is
 `adr/durable-and-long-running-tools.md` §2.
 
+### 6.5 Long-running work
+
+A call runs to completion under a deadline, which made the tool tier strictly
+request/response. A tool that declares `resumable = true` may instead do a bounded slice
+and hand back a cursor, and the host calls it again — as many times as it takes, across
+turns and across restarts.
+
+The instance model is untouched, and that is the point. Each call is created and destroyed
+exactly as before, under the same deadline and the same memory cap. Work outlives the turn
+because the *host* holds the cursor, never because anything outlives the instance. The
+alternatives — keeping an instance alive, or detaching one onto a goroutine — were rejected
+for the same reason: the wall-clock deadline is the only CPU bound the host has, and
+detaching from it leaves none.
+
+It runs as a **job**, in the registry long-running plugin work already uses, and an agent
+sees no difference: `job_check`, `job_wait`, `job_list`, `job_cancel`, unchanged. Two
+things a tool job does that a plugin job cannot, both consequences of the state being a row
+rather than a process: it resumes after a restart, and cancelling is exact rather than a
+polite request.
+
+Nine writing *itself* something that runs for an hour is a separate decision from Nine
+writing itself a date formatter, so the generated tier is gated by
+`[tools.agent] allow_long_running`, off by default. The capability ceiling cannot stand in
+for that: it bounds what a tool may *reach*, and duration is not reach.
+
+The design is `adr/durable-and-long-running-tools.md` §4.
+
 ### 6.3 Conferred, never claimed
 
 **A manifest declares a need. Only config grants.** These are different documents
