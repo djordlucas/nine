@@ -202,6 +202,26 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 			return fmt.Errorf("usage: nine attach <agent-id>")
 		}
 		return c.StartTUI(args[1])
+	case "sessions":
+		return c.Sessions(cfg)
+	case "session":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: nine session <show|delete> <agent-id>")
+		}
+		switch args[1] {
+		case "show":
+			if len(args) < 3 {
+				return fmt.Errorf("usage: nine session show <agent-id>")
+			}
+			return c.SessionShow(cfg, args[2])
+		case "delete":
+			if len(args) < 3 {
+				return fmt.Errorf("usage: nine session delete <agent-id> [--force]")
+			}
+			force := len(args) > 3 && args[3] == "--force"
+			return c.SessionDelete(cfg, args[2], force)
+		}
+		return fmt.Errorf("usage: nine session <show|delete> <agent-id>")
 	case "stop":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: nine stop <agent-id|--all>")

@@ -303,6 +303,46 @@ func (c *Client) StopSession(id string, all bool) (string, error) {
 	return reply.Text, nil
 }
 
+// ListSessions requests the session roster: every conversation with its age,
+// status, journal size, and whether the retention reaper is allowed to take it.
+func (c *Client) ListSessions() ([]SessionInfo, error) {
+	if err := c.send(NewSessionsListMsg()); err != nil {
+		return nil, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return nil, err
+	}
+	if err := expectReply(reply, TypeSessionsList); err != nil {
+		return nil, err
+	}
+	var out []SessionInfo
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return nil, fmt.Errorf("decode sessions: %w", err)
+	}
+	return out, nil
+}
+
+// DeleteSession erases a session and everything keyed to it, returning the
+// daemon's human-readable summary of what was removed.
+//
+// Distinct from StopSession, which ends a session and keeps its history. There
+// is deliberately no all=true here: erasing every session at once should not be
+// reachable by a flag.
+func (c *Client) DeleteSession(id string) (string, error) {
+	if err := c.send(NewSessionDeleteMsg(id)); err != nil {
+		return "", err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return "", err
+	}
+	if err := expectReply(reply, TypeSessionDelete); err != nil {
+		return "", err
+	}
+	return reply.Text, nil
+}
+
 func (c *Client) queryList(msgType MsgType) (string, error) {
 	if err := c.send(NewQueryMsg(msgType)); err != nil {
 		return "", err
