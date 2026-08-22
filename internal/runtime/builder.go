@@ -216,7 +216,7 @@ func (f *AgentBuilder) Build(agentID string, interactive bool) *agent.Loop {
 // p.Interactive is effective only for HITL-eligible roles (AND-ed with the
 // role's Interactive flag, adr/roles-design.md §6); p.OwnsGoal and p.Delegates layer
 // the pursue-shell's goal ownership and delegation opt-in over the resolved
-// role (docs/predefined-agents.md §3.1).
+// role (adr/predefined-agents-design.md §3.1).
 func (f *AgentBuilder) BuildForRole(agentID string, p RoleParams) *agent.Loop {
 	role := f.roles.Resolve(p.Role)
 	role.Interactive = role.Interactive && p.Interactive
@@ -321,7 +321,7 @@ var subAgentToolNames = []string{
 // goalSelfMgmtToolNames are the goal-ownership tools a pursue-shell session
 // uses to steer its own goal. They are granted to any goal-owning shell
 // (role.OwnsGoal) or delegating role, bypassing an allowlist role's own tool
-// set the way gap_report does (docs/predefined-agents.md §3.1).
+// set the way gap_report does (adr/predefined-agents-design.md §3.1).
 var goalSelfMgmtToolNames = []string{
 	"goal_get", "goal_list", "goal_update_status",
 }
@@ -385,7 +385,7 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 
 	// shellTools are conferred by the session shell, not the role's allowlist —
 	// they are granted unfiltered (like gap_report) and pruning in RestrictTo
-	// must let them through (docs/predefined-agents.md §3.1). Delegation,
+	// must let them through (adr/predefined-agents-design.md §3.1). Delegation,
 	// goal-ownership, and human-output are structural capabilities, so a narrow
 	// role that opts into them (e.g. a standing agent with delegates=true) still
 	// gets the tools even though its allowlist never lists them.
@@ -417,7 +417,7 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		shellTools = append(shellTools, goalSelfMgmtToolNames...)
 	}
 	// notify_user is the human-output surface for a goal-owning background shell
-	// (docs/predefined-agents.md §5 piece 2): a standing/pursue session has no
+	// (adr/predefined-agents-design.md §5 piece 2): a standing/pursue session has no
 	// conversation, so this is how it reaches a human.
 	if role.OwnsGoal && f.cfg.NotifyUser != nil {
 		agent.RegisterNotifyUser(d, agentID, f.cfg.NotifyUser)
@@ -989,7 +989,7 @@ func buildToolList(lc LoopConfig, role Role, shellTools []string, roleEnum strin
 	tools = appendInterceptedTools(tools, filterByRole(coreToolNames, role), roleEnum)
 	// Shell-conferred tools (delegation, goal self-management, notify_user) are
 	// advertised unfiltered — the shell grants them, not the role's allowlist
-	// (docs/predefined-agents.md §3.1).
+	// (adr/predefined-agents-design.md §3.1).
 	tools = appendInterceptedTools(tools, shellTools, roleEnum)
 	return tools
 }
