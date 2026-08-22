@@ -353,6 +353,30 @@ func initSchema(d db) error {
 			last_called_at TEXT NOT NULL DEFAULT '',
 			call_count     INTEGER NOT NULL DEFAULT 0
 		)`,
+		// tool_state is a sandboxed tool's durable state (spec/contracts/toolvm.md
+		// R-TVM.18): the host-owned store that lets a tool remember across calls
+		// without anything surviving the wasm instance. Deliberately NOT the `kv`
+		// table — that one is Nine's own namespace, and admitting tool writes to it
+		// would make every prefix Nine reads its bookkeeping from agent-writable.
+		//
+		// scope_key is '' for a tool-scoped grant and the owning conversation id for
+		// a conversation-scoped one, so one table serves both without the caller
+		// having to know which it got. size is the value's byte length, kept so the
+		// per-scope total can be summed without reading every value back.
+		`CREATE TABLE IF NOT EXISTS tool_state (
+			tool       TEXT NOT NULL,
+			scope_key  TEXT NOT NULL DEFAULT '',
+			key        TEXT NOT NULL,
+			value      TEXT NOT NULL DEFAULT '',
+			size       INTEGER NOT NULL DEFAULT 0,
+			updated_at TEXT NOT NULL DEFAULT ` + nowExpr + `,
+			expires_at TEXT NOT NULL DEFAULT '',
+			PRIMARY KEY (tool, scope_key, key)
+		)`,
+		// The sweeper asks for expired rows across every tool at once, so the index
+		// is on expires_at alone. '' (never expires) is the common value and sorts
+		// below every timestamp, so the range scan skips it.
+		`CREATE INDEX IF NOT EXISTS tool_state_expiry ON tool_state (expires_at)`,
 		`CREATE TABLE IF NOT EXISTS workflows (
 			id         TEXT PRIMARY KEY,
 			name       TEXT NOT NULL,

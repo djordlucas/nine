@@ -58,6 +58,10 @@ func OpenSandboxedTools(ctx context.Context, cfg *config.Config, store *memory.S
 		// Usage bookkeeping for LRU eviction (§9.2). Best-effort and after the
 		// fact: a touch failure must not fail the tool call the model is waiting on.
 		TouchGenerated: touchGenerated(store),
+		// The durable store behind the `state` capability. Nil when the daemon has
+		// no store, which leaves a granted tool with a named error rather than a
+		// store that silently forgets.
+		StateStore: newToolStateStore(store),
 	})
 	if err != nil {
 		slog.Error("sandboxed tools disabled: cannot open the wasm host", "err", err)
@@ -98,6 +102,7 @@ func agentConfig(cfg *config.Config) toolvm.AgentConfig {
 			FSWrite: mounts(caps.FS.Write),
 			Env:     caps.Env,
 			HTTP:    httpGrant(caps.Net.HTTP),
+			State:   stateGrant(caps.State),
 		}},
 	}
 }
@@ -221,6 +226,7 @@ func toolGrants(cfg *config.Config) map[string]toolvm.Grant {
 			FSWrite: mounts(caps.FS.Write),
 			Env:     caps.Env,
 			HTTP:    httpGrant(caps.Net.HTTP),
+			State:   stateGrant(caps.State),
 		}
 	}
 	return out
@@ -248,6 +254,29 @@ func toolTimeouts(cfg *config.Config) (map[string]time.Duration, error) {
 		out[name] = d
 	}
 	return out, nil
+}
+
+// stateGrant translates the operator's state table. Config.Validate has already
+// refused an absent or unknown scope and an unparseable ttl, so this is a pure
+// translation — an error here would be a validation gap, not an operator error,
+// and the duration is re-parsed rather than carried because config holds the
+// operator's text and toolvm holds the resolved bound.
+func stateGrant(in *config.ToolStateGrant) *toolvm.StateGrant {
+	if in == nil {
+		return nil
+	}
+	g := &toolvm.StateGrant{
+		Scope:      in.Scope,
+		MaxKeys:    in.MaxKeys,
+		MaxValueKB: in.MaxValueKB,
+		MaxTotalKB: in.MaxTotalKB,
+	}
+	if in.TTL != "" {
+		if d, err := time.ParseDuration(in.TTL); err == nil {
+			g.TTL = d
+		}
+	}
+	return g
 }
 
 // httpGrant translates the operator's net.http table. Config.Validate has

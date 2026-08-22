@@ -48,6 +48,7 @@ const hostFSReadDir = globalThis.__nine_fs_readdir;
 const hostFSStat = globalThis.__nine_fs_stat;
 const hostEnv = globalThis.__nine_env;
 const hostRandom = globalThis.__nine_random;
+const hostState = globalThis.__nine_state;
 
 let capsCache;
 globalThis[Symbol.for("nine.internal")] = Object.freeze({
@@ -59,6 +60,7 @@ globalThis[Symbol.for("nine.internal")] = Object.freeze({
   fsStat: (p) => hostFSStat(p),
   env: (n) => hostEnv(n),
   random: (n) => hostRandom(n),
+  state: (req) => hostState(req),
 });
 
 // crypto, built on the host's randomness rather than Math.random. getentropy is
@@ -105,6 +107,7 @@ delete globalThis.__nine_fs_readdir;
 delete globalThis.__nine_fs_stat;
 delete globalThis.__nine_env;
 delete globalThis.__nine_random;
+delete globalThis.__nine_state;
 
 // The `log` capability (§6.2), granted by default. QuickJS itself has no
 // console: the stock one comes from quickjs-libc's js_std_add_helpers, which

@@ -402,6 +402,35 @@ allow_hosts = ["api.weather.example", "*.cdn.weather.example"]  # exact, or a
 methods     = ["GET"]        # required; no implicit default
 max_bytes   = 1048576        # response cap; 0 uses 1 MiB
 
+# Durable state: what a tool may remember between calls.
+#
+# A tool is built fresh for every call and thrown away after it, so nothing in
+# the interpreter survives. This grants a store the HOST owns instead: keys
+# scoped to this one tool, bounded below, readable by nothing else. It is the
+# proportionate answer to a tool that needs to cache 200 bytes of ETag and would
+# otherwise have to be handed a directory on your disk.
+#
+# `scope` is REQUIRED and has no default, because the two values differ in
+# something you should decide rather than inherit:
+#
+#   "tool"          one namespace shared by every caller. What a cache wants —
+#                   and a channel from one conversation into another, since a
+#                   tool's arguments come from the model and a call in one
+#                   session can write down what a call in another reads back.
+#                   No network grant is needed for that; grant it to a tool
+#                   whose code you have read.
+#   "conversation"  a separate namespace per conversation, which closes that.
+#
+# Quotas are per (tool, scope). Exceeding one is an error the tool can catch and
+# recover from, never a silent drop. `nine tools show <name>` prints the
+# resolved scope and quotas.
+[tool.geocode.capabilities.state]
+scope        = "tool"        # required: "tool" or "conversation"
+max_keys     = 512           # 0 uses 128
+max_value_kb = 8             # 0 uses 64
+max_total_kb = 256           # 0 uses 1024
+ttl          = "24h"         # optional; omit for no expiry
+
 # ── Generated tools: the tier Nine writes itself ─────────────────────────────
 # OFF by default and independent of [tools] enabled above — an operator may want developer
 # tools without letting the agent author any. When on, the agent gets tool_write/tool_delete

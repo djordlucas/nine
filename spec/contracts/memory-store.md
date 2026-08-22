@@ -42,7 +42,7 @@ a fake repository.
 
 ## R-MEM.2 — Schema (exactly these tables)
 
-The reference database contains these **eighteen** tables. An implementation **MUST**
+The reference database contains these **nineteen** tables. An implementation **MUST**
 provide equivalent storage for each; it **MUST NOT** require additional operational
 tables to be agent-visible (R-MEM.4).
 
@@ -65,6 +65,7 @@ tables to be agent-visible (R-MEM.4).
 | `event_cursors` | per-subscriber durable journal position | daemon-private |
 | `related_sessions` | derived cross-session links (see [`subscriptions.md`](subscriptions.md)) | daemon-private |
 | `plugin_jobs` | long-running plugin work tracked across turns (see [`plugin.md`](plugin.md)) | daemon-private |
+| `tool_state` | a sandboxed tool's durable state, keyed `(tool, scope_key, key)` — the store behind the `state` capability (see [`toolvm.md`](toolvm.md) R-TVM.18). Deliberately separate from `kv`, which is Nine's own namespace and must not become tool-writable | daemon-private |
 
 There is **no `plugin_registry` table** (plugins are immutable image content) and **no
 `tasks` table** (finite work is a sub-agent or a workflow step).

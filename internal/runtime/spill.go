@@ -110,14 +110,41 @@ func sweepSpills(store *memory.Store) {
 	}
 }
 
-// RunSpillSweeper sweeps expired spills once at startup and then on every tick
-// until ctx is cancelled. Production-only housekeeping: the eval harness builds
-// its store per case and throws it away, so it never starts one.
+// sweepToolState reclaims expired durable-state rows (spec/contracts/toolvm.md
+// R-TVM.18).
+//
+// It rides on the spill sweeper's tick rather than getting a goroutine of its
+// own: both are periodic housekeeping over the same store on the same cadence,
+// and a second ticker would buy nothing.
+//
+// Expiry is applied on read as well, so a `ttl` is honoured between sweeps and
+// this is purely about reclaiming the space. Doing it the other way round —
+// reclaiming on read — would let a tool keep a value alive forever by never
+// looking at it, which is the opposite of what a ttl is for.
+func sweepToolState(store *memory.Store) {
+	n, err := store.ToolStateExpire()
+	if err != nil {
+		slog.Warn("tool state sweep failed", "err", err)
+		return
+	}
+	if n > 0 {
+		slog.Info("swept expired tool state", "deleted", n)
+	}
+}
+
+// RunSpillSweeper sweeps expired tool-output spills and expired durable tool
+// state, once at startup and then on every tick until ctx is cancelled.
+// Production-only housekeeping: the eval harness builds its store per case and
+// throws it away, so it never starts one.
 func RunSpillSweeper(ctx context.Context, store *memory.Store) {
 	if store == nil {
 		return
 	}
-	sweepSpills(store)
+	sweep := func() {
+		sweepSpills(store)
+		sweepToolState(store)
+	}
+	sweep()
 	t := time.NewTicker(spillSweepInterval)
 	defer t.Stop()
 	for {
@@ -125,7 +152,7 @@ func RunSpillSweeper(ctx context.Context, store *memory.Store) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			sweepSpills(store)
+			sweep()
 		}
 	}
 }
