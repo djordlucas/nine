@@ -340,7 +340,7 @@ wrong, `nine replay --turn N` to read it.
 Deterministic **re-execution** — rebuilding the agent loop on a *recorded*
 provider and dispatcher so a recorded session runs again with no live LLM or tool
 calls and reproduces its answers — is a separate, programmatic surface
-(`internal/replay`). It backs the record-then-replay test gate and the eval
+(`replay`). It backs the record-then-replay test gate and the eval
 suite's replay track ([evals](evals.md)); no CLI command exposes it.
 
 ### `nine docs` / `nine spec` — read the bundled docs

@@ -82,8 +82,7 @@ depend on, pin:
 args = ["-y", "@playwright/mcp@0.0.79", "--headless", "--browser", "chromium", "--isolated"]
 ```
 
-`0.0.79` is the version Nine's own test
-(`internal/builtins/mcp_playwright_test.go`) is written against.
+`0.0.79` is the version Nine's own end-to-end test is written against.
 
 ---
 
