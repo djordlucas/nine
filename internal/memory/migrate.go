@@ -143,6 +143,63 @@ var migrations = []migrationStep{
 		_, err = q.Exec(`ALTER TABLE session_plans RENAME COLUMN aspects TO routines`)
 		return err
 	}},
+
+	// 6 → 7: `plugin_jobs` becomes `jobs`, gaining a `backend` column so one
+	// registry serves both long-running plugin work and long-running sandboxed
+	// tools (adr/durable-and-long-running-tools.md §4.3). `plugin_job_id` becomes
+	// the backend-neutral `backend_ref`; `cursor` and `calls` are new and belong
+	// only to the tool backend.
+	//
+	// This copies rather than renaming, and the reason is the ordering in
+	// initSchema: CREATE TABLE IF NOT EXISTS runs *before* the migration runner,
+	// so by the time this step executes an empty `jobs` table already exists and
+	// `ALTER TABLE plugin_jobs RENAME TO jobs` would fail on the collision. Moving
+	// the rows across and dropping the old table is correct under both orderings.
+	//
+	// Every migrated row is backend='plugin' by definition — the tool backend did
+	// not exist when they were written.
+	{name: "plugin_jobs_to_jobs", fn: func(q sqlExec) error {
+		has, err := hasTableTx(q, "plugin_jobs")
+		if err != nil || !has {
+			return err
+		}
+		if _, err := q.Exec(`
+			INSERT OR IGNORE INTO jobs(
+				handle, backend, plugin, tool, backend_ref, owner_id, state, ack,
+				progress, output, spill_path, error, created_at, updated_at, finished_at)
+			SELECT handle, 'plugin', plugin, tool, plugin_job_id, owner_id, state, ack,
+			       progress, output, spill_path, error, created_at, updated_at, finished_at
+			FROM plugin_jobs`); err != nil {
+			return err
+		}
+		// The old indexes go with the table.
+		_, err = q.Exec(`DROP TABLE plugin_jobs`)
+		return err
+	}},
+
+	// 7 → 8: generated tools gain `resumable`. Same shape as step 1: the `tools`
+	// table predates the column and CREATE TABLE IF NOT EXISTS cannot add one to
+	// a table that already exists. Every existing row is 0, which is correct —
+	// the long-running lifecycle did not exist when they were written.
+	{name: "tools_resumable", fn: func(q sqlExec) error {
+		return addColumnIfMissing(q, "tools", "resumable", "INTEGER NOT NULL DEFAULT 0")
+	}},
+}
+
+// hasTableTx reports whether a table exists, using the passed handle so it
+// participates in the migration's transaction. (db.hasTable cannot be used from
+// a step: it routes a SELECT to the reader pool, which does not exist yet.)
+func hasTableTx(q sqlExec, name string) (bool, error) {
+	rows, err := q.Query(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`, name)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close() //nolint:errcheck
+	found := rows.Next()
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return found, rows.Close()
 }
 
 // dropColumnIfPresent removes a column only when it is there, so the step is

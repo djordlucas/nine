@@ -97,6 +97,21 @@ type ToolsConfig struct {
 	// (docs/sandboxed-tools.md §4.4). Empty uses os.UserCacheDir()/nine/tools.
 	CacheDir string `toml:"cache_dir"`
 
+	// JobMaxCalls bounds how many times one long-running tool job may be called
+	// before the daemon fails it. 0 uses runtime.DefaultJobMaxCalls (720).
+	//
+	// This bound is essential rather than defensive. Each call is deadline-bounded
+	// as ever, but a tool returning `continue` with after_ms = 0 forever converts
+	// a bounded CPU story into an unbounded one, one legal call at a time.
+	JobMaxCalls int `toml:"job_max_calls"`
+
+	// JobMinDelayMS is the floor on the delay a resumable tool may ask for
+	// between calls. 0 uses runtime.DefaultJobMinDelayMS (250).
+	//
+	// The tool's request is a request: the effective delay is at least this, and
+	// in practice is rounded up to the sweeper's next tick.
+	JobMinDelayMS int `toml:"job_min_delay_ms"`
+
 	// Agent is the `[tools.agent]` table: the generated tier, where Nine writes
 	// its own tools (docs/sandboxed-tools.md §5.2). Off by default and
 	// independent of `enabled` — an operator may want developer tools without
@@ -150,6 +165,16 @@ type ToolsAgentConfig struct {
 	// generated tools (docs/sandboxed-tools.md §4.4). Off by default — the single
 	// riskiest switch in the design.
 	Deps ToolsDepsConfig `toml:"deps"`
+
+	// AllowLongRunning lets a generated tool declare itself resumable and be run
+	// as a long-running job. Off by default, mirroring [tools.agent.deps].mode.
+	//
+	// Nine writing itself a date formatter and Nine writing itself something that
+	// runs for an hour across restarts are different propositions, and the
+	// capability ceiling cannot express the difference: it bounds *reach*, not
+	// *duration*. A capability-free tool that never stops is inert per call and
+	// unbounded in aggregate.
+	AllowLongRunning bool `toml:"allow_long_running"`
 
 	// AllowNetworkDeps lifts the deps+net.http interlock. A package that can reach
 	// the network can exfiltrate whatever the tool sees, so a tool that both

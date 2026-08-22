@@ -205,6 +205,7 @@ $ nine tools
 | `fs.read` / `fs.write` | `import … from "nine:fs"` | ❌ declare + grant |
 | `env` | `import { get } from "nine:env"` | ❌ declare + grant |
 | `state` | `import { get, set } from "nine:state"` | ❌ declare + grant |
+| long-running | `import { again } from "nine:job"` | ❌ `resumable = true` in the manifest |
 
 ### The filesystem, from JavaScript
 
@@ -308,6 +309,59 @@ try {
   set(key, value);
 }
 ```
+
+### Work too long for one call
+
+Every call runs under a wall-clock deadline — five seconds by default. If your tool needs
+longer, it does **not** get a longer call. It does a bounded slice, hands back a cursor,
+and gets called again.
+
+```toml
+# your manifest
+resumable = true
+```
+
+```js
+import { again } from "nine:job";
+
+export default function (args, job) {
+  const at = Number(job?.cursor ?? 0);
+  const end = Math.min(at + 100, args.total);
+  processRows(at, end);
+  if (end >= args.total) return `done: ${args.total} rows`;
+  return again({
+    cursor: String(end),
+    progress: `${end}/${args.total}`,
+    afterMs: 1000,
+  });
+}
+```
+
+The tool runs as a **background job**. The turn that started it gets a handle straight
+away; the result arrives on a later turn, and the model can follow up with `job_check`,
+`job_wait`, `job_list`, or `job_cancel` — the same four tools long-running plugin work
+already uses. Nothing about that surface is tool-specific.
+
+Three rules that are not optional:
+
+- **Bounded work per call.** Each call is an ordinary call under the ordinary deadline.
+  `again()` is how you get more time; blocking is how you get killed.
+- **Everything you need to resume goes in the cursor** (or in `nine:state`). The instance
+  does not survive, so a variable you set will not be there. `args` is handed back
+  unchanged every call — only the cursor moves.
+- **`resumable = true` in the manifest, or the envelope is refused.** A tool cannot acquire
+  a lifecycle by returning a field.
+
+`afterMs` is a request. The host floors it (`[tools] job_min_delay_ms`, default 250ms) and
+rounds up to its sweep, so 0 does not mean "spin".
+
+A job is bounded in total, too: `[tools] job_max_calls` (default 720) and `[plugins]
+job_max_seconds` (default 1h). A tool that always returns `again()` eventually fails,
+naming the bound.
+
+**Two things a tool job does that a plugin job cannot.** It **resumes after a daemon
+restart** — its whole live state is the cursor in the registry, so there is nothing to
+lose. And **cancelling is exact**: the daemon simply does not make the next call.
 
 ### The environment
 

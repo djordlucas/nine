@@ -108,6 +108,12 @@ func (d *Dispatcher) SetApproval(toolNames []string, fn ApprovalFn) {
 // returns a job id is an error.
 type JobStarter interface {
 	StartJob(ctx context.Context, pluginName, tool, pluginJobID, ack string) (string, error)
+
+	// StartToolJob records a long-running sandboxed-tool job and returns the
+	// observation the model sees. Unlike a plugin job the work has not begun —
+	// the daemon decides when to make the first call — so this can be refused
+	// outright rather than admitted and cancelled.
+	StartToolJob(ctx context.Context, tool string, args json.RawMessage, c *toolvm.Continuation) (string, error)
 }
 
 // SetJobStarter installs the sink for plugin jobs. Registered per worker so the
@@ -159,6 +165,17 @@ func (d *Dispatcher) RegisterSandboxed(h SandboxedHost) {
 			out, err := h.CallOutput(ctx, toolName, args)
 			if err != nil {
 				return "", err
+			}
+			if out.Continue != nil {
+				// The tool did bounded work and asked to be called again, so this
+				// turn gets an acknowledgement and the job runs on past it. Same
+				// shape as a plugin returning a job id, and the model sees the same
+				// vocabulary: a handle it can job_wait or job_check.
+				if d.jobs == nil {
+					return "", fmt.Errorf(
+						"tool %q asked to run as a background job, but background jobs are not enabled here", toolName)
+				}
+				return d.jobs.StartToolJob(ctx, toolName, args, out.Continue)
 			}
 			if out.Bytes != nil {
 				return d.storeToolBytes(ctx, toolName, out)

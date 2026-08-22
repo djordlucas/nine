@@ -42,7 +42,8 @@ var generatedToolDefs = []llm.ToolDef{
 					"fs":{"type":"array","items":{"type":"string","enum":["read","write"]}},
 					"net":{"type":"array","items":{"type":"string","enum":["http"]}},
 					"env":{"type":"array","items":{"type":"string"}}
-				}}
+				}},
+				"resumable":{"type":"boolean","description":"Set only for work too long for one call. A resumable tool does a bounded slice per call and returns again({cursor,progress,afterMs}) from \"nine:job\" to be called again with its cursor; returning a value finishes it. It runs as a background job, so its result reaches you on a later turn via job_check/job_wait. May be disabled by the operator."}
 			}}`),
 	},
 	{
@@ -97,6 +98,10 @@ type GeneratedToolSpec struct {
 	InputSchema  json.RawMessage
 	Source       string
 	Capabilities json.RawMessage
+	// Resumable asks for the long-running lifecycle. Gated by the operator
+	// separately from the capability ceiling, which bounds reach rather than
+	// duration.
+	Resumable bool
 }
 
 // RegisterGeneratedTools registers tool_write, tool_delete, and js_eval.
@@ -117,6 +122,7 @@ func RegisterGeneratedTools(d *Dispatcher, s GeneratedToolStore, evalEnabled boo
 			InputSchema  json.RawMessage `json:"input_schema"`
 			Source       string          `json:"source"`
 			Capabilities json.RawMessage `json:"capabilities"`
+			Resumable    bool            `json:"resumable"`
 		}
 		if err := json.Unmarshal(args, &req); err != nil {
 			return "", fmt.Errorf("tool_write: %w", err)
@@ -139,6 +145,7 @@ func RegisterGeneratedTools(d *Dispatcher, s GeneratedToolStore, evalEnabled boo
 			InputSchema:  req.InputSchema,
 			Source:       req.Source,
 			Capabilities: req.Capabilities,
+			Resumable:    req.Resumable,
 		})
 		if err != nil {
 			return "", err

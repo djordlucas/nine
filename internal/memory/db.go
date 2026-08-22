@@ -348,6 +348,7 @@ func initSchema(d db) error {
 			source         TEXT NOT NULL DEFAULT '',
 			capabilities   TEXT NOT NULL DEFAULT '{}',
 			lockfile       TEXT NOT NULL DEFAULT '{}',
+			resumable      INTEGER NOT NULL DEFAULT 0,
 			created_at     TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			updated_at     TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			last_called_at TEXT NOT NULL DEFAULT '',
@@ -449,15 +450,25 @@ func initSchema(d db) error {
 			updated_at       TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			PRIMARY KEY (agent_id, related_agent_id)
 		)`,
-		// plugin_jobs: the daemon-side registry of long-running plugin work
-		// (docs/plugin-capabilities.md §5). The model sees `handle`; the daemon
-		// polls (plugin, plugin_job_id) and notifies owner_id on completion. A
-		// large result goes to the file store (spill_path), not the row.
-		`CREATE TABLE IF NOT EXISTS plugin_jobs (
+		// jobs: the daemon-side registry of long-running work, across both
+		// backends (docs/plugin-capabilities.md §5, adr/durable-and-long-running-tools.md).
+		// The model sees `handle` and never the backend's own id.
+		//
+		// `backend` decides what the sweeper does with a row, and the two are not
+		// symmetrical: for a plugin it POLLS work the plugin is already doing, at
+		// (plugin, backend_ref); for a tool it IS the executor, making the next
+		// call itself and handing back the cursor the tool last returned. That is
+		// why `cursor` and `calls` live here — a tool job's entire live state is
+		// this row, which is what lets it resume after a restart where a plugin
+		// job can only be marked lost.
+		//
+		// A large result goes to the file store (spill_path), not the row.
+		`CREATE TABLE IF NOT EXISTS jobs (
 			handle        TEXT PRIMARY KEY,
-			plugin        TEXT NOT NULL,
+			backend       TEXT NOT NULL DEFAULT 'plugin',
+			plugin        TEXT NOT NULL DEFAULT '',
 			tool          TEXT NOT NULL,
-			plugin_job_id TEXT NOT NULL,
+			backend_ref   TEXT NOT NULL DEFAULT '',
 			owner_id      TEXT NOT NULL DEFAULT '',
 			state         TEXT NOT NULL DEFAULT 'running',
 			ack           TEXT NOT NULL DEFAULT '',
@@ -465,12 +476,15 @@ func initSchema(d db) error {
 			output        TEXT NOT NULL DEFAULT '',
 			spill_path    TEXT NOT NULL DEFAULT '',
 			error         TEXT NOT NULL DEFAULT '',
+			cursor        TEXT NOT NULL DEFAULT '',
+			calls         INTEGER NOT NULL DEFAULT 0,
+			next_at       TEXT NOT NULL DEFAULT '',
 			created_at    TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			updated_at    TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			finished_at   TEXT
 		)`,
-		`CREATE INDEX IF NOT EXISTS plugin_jobs_owner ON plugin_jobs (owner_id)`,
-		`CREATE INDEX IF NOT EXISTS plugin_jobs_state ON plugin_jobs (state)`,
+		`CREATE INDEX IF NOT EXISTS jobs_owner ON jobs (owner_id)`,
+		`CREATE INDEX IF NOT EXISTS jobs_state ON jobs (state)`,
 	}
 	for _, s := range stmts {
 		if _, err := d.Exec(s); err != nil {
