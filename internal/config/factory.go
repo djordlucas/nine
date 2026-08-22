@@ -201,15 +201,42 @@ func (cfg *Config) EventRetention() (keepTurns int, maxAge time.Duration) {
 	return keepTurns, maxAge
 }
 
+// ProviderOllama is the only chat backend Nine implements today.
+const ProviderOllama = "ollama"
+
+// CheckProvider reports whether [llm].provider names a backend Nine has.
+//
+// Unset is not an error: it means "the default", and the default is Ollama. A
+// value Nine does not recognize is a different thing entirely — the operator
+// asked for a specific backend and naming it wrong is a mistake, not a
+// preference. Serving a *different* model than the one requested is the worst
+// available outcome, because nothing downstream looks wrong: the daemon boots,
+// turns answer, and the answers come from somewhere else.
+//
+// This is deliberately not part of Validate. Validate runs inside Load, before
+// ApplyEnvOverrides — so it cannot see NINE_LLM_PROVIDER — and a Validate error
+// makes LoadDefault discard the whole file and fall through to an empty config.
+// A typo'd provider name silently throwing away the operator's entire
+// configuration would be worse than the warning this replaces. Callers run this
+// against the effective config, after overrides.
+func (cfg *Config) CheckProvider() error {
+	switch cfg.LLM.Provider {
+	case "", ProviderOllama:
+		return nil
+	}
+	return fmt.Errorf("[llm].provider %q is not a backend Nine has (known: %q); "+
+		"leave it unset for the default rather than guessing a name",
+		cfg.LLM.Provider, ProviderOllama)
+}
+
 // BuildProvider constructs an LLM provider from cfg, with environment variable
 // overrides applied on top.
 //
 // Ollama is the only chat backend: Nine targets local models, so there is
-// nothing to switch on. `[llm].provider` is kept because it names the backend in
-// config and because a second local backend is plausible; any value other than
-// "ollama" is a stale config rather than a request Nine can honor, so it is
-// reported and the Ollama adapter is built anyway (BuildProvider cannot fail —
-// booting with a local model is strictly more useful than not booting).
+// nothing to switch on. An unrecognized provider is refused at startup by
+// CheckProvider, so reaching here with one means a caller skipped that check;
+// it is logged and Ollama is built anyway, because BuildProvider cannot fail
+// and a running daemon beats a nil provider.
 func (cfg *Config) BuildProvider() llm.Provider {
 	provider := cfg.LLM.Provider
 	if e := os.Getenv("NINE_LLM_PROVIDER"); e != "" {
@@ -217,6 +244,8 @@ func (cfg *Config) BuildProvider() llm.Provider {
 	}
 	if provider != "" && provider != "ollama" {
 		// provider is operator-supplied config, not an untrusted source.
+		// Unreachable when the daemon ran CheckProvider, which is why this is a
+		// last-resort log rather than the enforcement point.
 		slog.Warn("unknown [llm].provider; using ollama", "provider", provider) //nolint:gosec // G706: operator-controlled value
 	}
 	model := cfg.LLM.Model
