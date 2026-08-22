@@ -60,3 +60,6 @@ remains here is the reasoning.
 - **durable-and-long-running-tools.md** — giving a sandboxed tool a memory and
   letting its work outlive a turn, without letting anything survive the instance.
   Amends I-TVM.3. Proposed.
+- **standing-tools.md** — running a resumable tool indefinitely on its own
+  cadence, declared in config or generated on request. A second run mode, not a
+  second kind of tool. Proposed.
