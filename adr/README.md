@@ -57,3 +57,6 @@ remains here is the reasoning.
 - **single-container.md** — the single-container design. Partly superseded:
   the browser plugin it assumes no longer exists.
 - **tui-slash-suggestions.md** — slash-command suggestions in the TUI.
+- **durable-and-long-running-tools.md** — giving a sandboxed tool a memory and
+  letting its work outlive a turn, without letting anything survive the instance.
+  Amends I-TVM.3. Proposed.
