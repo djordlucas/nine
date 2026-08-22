@@ -255,16 +255,24 @@ func runDaemon() {
 	// bound (adr/tool-output-spill.md §5).
 	go runtime.RunSpillSweeper(ctx, store)
 
-	// Any plugin job still marked running belongs to a plugin the previous daemon
-	// left behind (this boot spawned fresh ones), so it is unreachable: mark such
-	// rows lost and tell their owners (docs/plugin-capabilities.md §5).
+	// Any *plugin* job still marked running belongs to a plugin the previous
+	// daemon left behind (this boot spawned fresh ones), so it is unreachable:
+	// mark such rows lost and tell their owners (docs/plugin-capabilities.md §5).
 	runtime.MarkOrphanedJobsLost(store)
 
-	// Poll running plugin jobs (docs/plugin-capabilities.md §5): reconcile their
-	// state, expire over-age ones, and on completion cap-or-spill the result and
-	// notify the owning conversation so the next turn learns of it.
-	go runtime.RunJobSweeper(ctx, store, pluginManager, jobWaiters,
-		time.Duration(cfg.Plugins.JobPollSeconds)*time.Second, cfg.Plugins.JobMaxSeconds)
+	// A tool job is the opposite case and needs no repair. Its whole live state
+	// is the cursor on its row, so this daemon simply makes the next call; the
+	// only thing to do at boot is say which ones are being picked up.
+	runtime.ResumeToolJobs(store)
+
+	// Drive both job backends (docs/plugin-capabilities.md §5,
+	// adr/durable-and-long-running-tools.md §4.3): poll running plugin jobs,
+	// make the next call for due tool jobs, expire over-age ones, and on
+	// completion cap-or-spill the result and notify the owning conversation so
+	// the next turn learns of it.
+	go runtime.RunJobSweeperWithTools(ctx, store, pluginManager, jobWaiters,
+		time.Duration(cfg.Plugins.JobPollSeconds)*time.Second, cfg.Plugins.JobMaxSeconds,
+		runtime.NewToolJobRunner(store, toolHost, cfg.Tools.JobMaxCalls, cfg.Tools.JobMinDelayMS))
 
 	// Reconcile pre-defined agents declared in nine.toml: seed a config-owned
 	// goal + pursue shell for each, and bring existing ones' definitions in line

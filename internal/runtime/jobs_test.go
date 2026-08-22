@@ -80,14 +80,14 @@ func TestJobSweeperCompletesAndNotifies(t *testing.T) {
 	// Drive the sweeper until the job finishes.
 	sw := &jobSweeper{store: store, mgr: mgr}
 	deadline := time.Now().Add(3 * time.Second)
-	var got memory.PluginJob
+	var got memory.Job
 	for time.Now().Before(deadline) {
 		sw.sweepOnce(ctx)
-		j, ok, err := store.PluginJobGet(handle)
+		j, ok, err := store.JobGet(handle)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if ok && memory.PluginJobTerminal(j.State) {
+		if ok && memory.JobTerminal(j.State) {
 			got = j
 			break
 		}

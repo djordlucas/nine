@@ -522,3 +522,69 @@ func TestMigrationRenamesAspectsToRoutines(t *testing.T) {
 		t.Errorf("routines = %+v, want the stored pursue routine intact", plan.Routines)
 	}
 }
+
+// A database left by a binary that knew only plugin_jobs. Its rows must survive
+// into the generalized `jobs` table as backend='plugin', because a job in flight
+// when the operator upgraded is exactly the row whose loss would be noticed.
+func TestMigratesPluginJobsIntoJobs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nine.db")
+
+	func() {
+		w := openRaw(t, path)
+		mustExec(t, w, `CREATE TABLE conversations (id TEXT PRIMARY KEY)`)
+		mustExec(t, w, `CREATE TABLE plugin_jobs (
+			handle        TEXT PRIMARY KEY,
+			plugin        TEXT NOT NULL,
+			tool          TEXT NOT NULL,
+			plugin_job_id TEXT NOT NULL,
+			owner_id      TEXT NOT NULL DEFAULT '',
+			state         TEXT NOT NULL DEFAULT 'running',
+			ack           TEXT NOT NULL DEFAULT '',
+			progress      TEXT NOT NULL DEFAULT '',
+			output        TEXT NOT NULL DEFAULT '',
+			spill_path    TEXT NOT NULL DEFAULT '',
+			error         TEXT NOT NULL DEFAULT '',
+			created_at    TEXT NOT NULL DEFAULT '',
+			updated_at    TEXT NOT NULL DEFAULT '',
+			finished_at   TEXT
+		)`)
+		mustExec(t, w, `INSERT INTO plugin_jobs
+			(handle, plugin, tool, plugin_job_id, owner_id, state, ack, progress, created_at, updated_at)
+			VALUES ('job_old', 'downloader', 'download_file', 'pj-1', 'agent-7', 'running', 'started', '41%', '2026-01-01T00:00:00.000000Z', '2026-01-01T00:00:00.000000Z')`)
+		mustExec(t, w, `PRAGMA user_version = 6`)
+	}()
+
+	store, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer store.Close() //nolint:errcheck
+
+	j, found, err := store.JobGet("job_old")
+	if err != nil || !found {
+		t.Fatalf("JobGet = found %v err %v; the in-flight job did not survive the migration", found, err)
+	}
+	if j.Backend != JobBackendPlugin {
+		t.Errorf("backend = %q, want %q — a migrated row predates the tool backend by definition", j.Backend, JobBackendPlugin)
+	}
+	if j.BackendRef != "pj-1" {
+		t.Errorf("backend_ref = %q, want the old plugin_job_id %q", j.BackendRef, "pj-1")
+	}
+	for _, c := range []struct{ name, got, want string }{
+		{"plugin", j.Plugin, "downloader"},
+		{"tool", j.Tool, "download_file"},
+		{"owner", j.OwnerID, "agent-7"},
+		{"state", j.State, "running"},
+		{"ack", j.Ack, "started"},
+		{"progress", j.Progress, "41%"},
+	} {
+		if c.got != c.want {
+			t.Errorf("%s = %q, want %q", c.name, c.got, c.want)
+		}
+	}
+
+	// The old table is gone, so nothing writes to it by accident afterwards.
+	if hasTable(store.db, "plugin_jobs") {
+		t.Error("plugin_jobs still exists after the migration")
+	}
+}

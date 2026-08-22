@@ -18,8 +18,8 @@ func TestJobStarterAdmissionCap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = store.PluginJobCreate(memory.PluginJob{Handle: "a", Plugin: "p", Tool: "t", PluginJobID: "1", OwnerID: "conv1", State: "running"})
-	_ = store.PluginJobCreate(memory.PluginJob{Handle: "b", Plugin: "p", Tool: "t", PluginJobID: "2", OwnerID: "conv1", State: "running"})
+	_ = store.JobCreate(memory.Job{Handle: "a", Plugin: "p", Tool: "t", BackendRef: "1", OwnerID: "conv1", State: "running"})
+	_ = store.JobCreate(memory.Job{Handle: "b", Plugin: "p", Tool: "t", BackendRef: "2", OwnerID: "conv1", State: "running"})
 
 	js := newJobStarter(store, plugin.NewManager(""), "conv1", 2)
 	out, err := js.StartJob(context.Background(), "p", "t", "3", "started")
@@ -30,12 +30,12 @@ func TestJobStarterAdmissionCap(t *testing.T) {
 		t.Errorf("over-cap message = %q, want it to mention the maximum", out)
 	}
 	// No new row was written.
-	if n, _ := store.PluginJobCountOutstanding("conv1"); n != 2 {
+	if n, _ := store.JobCountOutstanding("conv1"); n != 2 {
 		t.Errorf("outstanding = %d, want it to stay at 2 (the new job declined)", n)
 	}
 
 	// Under the cap, a start records a row and returns a handle observation.
-	_ = store.PluginJobFinish("a", "done", "", "", "")
+	_ = store.JobFinish("a", "done", "", "", "")
 	out, err = js.StartJob(context.Background(), "p", "t", "4", "started")
 	if err != nil || !strings.Contains(out, "job_") {
 		t.Errorf("under-cap start: out=%q err=%v", out, err)
@@ -48,12 +48,12 @@ func TestMarkOrphanedJobsLost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = store.PluginJobCreate(memory.PluginJob{Handle: "orphan", Plugin: "p", Tool: "scan", PluginJobID: "1", OwnerID: "conv1", State: "running"})
+	_ = store.JobCreate(memory.Job{Handle: "orphan", Plugin: "p", Tool: "scan", BackendRef: "1", OwnerID: "conv1", State: "running"})
 
 	if n := MarkOrphanedJobsLost(store); n != 1 {
 		t.Fatalf("marked %d lost, want 1", n)
 	}
-	if got, _, _ := store.PluginJobGet("orphan"); got.State != "lost" {
+	if got, _, _ := store.JobGet("orphan"); got.State != "lost" {
 		t.Errorf("state = %q, want lost", got.State)
 	}
 	ns, _ := store.NotificationListPending("conv1")
@@ -68,7 +68,7 @@ func TestSweeperExpiresOverAge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = store.PluginJobCreate(memory.PluginJob{Handle: "old", Plugin: "ghost", Tool: "t", PluginJobID: "1", OwnerID: "conv1", State: "running"})
+	_ = store.JobCreate(memory.Job{Handle: "old", Plugin: "ghost", Tool: "t", BackendRef: "1", OwnerID: "conv1", State: "running"})
 
 	// Let it age past a 1-second bound.
 	time.Sleep(1100 * time.Millisecond)
@@ -76,7 +76,7 @@ func TestSweeperExpiresOverAge(t *testing.T) {
 	sw := &jobSweeper{store: store, mgr: plugin.NewManager(""), maxSeconds: 1}
 	sw.expireOverAge(context.Background())
 
-	got, _, _ := store.PluginJobGet("old")
+	got, _, _ := store.JobGet("old")
 	if got.State != "failed" || got.Error == "" {
 		t.Errorf("over-age job = %+v, want failed with a reason", got)
 	}

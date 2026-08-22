@@ -117,6 +117,7 @@ func (h *Host) compile(ctx context.Context, d discovered, grant Grant) (*Tool, e
 		Grant:        grant,
 		Timeout:      h.cfg.Timeouts[d.Manifest.Name],
 		ManifestPath: d.ManifestPath,
+		Resumable:    d.Manifest.Resumable,
 	}
 
 	if d.Manifest.Kind == KindJS {

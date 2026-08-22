@@ -95,8 +95,9 @@ func agentConfig(cfg *config.Config) toolvm.AgentConfig {
 	a := cfg.Tools.Agent
 	caps := a.Capabilities
 	return toolvm.AgentConfig{
-		Enabled:  a.Enabled,
-		MaxTools: a.MaxTools,
+		Enabled:          a.Enabled,
+		MaxTools:         a.MaxTools,
+		AllowLongRunning: a.AllowLongRunning,
 		Ceiling: toolvm.Ceiling{Grant: toolvm.Grant{
 			FSRead:  mounts(caps.FS.Read),
 			FSWrite: mounts(caps.FS.Write),

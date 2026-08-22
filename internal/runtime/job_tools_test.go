@@ -28,13 +28,13 @@ func TestJobCheckStates(t *testing.T) {
 		t.Errorf("unknown handle: %q", out)
 	}
 
-	_ = store.PluginJobCreate(memory.PluginJob{Handle: "job_r", Plugin: "p", Tool: "scan", PluginJobID: "1", OwnerID: "conv1", State: "running"})
-	_ = store.PluginJobUpdateLive("job_r", "running", "42%")
+	_ = store.JobCreate(memory.Job{Handle: "job_r", Plugin: "p", Tool: "scan", BackendRef: "1", OwnerID: "conv1", State: "running"})
+	_ = store.JobUpdateLive("job_r", "running", "42%")
 	if out, _ := jt.Check(ctx, "job_r"); !strings.Contains(out, "still running") || !strings.Contains(out, "42%") {
 		t.Errorf("running render: %q", out)
 	}
 
-	_ = store.PluginJobFinish("job_r", "done", "the answer", "", "")
+	_ = store.JobFinish("job_r", "done", "the answer", "", "")
 	if out, _ := jt.Check(ctx, "job_r"); !strings.Contains(out, "finished") || !strings.Contains(out, "the answer") {
 		t.Errorf("done render: %q", out)
 	}
@@ -44,7 +44,7 @@ func TestJobWaitReturnsOnTerminalAndTimesOutGracefully(t *testing.T) {
 	store, jt := newJobTest(t)
 	ctx := context.Background()
 
-	_ = store.PluginJobCreate(memory.PluginJob{Handle: "job_w", Plugin: "p", Tool: "t", PluginJobID: "1", OwnerID: "conv1", State: "running"})
+	_ = store.JobCreate(memory.Job{Handle: "job_w", Plugin: "p", Tool: "t", BackendRef: "1", OwnerID: "conv1", State: "running"})
 
 	// A short wait on a still-running job returns its progress, not an error.
 	out, err := jt.Wait(ctx, "job_w", 50*time.Millisecond)
@@ -56,7 +56,7 @@ func TestJobWaitReturnsOnTerminalAndTimesOutGracefully(t *testing.T) {
 	}
 
 	// Once terminal, wait returns the result immediately.
-	_ = store.PluginJobFinish("job_w", "done", "done result", "", "")
+	_ = store.JobFinish("job_w", "done", "done result", "", "")
 	out, err = jt.Wait(ctx, "job_w", 5*time.Second)
 	if err != nil || !strings.Contains(out, "done result") {
 		t.Errorf("wait on terminal: out=%q err=%v", out, err)
@@ -70,7 +70,7 @@ func TestJobListAndSurface(t *testing.T) {
 		t.Errorf("empty list: %q", out)
 	}
 
-	_ = store.PluginJobCreate(memory.PluginJob{Handle: "job_a", Plugin: "p", Tool: "download", PluginJobID: "1", OwnerID: "conv1", State: "running"})
+	_ = store.JobCreate(memory.Job{Handle: "job_a", Plugin: "p", Tool: "download", BackendRef: "1", OwnerID: "conv1", State: "running"})
 	out, _ := jt.List(context.Background())
 	if !strings.Contains(out, "job_a") || !strings.Contains(out, "download") {
 		t.Errorf("list: %q", out)
@@ -96,11 +96,11 @@ func TestJobWaitWakesOnSignal(t *testing.T) {
 	waiters := NewJobWaiters()
 	jt := newJobTools(store, plugin.NewManager(""), waiters, "conv1")
 
-	_ = store.PluginJobCreate(memory.PluginJob{Handle: "job_s", Plugin: "p", Tool: "t", PluginJobID: "1", OwnerID: "conv1", State: "running"})
+	_ = store.JobCreate(memory.Job{Handle: "job_s", Plugin: "p", Tool: "t", BackendRef: "1", OwnerID: "conv1", State: "running"})
 
 	go func() {
 		time.Sleep(50 * time.Millisecond)
-		_ = store.PluginJobFinish("job_s", "done", "the result", "", "")
+		_ = store.JobFinish("job_s", "done", "the result", "", "")
 		waiters.signal("job_s")
 	}()
 
@@ -146,13 +146,13 @@ func TestJobCancelBranches(t *testing.T) {
 		t.Errorf("cancel unknown: %q", out)
 	}
 
-	_ = store.PluginJobCreate(memory.PluginJob{Handle: "job_c", Plugin: "ghost", Tool: "t", PluginJobID: "1", OwnerID: "conv1", State: "running"})
+	_ = store.JobCreate(memory.Job{Handle: "job_c", Plugin: "ghost", Tool: "t", BackendRef: "1", OwnerID: "conv1", State: "running"})
 	// Plugin is not running in this bare manager → cannot cancel, but not an error.
 	if out, err := jt.Cancel(ctx, "job_c"); err != nil || !strings.Contains(out, "no longer running") {
 		t.Errorf("cancel plugin-gone: out=%q err=%v", out, err)
 	}
 
-	_ = store.PluginJobFinish("job_c", "done", "", "", "")
+	_ = store.JobFinish("job_c", "done", "", "", "")
 	if out, _ := jt.Cancel(ctx, "job_c"); !strings.Contains(out, "already finished") {
 		t.Errorf("cancel terminal: %q", out)
 	}
