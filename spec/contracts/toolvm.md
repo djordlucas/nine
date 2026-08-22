@@ -125,10 +125,18 @@ A module is **compiled once** and **instantiated per call**; the instance is clo
 the call returns.
 
 This is the strongest property in the design and is required, not an optimization:
-**no state survives a call.** Not a global, not a cached credential, not a poisoned
-prototype, not a half-freed heap. Two calls to the same tool **MUST NOT** be able to
-observe each other, and a tool **MUST NOT** be able to accumulate anything across a
-session.
+**no state survives a call implicitly.** Not a global, not a cached credential, not a
+poisoned prototype, not a half-freed heap. Two calls to the same tool **MUST NOT** be able
+to observe each other *through the machine*, and a tool **MUST NOT** be able to accumulate
+anything across a session except through a capability it was granted.
+
+> **Amended by R-TVM.18.** The original read "no state survives a call", full stop. A tool
+> granted `state` can now carry values between calls — but only through a host-owned store,
+> named by the tool, bounded by quota, and conferred by the operator. What the instance
+> model still guarantees is unchanged and is what the sandbox rests on: the guest's globals,
+> heap, and interpreter realm are destroyed at return, so no *implicit* carryover is
+> possible. What was given up is deliberate and audited in
+> `adr/durable-and-long-running-tools.md` §2.
 
 ---
 
@@ -183,6 +191,7 @@ pre-open, or a host function the daemon exports. Anything else is not "denied" �
 | `clock` | — | **granted** | `WithSysWalltime` / `WithSysNanotime` |
 | `random` | — | **granted** | `WithRandSource` |
 | `log` | — | **granted** | host fn `nine.log` → `slog` |
+| `state` | scope (**required**), quotas, ttl | **none** | host fn `nine.state` → `tool_state` — R-TVM.18 |
 
 `clock`, `random`, and `log` are unconditional because they leak nothing and every
 non-trivial tool needs them. Everything with reach starts at nothing.
@@ -248,6 +257,12 @@ read = [{ host = "/srv/data", guest = "/data" }]
 
 [tool.tz_aware.capabilities]
 env = ["TZ"]
+
+[tool.geocode.capabilities.state]
+scope        = "tool"      # required; "tool" or "conversation"
+max_keys     = 512
+max_value_kb = 8
+ttl          = "24h"       # optional; omit for no expiry
 ```
 
 - **Grants are per named tool.** There is **no** wildcard `[tool."*"]`. An operator
@@ -662,12 +677,83 @@ binary, no toolchain enters the runtime image — the resolver and bundler are i
 
 ---
 
+## R-TVM.18 — Durable state
+
+A tool granted `state` has a **host-owned key/value store**, scoped to itself. It is the
+amendment to R-TVM.3 and the whole of it: nothing else about the instance model changes.
+
+The store is a `tool_state` table keyed `(tool, scope_key, key)`
+(`spec/contracts/memory-store.md`) — deliberately **not** the `kv` table, which is Nine's
+own namespace and whose prefixes Nine reads its bookkeeping from.
+
+### Scope
+
+`scope` is a **required** grant parameter with **no default**, following the precedent
+`methods` sets in R-TVM.12.
+
+| `scope` | `scope_key` | Meaning |
+|---|---|---|
+| `tool` | `""` | one namespace shared by every caller of the tool |
+| `conversation` | the owning conversation id | a separate namespace per conversation |
+
+> **`scope = "tool"` is a cross-session information channel that needs no other
+> capability.** A tool's arguments come from the model, and the model's arguments can carry
+> anything in that session's context, so a call in session A can write them down and a call
+> in session B can read them back — with no `net.http`, no `fs`, and no egress of any kind.
+> The exfiltration is *into another conversation's context*, where none of the network
+> controls look. This is documented rather than prevented; it is why scope is required and
+> why the roster reports it.
+
+A `conversation`-scoped grant reaching the host with **no conversation on the context MUST
+be refused**, never served from the shared namespace. The fallback would confer exactly the
+cross-conversation visibility the operator chose the scope to deny, and it would do so on
+the paths that have no turn.
+
+### Quotas
+
+Per `(tool, scope_key)`: `max_keys` (default 128), `max_value_kb` (default 64),
+`max_total_kb` (default 1024), and an optional `ttl`.
+
+Exceeding one **MUST** be an error the guest can catch, never a silent drop — the same rule
+R-TVM.12 sets for a refused request. A tool that believes it remembered something it did
+not surfaces the fault a call later, as a cache that never hits.
+
+Expiry **MUST** be applied on read as well as swept, so a `ttl` means what it says between
+sweeps; and the sweep, not the read, is what reclaims the row, so a tool cannot keep a
+value alive by never looking at it.
+
+### The guest surface
+
+`nine:state` exports `get`, `set`, `remove`, `keys`, `swap`, `scope`, and the
+`getJSON`/`setJSON` conveniences. Values are strings.
+
+`swap` (compare-and-set) is **required**, not a convenience: a module is instantiated per
+call and two turns calling one tool at once is ordinary, so a read-modify-write spanning
+two host calls is racy by construction.
+
+### What it is not
+
+- **Not a filesystem.** Flat keys, string values, no directories, no streaming.
+- **Not a channel between tools.** The namespace is keyed by tool name; two tools cannot
+  see each other's state and there is no shared prefix.
+- **Not reachable by the model.** There is no `state_get` tool. The store is a tool's own
+  bookkeeping.
+- **Not audited per operation.** `net.http` audits every call because each reaches the
+  outside world; a `get` reaches a row the tool already owns. What is recorded is the grant
+  at load and the quota refusals.
+
+---
+
 ## R-TVM.13 — Fully built
 
-Every feature `docs/sandboxed-tools.md` specifies is now implemented (stages 1–6). The
+Every feature `docs/sandboxed-tools.md` specifies is implemented (stages 1–6). The
 `nine:*` stdlib (§4.2), external npm dependencies (§4.4), and the `deps` + `net.http`
-interlock are R-TVM.15; the generated tier is R-TVM.14. Nothing in the design remains
+interlock are R-TVM.15; the generated tier is R-TVM.14. Nothing in that design remains
 stubbed or refused-by-name.
+
+Durable state (R-TVM.18) is **beyond** that design rather than part of it — it amends
+R-TVM.3, which stages 1–6 took as fixed. The long-running half of
+`adr/durable-and-long-running-tools.md` is not built yet.
 
 ---
 
@@ -680,7 +766,10 @@ stubbed or refused-by-name.
   generated ceiling, in `nine.toml`. Nine cannot grant itself capabilities (R-PLUG.7,
   unchanged) — the manifest of a developer tool and the declaration of a generated one are
   descriptions, not grants.
-- **I-TVM.3** — No state survives a call.
+- **I-TVM.3** — No state survives a call **implicitly**. The guest's globals, heap, and
+  interpreter realm are destroyed at return, so two calls cannot observe each other through
+  the machine. Anything that persists does so through a host-owned surface the operator
+  granted, named by the tool, bounded by quota, and visible in the roster (R-TVM.18).
 - **I-TVM.4** — A tool name resolves to exactly one implementation. Sandboxed tools never
   override built-ins or plugin tools.
 - **I-TVM.5** — The committed interpreter links neither `std` nor `os`. The narrow

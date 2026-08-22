@@ -267,10 +267,13 @@ func (w *AgentWorker) processTurn(req turnReq) {
 	w.loop.SetHooks(w.turnHooks(turn))
 	slog.Debug("turn_start", "agent_id", w.id, "turn_n", turn)
 	w.loop.SetForceThinkNextTurn(req.forceThink)
-	// The sandboxed-tool host is daemon-wide, so the journal destination for a
-	// tool's outbound HTTP has to travel with the turn rather than be configured
-	// once at boot.
-	result, err := w.loop.Run(toolvm.WithHTTPAudit(req.ctx, w.httpAuditor(turn)), text)
+	// Both of these travel with the turn rather than being configured at boot,
+	// because the sandboxed-tool host is daemon-wide: the journal destination for
+	// a tool's outbound HTTP, and the conversation a conversation-scoped state
+	// grant resolves against.
+	toolCtx := toolvm.WithHTTPAudit(req.ctx, w.httpAuditor(turn))
+	toolCtx = toolvm.WithStateScope(toolCtx, w.id)
+	result, err := w.loop.Run(toolCtx, text)
 	w.loop.ClearHooks()
 	w.journal(turn, "turn_end", turnSpan(turn), "", turnEndPayload{
 		Result:     result,

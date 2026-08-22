@@ -57,6 +57,12 @@ type Config struct {
 	// TouchGenerated, when set, records that a generated tool was called, for LRU
 	// eviction. The daemon wires it to the store; this package has none.
 	TouchGenerated func(name string)
+
+	// StateStore backs the `state` capability. Nil leaves the capability
+	// unusable: a tool granted state gets a named error rather than a silently
+	// forgetful store, because a cache that never hits is indistinguishable from
+	// a slow tool and would be debugged for hours.
+	StateStore StateStore
 }
 
 // Tool is one loaded sandboxed tool, ready to dispatch.
@@ -198,10 +204,15 @@ func Open(ctx context.Context, cfg Config) (*Host, error) {
 	return h, nil
 }
 
-// registerHostFunctions exports the "nine" module. Its entire contents are the
-// `log` capability, granted to every tool because it leaks nothing and every
-// non-trivial tool needs it. Anything with reach is a wazero pre-open or is
-// absent; this is not the place to add one.
+// registerHostFunctions exports the "nine" module: `log`, `caps`, `http`, and
+// `state`.
+//
+// Exporting a function is not conferring a capability. `log` and `caps` leak
+// nothing and are granted to every tool; `http` and `state` are exported to
+// every tool because a wasm module's imports are fixed at compile time and the
+// QuickJS blob is shared by all of them, but each reads its grant per call from
+// the context and refuses a tool that has none. Everything else with reach is a
+// wazero pre-open or is structurally absent.
 func (h *Host) registerHostFunctions(ctx context.Context) error {
 	_, err := h.rt.NewHostModuleBuilder(hostModule).
 		NewFunctionBuilder().
@@ -222,6 +233,9 @@ func (h *Host) registerHostFunctions(ctx context.Context) error {
 		NewFunctionBuilder().
 		WithFunc(h.hostCaps).
 		Export("caps").
+		NewFunctionBuilder().
+		WithFunc(h.hostState).
+		Export("state").
 		Instantiate(ctx)
 	if err != nil {
 		return fmt.Errorf("toolvm: export host functions: %w", err)
@@ -439,6 +453,11 @@ func (h *Host) call(ctx context.Context, t *Tool, args json.RawMessage) (Output,
 	// resolves to this tool's permission and no other's.
 	if t.Grant.HTTP != nil {
 		ctx = context.WithValue(ctx, httpGrantKey{}, t.Grant.HTTP)
+	}
+	// The state grant travels the same way and for the same reason: one shared
+	// import, one permission per call.
+	if t.Grant.State != nil {
+		ctx = context.WithValue(ctx, stateGrantKey{}, t.Grant.State)
 	}
 	// The whole grant, for nine.caps. Read-only and descriptive: it is what the
 	// guest is told, never what it is allowed.
