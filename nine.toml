@@ -17,8 +17,9 @@
 ## Full reference: docs/configuration.md
 
 [llm]
-# Ollama is the only chat provider: Nine runs on local models. Any other value
-# is reported at boot and Ollama is used anyway.
+# Ollama is the only chat provider: Nine runs on local models. Leave it unset
+# for the default; any other value is refused at startup rather than quietly
+# served by a different backend.
 provider       = "ollama"
 model          = "qwen3.5:4b"
 # Empty uses Ollama's local default (http://localhost:11434). Overridden in the
