@@ -131,7 +131,7 @@ makes sense.
 | **TUI improvements** | The TUI is a capable conversation client with slash commands that surface goals, workflows, tools, skills, memory and the context breakdown — but those views are mostly read-only, and the parts of Nine that reward watching over time have no place in it: the journal `nine trace` reads back, the notifications standing agents raise, background sessions moving while you type. Seeing and steering the autonomous tier from the same screen you converse on, rather than from a second terminal running the CLI, is the direction. |
 | **Hardening** | Ensure Nine is as safe as possible. |
 | **Model routing** | Route different work to different models within one deployment. Currently, Nine only uses one model at a time. |
-| **Add different LLM backends** | Add llama.cpp and vllm. |
+| **Add different LLM backends** | Add llama.cpp and vLLM. Both speak an OpenAI-compatible API, so one adapter covers them. Two things already point at this: an unrecognized `[llm].provider` is refused at startup rather than silently falling back, so a new backend registers there; and the context budget's bytes-per-token estimate is calibrated against one tokenizer, so a second backend needs its own measurement — the estimate-vs-actual reconciliation is in place to produce it. |
 | **More built-in plugins** | — |
 
 ## AI Use / Methodology

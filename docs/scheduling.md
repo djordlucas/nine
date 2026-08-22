@@ -20,7 +20,7 @@ exclusive**:
 
 ## Cron expressions
 
-`internal/cron` parses standard 5-field cron — `minute hour day-of-month month
+`cron` parses standard 5-field cron — `minute hour day-of-month month
 day-of-week` — with no external dependency. Each field supports `*`, single
 values, ranges (`a-b`), lists (`a,b`), and steps (`*/n`, `a-b/n`). Day-of-week is
 `0-6` with Sunday `0` (`7` is also accepted for Sunday). Names (`JAN`, `MON`) are
@@ -45,7 +45,7 @@ local timezone.
 
 ## How the scheduler uses a trigger
 
-`stageNextWake(cfg, lastFire, now)` (`internal/runtime/session_plan.go`) reduces
+`stageNextWake(cfg, lastFire, now)` reduces
 either trigger to a single "how long until due" duration:
 
 - interval: `max(interval − (now − lastFire), 0)`

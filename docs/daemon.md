@@ -115,7 +115,7 @@ These message types are handled synchronously in the dispatch loop:
 
 ## Protocol
 
-All messages are newline-delimited JSON (`Msg` struct). The full message type reference and the client used by the CLI/TUI live in [`internal/protocol`](../internal/protocol/protocol.go), kept separate from the daemon implementation so client code doesn't pull in the whole runtime.
+All messages are newline-delimited JSON (`Msg` struct). The full message type reference and the client used by the CLI/TUI live in `protocol`, kept separate from the daemon implementation so client code doesn't pull in the whole runtime.
 
 ## Source Files
 
@@ -126,7 +126,7 @@ All messages are newline-delimited JSON (`Msg` struct). The full message type re
 | `supervisor.go` | Async event handling, idle timer, plugin rebuild |
 | `store.go` | SQL-backed `CheckpointStore` and `NotifStore` implementations |
 
-The wire protocol and client live in `internal/protocol`:
+The wire protocol and client live in `protocol`:
 
 | File | Responsibility |
 |------|---------------|

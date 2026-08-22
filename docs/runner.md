@@ -129,7 +129,3 @@ Stall detection is disabled when `Limit == 0` or `OnStall == nil`.
 | `prependNotifications` | Fetches pending notifs and prepends them to the message |
 | `checkStall` | Increments/resets stall counter; fires `OnStall` at threshold |
 | `checkpoint` | Serializes loop state and persists via `saveCkpt` |
-
-## Source
-
-[`internal/runtime/agent_worker.go`](../internal/runtime/agent_worker.go)
