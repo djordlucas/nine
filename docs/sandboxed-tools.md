@@ -590,6 +590,7 @@ module and none are exported to it.
 | `clock` | — | **granted** | `WithSysWalltime` |
 | `random` | — | **granted** | `WithRandSource` |
 | `log` | — | **granted** | host fn → `slog` + journal |
+| `state` | scope (required), quotas, ttl | **none** | host fn → the `tool_state` store (§6.4) |
 
 `clock`, `random`, and `log` are on by default because they leak nothing and
 every non-trivial tool needs them. Everything with reach — the filesystem, the
@@ -599,6 +600,28 @@ network, the process environment — starts at nothing.
 flag: the daemon's environment holds LLM provider API keys. A tool granted "env"
 wholesale is a credential exfiltration primitive. Grants are per key, and the
 `NINE_*` and `*_API_KEY` patterns are refused outright as a config error.
+
+### 6.4 Durable state
+
+An instance is destroyed when its call returns, so nothing in the interpreter survives —
+which is the strongest property here and is not being given up. What `state` adds is a
+store the *host* owns: keys scoped to one tool, bounded by a quota, conferred by the
+operator like any other capability.
+
+The invariant is therefore narrowed rather than dropped. It used to read "no state
+survives a call"; it now reads **"no state survives a call *implicitly*"**. The guest's
+globals, heap and interpreter realm still go, so no carryover happens by accident; what
+persists does so because a tool asked, an operator granted, and the roster shows it.
+
+**Scope is the decision that matters.** `scope = "tool"` shares one namespace across every
+caller — what a cache wants — and is, precisely because of that, a channel from one
+conversation into another that needs no other capability: a tool's arguments come from the
+model, and a call in one session can write them down for a call in another to read.
+`scope = "conversation"` keys the namespace per conversation and closes that. Neither is
+wrong; which one applies is why the parameter is required and has no default.
+
+The full reasoning, including what the amended invariant gives up and what it keeps, is
+`adr/durable-and-long-running-tools.md` §2.
 
 ### 6.3 Conferred, never claimed
 

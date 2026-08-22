@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -268,6 +269,31 @@ type ToolCapabilities struct {
 	// behind it — wazero has no network at all — so every check that makes it
 	// safe is Nine's own (docs/sandboxed-tools.md §8).
 	Net ToolNetGrant `toml:"net"`
+
+	// State grants a durable, host-owned key/value store scoped to this tool.
+	// Absent (nil) is the default and means the tool remembers nothing between
+	// calls, which is how every tool behaved before this existed.
+	State *ToolStateGrant `toml:"state"`
+}
+
+// ToolStateGrant is the `state` grant: what a tool may remember between calls.
+//
+// Scope is required and deliberately has no default. It decides whether the
+// namespace is shared across every caller or keyed by conversation, and that is
+// the whole security argument for the capability — a tool-scoped store is a
+// cross-session information channel that needs no other capability, since a
+// tool's arguments come from the model and can carry anything in that session's
+// context. Defaulting it would be choosing that on the operator's behalf.
+type ToolStateGrant struct {
+	// Scope is "tool" or "conversation".
+	Scope string `toml:"scope"`
+	// MaxKeys, MaxValueKB and MaxTotalKB bound one namespace. 0 uses the
+	// toolvm defaults (128 keys, 64 KB per value, 1024 KB in total).
+	MaxKeys    int `toml:"max_keys"`
+	MaxValueKB int `toml:"max_value_kb"`
+	MaxTotalKB int `toml:"max_total_kb"`
+	// TTL expires a written value after a duration ("24h"). Empty never expires.
+	TTL string `toml:"ttl"`
 }
 
 // ToolFSGrant maps host paths into a tool's guest filesystem. wazero enforces
@@ -738,7 +764,55 @@ func validateToolEntry(table string, entry ToolEntry) error {
 		}
 	}
 
+	if err := validateStateGrant(table, caps.State); err != nil {
+		return err
+	}
+
 	return validateHTTPGrant(table, caps.Net.HTTP)
+}
+
+// validateStateGrant checks a `state` grant.
+//
+// The scope check is the one that matters. Refusing an unset scope rather than
+// picking the safer one is deliberate: the two scopes differ in whether a tool
+// can carry data from one conversation into another, and an operator who did
+// not decide that should be told, not defaulted.
+func validateStateGrant(table string, g *ToolStateGrant) error {
+	if g == nil {
+		return nil
+	}
+	// The literals are toolvm.StateScopeTool / StateScopeConversation. They are
+	// spelled out rather than imported for the same reason the net.http method
+	// names are: this package validates the operator's file and stays free of the
+	// subsystems the file configures, and runtime does the translation.
+	switch g.Scope {
+	case "tool", "conversation":
+	case "":
+		return fmt.Errorf(
+			"[%s]: state needs scope = \"tool\" or \"conversation\"; there is no implicit "+
+				"default, because the two differ in whether this tool can carry data "+
+				"between conversations", table)
+	default:
+		return fmt.Errorf("[%s]: state scope %q is not \"tool\" or \"conversation\"", table, g.Scope)
+	}
+	for _, b := range []struct {
+		name string
+		v    int
+	}{{"max_keys", g.MaxKeys}, {"max_value_kb", g.MaxValueKB}, {"max_total_kb", g.MaxTotalKB}} {
+		if b.v < 0 {
+			return fmt.Errorf("[%s]: state %s cannot be negative", table, b.name)
+		}
+	}
+	if g.TTL != "" {
+		d, err := time.ParseDuration(g.TTL)
+		if err != nil {
+			return fmt.Errorf("[%s]: state ttl %q: %w", table, g.TTL, err)
+		}
+		if d <= 0 {
+			return fmt.Errorf("[%s]: state ttl %q must be positive; omit it for no expiry", table, g.TTL)
+		}
+	}
+	return nil
 }
 
 // validateHTTPGrant checks a `net.http` grant. Every rejection here is a config
