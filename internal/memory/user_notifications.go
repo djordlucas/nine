@@ -2,7 +2,7 @@ package memory
 
 // UserNotification is one row from the user_notifications table — a
 // human-facing message posted by a background agent that has no interactive
-// conversation (docs/predefined-agents.md §5 piece 2). Distinct from the
+// conversation (adr/predefined-agents-design.md §5 piece 2). Distinct from the
 // per-session `notifications` table, which feeds an agent's own next turn.
 type UserNotification struct {
 	ID        string `json:"id"`

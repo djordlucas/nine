@@ -228,7 +228,7 @@ func loadOrCreatePlan(ctx context.Context, store PlanStore, agentID string, prof
 // scheduler and role resolver understand. Stage-specific fields live alongside
 // it and are read by the stage's own handler. Role and Delegates are set on a
 // pursue routine seeded for a pre-defined standing agent
-// (docs/predefined-agents.md §5 piece 5): they carry the configured work role
+// (adr/predefined-agents-design.md §5 piece 5): they carry the configured work role
 // and delegation opt-in into the pursue shell.
 type routineConfig struct {
 	IdleIntervalSeconds int    `json:"idle_interval_seconds,omitempty"`
@@ -252,7 +252,7 @@ func routineRole(cfg json.RawMessage) string {
 
 // planOwnsGoal reports whether plan is a pursue shell — a session that steers
 // its own goal and therefore gets the goal self-management tools always-on
-// (docs/predefined-agents.md §3.1).
+// (adr/predefined-agents-design.md §3.1).
 func planOwnsGoal(plan *sessionPlanState) bool {
 	if plan == nil || plan.plan == nil {
 		return false

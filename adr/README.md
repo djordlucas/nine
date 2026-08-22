@@ -49,6 +49,10 @@ remains here is the reasoning.
 - **architecture-wiring.md** — the boot order, end-to-end data flows, and the
   component relationship map. Names types and call sites, which is what tracing
   a flow needs and what the architecture doc deliberately avoids.
+- **plugin-http-transport-design.md** — why the plugin transport is HTTP over a
+  Unix socket, the constraints found in the code, and the phased rollout.
+- **predefined-agents-design.md** — standing agents as config-seeded goals: the
+  motivation, the work breakdown, and the phasing.
 - **daemon-assembly-refactor.md** — collapsing two wiring paths into one.
 - **single-container.md** — the single-container design. Partly superseded:
   the browser plugin it assumes no longer exists.

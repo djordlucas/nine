@@ -396,7 +396,7 @@ func TestReflectionRoleIsNarrowed(t *testing.T) {
 // shell (OwnsGoal): it keeps its read-only work tools and gains the goal
 // self-management tools (to steer its own goal), but never gains goal_create,
 // delegation, or shell — the shell confers goal ownership, not delegation
-// (docs/predefined-agents.md §3.1).
+// (adr/predefined-agents-design.md §3.1).
 func TestMonitorPursueShellToolSurface(t *testing.T) {
 	p := &scriptedProvider{}
 	p.script = func(int, llm.Request) llm.Response {
@@ -436,7 +436,7 @@ func TestMonitorPursueShellToolSurface(t *testing.T) {
 // Delegates=true the pursue shell keeps goal ownership + notify_user AND gains
 // the delegation tools (run_agent/goal_create) — even though the sysadmin
 // allowlist lists none of them — exercising the escalation path end-to-end
-// (docs/predefined-agents.md §7 v2). Plugin work tools like shell aren't loaded
+// (adr/predefined-agents-design.md §7 v2). Plugin work tools like shell aren't loaded
 // in this harness, so we assert on the intercepted/shell tool surface only.
 func TestDelegatingStandingAgentWiderRole(t *testing.T) {
 	p := &scriptedProvider{}

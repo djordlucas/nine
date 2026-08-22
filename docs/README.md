@@ -32,7 +32,7 @@ features built on top of that architecture.
 ### Features
 
 15. [Plugins](plugins.md) — Built-in plugins, writing custom plugins, the plugin lifecycle
-16. [Plugins — HTTP transport](plugins-http-transport.md) — The HTTP/SSE plugin transport
+16. [The plugin transport](plugins-http-transport.md) — HTTP over a Unix socket: why, the contract, and how concurrency is bounded
 17. [Browser Automation](browser.md) — Driving a browser via Playwright's MCP server; the worked MCP example
 18. [Writing sandboxed tools](writing-sandboxed-tools.md) — Add a JS or wasm tool with two files, run in a capability-scoped sandbox
 19. [Sandboxed tools — design](sandboxed-tools.md) — The wasm tool host: why it exists, the capability model, and what is deliberately unbuilt
@@ -40,7 +40,7 @@ features built on top of that architecture.
 21. [Skills](skills.md) — What skills are, creating and managing skills
 22. [Self-Documentation](self-documentation.md) — How Nine retrieves its own bundled docs and spec to answer questions about itself
 23. [Workflows](workflows.md) — Persistent multi-step execution plans for sub-agent delegation
-24. [Predefined Agents](predefined-agents.md) — Config-declared standing agents (goals + pursue shells)
+24. [Pre-defined agents](predefined-agents.md) — Standing agents declared in config: declaring one, and who owns what
 25. [Scheduling](scheduling.md) — Interval and cron wake triggers for standing agents
 26. [Human-in-the-Loop](hitl.md) — `ask_human` and approval gates for interactive sessions
 27. [Self-Improvement & Boundaries](self-modification.md) — Skill writing, and why Nine does not modify itself

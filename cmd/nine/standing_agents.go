@@ -14,15 +14,15 @@ import (
 
 // configGoalOrigin is the goals.parent_type sentinel marking a goal seeded from
 // a [[agent]] config block rather than a conversation. Reconciliation touches
-// only these, never a conversation-created goal (docs/predefined-agents.md §3.3).
+// only these, never a conversation-created goal (adr/predefined-agents-design.md §3.3).
 const configGoalOrigin = "config"
 
 // defaultStandingRole is the role a [[agent]] runs when none is configured: the
-// read-only monitor (docs/predefined-agents.md §6).
+// read-only monitor (adr/predefined-agents-design.md §6).
 const defaultStandingRole = "monitor"
 
 // reconcileStandingAgents brings the pre-defined agents declared in nine.toml
-// up to their desired state at boot (docs/predefined-agents.md §3.3, §4). Config
+// up to their desired state at boot (adr/predefined-agents-design.md §3.3, §4). Config
 // owns each agent's *definition* (description/role/delegates/trigger, reconciled
 // in place every boot); the agent owns its *run-state* (goal status) — a goal
 // the agent paused or finished is never resurrected. It runs after the daemon is
@@ -165,7 +165,7 @@ func desiredAgentIDs(agents []config.AgentConfig) map[string]bool {
 // removedConfigGoals returns the config-origin goals not present in desired —
 // the standing agents to tear down. Goals created by a conversation
 // (parent_type != "config") are never included, so subtractive reconciliation
-// can never touch a human-created goal (docs/predefined-agents.md §4).
+// can never touch a human-created goal (adr/predefined-agents-design.md §4).
 func removedConfigGoals(goals []memory.Goal, desired map[string]bool) []memory.Goal {
 	var out []memory.Goal
 	for _, g := range goals {
