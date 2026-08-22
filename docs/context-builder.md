@@ -135,7 +135,3 @@ All token estimates use a **4 chars ≈ 1 token** approximation, consistent with
 |-------|---------|--------|
 | `ToolTopN` | 20 | Max ranked (non-always) tools included |
 | `ExtrasBudget` | 200 tokens | Min remaining budget to include `SystemExtras` |
-
-## Source
-
-[`internal/context/builder.go`](../internal/context/builder.go)

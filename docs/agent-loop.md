@@ -184,12 +184,3 @@ On each inner loop iteration `BuildWithUsage` assembles the full LLM request:
 crosses 90% of the budget, the loop also emits a one-shot `notice` warning that the
 oldest history is being trimmed to fit (re-arms once usage drops back below the
 threshold). See [Context Builder](context-builder.md).
-
-## Source Files
-
-| File | Responsibility |
-|------|---------------|
-| `loop.go` | ReAct loop, checkpointing, callbacks |
-| `dispatcher.go` | Tool registry, wiring methods, intercepted tool definitions |
-
-[`internal/agent/`](../internal/agent/)
