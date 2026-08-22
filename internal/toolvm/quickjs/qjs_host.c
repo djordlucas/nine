@@ -549,7 +549,11 @@ static uint64_t fail(JSContext *ctx) {
  * Input is the envelope the host wrote at `ptr`:
  *
  *   { "harness": "<js>", "modules": { "<specifier>": "<js>", ... },
- *     "args": <the model's arguments> }
+ *     "args": <the model's arguments>,
+ *     "job": { "cursor": "<opaque>", "call": <n> } }
+ *
+ * `job` is present only when the host is running this tool as a long-running
+ * job; an ordinary call omits it and the harness passes undefined.
  *
  * `modules` always carries the tool's own source under the specifier the
  * harness imports; the rest is whatever the allowlist admitted. Output is
@@ -591,6 +595,13 @@ __attribute__((export_name("nine_run"))) uint64_t nine_run(uint32_t ptr, uint32_
     JSValue global = JS_GetGlobalObject(ctx);
     JSValue args = JS_GetPropertyStr(ctx, envelope, "args");
     JS_SetPropertyStr(ctx, global, "__nine_args", args);
+
+    /* The job context, when this call is one of a long-running sequence. Absent
+     * on an ordinary call, which is the overwhelming majority — the harness
+     * hands the tool undefined and nothing changes for a tool that never asked
+     * to be resumable. */
+    JSValue job = JS_GetPropertyStr(ctx, envelope, "job");
+    JS_SetPropertyStr(ctx, global, "__nine_job", job);
     JS_SetPropertyStr(ctx, global, "__nine_result", JS_UNDEFINED);
     JS_SetPropertyStr(ctx, global, "__nine_log",
                       JS_NewCFunction(ctx, js_nine_log, "__nine_log", 1));

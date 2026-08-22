@@ -5,7 +5,7 @@
   authoring guide is `plugins.md`. This note is kept as the design rationale.
 - **Date:** 2026-07-30 (rev 1: 2026-07-25).
 - **Two small deviations from the design, both behaviour-preserving:** the sweeper
-  polls on an age-based backoff computed in SQL (`PluginJobsDueForPoll`) rather
+  polls on an age-based backoff computed in SQL (`JobsDueForPoll`) rather
   than per-job timers, and `job_wait` blocks on a sweeper-signalled `JobWaiters`
   channel with a poll fallback (the eval harness wires no signaller).
 - **Supersedes:** the rev-1 proposal, `plugin-host-api.md` (renamed to this
@@ -372,8 +372,14 @@ existing one actually hold.
 
 ### Daemon side: the registry
 
-A new `plugin_jobs` table in `memory` (like everything else
+A new `jobs` table in `memory` (like everything else
 persistent):
+
+> **Now shared with the tool backend.** The table is `jobs` rather than
+> `plugin_jobs`, and a `backend` column says whether a row is a plugin's detached
+> goroutine or a resumable sandboxed tool the daemon calls itself
+> (`spec/contracts/toolvm.md` R-TVM.19). Everything below still describes the
+> plugin backend; the model-facing surface is identical for both.
 
 | Column | Purpose |
 |---|---|
@@ -546,7 +552,7 @@ Each phase is independently shippable and independently useful.
    directories, terminal-job TTL eviction, protocol version bump and widened
    check. `testplugin` gains a slow job; `slowplugin` (which already advertises a
    cap) covers the concurrent-agents-one-plugin case.
-4. **Job registry (daemon half)** — `plugin_jobs` table, `job_id` handling in the
+4. **Job registry (daemon half)** — the `jobs` table, `job_id` handling in the
    dispatcher, the sweeper, completion → cap-or-spill → notification → journal.
 5. **Model-facing tools** — `job_wait` / `job_check` / `job_list` / `job_cancel`,
    plus the context-builder surfacing of outstanding jobs.

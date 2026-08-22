@@ -108,6 +108,19 @@ func firstCollision(name string, accepted map[string]*Tool, collides Collides) (
 // compiles its own module, which is also where a module that does not export the
 // ABI is caught — at load, not at first call.
 func (h *Host) compile(ctx context.Context, d discovered, grant Grant) (*Tool, error) {
+	// A resumable `wasm` tool receives its job context under the reserved
+	// `nine_job` argument key, since it has no harness to hand a second parameter
+	// to. Refuse a schema that declares the same name rather than silently
+	// overwriting the author's own argument — the key is only genuinely reserved
+	// if something enforces it.
+	if d.Manifest.Kind == KindWasm && d.Manifest.Resumable {
+		if declaresReservedJobKey(d.SchemaJSON) {
+			return nil, fmt.Errorf(
+				"input schema declares %q, which is reserved: a resumable wasm tool receives "+
+					"its job context under that key; rename the argument", reservedJobKey)
+		}
+	}
+
 	t := &Tool{
 		Name:         d.Manifest.Name,
 		DisplayName:  d.Manifest.DisplayName,
@@ -117,6 +130,7 @@ func (h *Host) compile(ctx context.Context, d discovered, grant Grant) (*Tool, e
 		Grant:        grant,
 		Timeout:      h.cfg.Timeouts[d.Manifest.Name],
 		ManifestPath: d.ManifestPath,
+		Resumable:    d.Manifest.Resumable,
 	}
 
 	if d.Manifest.Kind == KindJS {

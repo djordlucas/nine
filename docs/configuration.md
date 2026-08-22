@@ -343,6 +343,21 @@ timeout = "5s"
 # Per-call linear memory cap. Default 16.
 memory_mb = 16
 
+# Long-running tools: bounds on a tool that runs as a background job.
+#
+# A tool whose manifest says `resumable = true` may end a call by asking to be
+# called again, carrying a cursor. Each call is an ordinary call under the
+# ordinary deadline; what these bound is the total.
+#
+# job_max_calls is not defensive. Every individual call is legal, so without a
+# cap a tool that always asks to continue runs forever, one legal call at a time.
+# job_min_delay_ms floors the delay a tool may request, for the same reason.
+#
+# A job's lifetime and per-conversation cap are shared with plugin jobs and live
+# under [plugins]: job_max_seconds and max_jobs_per_conversation.
+job_max_calls    = 720       # 0 uses 720
+job_min_delay_ms = 250       # 0 uses 250
+
 # ── Capability grants, per named tool ────────────────────────────────────────
 # `[tool.<name>]` (singular) is the grant half of the capability model, sibling
 # to the plural `[tools]` above — the same split `[plugin.<name>]` uses.
@@ -483,6 +498,13 @@ allow = [                           # allowlist mode only: the packages an opera
 # is the one combination that makes a supply-chain compromise materially dangerous — leave it off
 # unless you understand exactly why you need it.
 # [tools.agent] allow_network_deps = false
+
+# May Nine write itself a tool that runs as a long-running background job? Off by
+# default. Deliberately separate from the capability ceiling above: a ceiling
+# bounds what a tool may REACH, and running for an hour is not reach. A
+# capability-free tool that never stops is inert per call and unbounded in
+# aggregate, which is exactly what a ceiling cannot express.
+# [tools.agent] allow_long_running = false
 ```
 
 ---

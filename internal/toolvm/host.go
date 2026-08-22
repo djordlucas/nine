@@ -87,6 +87,11 @@ type Tool struct {
 	// and its grant came from.
 	Shipped bool
 
+	// Resumable means this tool may end a call with a `continue` envelope and be
+	// run as a long-running job. From the manifest; it confers no reach, so it is
+	// a shape property rather than a capability.
+	Resumable bool
+
 	// Generated marks a tool Nine wrote itself (§5.2) rather than one an operator
 	// installed. It changes nothing about how the tool runs — same sandbox, same
 	// bounds, same capability resolution — only where its code and its ceiling
@@ -392,6 +397,11 @@ type Output struct {
 	Bytes []byte
 	// MediaType describes Bytes, if the tool said ("image/png"). Advisory.
 	MediaType string
+
+	// Continue is set when the tool asked to be called again instead of
+	// producing a result. Text and Bytes are empty in that case: a continuation
+	// is the tool declining to finish, not a smaller answer.
+	Continue *Continuation
 }
 
 // Call runs one tool and returns its text output, for callers that have nowhere
@@ -440,9 +450,36 @@ func (h *Host) CallOutput(ctx context.Context, name string, args json.RawMessage
 	return out, err
 }
 
+// CallJob runs one call of a long-running job: the tool is handed the cursor it
+// returned last time and may return another continuation, or a final result.
+//
+// It is deliberately the same execution path as an ordinary call — same instance
+// model, same deadline, same memory cap, same audit. Nothing about a job call is
+// special except that the host passes a cursor in and expects it may get one
+// back. That is the whole design: work outlives the turn because the *host*
+// keeps the state, never because anything outlives the instance.
+func (h *Host) CallJob(ctx context.Context, name string, args json.RawMessage, job JobContext) (Output, error) {
+	t := h.Get(name)
+	if t == nil {
+		return Output{}, fmt.Errorf("unknown sandboxed tool: %s", name)
+	}
+	if !t.Resumable {
+		return Output{}, fmt.Errorf("tool %q is not resumable", name)
+	}
+	out, err := h.callWithJob(ctx, t, args, &job)
+	if err == nil && t.Generated && h.cfg.TouchGenerated != nil {
+		h.cfg.TouchGenerated(name)
+	}
+	return out, err
+}
+
 // call is the execution path both CallOutput and EvalGenerated go through, so an
 // ephemeral evaluation cannot diverge from a catalogued tool's behavior.
 func (h *Host) call(ctx context.Context, t *Tool, args json.RawMessage) (Output, error) {
+	return h.callWithJob(ctx, t, args, nil)
+}
+
+func (h *Host) callWithJob(ctx context.Context, t *Tool, args json.RawMessage, job *JobContext) (Output, error) {
 	name := t.Name
 	timeout := t.effectiveTimeout(h.timeout)
 
@@ -464,7 +501,7 @@ func (h *Host) call(ctx context.Context, t *Tool, args json.RawMessage) (Output,
 	grant := t.Grant
 	ctx = context.WithValue(ctx, grantKey{}, &grant)
 
-	input, err := t.input(args)
+	input, err := t.inputForJob(args, job)
 	if err != nil {
 		return Output{}, err
 	}
@@ -498,6 +535,17 @@ func (h *Host) call(ctx context.Context, t *Tool, args json.RawMessage) (Output,
 		// can read it and try different arguments, which is exactly what it
 		// should do with "date is not a valid ISO-8601 string".
 		return Output{}, &CallError{Tool: name, Message: h.explainOOM(res.Error, len(input)), Detail: res.ErrorDetail}
+	}
+	if res.Continue != nil {
+		// A tool that never declared itself resumable must not be able to acquire
+		// a lifecycle by returning a field. R-TVM.10 makes the manifest
+		// authoritative for shape, and this is shape.
+		if !t.Resumable {
+			return Output{}, fmt.Errorf(
+				"tool %q returned a `continue` envelope but its manifest does not say resumable = true; "+
+					"add it, or return a result", name)
+		}
+		return Output{Continue: res.Continue}, nil
 	}
 	if res.OutputB64 != "" {
 		raw, decErr := base64.StdEncoding.DecodeString(res.OutputB64)

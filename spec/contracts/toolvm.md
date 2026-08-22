@@ -72,6 +72,21 @@ the model reads in Nine's own voice, so anything outside an RFC 6838 token is dr
 With no spill sink registered, a byte result is an **error** rather than a degraded
 success — unlike over-cap text, there is no smaller-but-valid form of a truncated blob.
 
+A success **MAY** instead say the tool is **not finished**:
+
+```json
+{"ok": true, "continue": {"cursor": "<opaque>", "progress": "41% · 1.2 GB/2.9 GB",
+                          "after_ms": 2000}}
+```
+
+The host persists `cursor`, waits, and calls the tool again with it handed back —
+R-TVM.19. `output` and `output_b64` are absent: a continuation is the tool declining to
+produce a result yet, not a smaller one.
+
+A tool whose manifest does not declare `resumable = true` returning this **MUST** be an
+error. Shape is the manifest's to state (R-TVM.10), and a tool must not be able to acquire
+a lifecycle by returning a field.
+
 A failure **MAY** carry structure alongside the message:
 
 ```json
@@ -90,7 +105,7 @@ A failure **MAY** carry structure alongside the message:
 Every field is optional, and `error` remains the message, so a guest that sets none of them
 produces exactly the envelope it produced before `error_detail` existed. This is why the
 addition **does not** bump `ABIVersion`: the two-export contract is unchanged and no
-existing parser breaks (adr/rich-js-tools.md §8).
+existing parser breaks (adr/rich-js-tools.md §8). The same reasoning covers `continue`.
 
 The host renders these into the error the model reads, since the dispatcher's channel for a
 tool failure is one string. A `js` tool's harness fills them from the thrown `Error`
@@ -744,6 +759,89 @@ two host calls is racy by construction.
 
 ---
 
+## R-TVM.19 — Long-running tools
+
+A tool declaring `resumable = true` may be run as a **job**: a sequence of ordinary calls,
+each carrying the cursor the last one returned.
+
+**Nothing about the instance model changes.** Each call is created and destroyed exactly as
+R-TVM.3 requires, under the same deadline and memory cap as any other call, with the same
+audit. The work outlives the turn because the *host* keeps the state — never because
+anything outlives the instance.
+
+The unit is deliberately **a call**, not a step: "step" is already a workflow's durable unit
+of delegated work (`docs/glossary.md`), and the two would be confused on sight.
+
+### The job context
+
+A resumable tool receives, alongside its arguments, `{cursor, call}` — the cursor it
+returned last time and a 1-based call number. A `js` tool gets it as a second parameter; a
+`wasm` tool gets it under the reserved `nine_job` key — a resumable `wasm` tool whose input
+schema declares that property **MUST** be refused at load, so the reservation is enforced
+rather than assumed. Arguments do not change between calls; the cursor is the only thing
+that moves.
+
+A conversation-scoped `state` grant (R-TVM.18) **MUST** resolve to the job's owner on every
+call. Call one runs inside the turn that started the job and later calls do not, so without
+this a tool granted state at conversation scope works exactly once.
+
+### One registry, two backends
+
+Jobs live in the `jobs` table (`spec/contracts/memory-store.md`), which serves both this and
+long-running plugin work (`docs/plugin-capabilities.md` §5). The model-facing surface —
+`job_wait`, `job_check`, `job_list`, `job_cancel` — is **unchanged and backend-agnostic**;
+a tool job and a plugin job are the same thing to an agent, which is correct, since the
+difference is an implementation detail of where the work runs.
+
+The two backends are **not symmetrical**, and the differences are normative:
+
+| | Plugin backend | Tool backend |
+|---|---|---|
+| The sweeper | **polls** work the plugin is doing | **is** the executor |
+| Cadence | age-based poll backoff | the delay the tool asked for, floored |
+| At boot | **MUST** be marked `lost` — the process is gone | **MUST** resume — the cursor is the row |
+| Cancel | best-effort request | exact: no further call is made |
+| Admission | post-hoc cancel; the plugin already started | **MAY** be refused before the first call |
+
+`lost` is a plugin-backend state. A tool job **MUST NOT** be marked lost at boot: its entire
+live state is its row, so there is nothing unreachable about it.
+
+### Bounds
+
+Per call, R-TVM.4 applies unchanged. Per job:
+
+| Bound | Config | Default |
+|---|---|---|
+| Total calls | `[tools] job_max_calls` | 720 |
+| Minimum delay between calls | `[tools] job_min_delay_ms` | 250 |
+| Lifetime | `[plugins] job_max_seconds` | 1h |
+| Per conversation | `[plugins] max_jobs_per_conversation` | 8 |
+
+The call cap is **required**, not defensive. Each call is individually legal; a tool
+returning `continue` with `after_ms: 0` forever converts a bounded CPU story into an
+unbounded one one legal call at a time. The delay floor exists for the same reason.
+
+The cap **MUST** be checked before a call is spent, so a job at its limit fails without one
+last call.
+
+### The generated tier
+
+`[tools.agent] allow_long_running` (default **false**) gates a generated tool declaring
+itself resumable. It is deliberately **not** part of the capability ceiling: a ceiling
+bounds what a tool may *reach*, and duration is not reach. A capability-free tool that never
+stops is inert per call and unbounded in aggregate — precisely what a ceiling cannot
+express.
+
+`js_eval` **MUST** refuse a continuation. It persists nothing by definition (R-TVM.14), and
+a job is persistence: there is no row to carry a cursor and nothing to resume.
+
+### Delivery
+
+Unchanged from the plugin backend and from `adr/reactive-events.md`: a finished job posts a
+notification to its owner and **never wakes anything**. It is read on the owner's next turn.
+
+---
+
 ## R-TVM.13 — Fully built
 
 Every feature `docs/sandboxed-tools.md` specifies is implemented (stages 1–6). The
@@ -751,9 +849,11 @@ Every feature `docs/sandboxed-tools.md` specifies is implemented (stages 1–6).
 interlock are R-TVM.15; the generated tier is R-TVM.14. Nothing in that design remains
 stubbed or refused-by-name.
 
-Durable state (R-TVM.18) is **beyond** that design rather than part of it — it amends
-R-TVM.3, which stages 1–6 took as fixed. The long-running half of
-`adr/durable-and-long-running-tools.md` is not built yet.
+Durable state (R-TVM.18) and long-running tools (R-TVM.19) are **beyond** that design
+rather than part of it: R-TVM.18 amends R-TVM.3, which stages 1–6 took as fixed, and
+R-TVM.19 adds a second lifecycle to the same tool. Both halves of
+`adr/durable-and-long-running-tools.md` are now built. The standing-tool lifecycle
+(`adr/standing-tools.md`) is not.
 
 ---
 

@@ -21,6 +21,9 @@ type Generated struct {
 	Source string
 	// Declaration is what the tool says it needs, checked against the ceiling.
 	Declaration Declaration
+	// Resumable asks for the long-running lifecycle. Gated separately from the
+	// capability ceiling, which bounds *reach* and cannot express *duration*.
+	Resumable bool
 }
 
 // AgentConfig is the generated tier's operator policy.
@@ -33,6 +36,20 @@ type AgentConfig struct {
 	Ceiling Ceiling
 	// MaxTools caps the catalog; 0 uses DefaultMaxGeneratedTools.
 	MaxTools int
+	// AllowLongRunning lets a generated tool declare itself resumable. Off by
+	// default, and deliberately not part of the Ceiling: the ceiling bounds what
+	// a tool may *reach*, and running forever is not reach. A capability-free
+	// tool that never stops is inert per call and unbounded in aggregate, which
+	// is precisely the case a capability ceiling cannot express.
+	AllowLongRunning bool
+}
+
+// AllowLongRunningGenerated reports whether the operator enabled the
+// long-running lifecycle for tools Nine writes itself.
+func (h *Host) AllowLongRunningGenerated() bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.agent.AllowLongRunning
 }
 
 // LoadGenerated registers agent-authored tools alongside the developer tools
@@ -74,6 +91,14 @@ func (h *Host) LoadGenerated(ctx context.Context, tools []Generated, collides Co
 		}
 		st.Capabilities = grant.Summary()
 
+		if g.Resumable && !h.agent.AllowLongRunning {
+			status = append(status, skip(st, fmt.Errorf(
+				"long-running generated tools are not enabled on this instance "+
+					"([tools.agent] allow_long_running); rewrite it to finish in one call, "+
+					"or use gap_report to ask an operator"), "resumable"))
+			continue
+		}
+
 		if _, taken := existing[g.Name]; taken {
 			status = append(status, skip(st,
 				fmt.Errorf("tool %q is already provided by a developer tool or plugin", g.Name), "collision"))
@@ -96,6 +121,7 @@ func (h *Host) LoadGenerated(ctx context.Context, tools []Generated, collides Co
 			Kind:      KindJS,
 			Grant:     grant,
 			Generated: true,
+			Resumable: g.Resumable,
 			module:    h.qjs,
 			source:    g.Source,
 			// The `nine:*` stdlib is the generated tier's import allowlist (§4.2):
@@ -230,6 +256,10 @@ func (h *Host) EvalGenerated(ctx context.Context, source string, decl Declaratio
 		// less-persistent tier, not a softer one.
 		imports: stdlibModules(),
 	}
+	// js_eval is never resumable, so Tool.Resumable stays false and h.call refuses
+	// a `continue` envelope for us. Stated here because the reason is not the
+	// generic one: js_eval persists nothing by definition (R-TVM.14), and a job is
+	// persistence — there is no row to carry a cursor and nothing to resume.
 	out, err := h.call(ctx, t, args)
 	if err != nil {
 		return "", err

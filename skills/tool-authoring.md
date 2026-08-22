@@ -96,6 +96,45 @@ you would be showing one conversation's data to another. If it matters, check.
 Do not put anything in state that you would not want a later call — possibly in a
 different conversation — to read back.
 
+### Work too long for one call
+
+Every call runs under a deadline — five seconds by default. If your tool needs longer, it
+does not get a longer call. It does a bounded slice, hands back a cursor, and asks to be
+called again.
+
+Set `resumable: true` on the `tool_write` call, and:
+
+```js
+import { again } from "nine:job";
+
+export default function (args, job) {
+  const at = Number(job?.cursor ?? 0);
+  const end = Math.min(at + 100, args.total);
+  processBatch(at, end);
+  if (end >= args.total) return `done: ${args.total} items`;
+  return again({ cursor: String(end), progress: `${end}/${args.total}`, afterMs: 1000 });
+}
+```
+
+It then runs as a **background job**. You get a handle immediately and the result reaches
+you on a **later turn** — follow up with `job_check`, `job_wait`, or `job_list`, and stop
+it with `job_cancel`. These are the same tools long-running plugin work uses; there is
+nothing tool-specific to learn.
+
+Three rules:
+
+- **Bounded work per call.** `again()` is how you get more time. Blocking is how you get
+  killed at the deadline.
+- **Everything you need to resume goes in the cursor** (or `nine:state`). Your `args` come
+  back unchanged every call — the cursor is the only thing that moves.
+- **Ask for this only when you need it.** A tool that finishes in one call should finish in
+  one call: its result reaches you *this* turn instead of a later one, which is almost
+  always what you want.
+
+The operator may have this switched off. If so `tool_write` refuses with a message saying
+so — rewrite the tool to finish in one call, or `gap_report` it. Do not retry with
+different wording.
+
 ### What to expect
 
 - **A new tool is callable on your next turn**, not this one.
