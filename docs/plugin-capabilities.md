@@ -20,7 +20,7 @@
   for it or check back later.
 - **Depends on:** the plugin HTTP-over-Unix-socket transport
   (`plugins-http-transport.md`, `spec/contracts/plugin.md`), the notification
-  feed (`internal/memory/notifications.go`), the tool-output spill
+  feed, the tool-output spill
   (`tool-output.md`) for large job results, and the pull-not-push
   discipline of `event-journal.md` for how a finished job reaches the model.
 
@@ -79,7 +79,7 @@ Second-order consequences of the removal:
 ### The constraint
 
 Operators install plugins Nine has never heard of. Today the only per-plugin
-environment comes from a hard-coded switch in `internal/config/factory.go`:
+environment comes from a hard-coded switch in `factory`:
 
 ```go
 func (cfg *Config) PluginEnvs(name string) []string {
@@ -154,10 +154,10 @@ NINE_WORKSPACE = "/srv/data"             # overrides the built-in default
 
 - `PluginEnvs(name)` shrinks to *defaults only* and is then applied to **every**
   plugin, including user plugins, which today receive no environment at all.
-- The call sites in `cmd/nine/daemon.go` collapse: every `TryStart(name)` passes
+- The call sites in `daemon` collapse: every `TryStart(name)` passes
   `cfg.PluginEnvs(name)...`, and `LoadUserPlugins` grows a way to reach config
   (pass a `func(name string) []string` into the manager rather than threading
-  `*config.Config` into `internal/plugin`, which must stay config-agnostic).
+  `*config.Config` into `plugin`, which must stay config-agnostic).
 - **Settings are read at spawn.** Editing `nine.toml` does not reach a running
   plugin; a user plugin picks it up on `nine plugins reload`, a built-in on
   daemon restart. A `plugin.configure` RPC for hot reload is possible later and
@@ -209,7 +209,7 @@ boot sweep safe — anything matching `<name>.<hex>` is by definition disposable
 a dir orphaned by a hard-killed daemon is reclaimed on the next boot rather than
 leaking forever. It mirrors `allocSocketPath`'s existing `crypto/rand` pattern.
 
-**The boot sweep is the primary reclaim path, not a backstop.** `cmd/nine/daemon.go`
+**The boot sweep is the primary reclaim path, not a backstop.** `daemon`
 installs no signal handler and never calls `StopAll` today, so on any exit other
 than a terminal-delivered SIGINT the plugin children are orphaned and `Stop` — and
 with it the dir removal — never runs. Phase 6 adds graceful shutdown, which makes
@@ -372,7 +372,7 @@ existing one actually hold.
 
 ### Daemon side: the registry
 
-A new `plugin_jobs` table in `internal/memory` (like everything else
+A new `plugin_jobs` table in `memory` (like everything else
 persistent):
 
 | Column | Purpose |
@@ -398,7 +398,7 @@ next turn.
 
 ### Model-facing tools
 
-Core-intercepted tools in `internal/agent` (registered like
+Core-intercepted tools in `agent` (registered like
 `RegisterNotifyUser`), available whenever the job registry is wired:
 
 | Tool | Blocking | Behaviour |
@@ -552,7 +552,7 @@ Each phase is independently shippable and independently useful.
    plus the context-builder surfacing of outstanding jobs.
 6. **Hardening + graceful shutdown** — boot sweep marking `running` rows `lost`,
    `job_max_seconds`, `max_jobs_per_conversation`, and the signal handler
-   `cmd/nine/daemon.go` lacks today: on SIGINT/SIGTERM, `job_cancel` every running
+   `daemon` lacks today: on SIGINT/SIGTERM, `job_cancel` every running
    job, then `Manager.StopAll`. Without it a `kill` orphans every plugin process
    (and its jobs, cache dir, and socket) rather than stopping it.
 7. **Docs & spec** — the §6 list, then `/sync-nine`.
