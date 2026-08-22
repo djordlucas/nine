@@ -64,7 +64,7 @@ tables to be agent-visible (R-MEM.4).
 | `session_events` | append-only execution journal (see [`event-journal.md`](event-journal.md)) | daemon-private |
 | `event_cursors` | per-subscriber durable journal position | daemon-private |
 | `related_sessions` | derived cross-session links (see [`subscriptions.md`](subscriptions.md)) | daemon-private |
-| `plugin_jobs` | long-running plugin work tracked across turns (see [`plugin.md`](plugin.md)) | daemon-private |
+| `jobs` | long-running work tracked across turns and restarts, for both backends — a plugin's detached goroutine and a resumable sandboxed tool (see [`plugin.md`](plugin.md), [`toolvm.md`](toolvm.md) R-TVM.19). Was `plugin_jobs`; `backend` says which, and `cursor`/`calls` belong to the tool backend | daemon-private |
 | `tool_state` | a sandboxed tool's durable state, keyed `(tool, scope_key, key)` — the store behind the `state` capability (see [`toolvm.md`](toolvm.md) R-TVM.18). Deliberately separate from `kv`, which is Nine's own namespace and must not become tool-writable | daemon-private |
 
 There is **no `plugin_registry` table** (plugins are immutable image content) and **no
@@ -224,7 +224,7 @@ builder), `vectors.go` (blob encoding + cosine ranking), `skills.go`, `conversat
 `goals.go`, `workflows.go` (delegates to `internal/workflow.Service`), `notifications.go`,
 `user_notifications.go`, `session_plans.go`, `hitl.go`, `events.go`
 (journal), `cursors.go` (subscriber cursors), `related.go` (related sessions),
-`plugin_jobs.go` (plugin job registry). Driver: `modernc.org/sqlite` (pure Go, no cgo).
+`jobs.go` (the job registry, both backends). Driver: `modernc.org/sqlite` (pure Go, no cgo).
 Backend: one SQLite file, on the container's `/data` volume or at `~/.nine/nine.db`
 natively.
 

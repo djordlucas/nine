@@ -64,6 +64,14 @@ type Manifest struct {
 	// Capabilities declares what the tool needs. It grants nothing
 	// (docs/sandboxed-tools.md §6.3).
 	Capabilities Declaration `toml:"capabilities"`
+
+	// Resumable says this tool may end a call with a `continue` envelope and be
+	// called again — long-running work, run as a job.
+	//
+	// It is not a capability: it confers no reach, so it sits outside
+	// [capabilities] alongside the timeout override. What it changes is the
+	// lifecycle, and R-TVM.10 makes the manifest authoritative for a tool's shape.
+	Resumable bool `toml:"resumable"`
 }
 
 // LoadManifest reads and validates one manifest file. Every required field is

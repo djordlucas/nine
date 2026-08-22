@@ -58,9 +58,23 @@ type envelope struct {
 	Harness string            `json:"harness"`
 	Modules map[string]string `json:"modules"`
 	Args    json.RawMessage   `json:"args"`
+	// Job is present only when this call is one of a long-running sequence. The
+	// harness passes it to the tool as a second argument; an ordinary call omits
+	// it and the tool sees undefined.
+	Job *JobContext `json:"job,omitempty"`
 }
 
-// input builds the bytes the host writes into guest memory for one call.
+// JobContext is what a resumable tool is told about the run it is part of.
+//
+// Cursor is whatever the tool itself returned last time — Nine persists it and
+// never reads it. Call counts from 1, so a tool can tell its first call from a
+// resumption without having to encode that into the cursor.
+type JobContext struct {
+	Cursor string `json:"cursor,omitempty"`
+	Call   int    `json:"call"`
+}
+
+// inputForJob builds the bytes the host writes into guest memory for one call.
 //
 // For a `wasm` tool that is just the model's arguments: the module is the tool.
 // For a `js` tool it is the envelope above, and building it here is where §4.3's
@@ -76,7 +90,9 @@ type envelope struct {
 // those would undo docs/self-modification.md exactly as a compiler would. The
 // curated `nine:*` standard library exists for the *generated* tier, which does
 // not yet exist here.
-func (t *Tool) input(args json.RawMessage) ([]byte, error) {
+// inputForJob builds the guest input, optionally carrying a job context. A nil
+// job is an ordinary call, which is almost all of them.
+func (t *Tool) inputForJob(args json.RawMessage, job *JobContext) ([]byte, error) {
 	if len(args) == 0 {
 		args = json.RawMessage(`{}`)
 	}
@@ -85,6 +101,12 @@ func (t *Tool) input(args json.RawMessage) ([]byte, error) {
 	}
 
 	if t.Kind == KindWasm {
+		// A wasm tool has no harness to hand a second argument to, so the job
+		// context rides inside the JSON it already parses. Additive: a tool that
+		// never opted into being resumable never sees the key.
+		if job != nil {
+			return mergeJobIntoArgs(args, job)
+		}
 		return args, nil
 	}
 
@@ -96,7 +118,26 @@ func (t *Tool) input(args json.RawMessage) ([]byte, error) {
 	}
 	modules[toolModuleSpecifier] = t.source
 
-	return json.Marshal(envelope{Harness: harness(), Modules: modules, Args: args})
+	return json.Marshal(envelope{Harness: harness(), Modules: modules, Args: args, Job: job})
+}
+
+// mergeJobIntoArgs adds the job context to a wasm tool's arguments under a
+// reserved key. The `nine_` prefix is reserved by the ABI for exactly this, so a
+// tool's own schema cannot collide with it.
+func mergeJobIntoArgs(args json.RawMessage, job *JobContext) ([]byte, error) {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(args, &m); err != nil {
+		return nil, fmt.Errorf("arguments must be a JSON object to carry a job cursor: %w", err)
+	}
+	if m == nil {
+		m = map[string]json.RawMessage{}
+	}
+	raw, err := json.Marshal(job)
+	if err != nil {
+		return nil, err
+	}
+	m["nine_job"] = raw
+	return json.Marshal(m)
 }
 
 // Imports returns the module specifiers this tool may import, sorted — for

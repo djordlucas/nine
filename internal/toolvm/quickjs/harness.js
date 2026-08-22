@@ -30,6 +30,13 @@
 const hostLog = globalThis.__nine_log;
 const hostHTTP = globalThis.__nine_http;
 const toolArgs = globalThis.__nine_args;
+// The job context, when this call is one of a long-running sequence: { cursor,
+// call }. Undefined on an ordinary call, which is almost all of them.
+const toolJob = globalThis.__nine_job;
+
+// A private sentinel for "the result is already written; stop here". Not an
+// error, and never visible to a tool.
+const SETTLED = Symbol("nine.settled");
 
 // The capability-backed primitives, handed to the nine:fs and nine:env modules
 // rather than to author code. They are stashed under a Symbol instead of staying
@@ -108,6 +115,7 @@ delete globalThis.__nine_fs_stat;
 delete globalThis.__nine_env;
 delete globalThis.__nine_random;
 delete globalThis.__nine_state;
+delete globalThis.__nine_job;
 
 // The `log` capability (§6.2), granted by default. QuickJS itself has no
 // console: the stock one comes from quickjs-libc's js_std_add_helpers, which
@@ -752,7 +760,9 @@ async function run(fn) {
   let settled = false;
   let value, failure, failed = false;
 
-  const p = (async () => fn(toolArgs))().then(
+  // The tool's own arguments first, then the job context. A tool that never
+  // opted into being resumable declares one parameter and never sees the second.
+  const p = (async () => fn(toolArgs, toolJob))().then(
     (v) => { value = v; settled = true; },
     (e) => { failure = e; failed = true; settled = true; },
   );
@@ -779,6 +789,22 @@ try {
     );
   }
   const value = await run(tool);
+
+  // A tool that asked to be called again (nine:job's again()). Checked before
+  // the byte and text renderings, because a continuation is neither: it is the
+  // tool declining to produce a result yet.
+  if (value && typeof value === "object" && value[Symbol.for("nine.continue")] === true) {
+    globalThis.__nine_result = JSON.stringify({
+      ok: true,
+      continue: {
+        cursor: value.cursor || undefined,
+        progress: value.progress || undefined,
+        after_ms: value.afterMs || undefined,
+      },
+    });
+    throw SETTLED;
+  }
+
   const bytes = asBytes(value);
   globalThis.__nine_result = bytes
     ? JSON.stringify({
@@ -788,9 +814,14 @@ try {
       })
     : JSON.stringify({ ok: true, output: render(value) });
 } catch (e) {
-  globalThis.__nine_result = JSON.stringify({
-    ok: false,
-    error: e && e.message ? String(e.message) : String(e),
-    error_detail: detail(e),
-  });
+  // SETTLED means a branch above already wrote __nine_result and used a throw
+  // only to leave the block. Rethrowing it as a tool failure would turn a
+  // successful continuation into an error.
+  if (e !== SETTLED) {
+    globalThis.__nine_result = JSON.stringify({
+      ok: false,
+      error: e && e.message ? String(e.message) : String(e),
+      error_detail: detail(e),
+    });
+  }
 }

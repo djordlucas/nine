@@ -308,7 +308,7 @@ terminal and distinct from `failed`. `progress` is free text.
   `max_concurrent` (excess jobs sit `queued`, since a job start frees the HTTP
   connection at once and the daemon's cap cannot hold that line), gives each job a
   `<cache_dir>/jobs/<job_id>/` dir, and evicts terminal jobs after a TTL.
-- **Daemon side:** a `plugin_jobs` registry row keyed to the owning
+- **Daemon side:** a `jobs` registry row keyed to the owning
   conversation records a stable `handle` (`job_<hex>`; the plugin-side id is never
   shown). A single sweeper polls `job_status` on an age-based backoff (base cadence
   for the first minute, then ~30s) and, on a terminal state, cap-or-spills the
@@ -537,7 +537,7 @@ plugin entry point, R-PLUG.13a),
 client, R-PLUG.15),
 `internal/plugin/serve.go` `plugin.Serve` — the plugin-side HTTP server loop on
 `NINE_PLUGIN_SOCKET`, `WithJobHandlers`/`WithJobs`; `contract.go` — `ToolDefinition`/`DescribeResult`),
-`internal/memory/plugin_jobs.go` (the `plugin_jobs` registry), `internal/runtime/plugin_jobs.go`
+`internal/memory/jobs.go` (the `jobs` registry), `internal/runtime/jobs.go`
 (job starter + sweeper), `internal/runtime/job_tools.go` (model-facing tools + surfacing),
 `internal/agent/register_jobs.go` (`job_wait`/`job_check`/`job_list`/`job_cancel`),
 `internal/builtins/mcp_playwright_test.go` (the opt-in end-to-end check against the real

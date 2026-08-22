@@ -46,14 +46,14 @@ func (jt *jobTools) Wait(ctx context.Context, handle string, timeout time.Durati
 
 	deadline := time.After(timeout)
 	for {
-		j, ok, err := jt.store.PluginJobGet(handle)
+		j, ok, err := jt.store.JobGet(handle)
 		if err != nil {
 			return "", err
 		}
 		if !ok {
 			return fmt.Sprintf("There is no background job with handle %s.", handle), nil
 		}
-		if memory.PluginJobTerminal(j.State) {
+		if memory.JobTerminal(j.State) {
 			return renderJob(j), nil
 		}
 
@@ -79,7 +79,7 @@ func (jt *jobTools) Wait(ctx context.Context, handle string, timeout time.Durati
 
 // Check returns the job's current state and result without waiting.
 func (jt *jobTools) Check(_ context.Context, handle string) (string, error) {
-	j, ok, err := jt.store.PluginJobGet(handle)
+	j, ok, err := jt.store.JobGet(handle)
 	if err != nil {
 		return "", err
 	}
@@ -91,7 +91,7 @@ func (jt *jobTools) Check(_ context.Context, handle string) (string, error) {
 
 // List reports the conversation's outstanding jobs.
 func (jt *jobTools) List(_ context.Context) (string, error) {
-	sums, err := jt.store.PluginJobsOutstandingSummary(jt.ownerID)
+	sums, err := jt.store.JobsOutstandingSummary(jt.ownerID)
 	if err != nil {
 		return "", err
 	}
@@ -109,28 +109,47 @@ func (jt *jobTools) List(_ context.Context) (string, error) {
 
 // Cancel requests best-effort cancellation of a job via its plugin.
 func (jt *jobTools) Cancel(ctx context.Context, handle string) (string, error) {
-	j, ok, err := jt.store.PluginJobGet(handle)
+	j, ok, err := jt.store.JobGet(handle)
 	if err != nil {
 		return "", err
 	}
 	if !ok {
 		return fmt.Sprintf("There is no background job with handle %s to cancel.", handle), nil
 	}
-	if memory.PluginJobTerminal(j.State) {
+	if memory.JobTerminal(j.State) {
 		return fmt.Sprintf("Job %s has already finished (%s).", handle, j.State), nil
+	}
+
+	// A tool job stops exactly, because the daemon owns when the next call
+	// happens: marking the row terminal is the cancel. A call already in flight
+	// runs out its own deadline and its result is discarded (JobAdvance refuses a
+	// terminal row), so the worst case is one call of latency rather than the
+	// plugin backend's best-effort request.
+	if j.Backend == memory.JobBackendTool {
+		if err := jt.store.JobFinish(handle, string(plugin.JobCancelled), "", "", "cancelled"); err != nil {
+			return "", fmt.Errorf("cancel %s: %w", handle, err)
+		}
+		if jt.waiters != nil {
+			jt.waiters.signal(handle)
+		}
+		return fmt.Sprintf("Cancelled %s. It will not be called again.", handle), nil
+	}
+
+	if jt.mgr == nil {
+		return fmt.Sprintf("Cannot cancel %s: it belongs to a plugin and no plugin manager is running.", handle), nil
 	}
 	p, running := jt.mgr.PluginByName(j.Plugin)
 	if !running {
 		return fmt.Sprintf("Cannot cancel %s: its plugin %q is no longer running.", handle, j.Plugin), nil
 	}
-	if err := jt.mgr.JobCancel(ctx, p, j.PluginJobID); err != nil {
+	if err := jt.mgr.JobCancel(ctx, p, j.BackendRef); err != nil {
 		return "", fmt.Errorf("cancel %s: %w", handle, err)
 	}
 	return fmt.Sprintf("Requested cancellation of %s; it will stop shortly.", handle), nil
 }
 
 // renderJob is the model-facing rendering of a job row, terminal or live.
-func renderJob(j memory.PluginJob) string {
+func renderJob(j memory.Job) string {
 	switch j.State {
 	case string(plugin.JobDone):
 		out := j.Output
@@ -149,7 +168,7 @@ func renderJob(j memory.PluginJob) string {
 	}
 }
 
-func stillRunning(j memory.PluginJob) string {
+func stillRunning(j memory.Job) string {
 	s := fmt.Sprintf("Job %s (%s) is still %s.", j.Handle, j.Tool, j.State)
 	if j.Progress != "" {
 		s += " Progress: " + j.Progress + "."
@@ -157,7 +176,7 @@ func stillRunning(j memory.PluginJob) string {
 	return s
 }
 
-func jobSummaryLine(s memory.PluginJobSummary) string {
+func jobSummaryLine(s memory.JobSummary) string {
 	line := fmt.Sprintf("- %s · %s · %s · %s old", s.Handle, s.Tool, s.State, humanAge(s.AgeSeconds))
 	if s.Progress != "" {
 		line += " · " + s.Progress
@@ -187,7 +206,7 @@ const jobSurfaceTopN = 5
 // none, so nothing is surfaced in the common case.
 func jobsEnrichmentFn(store *memory.Store, ownerID string) func(context.Context, []float32) string {
 	return func(_ context.Context, _ []float32) string {
-		sums, err := store.PluginJobsOutstandingSummary(ownerID)
+		sums, err := store.JobsOutstandingSummary(ownerID)
 		if err != nil || len(sums) == 0 {
 			return ""
 		}

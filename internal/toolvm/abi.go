@@ -100,6 +100,41 @@ type Result struct {
 	// this — every tool written before it existed — behaves exactly as it did.
 	// That is why it needs no ABIVersion bump (adr/rich-js-tools.md §8).
 	ErrorDetail *ErrorDetail `json:"error_detail,omitempty"`
+
+	// Continue, when set on a successful result, means the tool has not finished
+	// and wants to be called again. The host persists the cursor, waits, and calls
+	// it with the cursor handed back — which is how work outlives a turn without
+	// anything outliving the instance (adr/durable-and-long-running-tools.md §4.2).
+	//
+	// Additive like ErrorDetail and OutputB64, and for the same reason no
+	// ABIVersion bump: the two-export contract is unchanged and a guest that never
+	// sets it produces exactly the envelope it produced before.
+	Continue *Continuation `json:"continue,omitempty"`
+}
+
+// Continuation is a tool saying "not done — ask me again".
+//
+// The name of what happens next is deliberately *a call*, not a step or a tick:
+// each one is an ordinary tool call, with the same instance model, the same
+// deadline, the same memory cap, and the same audit as any other. Nothing new
+// runs. ("Step" is also already a workflow's unit of delegated work, and the two
+// would be confused on sight.)
+type Continuation struct {
+	// Cursor is the tool's own resume point, handed back verbatim on the next
+	// call. Opaque to the host — Nine persists it and never reads it.
+	Cursor string `json:"cursor,omitempty"`
+
+	// Progress is a free-text one-liner the model and the operator see while the
+	// job runs ("41% · 1.2 GB/2.9 GB"). Free text rather than a structured
+	// percentage because its consumer reads a sentence, and a tool with no total
+	// to divide by still has something useful to say.
+	Progress string `json:"progress,omitempty"`
+
+	// AfterMS is how long the tool would like before the next call. The host
+	// clamps it to at least the configured floor: without one, a tool returning 0
+	// forever turns a bounded CPU story into an unbounded one, one legal call at a
+	// time.
+	AfterMS int `json:"after_ms,omitempty"`
 }
 
 // ErrorDetail is the structured half of a failure. Every field is optional; a
