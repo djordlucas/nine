@@ -29,7 +29,12 @@ type Job struct {
 	BackendRef string `json:"backend_ref"`
 	OwnerID    string `json:"owner_id"`
 	State      string `json:"state"`
+	// Ack is the one-line acknowledgement a human or the model reads — never
+	// machine input. Args is the tool backend's separate field for the arguments
+	// every later call is made with; conflating the two would mean anything that
+	// renders Ack (reasonably) dumps raw JSON at the model.
 	Ack        string `json:"ack,omitempty"`
+	Args       string `json:"args,omitempty"`
 	Progress   string `json:"progress,omitempty"`
 	Output     string `json:"output,omitempty"`
 	SpillPath  string `json:"spill_path,omitempty"`
@@ -73,9 +78,9 @@ func (s *Store) JobCreate(j Job) error {
 		backend = JobBackendPlugin
 	}
 	_, err := s.db.Exec(
-		`INSERT INTO jobs(handle, backend, plugin, tool, backend_ref, owner_id, state, ack, cursor)
-		 VALUES(?,?,?,?,?,?,?,?,?)`,
-		j.Handle, backend, j.Plugin, j.Tool, j.BackendRef, j.OwnerID, j.State, j.Ack, j.Cursor)
+		`INSERT INTO jobs(handle, backend, plugin, tool, backend_ref, owner_id, state, ack, args, cursor)
+		 VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		j.Handle, backend, j.Plugin, j.Tool, j.BackendRef, j.OwnerID, j.State, j.Ack, j.Args, j.Cursor)
 	return err
 }
 
@@ -129,7 +134,7 @@ func (s *Store) JobsDueForPoll(baseSeconds, backoffSeconds, youngWindowSeconds i
 	return s.queryJobs(
 		`SELECT `+jobColumns+`
 		 FROM jobs
-		 WHERE state NOT IN ('done','failed','cancelled','lost')
+		 WHERE backend = 'plugin' AND state NOT IN ('done','failed','cancelled','lost')
 		   AND updated_at < (CASE WHEN created_at > ? THEN ? ELSE ? END)
 		 ORDER BY created_at`,
 		cutoff(youngWindowSeconds), cutoff(baseSeconds), cutoff(backoffSeconds))
@@ -243,7 +248,7 @@ func (s *Store) JobsExpire(maxSeconds int, reason string) ([]Job, error) {
 // jobColumns is the full-row column list. It is one constant rather than seven
 // copies so a new column cannot be added to the scan and forgotten in a query —
 // the failure mode there is a silent zero value, not an error.
-const jobColumns = `handle, backend, plugin, tool, backend_ref, owner_id, state, ack,
+const jobColumns = `handle, backend, plugin, tool, backend_ref, owner_id, state, ack, args,
 	        progress, output, spill_path, error, cursor, calls, next_at,
 	        created_at, updated_at, finished_at`
 
@@ -255,7 +260,7 @@ func scanJob(row rowScanner) (Job, error) {
 		finishedAt sql.NullString
 	)
 	err := row.Scan(&j.Handle, &j.Backend, &j.Plugin, &j.Tool, &j.BackendRef, &j.OwnerID,
-		&j.State, &j.Ack, &j.Progress, &j.Output, &j.SpillPath, &j.Error,
+		&j.State, &j.Ack, &j.Args, &j.Progress, &j.Output, &j.SpillPath, &j.Error,
 		&j.Cursor, &j.Calls, &j.NextAt,
 		&j.CreatedAt, &j.UpdatedAt, &finishedAt)
 	if err != nil {
@@ -363,15 +368,4 @@ func (s *Store) JobsResumable() ([]Job, error) {
 		 FROM jobs
 		 WHERE backend = ? AND state NOT IN ('done','failed','cancelled','lost')
 		 ORDER BY created_at`, JobBackendTool)
-}
-
-// JobsCountRunning returns how many non-terminal jobs exist across every owner —
-// the daemon-wide admission check, distinct from JobCountOutstanding's per-owner
-// one. A tool job is work this daemon performs, so the total matters in a way it
-// did not when every job was a goroutine in someone else's process.
-func (s *Store) JobsCountRunning() (int, error) {
-	var n int
-	err := s.db.QueryRow(
-		`SELECT count(*) FROM jobs WHERE state NOT IN ('done','failed','cancelled','lost')`).Scan(&n)
-	return n, err
 }

@@ -96,16 +96,18 @@ func (js *jobStarter) StartToolJob(ctx context.Context, tool string, args json.R
 	}
 
 	handle := newJobHandle()
-	// The model's original arguments are kept in Ack so every later call gets
-	// them: a resumable tool is called with the same arguments and a changing
-	// cursor, and the cursor is the only thing that moves.
+	// Args and Ack are separate fields on purpose. Every later call is made with
+	// the model's original arguments — a resumable tool is called with the same
+	// arguments and a changing cursor, and the cursor is the only thing that
+	// moves — while Ack stays the one line a human or the model reads.
 	if err := js.store.JobCreate(memory.Job{
 		Handle:  handle,
 		Backend: memory.JobBackendTool,
 		Tool:    tool,
 		OwnerID: js.ownerID,
 		State:   string(plugin.JobRunning),
-		Ack:     string(argsOrEmpty(args)),
+		Ack:     ack,
+		Args:    string(argsOrEmpty(args)),
 		Cursor:  c.Cursor,
 	}); err != nil {
 		return "", fmt.Errorf("record background job: %w", err)
@@ -171,7 +173,7 @@ type jobSweeper struct {
 	maxSeconds  int
 	baseSeconds int
 	// tools runs the tool backend, or nil when no sandboxed-tool host exists.
-	tools *toolJobRunner
+	tools *ToolJobRunner
 }
 
 // RunJobSweeper polls running plugin jobs until ctx is cancelled, completing
@@ -189,7 +191,7 @@ func RunJobSweeper(ctx context.Context, store *memory.Store, mgr *plugin.Manager
 // model-facing surface (job_wait/job_check/job_list/job_cancel) is already
 // backend-agnostic, and two loops would mean two cadences, two shutdown paths,
 // and two places to forget something.
-func RunJobSweeperWithTools(ctx context.Context, store *memory.Store, mgr *plugin.Manager, waiters *JobWaiters, interval time.Duration, maxSeconds int, tools *toolJobRunner) {
+func RunJobSweeperWithTools(ctx context.Context, store *memory.Store, mgr *plugin.Manager, waiters *JobWaiters, interval time.Duration, maxSeconds int, tools *ToolJobRunner) {
 	// A nil manager still leaves the tool backend usable: sandboxed tools do not
 	// need plugins, and a deployment can reasonably run one without the other.
 	if store == nil || (mgr == nil && tools == nil) {

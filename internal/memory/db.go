@@ -472,6 +472,7 @@ func initSchema(d db) error {
 			owner_id      TEXT NOT NULL DEFAULT '',
 			state         TEXT NOT NULL DEFAULT 'running',
 			ack           TEXT NOT NULL DEFAULT '',
+			args          TEXT NOT NULL DEFAULT '',
 			progress      TEXT NOT NULL DEFAULT '',
 			output        TEXT NOT NULL DEFAULT '',
 			spill_path    TEXT NOT NULL DEFAULT '',
