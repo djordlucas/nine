@@ -474,7 +474,7 @@ type DaemonConfig struct {
 	InstanceName string `toml:"instance_name"`
 
 	// StandingAgentsAuthoritative treats the [[agent]] list as the full desired
-	// state (docs/predefined-agents.md §7 v3). When true, a config-origin goal no
+	// state (adr/predefined-agents-design.md §7 v3). When true, a config-origin goal no
 	// longer listed in nine.toml is archived and its session stopped on boot.
 	// Default false: removing an entry just stops reconciling it, leaving the
 	// goal for the operator to archive manually. Never touches

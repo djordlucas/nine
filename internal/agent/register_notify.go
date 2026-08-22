@@ -11,7 +11,7 @@ import (
 
 // notifyToolDefs is the notify_user tool: the human-output surface for a
 // background agent that has no interactive conversation to speak into
-// (docs/predefined-agents.md §5 piece 2).
+// (adr/predefined-agents-design.md §5 piece 2).
 var notifyToolDefs = []llm.ToolDef{
 	{
 		Name:        "notify_user",
