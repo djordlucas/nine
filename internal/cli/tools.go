@@ -278,5 +278,12 @@ func declaredSummary(d toolvm.Declaration) string {
 	if len(d.Env) > 0 {
 		parts = append(parts, "env "+strings.Join(d.Env, ","))
 	}
+	if d.State {
+		// No parameters: a declaration says the tool remembers, and the scope and
+		// quotas are the operator's to confer. `nine tool validate` runs without a
+		// daemon and deliberately resolves no grant, so there is nothing more to
+		// show here than the need itself.
+		parts = append(parts, toolvm.CapState)
+	}
 	return strings.Join(parts, ", ")
 }

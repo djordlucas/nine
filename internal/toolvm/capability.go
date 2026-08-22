@@ -5,6 +5,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Capability names, as they appear in a manifest's [capabilities] table and in
@@ -16,6 +17,7 @@ const (
 	CapFSWrite  = "fs.write"
 	CapNetHTTP  = "net.http"
 	CapEnvRead  = "env"
+	CapState    = "state"
 	capFSVerbRd = "read"
 	capFSVerbWr = "write"
 )
@@ -32,6 +34,12 @@ type Declaration struct {
 	FS []string `toml:"fs" json:"fs"`
 	// Net lists network verbs: "http".
 	Net []string `toml:"net" json:"net"`
+	// State declares the `state` capability: a durable, host-owned store scoped
+	// to this tool. A bool rather than a list because the declaration contributes
+	// no parameters — scope and quotas are the operator's, conferred in the
+	// grant (R-TVM.6). A manifest saying `state = true` says "this tool
+	// remembers"; it does not get to say what it may remember or for how long.
+	State bool `toml:"state" json:"state"`
 	// Env lists the environment keys the tool reads, by name. Keys rather than a
 	// verb, because for env the key *is* the parameter — and naming them in the
 	// manifest is what lets an operator diff a declaration against a grant.
@@ -55,6 +63,69 @@ type Grant struct {
 	// the one capability with no wazero primitive behind it — every check that
 	// makes it safe lives in ssrf.go and nethttp.go.
 	HTTP *HTTPGrant
+	// State is the durable-state grant, or nil when the operator conferred none.
+	// Like HTTP it has no wazero primitive behind it: the store is Nine's, and
+	// the isolation between two tools' namespaces is a primary key, not a
+	// sandbox boundary.
+	State *StateGrant
+}
+
+// State scope values. Which one an operator writes is the whole security
+// argument for this capability, which is why it is required and has no default
+// (adr/durable-and-long-running-tools.md §3.3).
+const (
+	// StateScopeTool shares one namespace across every caller of the tool. It is
+	// what a cache wants — and it is a cross-session information channel that
+	// needs no other capability, since a tool's arguments come from the model and
+	// can carry anything in that session's context. Confer it on a tool whose
+	// code you have read.
+	StateScopeTool = "tool"
+	// StateScopeConversation keys the namespace by the owning conversation, so
+	// nothing a tool writes in one thread is readable from another.
+	StateScopeConversation = "conversation"
+)
+
+// Quota defaults, applied to any field an operator left at zero.
+const (
+	DefaultStateMaxKeys    = 128
+	DefaultStateMaxValueKB = 64
+	DefaultStateMaxTotalKB = 1024
+)
+
+// StateGrant is what the operator confers under
+// `[tool.<name>.capabilities.state]`: a key/value store the host owns, scoped as
+// Scope says and bounded by the quotas.
+//
+// The store is why I-TVM.3 reads "no state survives a call *implicitly*" rather
+// than "no state survives a call": the guest's globals, heap, and interpreter
+// realm are still destroyed at return, and what persists does so through this
+// grant, named by the tool and bounded here.
+type StateGrant struct {
+	// Scope is StateScopeTool or StateScopeConversation. Required; the config
+	// validator refuses an empty or unknown value rather than picking one.
+	Scope string
+	// MaxKeys, MaxValueKB and MaxTotalKB bound one (tool, scope) namespace.
+	// Zero means the default above.
+	MaxKeys    int
+	MaxValueKB int
+	MaxTotalKB int
+	// TTL is how long a written value lives. Zero means it never expires.
+	TTL time.Duration
+}
+
+// withDefaults fills the quota fields an operator left unset. Scope is never
+// defaulted — that is the point of it being required.
+func (g StateGrant) withDefaults() StateGrant {
+	if g.MaxKeys <= 0 {
+		g.MaxKeys = DefaultStateMaxKeys
+	}
+	if g.MaxValueKB <= 0 {
+		g.MaxValueKB = DefaultStateMaxValueKB
+	}
+	if g.MaxTotalKB <= 0 {
+		g.MaxTotalKB = DefaultStateMaxTotalKB
+	}
+	return g
 }
 
 // capabilities returns the capability names a Grant actually confers, sorted.
@@ -71,6 +142,9 @@ func (g Grant) capabilities() []string {
 	}
 	if g.HTTP != nil {
 		out = append(out, CapNetHTTP)
+	}
+	if g.State != nil {
+		out = append(out, CapState)
 	}
 	sort.Strings(out)
 	return out
@@ -101,6 +175,9 @@ func (d Declaration) capabilities() ([]string, error) {
 	}
 	if len(d.Env) > 0 {
 		out = append(out, CapEnvRead)
+	}
+	if d.State {
+		out = append(out, CapState)
 	}
 	sort.Strings(out)
 	return out, nil
@@ -191,11 +268,25 @@ func (g Grant) Summary() string {
 		case CapNetHTTP:
 			parts = append(parts, "net.http "+strings.Join(g.HTTP.Methods, "/")+
 				" "+strings.Join(g.HTTP.AllowHosts, ","))
+		case CapState:
+			parts = append(parts, "state "+g.State.summary())
 		default:
 			parts = append(parts, c)
 		}
 	}
 	return strings.Join(parts, "; ")
+}
+
+// summary renders a state grant for `nine tools show`: the scope first, because
+// it is the part an operator reviewing a grant most needs to see.
+func (g StateGrant) summary() string {
+	d := g.withDefaults()
+	out := fmt.Sprintf("scope=%s keys<=%d value<=%dKB total<=%dKB",
+		d.Scope, d.MaxKeys, d.MaxValueKB, d.MaxTotalKB)
+	if d.TTL > 0 {
+		out += " ttl=" + d.TTL.String()
+	}
+	return out
 }
 
 func mountList(ms []Mount) string {
@@ -270,6 +361,8 @@ func resolveCeiling(decl Declaration, ceiling Ceiling) (Grant, error) {
 			}
 		case CapNetHTTP:
 			g.HTTP = ceiling.HTTP
+		case CapState:
+			g.State = ceiling.State
 		}
 	}
 	return g, nil
@@ -292,6 +385,16 @@ type grantDescription struct {
 		AllowHosts []string `json:"allow_hosts"`
 		Methods    []string `json:"methods"`
 	} `json:"net_http,omitempty"`
+	// State tells a guest its scope and quotas. Both are safe to disclose and
+	// useful: a tool that knows its key budget can evict rather than discover the
+	// ceiling by hitting it, and nothing reads this back to enforce anything
+	// (I-TVM.8).
+	State *struct {
+		Scope      string `json:"scope"`
+		MaxKeys    int    `json:"max_keys"`
+		MaxValueKB int    `json:"max_value_kb"`
+		MaxTotalKB int    `json:"max_total_kb"`
+	} `json:"state,omitempty"`
 }
 
 func (g Grant) describe() grantDescription {
@@ -307,6 +410,15 @@ func (g Grant) describe() grantDescription {
 			AllowHosts []string `json:"allow_hosts"`
 			Methods    []string `json:"methods"`
 		}{AllowHosts: g.HTTP.AllowHosts, Methods: g.HTTP.Methods}
+	}
+	if g.State != nil {
+		s := g.State.withDefaults()
+		d.State = &struct {
+			Scope      string `json:"scope"`
+			MaxKeys    int    `json:"max_keys"`
+			MaxValueKB int    `json:"max_value_kb"`
+			MaxTotalKB int    `json:"max_total_kb"`
+		}{Scope: s.Scope, MaxKeys: s.MaxKeys, MaxValueKB: s.MaxValueKB, MaxTotalKB: s.MaxTotalKB}
 	}
 	return d
 }
