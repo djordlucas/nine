@@ -55,7 +55,7 @@ type Role struct {
 	// OwnsGoal marks a pursue-shell session that steers its own goal: it grants
 	// the goal self-management tools (goal_get/goal_list/goal_update_status/
 	// goal_update_status) regardless of the role's own allowlist, exactly as
-	// gap_report is always granted (docs/predefined-agents.md §3.1). It is
+	// gap_report is always granted (adr/predefined-agents-design.md §3.1). It is
 	// conferred by the shell (the daemon), not declared in a role skill, and is
 	// a root-only structural flag — ResolveLeaf strips it.
 	OwnsGoal bool
@@ -317,7 +317,7 @@ var trustedRoleSources = []string{memory.SkillSourceUser}
 // passenger when it rides beside a pursue shell (and declares none).
 //
 // A pursue routine may carry an explicit work-role name in its config (seeded by
-// SpawnStandingSession for pre-defined agents, docs/predefined-agents.md §5
+// SpawnStandingSession for pre-defined agents, adr/predefined-agents-design.md §5
 // piece 5); when present, that role's tools/persona run in place of the default
 // pursue role, while the pursue shell itself (persistence, goal ownership) is
 // unchanged.
