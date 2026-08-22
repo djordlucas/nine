@@ -39,7 +39,7 @@ var goalToolDefs = []llm.ToolDef{
 // RegisterGoalTools registers all four goal handlers into d (goal_create plus
 // the three self-management tools). It is the combined convenience used where a
 // role gets both delegation and goal-ownership; the daemon's loop builder wires
-// the two subsets independently (docs/predefined-agents.md §3.1).
+// the two subsets independently (adr/predefined-agents-design.md §3.1).
 func RegisterGoalTools(d *Dispatcher, agentID string, store *memory.Store, spawnFn GoalSessionSpawnFn) {
 	RegisterGoalCreate(d, agentID, store, spawnFn)
 	RegisterGoalManagement(d, store)
@@ -55,7 +55,7 @@ func RegisterGoalTools(d *Dispatcher, agentID string, store *memory.Store, spawn
 // Delegates flag. The goal *self-management* tools (goal_get, goal_list,
 // goal_update_status) are registered separately by
 // RegisterGoalManagement, since a standing agent must steer its own goal
-// regardless of whether it can delegate (docs/predefined-agents.md §3.1).
+// regardless of whether it can delegate (adr/predefined-agents-design.md §3.1).
 func RegisterGoalCreate(d *Dispatcher, agentID string, store *memory.Store, spawnFn GoalSessionSpawnFn) {
 	d.handlers["goal_create"] = func(ctx context.Context, args json.RawMessage) (string, error) {
 		var req struct {
@@ -116,7 +116,7 @@ func RegisterGoalCreate(d *Dispatcher, agentID string, store *memory.Store, spaw
 // the tools a goal-owning session uses to steer its own goal (read status,
 // pause/finish itself, record findings). They carry no delegation authority and
 // are registered for every pursue-shell session regardless of role
-// (docs/predefined-agents.md §3.1), and for delegating roles alongside
+// (adr/predefined-agents-design.md §3.1), and for delegating roles alongside
 // RegisterGoalCreate.
 func RegisterGoalManagement(d *Dispatcher, store *memory.Store) {
 	d.handlers["goal_get"] = func(_ context.Context, args json.RawMessage) (string, error) {

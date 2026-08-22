@@ -96,7 +96,7 @@ max_goal_sessions = 10
 # runtime = "Firecracker microVM"
 
 # Treat the [[agent]] list as the full desired state for pre-defined agents
-# (docs/predefined-agents.md §7 v3). When true, a config-origin goal no longer
+# (adr/predefined-agents-design.md §7 v3). When true, a config-origin goal no longer
 # listed in [[agent]] is archived and its session stopped on boot;
 # conversation-created goals are never touched. Defaults to false — removing an
 # entry just stops reconciling it, leaving the goal for manual archival.

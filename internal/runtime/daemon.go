@@ -43,10 +43,10 @@ type RoleParams struct {
 	Interactive bool
 	// OwnsGoal marks a pursue-shell session that steers its own goal, granting
 	// the goal self-management tools regardless of the role's allowlist
-	// (docs/predefined-agents.md §3.1).
+	// (adr/predefined-agents-design.md §3.1).
 	OwnsGoal bool
 	// Delegates opts a standing agent into sub-agent fan-out; OR-ed with the
-	// resolved role's own Delegates flag (docs/predefined-agents.md §3.1).
+	// resolved role's own Delegates flag (adr/predefined-agents-design.md §3.1).
 	Delegates bool
 }
 
