@@ -25,7 +25,7 @@ const (
 	DefaultJobMinDelayMS = 250
 )
 
-// toolJobRunner is the tool backend of the job registry.
+// ToolJobRunner is the tool backend of the job registry.
 //
 // The asymmetry with the plugin backend is the whole of it: for a plugin the
 // sweeper POLLS work the plugin is already doing, and for a tool the sweeper IS
@@ -39,7 +39,7 @@ const (
 //     goroutine is unreachable.
 //   - Cancellation is exact. Stopping means not making the next call; there is
 //     nothing to ask nicely.
-type toolJobRunner struct {
+type ToolJobRunner struct {
 	store    *memory.Store
 	host     *toolvm.Host
 	maxCalls int
@@ -49,21 +49,21 @@ type toolJobRunner struct {
 // NewToolJobRunner builds the tool backend for the job sweeper, or nil when
 // there is no sandboxed-tool host — which is what keeps the whole thing additive
 // for a deployment with [tools] unset.
-func NewToolJobRunner(store *memory.Store, host *toolvm.Host, maxCalls, minDelayMS int) *toolJobRunner {
+func NewToolJobRunner(store *memory.Store, host *toolvm.Host, maxCalls, minDelayMS int) *ToolJobRunner {
 	if store == nil || host == nil {
 		return nil
 	}
 	return newToolJobRunner(store, host, maxCalls, minDelayMS)
 }
 
-func newToolJobRunner(store *memory.Store, host *toolvm.Host, maxCalls, minDelayMS int) *toolJobRunner {
+func newToolJobRunner(store *memory.Store, host *toolvm.Host, maxCalls, minDelayMS int) *ToolJobRunner {
 	if maxCalls <= 0 {
 		maxCalls = DefaultJobMaxCalls
 	}
 	if minDelayMS <= 0 {
 		minDelayMS = DefaultJobMinDelayMS
 	}
-	return &toolJobRunner{
+	return &ToolJobRunner{
 		store:    store,
 		host:     host,
 		maxCalls: maxCalls,
@@ -72,7 +72,7 @@ func newToolJobRunner(store *memory.Store, host *toolvm.Host, maxCalls, minDelay
 }
 
 // runDue makes one call for every tool job that is due, and reconciles the row.
-func (r *toolJobRunner) runDue(ctx context.Context, s *jobSweeper) {
+func (r *ToolJobRunner) runDue(ctx context.Context, s *jobSweeper) {
 	if r == nil || r.host == nil {
 		return
 	}
@@ -87,7 +87,7 @@ func (r *toolJobRunner) runDue(ctx context.Context, s *jobSweeper) {
 }
 
 // runOnce makes a single call of one job and writes back what happened.
-func (r *toolJobRunner) runOnce(ctx context.Context, s *jobSweeper, j memory.Job) {
+func (r *ToolJobRunner) runOnce(ctx context.Context, s *jobSweeper, j memory.Job) {
 	// The call budget is checked before spending one, so a job that has reached
 	// its cap fails without a final extra call.
 	if j.Calls >= r.maxCalls {
@@ -97,11 +97,17 @@ func (r *toolJobRunner) runOnce(ctx context.Context, s *jobSweeper, j memory.Job
 		return
 	}
 
-	// The turn that started this job is long gone, so there is no conversation on
-	// the context — a conversation-scoped `state` grant is refused here by design
-	// (R-TVM.18), and a resumable tool that wants to remember across calls uses
-	// its cursor, or a tool-scoped grant.
-	out, err := r.host.CallJob(ctx, j.Tool, json.RawMessage(j.Ack), toolvm.JobContext{
+	// The conversation this job belongs to, so a conversation-scoped `state`
+	// grant resolves the same way on call 40 as it did on call 1.
+	//
+	// Without this a tool granted state at conversation scope works inside the
+	// turn that started it and then dies on its second call, because the sweeper
+	// has no turn and stateScopeFor refuses rather than falling back (R-TVM.18).
+	// owner_id *is* the conversation id — the registry has treated the agent id
+	// and the conversation id as one value since plugin jobs landed.
+	callCtx := toolvm.WithStateScope(ctx, j.OwnerID)
+
+	out, err := r.host.CallJob(callCtx, j.Tool, json.RawMessage(j.Args), toolvm.JobContext{
 		Cursor: j.Cursor,
 		Call:   j.Calls + 1,
 	})

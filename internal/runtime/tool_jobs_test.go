@@ -260,3 +260,128 @@ func TestToolJobsAreResumedNotLostAtBoot(t *testing.T) {
 		t.Errorf("ResumeToolJobs reported %d, want the 1 tool job", n)
 	}
 }
+
+// The interaction between durable state and long-running work, which is where
+// the two features meet and where each is individually correct.
+//
+// A conversation-scoped `state` grant must resolve the same way on call 40 as on
+// call 1. Call 1 happens inside the turn that started the job, where the
+// conversation is on the context; every later call happens in the sweeper, which
+// has no turn. Without the owner being carried across, such a tool works exactly
+// once and then dies — the failure this test exists to prevent.
+func TestConversationScopedStateSurvivesLaterJobCalls(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "acc.toml"), []byte(`
+name = "acc"
+kind = "js"
+entrypoint = "./acc.js"
+description = "Count across calls in conversation-scoped state."
+resumable = true
+
+[capabilities]
+state = true
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "acc.js"), []byte(`
+import { again } from "nine:job";
+import { get, set } from "nine:state";
+export default function () {
+  const n = Number(get("n") ?? 0) + 1;
+  set("n", String(n));
+  if (n >= 3) return "counted to " + n;
+  return again({ cursor: String(n), afterMs: 0 });
+}
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	host, err := toolvm.Open(ctx, toolvm.Config{
+		UserDir:    dir,
+		Grants:     map[string]toolvm.Grant{"acc": {State: &toolvm.StateGrant{Scope: toolvm.StateScopeConversation}}},
+		StateStore: newToolStateStore(store),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { host.Close(context.Background()) }) //nolint:errcheck
+	host.Load(ctx, nil)
+	if host.Get("acc") == nil {
+		t.Fatalf("tool did not load: %+v", host.Status())
+	}
+
+	// Call 1: inside the turn, exactly as the dispatcher would run it.
+	turnCtx := toolvm.WithStateScope(ctx, "agent-1")
+	out, err := host.CallOutput(turnCtx, "acc", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("in-turn call: %v", err)
+	}
+	if out.Continue == nil {
+		t.Fatal("the tool did not ask to continue")
+	}
+
+	js := newJobStarter(store, nil, "agent-1", 0)
+	if _, err := js.StartToolJob(turnCtx, "acc", json.RawMessage(`{}`), out.Continue); err != nil {
+		t.Fatal(err)
+	}
+	jobs, _ := store.JobsResumable()
+	handle := jobs[0].Handle
+
+	// Calls 2+: the sweeper, with no turn of its own.
+	s := &jobSweeper{store: store, waiters: NewJobWaiters(), tools: NewToolJobRunner(store, host, 0, 0)}
+	for range 6 {
+		j, _, err := store.JobGet(handle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if memory.JobTerminal(j.State) {
+			break
+		}
+		if _, err := store.JobAdvance(handle, j.Cursor, j.Progress, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		s.tools.runDue(ctx, s)
+	}
+
+	final, _, _ := store.JobGet(handle)
+	if final.State == "failed" {
+		t.Fatalf("the job died after the turn ended: %s", final.Error)
+	}
+	if final.State != "done" {
+		t.Fatalf("state = %q, want done", final.State)
+	}
+	if !strings.Contains(final.Output, "counted to 3") {
+		t.Fatalf("output = %q; the count did not accumulate across calls", final.Output)
+	}
+}
+
+// Args and Ack are separate fields. Ack is the one line a human reads; Args is
+// machine input. Conflating them means anything that renders Ack — a reasonable
+// thing to do — dumps raw JSON at the model.
+func TestToolJobKeepsArgsOutOfTheAck(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	js := newJobStarter(store, nil, "agent-1", 0)
+	if _, err := js.StartToolJob(context.Background(), "batcher",
+		json.RawMessage(`{"total":9}`),
+		&toolvm.Continuation{Cursor: "0", Progress: "0/9"}); err != nil {
+		t.Fatal(err)
+	}
+
+	jobs, _ := store.JobsResumable()
+	j := jobs[0]
+	if strings.Contains(j.Ack, "{") {
+		t.Errorf("ack = %q, want a human-readable line rather than arguments", j.Ack)
+	}
+	if j.Args != `{"total":9}` {
+		t.Errorf("args = %q, want the model's original arguments", j.Args)
+	}
+}
