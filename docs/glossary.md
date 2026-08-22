@@ -24,7 +24,7 @@ notifications, runs the loop, checks for stalls, and checkpoints state after
 every turn. Used for interactive conversations, self-reflection, goal pursue
 sessions, and sub-agents alike. See [AgentWorker Architecture](runner.md).
 
-**Agent Loop (`internal/agent/loop.go`)** — The ReAct (Reason → Act →
+**Agent Loop** — The ReAct (Reason → Act →
 Observe) implementation. Holds `history` and `scratchpad`, repeatedly builds
 a context, submits it to the LLM queue, and dispatches any tool calls until
 the model returns a final answer with no tool calls. See
@@ -35,7 +35,7 @@ activates on `gap_report` calls or stall detection. It has higher LLM queue
 priority than background work but lower than active conversations. See
 [Architecture § 14 Autonomy & oversight](architecture.md#14-autonomy--oversight-components).
 
-**Tool Dispatcher (`internal/agent/dispatcher.go`)** — Routes each tool call
+**Tool Dispatcher** — Routes each tool call
 to its registered handler: plugin tools via `plugin.call`, core-intercepted
 tools in-process. Fires post-call hooks on success and caps every result at
 ~2048 tokens, spilling larger output to the file store
@@ -54,18 +54,18 @@ carrying a file-store *path* rather than a value. The daemon substitutes the
 stored content before the call, so a large payload moves between tools without
 passing through the model's context.
 
-**Plugin Manager (`internal/plugin/manager.go`)** — Spawns plugin
+**Plugin Manager** — Spawns plugin
 subprocesses, calls `plugin.describe`, and registers their tools with the
 dispatcher. Plugins are fixed at build time — started at boot and stopped on
 shutdown (`Start`/`TryStart`/`Stop`/`StopAll`); there is no runtime hot-swap. A
 crashed subprocess is isolated from the daemon. See [Plugins](plugins.md).
 
-**LLM Queue (`internal/llm/queue.go`)** — Prioritized queue in front of the
+**LLM Queue** — Prioritized queue in front of the
 LLM provider. Enforces `max_concurrent` in-flight requests. Priority order:
 1 = supervisor, 2 = active conversations, 3 = background sessions and sub-agents. See
 [Architecture § 9 The LLM queue](architecture.md#9-the-llm-queue).
 
-**Context Builder (`ninectx.Builder`, `internal/context/builder.go`)** —
+**Context Builder (`ninectx.Builder`, `builder`)** —
 Assembles one `llm.Request` per loop iteration from system prompt, tool
 definitions, message history, and scratchpad, trimming lower-priority content
 to fit `context_budget`. See [Context Builder](context-builder.md).
@@ -103,7 +103,7 @@ a child agent to execute one task (`run_agent`) or several in parallel
 (`run_agents`, default 120s timeout). Both accept an optional `role` naming the
 child's worker role (default `executor`; see [Roles](roles.md)). Available to
 delegating roles only, with the delegation depth guard as recursion backstop.
-See `internal/agent/register_subagents.go`.
+See `subagents`.
 
 **Workflow** — A **ledger of delegated work** the LLM keeps: a named, persistent
 record of the multi-step plan it created before delegating to sub-agents.
@@ -178,7 +178,7 @@ or `none` (disables ranking). See
 [Configuration § Embeddings](configuration.md#embeddings).
 
 **Vector store / namespaces** — Embeddings are stored in the in-process
-`internal/memory.Store`'s `vectors` table (packed float32 blobs) under
+`Store`'s `vectors` table (packed float32 blobs) under
 namespaced keys — e.g. `skills` (skill descriptions), `docs` (one vector per
 section of the bundled documentation), `session-index` (one vector per completed
 turn, for the related-session indexer), and per-agent memory namespaces.
@@ -186,12 +186,12 @@ Nearest-neighbour queries rank by cosine similarity, computed in process over a
 namespace scan.
 
 **Self-model (`SystemSelf`)** — A context block built by
-`internal/selfmodel.Assembler` from the `self/identity`, `self/capabilities`,
+`Assembler` from the `self/identity`, `self/capabilities`,
 and `self/learned` KV keys, injected into every turn at priority 2.5 (capped
 ~600 tokens). Seeded by `BootstrapSelfKV`; `self/learned` and
 `self/capabilities` are refreshed by the idle-reflection routine.
 
-**`internal/memory.Store`** — The single, in-process **SQLite** interface for all of
+**`Store`** — The single, in-process **SQLite** interface for all of
 Nine's persistent state — *not* a plugin subprocess. Opens a file
 (`[memory].path`, default `~/.nine/nine.db`), creating it if absent, fails fast if
 it is unusable, and is the sole owner of the database handles (the "single
@@ -232,7 +232,7 @@ journal subscribers (`daemon.NotifySubscribers`).
 root, each LLM call, and each tool call get spans, so a trajectory forms a tree.
 
 **`nine trace` / `nine replay`** — `trace` renders a session's journal directly
-(works with the daemon down). `replay` (`internal/replay`) deterministically
+(works with the daemon down). `replay` deterministically
 re-executes a recorded session on a real loop wired to a *recorded*
 provider/dispatcher — no live LLM or tool calls.
 
@@ -240,13 +240,13 @@ provider/dispatcher — no live LLM or tool calls.
 growth: keep the last N turns per agent and/or drop events older than a max age
 (`[daemon] event_retention_turns` / `event_retention_days`).
 
-**Subscription (`internal/subscribe`)** — A durable-cursor reader over the journal:
+**Subscription** — A durable-cursor reader over the journal:
 a `Handler` (id = cursor key, opt-in event `Types`, idempotent `Handle`) driven
 forward from its persisted position (`event_cursors`), woken in-process and
 catching up after restart. At-least-once delivery; a poison event is logged and
 skipped, never wedging the cursor.
 
-**Subscriber (`internal/subscribers`)** — A programmatic, **out-of-band** handler
+**Subscriber** — A programmatic, **out-of-band** handler
 that reacts to journal events to enrich *derived* stores — never a generative LLM
 call, never a write into the active session (enrich, don't interject). Design:
 [reactive events](event-journal.md).
@@ -377,7 +377,7 @@ Nine enforces no URL policy on it. This replaced a built-in Playwright plugin
 that did block private/loopback URLs — see [Browser Automation](browser.md) for
 the migration and the security consequences.
 
-**`plugin.Serve`** — Helper in `internal/plugin` (`serve.go`) that implements the
+**`plugin.Serve`** — Helper in `plugin` (`serve.go`) that implements the
 JSON-RPC server loop for a plugin, so a plugin's `main` only passes its
 `ToolDefinition`s and a `name → ToolHandler` map. See
 [Plugins § Adding a Plugin](plugins.md#adding-a-plugin).
@@ -543,7 +543,7 @@ that filters the list as you type. See
 
 ## Protocol
 
-**`internal/protocol`** — Package holding the daemon/client wire types
+**`protocol`** — Package holding the daemon/client wire types
 (`Msg`, `ProgressEvent`, `StatusInfo`) and the client (`EnsureDaemon`, typed
 request methods), kept separate from the runtime so client code doesn't pull
 in the whole daemon. Messages are newline-delimited JSON over the Unix
