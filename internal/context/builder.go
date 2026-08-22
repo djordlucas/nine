@@ -329,13 +329,50 @@ func entryToMessages(e ScratchpadEntry) []llm.Message {
 
 // --------- token counting ---------
 
-// countTokens estimates the token count of s using the 4-chars-per-token
-// approximation common for Claude models.
+// bytesPerTokenNum/bytesPerTokenDen express the bytes-per-token estimate as a
+// rational number, so counting stays integer arithmetic: 3.45 bytes per token.
+//
+// It was 4, the approximation quoted for Claude models, and measurement says
+// that is too generous for what Nine actually sends. Reconciling the estimate
+// against provider-reported usage (R-LLM.8) over real turns put the true ratio
+// between 3.48 and 3.64 bytes per token, with the estimate under-counting on
+// **every** call by 9–13%.
+//
+// Under-counting is the harmful direction. The budget exists to keep a request
+// inside the model's context window; believing a request is 12% smaller than it
+// is spends headroom that was never there. Over-counting only trims a little
+// more than strictly necessary.
+//
+// So the divisor sits just below the smallest ratio observed rather than at the
+// median: 3.45 over-estimates by ~2.5% typically and did not under-count on any
+// measured call, where 3.5 — the median-fitting choice — still under-counts on
+// a few.
+//
+// Two things this is not. It is not per-content-class: the measured ratio was
+// stable across prose, code, tool-heavy and non-ASCII turns, because the system
+// prompt and tool schemas dominate every request and swamp the user's own text.
+// And it is not tokenizer-independent — it was measured against one model
+// family, and a model whose tokenizer differs materially will want its own
+// number. The mechanism for finding that out is the reconciliation logging,
+// which stays.
+const (
+	bytesPerTokenNum = 100
+	bytesPerTokenDen = 345
+)
+
+// EstimateTokens is countTokens for callers outside the package — the same
+// estimate the budget is enforced with, exported so a caller sizing input
+// against the budget uses the estimator rather than a second copy of the ratio
+// that can drift from it.
+func EstimateTokens(s string) int { return countTokens(s) }
+
+// countTokens estimates the token count of s at bytesPerTokenNum/bytesPerTokenDen
+// bytes per token, rounding up.
 func countTokens(s string) int {
 	if s == "" {
 		return 0
 	}
-	return (len(s) + 3) / 4
+	return (len(s)*bytesPerTokenNum + bytesPerTokenDen - 1) / bytesPerTokenDen
 }
 
 func toolTokens(t llm.ToolDef) int {
@@ -395,9 +432,11 @@ func (b *Builder) extrasBudget() int {
 	return 200
 }
 
-// truncateTokens truncates s to approximately maxTokens using the 4-chars-per-token estimate.
+// truncateTokens truncates s to approximately maxTokens, using the same
+// bytes-per-token estimate as countTokens so a string counted as fitting is not
+// then cut by a different rule.
 func truncateTokens(s string, maxTokens int) string {
-	limit := maxTokens * 4
+	limit := maxTokens * bytesPerTokenDen / bytesPerTokenNum
 	if len(s) <= limit {
 		return s
 	}

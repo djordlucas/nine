@@ -20,7 +20,18 @@ func makeVec(n, pos int) []float32 {
 func chars(n int, c byte) string { return strings.Repeat(string(c), n) }
 
 // tokStr returns a string that costs exactly t tokens (±1) in the 4-chars/token model.
-func tokStr(t int) string { return chars(t*4, 'x') }
+// tokStr builds a string the builder counts as t tokens. It asks the estimator
+// rather than multiplying by a hardcoded ratio, so recalibrating the
+// bytes-per-token constant does not silently change what these tests assert:
+// the old helper assumed 4 bytes per token, and a smaller divisor made every
+// sized input overflow its budget.
+func tokStr(t int) string {
+	s := chars(t*4, 'x') // 4 is an upper bound on bytes per token; trim down
+	for len(s) > 0 && ninectx.EstimateTokens(s) > t {
+		s = s[:len(s)-1]
+	}
+	return s
+}
 
 func TestBuildSystemCoreAlwaysPresent(t *testing.T) {
 	core := tokStr(800) // 800 tokens
