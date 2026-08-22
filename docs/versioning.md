@@ -24,7 +24,7 @@ convention — minor could break, patch was safe — to stay fast before the API
 protocol settled; `v1.0.0` is the point where they became stable enough to
 commit to.
 
-It is **not** hardcoded. `cmd/nine/main.go` declares:
+It is **not** hardcoded. `main` declares:
 
 ```go
 var Version = "dev"
@@ -117,7 +117,7 @@ a single version, and treats a v1 plugin as lacking jobs. The `0` (predates
 versioning) rejection stays.
 
 This applies only to **native** Nine plugins. MCP plugins negotiate their own
-protocol version (`mcpProtocolVersion`, see `internal/plugin/mcp.go`) — a
+protocol version (`mcpProtocolVersion`, see `mcp`) — a
 separate, externally-defined contract.
 
 ## 2a. Sandboxed tool ABI version
@@ -159,5 +159,5 @@ The SQLite schema is currently applied idempotently on `Open` via
 `initSchema` (`CREATE TABLE IF NOT EXISTS`, plus `CREATE EXTENSION IF NOT EXISTS
 vector`) — additive changes are safe, but there is **no migration table or
 version counter**. When the schema first needs a backward-incompatible change,
-add a migrations table to `internal/memory` with sequential migration numbers
+add a migrations table to `memory` with sequential migration numbers
 applied on open. Not yet implemented — same reasoning as the config schema.

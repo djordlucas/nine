@@ -31,7 +31,7 @@ Each `SessionRoutine`:
 | `result` | Free-form, routine-specific result string |
 | `updated_at` | Timestamp |
 
-`internal/memory/session_plans.go` provides `SessionPlanGet`, `SessionPlanSave`, and
+`plans` provides `SessionPlanGet`, `SessionPlanSave`, and
 `SessionPlanListActive`.
 
 ---
@@ -39,7 +39,7 @@ Each `SessionRoutine`:
 ## RoutineHandler
 
 Routines are the extension point. Each `kind` maps to a `RoutineHandler` via
-`RoutineRegistry` (`internal/runtime/session_plan.go`):
+`RoutineRegistry`:
 
 ```go
 type RoutineHandler interface {
@@ -60,7 +60,7 @@ type RoutineHandler interface {
   turn — an autonomous turn, with no user input.
 
 `RoutineRegistry["active"]` is registered statically; `"idle-reflection"` and
-`"pursue"` are registered at daemon startup (`cmd/nine/daemon.go`), each bound to a
+`"pursue"` are registered at daemon startup, each bound to a
 `*memory.Store`.
 
 ---
@@ -152,7 +152,7 @@ A single, fixed session with agent ID `self-reflection`
   `/reflections`).
 
 This is how the agent's self-model stays current without user interaction. The
-`internal/selfmodel.Assembler` reads `self/identity`, `self/capabilities`, and
+`Assembler` reads `self/identity`, `self/capabilities`, and
 `self/learned` from the KV store every turn and injects them as the `SystemSelf` block
 of the context (see [Context Builder](context-builder.md) and
 [Agent Loop](agent-loop.md)). `BootstrapSelfKV` seeds `self/identity` and

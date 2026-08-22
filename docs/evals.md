@@ -189,7 +189,7 @@ case is `id`, `track`, `prompts`, and one assertion.
 ## 3. Assertion reference (how each is checked)
 
 All journal reads are `store.SessionEventsByAgent(agentID)` (or `nine trace`), which
-returns events in `seq` order with these payloads (see `internal/runtime/journal.go`):
+returns events in `seq` order with these payloads (see `journal`):
 
 | Event | Key payload fields | Used to assert |
 |-------|--------------------|----------------|
@@ -413,20 +413,3 @@ To add coverage, or to have an LLM expand the corpus:
 > workspace; set realistic `expected_pass_min_class`. Output valid YAML, one document
 > per case, ids kebab-case and unique. Do not assert on exact free-text wording.
 
----
-
-## Reference symbols
-
-- Runner (this system): `tests/evals/runner` — `LoadCases`/`Case` (schema),
-  `Harness.Run` (in-process daemon + isolated store/workspace), `Grade` (assertions),
-  `ReplayFixture`/`RecordFixture` (Track R), `Suite`/`Report` (matrix + grid);
-  entry point `tests/evals/eval_test.go`; corpus `tests/evals/cases/`.
-- Journal + read: `internal/memory/events.go` (`SessionEventsByAgent`, `SessionEvent`),
-  `internal/runtime/journal.go` (payload structs), `nine trace`.
-- Replay: `internal/replay/replay.go` (`FromEvents`, `Recorded`, `Provider`,
-  `Dispatcher`, `Session`), `nine replay`.
-- Driving turns: `nine send` (`internal/cli`), `protocol.Client.Turn`.
-- Isolation: `internal/memory/memtest` (a database file per test, under `t.TempDir()`).
-- Existing harness: `tests/integration/setup_test.go` (Docker + Ollama bring-up),
-  `make integration-test`.
-- Models/config: `NINE_LLM_MODEL`/`NINE_LLM_ENDPOINT`, `internal/llm/ollama`.

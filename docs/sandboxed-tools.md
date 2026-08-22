@@ -40,7 +40,7 @@
 
 | # | Piece | Shape |
 |---|---|---|
-| 1 | **Wasm host** (§3) | `internal/toolvm`, built on **wazero** (pure Go, no CGO). One wasm instance **per call**, torn down after. Registers handlers on the existing `Dispatcher` exactly like `RegisterPlugin` does. |
+| 1 | **Wasm host** (§3) | `toolvm`, built on **wazero** (pure Go, no CGO). One wasm instance **per call**, torn down after. Registers handlers on the existing `Dispatcher` exactly like `RegisterPlugin` does. |
 | 2 | **JS is a guest, not the host** (§4) | QuickJS-NG compiled to wasm is *one pre-supplied guest module*. A developer may equally ship a raw `.wasm` built from Rust/TinyGo/Zig. Same ABI, same capability model. |
 | 3 | **Two authors, two trust tiers** (§5) | **Developer tools** are files on disk with a manifest, installed by the operator. **Generated tools** are rows in SQLite, authored by Nine. Different ceilings, one runtime. |
 | 4 | **Capabilities are conferred, never claimed** (§6–§8) | Default is the empty set: no filesystem, no network, no env, no clock. Every capability is an explicitly-exported host function or a wazero pre-open. A manifest *declares a need*; only operator config *grants*. |
@@ -95,7 +95,7 @@ untouched.
 
 ## 3. The host: wazero, one instance per call
 
-`internal/toolvm` owns a wazero runtime, a compilation cache, and a registry.
+`toolvm` owns a wazero runtime, a compilation cache, and a registry.
 Compilation happens once per module; **instantiation happens per call**, and the
 instance is closed when the call returns.
 
@@ -161,7 +161,7 @@ model, same dispatcher registration, same audit trail. QuickJS is an
 implementation detail of one tool *kind*, not an architectural layer.
 
 **The ABI is deliberately tiny**, because the tool contract it has to satisfy
-already is (`internal/plugin/contract.go`):
+already is:
 
 ```go
 CallRequest{Tool string, Args json.RawMessage} → CallResult{Output string}
@@ -750,7 +750,7 @@ plugin, where that intent is explicit and reviewed.
 ### 9.1 A new tool is visible next turn
 
 This needs no new machinery, because the semantics already exist. From
-`internal/plugin/userplugins.go`:
+`userplugins`:
 
 > Newly-started plugins are picked up by subsequently-built agent loops (the
 > builder reads `Running()` at build time); turns already in flight keep the tool
@@ -923,7 +923,7 @@ Each stage is independently useful and independently shippable.
 
 | Stage | Scope | Proves |
 |---|---|---|
-| **1** | `internal/toolvm`: wazero host, raw `.wasm` only, **no capabilities**, dispatcher registration, developer tools from `user_dir` | the host, the ABI, the loader, the collision rules |
+| **1** | `toolvm`: wazero host, raw `.wasm` only, **no capabilities**, dispatcher registration, developer tools from `user_dir` | the host, the ABI, the loader, the collision rules |
 | **2** | `js` kind — trimmed QuickJS blob (§4.1), harness, host-side module allowlist, `nine:*` stdlib. Spike against a prebuilt module, ship the vendored pinned one (§10.1) | an author writes JS, not Rust — with a closed import surface |
 | **3** | Capability model: `fs` pre-opens, `env` allowlist, grant resolution, load-time failure on ungranted declarations | §6–§7 end to end, developer tier complete |
 | **4** | `net.http` host function with the full §8 checklist + its own adversarial tests (SSRF, rebinding, redirect laundering) | the hard capability |

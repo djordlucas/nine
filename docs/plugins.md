@@ -73,8 +73,8 @@ Read /work/notes.txt and then write a summary to /work/summary.txt
 ### Memory & File Tools (Core)
 
 Unlike the plugins below, these tools are **core-intercepted**: they're wired
-directly into the agent loop (`internal/agent/register_memory.go`) and call
-`internal/memory.Store` in-process. There is no `memory` plugin subprocess — these
+directly into the agent loop and call
+`Store` in-process. There is no `memory` plugin subprocess — these
 tools are simply always available.
 
 | Tool | Description |
@@ -246,7 +246,7 @@ Plugins are part of the source repo and are compiled into the image at build tim
 Nine cannot generate, build, or load a plugin at runtime — adding a capability means
 adding a plugin to the tree and rebuilding.
 
-A plugin you supply is a standalone binary (see [User Plugins](#user-plugins) below); Nine's own Go plugins skip the separate binary by registering in `internal/builtins`. Either way the code is the same shape — `plugin.Serve` with a tool list and a handler map. Here is a minimal standalone example:
+A plugin you supply is a standalone binary (see [User Plugins](#user-plugins) below); Nine's own Go plugins skip the separate binary by registering in `builtins`. Either way the code is the same shape — `plugin.Serve` with a tool list and a handler map. Here is a minimal standalone example:
 
 ```go
 package main
@@ -292,7 +292,7 @@ func main() {
 
 To register the new plugin: add it under `plugins/<name>/`, add `<name>` to the
 `PLUGINS` list in the `Makefile` and the build loop in the `Dockerfile`, start it
-in `cmd/nine/daemon.go` (`pluginManager.TryStart("<name>", …)`), and rebuild. Default
+in `daemon` (`pluginManager.TryStart("<name>", …)`), and rebuild. Default
 plugins are sub-packages of the core module and use the vendored dependencies.
 
 ### Taking large input by reference
