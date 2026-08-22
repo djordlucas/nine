@@ -23,6 +23,14 @@ func runDaemon() {
 	// Load configuration
 	cfg := config.LoadDefault()
 
+	// Refuse a backend Nine does not have, rather than quietly serving a
+	// different one. Checked here, against the effective config, because
+	// LoadDefault applies environment overrides after the file is validated.
+	if err := cfg.CheckProvider(); err != nil {
+		slog.Error("configuration", "err", err)
+		os.Exit(1)
+	}
+
 	// Initialize memory store
 	dbPath, err := cfg.DatabasePath()
 	if err != nil {
