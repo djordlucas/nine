@@ -56,6 +56,15 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 	if _, err := g.host.CheckGenerated(spec.Name, decl, pluginCollides(g.mgr)); err != nil {
 		return nil, err
 	}
+	// Same discipline for the long-running lifecycle. It is checked here rather
+	// than only at load so the refusal reaches the model as a message it can act
+	// on, instead of a tool that persists and then silently never registers.
+	if spec.Resumable && !g.host.AllowLongRunningGenerated() {
+		return nil, fmt.Errorf(
+			"long-running generated tools are not enabled on this instance " +
+				"([tools.agent] allow_long_running). Rewrite the tool to finish in one call, " +
+				"or use gap_report to ask an operator to enable it")
+	}
 
 	// Resolve and inline external npm dependencies now, at write time, once (§4.4).
 	// What lands in the row is the self-contained bundle; by call time it has no
@@ -81,6 +90,7 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 		Source:       source,
 		Capabilities: spec.Capabilities,
 		Lockfile:     lockJSON,
+		Resumable:    spec.Resumable,
 	}); err != nil {
 		return nil, err
 	}
@@ -98,7 +108,7 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 	// the journal and survives a session_events scrub.
 	slog.Info("generated tool written",
 		"tool", spec.Name, "fs", decl.FS, "net", decl.Net, "env", decl.Env,
-		"deps", lockNames(lock), "evicted", evicted)
+		"resumable", spec.Resumable, "deps", lockNames(lock), "evicted", evicted)
 
 	g.reload(ctx)
 	return evicted, nil
@@ -218,6 +228,7 @@ func LoadGeneratedTools(ctx context.Context, store *memory.Store, host *toolvm.H
 			InputSchema: r.InputSchema,
 			Source:      r.Source,
 			Declaration: decl,
+			Resumable:   r.Resumable,
 		})
 	}
 	host.LoadGenerated(ctx, gens, pluginCollides(mgr))

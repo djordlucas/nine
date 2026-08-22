@@ -394,14 +394,31 @@ Ephemeral by default (`<root>/<name>.<rand>/`, wiped when the plugin exits);
 `[plugin.<name>].persist_cache = true` keeps `<root>/<name>/` across restarts.
 Opaque scratch — Nine never reads it. See [Plugin capabilities § 4](plugin-capabilities.md).
 
-**Job (plugin job)** — Detached work a plugin tool starts and outlives the call:
-`plugin.call` returns a `job_id` and an ack instead of a result, the daemon
-records it in the `plugin_jobs` registry keyed to the owning conversation under a
-stable **handle** (`job_<hex>`), and a sweeper polls `plugin.job_status` until it
-finishes, then notifies the owner so a later turn learns of it. The model drives
-it with `job_wait` / `job_check` / `job_list` / `job_cancel`. Distinct from a
-*task* (the per-turn unit) and a *goal*. Native plugins only. See
-[Plugin capabilities § 5](plugin-capabilities.md).
+**Job** — Work that outlives the call that started it, recorded in the `jobs`
+registry keyed to the owning conversation under a stable **handle**
+(`job_<hex>`), with the owner notified on completion so a later turn learns of
+it. The model drives one with `job_wait` / `job_check` / `job_list` /
+`job_cancel`, and those four are the same whichever **backend** runs it.
+Distinct from a *task* (the per-turn unit) and a *goal*.
+
+**Plugin job** — the original backend. `plugin.call` returns a `job_id` and an
+ack instead of a result; the work is a goroutine inside the plugin process and a
+sweeper polls `plugin.job_status` until it finishes. It dies with the daemon —
+rows still running at boot are marked `lost` — and cancelling is a best-effort
+request. See [Plugin capabilities § 5](plugin-capabilities.md).
+
+**Tool job** — a sandboxed tool declared `resumable`, run as a sequence of
+ordinary calls. Each call does a bounded slice and returns a **cursor** (via
+`again()` from `nine:job`); the daemon persists it and calls the tool again.
+Nothing outlives the wasm instance — the *host* holds the state — so unlike a
+plugin job it **resumes after a restart**, and cancelling is exact rather than a
+request. Bounded by `job_max_calls` and a delay floor. See
+[Sandboxed tools § 6.5](sandboxed-tools.md).
+
+**Cursor (job)** — a resumable tool's own resume point, opaque to Nine, handed
+back verbatim on its next call. Unrelated to a *subscription cursor*, which is a
+durable position in the event journal — both mean "where to pick up", in
+different registries.
 
 ---
 

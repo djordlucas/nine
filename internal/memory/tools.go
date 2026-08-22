@@ -30,9 +30,13 @@ type GeneratedTool struct {
 	// Lockfile is the exact external npm code the bundled Source carries: name,
 	// version, integrity, and requester per package (docs/sandboxed-tools.md §4.4).
 	// "{}" for a tool with no external dependencies, which is the common case.
-	Lockfile  json.RawMessage `json:"lockfile,omitempty"`
-	CreatedAt string          `json:"created_at,omitempty"`
-	UpdatedAt string          `json:"updated_at,omitempty"`
+	Lockfile json.RawMessage `json:"lockfile,omitempty"`
+	// Resumable asks for the long-running lifecycle: the tool may end a call with
+	// a `continue` envelope and be run as a job. Refused at load unless the
+	// operator set [tools.agent] allow_long_running.
+	Resumable bool   `json:"resumable,omitempty"`
+	CreatedAt string `json:"created_at,omitempty"`
+	UpdatedAt string `json:"updated_at,omitempty"`
 	// LastCalledAt drives LRU eviction (docs/sandboxed-tools.md §9.2). Empty
 	// until the tool is first called.
 	LastCalledAt string `json:"last_called_at,omitempty"`
@@ -60,13 +64,14 @@ func (s *Store) GeneratedToolUpsert(t GeneratedTool) error {
 		lock = "{}"
 	}
 	_, err := s.db.Exec(
-		`INSERT INTO tools(name, description, input_schema, source, capabilities, lockfile, created_at, updated_at)
-		 VALUES(?,?,?,?,?,?,?,?)
+		`INSERT INTO tools(name, description, input_schema, source, capabilities, lockfile, resumable, created_at, updated_at)
+		 VALUES(?,?,?,?,?,?,?,?,?)
 		 ON CONFLICT(name) DO UPDATE SET
 		   description=excluded.description, input_schema=excluded.input_schema,
 		   source=excluded.source, capabilities=excluded.capabilities,
-		   lockfile=excluded.lockfile, updated_at=excluded.updated_at`,
-		t.Name, t.Description, schema, t.Source, caps, lock, nowText(), nowText())
+		   lockfile=excluded.lockfile, resumable=excluded.resumable,
+		   updated_at=excluded.updated_at`,
+		t.Name, t.Description, schema, t.Source, caps, lock, t.Resumable, nowText(), nowText())
 	return err
 }
 
@@ -81,10 +86,10 @@ func (s *Store) GeneratedToolGet(name string) (GeneratedTool, bool, error) {
 	)
 	err := s.db.QueryRow(
 		`SELECT name, description, input_schema, source, capabilities, lockfile,
-		        created_at, updated_at, last_called_at, call_count
+		        resumable, created_at, updated_at, last_called_at, call_count
 		   FROM tools WHERE name = ?`, name).
 		Scan(&t.Name, &t.Description, &schema, &t.Source, &caps, &lock,
-			&t.CreatedAt, &t.UpdatedAt, &last, &t.CallCount)
+			&t.Resumable, &t.CreatedAt, &t.UpdatedAt, &last, &t.CallCount)
 	if err == sql.ErrNoRows {
 		return GeneratedTool{}, false, nil
 	}
@@ -103,7 +108,7 @@ func (s *Store) GeneratedToolGet(name string) (GeneratedTool, bool, error) {
 func (s *Store) GeneratedToolList() ([]GeneratedTool, error) {
 	rows, err := s.db.Query(
 		`SELECT name, description, input_schema, source, capabilities, lockfile,
-		        created_at, updated_at, last_called_at, call_count
+		        resumable, created_at, updated_at, last_called_at, call_count
 		   FROM tools
 		  ORDER BY COALESCE(NULLIF(last_called_at, ''), created_at) ASC, name ASC`)
 	if err != nil {
@@ -121,7 +126,7 @@ func (s *Store) GeneratedToolList() ([]GeneratedTool, error) {
 			last   sql.NullString
 		)
 		if err := rows.Scan(&t.Name, &t.Description, &schema, &t.Source, &caps, &lock,
-			&t.CreatedAt, &t.UpdatedAt, &last, &t.CallCount); err != nil {
+			&t.Resumable, &t.CreatedAt, &t.UpdatedAt, &last, &t.CallCount); err != nil {
 			return nil, err
 		}
 		t.InputSchema = json.RawMessage(schema)

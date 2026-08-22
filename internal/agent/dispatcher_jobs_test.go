@@ -2,9 +2,11 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"nine/internal/plugin"
+	"nine/internal/toolvm"
 )
 
 type fakeJobStarter struct {
@@ -12,11 +14,23 @@ type fakeJobStarter struct {
 	ret                      string
 	err                      error
 	called                   bool
+
+	// The tool-backend half.
+	toolCalled bool
+	toolName   string
+	toolArgs   string
+	toolCont   *toolvm.Continuation
 }
 
 func (f *fakeJobStarter) StartJob(_ context.Context, pluginName, tool, jobID, ack string) (string, error) {
 	f.called = true
 	f.plugin, f.tool, f.jobID, f.ack = pluginName, tool, jobID, ack
+	return f.ret, f.err
+}
+
+func (f *fakeJobStarter) StartToolJob(_ context.Context, tool string, args json.RawMessage, c *toolvm.Continuation) (string, error) {
+	f.toolCalled = true
+	f.toolName, f.toolArgs, f.toolCont = tool, string(args), c
 	return f.ret, f.err
 }
 
