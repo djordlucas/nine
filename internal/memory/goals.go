@@ -102,7 +102,7 @@ func (s *Store) GoalUpdateStatus(id, status string) error {
 
 // GoalUpdateDescription updates the description of a goal. Used by standing-agent
 // reconciliation to keep a config-owned goal's definition in sync with nine.toml
-// (docs/predefined-agents.md §4).
+// (adr/predefined-agents-design.md §4).
 func (s *Store) GoalUpdateDescription(id, description string) error {
 	_, err := s.db.Exec(
 		`UPDATE goals SET description=?, updated_at=? WHERE id=?`, description, nowText(), id)

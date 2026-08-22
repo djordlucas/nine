@@ -63,7 +63,7 @@ func (d *Daemon) SpawnStandingSession(_ context.Context, goalID, role string, de
 
 // TeardownStandingSession stops a standing agent's pursue session and
 // deactivates its session plan so it is never resumed again (subtractive
-// reconciliation — docs/predefined-agents.md §7 v3). It stops the running
+// reconciliation — adr/predefined-agents-design.md §7 v3). It stops the running
 // worker if one exists and flips the plan (and its stages) out of "active",
 // which makes planNeedsResume return false on every later boot. Idempotent: a
 // no-op if the session isn't running and its plan is already inactive. The

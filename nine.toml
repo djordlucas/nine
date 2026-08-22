@@ -48,7 +48,7 @@ task_timeout_seconds = 1800  # 30 minutes
 # instance_name = "atlas"
 # When true, the [[agent]] list below is the full desired state: a config-origin
 # goal no longer listed here is archived and its session stopped on boot
-# (docs/predefined-agents.md §7 v3). Conversation-created goals are never
+# (adr/predefined-agents-design.md §7 v3). Conversation-created goals are never
 # touched. Default false — removing an entry just stops reconciling it.
 # standing_agents_authoritative = false
 # Links topically-similar sessions out-of-band and lets a later turn pull a
