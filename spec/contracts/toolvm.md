@@ -776,8 +776,14 @@ of delegated work (`docs/glossary.md`), and the two would be confused on sight.
 
 A resumable tool receives, alongside its arguments, `{cursor, call}` — the cursor it
 returned last time and a 1-based call number. A `js` tool gets it as a second parameter; a
-`wasm` tool gets it under the reserved `nine_job` key. Arguments do not change between
-calls; the cursor is the only thing that moves.
+`wasm` tool gets it under the reserved `nine_job` key — a resumable `wasm` tool whose input
+schema declares that property **MUST** be refused at load, so the reservation is enforced
+rather than assumed. Arguments do not change between calls; the cursor is the only thing
+that moves.
+
+A conversation-scoped `state` grant (R-TVM.18) **MUST** resolve to the job's owner on every
+call. Call one runs inside the turn that started the job and later calls do not, so without
+this a tool granted state at conversation scope works exactly once.
 
 ### One registry, two backends
 

@@ -121,9 +121,31 @@ func (t *Tool) inputForJob(args json.RawMessage, job *JobContext) ([]byte, error
 	return json.Marshal(envelope{Harness: harness(), Modules: modules, Args: args, Job: job})
 }
 
-// mergeJobIntoArgs adds the job context to a wasm tool's arguments under a
-// reserved key. The `nine_` prefix is reserved by the ABI for exactly this, so a
-// tool's own schema cannot collide with it.
+// reservedJobKey is the argument name a resumable `wasm` tool receives its job
+// context under. A `js` tool gets it as a second parameter and needs none of
+// this; a wasm tool has no harness to hand one to.
+const reservedJobKey = "nine_job"
+
+// declaresReservedJobKey reports whether a JSON Schema declares reservedJobKey as
+// a property. Checked at load for resumable wasm tools, so the key is reserved in
+// fact and not only in a comment.
+func declaresReservedJobKey(schema json.RawMessage) bool {
+	if len(schema) == 0 {
+		return false
+	}
+	var s struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	if err := json.Unmarshal(schema, &s); err != nil {
+		return false
+	}
+	_, found := s.Properties[reservedJobKey]
+	return found
+}
+
+// mergeJobIntoArgs adds the job context to a wasm tool's arguments under
+// reservedJobKey, which compile() refuses to let a resumable wasm tool's own
+// schema declare.
 func mergeJobIntoArgs(args json.RawMessage, job *JobContext) ([]byte, error) {
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(args, &m); err != nil {
@@ -136,7 +158,7 @@ func mergeJobIntoArgs(args json.RawMessage, job *JobContext) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	m["nine_job"] = raw
+	m[reservedJobKey] = raw
 	return json.Marshal(m)
 }
 
