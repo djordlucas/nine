@@ -655,6 +655,21 @@ func (m *mockGoalStore) UserNotificationMarkSeen(_ string) error { return nil }
 func (m *mockGoalStore) SessionEventsByAgent(_ string) ([]memory.SessionEvent, error) {
 	return m.events, nil
 }
+
+// The session-lifecycle half of queryBackend. The daemon tests do not exercise
+// deletion — internal/memory covers the cascade and session_delete_test.go covers
+// the wiring — so these are inert stubs rather than a second implementation.
+func (m *mockGoalStore) SessionList() ([]memory.SessionSummary, error) { return nil, nil }
+func (m *mockGoalStore) SessionGet(string) (memory.SessionSummary, bool, error) {
+	return memory.SessionSummary{}, false, nil
+}
+func (m *mockGoalStore) SessionsReapable(time.Duration) ([]memory.SessionSummary, error) {
+	return nil, nil
+}
+func (m *mockGoalStore) SessionDelete(string) (memory.SessionDeleteCounts, error) {
+	return memory.SessionDeleteCounts{}, nil
+}
+func (m *mockGoalStore) JobsRunning() ([]memory.Job, error) { return nil, nil }
 func (m *mockGoalStore) SessionEventsAfter(_ int64, _ int) ([]memory.SessionEvent, error) {
 	return nil, nil
 }

@@ -80,6 +80,16 @@ type queryBackend interface {
 	// store (spec/contracts/toolvm.md R-TVM.14).
 	GeneratedToolList() ([]memory.GeneratedTool, error)
 	SessionEventsByAgent(agentID string) ([]memory.SessionEvent, error)
+	// Session listing and deletion. Deletion is the one operation here that
+	// destroys history rather than bounding it, which is why it reports what it
+	// removed rather than a bare error (spec/contracts/memory-store.md R-MEM.11).
+	SessionList() ([]memory.SessionSummary, error)
+	SessionGet(id string) (memory.SessionSummary, bool, error)
+	SessionsReapable(maxAge time.Duration) ([]memory.SessionSummary, error)
+	SessionDelete(id string) (memory.SessionDeleteCounts, error)
+	// JobsRunning backs the best-effort plugin-job cancel a session delete does
+	// before removing its rows.
+	JobsRunning() ([]memory.Job, error)
 	// Journal subscription read surface (satisfies subscribe.Store) so the
 	// daemon can host cursor-backed subscribers (adr/reactive-events.md).
 	SessionEventsAfter(afterSeq int64, limit int) ([]memory.SessionEvent, error)
@@ -98,6 +108,11 @@ type pluginRegistry interface {
 	// in neither Running() nor UserStatus(), so the roster needs them from here
 	// or they read as simply absent (R-PLUG.14).
 	DisabledSkipped() []string
+	// PluginByName and JobCancel let a session delete stop the plugin jobs it
+	// owned. Best-effort by nature: a plugin job is a goroutine in another
+	// process, so asking is the most the daemon can do.
+	PluginByName(name string) (*plugin.Plugin, bool)
+	JobCancel(ctx context.Context, p *plugin.Plugin, jobID string) error
 }
 
 // Daemon accepts connections on a Unix socket and routes messages to
@@ -489,6 +504,9 @@ func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.M
 	case protocol.SessionStopReq:
 		d.handleSessionStop(enc, r.AgentID, r.All)
 
+	case protocol.SessionDeleteReq:
+		d.handleSessionDelete(enc, r.AgentID)
+
 	case protocol.ListNotificationsReq:
 		d.handleListNotifications(enc, r.All)
 
@@ -536,6 +554,8 @@ func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.M
 			d.handlePluginsList(enc)
 		case protocol.TypePluginsReload:
 			d.handlePluginsReload(enc)
+		case protocol.TypeSessionsList:
+			d.handleSessionsList(enc)
 		case protocol.TypeToolsList:
 			d.handleToolsList(enc)
 		case protocol.TypeToolsReload:
