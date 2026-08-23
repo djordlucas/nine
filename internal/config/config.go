@@ -105,6 +105,13 @@ type ToolsConfig struct {
 	// a bounded CPU story into an unbounded one, one legal call at a time.
 	JobMaxCalls int `toml:"job_max_calls"`
 
+	// JobWorkers bounds how many long-running tool calls the sweeper makes at
+	// once. 0 uses runtime.DefaultJobWorkers (4).
+	//
+	// Each concurrent call is a wasm instantiation holding up to [tools] memory_mb,
+	// so this is the knob that decides how much memory a busy job queue can take.
+	JobWorkers int `toml:"job_workers"`
+
 	// JobMinDelayMS is the floor on the delay a resumable tool may ask for
 	// between calls. 0 uses runtime.DefaultJobMinDelayMS (250).
 	//
@@ -590,6 +597,14 @@ type PluginsConfig struct {
 	// JobMaxSeconds bounds a single job's lifetime: the sweeper marks an over-age
 	// job failed and attempts a cancel. 0 uses runtime.DefaultJobMaxSeconds (1h).
 	JobMaxSeconds int `toml:"job_max_seconds"`
+
+	// MaxJobsTotal caps the daemon's outstanding jobs across every conversation
+	// and both backends. 0 uses runtime.DefaultMaxJobsTotal (32).
+	//
+	// The per-conversation cap below bounds one agent; this bounds the machine.
+	// It mattered less when every job was a goroutine in a plugin's process — now
+	// a tool job is work this daemon performs, so the total is a real resource.
+	MaxJobsTotal int `toml:"max_jobs_total"`
 
 	// MaxJobsPerConversation caps a conversation's outstanding jobs, so a looping
 	// model cannot start an unbounded number. 0 uses runtime's default (8).

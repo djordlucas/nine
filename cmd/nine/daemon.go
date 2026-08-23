@@ -198,6 +198,7 @@ func runDaemon() {
 		SurfaceMemories:        cfg.Memory.SurfaceMemoriesEnabled(),
 		MaxToolOutputTokens:    cfg.Tools.MaxOutputTokens,
 		MaxJobsPerConversation: cfg.Plugins.MaxJobsPerConversation,
+		MaxJobsTotal:           cfg.Plugins.MaxJobsTotal,
 		JobWaiters:             jobWaiters,
 		Queue:                  cfg.BuildQueue(),
 		TaskTimeoutSeconds:     cfg.Daemon.TaskTimeoutSeconds,
@@ -278,7 +279,8 @@ func runDaemon() {
 	// the next turn learns of it.
 	go runtime.RunJobSweeperWithTools(ctx, store, pluginManager, jobWaiters,
 		time.Duration(cfg.Plugins.JobPollSeconds)*time.Second, cfg.Plugins.JobMaxSeconds,
-		runtime.NewToolJobRunner(store, toolHost, cfg.Tools.JobMaxCalls, cfg.Tools.JobMinDelayMS))
+		runtime.NewToolJobRunner(store, toolHost,
+			cfg.Tools.JobMaxCalls, cfg.Tools.JobMinDelayMS, cfg.Tools.JobWorkers))
 
 	// Reconcile pre-defined agents declared in nine.toml: seed a config-owned
 	// goal + pursue shell for each, and bring existing ones' definitions in line

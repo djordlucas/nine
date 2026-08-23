@@ -357,7 +357,14 @@ rounds up to its sweep, so 0 does not mean "spin".
 
 A job is bounded in total, too: `[tools] job_max_calls` (default 720) and `[plugins]
 job_max_seconds` (default 1h). A tool that always returns `again()` eventually fails,
-naming the bound.
+naming the bound. There are caps on how many jobs can be outstanding at once as well —
+per conversation and daemon-wide — so starting one can be refused with a message saying so.
+
+**Your tool is never called twice at once for the same job.** Distinct jobs may run in
+parallel, so a tool must still be safe to run concurrently *with itself on different
+jobs* — which is the same requirement any tool already has, since two turns can call one
+tool at once. What you are guaranteed is that call N+1 of a given job never starts before
+call N has returned, so its cursor is always the one you last handed back.
 
 **Two things a tool job does that a plugin job cannot.** It **resumes after a daemon
 restart** — its whole live state is the cursor in the registry, so there is nothing to
