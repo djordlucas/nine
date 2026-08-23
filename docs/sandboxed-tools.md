@@ -650,6 +650,27 @@ for that: it bounds what a tool may *reach*, and duration is not reach.
 
 The design is `adr/durable-and-long-running-tools.md` §4.
 
+### 6.6 Standing tools
+
+The same resumable tool can also be run **standing**: indefinitely, on its own cadence,
+declared in `nine.toml` rather than started by a turn. It is a second run mode, not a
+second kind of tool.
+
+The gap it fills is narrow and worth stating precisely. Recurring work in Nine has always
+gone through a standing agent, a goal session, or a session-plan routine — and all three
+put an LLM turn in the loop, so watching a file every ten seconds costs thousands of turns
+a day to be told nothing happened. For work with no judgement in it, that is the wrong
+tier. The alternatives outside Nine are worse: a native plugin is a process with the
+daemon's uid, a cron script has the user's, and neither is visible to `nine tools` or
+subject to the capability model.
+
+What it deliberately does not do is decide anything. A standing tool has no model, cannot
+delegate, and cannot address an agent — it leaves a note on the human feed, and only when
+it has something to say. Work that needs judgement still belongs to a standing agent, which
+can call the tool.
+
+The design, including the two shapes rejected and why, is `adr/standing-tools.md`.
+
 ### 6.3 Conferred, never claimed
 
 **A manifest declares a need. Only config grants.** These are different documents
