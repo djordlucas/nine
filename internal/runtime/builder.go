@@ -57,6 +57,10 @@ type LoopConfig struct {
 	// MaxToolOutputTokens mirrors [tools] max_output_tokens: the dispatcher's
 	// per-result output cap. 0 keeps agent.DefaultMaxOutputTokens.
 	MaxToolOutputTokens int
+	// MaxJobsTotal mirrors [plugins] max_jobs_total: the daemon-wide cap across
+	// every conversation and both backends. 0 uses DefaultMaxJobsTotal.
+	MaxJobsTotal int
+
 	// MaxJobsPerConversation mirrors [plugins] max_jobs_per_conversation: the cap
 	// on a conversation's outstanding plugin jobs (docs/plugin-capabilities.md §5).
 	// 0 uses DefaultMaxJobsPerConversation.
@@ -401,7 +405,8 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 	// A plugin tool that returns a job id is recorded against this conversation,
 	// with the per-conversation cap enforced on admission (§5).
 	if lc.Memory != nil {
-		d.SetJobStarter(newJobStarter(lc.Memory, lc.Mgr, agentID, lc.MaxJobsPerConversation))
+		d.SetJobStarter(newJobStarterWithTotal(lc.Memory, lc.Mgr, agentID,
+			lc.MaxJobsPerConversation, lc.MaxJobsTotal))
 	}
 
 	delegates := role.Delegates && depthGuard > 0
