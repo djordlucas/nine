@@ -140,6 +140,7 @@ func TestEveryClientMsgTypeDecodes(t *testing.T) {
 		protocol.TypeUserTurn:         {AgentID: "a1", Text: "hi"},
 		protocol.TypeSetPlanMode:      {AgentID: "a1", Text: "off"},
 		protocol.TypeSessionStop:      {AgentID: "a1"},
+		protocol.TypeSessionDelete:    {AgentID: "a1"},
 		protocol.TypeWorkflowStop:     {Text: "wf-1"},
 		protocol.TypeWorkflowFail:     {Text: "wf-1"},
 		protocol.TypePluginCall:       {ToolName: "echo"},

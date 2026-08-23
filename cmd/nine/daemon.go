@@ -250,6 +250,12 @@ func runDaemon() {
 	// Start the agent builder's main loop in the background, so it can manage agents while the daemon is running.
 	go supervisor.Run(ctx)
 
+	// Delete sessions nobody has touched in a while, on boot and daily. Never
+	// one with an active goal or session plan — those are idle by design
+	// (runtime.RunSessionReaper). 0 disables it.
+	go runtime.RunSessionReaper(ctx, daemon,
+		cfg.SessionRetention(runtime.DefaultSessionRetentionDays))
+
 	// Spilled tool outputs are session debris: sweep the expired ones on boot
 	// and hourly thereafter so large results cannot grow the file store without
 	// bound (adr/tool-output-spill.md §5).

@@ -262,6 +262,20 @@ func (cfg *Config) BuildProvider() llm.Provider {
 	return llmollama.New(model, endpoint, cfg.LLM.NumCtx, cfg.LLM.ThinkingEnabled(), cfg.LLM.TimeoutSeconds)
 }
 
+// SessionRetention returns the effective session retention in days: the
+// operator's value, or def when unset.
+//
+// The config field is a pointer for exactly this reason. Retention has three
+// states — unset (use the default), a number, and 0 (off) — and a plain int
+// cannot tell the first from the last. Getting that wrong means either never
+// reaping, or reaping on a config the operator believed had disabled it.
+func (cfg *Config) SessionRetention(def int) int {
+	if cfg.Daemon.SessionRetentionDays == nil {
+		return def
+	}
+	return *cfg.Daemon.SessionRetentionDays
+}
+
 // DefaultSelfReflectionInterval is the cadence of the dedicated self-reflection
 // session when [daemon].self_reflection is unset.
 const DefaultSelfReflectionInterval = 2 * time.Minute

@@ -346,3 +346,15 @@ func TestWorkflowDispatchConcurrent(t *testing.T) {
 		}
 	}
 }
+
+// The session-lifecycle half of queryBackend: inert stubs. The cascade is
+// covered in internal/memory and the wiring in session_delete_test.go.
+func (m *mockStore) SessionList() ([]memory.SessionSummary, error) { return nil, nil }
+func (m *mockStore) SessionGet(string) (memory.SessionSummary, bool, error) {
+	return memory.SessionSummary{}, false, nil
+}
+func (m *mockStore) SessionsReapable(time.Duration) ([]memory.SessionSummary, error) { return nil, nil }
+func (m *mockStore) SessionDelete(string) (memory.SessionDeleteCounts, error) {
+	return memory.SessionDeleteCounts{}, nil
+}
+func (m *mockStore) JobsRunning() ([]memory.Job, error) { return nil, nil }
