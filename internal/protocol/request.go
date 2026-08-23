@@ -59,6 +59,10 @@ type SessionStopReq struct {
 	All     bool
 }
 
+// SessionDeleteReq erases one session: the conversation and everything keyed to
+// it. Distinct from SessionStopReq, which ends a session and keeps its history.
+type SessionDeleteReq struct{ AgentID string }
+
 // WorkflowStopReq cancels an active workflow.
 type WorkflowStopReq struct{ ID string }
 
@@ -96,6 +100,7 @@ func (UserTurnReq) Type() MsgType          { return TypeUserTurn }
 func (SetPlanModeReq) Type() MsgType       { return TypeSetPlanMode }
 func (ContextReq) Type() MsgType           { return TypeContext }
 func (SessionStopReq) Type() MsgType       { return TypeSessionStop }
+func (SessionDeleteReq) Type() MsgType     { return TypeSessionDelete }
 func (WorkflowStopReq) Type() MsgType      { return TypeWorkflowStop }
 func (WorkflowFailReq) Type() MsgType      { return TypeWorkflowFail }
 func (ListNotificationsReq) Type() MsgType { return TypeListNotifications }
@@ -107,7 +112,7 @@ func (q QueryReq) Type() MsgType           { return q.Kind }
 var queryKinds = map[MsgType]bool{
 	TypeStatus: true, TypeListGoals: true, TypeListWorkflows: true,
 	TypeListTools: true, TypePluginsList: true, TypePluginsReload: true,
-	TypeToolsList: true, TypeToolsReload: true,
+	TypeToolsList: true, TypeToolsReload: true, TypeSessionsList: true,
 }
 
 // DecodeRequest turns a wire message into the typed request it represents.
@@ -138,6 +143,8 @@ func DecodeRequest(m Msg) (Request, error) {
 	case TypeSessionStop:
 		// "--all" is a sentinel in Text on the wire; the struct says what it means.
 		return SessionStopReq{AgentID: m.AgentID, All: m.Text == "--all"}, nil
+	case TypeSessionDelete:
+		return SessionDeleteReq{AgentID: m.AgentID}, nil
 	case TypeWorkflowStop:
 		return WorkflowStopReq{ID: m.Text}, nil
 	case TypeWorkflowFail:

@@ -27,6 +27,7 @@ const (
 	TypeSetPlanMode     MsgType = "set_plan_mode"
 	TypeUserTurn        MsgType = "user_turn"
 	TypeSessionStop     MsgType = "session_stop"
+	TypeSessionDelete   MsgType = "session_delete"
 	TypeWorkflowStop    MsgType = "workflow_stop"
 	TypeWorkflowFail    MsgType = "workflow_fail"
 	TypePluginCall      MsgType = "plugin_call"
@@ -41,6 +42,7 @@ const (
 	TypeListTools         MsgType = "list_tools"
 	TypePluginsList       MsgType = "plugins_list"
 	TypePluginsReload     MsgType = "plugins_reload"
+	TypeSessionsList      MsgType = "sessions_list"
 	TypeToolsList         MsgType = "tools_list"
 	TypeToolsReload       MsgType = "tools_reload"
 )
@@ -118,6 +120,7 @@ var ClientMsgTypes = []MsgType{
 	TypeSetPlanMode,
 	TypeUserTurn,
 	TypeSessionStop,
+	TypeSessionDelete,
 	TypeWorkflowStop,
 	TypeWorkflowFail,
 	TypePluginCall,
@@ -129,6 +132,7 @@ var ClientMsgTypes = []MsgType{
 	TypeListTools,
 	TypePluginsList,
 	TypePluginsReload,
+	TypeSessionsList,
 	TypeToolsList,
 	TypeToolsReload,
 	TypeHumanInputAnswer,
@@ -271,6 +275,22 @@ type ProgressEvent struct {
 	HumanRequest    *HumanRequest // set when Type == "human_input_required"
 }
 
+// SessionInfo describes one session for the "sessions_list" response.
+//
+// Protected says the retention reaper may not take it — the session has an
+// active goal or an active session plan, so it is idle by design rather than
+// abandoned. It is on the wire because an operator reading `nine sessions`
+// needs to know why an old session is not being reaped.
+type SessionInfo struct {
+	ID         string `json:"id"`
+	Name       string `json:"name,omitempty"`
+	Status     string `json:"status"`
+	AgeSeconds int    `json:"age_seconds"`
+	Events     int    `json:"events,omitempty"`
+	Protected  bool   `json:"protected,omitempty"`
+	Attached   bool   `json:"attached,omitempty"`
+}
+
 // ToolSummary describes one tool for the "list_tools" response.
 type ToolSummary struct {
 	Plugin      string `json:"plugin"`
@@ -403,6 +423,20 @@ func NewSessionStopMsg(agentID string, all bool) Msg {
 	}
 	return Msg{Type: TypeSessionStop, AgentID: agentID}
 }
+
+// NewSessionDeleteMsg requests erasure of a session: the conversation and
+// everything keyed to it.
+//
+// Deliberately a separate message from session_stop rather than a flag on it.
+// Stop ends a session and archives it — the transcript and the journal survive.
+// Delete destroys them, and an operation that irreversibly removes history
+// should not be reachable by mistyping a boolean.
+func NewSessionDeleteMsg(agentID string) Msg {
+	return Msg{Type: TypeSessionDelete, AgentID: agentID}
+}
+
+// NewSessionsListMsg asks for the session roster.
+func NewSessionsListMsg() Msg { return Msg{Type: TypeSessionsList} }
 
 // NewPluginCallMsg invokes a tool directly, bypassing the LLM agent. Despite
 // the name it is not plugin-only: the daemon resolves the name against the

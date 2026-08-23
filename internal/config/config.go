@@ -532,6 +532,20 @@ type DaemonConfig struct {
 	// conversation-created goals.
 	StandingAgentsAuthoritative bool `toml:"standing_agents_authoritative"`
 
+	// SessionRetentionDays deletes an abandoned session — and everything keyed to
+	// it — after this many days without activity. 0 disables it entirely;
+	// unset uses runtime.DefaultSessionRetentionDays (10).
+	//
+	// Age is measured from last activity, not creation, so a long-running
+	// conversation used this morning is never stale. A session with an active
+	// goal or an active session plan is never taken, whatever its age: a standing
+	// agent that wakes weekly looks abandoned after ten days precisely because it
+	// is working correctly.
+	//
+	// This is the one setting in Nine that destroys history rather than bounding
+	// it. Every deletion is logged with what it removed.
+	SessionRetentionDays *int `toml:"session_retention_days"`
+
 	// EventRetentionTurns bounds the session_events journal per agent: the number
 	// of most-recent turns kept at boot (adr/event-log.md v4). 0 → default
 	// (DefaultEventRetentionTurns); negative → keep all turns.

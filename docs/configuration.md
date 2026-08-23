@@ -67,6 +67,24 @@ task_timeout_seconds = 1800
 # (one per top-level goal). Defaults to 10 when unset or <= 0.
 max_goal_sessions = 10
 
+# Delete a session — and everything keyed to it — after this many days without
+# activity. Unset uses 10; 0 switches automatic deletion off entirely.
+#
+# This is the one setting in Nine that destroys history rather than bounding it,
+# so it is worth being precise about what it will and will not take:
+#
+#   * Age is from LAST ACTIVITY, not creation. A conversation you have kept for
+#     a year and used this morning is never stale.
+#   * A session whose id matches an ACTIVE GOAL is never taken — a goal's pursue
+#     session is named after its goal, so this is exact.
+#   * A session carrying an ACTIVE SESSION PLAN is never taken. That covers
+#     standing agents declared below: one that wakes weekly looks abandoned
+#     after ten days precisely because it is working.
+#
+# `nine sessions` marks a protected session "kept", so an old one that is not
+# being reaped explains itself. Every deletion is logged with what it removed.
+# session_retention_days = 10
+
 # Display name for this Nine instance, shown in the TUI top bar (replacing the
 # literal "nine"). When set, it is authoritative and fixed. When unset, the
 # daemon reuses a name it generated on a prior boot (persisted in the store), or
