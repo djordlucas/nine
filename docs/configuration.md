@@ -187,12 +187,25 @@ bin = "./dist/bin"
 # Defaults to the OS user cache dir (~/.cache/nine/plugins); the container
 # overrides it with NINE_PLUGINS_CACHE_DIR. Must be durable, not /tmp.
 # cache_dir = "~/.cache/nine/plugins"
-# Long-running plugin jobs (docs/plugin-capabilities.md §5): how often the daemon
-# polls a running job (default 2s), the per-job lifetime bound (default 3600s),
-# and the per-conversation cap on outstanding jobs (default 8).
+# Long-running jobs: how often the daemon polls a running PLUGIN job (default
+# 2s), the per-job lifetime bound (default 3600s), the per-conversation cap on
+# outstanding jobs (default 8), and the daemon-wide cap across every conversation
+# (default 32).
+#
+# Despite living under [plugins], the last three apply to BOTH job backends — a
+# plugin's detached goroutine and a resumable sandboxed tool (spec/contracts/
+# toolvm.md R-TVM.19). They stayed here rather than moving when the tool backend
+# landed, because renaming settled config keys is a breaking change for a
+# cosmetic gain. job_poll_seconds is plugin-only: a tool job's next call is due
+# when the tool said it was, not on a poll schedule.
+#
+# max_jobs_per_conversation bounds one agent; max_jobs_total bounds the machine.
+# The second matters more now that a tool job is work THIS daemon performs rather
+# than work another process is doing.
 # job_poll_seconds = 2
 # job_max_seconds = 3600
 # max_jobs_per_conversation = 8
+# max_jobs_total = 32
 
 # Per-plugin operator config (docs/plugin-capabilities.md §3). The singular
 # [plugin.<name>] table (sibling to the plural [plugins] above) configures one
@@ -375,6 +388,14 @@ memory_mb = 16
 # under [plugins]: job_max_seconds and max_jobs_per_conversation.
 job_max_calls    = 720       # 0 uses 720
 job_min_delay_ms = 250       # 0 uses 250
+
+# How many long-running tool calls the sweeper makes at once. Distinct jobs run
+# in parallel; one job is never called twice at once, whatever this is set to.
+#
+# Really a memory budget: each concurrent call is a wasm instantiation holding up
+# to memory_mb above, so 4 workers at the default 16 MiB is 64 MiB in the worst
+# case.
+job_workers      = 4         # 0 uses 4
 
 # ── Capability grants, per named tool ────────────────────────────────────────
 # `[tool.<name>]` (singular) is the grant half of the capability model, sibling

@@ -15,6 +15,11 @@ import (
 	"nine/internal/toolvm"
 )
 
+// DefaultMaxJobsTotal bounds the daemon's outstanding jobs across every
+// conversation and both backends when [plugins].max_jobs_total is unset. Four
+// conversations at the per-conversation cap of 8.
+const DefaultMaxJobsTotal = 32
+
 // DefaultJobPollSeconds is how often the sweeper polls running plugin jobs when
 // [plugins].job_poll_seconds is unset.
 const DefaultJobPollSeconds = 2
@@ -54,21 +59,47 @@ type jobStarter struct {
 	mgr     *plugin.Manager
 	ownerID string
 	maxJobs int
+	// maxTotal bounds the daemon's outstanding jobs across every conversation and
+	// both backends. maxJobs bounds one agent; this bounds the machine.
+	maxTotal int
 	// minDelay floors the first call's delay, as it floors every later one.
 	minDelay time.Duration
 }
 
 func newJobStarter(store *memory.Store, mgr *plugin.Manager, ownerID string, maxJobs int) *jobStarter {
+	return newJobStarterWithTotal(store, mgr, ownerID, maxJobs, 0)
+}
+
+func newJobStarterWithTotal(store *memory.Store, mgr *plugin.Manager, ownerID string, maxJobs, maxTotal int) *jobStarter {
 	if maxJobs <= 0 {
 		maxJobs = DefaultMaxJobsPerConversation
+	}
+	if maxTotal <= 0 {
+		maxTotal = DefaultMaxJobsTotal
 	}
 	return &jobStarter{
 		store:    store,
 		mgr:      mgr,
 		ownerID:  ownerID,
 		maxJobs:  maxJobs,
+		maxTotal: maxTotal,
 		minDelay: DefaultJobMinDelayMS * time.Millisecond,
 	}
+}
+
+// atCapacity reports whether a new job would exceed either bound, and the
+// sentence to hand the model when it would.
+//
+// Both caps are checked here rather than at the two call sites, so the plugin
+// and tool backends cannot drift on which limits they honour.
+func (js *jobStarter) atCapacity() (string, bool) {
+	if n, err := js.store.JobCountOutstanding(js.ownerID); err == nil && n >= js.maxJobs {
+		return fmt.Sprintf("Not started: you already have %d background jobs running, the maximum. Wait for one to finish (job_wait/job_check) or cancel one (job_cancel), then try again.", js.maxJobs), true
+	}
+	if n, err := js.store.JobsCountRunning(); err == nil && n >= js.maxTotal {
+		return fmt.Sprintf("Not started: this Nine is running %d background jobs, its daemon-wide maximum. Try again once some finish.", js.maxTotal), true
+	}
+	return "", false
 }
 
 // StartToolJob records a long-running sandboxed-tool job.
@@ -86,8 +117,10 @@ func (js *jobStarter) StartToolJob(ctx context.Context, tool string, args json.R
 	if c == nil {
 		return "", fmt.Errorf("tool %q: no continuation to start a job from", tool)
 	}
-	if n, err := js.store.JobCountOutstanding(js.ownerID); err == nil && n >= js.maxJobs {
-		return fmt.Sprintf("Not started: you already have %d background jobs running, the maximum. Wait for one to finish (job_wait/job_check) or cancel one (job_cancel), then try again.", js.maxJobs), nil
+	// A genuine refusal, unlike the plugin path above: the daemon decides when a
+	// tool job's next call happens, so nothing has to be started and cancelled.
+	if msg, full := js.atCapacity(); full {
+		return msg, nil
 	}
 
 	ack := c.Progress
@@ -137,11 +170,15 @@ func argsOrEmpty(args json.RawMessage) json.RawMessage {
 // cancelled rather than refused, and no row is written
 // (docs/plugin-capabilities.md §5).
 func (js *jobStarter) StartJob(ctx context.Context, pluginName, tool, pluginJobID, ack string) (string, error) {
-	if n, err := js.store.JobCountOutstanding(js.ownerID); err == nil && n >= js.maxJobs {
+	if msg, full := js.atCapacity(); full {
+		// The plugin has already started its goroutine by the time its id reaches
+		// us, so an over-cap plugin job is admitted and then cancelled rather than
+		// refused. That asymmetry with the tool backend is the transport's, not a
+		// choice (docs/plugin-capabilities.md §5).
 		if p, ok := js.mgr.PluginByName(pluginName); ok {
 			js.mgr.JobCancel(ctx, p, pluginJobID) //nolint:errcheck // best-effort; we are declining it
 		}
-		return fmt.Sprintf("Not started: you already have %d background jobs running, the maximum. Wait for one to finish (job_wait/job_check) or cancel one (job_cancel), then try again.", js.maxJobs), nil
+		return msg, nil
 	}
 
 	handle := newJobHandle()

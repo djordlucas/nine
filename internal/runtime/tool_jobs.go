@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"nine/internal/memory"
@@ -23,6 +24,11 @@ const (
 	// returning after_ms = 0 forever would occupy the sweeper indefinitely while
 	// never breaking a single per-call rule.
 	DefaultJobMinDelayMS = 250
+
+	// DefaultJobWorkers bounds concurrent tool-job calls. Each one is a wasm
+	// instantiation holding up to [tools] memory_mb — 16 MiB by default — so four
+	// is a memory budget as much as a parallelism choice.
+	DefaultJobWorkers = 4
 )
 
 // ToolJobRunner is the tool backend of the job registry.
@@ -44,34 +50,52 @@ type ToolJobRunner struct {
 	host     *toolvm.Host
 	maxCalls int
 	minDelay time.Duration
+	workers  int
 }
 
 // NewToolJobRunner builds the tool backend for the job sweeper, or nil when
 // there is no sandboxed-tool host — which is what keeps the whole thing additive
 // for a deployment with [tools] unset.
-func NewToolJobRunner(store *memory.Store, host *toolvm.Host, maxCalls, minDelayMS int) *ToolJobRunner {
+func NewToolJobRunner(store *memory.Store, host *toolvm.Host, maxCalls, minDelayMS, workers int) *ToolJobRunner {
 	if store == nil || host == nil {
 		return nil
 	}
-	return newToolJobRunner(store, host, maxCalls, minDelayMS)
+	return newToolJobRunner(store, host, maxCalls, minDelayMS, workers)
 }
 
-func newToolJobRunner(store *memory.Store, host *toolvm.Host, maxCalls, minDelayMS int) *ToolJobRunner {
+func newToolJobRunner(store *memory.Store, host *toolvm.Host, maxCalls, minDelayMS, workers int) *ToolJobRunner {
 	if maxCalls <= 0 {
 		maxCalls = DefaultJobMaxCalls
 	}
 	if minDelayMS <= 0 {
 		minDelayMS = DefaultJobMinDelayMS
 	}
+	if workers <= 0 {
+		workers = DefaultJobWorkers
+	}
 	return &ToolJobRunner{
 		store:    store,
 		host:     host,
 		maxCalls: maxCalls,
 		minDelay: time.Duration(minDelayMS) * time.Millisecond,
+		workers:  workers,
 	}
 }
 
-// runDue makes one call for every tool job that is due, and reconciles the row.
+// runDue makes one call for every tool job that is due, up to `workers` at a
+// time, and reconciles each row.
+//
+// **It waits for the whole batch before returning, and that is load-bearing.**
+// The sweeper's ticker drops ticks while a sweep is in progress, so waiting is
+// what guarantees a job is never called twice concurrently: within one batch
+// JobsDueForCall returns each handle once, and across batches the wait prevents
+// overlap. Firing these off and returning would let a slow call still be running
+// when the next tick found the same row due — its next_at has not moved yet — and
+// two calls would run against the same cursor.
+//
+// The pool exists because the tool backend *executes* rather than polls. A
+// sequential loop was right when a sweep issued HTTP requests; with fifty due
+// jobs it would put the slowest tool's deadline in front of everyone else.
 func (r *ToolJobRunner) runDue(ctx context.Context, s *jobSweeper) {
 	if r == nil || r.host == nil {
 		return
@@ -81,9 +105,29 @@ func (r *ToolJobRunner) runDue(ctx context.Context, s *jobSweeper) {
 		slog.Warn("tool job sweep: list due", "err", err)
 		return
 	}
-	for _, j := range jobs {
-		r.runOnce(ctx, s, j)
+	if len(jobs) == 0 {
+		return
 	}
+
+	sem := make(chan struct{}, r.workers)
+	var wg sync.WaitGroup
+	for _, j := range jobs {
+		select {
+		case <-ctx.Done():
+			// Shutting down: stop handing out work, but let what is running finish
+			// its own deadline rather than abandoning half-written rows.
+			wg.Wait()
+			return
+		case sem <- struct{}{}:
+		}
+		wg.Add(1)
+		go func(j memory.Job) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			r.runOnce(ctx, s, j)
+		}(j)
+	}
+	wg.Wait()
 }
 
 // runOnce makes a single call of one job and writes back what happened.
