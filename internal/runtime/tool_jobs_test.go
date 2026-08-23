@@ -37,6 +37,34 @@ func openToolHost(t *testing.T, name, manifest, src string) *toolvm.Host {
 	return h
 }
 
+// openStateToolHost is openToolHost with a tool-scoped state grant wired to a
+// real store, for a tool that has to observe itself across calls.
+func openStateToolHost(t *testing.T, name, manifest, src string, store *memory.Store) *toolvm.Host {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, name+".toml"), []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name+".js"), []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	h, err := toolvm.Open(ctx, toolvm.Config{
+		UserDir:    dir,
+		Grants:     map[string]toolvm.Grant{name: {State: &toolvm.StateGrant{Scope: toolvm.StateScopeTool}}},
+		StateStore: newToolStateStore(store),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { h.Close(context.Background()) }) //nolint:errcheck
+	h.Load(ctx, nil)
+	if h.Get(name) == nil {
+		t.Fatalf("tool %q did not load: %+v", name, h.Status())
+	}
+	return h
+}
+
 const batcherManifest = `
 name = "batcher"
 kind = "js"
@@ -61,7 +89,7 @@ func newTestSweeper(store *memory.Store, host *toolvm.Host) *jobSweeper {
 	return &jobSweeper{
 		store:   store,
 		waiters: NewJobWaiters(),
-		tools:   NewToolJobRunner(store, host, 0, 0),
+		tools:   NewToolJobRunner(store, host, 0, 0, 0),
 	}
 }
 
@@ -165,7 +193,7 @@ resumable = true
 import { again } from "nine:job";
 export default function (args, job) { return again({ cursor: String(job.call), afterMs: 0 }); }
 `)
-	s := &jobSweeper{store: store, waiters: NewJobWaiters(), tools: NewToolJobRunner(store, host, 3, 0)}
+	s := &jobSweeper{store: store, waiters: NewJobWaiters(), tools: NewToolJobRunner(store, host, 3, 0, 0)}
 
 	js := newJobStarter(store, nil, "agent-1", 0)
 	if _, err := js.StartToolJob(context.Background(), "forever",
@@ -334,7 +362,7 @@ export default function () {
 	handle := jobs[0].Handle
 
 	// Calls 2+: the sweeper, with no turn of its own.
-	s := &jobSweeper{store: store, waiters: NewJobWaiters(), tools: NewToolJobRunner(store, host, 0, 0)}
+	s := &jobSweeper{store: store, waiters: NewJobWaiters(), tools: NewToolJobRunner(store, host, 0, 0, 0)}
 	for range 6 {
 		j, _, err := store.JobGet(handle)
 		if err != nil {
@@ -383,5 +411,169 @@ func TestToolJobKeepsArgsOutOfTheAck(t *testing.T) {
 	}
 	if j.Args != `{"total":9}` {
 		t.Errorf("args = %q, want the model's original arguments", j.Args)
+	}
+}
+
+// The hazard a worker pool introduces that a sequential loop could not have: two
+// calls of the *same* job running at once against the same cursor.
+//
+// runDue waits for its batch, and the sweeper's ticker drops ticks while a sweep
+// is in progress, so overlap is impossible — this asserts that rather than
+// trusting it. The tool records the highest concurrency it ever observes for its
+// own handle.
+func TestToolJobIsNeverCalledTwiceAtOnce(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The tool records overlap in its own durable state: increment on entry,
+	// decrement on exit, remember the peak.
+	host := openStateToolHost(t, "overlap", `
+name = "overlap"
+kind = "js"
+entrypoint = "./overlap.js"
+description = "Detect concurrent calls of one job."
+resumable = true
+
+[capabilities]
+state = true
+`, `
+import { again } from "nine:job";
+import { get, set } from "nine:state";
+export default function (args, job) {
+  const live = Number(get("live") ?? 0) + 1;
+  set("live", String(live));
+  const peak = Math.max(live, Number(get("peak") ?? 0));
+  set("peak", String(peak));
+  // Burn a little wall clock so an overlapping call would be observed.
+  const until = Date.now() + 30;
+  while (Date.now() < until) { /* spin */ }
+  set("live", String(live - 1));
+  if (job.call >= 4) return "peak=" + peak;
+  return again({ cursor: String(job.call), afterMs: 0 });
+}
+`, store)
+
+	s := &jobSweeper{store: store, waiters: NewJobWaiters(),
+		tools: NewToolJobRunner(store, host, 0, 0, 8)}
+
+	js := newJobStarter(store, nil, "agent-1", 0)
+	if _, err := js.StartToolJob(context.Background(), "overlap",
+		json.RawMessage(`{}`), &toolvm.Continuation{Cursor: "0"}); err != nil {
+		t.Fatal(err)
+	}
+	jobs, _ := store.JobsResumable()
+	handle := jobs[0].Handle
+
+	for range 8 {
+		j, _, _ := store.JobGet(handle)
+		if memory.JobTerminal(j.State) {
+			break
+		}
+		if _, err := store.JobAdvance(handle, j.Cursor, j.Progress, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		s.tools.runDue(context.Background(), s)
+	}
+
+	final, _, _ := store.JobGet(handle)
+	if final.State != "done" {
+		t.Fatalf("job ended %q: %s", final.State, final.Error)
+	}
+	if final.Output != "peak=1" {
+		t.Fatalf("output = %q; two calls of one job overlapped", final.Output)
+	}
+}
+
+// The pool runs distinct jobs concurrently — the point of having one.
+func TestToolJobsRunConcurrentlyAcrossJobs(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := openToolHost(t, "slow", `
+name = "slow"
+kind = "js"
+entrypoint = "./slow.js"
+description = "Take a moment, then finish."
+resumable = true
+`, `
+export default function () {
+  const until = Date.now() + 60;
+  while (Date.now() < until) { /* spin */ }
+  return "done";
+}
+`)
+	s := &jobSweeper{store: store, waiters: NewJobWaiters(),
+		tools: NewToolJobRunner(store, host, 0, 0, 4)}
+
+	js := newJobStarter(store, nil, "agent-1", 0)
+	for range 4 {
+		if _, err := js.StartToolJob(context.Background(), "slow",
+			json.RawMessage(`{}`), &toolvm.Continuation{Cursor: "0"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	jobs, _ := store.JobsResumable()
+	if len(jobs) != 4 {
+		t.Fatalf("expected 4 jobs, got %d", len(jobs))
+	}
+	for _, j := range jobs {
+		if _, err := store.JobAdvance(j.Handle, "", "", time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	start := time.Now()
+	s.tools.runDue(context.Background(), s)
+	elapsed := time.Since(start)
+
+	for _, j := range jobs {
+		got, _, _ := store.JobGet(j.Handle)
+		if got.State != "done" {
+			t.Fatalf("job %s ended %q: %s", j.Handle, got.State, got.Error)
+		}
+	}
+	// Four ~60ms calls sequentially would be ~240ms. A generous bound: this is
+	// asserting "concurrent", not a precise speedup.
+	if elapsed > 200*time.Millisecond {
+		t.Fatalf("four jobs took %v with 4 workers; they ran sequentially", elapsed)
+	}
+}
+
+// The daemon-wide cap bounds the machine where the per-conversation cap bounds
+// one agent. It refuses rather than admitting-and-cancelling, because the daemon
+// decides when a tool job's first call happens.
+func TestDaemonWideJobCapRefuses(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Two conversations, each under the per-conversation cap, together over the
+	// daemon-wide one.
+	for i, owner := range []string{"agent-a", "agent-b"} {
+		js := newJobStarterWithTotal(store, nil, owner, 8, 3)
+		for n := range 2 {
+			out, err := js.StartToolJob(context.Background(), "t",
+				json.RawMessage(`{}`), &toolvm.Continuation{Cursor: "0"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			// The 4th job overall crosses the total of 3.
+			last := i == 1 && n == 1
+			if last && !strings.Contains(out, "daemon-wide maximum") {
+				t.Fatalf("job %d/%s was admitted past the daemon-wide cap: %q", n, owner, out)
+			}
+			if !last && strings.Contains(out, "maximum") {
+				t.Fatalf("job %d/%s was refused early: %q", n, owner, out)
+			}
+		}
+	}
+	n, err := store.JobsCountRunning()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 3 {
+		t.Fatalf("%d jobs were recorded, want the cap of 3", n)
 	}
 }

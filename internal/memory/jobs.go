@@ -369,3 +369,16 @@ func (s *Store) JobsResumable() ([]Job, error) {
 		 WHERE backend = ? AND state NOT IN ('done','failed','cancelled','lost')
 		 ORDER BY created_at`, JobBackendTool)
 }
+
+// JobsCountRunning returns how many non-terminal jobs exist across every owner.
+//
+// The daemon-wide admission check, distinct from JobCountOutstanding's per-owner
+// one. It matters more since the tool backend landed: a plugin job is work
+// someone else's process performs, but a tool job is work *this* daemon does, so
+// the total is a real resource and not just a tidiness concern.
+func (s *Store) JobsCountRunning() (int, error) {
+	var n int
+	err := s.db.QueryRow(
+		`SELECT count(*) FROM jobs WHERE state NOT IN ('done','failed','cancelled','lost')`).Scan(&n)
+	return n, err
+}
