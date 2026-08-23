@@ -814,8 +814,10 @@ Per call, R-TVM.4 applies unchanged. Per job:
 |---|---|---|
 | Total calls | `[tools] job_max_calls` | 720 |
 | Minimum delay between calls | `[tools] job_min_delay_ms` | 250 |
+| Concurrent calls the sweeper makes | `[tools] job_workers` | 4 |
 | Lifetime | `[plugins] job_max_seconds` | 1h |
 | Per conversation | `[plugins] max_jobs_per_conversation` | 8 |
+| Daemon-wide outstanding jobs | `[plugins] max_jobs_total` | 32 |
 
 The call cap is **required**, not defensive. Each call is individually legal; a tool
 returning `continue` with `after_ms: 0` forever converts a bounded CPU story into an
@@ -823,6 +825,17 @@ unbounded one one legal call at a time. The delay floor exists for the same reas
 
 The cap **MUST** be checked before a call is spent, so a job at its limit fails without one
 last call.
+
+**A job MUST NOT be called twice concurrently.** The sweeper may run distinct jobs in
+parallel up to `job_workers` — each is a separate wasm instantiation holding up to
+`[tools] memory_mb`, which is what that bound is really sizing — but two calls of one job
+would run against the same cursor and lose whichever finished first. The reference
+implementation gets this by waiting for the batch before returning, so a slow call cannot
+still be running when the next sweep finds its row due.
+
+The **daemon-wide** cap bounds the machine where the per-conversation cap bounds one agent.
+It matters more for this backend than for plugins: a plugin job is work another process
+performs, a tool job is work the daemon performs.
 
 ### The generated tier
 
