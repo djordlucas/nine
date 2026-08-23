@@ -855,6 +855,82 @@ notification to its owner and **never wakes anything**. It is read on the owner'
 
 ---
 
+## R-TVM.20 — Standing tools
+
+A resumable tool (R-TVM.19) **MAY** also be run **standing**: indefinitely, on its own
+cadence, started by configuration rather than by a turn.
+
+It is a second *run mode*, not a second kind of tool. Same sandbox, same capability
+resolution, same per-call deadline, same `continue` envelope, same driver. A tool author
+writes one kind of resumable tool and the operator decides how it runs.
+
+| | Job (R-TVM.19) | Standing run |
+|---|---|---|
+| Started by | the model, mid-turn | configuration, at boot |
+| Owner | the conversation | the operator |
+| Ends | when the tool returns a result | when stopped |
+| A returned result means | the job is done | **one cycle** is done |
+| Bounds | `job_max_calls`, `job_max_seconds` | health limits, not a call budget |
+
+### Cycles
+
+Calls run until the tool returns a result instead of asking to continue. That completes one
+**cycle**: the cursor **MUST** reset, and the trigger decides when the next cycle begins.
+
+So a standing run has **two cadences** — the trigger between cycles, and `after_ms` within
+one. A tool that finishes in a single call simply has one-call cycles.
+
+### The trigger
+
+`interval` **xor** `schedule`, reusing the parsing standing agents use
+(`docs/scheduling.md`) with its stated limits. Setting both, or neither, **MUST** be a
+config error rather than a skipped block: a standing tool runs unattended, so one the
+operator wrote and Nine silently ignored is the worst available outcome.
+
+### Ownership
+
+**Configuration owns the definition — tool, args, trigger. The runtime owns the run
+state.** This is the split `docs/predefined-agents.md` already settles for standing agents,
+and it holds here for the same reason: a standing tool an operator stopped **MUST** stay
+stopped across a restart and across a reconcile.
+
+Changing `args` **MUST** restart the cycle — the cursor was produced under the old
+arguments. Removing a block stops Nine reconciling it and **MUST NOT** delete its row.
+
+### Reporting
+
+A cycle's output goes to the **human feed** and nowhere else.
+
+Empty output **MUST** be silent. A watcher that runs every ten seconds and speaks only when
+it finds something is useful; one that announces every pass is a notification storm.
+
+A standing tool **MUST NOT** be able to address an agent or wake anything. The first keeps
+deterministic tool code from steering an autonomous agent with no human in between; the
+second is R-SUB.3's enrich-don't-interject, unchanged.
+
+### Health
+
+The failure this design expects is not a crash — it is a tool that throws on every call for
+a week while nobody notices. So:
+
+- consecutive failures **MUST** back off from the tool's own cadence, to a cap;
+- a threshold of consecutive failures **MUST** move the run to `failing`, which is visible
+  in the roster and carries the last error;
+- **only the transitions** into and out of `failing` notify. A flapping tool must not
+  produce a storm.
+
+`failing` is still running: it means "retrying on a backed-off cadence", not "given up".
+There is no terminal state — a standing run is stopped or it is going.
+
+### Concurrency
+
+Standing calls share the job driver's worker budget (`[tools] job_workers`). What both
+bound is the same scarce thing: concurrent wasm instantiations, each holding up to
+`[tools] memory_mb`. One standing tool **MUST NOT** be called twice concurrently, for the
+reason R-TVM.19 gives.
+
+---
+
 ## R-TVM.13 — Fully built
 
 Every feature `docs/sandboxed-tools.md` specifies is implemented (stages 1–6). The
@@ -865,8 +941,9 @@ stubbed or refused-by-name.
 Durable state (R-TVM.18) and long-running tools (R-TVM.19) are **beyond** that design
 rather than part of it: R-TVM.18 amends R-TVM.3, which stages 1–6 took as fixed, and
 R-TVM.19 adds a second lifecycle to the same tool. Both halves of
-`adr/durable-and-long-running-tools.md` are now built. The standing-tool lifecycle
-(`adr/standing-tools.md`) is not.
+`adr/durable-and-long-running-tools.md` are built, and the standing-tool lifecycle
+(`adr/standing-tools.md`) is built through its phase 2 — R-TVM.20. Its observability and
+control surface, and the generated flavour, are not.
 
 ---
 

@@ -251,6 +251,16 @@ func runDaemon() {
 	// Start the agent builder's main loop in the background, so it can manage agents while the daemon is running.
 	go supervisor.Run(ctx)
 
+	// Standing tools: resumable tools the daemon runs indefinitely on their own
+	// cadence (adr/standing-tools.md). Config owns each definition; the runtime
+	// owns whether it is running, so reconciling does not restart one an operator
+	// stopped. They share the job sweeper's worker budget — what both bound is
+	// concurrent wasm instantiations.
+	runtime.ReconcileStandingTools(store, cfg.StandingTools)
+	go runtime.RunStandingTools(ctx,
+		runtime.NewStandingRunner(store, toolHost, cfg.Tools.JobMinDelayMS, cfg.Tools.JobWorkers),
+		time.Duration(cfg.Plugins.JobPollSeconds)*time.Second)
+
 	// Delete sessions nobody has touched in a while, on boot and daily. Never
 	// one with an active goal or session plan — those are idle by design
 	// (runtime.RunSessionReaper). 0 disables it.

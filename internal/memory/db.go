@@ -484,6 +484,40 @@ func initSchema(d db) error {
 			updated_at    TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			finished_at   TEXT
 		)`,
+		// standing_tools: resumable tools the daemon runs indefinitely on their own
+		// cadence (adr/standing-tools.md). A second *run mode* for the same tool a
+		// job runs, not a second kind of tool — same sandbox, same envelope, same
+		// driver.
+		//
+		// Deliberately not a row in `jobs`. A job is owned by a conversation,
+		// terminates, and its states are done/failed/cancelled; a standing run is
+		// owned by the operator, never terminates, and is reconciled from config by
+		// a stable id rather than allocated a handle. Sharing the table would mean
+		// an `is_standing` flag contradicting half the columns around it.
+		//
+		// A CYCLE is one pass: calls run until the tool returns a result instead of
+		// asking to continue, at which point `cursor` resets and the trigger decides
+		// when the next cycle starts. So there are two cadences — the trigger between
+		// cycles, and after_ms within one.
+		`CREATE TABLE IF NOT EXISTS standing_tools (
+			id            TEXT PRIMARY KEY,
+			tool          TEXT NOT NULL,
+			args          TEXT NOT NULL DEFAULT '{}',
+			interval_secs INTEGER NOT NULL DEFAULT 0,
+			schedule      TEXT NOT NULL DEFAULT '',
+			state         TEXT NOT NULL DEFAULT 'running',
+			cursor        TEXT NOT NULL DEFAULT '',
+			calls         INTEGER NOT NULL DEFAULT 0,
+			cycles        INTEGER NOT NULL DEFAULT 0,
+			failures      INTEGER NOT NULL DEFAULT 0,
+			last_error    TEXT NOT NULL DEFAULT '',
+			last_call_at  TEXT NOT NULL DEFAULT '',
+			next_at       TEXT NOT NULL DEFAULT '',
+			generated     INTEGER NOT NULL DEFAULT 0,
+			created_at    TEXT NOT NULL DEFAULT ` + nowExpr + `,
+			updated_at    TEXT NOT NULL DEFAULT ` + nowExpr + `
+		)`,
+		`CREATE INDEX IF NOT EXISTS standing_tools_state ON standing_tools (state)`,
 		`CREATE INDEX IF NOT EXISTS jobs_owner ON jobs (owner_id)`,
 		`CREATE INDEX IF NOT EXISTS jobs_state ON jobs (state)`,
 	}
