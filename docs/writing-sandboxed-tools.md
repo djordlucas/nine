@@ -370,6 +370,31 @@ call N has returned, so its cursor is always the one you last handed back.
 restart** — its whole live state is the cursor in the registry, so there is nothing to
 lose. And **cancelling is exact**: the daemon simply does not make the next call.
 
+### Running indefinitely
+
+The same `resumable` tool an operator can start as a job, they can also declare **standing**
+— run on its own cadence, forever:
+
+```toml
+[[standing_tool]]
+id       = "corpus"
+tool     = "corpus_index"
+interval = "10s"
+args     = { root = "/srv/corpus" }
+```
+
+Nothing about your code changes. One difference in meaning: **returning a result ends a
+cycle, not the run.** Your cursor resets and the interval decides when the next pass
+starts, so a standing tool is `again()` within a pass and a plain return between them.
+
+Two things to write for:
+
+- **Return nothing when there is nothing to say.** An empty result is silent; a non-empty
+  one posts to the human feed. A watcher that announces every pass is a notification storm.
+- **Use `nine:state` for what must outlive a cycle.** The cursor resets between passes;
+  state does not. "What have I already seen" belongs in state, "where am I in this pass"
+  belongs in the cursor.
+
 ### The environment
 
 ```js

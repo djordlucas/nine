@@ -397,6 +397,32 @@ job_min_delay_ms = 250       # 0 uses 250
 # case.
 job_workers      = 4         # 0 uses 4
 
+# ── Standing tools: run one indefinitely ─────────────────────────────────────
+# A resumable tool can also be run STANDING: on its own cadence, started at boot
+# rather than by a turn. Same sandbox and same capability grants as any other
+# tool — this only changes when and how often it runs.
+#
+# A CYCLE is one pass. Calls run until the tool returns a result instead of
+# asking to continue; then the cursor resets and the trigger below decides when
+# the next cycle starts. So there are two cadences: the trigger between cycles,
+# and the tool's own afterMs within one.
+#
+# Ownership splits the way [[agent]] does: this file owns the definition (tool,
+# args, trigger) and the runtime owns whether it is running. So a standing tool
+# you stopped stays stopped across a restart, and editing this file does not
+# restart it. Changing `args` does restart its cycle — the cursor it was holding
+# was produced under the old arguments.
+#
+# A cycle's output goes to the human feed (`nine notifications`). Returning
+# nothing is silent, which is what keeps a ten-second watcher usable.
+#
+# [[standing_tool]]
+# id       = "corpus"          # operator-chosen and stable; reconciliation keys on it
+# tool     = "corpus_index"    # a loaded tool whose manifest says resumable = true
+# interval = "10s"             # …or schedule = "*/5 * * * *", never both
+# args     = { root = "/srv/corpus" }
+# enabled  = true              # false declares it without starting it
+
 # ── Capability grants, per named tool ────────────────────────────────────────
 # `[tool.<name>]` (singular) is the grant half of the capability model, sibling
 # to the plural `[tools]` above — the same split `[plugin.<name>]` uses.
