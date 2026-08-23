@@ -23,8 +23,11 @@ type Config struct {
 	Planning   PlanningConfig   `toml:"planning"`
 	Roles      RolesConfig      `toml:"roles"`
 	Agents     []AgentConfig    `toml:"agent"`
-	Tools      ToolsConfig      `toml:"tools"`
-	MCP        MCPConfig        `toml:"mcp"`
+	// StandingTools are the `[[standing_tool]]` blocks: resumable tools the daemon
+	// runs indefinitely on their own cadence (adr/standing-tools.md).
+	StandingTools []StandingToolConfig `toml:"standing_tool"`
+	Tools         ToolsConfig          `toml:"tools"`
+	MCP           MCPConfig            `toml:"mcp"`
 
 	// Plugin holds per-plugin `[plugin.<name>]` tables (singular), sibling to the
 	// plural `[plugins]` subsystem table above — the same split `[agent]` and
@@ -258,6 +261,33 @@ func (a ToolsAgentConfig) ApprovalMode() string {
 		return ToolApprovalOnCapability
 	}
 }
+
+// StandingToolConfig is one `[[standing_tool]]` block.
+//
+// It follows `[[agent]]` deliberately — an operator who has declared a standing
+// agent should recognise this on sight, and the ownership split is the same:
+// this file owns the definition, the runtime owns whether it is running.
+type StandingToolConfig struct {
+	// ID is operator-chosen and stable; reconciliation keys on it, so renaming
+	// creates a second standing tool rather than renaming the first.
+	ID string `toml:"id"`
+	// Tool is the resumable tool to run.
+	Tool string `toml:"tool"`
+	// Args is the tool's input at the start of each cycle, as a TOML table.
+	Args map[string]any `toml:"args"`
+	// Interval and Schedule are the cadence *between cycles*, and are mutually
+	// exclusive — a duration ("10s") or a 5-field cron expression. Setting both
+	// is a config error.
+	Interval string `toml:"interval"`
+	Schedule string `toml:"schedule"`
+	// Enabled defaults to true. Setting it false declares a standing tool without
+	// starting it, which is how you stage one before turning it on.
+	Enabled *bool `toml:"enabled"`
+}
+
+// IsEnabled reports whether the block asks to run. Unset means yes: declaring a
+// standing tool and having to also enable it would be a papercut.
+func (c StandingToolConfig) IsEnabled() bool { return c.Enabled == nil || *c.Enabled }
 
 // ToolEntry is one `[tool.<name>]` table (singular), sibling to the plural
 // `[tools]` subsystem table above — the same split `[plugin.<name>]` and
@@ -728,6 +758,9 @@ func (cfg *Config) Validate() error {
 	if err := validateMCPServers(cfg.MCP.Servers); err != nil {
 		return err
 	}
+	if err := validateStandingTools(cfg.StandingTools); err != nil {
+		return err
+	}
 	if err := validateToolEntry("tools.agent", ToolEntry{Capabilities: cfg.Tools.Agent.Capabilities}); err != nil {
 		return err
 	}
@@ -785,6 +818,50 @@ func validateMCPServers(servers []MCPServer) error {
 			return fmt.Errorf("[[mcp.server]] %q: duplicate name", s.Name)
 		}
 		seen[s.Name] = true
+	}
+	return nil
+}
+
+// validateStandingTools checks the `[[standing_tool]]` blocks.
+//
+// Everything here is a config error rather than a skipped block. A standing tool
+// runs unattended and indefinitely; one an operator wrote and Nine silently
+// ignored is the worst outcome available, because nothing ever reports its
+// absence.
+func validateStandingTools(blocks []StandingToolConfig) error {
+	seen := make(map[string]bool, len(blocks))
+	for i, b := range blocks {
+		where := fmt.Sprintf("[[standing_tool]] #%d", i+1)
+		if b.ID != "" {
+			where = fmt.Sprintf("[[standing_tool]] %q", b.ID)
+		}
+		switch {
+		case b.ID == "":
+			return fmt.Errorf("%s: id is required — it is what reconciliation keys on", where)
+		case seen[b.ID]:
+			return fmt.Errorf("%s: duplicate id", where)
+		case b.Tool == "":
+			return fmt.Errorf("%s: tool is required", where)
+		}
+		seen[b.ID] = true
+
+		// One trigger, matching the standing-agent rule (docs/scheduling.md): both
+		// set is a config error rather than a silent precedence nobody remembers.
+		if b.Interval != "" && b.Schedule != "" {
+			return fmt.Errorf("%s: set interval or schedule, not both", where)
+		}
+		if b.Interval == "" && b.Schedule == "" {
+			return fmt.Errorf("%s: needs interval or schedule — a standing tool with no cadence would never run", where)
+		}
+		if b.Interval != "" {
+			d, err := time.ParseDuration(b.Interval)
+			if err != nil {
+				return fmt.Errorf("%s: interval %q: %w", where, b.Interval, err)
+			}
+			if d <= 0 {
+				return fmt.Errorf("%s: interval %q must be positive", where, b.Interval)
+			}
+		}
 	}
 	return nil
 }
