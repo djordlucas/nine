@@ -43,6 +43,11 @@ var generatedToolDefs = []llm.ToolDef{
 					"net":{"type":"array","items":{"type":"string","enum":["http"]}},
 					"env":{"type":"array","items":{"type":"string"}}
 				}},
+				"standing":{"type":"object","description":"Ask for this tool to run indefinitely on its own cadence, starting now — not just once. Requires resumable. A human is ALWAYS asked to approve this, whatever the operator's other settings, and it may be disabled entirely. Use it only for work that genuinely needs to keep running; a tool that answers a question should not be standing.","properties":{
+					"interval":{"type":"string","description":"How often a new cycle starts, e.g. \"10s\" or \"1h\". Give this or schedule, not both."},
+					"schedule":{"type":"string","description":"A 5-field cron expression, as an alternative to interval."},
+					"args":{"type":"object","description":"Arguments passed at the start of every cycle."}
+				}},
 				"resumable":{"type":"boolean","description":"Set only for work too long for one call. A resumable tool does a bounded slice per call and returns again({cursor,progress,afterMs}) from \"nine:job\" to be called again with its cursor; returning a value finishes it. It runs as a background job, so its result reaches you on a later turn via job_check/job_wait. May be disabled by the operator."}
 			}}`),
 	},
@@ -102,6 +107,20 @@ type GeneratedToolSpec struct {
 	// separately from the capability ceiling, which bounds reach rather than
 	// duration.
 	Resumable bool
+	// Standing asks for the tool to be run indefinitely, starting now. Nil is
+	// the ordinary case.
+	Standing *StandingRequest
+}
+
+// StandingRequest is a generated tool asking to be run standing.
+//
+// It is a request and never a grant: the operator's allow_standing decides
+// whether it is possible at all, max_standing bounds how many may exist, and a
+// human approves each one. Nine can ask; it cannot confer.
+type StandingRequest struct {
+	Interval string          `json:"interval,omitempty"`
+	Schedule string          `json:"schedule,omitempty"`
+	Args     json.RawMessage `json:"args,omitempty"`
 }
 
 // RegisterGeneratedTools registers tool_write, tool_delete, and js_eval.
@@ -117,12 +136,13 @@ func RegisterGeneratedTools(d *Dispatcher, s GeneratedToolStore, evalEnabled boo
 
 	d.handlers["tool_write"] = func(ctx context.Context, args json.RawMessage) (string, error) {
 		var req struct {
-			Name         string          `json:"name"`
-			Description  string          `json:"description"`
-			InputSchema  json.RawMessage `json:"input_schema"`
-			Source       string          `json:"source"`
-			Capabilities json.RawMessage `json:"capabilities"`
-			Resumable    bool            `json:"resumable"`
+			Name         string           `json:"name"`
+			Description  string           `json:"description"`
+			InputSchema  json.RawMessage  `json:"input_schema"`
+			Source       string           `json:"source"`
+			Capabilities json.RawMessage  `json:"capabilities"`
+			Resumable    bool             `json:"resumable"`
+			Standing     *StandingRequest `json:"standing"`
 		}
 		if err := json.Unmarshal(args, &req); err != nil {
 			return "", fmt.Errorf("tool_write: %w", err)
@@ -146,6 +166,7 @@ func RegisterGeneratedTools(d *Dispatcher, s GeneratedToolStore, evalEnabled boo
 			Source:       req.Source,
 			Capabilities: req.Capabilities,
 			Resumable:    req.Resumable,
+			Standing:     req.Standing,
 		})
 		if err != nil {
 			return "", err

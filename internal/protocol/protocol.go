@@ -28,6 +28,9 @@ const (
 	TypeUserTurn        MsgType = "user_turn"
 	TypeSessionStop     MsgType = "session_stop"
 	TypeSessionDelete   MsgType = "session_delete"
+	TypeStandingShow    MsgType = "standing_show"
+	TypeStandingControl MsgType = "standing_control"
+	TypeToolCall        MsgType = "tool_call"
 	TypeWorkflowStop    MsgType = "workflow_stop"
 	TypeWorkflowFail    MsgType = "workflow_fail"
 	TypePluginCall      MsgType = "plugin_call"
@@ -43,6 +46,7 @@ const (
 	TypePluginsList       MsgType = "plugins_list"
 	TypePluginsReload     MsgType = "plugins_reload"
 	TypeSessionsList      MsgType = "sessions_list"
+	TypeStandingList      MsgType = "standing_list"
 	TypeToolsList         MsgType = "tools_list"
 	TypeToolsReload       MsgType = "tools_reload"
 )
@@ -121,6 +125,9 @@ var ClientMsgTypes = []MsgType{
 	TypeUserTurn,
 	TypeSessionStop,
 	TypeSessionDelete,
+	TypeStandingShow,
+	TypeStandingControl,
+	TypeToolCall,
 	TypeWorkflowStop,
 	TypeWorkflowFail,
 	TypePluginCall,
@@ -133,6 +140,7 @@ var ClientMsgTypes = []MsgType{
 	TypePluginsList,
 	TypePluginsReload,
 	TypeSessionsList,
+	TypeStandingList,
 	TypeToolsList,
 	TypeToolsReload,
 	TypeHumanInputAnswer,
@@ -210,6 +218,10 @@ type Msg struct {
 	Status          string          `json:"status,omitempty"`     // sub_agent_end: "done" | "failed" | "timed_out"
 	LLMCallN        int             `json:"llm_call_n,omitempty"` // thinking: 1-based LLM call count within the current turn
 	Think           bool            `json:"think,omitempty"`      // thinking: this call requests native thinking and will stream thinking chunks
+	// Limit bounds a listing reply — how many recent log lines standing_show
+	// returns. Additive and omitempty, so a client that never sets it produces
+	// exactly the bytes it produced before (R-PROTO.1).
+	Limit int `json:"limit,omitempty"`
 
 	// attach ok: recent tool events and last completed response for replay on reattach.
 	ReplayEvents    []Msg  `json:"replay_events,omitempty"`
@@ -289,6 +301,31 @@ type SessionInfo struct {
 	Events     int    `json:"events,omitempty"`
 	Protected  bool   `json:"protected,omitempty"`
 	Attached   bool   `json:"attached,omitempty"`
+}
+
+// StandingInfo describes one standing run for the "standing_list" and
+// "standing_show" responses. Recent is filled by show only — the roster stays
+// one line per run.
+type StandingInfo struct {
+	ID         string            `json:"id"`
+	Tool       string            `json:"tool"`
+	State      string            `json:"state"`
+	Trigger    string            `json:"trigger"`
+	Calls      int               `json:"calls"`
+	Cycles     int               `json:"cycles"`
+	Failures   int               `json:"failures,omitempty"`
+	LastError  string            `json:"last_error,omitempty"`
+	LastCallAt string            `json:"last_call_at,omitempty"`
+	NextAt     string            `json:"next_at,omitempty"`
+	Generated  bool              `json:"generated,omitempty"`
+	Recent     []StandingLogLine `json:"recent,omitempty"`
+}
+
+// StandingLogLine is one line of a standing run's recent activity.
+type StandingLogLine struct {
+	At      string `json:"at"`
+	Outcome string `json:"outcome"`
+	Detail  string `json:"detail,omitempty"`
 }
 
 // ToolSummary describes one tool for the "list_tools" response.
@@ -437,6 +474,35 @@ func NewSessionDeleteMsg(agentID string) Msg {
 
 // NewSessionsListMsg asks for the session roster.
 func NewSessionsListMsg() Msg { return Msg{Type: TypeSessionsList} }
+
+// NewStandingShowMsg asks for one standing run in detail, with up to n recent
+// log lines.
+func NewStandingShowMsg(id string, n int) Msg {
+	return Msg{Type: TypeStandingShow, AgentID: id, Limit: n}
+}
+
+// NewStandingControlMsg stops or starts a standing run. action is "stop" or
+// "start".
+func NewStandingControlMsg(id, action string) Msg {
+	return Msg{Type: TypeStandingControl, AgentID: id, Text: action}
+}
+
+// NewStandingListMsg asks for the standing-run roster.
+func NewStandingListMsg() Msg { return Msg{Type: TypeStandingList} }
+
+// NewToolCallMsg invokes one tool once, for testing.
+//
+// Distinct from plugin_call: this returns the *whole* envelope, including a
+// `continue` a resumable tool produced, and it runs against scratch state unless
+// liveState is set — testing a tool must not be able to overwrite the cursor of
+// a live standing run.
+func NewToolCallMsg(tool string, args json.RawMessage, liveState bool) Msg {
+	m := Msg{Type: TypeToolCall, ToolName: tool, ToolInput: args}
+	if liveState {
+		m.Text = "--live-state"
+	}
+	return m
+}
 
 // NewPluginCallMsg invokes a tool directly, bypassing the LLM agent. Despite
 // the name it is not plugin-only: the daemon resolves the name against the

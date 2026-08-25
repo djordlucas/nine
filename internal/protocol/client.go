@@ -343,6 +343,78 @@ func (c *Client) DeleteSession(id string) (string, error) {
 	return reply.Text, nil
 }
 
+// ListStanding requests the standing-run roster.
+func (c *Client) ListStanding() ([]StandingInfo, error) {
+	if err := c.send(NewStandingListMsg()); err != nil {
+		return nil, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return nil, err
+	}
+	if err := expectReply(reply, TypeStandingList); err != nil {
+		return nil, err
+	}
+	var out []StandingInfo
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return nil, fmt.Errorf("decode standing tools: %w", err)
+	}
+	return out, nil
+}
+
+// ShowStanding requests one standing run in detail, with up to n recent log
+// lines.
+func (c *Client) ShowStanding(id string, n int) (StandingInfo, error) {
+	if err := c.send(NewStandingShowMsg(id, n)); err != nil {
+		return StandingInfo{}, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return StandingInfo{}, err
+	}
+	if err := expectReply(reply, TypeStandingShow); err != nil {
+		return StandingInfo{}, err
+	}
+	var out StandingInfo
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return StandingInfo{}, fmt.Errorf("decode standing tool: %w", err)
+	}
+	return out, nil
+}
+
+// ControlStanding stops or starts a standing run; action is "stop" or "start".
+// Returns the daemon's human-readable outcome.
+func (c *Client) ControlStanding(id, action string) (string, error) {
+	if err := c.send(NewStandingControlMsg(id, action)); err != nil {
+		return "", err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return "", err
+	}
+	if err := expectReply(reply, TypeStandingControl); err != nil {
+		return "", err
+	}
+	return reply.Text, nil
+}
+
+// CallTool invokes one tool once, for testing, and returns the raw envelope
+// JSON — including a `continue` a resumable tool produced, since that is
+// exactly what is being debugged.
+func (c *Client) CallTool(tool string, args json.RawMessage, liveState bool) (string, error) {
+	if err := c.send(NewToolCallMsg(tool, args, liveState)); err != nil {
+		return "", err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return "", err
+	}
+	if err := expectReply(reply, TypeToolCall); err != nil {
+		return "", err
+	}
+	return reply.Text, nil
+}
+
 func (c *Client) queryList(msgType MsgType) (string, error) {
 	if err := c.send(NewQueryMsg(msgType)); err != nil {
 		return "", err
