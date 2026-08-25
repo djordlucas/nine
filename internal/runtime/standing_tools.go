@@ -48,15 +48,33 @@ const (
 //     produces output posts to the human feed and one that returns nothing is
 //     silent — which is what makes a watcher usable rather than a notification
 //     storm.
+//
+// AgentWaker delivers a condition trigger's finding to an agent. The daemon
+// implements it; the runner holds the interface so the standing driver does not
+// depend on the daemon's whole surface.
+type AgentWaker interface {
+	WakeAgent(agentID, text string) bool
+}
+
 type StandingRunner struct {
-	store    *memory.Store
-	host     *toolvm.Host
+	store *memory.Store
+	host  *toolvm.Host
+	// waker delivers a condition trigger's finding, or nil when standing runs can
+	// only reach the human feed.
+	waker    AgentWaker
 	minDelay time.Duration
 	workers  int
 	// log holds recent activity per tool, in memory. A standing run's ordinary
 	// calls are deliberately not journal events (journalTransition), so this is
 	// where "what has it been doing lately" lives.
 	log *standingLog
+}
+
+// SetWaker wires the condition-trigger delivery path.
+func (r *StandingRunner) SetWaker(w AgentWaker) {
+	if r != nil {
+		r.waker = w
+	}
 }
 
 // NewStandingRunner builds the driver, or nil when there is no sandboxed-tool
@@ -211,6 +229,73 @@ func ReconcileStandingTools(store *memory.Store, blocks []config.StandingToolCon
 	}
 }
 
+// ReconcileConditionTriggers turns each standing agent's `when = { … }` block
+// into a standing run whose findings wake that agent.
+//
+// A condition trigger is not a new mechanism: it is a standing tool with a
+// delivery target. That reuse is the point — the cheap deterministic tier
+// already knows how to run something on a cadence, back off when it breaks, and
+// report what it finds, and all a condition adds is *who* hears about it.
+//
+// The run's id is derived from the agent's, so re-reconciling replaces it rather
+// than accumulating one per boot, and removing the `when` block from the file
+// leaves the run behind stopped rather than silently deleting history — the same
+// rule the rest of standing-tool reconciliation follows.
+func ReconcileConditionTriggers(store *memory.Store, agents []config.AgentConfig) {
+	if store == nil {
+		return
+	}
+	for _, a := range agents {
+		if a.When == nil || a.When.Tool == "" {
+			continue
+		}
+		args, err := json.Marshal(orEmptyArgs(a.When.Args))
+		if err != nil {
+			slog.Error("condition trigger: cannot encode args", "agent", a.ID, "err", err)
+			continue
+		}
+		interval := 0
+		if a.When.Interval != "" {
+			d, err := time.ParseDuration(a.When.Interval)
+			if err != nil {
+				slog.Error("condition trigger: bad interval",
+					"agent", a.ID, "interval", a.When.Interval, "err", err)
+				continue
+			}
+			interval = int(d.Seconds())
+		}
+		if interval == 0 && a.When.Schedule == "" {
+			slog.Error("condition trigger needs interval or schedule; skipping", "agent", a.ID)
+			continue
+		}
+
+		id := ConditionTriggerID(a.ID)
+		_, existed, err := store.StandingToolGet(id)
+		if err != nil {
+			slog.Warn("condition trigger: read", "agent", a.ID, "err", err)
+			continue
+		}
+		if err := store.StandingToolUpsertDefinition(memory.StandingTool{
+			ID: id, Tool: a.When.Tool, Args: string(args),
+			IntervalSecs: interval, Schedule: a.When.Schedule, WakeAgent: a.ID,
+		}); err != nil {
+			slog.Warn("condition trigger: reconcile", "agent", a.ID, "err", err)
+			continue
+		}
+		if !existed {
+			if _, err := store.StandingToolSetState(id, memory.StandingRunning); err != nil {
+				slog.Warn("condition trigger: start", "agent", a.ID, "err", err)
+				continue
+			}
+			slog.Info("condition trigger declared",
+				"agent", a.ID, "tool", a.When.Tool, "interval_secs", interval, "schedule", a.When.Schedule)
+		}
+	}
+}
+
+// ConditionTriggerID names the standing run behind an agent's `when` block.
+func ConditionTriggerID(agentID string) string { return "when:" + agentID }
+
 func orEmptyArgs(m map[string]any) map[string]any {
 	if m == nil {
 		return map[string]any{}
@@ -340,6 +425,25 @@ func (r *StandingRunner) report(st memory.StandingTool, out toolvm.Output) {
 	journalTransition(r.store, st.ID, evStandingReported, map[string]any{
 		"tool": st.Tool, "output": clipDetail(text, 2000),
 	})
+
+	// A condition trigger delivers to its agent instead of the human feed: the
+	// operator wrote that link, and the whole point is that the agent looks *now*
+	// rather than on its next clock.
+	if st.WakeAgent != "" && r.waker != nil {
+		if r.waker.WakeAgent(st.WakeAgent, text) {
+			slog.Info("condition trigger woke an agent",
+				"id", st.ID, "agent", st.WakeAgent, "tool", st.Tool)
+			return
+		}
+		// The agent is not running, or is already busy. Falling back to the human
+		// feed is deliberate: a finding that reached nobody is worse than one that
+		// reached the wrong inbox, and a silently-dropped condition is exactly the
+		// failure an operator would never discover.
+		slog.Info("condition trigger could not wake its agent; posting to the human feed",
+			"id", st.ID, "agent", st.WakeAgent)
+		r.notifyHuman(fmt.Sprintf("[%s → %s, not running] %s", st.ID, st.WakeAgent, text))
+		return
+	}
 	r.notifyHuman(fmt.Sprintf("[%s] %s", st.ID, text))
 }
 

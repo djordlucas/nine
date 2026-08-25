@@ -397,6 +397,18 @@ job_min_delay_ms = 250       # 0 uses 250
 # case.
 job_workers      = 4         # 0 uses 4
 
+# A standing agent can also wake on a CONDITION rather than a clock — see the
+# [[agent]] blocks below and docs/scheduling.md:
+#
+#   [[agent]]
+#   id   = "sec-watch"
+#   when = { tool = "cve_scan", interval = "10s" }
+#
+# The predicate is a sandboxed tool run on that cadence with no model in the
+# loop; the agent's turn happens only when it returns something. It is a standing
+# tool underneath, listed as when:<agent-id>, so it backs off when it breaks and
+# can be stopped like any other.
+
 # ── Standing tools: run one indefinitely ─────────────────────────────────────
 # A resumable tool can also be run STANDING: on its own cadence, started at boot
 # rather than by a turn. Same sandbox and same capability grants as any other

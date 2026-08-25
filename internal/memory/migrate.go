@@ -184,6 +184,15 @@ var migrations = []migrationStep{
 	{name: "tools_resumable", fn: func(q sqlExec) error {
 		return addColumnIfMissing(q, "tools", "resumable", "INTEGER NOT NULL DEFAULT 0")
 	}},
+
+	// 8 → 9: standing tools gain `wake_agent`, so a standing run can serve as a
+	// standing agent's *condition trigger* — the cheap tier deciding when the
+	// expensive one is needed (docs/scheduling.md). Existing rows are '' , which
+	// is correct: every standing tool that predates this reports to the human
+	// feed, which is what they were declared to do.
+	{name: "standing_wake_agent", fn: func(q sqlExec) error {
+		return addColumnIfMissing(q, "standing_tools", "wake_agent", "TEXT NOT NULL DEFAULT ''")
+	}},
 }
 
 // hasTableTx reports whether a table exists, using the passed handle so it

@@ -65,7 +65,7 @@ tables to be agent-visible (R-MEM.4).
 | `event_cursors` | per-subscriber durable journal position | daemon-private |
 | `related_sessions` | derived cross-session links (see [`subscriptions.md`](subscriptions.md)) | daemon-private |
 | `jobs` | long-running work tracked across turns and restarts, for both backends — a plugin's detached goroutine and a resumable sandboxed tool (see [`plugin.md`](plugin.md), [`toolvm.md`](toolvm.md) R-TVM.19). Was `plugin_jobs`; `backend` says which, and `cursor`/`calls` belong to the tool backend | daemon-private |
-| `standing_tools` | resumable tools the daemon runs indefinitely on their own cadence (see [`toolvm.md`](toolvm.md) R-TVM.20). Separate from `jobs`: a job is conversation-owned and terminates, a standing run is operator-owned, reconciled by a stable id, and has no terminal state | daemon-private |
+| `standing_tools` | resumable tools the daemon runs indefinitely on their own cadence (see [`toolvm.md`](toolvm.md) R-TVM.20); `wake_agent` makes one a standing agent's condition trigger. Separate from `jobs`: a job is conversation-owned and terminates, a standing run is operator-owned, reconciled by a stable id, and has no terminal state | daemon-private |
 | `tool_state` | a sandboxed tool's durable state, keyed `(tool, scope_key, key)` — the store behind the `state` capability (see [`toolvm.md`](toolvm.md) R-TVM.18). Deliberately separate from `kv`, which is Nine's own namespace and must not become tool-writable | daemon-private |
 
 There is **no `plugin_registry` table** (plugins are immutable image content) and **no
