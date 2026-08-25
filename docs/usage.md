@@ -20,6 +20,12 @@ nine attach <agent-id>           Reconnect to an existing conversation/session
 nine stop <agent-id>             Terminate a session (stops the worker and
                                  deletes its saved state)
 nine stop --all                  Terminate every active session
+nine tools standing              List standing tools (run indefinitely)
+nine tool status <id>            One standing tool, with recent activity
+nine tool logs <id> [-n N]       A standing tool's recent calls
+nine tool stop|start <id>        Stop or start a standing tool
+nine tool call <name> ['<json>'] Run one tool once, for testing
+                                 (--live-state uses its real store)
 nine sessions                    List sessions: age, journal size, retention
 nine session show <agent-id>     One session in full
 nine session delete <agent-id>   Erase a session and everything keyed to it
@@ -282,6 +288,44 @@ mistyped command:
 
 `stop` acts on running state, so it needs the daemon up; with none running there
 is nothing to stop.
+
+### `nine tools standing` — watching what runs on its own
+
+A **standing tool** is a sandboxed tool the daemon runs indefinitely on its own
+cadence, declared in `nine.toml`. These are the commands for seeing what they are
+doing and stopping them.
+
+```bash
+./nine tools standing            # the roster: state, cycles, trigger
+./nine tool status corpus        # one of them in full
+./nine tool logs corpus -n 50    # its recent calls
+./nine tool stop corpus          # exact — no further call is scheduled
+./nine tool start corpus         # clears the failure history and calls now
+```
+
+A failing tool says so in the roster, with its consecutive-failure count and last
+error, so an old quiet tool explains itself rather than needing a log dive.
+
+`nine tool logs` reads an **in-memory** ring buffer, not the journal, and empties
+on restart. That is deliberate: a tool on a ten-second cadence makes thousands of
+calls a day and none of them are journal events. What *is* journaled is its
+transitions and its output — `nine trace <id>` reads those, and survives.
+
+### `nine tool call` — running one tool once
+
+```bash
+./nine tool call csv_stats '{"path":"/data/x.csv"}'
+```
+
+Prints the whole envelope, including the `continue` a resumable tool returns —
+cursor, progress and requested delay — because that is what you are debugging.
+
+**It runs against scratch state.** If the tool has durable state, a test call gets
+its own throwaway namespace, discarded afterwards. Without that, testing a tool
+could overwrite the cursor of a live standing run and you would have broken
+production by checking something. `--live-state` opts in when reproducing a bug
+needs the real store. Capabilities are never sandboxed — a test that cannot make
+the tool's real calls tests nothing.
 
 ### `nine sessions` / `nine session delete` — the roster, and erasing one
 

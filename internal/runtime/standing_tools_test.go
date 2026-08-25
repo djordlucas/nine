@@ -283,3 +283,161 @@ func mustTime(t *testing.T, s string) time.Time {
 	}
 	return ts
 }
+
+// The journal rule: a standing run's ordinary calls are NOT events. Only its
+// transitions and its output are, or a ten-second watcher would write 8,640 rows
+// a day and bury what `nine trace` exists to show.
+func TestStandingHeartbeatIsNotJournalled(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := standingHost(t, "watcher", watcherManifest, watcherSrc, nil)
+	r := NewStandingRunner(store, host, 1, 2)
+	// quiet: the cycle completes with no output, so nothing is worth reporting.
+	if err := store.StandingToolUpsertDefinition(memory.StandingTool{
+		ID: "w1", Tool: "watcher", Args: `{"quiet":true}`, IntervalSecs: 3600,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.StandingToolSetState("w1", memory.StandingRunning); err != nil {
+		t.Fatal(err)
+	}
+
+	for range 2 {
+		r.runDue(context.Background())
+		time.Sleep(3 * time.Millisecond)
+	}
+	if got, _, _ := store.StandingToolGet("w1"); got.Cycles != 1 {
+		t.Fatalf("precondition: expected one completed cycle, got %d", got.Cycles)
+	}
+
+	evs, err := store.SessionEventsByAgent("w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evs) != 0 {
+		t.Fatalf("a silent cycle wrote %d journal events; heartbeat calls must not be journalled: %+v",
+			len(evs), evs)
+	}
+
+	// Recent activity still exists — it just lives in memory, not the journal.
+	if got := r.log.recent("w1", 10); len(got) != 2 {
+		t.Fatalf("ring buffer holds %d entries, want the 2 calls", len(got))
+	}
+}
+
+// …but a cycle that produced output IS an event, and so are the state changes.
+func TestStandingOutputAndTransitionsAreJournalled(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := standingHost(t, "watcher", watcherManifest, watcherSrc, nil)
+	r := NewStandingRunner(store, host, 1, 2)
+	declare(t, store, "w1", "watcher", 3600)
+
+	for range 2 {
+		r.runDue(context.Background())
+		time.Sleep(3 * time.Millisecond)
+	}
+	if _, err := r.SetState("w1", memory.StandingStopped); err != nil {
+		t.Fatal(err)
+	}
+
+	evs, err := store.SessionEventsByAgent("w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, e := range evs {
+		seen[e.Type] = true
+	}
+	if !seen[evStandingReported] {
+		t.Errorf("a cycle with output was not journalled: %+v", evs)
+	}
+	if !seen[evStandingStopped] {
+		t.Errorf("stopping was not journalled: %+v", evs)
+	}
+}
+
+// A generated standing tool that keeps failing is switched off; an operator's
+// own declaration keeps retrying. The asymmetry is the point — one has an author
+// to answer to, the other does not.
+func TestGeneratedStandingToolAutoDisables(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		generated bool
+		wantState string
+	}{
+		{"generated is disabled", true, memory.StandingStopped},
+		{"config-declared keeps retrying", false, memory.StandingFailing},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store, err := memtest.Open(t)
+			if err != nil {
+				t.Fatal(err)
+			}
+			host := standingHost(t, "broken", `
+name = "broken"
+kind = "js"
+entrypoint = "./broken.js"
+description = "Always throw."
+resumable = true
+`, `export default function () { throw new Error("nope"); }`, nil)
+			r := NewStandingRunner(store, host, 1, 2)
+			if err := store.StandingToolUpsertDefinition(memory.StandingTool{
+				ID: "b1", Tool: "broken", Args: `{}`, IntervalSecs: 1, Generated: tc.generated,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.StandingToolSetState("b1", memory.StandingRunning); err != nil {
+				t.Fatal(err)
+			}
+
+			for range StandingGeneratedDisableAfter + 2 {
+				got, _, _ := store.StandingToolGet("b1")
+				if got.State == memory.StandingStopped {
+					break
+				}
+				// Force it due so the backoff does not stall the test.
+				if _, err := store.StandingToolFail("b1", got.LastError, time.Now(), got.State); err != nil {
+					t.Fatal(err)
+				}
+				r.runDue(context.Background())
+			}
+
+			got, _, _ := store.StandingToolGet("b1")
+			if got.State != tc.wantState {
+				t.Fatalf("state = %q, want %q", got.State, tc.wantState)
+			}
+		})
+	}
+}
+
+// SetState("start") clears the failure history and schedules an immediate call,
+// so `start` after a fix means "try again now" rather than "wait out the
+// backoff you accrued while broken".
+func TestStartClearsFailureHistory(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := standingHost(t, "watcher", watcherManifest, watcherSrc, nil)
+	r := NewStandingRunner(store, host, 1, 2)
+	declare(t, store, "w1", "watcher", 3600)
+	if _, err := store.StandingToolFail("w1", "boom", time.Now().Add(time.Hour), memory.StandingFailing); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := r.SetState("w1", memory.StandingRunning); err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ := store.StandingToolGet("w1")
+	if got.Failures != 0 || got.LastError != "" {
+		t.Fatalf("failures=%d lastErr=%q, want both cleared", got.Failures, got.LastError)
+	}
+	if got.NextAt != "" {
+		t.Fatalf("next_at = %q, want it cleared so the first call happens now", got.NextAt)
+	}
+}

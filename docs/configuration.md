@@ -570,6 +570,22 @@ allow = [                           # allowlist mode only: the packages an opera
 # capability-free tool that never stops is inert per call and unbounded in
 # aggregate, which is exactly what a ceiling cannot express.
 # [tools.agent] allow_long_running = false
+
+# May Nine ask to run a tool it wrote STANDING — indefinitely, on its own
+# cadence? Off by default, and separate from allow_long_running: a job the model
+# started still ends, where a standing run does not until somebody stops it.
+#
+# Even with this on, a human approves every promotion — including when
+# require_approval is "never". That is the one place the setting is overridden,
+# and it is deliberate: "never" means the capability ceiling is the only control,
+# and a ceiling bounds REACH. A capability-free tool that runs forever is inert
+# per call and unbounded in aggregate, which a ceiling cannot express.
+#
+# A generated standing tool that fails repeatedly is switched off. One you
+# declared in [[standing_tool]] is not — your declaration is a standing
+# instruction, and silently disabling it would be the greater surprise.
+# [tools.agent] allow_standing = false
+# [tools.agent] max_standing = 4
 ```
 
 ---

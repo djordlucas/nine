@@ -55,6 +55,28 @@ type stateGrantKey struct{}
 // grant.
 type stateScopeKey struct{}
 
+// stateSandboxKey forces every state operation into a scratch namespace,
+// whatever the grant's scope says.
+type stateSandboxKey struct{}
+
+// WithStateSandbox returns a context whose state operations run against the
+// scratch namespace key, for BOTH scopes — unlike WithStateScope, which only a
+// conversation-scoped grant consults.
+//
+// It exists for `nine tool call`: a test invocation must not be able to
+// overwrite the cursor or the bookkeeping of a live standing run, and a
+// tool-scoped grant otherwise ignores the context entirely — its namespace is
+// shared by construction, which is precisely the property that makes an
+// uninsulated test call dangerous. Reach is deliberately NOT sandboxed: the
+// tool's real grants apply, because a test that cannot make the tool's actual
+// calls tests nothing. The isolation is of state alone.
+func WithStateSandbox(ctx context.Context, key string) context.Context {
+	if key == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, stateSandboxKey{}, key)
+}
+
 // WithStateScope returns a context whose conversation-scoped state resolves to
 // id. Whoever is running the turn installs it, exactly as WithHTTPAudit is
 // installed and for the same reason: a Host is daemon-wide and built once at
@@ -137,6 +159,10 @@ func (h *Host) hostState(ctx context.Context, mod api.Module, ptr, size uint32) 
 // to deny, and it would do so exactly in the paths that lack a turn — which is
 // where nobody is watching.
 func stateScopeFor(ctx context.Context, g StateGrant) (string, error) {
+	// A sandboxed call goes to scratch whatever the scope — see WithStateSandbox.
+	if k, _ := ctx.Value(stateSandboxKey{}).(string); k != "" {
+		return k, nil
+	}
 	switch g.Scope {
 	case StateScopeTool:
 		return "", nil
