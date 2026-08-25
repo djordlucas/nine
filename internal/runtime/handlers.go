@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"nine/internal/agent"
+	"nine/internal/memory"
 	"nine/internal/plugin"
 	"nine/internal/protocol"
+	"nine/internal/toolvm"
 )
 
 // handleStatus responds with daemon uptime, active agents, and loaded plugins.
@@ -748,4 +750,189 @@ func (d *Daemon) handleSessionDelete(enc *json.Encoder, agentID string) {
 		resolved, counts.Total(), counts.Events,
 		counts.Notifications+counts.UserNotifications, counts.ToolState, counts.Jobs)
 	enc.Encode(protocol.NewTextMsg(protocol.TypeSessionDelete, msg)) //nolint:errcheck
+}
+
+// handleStandingList returns the standing-run roster.
+func (d *Daemon) handleStandingList(enc *json.Encoder) {
+	if d.standing == nil {
+		enc.Encode(protocol.NewTextMsg(protocol.TypeStandingList, "[]")) //nolint:errcheck
+		return
+	}
+	status, err := d.standing.Status()
+	if err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	out := make([]protocol.StandingInfo, 0, len(status))
+	for _, s := range status {
+		out = append(out, standingInfoOf(s))
+	}
+	payload, err := json.Marshal(out)
+	if err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	enc.Encode(protocol.NewTextMsg(protocol.TypeStandingList, string(payload))) //nolint:errcheck
+}
+
+// handleStandingShow returns one standing run with its recent activity.
+func (d *Daemon) handleStandingShow(enc *json.Encoder, id string, limit int) {
+	if d.standing == nil {
+		enc.Encode(protocol.NewErrorMsg("no standing tools are configured here")) //nolint:errcheck
+		return
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	s, found, err := d.standing.StatusOf(id, limit)
+	if err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	if !found {
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("no standing tool %q", id))) //nolint:errcheck
+		return
+	}
+	payload, err := json.Marshal(standingInfoOf(s))
+	if err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	enc.Encode(protocol.NewTextMsg(protocol.TypeStandingShow, string(payload))) //nolint:errcheck
+}
+
+// handleStandingControl stops or starts a standing run.
+func (d *Daemon) handleStandingControl(enc *json.Encoder, id, action string) {
+	if d.standing == nil {
+		enc.Encode(protocol.NewErrorMsg("no standing tools are configured here")) //nolint:errcheck
+		return
+	}
+	var state string
+	switch action {
+	case "stop":
+		state = memory.StandingStopped
+	case "start":
+		state = memory.StandingRunning
+	default:
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("standing control action %q is not \"stop\" or \"start\"", action))) //nolint:errcheck
+		return
+	}
+	ok, err := d.standing.SetState(id, state)
+	if err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	if !ok {
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("no standing tool %q", id))) //nolint:errcheck
+		return
+	}
+	verb := "stopped"
+	if action == "start" {
+		verb = "started; its first call is scheduled now"
+	}
+	enc.Encode(protocol.NewTextMsg(protocol.TypeStandingControl, fmt.Sprintf("%s %s", id, verb))) //nolint:errcheck
+}
+
+func standingInfoOf(s StandingStatus) protocol.StandingInfo {
+	out := protocol.StandingInfo{
+		ID: s.ID, Tool: s.Tool, State: s.State, Trigger: s.Trigger,
+		Calls: s.Calls, Cycles: s.Cycles, Failures: s.Failures,
+		LastError: s.LastError, LastCallAt: s.LastCallAt, NextAt: s.NextAt,
+		Generated: s.Generated,
+	}
+	for _, e := range s.Recent {
+		out.Recent = append(out.Recent, protocol.StandingLogLine{
+			At: e.At.UTC().Format(time.RFC3339), Outcome: e.Outcome, Detail: e.Detail,
+		})
+	}
+	return out
+}
+
+// handleToolCall runs one sandboxed tool once, for testing, and returns the
+// whole envelope — including a `continue` a resumable tool produced, because
+// that is exactly what is being debugged.
+//
+// Unless liveState is set, the call runs against a scratch state namespace that
+// is discarded afterwards. The trap this avoids is real: a test call sharing a
+// live standing run's store could overwrite its cursor or its bookkeeping, and
+// the operator who "just tested it" would have silently corrupted the production
+// run. Reach is NOT isolated — the tool's actual grants apply, because a test
+// that cannot make the tool's real calls tests nothing.
+func (d *Daemon) handleToolCall(enc *json.Encoder, tool string, args json.RawMessage, liveState bool) {
+	if d.tools == nil {
+		enc.Encode(protocol.NewErrorMsg("sandboxed tools are not enabled here")) //nolint:errcheck
+		return
+	}
+	ctx := context.Background()
+	scratch := ""
+	if !liveState {
+		// The sandbox override, not WithStateScope: a tool-scoped grant ignores
+		// the conversation on the context — its namespace is shared by
+		// construction — so only a forced override actually keeps a test call out
+		// of a live standing run's store.
+		scratch = "test:" + memory.NewID()
+		ctx = toolvm.WithStateSandbox(ctx, scratch)
+	}
+	// A resumable tool is handed a first-call job context, because that is what
+	// its first call actually looks like in production. Without it the tool sees
+	// `undefined` where it expects {cursor, call} — so `nine tool call` would fail
+	// on precisely the tools it exists to help debug.
+	var out toolvm.Output
+	var err error
+	if t := d.tools.Get(tool); t != nil && t.Resumable {
+		out, err = d.tools.CallJob(ctx, tool, args, toolvm.JobContext{Call: 1})
+	} else {
+		out, err = d.tools.CallOutput(ctx, tool, args)
+	}
+	// Scratch state is discarded whatever the outcome; a failed test call must
+	// not leave debris either.
+	if scratch != "" && d.store != nil {
+		if t := d.tools.Get(tool); t != nil {
+			d.dropScratchState(t.Name, scratch)
+		}
+	}
+	if err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	payload, err := json.Marshal(toolCallEnvelope(out))
+	if err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	enc.Encode(protocol.NewTextMsg(protocol.TypeToolCall, string(payload))) //nolint:errcheck
+}
+
+// dropScratchState reclaims a test call's scratch namespace. Best-effort — the
+// TTL-less rows would otherwise sit until someone noticed, but nothing breaks if
+// this fails beyond a few orphan rows an operator can see in the table.
+func (d *Daemon) dropScratchState(tool, scratch string) {
+	type scopeDropper interface {
+		ToolStateDropScope(tool, scopeKey string) error
+	}
+	if sd, ok := d.store.(scopeDropper); ok {
+		if err := sd.ToolStateDropScope(tool, scratch); err != nil {
+			slog.Warn("tool call: drop scratch state", "tool", tool, "err", err)
+		}
+	}
+}
+
+// toolCallEnvelope renders a call's outcome in the guest's own vocabulary, so
+// what the operator sees is what the tool actually returned.
+func toolCallEnvelope(out toolvm.Output) map[string]any {
+	env := map[string]any{"ok": true}
+	switch {
+	case out.Continue != nil:
+		env["continue"] = map[string]any{
+			"cursor":   out.Continue.Cursor,
+			"progress": out.Continue.Progress,
+			"after_ms": out.Continue.AfterMS,
+		}
+	case out.Bytes != nil:
+		env["bytes"] = len(out.Bytes)
+		env["media_type"] = out.MediaType
+	default:
+		env["output"] = out.Text
+	}
+	return env
 }

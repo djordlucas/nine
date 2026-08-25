@@ -142,19 +142,46 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 				return c.ToolsShow(cfg, args[2])
 			case "deps":
 				return c.ToolsDeps(cfg)
+			case "standing":
+				return c.Standing(cfg)
 			}
-			return fmt.Errorf("usage: nine tools [reload|show <name>|deps]")
+			return fmt.Errorf("usage: nine tools [reload|show <name>|deps|standing]")
 		}
 		return c.Tools(cfg)
 	case "tool":
-		if len(args) < 2 || args[1] != "validate" {
-			return fmt.Errorf("usage: nine tool validate [path]")
+		if len(args) < 2 {
+			return fmt.Errorf("%s", toolUsage)
 		}
-		p := ""
-		if len(args) > 2 {
-			p = args[2]
+		switch args[1] {
+		case "validate":
+			p := ""
+			if len(args) > 2 {
+				p = args[2]
+			}
+			return c.ToolValidate(cfg, p)
+		case "status":
+			if len(args) < 3 {
+				return fmt.Errorf("usage: nine tool status <standing-id>")
+			}
+			return c.StandingShow(cfg, args[2], 20)
+		case "logs":
+			if len(args) < 3 {
+				return fmt.Errorf("usage: nine tool logs <standing-id> [-n N]")
+			}
+			return c.StandingLogs(cfg, args[2], logLineCount(args[3:]))
+		case "stop", "start":
+			if len(args) < 3 {
+				return fmt.Errorf("usage: nine tool %s <standing-id>", args[1])
+			}
+			return c.StandingControl(cfg, args[2], args[1])
+		case "call":
+			if len(args) < 3 {
+				return fmt.Errorf("usage: nine tool call <name> ['<json>'] [--live-state]")
+			}
+			argsJSON, live := toolCallArgs(args[3:])
+			return c.ToolCall(cfg, args[2], argsJSON, live)
 		}
-		return c.ToolValidate(cfg, p)
+		return fmt.Errorf("%s", toolUsage)
 	case "plugin":
 		// `plugin serve` never reaches here: it is the daemon's entry point for a
 		// built-in plugin child, and cmd/nine/main.go dispatches it before the
@@ -310,6 +337,35 @@ func levenshtein(a, b string) int {
 		prev, curr = curr, prev
 	}
 	return prev[len(b)]
+}
+
+const toolUsage = "usage: nine tool <validate|status|logs|stop|start|call> …"
+
+// logLineCount reads an optional `-n N` from the tail of an argument list.
+func logLineCount(rest []string) int {
+	for i := 0; i+1 < len(rest); i++ {
+		if rest[i] == "-n" {
+			if n, err := strconv.Atoi(rest[i+1]); err == nil && n > 0 {
+				return n
+			}
+		}
+	}
+	return 20
+}
+
+// toolCallArgs separates the optional JSON argument from the --live-state flag,
+// so they may be given in either order.
+func toolCallArgs(rest []string) (argsJSON string, liveState bool) {
+	for _, a := range rest {
+		if a == "--live-state" {
+			liveState = true
+			continue
+		}
+		if argsJSON == "" {
+			argsJSON = a
+		}
+	}
+	return argsJSON, liveState
 }
 
 // unknownCommand reports name as an unrecognized command: a note on stderr —

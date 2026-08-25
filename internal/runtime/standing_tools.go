@@ -22,6 +22,11 @@ const (
 	// not need an operator, and three in a row is no longer a blip.
 	StandingFailureThreshold = 3
 
+	// StandingGeneratedDisableAfter switches off a *generated* standing tool
+	// after this many consecutive failures. Config-declared ones keep retrying:
+	// see recordFailure for why the two differ.
+	StandingGeneratedDisableAfter = 10
+
 	// StandingMaxBackoff caps the backed-off cadence. A broken tool should stop
 	// burning the cadence it asked for, but it should also still be retrying when
 	// someone fixes the thing it depends on.
@@ -48,6 +53,10 @@ type StandingRunner struct {
 	host     *toolvm.Host
 	minDelay time.Duration
 	workers  int
+	// log holds recent activity per tool, in memory. A standing run's ordinary
+	// calls are deliberately not journal events (journalTransition), so this is
+	// where "what has it been doing lately" lives.
+	log *standingLog
 }
 
 // NewStandingRunner builds the driver, or nil when there is no sandboxed-tool
@@ -67,7 +76,68 @@ func NewStandingRunner(store *memory.Store, host *toolvm.Host, minDelayMS, worke
 		host:     host,
 		minDelay: time.Duration(minDelayMS) * time.Millisecond,
 		workers:  workers,
+		log:      newStandingLog(),
 	}
+}
+
+// Log exposes the activity ring, so other components (the generated-tool store,
+// dropping a deleted tool's buffer) can reach it.
+func (r *StandingRunner) Log() *standingLog {
+	if r == nil {
+		return nil
+	}
+	return r.log
+}
+
+// Status returns every standing run with its recent activity, for the roster.
+func (r *StandingRunner) Status() ([]StandingStatus, error) {
+	if r == nil {
+		return nil, nil
+	}
+	tools, err := r.store.StandingToolList()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]StandingStatus, 0, len(tools))
+	for _, t := range tools {
+		out = append(out, standingStatusOf(t, nil))
+	}
+	return out, nil
+}
+
+// StatusOf returns one standing run with up to n recent log lines.
+func (r *StandingRunner) StatusOf(id string, n int) (StandingStatus, bool, error) {
+	if r == nil {
+		return StandingStatus{}, false, nil
+	}
+	t, found, err := r.store.StandingToolGet(id)
+	if err != nil || !found {
+		return StandingStatus{}, found, err
+	}
+	return standingStatusOf(t, r.log.recent(id, n)), true, nil
+}
+
+// SetState stops or starts a standing run, journalling the transition.
+//
+// Stopping is exact for the same reason cancelling a tool job is: the daemon
+// owns when the next call happens, so not scheduling one *is* the stop. A call
+// already in flight runs out its own deadline and its result is discarded, since
+// the store's writes refuse a stopped row.
+func (r *StandingRunner) SetState(id, state string) (bool, error) {
+	if r == nil {
+		return false, fmt.Errorf("standing tools are not enabled here")
+	}
+	ok, err := r.store.StandingToolSetState(id, state)
+	if err != nil || !ok {
+		return ok, err
+	}
+	evType := evStandingStopped
+	if state == memory.StandingRunning {
+		evType = evStandingStarted
+	}
+	journalTransition(r.store, id, evType, map[string]any{"by": "operator"})
+	slog.Info("standing tool "+state, "id", id)
+	return true, nil
 }
 
 // ReconcileStandingTools brings the store's definitions in line with the file.
@@ -221,6 +291,7 @@ func (r *StandingRunner) runOnce(ctx context.Context, st memory.StandingTool) {
 		if _, err := r.store.StandingToolAdvance(st.ID, out.Continue.Cursor, next); err != nil {
 			slog.Warn("standing tool: advance", "id", st.ID, "err", err)
 		}
+		r.log.add(st.ID, "continued", out.Continue.Progress)
 		return
 	}
 
@@ -230,11 +301,15 @@ func (r *StandingRunner) runOnce(ctx context.Context, st memory.StandingTool) {
 		slog.Warn("standing tool: complete cycle", "id", st.ID, "err", err)
 		return
 	}
+	r.log.add(st.ID, "completed", clipDetail(out.Text, 120))
 	r.report(st, out)
 
 	if st.State == memory.StandingFailing {
-		// Recovered: worth one line, on the edge rather than per call.
+		// Recovered: the edge, not every call.
 		slog.Info("standing tool recovered", "id", st.ID, "tool", st.Tool)
+		journalTransition(r.store, st.ID, evStandingRecovered, map[string]any{
+			"tool": st.Tool, "after_failures": st.Failures,
+		})
 		r.notifyHuman(fmt.Sprintf("Standing tool %s recovered and is running normally again.", st.ID))
 	}
 }
@@ -260,6 +335,11 @@ func (r *StandingRunner) report(st memory.StandingTool, out toolvm.Output) {
 	if text == "" {
 		return
 	}
+	// A cycle that produced something *is* an event, unlike the calls that got
+	// there — so this is journaled where the heartbeat is not.
+	journalTransition(r.store, st.ID, evStandingReported, map[string]any{
+		"tool": st.Tool, "output": clipDetail(text, 2000),
+	})
 	r.notifyHuman(fmt.Sprintf("[%s] %s", st.ID, text))
 }
 
@@ -284,15 +364,40 @@ func (r *StandingRunner) recordFailure(st memory.StandingTool, cause error) {
 		state = memory.StandingFailing
 	}
 
+	// A generated standing tool that keeps failing is disabled rather than left
+	// retrying forever. The asymmetry with a config-declared one is deliberate:
+	// an operator's declaration is a standing instruction and silently switching
+	// it off would be the more surprising behaviour, but a tool Nine wrote and
+	// nobody has looked at since the approval has no such author to answer to.
+	disabled := st.Generated && failures >= StandingGeneratedDisableAfter
+	if disabled {
+		state = memory.StandingStopped
+	}
+
 	next := time.Now().Add(r.backoff(st, failures))
 	if _, err := r.store.StandingToolFail(st.ID, cause.Error(), next, state); err != nil {
 		slog.Warn("standing tool: record failure", "id", st.ID, "err", err)
 		return
 	}
+	if disabled {
+		slog.Warn("generated standing tool disabled after repeated failure",
+			"id", st.ID, "tool", st.Tool, "consecutive", failures)
+		journalTransition(r.store, st.ID, evStandingStopped, map[string]any{
+			"tool": st.Tool, "by": "auto-disable", "consecutive": failures,
+		})
+		r.notifyHuman(fmt.Sprintf(
+			"Standing tool %s (written by Nine) has been switched off after %d consecutive failures. "+
+				"Last error: %s", st.ID, failures, oneLine(cause.Error())))
+		return
+	}
+	r.log.add(st.ID, "failed", clipDetail(cause.Error(), 120))
 	slog.Warn("standing tool call failed",
 		"id", st.ID, "tool", st.Tool, "consecutive", failures, "err", cause)
 
 	if tripped {
+		journalTransition(r.store, st.ID, evStandingFailing, map[string]any{
+			"tool": st.Tool, "consecutive": failures, "error": oneLine(cause.Error()),
+		})
 		r.notifyHuman(fmt.Sprintf(
 			"Standing tool %s has failed %d times in a row and is backing off. Last error: %s",
 			st.ID, failures, oneLine(cause.Error())))

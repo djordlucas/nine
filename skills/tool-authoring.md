@@ -135,6 +135,36 @@ The operator may have this switched off. If so `tool_write` refuses with a messa
 so — rewrite the tool to finish in one call, or `gap_report` it. Do not retry with
 different wording.
 
+### Work that should keep running
+
+If the work does not finish — watching something, keeping a derived file current,
+processing a stream — a tool can be **standing**: run indefinitely on its own cadence,
+starting as soon as it is approved.
+
+```json
+{"name":"paper_watch", "resumable":true,
+ "standing":{"interval":"5m","args":{"feed":"…"}}}
+```
+
+The rules that matter:
+
+- **A returned result ends a *cycle*, not the run.** Your cursor resets and the interval
+  decides when the next pass starts. `again()` within a pass, a plain return between them.
+- **Return nothing when there is nothing to report.** An empty result is silent; a
+  non-empty one goes to the human's notification feed. A tool that announces every pass
+  is noise nobody reads.
+- **You cannot notify an agent, only the human feed.** If something needs acting on, say
+  it clearly enough that a human can decide.
+- **Use `nine:state` for what must outlive a cycle.** "What have I already seen" is state;
+  "where am I in this pass" is the cursor.
+
+**A human always approves this**, whatever the operator's other settings — and it may be
+switched off entirely, in which case `tool_write` refuses with a message saying so.
+Rewrite as an ordinary tool, or `gap_report` it. Do not retry with different wording.
+
+Ask for standing only when the work genuinely never ends. A tool that answers a question
+should answer it and stop.
+
 ### What to expect
 
 - **A new tool is callable on your next turn**, not this one.

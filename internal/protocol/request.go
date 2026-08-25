@@ -63,6 +63,26 @@ type SessionStopReq struct {
 // it. Distinct from SessionStopReq, which ends a session and keeps its history.
 type SessionDeleteReq struct{ AgentID string }
 
+// StandingShowReq asks for one standing run in detail.
+type StandingShowReq struct {
+	ID    string
+	Limit int
+}
+
+// StandingControlReq stops or starts a standing run.
+type StandingControlReq struct {
+	ID     string
+	Action string // "stop" | "start"
+}
+
+// ToolCallReq invokes one tool once, for testing. LiveState opts out of the
+// scratch state namespace a test call gets by default.
+type ToolCallReq struct {
+	Tool      string
+	Args      json.RawMessage
+	LiveState bool
+}
+
 // WorkflowStopReq cancels an active workflow.
 type WorkflowStopReq struct{ ID string }
 
@@ -101,6 +121,9 @@ func (SetPlanModeReq) Type() MsgType       { return TypeSetPlanMode }
 func (ContextReq) Type() MsgType           { return TypeContext }
 func (SessionStopReq) Type() MsgType       { return TypeSessionStop }
 func (SessionDeleteReq) Type() MsgType     { return TypeSessionDelete }
+func (StandingShowReq) Type() MsgType      { return TypeStandingShow }
+func (StandingControlReq) Type() MsgType   { return TypeStandingControl }
+func (ToolCallReq) Type() MsgType          { return TypeToolCall }
 func (WorkflowStopReq) Type() MsgType      { return TypeWorkflowStop }
 func (WorkflowFailReq) Type() MsgType      { return TypeWorkflowFail }
 func (ListNotificationsReq) Type() MsgType { return TypeListNotifications }
@@ -113,6 +136,7 @@ var queryKinds = map[MsgType]bool{
 	TypeStatus: true, TypeListGoals: true, TypeListWorkflows: true,
 	TypeListTools: true, TypePluginsList: true, TypePluginsReload: true,
 	TypeToolsList: true, TypeToolsReload: true, TypeSessionsList: true,
+	TypeStandingList: true,
 }
 
 // DecodeRequest turns a wire message into the typed request it represents.
@@ -145,6 +169,12 @@ func DecodeRequest(m Msg) (Request, error) {
 		return SessionStopReq{AgentID: m.AgentID, All: m.Text == "--all"}, nil
 	case TypeSessionDelete:
 		return SessionDeleteReq{AgentID: m.AgentID}, nil
+	case TypeStandingShow:
+		return StandingShowReq{ID: m.AgentID, Limit: m.Limit}, nil
+	case TypeStandingControl:
+		return StandingControlReq{ID: m.AgentID, Action: m.Text}, nil
+	case TypeToolCall:
+		return ToolCallReq{Tool: m.ToolName, Args: m.ToolInput, LiveState: m.Text == "--live-state"}, nil
 	case TypeWorkflowStop:
 		return WorkflowStopReq{ID: m.Text}, nil
 	case TypeWorkflowFail:
