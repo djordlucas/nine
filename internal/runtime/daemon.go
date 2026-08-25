@@ -128,13 +128,15 @@ type Daemon struct {
 	instName   string            // instance display name shown in the TUI top bar (guarded by mu)
 
 	mgr   pluginRegistry
-	tools *toolvm.Host      // sandboxed-tool host (see ConfigureSandboxedTools); nil = disabled
-	core  *agent.Dispatcher // core-intercepted tools, for plugin_call (see ConfigureCoreTools)
-	store queryBackend
-	plans PlanStore
-	sup   *Supervisor
-	hitl  *HITL
-	sink  EventSink // durable session-event journal for new workers (nil = disabled)
+	tools *toolvm.Host // sandboxed-tool host (see ConfigureSandboxedTools); nil = disabled
+	// standing drives standing tools (see ConfigureStandingTools); nil = none.
+	standing *StandingRunner
+	core     *agent.Dispatcher // core-intercepted tools, for plugin_call (see ConfigureCoreTools)
+	store    queryBackend
+	plans    PlanStore
+	sup      *Supervisor
+	hitl     *HITL
+	sink     EventSink // durable session-event journal for new workers (nil = disabled)
 
 	maxGoalSessions int // see SetMaxGoalSessions
 
@@ -507,6 +509,15 @@ func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.M
 	case protocol.SessionDeleteReq:
 		d.handleSessionDelete(enc, r.AgentID)
 
+	case protocol.StandingShowReq:
+		d.handleStandingShow(enc, r.ID, r.Limit)
+
+	case protocol.StandingControlReq:
+		d.handleStandingControl(enc, r.ID, r.Action)
+
+	case protocol.ToolCallReq:
+		d.handleToolCall(enc, r.Tool, r.Args, r.LiveState)
+
 	case protocol.ListNotificationsReq:
 		d.handleListNotifications(enc, r.All)
 
@@ -556,6 +567,8 @@ func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.M
 			d.handlePluginsReload(enc)
 		case protocol.TypeSessionsList:
 			d.handleSessionsList(enc)
+		case protocol.TypeStandingList:
+			d.handleStandingList(enc)
 		case protocol.TypeToolsList:
 			d.handleToolsList(enc)
 		case protocol.TypeToolsReload:
@@ -675,6 +688,11 @@ func (d *Daemon) ConfigurePlugins(mgr *plugin.Manager) {
 // ConfigureSandboxedTools stores the sandboxed-tool host, so `tools_list` and
 // `tools_reload` can reach it. Passing nil (the default, when [tools] enabled is
 // unset) leaves both messages answering that the subsystem is disabled.
+// ConfigureStandingTools stores the standing-run driver so the operator surface
+// (standing_list / standing_show / standing_control) can reach it. Nil leaves
+// those messages answering that no standing tools exist here.
+func (d *Daemon) ConfigureStandingTools(r *StandingRunner) { d.standing = r }
+
 func (d *Daemon) ConfigureSandboxedTools(h *toolvm.Host) {
 	d.tools = h
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"nine/internal/agent"
 	"nine/internal/memory"
@@ -30,6 +31,28 @@ type generatedTools struct {
 	bundler *deps.Bundler
 	// allowNetworkDeps lifts the deps+net.http interlock (§4.4).
 	allowNetworkDeps bool
+	// allowStanding and maxStanding bound the standing flavour: whether Nine may
+	// ask for one at all, and how many may exist.
+	allowStanding bool
+	maxStanding   int
+	// standingLog is the driver's recent-activity ring, so deleting a tool also
+	// drops its buffer rather than leaking one entry set per deleted tool.
+	standingLog *standingLog
+}
+
+// LinkStandingTools connects the generated-tool store to the standing driver, so
+// deleting a generated tool also drops its recent-activity buffer.
+//
+// A free function rather than a constructor argument because the two are built
+// in the opposite order at boot — the store first, the driver once the host and
+// the config are resolved — and threading a not-yet-existent runner through the
+// constructor would be worse than one small seam.
+func LinkStandingTools(gts agent.GeneratedToolStore, r *StandingRunner) {
+	g, ok := gts.(*generatedTools)
+	if !ok || r == nil {
+		return
+	}
+	g.standingLog = r.Log()
 }
 
 // NewGeneratedToolStore wires the generated tier, or returns nil when it is off.
@@ -37,10 +60,28 @@ type generatedTools struct {
 // registers no handlers and advertises no defs, so a loop is identical to one
 // built before the tier existed.
 func NewGeneratedToolStore(store *memory.Store, host *toolvm.Host, mgr toolOwner, bundler *deps.Bundler, allowNetworkDeps bool) agent.GeneratedToolStore {
+	return NewGeneratedToolStoreWithStanding(store, host, mgr, bundler, allowNetworkDeps, false, 0)
+}
+
+// DefaultMaxGeneratedStanding caps how many standing tools Nine may have written
+// itself. Small on purpose: unlike a catalogued tool, which costs nothing until
+// called, each of these consumes cadence forever.
+const DefaultMaxGeneratedStanding = 4
+
+// NewGeneratedToolStoreWithStanding is NewGeneratedToolStore with the standing
+// flavour's operator policy.
+func NewGeneratedToolStoreWithStanding(store *memory.Store, host *toolvm.Host, mgr toolOwner, bundler *deps.Bundler, allowNetworkDeps, allowStanding bool, maxStanding int) agent.GeneratedToolStore {
 	if store == nil || host == nil || !host.AgentEnabled() {
 		return nil
 	}
-	return &generatedTools{store: store, host: host, mgr: mgr, bundler: bundler, allowNetworkDeps: allowNetworkDeps}
+	if maxStanding <= 0 {
+		maxStanding = DefaultMaxGeneratedStanding
+	}
+	return &generatedTools{
+		store: store, host: host, mgr: mgr, bundler: bundler,
+		allowNetworkDeps: allowNetworkDeps,
+		allowStanding:    allowStanding, maxStanding: maxStanding,
+	}
 }
 
 // Write validates a proposed tool against the ceiling and the namespace, persists
@@ -59,6 +100,11 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 	// Same discipline for the long-running lifecycle. It is checked here rather
 	// than only at load so the refusal reaches the model as a message it can act
 	// on, instead of a tool that persists and then silently never registers.
+	if spec.Standing != nil {
+		if err := g.checkStandingRequest(spec); err != nil {
+			return nil, err
+		}
+	}
 	if spec.Resumable && !g.host.AllowLongRunningGenerated() {
 		return nil, fmt.Errorf(
 			"long-running generated tools are not enabled on this instance " +
@@ -110,9 +156,100 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 		"tool", spec.Name, "fs", decl.FS, "net", decl.Net, "env", decl.Env,
 		"resumable", spec.Resumable, "deps", lockNames(lock), "evicted", evicted)
 
+	if spec.Standing != nil {
+		if err := g.promoteToStanding(spec); err != nil {
+			return nil, err
+		}
+	}
+
 	g.reload(ctx)
 	return evicted, nil
 }
+
+// checkStandingRequest refuses a standing promotion before anything is
+// persisted, so the model gets a message it can act on rather than a tool that
+// exists and never runs.
+func (g *generatedTools) checkStandingRequest(spec agent.GeneratedToolSpec) error {
+	if !g.allowStanding {
+		return fmt.Errorf(
+			"standing tools are not enabled for generated tools on this instance " +
+				"([tools.agent] allow_standing). Write it as an ordinary tool and call it " +
+				"when you need it, or use gap_report to ask an operator")
+	}
+	if !spec.Resumable {
+		// A standing run is a sequence of cycles, and a tool that cannot end a
+		// call with `continue` has no way to express one.
+		return fmt.Errorf("a standing tool must also be resumable: set resumable = true, " +
+			"and return again() from \"nine:job\" when a cycle has more work to do")
+	}
+	if spec.Standing.Interval == "" && spec.Standing.Schedule == "" {
+		return fmt.Errorf("a standing tool needs interval or schedule — one with no cadence would never run")
+	}
+	if spec.Standing.Interval != "" && spec.Standing.Schedule != "" {
+		return fmt.Errorf("give interval or schedule, not both")
+	}
+	if spec.Standing.Interval != "" {
+		d, err := time.ParseDuration(spec.Standing.Interval)
+		if err != nil {
+			return fmt.Errorf("interval %q is not a duration like \"10s\": %w", spec.Standing.Interval, err)
+		}
+		if d <= 0 {
+			return fmt.Errorf("interval %q must be positive", spec.Standing.Interval)
+		}
+	}
+
+	// The cap counts only generated runs: an operator's own [[standing_tool]]
+	// blocks are their business and are bounded by their file.
+	existing, err := g.store.StandingToolList()
+	if err != nil {
+		return err
+	}
+	n := 0
+	for _, st := range existing {
+		if st.Generated && st.ID != standingIDFor(spec.Name) {
+			n++
+		}
+	}
+	if n >= g.maxStanding {
+		return fmt.Errorf(
+			"you already have %d standing tools, the maximum on this instance. "+
+				"Stop one you no longer need before adding another", g.maxStanding)
+	}
+	return nil
+}
+
+// promoteToStanding records the run. Called after the tool row is written, so a
+// refusal above never leaves a standing row pointing at a tool that does not
+// exist.
+func (g *generatedTools) promoteToStanding(spec agent.GeneratedToolSpec) error {
+	interval := 0
+	if spec.Standing.Interval != "" {
+		d, _ := time.ParseDuration(spec.Standing.Interval) // validated above
+		interval = int(d.Seconds())
+	}
+	args := "{}"
+	if len(spec.Standing.Args) > 0 {
+		args = string(spec.Standing.Args)
+	}
+	id := standingIDFor(spec.Name)
+	if err := g.store.StandingToolUpsertDefinition(memory.StandingTool{
+		ID: id, Tool: spec.Name, Args: args,
+		IntervalSecs: interval, Schedule: spec.Standing.Schedule, Generated: true,
+	}); err != nil {
+		return fmt.Errorf("record standing tool: %w", err)
+	}
+	if _, err := g.store.StandingToolSetState(id, memory.StandingRunning); err != nil {
+		return fmt.Errorf("start standing tool: %w", err)
+	}
+	slog.Info("generated standing tool started",
+		"id", id, "tool", spec.Name, "interval_secs", interval, "schedule", spec.Standing.Schedule)
+	return nil
+}
+
+// standingIDFor names a generated tool's standing run. Derived rather than
+// random so rewriting the tool replaces its run instead of accumulating one per
+// write.
+func standingIDFor(tool string) string { return "gen:" + tool }
 
 // bundle resolves and inlines any external npm imports in source at write time,
 // and enforces the deps+net.http interlock (§4.4). A source that imports only
@@ -171,6 +308,16 @@ func lockNames(l deps.Lockfile) string {
 func (g *generatedTools) Delete(ctx context.Context, name string) error {
 	if err := g.store.GeneratedToolDelete(name); err != nil {
 		return err
+	}
+	// A standing run outliving the tool it runs would be a row the driver picks
+	// up every tick and fails on, forever, with "unknown sandboxed tool" — and
+	// it would eventually trip the breaker and notify a human about a tool that
+	// no longer exists. Deleting the tool deletes its run.
+	if err := g.store.StandingToolDelete(standingIDFor(name)); err != nil {
+		slog.Warn("could not remove the standing run of a deleted tool", "tool", name, "err", err)
+	}
+	if g.standingLog != nil {
+		g.standingLog.forget(standingIDFor(name))
 	}
 	slog.Info("generated tool deleted", "tool", name)
 	g.reload(ctx)

@@ -56,6 +56,8 @@ type AssemblyConfig struct {
 	// (docs/sandboxed-tools.md §9.4). Gates tool_write/js_eval for interactive
 	// sessions; ignored where the generated tier is off.
 	GeneratedApproval string
+	// GeneratedAllowStanding is `[tools.agent].allow_standing`.
+	GeneratedAllowStanding bool
 
 	// Loop / builder behavior.
 	ContextBudget int
@@ -131,16 +133,17 @@ func Assemble(c AssemblyConfig) *Assembly {
 				slog.Warn("post user notification", "agent_id", agentID, "err", err)
 			}
 		},
-		Sup:                supervisor,
-		TaskTimeoutSeconds: c.TaskTimeoutSeconds,
-		HITL:               c.HITL,
-		ApprovalTools:      c.ApprovalTools,
-		GateSubAgents:      c.GateSubAgents,
-		GeneratedApproval:  c.GeneratedApproval,
-		PlanApproval:       c.PlanApproval,
-		PlanMode:           c.PlanMode,
-		DefaultLeafRole:    c.DefaultLeafRole,
-		MaxDelegationDepth: c.MaxDelegationDepth,
+		Sup:                    supervisor,
+		TaskTimeoutSeconds:     c.TaskTimeoutSeconds,
+		HITL:                   c.HITL,
+		ApprovalTools:          c.ApprovalTools,
+		GateSubAgents:          c.GateSubAgents,
+		GeneratedApproval:      c.GeneratedApproval,
+		GeneratedAllowStanding: c.GeneratedAllowStanding,
+		PlanApproval:           c.PlanApproval,
+		PlanMode:               c.PlanMode,
+		DefaultLeafRole:        c.DefaultLeafRole,
+		MaxDelegationDepth:     c.MaxDelegationDepth,
 	})
 
 	// The daemon resolves each session's role from its plan profile and passes it
