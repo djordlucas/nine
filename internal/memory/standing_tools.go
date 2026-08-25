@@ -47,8 +47,13 @@ type StandingTool struct {
 	LastCallAt string `json:"last_call_at,omitempty"`
 	NextAt     string `json:"next_at,omitempty"`
 	Generated  bool   `json:"generated,omitempty"`
-	CreatedAt  string `json:"created_at,omitempty"`
-	UpdatedAt  string `json:"updated_at,omitempty"`
+	// WakeAgent, when set, makes this run a *condition trigger*: a cycle that
+	// produces output wakes that agent now instead of leaving a note on the human
+	// feed. It is the one way a standing tool may reach an agent, and only
+	// because an operator wrote the link in their own config.
+	WakeAgent string `json:"wake_agent,omitempty"`
+	CreatedAt string `json:"created_at,omitempty"`
+	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
 // StandingToolUpsertDefinition writes the config-owned half of a standing tool
@@ -64,13 +69,13 @@ func (s *Store) StandingToolUpsertDefinition(t StandingTool) error {
 		args = "{}"
 	}
 	_, err := s.db.Exec(
-		`INSERT INTO standing_tools(id, tool, args, interval_secs, schedule, generated, updated_at)
-		 VALUES(?,?,?,?,?,?,?)
+		`INSERT INTO standing_tools(id, tool, args, interval_secs, schedule, generated, wake_agent, updated_at)
+		 VALUES(?,?,?,?,?,?,?,?)
 		 ON CONFLICT(id) DO UPDATE SET
 		   tool=excluded.tool, args=excluded.args,
 		   interval_secs=excluded.interval_secs, schedule=excluded.schedule,
-		   updated_at=excluded.updated_at`,
-		t.ID, t.Tool, args, t.IntervalSecs, t.Schedule, t.Generated, nowText())
+		   wake_agent=excluded.wake_agent, updated_at=excluded.updated_at`,
+		t.ID, t.Tool, args, t.IntervalSecs, t.Schedule, t.Generated, t.WakeAgent, nowText())
 	return err
 }
 
@@ -187,13 +192,13 @@ func (s *Store) StandingToolDelete(id string) error {
 
 const standingColumns = `id, tool, args, interval_secs, schedule, state, cursor,
 	        calls, cycles, failures, last_error, last_call_at, next_at, generated,
-	        created_at, updated_at`
+	        wake_agent, created_at, updated_at`
 
 func scanStandingTool(row rowScanner) (StandingTool, error) {
 	var t StandingTool
 	err := row.Scan(&t.ID, &t.Tool, &t.Args, &t.IntervalSecs, &t.Schedule, &t.State,
 		&t.Cursor, &t.Calls, &t.Cycles, &t.Failures, &t.LastError, &t.LastCallAt,
-		&t.NextAt, &t.Generated, &t.CreatedAt, &t.UpdatedAt)
+		&t.NextAt, &t.Generated, &t.WakeAgent, &t.CreatedAt, &t.UpdatedAt)
 	return t, err
 }
 

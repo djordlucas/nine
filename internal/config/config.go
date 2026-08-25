@@ -471,6 +471,40 @@ type AgentConfig struct {
 	// never sets a role — a session has exactly one, and two claimants would
 	// make it depend on ordering.
 	Routines []AgentRoutine `toml:"routine"`
+
+	// When is a *condition* trigger: instead of waking on a clock, this agent
+	// wakes when a cheap deterministic predicate says there is something to do.
+	//
+	// It exists because the two cadences an agent could previously carry are both
+	// clocks, and a clock is the wrong shape for "tell me when X happens". At a
+	// useful polling rate most wakes find nothing, and each one costs a full LLM
+	// turn to be told so. A predicate is a sandboxed tool: it runs on the cheap
+	// cadence with no model in the loop, and the agent's turn happens only when
+	// it returns something.
+	//
+	// It composes with Interval/Schedule rather than replacing them: an agent may
+	// have both a periodic sweep and a condition that wakes it sooner.
+	When *AgentCondition `toml:"when"`
+}
+
+// AgentCondition is the `when = { … }` inline table on a standing agent: a
+// sandboxed tool evaluated on its own cadence, whose non-empty output wakes the
+// agent with that output as the turn's input.
+//
+// This is the one path by which a tool may reach an agent, and it is deliberate
+// that the link is written by an operator in their own configuration rather than
+// requested by either side. A standing tool still cannot choose to wake anything
+// (spec/contracts/toolvm.md R-TVM.20); what this adds is an operator saying "when
+// this predicate fires, that agent should look".
+type AgentCondition struct {
+	// Tool is the resumable sandboxed tool to evaluate.
+	Tool string `toml:"tool"`
+	// Interval and Schedule are how often the predicate is checked — mutually
+	// exclusive, same parsing as everywhere else.
+	Interval string `toml:"interval"`
+	Schedule string `toml:"schedule"`
+	// Args is the predicate's input at the start of each evaluation.
+	Args map[string]any `toml:"args"`
 }
 
 // AgentRoutine is one additional stage on a standing agent's session, declared
@@ -775,6 +809,9 @@ func (cfg *Config) Validate() error {
 	if err := validateStandingTools(cfg.StandingTools); err != nil {
 		return err
 	}
+	if err := validateConditionTriggers(cfg.Agents); err != nil {
+		return err
+	}
 	if err := validateToolEntry("tools.agent", ToolEntry{Capabilities: cfg.Tools.Agent.Capabilities}); err != nil {
 		return err
 	}
@@ -874,6 +911,38 @@ func validateStandingTools(blocks []StandingToolConfig) error {
 			}
 			if d <= 0 {
 				return fmt.Errorf("%s: interval %q must be positive", where, b.Interval)
+			}
+		}
+	}
+	return nil
+}
+
+// validateConditionTriggers checks each standing agent's `when = { … }` block.
+//
+// A config error rather than a skipped block, for the reason a standing tool's
+// is: a condition an operator wrote and Nine silently ignored means an agent
+// that never wakes, and nothing ever reports the absence.
+func validateConditionTriggers(agents []AgentConfig) error {
+	for _, a := range agents {
+		if a.When == nil {
+			continue
+		}
+		where := fmt.Sprintf("[[agent]] %q when", a.ID)
+		switch {
+		case a.When.Tool == "":
+			return fmt.Errorf("%s: tool is required — the predicate to evaluate", where)
+		case a.When.Interval != "" && a.When.Schedule != "":
+			return fmt.Errorf("%s: set interval or schedule, not both", where)
+		case a.When.Interval == "" && a.When.Schedule == "":
+			return fmt.Errorf("%s: needs interval or schedule — a condition that is never checked never fires", where)
+		}
+		if a.When.Interval != "" {
+			d, err := time.ParseDuration(a.When.Interval)
+			if err != nil {
+				return fmt.Errorf("%s: interval %q: %w", where, a.When.Interval, err)
+			}
+			if d <= 0 {
+				return fmt.Errorf("%s: interval %q must be positive", where, a.When.Interval)
 			}
 		}
 	}
