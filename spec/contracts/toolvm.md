@@ -904,9 +904,17 @@ A cycle's output goes to the **human feed** and nowhere else.
 Empty output **MUST** be silent. A watcher that runs every ten seconds and speaks only when
 it finds something is useful; one that announces every pass is a notification storm.
 
-A standing tool **MUST NOT** be able to address an agent or wake anything. The first keeps
-deterministic tool code from steering an autonomous agent with no human in between; the
-second is R-SUB.3's enrich-don't-interject, unchanged.
+A standing tool **MUST NOT** be able to address an agent or wake anything *of its own
+accord*. The first keeps deterministic tool code from steering an autonomous agent with no
+human in between; the second is R-SUB.3's enrich-don't-interject, unchanged.
+
+> **The one exception, and why it is not one.** A standing run **MAY** carry a wake target,
+> making it a standing agent's **condition trigger** (`docs/scheduling.md`): its findings
+> wake that agent instead of reaching the human feed. The target is written by an operator
+> in their own configuration and can be requested by neither the tool nor the agent, so the
+> human is in the loop when the link is made rather than each time it fires. A finding that
+> cannot be delivered — the agent is not running, or is mid-turn — **MUST** fall back to the
+> human feed rather than being dropped.
 
 ### Health
 

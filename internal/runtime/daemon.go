@@ -688,6 +688,24 @@ func (d *Daemon) ConfigurePlugins(mgr *plugin.Manager) {
 // ConfigureSandboxedTools stores the sandboxed-tool host, so `tools_list` and
 // `tools_reload` can reach it. Passing nil (the default, when [tools] enabled is
 // unset) leaves both messages answering that the subsystem is disabled.
+// WakeAgent runs a turn on agentID now, with text as its input — the delivery
+// half of a condition trigger (docs/scheduling.md).
+//
+// It reports whether the agent took it. A session that is not running cannot be
+// woken, and one that is mid-turn declines: both are cases where the honest
+// answer is "not now" rather than a queue, since a predicate's finding is about
+// the world rather than about a request that must not be lost. The caller falls
+// back to the human feed, so a refusal is never a dropped finding.
+func (d *Daemon) WakeAgent(agentID, text string) bool {
+	d.mu.RLock()
+	w := d.sessions[agentID]
+	d.mu.RUnlock()
+	if w == nil {
+		return false
+	}
+	return w.Wake(text)
+}
+
 // ConfigureStandingTools stores the standing-run driver so the operator surface
 // (standing_list / standing_show / standing_control) can reach it. Nil leaves
 // those messages answering that no standing tools exist here.
