@@ -110,8 +110,9 @@ func runDaemon() {
 	// or nil when `[tools.agent]` is off — in which case the meta-tools are neither
 	// registered nor advertised. The deps bundler resolves external npm imports at
 	// write time (§4.4); nil when [tools.agent.deps] is off.
-	generatedTools := runtime.NewGeneratedToolStore(store, toolHost, pluginManager,
-		runtime.NewDepsBundler(cfg), cfg.Tools.Agent.AllowNetworkDeps)
+	generatedTools := runtime.NewGeneratedToolStoreWithStanding(store, toolHost, pluginManager,
+		runtime.NewDepsBundler(cfg), cfg.Tools.Agent.AllowNetworkDeps,
+		cfg.Tools.Agent.AllowStanding, cfg.Tools.Agent.MaxStanding)
 
 	embedder := embed.Build(cfg.Embeddings.Provider, cfg.Embeddings.Model, cfg.Embeddings.Endpoint)
 
@@ -180,17 +181,18 @@ func runDaemon() {
 	// bootstrap — subscribers, standing agents, resume, instance name — is layered
 	// on below against the returned daemon (docs/evals.md §5).
 	asm := runtime.Assemble(runtime.AssemblyConfig{
-		SocketPath:        cfg.SocketPath(),
-		Store:             store,
-		Plugins:           pluginManager,
-		Tools:             toolHost,
-		GeneratedTools:    generatedTools,
-		GeneratedEval:     cfg.Tools.Agent.Eval,
-		GeneratedApproval: cfg.Tools.Agent.ApprovalMode(),
-		Embedder:          embedder,
-		ContextBudget:     cfg.ContextBudget(),
-		SystemPrompt:      runtime.BuildSystemPrompt(),
-		Runtime:           cfg.RuntimeLabel(),
+		SocketPath:             cfg.SocketPath(),
+		Store:                  store,
+		Plugins:                pluginManager,
+		Tools:                  toolHost,
+		GeneratedTools:         generatedTools,
+		GeneratedEval:          cfg.Tools.Agent.Eval,
+		GeneratedApproval:      cfg.Tools.Agent.ApprovalMode(),
+		GeneratedAllowStanding: cfg.Tools.Agent.AllowStanding,
+		Embedder:               embedder,
+		ContextBudget:          cfg.ContextBudget(),
+		SystemPrompt:           runtime.BuildSystemPrompt(),
+		Runtime:                cfg.RuntimeLabel(),
 		// Pull-surface related prior sessions only when the out-of-band indexer
 		// that populates the store is enabled.
 		RelatedSessions: cfg.Daemon.RelatedSessionsIndexEnabled(),
@@ -257,8 +259,11 @@ func runDaemon() {
 	// stopped. They share the job sweeper's worker budget — what both bound is
 	// concurrent wasm instantiations.
 	runtime.ReconcileStandingTools(store, cfg.StandingTools)
-	go runtime.RunStandingTools(ctx,
-		runtime.NewStandingRunner(store, toolHost, cfg.Tools.JobMinDelayMS, cfg.Tools.JobWorkers),
+	standing := runtime.NewStandingRunner(store, toolHost, cfg.Tools.JobMinDelayMS, cfg.Tools.JobWorkers)
+	daemon.ConfigureStandingTools(standing)
+	// So `tool_delete` on a generated standing tool also drops its activity ring.
+	runtime.LinkStandingTools(generatedTools, standing)
+	go runtime.RunStandingTools(ctx, standing,
 		time.Duration(cfg.Plugins.JobPollSeconds)*time.Second)
 
 	// Delete sessions nobody has touched in a while, on boot and daily. Never
