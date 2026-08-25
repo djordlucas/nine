@@ -25,6 +25,15 @@ schedule    = "0 9 * * 1-5"    # cron: weekdays at 9am
 `id` is chosen by the operator and is what reconciliation keys on, so renaming
 it creates a second agent rather than renaming the first.
 
+`when` is a third alternative — a **condition**: a cheap sandboxed predicate
+evaluated on its own cadence, waking the agent only when it finds something. It
+composes with a clock rather than replacing it. See
+[scheduling](scheduling.md#conditions-waking-on-a-predicate-rather-than-a-clock).
+
+```toml
+when = { tool = "cve_scan", interval = "10s", args = { manifest = "/srv/app/go.sum" } }
+```
+
 `schedule` and `interval` are alternatives — a cron expression or a fixed
 cadence. Setting neither gets the default goal-session cadence. See
 [scheduling](scheduling.md).
