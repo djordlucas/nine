@@ -89,10 +89,14 @@ type StallConfig struct {
 
 // AgentWorker wraps an agent loop and processes user turns sequentially.
 type AgentWorker struct {
-	id         string
-	loop       *agent.Loop
-	inbox      chan turnReq
-	inspect    chan inspectReq // context-inspection requests, served on run()'s goroutine
+	id      string
+	loop    *agent.Loop
+	inbox   chan turnReq
+	inspect chan inspectReq // context-inspection requests, served on run()'s goroutine
+	// wake carries a condition trigger's finding: a predicate said there is
+	// something to look at, so run a turn now rather than at the next clock
+	// (docs/scheduling.md). Buffered at 1 and never blocked on — see Wake.
+	wake       chan string
 	saveCkpt   func(id string, data []byte) error
 	getNotif   func(id string) ([]string, error)
 	stall      StallConfig
@@ -191,6 +195,7 @@ func newAgentWorker(
 		loop:      loop,
 		inbox:     make(chan turnReq, 1),
 		inspect:   make(chan inspectReq),
+		wake:      make(chan string, 1),
 		saveCkpt:  saveCkpt,
 		getNotif:  getNotif,
 		stall:     stall,
@@ -238,6 +243,8 @@ func (w *AgentWorker) run() {
 			w.processTurn(req)
 		case ir := <-w.inspect:
 			ir.respCh <- w.loop.InspectContext(ir.ctx)
+		case text := <-w.wake:
+			w.processTurn(turnReq{ctx: context.Background(), text: text, trigger: "condition"})
 		case <-timerC:
 			w.handleIdle()
 		case <-w.quit:
@@ -544,6 +551,23 @@ func (w *AgentWorker) handleIdle() {
 // closes the inbox — senders may be racing a send against shutdown — so
 // closing quit (once, even under concurrent calls) is the sole signal. Both
 // run() and any blocked sender select on it.
+// Wake asks the worker to run a turn now, with text as its input.
+//
+// Non-blocking and lossy on purpose. The buffer holds one pending wake: if the
+// agent is mid-turn, or a wake is already queued, this drops. That is the right
+// failure — a condition that fires twice while the agent is still reading the
+// first finding does not want two turns, it wants the agent to look, and the
+// second finding will still be there when it does. Blocking here would instead
+// let a chatty predicate stall the evaluator that produced it.
+func (w *AgentWorker) Wake(text string) bool {
+	select {
+	case w.wake <- text:
+		return true
+	default:
+		return false
+	}
+}
+
 func (w *AgentWorker) stop() {
 	w.stopOnce.Do(func() { close(w.quit) })
 	<-w.stopped
