@@ -514,6 +514,7 @@ func initSchema(d db) error {
 			last_call_at  TEXT NOT NULL DEFAULT '',
 			next_at       TEXT NOT NULL DEFAULT '',
 			generated     INTEGER NOT NULL DEFAULT 0,
+			wake_agent    TEXT NOT NULL DEFAULT '',
 			created_at    TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			updated_at    TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,

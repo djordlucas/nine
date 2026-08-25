@@ -259,7 +259,12 @@ func runDaemon() {
 	// stopped. They share the job sweeper's worker budget — what both bound is
 	// concurrent wasm instantiations.
 	runtime.ReconcileStandingTools(store, cfg.StandingTools)
+	// A standing agent's `when = { … }` block becomes a standing run whose
+	// findings wake that agent — the cheap deterministic tier deciding when the
+	// expensive one is needed (docs/scheduling.md).
+	runtime.ReconcileConditionTriggers(store, cfg.Agents)
 	standing := runtime.NewStandingRunner(store, toolHost, cfg.Tools.JobMinDelayMS, cfg.Tools.JobWorkers)
+	standing.SetWaker(daemon)
 	daemon.ConfigureStandingTools(standing)
 	// So `tool_delete` on a generated standing tool also drops its activity ring.
 	runtime.LinkStandingTools(generatedTools, standing)
