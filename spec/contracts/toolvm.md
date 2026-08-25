@@ -922,6 +922,62 @@ a week while nobody notices. So:
 `failing` is still running: it means "retrying on a backed-off cadence", not "given up".
 There is no terminal state — a standing run is stopped or it is going.
 
+### Observability
+
+**A standing run's ordinary calls MUST NOT be journal events.** A tool on a
+ten-second cadence is 8,640 calls a day; journalling each would swamp
+`session_events`, distort the retention scrub, and bury what `nine trace` exists
+to show.
+
+What **MUST** be journaled is transitions and output: started, stopped, entering
+and leaving `failing`, and any cycle that produced something. Volume is then
+proportional to things happening rather than to time passing. Events are
+attributed to the standing tool's id as the agent, so `nine trace <id>` reads a
+standing tool's history the way it reads a session's.
+
+The counterpart rule is unchanged: **anything a standing tool does that reaches
+the world is audited as usual.** Every `net.http` call it makes is journaled per
+R-TVM.12, unamended. A standing tool's heartbeat is not an event; what it does
+is.
+
+Per-call detail lives in counters on the row and in a bounded, in-memory ring
+buffer — deliberately lossy and deliberately not durable.
+
+### The operator surface
+
+| | |
+|---|---|
+| `nine tools standing` | the roster, with state, cycles and trigger |
+| `nine tool status <id>` | one run in full, with recent activity |
+| `nine tool logs <id> [-n N]` | the ring buffer |
+| `nine tool stop\|start <id>` | exact: stopping means no further call is scheduled |
+| `nine tool call <name> ['<json>'] [--live-state]` | one call, for testing |
+
+`nine tool call` **MUST** run against a **scratch state namespace** unless
+`--live-state` is given, and **MUST** return the whole envelope including a
+`continue`. A test call sharing a live standing run's store could overwrite its
+cursor, and an operator who "just tested it" would have silently corrupted the
+production run. Capabilities are **not** sandboxed: a test that cannot make the
+tool's real calls tests nothing. The isolation is of state alone.
+
+### The generated flavour
+
+`[tools.agent] allow_standing` (default **false**) gates a generated tool asking
+to be run standing; `max_standing` (default 4) bounds how many may exist, counting
+generated runs only.
+
+**A standing promotion MUST route through the HITL gate, including when
+`require_approval` is `never`.** That setting says the capability ceiling is the
+only control, and a ceiling bounds *reach* — a capability-free tool that runs
+forever is inert per call and unbounded in aggregate, which is precisely what a
+ceiling cannot express. Arguments that cannot be parsed **MUST** be treated as a
+promotion (fail closed).
+
+A **generated** standing tool that fails repeatedly **MUST** be disabled. A
+config-declared one **MUST NOT** be: an operator's declaration is a standing
+instruction, and silently switching it off would be the more surprising
+behaviour, where a tool Nine wrote has no author to answer to.
+
 ### Concurrency
 
 Standing calls share the job driver's worker budget (`[tools] job_workers`). What both
@@ -942,8 +998,7 @@ Durable state (R-TVM.18) and long-running tools (R-TVM.19) are **beyond** that d
 rather than part of it: R-TVM.18 amends R-TVM.3, which stages 1–6 took as fixed, and
 R-TVM.19 adds a second lifecycle to the same tool. Both halves of
 `adr/durable-and-long-running-tools.md` are built, and the standing-tool lifecycle
-(`adr/standing-tools.md`) is built through its phase 2 — R-TVM.20. Its observability and
-control surface, and the generated flavour, are not.
+(`adr/standing-tools.md`) is built — R-TVM.20, all five phases.
 
 ---
 

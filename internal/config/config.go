@@ -186,6 +186,20 @@ type ToolsAgentConfig struct {
 	// unbounded in aggregate.
 	AllowLongRunning bool `toml:"allow_long_running"`
 
+	// AllowStanding lets a generated tool ask to be run standing — indefinitely,
+	// on its own cadence. Off by default, and separate from AllowLongRunning: a
+	// job the model started still ends, where a standing run does not until
+	// somebody stops it.
+	//
+	// Even with this on, every promotion is approved by a human (see
+	// RequireApproval, which this deliberately overrides).
+	AllowStanding bool `toml:"allow_standing"`
+
+	// MaxStanding caps how many generated standing tools may exist at once.
+	// 0 uses runtime.DefaultMaxGeneratedStanding (4). Small on purpose: unlike a
+	// catalogued tool, each of these consumes cadence forever.
+	MaxStanding int `toml:"max_standing"`
+
 	// AllowNetworkDeps lifts the deps+net.http interlock. A package that can reach
 	// the network can exfiltrate whatever the tool sees, so a tool that both
 	// declares net.http AND resolves an external dependency is refused unless this

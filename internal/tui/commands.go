@@ -39,6 +39,7 @@ var slashCmds = []slashCmd{
 	{"goals", "", "list goals"},
 	{"workflows", "", "list active and recent workflows"},
 	{"tools", "[filter]", "list all tools (optional name filter)"},
+	{"standing", "[id]", "list standing tools, or show one with its recent activity"},
 	{"skills", "[name]", "list skills, or show a specific skill"},
 	{"memory", "[key]", "list KV keys, or show a specific key's value"},
 	{"new", "", "start a fresh conversation"},
@@ -106,6 +107,8 @@ func runCmd(cmd, arg string, client *protocol.Client, cfg *config.Config, curAge
 		return cmdWorkflows(client)
 	case "sessions":
 		return cmdSessions(client)
+	case "standing":
+		return cmdStanding(client, arg)
 	default:
 		return "", fmt.Errorf("%w /%s — type /help for a list", errUnknownCmd, cmd)
 	}
@@ -130,6 +133,43 @@ func cmdHelp() string {
 		fmt.Fprintf(&sb, "\n  %-*s  %s", w, c.label(), c.desc)
 	}
 	return sb.String()
+}
+
+// cmdStanding lists standing tools, or shows one with its recent activity.
+//
+// Read-only, like every other slash command here. Stopping and starting one is
+// deliberately CLI-only (`nine tool stop`): a keystroke away from halting
+// something that runs unattended is the wrong ergonomics.
+func cmdStanding(client *protocol.Client, arg string) (string, error) {
+	if arg != "" {
+		r, err := client.ShowStanding(arg, 10)
+		if err != nil {
+			return "", err
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, "%s (%s) — %s, %s\n", r.ID, r.Tool, r.State, r.Trigger)
+		fmt.Fprintf(&b, "  %d cycles, %d calls\n", r.Cycles, r.Calls)
+		if r.LastError != "" {
+			fmt.Fprintf(&b, "  last error: %s\n", r.LastError)
+		}
+		for _, e := range r.Recent {
+			fmt.Fprintf(&b, "  %s  %-9s %s\n", e.At, e.Outcome, e.Detail)
+		}
+		return b.String(), nil
+	}
+
+	runs, err := client.ListStanding()
+	if err != nil {
+		return "", err
+	}
+	if len(runs) == 0 {
+		return "No standing tools.", nil
+	}
+	var b strings.Builder
+	for _, r := range runs {
+		fmt.Fprintf(&b, "%-20s %-12s %-9s %s\n", r.ID, r.Tool, r.State, r.Trigger)
+	}
+	return b.String(), nil
 }
 
 func cmdSessions(client *protocol.Client) (string, error) {
