@@ -564,6 +564,7 @@ type LLMConfig struct {
 	Provider       string `toml:"provider"`
 	Model          string `toml:"model"`
 	Endpoint       string `toml:"endpoint"`
+	APIKey         string `toml:"api_key"` // For Mistral, OpenAI-compatible APIs
 	ContextBudget  int    `toml:"context_budget"`
 	MaxConcurrent  int    `toml:"max_concurrent"`
 	NumCtx         int    `toml:"num_ctx"`         // model context window size
