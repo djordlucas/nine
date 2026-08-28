@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -53,23 +54,24 @@ func New(model, endpoint, apiKey string, timeoutSecs int) *Provider {
 // Mistral wire types (OpenAI-compatible)
 
 type chatRequest struct {
-	Model    string     `json:"model"`
-	Messages []message  `json:"messages"`
-	Tools    []toolDef  `json:"tools,omitempty"`
-	Stream   bool       `json:"stream"`
-	MaxTokens int        `json:"max_tokens,omitempty"`
+	Model     string    `json:"model"`
+	Messages  []message `json:"messages"`
+	Tools     []toolDef `json:"tools,omitempty"`
+	Stream    bool      `json:"stream"`
+	MaxTokens int       `json:"max_tokens,omitempty"`
 }
 
 type message struct {
-	Role      string     `json:"role"` // user | assistant | system | tool
-	Content   string     `json:"content,omitempty"`
-	ToolCalls []toolCall `json:"tool_calls,omitempty"`
+	Role       string     `json:"role"` // user | assistant | system | tool
+	Content    string     `json:"content,omitempty"`
+	ToolCalls  []toolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"` // required for tool role messages
 }
 
 type toolCall struct {
-	ID       string         `json:"id"`
-	Type     string         `json:"type"` // "function"
-	Function functionCall   `json:"function"`
+	ID       string       `json:"id"`
+	Type     string       `json:"type"` // "function"
+	Function functionCall `json:"function"`
 }
 
 type functionCall struct {
@@ -95,7 +97,7 @@ type streamChunk struct {
 }
 
 type choice struct {
-	Delta       delta   `json:"delta"`
+	Delta        delta  `json:"delta"`
 	FinishReason string `json:"finish_reason,omitempty"`
 	Index        int    `json:"index,omitempty"`
 }
@@ -107,10 +109,10 @@ type delta struct {
 }
 
 type tDelta struct {
-	Index    int     `json:"index"`
-	ID       string  `json:"id,omitempty"`
-	Type     string  `json:"type,omitempty"`
-	Function fDelta  `json:"function,omitempty"`
+	Index    int    `json:"index"`
+	ID       string `json:"id,omitempty"`
+	Type     string `json:"type,omitempty"`
+	Function fDelta `json:"function,omitempty"`
 }
 
 type fDelta struct {
@@ -191,10 +193,11 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 	}
 
 	var (
-		content    strings.Builder
-		toolCalls  []llm.ToolCall
-		doneReason string
-		usage      llm.Usage
+		content      strings.Builder
+		toolCalls    []llm.ToolCall
+		toolCallsMap = make(map[int]*llm.ToolCall)
+		doneReason   string
+		usage        llm.Usage
 	)
 
 	scanner := bufio.NewScanner(httpResp.Body)
@@ -224,14 +227,28 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 			}
 
 			// Reconstruct tool calls from deltas
-			// Mistral streams tool calls as partial deltas; we accumulate them
+			// Mistral streams tool calls as partial deltas; we accumulate them by index
 			for _, tc := range c.Delta.ToolCalls {
-				if tc.Function.Name != "" {
-					toolCalls = append(toolCalls, llm.ToolCall{
+				idx := tc.Index
+
+				// Initialize tool call if this is the first delta for this index
+				if _, exists := toolCallsMap[idx]; !exists {
+					toolCallsMap[idx] = &llm.ToolCall{
 						ID:    tc.ID,
 						Name:  tc.Function.Name,
-						Input: json.RawMessage(tc.Function.Arguments),
-					})
+						Input: []byte{},
+					}
+				}
+
+				// Update the tool call with new data from this delta
+				if tc.ID != "" {
+					toolCallsMap[idx].ID = tc.ID
+				}
+				if tc.Function.Name != "" {
+					toolCallsMap[idx].Name = tc.Function.Name
+				}
+				if tc.Function.Arguments != "" {
+					toolCallsMap[idx].Input = append(toolCallsMap[idx].Input, []byte(tc.Function.Arguments)...)
 				}
 			}
 
@@ -249,6 +266,19 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 		}
 	}
 
+	// Convert the map values to a slice, preserving order by index
+	var maxIndex int
+	for idx := range toolCallsMap {
+		if idx > maxIndex {
+			maxIndex = idx
+		}
+	}
+	for i := 0; i <= maxIndex; i++ {
+		if tc, exists := toolCallsMap[i]; exists {
+			toolCalls = append(toolCalls, *tc)
+		}
+	}
+
 	if err := scanner.Err(); err != nil && err != io.EOF {
 		return llm.Response{}, fmt.Errorf("stream read: %w", err)
 	}
@@ -259,6 +289,8 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 		Usage:      usage,
 		StopReason: mapFinishReason(doneReason, toolCalls),
 	}
+
+	slog.Info("mistral complete", "text", resp.Text, "tool_calls", len(resp.ToolCalls), "stop_reason", resp.StopReason, "usage", resp.Usage)
 
 	return resp, nil
 }
@@ -280,8 +312,9 @@ func buildMessages(req llm.Request) []message {
 					content = "error: " + content
 				}
 				msgs = append(msgs, message{
-					Role:    "tool",
-					Content: content,
+					Role:       "tool",
+					Content:    content,
+					ToolCallID: tr.ToolCallID,
 				})
 			}
 			continue
