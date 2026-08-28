@@ -398,6 +398,17 @@ func (d *Daemon) Start(ctx context.Context) error {
 	}
 }
 
+// CheckpointAll triggers a checkpoint for all active sessions, forcing
+// their current state to be persisted. This is called during graceful shutdown
+// to prevent message loss. It does not wait for workers to finish processing.
+func (d *Daemon) CheckpointAll() {
+	d.mu.RLock()
+	for _, w := range d.sessions {
+		w.checkpoint()
+	}
+	d.mu.RUnlock()
+}
+
 // Stop closes the listener and terminates all AgentWorkers gracefully.
 func (d *Daemon) Stop() {
 	d.mu.Lock()
