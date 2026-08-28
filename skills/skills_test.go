@@ -37,6 +37,28 @@ func TestParseRoleWildcardTools(t *testing.T) {
 	}
 }
 
+func TestParseRoleWildcardToolsWithWhitespace(t *testing.T) {
+	// Test various whitespace patterns around the wildcard
+	for _, raw := range []string{
+		"---\nname: r\nrole:\n  tools: \"*\"\n---\n",
+		"---\nname: r\nrole:\n  tools: '*'\n---\n",
+		"---\nname: r\nrole:\n  tools: *\n---\n",
+		"---\nname: r\nrole:\n  tools: \" *\"\n---\n",
+		"---\nname: r\nrole:\n  tools: \"* \"\n---\n",
+		"---\nname: r\nrole:\n  tools: \" * \"\n---\n",
+		"---\nname: r\nrole:\n  tools:  \"*\" \n---\n",
+	} {
+		s := Parse(raw)
+		if s.Role == nil {
+			t.Errorf("role block not parsed for %q", raw)
+			continue
+		}
+		if !s.Role.AllTools {
+			t.Errorf("tools wildcard with whitespace should set AllTools for %q", raw)
+		}
+	}
+}
+
 func TestParseRoleOmittedToolsMeansAllTools(t *testing.T) {
 	s := Parse("---\nname: r\nrole:\n  delegates: false\n---\n")
 	if s.Role == nil || !s.Role.AllTools {

@@ -168,9 +168,9 @@ func Parse(raw string) Skill {
 }
 
 // isWildcard reports whether v is the `"*"` tools value (R-ROLE.2), allowing
-// bare and quoted forms.
+// bare and quoted forms, with optional surrounding whitespace.
 func isWildcard(v string) bool {
-	return strings.Trim(v, `"'`) == "*"
+	return strings.TrimSpace(strings.Trim(strings.TrimSpace(v), `"'`)) == "*"
 }
 
 // parseList parses a `[a, b, c]` frontmatter list into its trimmed elements.
