@@ -226,9 +226,9 @@ root = "./dist"
 # gate_sub_agents (default true) extends those gates to sub-agents the
 # conversation spawns, so delegation is not a way around them — the prompt
 # arrives on your stream, attributed to the sub-agent.
-# [hitl]
+[hitl]
 # timeout_seconds  = 300
-# require_approval = ["shell", "write_file"]
+require_approval = ["shell", "write_file"]
 # gate_sub_agents  = true
 
 [planning]
@@ -243,7 +243,7 @@ root = "./dist"
 #   off        never prompt
 #   on         always prompt
 #   on-risky   (default) prompt only when the plan intends a [hitl].require_approval tool
-# plan_approval = "on-risky"
+plan_approval = "on-risky"
 
 # Pre-defined, long-running agents (docs/predefined-agents.md). Each [[agent]]
 # is seeded as a config-owned goal at boot and runs under the pursue shell with
@@ -258,3 +258,5 @@ root = "./dist"
 # description = "Monitor this repo for security issues; triage new CVEs affecting our deps."
 # role        = "monitor"
 # schedule    = "0 9 * * 1-5"   # weekdays at 09:00  (or e.g. interval = "24h")
+[tools]
+enabled = true
