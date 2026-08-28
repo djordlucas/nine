@@ -184,6 +184,79 @@ func TestProvider_Complete_ToolResults(t *testing.T) {
 	}
 }
 
+func TestProvider_Complete_StreamingToolCalls(t *testing.T) {
+	// Test that tool calls streamed as partial deltas are correctly accumulated
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		
+		// Simulate Mistral streaming tool calls as partial deltas
+		w.Write([]byte(`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function"}]}}]}
+
+`))
+		w.Write([]byte(`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"get_weather"}}]}}]}
+
+`))
+		w.Write([]byte(`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{"}}]}}]}
+
+`))
+		w.Write([]byte(`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"city\":"}}]}}]}
+
+`))
+		w.Write([]byte(`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"Paris\""}}]}}]}
+
+`))
+		w.Write([]byte(`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"}"}}]}}]}
+
+`))
+		w.Write([]byte(`data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}
+
+`))
+		w.Write([]byte(`data: [DONE]
+
+`))
+	}))
+	defer server.Close()
+
+	provider := New("mistral-tiny", server.URL, "test-key", 30)
+
+	tools := []llm.ToolDef{
+		{Name: "get_weather", Description: "Get current weather", InputSchema: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}}}`)},
+	}
+
+	req := llm.Request{
+		Messages: []llm.Message{{Role: "user", Text: "What's the weather in Paris?"}},
+		Tools:    tools,
+	}
+
+	resp, err := provider.Complete(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Complete with streaming tool calls failed: %v", err)
+	}
+
+	if len(resp.ToolCalls) != 1 {
+		t.Fatalf("Expected 1 tool call, got %d", len(resp.ToolCalls))
+	}
+
+	tc := resp.ToolCalls[0]
+	if tc.ID != "call_1" {
+		t.Errorf("Expected tool call ID 'call_1', got %q", tc.ID)
+	}
+
+	if tc.Name != "get_weather" {
+		t.Errorf("Expected tool call name 'get_weather', got %q", tc.Name)
+	}
+
+	expectedArgs := `{"city":"Paris"}`
+	if string(tc.Input) != expectedArgs {
+		t.Errorf("Expected arguments %q, got %q", expectedArgs, string(tc.Input))
+	}
+
+	if resp.StopReason != "tool_use" {
+		t.Errorf("Expected stop reason 'tool_use', got %q", resp.StopReason)
+	}
+}
+
 func TestProvider_New(t *testing.T) {
 	tests := []struct {
 		name       string
