@@ -233,13 +233,16 @@ func runDaemon() {
 
 	// Graceful shutdown (docs/plugin-capabilities.md §5/§6). Without a handler a
 	// SIGINT/SIGTERM kills the process outright, orphaning every plugin — and its
-	// jobs, cache dir, and socket. Catch the signal, cancel the context (which
+	// jobs, cache dir, and socket. Catch the signal, trigger checkpoints for all
+	// active sessions (to prevent message loss), then cancel the context (which
 	// stops the daemon's accept loop and returns from Start), and let the cleanup
 	// after Start cancel running jobs and stop the plugins.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigCh
+		slog.Info("shutdown signal received; checkpointing sessions...")
+		daemon.CheckpointAll()
 		slog.Info("shutdown signal received; stopping")
 		cancel()
 	}()
@@ -322,9 +325,6 @@ func runDaemon() {
 		os.Exit(1)
 	}
 	cancel()
-
-	// Stop the daemon and wait for in-flight turns to complete and save their state
-	daemon.Stop()
 
 	// Graceful cleanup: ask every running plugin job to cancel, then stop the
 	// plugin processes (which also removes their ephemeral cache dirs and sockets).
