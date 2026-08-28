@@ -326,6 +326,9 @@ func runDaemon() {
 	}
 	cancel()
 
+	// Stop the daemon and wait for in-flight turns to complete and save their state
+	daemon.Stop()
+
 	// Graceful cleanup: ask every running plugin job to cancel, then stop the
 	// plugin processes (which also removes their ephemeral cache dirs and sockets).
 	// Bounded so shutdown cannot hang on an unresponsive plugin.
