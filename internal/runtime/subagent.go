@@ -13,9 +13,15 @@ import (
 // sub-agent's own execution trajectory under agentID (the sub-agent's ID), so it
 // can be surfaced by `nine trace --sub-agents`; pass nil to disable journaling.
 func RunSubAgentSync(ctx context.Context, agentID, description string, loop *agent.Loop, sink EventSink) (string, error) {
+	log.Debug("RunSubAgentSync", "agentID", agentID, "description", description)
 	r := newAgentWorker(agentID, loop, nil, nil, StallConfig{}, nil, sink)
 	result, err := r.turn(ctx, description)
 	r.stop()
+	if err != nil {
+		log.Warn("RunSubAgentSync error", "agentID", agentID, "err", err)
+	} else {
+		log.Debug("RunSubAgentSync completed", "agentID", agentID, "result_len", len(result))
+	}
 	return result, err
 }
 
@@ -32,6 +38,7 @@ type SubAgentWorker struct {
 // When the sub-agent completes, a notification is posted to spawnerID via notif
 // (both may be nil to skip notification).
 func SpawnSubAgent(ctx context.Context, agentID string, description string, loop *agent.Loop, notif NotifStore, spawnerID string) *SubAgentWorker {
+	log.Debug("SpawnSubAgent", "agentID", agentID, "description", description, "spawnerID", spawnerID)
 	var saveFn func(string, []byte) error
 	var notifFn func(string) ([]string, error)
 
@@ -41,34 +48,42 @@ func SpawnSubAgent(ctx context.Context, agentID string, description string, loop
 	sr.worker = r
 
 	go func() {
+		log.Debug("SpawnSubAgent goroutine started", "agentID", agentID)
 		ch := make(chan turnResp, 1)
 		select {
 		case r.inbox <- turnReq{ctx: ctx, text: description, respCh: ch}:
+			log.Debug("SpawnSubAgent sent turn request", "agentID", agentID)
 		case <-ctx.Done():
+			log.Debug("SpawnSubAgent context done before send", "agentID", agentID)
 			return
 		case <-r.quit:
+			log.Debug("SpawnSubAgent quit before send", "agentID", agentID)
 			return
 		}
 		var res turnResp
 		select {
 		case res = <-ch:
+			log.Debug("SpawnSubAgent got response", "agentID", agentID)
 		case <-ctx.Done():
+			log.Debug("SpawnSubAgent context done waiting for response", "agentID", agentID)
 			return
 		case <-r.quit:
+			log.Debug("SpawnSubAgent quit waiting for response", "agentID", agentID)
 			return
 		}
 
-		if notif != nil && spawnerID != "" {
-			msg := fmt.Sprintf("Task completed: %s", res.text)
-			if res.err != nil {
-				msg = fmt.Sprintf("Task failed: %v", res.err)
-			}
-			if ms, ok := notif.(*InMemoryNotifStore); ok {
-				ms.Add(spawnerID, msg)
-			}
+		if res.err != nil {
+			log.Warn("SpawnSubAgent sub-agent error", "agentID", agentID, "err", res.err)
+		} else {
+			log.Debug("SpawnSubAgent sub-agent completed", "agentID", agentID, "result_len", len(res.result))
 		}
-		r.stop()
+		if sr.notif != nil && sr.spawnerID != "" {
+			msg := fmt.Sprintf("Sub-agent %s finished: %s", agentID, res.result)
+			if res.err != nil {
+				msg = fmt.Sprintf("Sub-agent %s failed: %v", agentID, res.err)
+			}
+			sr.notif.Add(sr.spawnerID, msg)
+			log.Debug("SpawnSubAgent notification sent", "spawnerID", sr.spawnerID)
+		}
 	}()
-
-	return sr
 }
