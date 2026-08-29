@@ -106,6 +106,7 @@ func runDaemon() {
 	if toolHost != nil {
 		defer toolHost.Close(context.Background()) //nolint:errcheck // best-effort on shutdown
 	}
+
 	// The generated tier's write/delete/eval backend (docs/sandboxed-tools.md §5.2),
 	// or nil when `[tools.agent]` is off — in which case the meta-tools are neither
 	// registered nor advertised. The deps bundler resolves external npm imports at
