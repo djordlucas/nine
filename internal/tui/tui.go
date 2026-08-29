@@ -151,6 +151,9 @@ type progressMsg struct{ evt protocol.ProgressEvent }
 type errMsg struct{ err error }
 type chunkMsg struct{ text string }
 
+// timeTickMsg updates the current time display.
+type timeTickMsg time.Time
+
 // answerResultMsg reports the outcome of delivering a human answer on a
 // separate connection. A non-nil err is shown inline, not fatally.
 type answerResultMsg struct{ err error }
@@ -266,6 +269,7 @@ type displayState struct {
 	glamourStyle  string
 	renderer      *glamour.TermRenderer
 	version       string // Nine's build version, shown under the logo
+	currentTime   time.Time // current time for display in prompt bar
 }
 
 type model struct {
@@ -304,6 +308,7 @@ func initialModel(sockPath, binary, attachID string, pal palette, glamourStyle s
 			pal:          pal,
 			glamourStyle: glamourStyle,
 			version:      version,
+			currentTime:  time.Now(),
 		},
 		cfg: cfg,
 	}
@@ -322,6 +327,13 @@ func newRenderer(glamourStyle string, width int) *glamour.TermRenderer {
 	return r
 }
 
+// clockTick returns a command that sends time updates every second.
+func clockTick() tea.Cmd {
+	return tea.Every(time.Second, func(t time.Time) tea.Msg {
+		return timeTickMsg(t)
+	})
+}
+
 func (m model) Init() tea.Cmd {
 	var cmd tea.Cmd
 	if m.conn.attachID != "" {
@@ -329,7 +341,7 @@ func (m model) Init() tea.Cmd {
 	} else {
 		cmd = connectCmd(m.conn.sockPath, m.conn.binary)
 	}
-	return tea.Batch(cmd, m.chat.spinner.Tick)
+	return tea.Batch(cmd, m.chat.spinner.Tick, clockTick())
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -719,6 +731,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.chat.thinking {
 			m.rebuildContent()
 		}
+
+	case timeTickMsg:
+		m.display.currentTime = time.Time(msg)
+		cmds = append(cmds, clockTick())
 	}
 
 	if m.chat.ready {
@@ -793,7 +809,9 @@ func (m model) View() string {
 	if m.chat.suggestOpen {
 		parts = append(parts, m.chat.suggest.View())
 	}
-	parts = append(parts, m.chat.input.View())
+	// Render input line with time on the right
+	inputLine := renderInputWithTime(m.chat.input, m.display)
+	parts = append(parts, inputLine)
 
 	return strings.Join(parts, "\n")
 }
@@ -815,6 +833,30 @@ func contextHint(used, budget int, showContext bool) string {
 		return fmt.Sprintf("  ·  ctx: %d/%d", used, budget)
 	}
 	return ""
+}
+
+// renderInputWithTime renders the text input with the current time on the right.
+func renderInputWithTime(input textinput.Model, d displayState) string {
+	// Get the current input line
+	inputView := input.View()
+	
+	// Format time as HH:MM:SS
+	timeStr := d.currentTime.Format("15:04:05")
+	
+	// Calculate available width for input (leaving space for time)
+	// We reserve space for the time + some padding
+	timeWidth := len(timeStr) + 2 // +2 for padding
+	
+	// Get the current cursor position and input width
+	// We'll truncate the input display if needed to make room for the time
+	availableWidth := d.width - timeWidth
+	
+	// For now, simple approach: render input and time side by side
+	// The textinput.View() already includes the prompt
+	return lipgloss.JoinHorizontal(lipgloss.Top,
+		lipgloss.NewStyle().Width(availableWidth).Render(inputView),
+		d.pal.ts.Render(timeStr),
+	)
 }
 
 func (m *model) viewportHeight() int {
