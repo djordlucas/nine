@@ -65,3 +65,8 @@ func storeQuota(q toolvm.StateQuota) memory.ToolStateQuota {
 // through unchanged  a broken store is not the tool's problem to handle.
 func asHostQuotaError(err error) error {
 	var qe *memory.ToolStateQuotaError
+	if errors.As(err, &qe) {
+		return &toolvm.QuotaError{Reason: qe.Reason}
+	}
+	return err
+}
