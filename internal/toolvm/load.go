@@ -55,7 +55,6 @@ func (h *Host) Load(ctx context.Context, collides Collides) {
 			status = append(status, skip(st, fmt.Errorf("tool %q already provided by %q", d.Name, owner), "collision"))
 			continue
 		}
-
 		t, err := h.compile(ctx, d, grant)
 		if err != nil {
 			status = append(status, skip(st, err, "compile"))
@@ -171,4 +170,24 @@ func checkABI(mod wazero.CompiledModule) error {
 		}
 	}
 	return nil
+}
+
+// MergeUserTools merges user tools from tempHost into targetHost,
+// but does not overwrite existing tools (shipped tools have priority).
+// This is used by OpenSandboxedTools to preserve shipped tools while
+// still loading user tools.
+func MergeUserTools(targetHost, tempHost *Host) {
+	targetHost.mu.Lock()
+	defer targetHost.mu.Unlock()
+	
+	for _, tool := range tempHost.Tools() {
+		// Only add if the name doesn't already exist (shipped tool takes precedence)
+		if _, exists := targetHost.tools[tool.Name]; !exists {
+			targetHost.tools[tool.Name] = tool
+		}
+	}
+	// Append user tool statuses to target host status
+	for _, s := range tempHost.Status() {
+		targetHost.status = append(targetHost.status, s)
+	}
 }
