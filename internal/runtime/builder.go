@@ -529,10 +529,12 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 	if delegates {
 		roleEnum = f.roles.RoleEnum()
 	}
+
 	tools := buildToolList(lc, role, shellTools, roleEnum)
 	if role.Interactive && f.cfg.HITL != nil {
 		tools = append(tools, ninectx.ToolWithVector{Tool: agent.AskHumanDef})
 	}
+
 	// The generated meta-tool defs are not in InterceptedDefs, so buildToolList's
 	// shell-tool pass cannot advertise them — append them here, the way AskHumanDef
 	// is. Handlers were registered above; their names are in shellTools, so an
@@ -559,6 +561,7 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 	if role.Interactive && f.cfg.HITL != nil {
 		alwaysTools = append(alwaysTools, agent.AskHumanDef.Name)
 	}
+
 	perLoopBuilder := ninectx.New(ninectx.Config{
 		Budget:      lc.ContextBudget,
 		ToolTopN:    20,
@@ -1028,6 +1031,7 @@ func buildToolList(lc LoopConfig, role Role, shellTools []string, roleEnum strin
 			tools = append(tools, ninectx.ToolWithVector{Tool: st.ToLLMDef()})
 		}
 	}
+
 	tools = appendInterceptedTools(tools, filterByRole(coreToolNames, role), roleEnum)
 	// Shell-conferred tools (delegation, goal self-management, notify_user) are
 	// advertised unfiltered — the shell grants them, not the role's allowlist
