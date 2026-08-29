@@ -73,6 +73,14 @@ Two patterns are easy to half-complete — do the whole checklist:
   behavior is absorbed into `docs/` and the plan stays put as the record — do
   not leave a finished plan in `docs/` describing the future in present tense.
 
+## Commit discipline
+
+**Always verify before committing:**
+- `go build ./...` — ensures the code compiles
+- `go test ./...` — runs all unit tests
+
+A change that does not pass both is not ready to commit.
+
 ## Tests & toolchain
 
 - Go **1.26**. Build with `make build` (`make dev` and `make all` are the same
