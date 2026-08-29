@@ -75,10 +75,10 @@ func SpawnSubAgent(ctx context.Context, agentID string, description string, loop
 		if res.err != nil {
 			log.Warn("SpawnSubAgent sub-agent error", "agentID", agentID, "err", res.err)
 		} else {
-			log.Debug("SpawnSubAgent sub-agent completed", "agentID", agentID, "result_len", len(res.result))
+			log.Debug("SpawnSubAgent sub-agent completed", "agentID", agentID, "result_len", len(res.text))
 		}
 		if sr.notif != nil && sr.spawnerID != "" {
-			msg := fmt.Sprintf("Sub-agent %s finished: %s", agentID, res.result)
+			msg := fmt.Sprintf("Sub-agent %s finished: %s", agentID, res.text)
 			if res.err != nil {
 				msg = fmt.Sprintf("Sub-agent %s failed: %v", agentID, res.err)
 			}
@@ -86,4 +86,5 @@ func SpawnSubAgent(ctx context.Context, agentID string, description string, loop
 			log.Debug("SpawnSubAgent notification sent", "spawnerID", sr.spawnerID)
 		}
 	}()
+	return sr
 }

@@ -19,6 +19,72 @@ func NewStores(store *memory.Store) (
 	return cs, ns, ns.Add
 }
 
+// InMemoryCheckpointStore is an in-memory CheckpointStore. Safe for concurrent use.
+type InMemoryCheckpointStore struct {
+	mu   sync.RWMutex
+	data map[string][]byte
+}
+
+// NewInMemoryCheckpointStore returns an empty InMemoryCheckpointStore.
+func NewInMemoryCheckpointStore() *InMemoryCheckpointStore {
+	return &InMemoryCheckpointStore{data: make(map[string][]byte)}
+}
+
+func (s *InMemoryCheckpointStore) Save(agentID string, data []byte) error {
+	cp := make([]byte, len(data))
+	copy(cp, data)
+	s.mu.Lock()
+	s.data[agentID] = cp
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *InMemoryCheckpointStore) Load(agentID string) ([]byte, bool, error) {
+	s.mu.RLock()
+	d, ok := s.data[agentID]
+	s.mu.RUnlock()
+	if !ok {
+		return nil, false, nil
+	}
+	cp := make([]byte, len(d))
+	copy(cp, d)
+	return cp, true, nil
+}
+
+func (s *InMemoryCheckpointStore) Delete(agentID string) error {
+	s.mu.Lock()
+	delete(s.data, agentID)
+	s.mu.Unlock()
+	return nil
+}
+
+// InMemoryNotifStore is an in-memory NotifStore. Safe for concurrent use.
+type InMemoryNotifStore struct {
+	mu     sync.RWMutex
+	notifs map[string][]string
+}
+
+// NewInMemoryNotifStore returns an empty InMemoryNotifStore.
+func NewInMemoryNotifStore() *InMemoryNotifStore {
+	return &InMemoryNotifStore{notifs: make(map[string][]string)}
+}
+
+// Add queues a notification for delivery on the agent's next turn.
+func (s *InMemoryNotifStore) Add(agentID, text string) {
+	s.mu.Lock()
+	s.notifs[agentID] = append(s.notifs[agentID], text)
+	s.mu.Unlock()
+}
+
+// Fetch returns and clears all pending notifications for the agent.
+func (s *InMemoryNotifStore) Fetch(agentID string) ([]string, error) {
+	s.mu.Lock()
+	ns := s.notifs[agentID]
+	delete(s.notifs, agentID)
+	s.mu.Unlock()
+	return ns, nil
+}
+
 // ---- Postgres-backed stores ----
 
 // SQLCheckpointStore persists conversation state in the memory store's
