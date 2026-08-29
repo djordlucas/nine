@@ -38,33 +38,47 @@ type memoryReader interface {
 // date, so the note tells the model to lean on them only when they help.
 func memoryEnrichmentFn(r memoryReader) func(context.Context, []float32) string {
 	return func(_ context.Context, queryVec []float32) string {
+		log.Debug("memoryEnrichmentFn called", "queryVec_len", len(queryVec))
 		if len(queryVec) == 0 {
+			log.Debug("memoryEnrichmentFn empty query")
 			return ""
 		}
 		// Over-fetch a little: some hits are dropped below threshold or because
 		// their KV row was deleted between indexing and now.
 		matches, err := r.VectorQuery(memory.MemoriesNamespace, queryVec, memorySurfaceTopN+2)
 		if err != nil {
+			log.Warn("memoryEnrichmentFn VectorQuery failed", "err", err)
 			return ""
 		}
+		log.Debug("memoryEnrichmentFn got matches", "count", len(matches))
 		lines := make([]string, 0, memorySurfaceTopN)
 		for _, m := range matches {
 			if m.Score < memorySurfaceThreshold {
+				log.Debug("memoryEnrichmentFn match below threshold", "key", m.Key, "score", m.Score)
 				continue
 			}
 			val, found, err := r.Get(m.Key)
-			if err != nil || !found || val == "" {
+			if err != nil {
+				log.Warn("memoryEnrichmentFn Get failed", "key", m.Key, "err", err)
 				continue
 			}
+			if !found || val == "" {
+				log.Debug("memoryEnrichmentFn key not found or empty", "key", m.Key)
+				continue
+			}
+			log.Debug("memoryEnrichmentFn adding memory", "key", m.Key, "score", m.Score)
 			lines = append(lines, "- "+m.Key+": "+val)
 			if len(lines) >= memorySurfaceTopN {
+				log.Debug("memoryEnrichmentFn reached max lines", "count", len(lines))
 				break
 			}
 		}
 		if len(lines) == 0 {
+			log.Debug("memoryEnrichmentFn no matching memories")
 			return ""
 		}
-		return "Related things you noted earlier — draw on them only if they help, " +
+		log.Debug("memoryEnrichmentFn returning result", "line_count", len(lines))
+		return "Related things you noted earlier - draw on them only if they help, " +
 			"and don't assume they are still current:\n" + strings.Join(lines, "\n")
 	}
 }
@@ -76,6 +90,7 @@ func memoryEnrichmentFn(r memoryReader) func(context.Context, []float32) string 
 // combined note. Returns nil when no function is supplied, so the loop's
 // "enrichment off, no extra path" fast path is preserved.
 func composeEnrichment(fns ...func(context.Context, []float32) string) func(context.Context, []float32) string {
+	log.Debug("composeEnrichment", "fn_count", len(fns))
 	active := make([]func(context.Context, []float32) string, 0, len(fns))
 	for _, fn := range fns {
 		if fn != nil {
@@ -83,8 +98,10 @@ func composeEnrichment(fns ...func(context.Context, []float32) string) func(cont
 		}
 	}
 	if len(active) == 0 {
+		log.Debug("composeEnrichment no active functions")
 		return nil
 	}
+	log.Debug("composeEnrichment has active functions", "count", len(active))
 	return func(ctx context.Context, queryVec []float32) string {
 		parts := make([]string, 0, len(active))
 		for _, fn := range active {

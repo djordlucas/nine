@@ -1,10 +1,13 @@
 package runtime
 
-import "strings"
+import (
+	"strings"
+)
 
 // nameFromPrompt derives a short slug from the first ~5 words of a prompt.
 // Returns an empty string if text is blank.
 func nameFromPrompt(text string) string {
+	log.Debug("nameFromPrompt", "text", text)
 	words := strings.Fields(text)
 	const maxWords = 5
 	if len(words) > maxWords {
@@ -27,5 +30,6 @@ func nameFromPrompt(text string) string {
 	if len(name) > maxLen {
 		name = name[:maxLen]
 	}
+	log.Debug("nameFromPrompt result", "name", name)
 	return name
 }
