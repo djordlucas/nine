@@ -144,7 +144,8 @@ up-hot:
 	docker build --target dev -t nine-dev .
 	-docker rm -f nine-dev 2>/dev/null
 	docker run -d --name nine-dev \
-	  $(NINE_RUN_FLAGS) $(LLM_ENV) $(NINE_ENV) $(NINE_MOUNTS) \
+	  --env-file .env \
+	  $(NINE_RUN_FLAGS) $(NINE_ENV) $(NINE_MOUNTS) \
 	  -v $(CURDIR):/nine-src \
 	  -v nine-dev-data:/data \
 	  -v nine-dev-gocache:/root/.cache/go-build \
