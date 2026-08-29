@@ -59,8 +59,9 @@ type CheckpointStore interface {
 	Delete(agentID string) error
 }
 
-// NotifStore retrieves (and marks as delivered) pending notifications for an agent.
+// NotifStore stores and retrieves (and marks as delivered) pending notifications for an agent.
 type NotifStore interface {
+	Add(agentID, text string)
 	Fetch(agentID string) ([]string, error)
 }
 
