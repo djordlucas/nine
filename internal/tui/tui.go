@@ -862,7 +862,7 @@ const nineLogo = ` ███╗   ██╗██╗███╗   ██╗█�
  ██║ ╚████║██║██║ ╚████║███████╗
  ╚═╝  ╚═══╝╚═╝╚═╝  ╚═══╝╚══════╝`
 
-// renderLogo writes the centered, styled nine banner, its version, and a tagline.
+// renderLogo writes the centered, styled nine banner.
 func renderLogo(sb *strings.Builder, pal palette, width int, version string) {
 	logoWidth := lipgloss.Width(nineLogo)
 	pad := (width - logoWidth) / 2
@@ -874,19 +874,6 @@ func renderLogo(sb *strings.Builder, pal palette, width int, version string) {
 	for _, line := range strings.Split(nineLogo, "\n") {
 		sb.WriteString(indent + pal.nine.Render(line) + "\n")
 	}
-	if version != "" {
-		vpad := (width - len(version)) / 2
-		if vpad < 0 {
-			vpad = 0
-		}
-		sb.WriteString(strings.Repeat(" ", vpad) + pal.continuation.Render(version) + "\n")
-	}
-	tagline := "your local-first AI agent · type a message to begin"
-	tpad := (width - len(tagline)) / 2
-	if tpad < 0 {
-		tpad = 0
-	}
-	sb.WriteString("\n" + strings.Repeat(" ", tpad) + pal.continuation.Render(tagline) + "\n")
 }
 
 func (m *model) rebuildContent() {
