@@ -15,6 +15,7 @@ import (
 
 	"nine/internal/llm"
 	llmollama "nine/internal/llm/ollama"
+	llmmistral "nine/internal/llm/mistral"
 )
 
 // DefaultSocketPath is the Unix socket path used when none is configured.
@@ -70,6 +71,9 @@ func ApplyEnvOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("NINE_LLM_ENDPOINT"); v != "" {
 		cfg.LLM.Endpoint = v
+	}
+	if v := os.Getenv("NINE_LLM_API_KEY"); v != "" {
+		cfg.LLM.APIKey = v
 	}
 	if v := os.Getenv("NINE_EMBED_PROVIDER"); v != "" {
 		cfg.Embeddings.Provider = v
@@ -201,8 +205,11 @@ func (cfg *Config) EventRetention() (keepTurns int, maxAge time.Duration) {
 	return keepTurns, maxAge
 }
 
-// ProviderOllama is the only chat backend Nine implements today.
-const ProviderOllama = "ollama"
+// Provider names for supported LLM backends.
+const (
+	ProviderOllama  = "ollama"
+	ProviderMistral = "mistral"
+)
 
 // CheckProvider reports whether [llm].provider names a backend Nine has.
 //
@@ -221,12 +228,12 @@ const ProviderOllama = "ollama"
 // against the effective config, after overrides.
 func (cfg *Config) CheckProvider() error {
 	switch cfg.LLM.Provider {
-	case "", ProviderOllama:
+	case "", ProviderOllama, ProviderMistral:
 		return nil
 	}
 	return fmt.Errorf("[llm].provider %q is not a backend Nine has (known: %q); "+
 		"leave it unset for the default rather than guessing a name",
-		cfg.LLM.Provider, ProviderOllama)
+		cfg.LLM.Provider, []string{ProviderOllama, ProviderMistral})
 }
 
 // BuildProvider constructs an LLM provider from cfg, with environment variable
@@ -236,18 +243,19 @@ func (cfg *Config) CheckProvider() error {
 // nothing to switch on. An unrecognized provider is refused at startup by
 // CheckProvider, so reaching here with one means a caller skipped that check;
 // it is logged and Ollama is built anyway, because BuildProvider cannot fail
-// and a running daemon beats a nil provider.
+// BuildProvider constructs an LLM provider from cfg, with environment variable
+// overrides applied on top.
+//
+// Supported providers: ollama (default), mistral. An unrecognized provider is
+// refused at startup by CheckProvider, so reaching here with one means a caller
+// skipped that check; it is logged and Ollama is built anyway, because
+// BuildProvider cannot fail and a running daemon beats a nil provider.
 func (cfg *Config) BuildProvider() llm.Provider {
 	provider := cfg.LLM.Provider
 	if e := os.Getenv("NINE_LLM_PROVIDER"); e != "" {
 		provider = e
 	}
-	if provider != "" && provider != "ollama" {
-		// provider is operator-supplied config, not an untrusted source.
-		// Unreachable when the daemon ran CheckProvider, which is why this is a
-		// last-resort log rather than the enforcement point.
-		slog.Warn("unknown [llm].provider; using ollama", "provider", provider) //nolint:gosec // G706: operator-controlled value
-	}
+
 	model := cfg.LLM.Model
 	if e := os.Getenv("NINE_LLM_MODEL"); e != "" {
 		model = e
@@ -255,11 +263,27 @@ func (cfg *Config) BuildProvider() llm.Provider {
 	if model == "" {
 		model = "gemma4:e2b"
 	}
+
 	endpoint := cfg.LLM.Endpoint
 	if e := os.Getenv("NINE_LLM_ENDPOINT"); e != "" {
 		endpoint = e
 	}
-	return llmollama.New(model, endpoint, cfg.LLM.NumCtx, cfg.LLM.ThinkingEnabled(), cfg.LLM.TimeoutSeconds)
+
+	apiKey := cfg.LLM.APIKey
+	if e := os.Getenv("NINE_LLM_API_KEY"); e != "" {
+		apiKey = e
+	}
+
+	switch provider {
+	case ProviderMistral:
+		return llmmistral.New(model, endpoint, apiKey, cfg.LLM.TimeoutSeconds)
+	case ProviderOllama, "":
+		return llmollama.New(model, endpoint, cfg.LLM.NumCtx, cfg.LLM.ThinkingEnabled(), cfg.LLM.TimeoutSeconds)
+	default:
+		// Unreachable when the daemon ran CheckProvider, but handle gracefully.
+		slog.Warn("unknown [llm].provider; using ollama", "provider", provider) //nolint:gosec // G706: operator-controlled value
+		return llmollama.New(model, endpoint, cfg.LLM.NumCtx, cfg.LLM.ThinkingEnabled(), cfg.LLM.TimeoutSeconds)
+	}
 }
 
 // SessionRetention returns the effective session retention in days: the
