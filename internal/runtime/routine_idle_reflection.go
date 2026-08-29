@@ -6,7 +6,7 @@ import (
 )
 
 // idleReflectionRoutine implements the "idle-reflection" RoutineHandler: OnIdle
-// always has work — the reflection prompt — and the turn's outcome is recorded
+// always has work  the reflection prompt  and the turn's outcome is recorded
 // by the journal like any other turn's.
 //
 // It is a routine kind, not a session kind: any session may carry it as a routine
@@ -15,22 +15,30 @@ type idleReflectionRoutine struct{}
 
 // NewIdleReflectionRoutine creates the "idle-reflection" RoutineHandler.
 func NewIdleReflectionRoutine() RoutineHandler {
+	log.Debug("NewIdleReflectionRoutine called")
 	return &idleReflectionRoutine{}
 }
 
-func (s *idleReflectionRoutine) Init(context.Context, string, json.RawMessage) error { return nil }
+func (s *idleReflectionRoutine) Init(ctx context.Context, agentID string, cfg json.RawMessage) error {
+	log.Debug("idleReflectionRoutine.Init", "agentID", agentID)
+	return nil
+}
 
 // OnTurnEnd does nothing. A reflection turn used to be copied into a dedicated
-// `reflections` table, which recorded no agent id — survivable while exactly one
+// `reflections` table, which recorded no agent id  survivable while exactly one
 // session reflected, and wrong as soon as several can. The journal already
 // records every turn under its own agent_id (`turn_end.result`), and the durable
 // product of a reflection is the `self/*` KV write the prompt asks for, not the
 // transcript. So there is nothing left for this hook to do
 // (adr/concept-consolidation.md C5).
-func (s *idleReflectionRoutine) OnTurnEnd(context.Context, string, string, error) error { return nil }
+func (s *idleReflectionRoutine) OnTurnEnd(ctx context.Context, agentID, result string, err error) error {
+	log.Debug("idleReflectionRoutine.OnTurnEnd", "agentID", agentID, "result_len", len(result))
+	return nil
+}
 
 // OnIdle always has work to do: prompt the session to reflect on its recent
 // activity and update its self-model.
-func (s *idleReflectionRoutine) OnIdle(context.Context, string) (string, bool) {
+func (s *idleReflectionRoutine) OnIdle(ctx context.Context, agentID string) (string, bool) {
+	log.Debug("idleReflectionRoutine.OnIdle", "agentID", agentID)
 	return ReflectionPrompt, true
 }
