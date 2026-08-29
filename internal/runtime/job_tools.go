@@ -27,6 +27,7 @@ type jobTools struct {
 }
 
 func newJobTools(store *memory.Store, mgr *plugin.Manager, waiters *JobWaiters, ownerID string) *jobTools {
+	log.Debug("creating jobTools", "ownerID", ownerID)
 	return &jobTools{store: store, mgr: mgr, waiters: waiters, ownerID: ownerID}
 }
 
@@ -35,6 +36,7 @@ func newJobTools(store *memory.Store, mgr *plugin.Manager, waiters *JobWaiters, 
 // model can move on and check back later. With a waiter registry wired it blocks
 // on the sweeper's completion signal; otherwise it falls back to polling.
 func (jt *jobTools) Wait(ctx context.Context, handle string, timeout time.Duration) (string, error) {
+	log.Debug("jobTools.Wait start", "handle", handle, "timeout", timeout, "ownerID", jt.ownerID)
 	// Register before the first read so a completion between the read and the
 	// block is not missed; the closed channel then makes the next read return.
 	var signal <-chan struct{}
@@ -42,18 +44,22 @@ func (jt *jobTools) Wait(ctx context.Context, handle string, timeout time.Durati
 		var cancel func()
 		signal, cancel = jt.waiters.register(handle)
 		defer cancel()
+		log.Debug("jobTools.Wait registered waiter", "handle", handle)
 	}
 
 	deadline := time.After(timeout)
 	for {
 		j, ok, err := jt.store.JobGet(handle)
 		if err != nil {
+			log.Warn("jobTools.Wait JobGet failed", "handle", handle, "err", err)
 			return "", err
 		}
 		if !ok {
+			log.Debug("jobTools.Wait job not found", "handle", handle)
 			return fmt.Sprintf("There is no background job with handle %s.", handle), nil
 		}
 		if memory.JobTerminal(j.State) {
+			log.Debug("jobTools.Wait job terminal", "handle", handle, "state", j.State)
 			return renderJob(j), nil
 		}
 
@@ -67,11 +73,15 @@ func (jt *jobTools) Wait(ctx context.Context, handle string, timeout time.Durati
 		case <-signal:
 			// Signalled (job now terminal); the channel stays closed, so drop to
 			// polling for any further iterations.
+			log.Debug("jobTools.Wait signalled", "handle", handle)
 			signal = nil
 		case <-poll:
+			log.Debug("jobTools.Wait poll tick", "handle", handle)
 		case <-deadline:
+			log.Debug("jobTools.Wait timeout", "handle", handle, "state", j.State)
 			return stillRunning(j), nil
 		case <-ctx.Done():
+			log.Debug("jobTools.Wait context done", "handle", handle, "state", j.State)
 			return stillRunning(j), nil
 		}
 	}
@@ -79,25 +89,33 @@ func (jt *jobTools) Wait(ctx context.Context, handle string, timeout time.Durati
 
 // Check returns the job's current state and result without waiting.
 func (jt *jobTools) Check(_ context.Context, handle string) (string, error) {
+	log.Debug("jobTools.Check", "handle", handle, "ownerID", jt.ownerID)
 	j, ok, err := jt.store.JobGet(handle)
 	if err != nil {
+		log.Warn("jobTools.Check JobGet failed", "handle", handle, "err", err)
 		return "", err
 	}
 	if !ok {
+		log.Debug("jobTools.Check job not found", "handle", handle)
 		return fmt.Sprintf("There is no background job with handle %s.", handle), nil
 	}
+	log.Debug("jobTools.Check job found", "handle", handle, "state", j.State)
 	return renderJob(j), nil
 }
 
 // List reports the conversation's outstanding jobs.
 func (jt *jobTools) List(_ context.Context) (string, error) {
+	log.Debug("jobTools.List", "ownerID", jt.ownerID)
 	sums, err := jt.store.JobsOutstandingSummary(jt.ownerID)
 	if err != nil {
+		log.Warn("jobTools.List JobsOutstandingSummary failed", "ownerID", jt.ownerID, "err", err)
 		return "", err
 	}
 	if len(sums) == 0 {
+		log.Debug("jobTools.List no jobs", "ownerID", jt.ownerID)
 		return "No outstanding background jobs.", nil
 	}
+	log.Debug("jobTools.List found jobs", "ownerID", jt.ownerID, "count", len(sums))
 	var b strings.Builder
 	b.WriteString("Outstanding background jobs:\n")
 	for _, s := range sums {
@@ -109,14 +127,18 @@ func (jt *jobTools) List(_ context.Context) (string, error) {
 
 // Cancel requests best-effort cancellation of a job via its plugin.
 func (jt *jobTools) Cancel(ctx context.Context, handle string) (string, error) {
+	log.Debug("jobTools.Cancel", "handle", handle, "ownerID", jt.ownerID)
 	j, ok, err := jt.store.JobGet(handle)
 	if err != nil {
+		log.Warn("jobTools.Cancel JobGet failed", "handle", handle, "err", err)
 		return "", err
 	}
 	if !ok {
+		log.Debug("jobTools.Cancel job not found", "handle", handle)
 		return fmt.Sprintf("There is no background job with handle %s to cancel.", handle), nil
 	}
 	if memory.JobTerminal(j.State) {
+		log.Debug("jobTools.Cancel job already terminal", "handle", handle, "state", j.State)
 		return fmt.Sprintf("Job %s has already finished (%s).", handle, j.State), nil
 	}
 
@@ -127,24 +149,31 @@ func (jt *jobTools) Cancel(ctx context.Context, handle string) (string, error) {
 	// plugin backend's best-effort request.
 	if j.Backend == memory.JobBackendTool {
 		if err := jt.store.JobFinish(handle, string(plugin.JobCancelled), "", "", "cancelled"); err != nil {
+			log.Warn("jobTools.Cancel JobFinish failed", "handle", handle, "err", err)
 			return "", fmt.Errorf("cancel %s: %w", handle, err)
 		}
 		if jt.waiters != nil {
 			jt.waiters.signal(handle)
+			log.Debug("jobTools.Cancel signalled waiters", "handle", handle)
 		}
+		log.Debug("jobTools.Cancel tool job cancelled", "handle", handle)
 		return fmt.Sprintf("Cancelled %s. It will not be called again.", handle), nil
 	}
 
 	if jt.mgr == nil {
+		log.Debug("jobTools.Cancel no plugin manager", "handle", handle)
 		return fmt.Sprintf("Cannot cancel %s: it belongs to a plugin and no plugin manager is running.", handle), nil
 	}
 	p, running := jt.mgr.PluginByName(j.Plugin)
 	if !running {
+		log.Debug("jobTools.Cancel plugin not running", "handle", handle, "plugin", j.Plugin)
 		return fmt.Sprintf("Cannot cancel %s: its plugin %q is no longer running.", handle, j.Plugin), nil
 	}
 	if err := jt.mgr.JobCancel(ctx, p, j.BackendRef); err != nil {
+		log.Warn("jobTools.Cancel JobCancel failed", "handle", handle, "plugin", j.Plugin, "err", err)
 		return "", fmt.Errorf("cancel %s: %w", handle, err)
 	}
+	log.Debug("jobTools.Cancel plugin job cancellation requested", "handle", handle, "plugin", j.Plugin)
 	return fmt.Sprintf("Requested cancellation of %s; it will stop shortly.", handle), nil
 }
 
