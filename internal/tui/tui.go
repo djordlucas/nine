@@ -801,12 +801,12 @@ func (m model) View() string {
 	if m.chat.suggestOpen {
 		parts = append(parts, m.chat.suggest.View())
 	}
-	// Render status line with token counter and time (top line of bottom bar)
-	statusLine := renderStatusLine(m.display)
+	// Render status line with role, token counter and time (top line of bottom bar)
+	statusLine := renderStatusLine(m.display, m.conn.role)
 	parts = append(parts, statusLine)
 	
 	// Render input line (bottom line of bottom bar)
-	inputLine := renderInputWithTime(m.chat.input, m.display, m.conn.role)
+	inputLine := renderInputWithTime(m.chat.input, m.display)
 	parts = append(parts, inputLine)
 
 	return strings.Join(parts, "\n")
@@ -843,26 +843,19 @@ func formatTokens(n int) string {
 	return fmt.Sprintf("%d", n)
 }
 
-// renderInputWithTime renders the text input. If role is non-empty, it's
-// prepended before the input prompt. Token counter and time are rendered on
-// a separate status line below the input.
-func renderInputWithTime(input textinput.Model, d displayState, role string) string {
+// renderInputWithTime renders the text input on its own line.
+// Token counter, time, and role are rendered on a separate status line above.
+func renderInputWithTime(input textinput.Model, d displayState) string {
 	// Get the current input line
 	inputView := input.View()
-	
-	// Prepend role before the input prompt if set
-	if role != "" {
-		// Add role + space before the existing prompt (e.g., "> " or "Answer: ")
-		inputView = d.pal.you.Render(role + " ") + inputView
-	}
 	
 	// Input takes the full width of its line
 	return lipgloss.NewStyle().Width(d.width).Render(inputView)
 }
 
-// renderStatusLine renders the token counter and time on a separate line.
-// Format: [tokenCounter] | [time]  (both aligned to right)
-func renderStatusLine(d displayState) string {
+// renderStatusLine renders role, token counter, and time on the top line
+// of the bottom bar. Format: [role] [tokenCounter | time] (right-aligned)
+func renderStatusLine(d displayState, role string) string {
 	// Format time as HH:MM:SS (always shown at far right)
 	timeStr := d.pal.ts.Render(d.currentTime.Format("15:04:05"))
 	
@@ -873,11 +866,22 @@ func renderStatusLine(d displayState) string {
 		tokenStr = d.pal.ts.Render(fmt.Sprintf("%d%% (%s/%s)", pct, formatTokens(d.contextUsed), formatTokens(d.contextBudget)))
 	}
 	
-	// Build the status line: [tokenCounter | time]
+	// Build the status line: [role] [tokenCounter | time]
 	var parts []string
 	
+	// Add role on the left if present
+	if role != "" {
+		parts = append(parts, d.pal.you.Render(role))
+	}
+	
 	if tokenStr != "" {
+		if role != "" {
+			parts = append(parts, d.pal.continuation.Render(" "))
+		}
 		parts = append(parts, tokenStr)
+		parts = append(parts, d.pal.continuation.Render(" | "))
+	} else if role != "" {
+		// No token counter but have role, add pipe directly
 		parts = append(parts, d.pal.continuation.Render(" | "))
 	}
 	
