@@ -791,7 +791,7 @@ func (m model) View() string {
 		instanceName = "nine"
 	}
 	header := m.display.pal.header.Width(m.display.width).Render(
-		fmt.Sprintf("%s  ·  %s%s%s", instanceName, label, askHint, ctxHint),
+		fmt.Sprintf("%s%s%s", instanceName, askHint, ctxHint),
 	)
 	rule := m.display.pal.rule.Render(strings.Repeat("─", m.display.width))
 
@@ -801,8 +801,8 @@ func (m model) View() string {
 	if m.chat.suggestOpen {
 		parts = append(parts, m.chat.suggest.View())
 	}
-	// Render status line with role, token counter and time (top line of bottom bar)
-	statusLine := renderStatusLine(m.display, m.conn.role)
+	// Render status line with role, session info, token counter and time (top line of bottom bar)
+	statusLine := renderStatusLine(m.display, m.conn.role, label)
 	parts = append(parts, statusLine)
 	
 	// Render input line (bottom line of bottom bar)
@@ -853,9 +853,9 @@ func renderInputWithTime(input textinput.Model, d displayState) string {
 	return lipgloss.NewStyle().Width(d.width).Render(inputView)
 }
 
-// renderStatusLine renders role, token counter, and time on the top line
-// of the bottom bar. Format: [role] [tokenCounter | time] (right-aligned)
-func renderStatusLine(d displayState, role string) string {
+// renderStatusLine renders role, session info, token counter, and time on the top line
+// of the bottom bar. Format: [role] [session] [tokenCounter | time] (right-aligned)
+func renderStatusLine(d displayState, role string, sessionLabel string) string {
 	// Format time as HH:MM:SS (always shown at far right)
 	timeStr := d.pal.ts.Render(d.currentTime.Format("15:04:05"))
 	
@@ -866,7 +866,7 @@ func renderStatusLine(d displayState, role string) string {
 		tokenStr = d.pal.ts.Render(fmt.Sprintf("%d%% (%s/%s)", pct, formatTokens(d.contextUsed), formatTokens(d.contextBudget)))
 	}
 	
-	// Build the status line: [role] [tokenCounter | time]
+	// Build the status line: [role] [session] [tokenCounter | time]
 	var parts []string
 	
 	// Add role on the left if present
@@ -874,14 +874,25 @@ func renderStatusLine(d displayState, role string) string {
 		parts = append(parts, d.pal.you.Render(role))
 	}
 	
-	if tokenStr != "" {
+	// Add session label if present
+	if sessionLabel != "" && sessionLabel != "connecting..." && sessionLabel != "reconnecting…" {
 		if role != "" {
+			parts = append(parts, d.pal.continuation.Render(" "))
+		}
+		parts = append(parts, d.pal.continuation.Render(sessionLabel))
+	}
+	
+	// Add token counter and pipe separator if present
+	if tokenStr != "" {
+		// Add space before token counter if we have role or session
+		hasPrefix := role != "" || (sessionLabel != "" && sessionLabel != "connecting..." && sessionLabel != "reconnecting…")
+		if hasPrefix {
 			parts = append(parts, d.pal.continuation.Render(" "))
 		}
 		parts = append(parts, tokenStr)
 		parts = append(parts, d.pal.continuation.Render(" | "))
-	} else if role != "" {
-		// No token counter but have role, add pipe directly
+	} else if role != "" || (sessionLabel != "" && sessionLabel != "connecting..." && sessionLabel != "reconnecting…") {
+		// Have role/session but no token counter, add pipe directly
 		parts = append(parts, d.pal.continuation.Render(" | "))
 	}
 	
@@ -889,7 +900,6 @@ func renderStatusLine(d displayState, role string) string {
 	
 	// Right-align the entire status line
 	statusContent := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
-	// Use lipgloss.Right to right-align within the width
 	return lipgloss.NewStyle().Width(d.width).Align(lipgloss.Right).Render(statusContent)
 }
 
