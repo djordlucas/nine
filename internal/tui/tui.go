@@ -19,9 +19,11 @@ import (
 )
 
 const (
-	headerHeight = 2
-	// inputAreaHeight: rule + 1 line of input + 1 line of status (token/time).
-	inputAreaHeight = 3
+	// headerHeight: was 2 when we had a top header bar, now 0 since it's removed
+	headerHeight = 0
+	// inputAreaHeight: 1 line for status + 1 line for input (minimum).
+	// The input can wrap to additional lines when text is long.
+	inputAreaHeight = 2
 
 	maxInputDisplay  = 80
 	maxOutputDisplay = 200
@@ -931,8 +933,10 @@ func renderStatusLine(d displayState, role string, sessionLabel string) string {
 }
 
 func (m *model) viewportHeight() int {
-	// 1 for the rule above the input + 1 for the input line itself, plus
-	// whatever rows the slash-command picker is borrowing.
+	// Reserve space for: rule + status line + input line (minimum 1 line)
+	// The input can wrap to additional lines, but we reserve only 1 line by default
+	// (inputAreaHeight = 2: status + 1 input line). Extra wrapped lines will
+	// overlap with the viewport, which is acceptable.
 	h := m.display.height - headerHeight - inputAreaHeight - m.suggestHeight()
 	if h < 1 {
 		return 1
