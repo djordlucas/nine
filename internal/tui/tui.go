@@ -839,14 +839,36 @@ func formatTokens(n int) string {
 	return fmt.Sprintf("%d", n)
 }
 
-// renderInputWithTime renders the text input on its own line.
+// renderInputWithTime renders the text input on its own line with wrapping.
 // Token counter, time, and role are rendered on a separate status line above.
 func renderInputWithTime(input textinput.Model, d displayState) string {
-	// Get the current input line
-	inputView := input.View()
+	// Get the prompt and input value
+	prompt := input.Prompt
+	promptStyle := input.PromptStyle
+	value := input.Value()
 	
-	// Input takes the full width of its line
-	return lipgloss.NewStyle().Width(d.width).Render(inputView)
+	// Style the prompt
+	styledPrompt := promptStyle.Render(prompt)
+	
+	// Style the input text
+	styledValue := input.TextStyle.Render(value)
+	if styledValue == "" {
+		// Use placeholder if value is empty
+		styledValue = input.PlaceholderStyle.Render(input.Placeholder)
+	}
+	
+	// Calculate available width for input text (full width minus prompt width)
+	promptWidth := lipgloss.Width(styledPrompt)
+	availableWidth := d.width - promptWidth
+	if availableWidth < 10 {
+		availableWidth = 10
+	}
+	
+	// Wrap the input value if it exceeds available width
+	wrappedValue := lipgloss.NewStyle().Width(availableWidth).Render(styledValue)
+	
+	// Show the prompt and the value (wrapping handled by lipgloss)
+	return styledPrompt + wrappedValue
 }
 
 // renderStatusLine renders role and session info on the left, and token counter
