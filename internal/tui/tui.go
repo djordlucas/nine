@@ -851,35 +851,44 @@ func renderInputWithTime(input textinput.Model, d displayState, role string) str
 		inputView = d.pal.you.Render(role + " ") + inputView
 	}
 	
-	// Format time as HH:MM:SS
-	timeStr := d.currentTime.Format("15:04:05")
+	// Format time as HH:MM:SS (always shown at far right)
+	timeStr := d.pal.ts.Render(d.currentTime.Format("15:04:05"))
 	
 	// Build token counter string
 	tokenStr := ""
 	if d.contextBudget > 0 {
 		pct := d.contextUsed * 100 / d.contextBudget
-		tokenStr = fmt.Sprintf("%d%% (%s/%s)", pct, formatTokens(d.contextUsed), formatTokens(d.contextBudget))
+		tokenStr = d.pal.ts.Render(fmt.Sprintf("%d%% (%s/%s)", pct, formatTokens(d.contextUsed), formatTokens(d.contextBudget)))
 	}
 	
-	// Build right-side content: time · tokenCounter
-	rightParts := []string{d.pal.ts.Render(timeStr)}
+	// Calculate widths
+	timeWidth := lipgloss.Width(timeStr)
+	tokenWidth := lipgloss.Width(tokenStr)
+	
+	// Available width for input: total width - time width - spacing
+	// Token counter goes between input and time
+	spacing := 1 // at least one space between elements
+	inputMaxWidth := d.width - timeWidth - spacing
 	if tokenStr != "" {
-		rightParts = append(rightParts, d.pal.continuation.Render(" · ")+d.pal.ts.Render(tokenStr))
+		inputMaxWidth -= tokenWidth + spacing
 	}
-	rightContent := lipgloss.JoinHorizontal(lipgloss.Bottom, rightParts...)
-	
-	// Calculate available width for input (leaving space for right content)
-	rightWidth := lipgloss.Width(rightContent)
-	availableWidth := d.width - rightWidth
-	if availableWidth < 10 {
-		availableWidth = 10
+	if inputMaxWidth < 10 {
+		inputMaxWidth = 10
 	}
 	
-	// Render input and right content side by side
-	return lipgloss.JoinHorizontal(lipgloss.Top,
-		lipgloss.NewStyle().Width(availableWidth).Render(inputView),
-		rightContent,
-	)
+	// Build the line: [input][tokenCounter][time]
+	// Time is always at far right
+	var parts []string
+	parts = append(parts, lipgloss.NewStyle().Width(inputMaxWidth).Render(inputView))
+	
+	if tokenStr != "" {
+		parts = append(parts, tokenStr)
+	}
+	
+	// Time at far right - pad to ensure it's aligned to the right edge
+	parts = append(parts, timeStr)
+	
+	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
 }
 
 func (m *model) viewportHeight() int {
