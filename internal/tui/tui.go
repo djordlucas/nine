@@ -987,7 +987,6 @@ func renderLogo(sb *strings.Builder, pal palette, width int, version string) {
 		pad = 0
 	}
 	indent := strings.Repeat(" ", pad)
-	sb.WriteByte('\n')
 	for _, line := range strings.Split(nineLogo, "\n") {
 		sb.WriteString(indent + pal.nine.Render(line) + "\n")
 	}
@@ -999,8 +998,16 @@ func (m *model) rebuildContent() {
 	}
 	var sb strings.Builder
 	if len(m.chat.messages) == 0 && !m.chat.thinking {
+		// Center the logo both horizontally and vertically
+		logoHeight := 6 // The Nine logo is 6 lines tall
+		viewportHeight := m.chat.viewport.Height
+		verticalPad := (viewportHeight - logoHeight) / 2
+		if verticalPad > 0 {
+			sb.WriteString(strings.Repeat("\n", verticalPad))
+		}
 		renderLogo(&sb, m.display.pal, m.chat.viewport.Width, m.display.version)
 		m.chat.viewport.SetContent(sb.String())
+		m.chat.viewport.GotoBottom()
 		return
 	}
 	for _, msg := range m.chat.messages {
