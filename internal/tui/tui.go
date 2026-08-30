@@ -785,8 +785,7 @@ func (m model) View() string {
 		detailHint = "  ·  ctrl+t: tools on"
 	}
 	scrollHint := "  ·  pgup/pgdn: scroll"
-	// Context is now shown next to the clock, not in the header
-	// ctxHint := contextHint(m.display.contextUsed, m.display.contextBudget, m.display.showContext)
+	ctxHint := contextHint(m.display.contextUsed, m.display.contextBudget, m.display.showContext)
 	askHint := ""
 	if m.chat.pendingHuman() != nil {
 		askHint = "  ·  ? awaiting answer"
@@ -800,7 +799,7 @@ func (m model) View() string {
 		instanceName = "nine"
 	}
 	header := m.display.pal.header.Width(m.display.width).Render(
-		fmt.Sprintf("%s  ·  %s%s%s%s", instanceName, label, askHint, detailHint, scrollHint),
+		fmt.Sprintf("%s  ·  %s%s%s%s%s", instanceName, label, askHint, ctxHint, detailHint, scrollHint),
 	)
 	rule := m.display.pal.rule.Render(strings.Repeat("─", m.display.width))
 
@@ -836,25 +835,8 @@ func contextHint(used, budget int, showContext bool) string {
 	return ""
 }
 
-// formatContext formats context usage as "20% (6k/32k)".
-// If budget is 0 or unknown, returns empty string.
-func formatContext(used, budget int) string {
-	if budget <= 0 {
-		return ""
-	}
-	percent := used * 100 / budget
-	// Format numbers with k suffix for thousands
-	formatNum := func(n int) string {
-		if n >= 1000 {
-			return fmt.Sprintf("%.0fk", float64(n)/1000)
-		}
-		return fmt.Sprintf("%d", n)
-	}
-	return fmt.Sprintf("%d%% (%s/%s)", percent, formatNum(used), formatNum(budget))
-}
-
-// renderInputWithTime renders the text input with the current time and context
-// usage on the right.
+// renderInputWithTime renders the text input with the current time and token
+// counter on the right.
 func renderInputWithTime(input textinput.Model, d displayState) string {
 	// Get the current input line
 	inputView := input.View()
@@ -862,21 +844,25 @@ func renderInputWithTime(input textinput.Model, d displayState) string {
 	// Format time as HH:MM:SS
 	timeStr := d.currentTime.Format("15:04:05")
 	
-	// Format context usage
-	ctxStr := formatContext(d.contextUsed, d.contextBudget)
-	
-	// Build the right-side content (time and context)
-	var rightParts []string
-	if ctxStr != "" {
-		rightParts = append(rightParts, d.pal.ts.Render(ctxStr))
+	// Build token counter string
+	tokenStr := ""
+	if d.contextBudget > 0 {
+		tokenStr = fmt.Sprintf("%d/%d", d.contextUsed, d.contextBudget)
 	}
-	rightParts = append(rightParts, d.pal.ts.Render(timeStr))
-	rightContent := lipgloss.JoinHorizontal(lipgloss.Top, rightParts...)
+	
+	// Build right-side content: time · tokenCounter
+	rightParts := []string{d.pal.ts.Render(timeStr)}
+	if tokenStr != "" {
+		rightParts = append(rightParts, d.pal.continuation.Render(" · ")+d.pal.ts.Render(tokenStr))
+	}
+	rightContent := lipgloss.JoinHorizontal(lipgloss.Bottom, rightParts...)
 	
 	// Calculate available width for input (leaving space for right content)
-	// Add some padding between input and right content
-	rightWidth := lipgloss.Width(rightContent) + 1
+	rightWidth := lipgloss.Width(rightContent)
 	availableWidth := d.width - rightWidth
+	if availableWidth < 10 {
+		availableWidth = 10
+	}
 	
 	// Render input and right content side by side
 	return lipgloss.JoinHorizontal(lipgloss.Top,
