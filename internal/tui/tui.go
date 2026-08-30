@@ -834,12 +834,10 @@ func renderInputWithTime(input textinput.Model, d displayState, role string) str
 	// Get the current input line
 	inputView := input.View()
 	
-	// Prepend role before the input if set
+	// Prepend role before the input prompt if set
 	if role != "" {
-		// Replace the "> " prompt with role + "> "
-		// The inputView starts with "> " so we need to strip it and add role
-		inputView = strings.TrimPrefix(inputView, "> ")
-		inputView = d.pal.you.Render(role + " ") + "> " + inputView
+		// Add role + space before the existing prompt (e.g., "> " or "Answer: ")
+		inputView = d.pal.you.Render(role + " ") + inputView
 	}
 	
 	// Format time as HH:MM:SS
