@@ -285,7 +285,7 @@ type model struct {
 func initialModel(sockPath, binary, attachID string, pal palette, glamourStyle string, showContext bool, cfg *config.Config, version string) model {
 	ti := textinput.New()
 	ti.Placeholder = "Type a message..."
-	ti.Prompt = "> "
+	ti.Prompt = "9> "
 	ti.PromptStyle = pal.prompt
 	ti.CharLimit = 0
 	ti.Focus() //nolint:errcheck
@@ -664,7 +664,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						text: formatQuestion(evt.HumanRequest),
 						at:   time.Now(),
 					})
-					m.chat.input.Prompt = "Answer: "
+					m.chat.input.Prompt = "9Answer: "
 					m.chat.input.PromptStyle = m.display.pal.you
 				}
 			}
@@ -948,9 +948,9 @@ func (m *model) appendSystem(text string) {
 	m.chat.messages = append(m.chat.messages, chatMsg{role: "system", text: text, at: time.Now()})
 }
 
-// resetInputPrompt restores the default "> " input prompt after a HITL answer.
+// resetInputPrompt restores the default "9> " input prompt after a HITL answer.
 func (m *model) resetInputPrompt() {
-	m.chat.input.Prompt = "> "
+	m.chat.input.Prompt = "9> "
 	m.chat.input.PromptStyle = m.display.pal.prompt
 }
 
