@@ -776,9 +776,6 @@ func (m model) View() string {
 		} else {
 			label = short
 		}
-		if m.conn.role != "" {
-			label += "  ·  " + m.conn.role
-		}
 	}
 	scrollHint := "  ·  pgup/pgdn: scroll"
 	ctxHint := contextHint(m.display.contextUsed, m.display.contextBudget, m.display.showContext)
@@ -806,7 +803,7 @@ func (m model) View() string {
 		parts = append(parts, m.chat.suggest.View())
 	}
 	// Render input line with time on the right
-	inputLine := renderInputWithTime(m.chat.input, m.display)
+	inputLine := renderInputWithTime(m.chat.input, m.display, m.conn.role)
 	parts = append(parts, inputLine)
 
 	return strings.Join(parts, "\n")
@@ -832,10 +829,18 @@ func contextHint(used, budget int, showContext bool) string {
 }
 
 // renderInputWithTime renders the text input with the current time and token
-// counter on the right.
-func renderInputWithTime(input textinput.Model, d displayState) string {
+// counter on the right. If role is non-empty, it's prepended before the input prompt.
+func renderInputWithTime(input textinput.Model, d displayState, role string) string {
 	// Get the current input line
 	inputView := input.View()
+	
+	// Prepend role before the input if set
+	if role != "" {
+		// Replace the "> " prompt with role + "> "
+		// The inputView starts with "> " so we need to strip it and add role
+		inputView = strings.TrimPrefix(inputView, "> ")
+		inputView = d.pal.you.Render(role + " ") + "> " + inputView
+	}
 	
 	// Format time as HH:MM:SS
 	timeStr := d.currentTime.Format("15:04:05")
