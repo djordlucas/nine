@@ -801,13 +801,13 @@ func (m model) View() string {
 	if m.chat.suggestOpen {
 		parts = append(parts, m.chat.suggest.View())
 	}
-	// Render input line (first line of bottom bar)
-	inputLine := renderInputWithTime(m.chat.input, m.display, m.conn.role)
-	parts = append(parts, inputLine)
-	
-	// Render status line with token counter and time (second line of bottom bar)
+	// Render status line with token counter and time (top line of bottom bar)
 	statusLine := renderStatusLine(m.display)
 	parts = append(parts, statusLine)
+	
+	// Render input line (bottom line of bottom bar)
+	inputLine := renderInputWithTime(m.chat.input, m.display, m.conn.role)
+	parts = append(parts, inputLine)
 
 	return strings.Join(parts, "\n")
 }
