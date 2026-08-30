@@ -881,7 +881,7 @@ func renderStatusLine(d displayState, role string, sessionLabel string) string {
 	
 	// Add event counter if available
 	if d.eventCount > 0 {
-		rightParts = append(rightParts, d.pal.ts.Render(fmt.Sprintf("%d", d.eventCount)))
+		rightParts = append(rightParts, d.pal.ts.Render(fmt.Sprintf("%d events", d.eventCount)))
 		rightParts = append(rightParts, d.pal.continuation.Render(" | "))
 	}
 	
