@@ -20,8 +20,8 @@ import (
 
 const (
 	headerHeight = 2
-	// inputAreaHeight: rule + 1 line of input.
-	inputAreaHeight = 2
+	// inputAreaHeight: rule + 1 line of input + 1 line of status (token/time).
+	inputAreaHeight = 3
 
 	maxInputDisplay  = 80
 	maxOutputDisplay = 200
@@ -801,9 +801,13 @@ func (m model) View() string {
 	if m.chat.suggestOpen {
 		parts = append(parts, m.chat.suggest.View())
 	}
-	// Render input line with time on the right
+	// Render input line (first line of bottom bar)
 	inputLine := renderInputWithTime(m.chat.input, m.display, m.conn.role)
 	parts = append(parts, inputLine)
+	
+	// Render status line with token counter and time (second line of bottom bar)
+	statusLine := renderStatusLine(m.display)
+	parts = append(parts, statusLine)
 
 	return strings.Join(parts, "\n")
 }
@@ -839,8 +843,9 @@ func formatTokens(n int) string {
 	return fmt.Sprintf("%d", n)
 }
 
-// renderInputWithTime renders the text input with the current time and token
-// counter on the right. If role is non-empty, it's prepended before the input prompt.
+// renderInputWithTime renders the text input. If role is non-empty, it's
+// prepended before the input prompt. Token counter and time are rendered on
+// a separate status line below the input.
 func renderInputWithTime(input textinput.Model, d displayState, role string) string {
 	// Get the current input line
 	inputView := input.View()
@@ -851,6 +856,13 @@ func renderInputWithTime(input textinput.Model, d displayState, role string) str
 		inputView = d.pal.you.Render(role + " ") + inputView
 	}
 	
+	// Input takes the full width of its line
+	return lipgloss.NewStyle().Width(d.width).Render(inputView)
+}
+
+// renderStatusLine renders the token counter and time on a separate line.
+// Format: [tokenCounter] | [time]  (both aligned to right)
+func renderStatusLine(d displayState) string {
 	// Format time as HH:MM:SS (always shown at far right)
 	timeStr := d.pal.ts.Render(d.currentTime.Format("15:04:05"))
 	
@@ -861,36 +873,20 @@ func renderInputWithTime(input textinput.Model, d displayState, role string) str
 		tokenStr = d.pal.ts.Render(fmt.Sprintf("%d%% (%s/%s)", pct, formatTokens(d.contextUsed), formatTokens(d.contextBudget)))
 	}
 	
-	// Calculate widths
-	timeWidth := lipgloss.Width(timeStr)
-	tokenWidth := lipgloss.Width(tokenStr)
-	
-	// Available width for input: total width - time width - spacing
-	// If token counter exists, also reserve space for it + " | " separator + spacing
-	spacing := 1 // at least one space between elements
-	inputMaxWidth := d.width - timeWidth - spacing
-	if tokenStr != "" {
-		// Account for token counter + " | " separator (3 chars) + spacing
-		inputMaxWidth -= tokenWidth + 3 + spacing
-	}
-	if inputMaxWidth < 10 {
-		inputMaxWidth = 10
-	}
-	
-	// Build the line: [input][tokenCounter | ][time] or [input][time]
-	// Time is always at far right
+	// Build the status line: [tokenCounter | time]
 	var parts []string
-	parts = append(parts, lipgloss.NewStyle().Width(inputMaxWidth).Render(inputView))
 	
 	if tokenStr != "" {
 		parts = append(parts, tokenStr)
 		parts = append(parts, d.pal.continuation.Render(" | "))
 	}
 	
-	// Time at far right
 	parts = append(parts, timeStr)
 	
-	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+	// Right-align the entire status line
+	statusContent := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+	// Use lipgloss.Right to right-align within the width
+	return lipgloss.NewStyle().Width(d.width).Align(lipgloss.Right).Render(statusContent)
 }
 
 func (m *model) viewportHeight() int {
