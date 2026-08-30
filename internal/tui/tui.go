@@ -812,19 +812,31 @@ func (m model) View() string {
 // contextWarnPercent of the budget it flags the pressure with a ⚠ marker and a
 // percentage, and does so even when showContext is off — a warning outranks the
 // user's opt-out of the routine ctx readout. Below the threshold it shows the
-// plain used/budget readout only when showContext is on, and nothing when the
+// formatted used/budget readout only when showContext is on, and nothing when the
 // budget is unknown.
 func contextHint(used, budget int, showContext bool) string {
 	if budget <= 0 {
 		return ""
 	}
+	pct := used * 100 / budget
+	formattedUsed := formatTokens(used)
+	formattedBudget := formatTokens(budget)
 	if used*100 >= contextWarnPercent*budget {
-		return fmt.Sprintf("  ·  ⚠ ctx: %d/%d (%d%%)", used, budget, used*100/budget)
+		return fmt.Sprintf("  ·  ⚠ %d%% (%s/%s)", pct, formattedUsed, formattedBudget)
 	}
 	if showContext {
-		return fmt.Sprintf("  ·  ctx: %d/%d", used, budget)
+		return fmt.Sprintf("  ·  %d%% (%s/%s)", pct, formattedUsed, formattedBudget)
 	}
 	return ""
+}
+
+// formatTokens formats token counts with 'k' suffix for thousands.
+// e.g., 6715 -> "6k", 32768 -> "32k", 500 -> "500"
+func formatTokens(n int) string {
+	if n >= 1000 {
+		return fmt.Sprintf("%dk", n/1000)
+	}
+	return fmt.Sprintf("%d", n)
 }
 
 // renderInputWithTime renders the text input with the current time and token
@@ -845,7 +857,8 @@ func renderInputWithTime(input textinput.Model, d displayState, role string) str
 	// Build token counter string
 	tokenStr := ""
 	if d.contextBudget > 0 {
-		tokenStr = fmt.Sprintf("%d/%d", d.contextUsed, d.contextBudget)
+		pct := d.contextUsed * 100 / d.contextBudget
+		tokenStr = fmt.Sprintf("%d%% (%s/%s)", pct, formatTokens(d.contextUsed), formatTokens(d.contextBudget))
 	}
 	
 	// Build right-side content: time · tokenCounter
