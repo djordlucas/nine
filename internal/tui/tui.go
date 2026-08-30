@@ -780,10 +780,6 @@ func (m model) View() string {
 			label += "  ·  " + m.conn.role
 		}
 	}
-	detailHint := "  ·  ctrl+t: tools off"
-	if !m.display.showDetail {
-		detailHint = "  ·  ctrl+t: tools on"
-	}
 	scrollHint := "  ·  pgup/pgdn: scroll"
 	ctxHint := contextHint(m.display.contextUsed, m.display.contextBudget, m.display.showContext)
 	askHint := ""
@@ -799,7 +795,7 @@ func (m model) View() string {
 		instanceName = "nine"
 	}
 	header := m.display.pal.header.Width(m.display.width).Render(
-		fmt.Sprintf("%s  ·  %s%s%s%s%s", instanceName, label, askHint, ctxHint, detailHint, scrollHint),
+		fmt.Sprintf("%s  ·  %s%s%s%s", instanceName, label, askHint, ctxHint, scrollHint),
 	)
 	rule := m.display.pal.rule.Render(strings.Repeat("─", m.display.width))
 
