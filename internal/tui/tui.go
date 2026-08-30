@@ -785,7 +785,8 @@ func (m model) View() string {
 		detailHint = "  ·  ctrl+t: tools on"
 	}
 	scrollHint := "  ·  pgup/pgdn: scroll"
-	ctxHint := contextHint(m.display.contextUsed, m.display.contextBudget, m.display.showContext)
+	// Context is now shown next to the clock, not in the header
+	// ctxHint := contextHint(m.display.contextUsed, m.display.contextBudget, m.display.showContext)
 	askHint := ""
 	if m.chat.pendingHuman() != nil {
 		askHint = "  ·  ? awaiting answer"
@@ -799,7 +800,7 @@ func (m model) View() string {
 		instanceName = "nine"
 	}
 	header := m.display.pal.header.Width(m.display.width).Render(
-		fmt.Sprintf("%s  ·  %s%s%s%s%s", instanceName, label, askHint, ctxHint, detailHint, scrollHint),
+		fmt.Sprintf("%s  ·  %s%s%s%s", instanceName, label, askHint, detailHint, scrollHint),
 	)
 	rule := m.display.pal.rule.Render(strings.Repeat("─", m.display.width))
 
@@ -835,7 +836,25 @@ func contextHint(used, budget int, showContext bool) string {
 	return ""
 }
 
-// renderInputWithTime renders the text input with the current time on the right.
+// formatContext formats context usage as "20% (6k/32k)".
+// If budget is 0 or unknown, returns empty string.
+func formatContext(used, budget int) string {
+	if budget <= 0 {
+		return ""
+	}
+	percent := used * 100 / budget
+	// Format numbers with k suffix for thousands
+	formatNum := func(n int) string {
+		if n >= 1000 {
+			return fmt.Sprintf("%.0fk", float64(n)/1000)
+		}
+		return fmt.Sprintf("%d", n)
+	}
+	return fmt.Sprintf("%d%% (%s/%s)", percent, formatNum(used), formatNum(budget))
+}
+
+// renderInputWithTime renders the text input with the current time and context
+// usage on the right.
 func renderInputWithTime(input textinput.Model, d displayState) string {
 	// Get the current input line
 	inputView := input.View()
@@ -843,19 +862,26 @@ func renderInputWithTime(input textinput.Model, d displayState) string {
 	// Format time as HH:MM:SS
 	timeStr := d.currentTime.Format("15:04:05")
 	
-	// Calculate available width for input (leaving space for time)
-	// We reserve space for the time + some padding
-	timeWidth := len(timeStr) + 2 // +2 for padding
+	// Format context usage
+	ctxStr := formatContext(d.contextUsed, d.contextBudget)
 	
-	// Get the current cursor position and input width
-	// We'll truncate the input display if needed to make room for the time
-	availableWidth := d.width - timeWidth
+	// Build the right-side content (time and context)
+	var rightParts []string
+	if ctxStr != "" {
+		rightParts = append(rightParts, d.pal.ts.Render(ctxStr))
+	}
+	rightParts = append(rightParts, d.pal.ts.Render(timeStr))
+	rightContent := lipgloss.JoinHorizontal(lipgloss.Top, rightParts...)
 	
-	// For now, simple approach: render input and time side by side
-	// The textinput.View() already includes the prompt
+	// Calculate available width for input (leaving space for right content)
+	// Add some padding between input and right content
+	rightWidth := lipgloss.Width(rightContent) + 1
+	availableWidth := d.width - rightWidth
+	
+	// Render input and right content side by side
 	return lipgloss.JoinHorizontal(lipgloss.Top,
 		lipgloss.NewStyle().Width(availableWidth).Render(inputView),
-		d.pal.ts.Render(timeStr),
+		rightContent,
 	)
 }
 
