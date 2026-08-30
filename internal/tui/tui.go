@@ -887,20 +887,21 @@ func renderStatusLine(d displayState, role string, sessionLabel string) string {
 		tokenStr = d.pal.ts.Render(fmt.Sprintf("%d%% (%s/%s)", pct, formatTokens(d.contextUsed), formatTokens(d.contextBudget)))
 	}
 	
-	// Build left part: [role] · [session]
+	// Build left part: [role]
 	var leftParts []string
 	if role != "" {
 		// Use pale yellow for role (same as Nine logo color)
 		roleStyle := lipgloss.NewStyle().Bold(true).Foreground(d.pal.nine.GetForeground())
 		leftParts = append(leftParts, roleStyle.Render(role))
 	}
-	if sessionLabel != "" && sessionLabel != "connecting..." && sessionLabel != "reconnecting…" {
-		if role != "" {
-			leftParts = append(leftParts, d.pal.continuation.Render(" · "))
-		}
-		leftParts = append(leftParts, d.pal.continuation.Render(sessionLabel))
-	}
 	leftContent := lipgloss.JoinHorizontal(lipgloss.Bottom, leftParts...)
+	
+	// Build middle part: [session]
+	var middleParts []string
+	if sessionLabel != "" && sessionLabel != "connecting..." && sessionLabel != "reconnecting…" {
+		middleParts = append(middleParts, d.pal.continuation.Render(sessionLabel))
+	}
+	middleContent := lipgloss.JoinHorizontal(lipgloss.Bottom, middleParts...)
 	
 	// Build right part: [eventCount | tokenCounter | time]
 	var rightParts []string
@@ -918,18 +919,34 @@ func renderStatusLine(d displayState, role string, sessionLabel string) string {
 	rightParts = append(rightParts, timeStr)
 	rightContent := lipgloss.JoinHorizontal(lipgloss.Bottom, rightParts...)
 	
-	// Combine: left content at start, right content at end
-	// Use lipgloss.JoinHorizontal with specific widths to position them
+	// Calculate widths for three-column layout
 	leftWidth := lipgloss.Width(leftContent)
+	middleWidth := lipgloss.Width(middleContent)
 	rightWidth := lipgloss.Width(rightContent)
-	middleWidth := d.width - leftWidth - rightWidth
+	
+	// Ensure minimum widths
+	if leftWidth < 0 {
+		leftWidth = 0
+	}
 	if middleWidth < 0 {
 		middleWidth = 0
+	}
+	if rightWidth < 0 {
+		rightWidth = 0
+	}
+	
+	// Distribute remaining space to middle (center the session name)
+	totalUsed := leftWidth + middleWidth + rightWidth
+	if totalUsed < d.width {
+		// Add padding to middle to center it
+		extraSpace := d.width - totalUsed
+		// Distribute extra space evenly on both sides of middle
+		middleWidth += extraSpace
 	}
 	
 	return lipgloss.JoinHorizontal(lipgloss.Bottom,
 		leftContent,
-		lipgloss.NewStyle().Width(middleWidth).Render(""),
+		lipgloss.NewStyle().Width(middleWidth).Render(middleContent),
 		rightContent,
 	)
 }
