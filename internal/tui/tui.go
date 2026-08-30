@@ -864,11 +864,12 @@ func renderInputWithTime(input textinput.Model, d displayState, role string) str
 	// Calculate widths
 	timeWidth := lipgloss.Width(timeStr)
 	tokenWidth := lipgloss.Width(tokenStr)
+	pipeWidth := 1 // "|" separator
 	
-	// Available width for input: total width - time width - spacing
-	// Token counter goes between input and time
+	// Available width for input: total width - time width - pipe - spacing
+	// Token counter goes between input and pipe, time after pipe
 	spacing := 1 // at least one space between elements
-	inputMaxWidth := d.width - timeWidth - spacing
+	inputMaxWidth := d.width - timeWidth - pipeWidth - 2*spacing
 	if tokenStr != "" {
 		inputMaxWidth -= tokenWidth + spacing
 	}
@@ -876,16 +877,20 @@ func renderInputWithTime(input textinput.Model, d displayState, role string) str
 		inputMaxWidth = 10
 	}
 	
-	// Build the line: [input][tokenCounter][time]
+	// Build the line: [input][tokenCounter][ | ][time]
 	// Time is always at far right
 	var parts []string
 	parts = append(parts, lipgloss.NewStyle().Width(inputMaxWidth).Render(inputView))
 	
 	if tokenStr != "" {
 		parts = append(parts, tokenStr)
+		parts = append(parts, d.pal.continuation.Render("|"))
+	} else {
+		// No token counter, just add pipe separator
+		parts = append(parts, d.pal.continuation.Render("|"))
 	}
 	
-	// Time at far right - pad to ensure it's aligned to the right edge
+	// Time at far right
 	parts = append(parts, timeStr)
 	
 	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
