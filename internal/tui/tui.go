@@ -63,7 +63,7 @@ func autoPalette() palette {
 	return palette{
 		header:       lipgloss.NewStyle().Background(lipgloss.Color("0")).Foreground(lipgloss.Color("15")).Bold(true).Padding(0, 1),
 		rule:         lipgloss.NewStyle().Foreground(adaptive("245", "238")),
-		you:          lipgloss.NewStyle().Bold(true).Foreground(adaptive("127", "212")),
+		you:          lipgloss.NewStyle().Bold(true).Foreground(adaptive("228", "222")),
 		nine:         lipgloss.NewStyle().Bold(true).Foreground(adaptive("23", "86")),
 		system:       lipgloss.NewStyle().Foreground(adaptive("25", "75")),
 		spinner:      lipgloss.NewStyle().Foreground(adaptive("127", "205")),
@@ -81,7 +81,7 @@ func lightPalette() palette {
 	return palette{
 		header:       lipgloss.NewStyle().Background(lipgloss.Color("0")).Foreground(lipgloss.Color("15")).Bold(true).Padding(0, 1),
 		rule:         lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
-		you:          lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("127")),
+		you:          lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("228")),
 		nine:         lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("23")),
 		system:       lipgloss.NewStyle().Foreground(lipgloss.Color("25")),
 		spinner:      lipgloss.NewStyle().Foreground(lipgloss.Color("127")),
@@ -99,7 +99,7 @@ func darkPalette() palette {
 	return palette{
 		header:       lipgloss.NewStyle().Background(lipgloss.Color("0")).Foreground(lipgloss.Color("15")).Bold(true).Padding(0, 1),
 		rule:         lipgloss.NewStyle().Foreground(lipgloss.Color("238")),
-		you:          lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")),
+		you:          lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("222")),
 		nine:         lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86")),
 		system:       lipgloss.NewStyle().Foreground(lipgloss.Color("75")),
 		spinner:      lipgloss.NewStyle().Foreground(lipgloss.Color("205")),
