@@ -543,6 +543,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.chat.viewport.GotoBottom()
 			break
 		}
+		// Initialize event count from history and replay events
+		m.display.eventCount = len(msg.history)
+		for _, chatMsg := range msg.history {
+			m.display.eventCount += len(chatMsg.toolEvents)
+		}
+		m.display.eventCount += len(msg.replayEvents)
+		
 		if len(msg.history) > 0 {
 			// Full transcript available: render the whole conversation so the
 			// reattached session looks exactly as it did before detaching.
@@ -573,6 +580,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case progressMsg:
+		// Increment event counter for each progress event
+		m.display.eventCount++
 		evt := msg.evt
 		switch evt.Type {
 		case protocol.TypeToolStart:
