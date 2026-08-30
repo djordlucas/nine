@@ -777,7 +777,6 @@ func (m model) View() string {
 			label = short
 		}
 	}
-	scrollHint := "  ·  pgup/pgdn: scroll"
 	ctxHint := contextHint(m.display.contextUsed, m.display.contextBudget, m.display.showContext)
 	askHint := ""
 	if m.chat.pendingHuman() != nil {
@@ -792,7 +791,7 @@ func (m model) View() string {
 		instanceName = "nine"
 	}
 	header := m.display.pal.header.Width(m.display.width).Render(
-		fmt.Sprintf("%s  ·  %s%s%s%s", instanceName, label, askHint, ctxHint, scrollHint),
+		fmt.Sprintf("%s  ·  %s%s%s", instanceName, label, askHint, ctxHint),
 	)
 	rule := m.display.pal.rule.Render(strings.Repeat("─", m.display.width))
 
