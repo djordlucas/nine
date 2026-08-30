@@ -63,7 +63,7 @@ func autoPalette() palette {
 	return palette{
 		header:       lipgloss.NewStyle().Background(lipgloss.Color("0")).Foreground(lipgloss.Color("15")).Bold(true).Padding(0, 1),
 		rule:         lipgloss.NewStyle().Foreground(adaptive("245", "238")),
-		you:          lipgloss.NewStyle().Bold(true).Foreground(adaptive("228", "222")),
+		you:          lipgloss.NewStyle().Bold(true).Foreground(adaptive("245", "252")),
 		nine:         lipgloss.NewStyle().Bold(true).Foreground(adaptive("228", "222")),
 		system:       lipgloss.NewStyle().Foreground(adaptive("25", "75")),
 		spinner:      lipgloss.NewStyle().Foreground(adaptive("127", "205")),
@@ -81,7 +81,7 @@ func lightPalette() palette {
 	return palette{
 		header:       lipgloss.NewStyle().Background(lipgloss.Color("0")).Foreground(lipgloss.Color("15")).Bold(true).Padding(0, 1),
 		rule:         lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
-		you:          lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("228")),
+		you:          lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("245")),
 		nine:         lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("228")),
 		system:       lipgloss.NewStyle().Foreground(lipgloss.Color("25")),
 		spinner:      lipgloss.NewStyle().Foreground(lipgloss.Color("127")),
@@ -99,7 +99,7 @@ func darkPalette() palette {
 	return palette{
 		header:       lipgloss.NewStyle().Background(lipgloss.Color("0")).Foreground(lipgloss.Color("15")).Bold(true).Padding(0, 1),
 		rule:         lipgloss.NewStyle().Foreground(lipgloss.Color("238")),
-		you:          lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("222")),
+		you:          lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("252")),
 		nine:         lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("222")),
 		system:       lipgloss.NewStyle().Foreground(lipgloss.Color("75")),
 		spinner:      lipgloss.NewStyle().Foreground(lipgloss.Color("205")),
@@ -890,7 +890,9 @@ func renderStatusLine(d displayState, role string, sessionLabel string) string {
 	// Build left part: [role] · [session]
 	var leftParts []string
 	if role != "" {
-		leftParts = append(leftParts, d.pal.you.Render(role))
+		// Use pale yellow for role (same as Nine logo color)
+		roleStyle := lipgloss.NewStyle().Bold(true).Foreground(d.pal.nine.GetForeground())
+		leftParts = append(leftParts, roleStyle.Render(role))
 	}
 	if sessionLabel != "" && sessionLabel != "connecting..." && sessionLabel != "reconnecting…" {
 		if role != "" {
