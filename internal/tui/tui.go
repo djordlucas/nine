@@ -265,6 +265,7 @@ type displayState struct {
 	showContext   bool // from config; shows ctx used/budget in header
 	contextUsed   int
 	contextBudget int
+	eventCount    int // total session event count (including child agents)
 	pal           palette
 	glamourStyle  string
 	renderer      *glamour.TermRenderer
@@ -309,6 +310,7 @@ func initialModel(sockPath, binary, attachID string, pal palette, glamourStyle s
 			glamourStyle: glamourStyle,
 			version:      version,
 			currentTime:  time.Now(),
+			eventCount:   0,
 		},
 		cfg: cfg,
 	}
@@ -865,8 +867,15 @@ func renderStatusLine(d displayState, role string, sessionLabel string) string {
 	}
 	leftContent := lipgloss.JoinHorizontal(lipgloss.Bottom, leftParts...)
 	
-	// Build right part: [tokenCounter | time]
+	// Build right part: [eventCount | tokenCounter | time]
 	var rightParts []string
+	
+	// Add event counter if available
+	if d.eventCount > 0 {
+		rightParts = append(rightParts, d.pal.ts.Render(fmt.Sprintf("%d", d.eventCount)))
+		rightParts = append(rightParts, d.pal.continuation.Render(" | "))
+	}
+	
 	if tokenStr != "" {
 		rightParts = append(rightParts, tokenStr)
 		rightParts = append(rightParts, d.pal.continuation.Render(" | "))
