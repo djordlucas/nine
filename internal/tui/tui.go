@@ -852,14 +852,14 @@ func renderStatusLine(d displayState, role string, sessionLabel string) string {
 		tokenStr = d.pal.ts.Render(fmt.Sprintf("%d%% (%s/%s)", pct, formatTokens(d.contextUsed), formatTokens(d.contextBudget)))
 	}
 	
-	// Build left part: [role] [session]
+	// Build left part: [role] · [session]
 	var leftParts []string
 	if role != "" {
 		leftParts = append(leftParts, d.pal.you.Render(role))
 	}
 	if sessionLabel != "" && sessionLabel != "connecting..." && sessionLabel != "reconnecting…" {
 		if role != "" {
-			leftParts = append(leftParts, d.pal.continuation.Render(" "))
+			leftParts = append(leftParts, d.pal.continuation.Render(" · "))
 		}
 		leftParts = append(leftParts, d.pal.continuation.Render(sessionLabel))
 	}
