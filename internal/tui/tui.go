@@ -777,25 +777,10 @@ func (m model) View() string {
 			label = short
 		}
 	}
-	ctxHint := contextHint(m.display.contextUsed, m.display.contextBudget, m.display.showContext)
-	askHint := ""
-	if m.chat.pendingHuman() != nil {
-		askHint = "  ·  ? awaiting answer"
-		if waiting := len(m.chat.humanQueue) - 1; waiting > 0 {
-			askHint += fmt.Sprintf(" (%d more waiting)", waiting)
-		}
-	}
 
-	instanceName := m.conn.instanceName
-	if instanceName == "" {
-		instanceName = "nine"
-	}
-	header := m.display.pal.header.Width(m.display.width).Render(
-		fmt.Sprintf("%s%s%s", instanceName, askHint, ctxHint),
-	)
+	// Top bar (header) removed - skip header and first rule
 	rule := m.display.pal.rule.Render(strings.Repeat("─", m.display.width))
-
-	parts := []string{header, rule, m.chat.viewport.View(), rule}
+	parts := []string{m.chat.viewport.View(), rule}
 	// The picker sits directly on top of the input box, so it reads as attached
 	// to what is being typed.
 	if m.chat.suggestOpen {
