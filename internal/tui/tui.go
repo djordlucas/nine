@@ -66,7 +66,7 @@ func autoPalette() palette {
 		you:          lipgloss.NewStyle().Bold(true).Foreground(adaptive("245", "252")),
 		nine:         lipgloss.NewStyle().Bold(true).Foreground(adaptive("228", "222")),
 		system:       lipgloss.NewStyle().Foreground(adaptive("25", "75")),
-		spinner:      lipgloss.NewStyle().Foreground(adaptive("127", "205")),
+		spinner:      lipgloss.NewStyle().Foreground(adaptive("228", "222")),
 		prompt:       lipgloss.NewStyle().Foreground(adaptive("228", "222")),
 		ts:           lipgloss.NewStyle().Foreground(adaptive("244", "240")),
 		tool:         lipgloss.NewStyle().Foreground(adaptive("130", "214")),
@@ -84,7 +84,7 @@ func lightPalette() palette {
 		you:          lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("245")),
 		nine:         lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("228")),
 		system:       lipgloss.NewStyle().Foreground(lipgloss.Color("25")),
-		spinner:      lipgloss.NewStyle().Foreground(lipgloss.Color("127")),
+		spinner:      lipgloss.NewStyle().Foreground(lipgloss.Color("228")),
 		prompt:       lipgloss.NewStyle().Foreground(lipgloss.Color("228")),
 		ts:           lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
 		tool:         lipgloss.NewStyle().Foreground(lipgloss.Color("130")),
@@ -102,7 +102,7 @@ func darkPalette() palette {
 		you:          lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("252")),
 		nine:         lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("222")),
 		system:       lipgloss.NewStyle().Foreground(lipgloss.Color("75")),
-		spinner:      lipgloss.NewStyle().Foreground(lipgloss.Color("205")),
+		spinner:      lipgloss.NewStyle().Foreground(lipgloss.Color("222")),
 		prompt:       lipgloss.NewStyle().Foreground(lipgloss.Color("222")),
 		ts:           lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
 		tool:         lipgloss.NewStyle().Foreground(lipgloss.Color("214")),
@@ -289,6 +289,7 @@ func initialModel(sockPath, binary, attachID string, pal palette, glamourStyle s
 	ti.PromptStyle = pal.prompt
 	ti.CharLimit = 0
 	ti.Cursor.SetChar("|")
+	ti.Cursor.Style = pal.prompt
 	ti.Focus() //nolint:errcheck
 
 	sp := spinner.New()
@@ -346,7 +347,7 @@ func (m model) Init() tea.Cmd {
 	} else {
 		cmd = connectCmd(m.conn.sockPath, m.conn.binary)
 	}
-	return tea.Batch(cmd, m.chat.spinner.Tick, clockTick())
+	return tea.Batch(cmd, m.chat.spinner.Tick, clockTick(), m.chat.input.Cursor.BlinkCmd())
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -842,10 +843,11 @@ func formatTokens(n int) string {
 	return fmt.Sprintf("%d", n)
 }
 
-// renderInputWithTime renders the text input on its own line.
-// Token counter, time, and role are rendered on a separate status line above.
+// renderInputWithTime renders the text input on its own line with a
+// vertical bar cursor. Token counter, time, and role are rendered on a
+// separate status line above.
 func renderInputWithTime(input textinput.Model, d displayState) string {
-	// Use the textinput's View() which handles cursor display
+	// Use the textinput's View() which handles cursor display and blinking
 	// The width is already set by the WindowSizeMsg handler
 	return input.View()
 }
@@ -966,15 +968,44 @@ const nineLogo = ` ███╗   ██╗██╗███╗   ██╗█�
 // helpText is shown underneath the Nine logo at the start of a session.
 const helpText = "ctrl+t: toggle tools  |  pgup/pgdn: scroll  |  /: commands"
 
-// renderLogo writes the centered, styled nine banner.
+// renderLogo writes the centered, styled nine banner with version baked in.
 func renderLogo(sb *strings.Builder, pal palette, width int, version string) {
-	logoWidth := lipgloss.Width(nineLogo)
+	lines := strings.Split(nineLogo, "\n")
+	
+	// If version is provided, modify the last line to include it
+	if version != "" && len(lines) > 0 {
+		// Add version to the last line with spacing
+		lastLine := lines[len(lines)-1] + strings.Repeat(" ", 2) + version
+		lines[len(lines)-1] = lastLine
+	}
+	
+	// Now render all lines centered
+	logoWidth := 0
+	for _, line := range lines {
+		w := lipgloss.Width(line)
+		if w > logoWidth {
+			logoWidth = w
+		}
+	}
+	
 	pad := (width - logoWidth) / 2
 	if pad < 0 {
 		pad = 0
 	}
 	indent := strings.Repeat(" ", pad)
-	for _, line := range strings.Split(nineLogo, "\n") {
+	
+	for i, line := range lines {
+		if i == len(lines)-1 && version != "" {
+			// Last line: render logo part with nine style, version with ts style
+			// Split: find where version starts
+			idx := strings.Index(line, version)
+			if idx >= 0 {
+				logoText := line[:idx]
+				versionText := line[idx:]
+				sb.WriteString(indent + pal.nine.Render(logoText) + pal.ts.Render(versionText) + "\n")
+				continue
+			}
+		}
 		sb.WriteString(indent + pal.nine.Render(line) + "\n")
 	}
 }
