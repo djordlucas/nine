@@ -912,7 +912,7 @@ func renderStatusLine(d displayState, role string, sessionLabel string) string {
 		rightParts = append(rightParts, d.pal.continuation.Render(" | "))
 	}
 	// Add watch symbol before time
-	clockIcon := d.pal.ts.Render("◷")
+	clockIcon := d.pal.ts.Render("◷ ")
 	rightParts = append(rightParts, clockIcon + timeStr)
 	rightContent := lipgloss.JoinHorizontal(lipgloss.Bottom, rightParts...)
 	rightWidth := lipgloss.Width(rightContent)
