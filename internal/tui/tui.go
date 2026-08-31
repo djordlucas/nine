@@ -306,6 +306,10 @@ func initialModel(sockPath, binary, attachID string, pal palette, glamourStyle s
 			input:   ti,
 			spinner: sp,
 			suggest: newSuggestList(pal),
+			// Initialize with an empty user message to ensure proper label rendering
+			// for the first real user message. This is a workaround for a bug where
+			// the first message in the list doesn't show the "You:" label.
+			messages: []chatMsg{{role: "user", text: "", at: time.Now()}},
 		},
 		display: displayState{
 			showDetail:   true,
@@ -1026,7 +1030,8 @@ func (m *model) rebuildContent() {
 		return
 	}
 	var sb strings.Builder
-	if len(m.chat.messages) == 0 && !m.chat.thinking {
+	// Show logo if no messages or only the initial empty message
+	if !m.chat.thinking && (len(m.chat.messages) == 0 || (len(m.chat.messages) == 1 && m.chat.messages[0].text == "")) {
 		// Center the logo both horizontally and vertically (logo + help text = 7 lines)
 		contentHeight := 7 // Nine logo (6 lines) + help text (1 line)
 		viewportHeight := m.chat.viewport.Height
