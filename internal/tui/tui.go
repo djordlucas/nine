@@ -984,6 +984,9 @@ const nineLogo = ` ███╗   ██╗██╗███╗   ██╗█�
  ██║ ╚████║██║██║ ╚████║███████╗
  ╚═╝  ╚═══╝╚═╝╚═╝  ╚═══╝╚══════╝`
 
+// helpText is shown underneath the Nine logo at the start of a session.
+const helpText = "ctrl+t: toggle tools  |  pgup/pgdn: scroll  |  /: commands"
+
 // renderLogo writes the centered, styled nine banner.
 func renderLogo(sb *strings.Builder, pal palette, width int, version string) {
 	logoWidth := lipgloss.Width(nineLogo)
@@ -997,20 +1000,32 @@ func renderLogo(sb *strings.Builder, pal palette, width int, version string) {
 	}
 }
 
+// renderHelpText writes the centered, grey help text.
+func renderHelpText(sb *strings.Builder, pal palette, width int) {
+	helpWidth := len(helpText)
+	pad := (width - helpWidth) / 2
+	if pad < 0 {
+		pad = 0
+	}
+	indent := strings.Repeat(" ", pad)
+	sb.WriteString("\n" + indent + pal.continuation.Render(helpText))
+}
+
 func (m *model) rebuildContent() {
 	if !m.chat.ready {
 		return
 	}
 	var sb strings.Builder
 	if len(m.chat.messages) == 0 && !m.chat.thinking {
-		// Center the logo both horizontally and vertically
-		logoHeight := 6 // The Nine logo is 6 lines tall
+		// Center the logo both horizontally and vertically (logo + help text = 7 lines)
+		contentHeight := 7 // Nine logo (6 lines) + help text (1 line)
 		viewportHeight := m.chat.viewport.Height
-		verticalPad := (viewportHeight - logoHeight) / 2
+		verticalPad := (viewportHeight - contentHeight) / 2
 		if verticalPad > 0 {
 			sb.WriteString(strings.Repeat("\n", verticalPad))
 		}
 		renderLogo(&sb, m.display.pal, m.chat.viewport.Width, m.display.version)
+		renderHelpText(&sb, m.display.pal, m.chat.viewport.Width)
 		m.chat.viewport.SetContent(sb.String())
 		m.chat.viewport.GotoBottom()
 		return
