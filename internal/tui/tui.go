@@ -887,6 +887,7 @@ func renderStatusLine(d displayState, role string, sessionLabel string) string {
 		tokenStr = d.pal.ts.Render(fmt.Sprintf("%d%% (%s/%s)", pct, formatTokens(d.contextUsed), formatTokens(d.contextBudget)))
 	}
 	
+	// Calculate widths of left (role) and right (events/time) parts first
 	// Build left part: [role]
 	var leftParts []string
 	if role != "" {
@@ -895,13 +896,7 @@ func renderStatusLine(d displayState, role string, sessionLabel string) string {
 		leftParts = append(leftParts, roleStyle.Render(role))
 	}
 	leftContent := lipgloss.JoinHorizontal(lipgloss.Bottom, leftParts...)
-	
-	// Build middle part: [session]
-	var middleParts []string
-	if sessionLabel != "" && sessionLabel != "connecting..." && sessionLabel != "reconnecting…" {
-		middleParts = append(middleParts, d.pal.continuation.Render(sessionLabel))
-	}
-	middleContent := lipgloss.JoinHorizontal(lipgloss.Bottom, middleParts...)
+	leftWidth := lipgloss.Width(leftContent)
 	
 	// Build right part: [eventCount | tokenCounter | time]
 	var rightParts []string
@@ -918,35 +913,26 @@ func renderStatusLine(d displayState, role string, sessionLabel string) string {
 	}
 	rightParts = append(rightParts, timeStr)
 	rightContent := lipgloss.JoinHorizontal(lipgloss.Bottom, rightParts...)
-	
-	// Calculate widths for three-column layout
-	leftWidth := lipgloss.Width(leftContent)
-	middleWidth := lipgloss.Width(middleContent)
 	rightWidth := lipgloss.Width(rightContent)
 	
-	// Ensure minimum widths
-	if leftWidth < 0 {
-		leftWidth = 0
-	}
-	if middleWidth < 0 {
-		middleWidth = 0
-	}
-	if rightWidth < 0 {
-		rightWidth = 0
+	// Available width for middle (session) part
+	availableWidth := d.width - leftWidth - rightWidth
+	if availableWidth < 0 {
+		availableWidth = 0
 	}
 	
-	// Distribute remaining space to middle (center the session name)
-	totalUsed := leftWidth + middleWidth + rightWidth
-	if totalUsed < d.width {
-		// Add padding to middle to center it
-		extraSpace := d.width - totalUsed
-		// Distribute extra space evenly on both sides of middle
-		middleWidth += extraSpace
+	// Build middle part: [session] centered in available width
+	var middleParts []string
+	if sessionLabel != "" && sessionLabel != "connecting..." && sessionLabel != "reconnecting…" {
+		middleParts = append(middleParts, d.pal.continuation.Render(sessionLabel))
 	}
+	middleContent := lipgloss.JoinHorizontal(lipgloss.Bottom, middleParts...)
+	// Center the session in the available width
+	middleStyled := lipgloss.NewStyle().Width(availableWidth).Align(lipgloss.Center).Render(middleContent)
 	
 	return lipgloss.JoinHorizontal(lipgloss.Bottom,
 		leftContent,
-		lipgloss.NewStyle().Width(middleWidth).Render(middleContent),
+		middleStyled,
 		rightContent,
 	)
 }
