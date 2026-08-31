@@ -288,6 +288,7 @@ func initialModel(sockPath, binary, attachID string, pal palette, glamourStyle s
 	ti.Prompt = "> "
 	ti.PromptStyle = pal.prompt
 	ti.CharLimit = 0
+	ti.Cursor.SetChar("|")
 	ti.Focus() //nolint:errcheck
 
 	sp := spinner.New()
