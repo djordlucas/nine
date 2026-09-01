@@ -80,12 +80,16 @@ func autoPalette() palette {
 		toolInput:    lipgloss.NewStyle().Foreground(adaptive("241", "244")).Italic(true),
 		output:       lipgloss.NewStyle().Foreground(adaptive("236", "252")),
 		continuation: lipgloss.NewStyle().Foreground(adaptive("244", "240")),
-		// Box styles for message rendering with grey borders
-		userBox:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("245")).Padding(0, 1),
-		nineBox:      lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("240")).Padding(0, 1),
+		// Box styles for message rendering with consistent light grey borders
+		userBox:      lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("252")).Padding(0, 1),
+		nineBox:      lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("252")).Padding(0, 1),
 		systemBox:    lipgloss.NewStyle().Border(lipgloss.HiddenBorder()).Padding(0, 1),
-		askBox:       lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(lipgloss.Color("238")).Padding(0, 1),
-		bottomBarBox: lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("240")).Padding(0, 1),
+		askBox:       lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("252")).Padding(0, 1),
+		// Bottom bar with same grey border
+		bottomBarBox: lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(lipgloss.Color("252")).
+			Padding(0, 1),
 	}
 }
 
@@ -104,12 +108,16 @@ func lightPalette() palette {
 		toolInput:    lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true),
 		output:       lipgloss.NewStyle().Foreground(lipgloss.Color("236")),
 		continuation: lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
-		// Box styles for message rendering with grey borders
-		userBox:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("245")).Padding(0, 1),
-		nineBox:      lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("240")).Padding(0, 1),
+		// Box styles for message rendering with consistent light grey borders
+		userBox:      lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("252")).Padding(0, 1),
+		nineBox:      lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("252")).Padding(0, 1),
 		systemBox:    lipgloss.NewStyle().Border(lipgloss.HiddenBorder()).Padding(0, 1),
-		askBox:       lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(lipgloss.Color("238")).Padding(0, 1),
-		bottomBarBox: lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("240")).Padding(0, 1),
+		askBox:       lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("252")).Padding(0, 1),
+		// Bottom bar with same grey border
+		bottomBarBox: lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(lipgloss.Color("252")).
+			Padding(0, 1),
 	}
 }
 
@@ -128,13 +136,13 @@ func darkPalette() palette {
 		toolInput:    lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Italic(true),
 		output:       lipgloss.NewStyle().Foreground(lipgloss.Color("252")),
 		continuation: lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
-		// Box styles for message rendering with grey borders
-		// Use darker greys for dark terminal background
-		userBox:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("238")).Padding(0, 1),
-		nineBox:      lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("242")).Padding(0, 1),
+		// Box styles for message rendering with consistent light grey borders
+		// Use bright grey for dark terminal background
+		userBox:      lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("248")).Padding(0, 1),
+		nineBox:      lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("248")).Padding(0, 1),
 		systemBox:    lipgloss.NewStyle().Border(lipgloss.HiddenBorder()).Padding(0, 1),
-		askBox:       lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(lipgloss.Color("240")).Padding(0, 1),
-		bottomBarBox: lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("242")).Padding(0, 1),
+		askBox:       lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("248")).Padding(0, 1),
+		bottomBarBox: lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("248")).Padding(0, 1),
 	}
 }
 
@@ -825,9 +833,8 @@ func (m model) View() string {
 		}
 	}
 
-	// Top bar (header) removed - skip header and first rule
-	rule := m.display.pal.rule.Render(strings.Repeat("─", m.display.width))
-	parts := []string{m.chat.viewport.View(), rule}
+	// Top bar (header) removed
+	parts := []string{m.chat.viewport.View()}
 	// The picker sits directly on top of the input box, so it reads as attached
 	// to what is being typed.
 	if m.chat.suggestOpen {
@@ -1199,33 +1206,35 @@ func renderChatMsg(sb *strings.Builder, msg chatMsg, width int, showDetail bool,
 	var content strings.Builder
 	content.WriteString(header)
 
-	// Add message text
-	if msg.text != "" {
-		content.WriteString("\n")
-		wrapped := wordWrap(msg.text, textWidth)
-		content.WriteString(indent + wrapped)
-	}
-
-	// Add tool events and trace for Nine messages
+	// Add tool events and trace for Nine messages (before text)
 	if msg.role == "nine" {
 		for _, te := range msg.toolEvents {
-			content.WriteString("\n")
-			// Simple rendering: just show tool name and status
+			// Simple rendering: show tool name and input/output
 			toolLine := indent + pal.tool.Render(te.name)
-			if te.outputStr != "" {
-				toolLine += ": " + te.outputStr
-			} else if te.inputStr != "" {
-				toolLine += ": " + te.inputStr
+			if te.inputStr != "" {
+				toolLine += ": " + pal.toolInput.Render(te.inputStr)
 			}
-			content.WriteString(wordWrap(toolLine, textWidth) + "\n")
+			if te.outputStr != "" {
+				if te.inputStr != "" {
+					toolLine += " -> " + te.outputStr
+				} else {
+					toolLine += ": " + te.outputStr
+				}
+			}
+			// Each tool call on its own line, word-wrapped
+			content.WriteString("\n" + wordWrap(toolLine, textWidth))
 		}
 		if msg.trace != "" {
-			content.WriteString("\n")
 			// Simple trace rendering
 			for _, line := range strings.Split(msg.trace, "\n") {
-				content.WriteString(indent + pal.continuation.Render("· ") + wordWrap(line, textWidth-len(indent)-2) + "\n")
+				content.WriteString("\n" + indent + pal.continuation.Render("· ") + wordWrap(line, textWidth-len(indent)-2))
 			}
 		}
+	}
+
+	// Add message text
+	if msg.text != "" {
+		content.WriteString("\n" + indent + wordWrap(msg.text, textWidth))
 	}
 
 	// Render the box with full width
@@ -1327,35 +1336,35 @@ func renderThinking(sb *strings.Builder, v thinkingView) {
 	var content strings.Builder
 	content.WriteString(header)
 
-	// Add streaming text or status
-	if v.streamText != "" {
-		content.WriteString("\n")
-		wrapped := wordWrap(v.streamText, textWidth)
-		content.WriteString(indent + wrapped)
-	} else {
-		content.WriteString("\n")
-		status := v.sp.View() + " " + v.statusLabel() + v.stepHint() + " " + v.pal.ts.Render(formatElapsed(time.Since(v.at)))
-		content.WriteString(indent + status)
-	}
-
-	// Add tool events and trace
+	// Add tool events and trace (before streaming text)
 	for _, te := range v.evts {
-		content.WriteString("\n")
-		// Simple rendering: just show tool name and status
+		// Simple rendering: show tool name and input/output
 		toolLine := indent + v.pal.tool.Render(te.name)
-		if te.outputStr != "" {
-			toolLine += ": " + te.outputStr
-		} else if te.inputStr != "" {
-			toolLine += ": " + te.inputStr
+		if te.inputStr != "" {
+			toolLine += ": " + v.pal.toolInput.Render(te.inputStr)
 		}
-		content.WriteString(wordWrap(toolLine, textWidth) + "\n")
+		if te.outputStr != "" {
+			if te.inputStr != "" {
+				toolLine += " -> " + te.outputStr
+			} else {
+				toolLine += ": " + te.outputStr
+			}
+		}
+		// Each tool call on its own line, word-wrapped
+		content.WriteString("\n" + wordWrap(toolLine, textWidth))
 	}
 	if v.trace != "" {
-		content.WriteString("\n")
 		// Simple trace rendering
 		for _, line := range strings.Split(v.trace, "\n") {
-			content.WriteString(indent + v.pal.continuation.Render("· ") + wordWrap(line, textWidth-len(indent)-2) + "\n")
+			content.WriteString("\n" + indent + v.pal.continuation.Render("· ") + wordWrap(line, textWidth-len(indent)-2))
 		}
+	}
+
+	// Add streaming text or status (at the bottom)
+	if v.streamText != "" {
+		content.WriteString("\n" + indent + wordWrap(v.streamText, textWidth))
+	} else {
+		content.WriteString("\n" + indent + v.sp.View() + " " + v.statusLabel() + v.stepHint() + " " + v.pal.ts.Render(formatElapsed(time.Since(v.at))))
 	}
 
 	// Render the box with full width
