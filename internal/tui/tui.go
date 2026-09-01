@@ -19,8 +19,10 @@ import (
 )
 
 const (
-	headerHeight = 2
-	// inputAreaHeight: rule + 1 line of input.
+	// headerHeight: was 2 when we had a top header bar, now 0 since it's removed
+	headerHeight = 0
+	// inputAreaHeight: 1 line for status + 1 line for input (minimum).
+	// The input can wrap to additional lines when text is long.
 	inputAreaHeight = 2
 
 	maxInputDisplay  = 80
@@ -48,6 +50,7 @@ type palette struct {
 	toolInput    lipgloss.Style
 	output       lipgloss.Style
 	continuation lipgloss.Style
+	messageBlock lipgloss.Style
 }
 
 // adaptive returns a lipgloss color that picks Light on light terminals and Dark on dark ones.
@@ -61,17 +64,22 @@ func autoPalette() palette {
 	return palette{
 		header:       lipgloss.NewStyle().Background(lipgloss.Color("0")).Foreground(lipgloss.Color("15")).Bold(true).Padding(0, 1),
 		rule:         lipgloss.NewStyle().Foreground(adaptive("245", "238")),
-		you:          lipgloss.NewStyle().Bold(true).Foreground(adaptive("127", "212")),
-		nine:         lipgloss.NewStyle().Bold(true).Foreground(adaptive("23", "86")),
+		you:          lipgloss.NewStyle().Bold(true).Foreground(adaptive("245", "252")),
+		nine:         lipgloss.NewStyle().Bold(true).Foreground(adaptive("228", "222")),
 		system:       lipgloss.NewStyle().Foreground(adaptive("25", "75")),
-		spinner:      lipgloss.NewStyle().Foreground(adaptive("127", "205")),
-		prompt:       lipgloss.NewStyle().Foreground(adaptive("238", "241")),
+		spinner:      lipgloss.NewStyle().Foreground(adaptive("228", "222")),
+		prompt:       lipgloss.NewStyle().Foreground(adaptive("228", "222")),
 		ts:           lipgloss.NewStyle().Foreground(adaptive("244", "240")),
 		tool:         lipgloss.NewStyle().Foreground(adaptive("130", "214")),
 		arrow:        lipgloss.NewStyle().Foreground(adaptive("130", "214")),
 		toolInput:    lipgloss.NewStyle().Foreground(adaptive("241", "244")).Italic(true),
 		output:       lipgloss.NewStyle().Foreground(adaptive("236", "252")),
 		continuation: lipgloss.NewStyle().Foreground(adaptive("244", "240")),
+		messageBlock: lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(lipgloss.Color("244")).
+			Background(lipgloss.Color("0")).
+			Padding(0, 1),
 	}
 }
 
@@ -79,17 +87,22 @@ func lightPalette() palette {
 	return palette{
 		header:       lipgloss.NewStyle().Background(lipgloss.Color("0")).Foreground(lipgloss.Color("15")).Bold(true).Padding(0, 1),
 		rule:         lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
-		you:          lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("127")),
-		nine:         lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("23")),
+		you:          lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("245")),
+		nine:         lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("228")),
 		system:       lipgloss.NewStyle().Foreground(lipgloss.Color("25")),
-		spinner:      lipgloss.NewStyle().Foreground(lipgloss.Color("127")),
-		prompt:       lipgloss.NewStyle().Foreground(lipgloss.Color("238")),
+		spinner:      lipgloss.NewStyle().Foreground(lipgloss.Color("228")),
+		prompt:       lipgloss.NewStyle().Foreground(lipgloss.Color("228")),
 		ts:           lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
 		tool:         lipgloss.NewStyle().Foreground(lipgloss.Color("130")),
 		arrow:        lipgloss.NewStyle().Foreground(lipgloss.Color("130")),
 		toolInput:    lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true),
 		output:       lipgloss.NewStyle().Foreground(lipgloss.Color("236")),
 		continuation: lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
+		messageBlock: lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(lipgloss.Color("244")).
+			Background(lipgloss.Color("0")).
+			Padding(0, 1),
 	}
 }
 
@@ -97,17 +110,22 @@ func darkPalette() palette {
 	return palette{
 		header:       lipgloss.NewStyle().Background(lipgloss.Color("0")).Foreground(lipgloss.Color("15")).Bold(true).Padding(0, 1),
 		rule:         lipgloss.NewStyle().Foreground(lipgloss.Color("238")),
-		you:          lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")),
-		nine:         lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86")),
+		you:          lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("252")),
+		nine:         lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("222")),
 		system:       lipgloss.NewStyle().Foreground(lipgloss.Color("75")),
-		spinner:      lipgloss.NewStyle().Foreground(lipgloss.Color("205")),
-		prompt:       lipgloss.NewStyle().Foreground(lipgloss.Color("241")),
+		spinner:      lipgloss.NewStyle().Foreground(lipgloss.Color("222")),
+		prompt:       lipgloss.NewStyle().Foreground(lipgloss.Color("222")),
 		ts:           lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
 		tool:         lipgloss.NewStyle().Foreground(lipgloss.Color("214")),
 		arrow:        lipgloss.NewStyle().Foreground(lipgloss.Color("214")),
 		toolInput:    lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Italic(true),
 		output:       lipgloss.NewStyle().Foreground(lipgloss.Color("252")),
 		continuation: lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
+		messageBlock: lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(lipgloss.Color("244")).
+			Background(lipgloss.Color("0")).
+			Padding(0, 1),
 	}
 }
 
@@ -150,6 +168,9 @@ type responseMsg struct{ text string }
 type progressMsg struct{ evt protocol.ProgressEvent }
 type errMsg struct{ err error }
 type chunkMsg struct{ text string }
+
+// timeTickMsg updates the current time display.
+type timeTickMsg time.Time
 
 // answerResultMsg reports the outcome of delivering a human answer on a
 // separate connection. A non-nil err is shown inline, not fatally.
@@ -262,10 +283,12 @@ type displayState struct {
 	showContext   bool // from config; shows ctx used/budget in header
 	contextUsed   int
 	contextBudget int
+	eventCount    int // total session event count (including child agents)
 	pal           palette
 	glamourStyle  string
 	renderer      *glamour.TermRenderer
-	version       string // Nine's build version, shown under the logo
+	version       string    // Nine's build version, shown under the logo
+	currentTime   time.Time // current time for display in prompt bar
 }
 
 type model struct {
@@ -281,6 +304,8 @@ func initialModel(sockPath, binary, attachID string, pal palette, glamourStyle s
 	ti.Prompt = "> "
 	ti.PromptStyle = pal.prompt
 	ti.CharLimit = 0
+	ti.Cursor.SetChar("|")
+	ti.Cursor.Style = pal.prompt
 	ti.Focus() //nolint:errcheck
 
 	sp := spinner.New()
@@ -297,6 +322,10 @@ func initialModel(sockPath, binary, attachID string, pal palette, glamourStyle s
 			input:   ti,
 			spinner: sp,
 			suggest: newSuggestList(pal),
+			// Initialize with an empty user message to ensure proper label rendering
+			// for the first real user message. This is a workaround for a bug where
+			// the first message in the list doesn't show the "You:" label.
+			messages: []chatMsg{{role: "user", text: "", at: time.Now()}},
 		},
 		display: displayState{
 			showDetail:   true,
@@ -304,6 +333,8 @@ func initialModel(sockPath, binary, attachID string, pal palette, glamourStyle s
 			pal:          pal,
 			glamourStyle: glamourStyle,
 			version:      version,
+			currentTime:  time.Now(),
+			eventCount:   0,
 		},
 		cfg: cfg,
 	}
@@ -322,6 +353,13 @@ func newRenderer(glamourStyle string, width int) *glamour.TermRenderer {
 	return r
 }
 
+// clockTick returns a command that sends time updates every second.
+func clockTick() tea.Cmd {
+	return tea.Every(time.Second, func(t time.Time) tea.Msg {
+		return timeTickMsg(t)
+	})
+}
+
 func (m model) Init() tea.Cmd {
 	var cmd tea.Cmd
 	if m.conn.attachID != "" {
@@ -329,7 +367,7 @@ func (m model) Init() tea.Cmd {
 	} else {
 		cmd = connectCmd(m.conn.sockPath, m.conn.binary)
 	}
-	return tea.Batch(cmd, m.chat.spinner.Tick)
+	return tea.Batch(cmd, m.chat.spinner.Tick, clockTick(), m.chat.input.Cursor.BlinkCmd())
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -493,19 +531,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.WindowSizeMsg:
-		m.display.width = msg.Width
+		m.display.width = msg.Width - 1
 		m.display.height = msg.Height
-		m.chat.input.Width = msg.Width - len(m.chat.input.Prompt) - 1
+		m.chat.input.Width = (msg.Width - 1) - len(m.chat.input.Prompt) - 1
 		vph := m.viewportHeight()
 		if !m.chat.ready {
-			m.chat.viewport = viewport.New(msg.Width, vph)
+			m.chat.viewport = viewport.New(msg.Width-1, vph)
 			m.chat.ready = true
 		} else {
-			m.chat.viewport.Width = msg.Width
+			m.chat.viewport.Width = msg.Width - 1
 			m.chat.viewport.Height = vph
 		}
-		m.chat.suggest.SetSize(msg.Width, m.suggestHeight())
-		m.display.renderer = newRenderer(m.display.glamourStyle, msg.Width-4)
+		m.chat.suggest.SetSize(msg.Width-1, m.suggestHeight())
+		m.display.renderer = newRenderer(m.display.glamourStyle, (msg.Width-1)-8)
 		m.rebuildContent()
 
 	case connectedMsg:
@@ -529,6 +567,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.chat.viewport.GotoBottom()
 			break
 		}
+		// Initialize event count from history and replay events
+		m.display.eventCount = len(msg.history)
+		for _, chatMsg := range msg.history {
+			m.display.eventCount += len(chatMsg.toolEvents)
+		}
+		m.display.eventCount += len(msg.replayEvents)
+
 		if len(msg.history) > 0 {
 			// Full transcript available: render the whole conversation so the
 			// reattached session looks exactly as it did before detaching.
@@ -559,6 +604,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case progressMsg:
+		// Increment event counter for each progress event
+		m.display.eventCount++
 		evt := msg.evt
 		switch evt.Type {
 		case protocol.TypeToolStart:
@@ -719,6 +766,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.chat.thinking {
 			m.rebuildContent()
 		}
+
+	case timeTickMsg:
+		m.display.currentTime = time.Time(msg)
+		cmds = append(cmds, clockTick())
 	}
 
 	if m.chat.ready {
@@ -760,40 +811,23 @@ func (m model) View() string {
 		} else {
 			label = short
 		}
-		if m.conn.role != "" {
-			label += "  ·  " + m.conn.role
-		}
-	}
-	detailHint := "  ·  ctrl+t: tools off"
-	if !m.display.showDetail {
-		detailHint = "  ·  ctrl+t: tools on"
-	}
-	scrollHint := "  ·  pgup/pgdn: scroll"
-	ctxHint := contextHint(m.display.contextUsed, m.display.contextBudget, m.display.showContext)
-	askHint := ""
-	if m.chat.pendingHuman() != nil {
-		askHint = "  ·  ? awaiting answer"
-		if waiting := len(m.chat.humanQueue) - 1; waiting > 0 {
-			askHint += fmt.Sprintf(" (%d more waiting)", waiting)
-		}
 	}
 
-	instanceName := m.conn.instanceName
-	if instanceName == "" {
-		instanceName = "nine"
-	}
-	header := m.display.pal.header.Width(m.display.width).Render(
-		fmt.Sprintf("%s  ·  %s%s%s%s%s", instanceName, label, askHint, ctxHint, detailHint, scrollHint),
-	)
+	// Top bar (header) removed - skip header and first rule
 	rule := m.display.pal.rule.Render(strings.Repeat("─", m.display.width))
-
-	parts := []string{header, rule, m.chat.viewport.View(), rule}
+	parts := []string{m.chat.viewport.View(), rule}
 	// The picker sits directly on top of the input box, so it reads as attached
 	// to what is being typed.
 	if m.chat.suggestOpen {
 		parts = append(parts, m.chat.suggest.View())
 	}
-	parts = append(parts, m.chat.input.View())
+	// Render input line (top line of bottom bar)
+	inputLine := renderInputWithTime(m.chat.input, m.display)
+	parts = append(parts, inputLine)
+
+	// Render status line with role, session info, token counter and time (bottom line of bottom bar)
+	statusLine := renderStatusLine(m.display, m.conn.role, label)
+	parts = append(parts, statusLine)
 
 	return strings.Join(parts, "\n")
 }
@@ -802,24 +836,111 @@ func (m model) View() string {
 // contextWarnPercent of the budget it flags the pressure with a ⚠ marker and a
 // percentage, and does so even when showContext is off — a warning outranks the
 // user's opt-out of the routine ctx readout. Below the threshold it shows the
-// plain used/budget readout only when showContext is on, and nothing when the
+// formatted used/budget readout only when showContext is on, and nothing when the
 // budget is unknown.
 func contextHint(used, budget int, showContext bool) string {
 	if budget <= 0 {
 		return ""
 	}
+	pct := used * 100 / budget
+	formattedUsed := formatTokens(used)
+	formattedBudget := formatTokens(budget)
 	if used*100 >= contextWarnPercent*budget {
-		return fmt.Sprintf("  ·  ⚠ ctx: %d/%d (%d%%)", used, budget, used*100/budget)
+		return fmt.Sprintf("  ·  ⚠ %d%% (%s/%s)", pct, formattedUsed, formattedBudget)
 	}
 	if showContext {
-		return fmt.Sprintf("  ·  ctx: %d/%d", used, budget)
+		return fmt.Sprintf("  ·  %d%% (%s/%s)", pct, formattedUsed, formattedBudget)
 	}
 	return ""
 }
 
+// formatTokens formats token counts with 'k' suffix for thousands.
+// e.g., 6715 -> "6k", 32768 -> "32k", 500 -> "500"
+func formatTokens(n int) string {
+	if n >= 1000 {
+		return fmt.Sprintf("%dk", n/1000)
+	}
+	return fmt.Sprintf("%d", n)
+}
+
+// renderInputWithTime renders the text input on its own line with a
+// vertical bar cursor. Token counter, time, and role are rendered on a
+// separate status line above.
+func renderInputWithTime(input textinput.Model, d displayState) string {
+	// Use the textinput's View() which handles cursor display and blinking
+	// The width is already set by the WindowSizeMsg handler
+	return input.View()
+}
+
+// renderStatusLine renders role and session info on the left, and token counter
+// and time on the right of the top line of the bottom bar.
+// Format: [role session...]                              [tokenCounter | time]
+func renderStatusLine(d displayState, role string, sessionLabel string) string {
+	// Format time as HH:MM:SS
+	timeStr := d.pal.ts.Render(d.currentTime.Format("15:04:05"))
+
+	// Build token counter string
+	tokenStr := ""
+	if d.contextBudget > 0 {
+		pct := d.contextUsed * 100 / d.contextBudget
+		tokenStr = d.pal.ts.Render(fmt.Sprintf("%d%% (%s/%s)", pct, formatTokens(d.contextUsed), formatTokens(d.contextBudget)))
+	}
+
+	// Calculate widths of left (role + session) and right (events/time) parts first
+	// Build left part: [role . session]
+	var leftParts []string
+	if role != "" {
+		// Use pale yellow for role (same as Nine logo color)
+		roleStyle := lipgloss.NewStyle().Bold(true).Foreground(d.pal.nine.GetForeground())
+		leftParts = append(leftParts, roleStyle.Render(role))
+	}
+	if sessionLabel != "" && sessionLabel != "connecting..." && sessionLabel != "reconnecting…" {
+		leftParts = append(leftParts, d.pal.continuation.Render(" . "))
+		leftParts = append(leftParts, d.pal.continuation.Render(sessionLabel))
+	}
+	leftContent := lipgloss.JoinHorizontal(lipgloss.Center, leftParts...)
+	leftWidth := lipgloss.Width(leftContent)
+
+	// Build right part: [eventCount | tokenCounter | time]
+	var rightParts []string
+
+	// Add event counter if available
+	if d.eventCount > 0 {
+		rightParts = append(rightParts, d.pal.ts.Render(fmt.Sprintf("%d events", d.eventCount)))
+		rightParts = append(rightParts, d.pal.continuation.Render(" | "))
+	}
+
+	if tokenStr != "" {
+		rightParts = append(rightParts, tokenStr)
+		rightParts = append(rightParts, d.pal.continuation.Render(" | "))
+	}
+	// Add watch symbol before time
+	clockIcon := d.pal.ts.Render("◷ ")
+	rightParts = append(rightParts, clockIcon+timeStr)
+	rightContent := lipgloss.JoinHorizontal(lipgloss.Bottom, rightParts...)
+	rightWidth := lipgloss.Width(rightContent)
+
+	// Available width for spacing between left and right
+	availableWidth := d.width - leftWidth - rightWidth
+	if availableWidth < 0 {
+		availableWidth = 0
+	}
+
+	// Empty middle part since session is now in left part
+	middleStyled := lipgloss.NewStyle().Width(availableWidth).Render("")
+
+	return lipgloss.JoinHorizontal(lipgloss.Bottom,
+		leftContent,
+		middleStyled,
+		rightContent,
+	)
+}
+
 func (m *model) viewportHeight() int {
-	// 1 for the rule above the input + 1 for the input line itself, plus
-	// whatever rows the slash-command picker is borrowing.
+	// Reserve space for: rule + status line + input line (minimum 1 line)
+	// The input can wrap to additional lines, but we reserve only 1 line by default
+	// (inputAreaHeight = 2: status + 1 input line). Extra wrapped lines will
+	// overlap with the viewport, which is acceptable.
 	h := m.display.height - headerHeight - inputAreaHeight - m.suggestHeight()
 	if h < 1 {
 		return 1
@@ -862,31 +983,60 @@ const nineLogo = ` ███╗   ██╗██╗███╗   ██╗█�
  ██║ ╚████║██║██║ ╚████║███████╗
  ╚═╝  ╚═══╝╚═╝╚═╝  ╚═══╝╚══════╝`
 
-// renderLogo writes the centered, styled nine banner, its version, and a tagline.
+// helpText is shown underneath the Nine logo at the start of a session.
+const helpText = "ctrl+t: toggle tools  |  pgup/pgdn: scroll  |  /: commands"
+
+// renderLogo writes the centered, styled nine banner with version baked in.
 func renderLogo(sb *strings.Builder, pal palette, width int, version string) {
-	logoWidth := lipgloss.Width(nineLogo)
+	lines := strings.Split(nineLogo, "\n")
+
+	// If version is provided, modify the last line to include it
+	if version != "" && len(lines) > 0 {
+		// Add version to the last line with spacing
+		lastLine := lines[len(lines)-1] + strings.Repeat(" ", 2) + version
+		lines[len(lines)-1] = lastLine
+	}
+
+	// Now render all lines centered
+	logoWidth := 0
+	for _, line := range lines {
+		w := lipgloss.Width(line)
+		if w > logoWidth {
+			logoWidth = w
+		}
+	}
+
 	pad := (width - logoWidth) / 2
 	if pad < 0 {
 		pad = 0
 	}
 	indent := strings.Repeat(" ", pad)
-	sb.WriteByte('\n')
-	for _, line := range strings.Split(nineLogo, "\n") {
+
+	for i, line := range lines {
+		if i == len(lines)-1 && version != "" {
+			// Last line: render logo part with nine style, version with ts style
+			// Split: find where version starts
+			idx := strings.Index(line, version)
+			if idx >= 0 {
+				logoText := line[:idx]
+				versionText := line[idx:]
+				sb.WriteString(indent + pal.nine.Render(logoText) + pal.ts.Render(versionText) + "\n")
+				continue
+			}
+		}
 		sb.WriteString(indent + pal.nine.Render(line) + "\n")
 	}
-	if version != "" {
-		vpad := (width - len(version)) / 2
-		if vpad < 0 {
-			vpad = 0
-		}
-		sb.WriteString(strings.Repeat(" ", vpad) + pal.continuation.Render(version) + "\n")
+}
+
+// renderHelpText writes the centered, grey help text.
+func renderHelpText(sb *strings.Builder, pal palette, width int) {
+	helpWidth := len(helpText)
+	pad := (width - helpWidth) / 2
+	if pad < 0 {
+		pad = 0
 	}
-	tagline := "your local-first AI agent · type a message to begin"
-	tpad := (width - len(tagline)) / 2
-	if tpad < 0 {
-		tpad = 0
-	}
-	sb.WriteString("\n" + strings.Repeat(" ", tpad) + pal.continuation.Render(tagline) + "\n")
+	indent := strings.Repeat(" ", pad)
+	sb.WriteString("\n" + indent + pal.continuation.Render(helpText))
 }
 
 func (m *model) rebuildContent() {
@@ -894,9 +1044,19 @@ func (m *model) rebuildContent() {
 		return
 	}
 	var sb strings.Builder
-	if len(m.chat.messages) == 0 && !m.chat.thinking {
+	// Show logo if no messages or only the initial empty message
+	if !m.chat.thinking && (len(m.chat.messages) == 0 || (len(m.chat.messages) == 1 && m.chat.messages[0].text == "")) {
+		// Center the logo both horizontally and vertically (logo + help text = 7 lines)
+		contentHeight := 7 // Nine logo (6 lines) + help text (1 line)
+		viewportHeight := m.chat.viewport.Height
+		verticalPad := (viewportHeight - contentHeight) / 2
+		if verticalPad > 0 {
+			sb.WriteString(strings.Repeat("\n", verticalPad))
+		}
 		renderLogo(&sb, m.display.pal, m.chat.viewport.Width, m.display.version)
+		renderHelpText(&sb, m.display.pal, m.chat.viewport.Width)
 		m.chat.viewport.SetContent(sb.String())
+		m.chat.viewport.GotoBottom()
 		return
 	}
 	for _, msg := range m.chat.messages {
@@ -923,7 +1083,7 @@ func (m *model) rebuildContent() {
 }
 
 func headerLine(label, styledLabel, tsText, styledTs string, width int) string {
-	fill := width - len(label) - len(tsText)
+	fill := width - lipgloss.Width(styledLabel) - lipgloss.Width(styledTs)
 	if fill < 1 {
 		fill = 1
 	}
@@ -931,40 +1091,59 @@ func headerLine(label, styledLabel, tsText, styledTs string, width int) string {
 }
 
 func renderChatMsg(sb *strings.Builder, msg chatMsg, width int, showDetail bool, pal palette, r *glamour.TermRenderer) {
-	tsText := "[" + msg.at.Format("15:04:05") + "]"
+	tsText := msg.at.Format("15:04:05")
 	styledTs := pal.ts.Render(tsText)
 	const indent = "  "
+
+	// Skip rendering empty messages (like the initial empty user message workaround)
+	if msg.role == "user" && msg.text == "" && len(msg.toolEvents) == 0 && msg.trace == "" {
+		return
+	}
+
+	// Account for block: 2 border + 2 padding = 4, plus 1 for safety
+	contentWidth := width - 5
+	if contentWidth < 10 {
+		contentWidth = width
+	}
+	// Build message content
+	var buf strings.Builder
 	switch msg.role {
 	case "user":
-		sb.WriteString(headerLine("You:", pal.you.Render("You:"), tsText, styledTs, width))
+		buf.WriteString(headerLine("You:", pal.you.Render("You:"), tsText, styledTs, contentWidth))
 		if msg.text != "" {
-			wrapped := wordWrap(msg.text, width-len(indent))
+			wrapped := wordWrap(msg.text, contentWidth-len(indent))
 			for _, line := range strings.Split(wrapped, "\n") {
-				sb.WriteString(indent + line + "\n")
+				buf.WriteString(indent + line + "\n")
 			}
 		}
 	case "system":
-		sb.WriteString(headerLine("nine:", pal.system.Render("nine:"), tsText, styledTs, width))
+		buf.WriteString(headerLine("nine:", pal.system.Render("nine:"), tsText, styledTs, contentWidth))
 		for _, line := range strings.Split(msg.text, "\n") {
-			sb.WriteString(indent + pal.system.Render(line) + "\n")
+			buf.WriteString(indent + pal.system.Render(line) + "\n")
 		}
 	case "ask":
-		sb.WriteString(headerLine("Nine asks:", pal.you.Render("Nine asks:"), tsText, styledTs, width))
-		wrapped := wordWrap(msg.text, width-len(indent))
+		buf.WriteString(headerLine("Nine asks:", pal.you.Render("Nine asks:"), tsText, styledTs, contentWidth))
+		wrapped := wordWrap(msg.text, contentWidth-len(indent))
 		for _, line := range strings.Split(wrapped, "\n") {
-			sb.WriteString(indent + pal.tool.Render(line) + "\n")
+			buf.WriteString(indent + pal.tool.Render(line) + "\n")
 		}
 	default: // "nine"
-		sb.WriteString(headerLine("Nine:", pal.nine.Render("Nine:"), tsText, styledTs, width))
+		buf.WriteString(headerLine("Nine:", pal.nine.Render("Nine:"), tsText, styledTs, contentWidth))
 		for _, te := range msg.toolEvents {
-			renderToolEvent(sb, te, showDetail, pal, width)
+			renderToolEvent(&buf, te, showDetail, pal, contentWidth)
 		}
-		renderTrace(sb, msg.trace, showDetail, pal, width)
+		renderTrace(&buf, msg.trace, showDetail, pal, contentWidth)
 		if msg.text != "" {
 			rendered := renderMarkdown(r, msg.text)
-			sb.WriteString(rendered)
+			buf.WriteString(rendered)
 		}
 	}
+
+	// Wrap in message block and write to main buffer
+	content := buf.String()
+	// Set block width to match the display width
+	blockStyle := pal.messageBlock.Width(width)
+	sb.WriteString(blockStyle.Render(content))
 }
 
 func renderMarkdown(r *glamour.TermRenderer, text string) string {
@@ -975,7 +1154,9 @@ func renderMarkdown(r *glamour.TermRenderer, text string) string {
 	if err != nil {
 		return "  " + text + "\n"
 	}
-	return out
+	out = strings.TrimLeft(out, "\n")
+	out = strings.TrimRight(out, "\n")
+	return out + "\n"
 }
 
 // thinkingView is the live state renderThinking draws: the in-flight step, the
@@ -1021,25 +1202,39 @@ func (v thinkingView) stepHint() string {
 }
 
 func renderThinking(sb *strings.Builder, v thinkingView) {
-	tsText := "[" + v.at.Format("15:04:05") + "]"
+	// Account for block: 2 border + 2 padding = 4, plus 1 for safety
+	contentWidth := v.width - 5
+	if contentWidth < 10 {
+		contentWidth = v.width
+	}
+	tsText := v.at.Format("15:04:05")
 	styledTs := v.pal.ts.Render(tsText)
 	const indent = "  "
-	sb.WriteString(headerLine("Nine:", v.pal.nine.Render("Nine:"), tsText, styledTs, v.width))
+
+	// Build thinking content
+	var buf strings.Builder
+	buf.WriteString(headerLine("Nine:", v.pal.nine.Render("Nine:"), tsText, styledTs, contentWidth))
 	for _, te := range v.evts {
-		renderToolEvent(sb, te, v.showDetail, v.pal, v.width)
+		renderToolEvent(&buf, te, v.showDetail, v.pal, contentWidth)
 	}
 
-	renderTrace(sb, v.trace, v.showDetail, v.pal, v.width)
+	renderTrace(&buf, v.trace, v.showDetail, v.pal, contentWidth)
 
 	if v.streamText != "" {
-		wrapped := wordWrap(v.streamText, v.width-len(indent))
+		wrapped := wordWrap(v.streamText, contentWidth-len(indent))
 		for _, line := range strings.Split(wrapped, "\n") {
-			sb.WriteString(indent + v.pal.output.Render(line) + "\n")
+			buf.WriteString(indent + v.pal.output.Render(line) + "\n")
 		}
 	} else {
-		sb.WriteString(indent + v.sp.View() + " " + v.statusLabel() + v.stepHint() +
+		buf.WriteString(indent + v.sp.View() + " " + v.statusLabel() + v.stepHint() +
 			v.pal.ts.Render("  "+formatElapsed(time.Since(v.at))) + "\n")
 	}
+
+	// Wrap in message block and write to main buffer
+	content := buf.String()
+	// Set block width to match the display width
+	blockStyle := v.pal.messageBlock.Width(v.width)
+	sb.WriteString(blockStyle.Render(content))
 }
 
 // maxThinkingTraceLines caps how many trailing lines of the live reasoning trace
@@ -1088,7 +1283,7 @@ func renderReasoning(sb *strings.Builder, text string, pal palette, width int, m
 }
 
 func renderToolEvent(sb *strings.Builder, te toolEvent, showDetail bool, pal palette, width int) {
-	tsText := "[" + te.at.Format("15:04:05") + "]"
+	tsText := te.at.Format("15:04:05")
 	styledTs := pal.ts.Render(tsText)
 	const indent = "  "
 	if te.subAgent {
@@ -1096,12 +1291,12 @@ func renderToolEvent(sb *strings.Builder, te toolEvent, showDetail bool, pal pal
 		if te.subAgentRole != "" {
 			label += " · " + te.subAgentRole
 		}
-		rawLeft := "↳ " + label + "  " + te.inputStr
+		rawLeft := indent + "↳ " + label + "  " + te.inputStr
 		fill := width - lipgloss.Width(rawLeft) - len(tsText)
 		if fill < 1 {
 			fill = 1
 		}
-		styledLine := pal.arrow.Render("↳") + " " + pal.tool.Render(label) + "  " + pal.toolInput.Render(te.inputStr)
+		styledLine := indent + pal.arrow.Render("↳") + " " + pal.tool.Render(label) + "  " + pal.toolInput.Render(te.inputStr)
 		sb.WriteString(styledLine + strings.Repeat(" ", fill) + styledTs + "\n")
 		status := te.outputStr
 		if status == "" {
@@ -1124,12 +1319,12 @@ func renderToolEvent(sb *strings.Builder, te toolEvent, showDetail bool, pal pal
 		elapsedStr = "  " + formatElapsed(time.Since(te.at))
 	}
 	if showDetail {
-		rawLeft := "→ " + label + elapsedStr
+		rawLeft := indent + "→ " + label + elapsedStr
 		fill := width - lipgloss.Width(rawLeft) - len(tsText)
 		if fill < 1 {
 			fill = 1
 		}
-		styledLine := pal.arrow.Render("→") + " " + pal.tool.Render(label)
+		styledLine := indent + pal.arrow.Render("→") + " " + pal.tool.Render(label)
 		if elapsedStr != "" {
 			styledLine += pal.ts.Render(elapsedStr)
 		}
@@ -1141,12 +1336,12 @@ func renderToolEvent(sb *strings.Builder, te toolEvent, showDetail bool, pal pal
 			sb.WriteString(indent + pal.continuation.Render("└") + " " + pal.output.Render(te.outputStr) + "\n")
 		}
 	} else {
-		rawLeft := "→ " + label + elapsedStr
+		rawLeft := indent + "→ " + label + elapsedStr
 		fill := width - lipgloss.Width(rawLeft) - len(tsText)
 		if fill < 1 {
 			fill = 1
 		}
-		styledLine := pal.arrow.Render("→") + " " + pal.tool.Render(label)
+		styledLine := indent + pal.arrow.Render("→") + " " + pal.tool.Render(label)
 		if elapsedStr != "" {
 			styledLine += pal.ts.Render(elapsedStr)
 		}
