@@ -13,10 +13,10 @@ func TestContextHint(t *testing.T) {
 		want        string
 	}{
 		{"unknown budget is silent", 5000, 0, true, ""},
-		{"below threshold, show on", 4000, 8000, true, "  ·  ctx: 4000/8000"},
+		{"below threshold, show on", 4000, 8000, true, "  ·  50% (4k/8k)"},
 		{"below threshold, show off", 4000, 8000, false, ""},
-		{"at threshold warns even when show off", 7200, 8000, false, "  ·  ⚠ ctx: 7200/8000 (90%)"},
-		{"over threshold warns when show on", 7600, 8000, true, "  ·  ⚠ ctx: 7600/8000 (95%)"},
+		{"at threshold warns even when show off", 7200, 8000, false, "  ·  ⚠ 90% (7k/8k)"},
+		{"over threshold warns when show on", 7600, 8000, true, "  ·  ⚠ 95% (7k/8k)"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
