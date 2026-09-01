@@ -50,6 +50,7 @@ type palette struct {
 	toolInput    lipgloss.Style
 	output       lipgloss.Style
 	continuation lipgloss.Style
+	messageBlock lipgloss.Style
 }
 
 // adaptive returns a lipgloss color that picks Light on light terminals and Dark on dark ones.
@@ -74,6 +75,11 @@ func autoPalette() palette {
 		toolInput:    lipgloss.NewStyle().Foreground(adaptive("241", "244")).Italic(true),
 		output:       lipgloss.NewStyle().Foreground(adaptive("236", "252")),
 		continuation: lipgloss.NewStyle().Foreground(adaptive("244", "240")),
+		messageBlock: lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(lipgloss.Color("244")).
+			Background(lipgloss.Color("0")).
+			Padding(0, 1),
 	}
 }
 
@@ -92,6 +98,11 @@ func lightPalette() palette {
 		toolInput:    lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true),
 		output:       lipgloss.NewStyle().Foreground(lipgloss.Color("236")),
 		continuation: lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
+		messageBlock: lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(lipgloss.Color("244")).
+			Background(lipgloss.Color("0")).
+			Padding(0, 1),
 	}
 }
 
@@ -110,6 +121,11 @@ func darkPalette() palette {
 		toolInput:    lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Italic(true),
 		output:       lipgloss.NewStyle().Foreground(lipgloss.Color("252")),
 		continuation: lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
+		messageBlock: lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(lipgloss.Color("244")).
+			Background(lipgloss.Color("0")).
+			Padding(0, 1),
 	}
 }
 
@@ -271,7 +287,7 @@ type displayState struct {
 	pal           palette
 	glamourStyle  string
 	renderer      *glamour.TermRenderer
-	version       string // Nine's build version, shown under the logo
+	version       string    // Nine's build version, shown under the logo
 	currentTime   time.Time // current time for display in prompt bar
 }
 
@@ -515,19 +531,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.WindowSizeMsg:
-		m.display.width = msg.Width
+		m.display.width = msg.Width - 1
 		m.display.height = msg.Height
-		m.chat.input.Width = msg.Width - len(m.chat.input.Prompt) - 1
+		m.chat.input.Width = (msg.Width - 1) - len(m.chat.input.Prompt) - 1
 		vph := m.viewportHeight()
 		if !m.chat.ready {
-			m.chat.viewport = viewport.New(msg.Width, vph)
+			m.chat.viewport = viewport.New(msg.Width-1, vph)
 			m.chat.ready = true
 		} else {
-			m.chat.viewport.Width = msg.Width
+			m.chat.viewport.Width = msg.Width - 1
 			m.chat.viewport.Height = vph
 		}
-		m.chat.suggest.SetSize(msg.Width, m.suggestHeight())
-		m.display.renderer = newRenderer(m.display.glamourStyle, msg.Width-4)
+		m.chat.suggest.SetSize(msg.Width-1, m.suggestHeight())
+		m.display.renderer = newRenderer(m.display.glamourStyle, (msg.Width-1)-8)
 		m.rebuildContent()
 
 	case connectedMsg:
@@ -557,7 +573,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.display.eventCount += len(chatMsg.toolEvents)
 		}
 		m.display.eventCount += len(msg.replayEvents)
-		
+
 		if len(msg.history) > 0 {
 			// Full transcript available: render the whole conversation so the
 			// reattached session looks exactly as it did before detaching.
@@ -808,7 +824,7 @@ func (m model) View() string {
 	// Render input line (top line of bottom bar)
 	inputLine := renderInputWithTime(m.chat.input, m.display)
 	parts = append(parts, inputLine)
-	
+
 	// Render status line with role, session info, token counter and time (bottom line of bottom bar)
 	statusLine := renderStatusLine(m.display, m.conn.role, label)
 	parts = append(parts, statusLine)
@@ -862,59 +878,57 @@ func renderInputWithTime(input textinput.Model, d displayState) string {
 func renderStatusLine(d displayState, role string, sessionLabel string) string {
 	// Format time as HH:MM:SS
 	timeStr := d.pal.ts.Render(d.currentTime.Format("15:04:05"))
-	
+
 	// Build token counter string
 	tokenStr := ""
 	if d.contextBudget > 0 {
 		pct := d.contextUsed * 100 / d.contextBudget
 		tokenStr = d.pal.ts.Render(fmt.Sprintf("%d%% (%s/%s)", pct, formatTokens(d.contextUsed), formatTokens(d.contextBudget)))
 	}
-	
-	// Calculate widths of left (role) and right (events/time) parts first
-	// Build left part: [role]
+
+	// Calculate widths of left (role + session) and right (events/time) parts first
+	// Build left part: [role . session]
 	var leftParts []string
 	if role != "" {
 		// Use pale yellow for role (same as Nine logo color)
 		roleStyle := lipgloss.NewStyle().Bold(true).Foreground(d.pal.nine.GetForeground())
 		leftParts = append(leftParts, roleStyle.Render(role))
 	}
-	leftContent := lipgloss.JoinHorizontal(lipgloss.Bottom, leftParts...)
+	if sessionLabel != "" && sessionLabel != "connecting..." && sessionLabel != "reconnecting…" {
+		leftParts = append(leftParts, d.pal.continuation.Render(" . "))
+		leftParts = append(leftParts, d.pal.continuation.Render(sessionLabel))
+	}
+	leftContent := lipgloss.JoinHorizontal(lipgloss.Center, leftParts...)
 	leftWidth := lipgloss.Width(leftContent)
-	
+
 	// Build right part: [eventCount | tokenCounter | time]
 	var rightParts []string
-	
+
 	// Add event counter if available
 	if d.eventCount > 0 {
 		rightParts = append(rightParts, d.pal.ts.Render(fmt.Sprintf("%d events", d.eventCount)))
 		rightParts = append(rightParts, d.pal.continuation.Render(" | "))
 	}
-	
+
 	if tokenStr != "" {
 		rightParts = append(rightParts, tokenStr)
 		rightParts = append(rightParts, d.pal.continuation.Render(" | "))
 	}
 	// Add watch symbol before time
 	clockIcon := d.pal.ts.Render("◷ ")
-	rightParts = append(rightParts, clockIcon + timeStr)
+	rightParts = append(rightParts, clockIcon+timeStr)
 	rightContent := lipgloss.JoinHorizontal(lipgloss.Bottom, rightParts...)
 	rightWidth := lipgloss.Width(rightContent)
-	
-	// Available width for middle (session) part
+
+	// Available width for spacing between left and right
 	availableWidth := d.width - leftWidth - rightWidth
 	if availableWidth < 0 {
 		availableWidth = 0
 	}
-	
-	// Build middle part: [session] centered in available width
-	var middleParts []string
-	if sessionLabel != "" && sessionLabel != "connecting..." && sessionLabel != "reconnecting…" {
-		middleParts = append(middleParts, d.pal.continuation.Render(sessionLabel))
-	}
-	middleContent := lipgloss.JoinHorizontal(lipgloss.Bottom, middleParts...)
-	// Center the session in the available width
-	middleStyled := lipgloss.NewStyle().Width(availableWidth).Align(lipgloss.Center).Render(middleContent)
-	
+
+	// Empty middle part since session is now in left part
+	middleStyled := lipgloss.NewStyle().Width(availableWidth).Render("")
+
 	return lipgloss.JoinHorizontal(lipgloss.Bottom,
 		leftContent,
 		middleStyled,
@@ -975,14 +989,14 @@ const helpText = "ctrl+t: toggle tools  |  pgup/pgdn: scroll  |  /: commands"
 // renderLogo writes the centered, styled nine banner with version baked in.
 func renderLogo(sb *strings.Builder, pal palette, width int, version string) {
 	lines := strings.Split(nineLogo, "\n")
-	
+
 	// If version is provided, modify the last line to include it
 	if version != "" && len(lines) > 0 {
 		// Add version to the last line with spacing
 		lastLine := lines[len(lines)-1] + strings.Repeat(" ", 2) + version
 		lines[len(lines)-1] = lastLine
 	}
-	
+
 	// Now render all lines centered
 	logoWidth := 0
 	for _, line := range lines {
@@ -991,13 +1005,13 @@ func renderLogo(sb *strings.Builder, pal palette, width int, version string) {
 			logoWidth = w
 		}
 	}
-	
+
 	pad := (width - logoWidth) / 2
 	if pad < 0 {
 		pad = 0
 	}
 	indent := strings.Repeat(" ", pad)
-	
+
 	for i, line := range lines {
 		if i == len(lines)-1 && version != "" {
 			// Last line: render logo part with nine style, version with ts style
@@ -1069,7 +1083,7 @@ func (m *model) rebuildContent() {
 }
 
 func headerLine(label, styledLabel, tsText, styledTs string, width int) string {
-	fill := width - len(label) - len(tsText)
+	fill := width - lipgloss.Width(styledLabel) - lipgloss.Width(styledTs)
 	if fill < 1 {
 		fill = 1
 	}
@@ -1077,40 +1091,59 @@ func headerLine(label, styledLabel, tsText, styledTs string, width int) string {
 }
 
 func renderChatMsg(sb *strings.Builder, msg chatMsg, width int, showDetail bool, pal palette, r *glamour.TermRenderer) {
-	tsText := "[" + msg.at.Format("15:04:05") + "]"
+	tsText := msg.at.Format("15:04:05")
 	styledTs := pal.ts.Render(tsText)
 	const indent = "  "
+
+	// Skip rendering empty messages (like the initial empty user message workaround)
+	if msg.role == "user" && msg.text == "" && len(msg.toolEvents) == 0 && msg.trace == "" {
+		return
+	}
+
+	// Account for block: 2 border + 2 padding = 4, plus 1 for safety
+	contentWidth := width - 5
+	if contentWidth < 10 {
+		contentWidth = width
+	}
+	// Build message content
+	var buf strings.Builder
 	switch msg.role {
 	case "user":
-		sb.WriteString(headerLine("You:", pal.you.Render("You:"), tsText, styledTs, width))
+		buf.WriteString(headerLine("You:", pal.you.Render("You:"), tsText, styledTs, contentWidth))
 		if msg.text != "" {
-			wrapped := wordWrap(msg.text, width-len(indent))
+			wrapped := wordWrap(msg.text, contentWidth-len(indent))
 			for _, line := range strings.Split(wrapped, "\n") {
-				sb.WriteString(indent + line + "\n")
+				buf.WriteString(indent + line + "\n")
 			}
 		}
 	case "system":
-		sb.WriteString(headerLine("nine:", pal.system.Render("nine:"), tsText, styledTs, width))
+		buf.WriteString(headerLine("nine:", pal.system.Render("nine:"), tsText, styledTs, contentWidth))
 		for _, line := range strings.Split(msg.text, "\n") {
-			sb.WriteString(indent + pal.system.Render(line) + "\n")
+			buf.WriteString(indent + pal.system.Render(line) + "\n")
 		}
 	case "ask":
-		sb.WriteString(headerLine("Nine asks:", pal.you.Render("Nine asks:"), tsText, styledTs, width))
-		wrapped := wordWrap(msg.text, width-len(indent))
+		buf.WriteString(headerLine("Nine asks:", pal.you.Render("Nine asks:"), tsText, styledTs, contentWidth))
+		wrapped := wordWrap(msg.text, contentWidth-len(indent))
 		for _, line := range strings.Split(wrapped, "\n") {
-			sb.WriteString(indent + pal.tool.Render(line) + "\n")
+			buf.WriteString(indent + pal.tool.Render(line) + "\n")
 		}
 	default: // "nine"
-		sb.WriteString(headerLine("Nine:", pal.nine.Render("Nine:"), tsText, styledTs, width))
+		buf.WriteString(headerLine("Nine:", pal.nine.Render("Nine:"), tsText, styledTs, contentWidth))
 		for _, te := range msg.toolEvents {
-			renderToolEvent(sb, te, showDetail, pal, width)
+			renderToolEvent(&buf, te, showDetail, pal, contentWidth)
 		}
-		renderTrace(sb, msg.trace, showDetail, pal, width)
+		renderTrace(&buf, msg.trace, showDetail, pal, contentWidth)
 		if msg.text != "" {
 			rendered := renderMarkdown(r, msg.text)
-			sb.WriteString(rendered)
+			buf.WriteString(rendered)
 		}
 	}
+
+	// Wrap in message block and write to main buffer
+	content := buf.String()
+	// Set block width to match the display width
+	blockStyle := pal.messageBlock.Width(width)
+	sb.WriteString(blockStyle.Render(content))
 }
 
 func renderMarkdown(r *glamour.TermRenderer, text string) string {
@@ -1121,7 +1154,9 @@ func renderMarkdown(r *glamour.TermRenderer, text string) string {
 	if err != nil {
 		return "  " + text + "\n"
 	}
-	return out
+	out = strings.TrimLeft(out, "\n")
+	out = strings.TrimRight(out, "\n")
+	return out + "\n"
 }
 
 // thinkingView is the live state renderThinking draws: the in-flight step, the
@@ -1167,25 +1202,39 @@ func (v thinkingView) stepHint() string {
 }
 
 func renderThinking(sb *strings.Builder, v thinkingView) {
-	tsText := "[" + v.at.Format("15:04:05") + "]"
+	// Account for block: 2 border + 2 padding = 4, plus 1 for safety
+	contentWidth := v.width - 5
+	if contentWidth < 10 {
+		contentWidth = v.width
+	}
+	tsText := v.at.Format("15:04:05")
 	styledTs := v.pal.ts.Render(tsText)
 	const indent = "  "
-	sb.WriteString(headerLine("Nine:", v.pal.nine.Render("Nine:"), tsText, styledTs, v.width))
+
+	// Build thinking content
+	var buf strings.Builder
+	buf.WriteString(headerLine("Nine:", v.pal.nine.Render("Nine:"), tsText, styledTs, contentWidth))
 	for _, te := range v.evts {
-		renderToolEvent(sb, te, v.showDetail, v.pal, v.width)
+		renderToolEvent(&buf, te, v.showDetail, v.pal, contentWidth)
 	}
 
-	renderTrace(sb, v.trace, v.showDetail, v.pal, v.width)
+	renderTrace(&buf, v.trace, v.showDetail, v.pal, contentWidth)
 
 	if v.streamText != "" {
-		wrapped := wordWrap(v.streamText, v.width-len(indent))
+		wrapped := wordWrap(v.streamText, contentWidth-len(indent))
 		for _, line := range strings.Split(wrapped, "\n") {
-			sb.WriteString(indent + v.pal.output.Render(line) + "\n")
+			buf.WriteString(indent + v.pal.output.Render(line) + "\n")
 		}
 	} else {
-		sb.WriteString(indent + v.sp.View() + " " + v.statusLabel() + v.stepHint() +
+		buf.WriteString(indent + v.sp.View() + " " + v.statusLabel() + v.stepHint() +
 			v.pal.ts.Render("  "+formatElapsed(time.Since(v.at))) + "\n")
 	}
+
+	// Wrap in message block and write to main buffer
+	content := buf.String()
+	// Set block width to match the display width
+	blockStyle := v.pal.messageBlock.Width(v.width)
+	sb.WriteString(blockStyle.Render(content))
 }
 
 // maxThinkingTraceLines caps how many trailing lines of the live reasoning trace
@@ -1234,7 +1283,7 @@ func renderReasoning(sb *strings.Builder, text string, pal palette, width int, m
 }
 
 func renderToolEvent(sb *strings.Builder, te toolEvent, showDetail bool, pal palette, width int) {
-	tsText := "[" + te.at.Format("15:04:05") + "]"
+	tsText := te.at.Format("15:04:05")
 	styledTs := pal.ts.Render(tsText)
 	const indent = "  "
 	if te.subAgent {
@@ -1242,12 +1291,12 @@ func renderToolEvent(sb *strings.Builder, te toolEvent, showDetail bool, pal pal
 		if te.subAgentRole != "" {
 			label += " · " + te.subAgentRole
 		}
-		rawLeft := "↳ " + label + "  " + te.inputStr
+		rawLeft := indent + "↳ " + label + "  " + te.inputStr
 		fill := width - lipgloss.Width(rawLeft) - len(tsText)
 		if fill < 1 {
 			fill = 1
 		}
-		styledLine := pal.arrow.Render("↳") + " " + pal.tool.Render(label) + "  " + pal.toolInput.Render(te.inputStr)
+		styledLine := indent + pal.arrow.Render("↳") + " " + pal.tool.Render(label) + "  " + pal.toolInput.Render(te.inputStr)
 		sb.WriteString(styledLine + strings.Repeat(" ", fill) + styledTs + "\n")
 		status := te.outputStr
 		if status == "" {
@@ -1270,12 +1319,12 @@ func renderToolEvent(sb *strings.Builder, te toolEvent, showDetail bool, pal pal
 		elapsedStr = "  " + formatElapsed(time.Since(te.at))
 	}
 	if showDetail {
-		rawLeft := "→ " + label + elapsedStr
+		rawLeft := indent + "→ " + label + elapsedStr
 		fill := width - lipgloss.Width(rawLeft) - len(tsText)
 		if fill < 1 {
 			fill = 1
 		}
-		styledLine := pal.arrow.Render("→") + " " + pal.tool.Render(label)
+		styledLine := indent + pal.arrow.Render("→") + " " + pal.tool.Render(label)
 		if elapsedStr != "" {
 			styledLine += pal.ts.Render(elapsedStr)
 		}
@@ -1287,12 +1336,12 @@ func renderToolEvent(sb *strings.Builder, te toolEvent, showDetail bool, pal pal
 			sb.WriteString(indent + pal.continuation.Render("└") + " " + pal.output.Render(te.outputStr) + "\n")
 		}
 	} else {
-		rawLeft := "→ " + label + elapsedStr
+		rawLeft := indent + "→ " + label + elapsedStr
 		fill := width - lipgloss.Width(rawLeft) - len(tsText)
 		if fill < 1 {
 			fill = 1
 		}
-		styledLine := pal.arrow.Render("→") + " " + pal.tool.Render(label)
+		styledLine := indent + pal.arrow.Render("→") + " " + pal.tool.Render(label)
 		if elapsedStr != "" {
 			styledLine += pal.ts.Render(elapsedStr)
 		}
