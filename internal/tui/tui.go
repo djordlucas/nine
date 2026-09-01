@@ -1193,7 +1193,7 @@ func renderChatMsg(sb *strings.Builder, msg chatMsg, width int, showDetail bool,
 	var header string
 	// Reserve space for timestamp, put it at the end
 	if labelWidth < availableForHeader {
-		// Create header with label on left, timestamp on right
+		// Create header with label on left, timestamp right-aligned in remaining space
 		// Use plain strings for width calculation to avoid ANSI code issues
 		labelPlain := roleLabel
 		tsPlain := styledTs
@@ -1210,7 +1210,7 @@ func renderChatMsg(sb *strings.Builder, msg chatMsg, width int, showDetail bool,
 	if msg.role == "nine" {
 		for _, te := range msg.toolEvents {
 			// Simple rendering: show tool name and input/output
-			toolLine := indent + pal.tool.Render(te.name)
+			toolLine := indent + pal.arrow.Render("→") + " " + pal.tool.Render(te.name)
 			if te.inputStr != "" {
 				toolLine += ": " + pal.toolInput.Render(te.inputStr)
 			}
@@ -1220,6 +1220,9 @@ func renderChatMsg(sb *strings.Builder, msg chatMsg, width int, showDetail bool,
 				} else {
 					toolLine += ": " + te.outputStr
 				}
+			} else if te.inputStr == "" {
+				// Add colon placeholder when there's no input and no output yet
+				toolLine += ":"
 			}
 			// Each tool call on its own line, word-wrapped
 			content.WriteString("\n" + wordWrap(toolLine, textWidth))
@@ -1232,17 +1235,47 @@ func renderChatMsg(sb *strings.Builder, msg chatMsg, width int, showDetail bool,
 		}
 	}
 
-	// Add message text
+	// Add message text - render markdown only for complete messages
 	if msg.text != "" {
-		content.WriteString("\n" + indent + wordWrap(msg.text, textWidth))
+		content.WriteString("\n")
+		if r != nil {
+			// This is a complete message, safe to render markdown
+			rendered, err := r.Render(msg.text)
+			if err != nil {
+				// Fallback to plain text
+				wrapped := wordWrap(msg.text, textWidth)
+				for _, line := range strings.Split(wrapped, "\n") {
+					content.WriteString(indent + line + "\n")
+				}
+			} else {
+				rendered = strings.TrimLeft(rendered, "\n")
+				rendered = strings.TrimRight(rendered, "\n")
+				for _, line := range strings.Split(rendered, "\n") {
+					content.WriteString(indent + line + "\n")
+				}
+			}
+		} else {
+			// No markdown renderer, use plain text
+			wrapped := wordWrap(msg.text, textWidth)
+			for _, line := range strings.Split(wrapped, "\n") {
+				content.WriteString(indent + line + "\n")
+			}
+		}
+	}
+
+	// Ensure content ends with newline for consistent box height
+	contentStr := content.String()
+	if !strings.HasSuffix(contentStr, "\n") {
+		contentStr += "\n"
 	}
 
 	// Render the box with full width
-	// Note: .Width(n) on a bordered style makes the total rendered width n+2
-	// So we subtract 2 to account for the borders
+	// Box adds: 2 for borders. Padding is included in .Width() measurement.
+	// .Width(n) with NormalBorder: total visual width = n + 2
+	// To fit within viewport width, use: width - 2
 	// Note: box already contains newlines for its 3 lines (top, content, bottom)
 	// so we don't add an extra newline to avoid blank lines between boxes
-	box := boxStyle.Width(width - 2).Render(content.String())
+	box := boxStyle.Width(width - 2).Render(contentStr)
 	sb.WriteString(box)
 }
 
@@ -1323,7 +1356,7 @@ func renderThinking(sb *strings.Builder, v thinkingView) {
 	var header string
 	// Reserve space for timestamp, put it at the end
 	if labelWidth < availableForHeader {
-		// Create header with label on left, timestamp on right
+		// Create header with label on left, timestamp right-aligned in remaining space
 		// Use plain strings for width calculation to avoid ANSI code issues
 		labelPlain := roleLabel
 		tsPlain := styledTs
@@ -1339,7 +1372,7 @@ func renderThinking(sb *strings.Builder, v thinkingView) {
 	// Add tool events and trace (before streaming text)
 	for _, te := range v.evts {
 		// Simple rendering: show tool name and input/output
-		toolLine := indent + v.pal.tool.Render(te.name)
+		toolLine := indent + v.pal.arrow.Render("→") + " " + v.pal.tool.Render(te.name)
 		if te.inputStr != "" {
 			toolLine += ": " + v.pal.toolInput.Render(te.inputStr)
 		}
@@ -1349,6 +1382,9 @@ func renderThinking(sb *strings.Builder, v thinkingView) {
 			} else {
 				toolLine += ": " + te.outputStr
 			}
+		} else if te.inputStr == "" {
+			// Add colon placeholder when there's no input and no output yet
+			toolLine += ":"
 		}
 		// Each tool call on its own line, word-wrapped
 		content.WriteString("\n" + wordWrap(toolLine, textWidth))
@@ -1367,12 +1403,19 @@ func renderThinking(sb *strings.Builder, v thinkingView) {
 		content.WriteString("\n" + indent + v.sp.View() + " " + v.statusLabel() + v.stepHint() + " " + v.pal.ts.Render(formatElapsed(time.Since(v.at))))
 	}
 
+	// Ensure content ends with newline for consistent box height
+	contentStr := content.String()
+	if !strings.HasSuffix(contentStr, "\n") {
+		contentStr += "\n"
+	}
+
 	// Render the box with full width
-	// Note: .Width(n) on a bordered style makes the total rendered width n+2
-	// So we subtract 2 to account for the borders
+	// Box adds: 2 for borders. Padding is included in .Width() measurement.
+	// .Width(n) with NormalBorder: total visual width = n + 2
+	// To fit within viewport width, use: width - 2
 	// Note: box already contains newlines for its 3 lines (top, content, bottom)
 	// so we don't add an extra newline to avoid blank lines between boxes
-	box := boxStyle.Width(v.width - 2).Render(content.String())
+	box := boxStyle.Width(v.width - 2).Render(contentStr)
 	sb.WriteString(box)
 }
 
