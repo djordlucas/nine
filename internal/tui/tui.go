@@ -21,9 +21,9 @@ import (
 const (
 	// headerHeight: was 2 when we had a top header bar, now 0 since it's removed
 	headerHeight = 0
-	// inputAreaHeight: 1 line for status + 1 line for input (minimum).
+	// inputAreaHeight: 4 lines for boxed bottom bar (top border, input, status, bottom border)
 	// The input can wrap to additional lines when text is long.
-	inputAreaHeight = 2
+	inputAreaHeight = 4
 
 	maxInputDisplay  = 80
 	maxOutputDisplay = 200
@@ -50,7 +50,12 @@ type palette struct {
 	toolInput    lipgloss.Style
 	output       lipgloss.Style
 	continuation lipgloss.Style
-	messageBlock lipgloss.Style
+	// Box styles for message rendering
+	userBox      lipgloss.Style
+	nineBox      lipgloss.Style
+	systemBox    lipgloss.Style
+	askBox       lipgloss.Style
+	bottomBarBox lipgloss.Style
 }
 
 // adaptive returns a lipgloss color that picks Light on light terminals and Dark on dark ones.
@@ -75,11 +80,12 @@ func autoPalette() palette {
 		toolInput:    lipgloss.NewStyle().Foreground(adaptive("241", "244")).Italic(true),
 		output:       lipgloss.NewStyle().Foreground(adaptive("236", "252")),
 		continuation: lipgloss.NewStyle().Foreground(adaptive("244", "240")),
-		messageBlock: lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.Color("244")).
-			Background(lipgloss.Color("0")).
-			Padding(0, 1),
+		// Box styles for message rendering with grey borders
+		userBox:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("245")).Padding(0, 1),
+		nineBox:      lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("240")).Padding(0, 1),
+		systemBox:    lipgloss.NewStyle().Border(lipgloss.HiddenBorder()).Padding(0, 1),
+		askBox:       lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(lipgloss.Color("238")).Padding(0, 1),
+		bottomBarBox: lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("240")).Padding(0, 1),
 	}
 }
 
@@ -98,11 +104,12 @@ func lightPalette() palette {
 		toolInput:    lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true),
 		output:       lipgloss.NewStyle().Foreground(lipgloss.Color("236")),
 		continuation: lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
-		messageBlock: lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.Color("244")).
-			Background(lipgloss.Color("0")).
-			Padding(0, 1),
+		// Box styles for message rendering with grey borders
+		userBox:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("245")).Padding(0, 1),
+		nineBox:      lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("240")).Padding(0, 1),
+		systemBox:    lipgloss.NewStyle().Border(lipgloss.HiddenBorder()).Padding(0, 1),
+		askBox:       lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(lipgloss.Color("238")).Padding(0, 1),
+		bottomBarBox: lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("240")).Padding(0, 1),
 	}
 }
 
@@ -121,11 +128,13 @@ func darkPalette() palette {
 		toolInput:    lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Italic(true),
 		output:       lipgloss.NewStyle().Foreground(lipgloss.Color("252")),
 		continuation: lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
-		messageBlock: lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.Color("244")).
-			Background(lipgloss.Color("0")).
-			Padding(0, 1),
+		// Box styles for message rendering with grey borders
+		// Use darker greys for dark terminal background
+		userBox:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("238")).Padding(0, 1),
+		nineBox:      lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("242")).Padding(0, 1),
+		systemBox:    lipgloss.NewStyle().Border(lipgloss.HiddenBorder()).Padding(0, 1),
+		askBox:       lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(lipgloss.Color("240")).Padding(0, 1),
+		bottomBarBox: lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("242")).Padding(0, 1),
 	}
 }
 
@@ -145,11 +154,12 @@ type toolEvent struct {
 }
 
 type chatMsg struct {
-	role       string // "user" or "nine"
-	text       string
-	at         time.Time
-	toolEvents []toolEvent // non-empty only for "nine" role
-	trace      string
+	role           string // "user" or "nine"
+	text           string
+	at             time.Time
+	toolEvents     []toolEvent // non-empty only for "nine" role
+	trace          string
+	humanRequestID string // set for "ask" role messages to track pending HITL
 }
 
 // Internal tea.Msg types.
@@ -449,9 +459,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// returning the input box to normal.
 				if next := m.chat.popHuman(); next != nil {
 					m.chat.messages = append(m.chat.messages, chatMsg{
-						role: "ask",
-						text: formatQuestion(next),
-						at:   time.Now(),
+						role:           "ask",
+						text:           formatQuestion(next),
+						at:             time.Now(),
+						humanRequestID: next.RequestID,
 					})
 				} else {
 					m.resetInputPrompt()
@@ -531,19 +542,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.WindowSizeMsg:
-		m.display.width = msg.Width - 1
+		m.display.width = msg.Width
 		m.display.height = msg.Height
-		m.chat.input.Width = (msg.Width - 1) - len(m.chat.input.Prompt) - 1
+		m.chat.input.Width = msg.Width - len(m.chat.input.Prompt) - 5
 		vph := m.viewportHeight()
 		if !m.chat.ready {
-			m.chat.viewport = viewport.New(msg.Width-1, vph)
+			m.chat.viewport = viewport.New(msg.Width, vph)
 			m.chat.ready = true
 		} else {
-			m.chat.viewport.Width = msg.Width - 1
+			m.chat.viewport.Width = msg.Width
 			m.chat.viewport.Height = vph
 		}
-		m.chat.suggest.SetSize(msg.Width-1, m.suggestHeight())
-		m.display.renderer = newRenderer(m.display.glamourStyle, (msg.Width-1)-8)
+		m.chat.suggest.SetSize(msg.Width, m.suggestHeight())
+		m.display.renderer = newRenderer(m.display.glamourStyle, msg.Width-8)
 		m.rebuildContent()
 
 	case connectedMsg:
@@ -682,9 +693,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.chat.humanQueue = append(m.chat.humanQueue, evt.HumanRequest)
 				if first {
 					m.chat.messages = append(m.chat.messages, chatMsg{
-						role: "ask",
-						text: formatQuestion(evt.HumanRequest),
-						at:   time.Now(),
+						role:           "ask",
+						text:           formatQuestion(evt.HumanRequest),
+						at:             time.Now(),
+						humanRequestID: evt.HumanRequest.RequestID,
 					})
 					m.chat.input.Prompt = "Answer: "
 					m.chat.input.PromptStyle = m.display.pal.you
@@ -823,11 +835,16 @@ func (m model) View() string {
 	}
 	// Render input line (top line of bottom bar)
 	inputLine := renderInputWithTime(m.chat.input, m.display)
-	parts = append(parts, inputLine)
-
 	// Render status line with role, session info, token counter and time (bottom line of bottom bar)
-	statusLine := renderStatusLine(m.display, m.conn.role, label)
-	parts = append(parts, statusLine)
+	// Width: display.width - 4 (2 for borders, 2 for padding)
+	statusLine := renderStatusLine(m.display, m.conn.role, label, m.display.width-4)
+
+	// Box the bottom bar (input + status lines)
+	// With padding(0,0) and NormalBorder, .Width(n) renders to n+2
+	// So we use width-2 to get the exact viewport width
+	bottomBarContent := inputLine + "\n" + statusLine
+	bottomBarBox := m.display.pal.bottomBarBox.Width(m.display.width - 2).Render(bottomBarContent)
+	parts = append(parts, bottomBarBox)
 
 	return strings.Join(parts, "\n")
 }
@@ -875,7 +892,7 @@ func renderInputWithTime(input textinput.Model, d displayState) string {
 // renderStatusLine renders role and session info on the left, and token counter
 // and time on the right of the top line of the bottom bar.
 // Format: [role session...]                              [tokenCounter | time]
-func renderStatusLine(d displayState, role string, sessionLabel string) string {
+func renderStatusLine(d displayState, role string, sessionLabel string, width int) string {
 	// Format time as HH:MM:SS
 	timeStr := d.pal.ts.Render(d.currentTime.Format("15:04:05"))
 
@@ -921,7 +938,7 @@ func renderStatusLine(d displayState, role string, sessionLabel string) string {
 	rightWidth := lipgloss.Width(rightContent)
 
 	// Available width for spacing between left and right
-	availableWidth := d.width - leftWidth - rightWidth
+	availableWidth := width - leftWidth - rightWidth
 	if availableWidth < 0 {
 		availableWidth = 0
 	}
@@ -1039,6 +1056,19 @@ func renderHelpText(sb *strings.Builder, pal palette, width int) {
 	sb.WriteString("\n" + indent + pal.continuation.Render(helpText))
 }
 
+// isPendingHITL returns true if the message is a pending "ask" (HITL) message
+func isPendingHITL(msg chatMsg, humanQueue []*protocol.HumanRequest) bool {
+	if msg.role != "ask" || msg.humanRequestID == "" {
+		return false
+	}
+	for _, hr := range humanQueue {
+		if hr.RequestID == msg.humanRequestID {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *model) rebuildContent() {
 	if !m.chat.ready {
 		return
@@ -1059,10 +1089,35 @@ func (m *model) rebuildContent() {
 		m.chat.viewport.GotoBottom()
 		return
 	}
+	// Separate regular messages from pending HITL messages
+	// Pending HITL messages should appear at the bottom, above the thinking view
+	var regularMsgs []chatMsg
+	var pendingHITLMsgs []chatMsg
 	for _, msg := range m.chat.messages {
-		renderChatMsg(&sb, msg, m.chat.viewport.Width, m.display.showDetail, m.display.pal, m.display.renderer)
-		sb.WriteByte('\n')
+		if isPendingHITL(msg, m.chat.humanQueue) {
+			pendingHITLMsgs = append(pendingHITLMsgs, msg)
+		} else {
+			regularMsgs = append(regularMsgs, msg)
+		}
 	}
+
+	// Render regular messages
+	for i, msg := range regularMsgs {
+		if i > 0 {
+			sb.WriteByte('\n')
+		}
+		renderChatMsg(&sb, msg, m.chat.viewport.Width, m.display.showDetail, m.display.pal, m.display.renderer)
+	}
+
+	// Render pending HITL messages above the thinking view
+	for i, msg := range pendingHITLMsgs {
+		if len(regularMsgs) > 0 || i > 0 {
+			sb.WriteByte('\n')
+		}
+		renderChatMsg(&sb, msg, m.chat.viewport.Width, m.display.showDetail, m.display.pal, m.display.renderer)
+	}
+
+	// Render thinking view (if active)
 	if m.chat.thinking {
 		renderThinking(&sb, thinkingView{
 			sp:         m.chat.spinner,
@@ -1079,15 +1134,11 @@ func (m *model) rebuildContent() {
 			stage:      m.chat.stage,
 		})
 	}
-	m.chat.viewport.SetContent(sb.String())
-}
 
-func headerLine(label, styledLabel, tsText, styledTs string, width int) string {
-	fill := width - lipgloss.Width(styledLabel) - lipgloss.Width(styledTs)
-	if fill < 1 {
-		fill = 1
-	}
-	return styledLabel + strings.Repeat(" ", fill) + styledTs + "\n"
+	content := sb.String()
+	m.chat.viewport.SetContent(content)
+	// Always scroll to bottom to show newest messages
+	m.chat.viewport.GotoBottom()
 }
 
 func renderChatMsg(sb *strings.Builder, msg chatMsg, width int, showDetail bool, pal palette, r *glamour.TermRenderer) {
@@ -1100,50 +1151,90 @@ func renderChatMsg(sb *strings.Builder, msg chatMsg, width int, showDetail bool,
 		return
 	}
 
-	// Account for block: 2 border + 2 padding = 4, plus 1 for safety
-	contentWidth := width - 5
-	if contentWidth < 10 {
-		contentWidth = width
-	}
-	// Build message content
-	var buf strings.Builder
+	// Select the appropriate box style based on message role
+	var boxStyle lipgloss.Style
+	var roleLabel string
 	switch msg.role {
 	case "user":
-		buf.WriteString(headerLine("You:", pal.you.Render("You:"), tsText, styledTs, contentWidth))
-		if msg.text != "" {
-			wrapped := wordWrap(msg.text, contentWidth-len(indent))
-			for _, line := range strings.Split(wrapped, "\n") {
-				buf.WriteString(indent + line + "\n")
-			}
-		}
+		boxStyle = pal.userBox
+		roleLabel = pal.you.Render("You:")
+	case "nine":
+		boxStyle = pal.nineBox
+		roleLabel = pal.nine.Render("Nine:")
 	case "system":
-		buf.WriteString(headerLine("nine:", pal.system.Render("nine:"), tsText, styledTs, contentWidth))
-		for _, line := range strings.Split(msg.text, "\n") {
-			buf.WriteString(indent + pal.system.Render(line) + "\n")
-		}
+		boxStyle = pal.systemBox
+		roleLabel = pal.system.Render("nine:")
 	case "ask":
-		buf.WriteString(headerLine("Nine asks:", pal.you.Render("Nine asks:"), tsText, styledTs, contentWidth))
-		wrapped := wordWrap(msg.text, contentWidth-len(indent))
-		for _, line := range strings.Split(wrapped, "\n") {
-			buf.WriteString(indent + pal.tool.Render(line) + "\n")
-		}
-	default: // "nine"
-		buf.WriteString(headerLine("Nine:", pal.nine.Render("Nine:"), tsText, styledTs, contentWidth))
+		boxStyle = pal.askBox
+		roleLabel = pal.you.Render("Nine asks:")
+	default:
+		// Fallback for unknown roles
+		boxStyle = pal.nineBox
+		roleLabel = pal.nine.Render("Nine:")
+	}
+
+	// Calculate available width for box content
+	// Box adds: 2 for borders + 2 for padding = 4 total
+	// Content area inside box: width - 4
+	contentWidth := width - 4
+	textWidth := contentWidth
+
+	// Build header with role label on left and timestamp on right
+	// Use a simple approach: label, then timestamp right-aligned in remaining space
+	availableForHeader := contentWidth
+	labelWidth := lipgloss.Width(roleLabel)
+	var header string
+	// Reserve space for timestamp, put it at the end
+	if labelWidth < availableForHeader {
+		// Create header with label on left, timestamp on right
+		// Use plain strings for width calculation to avoid ANSI code issues
+		labelPlain := roleLabel
+		tsPlain := styledTs
+		// Calculate padding
+		padding := strings.Repeat(" ", availableForHeader-labelWidth-lipgloss.Width(styledTs))
+		header = labelPlain + padding + tsPlain
+	} else {
+		header = roleLabel
+	}
+	var content strings.Builder
+	content.WriteString(header)
+
+	// Add message text
+	if msg.text != "" {
+		content.WriteString("\n")
+		wrapped := wordWrap(msg.text, textWidth)
+		content.WriteString(indent + wrapped)
+	}
+
+	// Add tool events and trace for Nine messages
+	if msg.role == "nine" {
 		for _, te := range msg.toolEvents {
-			renderToolEvent(&buf, te, showDetail, pal, contentWidth)
+			content.WriteString("\n")
+			// Simple rendering: just show tool name and status
+			toolLine := indent + pal.tool.Render(te.name)
+			if te.outputStr != "" {
+				toolLine += ": " + te.outputStr
+			} else if te.inputStr != "" {
+				toolLine += ": " + te.inputStr
+			}
+			content.WriteString(wordWrap(toolLine, textWidth) + "\n")
 		}
-		renderTrace(&buf, msg.trace, showDetail, pal, contentWidth)
-		if msg.text != "" {
-			rendered := renderMarkdown(r, msg.text)
-			buf.WriteString(rendered)
+		if msg.trace != "" {
+			content.WriteString("\n")
+			// Simple trace rendering
+			for _, line := range strings.Split(msg.trace, "\n") {
+				content.WriteString(indent + pal.continuation.Render("· ") + wordWrap(line, textWidth-len(indent)-2) + "\n")
+			}
 		}
 	}
 
-	// Wrap in message block and write to main buffer
-	content := buf.String()
-	// Set block width to match the display width
-	blockStyle := pal.messageBlock.Width(width)
-	sb.WriteString(blockStyle.Render(content))
+	// Render the box with full width
+	// Note: .Width(n) on a bordered style makes the total rendered width n+2
+	// So we subtract 2 to account for the borders
+	// Note: box already contains newlines for its 3 lines (top, content, bottom)
+	// so we don't add an extra newline to avoid blank lines between boxes
+	box := boxStyle.Width(width - 2).Render(content.String())
+	sb.WriteString(box)
 }
 
 func renderMarkdown(r *glamour.TermRenderer, text string) string {
@@ -1202,39 +1293,78 @@ func (v thinkingView) stepHint() string {
 }
 
 func renderThinking(sb *strings.Builder, v thinkingView) {
-	// Account for block: 2 border + 2 padding = 4, plus 1 for safety
-	contentWidth := v.width - 5
-	if contentWidth < 10 {
-		contentWidth = v.width
-	}
 	tsText := v.at.Format("15:04:05")
 	styledTs := v.pal.ts.Render(tsText)
 	const indent = "  "
 
-	// Build thinking content
-	var buf strings.Builder
-	buf.WriteString(headerLine("Nine:", v.pal.nine.Render("Nine:"), tsText, styledTs, contentWidth))
-	for _, te := range v.evts {
-		renderToolEvent(&buf, te, v.showDetail, v.pal, contentWidth)
-	}
+	// Use nineBox for thinking messages
+	boxStyle := v.pal.nineBox
+	roleLabel := v.pal.nine.Render("Nine:")
 
-	renderTrace(&buf, v.trace, v.showDetail, v.pal, contentWidth)
+	// Calculate available width for box content
+	// Box adds: 2 for borders + 2 for padding = 4 total
+	// Content area inside box: width - 4
+	contentWidth := v.width - 4
+	textWidth := contentWidth
 
-	if v.streamText != "" {
-		wrapped := wordWrap(v.streamText, contentWidth-len(indent))
-		for _, line := range strings.Split(wrapped, "\n") {
-			buf.WriteString(indent + v.pal.output.Render(line) + "\n")
-		}
+	// Build header with role label on left and timestamp on right
+	// Use a simple approach: label, then timestamp right-aligned in remaining space
+	availableForHeader := contentWidth
+	labelWidth := lipgloss.Width(roleLabel)
+	var header string
+	// Reserve space for timestamp, put it at the end
+	if labelWidth < availableForHeader {
+		// Create header with label on left, timestamp on right
+		// Use plain strings for width calculation to avoid ANSI code issues
+		labelPlain := roleLabel
+		tsPlain := styledTs
+		// Calculate padding
+		padding := strings.Repeat(" ", availableForHeader-labelWidth-lipgloss.Width(styledTs))
+		header = labelPlain + padding + tsPlain
 	} else {
-		buf.WriteString(indent + v.sp.View() + " " + v.statusLabel() + v.stepHint() +
-			v.pal.ts.Render("  "+formatElapsed(time.Since(v.at))) + "\n")
+		header = roleLabel
+	}
+	var content strings.Builder
+	content.WriteString(header)
+
+	// Add streaming text or status
+	if v.streamText != "" {
+		content.WriteString("\n")
+		wrapped := wordWrap(v.streamText, textWidth)
+		content.WriteString(indent + wrapped)
+	} else {
+		content.WriteString("\n")
+		status := v.sp.View() + " " + v.statusLabel() + v.stepHint() + " " + v.pal.ts.Render(formatElapsed(time.Since(v.at)))
+		content.WriteString(indent + status)
 	}
 
-	// Wrap in message block and write to main buffer
-	content := buf.String()
-	// Set block width to match the display width
-	blockStyle := v.pal.messageBlock.Width(v.width)
-	sb.WriteString(blockStyle.Render(content))
+	// Add tool events and trace
+	for _, te := range v.evts {
+		content.WriteString("\n")
+		// Simple rendering: just show tool name and status
+		toolLine := indent + v.pal.tool.Render(te.name)
+		if te.outputStr != "" {
+			toolLine += ": " + te.outputStr
+		} else if te.inputStr != "" {
+			toolLine += ": " + te.inputStr
+		}
+		content.WriteString(wordWrap(toolLine, textWidth) + "\n")
+	}
+	if v.trace != "" {
+		content.WriteString("\n")
+		// Simple trace rendering
+		for _, line := range strings.Split(v.trace, "\n") {
+			content.WriteString(indent + v.pal.continuation.Render("· ") + wordWrap(line, textWidth-len(indent)-2) + "\n")
+		}
+	}
+
+	// Render the box with full width
+	// Note: .Width(n) on a bordered style makes the total rendered width n+2
+	// So we subtract 2 to account for the borders
+	// Note: box already contains newlines for its 3 lines (top, content, bottom)
+	// so we don't add an extra newline to avoid blank lines between boxes
+	box := boxStyle.Width(v.width - 2).Render(content.String())
+	sb.WriteString(box)
 }
 
 // maxThinkingTraceLines caps how many trailing lines of the live reasoning trace
