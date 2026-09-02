@@ -63,3 +63,6 @@ remains here is the reasoning.
 - **standing-tools.md** — running a resumable tool indefinitely on its own
   cadence, declared in config or generated on request. A second run mode, not a
   second kind of tool. Proposed.
+- **personality-pattern.md** — the personality pattern for packaging complete, autonomous
+  Nine instances as specialized agents, including self-model bootstrapping and buffered
+  input requirements. Proposed.
