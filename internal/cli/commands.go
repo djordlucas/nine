@@ -31,8 +31,16 @@ type CLI struct {
 
 	// StartDaemon launches the daemon process. Set by the caller.
 	StartDaemon func()
+	// StartAPI launches the API server process.
+	StartAPI func()
 	// StartTUI opens the terminal UI, optionally attaching to attachID.
 	StartTUI func(attachID string) error
+	// APIServe starts the API server with the given flags.
+	APIServe func(cfg *config.Config, flags []string) error
+	// APIStatus returns the API server status.
+	APIStatus func(cfg *config.Config) error
+	// APIStop stops the API server.
+	APIStop func(cfg *config.Config) error
 }
 
 // New returns a CLI wired to the standard streams.
@@ -64,6 +72,20 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 	case "daemon":
 		c.StartDaemon()
 		return nil
+	case "api":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: nine api <serve|status|stop>")
+		}
+		switch args[1] {
+		case "serve":
+			return c.APIServe(cfg, args[2:])
+		case "status":
+			return c.APIStatus(cfg)
+		case "stop":
+			return c.APIStop(cfg)
+		default:
+			return fmt.Errorf("unknown api command: %s", args[1])
+		}
 	case "goals":
 		return c.Goals(cfg)
 	case "reflections":
