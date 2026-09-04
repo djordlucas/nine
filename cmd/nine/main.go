@@ -28,6 +28,12 @@ func main() {
 		servePluginAndExit(name)
 	}
 
+	// API server mode: `nine api serve` starts the HTTP API server as a
+	// separate process that communicates with the daemon via Unix socket.
+	if apiServeArgs(os.Args[1:]) {
+		serveAPIAndExit()
+	}
+
 	logsToStderr := setupLogger()
 
 	cfg := config.LoadDefault()
@@ -53,6 +59,11 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+// apiServeArgs reports whether argv invokes `nine api serve`.
+func apiServeArgs(args []string) bool {
+	return len(args) >= 1 && args[0] == "api" && (len(args) == 1 || args[1] == "serve")
 }
 
 // pluginServeArgs reports whether argv invokes `nine plugin serve [name]`, and

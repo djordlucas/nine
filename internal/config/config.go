@@ -28,6 +28,10 @@ type Config struct {
 	StandingTools []StandingToolConfig `toml:"standing_tool"`
 	Tools         ToolsConfig          `toml:"tools"`
 	MCP           MCPConfig            `toml:"mcp"`
+	// API is the `[api]` table: HTTP API server configuration for remote access
+	// to Nine's functionality (spec/contracts/api.md). The API runs as a separate
+	// process that communicates with the daemon via Unix socket.
+	API APIConfig `toml:"api"`
 
 	// Plugin holds per-plugin `[plugin.<name>]` tables (singular), sibling to the
 	// plural `[plugins]` subsystem table above — the same split `[agent]` and
@@ -714,6 +718,73 @@ type PluginsConfig struct {
 	UserDir string `toml:"user_dir"`
 }
 
+// APIConfig holds the HTTP API server configuration for remote access to
+// Nine's functionality (spec/contracts/api.md). The API runs as a separate
+// process that communicates with the daemon via Unix socket, providing feature
+// parity with the CLI over HTTP/REST.
+type APIConfig struct {
+	// Enabled starts the API server. Off by default; when off, `nine api serve`
+	// still works but the daemon does not start it automatically.
+	Enabled bool `toml:"enabled"`
+
+	// Port is the HTTP server port. Defaults to 8080.
+	Port int `toml:"port"`
+
+	// Host is the bind address. Defaults to "localhost" (IPv4 loopback only).
+	// Set to "0.0.0.0" to listen on all interfaces.
+	Host string `toml:"host"`
+
+	// AuthToken is an optional bearer token for API authentication. When set,
+	// all requests must include `Authorization: Bearer <token>`. Empty disables
+	// authentication.
+	AuthToken string `toml:"auth_token"`
+
+	// TimeoutSeconds is the request timeout in seconds. Defaults to 30.
+	// A request that takes longer returns 504 Gateway Timeout.
+	TimeoutSeconds int `toml:"timeout_seconds"`
+
+	// MaxConnections limits concurrent connections. Defaults to 100.
+	MaxConnections int `toml:"max_connections"`
+
+	// CORSOrigins is the list of allowed CORS origins. Defaults to ["*"]
+	// (all origins). Set to specific origins for production.
+	CORSOrigins []string `toml:"cors_origins"`
+
+	// RateLimit configures rate limiting for the API.
+	RateLimit APIRateLimitConfig `toml:"rate_limit"`
+
+	// TLS configures HTTPS/TLS support.
+	TLS APITLSConfig `toml:"tls"`
+}
+
+// APIRateLimitConfig configures rate limiting.
+type APIRateLimitConfig struct {
+	// Enabled turns rate limiting on. Defaults to true.
+	Enabled bool `toml:"enabled"`
+
+	// RequestsPerMinute is the limit. Defaults to 60.
+	RequestsPerMinute int `toml:"requests_per_minute"`
+
+	// BurstSize allows short bursts above the limit. Defaults to 10.
+	BurstSize int `toml:"burst_size"`
+
+	// ExcludedPaths are paths not subject to rate limiting.
+	// Defaults to ["/api/v1/health", "/api/v1/status"].
+	ExcludedPaths []string `toml:"excluded_paths"`
+}
+
+// APITLSConfig configures TLS for the API server.
+type APITLSConfig struct {
+	// Enabled turns on HTTPS. Defaults to false.
+	Enabled bool `toml:"enabled"`
+
+	// CertPath is the path to the TLS certificate file.
+	CertPath string `toml:"cert_path"`
+
+	// KeyPath is the path to the TLS private key file.
+	KeyPath string `toml:"key_path"`
+}
+
 // MCPConfig holds the MCP servers Nine should connect to. Each becomes one
 // plugin: the daemon starts an `mcp` bridge instance per server, so an MCP
 // server is a plugin in every respect that matters — its own process, its own
@@ -769,6 +840,96 @@ type MemoryConfig struct {
 // pull-surfaced into the context, defaulting to true when the key is unset.
 func (m MemoryConfig) SurfaceMemoriesEnabled() bool {
 	return m.SurfaceMemories == nil || *m.SurfaceMemories
+}
+
+// API defaults.
+const (
+	// DefaultAPIPort is the default HTTP API server port.
+	DefaultAPIPort = 8080
+	// DefaultAPIHost is the default bind address (localhost only).
+	DefaultAPIHost = "localhost"
+	// DefaultAPITimeoutSeconds is the default request timeout.
+	DefaultAPITimeoutSeconds = 30
+	// DefaultAPIMaxConnections is the default max concurrent connections.
+	DefaultAPIMaxConnections = 100
+	// DefaultAPIRequestsPerMinute is the default rate limit.
+	DefaultAPIRequestsPerMinute = 60
+	// DefaultAPIBurstSize is the default rate limit burst size.
+	DefaultAPIBurstSize = 10
+)
+
+// Port returns the effective API port, defaulting to DefaultAPIPort.
+func (a APIConfig) Port() int {
+	if a.Port == 0 {
+		return DefaultAPIPort
+	}
+	return a.Port
+}
+
+// Host returns the effective API host, defaulting to DefaultAPIHost.
+func (a APIConfig) Host() string {
+	if a.Host == "" {
+		return DefaultAPIHost
+	}
+	return a.Host
+}
+
+// TimeoutSeconds returns the effective timeout, defaulting to DefaultAPITimeoutSeconds.
+func (a APIConfig) TimeoutSeconds() int {
+	if a.TimeoutSeconds == 0 {
+		return DefaultAPITimeoutSeconds
+	}
+	return a.TimeoutSeconds
+}
+
+// MaxConnections returns the effective max connections, defaulting to DefaultAPIMaxConnections.
+func (a APIConfig) MaxConnections() int {
+	if a.MaxConnections == 0 {
+		return DefaultAPIMaxConnections
+	}
+	return a.MaxConnections
+}
+
+// CORSOrigins returns the effective CORS origins, defaulting to ["*"] if unset.
+func (a APIConfig) CORSOrigins() []string {
+	if len(a.CORSOrigins) == 0 {
+		return []string{"*"}
+	}
+	return a.CORSOrigins
+}
+
+// RateLimitEnabled returns whether rate limiting is enabled, defaulting to true.
+func (a APIConfig) RateLimitEnabled() bool {
+	return a.RateLimit.Enabled
+}
+
+// RequestsPerMinute returns the effective rate limit, defaulting to DefaultAPIRequestsPerMinute.
+func (a APIConfig) RequestsPerMinute() int {
+	if a.RateLimit.RequestsPerMinute == 0 {
+		return DefaultAPIRequestsPerMinute
+	}
+	return a.RateLimit.RequestsPerMinute
+}
+
+// BurstSize returns the effective burst size, defaulting to DefaultAPIBurstSize.
+func (a APIConfig) BurstSize() int {
+	if a.RateLimit.BurstSize == 0 {
+		return DefaultAPIBurstSize
+	}
+	return a.RateLimit.BurstSize
+}
+
+// ExcludedPaths returns the effective excluded paths for rate limiting.
+func (a APIConfig) ExcludedPaths() []string {
+	if len(a.RateLimit.ExcludedPaths) == 0 {
+		return []string{"/api/v1/health", "/api/v1/status"}
+	}
+	return a.RateLimit.ExcludedPaths
+}
+
+// TLSEnabled returns whether TLS is enabled.
+func (a APIConfig) TLSEnabled() bool {
+	return a.TLS.Enabled
 }
 
 type EmbeddingsConfig struct {
