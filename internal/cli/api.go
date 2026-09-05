@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -31,6 +33,13 @@ func (c *CLI) APIServe(cfg *config.Config, flags []string) error {
 		return fmt.Errorf("failed to start API server: %w", err)
 	}
 
+	// Save PID for later cleanup
+	pidFile := os.ExpandEnv("$HOME/.nine/api.pid")
+	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", cmd.Process.Pid)), 0600); err != nil {
+		// Non-critical error, continue
+		fmt.Fprintf(c.Out, "Warning: failed to write PID file: %v\n", err)
+	}
+
 	// Give it a moment to start
 	time.Sleep(500 * time.Millisecond)
 
@@ -43,11 +52,13 @@ func (c *CLI) APIServe(cfg *config.Config, flags []string) error {
 	if err := checkAPIHealth(cfg); err != nil {
 		// Clean up if it failed
 		cmd.Process.Kill() //nolint:errcheck
+		os.Remove(pidFile) // nolint:errcheck
 		return fmt.Errorf("API server started but is not healthy: %w", err)
 	}
 
-	fmt.Fprintf(c.Out, "API server started successfully\n")
+	fmt.Fprintf(c.Out, "API server started successfully (PID: %d)\n", cmd.Process.Pid)
 	fmt.Fprintf(c.Out, "Connect to: http://%s:%d\n", cfg.API.Host(), cfg.API.Port())
+	fmt.Fprintf(c.Out, "PID file: %s\n", pidFile)
 
 	// Note: The process runs independently; use `nine api stop` to stop it
 	return nil
@@ -69,17 +80,30 @@ func (c *CLI) APIStatus(cfg *config.Config) error {
 
 // APIStop stops the API server process.
 func (c *CLI) APIStop(cfg *config.Config) error {
-	// Try to connect to the API and trigger a graceful shutdown
-	// For now, we'll just report that the user should kill the process manually
-	// In a full implementation, we would:
-	// 1. Connect to the API management endpoint
-	// 2. Send a shutdown request
-	// 3. Wait for it to stop
+	// Try to find and kill the API process
+	// First, check if there's a PID file
+	pidFile := os.ExpandEnv("$HOME/.nine/api.pid")
+	if pidData, err := os.ReadFile(pidFile); err == nil {
+		pidStr := strings.TrimSpace(string(pidData))
+		if pid, err := strconv.Atoi(pidStr); err == nil {
+			process, err := os.FindProcess(pid)
+			if err == nil {
+				if err := process.Kill(); err == nil {
+					// Remove PID file after killing
+					os.Remove(pidFile) // nolint:errcheck
+					fmt.Fprintf(c.Out, "API server (PID %d) stopped successfully\n", pid)
+					return nil
+				}
+				return fmt.Errorf("failed to kill API server process %d: %w", pid, err)
+			}
+		}
+	}
 
-	fmt.Fprintf(c.Out, "To stop the API server, you need to:\n")
+	// If no PID file, try to find the process manually
+	fmt.Fprintf(c.Out, "No PID file found at %s\n", pidFile)
+	fmt.Fprintf(c.Out, "To stop the API server manually:\n")
 	fmt.Fprintf(c.Out, "1. Find the API server process: ps aux | grep 'nine api serve'\n")
 	fmt.Fprintf(c.Out, "2. Kill it: kill <PID>\n")
-	fmt.Fprintf(c.Out, "\nNote: In a future version, this will be automated.\n")
 	return nil
 }
 
