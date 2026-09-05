@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -294,6 +295,11 @@ type apiServer struct {
 	socketPath    string
 	daemonConn    *protocol.Client
 	connMu        sync.Mutex
+	// rateLimiters maps client IPs to their rate limiters.
+	// Note: This map grows unbounded. In production, consider:
+	// - Periodic cleanup of stale entries
+	// - Using a bounded LRU cache
+	// - Adding TTL to rate limiter entries
 	rateLimiters  map[string]*rateLimiter
 	rateMu        sync.Mutex
 }
@@ -430,7 +436,9 @@ func (s *apiServer) getDaemonClient() (*protocol.Client, error) {
 	if s.daemonConn != nil {
 		// Test if daemon is still responsive by attempting a new connection
 		// If this succeeds, the daemon is alive and our connection should be valid
-		if _, err := protocol.Connect(s.socketPath); err == nil {
+		testCl, err := protocol.Connect(s.socketPath)
+		if err == nil {
+			testCl.Close() // Don't leak the test connection
 			return s.daemonConn, nil
 		}
 		// Daemon is not responsive, close stale connection
@@ -826,8 +834,12 @@ func (s *apiServer) handleGetConversation(w http.ResponseWriter, r *http.Request
 	// Parse the context JSON so it can be properly included in the response
 	var contextData any
 	if err := json.Unmarshal([]byte(ctxJSON), &contextData); err != nil {
-		// If parsing fails, return raw JSON as a string
-		contextData = ctxJSON
+		// If parsing fails, log error and return structured representation
+		slog.Warn("failed to parse context JSON", "err", err, "raw_length", len(ctxJSON))
+		contextData = map[string]any{
+			"error": "failed to parse context",
+			"raw":   string(ctxJSON),
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -925,9 +937,20 @@ func (s *apiServer) handleGetContext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Parse the context JSON so it can be properly included in the response
+	var contextData any
+	if err := json.Unmarshal([]byte(ctxJSON), &contextData); err != nil {
+		// If parsing fails, log error and return structured representation
+		slog.Warn("failed to parse context JSON", "err", err, "raw_length", len(ctxJSON))
+		contextData = map[string]any{
+			"error": "failed to parse context",
+			"raw":   string(ctxJSON),
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"agent_id": id,
-		"context":  ctxJSON,
+		"context":  contextData,
 	})
 }
 
@@ -1542,6 +1565,15 @@ func (s *apiServer) handleStreamMessages(w http.ResponseWriter, r *http.Request)
 			"missing conversation id", nil)
 		return
 	}
+
+	// Check daemon connection first
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "service_unavailable",
+			err.Error(), nil)
+		return
+	}
+	defer cl.Close()
 
 	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
