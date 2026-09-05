@@ -5,11 +5,12 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -111,6 +112,8 @@ type apiFlags struct {
 }
 
 // parseAPIFlags parses API-specific command-line flags.
+// Note: args[0] is intentionally skipped as it contains the command name ("serve").
+// The actual flags start from args[1] onwards.
 func parseAPIFlags(args []string) apiFlags {
 	var flags apiFlags
 	flags.port = config.DefaultAPIPort
@@ -118,16 +121,31 @@ func parseAPIFlags(args []string) apiFlags {
 	flags.timeout = config.DefaultAPITimeoutSeconds
 	flags.maxConn = config.DefaultAPIMaxConnections
 
+	// Start from index 1 to skip the command name ("serve")
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
 		case "--port":
 			if i+1 < len(args) {
-				fmt.Sscanf(args[i+1], "%d", &flags.port)
+				if p, err := strconv.Atoi(args[i+1]); err == nil {
+					if p >= 1 && p <= 65535 {
+						flags.port = p
+					} else {
+						slog.Warn("invalid port number, using default", "port", args[i+1], "default", config.DefaultAPIPort)
+					}
+				} else {
+					slog.Warn("invalid port value, using default", "value", args[i+1], "default", config.DefaultAPIPort)
+				}
 				i++
 			}
 		case "--host":
 			if i+1 < len(args) {
-				flags.host = args[i+1]
+				host := args[i+1]
+				// Basic validation: non-empty string
+				if host != "" {
+					flags.host = host
+				} else {
+					slog.Warn("empty host value, using default", "default", config.DefaultAPIHost)
+				}
 				i++
 			}
 		case "--auth-token":
@@ -137,12 +155,28 @@ func parseAPIFlags(args []string) apiFlags {
 			}
 		case "--timeout":
 			if i+1 < len(args) {
-				fmt.Sscanf(args[i+1], "%d", &flags.timeout)
+				if t, err := strconv.Atoi(args[i+1]); err == nil {
+					if t > 0 {
+						flags.timeout = t
+					} else {
+						slog.Warn("invalid timeout value, using default", "value", args[i+1], "default", config.DefaultAPITimeoutSeconds)
+					}
+				} else {
+					slog.Warn("invalid timeout value, using default", "value", args[i+1], "default", config.DefaultAPITimeoutSeconds)
+				}
 				i++
 			}
 		case "--max-connections":
 			if i+1 < len(args) {
-				fmt.Sscanf(args[i+1], "%d", &flags.maxConn)
+				if m, err := strconv.Atoi(args[i+1]); err == nil {
+					if m > 0 {
+						flags.maxConn = m
+					} else {
+						slog.Warn("invalid max-connections value, using default", "value", args[i+1], "default", config.DefaultAPIMaxConnections)
+					}
+				} else {
+					slog.Warn("invalid max-connections value, using default", "value", args[i+1], "default", config.DefaultAPIMaxConnections)
+				}
 				i++
 			}
 		case "--cors-origins":
@@ -167,19 +201,47 @@ func parseAPIFlags(args []string) apiFlags {
 
 	// Check environment variables
 	if v := os.Getenv("NINE_API_PORT"); v != "" {
-		fmt.Sscanf(v, "%d", &flags.port)
+		if p, err := strconv.Atoi(v); err == nil {
+			if p >= 1 && p <= 65535 {
+				flags.port = p
+			} else {
+				slog.Warn("invalid NINE_API_PORT value, using default", "value", v, "default", config.DefaultAPIPort)
+			}
+		} else {
+			slog.Warn("invalid NINE_API_PORT value, using default", "value", v, "default", config.DefaultAPIPort)
+		}
 	}
 	if v := os.Getenv("NINE_API_HOST"); v != "" {
-		flags.host = v
+		if v != "" {
+			flags.host = v
+		} else {
+			slog.Warn("empty NINE_API_HOST value, using default", "default", config.DefaultAPIHost)
+		}
 	}
 	if v := os.Getenv("NINE_API_AUTH_TOKEN"); v != "" {
 		flags.authToken = v
 	}
 	if v := os.Getenv("NINE_API_TIMEOUT_SECONDS"); v != "" {
-		fmt.Sscanf(v, "%d", &flags.timeout)
+		if t, err := strconv.Atoi(v); err == nil {
+			if t > 0 {
+				flags.timeout = t
+			} else {
+				slog.Warn("invalid NINE_API_TIMEOUT_SECONDS value, using default", "value", v, "default", config.DefaultAPITimeoutSeconds)
+			}
+		} else {
+			slog.Warn("invalid NINE_API_TIMEOUT_SECONDS value, using default", "value", v, "default", config.DefaultAPITimeoutSeconds)
+		}
 	}
 	if v := os.Getenv("NINE_API_MAX_CONNECTIONS"); v != "" {
-		fmt.Sscanf(v, "%d", &flags.maxConn)
+		if m, err := strconv.Atoi(v); err == nil {
+			if m > 0 {
+				flags.maxConn = m
+			} else {
+				slog.Warn("invalid NINE_API_MAX_CONNECTIONS value, using default", "value", v, "default", config.DefaultAPIMaxConnections)
+			}
+		} else {
+			slog.Warn("invalid NINE_API_MAX_CONNECTIONS value, using default", "value", v, "default", config.DefaultAPIMaxConnections)
+		}
 	}
 	if v := os.Getenv("NINE_API_CORS_ORIGINS"); v != "" {
 		flags.corsOrigins = strings.Split(v, ",")
@@ -227,11 +289,13 @@ func mergeAPIConfig(fileCfg config.APIConfig, flags apiFlags) config.APIConfig {
 
 // apiServer wraps the HTTP server with additional state.
 type apiServer struct {
-	server      *http.Server
-	config      config.APIConfig
-	socketPath  string
-	daemonConn  *protocol.Client
-	connMu      sync.Mutex
+	server        *http.Server
+	config        config.APIConfig
+	socketPath    string
+	daemonConn    *protocol.Client
+	connMu        sync.Mutex
+	rateLimiters  map[string]*rateLimiter
+	rateMu        sync.Mutex
 }
 
 // newAPIServer creates a new API server instance.
@@ -248,9 +312,10 @@ func newAPIServer(cfg config.APIConfig, socketPath string) (*apiServer, error) {
 
 	// Create the API server wrapper
 	apiSrv := &apiServer{
-		server:     server,
-		config:     cfg,
-		socketPath: socketPath,
+		server:        server,
+		config:        cfg,
+		socketPath:    socketPath,
+		rateLimiters:  make(map[string]*rateLimiter),
 	}
 
 	// Create the HTTP handler with middleware
@@ -363,12 +428,12 @@ func (s *apiServer) getDaemonClient() (*protocol.Client, error) {
 
 	// Check if we have a valid connection
 	if s.daemonConn != nil {
-		// Simple health check - try to send a ping
-		if cl, err := protocol.Connect(s.socketPath); err == nil {
-			cl.Close()
+		// Test if daemon is still responsive by attempting a new connection
+		// If this succeeds, the daemon is alive and our connection should be valid
+		if _, err := protocol.Connect(s.socketPath); err == nil {
 			return s.daemonConn, nil
 		}
-		// Connection is stale, close it
+		// Daemon is not responsive, close stale connection
 		s.daemonConn.Close()
 		s.daemonConn = nil
 	}
@@ -514,10 +579,6 @@ func (s *apiServer) rateLimitMiddleware(next http.Handler) http.Handler {
 		return next
 	}
 
-	// Create a rate limiter per IP
-	limiters := make(map[string]*rateLimiter)
-	var mu sync.Mutex
-
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Skip rate limiting for excluded paths
 		for _, path := range s.config.ExcludedPaths() {
@@ -530,13 +591,13 @@ func (s *apiServer) rateLimitMiddleware(next http.Handler) http.Handler {
 		// Get client IP
 		ip := getClientIP(r)
 
-		mu.Lock()
-		limiter, exists := limiters[ip]
+		s.rateMu.Lock()
+		limiter, exists := s.rateLimiters[ip]
 		if !exists {
 			limiter = newRateLimiter(s.config.RequestsPerMinute(), s.config.BurstSize())
-			limiters[ip] = limiter
+			s.rateLimiters[ip] = limiter
 		}
-		mu.Unlock()
+		s.rateMu.Unlock()
 
 		// Check rate limit
 		if !limiter.allow() {
@@ -762,10 +823,16 @@ func (s *apiServer) handleGetConversation(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// For now, return basic info - full context parsing would require importing the context package
+	// Parse the context JSON so it can be properly included in the response
+	var contextData any
+	if err := json.Unmarshal([]byte(ctxJSON), &contextData); err != nil {
+		// If parsing fails, return raw JSON as a string
+		contextData = ctxJSON
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":           id,
-		"context":      ctxJSON,
+		"context":      contextData,
 		"created_at":   time.Now().UTC().Format(time.RFC3339),
 	})
 }
@@ -1214,14 +1281,16 @@ func (s *apiServer) handleListNotifications(w http.ResponseWriter, r *http.Reque
 
 func (s *apiServer) handleListSkills(w http.ResponseWriter, r *http.Request) {
 	// Skills are accessed through the memory store, not directly via socket
-	// For now, return a placeholder
+	// TODO: Implement proper skills listing via daemon socket.
+	// For now, return a placeholder.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": []string{},
 	})
 }
 
 func (s *apiServer) handleListDocs(w http.ResponseWriter, r *http.Request) {
-	// For now, return a placeholder
+	// TODO: Implement proper docs listing.
+	// For now, return a placeholder.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"topics": []string{"overview", "usage", "configuration", "plugins", "architecture"},
 	})
@@ -1235,7 +1304,8 @@ func (s *apiServer) handleGetDocs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// For now, return a placeholder
+	// TODO: Implement proper docs retrieval.
+	// For now, return a placeholder.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"topic":   topic,
 		"content": "Documentation for " + topic + " would appear here.",
@@ -1243,7 +1313,8 @@ func (s *apiServer) handleGetDocs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *apiServer) handleListSpec(w http.ResponseWriter, r *http.Request) {
-	// For now, return a placeholder
+	// TODO: Implement proper spec listing.
+	// For now, return a placeholder.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"topics": []string{"wire-protocol", "plugin", "toolvm", "api"},
 	})
@@ -1257,7 +1328,8 @@ func (s *apiServer) handleGetSpec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// For now, return a placeholder
+	// TODO: Implement proper spec retrieval.
+	// For now, return a placeholder.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"topic":   topic,
 		"content": "Specification for " + topic + " would appear here.",
@@ -1272,7 +1344,8 @@ func (s *apiServer) handleGetHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// For now, return a placeholder
+	// TODO: Implement proper history retrieval via daemon socket.
+	// For now, return a placeholder.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"agent_id": id,
 		"data":    []string{},
@@ -1297,7 +1370,8 @@ func (s *apiServer) handleGetTrace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// For now, return a placeholder
+	// TODO: Implement proper trace retrieval via daemon socket.
+	// For now, return a placeholder.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"agent_id":    id,
 		"turn":       req.Turn,
@@ -1322,7 +1396,8 @@ func (s *apiServer) handleReplay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// For now, return a placeholder
+	// TODO: Implement proper replay via daemon socket.
+	// For now, return a placeholder.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"agent_id": id,
 		"turn":    req.Turn,
@@ -1337,7 +1412,8 @@ func (s *apiServer) handleGetTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// For now, return a placeholder
+	// TODO: Implement proper tool info retrieval via daemon socket.
+	// For now, return a placeholder.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"name": name,
 	})
@@ -1361,7 +1437,11 @@ func (s *apiServer) handleCreateGoal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// For now, return a placeholder - goal creation requires direct store access
+	// TODO: Implement proper goal creation via daemon socket.
+	// Currently, goals are managed through agent tools (goal_create, goal_get, etc.)
+	// which are not directly accessible via the socket protocol.
+	// For now, return a placeholder.
+	// See: internal/agent/register_goals.go for the tool implementations.
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"id":          "goal-" + fmt.Sprintf("%d", time.Now().UnixNano()),
 		"name":        req.Name,
@@ -1379,7 +1459,11 @@ func (s *apiServer) handleGetGoal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// For now, return a placeholder
+	// TODO: Implement proper goal retrieval via daemon socket.
+	// Currently, goals are managed through agent tools (goal_create, goal_get, etc.)
+	// which are not directly accessible via the socket protocol.
+	// For now, return a placeholder.
+	// See: internal/agent/register_goals.go for the tool implementations.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id": id,
 	})
@@ -1393,7 +1477,11 @@ func (s *apiServer) handleDeleteGoal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// For now, return a placeholder
+	// TODO: Implement proper goal deletion via daemon socket.
+	// Currently, goals are managed through agent tools (goal_create, goal_get, etc.)
+	// which are not directly accessible via the socket protocol.
+	// For now, return a placeholder.
+	// See: internal/agent/register_goals.go for the tool implementations.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"message": "goal deleted",
 		"id":      id,
@@ -1460,25 +1548,18 @@ func (s *apiServer) handleStreamMessages(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	// For now, implement a simple streaming example
-	// In a full implementation, this would connect to the daemon and stream
-	// progress events
+	// Write headers and initial status
+	w.WriteHeader(http.StatusOK)
 
-	// Send a test event
-	fmt.Fprintf(w, "event: connected\ndata: %s\n\n", `{"message": "stream connected"}`)
+	// Send a connection event
+	fmt.Fprintf(w, "event: connected\ndata: %s\n\n", `{"message": "stream connected", "agent_id": "`+id+`"}`)
 
 	// Flush the response
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
 	}
 
-	// Wait for client disconnect
-	select {
-	case <-r.Context().Done():
-		// Client disconnected
-		return
-	case <-time.After(30 * time.Second):
-		// Timeout
-		return
-	}
+	// Wait for client disconnect or context cancellation
+	// Removed the 30-second timeout to allow long-lived connections
+	<-r.Context().Done()
 }
