@@ -858,40 +858,40 @@ const (
 	DefaultAPIBurstSize = 10
 )
 
-// Port returns the effective API port, defaulting to DefaultAPIPort.
-func (a APIConfig) Port() int {
+// GetPort returns the effective API port, defaulting to DefaultAPIPort.
+func (a APIConfig) GetPort() int {
 	if a.Port == 0 {
 		return DefaultAPIPort
 	}
 	return a.Port
 }
 
-// Host returns the effective API host, defaulting to DefaultAPIHost.
-func (a APIConfig) Host() string {
+// GetHost returns the effective API host, defaulting to DefaultAPIHost.
+func (a APIConfig) GetHost() string {
 	if a.Host == "" {
 		return DefaultAPIHost
 	}
 	return a.Host
 }
 
-// TimeoutSeconds returns the effective timeout, defaulting to DefaultAPITimeoutSeconds.
-func (a APIConfig) TimeoutSeconds() int {
+// GetTimeoutSeconds returns the effective timeout, defaulting to DefaultAPITimeoutSeconds.
+func (a APIConfig) GetTimeoutSeconds() int {
 	if a.TimeoutSeconds == 0 {
 		return DefaultAPITimeoutSeconds
 	}
 	return a.TimeoutSeconds
 }
 
-// MaxConnections returns the effective max connections, defaulting to DefaultAPIMaxConnections.
-func (a APIConfig) MaxConnections() int {
+// GetMaxConnections returns the effective max connections, defaulting to DefaultAPIMaxConnections.
+func (a APIConfig) GetMaxConnections() int {
 	if a.MaxConnections == 0 {
 		return DefaultAPIMaxConnections
 	}
 	return a.MaxConnections
 }
 
-// CORSOrigins returns the effective CORS origins, defaulting to ["*"] if unset.
-func (a APIConfig) CORSOrigins() []string {
+// GetCORSOrigins returns the effective CORS origins, defaulting to ["*"] if unset.
+func (a APIConfig) GetCORSOrigins() []string {
 	if len(a.CORSOrigins) == 0 {
 		return []string{"*"}
 	}

@@ -114,12 +114,12 @@ type Config struct {
 
 // NewServer creates a new API server instance.
 func NewServer(cfg Config) *Server {
-	addr := fmt.Sprintf("%s:%d", cfg.APIConfig.Host(), cfg.APIConfig.Port())
+	addr := fmt.Sprintf("%s:%d", cfg.APIConfig.GetHost(), cfg.APIConfig.GetPort())
 	server := &http.Server{
 		Addr:           addr,
-		ReadTimeout:    time.Duration(cfg.APIConfig.TimeoutSeconds()) * time.Second,
-		WriteTimeout:   time.Duration(cfg.APIConfig.TimeoutSeconds()) * time.Second,
-		IdleTimeout:    time.Duration(cfg.APIConfig.TimeoutSeconds()+5) * time.Second,
+		ReadTimeout:    time.Duration(cfg.APIConfig.GetTimeoutSeconds()) * time.Second,
+		WriteTimeout:   time.Duration(cfg.APIConfig.GetTimeoutSeconds()) * time.Second,
+		IdleTimeout:    time.Duration(cfg.APIConfig.GetTimeoutSeconds()+5) * time.Second,
 		MaxHeaderBytes: 1 << 20, // 1 MB
 	}
 
@@ -137,8 +137,8 @@ func NewServer(cfg Config) *Server {
 func (s *Server) Run() error {
 	slog.Info("starting nine API server",
 		"version", s.version,
-		"host", s.config.Host(),
-		"port", s.config.Port(),
+		"host", s.config.GetHost(),
+		"port", s.config.GetPort(),
 		"auth_enabled", s.config.AuthToken != "",
 		"tls_enabled", s.config.TLSEnabled(),
 		"rate_limit_enabled", s.config.RateLimitEnabled())
