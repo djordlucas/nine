@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -51,7 +52,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 // corsMiddleware handles CORS.
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origins := s.config.CORSOrigins()
+		origins := s.config.GetCORSOrigins()
 
 		// Set CORS headers
 		w.Header().Set("Access-Control-Allow-Origin", strings.Join(origins, ", "))
@@ -189,13 +190,28 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse the status info into a structured response
-	var statusResp StatusResponse
-	if err := json.Unmarshal([]byte(info), &statusResp); err != nil {
-		// If parsing fails, return the raw info as a fallback
-		writeJSON(w, http.StatusOK, info)
-		return
+	// Convert protocol StatusInfo to API StatusResponse
+	// Convert plugin names to PluginInfo
+	var pluginInfos []PluginInfo
+	for _, pluginName := range info.Plugins {
+		pluginInfos = append(pluginInfos, PluginInfo{
+			Name:   pluginName,
+			Source: "",
+			Loaded: true,
+		})
 	}
+
+	statusResp := StatusResponse{
+		Status:      "healthy",
+		Version:     s.version,
+		Uptime:      info.Uptime,
+		Sessions:    len(info.Agents),
+		Plugins:     pluginInfos,
+		Tools:       []ToolInfo{},
+		MemoryStats: MemoryStats{},
+		Config:      map[string]interface{}{},
+	}
+
 	writeJSON(w, http.StatusOK, statusResp)
 }
 
@@ -251,14 +267,22 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Parse sessions into ConversationInfo slice
+	// Convert protocol SessionInfo to API ConversationInfo
 	var conversations []ConversationInfo
-	if err := json.Unmarshal([]byte(sessions), &conversations); err != nil {
-		// If parsing fails, return raw data
-		writeJSON(w, http.StatusOK, map[string]any{
-			"data": sessions,
+	for _, sess := range sessions {
+		conversations = append(conversations, ConversationInfo{
+			ID:           sess.ID,
+			Name:         sess.Name,
+			Role:         "", // Role not available in SessionInfo
+			PlanMode:     "", // PlanMode not available in SessionInfo
+			Status:       sess.Status,
+			CreatedAt:    time.Time{}, // CreatedAt not available in SessionInfo
+			UpdatedAt:    time.Time{}, // UpdatedAt not available in SessionInfo
+			EventsCount:  sess.Events,
+			Protected:    sess.Protected,
+			Attached:     sess.Attached,
+			AgeSeconds:   sess.AgeSeconds,
 		})
-		return
 	}
 
 	writeJSON(w, http.StatusOK, ListConversationsResponse{
@@ -612,11 +636,9 @@ func (s *Server) handleCreateGoal(w http.ResponseWriter, r *http.Request) {
 	// For now, return a placeholder.
 	// See: internal/agent/register_goals.go for the tool implementations.
 	writeJSON(w, http.StatusCreated, CreateGoalResponse{
-		ID:          "goal-" + fmt.Sprintf("%d", time.Now().UnixNano()),
-		Name:        req.Name,
-		Description: req.Description,
-		Priority:    req.Priority,
-		Status:     "created",
+		ID:        "goal-" + fmt.Sprintf("%d", time.Now().UnixNano()),
+		Status:    "created",
+		SessionID: "",
 	})
 }
 
@@ -779,13 +801,19 @@ func (s *Server) handleListTools(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse tools data
+	// Convert protocol ToolSummary to API ToolInfo
 	var toolInfos []ToolInfo
-	if err := json.Unmarshal([]byte(tools), &toolInfos); err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"data": tools,
+	for _, tool := range tools {
+		toolInfos = append(toolInfos, ToolInfo{
+			Name:        tool.Name,
+			Description: tool.Description,
+			Plugin:      tool.Plugin,
+			Kind:        "plugin",
+			Loaded:      true,
+			Capabilities: []string{},
+			ManifestPath: "",
+			Generated:   false,
 		})
-		return
 	}
 
 	writeJSON(w, http.StatusOK, ListToolsResponse{
@@ -874,13 +902,23 @@ func (s *Server) handleReloadTools(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse tools data
+	// Convert protocol SandboxedToolStatus to API ToolInfo
 	var toolInfos []ToolInfo
-	if err := json.Unmarshal([]byte(tools), &toolInfos); err != nil {
-		writeJSON(w, http.StatusOK, ReloadToolsResponse{
-			Message: "tools reloaded",
+	for _, tool := range tools {
+		capabilities := []string{}
+		if tool.Capabilities != "" {
+			capabilities = strings.Split(tool.Capabilities, ",")
+		}
+		toolInfos = append(toolInfos, ToolInfo{
+			Name:         tool.Name,
+			Description:  tool.Description,
+			Plugin:       "",
+			Kind:         tool.Kind,
+			Loaded:       tool.Loaded,
+			Capabilities: capabilities,
+			ManifestPath: tool.ManifestPath,
+			Generated:    tool.Generated,
 		})
-		return
 	}
 
 	writeJSON(w, http.StatusOK, ReloadToolsResponse{
@@ -909,13 +947,17 @@ func (s *Server) handleListPlugins(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse plugins data
+	// Convert protocol PluginStatus to API PluginInfo
 	var pluginInfos []PluginInfo
-	if err := json.Unmarshal([]byte(plugins), &pluginInfos); err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"data": plugins,
+	for _, plugin := range plugins {
+		pluginInfos = append(pluginInfos, PluginInfo{
+			Name:     plugin.Name,
+			Source:   plugin.Source,
+			Loaded:   plugin.Loaded,
+			Tools:    plugin.Tools,
+			Error:    plugin.Error,
+			Disabled: plugin.Disabled,
 		})
-		return
 	}
 
 	writeJSON(w, http.StatusOK, ListPluginsResponse{
@@ -939,14 +981,17 @@ func (s *Server) handleReloadPlugins(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse plugins data
+	// Convert protocol PluginStatus to API PluginInfo
 	var pluginInfos []PluginInfo
-	if err := json.Unmarshal([]byte(plugins), &pluginInfos); err != nil {
-		writeJSON(w, http.StatusOK, ReloadPluginsResponse{
-			Message:     "plugins reloaded",
-			LoadedCount: len(plugins),
+	for _, plugin := range plugins {
+		pluginInfos = append(pluginInfos, PluginInfo{
+			Name:     plugin.Name,
+			Source:   plugin.Source,
+			Loaded:   plugin.Loaded,
+			Tools:    plugin.Tools,
+			Error:    plugin.Error,
+			Disabled: plugin.Disabled,
 		})
-		return
 	}
 
 	writeJSON(w, http.StatusOK, ReloadPluginsResponse{
@@ -1048,14 +1093,25 @@ func (s *Server) handleAttachSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Convert Msg slices to []any
+	replayEvents := make([]any, len(result.ReplayEvents))
+	for i, msg := range result.ReplayEvents {
+		replayEvents[i] = msg
+	}
+
+	history := make([]any, len(result.History))
+	for i, msg := range result.History {
+		history[i] = msg
+	}
+
 	writeJSON(w, http.StatusOK, AttachSessionResponse{
-		AgentID:         result.AgentID,
-		Name:           result.Name,
-		Role:           result.Role,
-		InstanceName:   result.InstanceName,
-		ReplayEvents:   result.ReplayEvents,
+		AgentID:        result.AgentID,
+		Name:          result.Name,
+		Role:          result.Role,
+		InstanceName:  result.InstanceName,
+		ReplayEvents:  replayEvents,
 		PendingResponse: result.PendingResponse,
-		History:        result.History,
+		History:       history,
 	})
 }
 
