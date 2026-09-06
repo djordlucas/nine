@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"nine/internal/api"
 	"nine/internal/config"
 	"nine/internal/protocol"
 )
@@ -253,27 +254,27 @@ func (a *APIClient) doRequest(method, path string, body any) ([]byte, error) {
 }
 
 // Status returns the API server status.
-func (a *APIClient) Status() (map[string]any, error) {
+func (a *APIClient) Status() (*api.StatusResponse, error) {
 	data, err := a.doRequest("GET", "/status", nil)
 	if err != nil {
 		return nil, err
 	}
-	var result map[string]any
+	var result api.StatusResponse
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, err
 	}
-	return result, nil
+	return &result, nil
 }
 
 // Health returns the API server health.
-func (a *APIClient) Health() (map[string]any, error) {
+func (a *APIClient) Health() (*api.HealthResponse, error) {
 	data, err := a.doRequest("GET", "/health", nil)
 	if err != nil {
 		return nil, err
 	}
-	var result map[string]any
+	var result api.HealthResponse
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, err
 	}
-	return result, nil
+	return &result, nil
 }
