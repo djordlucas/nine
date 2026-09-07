@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -15,7 +14,6 @@ import (
 
 	"nine/internal/api"
 	"nine/internal/config"
-	"nine/internal/protocol"
 )
 
 // APIServe starts the API server process.
@@ -58,7 +56,7 @@ func (c *CLI) APIServe(cfg *config.Config, flags []string) error {
 	}
 
 	fmt.Fprintf(c.Out, "API server started successfully (PID: %d)\n", cmd.Process.Pid)
-	fmt.Fprintf(c.Out, "Connect to: http://%s:%d\n", cfg.API.Host(), cfg.API.Port())
+	fmt.Fprintf(c.Out, "Connect to: http://%s:%d\n", cfg.API.GetHost(), cfg.API.GetPort())
 	fmt.Fprintf(c.Out, "PID file: %s\n", pidFile)
 
 	// Note: The process runs independently; use `nine api stop` to stop it
@@ -73,8 +71,8 @@ func (c *CLI) APIStatus(cfg *config.Config) error {
 	}
 
 	fmt.Fprintf(c.Out, "API server is running\n")
-	fmt.Fprintf(c.Out, "Host: %s\n", cfg.API.Host())
-	fmt.Fprintf(c.Out, "Port: %d\n", cfg.API.Port())
+	fmt.Fprintf(c.Out, "Host: %s\n", cfg.API.GetHost())
+	fmt.Fprintf(c.Out, "Port: %d\n", cfg.API.GetPort())
 	fmt.Fprintf(c.Out, "Health: healthy\n")
 	return nil
 }
@@ -111,7 +109,7 @@ func (c *CLI) APIStop(cfg *config.Config) error {
 // checkAPIHealth checks if the API server is running and healthy.
 func checkAPIHealth(cfg *config.Config) error {
 	// Try to connect to the health endpoint
-	url := fmt.Sprintf("http://%s:%d/api/v1/health", cfg.API.Host(), cfg.API.Port())
+	url := fmt.Sprintf("http://%s:%d/api/v1/health", cfg.API.GetHost(), cfg.API.GetPort())
 
 	client := &http.Client{
 		Timeout: 2 * time.Second,
@@ -161,11 +159,11 @@ func StartAPIProcess(cfg *config.Config) (*os.Process, error) {
 	args := []string{"api", "serve"}
 
 	// Add flags from config
-	if cfg.API.Port() != config.DefaultAPIPort {
-		args = append(args, "--port", fmt.Sprintf("%d", cfg.API.Port()))
+	if cfg.API.GetPort() != config.DefaultAPIPort {
+		args = append(args, "--port", fmt.Sprintf("%d", cfg.API.GetPort()))
 	}
-	if cfg.API.Host() != config.DefaultAPIHost {
-		args = append(args, "--host", cfg.API.Host())
+	if cfg.API.GetHost() != config.DefaultAPIHost {
+		args = append(args, "--host", cfg.API.GetHost())
 	}
 	if cfg.API.AuthToken != "" {
 		args = append(args, "--auth-token", cfg.API.AuthToken)
@@ -200,10 +198,10 @@ type APIClient struct {
 // NewAPIClient creates a new API client.
 func NewAPIClient(cfg *config.Config) *APIClient {
 	return &APIClient{
-		BaseURL:   fmt.Sprintf("http://%s:%d/api/v1", cfg.API.Host(), cfg.API.Port()),
+		BaseURL:   fmt.Sprintf("http://%s:%d/api/v1", cfg.API.GetHost(), cfg.API.GetPort()),
 		AuthToken: cfg.API.AuthToken,
 		HTTPClient: &http.Client{
-			Timeout: time.Duration(cfg.API.TimeoutSeconds()) * time.Second,
+			Timeout: time.Duration(cfg.API.GetTimeoutSeconds()) * time.Second,
 		},
 	}
 }

@@ -35,12 +35,6 @@ type CLI struct {
 	StartAPI func()
 	// StartTUI opens the terminal UI, optionally attaching to attachID.
 	StartTUI func(attachID string) error
-	// APIServe starts the API server with the given flags.
-	APIServe func(cfg *config.Config, flags []string) error
-	// APIStatus returns the API server status.
-	APIStatus func(cfg *config.Config) error
-	// APIStop stops the API server.
-	APIStop func(cfg *config.Config) error
 }
 
 // New returns a CLI wired to the standard streams.
