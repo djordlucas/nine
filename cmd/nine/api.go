@@ -36,8 +36,8 @@ func serveAPIAndExit() {
 	// Log configuration
 	slog.Info("starting nine API server",
 		"version", Version,
-		"host", mergedCfg.Host(),
-		"port", mergedCfg.Port(),
+		"host", mergedCfg.GetHost(),
+		"port", mergedCfg.GetPort(),
 		"auth_enabled", mergedCfg.AuthToken != "",
 		"tls_enabled", mergedCfg.TLSEnabled(),
 		"rate_limit_enabled", mergedCfg.RateLimitEnabled())
