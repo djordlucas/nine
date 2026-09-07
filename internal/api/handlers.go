@@ -845,14 +845,21 @@ func (s *Server) handleCallTool(w http.ResponseWriter, r *http.Request) {
 	defer cl.Close()
 
 	// Convert args to json.RawMessage for the protocol
-	argsJSON, err := json.Marshal(req.Args)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request",
-			"invalid args format", nil)
-		return
+	var argsRaw json.RawMessage
+	if req.Args != nil {
+		argsJSON, err := json.Marshal(req.Args)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request",
+				"invalid args format", nil)
+			return
+		}
+		argsRaw = argsJSON
+	} else {
+		// Ensure argsRaw is a valid JSON null value, not an empty byte slice
+		argsRaw = []byte("null")
 	}
 
-	result, err := cl.CallTool(name, json.RawMessage(argsJSON), req.LiveState)
+	result, err := cl.CallTool(name, argsRaw, req.LiveState)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			writeError(w, http.StatusNotFound, "not_found",
