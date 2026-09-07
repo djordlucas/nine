@@ -275,6 +275,10 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 	}
 	for i := 0; i <= maxIndex; i++ {
 		if tc, exists := toolCallsMap[i]; exists {
+			// Ensure empty Input is nil, not empty slice, to avoid journal marshal errors
+			if len(tc.Input) == 0 {
+				tc.Input = nil
+			}
 			toolCalls = append(toolCalls, *tc)
 		}
 	}
