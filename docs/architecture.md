@@ -35,6 +35,9 @@ fetched (`npx`) or hosted elsewhere (§10).
    │            │ newline-delimited JSON     │                              │
    │            │ over AF_UNIX socket        │                              │
    │            └─────────────┬──────────────┘                              │
+   │           ┌──────────────┴──────────────┐                              │
+   │           │  nine api (HTTP server)     │  ← REST/Swagger, same socket  │
+   │           └──────────────┬──────────────┘                              │
    │                          ▼                                             │
    │           ┌──────────────────────────────┐                            │
    │           │   DAEMON  (nine, daemon mode) │                            │
@@ -95,6 +98,7 @@ Key consequences of this shape:
 |---------|--------|------|----------|
 | Client  | `nine` | TUI or one-shot request; connects to socket | Per invocation |
 | Daemon  | `nine` (re-exec) | Owns sockets, sessions, queue, plugins, DB connection | Long-lived |
+| API server | `nine` (re-exec) | HTTP/REST server; translates requests to the daemon socket. Serves OpenAPI/Swagger at `/api/v1/swagger/` (see [api.md](api.md)) | Long-lived (s6-managed in Docker) |
 | Plugin  | `bin/<name>`, or `nine` (re-exec) for the built-ins | One tool provider, HTTP over a unix socket | Spawned by daemon, killed on stop |
 | MCP bridge | `nine` (re-exec) | One declared `[[mcp.server]]`: the plugin contract to the daemon, stdio or HTTP to the server | Spawned by daemon, killed on stop |
 | Sandboxed tool | *(none)* | JS/wasm in a wazero instance inside the daemon | One instance per call, closed on return |

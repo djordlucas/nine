@@ -1,0 +1,10 @@
+#!/command/with-contenv sh
+set -e
+
+# API server service for the runtime (production) image.
+# Wait for the daemon's Unix socket to appear before starting.
+while [ ! -S /tmp/nine.sock ]; do
+	sleep 0.5
+done
+
+exec nine api serve --host 0.0.0.0 --port 8080

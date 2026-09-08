@@ -27,19 +27,19 @@ func runDaemon() {
 	// different one. Checked here, against the effective config, because
 	// LoadDefault applies environment overrides after the file is validated.
 	if err := cfg.CheckProvider(); err != nil {
-		slog.Error("configuration", "err", err)
+		slog.Error("configuration check failed", "err", err)
 		os.Exit(1)
 	}
 
 	// Initialize memory store
 	dbPath, err := cfg.DatabasePath()
 	if err != nil {
-		slog.Error("resolve memory store path", "err", err)
+		slog.Error("failed to resolve memory store path", "err", err)
 		os.Exit(1)
 	}
 	store, err := memory.Open(dbPath)
 	if err != nil {
-		slog.Error("open memory store", "path", dbPath, "err", err)
+		slog.Error("failed to open memory store", "path", dbPath, "err", err)
 		os.Exit(1)
 	}
 	// Closing checkpoints the write-ahead log, so the database file is left
@@ -139,7 +139,7 @@ func runDaemon() {
 
 	// Bootstrap the self-model with the current plugin list, so it can answer questions about them.
 	if err := runtime.BootstrapSelfKV(store, pluginManager.ListRunning()); err != nil {
-		slog.Error("bootstrap self KV", "err", err)
+		slog.Error("failed to bootstrap self KV", "err", err)
 	}
 
 	// Register the idle-reflection routine handler, then reconcile the dedicated
@@ -150,7 +150,7 @@ func runDaemon() {
 		return runtime.NewIdleReflectionRoutine()
 	}
 	if err := runtime.ReconcileSelfReflection(store, cfg.SelfReflectionInterval()); err != nil {
-		slog.Error("reconcile self-reflection session", "err", err)
+		slog.Error("failed to reconcile self-reflection session", "err", err)
 	}
 
 	// Scrub old workflows on startup, to prevent unbounded growth of the workflow store.
@@ -322,7 +322,7 @@ func runDaemon() {
 	slog.Info("starting the nine daemon", "socket", cfg.SocketPath())
 	if err := daemon.Start(ctx); err != nil {
 		cancel()
-		slog.Error("daemon error", "err", err)
+		slog.Error("daemon failed", "err", err)
 		os.Exit(1)
 	}
 	cancel()
@@ -373,7 +373,7 @@ func startMCPServers(mgr *plugin.Manager, cfg *config.Config) {
 		if err != nil {
 			// Only unmarshalable values could cause this, and the config types are
 			// all strings; log rather than fail the boot.
-			slog.Error("encode MCP server spec", "server", srv.Name, "err", err)
+			slog.Error("failed to encode MCP server spec", "server", srv.Name, "err", err)
 			continue
 		}
 		instance := plugin.MCPInstanceName(srv.Name)

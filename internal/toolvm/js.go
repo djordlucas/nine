@@ -57,7 +57,7 @@ func harness() string {
 type envelope struct {
 	Harness string            `json:"harness"`
 	Modules map[string]string `json:"modules"`
-	Args    json.RawMessage   `json:"args"`
+	Args    json.RawMessage   `json:"args,omitempty"`
 	// Job is present only when this call is one of a long-running sequence. The
 	// harness passes it to the tool as a second argument; an ordinary call omits
 	// it and the tool sees undefined.
@@ -134,7 +134,7 @@ func declaresReservedJobKey(schema json.RawMessage) bool {
 		return false
 	}
 	var s struct {
-		Properties map[string]json.RawMessage `json:"properties"`
+		Properties map[string]json.RawMessage `json:"properties,omitempty"`
 	}
 	if err := json.Unmarshal(schema, &s); err != nil {
 		return false
