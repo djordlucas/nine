@@ -8,12 +8,13 @@ import (
 
 // Conversation is one row from the conversations table.
 type Conversation struct {
-	ID         string          `json:"id"`
-	History    json.RawMessage `json:"history,omitempty"`
-	Scratchpad json.RawMessage `json:"scratchpad,omitempty"`
-	Status     string          `json:"status"`
-	CreatedAt  string          `json:"created_at"`
-	UpdatedAt  string          `json:"updated_at"`
+	ID           string          `json:"id"`
+	History      json.RawMessage `json:"history,omitempty"`
+	Scratchpad   json.RawMessage `json:"scratchpad,omitempty"`
+	Status       string          `json:"status"`
+	CreatedAt    string          `json:"created_at"`
+	UpdatedAt    string          `json:"updated_at"`
+	QueuedMsgs   json.RawMessage `json:"queued_messages,omitempty"`
 }
 
 // ConversationCreate creates the conversation row if it doesn't already exist.
@@ -25,11 +26,11 @@ func (s *Store) ConversationCreate(id string) error {
 // ConversationGet returns the conversation by id. Returns (nil, nil) if not found.
 func (s *Store) ConversationGet(id string) (*Conversation, error) {
 	var c Conversation
-	var historyStr, scratchpadStr string
+	var historyStr, scratchpadStr, queuedMsgsStr string
 	err := s.db.QueryRow(
-		`SELECT id, history, scratchpad, status, created_at, updated_at
+		`SELECT id, history, scratchpad, status, created_at, updated_at, queued_messages
 		 FROM conversations WHERE id = ?`, id).
-		Scan(&c.ID, &historyStr, &scratchpadStr, &c.Status, &c.CreatedAt, &c.UpdatedAt)
+		Scan(&c.ID, &historyStr, &scratchpadStr, &c.Status, &c.CreatedAt, &c.UpdatedAt, &queuedMsgsStr)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -38,6 +39,7 @@ func (s *Store) ConversationGet(id string) (*Conversation, error) {
 	}
 	c.History = json.RawMessage(historyStr)
 	c.Scratchpad = json.RawMessage(scratchpadStr)
+	c.QueuedMsgs = json.RawMessage(queuedMsgsStr)
 	return &c, nil
 }
 
@@ -57,6 +59,14 @@ func (s *Store) ConversationUpdateScratchpad(id string, scratchpad json.RawMessa
 	return err
 }
 
+// ConversationUpdateQueuedMsgs updates the queued messages blob for a conversation.
+func (s *Store) ConversationUpdateQueuedMsgs(id string, queuedMsgs json.RawMessage) error {
+	_, err := s.db.Exec(
+		`UPDATE conversations SET queued_messages=?, updated_at=? WHERE id=?`,
+		string(queuedMsgs), nowText(), id)
+	return err
+}
+
 // ConversationSetStatus updates the status field for a conversation.
 func (s *Store) ConversationSetStatus(id, status string) error {
 	_, err := s.db.Exec(
@@ -66,7 +76,7 @@ func (s *Store) ConversationSetStatus(id, status string) error {
 }
 
 // ConversationLoad returns (data, true, nil) where data is the JSON-encoded
-// {history, scratchpad} blob used by the checkpoint store. Returns (nil, false, nil)
+// {history, scratchpad, queued_messages} blob used by the checkpoint store. Returns (nil, false, nil)
 // if not found.
 func (s *Store) ConversationLoad(id string) ([]byte, bool, error) {
 	c, err := s.ConversationGet(id)
@@ -77,18 +87,20 @@ func (s *Store) ConversationLoad(id string) ([]byte, bool, error) {
 		return nil, false, nil
 	}
 	data, err := json.Marshal(struct {
-		History    json.RawMessage `json:"history,omitempty"`
-		Scratchpad json.RawMessage `json:"scratchpad,omitempty"`
-	}{c.History, c.Scratchpad})
+		History      json.RawMessage `json:"history,omitempty"`
+		Scratchpad   json.RawMessage `json:"scratchpad,omitempty"`
+		QueuedMsgs   json.RawMessage `json:"queued_messages,omitempty"`
+	}{c.History, c.Scratchpad, c.QueuedMsgs})
 	return data, err == nil, err
 }
 
-// ConversationSave upserts a conversation's history and scratchpad from a
-// JSON blob of the form {history: [...], scratchpad: [...]}.
+// ConversationSave upserts a conversation's history, scratchpad, and queued messages from a
+// JSON blob of the form {history: [...], scratchpad: [...], queued_messages: [...]}.
 func (s *Store) ConversationSave(id string, data []byte) error {
 	var cp struct {
-		History    json.RawMessage `json:"history,omitempty"`
-		Scratchpad json.RawMessage `json:"scratchpad,omitempty"`
+		History      json.RawMessage `json:"history,omitempty"`
+		Scratchpad   json.RawMessage `json:"scratchpad,omitempty"`
+		QueuedMsgs   json.RawMessage `json:"queued_messages,omitempty"`
 	}
 	if err := json.Unmarshal(data, &cp); err != nil {
 		return err
@@ -99,7 +111,10 @@ func (s *Store) ConversationSave(id string, data []byte) error {
 	if err := s.ConversationUpdateHistory(id, cp.History); err != nil {
 		return err
 	}
-	return s.ConversationUpdateScratchpad(id, cp.Scratchpad)
+	if err := s.ConversationUpdateScratchpad(id, cp.Scratchpad); err != nil {
+		return err
+	}
+	return s.ConversationUpdateQueuedMsgs(id, cp.QueuedMsgs)
 }
 
 // ConversationDelete removes a conversation row (its checkpointed history and
