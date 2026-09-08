@@ -42,6 +42,28 @@ func TestDispatchValidTool(t *testing.T) {
 	}
 }
 
+func TestDispatchNilArgsNormalizedToEmptyObject(t *testing.T) {
+	// When a tool call arrives with nil/empty args (after SanitizeRawMessage),
+	// the dispatcher must pass {} to the handler so json.Unmarshal succeeds
+	// instead of returning "unexpected end of JSON input".
+	var receivedArgs json.RawMessage
+	d := newWithHandler("test_tool", func(_ context.Context, args json.RawMessage) (string, error) {
+		receivedArgs = args
+		return "ok", nil
+	})
+
+	res, err := d.Dispatch(context.Background(), "test_tool", nil)
+	if err != nil {
+		t.Fatalf("Dispatch with nil args: %v", err)
+	}
+	if res.Output != "ok" {
+		t.Errorf("output = %q, want 'ok'", res.Output)
+	}
+	if string(receivedArgs) != `{}` {
+		t.Errorf("handler received %q, want '{}'", string(receivedArgs))
+	}
+}
+
 func TestDispatchUnknownTool(t *testing.T) {
 	d := agent.New()
 	_, err := d.Dispatch(context.Background(), "no_such_tool", json.RawMessage(`{}`))

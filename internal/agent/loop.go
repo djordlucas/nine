@@ -710,6 +710,20 @@ func (l *Loop) dispatchWithRetry(ctx context.Context, name string, input json.Ra
 			)
 			return result, attempt + 1, elapsed, err
 		}
+		// Nil args (the model sent nothing or invalid JSON that was sanitized
+		// to nil) produce a deterministic validation error — retrying with nil
+		// again will never succeed. Hand the error back to the model so it can
+		// provide proper arguments. An explicit {} from the model is different:
+		// the tool may accept it, and the error may be transient (e.g. an
+		// approval gate flicker), so that case still retries.
+		if len(input) == 0 {
+			slog.Info("tool call failed with no args, not retrying",
+				"tool", name,
+				"err", err,
+				"duration_ms", elapsed.Milliseconds(),
+			)
+			return result, attempt + 1, elapsed, err
+		}
 		if attempt < maxToolRetries {
 			slog.Warn("tool call failed, retrying",
 				"tool", name,

@@ -32,7 +32,7 @@ type ScratchpadEntry struct {
 	Thought     string
 	ToolName    string // empty when no tool was called
 	ToolCallID  string
-	ToolArgs    json.RawMessage
+	ToolArgs    json.RawMessage `json:"tool_args,omitempty"`
 	Observation string
 }
 

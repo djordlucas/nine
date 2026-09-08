@@ -25,7 +25,7 @@ const ProtocolVersion = 2
 type ToolDefinition struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"input_schema"`
+	InputSchema json.RawMessage `json:"input_schema,omitempty"`
 	DisplayName string          `json:"display_name,omitempty"` // optional human-friendly label for TUI display
 }
 
@@ -60,7 +60,7 @@ type DescribeResult struct {
 // CallRequest is the params for plugin.call.
 type CallRequest struct {
 	Tool string          `json:"tool"`
-	Args json.RawMessage `json:"args"`
+	Args json.RawMessage `json:"args,omitempty"`
 }
 
 // CallResult is the result of plugin.call.

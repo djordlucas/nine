@@ -102,7 +102,7 @@ type traceMessage struct {
 
 type traceToolCall struct {
 	Name  string          `json:"Name"`
-	Input json.RawMessage `json:"Input"`
+	Input json.RawMessage `json:"Input,omitempty"`
 }
 
 type llmRequestPayload struct {
@@ -148,7 +148,7 @@ type toolHTTPPayload struct {
 
 type toolStartPayload struct {
 	Name  string          `json:"name"`
-	Input json.RawMessage `json:"input"`
+	Input json.RawMessage `json:"input,omitempty"`
 }
 
 type contextPayload struct {

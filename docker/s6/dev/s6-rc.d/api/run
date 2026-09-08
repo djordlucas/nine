@@ -1,0 +1,12 @@
+#!/command/with-contenv sh
+set -e
+
+# API server service for the dev (hot-reload) image.
+# The daemon is managed by the `nine` s6 service (dev-entrypoint.sh), which
+# backgrounds it — s6 does not get a readiness notification, so we poll the
+# socket instead of using s6-svwait.
+while [ ! -S /tmp/nine.sock ]; do
+	sleep 0.5
+done
+
+exec nine api serve --host 0.0.0.0 --port 8080

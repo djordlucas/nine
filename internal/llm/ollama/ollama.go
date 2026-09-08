@@ -95,7 +95,7 @@ type toolCall struct {
 
 type toolCallFunction struct {
 	Name      string          `json:"name"`
-	Arguments json.RawMessage `json:"arguments"`
+	Arguments json.RawMessage `json:"arguments,omitempty"`
 }
 
 type chatTool struct {
@@ -106,7 +106,7 @@ type chatTool struct {
 type toolFuncDef struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
-	Parameters  json.RawMessage `json:"parameters"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
 }
 
 type streamChunk struct {
@@ -165,12 +165,16 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 	if len(req.Tools) > 0 {
 		chatRequestBody.Tools = make([]chatTool, len(req.Tools))
 		for i, t := range req.Tools {
+			params := t.InputSchema
+			if len(params) == 0 {
+				params = json.RawMessage(`{"type":"object"}`)
+			}
 			chatRequestBody.Tools[i] = chatTool{
 				Type: "function",
 				Function: toolFuncDef{
 					Name:        t.Name,
 					Description: escapeXMLChars(t.Description),
-					Parameters:  t.InputSchema,
+					Parameters:  params,
 				},
 			}
 		}
@@ -241,10 +245,11 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 			if id == "" {
 				id = fmt.Sprintf("call_%d", i)
 			}
+			// Sanitize Input to avoid journal marshal errors from invalid JSON
 			toolCalls = append(toolCalls, llm.ToolCall{
 				ID:    id,
 				Name:  tc.Function.Name,
-				Input: tc.Function.Arguments,
+				Input: llm.SanitizeRawMessage(tc.Function.Arguments),
 			})
 		}
 		if chunk.Done {
@@ -313,7 +318,13 @@ func convertMessage(m llm.Message) []chatMessage {
 	if len(m.ToolCalls) > 0 {
 		tcs := make([]toolCall, len(m.ToolCalls))
 		for i, tc := range m.ToolCalls {
-			tcs[i] = toolCall{Function: toolCallFunction{Name: tc.Name, Arguments: tc.Input}}
+			// Sanitize Input: nil/invalid → {} so arguments is
+			// always present and valid JSON for the API.
+			args := llm.SanitizeRawMessage(tc.Input)
+			if args == nil {
+				args = json.RawMessage(`{}`)
+			}
+			tcs[i] = toolCall{Function: toolCallFunction{Name: tc.Name, Arguments: args}}
 		}
 		return []chatMessage{{Role: m.Role, Content: m.Text, ToolCalls: tcs}}
 	}

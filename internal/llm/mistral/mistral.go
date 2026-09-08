@@ -76,7 +76,7 @@ type toolCall struct {
 
 type functionCall struct {
 	Name      string          `json:"name"`
-	Arguments json.RawMessage `json:"arguments"`
+	Arguments json.RawMessage `json:"arguments,omitempty"`
 }
 
 type toolDef struct {
@@ -87,7 +87,7 @@ type toolDef struct {
 type toolFuncDef struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
-	Parameters  json.RawMessage `json:"parameters"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
 }
 
 // Stream chunk
@@ -142,12 +142,16 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 
 	tools := make([]toolDef, 0, len(req.Tools))
 	for _, t := range req.Tools {
+		params := t.InputSchema
+		if len(params) == 0 {
+			params = json.RawMessage(`{"type":"object"}`)
+		}
 		tools = append(tools, toolDef{
 			Type: "function",
 			Function: toolFuncDef{
 				Name:        t.Name,
 				Description: t.Description,
-				Parameters:  t.InputSchema,
+				Parameters:  params,
 			},
 		})
 	}
@@ -275,7 +279,9 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 	}
 	for i := 0; i <= maxIndex; i++ {
 		if tc, exists := toolCallsMap[i]; exists {
-			toolCalls = append(toolCalls, *tc)
+			// Sanitize Input: set to nil if empty or invalid JSON to avoid journal marshal errors
+			toolCallsMap[i].Input = llm.SanitizeRawMessage(tc.Input)
+			toolCalls = append(toolCalls, *toolCallsMap[i])
 		}
 	}
 
@@ -329,12 +335,18 @@ func buildMessages(req llm.Request) []message {
 		if len(m.ToolCalls) > 0 {
 			msg.ToolCalls = make([]toolCall, len(m.ToolCalls))
 			for i, tc := range m.ToolCalls {
+				// Sanitize Input: nil/invalid → {} so the arguments
+				// field is always present and valid JSON for the API.
+				args := llm.SanitizeRawMessage(tc.Input)
+				if args == nil {
+					args = json.RawMessage(`{}`)
+				}
 				msg.ToolCalls[i] = toolCall{
 					ID:   tc.ID,
 					Type: "function",
 					Function: functionCall{
 						Name:      tc.Name,
-						Arguments: tc.Input,
+						Arguments: args,
 					},
 				}
 			}
