@@ -10,6 +10,11 @@ COPY . .
 # build loop and nothing to copy into /opt/nine/bin at all.
 RUN go build -mod=vendor -o /usr/local/bin/nine ./cmd/nine
 
+# swag CLI for regenerating the OpenAPI spec from handler annotations
+# (docs/api.md). Built without -mod=vendor since it's a standalone tool,
+# not part of the nine module.
+RUN go install github.com/swaggo/swag/cmd/swag@latest
+
 # ── s6-overlay fetch stage (shared by dev + runtime) ──────────────────────────
 # s6-overlay supervises the daemon (adr/single-container.md): it reaps orphaned
 # children (an MCP server's process tree, for one), forwards docker stop's
@@ -58,6 +63,7 @@ COPY --from=s6-fetch /out/ /
 # SQLite, not a cgo binding — so it likewise carries no libc dependency across
 # stages.
 COPY --from=go-build /usr/local/go /usr/local/go
+COPY --from=go-build /go/bin/swag /usr/local/bin/swag
 
 # nodejs + npm are here for `npx`-launched MCP servers, which is how the dev
 # image reaches anything Nine does not build itself — a browser included
@@ -90,12 +96,13 @@ RUN mkdir -p /opt/nine/bin
 
 COPY docker/s6/common/user-bundles.d/ /etc/s6-overlay/user-bundles.d/
 COPY docker/s6/dev/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
-RUN chmod +x /etc/s6-overlay/s6-rc.d/nine/run
+RUN chmod +x /etc/s6-overlay/s6-rc.d/nine/run /etc/s6-overlay/s6-rc.d/api/run
 
 WORKDIR /nine-src
 
 # /data carries all durable state: the SQLite database and the workspace.
 VOLUME /data
+EXPOSE 8080
 ENTRYPOINT ["/init"]
 
 # ── Runtime stage (production) ────────────────────────────────────────────────
@@ -126,8 +133,9 @@ RUN mkdir -p /opt/nine/bin
 
 COPY docker/s6/common/user-bundles.d/ /etc/s6-overlay/user-bundles.d/
 COPY docker/s6/runtime/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
-RUN chmod +x /etc/s6-overlay/s6-rc.d/nine/run
+RUN chmod +x /etc/s6-overlay/s6-rc.d/nine/run /etc/s6-overlay/s6-rc.d/api/run
 
 # /data carries all durable state: the SQLite database and the workspace.
 VOLUME /data
+EXPOSE 8080
 ENTRYPOINT ["/init"]
