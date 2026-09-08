@@ -16,6 +16,9 @@ import (
 	"syscall"
 	"time"
 
+	httpSwagger "github.com/swaggo/http-swagger/v2"
+
+	"nine/internal/api/docs"
 	"nine/internal/config"
 	"nine/internal/protocol"
 )
@@ -280,34 +283,29 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 
 	// Streaming endpoints (SSE)
 	mux.HandleFunc("GET /api/v1/conversations/{id}/messages/stream", s.handleStreamMessages)
+
+	// Swagger UI and OpenAPI spec
+	mux.HandleFunc("/api/v1/swagger/", httpSwagger.Handler(
+		httpSwagger.URL("/api/v1/swagger/doc.json"),
+	))
+	mux.HandleFunc("/api/v1/swagger/doc.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(docs.SwaggerInfo.ReadDoc())) //nolint:errcheck
+	})
 }
 
 // getDaemonClient returns a connected client to the daemon.
-// It maintains a connection pool and handles reconnection.
+// Each call returns a fresh connection — handlers call defer cl.Close(),
+// so a shared pooled connection would be closed by the first handler and
+// break every subsequent request.
 func (s *Server) getDaemonClient() (*protocol.Client, error) {
 	s.connMu.Lock()
 	defer s.connMu.Unlock()
 
-	// Check if we have a valid connection
-	if s.daemonConn != nil {
-		// Test if daemon is still responsive by attempting a new connection
-		// If this succeeds, the daemon is alive and our connection should be valid
-		testCl, err := protocol.Connect(s.socketPath)
-		if err == nil {
-			testCl.Close() // Don't leak the test connection
-			return s.daemonConn, nil
-		}
-		// Daemon is not responsive, close stale connection
-		s.daemonConn.Close()
-		s.daemonConn = nil
-	}
-
-	// Create new connection
 	cl, err := protocol.Connect(s.socketPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to daemon: %w", err)
 	}
-	s.daemonConn = cl
 	return cl, nil
 }
 

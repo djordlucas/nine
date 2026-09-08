@@ -19,7 +19,7 @@ GOFLAGS  := -mod=vendor
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS  := -ldflags "-X main.Version=$(VERSION)"
 
-.PHONY: all dev build test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-generate quickjs-wasm quickjs-verify
+.PHONY: all dev build openapi openapi-silent test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-generate quickjs-wasm quickjs-verify
 
 dev: build
 
@@ -32,7 +32,25 @@ all: dev
 
 build:
 	@mkdir -p $(DIST)
+	$(MAKE) openapi-silent
 	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(DIST)/$(BINARY) $(CMD)
+
+# Regenerate the OpenAPI/Swagger spec from handler annotations (docs/api.md).
+# As a build dependency this is a silent no-op if swag is not installed.
+# As a standalone command (make openapi) it fails loudly.
+openapi:
+	@command -v swag >/dev/null 2>&1 || { \
+		echo "swag not found — install with: go install github.com/swaggo/swag/cmd/swag@latest"; \
+		exit 1; \
+	}
+	swag init -d internal/api -o internal/api/docs -g docs.go --parseDependency --parseInternal
+
+# Silent variant used as a build dependency — falls back to the committed spec
+# if swag is not installed, so CI and developers without the CLI are not blocked.
+openapi-silent:
+	@command -v swag >/dev/null 2>&1 && \
+		swag init -d internal/api -o internal/api/docs -g docs.go --parseDependency --parseInternal -q || \
+		true
 
 FORCE:
 
@@ -135,22 +153,24 @@ up:
 	docker build --target runtime -t nine .
 	-docker rm -f nine 2>/dev/null
 	docker run -d --name nine \
+	  -p 8080:8080 \
 	  $(NINE_RUN_FLAGS) $(LLM_ENV) $(NINE_ENV) $(NINE_MOUNTS) \
 	  -v nine-data:/data \
 	  nine
-	@echo "nine is up. Attach a session with: make session"
+	@echo "nine is up. API at http://localhost:8080. Attach a session with: make session"
 
 up-hot:
 	docker build --target dev -t nine-dev .
 	-docker rm -f nine-dev 2>/dev/null
 	docker run -d --name nine-dev \
+	  -p 8080:8080 \
 	  --env-file .env \
 	  $(NINE_RUN_FLAGS) $(NINE_ENV) $(NINE_MOUNTS) \
 	  -v $(CURDIR):/nine-src \
 	  -v nine-dev-data:/data \
 	  -v nine-dev-gocache:/root/.cache/go-build \
 	  nine-dev
-	@echo "nine (hot-reload) is building/starting. Follow it with: make logs"
+	@echo "nine (hot-reload) is building/starting. API at http://localhost:8080. Follow it with: make logs"
 
 session:
 	@docker exec -it nine nine 2>/dev/null || docker exec -it nine-dev nine

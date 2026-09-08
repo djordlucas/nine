@@ -24,6 +24,11 @@ DAEMON=""
 
 build() {
 	echo "[dev] building nine…"
+	# Regenerate the OpenAPI spec from handler annotations before compiling.
+	# swag is installed in the dev image (Dockerfile go-build stage); -mod=mod
+	# is needed because swag parses the module graph and vendor mode blocks it.
+	GOFLAGS=-mod=mod swag init -d /nine-src/internal/api -o /nine-src/internal/api/docs -g docs.go --parseDependency --parseInternal -q 2>/dev/null || \
+		echo "[dev] warning: swag init failed, using committed spec"
 	go build -o /usr/local/bin/nine ./cmd/nine || return 1
 	echo "[dev] build ok"
 }
@@ -32,6 +37,9 @@ start() {
 	nine daemon &
 	DAEMON=$!
 	echo "[dev] daemon started (pid $DAEMON)"
+	# Restart the API server so it picks up the rebuilt binary and reconnects
+	# to the fresh daemon socket. s6 manages it as a separate longrun service.
+	s6-svc -r /run/service/api 2>/dev/null || true
 }
 
 stop() {
