@@ -20,7 +20,7 @@ type SessionEvent struct {
 	ParentSpanID string          `json:"parent_span_id,omitempty"`
 	Type         string          `json:"type"`
 	TS           time.Time       `json:"ts"`
-	Payload      json.RawMessage `json:"payload"`
+	Payload      json.RawMessage `json:"payload,omitempty"`
 }
 
 // SessionEventsAppend inserts a batch of events in one round-trip. Seq is

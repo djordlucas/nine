@@ -880,7 +880,7 @@ func (f *AgentBuilder) registerApprovalGates(d *agent.Dispatcher, askerID string
 // decision.
 func requestsStanding(args json.RawMessage) bool {
 	var req struct {
-		Standing json.RawMessage `json:"standing"`
+		Standing json.RawMessage `json:"standing,omitempty"`
 	}
 	if err := json.Unmarshal(args, &req); err != nil {
 		return true
@@ -895,7 +895,7 @@ func requestsStanding(args json.RawMessage) bool {
 // approval decision.
 func declaresCapability(args json.RawMessage) bool {
 	var req struct {
-		Capabilities json.RawMessage `json:"capabilities"`
+		Capabilities json.RawMessage `json:"capabilities,omitempty"`
 		Source       string          `json:"source"`
 	}
 	if err := json.Unmarshal(args, &req); err != nil {

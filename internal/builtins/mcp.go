@@ -227,7 +227,7 @@ func dialSpec(spec mcpServerSpec) (mcpConn, error) {
 type mcpTool struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"inputSchema"` // MCP spells it camelCase
+	InputSchema json.RawMessage `json:"inputSchema,omitempty"` // MCP spells it camelCase
 }
 
 // mcpConnect spawns the server and completes the MCP handshake —

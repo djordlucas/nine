@@ -70,6 +70,11 @@ nine trace <agent-id> [--turn N] [--sub-agents]
 nine replay <agent-id> --turn N  Reconstruct one recorded turn in full detail —
                                  every LLM call and tool I/O; works with the
                                  daemon down
+
+nine api serve [--port] [--host] [--auth-token]
+                                 Start the HTTP API server (see [api.md](api.md))
+nine api status                  Check if the API server is running
+nine api stop                    Stop the API server
 ```
 
 ---

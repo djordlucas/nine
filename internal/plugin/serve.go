@@ -238,7 +238,7 @@ func handleRPC(w http.ResponseWriter, r *http.Request, describe DescribeResult, 
 
 	var req struct {
 		Method string          `json:"method"`
-		Params json.RawMessage `json:"params"`
+		Params json.RawMessage `json:"params,omitempty"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
 		writeRPC(w, nil, InvalidArgs("invalid request: %v", err))
@@ -263,7 +263,7 @@ func handleRPC(w http.ResponseWriter, r *http.Request, describe DescribeResult, 
 	case "plugin.call":
 		var p struct {
 			Tool string          `json:"tool"`
-			Args json.RawMessage `json:"args"`
+			Args json.RawMessage `json:"args,omitempty"`
 		}
 		if err := json.Unmarshal(req.Params, &p); err != nil {
 			rpcErr = InvalidArgs("invalid params: %v", err)
