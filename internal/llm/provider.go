@@ -17,7 +17,7 @@ const (
 type ToolDef struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"input_schema"`
+	InputSchema json.RawMessage `json:"input_schema,omitempty"`
 	DisplayName string          `json:"-"` // human-friendly label for TUI display; never sent to the LLM
 }
 
@@ -25,7 +25,7 @@ type ToolDef struct {
 type ToolCall struct {
 	ID    string          // unique per-turn call ID
 	Name  string          // tool name
-	Input json.RawMessage // tool arguments as JSON
+	Input json.RawMessage `json:"input,omitempty"` // tool arguments as JSON
 }
 
 // ToolResult is the result of a tool call, included in the next user turn.

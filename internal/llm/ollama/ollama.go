@@ -95,7 +95,7 @@ type toolCall struct {
 
 type toolCallFunction struct {
 	Name      string          `json:"name"`
-	Arguments json.RawMessage `json:"arguments"`
+	Arguments json.RawMessage `json:"arguments,omitempty"`
 }
 
 type chatTool struct {
@@ -106,7 +106,7 @@ type chatTool struct {
 type toolFuncDef struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
-	Parameters  json.RawMessage `json:"parameters"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
 }
 
 type streamChunk struct {
@@ -241,10 +241,11 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 			if id == "" {
 				id = fmt.Sprintf("call_%d", i)
 			}
+			// Sanitize Input to avoid journal marshal errors from invalid JSON
 			toolCalls = append(toolCalls, llm.ToolCall{
 				ID:    id,
 				Name:  tc.Function.Name,
-				Input: tc.Function.Arguments,
+				Input: llm.SanitizeRawMessage(tc.Function.Arguments),
 			})
 		}
 		if chunk.Done {
@@ -313,7 +314,9 @@ func convertMessage(m llm.Message) []chatMessage {
 	if len(m.ToolCalls) > 0 {
 		tcs := make([]toolCall, len(m.ToolCalls))
 		for i, tc := range m.ToolCalls {
-			tcs[i] = toolCall{Function: toolCallFunction{Name: tc.Name, Arguments: tc.Input}}
+			// Sanitize Input to avoid sending invalid JSON to the API
+			sanitizedInput := llm.SanitizeRawMessage(tc.Input)
+			tcs[i] = toolCall{Function: toolCallFunction{Name: tc.Name, Arguments: sanitizedInput}}
 		}
 		return []chatMessage{{Role: m.Role, Content: m.Text, ToolCalls: tcs}}
 	}
