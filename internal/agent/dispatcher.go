@@ -261,6 +261,15 @@ func (d *Dispatcher) Dispatch(ctx context.Context, toolName string, args json.Ra
 		return CallResult{}, fmt.Errorf("unknown tool: %s", toolName)
 	}
 
+	// Normalize nil/empty args to {} so every handler can json.Unmarshal
+	// unconditionally. The LLM providers sanitize invalid tool-call input to
+	// nil to keep the journal marshal-safe; without this, a handler that
+	// receives nil gets "unexpected end of JSON input" instead of a clean
+	// zero-value struct it can validate.
+	if len(args) == 0 {
+		args = json.RawMessage(`{}`)
+	}
+
 	if d.approve != nil && d.gated[toolName] {
 		if err := d.approve(ctx, toolName, args); err != nil {
 			return CallResult{}, err

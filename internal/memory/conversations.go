@@ -9,8 +9,8 @@ import (
 // Conversation is one row from the conversations table.
 type Conversation struct {
 	ID         string          `json:"id"`
-	History    json.RawMessage `json:"history"`
-	Scratchpad json.RawMessage `json:"scratchpad"`
+	History    json.RawMessage `json:"history,omitempty"`
+	Scratchpad json.RawMessage `json:"scratchpad,omitempty"`
 	Status     string          `json:"status"`
 	CreatedAt  string          `json:"created_at"`
 	UpdatedAt  string          `json:"updated_at"`
@@ -77,8 +77,8 @@ func (s *Store) ConversationLoad(id string) ([]byte, bool, error) {
 		return nil, false, nil
 	}
 	data, err := json.Marshal(struct {
-		History    json.RawMessage `json:"history"`
-		Scratchpad json.RawMessage `json:"scratchpad"`
+		History    json.RawMessage `json:"history,omitempty"`
+		Scratchpad json.RawMessage `json:"scratchpad,omitempty"`
 	}{c.History, c.Scratchpad})
 	return data, err == nil, err
 }
@@ -87,8 +87,8 @@ func (s *Store) ConversationLoad(id string) ([]byte, bool, error) {
 // JSON blob of the form {history: [...], scratchpad: [...]}.
 func (s *Store) ConversationSave(id string, data []byte) error {
 	var cp struct {
-		History    json.RawMessage `json:"history"`
-		Scratchpad json.RawMessage `json:"scratchpad"`
+		History    json.RawMessage `json:"history,omitempty"`
+		Scratchpad json.RawMessage `json:"scratchpad,omitempty"`
 	}
 	if err := json.Unmarshal(data, &cp); err != nil {
 		return err

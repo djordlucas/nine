@@ -42,6 +42,7 @@ type palette struct {
 	you          lipgloss.Style
 	nine         lipgloss.Style
 	system       lipgloss.Style // slash command output
+	errLabel     lipgloss.Style // LLM/provider error label
 	spinner      lipgloss.Style
 	prompt       lipgloss.Style
 	ts           lipgloss.Style
@@ -54,6 +55,7 @@ type palette struct {
 	userBox      lipgloss.Style
 	nineBox      lipgloss.Style
 	systemBox    lipgloss.Style
+	errorBox     lipgloss.Style
 	askBox       lipgloss.Style
 	bottomBarBox lipgloss.Style
 }
@@ -72,6 +74,7 @@ func autoPalette() palette {
 		you:          lipgloss.NewStyle().Bold(true).Foreground(adaptive("245", "252")),
 		nine:         lipgloss.NewStyle().Bold(true).Foreground(adaptive("228", "222")),
 		system:       lipgloss.NewStyle().Foreground(adaptive("25", "75")),
+		errLabel:     lipgloss.NewStyle().Bold(true).Foreground(adaptive("124", "203")),
 		spinner:      lipgloss.NewStyle().Foreground(adaptive("228", "222")),
 		prompt:       lipgloss.NewStyle().Foreground(adaptive("228", "222")),
 		ts:           lipgloss.NewStyle().Foreground(adaptive("244", "240")),
@@ -81,10 +84,11 @@ func autoPalette() palette {
 		output:       lipgloss.NewStyle().Foreground(adaptive("236", "252")),
 		continuation: lipgloss.NewStyle().Foreground(adaptive("244", "240")),
 		// Box styles for message rendering with consistent light grey borders
-		userBox:      lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("252")).Padding(0, 1),
-		nineBox:      lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("252")).Padding(0, 1),
-		systemBox:    lipgloss.NewStyle().Border(lipgloss.HiddenBorder()).Padding(0, 1),
-		askBox:       lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("252")).Padding(0, 1),
+		userBox:   lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("252")).Padding(0, 1),
+		nineBox:   lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("252")).Padding(0, 1),
+		systemBox: lipgloss.NewStyle().Border(lipgloss.HiddenBorder()).Padding(0, 1),
+		errorBox:  lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(adaptive("124", "203")).Padding(0, 1),
+		askBox:    lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("252")).Padding(0, 1),
 		// Bottom bar with same grey border
 		bottomBarBox: lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder()).
@@ -100,6 +104,7 @@ func lightPalette() palette {
 		you:          lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("245")),
 		nine:         lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("228")),
 		system:       lipgloss.NewStyle().Foreground(lipgloss.Color("25")),
+		errLabel:     lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("124")),
 		spinner:      lipgloss.NewStyle().Foreground(lipgloss.Color("228")),
 		prompt:       lipgloss.NewStyle().Foreground(lipgloss.Color("228")),
 		ts:           lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
@@ -109,10 +114,11 @@ func lightPalette() palette {
 		output:       lipgloss.NewStyle().Foreground(lipgloss.Color("236")),
 		continuation: lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
 		// Box styles for message rendering with consistent light grey borders
-		userBox:      lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("252")).Padding(0, 1),
-		nineBox:      lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("252")).Padding(0, 1),
-		systemBox:    lipgloss.NewStyle().Border(lipgloss.HiddenBorder()).Padding(0, 1),
-		askBox:       lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("252")).Padding(0, 1),
+		userBox:   lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("252")).Padding(0, 1),
+		nineBox:   lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("252")).Padding(0, 1),
+		systemBox: lipgloss.NewStyle().Border(lipgloss.HiddenBorder()).Padding(0, 1),
+		errorBox:  lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("124")).Padding(0, 1),
+		askBox:    lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("252")).Padding(0, 1),
 		// Bottom bar with same grey border
 		bottomBarBox: lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder()).
@@ -128,6 +134,7 @@ func darkPalette() palette {
 		you:          lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("252")),
 		nine:         lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("222")),
 		system:       lipgloss.NewStyle().Foreground(lipgloss.Color("75")),
+		errLabel:     lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("203")),
 		spinner:      lipgloss.NewStyle().Foreground(lipgloss.Color("222")),
 		prompt:       lipgloss.NewStyle().Foreground(lipgloss.Color("222")),
 		ts:           lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
@@ -141,6 +148,7 @@ func darkPalette() palette {
 		userBox:      lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("248")).Padding(0, 1),
 		nineBox:      lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("248")).Padding(0, 1),
 		systemBox:    lipgloss.NewStyle().Border(lipgloss.HiddenBorder()).Padding(0, 1),
+		errorBox:     lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("203")).Padding(0, 1),
 		askBox:       lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("248")).Padding(0, 1),
 		bottomBarBox: lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("248")).Padding(0, 1),
 	}
@@ -167,7 +175,8 @@ type chatMsg struct {
 	at             time.Time
 	toolEvents     []toolEvent // non-empty only for "nine" role
 	trace          string
-	humanRequestID string // set for "ask" role messages to track pending HITL
+	humanRequestID string     // set for "ask" role messages to track pending HITL
+	interrupted    bool       // the turn was cut short by an error
 }
 
 // Internal tea.Msg types.
@@ -774,9 +783,34 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.rebuildContent()
 			m.chat.viewport.GotoBottom()
 			cmds = append(cmds, reattachCmd(m.conn.sockPath, m.conn.agentID))
-		} else {
+		} else if m.conn.agentID == "" {
+			// No active session yet — nothing to render into. Fatal.
 			m.conn.reconnecting = false
 			m.conn.err = msg.err
+		} else {
+			// Daemon/agent error (HTTP error, context cancelled, etc.) on an
+			// active session: surface it inline so the user can retry instead of
+			// taking over the screen with a ctrl+c-to-exit prompt.
+			m.conn.reconnecting = false
+			// Preserve the in-progress turn as an interrupted message so the
+			// user can see where it stopped, then append the error below it.
+			if m.chat.thinking {
+				m.chat.messages = append(m.chat.messages, chatMsg{
+					role:       "nine",
+					text:       m.chat.streamingText,
+					at:         m.chat.thinkingAt,
+					toolEvents: m.chat.pendingToolEvts,
+					trace:      m.chat.thinkingTrace,
+					interrupted: true,
+				})
+			}
+			m.chat.thinking = false
+			m.chat.streamingText = ""
+			m.chat.thinkingTrace = ""
+			m.chat.pendingToolEvts = nil
+			m.appendError(msg.err.Error())
+			m.rebuildContent()
+			m.chat.viewport.GotoBottom()
 		}
 
 	case spinner.TickMsg:
@@ -814,7 +848,7 @@ func (m model) View() string {
 	if !m.chat.ready {
 		return "\n  Connecting to nine daemon...\n"
 	}
-	if m.conn.err != nil {
+	if m.conn.err != nil && m.conn.agentID == "" {
 		return fmt.Sprintf("\n  error: %v\n\n  Press ctrl+c to exit.\n", m.conn.err)
 	}
 
@@ -974,6 +1008,10 @@ func (m *model) viewportHeight() int {
 
 func (m *model) appendSystem(text string) {
 	m.chat.messages = append(m.chat.messages, chatMsg{role: "system", text: text, at: time.Now()})
+}
+
+func (m *model) appendError(text string) {
+	m.chat.messages = append(m.chat.messages, chatMsg{role: "error", text: text, at: time.Now()})
 }
 
 // resetInputPrompt restores the default "> " input prompt after a HITL answer.
@@ -1168,9 +1206,15 @@ func renderChatMsg(sb *strings.Builder, msg chatMsg, width int, showDetail bool,
 	case "nine":
 		boxStyle = pal.nineBox
 		roleLabel = pal.nine.Render("Nine:")
+		if msg.interrupted {
+			roleLabel += " " + pal.errLabel.Render("interrupted")
+		}
 	case "system":
 		boxStyle = pal.systemBox
 		roleLabel = pal.system.Render("nine:")
+	case "error":
+		boxStyle = pal.errorBox
+		roleLabel = pal.errLabel.Render("error:")
 	case "ask":
 		boxStyle = pal.askBox
 		roleLabel = pal.you.Render("Nine asks:")
