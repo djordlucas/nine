@@ -142,12 +142,16 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 
 	tools := make([]toolDef, 0, len(req.Tools))
 	for _, t := range req.Tools {
+		params := t.InputSchema
+		if len(params) == 0 {
+			params = json.RawMessage(`{"type":"object"}`)
+		}
 		tools = append(tools, toolDef{
 			Type: "function",
 			Function: toolFuncDef{
 				Name:        t.Name,
 				Description: t.Description,
-				Parameters:  t.InputSchema,
+				Parameters:  params,
 			},
 		})
 	}
@@ -331,14 +335,18 @@ func buildMessages(req llm.Request) []message {
 		if len(m.ToolCalls) > 0 {
 			msg.ToolCalls = make([]toolCall, len(m.ToolCalls))
 			for i, tc := range m.ToolCalls {
-				// Sanitize Input to avoid sending invalid JSON to the API
-				sanitizedInput := llm.SanitizeRawMessage(tc.Input)
+				// Sanitize Input: nil/invalid → {} so the arguments
+				// field is always present and valid JSON for the API.
+				args := llm.SanitizeRawMessage(tc.Input)
+				if args == nil {
+					args = json.RawMessage(`{}`)
+				}
 				msg.ToolCalls[i] = toolCall{
 					ID:   tc.ID,
 					Type: "function",
 					Function: functionCall{
 						Name:      tc.Name,
-						Arguments: sanitizedInput,
+						Arguments: args,
 					},
 				}
 			}
