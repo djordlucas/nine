@@ -88,7 +88,7 @@ func RegisterToolList(d *Dispatcher, getTools func() []ninectx.ToolWithVector) {
 type toolSearchResult struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"input_schema"`
+	InputSchema json.RawMessage `json:"input_schema,omitempty"`
 	Score       float32         `json:"score"`
 }
 

@@ -303,6 +303,58 @@ func TestProvider_New(t *testing.T) {
 	}
 }
 
+func TestBuildMessages_EmptyToolCallArgs(t *testing.T) {
+	// When a tool call has nil/empty Input, the arguments field must still be
+	// present in the wire payload — Mistral returns 422 if it's omitted.
+	req := llm.Request{
+		Messages: []llm.Message{
+			{Role: "assistant", ToolCalls: []llm.ToolCall{
+				{ID: "call_1", Name: "parameterless_tool", Input: nil},
+			}},
+		},
+	}
+	msgs := buildMessages(req)
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+	raw, _ := json.Marshal(msgs[0])
+	s := string(raw)
+	if !strings.Contains(s, `"arguments"`) {
+		t.Fatalf("arguments field missing from tool call — Mistral would return 422\n%s", s)
+	}
+}
+
+func TestComplete_ToolDefNilParameters(t *testing.T) {
+	// A tool with no InputSchema must still send a parameters field.
+	var captured chatRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&captured)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}
+
+`))
+	}))
+	defer server.Close()
+
+	provider := New("mistral-tiny", server.URL, "test-key", 30)
+	_, err := provider.Complete(context.Background(), llm.Request{
+		Messages: []llm.Message{{Role: "user", Text: "hi"}},
+		Tools:    []llm.ToolDef{{Name: "noop", Description: "no args", InputSchema: nil}},
+	})
+	if err != nil {
+		t.Fatalf("Complete failed: %v", err)
+	}
+	if len(captured.Tools) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(captured.Tools))
+	}
+	raw, _ := json.Marshal(captured.Tools[0])
+	s := string(raw)
+	if !strings.Contains(s, `"parameters"`) {
+		t.Fatalf("parameters field missing from tool def — Mistral would return 422\n%s", s)
+	}
+}
+
 func TestMapFinishReason(t *testing.T) {
 	tests := []struct {
 		reason  string

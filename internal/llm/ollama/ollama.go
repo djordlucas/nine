@@ -165,12 +165,16 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 	if len(req.Tools) > 0 {
 		chatRequestBody.Tools = make([]chatTool, len(req.Tools))
 		for i, t := range req.Tools {
+			params := t.InputSchema
+			if len(params) == 0 {
+				params = json.RawMessage(`{"type":"object"}`)
+			}
 			chatRequestBody.Tools[i] = chatTool{
 				Type: "function",
 				Function: toolFuncDef{
 					Name:        t.Name,
 					Description: escapeXMLChars(t.Description),
-					Parameters:  t.InputSchema,
+					Parameters:  params,
 				},
 			}
 		}
@@ -314,9 +318,13 @@ func convertMessage(m llm.Message) []chatMessage {
 	if len(m.ToolCalls) > 0 {
 		tcs := make([]toolCall, len(m.ToolCalls))
 		for i, tc := range m.ToolCalls {
-			// Sanitize Input to avoid sending invalid JSON to the API
-			sanitizedInput := llm.SanitizeRawMessage(tc.Input)
-			tcs[i] = toolCall{Function: toolCallFunction{Name: tc.Name, Arguments: sanitizedInput}}
+			// Sanitize Input: nil/invalid → {} so arguments is
+			// always present and valid JSON for the API.
+			args := llm.SanitizeRawMessage(tc.Input)
+			if args == nil {
+				args = json.RawMessage(`{}`)
+			}
+			tcs[i] = toolCall{Function: toolCallFunction{Name: tc.Name, Arguments: args}}
 		}
 		return []chatMessage{{Role: m.Role, Content: m.Text, ToolCalls: tcs}}
 	}

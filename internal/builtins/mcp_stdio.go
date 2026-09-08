@@ -185,7 +185,7 @@ func (c *mcpStdio) roundTrip(method string, params any) (json.RawMessage, error)
 			return nil, fmt.Errorf("MCP server closed stdout")
 		}
 		var raw struct {
-			ID     json.RawMessage `json:"id"`
+			ID     json.RawMessage `json:"id,omitempty"`
 			Result json.RawMessage `json:"result,omitempty"`
 			Error  *mcpRPCError    `json:"error,omitempty"`
 			Method string          `json:"method,omitempty"`

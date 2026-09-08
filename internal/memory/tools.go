@@ -20,7 +20,7 @@ import (
 type GeneratedTool struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"input_schema"`
+	InputSchema json.RawMessage `json:"input_schema,omitempty"`
 	Source      string          `json:"source,omitempty"`
 	// Capabilities is the tool's declaration, stored as the JSON the agent
 	// supplied. Checked against the operator's ceiling at load, and re-checked

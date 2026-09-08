@@ -138,9 +138,9 @@ func RegisterGeneratedTools(d *Dispatcher, s GeneratedToolStore, evalEnabled boo
 		var req struct {
 			Name         string           `json:"name"`
 			Description  string           `json:"description"`
-			InputSchema  json.RawMessage  `json:"input_schema"`
+			InputSchema  json.RawMessage  `json:"input_schema,omitempty"`
 			Source       string           `json:"source"`
-			Capabilities json.RawMessage  `json:"capabilities"`
+			Capabilities json.RawMessage  `json:"capabilities,omitempty"`
 			Resumable    bool             `json:"resumable"`
 			Standing     *StandingRequest `json:"standing"`
 		}
@@ -204,8 +204,8 @@ func RegisterGeneratedTools(d *Dispatcher, s GeneratedToolStore, evalEnabled boo
 	d.handlers["js_eval"] = func(ctx context.Context, args json.RawMessage) (string, error) {
 		var req struct {
 			Source       string          `json:"source"`
-			Args         json.RawMessage `json:"args"`
-			Capabilities json.RawMessage `json:"capabilities"`
+			Args         json.RawMessage `json:"args,omitempty"`
+			Capabilities json.RawMessage `json:"capabilities,omitempty"`
 		}
 		if err := json.Unmarshal(args, &req); err != nil {
 			return "", fmt.Errorf("js_eval: %w", err)
