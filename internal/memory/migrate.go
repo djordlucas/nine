@@ -193,6 +193,14 @@ var migrations = []migrationStep{
 	{name: "standing_wake_agent", fn: func(q sqlExec) error {
 		return addColumnIfMissing(q, "standing_tools", "wake_agent", "TEXT NOT NULL DEFAULT ''")
 	}},
+
+	// 9 \u2192 10: conversations gain `queued_messages` for buffering user replies.
+	// This allows users to add more details or request changes while the session
+	// is running, without those messages appearing in the model's context until
+	// explicitly read via a tool.
+	{name: "conversations_queued_messages", fn: func(q sqlExec) error {
+		return addColumnIfMissing(q, "conversations", "queued_messages", "TEXT NOT NULL DEFAULT '[]'")
+	}},
 }
 
 // hasTableTx reports whether a table exists, using the passed handle so it

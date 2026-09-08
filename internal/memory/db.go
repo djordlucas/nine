@@ -297,12 +297,13 @@ func initSchema(d db) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS vectors_ns_dim_idx ON vectors (namespace, dim)`,
 		`CREATE TABLE IF NOT EXISTS conversations (
-			id         TEXT PRIMARY KEY,
-			history    TEXT NOT NULL DEFAULT '[]',
-			scratchpad TEXT NOT NULL DEFAULT '[]',
-			status     TEXT NOT NULL DEFAULT 'active',
-			created_at TEXT NOT NULL DEFAULT ` + nowExpr + `,
-			updated_at TEXT NOT NULL DEFAULT ` + nowExpr + `
+			id           TEXT PRIMARY KEY,
+			history      TEXT NOT NULL DEFAULT '[]',
+			scratchpad   TEXT NOT NULL DEFAULT '[]',
+			queued_messages TEXT NOT NULL DEFAULT '[]',
+			status       TEXT NOT NULL DEFAULT 'active',
+			created_at  TEXT NOT NULL DEFAULT ` + nowExpr + `,
+			updated_at  TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,
 		`CREATE TABLE IF NOT EXISTS goals (
 			id          TEXT PRIMARY KEY,
