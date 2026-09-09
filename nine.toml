@@ -131,7 +131,7 @@ endpoint = ""
 api_key  = ""
 
 [ui]
-theme = "auto"  # "auto" detects terminal background; "light" or "dark" to force
+theme = "dark"  # "auto" detects terminal background; "light" or "dark" to force
 
 [workspace]
 # Files-plugin working directory. The container overrides this to the mounted

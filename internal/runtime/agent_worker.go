@@ -122,6 +122,11 @@ type AgentWorker struct {
 	mu         sync.Mutex
 	progressFn func(protocol.Msg) // called from worker goroutine on each tool event
 	busy       bool               // true while processTurn is running; guarded by mu
+	// drainQueuedFn, when set, is called after each turn completes. If it
+	// returns a non-empty string, the worker immediately starts another turn
+	// with that text. Used to auto-process queued messages left unconsumed by
+	// the model (docs/queued-messages.md).
+	drainQueuedFn func() (string, error)
 }
 
 // IsBusy reports whether the worker is currently processing a turn.
@@ -139,6 +144,11 @@ func (w *AgentWorker) setProgress(fn func(protocol.Msg)) {
 	w.progressFn = fn
 	w.mu.Unlock()
 }
+
+// SetDrainQueued installs fn to be called after each turn. If fn returns a
+// non-empty string, the worker auto-starts another turn with that text. Used
+// to drain queued messages the model left unconsumed.
+func (w *AgentWorker) SetDrainQueued(fn func() (string, error)) { w.drainQueuedFn = fn }
 
 func (w *AgentWorker) emitEvent(msg protocol.Msg) {
 	w.mu.Lock()
@@ -250,15 +260,39 @@ func (w *AgentWorker) run() {
 		select {
 		case req := <-w.inbox:
 			w.processTurn(req)
+			w.drainQueued()
 		case ir := <-w.inspect:
 			ir.respCh <- w.loop.InspectContext(ir.ctx)
 		case text := <-w.wake:
 			w.processTurn(turnReq{ctx: context.Background(), text: text, trigger: "condition"})
+			w.drainQueued()
 		case <-timerC:
 			w.handleIdle()
 		case <-w.quit:
 			return
 		}
+	}
+}
+
+// drainQueued processes any queued messages the model left unconsumed after a
+// turn. It loops: each remaining unconsumed message becomes its own turn,
+// until none are left. This runs on the worker goroutine, so there is no
+// concurrency with the turn itself.
+func (w *AgentWorker) drainQueued() {
+	if w.drainQueuedFn == nil {
+		return
+	}
+	for {
+		text, err := w.drainQueuedFn()
+		if err != nil || text == "" {
+			return
+		}
+		slog.Info("auto-processing queued message", "agent_id", w.id)
+		w.processTurn(turnReq{
+			ctx:    context.Background(),
+			text:   text,
+			respCh: make(chan turnResp, 1),
+		})
 	}
 }
 
@@ -339,12 +373,12 @@ func (w *AgentWorker) turnHooks(turn int) agent.Hooks {
 			w.emitEvent(protocol.NewContextUpdateMsg(w.id, used, budget))
 			w.journal(turn, "context_update", root, "", contextPayload{Used: used, Budget: budget})
 		},
-		OnToolStart: func(name, displayName string, input json.RawMessage) {
-			w.emitEvent(protocol.NewToolStartMsg(w.id, name, displayName, input))
+		OnToolStart: func(name, displayName, backend string, input json.RawMessage) {
+			w.emitEvent(protocol.NewToolStartMsg(w.id, name, displayName, backend, input))
 			w.journalToolStart(turn, name, input)
 		},
-		OnToolEnd: func(name, displayName string, input json.RawMessage, out agent.ToolOutcome) {
-			w.emitEvent(protocol.NewToolEndMsg(w.id, name, displayName, input, out.Output))
+		OnToolEnd: func(name, displayName, backend string, input json.RawMessage, out agent.ToolOutcome) {
+			w.emitEvent(protocol.NewToolEndMsg(w.id, name, displayName, backend, input, out.Output))
 			w.journalToolEnd(turn, name, input, out)
 		},
 		OnChunk: func(chunk string) {

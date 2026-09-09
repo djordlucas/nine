@@ -211,6 +211,7 @@ type Msg struct {
 	ToolDisplayName string          `json:"tool_display_name,omitempty"`
 	ToolInput       json.RawMessage `json:"tool_input,omitempty"`
 	ToolOutput      string          `json:"tool_output,omitempty"`
+	Backend         string          `json:"backend,omitempty"` // tool_start/tool_end: which backend runs the tool
 	Timestamp       int64           `json:"ts,omitempty"` // unix millis
 	ContextUsed     int             `json:"context_used,omitempty"`
 	ContextBudget   int             `json:"context_budget,omitempty"`
@@ -275,6 +276,7 @@ type ProgressEvent struct {
 	ToolDisplayName string
 	ToolInput       json.RawMessage
 	ToolOutput      string
+	Backend         string // tool_start/tool_end: which backend runs the tool
 	At              time.Time
 	ContextUsed     int           // set when Type == "context_update"
 	ContextBudget   int           // set when Type == "context_update"
@@ -597,24 +599,26 @@ func NewDoneMsg(agentID string) Msg {
 // --- Streaming progress constructors (session worker) ---
 
 // NewToolStartMsg announces that a tool call has started.
-func NewToolStartMsg(agentID, toolName, toolDisplayName string, toolInput json.RawMessage) Msg {
+func NewToolStartMsg(agentID, toolName, toolDisplayName, backend string, toolInput json.RawMessage) Msg {
 	return Msg{
 		Type:            TypeToolStart,
 		AgentID:         agentID,
 		ToolName:        toolName,
 		ToolDisplayName: toolDisplayName,
+		Backend:         backend,
 		ToolInput:       toolInput,
 		Timestamp:       time.Now().UnixMilli(),
 	}
 }
 
 // NewToolEndMsg announces that a tool call has finished.
-func NewToolEndMsg(agentID, toolName, toolDisplayName string, toolInput json.RawMessage, toolOutput string) Msg {
+func NewToolEndMsg(agentID, toolName, toolDisplayName, backend string, toolInput json.RawMessage, toolOutput string) Msg {
 	return Msg{
 		Type:            TypeToolEnd,
 		AgentID:         agentID,
 		ToolName:        toolName,
 		ToolDisplayName: toolDisplayName,
+		Backend:         backend,
 		ToolInput:       toolInput,
 		ToolOutput:      toolOutput,
 		Timestamp:       time.Now().UnixMilli(),
@@ -768,6 +772,7 @@ func (m Msg) ToProgressEvent() (ProgressEvent, bool) {
 			ToolDisplayName: m.ToolDisplayName,
 			ToolInput:       m.ToolInput,
 			ToolOutput:      m.ToolOutput,
+			Backend:         m.Backend,
 			SubAgentID:      m.SubAgentID,
 			Role:            m.Role,
 			At:              at,

@@ -4,7 +4,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/charmbracelet/glamour"
+	"charm.land/glamour/v2"
 	"golang.org/x/term"
 
 	"nine/docs"
@@ -34,7 +34,7 @@ func (c *CLI) writeMarkdown(md string) error {
 // renderMarkdown styles Markdown for the terminal, auto-selecting a light/dark
 // theme and wrapping to the given width.
 func renderMarkdown(md string, width int) (string, error) {
-	r, err := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(width))
+	r, err := glamour.NewTermRenderer(glamour.WithEnvironmentConfig(), glamour.WithWordWrap(width))
 	if err != nil {
 		return "", err
 	}
