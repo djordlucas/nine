@@ -315,6 +315,9 @@ var coreToolNames = []string{
 	"memory_get", "memory_set", "memory_delete", "memory_list",
 	"file_store", "file_fetch", "file_list", "file_search_text",
 	"skill_list", "skill_read", "skill_write", "skill_modify",
+	"queued_messages_get", "queued_message_mark_consumed",
+	"queued_messages_mark_all_consumed", "queued_messages_count",
+	"queued_messages_unconsumed_count",
 }
 
 // subAgentToolNames are the run_agent/workflow/goal_create delegation tools
@@ -666,6 +669,16 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		AnalysisPrompt: analystPrompt,
 		PlanMode:       f.cfg.PlanMode,
 		PlanReviewFn:   planReviewFn,
+		QueuedMessagesFn: func() int {
+			if lc.Memory == nil {
+				return 0
+			}
+			count, err := lc.Memory.UnconsumedMessagesCount(agentID)
+			if err != nil {
+				return 0
+			}
+			return count
+		},
 	}, perLoopBuilder, f.queuePtr.Load(), d)
 }
 
@@ -689,6 +702,7 @@ func (f *AgentBuilder) registerCoreTools(d *agent.Dispatcher, lc LoopConfig, age
 	agent.RegisterMemoryTools(d, lc.Memory, lc.Embedder, protectedKeyPrefixes, lc.SurfaceMemories)
 	agent.RegisterSkillTools(d, lc.Memory, lc.Embedder)
 	agent.RegisterDocTools(d, lc.Memory, lc.Embedder)
+	agent.RegisterQueuedTools(d, lc.Memory, func() string { return agentID })
 	// Over-cap tool results spill to the file store and come back by path, for
 	// this loop and any sub-agent loop built from it.
 	d.SetMaxOutputTokens(lc.MaxToolOutputTokens) // no-op when unset
@@ -738,7 +752,18 @@ func (f *AgentBuilder) registerSubAgentTools(d *agent.Dispatcher, lc LoopConfig,
 		spawnStart := time.Now()
 		// The child inherits this loop's gate owner, so an approval prompt from
 		// any delegation depth still lands on the session a human is watching.
-		result, err := RunSubAgentSync(ctx, subID, prompt, f.build(subID, leaf, depthGuard-1, f.subGate(gate, leaf.Name, task)), f.sink)
+		// Forward the sub-agent's tool events to the parent's progress stream,
+		// prefixed with the sub-agent's role so the TUI can distinguish them.
+		subProgress := func(msg protocol.Msg) {
+			switch msg.Type {
+			case protocol.TypeToolStart, protocol.TypeToolEnd:
+				msg.AgentID = parentID
+				msg.SubAgentID = subID
+				msg.Role = leaf.Name
+			}
+			f.emitProgressEvent(parentID, msg)
+		}
+		result, err := RunSubAgentSync(ctx, subID, prompt, f.build(subID, leaf, depthGuard-1, f.subGate(gate, leaf.Name, task)), f.sink, subProgress)
 		removeSubAgent()
 		status := "done"
 		switch {

@@ -121,6 +121,15 @@ type AgentWorker struct {
 
 	mu         sync.Mutex
 	progressFn func(protocol.Msg) // called from worker goroutine on each tool event
+	busy       bool               // true while processTurn is running; guarded by mu
+}
+
+// IsBusy reports whether the worker is currently processing a turn.
+// Thread-safe; checked by the daemon to decide whether to queue a message.
+func (w *AgentWorker) IsBusy() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.busy
 }
 
 // setProgress registers fn to be called with a tool event protocol.Msg.
@@ -260,7 +269,13 @@ func (w *AgentWorker) processTurn(req turnReq) {
 	w.mu.Lock()
 	w.turnN++
 	turn := w.turnN
+	w.busy = true
 	w.mu.Unlock()
+	defer func() {
+		w.mu.Lock()
+		w.busy = false
+		w.mu.Unlock()
+	}()
 	w.llmCallN = 0
 	w.toolN = 0
 	w.replay.clearResponse() // new turn supersedes any buffered response

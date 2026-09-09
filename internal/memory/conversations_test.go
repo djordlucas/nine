@@ -18,7 +18,7 @@ func TestConversationCheckpointRoundTrip(t *testing.T) {
 		t.Fatalf("missing checkpoint: found=%v err=%v, want false/nil", found, err)
 	}
 
-	blob := []byte(`{"history":[{"role":"user"}],"scratchpad":[]}`)
+	blob := []byte(`{"history":[{"role":"user"}],"scratchpad":[],"queued_messages":[]}`)
 	if err := store.ConversationSave("c1", blob); err != nil {
 		t.Fatal(err)
 	}
