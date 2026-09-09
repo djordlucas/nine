@@ -49,6 +49,7 @@ type palette struct {
 	tool         lipgloss.Style
 	arrow        lipgloss.Style
 	toolInput    lipgloss.Style
+	thinking     lipgloss.Style // reasoning trace — one step dimmer than toolInput
 	output       lipgloss.Style
 	continuation lipgloss.Style
 	// Box styles for message rendering
@@ -81,6 +82,7 @@ func autoPalette() palette {
 		tool:         lipgloss.NewStyle().Foreground(adaptive("130", "214")),
 		arrow:        lipgloss.NewStyle().Foreground(adaptive("130", "214")),
 		toolInput:    lipgloss.NewStyle().Foreground(adaptive("241", "244")).Italic(true),
+		thinking:     lipgloss.NewStyle().Foreground(adaptive("240", "241")).Italic(true),
 		output:       lipgloss.NewStyle().Foreground(adaptive("236", "252")),
 		continuation: lipgloss.NewStyle().Foreground(adaptive("244", "240")),
 		// Box styles for message rendering with consistent light grey borders
@@ -111,6 +113,7 @@ func lightPalette() palette {
 		tool:         lipgloss.NewStyle().Foreground(lipgloss.Color("130")),
 		arrow:        lipgloss.NewStyle().Foreground(lipgloss.Color("130")),
 		toolInput:    lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true),
+		thinking:     lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Italic(true),
 		output:       lipgloss.NewStyle().Foreground(lipgloss.Color("236")),
 		continuation: lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
 		// Box styles for message rendering with consistent light grey borders
@@ -141,6 +144,7 @@ func darkPalette() palette {
 		tool:         lipgloss.NewStyle().Foreground(lipgloss.Color("214")),
 		arrow:        lipgloss.NewStyle().Foreground(lipgloss.Color("214")),
 		toolInput:    lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Italic(true),
+		thinking:     lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true),
 		output:       lipgloss.NewStyle().Foreground(lipgloss.Color("252")),
 		continuation: lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
 		// Box styles for message rendering with consistent light grey borders
@@ -170,13 +174,15 @@ type toolEvent struct {
 }
 
 type chatMsg struct {
-	role           string // "user" or "nine"
+	role           string // "user", "nine", "system", "error", "ask"
 	text           string
 	at             time.Time
 	toolEvents     []toolEvent // non-empty only for "nine" role
 	trace          string
 	humanRequestID string     // set for "ask" role messages to track pending HITL
 	interrupted    bool       // the turn was cut short by an error
+	pending        bool       // queued message waiting for the agent to consume
+	active         bool       // the model is currently working on this message
 }
 
 // Internal tea.Msg types.
@@ -202,6 +208,14 @@ type timeTickMsg time.Time
 // answerResultMsg reports the outcome of delivering a human answer on a
 // separate connection. A non-nil err is shown inline, not fatally.
 type answerResultMsg struct{ err error }
+
+// queuedResultMsg reports the outcome of sending a queued message on a separate
+// connection while the main turn stream is in flight. Never fatal — errors are
+// shown inline.
+type queuedResultMsg struct {
+	notice string
+	err    error
+}
 
 // streamConn drives TurnWithProgress in a goroutine and feeds tea.Msg values
 // into a channel. Call next() to get a tea.Cmd that returns the next message.
@@ -489,14 +503,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, answerCmd(m.conn.sockPath, m.conn.agentID, req.RequestID, text))
 				return m, tea.Batch(cmds...)
 			}
-			if !m.chat.thinking && m.conn.client != nil {
+			if m.conn.client != nil {
 				text := strings.TrimSpace(m.chat.input.Value())
 				if text == "" {
 					break
 				}
 				m.chat.input.Reset()
-				forceThink := false
-				if strings.HasPrefix(text, "/") {
+
+				// Slash commands only run when idle — they are local, not turns.
+				if strings.HasPrefix(text, "/") && !m.chat.thinking {
 					cmd, arg, _ := strings.Cut(strings.TrimPrefix(text, "/"), " ")
 					if cmd == "think" {
 						text = strings.TrimSpace(arg)
@@ -506,7 +521,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.chat.viewport.GotoBottom()
 							return m, tea.Batch(cmds...)
 						}
-						forceThink = true
 					} else {
 						switch cmd {
 						case "clear":
@@ -537,24 +551,54 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, tea.Batch(cmds...)
 					}
 				}
-				m.chat.messages = append(m.chat.messages, chatMsg{
-					role: "user",
-					text: text,
-					at:   time.Now(),
-				})
-				m.chat.thinking = true
-				m.chat.planning = false
-				m.chat.thinkingAt = time.Now()
-				m.chat.thinkingStep = 0
-				m.chat.thinkingTrace = ""
-				m.chat.thinkingThink = false
-				m.chat.stage = ""
-				m.chat.streamingText = ""
-				m.chat.pendingToolEvts = nil
-				m.rebuildContent()
-				m.chat.viewport.GotoBottom()
-				m.conn.stream = startStream(m.conn.client, m.conn.agentID, text, forceThink)
-				cmds = append(cmds, m.conn.stream.next())
+
+				// Send the message — whether idle or mid-turn. When the daemon
+				// is busy it queues the message (docs/queued-messages.md) and
+				// the model can pick it up with queued_messages_get on the next
+				// turn. A /think prefix is stripped before sending; other slash
+				// commands are handled above and never reach this path while
+				// thinking.
+				forceThink := strings.HasPrefix(text, "/think ")
+				if forceThink {
+					text = strings.TrimSpace(strings.TrimPrefix(text, "/think "))
+				}
+				if m.chat.thinking {
+					// Mid-turn: the daemon will queue the message. Mark it
+					// pending so it shows [queued] and stays below the thinking
+					// view until the model consumes it.
+					m.chat.messages = append(m.chat.messages, chatMsg{
+						role:    "user",
+						text:    text,
+						at:      time.Now(),
+						pending: true,
+					})
+					m.rebuildContent()
+					m.chat.viewport.GotoBottom()
+					cmds = append(cmds, sendQueuedCmd(m.conn.sockPath, m.conn.agentID, text))
+				} else {
+					// Starting a new turn — mark the user message as active so
+					// it shows [active] while the model is working on it. The
+					// flag is cleared when the response arrives.
+					m.chat.messages = append(m.chat.messages, chatMsg{
+						role:   "user",
+						text:   text,
+						at:     time.Now(),
+						active: true,
+					})
+					m.chat.thinking = true
+					m.chat.planning = false
+					m.chat.thinkingAt = time.Now()
+					m.chat.thinkingStep = 0
+					m.chat.thinkingTrace = ""
+					m.chat.thinkingThink = false
+					m.chat.stage = ""
+					m.chat.streamingText = ""
+					m.chat.pendingToolEvts = nil
+					m.rebuildContent()
+					m.chat.viewport.GotoBottom()
+					m.conn.stream = startStream(m.conn.client, m.conn.agentID, text, forceThink)
+					cmds = append(cmds, m.conn.stream.next())
+				}
 			}
 		}
 
@@ -647,6 +691,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				thought:     strings.TrimSpace(m.chat.streamingText),
 				at:          evt.At,
 				trace:       m.chat.thinkingTrace,
+				subAgent:     evt.SubAgentID != "",
+				subAgentID:   evt.SubAgentID,
+				subAgentRole: evt.Role,
 			})
 			m.chat.streamingText = ""
 			m.chat.thinkingTrace = ""
@@ -735,20 +782,35 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.thinkingTrace = ""
 		m.chat.stage = ""
 
+		// The turn completed — clear the pending and active flags on all user
+		// messages. Queued messages have been consumed by the model, and the
+		// active message now has its response.
+		for i := range m.chat.messages {
+			m.chat.messages[i].pending = false
+			m.chat.messages[i].active = false
+		}
+
 		if m.chat.pendingHuman() != nil {
 			// Turn ended with questions still unanswered (e.g. they timed out).
 			// The whole queue goes with it — every asker's wait ended too.
 			m.chat.humanQueue = nil
 			m.resetInputPrompt()
 		}
-		m.chat.messages = append(m.chat.messages, chatMsg{
+		// Insert the response right after the user message that started this
+		// turn, preserving chronological order. The thinking view was rendered
+		// separately while the turn was in flight; queued messages sent during
+		// the turn were appended after the triggering user message. Without
+		// this insertion the completed response would land after those queued
+		// messages, displacing it from its true position in the conversation.
+		response := chatMsg{
 			role:       "nine",
 			text:       msg.text,
 			at:         m.chat.thinkingAt,
 			toolEvents: m.chat.pendingToolEvts,
 			trace:      trace,
-		})
+		}
 		m.chat.pendingToolEvts = nil
+		m.chat.messages = insertAfterLastUserTurn(m.chat.messages, response)
 		m.rebuildContent()
 		m.chat.viewport.GotoBottom()
 
@@ -759,11 +821,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.chat.viewport.GotoBottom()
 		}
 
+	case queuedResultMsg:
+		if msg.err != nil {
+			m.appendSystem("queue failed: " + msg.err.Error())
+			m.rebuildContent()
+			m.chat.viewport.GotoBottom()
+		}
+
 	case errMsg:
 		m.chat.thinking = false
 		m.chat.planning = false
 		m.conn.stream = nil
 		m.chat.stage = ""
+		for i := range m.chat.messages {
+			m.chat.messages[i].active = false
+		}
 
 		// A dropped connection mid-session (e.g. the daemon restarting under
 		// hot-reload) is recoverable: the session's state is checkpointed in
@@ -1010,6 +1082,24 @@ func (m *model) appendSystem(text string) {
 	m.chat.messages = append(m.chat.messages, chatMsg{role: "system", text: text, at: time.Now()})
 }
 
+// insertAfterLastUserTurn inserts the completed nine response right after the
+// last non-pending user message — the one that started the turn. This keeps
+// the response in its chronological position, before any queued messages that
+// were sent while the turn was in flight.
+func insertAfterLastUserTurn(messages []chatMsg, response chatMsg) []chatMsg {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].role == "user" && !messages[i].pending {
+			result := make([]chatMsg, 0, len(messages)+1)
+			result = append(result, messages[:i+1]...)
+			result = append(result, response)
+			result = append(result, messages[i+1:]...)
+			return result
+		}
+	}
+	// No user message found (shouldn't happen) — append at the end.
+	return append(messages, response)
+}
+
 func (m *model) appendError(text string) {
 	m.chat.messages = append(m.chat.messages, chatMsg{role: "error", text: text, at: time.Now()})
 }
@@ -1134,12 +1224,17 @@ func (m *model) rebuildContent() {
 		m.chat.viewport.GotoBottom()
 		return
 	}
-	// Separate regular messages from pending HITL messages
-	// Pending HITL messages should appear at the bottom, above the thinking view
+	// Separate regular messages from pending HITL messages and pending (queued)
+	// user messages. Both pending types are extracted from the normal message
+	// stream and pinned to the bottom of the viewport, closest to the input bar,
+	// so the user can review them without scrolling.
 	var regularMsgs []chatMsg
 	var pendingHITLMsgs []chatMsg
+	var pendingQueuedMsgs []chatMsg
 	for _, msg := range m.chat.messages {
-		if isPendingHITL(msg, m.chat.humanQueue) {
+		if msg.pending && msg.role == "user" {
+			pendingQueuedMsgs = append(pendingQueuedMsgs, msg)
+		} else if isPendingHITL(msg, m.chat.humanQueue) {
 			pendingHITLMsgs = append(pendingHITLMsgs, msg)
 		} else {
 			regularMsgs = append(regularMsgs, msg)
@@ -1154,16 +1249,11 @@ func (m *model) rebuildContent() {
 		renderChatMsg(&sb, msg, m.chat.viewport.Width, m.display.showDetail, m.display.pal, m.display.renderer)
 	}
 
-	// Render pending HITL messages above the thinking view
-	for i, msg := range pendingHITLMsgs {
-		if len(regularMsgs) > 0 || i > 0 {
-			sb.WriteByte('\n')
-		}
-		renderChatMsg(&sb, msg, m.chat.viewport.Width, m.display.showDetail, m.display.pal, m.display.renderer)
-	}
-
 	// Render thinking view (if active)
 	if m.chat.thinking {
+		if len(regularMsgs) > 0 {
+			sb.WriteByte('\n')
+		}
 		renderThinking(&sb, thinkingView{
 			sp:         m.chat.spinner,
 			at:         m.chat.thinkingAt,
@@ -1178,6 +1268,23 @@ func (m *model) rebuildContent() {
 			planning:   m.chat.planning,
 			stage:      m.chat.stage,
 		})
+	}
+
+	// Render pending (queued) user messages below the thinking view.
+	for i, msg := range pendingQueuedMsgs {
+		if i > 0 || m.chat.thinking || len(regularMsgs) > 0 {
+			sb.WriteByte('\n')
+		}
+		renderChatMsg(&sb, msg, m.chat.viewport.Width, m.display.showDetail, m.display.pal, m.display.renderer)
+	}
+
+	// Render pending HITL messages last — at the very bottom of the viewport,
+	// closest to the input bar, so they are easy to review and answer.
+	for i, msg := range pendingHITLMsgs {
+		if i > 0 || m.chat.thinking || len(regularMsgs) > 0 || len(pendingQueuedMsgs) > 0 {
+			sb.WriteByte('\n')
+		}
+		renderChatMsg(&sb, msg, m.chat.viewport.Width, m.display.showDetail, m.display.pal, m.display.renderer)
 	}
 
 	content := sb.String()
@@ -1203,6 +1310,11 @@ func renderChatMsg(sb *strings.Builder, msg chatMsg, width int, showDetail bool,
 	case "user":
 		boxStyle = pal.userBox
 		roleLabel = pal.you.Render("You:")
+		if msg.pending {
+			roleLabel += " " + pal.continuation.Render("[queued]")
+		} else if msg.active {
+			roleLabel += " " + pal.continuation.Render("[active]")
+		}
 	case "nine":
 		boxStyle = pal.nineBox
 		roleLabel = pal.nine.Render("Nine:")
@@ -1253,23 +1365,56 @@ func renderChatMsg(sb *strings.Builder, msg chatMsg, width int, showDetail bool,
 	// Add tool events and trace for Nine messages (before text)
 	if msg.role == "nine" {
 		for _, te := range msg.toolEvents {
-			// Simple rendering: show tool name and input/output
-			toolLine := indent + pal.arrow.Render("→") + " " + pal.tool.Render(te.name)
-			if te.inputStr != "" {
-				toolLine += ": " + pal.toolInput.Render(te.inputStr)
-			}
-			if te.outputStr != "" {
-				if te.inputStr != "" {
-					toolLine += " -> " + te.outputStr
-				} else {
-					toolLine += ": " + te.outputStr
+			var toolLine string
+			if te.subAgent {
+				// Sub-agent tool call or lifecycle event: prefix with a
+				// short ID to distinguish multiple sub-agents with the same
+				// role, then the role name.
+				label := "sub-agent"
+				if te.subAgentRole != "" {
+					label = te.subAgentRole
 				}
-			} else if te.inputStr == "" {
-				// Add colon placeholder when there's no input and no output yet
-				toolLine += ":"
+				if te.subAgentID != "" {
+					label = pal.continuation.Render("("+shortID(te.subAgentID, 8)+")") + " " + label
+				}
+				toolName := te.name
+				if toolName == "" && te.displayName != "" {
+					toolName = te.displayName
+				}
+				if toolName != "" {
+					// Sub-agent tool call forwarded from the child
+					toolLine = indent + pal.arrow.Render("→") + " " + pal.tool.Render(label) + "/" + pal.tool.Render(toolName)
+				} else {
+					// Sub-agent lifecycle event (start/end)
+					toolLine = indent + pal.arrow.Render("→") + " " + pal.tool.Render(label)
+				}
+				if te.inputStr != "" {
+					toolLine += ": " + pal.toolInput.Render(te.inputStr)
+				}
+				if te.outputStr != "" {
+					toolLine += " -> " + pal.output.Render(te.outputStr)
+				} else if te.inputStr == "" {
+					toolLine += " -> " + pal.continuation.Render("running")
+				}
+			} else {
+				// Regular tool call
+				toolLine = indent + pal.arrow.Render("→") + " " + pal.tool.Render(te.name)
+				if te.inputStr != "" {
+					toolLine += ": " + pal.toolInput.Render(te.inputStr)
+				}
+				if te.outputStr != "" {
+					if te.inputStr != "" {
+						toolLine += " -> " + te.outputStr
+					} else {
+						toolLine += ": " + te.outputStr
+					}
+				} else if te.inputStr == "" {
+					toolLine += ":"
+				}
 			}
-			// Each tool call on its own line, word-wrapped
-			content.WriteString("\n" + wordWrap(toolLine, textWidth))
+			// Each tool call on its own line, word-wrapped, with a blank
+			// line after it to separate consecutive tool calls.
+			content.WriteString("\n" + wordWrap(toolLine, textWidth) + "\n")
 		}
 		if msg.trace != "" {
 			// Simple trace rendering
@@ -1415,23 +1560,56 @@ func renderThinking(sb *strings.Builder, v thinkingView) {
 
 	// Add tool events and trace (before streaming text)
 	for _, te := range v.evts {
-		// Simple rendering: show tool name and input/output
-		toolLine := indent + v.pal.arrow.Render("→") + " " + v.pal.tool.Render(te.name)
-		if te.inputStr != "" {
-			toolLine += ": " + v.pal.toolInput.Render(te.inputStr)
-		}
-		if te.outputStr != "" {
-			if te.inputStr != "" {
-				toolLine += " -> " + te.outputStr
-			} else {
-				toolLine += ": " + te.outputStr
+		var toolLine string
+		if te.subAgent {
+			// Sub-agent tool call or lifecycle event: prefix with a
+			// short ID to distinguish multiple sub-agents with the same
+			// role, then the role name.
+			label := "sub-agent"
+			if te.subAgentRole != "" {
+				label = te.subAgentRole
 			}
-		} else if te.inputStr == "" {
-			// Add colon placeholder when there's no input and no output yet
-			toolLine += ":"
+			if te.subAgentID != "" {
+				label = v.pal.continuation.Render("("+shortID(te.subAgentID, 8)+")") + " " + label
+			}
+			toolName := te.name
+			if toolName == "" && te.displayName != "" {
+				toolName = te.displayName
+			}
+			if toolName != "" {
+				// Sub-agent tool call forwarded from the child
+				toolLine = indent + v.pal.arrow.Render("→") + " " + v.pal.tool.Render(label) + "/" + v.pal.tool.Render(toolName)
+			} else {
+				// Sub-agent lifecycle event (start/end)
+				toolLine = indent + v.pal.arrow.Render("→") + " " + v.pal.tool.Render(label)
+			}
+			if te.inputStr != "" {
+				toolLine += ": " + v.pal.toolInput.Render(te.inputStr)
+			}
+			if te.outputStr != "" {
+				toolLine += " -> " + v.pal.output.Render(te.outputStr)
+			} else if te.inputStr == "" {
+				toolLine += " -> " + v.pal.continuation.Render("running")
+			}
+		} else {
+			// Regular tool call
+			toolLine = indent + v.pal.arrow.Render("→") + " " + v.pal.tool.Render(te.name)
+			if te.inputStr != "" {
+				toolLine += ": " + v.pal.toolInput.Render(te.inputStr)
+			}
+			if te.outputStr != "" {
+				if te.inputStr != "" {
+					toolLine += " -> " + te.outputStr
+				} else {
+					toolLine += ": " + te.outputStr
+				}
+			} else if te.inputStr == "" {
+				toolLine += ":"
+			}
 		}
-		// Each tool call on its own line, word-wrapped
-		content.WriteString("\n" + wordWrap(toolLine, textWidth))
+		// Each tool call on its own line, word-wrapped, with a blank line
+		// after it to separate consecutive tool calls.
+		content.WriteString("\n" + wordWrap(toolLine, textWidth) + "\n")
 	}
 	if v.trace != "" {
 		// Simple trace rendering
@@ -1504,7 +1682,7 @@ func renderReasoning(sb *strings.Builder, text string, pal palette, width int, m
 		sb.WriteString(indent + pal.continuation.Render("· …") + "\n")
 	}
 	for _, line := range lines {
-		sb.WriteString(indent + pal.continuation.Render("· ") + pal.toolInput.Render(line) + "\n")
+		sb.WriteString(indent + pal.continuation.Render("· ") + pal.thinking.Render(line) + "\n")
 	}
 }
 
@@ -1859,6 +2037,22 @@ func answerCmd(sockPath, agentID, requestID, answer string) tea.Cmd {
 		}
 		defer c.Close() //nolint:errcheck
 		return answerResultMsg{err: c.AnswerHuman(agentID, requestID, answer)}
+	}
+}
+
+// sendQueuedCmd sends a user message to the daemon on a fresh connection while
+// the main turn stream is in flight. The daemon detects the worker is busy and
+// queues the message (docs/queued-messages.md). It reads the notice or error
+// reply and returns it as a queuedResultMsg — never fatal.
+func sendQueuedCmd(sockPath, agentID, text string) tea.Cmd {
+	return func() tea.Msg {
+		c, err := protocol.Connect(sockPath)
+		if err != nil {
+			return queuedResultMsg{err: err}
+		}
+		defer c.Close() //nolint:errcheck
+		notice, err := c.QueueTurn(agentID, text)
+		return queuedResultMsg{notice: notice, err: err}
 	}
 }
 

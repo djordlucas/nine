@@ -54,11 +54,12 @@ func New(model, endpoint, apiKey string, timeoutSecs int) *Provider {
 // Mistral wire types (OpenAI-compatible)
 
 type chatRequest struct {
-	Model     string    `json:"model"`
-	Messages  []message `json:"messages"`
-	Tools     []toolDef `json:"tools,omitempty"`
-	Stream    bool      `json:"stream"`
-	MaxTokens int       `json:"max_tokens,omitempty"`
+	Model           string    `json:"model"`
+	Messages        []message `json:"messages"`
+	Tools           []toolDef `json:"tools,omitempty"`
+	Stream          bool      `json:"stream"`
+	MaxTokens       int       `json:"max_tokens,omitempty"`
+	ReasoningEffort string    `json:"reasoning_effort,omitempty"` // "none" | "low" | "medium" | "high" — enables thinking traces
 }
 
 type message struct {
@@ -103,9 +104,9 @@ type choice struct {
 }
 
 type delta struct {
-	Role      string   `json:"role,omitempty"`
-	Content   string   `json:"content,omitempty"`
-	ToolCalls []tDelta `json:"tool_calls,omitempty"`
+	Role      string          `json:"role,omitempty"`
+	Content   json.RawMessage `json:"content,omitempty"`
+	ToolCalls []tDelta        `json:"tool_calls,omitempty"`
 }
 
 type tDelta struct {
@@ -118,6 +119,19 @@ type tDelta struct {
 type fDelta struct {
 	Name      string `json:"name,omitempty"`
 	Arguments string `json:"arguments,omitempty"`
+}
+
+// mistralContentChunk is one element of the streaming delta.content list
+// during the thinking phase. The thinking field holds the reasoning text.
+type mistralContentChunk struct {
+	Type     string          `json:"type"` // "thinking" | "text"
+	Text     string          `json:"text,omitempty"`
+	Thinking []textChunkRef  `json:"thinking,omitempty"` // present when type == "thinking"
+}
+
+// textChunkRef is a nested text chunk inside a thinking chunk.
+type textChunkRef struct {
+	Text string `json:"text,omitempty"`
 }
 
 type usage struct {
@@ -165,6 +179,13 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 
 	if req.MaxTokens > 0 {
 		body.MaxTokens = req.MaxTokens
+	}
+
+	// When the caller requests thinking (req.Think non-nil and true), ask
+	// Mistral for a high reasoning effort so the model emits ThinkChunk
+	// traces before the final answer.
+	if req.Think != nil && *req.Think {
+		body.ReasoningEffort = "high"
 	}
 
 	data, err := json.Marshal(body)
@@ -222,11 +243,37 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 		}
 
 		for _, c := range chunk.Choices {
-			// Handle content deltas
-			if c.Delta.Content != "" {
-				content.WriteString(c.Delta.Content)
-				if req.OnChunk != nil {
-					req.OnChunk(c.Delta.Content)
+			// Handle content deltas — content can be a plain string (answer
+			// phase) or a list of chunks (thinking phase). Mistral's reasoning
+			// models return ThinkChunk (type: "thinking") before the final
+			// TextChunk.
+			if len(c.Delta.Content) > 0 && string(c.Delta.Content) != "null" {
+				// Try string first (answer phase)
+				var textStr string
+				if err := json.Unmarshal(c.Delta.Content, &textStr); err == nil && textStr != "" {
+					content.WriteString(textStr)
+					if req.OnChunk != nil {
+						req.OnChunk(textStr)
+					}
+				} else {
+					// Try as list of content chunks (thinking phase)
+					var contentChunks []mistralContentChunk
+					if err := json.Unmarshal(c.Delta.Content, &contentChunks); err == nil {
+						for _, cc := range contentChunks {
+							if cc.Type == "thinking" {
+								for _, inner := range cc.Thinking {
+									if inner.Text != "" && req.OnThinkingChunk != nil {
+										req.OnThinkingChunk(inner.Text)
+									}
+								}
+							} else if cc.Type == "text" && cc.Text != "" {
+								content.WriteString(cc.Text)
+								if req.OnChunk != nil {
+									req.OnChunk(cc.Text)
+								}
+							}
+						}
+					}
 				}
 			}
 

@@ -518,7 +518,7 @@ func TestRunSubAgentSync(t *testing.T) {
 		return llm.Response{Text: want, StopReason: "end_turn"}, nil
 	})
 
-	result, err := runtime.RunSubAgentSync(context.Background(), "sub-1", "do something", newSubAgentLoop(provider), nil)
+	result, err := runtime.RunSubAgentSync(context.Background(), "sub-1", "do something", newSubAgentLoop(provider), nil, nil)
 	if err != nil {
 		t.Fatalf("RunSubAgentSync: %v", err)
 	}
@@ -537,7 +537,7 @@ func TestRunSubAgentSyncContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	_, err := runtime.RunSubAgentSync(ctx, "sub-cancel", "blocked task", newSubAgentLoop(provider), nil)
+	_, err := runtime.RunSubAgentSync(ctx, "sub-cancel", "blocked task", newSubAgentLoop(provider), nil, nil)
 	if err == nil {
 		t.Fatal("expected error on context cancellation, got nil")
 	}
@@ -558,7 +558,7 @@ func TestRunSubAgentSyncConcurrent(t *testing.T) {
 				return llm.Response{Text: answer, StopReason: "end_turn"}, nil
 			})
 			results[i], errs[i] = runtime.RunSubAgentSync(
-				context.Background(), fmt.Sprintf("sub-%d", i), "task", newSubAgentLoop(provider), nil)
+				context.Background(), fmt.Sprintf("sub-%d", i), "task", newSubAgentLoop(provider), nil, nil)
 		}(i)
 	}
 	wg.Wait()

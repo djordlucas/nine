@@ -4,17 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"nine/internal/llm"
 	"nine/internal/memory"
 )
 
 // QueuedMessage represents a single queued message with its consumption status.
-type QueuedMessage struct {
-	Text      string `json:"text"`
-	Consumed bool   `json:"consumed"`
-}
+type QueuedMessage = memory.QueuedMessage
 
 var queuedToolDefs = []llm.ToolDef{
 	{
@@ -387,30 +383,4 @@ func (s *MemoryQueuedMessagesStore) CleanupConsumedMessages(agentID string) erro
 	return s.saveQueuedMessages(agentID, remaining)
 }
 
-// Ensure the QueuedMessage type implements json.Marshaler/Unmarshaler for proper serialization
-func (qm QueuedMessage) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
-		Text      string `json:"text"`
-		Consumed bool   `json:"consumed"`
-	}{qm.Text, qm.Consumed})
-}
 
-// Ensure proper unmarshaling - not strictly needed but good for symmetry
-func (qm *QueuedMessage) UnmarshalJSON(data []byte) error {
-	var raw struct {
-		Text      string `json:"text"`
-		Consumed bool   `json:"consumed"`
-	}
-	if err := json.Unmarshal(data, &raw); err != nil {
-		// Try as plain string
-		var txt string
-		if err2 := json.Unmarshal(data, &txt); err2 != nil {
-			return err
-		}
-		raw.Text = txt
-		raw.Consumed = false
-	}
-	qm.Text = raw.Text
-	qm.Consumed = raw.Consumed
-	return nil
-}

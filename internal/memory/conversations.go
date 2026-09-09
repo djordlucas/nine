@@ -1,8 +1,10 @@
 package memory
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -15,6 +17,147 @@ type Conversation struct {
 	CreatedAt    string          `json:"created_at"`
 	UpdatedAt    string          `json:"updated_at"`
 	QueuedMsgs   json.RawMessage `json:"queued_messages,omitempty"`
+}
+
+// QueuedMessage represents a single queued user message with its consumption status.
+type QueuedMessage struct {
+	Text      string `json:"text"`
+	Consumed bool   `json:"consumed"`
+}
+
+// GetQueuedMessages returns all queued messages for a conversation.
+func (s *Store) GetQueuedMessages(agentID string) ([]QueuedMessage, error) {
+	c, err := s.ConversationGet(agentID)
+	if err != nil {
+		return nil, err
+	}
+	if c == nil {
+		return nil, nil
+	}
+	if len(c.QueuedMsgs) == 0 || string(c.QueuedMsgs) == "" {
+		return nil, nil
+	}
+	var msgs []QueuedMessage
+	if err := json.Unmarshal(c.QueuedMsgs, &msgs); err != nil {
+		return nil, fmt.Errorf("unmarshal queued messages: %w", err)
+	}
+	return msgs, nil
+}
+
+// QueueMessage adds a message to the queue for the given agent ID.
+func (s *Store) QueueMessage(agentID, message string) error {
+	if err := s.ConversationCreate(agentID); err != nil {
+		return err
+	}
+	msgs, err := s.GetQueuedMessages(agentID)
+	if err != nil {
+		return err
+	}
+	msgs = append(msgs, QueuedMessage{Text: message, Consumed: false})
+	data, err := json.Marshal(msgs)
+	if err != nil {
+		return err
+	}
+	return s.ConversationUpdateQueuedMsgs(agentID, data)
+}
+
+// MarkConsumed marks the message at the given index as consumed, moves it to
+// conversation history as a user message, and returns the consumed message text.
+func (s *Store) MarkConsumed(ctx context.Context, agentID string, index int) (string, error) {
+	msgs, err := s.GetQueuedMessages(agentID)
+	if err != nil {
+		return "", err
+	}
+	if index < 0 || index >= len(msgs) {
+		return "", fmt.Errorf("index %d out of range (have %d messages)", index, len(msgs))
+	}
+	msgs[index].Consumed = true
+	data, err := json.Marshal(msgs)
+	if err != nil {
+		return "", err
+	}
+	if err := s.ConversationUpdateQueuedMsgs(agentID, data); err != nil {
+		return "", err
+	}
+	// Append the consumed message to conversation history as a user message.
+	if err := s.appendHistoryMessage(agentID, msgs[index].Text); err != nil {
+		return "", fmt.Errorf("append to history: %w", err)
+	}
+	return fmt.Sprintf("Consumed message %d: %s", index, msgs[index].Text), nil
+}
+
+// MarkAllConsumed marks all unconsumed messages as consumed and moves them to
+// conversation history. Returns the number of messages consumed.
+func (s *Store) MarkAllConsumed(ctx context.Context, agentID string) (int, error) {
+	msgs, err := s.GetQueuedMessages(agentID)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for i := range msgs {
+		if !msgs[i].Consumed {
+			msgs[i].Consumed = true
+			if err := s.appendHistoryMessage(agentID, msgs[i].Text); err != nil {
+				return count, fmt.Errorf("append to history: %w", err)
+			}
+			count++
+		}
+	}
+	if count == 0 {
+		return 0, nil
+	}
+	data, err := json.Marshal(msgs)
+	if err != nil {
+		return count, err
+	}
+	return count, s.ConversationUpdateQueuedMsgs(agentID, data)
+}
+
+// QueuedMessagesCount returns the total number of queued messages.
+func (s *Store) QueuedMessagesCount(agentID string) (int, error) {
+	msgs, err := s.GetQueuedMessages(agentID)
+	if err != nil {
+		return 0, err
+	}
+	return len(msgs), nil
+}
+
+// UnconsumedMessagesCount returns the number of unconsumed queued messages.
+func (s *Store) UnconsumedMessagesCount(agentID string) (int, error) {
+	msgs, err := s.GetQueuedMessages(agentID)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for _, m := range msgs {
+		if !m.Consumed {
+			count++
+		}
+	}
+	return count, nil
+}
+
+// appendHistoryMessage appends a user message to the conversation history blob.
+func (s *Store) appendHistoryMessage(agentID, text string) error {
+	c, err := s.ConversationGet(agentID)
+	if err != nil {
+		return err
+	}
+	var history []map[string]any
+	if c != nil && len(c.History) > 0 {
+		if err := json.Unmarshal(c.History, &history); err != nil {
+			return fmt.Errorf("unmarshal history: %w", err)
+		}
+	}
+	history = append(history, map[string]any{
+		"role": "user",
+		"text": text,
+	})
+	data, err := json.Marshal(history)
+	if err != nil {
+		return err
+	}
+	return s.ConversationUpdateHistory(agentID, data)
 }
 
 // ConversationCreate creates the conversation row if it doesn't already exist.
@@ -58,8 +201,6 @@ func (s *Store) ConversationUpdateScratchpad(id string, scratchpad json.RawMessa
 		string(scratchpad), nowText(), id)
 	return err
 }
-
-// ConversationUpdateQueuedMsgs updates the queued messages blob for a conversation.
 func (s *Store) ConversationUpdateQueuedMsgs(id string, queuedMsgs json.RawMessage) error {
 	_, err := s.db.Exec(
 		`UPDATE conversations SET queued_messages=?, updated_at=? WHERE id=?`,
@@ -96,7 +237,19 @@ func (s *Store) ConversationLoad(id string) ([]byte, bool, error) {
 
 // ConversationSave upserts a conversation's history, scratchpad, and queued messages from a
 // JSON blob of the form {history: [...], scratchpad: [...], queued_messages: [...]}.
+// Queued messages are only overwritten if the blob includes the field — the
+// checkpoint (loop.SaveState) does not, so preserving the queue avoids clobbering
+// messages added while a turn was in flight.
 func (s *Store) ConversationSave(id string, data []byte) error {
+	// Check if the queued_messages field is explicitly present in the blob.
+	// A checkpoint from loop.SaveState omits it entirely; we must not clobber
+	// the queue in that case. Use a raw decode to detect field presence.
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	_, hasQueued := raw["queued_messages"]
+
 	var cp struct {
 		History      json.RawMessage `json:"history,omitempty"`
 		Scratchpad   json.RawMessage `json:"scratchpad,omitempty"`
@@ -114,7 +267,13 @@ func (s *Store) ConversationSave(id string, data []byte) error {
 	if err := s.ConversationUpdateScratchpad(id, cp.Scratchpad); err != nil {
 		return err
 	}
-	return s.ConversationUpdateQueuedMsgs(id, cp.QueuedMsgs)
+	// Only overwrite queued messages if the blob explicitly includes the field.
+	// A checkpoint from loop.SaveState omits it, and overwriting with empty
+	// would erase messages queued by the daemon while a turn was in flight.
+	if hasQueued {
+		return s.ConversationUpdateQueuedMsgs(id, cp.QueuedMsgs)
+	}
+	return nil
 }
 
 // ConversationDelete removes a conversation row (its checkpointed history and

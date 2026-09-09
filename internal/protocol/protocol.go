@@ -768,6 +768,8 @@ func (m Msg) ToProgressEvent() (ProgressEvent, bool) {
 			ToolDisplayName: m.ToolDisplayName,
 			ToolInput:       m.ToolInput,
 			ToolOutput:      m.ToolOutput,
+			SubAgentID:      m.SubAgentID,
+			Role:            m.Role,
 			At:              at,
 		}, true
 	case TypeContextUpdate:

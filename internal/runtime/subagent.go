@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"nine/internal/agent"
+	"nine/internal/protocol"
 )
 
 // RunSubAgentSync runs loop with description, blocks until the sub-agent
@@ -12,9 +13,14 @@ import (
 // concurrently from multiple goroutines. sink, when non-nil, journals the
 // sub-agent's own execution trajectory under agentID (the sub-agent's ID), so it
 // can be surfaced by `nine trace --sub-agents`; pass nil to disable journaling.
-func RunSubAgentSync(ctx context.Context, agentID, description string, loop *agent.Loop, sink EventSink) (string, error) {
+// onProgress, when non-nil, is called for each tool/thinking event emitted by the
+// sub-agent, so the parent can forward them to its own progress stream.
+func RunSubAgentSync(ctx context.Context, agentID, description string, loop *agent.Loop, sink EventSink, onProgress func(protocol.Msg)) (string, error) {
 	log.Debug("RunSubAgentSync", "agentID", agentID, "description", description)
 	r := newAgentWorker(agentID, loop, nil, nil, StallConfig{}, nil, sink)
+	if onProgress != nil {
+		r.setProgress(onProgress)
+	}
 	result, err := r.turn(ctx, description)
 	r.stop()
 	if err != nil {
