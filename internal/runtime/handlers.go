@@ -288,6 +288,19 @@ func (d *Daemon) userTurn(ctx context.Context, enc *json.Encoder, agentID, text 
 		}
 	}
 
+	// If the worker is mid-turn, queue the message rather than blocking until
+	// the turn completes. The model is notified of queued messages via the
+	// context builder and can consume them with queued_messages_get (docs/queued-messages.md).
+	if r.IsBusy() {
+		if err := d.store.QueueMessage(agentID, text); err != nil {
+			enc.Encode(protocol.NewAgentErrorMsg(agentID, fmt.Sprintf("failed to queue message: %v", err))) //nolint:errcheck
+			return
+		}
+		slog.Info("message queued", "agent_id", agentID)
+		enc.Encode(protocol.NewNoticeMsg(agentID, "Your message has been queued and will be available to the agent on its next turn."))
+		return
+	}
+
 	progressCh := make(chan protocol.Msg, 256)
 	r.setProgress(func(msg protocol.Msg) {
 		select {
