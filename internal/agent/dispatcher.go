@@ -30,6 +30,8 @@ type CallResult struct {
 	// Characters, not bytes: it is the unit file_fetch's offset/limit address,
 	// so the model can do arithmetic between the two.
 	OutputChars int
+	// Backend labels which backend ran the tool ("builtin", "plugin", "tool").
+	Backend string
 }
 
 // ApprovalFn is consulted before a gated tool runs. Returning a non-nil error
@@ -54,6 +56,7 @@ func (e *ApprovalError) Unwrap() error { return e.Err }
 // output token cap.
 type Dispatcher struct {
 	handlers map[string]func(context.Context, json.RawMessage) (string, error)
+	backends map[string]string
 	hooks    map[string][]Hook
 	gated    map[string]bool
 	approve  ApprovalFn
@@ -77,6 +80,7 @@ type Dispatcher struct {
 func New() *Dispatcher {
 	d := &Dispatcher{
 		handlers:        make(map[string]func(context.Context, json.RawMessage) (string, error)),
+		backends:        make(map[string]string),
 		hooks:           make(map[string][]Hook),
 		refParams:       make(map[string][]string),
 		maxOutputTokens: DefaultMaxOutputTokens,
@@ -126,6 +130,7 @@ func (d *Dispatcher) RegisterPlugin(m *plugin.Manager, p *plugin.Plugin) {
 		toolName := t.Name
 		pp := p
 		d.declareRefParams(toolName, t.InputSchema)
+		d.backends[toolName] = "plugin"
 		d.handlers[toolName] = func(ctx context.Context, args json.RawMessage) (string, error) {
 			cr, err := m.Call(ctx, pp, toolName, args)
 			if err != nil {
@@ -161,6 +166,7 @@ func (d *Dispatcher) RegisterSandboxed(h SandboxedHost) {
 	for _, t := range h.Tools() {
 		toolName := t.Name
 		d.declareRefParams(toolName, t.InputSchema)
+		d.backends[toolName] = "wasm"
 		d.handlers[toolName] = func(ctx context.Context, args json.RawMessage) (string, error) {
 			out, err := h.CallOutput(ctx, toolName, args)
 			if err != nil {
@@ -207,6 +213,7 @@ func (d *Dispatcher) resolveCallResult(ctx context.Context, p *plugin.Plugin, to
 // Intended for testing; overwrites any existing handler.
 func (d *Dispatcher) InjectHandler(toolName string, fn func(context.Context, json.RawMessage) (string, error)) {
 	d.handlers[toolName] = fn
+	d.backends[toolName] = "builtin"
 }
 
 // InjectHandlerWithSchema is InjectHandler for a tool whose input schema
@@ -216,6 +223,7 @@ func (d *Dispatcher) InjectHandler(toolName string, fn func(context.Context, jso
 func (d *Dispatcher) InjectHandlerWithSchema(toolName string, schema json.RawMessage, fn func(context.Context, json.RawMessage) (string, error)) {
 	d.declareRefParams(toolName, schema)
 	d.handlers[toolName] = fn
+	d.backends[toolName] = "builtin"
 }
 
 // RestrictTo removes every registered handler whose name is not in names.
@@ -291,4 +299,14 @@ func (d *Dispatcher) Dispatch(ctx context.Context, toolName string, args json.Ra
 	}
 
 	return d.capOrSpill(ctx, toolName, output), nil
+}
+
+// Backend returns the backend label for toolName. Tools registered directly
+// via d.handlers (core builtins) default to "builtin" when not explicitly
+// labeled by RegisterPlugin/RegisterSandboxed/InjectHandler.
+func (d *Dispatcher) Backend(toolName string) string {
+	if b, ok := d.backends[toolName]; ok {
+		return b
+	}
+	return "builtin"
 }

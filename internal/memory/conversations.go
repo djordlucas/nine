@@ -46,6 +46,8 @@ func (s *Store) GetQueuedMessages(agentID string) ([]QueuedMessage, error) {
 
 // QueueMessage adds a message to the queue for the given agent ID.
 func (s *Store) QueueMessage(agentID, message string) error {
+	s.queueMu.Lock()
+	defer s.queueMu.Unlock()
 	if err := s.ConversationCreate(agentID); err != nil {
 		return err
 	}
@@ -66,6 +68,8 @@ func (s *Store) QueueMessage(agentID, message string) error {
 // history — the store no longer writes to history directly, because the
 // end-of-turn checkpoint would clobber it.
 func (s *Store) MarkConsumed(ctx context.Context, agentID string, index int) (string, error) {
+	s.queueMu.Lock()
+	defer s.queueMu.Unlock()
 	msgs, err := s.GetQueuedMessages(agentID)
 	if err != nil {
 		return "", err
@@ -87,6 +91,8 @@ func (s *Store) MarkConsumed(ctx context.Context, agentID string, index int) (st
 // MarkAllConsumed marks all unconsumed messages as consumed and returns their
 // texts. The caller is responsible for appending them to conversation history.
 func (s *Store) MarkAllConsumed(ctx context.Context, agentID string) ([]string, error) {
+	s.queueMu.Lock()
+	defer s.queueMu.Unlock()
 	msgs, err := s.GetQueuedMessages(agentID)
 	if err != nil {
 		return nil, err
@@ -130,6 +136,32 @@ func (s *Store) UnconsumedMessagesCount(agentID string) (int, error) {
 		}
 	}
 	return count, nil
+}
+
+// DrainQueuedMessage atomically marks the oldest unconsumed message as
+// consumed and returns its text. Returns "" when no unconsumed messages
+// remain. The lock ensures the read-mark-write cycle is atomic.
+func (s *Store) DrainQueuedMessage(agentID string) (string, error) {
+	s.queueMu.Lock()
+	defer s.queueMu.Unlock()
+	msgs, err := s.GetQueuedMessages(agentID)
+	if err != nil {
+		return "", err
+	}
+	for i, m := range msgs {
+		if !m.Consumed {
+			msgs[i].Consumed = true
+			data, err := json.Marshal(msgs)
+			if err != nil {
+				return "", err
+			}
+			if err := s.ConversationUpdateQueuedMsgs(agentID, data); err != nil {
+				return "", err
+			}
+			return msgs[i].Text, nil
+		}
+	}
+	return "", nil
 }
 
 // ConversationCreate creates the conversation row if it doesn't already exist.

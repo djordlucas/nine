@@ -109,12 +109,12 @@ func TestTurnWithProgressStreamsThenReturns(t *testing.T) {
 		if in.Type != protocol.TypeUserTurn {
 			return
 		}
-		enc.Encode(protocol.NewToolStartMsg("a1", "echo", "Echo", nil))      //nolint:errcheck
-		enc.Encode(protocol.NewResponseChunkMsg("a1", "par"))                //nolint:errcheck
-		enc.Encode(protocol.NewResponseChunkMsg("a1", "tial"))               //nolint:errcheck
-		enc.Encode(protocol.NewToolEndMsg("a1", "echo", "Echo", nil, "out")) //nolint:errcheck
-		enc.Encode(protocol.NewResponseMsg("a1", "final answer"))            //nolint:errcheck
-		enc.Encode(protocol.NewDoneMsg("a1"))                                //nolint:errcheck
+		enc.Encode(protocol.NewToolStartMsg("a1", "echo", "Echo", "", nil))      //nolint:errcheck
+		enc.Encode(protocol.NewResponseChunkMsg("a1", "par"))                    //nolint:errcheck
+		enc.Encode(protocol.NewResponseChunkMsg("a1", "tial"))                   //nolint:errcheck
+		enc.Encode(protocol.NewToolEndMsg("a1", "echo", "Echo", "", nil, "out")) //nolint:errcheck
+		enc.Encode(protocol.NewResponseMsg("a1", "final answer"))                //nolint:errcheck
+		enc.Encode(protocol.NewDoneMsg("a1"))                                    //nolint:errcheck
 	})
 
 	var got []protocol.MsgType
