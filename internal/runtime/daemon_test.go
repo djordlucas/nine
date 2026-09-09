@@ -675,3 +675,5 @@ func (m *mockGoalStore) SessionEventsAfter(_ int64, _ int) ([]memory.SessionEven
 }
 func (m *mockGoalStore) EventCursorGet(_ string) (int64, error) { return 0, nil }
 func (m *mockGoalStore) EventCursorSet(_ string, _ int64) error { return nil }
+func (m *mockGoalStore) QueueMessage(_, _ string) error           { return nil }
+func (m *mockGoalStore) UnconsumedMessagesCount(_ string) (int, error) { return 0, nil }

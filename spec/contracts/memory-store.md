@@ -53,7 +53,7 @@ tables to be agent-visible (R-MEM.4).
 | `vectors` | embeddings as packed float32 blobs, ranked by cosine similarity, namespaced (`skills`, `session-index`, `memories`, `docs`, agent namespaces) | mixed (see below) |
 | `skills` | skill records (name, description, tags, body, source) | mixed |
 | `tools` | generated sandboxed tools Nine authored (name, description, input_schema, `js` source, capability **declaration**, usage counters) — code and declaration only, never a grant (see [`toolvm.md`](toolvm.md) R-TVM.14) | daemon-private |
-| `conversations` | message history, scratchpad checkpoint, status, display name | daemon-private |
+| `conversations` | message history, scratchpad checkpoint, status, display name, **queued_messages** (buffered user replies) | daemon-private |
 | `goals` | open-ended intentions; status; parent (`parent_id` is the only edge) | daemon-private |
 | `workflows` | multi-step plans; steps as a JSON array on the row | daemon-private |
 | `notifications` | pending push messages to the next active turn | daemon-private |
@@ -107,7 +107,7 @@ tables, notifications, or session plans through a tool call.
 
 | Group | Methods (reference) |
 |-------|---------------------|
-| Conversations / checkpoints | `ConversationCreate/Get/SetStatus`, `ConversationSave/Load` (checkpoint blob), `ConversationUpdateHistory/Scratchpad`, `ConversationName{Save,Load}` |
+| Conversations / checkpoints | `ConversationCreate/Get/SetStatus`, `ConversationSave/Load` (checkpoint blob), `ConversationUpdateHistory/Scratchpad/QueuedMsgs`, `ConversationName{Save,Load}` |
 | Goals | `GoalCreate/Get/List/UpdateStatus/AppendSubtree` (the agent reaches these only via the core-intercepted `goal_*` tools, which the daemon mediates) |
 | Workflows | `WorkflowCreate/Get/Update/List/Scrub/Fail/Cancel/ResetStep` (mediated via core-intercepted `workflow_*` tools and operator commands) |
 | Notifications | `NotificationCreate/ListPending/MarkDelivered`; human feed `UserNotificationCreate/List/MarkSeen` |
