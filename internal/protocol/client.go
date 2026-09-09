@@ -209,6 +209,29 @@ func (c *Client) AnswerHuman(agentID, requestID, answer string) error {
 	return expectReply(reply, TypeHumanInputAnswer)
 }
 
+// QueueTurn sends a user turn on a fresh connection while the main turn stream
+// is in flight. The daemon detects the worker is busy and queues the message
+// (docs/queued-messages.md). Returns the notice text from the daemon, or an
+// error. Unlike TurnWithProgress, this does not wait for a full response — the
+// daemon sends a notice when the message is queued.
+func (c *Client) QueueTurn(agentID, text string) (string, error) {
+	if err := c.send(NewUserTurnMsg(agentID, text)); err != nil {
+		return "", err
+	}
+	for {
+		msg, err := c.recv()
+		if err != nil {
+			return "", err
+		}
+		switch msg.Type {
+		case TypeNotice:
+			return msg.Text, nil
+		case TypeError:
+			return "", fmt.Errorf("daemon: %s", msg.Text)
+		}
+	}
+}
+
 // Status requests daemon status information.
 func (c *Client) Status() (*StatusInfo, error) {
 	if err := c.send(NewQueryMsg(TypeStatus)); err != nil {

@@ -87,6 +87,7 @@ TOOL CALL
           tool_write, tool_delete, js_eval  (generated tier; only with [tools.agent] — toolvm.md R-TVM.14)
           run_agent, run_agents
           workflow_create/update/get/list/retry_step
+          queued_messages_get, queued_message_mark_consumed, queued_messages_mark_all_consumed, queued_messages_count, queued_messages_unconsumed_count
           goal_create/get/list/update_status/append_subtree
           (planned: ask_human — see hitl.md)
 ```
