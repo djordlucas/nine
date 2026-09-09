@@ -61,8 +61,10 @@ func (s *Store) QueueMessage(agentID, message string) error {
 	return s.ConversationUpdateQueuedMsgs(agentID, data)
 }
 
-// MarkConsumed marks the message at the given index as consumed, moves it to
-// conversation history as a user message, and returns the consumed message text.
+// MarkConsumed marks the message at the given index as consumed and returns
+// its text. The caller is responsible for appending the text to conversation
+// history — the store no longer writes to history directly, because the
+// end-of-turn checkpoint would clobber it.
 func (s *Store) MarkConsumed(ctx context.Context, agentID string, index int) (string, error) {
 	msgs, err := s.GetQueuedMessages(agentID)
 	if err != nil {
@@ -79,38 +81,31 @@ func (s *Store) MarkConsumed(ctx context.Context, agentID string, index int) (st
 	if err := s.ConversationUpdateQueuedMsgs(agentID, data); err != nil {
 		return "", err
 	}
-	// Append the consumed message to conversation history as a user message.
-	if err := s.appendHistoryMessage(agentID, msgs[index].Text); err != nil {
-		return "", fmt.Errorf("append to history: %w", err)
-	}
-	return fmt.Sprintf("Consumed message %d: %s", index, msgs[index].Text), nil
+	return msgs[index].Text, nil
 }
 
-// MarkAllConsumed marks all unconsumed messages as consumed and moves them to
-// conversation history. Returns the number of messages consumed.
-func (s *Store) MarkAllConsumed(ctx context.Context, agentID string) (int, error) {
+// MarkAllConsumed marks all unconsumed messages as consumed and returns their
+// texts. The caller is responsible for appending them to conversation history.
+func (s *Store) MarkAllConsumed(ctx context.Context, agentID string) ([]string, error) {
 	msgs, err := s.GetQueuedMessages(agentID)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	count := 0
+	var consumed []string
 	for i := range msgs {
 		if !msgs[i].Consumed {
 			msgs[i].Consumed = true
-			if err := s.appendHistoryMessage(agentID, msgs[i].Text); err != nil {
-				return count, fmt.Errorf("append to history: %w", err)
-			}
-			count++
+			consumed = append(consumed, msgs[i].Text)
 		}
 	}
-	if count == 0 {
-		return 0, nil
+	if len(consumed) == 0 {
+		return nil, nil
 	}
 	data, err := json.Marshal(msgs)
 	if err != nil {
-		return count, err
+		return consumed, err
 	}
-	return count, s.ConversationUpdateQueuedMsgs(agentID, data)
+	return consumed, s.ConversationUpdateQueuedMsgs(agentID, data)
 }
 
 // QueuedMessagesCount returns the total number of queued messages.
@@ -135,29 +130,6 @@ func (s *Store) UnconsumedMessagesCount(agentID string) (int, error) {
 		}
 	}
 	return count, nil
-}
-
-// appendHistoryMessage appends a user message to the conversation history blob.
-func (s *Store) appendHistoryMessage(agentID, text string) error {
-	c, err := s.ConversationGet(agentID)
-	if err != nil {
-		return err
-	}
-	var history []map[string]any
-	if c != nil && len(c.History) > 0 {
-		if err := json.Unmarshal(c.History, &history); err != nil {
-			return fmt.Errorf("unmarshal history: %w", err)
-		}
-	}
-	history = append(history, map[string]any{
-		"role": "user",
-		"text": text,
-	})
-	data, err := json.Marshal(history)
-	if err != nil {
-		return err
-	}
-	return s.ConversationUpdateHistory(agentID, data)
 }
 
 // ConversationCreate creates the conversation row if it doesn't already exist.

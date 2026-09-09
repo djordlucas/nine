@@ -381,6 +381,17 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 	lc := f.cfg.Loop
 	d := agent.New()
 
+	// The loop is created after registerCoreTools, so the onConsumed callback
+	// captures a pointer that is assigned once the loop exists. This lets
+	// queued-message consumption append to the loop's in-memory history —
+	// avoiding a clobber by the end-of-turn checkpoint.
+	var loop *agent.Loop
+	onConsumed := func(text string) {
+		if loop != nil {
+			loop.AppendUserHistory(text)
+		}
+	}
+
 	for _, p := range lc.Mgr.Running() {
 		if p != nil {
 			d.RegisterPlugin(lc.Mgr, p)
@@ -393,7 +404,7 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		d.RegisterSandboxed(lc.Tools)
 	}
 
-	f.registerCoreTools(d, lc, agentID)
+	f.registerCoreTools(d, lc, agentID, onConsumed)
 
 	// shellTools are conferred by the session shell, not the role's allowlist —
 	// they are granted unfiltered (like gap_report) and pruning in RestrictTo
@@ -652,7 +663,7 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		}
 	}
 
-	return agent.NewLoop(agent.Config{
+	l := agent.NewLoop(agent.Config{
 		Role: role.Name,
 		// Every loop is built here — root sessions via BuildForRole, sub-agents
 		// via the spawn path — each with its own id, so a sub-agent reports the
@@ -680,6 +691,8 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 			return count
 		},
 	}, perLoopBuilder, f.queuePtr.Load(), d)
+	loop = l
+	return l
 }
 
 // planMentionRiskyTool checks the presence of risky tools in a plan
@@ -695,14 +708,14 @@ func planMentionRiskyTool(plan string, riskyTools []string) bool {
 
 // registerCoreTools registers the gap-report, memory/file, and skill tools
 // available to every role (allowlist pruning happens afterwards in build).
-func (f *AgentBuilder) registerCoreTools(d *agent.Dispatcher, lc LoopConfig, agentID string) {
+func (f *AgentBuilder) registerCoreTools(d *agent.Dispatcher, lc LoopConfig, agentID string, onConsumed func(string)) {
 	agent.RegisterGapReport(d, func(desc string) {
 		f.cfg.Sup.Post(Event{Kind: EventGapReported, AgentID: agentID, Payload: desc})
 	})
 	agent.RegisterMemoryTools(d, lc.Memory, lc.Embedder, protectedKeyPrefixes, lc.SurfaceMemories)
 	agent.RegisterSkillTools(d, lc.Memory, lc.Embedder)
 	agent.RegisterDocTools(d, lc.Memory, lc.Embedder)
-	agent.RegisterQueuedTools(d, lc.Memory, func() string { return agentID })
+	agent.RegisterQueuedTools(d, lc.Memory, func() string { return agentID }, onConsumed)
 	// Over-cap tool results spill to the file store and come back by path, for
 	// this loop and any sub-agent loop built from it.
 	d.SetMaxOutputTokens(lc.MaxToolOutputTokens) // no-op when unset
@@ -730,7 +743,7 @@ const directCallAgentID = "direct-call"
 // them against the live host instead (handlePluginCall).
 func (f *AgentBuilder) CoreDispatcher() *agent.Dispatcher {
 	d := agent.New()
-	f.registerCoreTools(d, f.cfg.Loop, directCallAgentID)
+	f.registerCoreTools(d, f.cfg.Loop, directCallAgentID, nil)
 	return d
 }
 
