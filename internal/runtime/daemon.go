@@ -100,6 +100,7 @@ type queryBackend interface {
 	// session is mid-turn rather than blocking until the turn completes.
 	QueueMessage(agentID, message string) error
 	UnconsumedMessagesCount(agentID string) (int, error)
+	DrainQueuedMessage(agentID string) (string, error)
 }
 
 // pluginRegistry provides the plugin access needed by message handlers.
@@ -210,12 +211,12 @@ func (d *Daemon) journalReplay(agentID string) ([]protocol.Msg, string) {
 		case "tool_start":
 			var p toolStartPayload
 			if json.Unmarshal(e.Payload, &p) == nil {
-				msgs = append(msgs, protocol.NewToolStartMsg(agentID, p.Name, "", p.Input))
+				msgs = append(msgs, protocol.NewToolStartMsg(agentID, p.Name, "", "", p.Input))
 			}
 		case "tool_end":
 			var p toolEndPayload
 			if json.Unmarshal(e.Payload, &p) == nil {
-				msgs = append(msgs, protocol.NewToolEndMsg(agentID, p.Name, "", p.Input, p.Output))
+				msgs = append(msgs, protocol.NewToolEndMsg(agentID, p.Name, "", "", p.Input, p.Output))
 			}
 		case "sub_agent_start":
 			var p subAgentPayload
@@ -278,13 +279,13 @@ func (d *Daemon) journalHistory(agentID string) []protocol.Msg {
 			if json.Unmarshal(e.Payload, &p) != nil {
 				continue
 			}
-			m = protocol.NewToolStartMsg(agentID, p.Name, "", p.Input)
+			m = protocol.NewToolStartMsg(agentID, p.Name, "", "", p.Input)
 		case "tool_end":
 			var p toolEndPayload
 			if json.Unmarshal(e.Payload, &p) != nil {
 				continue
 			}
-			m = protocol.NewToolEndMsg(agentID, p.Name, "", p.Input, p.Output)
+			m = protocol.NewToolEndMsg(agentID, p.Name, "", "", p.Input, p.Output)
 		case "sub_agent_start":
 			var p subAgentPayload
 			if json.Unmarshal(e.Payload, &p) != nil {

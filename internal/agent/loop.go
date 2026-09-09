@@ -140,8 +140,8 @@ type Loop struct {
 	lastToolCount      int  // tool calls dispatched in the most recent Run()
 	forceThinkNextTurn bool // set by SetForceThinkNextTurn; consumed + reset each Run (/think)
 	displayNames       map[string]string
-	onToolStart        func(name, displayName string, input json.RawMessage)
-	onToolEnd          func(name, displayName string, input json.RawMessage, out ToolOutcome)
+	onToolStart        func(name, displayName, backend string, input json.RawMessage)
+	onToolEnd          func(name, displayName, backend string, input json.RawMessage, out ToolOutcome)
 	onContextUpdate    func(used, budget int)
 	onChunk            func(string)
 	onThinkingChunk    func(string)
@@ -205,8 +205,9 @@ type Hooks struct {
 
 	// OnToolStart fires before each tool call is dispatched, OnToolEnd after it
 	// completes. displayName is the human-friendly label, falling back to name.
-	OnToolStart func(name, displayName string, input json.RawMessage)
-	OnToolEnd   func(name, displayName string, input json.RawMessage, out ToolOutcome)
+	// backend labels which backend runs the tool ("builtin", "plugin", "tool").
+	OnToolStart func(name, displayName, backend string, input json.RawMessage)
+	OnToolEnd   func(name, displayName, backend string, input json.RawMessage, out ToolOutcome)
 
 	// OnLLMRequest fires with the fully-assembled request for each inner LLM
 	// call just before it is submitted, along with the estimated tokens used,
@@ -534,8 +535,9 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 		// assistant's thought text; subsequent entries (parallel calls) get none.
 		for i, tc := range resp.ToolCalls {
 			dn := l.displayNames[tc.Name]
+			backend := l.dispatcher.Backend(tc.Name)
 			if l.onToolStart != nil {
-				l.onToolStart(tc.Name, dn, tc.Input)
+				l.onToolStart(tc.Name, dn, backend, tc.Input)
 			}
 			result, attempts, elapsed, dispErr := l.dispatchWithRetry(ctx, tc.Name, tc.Input)
 			observation := result.Output
@@ -560,7 +562,7 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 				toolErrs = append(toolErrs, fmt.Sprintf("%s: %v", tc.Name, dispErr))
 			}
 			if l.onToolEnd != nil {
-				l.onToolEnd(tc.Name, dn, tc.Input, ToolOutcome{
+				l.onToolEnd(tc.Name, dn, backend, tc.Input, ToolOutcome{
 					Output:      observation,
 					Truncated:   result.Truncated,
 					SpillPath:   result.SpillPath,

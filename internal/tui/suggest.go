@@ -5,8 +5,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/list"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/list"
+	tea "charm.land/bubbletea/v2"
 )
 
 // maxSuggestRows caps how tall the slash-command picker grows. It borrows its
@@ -187,7 +187,7 @@ func (m *model) resizeViewport() {
 		return
 	}
 	atBottom := m.chat.viewport.AtBottom()
-	m.chat.viewport.Height = m.viewportHeight()
+	m.chat.viewport.SetHeight(m.viewportHeight())
 	m.rebuildContent()
 	if atBottom {
 		m.chat.viewport.GotoBottom()
