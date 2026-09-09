@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -136,6 +137,13 @@ func (d db) BeginWrite() (*sql.Tx, error) { return d.w.Begin() }
 type Store struct {
 	db        db
 	workflows *workflow.Service
+	// queueMu serializes read-modify-write operations on the queued-messages
+	// array. Each QueueMessage/MarkConsumed/MarkAllConsumed call reads the
+	// queue, modifies it in memory, and writes it back; without a lock,
+	// concurrent calls (one per connection — the TUI sends each queued
+	// message on its own connection) race and the last writer wins,
+	// silently dropping earlier messages.
+	queueMu sync.Mutex
 }
 
 // Open opens the SQLite database at path, creating the file and its parent

@@ -251,6 +251,13 @@ func (d *Daemon) makeAgentWorker(id string, checkpointData []byte, interactive b
 			sup.Post(Event{Kind: EventAgentCompletes, AgentID: agentID})
 		}
 	}
+	if d.store != nil {
+		store := d.store
+		agentID := id
+		r.SetDrainQueued(func() (string, error) {
+			return store.DrainQueuedMessage(agentID)
+		})
+	}
 	return r
 }
 

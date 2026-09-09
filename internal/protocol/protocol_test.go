@@ -16,7 +16,7 @@ import (
 func TestMsgFramingRoundTrip(t *testing.T) {
 	msgs := []protocol.Msg{
 		protocol.NewUserTurnMsg("a1", "hello"),
-		protocol.NewToolStartMsg("a1", "shell", "Shell", json.RawMessage(`{"cmd":"ls"}`)),
+		protocol.NewToolStartMsg("a1", "shell", "Shell", "", json.RawMessage(`{"cmd":"ls"}`)),
 		protocol.NewResponseMsg("a1", "done"),
 	}
 
@@ -71,8 +71,8 @@ func TestProgressEventConversion(t *testing.T) {
 		wantType protocol.MsgType
 		wantOK   bool
 	}{
-		{protocol.NewToolStartMsg("a", "shell", "Shell", nil), "tool_start", true},
-		{protocol.NewToolEndMsg("a", "shell", "Shell", nil, "out"), "tool_end", true},
+		{protocol.NewToolStartMsg("a", "shell", "Shell", "", nil), "tool_start", true},
+		{protocol.NewToolEndMsg("a", "shell", "Shell", "", nil, "out"), "tool_end", true},
 		{protocol.NewContextUpdateMsg("a", 100, 1000), "context_update", true},
 		{protocol.NewResponseChunkMsg("a", "tok"), "response_chunk", true},
 		{protocol.NewThinkingChunkMsg("a", "reasoning"), "thinking_chunk", true},
@@ -107,7 +107,7 @@ func TestProgressEventConversion(t *testing.T) {
 // MUST NOT be serialized on the tool definitions sent to the LLM.
 func TestDisplayNamesClientOnly(t *testing.T) {
 	// Client-facing: the tool event carries the display name for the TUI.
-	ev, _ := protocol.NewToolStartMsg("a", "shell", "Run Shell", nil).ToProgressEvent()
+	ev, _ := protocol.NewToolStartMsg("a", "shell", "Run Shell", "", nil).ToProgressEvent()
 	if ev.ToolDisplayName != "Run Shell" {
 		t.Errorf("client event display name = %q, want \"Run Shell\"", ev.ToolDisplayName)
 	}

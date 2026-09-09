@@ -14,8 +14,8 @@ import (
 func TestHistoryToChatMsgs(t *testing.T) {
 	msgs := []protocol.Msg{
 		protocol.NewHistoryUserMsg("a", "first"),
-		protocol.NewToolStartMsg("a", "echo", "", json.RawMessage(`{"v":1}`)),
-		protocol.NewToolEndMsg("a", "echo", "", json.RawMessage(`{"v":1}`), "1"),
+		protocol.NewToolStartMsg("a", "echo", "", "", json.RawMessage(`{"v":1}`)),
+		protocol.NewToolEndMsg("a", "echo", "", "", json.RawMessage(`{"v":1}`), "1"),
 		protocol.NewResponseMsg("a", "answer one"),
 		// An idle turn: a response with no preceding user prompt.
 		protocol.NewResponseMsg("a", "background note"),
@@ -106,7 +106,7 @@ func TestHistoryToChatMsgsEmpty(t *testing.T) {
 func TestHistoryTrailingActivity(t *testing.T) {
 	msgs := []protocol.Msg{
 		protocol.NewHistoryUserMsg("a", "do it"),
-		protocol.NewToolStartMsg("a", "slow", "", nil),
+		protocol.NewToolStartMsg("a", "slow", "", "", nil),
 	}
 	got := historyToChatMsgs(msgs)
 	if len(got) != 2 {
