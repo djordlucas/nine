@@ -74,6 +74,11 @@ type Config struct {
 	// Nil disables the checkpoint (the low-prority SystemPlan block is then the only guard)
 	// The runtime wires this to HITL.Ask for interactive sessions only.
 	PlanReviewFn func(ctx context.Context, plan string) (PlanDecision, error)
+
+	// QueuedMessagesFn, when non-nil, returns the number of unconsumed queued
+	// messages for this session. The context builder surfaces this count to the
+	// model so it knows to call queued_messages_get. nil = no queued messages.
+	QueuedMessagesFn func() int
 }
 
 // PlanDecision is the outcome of a PlanReviewFn checkpoint.
@@ -411,15 +416,16 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 		l.stage(StageContext)
 
 		req, tokensUsed := l.builder.BuildWithUsage(ninectx.BuildInput{
-			SystemCore:       l.ambientCore(),
-			SystemExtras:     l.cfg.SystemExtras,
-			SystemSelf:       selfModel,
-			SystemEnrichment: enrichment,
-			Tools:            l.cfg.Tools,
-			QueryVector:      queryVec,
-			History:          l.history,
-			Scratchpad:       l.scratchpad,
-			SystemPlan:       plan,
+			SystemCore:          l.ambientCore(),
+			SystemExtras:        l.cfg.SystemExtras,
+			SystemSelf:          selfModel,
+			SystemEnrichment:    enrichment,
+			Tools:               l.cfg.Tools,
+			QueryVector:         queryVec,
+			History:             l.history,
+			Scratchpad:          l.scratchpad,
+			SystemPlan:          plan,
+			QueuedMessagesCount: l.queuedMessagesCount(),
 		})
 		req.MaxTokens = l.maxTokens()
 		req.OnChunk = l.onChunk
@@ -751,6 +757,13 @@ func (l *Loop) ClearHistory() {
 	l.scratchpad = l.scratchpad[:0]
 }
 
+// AppendUserHistory adds a user message to the in-memory conversation history.
+// Used by queued-message consumption to fold consumed messages into the turn
+// the model is running, so the end-of-turn checkpoint includes them.
+func (l *Loop) AppendUserHistory(text string) {
+	l.history = append(l.history, llm.Message{Role: "user", Text: text})
+}
+
 // SaveState serialises the loop's current state to JSON.
 func (l *Loop) SaveState() ([]byte, error) {
 	return json.Marshal(ConversationState{
@@ -775,6 +788,13 @@ func (l *Loop) maxTokens() int {
 		return l.cfg.MaxTokens
 	}
 	return 4096
+}
+
+func (l *Loop) queuedMessagesCount() int {
+	if l.cfg.QueuedMessagesFn == nil {
+		return 0
+	}
+	return l.cfg.QueuedMessagesFn()
 }
 
 func embedText(ctx context.Context, e embed.Embedder, text string) []float32 {

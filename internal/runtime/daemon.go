@@ -96,6 +96,10 @@ type queryBackend interface {
 	SessionEventsAfter(afterSeq int64, limit int) ([]memory.SessionEvent, error)
 	EventCursorGet(subscriberID string) (int64, error)
 	EventCursorSet(subscriberID string, seq int64) error
+	// Queued message support: the daemon queues a user message when the
+	// session is mid-turn rather than blocking until the turn completes.
+	QueueMessage(agentID, message string) error
+	UnconsumedMessagesCount(agentID string) (int, error)
 }
 
 // pluginRegistry provides the plugin access needed by message handlers.

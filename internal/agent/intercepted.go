@@ -19,6 +19,7 @@ var InterceptedDefs = concatToolDefs(
 	notifyToolDefs,
 	searchToolDefs,
 	jobToolDefs,
+	queuedToolDefs,
 )
 
 func concatToolDefs(groups ...[]llm.ToolDef) []llm.ToolDef {

@@ -54,6 +54,9 @@ type BuildInput struct {
 	// Priority 4.5 - capped and dropped when budget is tight and it yields to scratchpad entries.
 	// A weak model's plan must bever crowd out the actual tool observations.
 	SystemPlan string
+	// QueuedMessagesCount is the number of queued messages for this session.
+	// When > 0, a system message is added to inform the model about queued messages.
+	QueuedMessagesCount int
 }
 
 // Builder assembles llm.Request values within a token budget.
@@ -206,6 +209,11 @@ func (b *Builder) assemble(input BuildInput, report bool) (llm.Request, int, Rep
 		add("extras", "5", 0, false, fmt.Sprintf("dropped: needs %d free tokens", b.extrasBudget()))
 	} else {
 		add("extras", "5", 0, false, "empty")
+	}
+
+	// Add queued messages notification to system prompt if there are any.
+	if input.QueuedMessagesCount > 0 {
+		system += fmt.Sprintf("\n\n[System: There are %d queued messages from the user. Use the queued_messages_get tool to read them.]", input.QueuedMessagesCount)
 	}
 
 	// Assemble messages: history followed by scratchpad entries.
