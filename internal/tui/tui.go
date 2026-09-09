@@ -1,18 +1,21 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/glamour/v2"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/compat"
 
 	"nine/internal/config"
 	"nine/internal/protocol"
@@ -24,9 +27,6 @@ const (
 	// inputAreaHeight: 4 lines for boxed bottom bar (top border, input, status, bottom border)
 	// The input can wrap to additional lines when text is long.
 	inputAreaHeight = 4
-
-	maxInputDisplay  = 80
-	maxOutputDisplay = 200
 
 	// contextWarnPercent mirrors the daemon's contextWarnFraction (0.9,
 	// internal/agent): at or above this fraction of the budget the header flags
@@ -49,6 +49,14 @@ type palette struct {
 	tool         lipgloss.Style
 	arrow        lipgloss.Style
 	toolInput    lipgloss.Style
+	labelBackend lipgloss.Style
+	backendValue lipgloss.Style
+	labelInput   lipgloss.Style
+	labelOutput  lipgloss.Style
+	jsonKey      lipgloss.Style
+	jsonValue    lipgloss.Style
+	outKey       lipgloss.Style
+	outValue     lipgloss.Style
 	thinking     lipgloss.Style // reasoning trace — one step dimmer than toolInput
 	output       lipgloss.Style
 	continuation lipgloss.Style
@@ -62,11 +70,11 @@ type palette struct {
 }
 
 // adaptive returns a lipgloss color that picks Light on light terminals and Dark on dark ones.
-func adaptive(light, dark string) lipgloss.AdaptiveColor {
-	return lipgloss.AdaptiveColor{Light: light, Dark: dark}
+func adaptive(light, dark string) compat.AdaptiveColor {
+	return compat.AdaptiveColor{Light: lipgloss.Color(light), Dark: lipgloss.Color(dark)}
 }
 
-// autoPalette adapts to the terminal background automatically via lipgloss.AdaptiveColor.
+// autoPalette adapts to the terminal background automatically via compat.AdaptiveColor.
 // This is the default and handles both light and dark terminals correctly.
 func autoPalette() palette {
 	return palette{
@@ -82,6 +90,14 @@ func autoPalette() palette {
 		tool:         lipgloss.NewStyle().Foreground(adaptive("130", "214")),
 		arrow:        lipgloss.NewStyle().Foreground(adaptive("130", "214")),
 		toolInput:    lipgloss.NewStyle().Foreground(adaptive("241", "244")).Italic(true),
+		labelBackend: lipgloss.NewStyle().Foreground(adaptive("38", "75")),
+		backendValue: lipgloss.NewStyle().Foreground(adaptive("30", "66")),
+		labelInput:   lipgloss.NewStyle().Foreground(adaptive("33", "75")),
+		labelOutput:  lipgloss.NewStyle().Foreground(adaptive("65", "114")),
+		jsonKey:      lipgloss.NewStyle().Foreground(adaptive("25", "63")),
+		jsonValue:    lipgloss.NewStyle().Foreground(adaptive("250", "252")),
+		outKey:       lipgloss.NewStyle().Foreground(adaptive("29", "72")),
+		outValue:     lipgloss.NewStyle().Foreground(adaptive("250", "252")),
 		thinking:     lipgloss.NewStyle().Foreground(adaptive("240", "241")).Italic(true),
 		output:       lipgloss.NewStyle().Foreground(adaptive("236", "252")),
 		continuation: lipgloss.NewStyle().Foreground(adaptive("244", "240")),
@@ -113,6 +129,14 @@ func lightPalette() palette {
 		tool:         lipgloss.NewStyle().Foreground(lipgloss.Color("130")),
 		arrow:        lipgloss.NewStyle().Foreground(lipgloss.Color("130")),
 		toolInput:    lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true),
+		labelBackend: lipgloss.NewStyle().Foreground(lipgloss.Color("38")),
+		backendValue: lipgloss.NewStyle().Foreground(lipgloss.Color("30")),
+		labelInput:   lipgloss.NewStyle().Foreground(lipgloss.Color("33")),
+		labelOutput:  lipgloss.NewStyle().Foreground(lipgloss.Color("65")),
+		jsonKey:      lipgloss.NewStyle().Foreground(lipgloss.Color("25")),
+		jsonValue:    lipgloss.NewStyle().Foreground(lipgloss.Color("250")),
+		outKey:       lipgloss.NewStyle().Foreground(lipgloss.Color("29")),
+		outValue:     lipgloss.NewStyle().Foreground(lipgloss.Color("250")),
 		thinking:     lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Italic(true),
 		output:       lipgloss.NewStyle().Foreground(lipgloss.Color("236")),
 		continuation: lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
@@ -144,6 +168,14 @@ func darkPalette() palette {
 		tool:         lipgloss.NewStyle().Foreground(lipgloss.Color("214")),
 		arrow:        lipgloss.NewStyle().Foreground(lipgloss.Color("214")),
 		toolInput:    lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Italic(true),
+		labelBackend: lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
+		backendValue: lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
+		labelInput:   lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
+		labelOutput:  lipgloss.NewStyle().Foreground(lipgloss.Color("65")),
+		jsonKey:      lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
+		jsonValue:    lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
+		outKey:       lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
+		outValue:     lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
 		thinking:     lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true),
 		output:       lipgloss.NewStyle().Foreground(lipgloss.Color("252")),
 		continuation: lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
@@ -161,6 +193,7 @@ func darkPalette() palette {
 type toolEvent struct {
 	name        string
 	displayName string // human-friendly label; falls back to name when empty
+	backend     string // which backend runs the tool ("builtin", "plugin", "tool")
 	inputStr    string
 	outputStr   string // empty while still running
 	thought     string // ReAct reasoning text the model emitted before this call
@@ -179,10 +212,10 @@ type chatMsg struct {
 	at             time.Time
 	toolEvents     []toolEvent // non-empty only for "nine" role
 	trace          string
-	humanRequestID string     // set for "ask" role messages to track pending HITL
-	interrupted    bool       // the turn was cut short by an error
-	pending        bool       // queued message waiting for the agent to consume
-	active         bool       // the model is currently working on this message
+	humanRequestID string // set for "ask" role messages to track pending HITL
+	interrupted    bool   // the turn was cut short by an error
+	pending        bool   // queued message waiting for the agent to consume
+	active         bool   // the model is currently working on this message
 }
 
 // Internal tea.Msg types.
@@ -343,10 +376,12 @@ func initialModel(sockPath, binary, attachID string, pal palette, glamourStyle s
 	ti := textinput.New()
 	ti.Placeholder = "Type a message..."
 	ti.Prompt = "> "
-	ti.PromptStyle = pal.prompt
 	ti.CharLimit = 0
-	ti.Cursor.SetChar("|")
-	ti.Cursor.Style = pal.prompt
+	s := ti.Styles()
+	s.Focused.Prompt = pal.prompt
+	s.Blurred.Prompt = pal.prompt
+	s.Cursor.Color = pal.prompt.GetForeground()
+	ti.SetStyles(s)
 	ti.Focus() //nolint:errcheck
 
 	sp := spinner.New()
@@ -386,7 +421,7 @@ func initialModel(sockPath, binary, attachID string, pal palette, glamourStyle s
 func newRenderer(glamourStyle string, width int) *glamour.TermRenderer {
 	var styleOpt glamour.TermRendererOption
 	if glamourStyle == "auto" || glamourStyle == "" {
-		styleOpt = glamour.WithAutoStyle()
+		styleOpt = glamour.WithEnvironmentConfig()
 	} else {
 		styleOpt = glamour.WithStandardStyle(glamourStyle)
 	}
@@ -408,33 +443,33 @@ func (m model) Init() tea.Cmd {
 	} else {
 		cmd = connectCmd(m.conn.sockPath, m.conn.binary)
 	}
-	return tea.Batch(cmd, m.chat.spinner.Tick, clockTick(), m.chat.input.Cursor.BlinkCmd())
+	return tea.Batch(cmd, m.chat.spinner.Tick, clockTick(), textinput.Blink)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		// While the slash-command picker is open it owns navigation, completion
 		// and dismissal, and these keys must not reach the text input or the
 		// viewport (which would otherwise scroll on up/down). Enter is handled
 		// further down instead, so a no-argument command can be completed and
 		// submitted in the same keystroke.
 		if m.chat.suggestOpen {
-			switch msg.Type {
-			case tea.KeyUp, tea.KeyCtrlP:
+			switch msg.String() {
+			case "up", "ctrl+p":
 				m.chat.suggest.CursorUp()
 				return m, nil
-			case tea.KeyDown, tea.KeyCtrlN:
+			case "down", "ctrl+n":
 				m.chat.suggest.CursorDown()
 				return m, nil
-			case tea.KeyTab:
+			case "tab":
 				if c, ok := m.selectedSuggestion(); ok {
 					m.acceptSuggestion(c)
 				}
 				return m, nil
-			case tea.KeyEsc:
+			case "esc":
 				// Esc quits the TUI everywhere else; with the picker open it
 				// dismisses the picker only.
 				m.closeSuggestions()
@@ -442,18 +477,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		switch msg.Type {
-		case tea.KeyCtrlC, tea.KeyEsc:
+		switch msg.String() {
+		case "ctrl+c", "esc":
 			if m.conn.client != nil {
 				m.conn.client.Close() //nolint:errcheck
 			}
 			return m, tea.Quit
 
-		case tea.KeyCtrlT:
+		case "ctrl+t":
 			m.display.showDetail = !m.display.showDetail
 			m.rebuildContent()
 
-		case tea.KeyPgUp, tea.KeyPgDown, tea.KeyHome, tea.KeyEnd:
+		case "pgup", "pgdown", "home", "end":
 			if m.chat.ready {
 				var vpCmd tea.Cmd
 				m.chat.viewport, vpCmd = m.chat.viewport.Update(msg)
@@ -461,7 +496,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Batch(cmds...)
 
-		case tea.KeyEnter:
+		case "enter":
 			// Accept the highlighted command rather than submitting whatever
 			// partial text is in the box — otherwise "/hel" + Enter would send
 			// "/hel" while "/help" sits visibly selected. A command that takes
@@ -605,14 +640,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.display.width = msg.Width
 		m.display.height = msg.Height
-		m.chat.input.Width = msg.Width - len(m.chat.input.Prompt) - 5
+		m.chat.input.SetWidth(msg.Width - len(m.chat.input.Prompt) - 5)
 		vph := m.viewportHeight()
 		if !m.chat.ready {
-			m.chat.viewport = viewport.New(msg.Width, vph)
+			m.chat.viewport = viewport.New(viewport.WithWidth(msg.Width), viewport.WithHeight(vph))
 			m.chat.ready = true
 		} else {
-			m.chat.viewport.Width = msg.Width
-			m.chat.viewport.Height = vph
+			m.chat.viewport.SetWidth(msg.Width)
+			m.chat.viewport.SetHeight(vph)
 		}
 		m.chat.suggest.SetSize(msg.Width, m.suggestHeight())
 		m.display.renderer = newRenderer(m.display.glamourStyle, msg.Width-8)
@@ -685,12 +720,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// "thought". Retain it on the tool event so it persists in the transcript
 			// instead of being discarded, then clear the live streaming buffer.
 			m.chat.pendingToolEvts = append(m.chat.pendingToolEvts, toolEvent{
-				name:        evt.ToolName,
-				displayName: evt.ToolDisplayName,
-				inputStr:    formatInput(evt.ToolInput),
-				thought:     strings.TrimSpace(m.chat.streamingText),
-				at:          evt.At,
-				trace:       m.chat.thinkingTrace,
+				name:         evt.ToolName,
+				displayName:  evt.ToolDisplayName,
+				backend:      evt.Backend,
+				inputStr:     formatInput(evt.ToolInput),
+				thought:      strings.TrimSpace(m.chat.streamingText),
+				at:           evt.At,
+				trace:        m.chat.thinkingTrace,
 				subAgent:     evt.SubAgentID != "",
 				subAgentID:   evt.SubAgentID,
 				subAgentRole: evt.Role,
@@ -763,7 +799,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						humanRequestID: evt.HumanRequest.RequestID,
 					})
 					m.chat.input.Prompt = "Answer: "
-					m.chat.input.PromptStyle = m.display.pal.you
+					setPromptStyle(&m.chat.input, m.display.pal.you)
 				}
 			}
 		}
@@ -877,11 +913,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// user can see where it stopped, then append the error below it.
 			if m.chat.thinking {
 				m.chat.messages = append(m.chat.messages, chatMsg{
-					role:       "nine",
-					text:       m.chat.streamingText,
-					at:         m.chat.thinkingAt,
-					toolEvents: m.chat.pendingToolEvts,
-					trace:      m.chat.thinkingTrace,
+					role:        "nine",
+					text:        m.chat.streamingText,
+					at:          m.chat.thinkingAt,
+					toolEvents:  m.chat.pendingToolEvts,
+					trace:       m.chat.thinkingTrace,
 					interrupted: true,
 				})
 			}
@@ -925,12 +961,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m model) View() string {
+func (m model) View() tea.View {
 	if !m.chat.ready {
-		return "\n  Connecting to nine daemon...\n"
+		v := tea.NewView("\n  Connecting to nine daemon...\n")
+		v.AltScreen = true
+		return v
 	}
 	if m.conn.err != nil && m.conn.agentID == "" {
-		return fmt.Sprintf("\n  error: %v\n\n  Press ctrl+c to exit.\n", m.conn.err)
+		v := tea.NewView(fmt.Sprintf("\n  error: %v\n\n  Press ctrl+c to exit.\n", m.conn.err))
+		v.AltScreen = true
+		return v
 	}
 
 	label := "connecting..."
@@ -962,13 +1002,16 @@ func (m model) View() string {
 	statusLine := renderStatusLine(m.display, m.conn.role, label, m.display.width-4)
 
 	// Box the bottom bar (input + status lines)
-	// With padding(0,0) and NormalBorder, .Width(n) renders to n+2
-	// So we use width-2 to get the exact viewport width
+	// In lipgloss v2, Width(n) includes borders, so Width(width) renders to
+	// exactly width: borders (2) + padding (2) + content (width-4).
 	bottomBarContent := inputLine + "\n" + statusLine
-	bottomBarBox := m.display.pal.bottomBarBox.Width(m.display.width - 2).Render(bottomBarContent)
+	bottomBarBox := m.display.pal.bottomBarBox.Width(m.display.width).Render(bottomBarContent)
 	parts = append(parts, bottomBarBox)
 
-	return strings.Join(parts, "\n")
+	v := tea.NewView(strings.Join(parts, "\n"))
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
 }
 
 // contextHint renders the header's context-usage segment. When usage crosses
@@ -1116,7 +1159,17 @@ func (m *model) appendError(text string) {
 // resetInputPrompt restores the default "> " input prompt after a HITL answer.
 func (m *model) resetInputPrompt() {
 	m.chat.input.Prompt = "> "
-	m.chat.input.PromptStyle = m.display.pal.prompt
+	setPromptStyle(&m.chat.input, m.display.pal.prompt)
+}
+
+// setPromptStyle styles the textinput prompt in both focus states. In bubbles
+// v2 the prompt style lives in Styles.Focused/Blurred.Prompt, replacing the
+// removed PromptStyle field.
+func setPromptStyle(ti *textinput.Model, st lipgloss.Style) {
+	s := ti.Styles()
+	s.Focused.Prompt = st
+	s.Blurred.Prompt = st
+	ti.SetStyles(s)
 }
 
 // formatQuestion renders an ask_human question and any options for display.
@@ -1222,13 +1275,13 @@ func (m *model) rebuildContent() {
 	if !m.chat.thinking && (len(m.chat.messages) == 0 || (len(m.chat.messages) == 1 && m.chat.messages[0].text == "")) {
 		// Center the logo both horizontally and vertically (logo + help text = 7 lines)
 		contentHeight := 7 // Nine logo (6 lines) + help text (1 line)
-		viewportHeight := m.chat.viewport.Height
+		viewportHeight := m.chat.viewport.Height()
 		verticalPad := (viewportHeight - contentHeight) / 2
 		if verticalPad > 0 {
 			sb.WriteString(strings.Repeat("\n", verticalPad))
 		}
-		renderLogo(&sb, m.display.pal, m.chat.viewport.Width, m.display.version)
-		renderHelpText(&sb, m.display.pal, m.chat.viewport.Width)
+		renderLogo(&sb, m.display.pal, m.chat.viewport.Width(), m.display.version)
+		renderHelpText(&sb, m.display.pal, m.chat.viewport.Width())
 		m.chat.viewport.SetContent(sb.String())
 		m.chat.viewport.GotoBottom()
 		return
@@ -1255,7 +1308,7 @@ func (m *model) rebuildContent() {
 		if i > 0 {
 			sb.WriteByte('\n')
 		}
-		renderChatMsg(&sb, msg, m.chat.viewport.Width, m.display.showDetail, m.display.pal, m.display.renderer)
+		renderChatMsg(&sb, msg, m.chat.viewport.Width(), m.display.showDetail, m.display.pal, m.display.renderer)
 	}
 
 	// Render thinking view (if active)
@@ -1271,7 +1324,7 @@ func (m *model) rebuildContent() {
 			pal:        m.display.pal,
 			streamText: m.chat.streamingText,
 			trace:      m.chat.thinkingTrace,
-			width:      m.chat.viewport.Width,
+			width:      m.chat.viewport.Width(),
 			step:       m.chat.thinkingStep,
 			think:      m.chat.thinkingThink,
 			planning:   m.chat.planning,
@@ -1284,7 +1337,7 @@ func (m *model) rebuildContent() {
 		if i > 0 || m.chat.thinking || len(regularMsgs) > 0 {
 			sb.WriteByte('\n')
 		}
-		renderChatMsg(&sb, msg, m.chat.viewport.Width, m.display.showDetail, m.display.pal, m.display.renderer)
+		renderChatMsg(&sb, msg, m.chat.viewport.Width(), m.display.showDetail, m.display.pal, m.display.renderer)
 	}
 
 	// Render pending HITL messages last — at the very bottom of the viewport,
@@ -1293,7 +1346,7 @@ func (m *model) rebuildContent() {
 		if i > 0 || m.chat.thinking || len(regularMsgs) > 0 || len(pendingQueuedMsgs) > 0 {
 			sb.WriteByte('\n')
 		}
-		renderChatMsg(&sb, msg, m.chat.viewport.Width, m.display.showDetail, m.display.pal, m.display.renderer)
+		renderChatMsg(&sb, msg, m.chat.viewport.Width(), m.display.showDetail, m.display.pal, m.display.renderer)
 	}
 
 	content := sb.String()
@@ -1372,9 +1425,14 @@ func renderChatMsg(sb *strings.Builder, msg chatMsg, width int, showDetail bool,
 	content.WriteString(header)
 
 	// Add tool events and trace for Nine messages (before text)
+	hasTools := false
+	hasTrace := false
 	if msg.role == "nine" {
 		for i, te := range msg.toolEvents {
-			var toolLine string
+			// Tool name line: aligned with the header (no indent) so the
+			// arrow sits flush with the role label inside the box.
+			var nameLine string
+			var detailLines []string
 			if te.subAgent {
 				// Sub-agent tool call or lifecycle event: prefix with a
 				// short ID to distinguish multiple sub-agents with the same
@@ -1391,39 +1449,45 @@ func renderChatMsg(sb *strings.Builder, msg chatMsg, width int, showDetail bool,
 					toolName = te.displayName
 				}
 				if toolName != "" {
-					// Sub-agent tool call forwarded from the child
-					toolLine = indent + pal.arrow.Render("→") + " " + pal.tool.Render(label) + "/" + pal.tool.Render(toolName)
+					nameLine = pal.rule.Render("───") + " " + pal.tool.Render(label) + "/" + pal.tool.Render(toolName)
 				} else {
-					// Sub-agent lifecycle event (start/end)
-					toolLine = indent + pal.arrow.Render("→") + " " + pal.tool.Render(label)
+					nameLine = pal.rule.Render("───") + " " + pal.tool.Render(label)
+				}
+				if te.backend != "" {
+					detailLines = appendDetailLabeled(detailLines, pal.labelBackend.Render("backend:"), pal.backendValue.Render(te.backend))
 				}
 				if te.inputStr != "" {
-					toolLine += ": " + pal.toolInput.Render(te.inputStr)
+					if d := renderDetail(te.inputStr, pal.toolInput, pal.jsonKey, pal.jsonValue); d != "" {
+						detailLines = appendDetailLabeled(detailLines, pal.labelInput.Render("input:"), d)
+					}
 				}
 				if te.outputStr != "" {
-					toolLine += " -> " + pal.output.Render(te.outputStr)
+					if d := renderDetail(te.outputStr, pal.output, pal.outKey, pal.outValue); d != "" {
+						detailLines = appendDetailLabeled(detailLines, pal.labelOutput.Render("output:"), d)
+					}
 				} else if te.inputStr == "" {
-					toolLine += " -> " + pal.continuation.Render("running")
+					detailLines = appendDetailLabeled(detailLines, pal.labelOutput.Render("output:"), pal.outValue.Render("running"))
 				}
 			} else {
 				// Regular tool call
-				toolLine = indent + pal.arrow.Render("→") + " " + pal.tool.Render(te.name)
+				nameLine = pal.rule.Render("───") + " " + pal.tool.Render(te.name)
+				if te.backend != "" {
+					detailLines = appendDetailLabeled(detailLines, pal.labelBackend.Render("backend:"), pal.backendValue.Render(te.backend))
+				}
 				if te.inputStr != "" {
-					toolLine += ": " + pal.toolInput.Render(te.inputStr)
+					if d := renderDetail(te.inputStr, pal.toolInput, pal.jsonKey, pal.jsonValue); d != "" {
+						detailLines = appendDetailLabeled(detailLines, pal.labelInput.Render("input:"), d)
+					}
 				}
 				if te.outputStr != "" {
-					if te.inputStr != "" {
-						toolLine += " -> " + te.outputStr
-					} else {
-						toolLine += ": " + te.outputStr
+					if d := renderDetail(te.outputStr, pal.output, pal.outKey, pal.outValue); d != "" {
+						detailLines = appendDetailLabeled(detailLines, pal.labelOutput.Render("output:"), d)
 					}
-				} else if te.inputStr == "" {
-					toolLine += ":"
 				}
 			}
-			// Each tool call on its own line, word-wrapped. Add a blank
-			// line between consecutive tool calls, but not after the last
-			// one (the text or trace follows).
+			// Each tool call on its own block. Add a blank line between
+			// consecutive tool calls, but not after the last one (the text
+			// or trace follows).
 			if i > 0 {
 				content.WriteString("\n")
 			}
@@ -1435,18 +1499,41 @@ func renderChatMsg(sb *strings.Builder, msg chatMsg, width int, showDetail bool,
 			if te.thought != "" {
 				renderThought(&content, te.thought, pal, textWidth)
 			}
-			content.WriteString("\n" + wordWrap(toolLine, textWidth))
+			content.WriteString("\n" + wordWrap(nameLine, textWidth))
+			// Append a dim rule after the name to the right edge of the
+			// content area, on the same line.
+			nameW := lipgloss.Width(nameLine)
+			sepWidth := textWidth - nameW - 1
+			if sepWidth > 0 {
+				content.WriteString(" " + pal.rule.Render(strings.Repeat("─", sepWidth)))
+			}
+			for _, dl := range detailLines {
+				if strings.HasPrefix(dl, "\t") {
+					// Sub-content line: extra indent, no wordWrap (the indent
+					// would be stripped by wrapLine's Fields call).
+					content.WriteString("\n" + indent + indent + dl[1:])
+				} else {
+					content.WriteString("\n" + indent + wordWrap(dl, textWidth-len(indent)))
+				}
+			}
 		}
+		hasTools = len(msg.toolEvents) > 0
+		hasTrace = msg.trace != ""
 		if msg.trace != "" {
 			// Simple trace rendering
 			for _, line := range strings.Split(msg.trace, "\n") {
-				content.WriteString("\n" + indent + pal.continuation.Render("· ") + wordWrap(line, textWidth-len(indent)-2))
+				content.WriteString("\n" + indent + wordWrap(line, textWidth-len(indent)))
 			}
 		}
 	}
 
 	// Add message text - render markdown only for complete messages
 	if msg.text != "" {
+		// Separate the answer from tool output or trace with a dim rule.
+		if hasTools || hasTrace {
+			content.WriteString("\n" + pal.rule.Render(strings.Repeat("─", textWidth)))
+			content.WriteString("\n")
+		}
 		content.WriteString("\n")
 		if r != nil {
 			// This is a complete message, safe to render markdown
@@ -1480,12 +1567,11 @@ func renderChatMsg(sb *strings.Builder, msg chatMsg, width int, showDetail bool,
 	}
 
 	// Render the box with full width
-	// Box adds: 2 for borders. Padding is included in .Width() measurement.
-	// .Width(n) with NormalBorder: total visual width = n + 2
-	// To fit within viewport width, use: width - 2
+	// In lipgloss v2, Width(n) includes borders, so Width(width) renders to
+	// exactly width: borders (2) + padding (2) + content (width-4).
 	// Note: box already contains newlines for its 3 lines (top, content, bottom)
 	// so we don't add an extra newline to avoid blank lines between boxes
-	box := boxStyle.Width(width - 2).Render(contentStr)
+	box := boxStyle.Width(width).Render(contentStr)
 	sb.WriteString(box)
 }
 
@@ -1581,7 +1667,10 @@ func renderThinking(sb *strings.Builder, v thinkingView) {
 
 	// Add tool events and trace (before streaming text)
 	for i, te := range v.evts {
-		var toolLine string
+		// Tool name line: aligned with the header (no indent) so the
+		// arrow sits flush with the role label inside the box.
+		var nameLine string
+		var detailLines []string
 		if te.subAgent {
 			// Sub-agent tool call or lifecycle event: prefix with a
 			// short ID to distinguish multiple sub-agents with the same
@@ -1598,38 +1687,44 @@ func renderThinking(sb *strings.Builder, v thinkingView) {
 				toolName = te.displayName
 			}
 			if toolName != "" {
-				// Sub-agent tool call forwarded from the child
-				toolLine = indent + v.pal.arrow.Render("→") + " " + v.pal.tool.Render(label) + "/" + v.pal.tool.Render(toolName)
+				nameLine = v.pal.rule.Render("───") + " " + v.pal.tool.Render(label) + "/" + v.pal.tool.Render(toolName)
 			} else {
-				// Sub-agent lifecycle event (start/end)
-				toolLine = indent + v.pal.arrow.Render("→") + " " + v.pal.tool.Render(label)
+				nameLine = v.pal.rule.Render("───") + " " + v.pal.tool.Render(label)
+			}
+			if te.backend != "" {
+				detailLines = appendDetailLabeled(detailLines, v.pal.labelBackend.Render("backend:"), v.pal.backendValue.Render(te.backend))
 			}
 			if te.inputStr != "" {
-				toolLine += ": " + v.pal.toolInput.Render(te.inputStr)
+				if d := renderDetail(te.inputStr, v.pal.toolInput, v.pal.jsonKey, v.pal.jsonValue); d != "" {
+					detailLines = appendDetailLabeled(detailLines, v.pal.labelInput.Render("input:"), d)
+				}
 			}
 			if te.outputStr != "" {
-				toolLine += " -> " + v.pal.output.Render(te.outputStr)
+				if d := renderDetail(te.outputStr, v.pal.output, v.pal.outKey, v.pal.outValue); d != "" {
+					detailLines = appendDetailLabeled(detailLines, v.pal.labelOutput.Render("output:"), d)
+				}
 			} else if te.inputStr == "" {
-				toolLine += " -> " + v.pal.continuation.Render("running")
+				detailLines = appendDetailLabeled(detailLines, v.pal.labelOutput.Render("output:"), v.pal.outValue.Render("running"))
 			}
 		} else {
 			// Regular tool call
-			toolLine = indent + v.pal.arrow.Render("→") + " " + v.pal.tool.Render(te.name)
+			nameLine = v.pal.rule.Render("───") + " " + v.pal.tool.Render(te.name)
+			if te.backend != "" {
+				detailLines = appendDetailLabeled(detailLines, v.pal.labelBackend.Render("backend:"), v.pal.backendValue.Render(te.backend))
+			}
 			if te.inputStr != "" {
-				toolLine += ": " + v.pal.toolInput.Render(te.inputStr)
+				if d := renderDetail(te.inputStr, v.pal.toolInput, v.pal.jsonKey, v.pal.jsonValue); d != "" {
+					detailLines = appendDetailLabeled(detailLines, v.pal.labelInput.Render("input:"), d)
+				}
 			}
 			if te.outputStr != "" {
-				if te.inputStr != "" {
-					toolLine += " -> " + te.outputStr
-				} else {
-					toolLine += ": " + te.outputStr
+				if d := renderDetail(te.outputStr, v.pal.output, v.pal.outKey, v.pal.outValue); d != "" {
+					detailLines = appendDetailLabeled(detailLines, v.pal.labelOutput.Render("output:"), d)
 				}
-			} else if te.inputStr == "" {
-				toolLine += ":"
 			}
 		}
-		// Each tool call on its own line, word-wrapped. Add a blank line
-		// between consecutive tool calls, but not after the last one.
+		// Each tool call on its own block. Add a blank line between
+		// consecutive tool calls, but not after the last one.
 		if i > 0 {
 			content.WriteString("\n")
 		}
@@ -1640,16 +1735,35 @@ func renderThinking(sb *strings.Builder, v thinkingView) {
 		if te.thought != "" {
 			renderThought(&content, te.thought, v.pal, textWidth)
 		}
-		content.WriteString("\n" + wordWrap(toolLine, textWidth))
+		content.WriteString("\n" + wordWrap(nameLine, textWidth))
+		// Append a dim rule after the name to the right edge of the
+		// content area, on the same line.
+		nameW := lipgloss.Width(nameLine)
+		sepWidth := textWidth - nameW - 1
+		if sepWidth > 0 {
+			content.WriteString(" " + v.pal.rule.Render(strings.Repeat("─", sepWidth)))
+		}
+		for _, dl := range detailLines {
+			if strings.HasPrefix(dl, "\t") {
+				content.WriteString("\n" + indent + indent + dl[1:])
+			} else {
+				content.WriteString("\n" + indent + wordWrap(dl, textWidth-len(indent)))
+			}
+		}
 	}
 	if v.trace != "" {
 		// Simple trace rendering
 		for _, line := range strings.Split(v.trace, "\n") {
-			content.WriteString("\n" + indent + v.pal.continuation.Render("· ") + wordWrap(line, textWidth-len(indent)-2))
+			content.WriteString("\n" + indent + wordWrap(line, textWidth-len(indent)))
 		}
 	}
 
 	// Add streaming text or status (at the bottom)
+	// Separate the answer from tool output or trace with a dim rule.
+	if len(v.evts) > 0 || v.trace != "" {
+		content.WriteString("\n" + v.pal.rule.Render(strings.Repeat("─", textWidth)))
+		content.WriteString("\n")
+	}
 	if v.streamText != "" {
 		content.WriteString("\n" + indent + wordWrap(v.streamText, textWidth))
 	} else {
@@ -1663,12 +1777,11 @@ func renderThinking(sb *strings.Builder, v thinkingView) {
 	}
 
 	// Render the box with full width
-	// Box adds: 2 for borders. Padding is included in .Width() measurement.
-	// .Width(n) with NormalBorder: total visual width = n + 2
-	// To fit within viewport width, use: width - 2
+	// In lipgloss v2, Width(n) includes borders, so Width(width) renders to
+	// exactly width: borders (2) + padding (2) + content (width-4).
 	// Note: box already contains newlines for its 3 lines (top, content, bottom)
 	// so we don't add an extra newline to avoid blank lines between boxes
-	box := boxStyle.Width(v.width - 2).Render(contentStr)
+	box := boxStyle.Width(v.width).Render(contentStr)
 	sb.WriteString(box)
 }
 
@@ -1713,7 +1826,7 @@ func renderReasoning(sb *strings.Builder, text string, pal palette, width int, m
 		sb.WriteString(indent + pal.continuation.Render("· …") + "\n")
 	}
 	for _, line := range lines {
-		sb.WriteString(indent + pal.continuation.Render("· ") + pal.thinking.Render(line) + "\n")
+		sb.WriteString(indent + pal.thinking.Render(line) + "\n")
 	}
 }
 
@@ -1807,6 +1920,7 @@ func replayToToolEvents(msgs []protocol.Msg) []toolEvent {
 			evts = append(evts, toolEvent{
 				name:        msg.ToolName,
 				displayName: msg.ToolDisplayName,
+				backend:     msg.Backend,
 				inputStr:    formatInput(msg.ToolInput),
 				at:          at,
 			})
@@ -1896,20 +2010,125 @@ func formatInput(raw []byte) string {
 	if len(raw) == 0 {
 		return ""
 	}
-	s := strings.TrimSpace(string(raw))
-	if len(s) > maxInputDisplay {
-		return s[:maxInputDisplay] + "…"
+	return strings.TrimSpace(string(raw))
+}
+
+// appendDetailLabeled adds a label on its own line, then each line of the
+// (possibly multi-line) content on a separate line indented one level further.
+// Sub-content lines are prefixed with a tab that the render loop expands.
+func appendDetailLabeled(lines []string, label, content string) []string {
+	lines = append(lines, label)
+	for _, line := range strings.Split(content, "\n") {
+		lines = append(lines, "\t"+line)
 	}
-	return s
+	return lines
+}
+
+// renderJSONKV parses s as a JSON object or array of objects and renders it as
+// space-separated styled key:value pairs (keys sorted alphabetically). Array
+// elements are separated by " | ". Returns "" when s is not JSON or is empty,
+// so callers can fall back to the plain render.
+func renderJSONKV(s string, keyStyle, valStyle lipgloss.Style) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+
+	// Try JSON object first.
+	var m map[string]any
+	if err := json.Unmarshal([]byte(s), &m); err == nil {
+		return renderObjectKV(m, keyStyle, valStyle)
+	}
+
+	// Try JSON array.
+	var arr []any
+	if err := json.Unmarshal([]byte(s), &arr); err == nil {
+		var elems []string
+		for _, el := range arr {
+			if obj, ok := el.(map[string]any); ok {
+				if kv := renderObjectKV(obj, keyStyle, valStyle); kv != "" {
+					elems = append(elems, kv)
+				}
+			} else {
+				v := formatJSONValue(el)
+				if v != "" {
+					elems = append(elems, valStyle.Render(v))
+				}
+			}
+		}
+		if len(elems) == 0 {
+			return ""
+		}
+		return strings.Join(elems, "\n")
+	}
+
+	return ""
+}
+
+// renderObjectKV renders a single JSON object as sorted key:value pairs.
+// Returns "" for empty objects.
+func renderObjectKV(m map[string]any, keyStyle, valStyle lipgloss.Style) string {
+	if len(m) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	const maxValDisplay = 50
+	var parts []string
+	for _, k := range keys {
+		valStr := formatJSONValue(m[k])
+		if len(valStr) > maxValDisplay {
+			valStr = valStr[:maxValDisplay] + "…"
+		}
+		parts = append(parts, keyStyle.Render(k+":")+valStyle.Render(valStr))
+	}
+	return strings.Join(parts, " ")
+}
+
+// renderDetail renders a tool input or output string. When the string is a
+// JSON object or array it is displayed as styled key:value pairs; otherwise
+// the fallback style is applied to the raw string (truncated). Returns "" for
+// empty input or an empty JSON object ("{}") so callers can omit the line.
+func renderDetail(s string, fallback, keyStyle, valStyle lipgloss.Style) string {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "{}" || s == "[]" {
+		return ""
+	}
+	if kv := renderJSONKV(s, keyStyle, valStyle); kv != "" {
+		return kv
+	}
+	// Non-JSON fallback: truncate long strings.
+	const maxDisplay = 200
+	if len(s) > maxDisplay {
+		s = s[:maxDisplay] + fmt.Sprintf("… [+%d chars]", len(s)-maxDisplay)
+	}
+	return fallback.Render(s)
+}
+
+func formatJSONValue(v any) string {
+	switch vv := v.(type) {
+	case string:
+		return vv
+	case bool:
+		return fmt.Sprintf("%v", vv)
+	case float64:
+		if vv == float64(int64(vv)) {
+			return fmt.Sprintf("%d", int64(vv))
+		}
+		return fmt.Sprintf("%v", vv)
+	case nil:
+		return "null"
+	default:
+		b, _ := json.Marshal(vv)
+		return string(b)
+	}
 }
 
 func truncateOutput(s string) string {
-	s = strings.TrimSpace(s)
-	if len(s) > maxOutputDisplay {
-		extra := len(s) - maxOutputDisplay
-		return s[:maxOutputDisplay] + fmt.Sprintf("… [+%d chars]", extra)
-	}
-	return s
+	return strings.TrimSpace(s)
 }
 
 // wordWrap wraps text at width characters without breaking words.
@@ -2104,14 +2323,12 @@ func Run(sockPath, binary string, cfg *config.Config, attachID, version string) 
 		pal = darkPalette()
 		glamourStyle = "dark"
 	default: // "" or "auto" — detect from terminal background before bubbletea owns stdin.
-		// Both lipgloss (sync.Once) and glamour (termenv) send an OSC 11 query to
-		// detect the background color. If that query fires after bubbletea takes over
-		// stdin, the terminal's response arrives as a keypress in the textarea.
-		// Calling HasDarkBackground() here, while we still own stdin, caches the
-		// lipgloss result and lets us pass an explicit style to glamour so it never
-		// queries again inside the event loop.
+		// compat.HasDarkBackground is evaluated at package import time, while we
+		// still own stdin, so the OSC 11 background query it issues can't race
+		// with bubbletea's event loop. Reuse that cached result to pick an
+		// explicit glamour style so glamour never re-queries inside the loop.
 		pal = autoPalette()
-		if lipgloss.HasDarkBackground() {
+		if compat.HasDarkBackground {
 			glamourStyle = "dark"
 		} else {
 			glamourStyle = "light"
@@ -2119,8 +2336,6 @@ func Run(sockPath, binary string, cfg *config.Config, attachID, version string) 
 	}
 	p := tea.NewProgram(
 		initialModel(sockPath, binary, attachID, pal, glamourStyle, showContext, cfg, version),
-		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
 	)
 	_, err := p.Run()
 	return err
