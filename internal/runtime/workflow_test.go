@@ -57,6 +57,7 @@ func (m *mockStore) EventCursorGet(_ string) (int64, error) { return 0, nil }
 func (m *mockStore) EventCursorSet(_ string, _ int64) error { return nil }
 func (m *mockStore) QueueMessage(_, _ string) error                { return nil }
 func (m *mockStore) UnconsumedMessagesCount(_ string) (int, error) { return 0, nil }
+func (m *mockStore) DrainQueuedMessage(_ string) (string, error)    { return "", nil }
 
 // makeSimpleDaemon returns a running daemon backed by an always-answer provider.
 // Callers must call d.Stop() and cancel() when done.
