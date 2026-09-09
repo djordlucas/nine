@@ -824,6 +824,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case queuedResultMsg:
 		if msg.err != nil {
 			m.appendSystem("queue failed: " + msg.err.Error())
+			// Clear the pending flag on the last user message — the queue
+			// failed, so it's not actually queued.
+			for i := len(m.chat.messages) - 1; i >= 0; i-- {
+				if m.chat.messages[i].pending {
+					m.chat.messages[i].pending = false
+					break
+				}
+			}
 			m.rebuildContent()
 			m.chat.viewport.GotoBottom()
 		}
@@ -835,6 +843,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.stage = ""
 		for i := range m.chat.messages {
 			m.chat.messages[i].active = false
+			m.chat.messages[i].pending = false
 		}
 
 		// A dropped connection mid-session (e.g. the daemon restarting under
@@ -1364,7 +1373,7 @@ func renderChatMsg(sb *strings.Builder, msg chatMsg, width int, showDetail bool,
 
 	// Add tool events and trace for Nine messages (before text)
 	if msg.role == "nine" {
-		for _, te := range msg.toolEvents {
+		for i, te := range msg.toolEvents {
 			var toolLine string
 			if te.subAgent {
 				// Sub-agent tool call or lifecycle event: prefix with a
@@ -1412,9 +1421,21 @@ func renderChatMsg(sb *strings.Builder, msg chatMsg, width int, showDetail bool,
 					toolLine += ":"
 				}
 			}
-			// Each tool call on its own line, word-wrapped, with a blank
-			// line after it to separate consecutive tool calls.
-			content.WriteString("\n" + wordWrap(toolLine, textWidth) + "\n")
+			// Each tool call on its own line, word-wrapped. Add a blank
+			// line between consecutive tool calls, but not after the last
+			// one (the text or trace follows).
+			if i > 0 {
+				content.WriteString("\n")
+			}
+			// Render the reasoning trace and thought before the tool line,
+			// same as renderToolEvent does.
+			if te.trace != "" {
+				renderTrace(&content, te.trace, showDetail, pal, textWidth)
+			}
+			if te.thought != "" {
+				renderThought(&content, te.thought, pal, textWidth)
+			}
+			content.WriteString("\n" + wordWrap(toolLine, textWidth))
 		}
 		if msg.trace != "" {
 			// Simple trace rendering
@@ -1559,7 +1580,7 @@ func renderThinking(sb *strings.Builder, v thinkingView) {
 	content.WriteString(header)
 
 	// Add tool events and trace (before streaming text)
-	for _, te := range v.evts {
+	for i, te := range v.evts {
 		var toolLine string
 		if te.subAgent {
 			// Sub-agent tool call or lifecycle event: prefix with a
@@ -1607,9 +1628,19 @@ func renderThinking(sb *strings.Builder, v thinkingView) {
 				toolLine += ":"
 			}
 		}
-		// Each tool call on its own line, word-wrapped, with a blank line
-		// after it to separate consecutive tool calls.
-		content.WriteString("\n" + wordWrap(toolLine, textWidth) + "\n")
+		// Each tool call on its own line, word-wrapped. Add a blank line
+		// between consecutive tool calls, but not after the last one.
+		if i > 0 {
+			content.WriteString("\n")
+		}
+		// Render the reasoning trace and thought before the tool line.
+		if te.trace != "" {
+			renderTrace(&content, te.trace, v.showDetail, v.pal, textWidth)
+		}
+		if te.thought != "" {
+			renderThought(&content, te.thought, v.pal, textWidth)
+		}
+		content.WriteString("\n" + wordWrap(toolLine, textWidth))
 	}
 	if v.trace != "" {
 		// Simple trace rendering

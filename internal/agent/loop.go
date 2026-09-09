@@ -757,6 +757,13 @@ func (l *Loop) ClearHistory() {
 	l.scratchpad = l.scratchpad[:0]
 }
 
+// AppendUserHistory adds a user message to the in-memory conversation history.
+// Used by queued-message consumption to fold consumed messages into the turn
+// the model is running, so the end-of-turn checkpoint includes them.
+func (l *Loop) AppendUserHistory(text string) {
+	l.history = append(l.history, llm.Message{Role: "user", Text: text})
+}
+
 // SaveState serialises the loop's current state to JSON.
 func (l *Loop) SaveState() ([]byte, error) {
 	return json.Marshal(ConversationState{

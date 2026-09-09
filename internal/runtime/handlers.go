@@ -292,6 +292,10 @@ func (d *Daemon) userTurn(ctx context.Context, enc *json.Encoder, agentID, text 
 	// the turn completes. The model is notified of queued messages via the
 	// context builder and can consume them with queued_messages_get (docs/queued-messages.md).
 	if r.IsBusy() {
+		if d.store == nil {
+			enc.Encode(protocol.NewAgentErrorMsg(agentID, "session is busy and queued messages are not available")) //nolint:errcheck
+			return
+		}
 		if err := d.store.QueueMessage(agentID, text); err != nil {
 			enc.Encode(protocol.NewAgentErrorMsg(agentID, fmt.Sprintf("failed to queue message: %v", err))) //nolint:errcheck
 			return
