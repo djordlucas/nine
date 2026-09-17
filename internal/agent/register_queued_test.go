@@ -10,8 +10,8 @@ import (
 
 func TestQueuedMessagesGet(t *testing.T) {
 	store := newTestStore(t)
-	store.QueueMessage("q-agent-1", "hello")  //nolint:errcheck // test setup
-	store.QueueMessage("q-agent-1", "world")  //nolint:errcheck // test setup
+	store.QueueMessage("q-agent-1", "hello")
+	store.QueueMessage("q-agent-1", "world")
 
 	var consumed []string
 	d := agent.New()
@@ -41,8 +41,8 @@ func TestQueuedMessagesGet(t *testing.T) {
 
 func TestQueuedMessageMarkConsumed(t *testing.T) {
 	store := newTestStore(t)
-	store.QueueMessage("q-agent-2", "first")  //nolint:errcheck // test setup
-	store.QueueMessage("q-agent-2", "second")  //nolint:errcheck // test setup
+	store.QueueMessage("q-agent-2", "first")
+	store.QueueMessage("q-agent-2", "second")
 
 	var consumed []string
 	d := agent.New()
@@ -135,9 +135,9 @@ func TestQueuedMessagesCount(t *testing.T) {
 
 func TestQueuedMessagesUnconsumedCount(t *testing.T) {
 	store := newTestStore(t)
-	store.QueueMessage("q-agent-5", "one")  //nolint:errcheck // test setup
-	store.QueueMessage("q-agent-5", "two")  //nolint:errcheck // test setup
-	store.MarkConsumed(context.Background(), "q-agent-5", 0) //nolint:errcheck // test setup
+	store.QueueMessage("q-agent-5", "one")
+	store.QueueMessage("q-agent-5", "two")
+	store.MarkConsumed(context.Background(), "q-agent-5", 0)
 
 	d := agent.New()
 	agent.RegisterQueuedTools(d, store,
