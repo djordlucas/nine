@@ -135,6 +135,7 @@ makes sense.
 | **Done** | **Standing tools** | Recurring deterministic work has no cheap home: every way to run something on a cadence — standing agents, goal sessions, session-plan routines — puts an LLM turn in the loop, so watching a file every ten seconds costs thousands of turns a day to be told nothing happened. A sandboxed tool run indefinitely by the daemon, declared in config or generated on request, does that work with no model in the loop and under the capability model a cron script and a native plugin both sit outside of. Designed in `adr/standing-tools.md`. |
 | **Planned** | **Codebase improvements** | Architectural refactoring and performance optimizations to improve maintainability, testability, and runtime efficiency. See [`adr/codebase-improvement.md`](adr/codebase-improvement.md). |
 | **Planned** | **More built-in plugins** | — |
+| **Planned** | **Re-enable CodeQL code scanning** | CodeQL analysis and SARIF upload to the GitHub Security tab require a public repository or a GitHub Advanced Security license, and fail with "Code scanning is not enabled for this repository" while the repo is private. The CodeQL job is removed from the `Security Scan` workflow for now; re-add it (and the `upload-sarif` steps on the Trivy jobs) once the repository is public. |
 ## AI Use / Methodology
 
 This project was made with the author's ideas, experience, and orchestration and built with Claude.
