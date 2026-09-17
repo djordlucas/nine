@@ -47,7 +47,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Trivy filesystem scanner
-        uses: aquasecurity/trivy-action@0.20
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: "."
@@ -89,7 +89,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Run Trivy container scanner
-        uses: aquasecurity/trivy-action@0.20
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: image
           image-ref: nine:scan
