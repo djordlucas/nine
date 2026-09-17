@@ -136,6 +136,7 @@ makes sense.
 | **Planned** | **Codebase improvements** | Architectural refactoring and performance optimizations to improve maintainability, testability, and runtime efficiency. See [`adr/codebase-improvement.md`](adr/codebase-improvement.md). |
 | **Planned** | **More built-in plugins** | — |
 | **Planned** | **Re-enable CodeQL code scanning** | CodeQL analysis and SARIF upload to the GitHub Security tab require a public repository or a GitHub Advanced Security license, and fail with "Code scanning is not enabled for this repository" while the repo is private. The CodeQL job is removed from the `Security Scan` workflow for now; re-add it (and the `upload-sarif` steps on the Trivy jobs) once the repository is public. |
+| **Planned** | **Remediate Trivy findings and re-strictify the gate** | The Trivy filesystem and Docker scans run in CI but are currently report-only (`exit-code: 0`): the `debian:bookworm-slim` runtime base image and some Go modules carry fixed CRITICAL/HIGH CVEs that have not yet been remediated. Re-strictify the scans (`exit-code: 1`) after bumping the base image (`apt-get dist-upgrade`), updating affected dependencies, and/or adding a `.trivyignore` for accepted risk. |
 ## AI Use / Methodology
 
 This project was made with the author's ideas, experience, and orchestration and built with Claude.
