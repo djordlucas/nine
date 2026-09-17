@@ -44,6 +44,7 @@ linters:
         - (*nine/internal/plugin.Manager).Stop
         - (*nine/internal/plugin.Manager).Call
         - (*nine/internal/daemon.Client).Close
+        - (*nine/internal/protocol.Client).Close
 
     gosec:
       excludes:
@@ -62,3 +63,13 @@ linters:
       rules:
         - name: exported
           disabled: true  # don't require doc comments on all exported symbols
+
+  exclusions:
+    rules:
+      # Test setup routinely discards error returns (e.g. seeding a store,
+      # writing fixture responses); they are not actionable and errcheck on
+      # them adds noise without catching real bugs. Real errcheck issues in
+      # test code are rare and handled case-by-case with //nolint:errcheck.
+      - path: _test\.go
+        linters:
+          - errcheck

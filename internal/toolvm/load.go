@@ -187,7 +187,5 @@ func MergeUserTools(targetHost, tempHost *Host) {
 		}
 	}
 	// Append user tool statuses to target host status
-	for _, s := range tempHost.Status() {
-		targetHost.status = append(targetHost.status, s)
-	}
+	targetHost.status = append(targetHost.status, tempHost.Status()...)
 }
