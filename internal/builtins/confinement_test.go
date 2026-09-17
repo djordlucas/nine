@@ -32,7 +32,7 @@ func linkNine(t *testing.T) string {
 			t.Fatalf("open nine: %v", err)
 		}
 		defer src.Close() //nolint:errcheck // test cleanup
-		out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY, 0o755)
+		out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY, 0o755) //nolint:gosec // G302: dst is an executable copy of nine
 		if err != nil {
 			t.Fatalf("create nine copy: %v", err)
 		}
@@ -88,26 +88,20 @@ func serveChild(t *testing.T, name string, budget time.Duration, env ...string) 
 	return bin, buf.String(), waitErr
 }
 
-// waitBudget is how long serveChild gives the child before calling it "still
-// serving". The two cases want opposite budgets, which is why the caller picks.
-//
-// A child that should *refuse* exits in milliseconds, so waiting longer costs
-// nothing on the happy path and only buys tolerance for a slow start — and slow
-// starts happen: the binary is freshly hardlinked, so its first execution pays
-// the code-signing assessment macOS charges for a binary it has not seen, on top
-// of spawn contention when the suite runs in parallel. The old fixed 2s was the
-// flake in TestServeChildRequiresSocket: a child exiting at 2.001s was reported
-// as "kept running", which is the same mistake R-PLUG.14 fixed in the daemon —
-// a fixed wall-clock budget that cannot tell dead from slow.
-//
-// A child that should *keep serving* is confirmed alive by the budget elapsing,
-// so there the budget is pure cost and stays short.
-type waitBudget = time.Duration
-
 const (
-	// expectExit: the child should refuse and exit. Generous.
+	// expectExit: the child should refuse and exit. Generous. A child that
+	// should *refuse* exits in milliseconds, so waiting longer costs nothing on
+	// the happy path and only buys tolerance for a slow start — and slow starts
+	// happen: the binary is freshly hardlinked, so its first execution pays the
+	// code-signing assessment macOS charges for a binary it has not seen, on
+	// top of spawn contention when the suite runs in parallel. The old fixed 2s
+	// was the flake in TestServeChildRequiresSocket: a child exiting at 2.001s
+	// was reported as "kept running", which is the same mistake R-PLUG.14 fixed
+	// in the daemon — a fixed wall-clock budget that cannot tell dead from slow.
 	expectExit = 30 * time.Second
-	// expectServing: the child should still be running. Paid in full every time.
+	// expectServing: the child should still be running. Paid in full every
+	// time — a child that should *keep serving* is confirmed alive by the budget
+	// elapsing, so there the budget is pure cost and stays short.
 	expectServing = 2 * time.Second
 )
 
