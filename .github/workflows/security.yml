@@ -18,11 +18,11 @@ concurrency:
 # public repository or a GitHub Advanced Security license, and fails with
 # "Code scanning is not enabled for this repository" on private repos.
 #
-# Consequently: the CodeQL job is removed, the Trivy upload-sarif steps are
-# continue-on-error, and the Trivy scans themselves run report-only
-# (exit-code: 0) until the base-image/dependency findings they surface are
-# remediated. Re-enable CodeQL, the SARIF uploads, and the Trivy failing gate
-# once the repository is public. Tracked in the README roadmap.
+# Consequently the CodeQL job is removed and the Trivy upload-sarif steps are
+# continue-on-error. The Trivy scans themselves run as a failing gate
+# (exit-code: 1) again now that the base-image/dependency findings they surface
+# have been remediated (PR #155). Re-enable CodeQL and the SARIF uploads once
+# the repository is public. Tracked in the README roadmap.
 
 jobs:
   trivy-fs:
@@ -35,24 +35,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run Trivy filesystem scanner (diagnostic table)
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          scan-type: fs
-          scan-ref: "."
-          severity: CRITICAL,HIGH
-          exit-code: 0
-          ignore-unfixed: true
-          vuln-type: os,library
-          format: table
-
       - name: Run Trivy filesystem scanner
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: "."
           severity: CRITICAL,HIGH
-          exit-code: 0
+          exit-code: 1
           ignore-unfixed: true
           vuln-type: os,library
           format: sarif
@@ -89,24 +78,13 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Run Trivy container scanner (diagnostic table)
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          scan-type: image
-          image-ref: nine:scan
-          severity: CRITICAL,HIGH
-          exit-code: 0
-          ignore-unfixed: true
-          vuln-type: os,library
-          format: table
-
       - name: Run Trivy container scanner
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: image
           image-ref: nine:scan
           severity: CRITICAL,HIGH
-          exit-code: 0
+          exit-code: 1
           ignore-unfixed: true
           vuln-type: os,library
           format: sarif
