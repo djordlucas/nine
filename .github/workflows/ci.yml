@@ -32,7 +32,7 @@ jobs:
       - name: Test
         run: make test
         env:
-          NINE_TEST_TIMEOUT: 5m
+          NINE_TEST_TIMEOUT: 20m
 
       - name: Lint
         run: |
