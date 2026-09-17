@@ -80,7 +80,7 @@ func TestQueuedMessagesEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store.ConversationCreate("q1") //nolint:errcheck // test setup
+	store.ConversationCreate("q1")
 
 	msgs, err := store.GetQueuedMessages("q1")
 	if err != nil {
