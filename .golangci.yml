@@ -44,6 +44,7 @@ linters:
         - (*nine/internal/plugin.Manager).Stop
         - (*nine/internal/plugin.Manager).Call
         - (*nine/internal/daemon.Client).Close
+        - (*nine/internal/protocol.Client).Close
 
     gosec:
       excludes:

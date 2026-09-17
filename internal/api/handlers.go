@@ -1552,8 +1552,18 @@ func (s *Server) handleStreamMessages(w http.ResponseWriter, r *http.Request) {
 	// Write headers and initial status
 	w.WriteHeader(http.StatusOK)
 
-	// Send a connection event
-	fmt.Fprintf(w, "event: connected\ndata: %s\n\n", `{"message": "stream connected", "agent_id": "`+id+`"}`)
+	// Send a connection event. Marshal the payload so a path-supplied id is
+	// escaped rather than interpolated raw into the SSE stream (gosec G705).
+	connPayload, err := json.Marshal(struct {
+		Message string `json:"message"`
+		AgentID string `json:"agent_id"`
+	}{Message: "stream connected", AgentID: id})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "server_error",
+			fmt.Sprintf("marshal connection event: %v", err), nil)
+		return
+	}
+	fmt.Fprintf(w, "event: connected\ndata: %s\n\n", connPayload)
 
 	// Flush the response
 	if f, ok := w.(http.Flusher); ok {
