@@ -41,7 +41,7 @@ func TestProvider_Complete(t *testing.T) {
 		response := `data: {"choices":[{"delta":{"content":"Hello from Mistral"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}
 
 `
-		w.Write([]byte(response))
+		_, _ = w.Write([]byte(response)) //nolint:errcheck // test server
 	}))
 	defer server.Close()
 
@@ -103,7 +103,7 @@ func TestProvider_Complete_WithTools(t *testing.T) {
 		response := `data: {"choices":[{"delta":{"content":""},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":20,"completion_tokens":8,"total_tokens":28}}
 
 `
-		w.Write([]byte(response))
+		_, _ = w.Write([]byte(response)) //nolint:errcheck // test server
 	}))
 	defer server.Close()
 
@@ -130,7 +130,7 @@ func TestProvider_Complete_AuthError(t *testing.T) {
 		if !strings.HasPrefix(auth, "Bearer valid-key") {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"error":{"message":"Invalid API key","type":"invalid_request_error"}}`))
+			_, _ = w.Write([]byte(`{"error":{"message":"Invalid API key","type":"invalid_request_error"}}`)) //nolint:errcheck // test server
 			return
 		}
 		w.WriteHeader(http.StatusOK)
