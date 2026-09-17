@@ -36,7 +36,7 @@ jobs:
 
       - name: Lint
         run: |
-          sudo apt-get update && sudo apt-get install -y --no-install-recommends golangci-lint
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
           make lint
 
   docker:
