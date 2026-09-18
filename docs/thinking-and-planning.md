@@ -1,9 +1,15 @@
 # Thinking and planning
 
-Two separate questions, often confused: **does the model reason before it
-acts**, and **do you get to see and approve that reasoning**. Nine answers them
-with different settings, because the useful combinations are not the obvious
-ones — you can plan without watching, and watch without approving.
+Three independent settings, often confused with each other:
+
+| Setting | Section | Controls |
+|---------|---------|----------|
+| `plan_mode` | `[planning]` | Whether the model reasons before acting |
+| `thinking` | `[llm]` | Whether that reasoning is streamed to the TUI |
+| `plan_approval` | `[planning]` | Whether you are asked to approve a plan before it runs |
+
+They combine freely: you can plan without watching, and watch without
+approving.
 
 ## Reasoning before acting
 
@@ -35,10 +41,9 @@ This requires a model that advertises the capability, and currently works with
 Ollama. Turning it off asks the model to skip reasoning aloud entirely, which
 is a latency choice rather than a display one.
 
-Two things follow that are easy to get backwards. Watching the trace does not
-mean the model is planning more — that is `plan_mode`. And turning the trace
-off does not disable planning, though it does remove the only direct evidence
-you had that planning happened.
+Watching the trace does not make the model plan more; that is `plan_mode`.
+Turning the trace off does not disable planning, but it removes the only direct
+evidence that planning happened.
 
 ## Approving a plan
 
@@ -60,6 +65,15 @@ at the call you can only permit or refuse the step.
 
 Approval is interactive by nature, so it applies to TUI conversations. A
 background session has nobody to ask.
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Thinking needs model support | The live trace requires a model that advertises the capability, and currently works with Ollama. See [model compatibility](model-compatibility.md). |
+| Approval is interactive only | `plan_approval` applies to TUI conversations. A background session has nobody to ask, so a plan there runs unapproved whatever the setting. |
+| Approval redirects, it does not edit | At the planning stage you can redirect the approach or refuse it. There is no way to edit the plan in place and continue. |
+| Reasoning cost is per call | `always` pays the reasoning cost on every call in a turn. The benefit lands almost entirely on the first, which is why `plan-only` is the default. |
 
 ## Related
 

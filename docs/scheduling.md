@@ -19,7 +19,7 @@ exclusive**:
 | Cron | `schedule` | Wake at the next time matching a 5-field cron expression. |
 
 A standing agent may also carry a **condition** trigger, which is not a clock —
-see [below](#conditions-waking-on-a-predicate-rather-than-a-clock).
+see [Condition triggers](#condition-triggers).
 
 ## Cron expressions
 
@@ -60,7 +60,7 @@ session's active idle-capable routines; `handleIdle` fires every routine that is
 either a positive interval or a valid cron as idle-capable, so the daemon revives
 it on restart.
 
-## Conditions: waking on a predicate rather than a clock
+## Condition triggers
 
 A clock is the wrong shape for "tell me when X happens". At a useful polling rate
 most wakes find nothing, and each one costs a full LLM turn to be told so — a
@@ -81,7 +81,7 @@ when        = { tool = "cve_scan", interval = "10s", args = { manifest = "/srv/a
 The predicate follows the standing-tool convention exactly: **return nothing when
 there is nothing to report**, and a non-empty result is the finding.
 
-A few properties worth knowing:
+Properties:
 
 - **It composes with a clock.** An agent may have `interval`/`schedule` *and* a
   `when`, giving it a periodic sweep plus something that wakes it sooner.
@@ -100,13 +100,14 @@ it leaves a note and a human decides
 adds is an operator writing that link in their own configuration — the human is
 in the loop when the connection is made, rather than each time it fires.
 
-## Semantics and limits (v1)
+## Limits
 
-- **No backfill.** `lastFire` resets to the worker's start time on daemon
-  restart, so a cron occurrence missed while the daemon was down is not
-  replayed — the session simply waits for the next occurrence.
-- **Minute granularity.** Cron resolves to the minute; the timer may fire a few
-  seconds late, which is fine for standing-agent cadences.
-- **One trigger per routine.** A standing agent declares `interval` **xor**
-  `schedule` in `nine.toml`; setting both is a config error and the agent is
-  skipped with a warning.
+| Limit | Detail |
+|-------|--------|
+| No backfill | `lastFire` resets to the worker's start time on daemon restart, so a cron occurrence missed while the daemon was down is not replayed. The session waits for the next occurrence. |
+| Minute granularity | Cron resolves to the minute and the timer may fire a few seconds late. Adequate for standing-agent cadences, not for anything finer. |
+| One clock trigger per routine | A standing agent declares `interval` **xor** `schedule`. Setting both is a config error and the agent is skipped with a warning. |
+| No cron names | `JAN`, `MON` and friends are not parsed. Numeric fields only. |
+| Local timezone only | Schedules evaluate in the daemon's local timezone. There is no per-agent timezone. |
+| Wakes are lossy by design | If the agent is mid-turn or a wake is already queued, a new one drops. A predicate firing twice while the agent reads the first finding should make it look, not run two turns. |
+| Conditions need the sandboxed-tool tier | A condition trigger is a standing tool, so it requires `[tools] enabled = true`. |
