@@ -1,4 +1,4 @@
-# Self-Documentation
+# Self-documentation
 
 Nine ships its own manual inside its binary and can retrieve it on demand. When
 you ask how Nine works, it searches the `docs/` and `spec/` trees compiled into

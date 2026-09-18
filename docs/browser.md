@@ -1,4 +1,4 @@
-# Browser Automation
+# Browser automation
 
 Nine drives a browser through **MCP**. There is no browser plugin: you declare
 [Playwright's MCP server][pw-mcp] in `nine.toml` as an `[[mcp.server]]`, and its
