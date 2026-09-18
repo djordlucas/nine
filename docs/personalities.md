@@ -722,3 +722,13 @@ spec:
 ## See also
 
 - [ADR: Personality Pattern](../adr/personality-pattern.md) – The design document for this feature
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| A personality is configuration, not a feature | It is a `nine.toml`, a set of skills, and optionally some sandboxed tools, packaged in an image. Nothing in the daemon knows what a personality is. |
+| Each needs its own image and container | There is no way to run two personalities in one daemon. They are separate deployments with separate databases. |
+| Self-model bootstrap is best-effort | The bootstrap seeds an initial self-model; what the instance believes about itself after that is whatever reflection wrote. |
+| Skills are copied, not shared | Two personalities that need the same skill each carry their own copy. There is no shared skill registry. |
+| Still the design under `adr/` | The pattern is documented and usable, but it remains a convention rather than a supported product surface — see [`adr/personality-pattern.md`](../adr/personality-pattern.md). |

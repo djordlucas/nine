@@ -1092,3 +1092,18 @@ Go toolchain, no git, and no source tree.
     single namespace; later registrations are skipped with a reported reason,
     never allowed to shadow an earlier one.
 ```
+
+---
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Single host, single daemon | All state lives in one daemon process and one SQLite file. There is no clustering, no replication, and no remote client — the socket is local. |
+| One SQLite writer | Every durable write goes through one file, so concurrent writes serialize. |
+| Turns are sequential per session | Each worker's inbox holds one turn. Concurrency is across sessions, not within one. |
+| No CPU metering in the sandbox | wazero has no fuel metering, so a wall-clock deadline is the only bound on a sandboxed tool call. |
+| Token budgeting is estimated | Context accounting uses a 4-characters-per-token approximation calibrated against one tokenizer. |
+| Trimming, not compaction | Over-budget history is dropped from the front rather than summarized. |
+| One LLM provider at a time | No routing across models within a deployment. |
+| Two supervisor events unhandled | `EventGoalStalls` and `EventGapReported` are delivered but not yet acted on. |
