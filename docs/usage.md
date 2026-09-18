@@ -591,3 +591,15 @@ NINE_LOG_FORMAT=json NINE_LOG_LEVEL=info ./nine daemon
 - **Parallel work**: Nine can run multiple background sessions and sub-agents concurrently. The LLM queue prioritizes active (user-facing) conversations over background ones.
 - **Stuck agent**: If an agent appears to loop without making progress, the supervisor detects the stall and intervenes automatically. You can also ask: `./nine "Are any agents stalled?"`.
 - **Reset**: To start a completely fresh conversation (no history), restart the daemon: `pkill nine && ./nine "Hello"`.
+
+---
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Local clients only | The CLI and TUI reach the daemon over a Unix socket on the same host. |
+| No conversation reset command | Starting genuinely fresh means restarting the daemon. `/new` starts a new conversation but leaves the daemon's other state in place. |
+| TUI views are read-only | Slash commands surface goals, workflows, tools, skills, memory and the context breakdown, but do not let you edit them. |
+| The journal has no TUI view | `nine trace`, `nine replay` and `nine context` are CLI-only; nothing surfaces them inside the TUI. |
+| Config changes need a restart | Editing `nine.toml` takes effect on daemon restart. |

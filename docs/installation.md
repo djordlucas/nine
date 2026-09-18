@@ -230,3 +230,13 @@ LLM queue: 0 inflight, 0 waiting  (max 1 concurrent)
 Agents:   1 active
 Plugins:  mcp, shell
 ```
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| One container, one host | The deployment unit is a single container holding the daemon and its SQLite file. There is no multi-node story and no second service to orchestrate. |
+| Config changes need a restart | Nine cannot rewrite `nine.toml` at runtime. Edit the file and restart the daemon. |
+| Environment overrides are a fixed set | Only the documented `NINE_*` variables override the file. Whether the sandboxed-tool subsystem runs at all stays in `nine.toml`, which no environment variable can flip on. |
+| No browser in either image | The dev image carries Node for `npx` MCP servers; the runtime image carries neither Node nor a browser. |
+| Rebuilding the QuickJS blob needs wasi-sdk | Ordinary builds use the committed `qjs.wasm` artifact and its recorded SHA-256. Only `make quickjs-wasm` wants a wasi-sdk. |

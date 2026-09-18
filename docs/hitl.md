@@ -209,7 +209,7 @@ Steps 1–7 deliver a working `ask_human`. Step 8 adds automatic gates on top.
 
 ---
 
-## Limitations
+## Limits
 
 - **Non-interactive sessions cannot ask** — sub-agents and background sessions that need human input must surface it to their parent conversation via their return value or a notification; they cannot call `ask_human` directly.
 - **One pending question per session** — `HumanRequestGetPending` returns at most one row. Concurrent `ask_human` calls within the same turn are serialised (first one blocks the loop before the second is issued).
