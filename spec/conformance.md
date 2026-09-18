@@ -4,11 +4,12 @@ This is the acceptance checklist: every numbered requirement from a **`Built`**
 contract in [`contracts/`](contracts/), mapped to an **observable** test. An
 implementation "is Nine" when it passes every row below.
 
-One contract is **not** `Built` and so has no rows here: [`agent-policy.md`](contracts/agent-policy.md)
-is `Planned`, and a requirement with no implementation has no observable check. That is
-the only permitted reason for a requirement to be absent — if a `Built` contract's
-requirement has no row, the omission is a defect in this file, not a statement about the
-requirement.
+Two contracts are **not** `Built` and so have no rows here:
+[`agent-policy.md`](contracts/agent-policy.md) is `Planned` and
+[`api.md`](contracts/api.md) is `Design`. A requirement with no implementation has no
+observable check. That is the only permitted reason for a requirement to be absent — if a
+`Built` contract's requirement has no row, the omission is a defect in this file, not a
+statement about the requirement.
 
 How to use this file:
 
