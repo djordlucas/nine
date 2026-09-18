@@ -73,7 +73,7 @@ changed, re-record with `make eval-generate` and note it.
 
 ## 5. Branch, commit, PR
 
-Per `CLAUDE.md`, never commit to `main`. If not already on a feature branch,
+Per `AGENT.md`, never commit to `main`. If not already on a feature branch,
 `git checkout -b chore/sync-evals-<summary>` (it carries uncommitted work over),
 then commit, `git push -u origin HEAD`, and `gh pr create --fill` — only as far as
 the user asked.
