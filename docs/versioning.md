@@ -10,8 +10,8 @@ compatibility contracts that bump *only* when a real break happens.
 | **Release version** | "which Nine is this" (user-facing) | SemVer, git-tag driven | git tag `vX.Y.Z` → injected at build |
 | **Plugin protocol** | daemon ↔ native plugin wire compat | single integer, bump on break | `plugin.ProtocolVersion` |
 | **Sandboxed tool ABI** | daemon ↔ wasm guest compat | single integer, bump on break | `toolvm.ABIVersion` |
-| **Config schema** | `nine.toml` shape | integer `schema_version` field (planned) | config struct + migrate-on-load |
-| **Memory DB schema** | SQLite schema | idempotent `CREATE TABLE IF NOT EXISTS` on open; `PRAGMA user_version` records a generation, but there is no migration runner yet (planned) | `internal/memory.initSchema` |
+| **Config schema** | `nine.toml` shape | not implemented — see [Limits](#limits) | — |
+| **Memory DB schema** | SQLite schema | idempotent `CREATE TABLE IF NOT EXISTS` on open; no migration runner — see [Limits](#limits) | `internal/memory.initSchema` |
 
 ## 1. Release version
 
@@ -145,19 +145,12 @@ How it works:
   reports it — rather than instantiating the module and letting the mismatch
   surface as a mystery trap on first call.
 
-## 3. Config schema version (planned)
+## Limits
 
-When `nine.toml` first changes shape incompatibly, add a `schema_version`
-integer to the config and migrate-on-load so an upgraded daemon can read an
-older user's file instead of crashing. Not yet implemented — no incompatible
-config change has landed yet, but now that Nine is past `1.0` the migration path
-must be in place *before* the first one does.
+Neither remaining versioning axis is implemented. Both are additive work that
+must land before the change that needs them, not after.
 
-## 4. Memory DB schema (planned)
-
-The SQLite schema is currently applied idempotently on `Open` via
-`initSchema` (`CREATE TABLE IF NOT EXISTS`, plus `CREATE EXTENSION IF NOT EXISTS
-vector`) — additive changes are safe, but there is **no migration table or
-version counter**. When the schema first needs a backward-incompatible change,
-add a migrations table to `memory` with sequential migration numbers
-applied on open. Not yet implemented — same reasoning as the config schema.
+| Axis | State today | What is needed |
+|------|-------------|----------------|
+| Config schema | `nine.toml` carries no `schema_version`. An upgraded daemon reading an older file relies on the config shape not having changed incompatibly. | A `schema_version` integer plus migrate-on-load, in place *before* the first incompatible config change. |
+| Memory DB schema | `initSchema` applies the schema idempotently on `Open` (`CREATE TABLE IF NOT EXISTS`). Additive changes are safe. `PRAGMA user_version` records a generation, but there is no migration table and no migration runner. | A migrations table in `memory` with sequential numbers applied on open, before the first backward-incompatible schema change. |

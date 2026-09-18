@@ -132,3 +132,12 @@ The wire protocol and client live in `protocol`:
 |------|---------------|
 | `protocol.go` | Shared types: `Msg`, `ProgressEvent`, `StatusInfo` |
 | `client.go` | Client-side dial, `EnsureDaemon`, typed request methods |
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Local clients only | The daemon listens on a Unix socket, so every client runs on the same host. There is no authentication and no transport security. A REST API is on the roadmap and lands with the hardening work. |
+| One turn at a time per conversation | Each worker's inbox has capacity 1, so turns are strictly sequential within a conversation. Concurrency is across conversations, not within one. |
+| Two supervisor events are reserved | `EventGoalStalls` and `EventGapReported` are delivered but not yet acted on. |
+| No graceful client resume | A client that disconnects mid-turn loses the progress stream. The turn completes and is checkpointed, but the streamed output is not replayed on reattach. |
