@@ -79,7 +79,7 @@ nine api stop                    Stop the API server
 
 ---
 
-## TUI Slash Commands
+## TUI slash commands
 
 When running the interactive TUI (`nine` with no arguments), you can type slash commands directly in the input box.
 
@@ -122,7 +122,7 @@ regardless of the session's plan mode.
 
 ---
 
-## Sending Messages
+## Sending messages
 
 The simplest use is passing a message directly:
 
@@ -132,7 +132,7 @@ The simplest use is passing a message directly:
 
 Nine starts the daemon automatically if it isn't already running, sends the message, waits for the response, and prints it. The daemon stays running in the background for subsequent calls.
 
-### Continuing a Conversation
+### Continuing a conversation
 
 Each call to `nine <message>` continues the same conversation thread. The agent remembers prior messages in the session.
 
@@ -142,7 +142,7 @@ Each call to `nine <message>` continues the same conversation thread. The agent 
 ./nine "Store that count in memory under the key 'loopback_count'"
 ```
 
-### Attaching to a Specific Agent
+### Attaching to a specific agent
 
 If you want to connect to a different session (e.g., a background goal-pursue session):
 
@@ -155,7 +155,7 @@ If you want to connect to a different session (e.g., a background goal-pursue se
 
 ---
 
-## Command Reference
+## Command reference
 
 ### `nine daemon`
 
@@ -445,9 +445,9 @@ so `./nine spec wire-protocol | less` and `./nine docs usage > usage.txt` both w
 
 ---
 
-## Use Cases with Examples
+## Use cases with examples
 
-### 1. File Operations
+### 1. File operations
 
 ```bash
 ./nine "Read /etc/hosts and tell me how many entries are in the 127.0.0.1 block"
@@ -461,7 +461,7 @@ so `./nine spec wire-protocol | less` and `./nine docs usage > usage.txt` both w
 ./nine "Find all .log files under /var/log modified in the last 24 hours and list their sizes"
 ```
 
-### 2. Shell Commands
+### 2. Shell commands
 
 ```bash
 ./nine "Run 'df -h' and tell me which partition is most full"
@@ -475,7 +475,7 @@ so `./nine spec wire-protocol | less` and `./nine docs usage > usage.txt` both w
 ./nine "Run 'git log --oneline -20' in /path/to/repo and summarize what changed"
 ```
 
-### 3. Web Research
+### 3. Web research
 
 Out of the box, web research goes through `web_search` and `web_page_read` — plain
 HTTP, no JavaScript.
@@ -499,7 +499,7 @@ For pages that need JavaScript, a login, or interaction, add a real browser by d
 Playwright's MCP server in `nine.toml` — see [Browser Automation](browser.md). Nine ships
 no browser of its own.
 
-### 4. Memory and State
+### 4. Memory and state
 
 ```bash
 ./nine "Remember that my production database host is db.prod.example.com"
@@ -515,7 +515,7 @@ no browser of its own.
 ./nine "List everything you have in memory"
 ```
 
-### 5. Background Goals
+### 5. Background goals
 
 Ask Nine to work on something open-ended in the background — Nine records a goal, spawns a background pursue session for it, and returns immediately:
 
@@ -532,7 +532,7 @@ Check in later:
 
 Background agents continue running even when you're not connected. The next time you send a message, any pending notifications are prepended to the response.
 
-### 6. Multi-Step Workflows
+### 6. Multi-Step workflows
 
 Nine handles complex, multi-step tasks without needing step-by-step prompting:
 
@@ -565,7 +565,7 @@ configuration at runtime — see [Self-Improvement & Boundaries](self-modificati
 
 ---
 
-## Output and Logging
+## Output and logging
 
 Nine writes the agent's final response to stdout. All internal logs go to stderr.
 
