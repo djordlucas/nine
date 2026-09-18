@@ -11,8 +11,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // repoRoot is this package's path relative to the repository root.
@@ -151,24 +154,116 @@ func TestWorkflowActionsPinnedBySHA(t *testing.T) {
 	}
 }
 
-// TestReleaseWorkflowScansBeforePushing asserts the publish job depends on the
-// verify job. A scan that runs after the push has already shipped the artifact
-// it was supposed to gate.
-func TestReleaseWorkflowScansBeforePushing(t *testing.T) {
+// releaseWorkflow is the part of the release workflow these tests reason about.
+type releaseWorkflow struct {
+	Jobs map[string]struct {
+		Needs    any `yaml:"needs"` // a string or a list, per Actions
+		Strategy struct {
+			Matrix struct {
+				Platform []string `yaml:"platform"`
+			} `yaml:"matrix"`
+		} `yaml:"strategy"`
+		Steps []map[string]any `yaml:"steps"`
+	} `yaml:"jobs"`
+}
+
+func loadReleaseWorkflow(t *testing.T) releaseWorkflow {
+	t.Helper()
+	var wf releaseWorkflow
+	if err := yaml.Unmarshal([]byte(readRepoFile(t, ".github/workflows/release-image.yml")), &wf); err != nil {
+		t.Fatalf("parse release-image.yml: %v", err)
+	}
+	return wf
+}
+
+// needsOf normalises the `needs` key, which Actions accepts as either a single
+// job name or a list of them.
+func needsOf(v any) []string {
+	switch n := v.(type) {
+	case string:
+		return []string{n}
+	case []any:
+		out := make([]string, 0, len(n))
+		for _, e := range n {
+			if s, ok := e.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// TestPublishDependsOnVerify asserts the publish job cannot run unless the
+// scanning job passed. A scan that runs after the push has already shipped the
+// artifact it was supposed to gate.
+func TestPublishDependsOnVerify(t *testing.T) {
+	wf := loadReleaseWorkflow(t)
+
+	publish, ok := wf.Jobs["publish"]
+	if !ok {
+		t.Fatal("no publish job in release-image.yml")
+	}
+	needs := needsOf(publish.Needs)
+	if !slices.Contains(needs, "verify") {
+		t.Errorf("publish needs %v, which does not include verify, so it can push an unscanned image", needs)
+	}
+}
+
+// TestEveryPublishedPlatformIsScanned asserts the gate covers each architecture
+// that gets pushed. The Debian layers differ per arch, so scanning one and
+// publishing two leaves the other ungated.
+func TestEveryPublishedPlatformIsScanned(t *testing.T) {
+	wf := loadReleaseWorkflow(t)
+
+	scanned := wf.Jobs["verify"].Strategy.Matrix.Platform
+	if len(scanned) == 0 {
+		t.Fatal("the verify job declares no platform matrix")
+	}
+
+	// The platforms the publish job actually pushes. Only the build step counts:
+	// the QEMU setup step carries a `platforms` key too, naming what it emulates.
+	var pushed []string
+	for _, step := range wf.Jobs["publish"].Steps {
+		uses, _ := step["uses"].(string)
+		if !strings.Contains(uses, "docker/build-push-action") {
+			continue
+		}
+		with, ok := step["with"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if plat, ok := with["platforms"].(string); ok {
+			for _, p := range strings.Split(plat, ",") {
+				pushed = append(pushed, strings.TrimSpace(p))
+			}
+		}
+	}
+	if len(pushed) == 0 {
+		t.Fatal("no platforms found on the publish job's build step")
+	}
+
+	for _, p := range pushed {
+		if !slices.Contains(scanned, p) {
+			t.Errorf("platform %s is published but not scanned (verify scans %v)", p, scanned)
+		}
+	}
+}
+
+// TestReleaseGateIsAGate asserts the release pipeline keeps the properties that
+// make a published image trustworthy: a failing scan, a signature, an SBOM.
+func TestReleaseGateIsAGate(t *testing.T) {
 	wf := readRepoFile(t, ".github/workflows/release-image.yml")
 
-	if !strings.Contains(wf, "needs: verify") {
-		t.Error("the publish job does not declare `needs: verify`, so it can push an unscanned image")
-	}
-	// exit-code 1 is what turns the scan from a report into a gate.
-	if !strings.Contains(wf, "exit-code: 1") {
-		t.Error("no failing Trivy gate in the release workflow")
-	}
-	if !strings.Contains(wf, "cosign sign") {
-		t.Error("the release workflow does not sign the published image")
-	}
-	if !strings.Contains(wf, "sbom: true") {
-		t.Error("the release workflow does not attach an SBOM")
+	for _, check := range []struct{ needle, why string }{
+		{"exit-code: 1", "the Trivy scan does not fail the job, so it reports rather than gates"},
+		{"cosign sign", "the release does not sign the published image"},
+		{"sbom: true", "the release does not attach an SBOM"},
+		{"provenance: mode=max", "the release does not attach build provenance"},
+	} {
+		if !strings.Contains(wf, check.needle) {
+			t.Error(check.why)
+		}
 	}
 }
 
