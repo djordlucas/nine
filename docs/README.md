@@ -1,107 +1,108 @@
-# Nine — User Guide
+# Nine user guide
 
-Nine is a self-contained AI agent daemon. It runs a persistent background process that handles tasks, manages memory, runs background goals and workflows, and improves itself by writing skills. It deliberately does not modify its own code or configuration at runtime — its executable shape is fixed.
+Nine is a self-contained AI agent daemon. It runs a persistent background
+process that handles tasks, manages memory, runs background goals and
+workflows, and improves itself by writing skills. It does not modify its own
+code or configuration at runtime — its executable shape is fixed.
 
-## Table of Contents
+New to Nine: read [Installation](installation.md), then [CLI usage](usage.md),
+then [Configuration](configuration.md). Everything else is reference.
 
-These are ordered for a first-time reader: get Nine running and learn the CLI, then
-work through the architecture from the outside in, then read about the individual
-features built on top of that architecture.
+## Quick start
 
-### Getting Started
-
-1. [Installation](installation.md) — Build from source, Docker, first run (the container's
-   design rationale is recorded in [adr/](../adr/single-container.md))
-2. [CLI Usage](usage.md) — Commands, interactive TUI, slash commands, background tasks, examples
-3. [Configuration](configuration.md) — `nine.toml` reference, LLM providers, environment variables
-
-### Architecture
-
-4. [Architecture](architecture.md) — Topology, concurrency, the turn lifecycle, boot sequence, invariants
-5. [Daemon Architecture](daemon.md) — Unix socket server, message dispatch, conversation lifecycle
-6. [HTTP API](api.md) — REST endpoints, OpenAPI/Swagger spec, authentication, the `nine api` command
-7. [Runner Architecture](runner.md) — Per-conversation agent loop wrapper, stall detection, checkpointing
-8. [Agent Loop](agent-loop.md) — The ReAct (reason → act → observe) implementation
-9. [Context Builder](context-builder.md) — Token budgeting, message trimming, and tool relevance ranking
-10. [Session Plans & Routines](session-plans.md) — Per-session routines, idle scheduling, self-reflection, and background goal pursuit
-11. [Roles](roles.md) — Worker kinds as data: the persona, the enforced tool allowlist, and the roles Nine ships
-12. [The event journal](event-journal.md) — The append-only record of every model exchange and tool call, and subscribing to it
-13. [How tools reach a turn](tool-selection.md) — Ranking, mid-turn lookup, and why a tool's description is its retrieval surface
-14. [Goal sessions](goal-sessions.md) — The background session paired with each top-level goal: its cycle, and the bounds on it
-15. [Thinking & planning](thinking-and-planning.md) — Reasoning before acting, watching it reason, and approving a plan
-
-### Features
-
-16. [Plugins](plugins.md) — Built-in plugins, writing custom plugins, the plugin lifecycle
-17. [The plugin transport](plugins-http-transport.md) — HTTP over a Unix socket: why, the contract, and how concurrency is bounded
-18. [Browser Automation](browser.md) — Driving a browser via Playwright's MCP server; the worked MCP example
-19. [Writing sandboxed tools](writing-sandboxed-tools.md) — Add a JS or wasm tool with two files, run in a capability-scoped sandbox
-20. [Sandboxed tools — design](sandboxed-tools.md) — The wasm tool host: why it exists, the capability model, and what is deliberately unbuilt
-21. [Large tool output](tool-output.md) — Caps, spilling an oversized result to the store, reading it back, and passing a payload by reference
-22. [Skills](skills.md) — What skills are, creating and managing skills
-23. [Self-Documentation](self-documentation.md) — How Nine retrieves its own bundled docs and spec to answer questions about itself
-24. [Workflows](workflows.md) — Persistent multi-step execution plans for sub-agent delegation
-25. [Pre-defined agents](predefined-agents.md) — Standing agents declared in config: declaring one, and who owns what
-26. [Scheduling](scheduling.md) — Interval and cron wake triggers for standing agents
-27. [Human-in-the-Loop](hitl.md) — `ask_human` and approval gates for interactive sessions
-28. [Self-Improvement & Boundaries](self-modification.md) — Skill writing, and why Nine does not modify itself
-
-### Reference
-
-29. [Glossary](glossary.md) — All key concepts and features in one place, grouped by topic
-30. [Versioning](versioning.md) — Release, plugin-protocol, tool-ABI, config, and schema versioning
-31. [Evals](evals.md) — Test plan for replays + live models; the case schema and feature map used to generate test cases
-32. [Model compatibility](model-compatibility.md) — Which models Nine has been run against, how they did, and on what hardware
-
-## Quick Start
-
-### Docker (recommended)
-
-The daemon runs as one container — no docker-compose:
+The daemon runs as one container; there is no docker-compose.
 
 ```bash
-# 1. Build + run — the daemon (edit nine.toml for your LLM)
-make up
-
-# 2. Open an interactive session
-make session
+make up        # build and run the daemon
+make session   # open an interactive TUI session
 ```
 
-### Native (local dev)
+Native build:
 
 ```bash
-# 1. Build
 make all
-
-# 2. Configure your LLM provider in nine.toml
-
-# 3. Run
 ./dist/nine "What files are in the current directory?"
 ```
 
-Nine auto-starts the daemon on first use. Subsequent calls share the same running daemon and conversation history.
+Nine auto-starts the daemon on first use. Later calls share the same running
+daemon and conversation history. Configure your LLM provider in `nine.toml`
+before the first run.
 
-## Key Concepts
+## Getting started
 
-| Concept | Description |
-|---------|-------------|
-| **Daemon** | Long-running background process, manages agents, holds plugin state |
-| **Agent** | A conversation thread running the ReAct loop (reason → act → observe) |
-| **Plugin** | Standalone binary exposing tools via JSON-RPC; fixed at build time, started at boot |
-| **Skill** | Markdown how-to note describing a reusable capability, semantically retrieved into context |
-| **Supervisor** | A special agent that monitors others for stalls and capability gaps (durable, journal-backed) |
-| **Checkpoint** | Serialized agent state (messages + scratchpad) persisted to the `conversations` table |
+| Document | Covers |
+|----------|--------|
+| [Installation](installation.md) | Build from source, Docker, first run |
+| [CLI usage](usage.md) | Commands, interactive TUI, slash commands, background tasks |
+| [Configuration](configuration.md) | `nine.toml` reference, LLM providers, environment variables |
 
-## TUI Slash Commands
+## Architecture
 
-The interactive TUI (`nine` with no arguments) supports slash commands. Type `/help` to see the full list. Common ones:
+Ordered outside in.
 
-| Command | Description |
-|---------|-------------|
+| Document | Covers |
+|----------|--------|
+| [Architecture](architecture.md) | Topology, concurrency, turn lifecycle, boot sequence, invariants |
+| [Daemon](daemon.md) | Unix socket server, message dispatch, conversation lifecycle |
+| [HTTP API](api.md) | REST endpoints, OpenAPI spec, authentication, `nine api` |
+| [AgentWorker](runner.md) | Per-conversation loop wrapper, stall detection, checkpointing |
+| [Agent loop](agent-loop.md) | The ReAct implementation: reason, act, observe |
+| [Context builder](context-builder.md) | Token budgeting, message trimming, tool relevance ranking |
+| [Session plans and routines](session-plans.md) | Per-session routines, idle scheduling, self-reflection, goal pursuit |
+| [Roles](roles.md) | Worker kinds as data: persona and enforced tool allowlist |
+| [Event journal](event-journal.md) | Append-only record of every model exchange and tool call; subscribing to it |
+| [Tool selection](tool-selection.md) | Pre-turn ranking and mid-turn search over the tool catalog |
+| [Goal sessions](goal-sessions.md) | The background session paired with each top-level goal |
+| [Thinking and planning](thinking-and-planning.md) | Reasoning before acting, and plan approval |
+
+## Features
+
+| Document | Covers |
+|----------|--------|
+| [Plugins](plugins.md) | Built-in plugins, writing custom plugins, the plugin lifecycle |
+| [Plugin transport](plugins-http-transport.md) | HTTP over a Unix socket: the contract and concurrency bounds |
+| [Plugin capabilities](plugin-capabilities.md) | Per-plugin settings, cache directories, and long-running jobs |
+| [Browser automation](browser.md) | Driving a browser via Playwright's MCP server |
+| [Writing sandboxed tools](writing-sandboxed-tools.md) | Adding a JS or wasm tool with two files |
+| [Sandboxed tools](sandboxed-tools.md) | The wasm tool host and its capability model |
+| [Large tool output](tool-output.md) | Caps, spilling to the store, reading back by reference |
+| [Skills](skills.md) | What skills are; creating and managing them |
+| [Self-documentation](self-documentation.md) | How Nine retrieves its own bundled docs and spec |
+| [Workflows](workflows.md) | Persistent multi-step execution plans for sub-agent delegation |
+| [Pre-defined agents](predefined-agents.md) | Standing agents declared in config |
+| [Scheduling](scheduling.md) | Interval and cron wake triggers for standing agents |
+| [Human-in-the-loop](hitl.md) | `ask_human` and approval gates for interactive sessions |
+| [Self-improvement and boundaries](self-modification.md) | Skill writing, and what Nine will not change |
+| [Personalities](personalities.md) | Packaging a configured Nine as a specialized agent |
+| [Queued messages](queued-messages.md) | Sending input while a session is busy |
+
+## Reference
+
+| Document | Covers |
+|----------|--------|
+| [Glossary](glossary.md) | Every concept in one place, grouped by topic |
+| [Versioning](versioning.md) | Release, plugin-protocol, tool-ABI, config, and schema versioning |
+| [Evals](evals.md) | Replay and live-model tracks, the case schema, the feature map |
+| [Model compatibility](model-compatibility.md) | Models Nine has run against, results, hardware |
+
+## TUI slash commands
+
+`nine` with no arguments opens the TUI. `/help` lists every command. Common ones:
+
+| Command | Shows |
+|---------|-------|
 | `/status` | Daemon uptime, loaded plugins, active agents |
-| `/tools` | All available tools grouped by plugin |
-| `/skills` | List skills |
-| `/memory` | Browse the KV memory store |
-| `/config` | Show running configuration |
-| `/new` | Start a fresh conversation |
-| `/clear` | Clear the screen |
+| `/tools` | All available tools, grouped by plugin |
+| `/skills` | Registered skills |
+| `/memory` | The KV memory store |
+| `/config` | Running configuration |
+| `/new` | Starts a fresh conversation |
+| `/clear` | Clears the screen |
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| No search across documents | `nine docs <topic>` renders one document. The agent's `doc_search` tool searches the set; a reader on the command line does not have an equivalent. |
+| Index maintained by hand | A new document under `docs/` does not appear here automatically. |
+| Design rationale is elsewhere | These documents describe present behavior only. Why a design was chosen lives in [`adr/`](../adr/README.md), which does not ship in the binary. |

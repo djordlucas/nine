@@ -1,4 +1,4 @@
-# Sandboxed tools — a Wasm tool host with conferred capabilities
+# Sandboxed tools
 
 - **Status:** **Stages 1–6 built** (rev 1) — the design is fully implemented. This
   note remains the design rationale; the normative contract for what exists is

@@ -1,4 +1,4 @@
-# Context Builder Architecture
+# Context builder
 
 The context builder (`ninectx.Builder`) assembles one `llm.Request` per inner-loop iteration, fitting conversation state into a fixed token budget using priority-based trimming and embedding-based tool ranking.
 

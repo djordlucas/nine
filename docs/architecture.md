@@ -1,4 +1,4 @@
-# Nine — Architecture
+# Architecture
 
 This document walks the actual runtime: the process topology, the goroutine model,
 the precise lifecycle of a turn, how state is assembled and budgeted, and how every

@@ -1,4 +1,4 @@
-# Agent Loop Architecture
+# Agent loop
 
 The agent loop is a stateful ReAct (Reason + Act) implementation. Each `Loop` holds conversation history and a scratchpad, and iterates between LLM calls and tool dispatches until the model produces a final answer with no tool calls.
 
