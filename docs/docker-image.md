@@ -5,7 +5,7 @@ way to run Nine without a source checkout.
 
 ```bash
 docker run -d --name nine \
-  -p 8080:8080 \
+  -p 127.0.0.1:8080:8080 \
   --add-host host.docker.internal:host-gateway \
   -v nine-data:/data \
   ghcr.io/djordlucas/nine:latest
@@ -60,7 +60,7 @@ right one. arm64 covers Apple Silicon and Graviton.
 | Daemon | `nine daemon`, as uid 1000 (`nine`) |
 | API | `nine api serve --host 0.0.0.0 --port 8080`, as uid 1000 |
 | State | `/data` — the SQLite database and the workspace |
-| Health | `nine status` every 30s, after a 20s start period |
+| Health | `nine status` every 30s, after a 20s start period, matching on the uptime line — the command exits 0 even with no daemon reachable |
 
 The daemon and the API run unprivileged. Everything the agent reaches through
 the `shell` plugin inherits uid 1000, so it cannot write outside `/data` or
@@ -127,8 +127,10 @@ A release is a `v*` git tag. The workflow
 (`.github/workflows/release-image.yml`) runs two jobs, and the order is the
 point:
 
-1. **verify** — build `linux/amd64`, scan it with Trivy (fixable CRITICAL or
-   HIGH fails the job), run the image contract tests from `tests/docker/`.
+1. **verify** — build each published architecture, scan it with Trivy (a
+   fixable CRITICAL or HIGH fails the job), and run the image contract tests
+   from `tests/docker/`. A test asserts that every platform the publish job
+   pushes is one the matrix scans.
 2. **publish** — only if verify passed: build the multi-arch manifest from
    cache, push, sign, attest.
 
@@ -155,5 +157,6 @@ Supply-chain properties:
 | No package installs at runtime | Running unprivileged means the agent cannot `apt-get install`. Derive an image instead. |
 | No browser, no Node | An MCP server needing either must come from a derived image or a hosted URL — [browser.md](browser.md). |
 | arm64 is emulated at build time | The Go binary cross-compiles, but the Debian layers build under QEMU, so arm64 releases are slower to produce. The image itself is native. |
+| Contract tests run on amd64 only | Both architectures are scanned, but the container tests drive real containers, and running them under QEMU would add emulation flakiness to a release gate. |
 | `latest` is a moving target | It changes on every stable release. Pin a version or a digest for anything that matters. |
 | Docker Hub pulls are rate-limited | Anonymous pulls hit Docker's limits. GHCR does not apply them. |
