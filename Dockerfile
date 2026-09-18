@@ -23,7 +23,7 @@ RUN go install github.com/swaggo/swag/cmd/swag@latest
 FROM debian:bookworm-slim AS s6-fetch
 ARG S6_OVERLAY_VERSION=3.2.3.2
 ARG TARGETARCH
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get dist-upgrade -y && apt-get install -y --no-install-recommends \
       curl xz-utils ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 RUN case "$TARGETARCH" in \
@@ -74,7 +74,7 @@ COPY --from=go-build /go/bin/swag /usr/local/bin/swag
 # PLAYWRIGHT_BROWSERS_PATH, so it survives a container restart without bloating
 # the image for everyone who never browses. (That is the command, not `npx
 # playwright install chromium` — see docs/browser.md §1.)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get dist-upgrade -y && apt-get install -y --no-install-recommends \
       git \
       inotify-tools \
       nodejs \
@@ -116,7 +116,7 @@ COPY --from=s6-fetch /out/ /
 # wants one in production derives an image from this and installs its runtime,
 # or points a [[mcp.server]] at a hosted url. docs/browser.md walks through both
 # for the browser case.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get dist-upgrade -y && apt-get install -y --no-install-recommends \
       ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
