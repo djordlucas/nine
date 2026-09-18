@@ -89,22 +89,31 @@ func startContainer(t *testing.T, extraArgs ...string) string {
 	return id
 }
 
-// waitForDaemon blocks until `nine status` succeeds inside the container, which
-// is the same check the image's HEALTHCHECK runs.
+// waitForDaemon blocks until the daemon answers inside the container, which is
+// the same condition the image's HEALTHCHECK checks.
+//
+// It matches on "Uptime:" rather than on the exit status, because `nine status`
+// prints "no daemon running" and exits 0 when it cannot reach a daemon — the
+// query succeeded, it just found nothing. Waiting on the exit status alone
+// would return immediately against a container whose daemon never started.
 func waitForDaemon(t *testing.T, id string) {
 	t.Helper()
 	deadline := time.Now().Add(readyTimeout)
-	var lastErr error
+	var last string
 	for time.Now().Before(deadline) {
-		if _, err := dockerRun(t, "exec", id, "nine", "status"); err == nil {
+		out, err := dockerRun(t, "exec", id, "nine", "status")
+		if err == nil && strings.Contains(out, "Uptime:") {
 			return
-		} else {
-			lastErr = err
+		}
+		last = out
+		if err != nil {
+			last = err.Error()
 		}
 		time.Sleep(2 * time.Second)
 	}
 	logs, _ := dockerRun(t, "logs", id)
-	t.Fatalf("daemon not ready within %s: %v\ncontainer logs:\n%s", readyTimeout, lastErr, logs)
+	t.Fatalf("daemon not ready within %s (last status output: %q)\ncontainer logs:\n%s",
+		readyTimeout, last, logs)
 }
 
 // TestDaemonRunsAsNonRoot is the central claim of the hardened image. s6-overlay

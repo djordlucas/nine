@@ -1,10 +1,32 @@
 # Installation
 
+Three ways to run Nine, in increasing order of effort:
+
+| Path | Needs | For |
+|------|-------|-----|
+| [Pull the image](docker-image.md) | Docker, an LLM endpoint | Running Nine |
+| Build the image from a clone | Docker, the repo | Changing the image, or auditing the build |
+| Native build | Go 1.26+, the repo | Developing Nine |
+
+The published image is the shortest path and needs no clone:
+
+```bash
+docker run -d --name nine \
+  -p 127.0.0.1:8080:8080 \
+  --add-host host.docker.internal:host-gateway \
+  -v nine-data:/data \
+  ghcr.io/djordlucas/nine:latest
+```
+
+Registries, tags, signature verification and the image's configuration surface
+are in [Container image](docker-image.md). The rest of this document covers
+building it yourself.
+
 ## Prerequisites
 
 | Requirement | Version | Notes |
 |-------------|---------|-------|
-| Docker | 24+ | Required — runs the whole stack in one container |
+| Docker | 24+ | Required — runs the whole stack in one container. Only this is needed to run the published image. |
 | Go | 1.26+ | For development (build from source) |
 | Node.js | 18+ | Optional — only to run `npx`-launched MCP servers (e.g. a browser) |
 | golangci-lint | Latest | Optional, for `make lint` |
@@ -22,6 +44,10 @@ docker-compose file and no database service to orchestrate; `docker run` is
 wrapped in a handful of Makefile targets for the env/volume/flag boilerplate.
 Inside the container the daemon opens `/data/nine.db` and reaches the host's LLM
 endpoint via `host.docker.internal`.
+
+These targets build the image locally. The same `runtime` stage is what gets
+published — `make image` builds it exactly as a release does, and `make
+image-test` asserts the same contract CI does before a push.
 
 There are two modes, built from the same `Dockerfile`, both based on
 `debian:bookworm-slim`. The `nine` binary is pure Go and carries no libc
@@ -239,4 +265,6 @@ Plugins:  mcp, shell
 | Config changes need a restart | Nine cannot rewrite `nine.toml` at runtime. Edit the file and restart the daemon. |
 | Environment overrides are a fixed set | Only the documented `NINE_*` variables override the file. Whether the sandboxed-tool subsystem runs at all stays in `nine.toml`, which no environment variable can flip on. |
 | No browser in either image | The dev image carries Node for `npx` MCP servers; the runtime image carries neither Node nor a browser. |
+| Published image runs unprivileged | The daemon and API run as uid 1000, so the agent cannot install packages or write outside `/data` inside the container. Derive an image to add anything. |
+| `docker exec` lands as root | Pass `-u nine` for anything touching `/data`, or a root-owned file appears in the volume. |
 | Rebuilding the QuickJS blob needs wasi-sdk | Ordinary builds use the committed `qjs.wasm` artifact and its recorded SHA-256. Only `make quickjs-wasm` wants a wasi-sdk. |

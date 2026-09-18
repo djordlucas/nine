@@ -225,3 +225,31 @@ func TestRuntimeServicesDropPrivileges(t *testing.T) {
 		t.Error("the runtime stage does not create the uid 1000 nine user the services drop to")
 	}
 }
+
+// TestHealthcheckDetectsADeadDaemon guards a subtle failure. `nine status`
+// prints "no daemon running" and exits 0 when it cannot reach a daemon, because
+// the query itself succeeded. A HEALTHCHECK that only ran that command would
+// report every container healthy, including one whose daemon never started, so
+// the check has to inspect the output.
+func TestHealthcheckDetectsADeadDaemon(t *testing.T) {
+	dockerfile := readRepoFile(t, "Dockerfile")
+
+	idx := strings.Index(dockerfile, "HEALTHCHECK")
+	if idx < 0 {
+		t.Fatal("the runtime image declares no HEALTHCHECK")
+	}
+	// The directive plus its continuation lines.
+	block := dockerfile[idx:]
+	if end := strings.Index(block, "\nENTRYPOINT"); end > 0 {
+		block = block[:end]
+	}
+
+	if !strings.Contains(block, "nine status") {
+		t.Error("the healthcheck does not probe the daemon with `nine status`")
+	}
+	if !strings.Contains(block, "Uptime:") {
+		t.Error("the healthcheck does not inspect the status output; " +
+			"`nine status` exits 0 with no daemon running, so a bare invocation " +
+			"reports a dead container healthy")
+	}
+}
