@@ -1,4 +1,4 @@
-# Contract — API Layer
+# Contract — API layer
 
 **Status:** Design · **Depends on:** wire-protocol, plugin, toolvm · **Used by:** API server, CLI, daemon
 
@@ -46,9 +46,9 @@ The API layer is designed to:
 
 ---
 
-## Process Model
+## Process model
 
-### API-A-1: Process Lifecycle
+### API-A-1: process lifecycle
 
 The API server process:
 
@@ -59,7 +59,7 @@ The API server process:
 5. **MUST NOT** load daemon configuration directly (only through socket)
 6. **MUST NOT** access the database directly (only through daemon)
 
-### API-A-2: Startup Sequence
+### API-A-2: startup sequence
 
 ```
 1. Parse API-specific configuration (port, host, auth, etc.)
@@ -70,7 +70,7 @@ The API server process:
 6. Begin accepting requests
 ```
 
-### API-A-3: Shutdown Sequence
+### API-A-3: shutdown sequence
 
 ```
 1. Receive SIGTERM/SIGINT or daemon disconnect
@@ -84,7 +84,7 @@ The API server process:
 
 ## Configuration
 
-### API-C-1: Configuration Sources
+### API-C-1: configuration sources
 
 API configuration is separate from daemon configuration:
 
@@ -94,7 +94,7 @@ API configuration is separate from daemon configuration:
 | Environment variables | Medium | `NINE_API_PORT`, `NINE_API_HOST`, `NINE_API_AUTH_TOKEN` |
 | Config file | Lowest | `api` section in `nine.toml` |
 
-### API-C-2: Configuration Options
+### API-C-2: configuration options
 
 ```toml
 [api]
@@ -114,15 +114,15 @@ nine api serve --port 3000 --host 0.0.0.0 --auth-token secret
 
 ---
 
-## HTTP API Specification
+## HTTP API specification
 
-### API-HTTP-1: Base URL and Versioning
+### API-HTTP-1: base URL and versioning
 
 - **Base path:** `/api/v1` (version 1)
 - **Content-Type:** `application/json` for all requests and responses
 - **Charset:** UTF-8
 
-### API-HTTP-2: Authentication
+### API-HTTP-2: authentication
 
 When `auth_token` is configured:
 
@@ -130,7 +130,7 @@ When `auth_token` is configured:
 - **MUST** return `401 Unauthorized` for missing or invalid token
 - **MUST** return `403 Forbidden` for valid but insufficient token
 
-### API-HTTP-3: Error Format
+### API-HTTP-3: error format
 
 All errors follow this format:
 
@@ -157,7 +157,7 @@ Standard error codes:
 | `server_error` | 500 | Internal server error |
 | `service_unavailable` | 503 | Daemon not running or unreachable |
 
-### API-HTTP-4: Pagination
+### API-HTTP-4: pagination
 
 For list endpoints that support pagination:
 
@@ -182,9 +182,9 @@ For list endpoints that support pagination:
 
 ---
 
-## Endpoint Specification
+## Endpoint specification
 
-### API-END-1: Health and Status
+### API-END-1: health and status
 
 #### GET `/api/v1/health`
 
@@ -213,7 +213,7 @@ Get daemon status.
 
 ---
 
-### API-END-2: Conversations (Sessions)
+### API-END-2: conversations (sessions)
 
 #### POST `/api/v1/conversations`
 
@@ -347,7 +347,7 @@ Stop a conversation (end session but keep history).
 
 ---
 
-### API-END-3: Messages and Turns
+### API-END-3: messages and turns
 
 #### GET `/api/v1/conversations/{id}/history`
 
@@ -403,7 +403,7 @@ Replay a specific turn.
 
 ---
 
-### API-END-4: Goals
+### API-END-4: goals
 
 #### GET `/api/v1/goals`
 
@@ -484,7 +484,7 @@ Delete a goal.
 
 ---
 
-### API-END-5: Workflows
+### API-END-5: workflows
 
 #### GET `/api/v1/workflows`
 
@@ -535,7 +535,7 @@ Mark a workflow as failed.
 
 ---
 
-### API-END-6: Tools
+### API-END-6: tools
 
 #### GET `/api/v1/tools`
 
@@ -602,7 +602,7 @@ Get tool details.
 
 ---
 
-### API-END-7: Plugins
+### API-END-7: plugins
 
 #### GET `/api/v1/plugins`
 
@@ -641,7 +641,7 @@ Reload user plugins.
 
 ---
 
-### API-END-8: Notifications
+### API-END-8: notifications
 
 #### GET `/api/v1/notifications`
 
@@ -675,7 +675,7 @@ Get user notifications.
 
 ---
 
-### API-END-9: Skills
+### API-END-9: skills
 
 #### GET `/api/v1/skills`
 
@@ -699,7 +699,7 @@ List all skills.
 
 ---
 
-### API-END-10: Memory and Search
+### API-END-10: memory and search
 
 #### GET `/api/v1/memory`
 
@@ -752,7 +752,7 @@ Create a memory entry.
 
 ---
 
-### API-END-11: Files
+### API-END-11: files
 
 #### GET `/api/v1/files`
 
@@ -819,7 +819,7 @@ Get file content.
 
 ---
 
-### API-END-12: Sessions (Attach/Detach)
+### API-END-12: sessions (Attach/Detach)
 
 #### POST `/api/v1/sessions/attach`
 
@@ -847,7 +847,7 @@ Attach to an existing session for streaming.
 
 ---
 
-### API-END-13: System
+### API-END-13: system
 
 #### GET `/api/v1/docs`
 
@@ -897,16 +897,16 @@ Get specific specification.
 
 ---
 
-## Streaming Endpoints
+## Streaming endpoints
 
-### API-STREAM-1: Streaming Responses
+### API-STREAM-1: streaming responses
 
 For endpoints that produce streaming output (turn execution, tool calls), the API supports both:
 
 1. **SSE (Server-Sent Events):** `/api/v1/conversations/{id}/messages/stream`
 2. **WebSocket:** `/ws/v1/conversations/{id}/messages`
 
-### API-STREAM-2: SSE Format
+### API-STREAM-2: SSE format
 
 ```
 event: tool_start
@@ -922,7 +922,7 @@ event: done
 data: {"agent_id": "id", "timestamp": 1234567890}
 ```
 
-### API-STREAM-3: WebSocket Messages
+### API-STREAM-3: WebSocket messages
 
 All messages are JSON objects with a `type` field:
 
@@ -936,9 +936,9 @@ All messages are JSON objects with a `type` field:
 
 ---
 
-## Socket Communication
+## Socket communication
 
-### API-SOCKET-1: Connection Management
+### API-SOCKET-1: connection management
 
 The API server:
 
@@ -947,7 +947,7 @@ The API server:
 3. **MUST** handle connection failures gracefully
 4. **MUST** reconnect automatically when the daemon restarts
 
-### API-SOCKET-2: Message Routing
+### API-SOCKET-2: message routing
 
 Each API request:
 
@@ -956,7 +956,7 @@ Each API request:
 3. **MUST** handle responses and map them back to API format
 4. **MUST** propagate errors appropriately
 
-### API-SOCKET-3: Request Context
+### API-SOCKET-3: request context
 
 The API server:
 
@@ -966,29 +966,29 @@ The API server:
 
 ---
 
-## Security Considerations
+## Security considerations
 
-### API-SEC-1: Authentication
+### API-SEC-1: authentication
 
 - **MUST** support bearer token authentication
 - **MUST** support API key authentication
 - **SHOULD** support JWT authentication (future)
 - **MUST** return appropriate error codes for auth failures
 
-### API-SEC-2: Authorization
+### API-SEC-2: authorization
 
 - **MUST** validate that authenticated user has access to requested resource
 - **MUST** implement resource-level access control
 - **MUST** log all access attempts
 
-### API-SEC-3: Input Validation
+### API-SEC-3: input validation
 
 - **MUST** validate all request parameters
 - **MUST** sanitize user input
 - **MUST** enforce size limits on request bodies
 - **MUST** enforce rate limiting (configurable)
 
-### API-SEC-4: Transport Security
+### API-SEC-4: transport security
 
 - **SHOULD** support HTTPS/TLS
 - **SHOULD** support mutual TLS (mTLS)
@@ -1002,9 +1002,9 @@ The API server:
 
 ---
 
-## Rate Limiting
+## Rate limiting
 
-### API-RATE-1: Configuration
+### API-RATE-1: configuration
 
 ```toml
 [api.rate_limit]
@@ -1014,7 +1014,7 @@ burst_size = 10
 excluded_paths = ["/health", "/status"]
 ```
 
-### API-RATE-2: Headers
+### API-RATE-2: headers
 
 Rate limit responses **MUST** include:
 
@@ -1029,7 +1029,7 @@ Retry-After: 30
 
 ## Observability
 
-### API-OBS-1: Logging
+### API-OBS-1: logging
 
 The API server **MUST** log:
 
@@ -1038,7 +1038,7 @@ The API server **MUST** log:
 - Authentication attempts
 - Rate limit events
 
-### API-OBS-2: Metrics
+### API-OBS-2: metrics
 
 The API server **SHOULD** expose metrics:
 
@@ -1048,7 +1048,7 @@ The API server **SHOULD** expose metrics:
 - Connection pool stats
 - Active connections
 
-### API-OBS-3: Tracing
+### API-OBS-3: tracing
 
 The API server **SHOULD** support distributed tracing:
 
@@ -1058,9 +1058,9 @@ The API server **SHOULD** support distributed tracing:
 
 ---
 
-## CLI Integration
+## CLI integration
 
-### API-CLI-1: API Command
+### API-CLI-1: API command
 
 ```bash
 # Start the API server
@@ -1073,13 +1073,13 @@ nine api status
 nine api stop
 ```
 
-### API-CLI-2: Configuration via CLI
+### API-CLI-2: configuration via CLI
 
 All API configuration options **MUST** be available via CLI flags.
 
 ---
 
-## Feature Parity Matrix
+## Feature parity matrix
 
 | CLI Command | API Endpoint | Status |
 |-------------|--------------|--------|
@@ -1106,9 +1106,9 @@ All API configuration options **MUST** be available via CLI flags.
 
 ---
 
-## Implementation Notes
+## Implementation notes
 
-### API-IMPL-1: Process Architecture
+### API-IMPL-1: process architecture
 
 The API server runs as a separate Go process:
 
@@ -1129,7 +1129,7 @@ func serveAPI() {
 }
 ```
 
-### API-IMPL-2: Request Flow
+### API-IMPL-2: request flow
 
 ```
 HTTP Request → Middleware (auth, rate limit) → Handler → 
@@ -1137,7 +1137,7 @@ Socket Client → Daemon → Socket Response →
 Handler → HTTP Response
 ```
 
-### API-IMPL-3: Error Handling
+### API-IMPL-3: error handling
 
 ```go
 func handleRequest(w http.ResponseWriter, r *http.Request) {
@@ -1166,15 +1166,15 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 
 ---
 
-## Testing Requirements
+## Testing requirements
 
-### API-TEST-1: Unit Tests
+### API-TEST-1: unit tests
 
 - All handlers **MUST** have unit tests
 - All middleware **MUST** have unit tests
 - Socket client **MUST** have mock tests
 
-### API-TEST-2: Integration Tests
+### API-TEST-2: integration tests
 
 - **MUST** test with real daemon
 - **MUST** test all endpoints
@@ -1182,7 +1182,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 - **MUST** test authentication
 - **MUST** test rate limiting
 
-### API-TEST-3: Contract Tests
+### API-TEST-3: contract tests
 
 - **MUST** verify response formats
 - **MUST** verify error formats
@@ -1190,7 +1190,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 
 ---
 
-## Future Enhancements
+## Future enhancements
 
 | Feature | Priority | Status |
 |---------|----------|--------|
@@ -1204,9 +1204,9 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 
 ---
 
-## Appendix A: Configuration Reference
+## Appendix A: configuration reference
 
-### Full Configuration Schema
+### Full configuration schema
 
 ```toml
 [api]
@@ -1230,7 +1230,7 @@ cert_path = ""
 key_path = ""
 ```
 
-### Environment Variables
+### Environment variables
 
 ```
 NINE_API_ENABLED=true
@@ -1242,7 +1242,7 @@ NINE_API_MAX_CONNECTIONS=100
 NINE_API_CORS_ORIGINS=*
 ```
 
-### Command-line Flags
+### Command-line flags
 
 ```
 nine api serve --port 8080 --host 0.0.0.0 --auth-token secret --timeout 30
@@ -1250,7 +1250,7 @@ nine api serve --port 8080 --host 0.0.0.0 --auth-token secret --timeout 30
 
 ---
 
-## Appendix B: Error Code Reference
+## Appendix B: error code reference
 
 | Code | HTTP | Description | Retryable |
 |------|------|-------------|-----------|
@@ -1266,9 +1266,9 @@ nine api serve --port 8080 --host 0.0.0.0 --auth-token secret --timeout 30
 
 ---
 
-## Appendix C: Response Examples
+## Appendix C: response examples
 
-### Successful Response
+### Successful response
 
 ```json
 {
@@ -1281,7 +1281,7 @@ nine api serve --port 8080 --host 0.0.0.0 --auth-token secret --timeout 30
 }
 ```
 
-### Error Response
+### Error response
 
 ```json
 {
@@ -1302,7 +1302,7 @@ nine api serve --port 8080 --host 0.0.0.0 --auth-token secret --timeout 30
 
 ---
 
-## Revision History
+## Revision history
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|

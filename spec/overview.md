@@ -1,4 +1,4 @@
-# Nine — Overview
+# Nine — overview
 
 Read this before [`build-order.md`](build-order.md). It establishes the system shape,
 the goals and explicit non-goals, the vocabulary of work units, and the invariants that
@@ -117,7 +117,7 @@ the session is durable:
 | **Self-reflection** | an idle timer, autonomously | yes — same machinery as pursue |
 | **Sub-agent** | a parent tool call, delegated | **no** — transient, runs synchronously inside the call |
 
-The load-bearing distinction is **durable vs. transient**, not interactive vs. not.
+The distinction that decides behavior is **durable vs. transient**, not interactive vs. not.
 Conversations, goal-pursue, and self-reflection are durable sessions: each is an
 `AgentWorker` with a `SessionPlan`, lives in the daemon's session registry, and is
 checkpointed so it survives restart (I5, I7). A **sub-agent is a bare loop run

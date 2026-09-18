@@ -1,4 +1,4 @@
-# Contract — Human-in-the-loop (HITL)
+# Contract — human-in-the-loop (HITL)
 
 **Status:** Built · **Depends on:** [`memory-store.md`](memory-store.md), [`wire-protocol.md`](wire-protocol.md), [`dispatcher.md`](dispatcher.md), [`agent-worker.md`](agent-worker.md), [`config.md`](config.md) · **Used by:** daemon, TUI
 
@@ -19,7 +19,7 @@ one pair of message types.
 
 ---
 
-## R-HITL.1 — Interactive-session gating
+## R-HITL.1 — interactive-session gating
 
 `ask_human` is available **only in interactive sessions** — conversations started by a
 human through the TUI. Every other session kind (self-reflection, goal/pursue,
@@ -92,7 +92,7 @@ while the other waits out its timeout.
 
 ---
 
-## R-HITL.4 — Restart recovery
+## R-HITL.4 — restart recovery
 
 The checkpoint is written after each completed tool call, and `ask_human` blocks **before**
 its result is recorded — so the checkpoint predates the call. On restart the loop is
@@ -116,7 +116,7 @@ stable sub-agent identities across restarts, which the delegation path does not 
 
 ---
 
-## R-HITL.5 — Approval gates
+## R-HITL.5 — approval gates
 
 Tools named in `[hitl].require_approval` (see [`config.md`](config.md)) trigger an
 auto-generated `ask_human` **before** the handler runs. A gate is armed for any loop with
@@ -173,7 +173,7 @@ cancelled). The reference tree marks both with `agent.ApprovalError`, which
 
 ---
 
-## R-HITL.6 — Protocol messages
+## R-HITL.6 — protocol messages
 
 Two message types ([`wire-protocol.md`](wire-protocol.md)):
 
@@ -194,7 +194,7 @@ the DB row. It **MUST NOT** start a new `agent.Loop.Run`.
 
 ---
 
-## R-HITL.7 — Persistence
+## R-HITL.7 — persistence
 
 Two tables (see [`memory-store.md`](memory-store.md) R-MEM.2):
 

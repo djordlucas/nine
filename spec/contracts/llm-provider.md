@@ -1,4 +1,4 @@
-# Contract — LLM Provider & Priority Queue
+# Contract — LLM provider & priority queue
 
 **Status:** Built · **Depends on:** config · **Used by:** agent loop (only, via the queue)
 
@@ -8,7 +8,7 @@ concurrency and priority across all sessions.
 
 ---
 
-## R-LLM.1 — Provider interface
+## R-LLM.1 — provider interface
 
 A provider is a thin **single-method** interface:
 
@@ -45,7 +45,7 @@ A conforming implementation **MUST** keep the provider behind the queue.
 
 ---
 
-## R-LLM.2 — Tool calls and final answers
+## R-LLM.2 — tool calls and final answers
 
 `Complete` returns a `Response` that either carries `ToolCalls` (the model wants to act)
 or is a final answer (`Text`, no tool calls). The agent loop distinguishes the two (see
@@ -54,7 +54,7 @@ text through it while still returning the assembled `Response`.
 
 ---
 
-## R-LLM.3 — The priority queue
+## R-LLM.3 — the priority queue
 
 ```text
 Submit(cancel, priority, req):
@@ -78,7 +78,7 @@ context is done (the callback would report against whatever turn is running by t
 
 ---
 
-## R-LLM.4 — Priorities
+## R-LLM.4 — priorities
 
 ```text
 1  PrioritySupervisor    — supervisor diagnostic calls
@@ -99,7 +99,7 @@ three tiers and this ordering.
 
 ---
 
-## R-LLM.5 — Cancellation & timeout
+## R-LLM.5 — cancellation & timeout
 
 `Submit` honors a **cancellation handle**. Cancelling it removes a still-queued item and
 aborts an in-flight call. `[llm].timeout_seconds` bounds individual provider HTTP calls:
@@ -110,7 +110,7 @@ Sub-agent group timeouts are enforced one layer up (see
 
 ---
 
-## R-LLM.6 — Token counting
+## R-LLM.6 — token counting
 
 Token budgeting uses a 4-chars-≈-1-token approximation in the context builder (see
 [`context-builder.md`](context-builder.md)); the provider interface carries no
@@ -120,7 +120,7 @@ calibrated.
 
 ---
 
-## R-LLM.8 — Reported usage
+## R-LLM.8 — reported usage
 
 `Response.Usage` carries the provider's own accounting for the completion:
 `InputTokens` for the assembled prompt (system + messages + tool definitions) and

@@ -769,3 +769,17 @@ Copy either into your `[tools].user_dir`; nothing in `examples/` is loaded.
 - [ ] Declared capabilities are the minimum, and the operator has granted exactly them.
 - [ ] `nine tool validate` passes.
 - [ ] `nine tools` shows it as `ok` after a reload.
+
+---
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| The `wasm` kind is specified, not supported | The ABI is defined and documented, but raw `.wasm` tools are not a supported authoring path today. Write JS. |
+| Nothing survives a call | A module is instantiated fresh per call and torn down after it. No globals, no cached credentials, no parsed index. Persist through a granted `fs` path, or wait for durable state. |
+| Bundle your own dependencies | The shipped file must contain no `import`. External npm dependencies are a separate, off-by-default tier. |
+| A trimmed JS surface | QuickJS is deliberately narrowed. Globals a Node or browser author expects are absent, and the import surface is closed — see *What JavaScript you get*. |
+| Wall-clock deadline only | There is no CPU or memory metering; wazero has no fuel. A tool is bounded by its timeout alone. |
+| Adding a tool needs a reload | Tools are discovered from `[tools].user_dir`. Run `nine plugins reload`, or restart the daemon. |
+| Capabilities are the operator's | Declaring a capability in the manifest does not grant it. The operator grants it by name in `nine.toml`, and a declaration with no matching grant fails the load. |

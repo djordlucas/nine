@@ -33,7 +33,7 @@ func TestDocsTopic(t *testing.T) {
 	if err := c.Docs("hitl"); err != nil {
 		t.Fatalf("Docs(hitl): %v", err)
 	}
-	if !strings.Contains(out.String(), "# Human-in-the-Loop") {
+	if !strings.Contains(out.String(), "# Human-in-the-loop") {
 		t.Errorf("hitl doc content missing:\n%s", out.String())
 	}
 }
@@ -47,7 +47,7 @@ func TestSpecTopic(t *testing.T) {
 		if err := c.Spec(name); err != nil {
 			t.Fatalf("Spec(%q): %v", name, err)
 		}
-		if !strings.Contains(out.String(), "Session Event Journal") {
+		if !strings.Contains(out.String(), "session event journal") {
 			t.Errorf("Spec(%q) missing expected content:\n%s", name, out.String())
 		}
 	}
@@ -90,7 +90,7 @@ func TestRunDocsSpecDispatch(t *testing.T) {
 	}{
 		{[]string{"docs"}, "nine docs <topic>"},
 		{[]string{"spec"}, "nine spec <topic>"},
-		{[]string{"spec", "wire-protocol"}, "Wire Protocol"},
+		{[]string{"spec", "wire-protocol"}, "wire protocol"},
 	}
 	for _, tc := range cases {
 		var out bytes.Buffer
