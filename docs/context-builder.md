@@ -2,7 +2,7 @@
 
 The context builder (`ninectx.Builder`) assembles one `llm.Request` per inner-loop iteration, fitting conversation state into a fixed token budget using priority-based trimming and embedding-based tool ranking.
 
-## Assembly Pipeline
+## Assembly pipeline
 
 ```mermaid
 flowchart TD
@@ -71,7 +71,7 @@ flowchart TD
     style Scratchpad fill:#3a1a1a,color:#fff
 ```
 
-## Token Budget Waterfall
+## Token budget waterfall
 
 Each priority level deducts from a shared `remaining` counter. Lower-priority content is dropped when the counter runs out.
 
@@ -95,7 +95,7 @@ threshold, so a session that repeatedly brushes the ceiling is warned on each
 upward crossing rather than only once. This is advisory only — the turn always
 fits the budget by construction; the notice never blocks or compacts.
 
-## Tool Selection
+## Tool selection
 
 `selectTools` runs on every call to `BuildWithUsage`. It:
 
@@ -106,7 +106,7 @@ fits the budget by construction; the notice never blocks or compacts.
 
 Always-include tools are never skipped regardless of budget or score. Intercepted tools (e.g. `gap_report`, `run_agent`) are registered as always-include so they are always visible to the LLM.
 
-## Scratchpad → Messages
+## Scratchpad → messages
 
 Each `ScratchpadEntry` expands to two `llm.Message` values so the LLM sees the full ReAct trace:
 
@@ -118,7 +118,7 @@ ScratchpadEntry { Thought, ToolName, ToolCallID, ToolArgs, Observation }
 
 Entries with no `ToolName` produce only the assistant message (pure thought, no tool call).
 
-## Token Counting
+## Token counting
 
 All token estimates use a **4 chars ≈ 1 token** approximation, consistent with Claude model tokenisation:
 
@@ -129,9 +129,19 @@ All token estimates use a **4 chars ≈ 1 token** approximation, consistent with
 | `messageTokens(m)` | text + tool call names/inputs + tool result contents |
 | `scratchpadTokens(e)` | thought + observation + tool name/args |
 
-## Config Defaults
+## Config defaults
 
 | Field | Default | Effect |
 |-------|---------|--------|
 | `ToolTopN` | 20 | Max ranked (non-always) tools included |
 | `ExtrasBudget` | 200 tokens | Min remaining budget to include `SystemExtras` |
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Token counts are estimated | Every count uses a 4-characters-per-token approximation calibrated against one tokenizer. A model that tokenizes differently is budgeted inaccurately, and a second LLM backend needs its own measurement. A real tokenizer is designed in [`adr/accurate-token-counting.md`](../adr/accurate-token-counting.md). |
+| Ranking needs an embedder | With `[embeddings].provider = "none"` there is no embedder, every tool scores 0, and ranking degrades to insertion order under the `TopN` cap. |
+| Tool vectors are cached at boot | Each tool's `name: description` is embedded once and cached by name. A description that changes at runtime keeps its old vector. |
+| Trimming is not compaction | Over-budget history is dropped from the front, not summarized. Content that falls out of the window is gone from the turn. |
+| Always-include tools ignore the budget | Tools in `Config.AlwaysTools` are never skipped, so a large always-include set can crowd out history before ranking runs. |

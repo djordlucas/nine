@@ -6,7 +6,7 @@ the running binary and answers from the text rather than from impression.
 
 ---
 
-## Why Retrieval Rather Than Context
+## Why retrieval rather than context
 
 The bundled corpus is about 730 KB across roughly 570 sections. Placing any
 meaningful portion of it in every turn would consume the context budget for the
@@ -24,7 +24,7 @@ docs Nine cites are always the docs its own version ships (see
 
 ---
 
-## The Tools
+## The tools
 
 | Tool | Effect |
 |---|---|
@@ -123,7 +123,7 @@ silently answer from whichever sections happened to make it in.
 
 ---
 
-## Ranking: Two Retrievers, Fused
+## Ranking: two retrievers, fused
 
 `doc_search` is a **hybrid**. It runs two independent retrievers and fuses their
 rankings:
@@ -192,7 +192,7 @@ Two things follow for anyone relying on this:
 
 ---
 
-## Using It Well
+## Using it well
 
 The [`self-documentation` skill](../skills/self-documentation.md) carries the
 policy: search before answering questions about Nine, read the section rather
@@ -220,7 +220,7 @@ and it returns a paraphrase where the value was in the quote.
 
 ---
 
-## Keeping It Accurate
+## Keeping it accurate
 
 The index is only as good as the documents, and the documents are kept in
 lockstep with the code by `/sync-nine`. A behavior change that skips the

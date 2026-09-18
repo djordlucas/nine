@@ -175,7 +175,7 @@ records which models have been run and how they did.
 
 ---
 
-## Makefile Targets
+## Makefile targets
 
 **Build & test**
 
@@ -206,7 +206,7 @@ records which models have been run and how they did.
 
 ---
 
-## Verifying the Installation
+## Verifying the installation
 
 **Deployed in a container** — attach a session and check status:
 

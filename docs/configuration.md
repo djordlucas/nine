@@ -18,7 +18,7 @@ shipping a second file. The database path needs no override there: it defaults t
 
 ---
 
-## Full Reference
+## Full reference
 
 ```toml
 [llm]
@@ -602,7 +602,7 @@ allow = [                           # allowlist mode only: the packages an opera
 
 ---
 
-## LLM Providers
+## LLM providers
 
 `ollama` is the only chat provider. Nine is built for local models, so there is
 nothing to choose between: any other `provider` value is logged as unknown at
@@ -641,7 +641,7 @@ Embeddings power two features:
 
 The default (`keyword`) uses a built-in feature-hashing embedder that requires no model and no network access. Switch to `ollama` for higher quality ranking.
 
-### Built-in Keyword Embedder (Default)
+### Built-in keyword embedder (default)
 
 ```toml
 [embeddings]
@@ -650,7 +650,7 @@ provider = ""   # or "keyword" — both select the built-in embedder
 
 No configuration needed. Suitable for most deployments.
 
-### Using Ollama for Embeddings
+### Using Ollama for embeddings
 
 ```toml
 [embeddings]
@@ -667,7 +667,7 @@ ollama pull nomic-embed-text
 
 ---
 
-## Environment Variables
+## Environment variables
 
 Environment variables take priority over `nine.toml` values.
 
@@ -716,7 +716,7 @@ NINE_LLM_MODEL=llama3.2 make up
 
 ---
 
-## Changing Configuration
+## Changing configuration
 
 Configuration is owned by the operator, not the agent: Nine cannot modify `nine.toml`
 at runtime. To change a setting, edit the file and restart the daemon so it re-reads

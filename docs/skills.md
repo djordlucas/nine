@@ -4,7 +4,7 @@ Skills are markdown how-to notes describing reusable knowledge or procedures. Wh
 
 ---
 
-## What Skills Are
+## What skills are
 
 A skill has a name, a description, an optional set of tags, and a markdown body. Built-in skills are authored as `.md` files with YAML frontmatter:
 
@@ -28,7 +28,7 @@ The description is embedded into the `skills` vector namespace; the self-model s
 
 ---
 
-## Where Skills Live
+## Where skills live
 
 Skills are stored in the **memory store** (the `skills` table), not on the filesystem. There are three kinds:
 
@@ -44,7 +44,7 @@ This split is deliberate: curated skills should not drift on a running instance 
 
 ---
 
-## Your Own Skills and Roles
+## Your own skills and roles
 
 Point `[skills].user_dir` at a directory and Nine seeds it alongside the built-ins:
 
@@ -103,13 +103,13 @@ Attempting to overwrite or modify a built-in skill returns an error directing th
 
 ---
 
-## Adding or Editing a Built-in Skill
+## Adding or editing a built-in skill
 
 Edit (or add) a `.md` file in the repo's `skills/` directory and rebuild. On the next boot the seeder upserts it into the store and embeds its description. There is no runtime path to change a built-in skill.
 
 ---
 
-## How Skills Affect the Agent
+## How skills affect the agent
 
 Two mechanisms, and the difference matters.
 
@@ -127,7 +127,7 @@ If a skill is critical, you can still name it explicitly:
 
 ---
 
-## Skills vs. Memory
+## Skills vs. memory
 
 | | Skills | Memory (KV store) |
 |--|--------|------------------|

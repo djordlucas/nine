@@ -4,7 +4,7 @@ An `AgentWorker` wraps a single `agent.Loop` and serializes user turns for one
 conversation or background session. Each worker owns a goroutine that processes
 turns one at a time from an inbox channel.
 
-## Component Diagram
+## Component diagram
 
 ```mermaid
 flowchart TD
@@ -58,7 +58,7 @@ flowchart TD
     style Stores fill:#2a2a1a,color:#fff
 ```
 
-## Turn Lifecycle
+## Turn lifecycle
 
 ```mermaid
 sequenceDiagram
@@ -97,7 +97,7 @@ sequenceDiagram
     R->>R: onComplete(agentID)
 ```
 
-## Stall Detection
+## Stall detection
 
 The AgentWorker tracks consecutive turns where `agent.Loop.LastRunToolCount() == 0`. When `stallN` reaches `StallConfig.Limit`, `OnStall` fires and the counter resets.
 
@@ -110,13 +110,13 @@ turn completes
 
 Stall detection is disabled when `Limit == 0` or `OnStall == nil`.
 
-## Concurrency Model
+## Concurrency model
 
 - The inbox channel has capacity 1. The daemon blocks sending a new turn until the current one finishes, making turns strictly sequential per worker.
 - `progressFn` is guarded by a mutex so the daemon goroutine can register/clear it while the AgentWorker goroutine calls it.
 - `stop()` closes the inbox and blocks on `<-stopped`, ensuring the goroutine drains cleanly before the worker is discarded.
 
-## Key Methods
+## Key methods
 
 | Method | Description |
 |--------|-------------|
