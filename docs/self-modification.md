@@ -1,4 +1,4 @@
-# Self-Improvement & Boundaries
+# Self-improvement and boundaries
 
 Nine improves itself by writing **skills** — and deliberately nothing more. It does
 not generate plugins, rewrite its own configuration, or rebuild its own source code.
@@ -60,8 +60,7 @@ or an agent skill — listable, deletable, and journalled — so it does **not**
 the way a rebuilt native plugin would, which is the distinction that makes it permissible
 where plugin generation is not.
 
-The invariant is intact and load-bearing: **no agent-reachable path writes a capability
-grant.** `tool_write` writes JavaScript and a capability *declaration*; the operator writes
+The invariant holds: **no agent-reachable path writes a capability grant.** `tool_write` writes JavaScript and a capability *declaration*; the operator writes
 the **ceiling** (`[tools.agent.capabilities]`) that bounds what any generated tool may be
 granted, and a tool that declares nothing gets nothing. *Nine cannot grant itself
 capabilities* (R-PLUG.7) holds unchanged — the agent writes the code, the operator writes the
@@ -80,9 +79,9 @@ plugins. Configuration changes are made by editing
 
 ## Plugins are fixed
 
-Nine still runs the **`shell` plugin**, alongside its sandboxed tools,
-but they are immutable image content built at `docker build` time: all four are
-compiled into the `nine` binary and served as `nine plugin serve <name>`. There
+Nine ships four plugins — `shell`, `files`, `http` and `time` — alongside its
+sandboxed tools. All four are immutable image content: they are compiled into
+the `nine` binary and served as `nine plugin serve <name>`. There
 is no mechanism for an agent to add, build, or replace a plugin at runtime. To
 add a built-in capability, add a plugin to the source repo and rebuild the image.
 
@@ -93,3 +92,16 @@ restarting. Nothing an agent does at runtime can declare one.
 A plugin remains an isolation boundary: each runs as a subprocess, so a crash takes
 down only that plugin, not the daemon. Recovery (restarting a crashed plugin from its
 existing binary) is the plugin manager's responsibility — no recompilation is involved.
+
+---
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Skills only | Nine writes skills and, where enabled, sandboxed tools. It does not generate native plugins, rewrite `nine.toml`, or rebuild its own source. Deliberate: a daemon that changes its own form is hard to reason about, debug and trust. |
+| Built-in skills are immutable at runtime | `skill_write` and `skill_modify` refuse to touch a skill seeded from the binary. Changing one means editing `skills/*.md` and rebuilding. |
+| Generated tools are off by default | `[tools.agent] enabled` gates the tier that lets Nine write its own tools. |
+| Capabilities are never agent-writable | `tool_write` writes JavaScript and a capability *declaration*. The operator writes the ceiling (`[tools.agent.capabilities]`) that bounds what any generated tool may be granted. A tool that declares nothing gets nothing. |
+| Config changes need a restart | Editing `nine.toml` takes effect on daemon restart. There is no reload path, for agent or operator. |
+| Adding a built-in plugin needs a rebuild | An `[[mcp.server]]` is the operator's way to add a capability without rebuilding; it still requires editing `nine.toml` and restarting. Nothing an agent does at runtime can declare one. |

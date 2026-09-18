@@ -1,4 +1,4 @@
-# Evals — testing Nine with replays and live models
+# Evals
 
 How Nine is tested end-to-end against real — and recorded — model
 infrastructure. The case schema below is deliberately precise enough that new
@@ -413,3 +413,12 @@ To add coverage, or to have an LLM expand the corpus:
 > workspace; set realistic `expected_pass_min_class`. Output valid YAML, one document
 > per case, ids kebab-case and unique. Do not assert on exact free-text wording.
 
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| `tests/evals/runner` is excluded from CI | The package spins up a real in-process daemon per test and intermittently deadlocks under CI load on a turn whose reply never arrives. The infra-free gate (`make eval-replay`) still runs. |
+| Live runs are nondeterministic | Track L runs against a real model, so a pass fraction is a sample. Track R is the deterministic half. |
+| Cases assume a clean store | Each case assumes a fresh store and workspace. A case that leaks state breaks the next one rather than failing itself. |
+| No exact-wording assertions | Free-text wording is not asserted on, so a regression that changes only phrasing is invisible to the suite. |
+| Generated cases need review | The generator prompt produces plausible YAML; nothing checks that a generated case actually forces the behavior it names. |

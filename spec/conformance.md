@@ -1,14 +1,15 @@
-# Nine — Conformance Checklist
+# Nine — conformance checklist
 
 This is the acceptance checklist: every numbered requirement from a **`Built`**
 contract in [`contracts/`](contracts/), mapped to an **observable** test. An
 implementation "is Nine" when it passes every row below.
 
-One contract is **not** `Built` and so has no rows here: [`agent-policy.md`](contracts/agent-policy.md)
-is `Planned`, and a requirement with no implementation has no observable check. That is
-the only permitted reason for a requirement to be absent — if a `Built` contract's
-requirement has no row, the omission is a defect in this file, not a statement about the
-requirement.
+Two contracts are **not** `Built` and so have no rows here:
+[`agent-policy.md`](contracts/agent-policy.md) is `Planned` and
+[`api.md`](contracts/api.md) is `Design`. A requirement with no implementation has no
+observable check. That is the only permitted reason for a requirement to be absent — if a
+`Built` contract's requirement has no row, the omission is a defect in this file, not a
+statement about the requirement.
 
 How to use this file:
 
@@ -44,7 +45,7 @@ How to use this file:
 
 ---
 
-## 1. Foundations (Phase 0)
+## 1. Foundations (phase 0)
 
 ### Config — [`config.md`](contracts/config.md)
 
@@ -112,7 +113,7 @@ How to use this file:
 
 ---
 
-## 2. LLM, embeddings, plugins (Phases 1–3)
+## 2. LLM, embeddings, plugins (phases 1–3)
 
 ### LLM provider & queue — [`llm-provider.md`](contracts/llm-provider.md)
 
@@ -163,7 +164,7 @@ How to use this file:
 
 ---
 
-## 3. Context, loop, dispatcher (Phases 4–5)
+## 3. Context, loop, dispatcher (phases 4–5)
 
 ### Context builder — [`context-builder.md`](contracts/context-builder.md)
 
@@ -202,7 +203,7 @@ How to use this file:
 
 ---
 
-## 4. Worker, attach, daemon (Phases 6–7)
+## 4. Worker, attach, daemon (phases 6–7)
 
 ### Agent worker — [`agent-worker.md`](contracts/agent-worker.md)
 
@@ -217,7 +218,7 @@ How to use this file:
 | R-WORK.7 | Clean shutdown | Worker stops without dropping the in-flight checkpoint. |
 | R-WORK.8 | Durable journal | With an `EventSink`, a turn records `turn_start`/`llm_request`/`llm_response`/`tool_*`/`turn_end` to `session_events`, distinct from the in-memory progress/replay buffers. |
 
-### End-to-end (Phases 6–7 gates)
+### End-to-end (phases 6–7 gates)
 
 | Check | Observable |
 |-------|------------|
@@ -230,7 +231,7 @@ How to use this file:
 
 ---
 
-## 5. Autonomy (Phases 8–10)
+## 5. Autonomy (phases 8–10)
 
 ### Session plans — [`session-plans.md`](contracts/session-plans.md)
 
@@ -246,7 +247,7 @@ How to use this file:
 | R-PLAN.8 | Self-model (`SystemSelf`) | `self/identity`+`self/capabilities`+`self/learned` injected as P2.5, capped ~600 tokens. |
 | R-PLAN.9 | `pursue` routine | 5-min interval; reads the goal and its derived children, acts, syncs status, pauses goal on stall. |
 
-### Goals — [`orchestration.md`](contracts/orchestration.md) (§ Goals)
+### Goals — [`orchestration.md`](contracts/orchestration.md) (§ goals)
 
 | ID | Property | Observable check |
 |----|----------|------------------|
@@ -256,9 +257,9 @@ How to use this file:
 
 ---
 
-## 6. Delegation & workflows (Phases 11–12)
+## 6. Delegation & workflows (phases 11–12)
 
-### Sub-agents — [`orchestration.md`](contracts/orchestration.md) (§ Sub-agents)
+### Sub-agents — [`orchestration.md`](contracts/orchestration.md) (§ sub-agents)
 
 | ID | Property | Observable check |
 |----|----------|------------------|
@@ -266,7 +267,7 @@ How to use this file:
 | R-ORCH.2 | Execution model | A child runs a fresh loop in its leaf role at depthGuard-1 synchronously (`RunSubAgentSync`); lifecycle streams as `sub_agent_start`/`sub_agent_end`. |
 | R-ORCH.3 | Delegation termination (I6) | An `executor` child can `run_agent`; its grandchild cannot (tool absent, guard exhausted). `run_agents` group timeout = 1800s; stragglers cancelled and marked `timed_out`. |
 
-### Workflows — [`orchestration.md`](contracts/orchestration.md) (§ Workflows)
+### Workflows — [`orchestration.md`](contracts/orchestration.md) (§ workflows)
 
 | ID | Property | Observable check |
 |----|----------|------------------|
@@ -280,7 +281,7 @@ How to use this file:
 
 ---
 
-## 7. Oversight (Phase 13) — [`supervisor.md`](contracts/supervisor.md)
+## 7. Oversight (phase 13) — [`supervisor.md`](contracts/supervisor.md)
 
 | ID | Property | Observable check |
 |----|----------|------------------|
@@ -293,7 +294,7 @@ How to use this file:
 
 ---
 
-## 8. Human-in-the-loop (Phase 14) — [`hitl.md`](contracts/hitl.md)
+## 8. Human-in-the-loop (phase 14) — [`hitl.md`](contracts/hitl.md)
 
 | ID | Property | Observable check |
 |----|----------|------------------|
@@ -308,7 +309,7 @@ How to use this file:
 
 ---
 
-## 9. Skills & boundary (Phase 15) — [`skills.md`](contracts/skills.md)
+## 9. Skills & boundary (phase 15) — [`skills.md`](contracts/skills.md)
 
 | ID | Property | Observable check |
 |----|----------|------------------|
@@ -346,7 +347,7 @@ How to use this file:
 
 ---
 
-## 10. Operator surface (Phase 16) — [`wire-protocol.md`](contracts/wire-protocol.md) (client)
+## 10. Operator surface (phase 16) — [`wire-protocol.md`](contracts/wire-protocol.md) (client)
 
 | Check | Observable |
 |-------|------------|
@@ -358,7 +359,7 @@ How to use this file:
 
 ---
 
-## 11. Startup wiring & resume (Phase 17)
+## 11. Startup wiring & resume (phase 17)
 
 | Check | Observable |
 |-------|------------|
@@ -368,7 +369,7 @@ How to use this file:
 
 ---
 
-## 12. Event journal & subscriptions (Phase 18) — [`event-journal.md`](contracts/event-journal.md), [`subscriptions.md`](contracts/subscriptions.md)
+## 12. Event journal & subscriptions (phase 18) — [`event-journal.md`](contracts/event-journal.md), [`subscriptions.md`](contracts/subscriptions.md)
 
 | ID | Property | Observable check |
 |----|----------|------------------|

@@ -1,4 +1,4 @@
-# Queued Messages
+# Queued messages
 
 **Status:** Implemented  **Feature:** Per-session message buffering for user replies during active turns
 
@@ -13,9 +13,9 @@ When a user sends a message while Nine is busy (e.g., waiting for an LLM respons
 3. **Model control** - The model decides when and which messages to process
 4. **Hybrid consumption** - The model can process some messages and leave others in the queue
 
-## How It Works
+## How it works
 
-### Message Flow
+### Message flow
 
 ```mermaid
 flowchart TD
@@ -55,7 +55,7 @@ flowchart TD
     style History fill:#3a1a3a,color:#fff
 ```
 
-### Turn Lifecycle with Queued Messages
+### Turn lifecycle with queued messages
 
 1. **User sends message during busy turn** > Message is added to the queue (not to history)
 2. **Next turn starts** > System message includes: `"[System: There are N queued messages from the user. Use queued_messages_get to read them.]"`
@@ -136,9 +136,9 @@ Get the number of unconsumed messages currently queued.
 
 **Returns:** Integer count
 
-## Usage Patterns
+## Usage patterns
 
-### Pattern 1: Process All Messages
+### Pattern 1: process all messages
 
 ```
 User: Do the analysis
@@ -152,7 +152,7 @@ Nine: [finishes thinking, starts turn]
       [Now processes all messages together]
 ```
 
-### Pattern 2: Selective Processing
+### Pattern 2: selective processing
 
 ```
 User: Do the analysis
@@ -169,7 +169,7 @@ Nine: [finishes thinking, starts turn]
       [Processes database and cache requests, ignores frontend]
 ```
 
-### Pattern 3: Deferred Processing
+### Pattern 3: deferred processing
 
 ```
 User: Do the analysis
@@ -188,9 +188,9 @@ Nine: [finishes thinking, starts turn]
       [Now processes the queued messages]
 ```
 
-## Data Structure
+## Data structure
 
-### Conversation Table
+### Conversation table
 
 The `conversations` table has a `queued_messages` column (TEXT, default `[]`) that stores an array of queued messages:
 
@@ -202,7 +202,7 @@ The `conversations` table has a `queued_messages` column (TEXT, default `[]`) th
 ]
 ```
 
-### QueuedMessage Type
+### QueuedMessage type
 
 ```go
 type QueuedMessage struct {
@@ -211,15 +211,15 @@ type QueuedMessage struct {
 }
 ```
 
-## Implementation Details
+## Implementation details
 
-### Database Schema
+### Database schema
 
 The `queued_messages` column was added in schema version 10 (migration step 9  10).
 
 **Migration:** `conversations_queued_messages` - adds the column with default `[]`
 
-### Context Builder Integration
+### Context builder integration
 
 When `QueuedMessagesCount > 0`, the context builder appends to the system prompt:
 
@@ -229,7 +229,7 @@ When `QueuedMessagesCount > 0`, the context builder appends to the system prompt
 
 This notification appears in **every turn** where there are unconsumed queued messages.
 
-### Message Consumption Flow
+### Message consumption flow
 
 1. Model calls `queued_message_mark_consumed` with a specific index
 2. Store retrieves the queued messages
@@ -253,14 +253,14 @@ The system does not automatically clean up consumed messages from the queue. Thi
 
 No configuration is required. The queued messages feature is always available when the daemon is running.
 
-## Limitations
+## Limits
 
 1. **No automatic consumption** - Messages are never automatically moved to history
 2. **No TUI/CLI/API integration yet** - Currently only the model can access queued messages through tools
 3. **No size limits** - There is currently no limit on the number or size of queued messages
 4. **No expiration** - Queued messages do not expire automatically
 
-## Future Enhancements
+## Future enhancements
 
 - CLI command to view queued messages for a session
 - TUI indicator showing queued message count
@@ -268,8 +268,8 @@ No configuration is required. The queued messages feature is always available wh
 - Configuration options for queued message behavior
 - Automatic cleanup of fully-consumed queues
 
-## See Also
+## See also
 
-- [Agent Loop](agent-loop.md) - How turns are processed
-- [Context Builder](context-builder.md) - How context is assembled
-- [Memory Store Contract](spec/contracts/memory-store.md) - Database schema and operations
+- [Agent loop](agent-loop.md) - How turns are processed
+- [Context builder](context-builder.md) - How context is assembled
+- [Memory store contract](../spec/contracts/memory-store.md) - Database schema and operations

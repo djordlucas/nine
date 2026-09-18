@@ -1,33 +1,39 @@
-# GitHub Repository Hardening Guide: Preparing for Public Access
+# GitHub repository hardening
 
-This comprehensive guide helps you harden your GitHub repository before making it public. It covers security best practices, access controls, content sanitization, and policy configurations to ensure your repository is safe for public visibility.
+**Status:** Reference checklist · **Scope:** Repository configuration for public release
+
+Operational checklist for hardening this repository before making it public:
+secret audit, branch protection, CODEOWNERS, secret and code scanning, Actions
+permissions, and repository metadata. It documents GitHub configuration, not
+Nine itself, which is why it lives here rather than in `docs/` — `docs/` is
+embedded in the binary and ships to users.
 
 ---
 
-## \ud83c\udf81 Overview: Repository Hardening Checklist
+## 🎁 Overview: Repository Hardening Checklist
 
 | Category | Action | Priority | GitHub Plan |
 |----------|--------|----------|-------------|
-| [Sensitive Data Audit](#1-sensitive-data-audit) | Remove secrets, tokens, credentials | \ud83d\udd34 **CRITICAL** | All |
-| [CODEOWNERS](#2-code-owners-and-review-controls) | Define code ownership and review requirements | \ud83d\udd34 **CRITICAL** | Free |
-| [Branch Protection](#3-branch-protection-rules) | Enforce PR requirements and approvals | \ud83d\udd34 **CRITICAL** | Free |
-| [Secret Scanning](#4-secret-scanning) | Enable GitHub secret scanning | \ud83d\udd34 **CRITICAL** | Free |
-| [Security Policy](#5-security-policy) | Add SECURITY.md with reporting process | \ud83d\udd34 **CRITICAL** | Free |
-| [Dependency Security](#6-dependency-security) | Enable Dependabot and vulnerability alerts | \ud83d\udd34 **CRITICAL** | Free |
-| [License](#7-license-and-legal) | Add appropriate open source license | \ud83d\udd35 **HIGH** | Free |
-| [Issue & PR Templates](#8-issue-and-pr-templates) | Standardize contributions | \ud83d\udd35 **HIGH** | Free |
-| [GitHub Actions Security](#9-github-actions-security) | Secure CI/CD workflows | \ud83d\udd35 **HIGH** | Free |
-| [Fork Protection](#10-fork-and-contribution-controls) | Control fork behavior | \ud83d\udd35 **HIGH** | Free/Pro |
-| [Code Scanning](#11-code-scanning) | Enable static analysis | \ud83d\udd35 **MEDIUM** | Free |
-| [Repository Metadata](#12-repository-metadata) | Configure visibility, topics, description | \ud83d\udd35 **MEDIUM** | Free |
+| [Sensitive Data Audit](#1-sensitive-data-audit) | Remove secrets, tokens, credentials | 🔴 **CRITICAL** | All |
+| [CODEOWNERS](#2-code-owners-and-review-controls) | Define code ownership and review requirements | 🔴 **CRITICAL** | Free |
+| [Branch Protection](#3-branch-protection-rules) | Enforce PR requirements and approvals | 🔴 **CRITICAL** | Free |
+| [Secret Scanning](#4-secret-scanning) | Enable GitHub secret scanning | 🔴 **CRITICAL** | Free |
+| [Security Policy](#5-security-policy) | Add SECURITY.md with reporting process | 🔴 **CRITICAL** | Free |
+| [Dependency Security](#6-dependency-security) | Enable Dependabot and vulnerability alerts | 🔴 **CRITICAL** | Free |
+| [License](#7-license-and-legal) | Add appropriate open source license | 🔵 **HIGH** | Free |
+| [Issue & PR Templates](#8-issue-and-pr-templates) | Standardize contributions | 🔵 **HIGH** | Free |
+| [GitHub Actions Security](#9-github-actions-security) | Secure CI/CD workflows | 🔵 **HIGH** | Free |
+| [Fork Protection](#10-fork-and-contribution-controls) | Control fork behavior | 🔵 **HIGH** | Free/Pro |
+| [Code Scanning](#11-code-scanning) | Enable static analysis | 🔵 **MEDIUM** | Free |
+| [Repository Metadata](#12-repository-metadata) | Configure visibility, topics, description | 🔵 **MEDIUM** | Free |
 
 ---
 
-## \ud83d\udd34 Phase 1: Pre-Publication Security (Do These FIRST)
+## 🔴 Phase 1: Pre-Publication Security (Do These FIRST)
 
 ### 1. Sensitive Data Audit
 
-**\u26a0\ufe0f CRITICAL: Before making any repository public, you MUST audit and remove all sensitive data.**
+**⚠️ CRITICAL: Before making any repository public, you MUST audit and remove all sensitive data.**
 
 #### 1.1 Scan for Secrets
 
@@ -92,7 +98,7 @@ git push origin --force --all
 git push origin --force --tags
 ```
 
-**\u26a0\ufe0f WARNING:** History rewriting affects all collaborators. Coordinate with your team and ensure everyone re-clones the repository.
+**⚠️ WARNING:** History rewriting affects all collaborators. Coordinate with your team and ensure everyone re-clones the repository.
 
 #### 1.4 .gitignore Best Practices
 
@@ -251,18 +257,18 @@ Branch protection enforces rules before a PR can be merged, ensuring quality and
 
 | Setting | Recommendation | Why |
 |---------|---------------|-----|
-| Require pull request | \u2705 **Enable** | Prevents direct pushes |
-| Require approvals | \u2705 **Enable** (2+) | Ensures review |
-| Require review from Code Owners | \u2705 **Enable** | Enforces CODEOWNERS |
-| Require status checks to pass | \u2705 **Enable** | Ensures CI passes |
-| Require branches to be up to date | \u2705 **Enable** | Prevents merge conflicts |
-| Require linear history | \u274c Optional | Prevents merge commits |
-| Include administrators | \u2705 **Enable** | Admins follow same rules |
-| Block force pushes | \u2705 **Enable** | Prevents history rewriting |
-| Block deletions | \u2705 **Enable** | Prevents branch deletion |
-| Require signed commits | \u274c Optional | GPG verification |
-| Require deployment to succeed | \u274c Optional | Environment-specific |
-| Restrict who can push | \u274c Optional | Only for closed repos |
+| Require pull request | ✅ **Enable** | Prevents direct pushes |
+| Require approvals | ✅ **Enable** (2+) | Ensures review |
+| Require review from Code Owners | ✅ **Enable** | Enforces CODEOWNERS |
+| Require status checks to pass | ✅ **Enable** | Ensures CI passes |
+| Require branches to be up to date | ✅ **Enable** | Prevents merge conflicts |
+| Require linear history | ❌ Optional | Prevents merge commits |
+| Include administrators | ✅ **Enable** | Admins follow same rules |
+| Block force pushes | ✅ **Enable** | Prevents history rewriting |
+| Block deletions | ✅ **Enable** | Prevents branch deletion |
+| Require signed commits | ❌ Optional | GPG verification |
+| Require deployment to succeed | ❌ Optional | Environment-specific |
+| Restrict who can push | ❌ Optional | Only for closed repos |
 
 #### 3.2 Protection for Release Branches
 
@@ -270,12 +276,12 @@ Create additional rules for release branches:
 
 **Pattern:** `release/*`
 
-- Require pull request: \u2705
+- Require pull request: ✅
 - Require approvals: 2+
-- Require Code Owners: \u2705
-- Include administrators: \u2705
-- Block force pushes: \u2705
-- Block deletions: \u2705
+- Require Code Owners: ✅
+- Include administrators: ✅
+- Block force pushes: ✅
+- Block deletions: ✅
 
 #### 3.3 Protection for Other Critical Branches
 
@@ -285,7 +291,7 @@ Apply appropriate protection based on branch importance.
 
 ---
 
-## \ud83d\udd34 Phase 2: Security Configuration
+## 🔴 Phase 2: Security Configuration
 
 ### 4. Secret Scanning
 
@@ -333,7 +339,7 @@ Create a `SECURITY.md` file in your repository root or `.github/` directory to p
 ```markdown
 # Security Policy
 
-## \ud83d\udc82 Reporting a Vulnerability
+## 💂 Reporting a Vulnerability
 
 If you discover a security vulnerability in this project, please follow our responsible disclosure process:
 
@@ -345,32 +351,32 @@ If you discover a security vulnerability in this project, please follow our resp
    - Impact assessment
    - Your contact information (optional)
 
-## \u2705 Security Scope
+## ✅ Security Scope
 
 This policy applies to:
 - The main repository codebase
 - All published releases
 - Official documentation
 
-## \u274c Out of Scope
+## ❌ Out of Scope
 
 The following are NOT covered by this policy:
 - Third-party dependencies (report to their maintainers)
 - Individual user accounts or data
 - Infrastructure not directly managed by this project
 
-## \u23f1 Response Time
+## ⏱ Response Time
 
 We aim to:
 - Acknowledge receipt within 24 hours
 - Provide initial assessment within 48 hours
 - Release a patch or mitigation within 7 days (for critical vulnerabilities)
 
-## \ud83d\udd04 Preferred Languages
+## 🔄 Preferred Languages
 
 You may submit reports in English.
 
-## \ud83d\udc93 Hall of Fame
+## 💓 Hall of Fame
 
 We publicly acknowledge security researchers who responsibly disclose vulnerabilities:
 
@@ -378,7 +384,7 @@ We publicly acknowledge security researchers who responsibly disclose vulnerabil
 |-----------|------|--------------|
 | @researcher | 2024-01-01 | XSS in web interface |
 
-## \ud83d\udc65 Security Contacts
+## 👥 Security Contacts
 
 | Role | Email | PGP Key |
 |------|-------|---------|
@@ -486,12 +492,12 @@ For public repositories, always include a license. Common choices:
 
 | License | Permissions | Limitations | Use Case |
 |---------|-------------|-------------|----------|
-| MIT | \u2705 Commercial use<br>\u2705 Modification<br>\u2705 Distribution<br>\u2705 Patent use | \u274c Liability<br>\u274c Warranty | Most permissive |
-| Apache 2.0 | \u2705 Commercial use<br>\u2705 Modification<br>\u2705 Distribution<br>\u2705 Patent use | \u274c Liability<br>\u274c Warranty<br>\u274c Trademark use | Balanced, patent protection |
-| GPL-3.0 | \u2705 Commercial use<br>\u2705 Modification<br>\u2705 Distribution<br>\u2705 Patent use | \u274c Liability<br>\u274c Warranty<br>\u26a0\ufe0f Copyleft (derivatives must be open) | Strong copyleft |
-| AGPL-3.0 | \u2705 Commercial use<br>\u2705 Modification<br>\u2705 Distribution<br>\u2705 Patent use | \u274c Liability<br>\u274c Warranty<br>\u26a0\ufe0f Strong copyleft (network use) | Network copyleft |
-| BSD-3-Clause | \u2705 Commercial use<br>\u2705 Modification<br>\u2705 Distribution | \u274c Liability<br>\u274c Warranty<br>\u274c Trademark use | Permissive, simple |
-| ISC | \u2705 Commercial use<br>\u2705 Modification<br>\u2705 Distribution | \u274c Liability<br>\u274c Warranty | Very permissive |
+| MIT | ✅ Commercial use<br>✅ Modification<br>✅ Distribution<br>✅ Patent use | ❌ Liability<br>❌ Warranty | Most permissive |
+| Apache 2.0 | ✅ Commercial use<br>✅ Modification<br>✅ Distribution<br>✅ Patent use | ❌ Liability<br>❌ Warranty<br>❌ Trademark use | Balanced, patent protection |
+| GPL-3.0 | ✅ Commercial use<br>✅ Modification<br>✅ Distribution<br>✅ Patent use | ❌ Liability<br>❌ Warranty<br>⚠️ Copyleft (derivatives must be open) | Strong copyleft |
+| AGPL-3.0 | ✅ Commercial use<br>✅ Modification<br>✅ Distribution<br>✅ Patent use | ❌ Liability<br>❌ Warranty<br>⚠️ Strong copyleft (network use) | Network copyleft |
+| BSD-3-Clause | ✅ Commercial use<br>✅ Modification<br>✅ Distribution | ❌ Liability<br>❌ Warranty<br>❌ Trademark use | Permissive, simple |
+| ISC | ✅ Commercial use<br>✅ Modification<br>✅ Distribution | ❌ Liability<br>❌ Warranty | Very permissive |
 
 **Recommendation:** Use MIT or Apache 2.0 for most projects. Use GPL if you want to enforce open source derivatives.
 
@@ -535,7 +541,7 @@ Consider adding a `TRADEMARKS.md` file if your project has trademarked names or 
 
 ---
 
-## \ud83d\udd35 Phase 3: Repository Configuration
+## 🔵 Phase 3: Repository Configuration
 
 ### 8. Issue and PR Templates
 
@@ -555,11 +561,11 @@ labels: bug
 assignees: ''
 ---
 
-## \ud83d\udce2 Describe the bug
+## 📢 Describe the bug
 
 A clear and concise description of what the bug is.
 
-## \u26a0\ufe0f To Reproduce
+## ⚠️ To Reproduce
 
 Steps to reproduce the behavior:
 1. Go to '...'
@@ -567,21 +573,21 @@ Steps to reproduce the behavior:
 3. Scroll down to '....'
 4. See error
 
-## \ud83d\udcf0 Expected behavior
+## 📰 Expected behavior
 
 A clear description of what you expected to happen.
 
-## \ud83d\udcbb Screenshots
+## 💻 Screenshots
 
 If applicable, add screenshots to help explain your problem.
 
-## \ud83d\udcdb Environment
+## 📛 Environment
 
 - OS: [e.g. iOS]
 - Browser [e.g. chrome, safari]
 - Version [e.g. 22]
 
-## \ud83d\udc81 Additional context
+## 💁 Additional context
 
 Add any other context about the problem here.
 ```
@@ -596,19 +602,19 @@ labels: enhancement
 assignees: ''
 ---
 
-## \ud83c\udf1f Is your feature request related to a problem? Please describe.
+## 🌟 Is your feature request related to a problem? Please describe.
 
 A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
 
-## \ud83d\udc8b Describe the solution you'd like
+## 💋 Describe the solution you'd like
 
 A clear description of what you want to happen.
 
-## \ud83d\udca1 Describe alternatives you've considered
+## 💡 Describe alternatives you've considered
 
 A clear description of any alternative solutions or features you've considered.
 
-## \ud83d\udc8d Additional context
+## 💍 Additional context
 
 Add any other context or screenshots about the feature request here.
 ```
@@ -622,7 +628,7 @@ title: "[SECURITY] "
 labels: security
 ---
 
-**\u26a0\ufe0f STOP: Do NOT report security vulnerabilities here.**
+**⚠️ STOP: Do NOT report security vulnerabilities here.**
 
 Please see our [Security Policy](SECURITY.md) for responsible disclosure instructions.
 
@@ -634,13 +640,13 @@ If you believe you have found a security vulnerability, please report it private
 Create `.github/PULL_REQUEST_TEMPLATE.md`:
 
 ```markdown
-## \ud83d\udce2 Description
+## 📢 Description
 
 Include a summary of the change and which issue is fixed. Include relevant motivation and context.
 
 Fixes # (issue)
 
-## \ud83c\udf10 Type of change
+## 🌐 Type of change
 
 - [ ] Bug fix (non-breaking change which fixes an issue)
 - [ ] New feature (non-breaking change which adds functionality)
@@ -648,7 +654,7 @@ Fixes # (issue)
 - [ ] This change requires a documentation update
 - [ ] Security fix
 
-## \ud83d\udc86 How Has This Been Tested?
+## 💆 How Has This Been Tested?
 
 Please describe the tests that you ran to verify your changes. Provide instructions so we can reproduce.
 
@@ -656,7 +662,7 @@ Please describe the tests that you ran to verify your changes. Provide instructi
 - [ ] Integration tests
 - [ ] Manual testing
 
-## \ud83d\udc65 Checklist
+## 👥 Checklist
 
 - [ ] My code follows the style guidelines of this project
 - [ ] I have performed a self-review of my own code
@@ -666,9 +672,9 @@ Please describe the tests that you ran to verify your changes. Provide instructi
 - [ ] Any dependent changes have been merged and published in downstream modules
 - [ ] I have checked my code and corrected any misspellings
 
-## \ud83d\udd3d Screenshots (if applicable)
+## 🔽 Screenshots (if applicable)
 
-## \ud83d\udc41 Reviewers
+## 👁 Reviewers
 
 @your-org/maintainers
 ```
@@ -691,10 +697,10 @@ Please describe the tests that you ran to verify your changes. Provide instructi
 
 2. **Pin actions to full commit SHA:**
    ```yaml
-   # \u274c Bad: uses tag
+   # ❌ Bad: uses tag
    - uses: actions/checkout@v4
    
-   # \u2705 Good: uses full SHA
+   # ✅ Good: uses full SHA
    - uses: actions/checkout@8e5e7e5ab8b370d380e6ll394df77a82e5042155c
    ```
 
@@ -795,11 +801,11 @@ Create `CONTRIBUTING.md`:
 
 We welcome contributions! Please follow these guidelines.
 
-## \ud83d\udc8b Code of Conduct
+## 💋 Code of Conduct
 
 By participating in this project, you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md).
 
-## \ud83d\udc81 Getting Started
+## 💁 Getting Started
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
@@ -807,7 +813,7 @@ By participating in this project, you agree to abide by our [Code of Conduct](CO
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## \ud83d\udcf0 Pull Request Guidelines
+## 📰 Pull Request Guidelines
 
 - Follow the [Pull Request Template](.github/PULL_REQUEST_TEMPLATE.md)
 - Keep PRs focused and small
@@ -815,25 +821,25 @@ By participating in this project, you agree to abide by our [Code of Conduct](CO
 - Update documentation as needed
 - Reference related issues
 
-## \ud83d\udcbb Coding Standards
+## 💻 Coding Standards
 
 - Follow the existing code style
 - Use meaningful commit messages
 - Comment complex logic
 - Keep line lengths reasonable (80-120 chars)
 
-## \ud83d\udc86 Testing
+## 💆 Testing
 
 - All PRs must pass existing tests
 - Add tests for new features
 - Bug fixes must include regression tests
 
-## \ud83d\udd3d Reporting Issues
+## 🔽 Reporting Issues
 
 Use the appropriate [Issue Template](.github/ISSUE_TEMPLATE/)
 for your report.
 
-## \ud83d\udc65 Review Process
+## 👥 Review Process
 
 - All PRs require approval from CODEOWNERS
 - Maintainers may request changes
@@ -981,7 +987,7 @@ Consider adding these tools to your CI:
 
 ---
 
-## \ud83d\udd35 Phase 4: Repository Metadata and Settings
+## 🔵 Phase 4: Repository Metadata and Settings
 
 ### 12. Repository Metadata
 
@@ -1008,12 +1014,12 @@ Enable/disable features appropriately:
 
 | Feature | Recommendation | Notes |
 |---------|---------------|-------|
-| Issues | \u2705 Enable | Essential for community |
-| Projects | \u274c Optional | Only if needed |
-| Discussions | \u2705 Enable | Community building |
-| Wiki | \u274c Optional | Consider for docs |
-| Sponsorships | \u2705 Enable | If accepting donations |
-| GitHub Pages | \u2705 Enable | For project websites |
+| Issues | ✅ Enable | Essential for community |
+| Projects | ❌ Optional | Only if needed |
+| Discussions | ✅ Enable | Community building |
+| Wiki | ❌ Optional | Consider for docs |
+| Sponsorships | ✅ Enable | If accepting donations |
+| GitHub Pages | ✅ Enable | For project websites |
 
 #### 12.4 Default Branch
 
@@ -1050,13 +1056,13 @@ Ensure security alerts are sent to the right people:
 
 ---
 
-## \ud83d\udd35 Phase 5: Final Verification
+## 🔵 Phase 5: Final Verification
 
 ### 14. Pre-Publication Checklist
 
-**\u26a0\ufe0f DO NOT make the repository public until ALL critical items are complete.**
+**⚠️ DO NOT make the repository public until ALL critical items are complete.**
 
-#### \ud83d\udd34 Critical (Must Complete)
+#### 🔴 Critical (Must Complete)
 
 - [ ] **Sensitive Data Audit Complete**
   - [ ] Ran secret scanning tools (truffleHog, gitleaks, git-secrets)
@@ -1095,7 +1101,7 @@ Ensure security alerts are sent to the right people:
   - [ ] All dependencies have compatible licenses
   - [ ] Third-party assets have proper attribution
 
-#### \ud83d\udd35 High Priority (Should Complete)
+#### 🔵 High Priority (Should Complete)
 
 - [ ] **Templates Configured**
   - [ ] Issue templates created
@@ -1118,7 +1124,7 @@ Ensure security alerts are sent to the right people:
   - [ ] CodeQL or other static analysis enabled
   - [ ] Custom queries configured (if needed)
 
-#### \ud83d\udd36 Medium Priority (Nice to Have)
+#### 🔶 Medium Priority (Nice to Have)
 
 - [ ] README.md is comprehensive and up-to-date
 - [ ] Documentation is complete
@@ -1188,7 +1194,7 @@ After making the repository public:
 
 ---
 
-## \ud83d\udcda Additional Resources
+## 📚 Additional Resources
 
 ### GitHub Documentation
 
@@ -1222,7 +1228,7 @@ After making the repository public:
 
 ---
 
-## \ud83d\udcc5 Appendix A: Emergency Response Plan
+## 📅 Appendix A: Emergency Response Plan
 
 ### Secret Exposure Response
 
@@ -1279,7 +1285,7 @@ If a secret is accidentally exposed in a public repository:
 
 ---
 
-## \ud83d\udcc5 Appendix B: Pre-Commit Hooks for Security
+## 📅 Appendix B: Pre-Commit Hooks for Security
 
 Add these hooks to prevent common security issues:
 
@@ -1362,7 +1368,7 @@ pre-commit run --all-files
 
 ---
 
-## \ud83d\udcc5 Appendix C: Example .github/ Directory Structure
+## 📅 Appendix C: Example .github/ Directory Structure
 
 ```
 .github/
@@ -1386,7 +1392,7 @@ pre-commit run --all-files
 
 ---
 
-## \ud83d\udcc5 Appendix D: Common Pitfalls and How to Avoid Them
+## 📅 Appendix D: Common Pitfalls and How to Avoid Them
 
 ### Pitfall 1: Incomplete Secret Removal
 
@@ -1438,7 +1444,7 @@ pre-commit run --all-files
 
 ---
 
-## \ud83d\udc65 Summary
+## 👥 Summary
 
 Preparing a repository for public access requires careful attention to security, legal, and operational concerns. This guide provides a comprehensive checklist to ensure your repository is safe, well-documented, and ready for public collaboration.
 

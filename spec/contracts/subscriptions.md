@@ -1,4 +1,4 @@
-# Contract — Journal Subscriptions & Reactive Enrichment
+# Contract — journal subscriptions & reactive enrichment
 
 **Status:** Built · **Depends on:** event journal, memory store, embedder · **Used by:** supervisor, related-session indexer, context builder
 
@@ -9,7 +9,7 @@ later user-initiated turns *pull* from. Full design: `adr/reactive-events.md`.
 
 ---
 
-## R-SUB.1 — The subscription primitive
+## R-SUB.1 — the subscription primitive
 
 A subscriber is a `subscribe.Handler`:
 
@@ -28,7 +28,7 @@ plain goroutine, **off the turn path**.
 
 ---
 
-## R-SUB.2 — Wake + catch-up
+## R-SUB.2 — wake + catch-up
 
 `Notify()` gives an in-process, low-latency wake (the event sink's flush calls
 `Daemon.NotifySubscribers`); a poll tick is the fallback. The durable **cursor is the
@@ -40,7 +40,7 @@ rather than a database feature (see R-SUB.7).
 
 ---
 
-## R-SUB.3 — Out-of-band discipline (the guarantees)
+## R-SUB.3 — out-of-band discipline (the guarantees)
 
 A subscriber **MUST NOT**:
 
@@ -55,7 +55,7 @@ reaction→event→reaction feedback loops. **Enrich, don't interject.**
 
 ---
 
-## R-SUB.4 — The related-session indexer
+## R-SUB.4 — the related-session indexer
 
 `subscribers.RelatedIndexer` (config-gated, on by default when an embedder is configured:
 `[daemon] related_sessions_index`) subscribes to `turn_end`. On each completed turn it:
@@ -71,7 +71,7 @@ an embedder it is a no-op.
 
 ---
 
-## R-SUB.5 — Pull surfacing (how value reaches the user)
+## R-SUB.5 — pull surfacing (how value reaches the user)
 
 Derived state is inert until a **user-initiated** turn pulls it. The context builder may
 surface one recorded `related_sessions` link as `SystemEnrichment` (priority 2.6, capped,
@@ -85,7 +85,7 @@ answers do against each other.
 
 ---
 
-## R-SUB.6 — The supervisor as a subscriber
+## R-SUB.6 — the supervisor as a subscriber
 
 The supervisor's control-plane bus is folded onto the journal: it `Post`s events as the
 `supervisor` type and consumes them via a cursor-backed subscription, surviving restart
@@ -94,7 +94,7 @@ applied to lifecycle events.
 
 ---
 
-## R-SUB.7 — Deferred by decision (not forgotten)
+## R-SUB.7 — deferred by decision (not forgotten)
 
 Generative-LLM reactions and autonomous session injection ("free will") are **out of
 scope**: reactions stay programmatic and out-of-band. Database-level pub/sub, JSON

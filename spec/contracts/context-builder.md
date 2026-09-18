@@ -1,4 +1,4 @@
-# Contract — Context Builder & Token Budget
+# Contract — context builder & token budget
 
 **Status:** Built · **Depends on:** embedder (relevance) · **Used by:** agent loop (every inner iteration)
 
@@ -7,7 +7,7 @@ iteration. This is what lets Nine run usefully on small local models (goal G5).
 
 ---
 
-## R-CTX.1 — Token model
+## R-CTX.1 — token model
 
 Token counting is a deliberate approximation: **4 characters ≈ 1 token**, with no
 tokenizer dependency. The budget is `context_budget` (falling back to `num_ctx` when
@@ -24,7 +24,7 @@ stays deterministic for a given input (R-CTX.4).
 
 ---
 
-## R-CTX.2 — Priority allocation
+## R-CTX.2 — priority allocation
 
 The budget is consumed by priority. Higher priorities are subtracted first; lower ones
 get whatever remains. When a component doesn't fit, it is trimmed or dropped per its
@@ -45,7 +45,7 @@ P1 is inviolable. P5 is the first to go.
 
 ---
 
-## R-CTX.3 — Tool relevance filtering
+## R-CTX.3 — tool relevance filtering
 
 ```text
 queryVec = embed(user query)             // provided by the loop, once per turn
@@ -73,7 +73,7 @@ A conforming implementation **MUST** keep always-include tools present every tur
 
 ---
 
-## R-CTX.4 — Assembly output & usage
+## R-CTX.4 — assembly output & usage
 
 `BuildWithUsage(...)` returns the assembled `llm.Request` **and** the approximate tokens
 used, which the loop reports via `OnContextUpdate(used, budget)` → the `context_update`
@@ -93,7 +93,7 @@ never races an in-flight turn.
 
 ---
 
-## R-CTX.5 — Memory as compression (behavioral guidance)
+## R-CTX.5 — memory as compression (behavioral guidance)
 
 Because context is budgeted, the system prompt **SHOULD** steer the agent to offload to
 memory rather than carry bulk in-context: store large tool outputs and retrieve by key,

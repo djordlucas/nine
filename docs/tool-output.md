@@ -1,18 +1,13 @@
 # Large tool output
 
 A tool can return more than a model can read. Nine caps what reaches the
-conversation and keeps the rest somewhere the model can go and get it, so a
-large result is a thing to navigate rather than a thing that was destroyed.
+conversation and writes the rest to the file store, where the model can search
+and page through it. Nothing is discarded.
 
 Three mechanisms cover this, all applied by the **dispatcher** — the component
 that sits between the model and every tool. Because it holds the complete
 result before anything is truncated, none of this requires cooperation from the
 tool itself. Tools do not know their output was large.
-
-## When a tool result is too large
-
-A tool result over the cap is not discarded and not silently cut short. It is
-kept whole and made reachable; only the *view* of it is bounded.
 
 ## The cap
 
@@ -69,8 +64,15 @@ reference; Nine does not guess that a string looks like a path and silently
 swap it for file contents. A string that happens to resemble a path stays a
 string.
 
-One limit remains by design: the model must know the handle, which means the
-handle came from a previous result in the same turn.
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Spill paths live for one turn | A spill path is addressable only within the turn that produced it. Paths do not accumulate across a conversation, and a stale path from an earlier turn reaches nothing. |
+| A reference needs a handle from the same turn | Passing a payload by reference requires the model to know the handle, which means it came from an earlier result in that same turn. |
+| References are declared, never inferred | A tool must mark an input as a file-store reference. Nine does not guess that a string looks like a path and swap in file contents. |
+| The cap is global | `max_output_tokens` applies to every tool result. It is not per-tool, so a tool whose useful output is consistently larger always spills. |
+| Preview shape is fixed | The model sees a head and a tail. A result whose signal sits in the middle needs a `file_fetch` or `file_search_text` call to reach. |
 
 > Why the dispatcher rather than a tool-facing API, and the options weighed —
 > [../adr/tool-output-spill.md](../adr/tool-output-spill.md).
