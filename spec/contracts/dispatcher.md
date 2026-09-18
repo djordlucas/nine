@@ -1,4 +1,4 @@
-# Contract — Tool Dispatcher
+# Contract — tool dispatcher
 
 **Status:** Built · **Depends on:** plugin manager, memory store, embedder · **Used by:** agent loop
 
@@ -8,7 +8,7 @@ handler. Both kinds appear in the same LLM tool list; the agent cannot tell them
 
 ---
 
-## R-DISP.1 — Dispatch path
+## R-DISP.1 — dispatch path
 
 ```text
 Dispatch(toolName, args):
@@ -26,7 +26,7 @@ NOT** panic the loop.
 
 ---
 
-## R-DISP.2 — Output cap and spill
+## R-DISP.2 — output cap and spill
 
 Every successful result is capped at `DefaultMaxOutputTokens = 2048` tokens (`maxChars
 = 2048 × 4 = 8192`) **before** being appended to the scratchpad. The cap is applied by
@@ -72,7 +72,7 @@ See [`../../adr/tool-output-spill.md`](../../adr/tool-output-spill.md).
 
 ---
 
-## R-DISP.3 — Tool taxonomy
+## R-DISP.3 — tool taxonomy
 
 ```text
 TOOL CALL
@@ -105,7 +105,7 @@ explicitly conferred capability set. The branch is empty unless `[tools] enabled
 
 ---
 
-## R-DISP.4 — Wiring model
+## R-DISP.4 — wiring model
 
 `Dispatcher.New()` returns an **empty** handler map. The daemon adds handlers at startup
 via the `Register*` functions (`RegisterGapReport`, `RegisterRunAgent(s)`,
@@ -124,7 +124,7 @@ Dispatcher.New()  → empty handler map
 
 ---
 
-## R-DISP.5 — Post-call hooks
+## R-DISP.5 — post-call hooks
 
 `AddHook(toolName, fn)` registers callbacks that fire after a **successful** call to that
 tool. The reference use: after `skill_write`/`skill_modify`, the skill's description is
@@ -133,7 +133,7 @@ embedded into the `skills` vector namespace (see [`skills.md`](skills.md)). Hook
 
 ---
 
-## R-DISP.6 — Role-aware registration (invariant I6)
+## R-DISP.6 — role-aware registration (invariant I6)
 
 The loop builder takes `(agentID, role, depthGuard)`. Tool registration is governed by
 the role ([`roles.md`](roles.md)): `role.Delegates` (with `depthGuard > 0`) gates
@@ -161,7 +161,7 @@ delegation stays structurally impossible.
 
 ---
 
-## R-DISP.7 — Reference arguments (`x-nine-ref`)
+## R-DISP.7 — reference arguments (`x-nine-ref`)
 
 A tool **MAY** declare a top-level string property as carrying a **file-store path**
 rather than a literal value, by setting `"x-nine-ref": true` on it in its input schema.

@@ -196,3 +196,12 @@ Standard error codes: `invalid_request` (400), `unauthorized` (401), `forbidden`
 ## Hot-reload behavior
 
 In the dev container, the API server is an s6 longrun service. When the hot-reload loop detects a `.go` change, it rebuilds the binary, restarts the daemon, and restarts the API server so it picks up the new binary and reconnects to the fresh daemon socket. The API server polls for `/tmp/nine.sock` on startup, so it waits for the daemon to be ready before accepting requests.
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Local transport underneath | The API server is a translation layer over the daemon's Unix socket, so it runs on the same host as the daemon. |
+| No WebSocket support | Streaming a turn's progress events over HTTP is not implemented. A conversation turn is request/response. |
+| Spec is generated, not hand-checked | The OpenAPI document is regenerated from annotations. An endpoint whose annotation drifts from its handler produces a spec that is wrong in the same way. |
+| Startup races the daemon | The API server polls for the daemon socket on startup and refuses requests until the daemon is ready. |

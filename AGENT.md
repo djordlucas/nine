@@ -73,6 +73,15 @@ Two patterns are easy to half-complete — do the whole checklist:
   behavior is absorbed into `docs/` and the plan stays put as the record — do
   not leave a finished plan in `docs/` describing the future in present tense.
 
+## Documentation style
+
+**`DOCS_STYLE.md` governs every Markdown file in this repo. Read it before
+writing or editing one.** A `PreToolUse` hook
+(`.claude/hooks/docs-style-guard.sh`) surfaces its rules on every `.md` read or
+edit. In short: conclusion first, every sentence carries a fact, headings name
+their subject, tables for anything with more than one attribute, a `## Limits`
+section last, and no superseded content.
+
 ## Commit discipline
 
 **Always verify before committing:**

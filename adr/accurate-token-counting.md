@@ -1,9 +1,9 @@
 # Accurate Token Counting Implementation Plan
 
-**Status:** Proposed (implementation plan) \u0014 **Date:** 2026-08-26 \u0014 **Author:** Vibe Code
-**Scope:** Performance optimization, context budgeting accuracy \u0014 **Depends on:** None
+**Status:** Proposed (implementation plan) — **Date:** 2026-08-26 — **Author:** Vibe Code
+**Scope:** Performance optimization, context budgeting accuracy — **Depends on:** None
 **Follows:** `adr/codebase-improvement.md` (implements A1 from Part II, Section 4.1)
-**Amends:** None \u0014 **Supersedes:** None
+**Amends:** None — **Supersedes:** None
 
 ---
 
@@ -11,7 +11,7 @@
 
 This document provides the **implementation plan** for replacing Nine's current byte-based token estimation (`(len(s)+3)/4`) with **actual tokenizer-based counting** via Ollama's `/api/tokenize` endpoint. This addresses **F1** from `adr/architecture-review.md` and implements **A1** from the performance optimizations in `adr/codebase-improvement.md`.
 
-The change is gated behind a feature flag (`[performance].accurate_token_counting`), defaults to **disabled** for backward compatibility, and falls back to the estimate if the tokenizer is unavailable. The expected improvement is **20\u201340% more accurate context budgeting** without regression in turn latency.
+The change is gated behind a feature flag (`[performance].accurate_token_counting`), defaults to **disabled** for backward compatibility, and falls back to the estimate if the tokenizer is unavailable. The expected improvement is **20–40% more accurate context budgeting** without regression in turn latency.
 
 ---
 
@@ -39,7 +39,7 @@ This estimate was calibrated against real usage data and over-estimates by ~2.5%
 - It is **model-specific** (calibrated for one tokenizer family)
 - It **cannot adapt** to different tokenizers
 - It is **never reconciled** against actual provider-reported usage (R-LLM.8)
-- It introduces **2\u20134x inaccuracy** for tokenizers that differ materially from the calibration model
+- It introduces **2–4x inaccuracy** for tokenizers that differ materially from the calibration model
 
 ### Why Now
 
@@ -271,7 +271,7 @@ func ApplyEnvOverrides(cfg *Config) {
 
 ## 5. Implementation Phases
 
-### Phase 1: Foundation (1\u00132 weeks)
+### Phase 1: Foundation (12 weeks)
 - [ ] Create `internal/context/tokenizer.go` with interface and implementations
 - [ ] Add `Tokenize()` method to Ollama provider
 - [ ] Add `[performance]` config section
@@ -279,7 +279,7 @@ func ApplyEnvOverrides(cfg *Config) {
 
 **Gate:** All existing tests pass; new code compiles without errors.
 
-### Phase 2: Integration (2\u00133 weeks)
+### Phase 2: Integration (23 weeks)
 - [ ] Update `internal/context/builder.go` to use tokenizer
 - [ ] Add token count cache to builder
 - [ ] Add reconciliation logic
@@ -287,13 +287,13 @@ func ApplyEnvOverrides(cfg *Config) {
 
 **Gate:** All existing tests pass; feature flag works correctly.
 
-### Phase 3: Testing & Validation (3\u00134 weeks)
+### Phase 3: Testing & Validation (34 weeks)
 - [ ] Add unit tests for all tokenizer implementations
 - [ ] Add benchmarks comparing estimate vs actual counting
 - [ ] Add integration tests for end-to-end token counting
 - [ ] Validate reconciliation logging and metrics
 
-**Gate:** All tests pass; benchmarks show 20\u201340% accuracy improvement.
+**Gate:** All tests pass; benchmarks show 20–40% accuracy improvement.
 
 ---
 
@@ -323,14 +323,14 @@ func ApplyEnvOverrides(cfg *Config) {
 ### Functional
 - [ ] All existing tests pass with feature flag disabled
 - [ ] All existing tests pass with feature flag enabled
-- [ ] Feature flag `accurate_token_counting = false` \u2192 uses estimate (backward compatible)
-- [ ] Feature flag `accurate_token_counting = true` \u2192 uses Ollama tokenizer
+- [ ] Feature flag `accurate_token_counting = false` → uses estimate (backward compatible)
+- [ ] Feature flag `accurate_token_counting = true` → uses Ollama tokenizer
 - [ ] Fallback to estimate if Ollama tokenizer fails (network error, endpoint missing)
 - [ ] Token count cache reduces repeated string counting
 - [ ] Reconciliation logs show estimate vs actual comparison
 
 ### Performance
-- [ ] Benchmarks show 20\u201340% improvement in counting accuracy
+- [ ] Benchmarks show 20–40% improvement in counting accuracy
 - [ ] Cache hit rate > 80% for typical sessions
 - [ ] No regression in turn latency (>5% increase)
 - [ ] Memory overhead < 10MB for cache
@@ -442,12 +442,12 @@ Each phase includes:
 
 ## 13. References
 
-- `adr/architecture-review.md` \u0014 Architecture review findings (F1)
-- `adr/codebase-improvement.md` \u0014 Performance optimizations (A1)
-- `spec/contracts/llm.md` \u0014 LLM contract (R-LLM.8: Usage reporting)
-- `internal/context/builder.go` \u0014 Current token counting implementation
-- `internal/llm/ollama/ollama.go` \u0014 Ollama provider
-- `internal/config/config.go` \u0014 Configuration structure
+- `adr/architecture-review.md` — Architecture review findings (F1)
+- `adr/codebase-improvement.md` — Performance optimizations (A1)
+- `spec/contracts/llm.md` — LLM contract (R-LLM.8: Usage reporting)
+- `internal/context/builder.go` — Current token counting implementation
+- `internal/llm/ollama/ollama.go` — Ollama provider
+- `internal/config/config.go` — Configuration structure
 - Ollama API Documentation: `/api/tokenize` endpoint
 
 ---
@@ -456,7 +456,7 @@ Each phase includes:
 
 | Metric | Current | Target | Improvement |
 |--------|---------|--------|-------------|
-| Token count accuracy | \u00b110-15% | \u00b15% | 20-40% more accurate |
+| Token count accuracy | ±10-15% | ±5% | 20-40% more accurate |
 | Context budget utilization | Over-estimate | Accurate | Better use of available tokens |
 | Turn latency (counting only) | ~0ms (estimate) | ~1-5ms (Ollama call) | Negligible with cache |
 | Memory usage | N/A | <10MB (cache) | Acceptable overhead |

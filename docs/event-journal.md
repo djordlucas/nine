@@ -12,10 +12,9 @@ reacted to.
 ## What it holds
 
 Each inner model call is recorded with its **full request and full response**,
-alongside the tool calls made and what they returned. Recording exchanges in
-full is what makes the difference between knowing that a session went wrong and
-being able to see why: a summary tells you a tool was called, the journal tells
-you what the model was looking at when it decided to call it.
+alongside the tool calls made and what they returned. A summary would record
+that a tool was called; the journal records what the model was looking at when
+it decided to call it.
 
 Checkpoints and the journal answer different questions and both are kept. A
 checkpoint is a **state** — enough to resume a session. The journal is the
@@ -23,24 +22,21 @@ checkpoint is a **state** — enough to resume a session. The journal is the
 
 ## Retention
 
-Sessions that are closed have their journal pruned below the most recent
-checkpoint, and a scrub runs at startup. Full-fidelity recording is only
-affordable if it is bounded, and history below a checkpoint is history you can
-no longer resume into.
+A closed session's journal is pruned below its most recent checkpoint, and a
+scrub runs at startup. History below a checkpoint cannot be resumed into, which
+is what makes full-fidelity recording affordable.
 
 ## Subscribing to journal events
 
-Because the journal is an ordered stream and not just a record, components can
-**subscribe** to it and react as entries arrive. Reactions maintain derived
-material — tags, links, indices, notifications — that makes later turns better
-informed.
+The journal is an ordered stream, so components can **subscribe** to it and
+react as entries arrive. Reactions maintain derived material — tags, links,
+indices, notifications — that makes later turns better informed.
 
-Four rules bound this, and they are what keep it from becoming an agent that
-talks to you:
+Four rules bound what a subscriber may do:
 
 **Reactions are out-of-band.** A reaction never blocks a turn, never writes
 into conversation history, and never steers the discussion. It writes only to
-derived stores. Every other guarantee follows from this one.
+derived stores.
 
 **Pull, not push.** Reactions build a substrate; the value reaches you only
 when a later turn you initiated *pulls* it — for instance, the context builder
@@ -49,9 +45,8 @@ token budget. Nine never interrupts you on its own initiative.
 
 **No generative reactions.** Subscribers do not make generative model calls.
 This bounds cost, keeps replay deterministic by keeping a nondeterministic step
-out of the record, and — most importantly — removes the possibility of a
-reaction triggering an event that triggers another reaction. A programmatic
-reaction produces bounded, structured output that cannot spiral.
+out of the record, and prevents a reaction from triggering an event that
+triggers another reaction.
 
 **Embedding is allowed; generation is not.** Subscribers may compute embeddings
 and use vector retrieval, which is what lets them relate sessions to each other
@@ -60,3 +55,13 @@ without writing anything new.
 > The investigation behind the journal, and the delivery semantics worked out
 > for subscriptions — [../adr/event-log.md](../adr/event-log.md) and
 > [../adr/reactive-events.md](../adr/reactive-events.md).
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Pruned below the last checkpoint | A closed session's journal is pruned below its most recent checkpoint, and a scrub runs at startup. History below a checkpoint cannot be resumed into and is not retained. |
+| One subscriber ships | Session linking is the only subscriber built. The subscription mechanism is general; nothing else uses it yet. |
+| No generative subscribers, by design | Subscribers may compute embeddings but may not make generative model calls. This bounds cost, keeps replay deterministic, and prevents a reaction from triggering another reaction. It is a deliberate constraint, not a gap. |
+| Pull only, by design | A reaction never blocks a turn, writes to conversation history, or interrupts. Derived material reaches you only when a later turn you initiated pulls it. |
+| Written off the critical path | An async batched sink writes the journal, so entries for an in-flight turn may not be readable the instant the turn ends. |

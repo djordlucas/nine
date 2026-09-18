@@ -1,4 +1,4 @@
-# Contract — Plugins & the Plugin Manager
+# Contract — plugins & the plugin manager
 
 **Status:** Built · **Depends on:** dispatcher (registration) · **Used by:** every turn that calls an external tool
 
@@ -21,7 +21,7 @@ no runtime generation, build, or hot-swap (N1).
 
 ---
 
-## R-PLUG.1 — The plugin contract (two methods)
+## R-PLUG.1 — the plugin contract (two methods)
 
 A plugin is any executable that implements exactly two methods. A native plugin serves
 them over HTTP — `POST /rpc` on the Unix socket named by `NINE_PLUGIN_SOCKET` — with a
@@ -84,7 +84,7 @@ request** so writing the reply does not cancel the work. See R-PLUG.12.
 
 ---
 
-## R-PLUG.3 — Manager lifecycle
+## R-PLUG.3 — manager lifecycle
 
 The manager owns subprocess lifecycle:
 
@@ -110,7 +110,7 @@ See [`context-builder.md`](context-builder.md).)
 
 ---
 
-## R-PLUG.4 — Crash isolation & recovery (I9)
+## R-PLUG.4 — crash isolation & recovery (I9)
 
 If a plugin subprocess exits unexpectedly:
 
@@ -123,7 +123,7 @@ Tool calls to a down plugin return an error the agent observes as a normal tool 
 
 ---
 
-## R-PLUG.5 — Default plugins
+## R-PLUG.5 — default plugins
 
 Started at daemon boot from immutable content:
 
@@ -152,7 +152,7 @@ Started at daemon boot from immutable content:
 
 ---
 
-## R-PLUG.6 — Browser automation is not a plugin
+## R-PLUG.6 — browser automation is not a plugin
 
 An implementation **MUST NOT** ship a browser as a default plugin. Browser automation is
 obtained by declaring a browser MCP server as an `[[mcp.server]]` (R-PLUG.15); its tools
@@ -178,7 +178,7 @@ the model as a fallback to a browser that may not be present.
 
 ---
 
-## R-PLUG.7 — No runtime plugin mutation *by the agent* (N1)
+## R-PLUG.7 — no runtime plugin mutation *by the agent* (N1)
 
 No **agent-reachable** tool or path may write plugin source, build a plugin, start
 a new plugin binary, hot-swap, or roll back a plugin. This is a self-modification
@@ -193,13 +193,13 @@ an agent tool, so neither is a path by which Nine mutates its own capabilities.
 **Scope: native plugins.** Sandboxed tools (`spec/contracts/toolvm.md`) are a separate
 subsystem with its own runtime, and the rule above is written about this one. The
 sentence that generalizes — *Nine cannot grant itself capabilities* — is unchanged and
-now load-bearing for both: a sandboxed tool's capabilities come from `[tool.<name>]` in
+now covers both: a sandboxed tool's capabilities come from `[tool.<name>]` in
 `nine.toml`, written by the operator, and no agent-reachable path writes one (I-TVM.2).
 Nothing in the sandboxed-tool subsystem as built lets an agent author a tool at all.
 
 ---
 
-## R-PLUG.9 — User plugins (operator-supplied)
+## R-PLUG.9 — user plugins (operator-supplied)
 
 Operator plugins are discovered from `[plugins].user_dir` (env
 `NINE_PLUGINS_USER_DIR`), scanned separately from the built-in `bin` dir. Unset or
@@ -232,7 +232,7 @@ without tracking, and backs both the pre-load vetting and `validate`.
 
 ---
 
-## R-PLUG.8 — Per-plugin concurrency
+## R-PLUG.8 — per-plugin concurrency
 
 A plugin advertises `max_concurrent` in its `describe` result; the manager maps it onto
 the per-plugin HTTP transport's `MaxConnsPerHost`. The value `0` (or omitted) means
@@ -250,7 +250,7 @@ rather than exempted from it.
 
 ---
 
-## R-PLUG.10 — Operator settings pass-through
+## R-PLUG.10 — operator settings pass-through
 
 An operator configures a plugin Nine has never heard of through a **singular**
 `[plugin.<name>]` table (sibling to the plural `[plugins]` subsystem table). Its
@@ -271,7 +271,7 @@ declares them, so no rebuild is needed to configure a third-party plugin.
 - Applies to **every** plugin including user plugins and MCP servers; read at spawn
   (a change reaches a running plugin only on `nine plugins reload` or restart).
 
-## R-PLUG.11 — Per-plugin cache directory
+## R-PLUG.11 — per-plugin cache directory
 
 The manager creates a scratch directory per plugin process and hands it over as
 `NINE_PLUGIN_CACHE_DIR` (guaranteed to exist, mode `0700`), with
@@ -288,7 +288,7 @@ scratch, never embedded, and reaches the model only if the plugin returns it.
 - `Probe` (validate / user-plugin vetting) always uses a throwaway ephemeral dir,
   regardless of `persist_cache`, so validation never touches persistent state.
 
-## R-PLUG.12 — Long-running jobs (opt-in)
+## R-PLUG.12 — long-running jobs (opt-in)
 
 A tool call **MAY** start detached work and return a `job_id` plus a one-line
 `output` ack instead of a result. Such a plugin **MUST** advertise `async_jobs`
@@ -327,7 +327,7 @@ terminal and distinct from `failed`. `progress` is free text.
 
 ---
 
-## R-PLUG.13 — Built-in plugins are served by the `nine` binary
+## R-PLUG.13 — built-in plugins are served by the `nine` binary
 
 The one Go default plugin, `shell`, ships **inside the `nine` binary**, not as a separate
 executable. (`time`, `files` and `http` were among them and are now shipped sandboxed tools
@@ -385,7 +385,7 @@ An implementation **MUST NOT** derive a built-in's name from its executable path
 path is `nine` for all of them, so the name is carried explicitly from the caller.
 
 The protocol-version check (R-PLUG.3) still runs for built-ins but can no longer fail
-for them — daemon and plugin are the same build. It remains load-bearing for user
+for them — daemon and plugin are the same build. It still governs user
 plugins (R-PLUG.9) and MCP servers, which are genuinely separate artifacts.
 
 No default plugin is excluded: all four are Go and all four live in the binary. A
@@ -496,7 +496,7 @@ implementation, and no `except MCP` clause in this contract: the stdio client, t
 `plugin.call ↔ tools/call` adapter, and the second spawn path all live inside one plugin
 that the daemon treats like every other.
 
-### R-PLUG.15b — Content is flattened, never filtered
+### R-PLUG.15b — content is flattened, never filtered
 
 An MCP reply is an array of content parts and the plugin contract returns one string, so
 the bridge flattens. It **MUST NOT** drop a part it does not understand.
@@ -546,7 +546,7 @@ sweeper, graceful shutdown at boot), `internal/cli/plugins.go` (`nine plugins` /
 
 ---
 
-## R-PLUG.14 — Startup readiness: distinguish dead from slow
+## R-PLUG.14 — startup readiness: distinguish dead from slow
 
 A spawned plugin is reachable only once it listens, so the manager polls its socket
 after spawning. That wait **MUST** end on **either** of two conditions, not just one:

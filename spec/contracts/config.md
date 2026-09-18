@@ -1,10 +1,10 @@
-# Contract — Configuration & Layout
+# Contract — configuration & layout
 
 **Status:** Built · **Depends on:** nothing · **Used by:** every subsystem at startup
 
 ---
 
-## R-CFG.1 — Resolution order
+## R-CFG.1 — resolution order
 
 Configuration is a single TOML file located by trying, in order:
 
@@ -18,7 +18,7 @@ implementation **MUST** honor this order.
 
 ---
 
-## R-CFG.2 — Sections and fields
+## R-CFG.2 — sections and fields
 
 ```toml
 [llm]
@@ -117,7 +117,7 @@ Notes:
 
 ---
 
-## R-CFG.3 — Configuration is set by the operator, applied at start
+## R-CFG.3 — configuration is set by the operator, applied at start
 
 Config is read once at daemon start. There is **no** runtime config-rewrite tool and
 **no** soft-reload (N2). To change configuration, edit the file and restart the daemon.
@@ -125,7 +125,7 @@ An implementation **MUST NOT** expose a tool that mutates `nine.toml`.
 
 ---
 
-## R-CFG.4 — Volume / filesystem layout
+## R-CFG.4 — volume / filesystem layout
 
 The runtime separates **mutable state** from **immutable image content**:
 
@@ -148,7 +148,7 @@ and no source tree** (N3).
 
 ---
 
-## R-CFG.5 — Logging & environment
+## R-CFG.5 — logging & environment
 
 - Final agent responses go to **stdout**; all logs go to **stderr**.
 - `NINE_LOG_LEVEL` (e.g. `debug`, `info`) controls verbosity; `NINE_LOG_FORMAT=json`

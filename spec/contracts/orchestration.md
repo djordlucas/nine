@@ -1,4 +1,4 @@
-# Contract — Orchestration: Sub-agents, Workflows, Goals
+# Contract — orchestration: sub-agents, workflows, goals
 
 **Status:** Built · **Depends on:** agent loop, dispatcher, memory store, session plans · **Used by:** any delegating-role turn
 
@@ -10,7 +10,7 @@ state only through mediated handlers (invariant I4).
 
 ## Sub-agents
 
-### R-ORCH.1 — Tools
+### R-ORCH.1 — tools
 
 | Tool | Effect |
 |------|--------|
@@ -25,7 +25,7 @@ daemon's `TaskTimeoutSeconds` = **1800s / 30 min**. Agents still running when th
 timeout fires are **cancelled and marked `timed_out`**. (Only lower the default for
 known-quick tasks.)
 
-### R-ORCH.2 — Execution model
+### R-ORCH.2 — execution model
 
 A child runs a **fresh `agent.Loop` in its leaf role at depthGuard-1, synchronously**
 (`RunSubAgentSync`).
@@ -35,7 +35,7 @@ the parent (and through to the client) as `sub_agent_start` / `sub_agent_end{sta
 events (R-PROTO.3), each carrying the child's resolved leaf `role` so a client can
 show which kind of agent is running.
 
-### R-ORCH.3 — Delegation termination (I6)
+### R-ORCH.3 — delegation termination (I6)
 
 Termination is primarily structural: coarse leaf roles are non-delegating
 (`delegates: false`, [`roles.md`](roles.md)). The `depthGuard` backstop
@@ -48,7 +48,7 @@ list). This makes runaway recursion structurally impossible (R-ROLE.6).
 
 ## Workflows
 
-### R-ORCH.4 — What a workflow is
+### R-ORCH.4 — what a workflow is
 
 A named, persistent, multi-step plan the LLM creates before delegating multi-step work to
 sub-agents. Stored in `workflows` with steps as a **JSON array on the row** (no join for
@@ -59,7 +59,7 @@ Workflow { id, agent_id, name, status ("active"|"done"|"failed"|"cancelled"), st
 Step     { id, label, status ("pending"|"running"|"done"|"failed"|"skipped"), result, failure_reason }
 ```
 
-### R-ORCH.5 — Package boundary (I3)
+### R-ORCH.5 — package boundary (I3)
 
 Workflow domain logic lives in a `workflow.Service` that depends only on a narrow
 `Repository` interface (`Insert/Load/Save/ListActive/ListRecent/Notify`) — it holds no
@@ -67,20 +67,20 @@ database handle. The memory store implements the repository and exposes `Workflo
 methods as thin delegations. This keeps the single-gateway invariant while moving domain
 rules out of persistence.
 
-### R-ORCH.6 — Tools (delegating roles)
+### R-ORCH.6 — tools (delegating roles)
 
 `workflow_create`, `workflow_update`, `workflow_get`, `workflow_list`,
 `workflow_retry_step`. When a workflow is active, the system prompt **SHOULD** steer the
 agent to `workflow_list` at the start of a turn and `workflow_get` before deciding what
 to do next.
 
-### R-ORCH.7 — Auto-close
+### R-ORCH.7 — auto-close
 
 When `workflow_update` marks a step `done`/`failed`, it checks whether all steps are
 terminal; if so it auto-closes the workflow as `done` (all succeeded) or `failed` (any
 failed). The LLM needs no explicit close call.
 
-### R-ORCH.8 — Operator commands
+### R-ORCH.8 — operator commands
 
 - `workflow_stop <id>` (daemon up): mark workflow `cancelled`, pending steps `skipped`,
   running steps `failed (stopped)`. In-flight sub-agents finish but their results are
@@ -88,7 +88,7 @@ failed). The LLM needs no explicit close call.
 - `workflow_fail <id>` / `--all`: post-mortem; mark workflow(s) `failed`. **Works with
   the daemon down** by running the store as a one-shot process.
 
-### R-ORCH.9 — Startup scrub
+### R-ORCH.9 — startup scrub
 
 On every daemon start, mark all `running` steps `failed (interrupted)` and auto-close
 workflows now fully terminal. Workflows with remaining `pending` steps stay `active` so
@@ -98,7 +98,7 @@ the LLM resumes them. This recovers from ungraceful shutdowns.
 
 ## Goals
 
-### R-ORCH.10 — What a goal is
+### R-ORCH.10 — what a goal is
 
 A persistent, open-ended intention with no defined end condition (e.g. "monitor this repo
 for security issues"). Stored in `goals`:
@@ -112,14 +112,14 @@ Goal { id, description, status ("active"|"paused"|"done"|"archived"),
 The LLM creates and decomposes goals **autonomously** — no user approval to spawn
 sub-goals or tasks.
 
-### R-ORCH.11 — Tools (delegating roles)
+### R-ORCH.11 — tools (delegating roles)
 
 `goal_create`, `goal_get`, `goal_list`, `goal_update_status`.
 `goal_create` defaults `parent_id`/`parent_type` to the owning conversation when no parent
 is given. `goal_list` is also reachable as a read-only daemon proxy (`nine goals`) without
 an agent loop.
 
-### R-ORCH.12 — Pursue session spawning (goal-spawning roles only)
+### R-ORCH.12 — pursue session spawning (goal-spawning roles only)
 
 `goal_create` for a **top-level** goal (`parent_type: "conversation"`) spawns a `pursue`
 session via `SpawnGoalSession` (see [`session-plans.md`](session-plans.md) R-PLAN.9):
@@ -146,7 +146,7 @@ function, so only top-level goals get background sessions (R-ROLE.1).
 
 ---
 
-## R-ORCH.13 — The goal tree has exactly one representation
+## R-ORCH.13 — the goal tree has exactly one representation
 
 A goal's parent is `parent_id` (with `parent_type`), written when the child is created.
 That edge is the **only** stored form of the relation: an implementation **MUST NOT**
