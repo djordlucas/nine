@@ -17,6 +17,12 @@ Open an issue with:
 
 Open an issue describing the use case. There is no guarantee of implementation.
 
+## Documentation
+
+Documentation in this repo follows [DOCS_STYLE.md](DOCS_STYLE.md): conclusion
+first, no filler sentences, headings that name their subject, and a `## Limits`
+section last. Read it before proposing a documentation change.
+
 ## Security Issues
 
 **Do not open a public issue.**
