@@ -82,7 +82,10 @@ Titles and headings name their subject in the fewest words that stay unambiguous
 
 Rules:
 
-- No colon-subtitle teasers, no "why", no "what you need to know".
+- No colon-subtitle teasers, no "what you need to know".
+- "Why X" is a valid heading when the section's entire subject is the rationale
+  ("Why roles are coarse"). It is not valid as a teaser that withholds the
+  answer the section then reveals ("Why this is containable").
 - Sentence case, not Title Case.
 - A heading is a noun phrase, unless the section documents a procedure — then
   use the imperative ("Add a tool", "Build from source").
