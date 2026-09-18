@@ -1,4 +1,4 @@
-# Contract — Sandboxed Tools (the Wasm tool host)
+# Contract — sandboxed tools (the wasm tool host)
 
 **Status:** Built (stages 1–6) · **Depends on:** dispatcher (registration), config (grants + the generated ceiling + the deps policy), memory store (generated tools are rows), HITL (the optional write gate), esbuild (write-time dependency bundling) · **Used by:** any turn calling a sandboxed tool
 
@@ -22,7 +22,7 @@ The design rationale is `docs/sandboxed-tools.md`; the authoring guide is
 
 ---
 
-## R-TVM.1 — The guest ABI
+## R-TVM.1 — the guest ABI
 
 A tool is a wasm module exporting exactly two functions. `toolvm.ABIVersion` is **1**.
 
@@ -117,7 +117,7 @@ declaring an unsupported ABI **MUST** be refused at load, not called.
 
 ---
 
-## R-TVM.2 — Two kinds, one contract
+## R-TVM.2 — two kinds, one contract
 
 | Kind | Module | Built when |
 |---|---|---|
@@ -134,7 +134,7 @@ one would undo the no-toolchain property `docs/self-modification.md` insists on.
 
 ---
 
-## R-TVM.3 — One instance per call
+## R-TVM.3 — one instance per call
 
 A module is **compiled once** and **instantiated per call**; the instance is closed when
 the call returns.
@@ -155,7 +155,7 @@ anything across a session except through a capability it was granted.
 
 ---
 
-## R-TVM.4 — Resource bounds (always on, orthogonal to capabilities)
+## R-TVM.4 — resource bounds (always on, orthogonal to capabilities)
 
 | Bound | Mechanism | Default |
 |---|---|---|
@@ -191,7 +191,7 @@ instantiation or trap failure.
 
 ---
 
-## R-TVM.5 — The capability set
+## R-TVM.5 — the capability set
 
 The default is the **empty set**. Every capability is exactly one of two things: a wazero
 pre-open, or a host function the daemon exports. Anything else is not "denied" — it is
@@ -219,7 +219,7 @@ exported to it.
 
 ---
 
-## R-TVM.6 — Capabilities are conferred, never claimed
+## R-TVM.6 — capabilities are conferred, never claimed
 
 A manifest **declares a need**. Only `nine.toml` **grants**. These are different documents
 written by different people.
@@ -251,12 +251,12 @@ For `env` the *keys themselves* must match, not merely the presence of the capab
 grant of the wrong keys would otherwise pass review as if it were the right ones.
 
 > **The invariant this preserves.** R-PLUG.7's "**Nine cannot grant itself capabilities**"
-> is unchanged and is now load-bearing for two subsystems. The operator writes every
-> grant; no agent-reachable path writes one.
+> is unchanged and now covers two subsystems. The operator writes every grant; no
+> agent-reachable path writes one.
 
 ---
 
-## R-TVM.7 — Grants in `nine.toml`
+## R-TVM.7 — grants in `nine.toml`
 
 Following the plural-subsystem / singular-instance split (R-PLUG.10):
 
@@ -294,7 +294,7 @@ ttl          = "24h"       # optional; omit for no expiry
 
 ---
 
-## R-TVM.8 — Imports are a capability
+## R-TVM.8 — imports are a capability
 
 > **Module resolution happens in the host, against a closed allowlist, before
 > instantiation. The guest never receives a resolver that can touch disk or network.**
@@ -321,7 +321,7 @@ only from a verified cache — never weakened by it.
 
 ---
 
-## R-TVM.9 — The interpreter surface is trimmed
+## R-TVM.9 — the interpreter surface is trimmed
 
 QuickJS-NG ships `std` and `os` as **separate, opt-in init calls**, and the stock `qjs`
 CLI links both. Between them they expose a filesystem API, a process API (`os.exec`), a
@@ -361,7 +361,7 @@ toolchain**.
 
 ---
 
-## R-TVM.10 — Loading (the R-PLUG.9 sequence)
+## R-TVM.10 — loading (the R-PLUG.9 sequence)
 
 Developer tools are discovered from `[tools].user_dir` in the sidecar layout user plugins
 already use — an operator should not have to learn a second set of rules.
@@ -397,7 +397,7 @@ silently meaning nothing is the worst available failure mode.
 
 ---
 
-## R-TVM.11 — Visibility, reload, and reporting
+## R-TVM.11 — visibility, reload, and reporting
 
 A newly-loaded tool is picked up by **subsequently-built agent loops**; turns already in
 flight keep the tool set they started with. This is exactly `plugins reload` semantics
@@ -556,7 +556,7 @@ native plugin, where that intent is explicit and reviewed. Config validation ref
 
 ---
 
-## R-TVM.14 — Generated tools (the tier Nine authors)
+## R-TVM.14 — generated tools (the tier Nine authors)
 
 A **generated tool** is one Nine wrote itself, through the core-intercepted `tool_write`
 (R-DISP.3). It is a row in the store's `tools` table (`spec/contracts/memory-store.md`),
@@ -640,7 +640,7 @@ resolved packages, as a greppable operator breadcrumb that survives a journal sc
 
 ---
 
-## R-TVM.15 — External dependencies and the `nine:*` stdlib
+## R-TVM.15 — external dependencies and the `nine:*` stdlib
 
 A generated tool may import two kinds of module, both resolved **before** the call — never by
 the guest, never at call time.
@@ -684,15 +684,15 @@ and no network. The pipeline **MUST**:
 
 The containment argument: a malicious package is bounded by the tool's capabilities, and a
 tool that declares none has none (R-TVM.6, I-TVM.1). The blast radius of "arbitrary npm" is
-exactly the reach the operator already granted — which is why the interlock, keeping egress
-off the table, is load-bearing.
+exactly the reach the operator already granted. The interlock, which keeps egress off the
+table, is what holds that argument up.
 
 New Go dependency: `github.com/evanw/esbuild/pkg/api` (pure Go, vendored). No Node, no npm
 binary, no toolchain enters the runtime image — the resolver and bundler are in-process.
 
 ---
 
-## R-TVM.18 — Durable state
+## R-TVM.18 — durable state
 
 A tool granted `state` has a **host-owned key/value store**, scoped to itself. It is the
 amendment to R-TVM.3 and the whole of it: nothing else about the instance model changes.
@@ -759,7 +759,7 @@ two host calls is racy by construction.
 
 ---
 
-## R-TVM.19 — Long-running tools
+## R-TVM.19 — long-running tools
 
 A tool declaring `resumable = true` may be run as a **job**: a sequence of ordinary calls,
 each carrying the cursor the last one returned.
@@ -855,7 +855,7 @@ notification to its owner and **never wakes anything**. It is read on the owner'
 
 ---
 
-## R-TVM.20 — Standing tools
+## R-TVM.20 — standing tools
 
 A resumable tool (R-TVM.19) **MAY** also be run **standing**: indefinitely, on its own
 cadence, started by configuration rather than by a turn.
@@ -995,7 +995,7 @@ reason R-TVM.19 gives.
 
 ---
 
-## R-TVM.13 — Fully built
+## R-TVM.13 — fully built
 
 Every feature `docs/sandboxed-tools.md` specifies is implemented (stages 1–6). The
 `nine:*` stdlib (§4.2), external npm dependencies (§4.4), and the `deps` + `net.http`
@@ -1055,7 +1055,7 @@ call it before every write. Containment remains the pre-open's — the implement
 path components and each resolves inside the mount because the guest has nothing else to
 resolve against. Nothing in the guest enforces this, and nothing in the guest could.
 
-## R-TVM.16 — The shipped tier (first-party tools in the binary)
+## R-TVM.16 — the shipped tier (first-party tools in the binary)
 
 A third source tier, after developer (R-TVM.10) and generated (R-TVM.14): tools whose
 source is **compiled into the daemon binary**. They run through the same host, the same

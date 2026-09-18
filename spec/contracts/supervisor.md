@@ -1,4 +1,4 @@
-# Contract — Supervisor (oversight)
+# Contract — supervisor (oversight)
 
 **Status:** Built · **Depends on:** plugin manager (rebuild), agent worker (events) · **Used by:** daemon
 
@@ -8,7 +8,7 @@ self-awareness and self-correction.
 
 ---
 
-## R-SUP.1 — Durable, journal-backed control-plane bus
+## R-SUP.1 — durable, journal-backed control-plane bus
 
 The supervisor's bus is **durable** (see [`subscriptions.md`](subscriptions.md)).
 `Post(event)` **synchronously appends** the event to the session-event journal (the
@@ -22,7 +22,7 @@ idempotent.
 
 ---
 
-## R-SUP.2 — Events
+## R-SUP.2 — events
 
 ```text
 EventAgentCompletes  — posted by a worker via onComplete after every turn; resets the idle timer
@@ -35,7 +35,7 @@ Each event carries at least the `AgentID` (or plugin name) it concerns.
 
 ---
 
-## R-SUP.3 — Reactions
+## R-SUP.3 — reactions
 
 | Event | Action |
 |-------|--------|
@@ -49,7 +49,7 @@ self-generated. This is the boundary that distinguishes the current design from 
 
 ---
 
-## R-SUP.4 — Priority
+## R-SUP.4 — priority
 
 The supervisor submits any LLM calls at `PrioritySupervisor` (value 1) — above active
 conversations and background work (see [`llm-provider.md`](llm-provider.md) R-LLM.4). It
