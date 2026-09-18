@@ -1042,7 +1042,7 @@ Reconciled via `/sync-nine` when the code lands, not before:
 | `configuration.md` | `[tools]`, `[tool.<name>]`, `[tools.agent]`, `[tools.agent.deps]`. |
 | `usage.md` (deps) | `nine tools deps`, lockfile inspection, freeze/thaw. |
 | `versioning.md` | `toolvm.ABIVersion` alongside `plugin.ProtocolVersion`. |
-| `glossary.md` | *sandboxed tool*, *generated tool*, *capability grant*, *`nine:*` stdlib* — the overloading warning in CLAUDE.md applies with force here. |
+| `glossary.md` | *sandboxed tool*, *generated tool*, *capability grant*, *`nine:*` stdlib* — the overloading warning in AGENT.md applies with force here. |
 | `writing-sandboxed-tools.md` | **New.** Authoring guide: manifest format, the ABI, bundling deps with esbuild (§4.2), the `nine:*` set, and what QuickJS does *not* provide. |
 | `usage.md` | `nine tools list/show/reload`, `nine tool validate`. |
 | `hitl.md` | `require_approval = "on_capability"` as a new gate trigger (§9.4). |

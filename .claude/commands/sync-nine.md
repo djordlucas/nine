@@ -30,8 +30,8 @@ so they describe the new behavior. Touch only what the change affects:
   format, method, config field, or interface changed, the matching contract
   MUST change too.
 
-Match the surrounding prose style, density, and headings. Don't add docs for
-things that didn't change. If a change makes an existing doc statement false,
+Follow `DOCS_STYLE.md` and match the surrounding density and headings. Don't
+add docs for things that didn't change. If a change makes an existing doc statement false,
 fix it rather than appending a note.
 
 ## 3. Decide the version bump (semver, git-tag driven)
@@ -53,7 +53,7 @@ State the chosen next version and one line of justification before tagging.
 
 ## 4. Branch, commit, PR — then tag
 
-Every change goes on a feature branch with a pull request (see `CLAUDE.md`), so
+Every change goes on a feature branch with a pull request (see `AGENT.md`), so
 never commit the sync straight to `main`. If you are not already on a feature
 branch, create one first — `git checkout -b` carries the uncommitted work over:
 
