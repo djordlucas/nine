@@ -437,7 +437,7 @@ max_queue_rate_per_minute = 10
 
 ## Personality growth loop
 
-A personality's **growth loop** is what makes it "alive"—it autonomously improves its knowledge and capabilities over time. This is achieved through:
+A personality's **growth loop** improves its knowledge and capabilities over time without supervision. Five parts:
 
 1. **Standing agents** that wake on a schedule
 2. **Goals** that define open-ended objectives

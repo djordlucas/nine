@@ -1,4 +1,4 @@
-# Contract — Memory Store (the single database gateway)
+# Contract — memory store (the single database gateway)
 
 **Status:** Built · **Depends on:** nothing · **Used by:** everything that persists
 
@@ -30,7 +30,7 @@ without blocking, or being blocked by, the daemon's writer.
 
 ---
 
-## R-MEM.1 — Single gateway
+## R-MEM.1 — single gateway
 
 A conforming implementation **MUST** route every database access through one store type
 that holds the sole connection/handle. Domain services (e.g. the workflow service)
@@ -40,7 +40,7 @@ a fake repository.
 
 ---
 
-## R-MEM.2 — Schema (exactly these tables)
+## R-MEM.2 — schema (exactly these tables)
 
 The reference database contains these **twenty** tables. An implementation **MUST**
 provide equivalent storage for each; it **MUST NOT** require additional operational
@@ -73,7 +73,7 @@ There is **no `plugin_registry` table** (plugins are immutable image content) an
 
 ---
 
-## R-MEM.3 — Agent-facing methods (exposed as tools)
+## R-MEM.3 — agent-facing methods (exposed as tools)
 
 These back the agent-visible tools. (The embedding-backed ones are *core-intercepted* —
 the dispatcher calls the embedder and then the store; see
@@ -99,7 +99,7 @@ empty result.
 
 ---
 
-## R-MEM.4 — Daemon-private methods (never tools) — invariant I4
+## R-MEM.4 — daemon-private methods (never tools) — invariant I4
 
 The following are reachable only by the daemon/runtime, never advertised as agent tools.
 An agent **MUST NOT** be able to mutate its own conversation row, the goal/workflow
@@ -125,7 +125,7 @@ tables, notifications, or session plans through a tool call.
 
 ---
 
-## R-MEM.5 — Checkpoints
+## R-MEM.5 — checkpoints
 
 The checkpoint unit is `ConversationState{History, Scratchpad}`, serialized to JSON.
 
@@ -140,7 +140,7 @@ is distinguishable from an error.
 
 ---
 
-## R-MEM.6 — Vectors and namespaces
+## R-MEM.6 — vectors and namespaces
 
 `VectorStore(id, namespace, key, vector)` and `VectorQuery(namespace, vector, topK)`
 store into and query the `embedding` blob column, ranking by cosine similarity and
@@ -173,7 +173,7 @@ implementation **MAY** serialize at the call site instead.
 
 ---
 
-## R-MEM.8 — Memory surfacing (KV pull-surfacing)
+## R-MEM.8 — memory surfacing (KV pull-surfacing)
 
 When `[memory].surface_memories` is enabled (**default on**; a no-op without an embedder),
 key-value memory becomes semantically retrievable without the agent asking:
@@ -196,7 +196,7 @@ surfacer into the loop's single enrichment channel.
 
 ---
 
-## R-MEM.9 — The `spill/` namespace is daemon-owned
+## R-MEM.9 — the `spill/` namespace is daemon-owned
 
 Over-cap tool output is written to `files` under `spill/<agent-id>/`
 ([`dispatcher.md`](dispatcher.md) R-DISP.2). That prefix carries two invariants, both of
@@ -231,7 +231,7 @@ natively.
 
 ---
 
-## R-MEM.11 — Session deletion
+## R-MEM.11 — session deletion
 
 A session may be **erased**: the `conversations` row and every row keyed to it —
 `session_events`, `notifications`, `user_notifications`, `session_plans`,
@@ -272,7 +272,7 @@ and last.
 
 ---
 
-## R-MEM.10 — Schema versioning and migration
+## R-MEM.10 — schema versioning and migration
 
 `PRAGMA user_version` records which schema generation a database is at, and `Open`
 brings it up to date before returning. `CREATE TABLE IF NOT EXISTS` covers new tables
