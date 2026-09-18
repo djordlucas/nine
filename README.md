@@ -10,6 +10,8 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8.svg)](go.mod)
 [![Status: experimental](https://img.shields.io/badge/status-experimental-orange.svg)](#project-status)
+[![GHCR](https://img.shields.io/badge/ghcr.io-djordlucas%2Fnine-blue?logo=github)](https://github.com/djordlucas/nine/pkgs/container/nine)
+[![Docker Hub](https://img.shields.io/badge/docker.io-djordlucas%2Fnine-blue?logo=docker)](https://hub.docker.com/r/djordlucas/nine)
 
 Nine is an **AI agent runtime**.
 Use Nine to research subjects, work on codebases, automate processes, experiment.
@@ -85,57 +87,60 @@ developed against small models to stay useful on modest hardware. Currently test
 
 ## Quick start
 
-The Docker path. For a native build, prerequisites, and the full Makefile
-target list, see [Installation](#installation).
-
-You need Docker and a running Ollama.
-
-Nine defaults to Ollama at `host.docker.internal:11434`, so pull a model on the host
-first:
+No clone needed — the image ships a working config.
 
 ```bash
+# 1. A model on the host
 ollama pull qwen3.5:4b
+
+# 2. Nine
+docker run -d --name nine \
+  -p 127.0.0.1:8080:8080 \
+  --add-host host.docker.internal:host-gateway \
+  -v nine-data:/data \
+  ghcr.io/djordlucas/nine:latest
+
+# 3. A session
+docker exec -it -u nine nine nine
 ```
 
-Pull the code:
+Also on Docker Hub as `djordlucas/nine`. Both registries carry the same digest,
+for `linux/amd64` and `linux/arm64`. Tags, signature verification and the
+configuration surface: [docs/docker-image.md](docs/docker-image.md).
+
+Point Nine at a different LLM without a config file:
+
+```bash
+docker run -d --name nine \
+  -e NINE_LLM_ENDPOINT=http://192.168.1.10:11434 \
+  -e NINE_LLM_MODEL=qwen3.5:9b \
+  -v nine-data:/data \
+  ghcr.io/djordlucas/nine:latest
+```
+
+Verify what you pulled before running it:
+
+```bash
+cosign verify ghcr.io/djordlucas/nine:latest \
+  --certificate-identity-regexp '^https://github.com/djordlucas/nine/.github/workflows/release-image.yml@' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+### From a clone
+
+For hacking on Nine, or to build the image yourself:
 
 ```bash
 git clone https://github.com/djordlucas/nine
 cd nine
+make up        # build and run the runtime image
+make session   # interactive TUI session
 ```
 
-Configure Nine — see [docs/configuration.md](docs/configuration.md). Interesting
-options to change initially:
-
-```toml
-[plugins]
-bin      = "./dist/bin"  # plugins binaries
-
-[workspace]
-root     = "./workspace" # Filesystem root, use a bind mount for external access
-
-[tools]                   # sandboxed tools, off unless enabled
-enabled  = true
-user_dir = "./tools.d"    # ships working csv_stats (js) and sha256 (wasm) examples
-
-[llm]                     # model configuration
-provider       = "ollama"
-model          = "qwen3.5:4b"
-endpoint       = ""              # empty uses Ollama's local default
-num_ctx        = 32768
-max_concurrent = 1
-```
-
-Start Nine:
-
-```bash
-make up                # the daemon, one container
-make session           # interactive TUI session
-make shell             # sh into nine's container for debug
-```
-
-The daemon auto-starts on first use. Later calls share the same daemon and
-conversation history. Run `nine` with no arguments for the interactive TUI.
+`make up` mounts the repo's own `nine.toml`, which is a development config —
+sandboxed tools on, paths in the source tree. The published image's baked config
+is narrower. See [Installation](#installation) for the native build,
+prerequisites, and the full Makefile target list.
 
 ## Installation
 
@@ -177,13 +182,22 @@ the database is created on first run at `~/.nine/nine.db`.
 The deployment unit is **one container** running the daemon under s6-overlay
 ([adr/single-container.md](adr/single-container.md)). Its database is a file on
 the `/data` volume, so there is no second service to orchestrate and no
-docker-compose file; `docker run` is wrapped in Makefile targets:
+docker-compose file.
+
+Most people should pull the published image rather than build one — see
+[Quick start](#quick-start) and [docs/docker-image.md](docs/docker-image.md).
+The targets below build it locally from a clone:
 
 ```bash
 make up                # built runtime image
 make up-hot            # hot-reload: rebuilds and restarts the daemon on any .go change
 make down              # stop, keeping all data
 make destroy           # remove everything, including all data volumes and images
+
+make image             # build the runtime image exactly as a release does
+make image-test        # assert the image contract (non-root, no toolchain, versions)
+make image-scan        # the same Trivy gate CI applies before a push
+make image-verify      # verify a published image's cosign signature
 ```
 
 The runtime image holds the compiled binary, the plugins, and the built-in skills
@@ -657,7 +671,8 @@ removed from this table rather than marked done.
 ## Limits
 | Limit | Detail |
 |-------|--------|
-| Not hardened | Only sandboxed tools run behind a real boundary. The `shell` plugin and native plugins run as the daemon's process user with its full filesystem and network reach. Run Nine in Docker or under a restricted user when pointing it at anything untrusted. |
+| Not hardened | Only sandboxed tools run behind a real boundary. The `shell` plugin and native plugins run as the daemon's process user with its full filesystem and network reach. In the published image that user is an unprivileged uid 1000, so the reach stops at the container. |
+| No API authentication | Port 8080 speaks to whoever reaches it. Bind it to localhost or front it with a proxy. |
 | Single host | The daemon listens on a Unix socket, so every client runs on the same machine. No authentication, no transport security. |
 | One model at a time | No routing across models within a deployment. |
 | Ollama and Mistral only | Other providers are refused at startup rather than falling back. |
@@ -683,6 +698,15 @@ runs commands as the daemon's process user, plugins are ordinary subprocesses wi
 daemon's own reach, and the agent has real filesystem and network access through them.
 Run Nine in Docker or under a restricted user if you are pointing it at anything you
 don't trust.
+
+In the published image the daemon runs as an unprivileged uid 1000, so that reach
+stops at the container: the agent cannot write outside `/data` or install packages.
+s6-overlay stays root to supervise and forward signals. The image is signed with
+cosign and carries an SBOM and build provenance —
+[docs/docker-image.md](docs/docker-image.md) has the verify commands.
+
+The API on port 8080 has no authentication. Bind it to localhost, as the quick start
+does, or put it behind a reverse proxy.
 
 Two settings deserve a deliberate decision rather than a default. Enabling
 `[tools.agent]` lets the agent write code that then runs — bounded by the ceiling you

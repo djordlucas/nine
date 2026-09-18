@@ -13,6 +13,10 @@ compatibility contracts that bump *only* when a real break happens.
 | **Config schema** | `nine.toml` shape | not implemented — see [Limits](#limits) | — |
 | **Memory DB schema** | SQLite schema | idempotent `CREATE TABLE IF NOT EXISTS` on open; no migration runner — see [Limits](#limits) | `internal/memory.initSchema` |
 
+The release version also names the container image. A `v*` tag builds and
+publishes `ghcr.io/djordlucas/nine` and `docker.io/djordlucas/nine` — see
+[Container image](docker-image.md) for the tag scheme those versions map to.
+
 ## 1. Release version
 
 The release version is the only number humans say out loud. It follows
