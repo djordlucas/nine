@@ -6,7 +6,7 @@ the doc with the full explanation.
 
 ---
 
-## Core Processes & Components
+## Core processes & components
 
 **Daemon** — The long-running background process that holds all state: plugin
 registry, LLM queue, active sessions, and the handle to the SQLite store.
@@ -77,7 +77,7 @@ restarts. See [Agent Loop § Checkpointing](agent-loop.md#checkpointing).
 
 ---
 
-## Work Units
+## Work units
 
 **Conversation** — An interactive thread tied to a terminal session. Status
 `active` (terminal connected) or `archived` (disconnected, resumable via
@@ -146,7 +146,7 @@ every top-level goal (`agentID == goalID`), waking every 5 minutes to
 
 ---
 
-## Context, Memory & Self-Model
+## Context, memory & Self-Model
 
 **Context Budget (`context_budget` / `num_ctx`)** — Per-turn token limit. The
 context builder allocates it across priorities: (1) system prompt core —
@@ -215,7 +215,7 @@ active-conversation turn (`prependNotifications`). Separately, the
 
 ---
 
-## Event Journal & Subscriptions
+## Event journal & subscriptions
 
 **Event journal (`session_events`)** — Append-only, per-session execution log:
 one row per step (`turn_start`, `llm_request`/`llm_response` with the exact
@@ -260,7 +260,7 @@ later user turn *pulls* the most relevant link into context under the token budg
 
 ---
 
-## Plugins & Tools
+## Plugins & tools
 
 **Plugin** — A standalone binary that answers two methods — `plugin.describe`
 (returns tool definitions) and `plugin.call` (executes a tool, returns a result)
@@ -458,7 +458,7 @@ new agent skill via `skill_write`, so future similar tasks can reuse it.
 
 ---
 
-## Self-Improvement & Capability Gaps
+## Self-Improvement & capability gaps
 
 **Self-Improvement** — Nine improves itself only by writing its own skills
 (`skill_write` / `skill_modify`) — data, not code. Built-in skills are immutable.
@@ -482,7 +482,7 @@ than self-generated.
 
 ---
 
-## Configuration & Operations
+## Configuration & operations
 
 **`nine.toml`** — TOML config file, located via `$NINE_CONFIG` → `./nine.toml`
 → `/nine.toml` (Docker bind-mount) → `~/.nine/nine.toml`. Sections:
