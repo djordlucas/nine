@@ -226,3 +226,15 @@ The index is only as good as the documents, and the documents are kept in
 lockstep with the code by `/sync-nine`. A behavior change that skips the
 embedded docs does not merely leave the docs stale — it teaches Nine to state
 the stale behavior as fact, with a citation.
+
+---
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Retrieval is best-effort | Ranking is designed to make the manual reachable, not to be right on the first try. The model can re-query or `doc_read` a topic by name when the first hit is wrong. |
+| Only `docs/` and `spec/` are indexed | `adr/` is deliberately excluded: it records superseded reasoning, which would answer questions about the present with the reasoning of the past. |
+| Accuracy depends on `/sync-nine` | A behavior change that skips the embedded docs does not just leave them stale — Nine states the stale behavior as fact, with a citation. |
+| Delegation rarely pays | Spawning a sub-agent for a specific lookup costs more than the section it would read, and returns a paraphrase where the value was the quote. It is worth it only for synthesis across many documents. |
+| Docs ship per binary | The index is built from the documents embedded at build time, so a running daemon answers from its own version's docs, not the repo's current state. |
