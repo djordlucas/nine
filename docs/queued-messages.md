@@ -1,4 +1,4 @@
-# Queued Messages
+# Queued messages
 
 **Status:** Implemented  **Feature:** Per-session message buffering for user replies during active turns
 

@@ -1,4 +1,4 @@
-# Evals — testing Nine with replays and live models
+# Evals
 
 How Nine is tested end-to-end against real — and recorded — model
 infrastructure. The case schema below is deliberately precise enough that new

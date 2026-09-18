@@ -1,4 +1,4 @@
-# Scheduling — how idle-capable sessions decide when to wake
+# Scheduling
 
 Used by standing agents ([predefined-agents.md](predefined-agents.md)), goal
 sessions, and self-reflection.

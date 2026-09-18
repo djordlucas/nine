@@ -1,4 +1,4 @@
-# Session Plans & Routines
+# Session plans and routines
 
 Every running session (`AgentWorker`) — an ordinary conversation, the dedicated
 self-reflection session, or a goal's background "pursue" session — has a persistent

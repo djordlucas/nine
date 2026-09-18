@@ -1,4 +1,4 @@
-# Self-Improvement & Boundaries
+# Self-improvement and boundaries
 
 Nine improves itself by writing **skills** — and deliberately nothing more. It does
 not generate plugins, rewrite its own configuration, or rebuild its own source code.

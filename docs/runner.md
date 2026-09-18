@@ -1,4 +1,4 @@
-# AgentWorker Architecture
+# AgentWorker
 
 An `AgentWorker` wraps a single `agent.Loop` and serializes user turns for one
 conversation or background session. Each worker owns a goroutine that processes

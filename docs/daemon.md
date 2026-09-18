@@ -1,4 +1,4 @@
-# Daemon Architecture
+# Daemon
 
 The daemon is a Unix-socket server that routes user turns to per-conversation agent loops and persists state via checkpoints.
 

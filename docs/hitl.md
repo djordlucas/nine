@@ -1,4 +1,4 @@
-# Human-in-the-Loop (HITL)
+# Human-in-the-loop
 
 Nine can pause mid-task and wait for human input. This is how you approve a
 dangerous tool call before it runs, and how Nine asks you a question when it is
