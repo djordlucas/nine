@@ -19,7 +19,7 @@ GOFLAGS  := -mod=vendor
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS  := -ldflags "-X main.Version=$(VERSION)"
 
-.PHONY: all dev build openapi openapi-check openapi-lint test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-generate quickjs-wasm quickjs-verify harness-bc
+.PHONY: all dev build openapi openapi-check openapi-lint test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-generate quickjs-wasm quickjs-verify harness-bc image image-test image-scan image-verify
 
 dev: build
 
@@ -205,6 +205,52 @@ down:
 destroy: down
 	-docker volume rm nine-data nine-dev-data nine-dev-gocache
 	-docker image rm nine nine-dev
+
+# ── published image ──────────────────────────────────────────────────────────
+# The image published to ghcr.io/djordlucas/nine and docker.io/djordlucas/nine
+# is the `runtime` stage. These targets build and check the same artifact the
+# release workflow does, so a problem shows up before a tag is cut, not after.
+# Pushing is CI's job — there is deliberately no `make image-push`: a release
+# comes from a tag, through a workflow that scans and signs it.
+
+IMAGE_NAME ?= nine
+IMAGE_TAG  ?= local
+IMAGE_REF  := $(IMAGE_NAME):$(IMAGE_TAG)
+
+# Build the runtime image exactly as the release does, minus the multi-arch
+# manifest. VERSION comes from git tags, the same as the native build.
+image:
+	docker build \
+	  --target runtime \
+	  --build-arg VERSION=$(VERSION) \
+	  --build-arg VCS_REF=$(shell git rev-parse HEAD 2>/dev/null || echo unknown) \
+	  --build-arg BUILD_DATE=$(shell date -u +%Y-%m-%dT%H:%M:%SZ) \
+	  -t $(IMAGE_REF) .
+
+# The image contract: unprivileged, no toolchain, state on the volume, version
+# matching the build. Static supply-chain checks in the same package run without
+# Docker as part of `make test`.
+image-test: image
+	NINE_IMAGE_TEST=1 NINE_TEST_IMAGE=$(IMAGE_REF) NINE_TEST_VERSION=$(VERSION) \
+	  $(GO) test $(GOFLAGS) -v -timeout 15m ./tests/docker/...
+
+# The same gate CI applies before a push: fixable CRITICAL/HIGH fails.
+image-scan: image
+	docker run --rm \
+	  -v /var/run/docker.sock:/var/run/docker.sock \
+	  aquasec/trivy:latest image \
+	    --severity CRITICAL,HIGH \
+	    --ignore-unfixed \
+	    --exit-code 1 \
+	    $(IMAGE_REF)
+
+# Verify a published image's signature and provenance. Needs cosign.
+# Override IMAGE to check Docker Hub instead: make image-verify IMAGE=djordlucas/nine:latest
+IMAGE ?= ghcr.io/djordlucas/nine:latest
+image-verify:
+	cosign verify $(IMAGE) \
+	  --certificate-identity-regexp '^https://github.com/djordlucas/nine/.github/workflows/release-image.yml@' \
+	  --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 # ── integration tests ────────────────────────────────────────────────────────
 # Requires: Docker running, Ollama on localhost:11434 with NINE_LLM_MODEL loaded.
