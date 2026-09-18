@@ -29,7 +29,10 @@ updates:
       include: "scope"
 
   - package-ecosystem: "github-actions"
-    directory: "/.github"
+    # Must be "/" — Dependabot resolves .github/workflows relative to this, so
+    # "/.github" makes it look in .github/.github/workflows and find nothing.
+    # The action SHA pins depend on this working.
+    directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5

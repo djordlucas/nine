@@ -13,6 +13,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege by default; each job widens only what it needs.
+permissions:
+  contents: read
+
 # Code scanning is unavailable while the repository is private: GitHub code
 # scanning (CodeQL analysis and SARIF upload to the Security tab) requires a
 # public repository or a GitHub Advanced Security license, and fails with
@@ -33,10 +37,9 @@ jobs:
       security-events: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Run Trivy filesystem scanner
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: "."
@@ -49,7 +52,7 @@ jobs:
           output: trivy-fs-results.sarif
 
       - name: Upload to Security Tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@3ea06614dafe36dec890db3446326e0d40ce53d4 # v3
         with:
           sarif_file: trivy-fs-results.sarif
         if: always()
@@ -64,23 +67,24 @@ jobs:
       packages: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Build Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: Dockerfile
+          target: runtime
           tags: nine:scan
           load: true
+          push: false
+          provenance: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Run Trivy container scanner
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
           image-ref: nine:scan
@@ -93,7 +97,7 @@ jobs:
           output: trivy-docker-results.sarif
 
       - name: Upload to Security Tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@3ea06614dafe36dec890db3446326e0d40ce53d4 # v3
         with:
           sarif_file: trivy-docker-results.sarif
         if: always()

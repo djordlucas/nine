@@ -1,0 +1,54 @@
+# Default configuration baked into the published image at /nine.toml.
+#
+# It exists so `docker run ghcr.io/djordlucas/nine` works without cloning the
+# repository. It is deliberately more conservative than the repo's own
+# nine.toml, which is a development config: the sandboxed-tool tier is off, and
+# every path points at the /data volume rather than the source tree.
+#
+# To change anything here, mount your own file over it:
+#
+#   docker run -v ./my-nine.toml:/nine.toml:ro ghcr.io/djordlucas/nine
+#
+# The LLM settings also take environment overrides without a mounted file —
+# NINE_LLM_PROVIDER, NINE_LLM_MODEL, NINE_LLM_ENDPOINT. Full reference:
+# docs/configuration.md.
+
+[llm]
+provider = "ollama"
+model    = "qwen3.5:4b"
+# host.docker.internal resolves on Docker Desktop. On plain Linux, either run
+# with --add-host host.docker.internal:host-gateway (what the README shows) or
+# set NINE_LLM_ENDPOINT to the host's address.
+endpoint       = "http://host.docker.internal:11434"
+num_ctx        = 32768
+max_concurrent = 1
+
+[memory]
+# The /data volume holds every durable thing: this database and the workspace.
+path = "/data/nine.db"
+
+[workspace]
+# The filesystem root the files plugin is scoped to. Keeping it inside /data
+# means a `docker run -v nine-data:/data` keeps the agent's files across
+# restarts, and nothing it writes escapes the volume.
+root = "/data/workspace"
+
+[embeddings]
+# The built-in feature-hashing embedder: no model, no network, no VRAM. Tool
+# and skill ranking work out of the box with it. Set provider = "ollama" and a
+# model to rank semantically instead.
+provider = "keyword"
+
+[hitl]
+# Tools that need an explicit yes before each call, in an interactive session.
+# A background session has nobody to ask, so these gate the TUI and CLI only.
+require_approval = ["shell", "write_file"]
+
+[tools]
+# The sandboxed-tool tier is off in the published image. Turning it on means
+# mounting a directory of tools and your own config; no environment variable
+# flips it, which is deliberate (docs/sandboxed-tools.md).
+enabled = false
+
+# [tools.agent] is absent, so Nine cannot write its own tools. That tier is off
+# by default everywhere; it is named here only so its absence is legible.
