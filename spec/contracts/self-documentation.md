@@ -1,4 +1,4 @@
-# Contract — Self-Documentation
+# Contract — self-documentation
 
 **Status:** Built · **Depends on:** embedder, memory store (vector put/query), embedded `docs/` + `spec/` bundles · **Used by:** agent loop (tool dispatch), CLI (`nine docs` / `nine spec`)
 
@@ -11,7 +11,7 @@ narrative treatment.
 
 ---
 
-## R-DOC.1 — Addressing
+## R-DOC.1 — addressing
 
 A bundled section is addressed as `<bundle>/<path>#<anchor>`:
 
@@ -30,7 +30,7 @@ listing (`ROADMAP`) **MUST NOT** be indexed.
 
 ---
 
-## R-DOC.2 — Chunking
+## R-DOC.2 — chunking
 
 Documents are split at `##` headings, with two required refinements:
 
@@ -45,7 +45,7 @@ makes it unfindable by the terms a query would use.
 
 ---
 
-## R-DOC.3 — The index holds addresses, not text
+## R-DOC.3 — the index holds addresses, not text
 
 One vector per section in the `docs` namespace, keyed by address. The section body
 **MUST NOT** be copied into the store; a read slices it out of the embedded FS.
@@ -56,7 +56,7 @@ version ships.
 
 ---
 
-## R-DOC.4 — Boot-time indexing and invalidation
+## R-DOC.4 — boot-time indexing and invalidation
 
 The index is built at daemon boot and **MUST** be fingerprinted over (a) every section
 address and body and (b) the embedder's provider/model identity.
@@ -75,7 +75,7 @@ and a stale hit is worse than a missing one.
 
 ---
 
-## R-DOC.5 — Tools
+## R-DOC.5 — tools
 
 | Tool | Guarantee |
 |---|---|
@@ -108,12 +108,12 @@ locate an answer it cannot retrieve.
 
 ---
 
-## R-DOC.6 — Docs and spec are the source of truth
+## R-DOC.6 — docs and spec are the source of truth
 
 Where the bundled documentation and the observed implementation disagree, the
 documentation states the **intended** behavior. Nine **MUST** surface the mismatch as a
 defect rather than silently reporting the implementation's behavior as correct.
 
-This rule is what makes the retrieval trustworthy, and it is load-bearing in the other
-direction too: a behavior change that skips the embedded docs does not merely leave them
-stale, it teaches Nine to assert the stale behavior with a citation.
+This rule is what makes the retrieval trustworthy, and it cuts both ways: a behavior
+change that skips the embedded docs does not merely leave them stale, it teaches Nine to
+assert the stale behavior with a citation.

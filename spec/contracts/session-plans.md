@@ -1,4 +1,4 @@
-# Contract — Session Plans, Routines, Self-Model & Reflection
+# Contract — session plans, routines, self-model & reflection
 
 **Status:** Built · **Depends on:** agent worker, memory store, embedder · **Used by:** every session; goals (pursue)
 
@@ -8,7 +8,7 @@ persisted in `session_plans`. This is the single substrate for all between-turn 
 
 ---
 
-## R-PLAN.1 — Data model
+## R-PLAN.1 — data model
 
 A session plan is one row keyed by the session's agent ID:
 
@@ -50,7 +50,7 @@ store.
 
 ---
 
-## R-PLAN.3 — Lifecycle: lazy vs eager persistence (I7)
+## R-PLAN.3 — lifecycle: lazy vs eager persistence (I7)
 
 `loadOrCreatePlan(store, agentID, profile, eager)`:
 
@@ -66,7 +66,7 @@ store.
 
 ---
 
-## R-PLAN.4 — Idle scheduling
+## R-PLAN.4 — idle scheduling
 
 ```text
 armIdleTimer():  next = min remaining idle_interval_seconds across active, idle-capable routines
@@ -79,7 +79,7 @@ on fire (handleIdle):
    4. if not ok: refresh the cached plan from the store, then re-arm for the next cycle
 ```
 
-The refresh in step 4 is load-bearing: a routine may retire itself from within `OnIdle`
+The refresh in step 4 is required: a routine may retire itself from within `OnIdle`
 by writing its plan row directly (as `pursue` does when its goal is no longer active).
 Without the refresh the cached plan would keep that routine `active`, so the timer would
 re-arm indefinitely and the session would keep counting against the goal-session cap.
@@ -88,7 +88,7 @@ Routines with no `idle_interval_seconds` (e.g. plain `active`) never trigger idl
 
 ---
 
-## R-PLAN.5 — Resume on restart (I7)
+## R-PLAN.5 — resume on restart (I7)
 
 On daemon startup, `ResumeSessions` starts a worker for every `session_plans` row with
 `status: active` that has at least one active, idle-capable routine (`planNeedsResume`).
@@ -98,7 +98,7 @@ are proactively resumed, so background autonomy survives reboots.
 
 ---
 
-## R-PLAN.6 — Built-in routine: `active`
+## R-PLAN.6 — built-in routine: `active`
 
 The trivial routine every ordinary conversation gets (`defaultProfile = ["active"]`). All
 three methods are no-ops. It exists so `loadOrCreatePlan` always has something to seed and
@@ -106,7 +106,7 @@ as the slot where future per-conversation routines can be added.
 
 ---
 
-## R-PLAN.7 — Built-in routine: `idle-reflection` (self-reflection)
+## R-PLAN.7 — built-in routine: `idle-reflection` (self-reflection)
 
 A single fixed session, agent ID `"self-reflection"`, profile `["idle-reflection"]`,
 idle interval **2 minutes**. Created once by `ReconcileSelfReflection` on first start;
@@ -121,7 +121,7 @@ resumed every restart.
 
 ---
 
-## R-PLAN.8 — Self-model (`SystemSelf`)
+## R-PLAN.8 — self-model (`SystemSelf`)
 
 A self-model assembler reads `self/identity`, `self/capabilities`, and `self/learned`
 from K/V **every turn** and injects them as the P2.5 `SystemSelf` block (cap ~600 tokens;
@@ -134,7 +134,7 @@ see [`context-builder.md`](context-builder.md)).
 
 ---
 
-## R-PLAN.9 — Built-in routine: `pursue` (background goal pursuit)
+## R-PLAN.9 — built-in routine: `pursue` (background goal pursuit)
 
 See [`orchestration.md`](orchestration.md) for the `goal_*` tools and goal data model.
 Each top-level goal gets a `pursue` session keyed 1:1 by `agentID == goalID`, profile

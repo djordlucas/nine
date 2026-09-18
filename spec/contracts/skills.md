@@ -1,4 +1,4 @@
-# Contract — Skills & the Self-Improvement Boundary
+# Contract — skills & the self-improvement boundary
 
 **Status:** Built · **Depends on:** memory store, embedder, dispatcher hooks · **Used by:** any turn
 
@@ -12,7 +12,7 @@ defaults (`internal/agent/register_skills.go`, `internal/memory/skills.go`,
 
 ---
 
-## R-SKILL.1 — File / record format
+## R-SKILL.1 — file / record format
 
 A skill has YAML-style frontmatter and a markdown body:
 
@@ -37,7 +37,7 @@ under `skills/roles/` and are embedded/seeded like any other built-in (R-SKILL.2
 
 ---
 
-## R-SKILL.2 — Three sources, two of them immutable
+## R-SKILL.2 — three sources, two of them immutable
 
 | Source | Where it lives | Mutable at runtime? |
 |--------|----------------|---------------------|
@@ -79,7 +79,7 @@ validate`) so an operator can check a file without restarting.
 
 ---
 
-## R-SKILL.3 — Tools (core-intercepted)
+## R-SKILL.3 — tools (core-intercepted)
 
 | Tool | Effect |
 |------|--------|
@@ -107,7 +107,7 @@ an embedder-less deployment.
 
 ---
 
-## R-SKILL.4 — Indexing hook
+## R-SKILL.4 — indexing hook
 
 After a successful `skill_write`/`skill_modify`, a dispatcher post-call hook (R-DISP.5)
 embeds the skill's description into the `skills:` vector namespace. `SeedSkills` does the
@@ -116,7 +116,7 @@ passive self-model ranking and the `skill_search` tool (R-SKILL.3).
 
 ---
 
-## R-SKILL.5 — The self-improvement boundary (N1–N3, I10)
+## R-SKILL.5 — the self-improvement boundary (N1–N3, I10)
 
 Skills are the **whole** of runtime self-modification. A conforming implementation
 **MUST NOT** provide any tool or path that:

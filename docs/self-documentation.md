@@ -169,10 +169,10 @@ questions (`TestDocSearchRetrievalQuality`):
 | Lexical only (no embedder) | 21/30 | 25/30 |
 | **Hybrid (live)** | **24/30** | **27/30** |
 
-Worth noting the middle row: a daemon with **no embedder at all** now retrieves
-better than the original vector-only implementation did with one. The two
-retrievers are close in strength and fail on different queries, which is exactly
-the condition under which fusing them pays.
+A daemon with **no embedder at all** now retrieves better than the original
+vector-only implementation did with one. The two retrievers are close in
+strength and fail on different queries, which is the condition under which
+fusing them pays.
 
 Top 5 is the number that matters, since that is what `doc_search` returns by
 default: it decides whether the answer is in front of the model at all — 90% of

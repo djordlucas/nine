@@ -653,7 +653,7 @@ tools, not the daemon.
    └─ LoadGeneratedTools(store, host, mgr)    ← project the stored catalog in
 ```
 
-The ordering is load-bearing twice. The host opens **after** the plugin manager,
+Two orderings are enforced. The host opens **after** the plugin manager,
 so every plugin tool name is already reserved and a colliding sandboxed tool is
 *skipped* rather than allowed to override (`pluginCollides`); and
 `SetAgentConfig` runs **before** the first `LoadGenerated`, which refuses to

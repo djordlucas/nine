@@ -1,4 +1,4 @@
-# Nine — Generation Spec
+# Nine — generation spec
 
 This directory is a **generation playbook**: a complete, implementation-agnostic
 specification for building Nine from scratch. It tells you *what* to build, *in what
@@ -108,8 +108,8 @@ If you only want to build one subsystem, jump to its contract and follow its
 
 ## Status of the reference implementation
 
-These contracts describe the system **as currently built** in this repository. A few
-load-bearing facts worth stating up front:
+These contracts describe the system **as currently built** in this repository.
+Facts that the rest depends on:
 
 - Stall detection fires at **5** consecutive no-tool turns.
 - `run_agents` default group timeout is the daemon task timeout, **1800s / 30 min**.
