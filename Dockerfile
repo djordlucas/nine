@@ -171,15 +171,15 @@ RUN mkdir -p /opt/nine/bin /data/workspace && \
     chown -R nine:nine /data && \
     chmod 0755 /opt/nine/bin
 
-# The runtime bundle adds init-perms on top of the shared nine + api services.
-# It is stage-specific because the dev stage has no init-perms service, and a
-# bundle naming a service that does not exist fails the s6 boot.
 # A default config so `docker run ghcr.io/djordlucas/nine` works with no clone
 # and no mounted file. Conservative on purpose — sandboxed tools off, every path
 # under /data. An operator's own file mounted at /nine.toml shadows it, and the
 # NINE_LLM_* environment overrides work without one.
 COPY docker/nine.toml /nine.toml
 
+# The runtime bundle adds init-perms on top of the shared nine + api services.
+# It is stage-specific because the dev stage has no init-perms service, and a
+# bundle naming a service that does not exist fails the s6 boot.
 COPY docker/s6/common/user-bundles.d/  /etc/s6-overlay/user-bundles.d/
 COPY docker/s6/runtime/user-bundles.d/ /etc/s6-overlay/user-bundles.d/
 COPY docker/s6/runtime/s6-rc.d/        /etc/s6-overlay/s6-rc.d/
@@ -192,11 +192,16 @@ RUN chmod +x /etc/s6-overlay/s6-rc.d/nine/run \
 VOLUME /data
 EXPOSE 8080
 
-# `nine status` talks to the daemon over its Unix socket, so it reports the
-# thing that actually matters — the daemon answering — without adding curl to
-# the image for a health probe.
+# `nine status` reaches the daemon over its Unix socket, so it probes the thing
+# that matters without adding curl to the image.
+#
+# The grep is required, not defensive: with no daemon reachable, `nine status`
+# prints "no daemon running" and exits 0, because the query itself succeeded.
+# A bare `CMD nine status` would therefore report healthy against a dead daemon.
+# "Uptime:" is the first line of a real status (internal/cli.printStatus), and
+# tests/docker asserts the container reaches healthy.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD ["/usr/local/bin/nine", "status"]
+  CMD /usr/local/bin/nine status 2>&1 | grep -q '^Uptime:'
 
 ENTRYPOINT ["/init"]
 

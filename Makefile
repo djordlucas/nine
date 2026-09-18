@@ -185,11 +185,15 @@ up-hot:
 	  nine-dev
 	@echo "nine (hot-reload) is building/starting. API at http://localhost:8080. Follow it with: make logs"
 
+# -u nine matters: the runtime container's services run as uid 1000, and a
+# session started as root writes root-owned files into /data that the daemon
+# then cannot touch. The dev container runs as root throughout, so it takes no
+# -u and is the fallback here.
 session:
-	@docker exec -it nine nine 2>/dev/null || docker exec -it nine-dev nine
+	@docker exec -it -u nine nine nine 2>/dev/null || docker exec -it nine-dev nine
 
 shell:
-	@docker exec -it nine sh 2>/dev/null || docker exec -it nine-dev sh
+	@docker exec -it -u nine nine sh 2>/dev/null || docker exec -it nine-dev sh
 
 logs:
 	@docker logs -f nine 2>/dev/null || docker logs -f nine-dev
