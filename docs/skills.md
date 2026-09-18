@@ -111,7 +111,7 @@ Edit (or add) a `.md` file in the repo's `skills/` directory and rebuild. On the
 
 ## How skills affect the agent
 
-Two mechanisms, and the difference matters.
+Two mechanisms.
 
 **Passively**, relevant skill *names* are injected into the self-model block (context priority 5 — dropped first under budget pressure). Names only: the body is never preloaded. For complex turns with long histories the hint may be trimmed away entirely.
 
@@ -137,3 +137,15 @@ If a skill is critical, you can still name it explicitly:
 | Best for | Reusable procedures, guidelines | Per-session state, dynamic data |
 
 Use skills for knowledge that should influence how the agent approaches a class of task. Use memory for values the agent needs to look up during task execution.
+
+---
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Built-in skills are immutable at runtime | `skill_write` and `skill_modify` refuse built-in and user skills. Changing a built-in means editing `skills/*.md` and rebuilding; a user skill's file is its source of truth. |
+| The passive hint is dropped first | Relevant skill names ride at context priority 5, the first thing trimmed under budget pressure. On long, complex turns — where a skill helps most — the hint is likeliest to be gone. The active `skill_search` path exists to cover that. |
+| Names only, never bodies | The passive path injects skill names. A body reaches context only through an explicit `skill_read`. |
+| `skill_search` needs an embedder | It is embedder-gated. With no embedder configured, use `skill_list`. |
+| No versioning or history | A `skill_modify` replaces the content. There is no revision history and no way to diff or roll back. |

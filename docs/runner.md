@@ -129,3 +129,13 @@ Stall detection is disabled when `Limit == 0` or `OnStall == nil`.
 | `prependNotifications` | Fetches pending notifs and prepends them to the message |
 | `checkStall` | Increments/resets stall counter; fires `OnStall` at threshold |
 | `checkpoint` | Serializes loop state and persists via `saveCkpt` |
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Stall detection is heuristic | A stall is counted as consecutive turns using no tools. A session legitimately reasoning without tools across several turns looks identical to a wedged one. |
+| Stall detection is off by default in tests | `Limit == 0` or `OnStall == nil` disables it entirely. |
+| Checkpoint granularity is one turn | State is serialized after a turn completes. A daemon killed mid-turn resumes from the previous turn and loses that turn's scratchpad. |
+| Progress buffer can drop | `progressCh` is buffered at 256 events. A turn emitting faster than the client consumes can overflow it. |
+| No per-turn timeout | The worker blocks on `agent.Loop.Run` for as long as the loop takes. Bounding a turn is the loop's and the LLM queue's job, not the worker's. |
