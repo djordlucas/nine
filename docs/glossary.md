@@ -569,3 +569,10 @@ socket. See [Daemon Architecture § Protocol](daemon.md#protocol).
 **Progress events** — Streamed during a turn: `tool_start`/`tool_end` (tool
 call lifecycle), `context_update` (token usage vs. budget), `response_chunk`
 (streamed text). Final `response` + `done` sent when the turn completes.
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Maintained by hand | A new concept does not appear here automatically. Where a definition here and a `spec/` contract disagree, the contract wins. |
+| Terms are deliberately overloaded in the codebase | Agent, session, conversation, sub-agent, goal, workflow and role are distinct here but used loosely in some source comments. Trust this document over a comment. |

@@ -253,7 +253,7 @@ The system does not automatically clean up consumed messages from the queue. Thi
 
 No configuration is required. The queued messages feature is always available when the daemon is running.
 
-## Limitations
+## Limits
 
 1. **No automatic consumption** - Messages are never automatically moved to history
 2. **No TUI/CLI/API integration yet** - Currently only the model can access queued messages through tools
@@ -270,6 +270,6 @@ No configuration is required. The queued messages feature is always available wh
 
 ## See also
 
-- [Agent Loop](agent-loop.md) - How turns are processed
-- [Context Builder](context-builder.md) - How context is assembled
-- [Memory Store Contract](spec/contracts/memory-store.md) - Database schema and operations
+- [Agent loop](agent-loop.md) - How turns are processed
+- [Context builder](context-builder.md) - How context is assembled
+- [Memory store contract](../spec/contracts/memory-store.md) - Database schema and operations

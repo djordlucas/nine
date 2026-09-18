@@ -108,7 +108,7 @@ At `0.0.79` the default set is 24 tools. The ones that carry most of the work:
 | `browser_console_messages`, `browser_network_requests` | Page diagnostics. |
 | `browser_navigate_back`, `browser_resize`, `browser_handle_dialog`, `browser_file_upload`, `browser_drag`, `browser_drop` | The rest. |
 
-### 24 tools is not free
+### Context cost
 
 Every tool's name, description, and JSON schema goes into the context window on
 every turn. Against a small local model at `num_ctx = 32768` — Nine's default is
@@ -116,7 +116,7 @@ every turn. Against a small local model at `num_ctx = 32768` — Nine's default 
 conversation.
 
 Nine ranks tools by relevance when an embedder is configured
-(`[embeddings]`, see [tool-exposition.md](tool-selection.md)), which limits the
+(`[embeddings]`, see [tool selection](tool-selection.md)), which limits the
 damage. If you are running a small model and browsing rarely, consider declaring
 the server only in the config of the instance that needs it.
 
@@ -258,38 +258,7 @@ reply shape upstream changed.
 
 ---
 
-## 8. Migrating from the browser plugin
-
-The old plugin's tools do not map one-to-one.
-
-| Old (`browser` plugin) | New (`@playwright/mcp`) |
-|------------------------|-------------------------|
-| `browser_navigate` | `playwright__browser_navigate` |
-| `browser_extract` | `playwright__browser_evaluate`, or `browser_snapshot` |
-| `browser_screenshot` | `playwright__browser_take_screenshot` |
-| `browser_click` | `playwright__browser_click` |
-| `browser_fill` | `playwright__browser_type` / `browser_fill_form` |
-| `browser_eval` | `playwright__browser_evaluate` |
-| `browser_wait` | `playwright__browser_wait_for` |
-| `browser_status` | — (navigate reports URL and title) |
-| `browser_reset` | `playwright__browser_close`, or `--isolated` |
-
-Other changes:
-
-- **`BROWSER_*` environment variables are gone.** They were the old plugin's
-  config surface. Use the server's CLI flags in `args` instead:
-  `BROWSER_HEADLESS=0` → omit `--headless`; `BROWSER_VIEWPORT_WIDTH/HEIGHT` →
-  `--viewport-size 1280x800`; `BROWSER_TIMEOUT` → `--timeout-navigation`.
-- **`BROWSER_ALLOW_URLS` / `BROWSER_BLOCK_URLS` / `BROWSER_ALLOW_PRIVATE` have
-  no equivalent.** See [§5](#5-security).
-- **`make browser-plugin` is gone**, along with `dist/bin/browser`. `make dev`
-  no longer installs npm packages or a browser.
-- **Skills and prompts that name `browser_*` tools need updating** for the
-  prefix and the renames.
-
----
-
-## 9. Telling the agent how to use it
+## 8. Telling the agent how to use it
 
 Nine's system prompt says nothing about browsers — it cannot, since it does not
 know whether one is configured or what the operator named it. The guidance lives
@@ -308,9 +277,19 @@ matched exactly and the prefix is yours to choose, so built-in roles like
 
 ---
 
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| No URL allowlist | The server exposes no equivalent of a per-URL allow or block list. A configured browser can reach whatever the host can. See §5. |
+| 24 tools in the catalog | Every tool's name, description and schema enters the context window each turn. Against `qwen3.5:4b` at `num_ctx = 32768` that is a real fraction of the budget. Declare the server only on instances that browse. |
+| Needs `npx` and a browser | Neither runtime image ships a browser. The dev image carries Node for `npx` MCP servers; the runtime image does not. |
+| Opt-in end-to-end test | `NINE_PLAYWRIGHT_TEST=1 go test ./internal/builtins/ -run Playwright` needs `npx` and an installed browser, so it does not run in the default suite. |
+| Built-in roles cannot call it | Allowlists match tool names exactly, and MCP tools carry an operator-chosen prefix, so no built-in role names one. `report-writer` researches over HTTP for this reason. |
+
 ## See also
 
 - [plugins.md](plugins.md) — the plugin model, and MCP servers in general
 - [configuration.md](configuration.md) — `[[mcp.server]]` reference
-- [tool-exposition.md](tool-selection.md) — how tools are ranked into context
+- [tool selection](tool-selection.md) — how tools are ranked into context
 - [spec/contracts/plugin.md](../spec/contracts/plugin.md) — R-PLUG.15, the MCP bridge

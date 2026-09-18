@@ -489,3 +489,14 @@ Inside `Run`, use `plugin.JobDir(ctx)` for per-job scratch and
 honours the plugin's `max_concurrent` for jobs (excess jobs queue) and evicts
 finished jobs after a TTL. Jobs are native-plugin only (protocol v2); MCP servers
 cannot use them. See [Plugin capabilities § 5](plugin-capabilities.md).
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Fixed at build time | Built-in plugins are compiled into the `nine` binary. Adding one means editing the source repo and rebuilding; there is no runtime path for an agent or an operator to add a native plugin. |
+| User plugins need a restart or reload | A new plugin under `[plugins].user_dir` is discovered at boot. `nine plugins reload` picks up changes for user plugins; built-ins need a daemon restart. |
+| Unbounded concurrency by default | `max_concurrent` defaults to 0, meaning unbounded. A plugin holding shared mutable state must declare its own cap. |
+| No capability sandbox | A plugin is an ordinary subprocess running as the daemon's process user, with the daemon's filesystem and network reach. Only sandboxed tools run behind a capability boundary. |
+| MCP tools are invisible to built-in roles | Their names carry an operator-chosen prefix, and role allowlists match exactly. |
+| A plugin cannot call back | The daemon dials the plugin and never the reverse. A plugin reports long-running work by being polled. |
