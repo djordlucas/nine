@@ -137,7 +137,11 @@ Rules:
 
 - The section is named `## Limits`, not "Future work", "TODO", "Caveats", or
   "Known issues".
-- It goes last. Nothing follows it except cross-reference links.
+- It goes last. Nothing follows it except cross-reference links, or — in
+  `README.md` only — the repository footer: AI use, Contributing, Security,
+  License.
+- A roadmap is not a limits section. A roadmap lists intended work; `## Limits`
+  states what is true today. `README.md` carries both, roadmap first.
 - A deliberate non-goal belongs here, marked as deliberate — it stops readers
   filing it as an oversight.
 - If a subject genuinely has no open ends, say so in one line rather than
