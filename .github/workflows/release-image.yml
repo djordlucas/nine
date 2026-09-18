@@ -37,14 +37,11 @@ permissions:
   contents: read
 
 jobs:
-  # ── Gate: build one amd64 image, scan it, run the image contract tests ──────
-  # Nothing is pushed from this job. If it fails, publish never runs.
-  verify:
-    name: Build, scan and test
+  # Resolved once, in its own job: a matrix job's outputs come from whichever
+  # leg finished last, which is not a defined choice.
+  meta:
+    name: Resolve version
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
     outputs:
       version: ${{ steps.version.outputs.version }}
       build_date: ${{ steps.version.outputs.build_date }}
@@ -52,8 +49,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          # The version label and `nine version` come from the tag, so the tag
-          # has to be there to describe.
+          # `nine version` and the image's version label come from the tag, so
+          # the tag has to be present to describe.
           fetch-depth: 0
           persist-credentials: false
 
@@ -70,26 +67,53 @@ jobs:
           echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
           echo "Building version ${version}"
 
+  # ── Gate: build each published arch, scan it, run the image contract tests ──
+  # Nothing is pushed from this job. If it fails, publish never runs.
+  verify:
+    name: Build, scan and test (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    needs: meta
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: true
+      matrix:
+        # Both published architectures are scanned. The Debian layers differ per
+        # arch, so scanning only amd64 would ship arm64 ungated.
+        platform: [linux/amd64, linux/arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU
+        if: matrix.platform != 'linux/amd64'
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+        with:
+          platforms: arm64
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      - name: Build amd64 image for scanning
+      - name: Build image for scanning
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: Dockerfile
           target: runtime
-          platforms: linux/amd64
+          platforms: ${{ matrix.platform }}
           tags: nine:verify
           load: true
           push: false
           provenance: false
           build-args: |
-            VERSION=${{ steps.version.outputs.version }}
+            VERSION=${{ needs.meta.outputs.version }}
             VCS_REF=${{ github.sha }}
-            BUILD_DATE=${{ steps.version.outputs.build_date }}
-          cache-from: type=gha,scope=release
-          cache-to: type=gha,mode=max,scope=release
+            BUILD_DATE=${{ needs.meta.outputs.build_date }}
+          cache-from: type=gha,scope=release-${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=release-${{ matrix.platform }}
 
       # The gate. CRITICAL/HIGH with a known fix fails the job, which stops the
       # publish job from running at all.
@@ -124,8 +148,10 @@ jobs:
         continue-on-error: true # needs a public repo or GHAS
         with:
           sarif_file: trivy-image.sarif
+          category: trivy-image-${{ matrix.platform }}
 
       - name: Setup Go
+        if: matrix.platform == 'linux/amd64'
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: "1.26"
@@ -135,17 +161,20 @@ jobs:
       # Asserts the image contract: runs as uid 1000, no toolchain or secrets in
       # the layers, /data writable, the daemon answers, the version label matches.
       - name: Image contract tests
+        # Native arch only: running the containers under QEMU would add
+        # emulation flakiness to a release gate. Both arches are still scanned.
+        if: matrix.platform == 'linux/amd64'
         env:
           NINE_IMAGE_TEST: "1"
           NINE_TEST_IMAGE: nine:verify
-          NINE_TEST_VERSION: ${{ steps.version.outputs.version }}
+          NINE_TEST_VERSION: ${{ needs.meta.outputs.version }}
         run: go test -mod=vendor -v -timeout 10m ./tests/docker/...
 
   # ── Publish: multi-arch build, push, sign, attest ──────────────────────────
   publish:
     name: Publish
     runs-on: ubuntu-latest
-    needs: verify
+    needs: [meta, verify]
     if: github.event_name == 'push' || inputs.push
     permissions:
       contents: read
@@ -209,7 +238,7 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref_type == 'tag' && !contains(github.ref_name, '-') }}
             type=sha,format=long
           labels: |
-            org.opencontainers.image.version=${{ needs.verify.outputs.version }}
+            org.opencontainers.image.version=${{ needs.meta.outputs.version }}
 
       - name: Build and push
         id: build
@@ -223,9 +252,9 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VERSION=${{ needs.verify.outputs.version }}
+            VERSION=${{ needs.meta.outputs.version }}
             VCS_REF=${{ github.sha }}
-            BUILD_DATE=${{ needs.verify.outputs.build_date }}
+            BUILD_DATE=${{ needs.meta.outputs.build_date }}
           # An SBOM says what is in the image; provenance says how it was built.
           # Both ride along as attestations on the manifest.
           sbom: true
