@@ -117,3 +117,10 @@ func (st *AgentWorkerForTest) StopAgentWorker() { st.w.stop() }
 func (st *AgentWorkerForTest) InspectContextForTest(ctx context.Context) (ninectx.Report, error) {
 	return st.w.InspectContext(ctx)
 }
+
+// IsBusyForTest delegates to the unexported AgentWorker.IsBusy.
+func (st *AgentWorkerForTest) IsBusyForTest() bool { return st.w.IsBusy() }
+
+// SetOnCompleteForTest installs the worker's post-turn onComplete callback.
+// Call it before the first turn.
+func (st *AgentWorkerForTest) SetOnCompleteForTest(fn func(agentID string)) { st.w.onComplete = fn }
