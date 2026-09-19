@@ -1,4 +1,4 @@
-# Sandboxed tools — a Wasm tool host with conferred capabilities
+# Sandboxed tools
 
 - **Status:** **Stages 1–6 built** (rev 1) — the design is fully implemented. This
   note remains the design rationale; the normative contract for what exists is
@@ -36,7 +36,7 @@
 
 ---
 
-## 1. TL;DR — recommendation
+## 1. Summary
 
 | # | Piece | Shape |
 |---|---|---|
@@ -59,18 +59,14 @@ edits Go source, rebuilds the binary, alters `nine.toml`, writes a native plugin
 or changes a built-in skill. Every one of those stays removed
 (`self-modification.md`). Nine's executable shape remains fixed.
 
-What changes is narrower and needs to be stated precisely, because
-`self-modification.md` and `R-PLUG.7` currently forbid it in passing:
+What it does allow is narrower. `R-PLUG.7` states the boundary:
 
 > **R-PLUG.7:** No agent-reachable tool or path may write plugin source, build a
 > plugin, start a new plugin binary, hot-swap, or roll back a plugin. This is a
 > self-modification boundary: **Nine cannot grant itself capabilities.**
 
-The final sentence is the invariant that actually matters, and this design
-**preserves it verbatim**. The clause that must be amended is the one about
-*writing code*, because that is what a generated tool is.
-
-The distinction the amendment must draw:
+The final sentence is the invariant, and it is preserved verbatim. The clause
+about *writing code* is the one a generated tool changes. The distinction:
 
 | | Code | Capabilities |
 |---|---|---|
@@ -151,10 +147,9 @@ module exporting `run`, and there are two ways to get one:
   the tool's source is JavaScript handed to it. Nothing is compiled at install
   time.
 
-This is what makes generated tools tractable. An LLM writes correct JavaScript
-far better than it writes Rust that compiles to wasm, and — decisively — **there
-is no build step**, so no toolchain in the runtime image (`self-modification.md`
-is emphatic that there is none, and this design does not add one).
+An LLM writes correct JavaScript far better than it writes Rust that compiles
+to wasm, and **there is no build step**, so the runtime image needs no toolchain
+(`self-modification.md`).
 
 Both kinds are the same to everything downstream: same ABI, same capability
 model, same dispatcher registration, same audit trail. QuickJS is an
@@ -296,8 +291,8 @@ has no imports left at all.
 
 **Bytecode.** The harness and the `nine:*` modules are the same bytes on every
 call, so they are precompiled to QuickJS bytecode once and instantiated from
-that. With per-call instantiation (§3) this matters: it moves parsing off the hot
-path entirely, and only the tool's own source is compiled per call.
+that. Under per-call instantiation (§3) this moves parsing off the hot path
+entirely: only the tool's own source is compiled per call.
 
 ### 4.4 External dependencies — opt-in, allowlisted, resolved at write time
 
@@ -339,8 +334,8 @@ import goes through a Go callback that serves only from the verified cache and
 refuses everything else. §4.3's rule is not weakened by this feature; it is
 implemented by it.
 
-The payoff is a convergence worth stating plainly: **a generated tool with
-dependencies becomes a developer tool, mechanically.** Same artifact — one
+**A generated tool with dependencies becomes a developer tool, mechanically.**
+Same artifact — one
 self-contained ESM file with no imports. The only difference is who ran the
 bundler and when. Everything downstream (§3 execution, §6 capabilities, §9 audit)
 is unchanged and does not need to know.
@@ -419,8 +414,8 @@ Four properties do the real work, and they compound:
 > **`deps` + `net.http` on the same tool is refused unless the operator sets
 > `allow_network_deps = true`.**
 
-Property 2 is what makes external dependencies safe, and network egress is
-precisely what dissolves it. A package that can reach the network can exfiltrate
+Property 2 is what makes external dependencies safe, and network egress
+dissolves it. A package that can reach the network can exfiltrate
 whatever the tool sees — its arguments, its filesystem grants, anything in scope
 — and the sandbox is no longer a boundary, just a delay. The two features are
 individually reasonable and jointly a data-exfiltration primitive, so the
@@ -514,7 +509,7 @@ what the approval gate keys on (§9.4). A tool that declares nothing — the com
 case — gets nothing, regardless of how permissive the ceiling is. Least privilege
 is per tool, not per tier.
 
-Symmetry with skills is deliberate and load-bearing:
+The symmetry with skills is deliberate:
 
 | | Skill | Generated tool |
 |---|---|---|
@@ -614,9 +609,9 @@ globals, heap and interpreter realm still go, so no carryover happens by acciden
 persists does so because a tool asked, an operator granted, and the roster shows it.
 
 **Scope is the decision that matters.** `scope = "tool"` shares one namespace across every
-caller — what a cache wants — and is, precisely because of that, a channel from one
-conversation into another that needs no other capability: a tool's arguments come from the
-model, and a call in one session can write them down for a call in another to read.
+caller, which is what a cache wants and is also a channel from one conversation into
+another that needs no other capability: a tool's arguments come from the model, and a
+call in one session can write them down for a call in another to read.
 `scope = "conversation"` keys the namespace per conversation and closes that. Neither is
 wrong; which one applies is why the parameter is required and has no default.
 
@@ -656,7 +651,7 @@ The same resumable tool can also be run **standing**: indefinitely, on its own c
 declared in `nine.toml` rather than started by a turn. It is a second run mode, not a
 second kind of tool.
 
-The gap it fills is narrow and worth stating precisely. Recurring work in Nine has always
+The gap it fills is narrow. Recurring work in Nine has always
 gone through a standing agent, a goal session, or a session-plan routine — and all three
 put an LLM turn in the loop, so watching a file every ten seconds costs thousands of turns
 a day to be told nothing happened. For work with no judgement in it, that is the wrong
@@ -732,7 +727,7 @@ require_approval = "on_capability"
 read = [{ host = "${NINE_WORKSPACE}", guest = "/workspace" }]
 ```
 
-Four properties worth stating:
+Four properties:
 
 - **`[tools.agent.capabilities]` is a ceiling, not a default.** A generated tool
   cannot request its way past it, and does not receive it merely by existing. It
@@ -762,10 +757,9 @@ is the reach of **a tool's dependencies** (§4.4). With an empty ceiling, a host
 npm package can only return a wrong answer. With workspace read, it can *see the
 workspace* — and if it could also reach the network, exfiltrate it.
 
-It cannot, and that is the whole point of the §4.4 interlock. But the interlock
-shifts from belt-and-braces to **load-bearing**: it is now the only thing standing
-between a compromised transitive dependency and your source tree. Two things
-follow, and neither is optional:
+It cannot, because of the §4.4 interlock. That interlock is now the only thing
+standing between a compromised transitive dependency and your source tree. Two
+things follow, neither optional:
 
 1. `allow_network_deps` stays off. Turning it on with this ceiling is the one
    combination that makes a supply-chain compromise materially dangerous.
@@ -926,10 +920,9 @@ New Go module dependencies, in full:
 
 Both are **pure Go**, MIT, and heavily used — consistent with the
 `modernc.org/sqlite` choice and with `go build -mod=vendor`. esbuild is the
-larger addition and is worth the cost precisely because it removes a much bigger
-one: without it, bundling means Node in the image, and Node in the image means a
-JavaScript runtime and a package manager sitting outside the sandbox — which is
-the exact thing this design exists to avoid. It is also only pulled in for
+larger addition and removes a bigger one: without it, bundling means Node in the
+image, and Node in the image means a JavaScript runtime and a package manager
+sitting outside the sandbox. It is also only pulled in for
 stage 6; stages 1–5 need wazero alone.
 
 ### 10.1 Building the QuickJS blob
@@ -988,65 +981,15 @@ depending on one reviewed commit of C.
 
 ---
 
-## 11. Build order
+## 11. Limits
 
-Each stage is independently useful and independently shippable.
-
-| Stage | Scope | Proves |
-|---|---|---|
-| **1** | `toolvm`: wazero host, raw `.wasm` only, **no capabilities**, dispatcher registration, developer tools from `user_dir` | the host, the ABI, the loader, the collision rules |
-| **2** | `js` kind — trimmed QuickJS blob (§4.1), harness, host-side module allowlist, `nine:*` stdlib. Spike against a prebuilt module, ship the vendored pinned one (§10.1) | an author writes JS, not Rust — with a closed import surface |
-| **3** | Capability model: `fs` pre-opens, `env` allowlist, grant resolution, load-time failure on ungranted declarations | §6–§7 end to end, developer tier complete |
-| **4** | `net.http` host function with the full §8 checklist + its own adversarial tests (SSRF, rebinding, redirect laundering) | the hard capability |
-| **5** | `tool_write`, `js_eval` (§5.3), the `tools` table, the agent ceiling + per-tool declarations, cap + eviction, conditional HITL gate, audit | the generated tier |
-| **6** | External deps (§4.4): esbuild bundling, allowlist policy, integrity + lockfile, cache, the `net.http` interlock | libraries, safely |
-
-**Stage 3 is the real milestone** — at that point a developer can add a permanent,
-sandboxed, capability-scoped tool by dropping two files, and the entire
-generated-tool tier is still switched off. That is a complete feature on its own,
-and shipping it before stage 5 means the capability model is proven by a human
-author before it is load-bearing for a machine one.
-
-**Stage 6 depends on stage 5's containment being real**, not merely designed. Its
-whole safety argument is "a malicious package can only do what the tool was
-granted" — which is worth exactly as much as the capability model underneath it.
-It should not be built until stage 3's grant resolution and stage 4's `net.http`
-checks have adversarial tests passing.
-
-Recommended production posture once all six land:
-
-| Setting | Value |
-|---|---|
-| Developer tools | named grants, per tool, reviewed |
-| `[tools.agent.capabilities]` | workspace `fs.read` — narrowed to a subdirectory if the workspace holds secrets (§7.1) |
-| `require_approval` | `"on_capability"` |
-| `deps.mode` | `"allowlist"` with `frozen = true` |
-| `allow_network_deps` | **off** |
-
-`deps.mode = "open"` belongs on a development instance — one where the agent is
-exploring — not one serving a production workload. The intended path is to
-iterate open, then freeze the lockfile and copy it forward.
-
----
-
-## 12. Documents this changes
-
-Reconciled via `/sync-nine` when the code lands, not before:
-
-| Document | Change |
-|---|---|
-| `self-modification.md` | Amend "Generate / build / hot-swap plugins — Removed". Native plugins stay removed; add generated *sandboxed tools* as permitted, with the code/capabilities split of §2 as the rationale. |
-| `spec/contracts/plugin.md` (R-PLUG.7) | Narrow to native plugins. "Nine cannot grant itself capabilities" stays **unchanged** — it remains true and is now load-bearing for two subsystems. |
-| `spec/contracts/toolvm.md` | **New.** `R-TVM.*`: ABI, capability set, grant resolution, load sequence, collision rules, resource bounds. |
-| `spec/contracts/dispatcher.md` (R-DISP.3/4) | Tool taxonomy gains a third branch: plugin / core-intercepted / **sandboxed**. |
-| `configuration.md` | `[tools]`, `[tool.<name>]`, `[tools.agent]`, `[tools.agent.deps]`. |
-| `usage.md` (deps) | `nine tools deps`, lockfile inspection, freeze/thaw. |
-| `versioning.md` | `toolvm.ABIVersion` alongside `plugin.ProtocolVersion`. |
-| `glossary.md` | *sandboxed tool*, *generated tool*, *capability grant*, *`nine:*` stdlib* — the overloading warning in CLAUDE.md applies with force here. |
-| `writing-sandboxed-tools.md` | **New.** Authoring guide: manifest format, the ABI, bundling deps with esbuild (§4.2), the `nine:*` set, and what QuickJS does *not* provide. |
-| `usage.md` | `nine tools list/show/reload`, `nine tool validate`. |
-| `hitl.md` | `require_approval = "on_capability"` as a new gate trigger (§9.4). |
-| `spec/contracts/dispatcher.md` (R-DISP.3) | `tool_write` and `js_eval` join the core-intercepted tool list. |
-| `docs/README.md` | Index entry. |
-| `Makefile` / CI | `make quickjs-wasm` (bump-only, §10.1) and the `qjs.wasm.sha256` verification step. |
-| `installation.md` | Note that the committed blob means no wasi-sdk for an ordinary build. |
+| Limit | Detail |
+|-------|--------|
+| `net.http` is the hard capability | wazero has no network, so `net.http` is entirely a host function and its security is entirely Nine's problem. It carries its own SSRF, rebinding and redirect-laundering checks (§8). Getting it wrong turns every generated tool into an SSRF primitive. |
+| No hot reload | The host loads modules at boot and per call. Adding a developer tool means restarting the daemon. |
+| Capability gaps | `fs` and `env` cover the common cases; runtime wasm grants, binary data, per-tool timeouts, structured tool errors and secret sharing are not built. |
+| Nothing survives a call | A module is instantiated fresh per call and torn down after it — no globals, no cached credentials, no parsed index. Durable state and long-running work are designed in [`adr/durable-and-long-running-tools.md`](../adr/durable-and-long-running-tools.md). |
+| Trimmed JS surface | The interpreter surface is deliberately narrowed (§4.1). Globals a Node or browser author expects are absent, and the import surface is closed. |
+| External deps are off by default | `allow_network_deps` gates them, and turning it on removes the property that makes external dependencies safe. The `net.http` interlock (§4.4) is then the only thing between a compromised transitive dependency and your source tree. |
+| The generated tier is off by default | `[tools.agent] enabled` gates it. The agent writes code; the operator writes grants; they are never the same actor. |
+| `scope = "tool"` is cross-conversation | A tool-scoped namespace is shared by every caller, which is what a cache wants and is also a channel from one conversation into another. `scope = "conversation"` closes it. |

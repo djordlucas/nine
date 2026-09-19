@@ -1,4 +1,4 @@
-# Contract — Wire Protocol (daemon ↔ client)
+# Contract — wire protocol (daemon ↔ client)
 
 **Status:** Built · **Depends on:** nothing (shared package) · **Used by:** daemon, CLI, TUI
 
@@ -9,7 +9,7 @@ JSON object per line.
 
 ---
 
-## R-PROTO.1 — Envelope
+## R-PROTO.1 — envelope
 
 There is a single flat envelope type, `Msg`. Every message — request or event — is one
 `Msg`. Implementations **MUST** use one flat object with a `type` discriminator and
@@ -59,7 +59,7 @@ Msg {
 
 ---
 
-## R-PROTO.2 — Client → daemon messages
+## R-PROTO.2 — client → daemon messages
 
 | `type` | Fields | Meaning |
 |--------|--------|---------|
@@ -88,7 +88,7 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 
 ---
 
-## R-PROTO.3 — Daemon → client messages
+## R-PROTO.3 — daemon → client messages
 
 **Lifecycle / results:**
 
@@ -145,7 +145,7 @@ resolved leaf role); it never reaches the LLM and a client **MUST NOT** branch o
 
 ---
 
-## R-PROTO.4 — Read payloads
+## R-PROTO.4 — read payloads
 
 `status` returns `StatusInfo` JSON-encoded in `text`:
 
@@ -174,7 +174,7 @@ PluginStatus { name string, source string, loaded bool, tools []string, error st
 plugins) before returning the resulting roster; both are operator reads/actions,
 never agent tools.
 
-### R-PROTO.4a — Sandboxed tool roster
+### R-PROTO.4a — sandboxed tool roster
 
 `tools_list` and `tools_reload` return `[]SandboxedToolStatus` JSON-encoded in `text`
 (`spec/contracts/toolvm.md`):
@@ -217,7 +217,7 @@ are not reachable this way.
 
 ---
 
-## R-PROTO.6 — Display names never reach the LLM (I8)
+## R-PROTO.6 — display names never reach the LLM (I8)
 
 `tool_display_name` is a UI affordance carried to the client only. The canonical
 `tool_name` is what the model sees and calls. An implementation **MUST NOT** send display
@@ -239,7 +239,7 @@ the daemon (G1).
 
 ---
 
-## R-PROTO.8 — Connection & concurrency
+## R-PROTO.8 — connection & concurrency
 
 - The daemon accepts connections in a loop, handling **each connection concurrently and
   independently**, reading newline-delimited `Msg`s.
@@ -259,7 +259,7 @@ the daemon (G1).
 
 ---
 
-## R-PROTO.9 — Every client message type is dispatched
+## R-PROTO.9 — every client message type is dispatched
 
 The daemon **MUST** route every message type a client is documented to send, and an
 implementation **MUST** carry a check that this holds — the set of client-sendable types
@@ -271,7 +271,7 @@ sends each member to a running daemon, asserting the reply is not the dispatcher
 validation error or "no such conversation" **passes**, because it proves the message
 reached a handler. Only the default branch fails.
 
-This is what makes the typed discriminator (R-PROTO.1) load-bearing rather than a
+This is what makes the typed discriminator (R-PROTO.1) enforced rather than a
 convention. Without it, a message type can be declared, documented, and sent by a client
 while the daemon has no case for it, and nothing reports that until a user hits it.
 
@@ -303,7 +303,7 @@ methods checked, thirteen did not.
 
 ---
 
-## R-PROTO.11 — Required fields are checked on ingress
+## R-PROTO.11 — required fields are checked on ingress
 
 The envelope is flat and every field is `omitempty`, so which fields a given type
 actually needs cannot be expressed in the schema. An implementation **MUST** carry that
@@ -327,7 +327,7 @@ latter is R-PROTO.9's to report, and one fault should not be reported in two voi
 
 ---
 
-## R-PROTO.12 — Requests decode to per-message types before dispatch
+## R-PROTO.12 — requests decode to per-message types before dispatch
 
 A daemon **MUST NOT** dispatch on the envelope. It **MUST** first decode an inbound client
 message into a **per-message request type** carrying only the fields that message has, and

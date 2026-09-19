@@ -13,29 +13,18 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Code scanning is unavailable while the repository is private: GitHub code
+# scanning (CodeQL analysis and SARIF upload to the Security tab) requires a
+# public repository or a GitHub Advanced Security license, and fails with
+# "Code scanning is not enabled for this repository" on private repos.
+#
+# Consequently the CodeQL job is removed and the Trivy upload-sarif steps are
+# continue-on-error. The Trivy scans themselves run as a failing gate
+# (exit-code: 1) again now that the base-image/dependency findings they surface
+# have been remediated (PR #155). Re-enable CodeQL and the SARIF uploads once
+# the repository is public. Tracked in the README roadmap.
+
 jobs:
-  codeql:
-    name: CodeQL Analysis
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: go
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
-
-      - name: Analyze
-        uses: github/codeql-action/analyze@v3
-
   trivy-fs:
     name: Trivy Filesystem Scan
     runs-on: ubuntu-latest
@@ -55,6 +44,7 @@ jobs:
           exit-code: 1
           ignore-unfixed: true
           vuln-type: os,library
+          limit-severities-for-sarif: true
           format: sarif
           output: trivy-fs-results.sarif
 
@@ -63,6 +53,7 @@ jobs:
         with:
           sarif_file: trivy-fs-results.sarif
         if: always()
+        continue-on-error: true  # SARIF upload needs a public repo or GHAS
 
   trivy-docker:
     name: Trivy Docker Image Scan
@@ -97,6 +88,7 @@ jobs:
           exit-code: 1
           ignore-unfixed: true
           vuln-type: os,library
+          limit-severities-for-sarif: true
           format: sarif
           output: trivy-docker-results.sarif
 
@@ -105,3 +97,4 @@ jobs:
         with:
           sarif_file: trivy-docker-results.sarif
         if: always()
+        continue-on-error: true  # SARIF upload needs a public repo or GHAS

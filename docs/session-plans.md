@@ -1,4 +1,4 @@
-# Session Plans & Routines
+# Session plans and routines
 
 Every running session (`AgentWorker`) — an ordinary conversation, the dedicated
 self-reflection session, or a goal's background "pursue" session — has a persistent
@@ -197,3 +197,12 @@ goal gets its own background session running the `pursue` routine, keyed 1:1 by
 
 Each pursue session's idle interval (`PursueIdleInterval`) is 5 minutes.
 
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Fixed pursue interval | `PursueIdleInterval` is 5 minutes and is not configurable per goal. |
+| Goal-session cap | `daemon.max_goal_sessions`, default 10. Past the cap a goal is recorded without a background session, and `goal_create` reports `pursue_session: "limit_reached"`. |
+| Sub-goals get no session | A goal with `parent_type: "goal"` is worked inside its parent's pursue loop. |
+| No backfill across restarts | A routine's `lastFire` resets to the worker's start time on restart, so an occurrence missed while the daemon was down is not replayed. |
+| One clock trigger per routine | `idle_interval_seconds` and `schedule` are mutually exclusive. |

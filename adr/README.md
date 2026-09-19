@@ -30,39 +30,55 @@ remains here is the reasoning.
 
 ## Contents
 
-- **architecture-review.md** — the rev-2 review: findings F1–F13, severity,
-  sequencing. All findings are closed.
-- **concept-consolidation.md** — C1–C7: stages, reflection and goal
-  bookkeeping, consolidated. Complete 2026-08-19.
-- **event-log.md** — investigation report behind the session journal.
-  Written against a PostgreSQL store; the store is SQLite now.
-- **reactive-events.md** — event subscriptions: reacting to the journal.
-- **tool-output-spill.md** — spilling oversized tool output to the store and
-  passing it back by reference.
-- **tool-exposition.md** — top-K ranking vs. on-demand lookup, and why the
-  hybrid won.
-- **rich-js-tools.md** — what a sandboxed-tool author can actually call: the JS
-  environment, and what belongs beneath it.
-- **roles-design.md** — why worker kinds became data, the migration off
-  depth-based gating, and the acceptance gates for it.
-- **thinking-and-planning.md** — thinking and planning modes, M1–M7.
-- **architecture-wiring.md** — the boot order, end-to-end data flows, and the
-  component relationship map. Names types and call sites, which is what tracing
-  a flow needs and what the architecture doc deliberately avoids.
-- **plugin-http-transport-design.md** — why the plugin transport is HTTP over a
-  Unix socket, the constraints found in the code, and the phased rollout.
-- **predefined-agents-design.md** — standing agents as config-seeded goals: the
-  motivation, the work breakdown, and the phasing.
-- **daemon-assembly-refactor.md** — collapsing two wiring paths into one.
-- **single-container.md** — the single-container design. Partly superseded:
-  the browser plugin it assumes no longer exists.
-- **tui-slash-suggestions.md** — slash-command suggestions in the TUI.
-- **durable-and-long-running-tools.md** — giving a sandboxed tool a memory and
-  letting its work outlive a turn, without letting anything survive the instance.
-  Amends I-TVM.3. Proposed.
-- **standing-tools.md** — running a resumable tool indefinitely on its own
-  cadence, declared in config or generated on request. A second run mode, not a
-  second kind of tool. Proposed.
-- **personality-pattern.md** — the personality pattern for packaging complete, autonomous
-  Nine instances as specialized agents, including self-model bootstrapping and buffered
-  input requirements. Proposed.
+Sorted by status, then by subject. "Superseded" records a decision that later
+changed; the document stays as the record and is not rewritten.
+
+### Implemented
+
+| Document | What it records | Shipped |
+|----------|-----------------|---------|
+| `architecture-review.md` | Rev-2 review: findings F1–F13, severity, sequencing | 2026-08-21, all closed |
+| `concept-consolidation.md` | C1–C7: stages, reflection and goal bookkeeping, consolidated | 2026-08-19 |
+| `daemon-assembly-refactor.md` | Collapsing two wiring paths into one `runtime.Assemble` | `cea290d` |
+| `plugin-http-transport-design.md` | HTTP over a Unix socket for plugins: constraints and phased rollout | yes |
+| `rich-js-tools.md` | The JS environment a sandboxed-tool author can call | yes |
+| `thinking-and-planning.md` | Thinking and planning modes, M1–M7 | yes |
+| `tool-exposition.md` | Top-K ranking vs. on-demand lookup; the hybrid is live behavior | yes |
+| `tool-output-spill.md` | Spilling oversized tool output to the store, passing it back by reference | yes |
+| `tui-slash-suggestions.md` | Slash-command suggestions in the TUI | yes |
+| `architecture-wiring.md` | Boot order, end-to-end data flows, component map. Names types and call sites. | yes |
+| `roles-design.md` | Worker kinds as data; migration off depth-based gating | yes |
+
+### Proposed
+
+| Document | What it records |
+|----------|-----------------|
+| `accurate-token-counting.md` | Real tokenizer behind a feature flag, replacing the character estimate |
+| `codebase-improvement.md` | Design note: prioritized improvements across the tree |
+| `durable-and-long-running-tools.md` | Giving a sandboxed tool memory and letting work outlive a turn. Amends I-TVM.3. |
+| `event-log.md` | Investigation behind the session journal. Written against PostgreSQL; the store is SQLite. |
+| `personality-pattern.md` | Packaging complete Nine instances as specialized agents; self-model bootstrapping |
+| `predefined-agents-design.md` | Standing agents as config-seeded goals: motivation, work breakdown, phasing |
+| `reactive-events.md` | Event subscriptions: reacting to the journal |
+| `standing-tools.md` | Running a resumable tool on its own cadence. A second run mode, not a second kind of tool. |
+| `tui-boxed-messages.md` | Boxed message rendering in the TUI. `internal/tui` only. |
+
+### Superseded in part
+
+| Document | What changed |
+|----------|--------------|
+| `single-container.md` | The single-container design. The browser plugin it assumes no longer exists — browser automation is an `[[mcp.server]]`. |
+| `event-log.md` | Assumes a PostgreSQL store; persistence is a single SQLite file. |
+
+### Not about Nine
+
+| Document | What it records |
+|----------|-----------------|
+| `github-hardening.md` | GitHub repository configuration for public release: secret audit, branch protection, scanning, metadata. Kept here so it does not ship in the binary. |
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Status is recorded by hand | Each document's `**Status:**` line and this index are updated manually; a stale status is possible. Trust the document over the index. |
+| Proposed documents may never ship | Nothing here is a commitment. A proposal that was rejected keeps its `Proposed` status rather than being deleted. |

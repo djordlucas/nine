@@ -27,7 +27,7 @@ The personality pattern **packages these primitives** into a deployable artifact
 
 ---
 
-## When to Use a Personality
+## When to use a personality
 
 Build a personality when you want:
 
@@ -44,7 +44,7 @@ Do **not** use a personality when you want:
 
 ---
 
-## Personality Structure
+## Personality structure
 
 A personality repository has the following structure:
 
@@ -67,9 +67,9 @@ personality-<name>/
 
 ---
 
-## Creating a Personality
+## Creating a personality
 
-### Step 1: Create the Repository
+### Step 1: create the repository
 
 ```bash
 mkdir personality-alice
@@ -77,7 +77,7 @@ cd personality-alice
 git init
 ```
 
-### Step 2: Create the Dockerfile
+### Step 2: create the Dockerfile
 
 ```dockerfile
 # personality-alice/Dockerfile
@@ -109,7 +109,7 @@ VOLUME /workspace
 CMD ["nine", "daemon"]
 ```
 
-### Step 3: Create the Configuration (`nine.toml`)
+### Step 3: create the configuration (`nine.toml`)
 
 ```toml
 # personality-alice/nine.toml
@@ -156,7 +156,7 @@ user_dir = "/etc/nine-personality/skills"
 max_queue_size = 100
 ```
 
-### Step 4: Create the Self-Model Bootstrap (Optional)
+### Step 4: create the Self-Model bootstrap (optional)
 
 The self-model bootstrap file seeds the agent's identity and initial state on first boot. If not provided, Nine uses its built-in defaults.
 
@@ -183,7 +183,7 @@ prs_analyzed = 0
 
 The bootstrap file is loaded **once, on first boot**, and its contents are written to the KV store under the `self/` prefix. Subsequent boots skip the bootstrap if `self/_bootstrapped` exists.
 
-### Step 5: Create Skills
+### Step 5: create skills
 
 Skills provide the personality's knowledge base. They are stored in the `skills/` directory and seeded into the database on every boot.
 
@@ -221,7 +221,7 @@ Your purpose: {{ memory_get("self/identity/purpose") }}.
    - Update `self/capabilities` with the new capability
 ```
 
-### Step 6: Create Sandboxed Tools (Optional)
+### Step 6: create sandboxed tools (optional)
 
 Tools extend the personality's capabilities. They live in the `tools.d/` directory.
 
@@ -265,7 +265,7 @@ description = "Analyze a PR diff and return summary statistics"
 }
 ```
 
-### Step 7: Build and Run
+### Step 7: build and run
 
 ```bash
 # Build the personality image
@@ -288,9 +288,9 @@ docker exec -it alice nine "Alice, analyze this PR"
 
 ---
 
-## Self-Model Bootstrapping
+## Self-Model bootstrapping
 
-### How It Works
+### How it works
 
 On first boot, Nine checks for a bootstrap file at the path specified by:
 
@@ -304,7 +304,7 @@ If a bootstrap file is found and `self/_bootstrapped` does not exist in the KV s
 3. Keys within a section are written as `self/<section>/<key>`
 4. `self/_bootstrapped` is set to `true` to prevent re-running on subsequent boots
 
-### Bootstrap File Format
+### Bootstrap file format
 
 The bootstrap file is a standard TOML file. Top-level sections become sub-prefixes under `self/`.
 
@@ -329,7 +329,7 @@ This writes:
 - `self/state/last_update = "2024-01-01T00:00:00Z"`
 - `self/_bootstrapped = "true"`
 
-### Bootstrap Behavior
+### Bootstrap behavior
 
 - **Idempotent**: Runs only once per database. If `self/_bootstrapped` exists, the bootstrap is skipped.
 - **Optional**: If no bootstrap file is configured, Nine uses its built-in defaults.
@@ -338,13 +338,13 @@ This writes:
 
 ---
 
-## Buffered Input
+## Buffered input
 
 ### Overview
 
 Buffered input allows operators to **queue multiple messages** for a personality to process, even when the agent is busy. This is essential for personalities that receive external input (webhooks, scheduled data dumps, API calls).
 
-### How It Works
+### How it works
 
 When a message is sent to a busy agent:
 
@@ -354,7 +354,7 @@ When a message is sent to a busy agent:
 
 Messages are processed in **FIFO order within priority levels** (high-priority messages are processed before normal-priority messages).
 
-### Using Buffered Input
+### Using buffered input
 
 #### Via CLI
 
@@ -369,7 +369,7 @@ nine send --id alice "Review PR #123"
 nine send --id alice --priority 1 "Urgent: security review needed"
 ```
 
-#### Via Unix Socket (Programmatic)
+#### Via Unix socket (programmatic)
 
 ```json
 # Request
@@ -391,7 +391,7 @@ nine send --id alice --priority 1 "Urgent: security review needed"
 }
 ```
 
-### Queue Management
+### Queue management
 
 ```bash
 # List queued messages
@@ -424,7 +424,7 @@ max_queue_size = 50
 max_queue_rate_per_minute = 10
 ```
 
-### Queue Behavior
+### Queue behavior
 
 - **Persistent**: Queued messages survive daemon restarts
 - **Ordered**: Messages are processed in FIFO order within priority levels
@@ -435,9 +435,9 @@ max_queue_rate_per_minute = 10
 
 ---
 
-## Personality Growth Loop
+## Personality growth loop
 
-A personality's **growth loop** is what makes it "alive"—it autonomously improves its knowledge and capabilities over time. This is achieved through:
+A personality's **growth loop** improves its knowledge and capabilities over time without supervision. Five parts:
 
 1. **Standing agents** that wake on a schedule
 2. **Goals** that define open-ended objectives
@@ -445,7 +445,7 @@ A personality's **growth loop** is what makes it "alive"—it autonomously impro
 4. **Skills** that capture procedural knowledge
 5. **Tools** that extend capabilities
 
-### Example Growth Loop
+### Example growth loop
 
 ```
 # Hourly wake
@@ -461,7 +461,7 @@ A personality's **growth loop** is what makes it "alive"—it autonomously impro
 5. Updates self/state/last_pr_checked to now
 ```
 
-### Growth Mechanisms
+### Growth mechanisms
 
 | Mechanism | Tool | Purpose | Persistence |
 |-----------|------|---------|-------------|
@@ -473,9 +473,9 @@ A personality's **growth loop** is what makes it "alive"—it autonomously impro
 
 ---
 
-## Best Practices
+## Best practices
 
-### 1. Start Simple
+### 1. Start simple
 
 Begin with a minimal personality:
 - A `nine.toml` with a standing agent
@@ -484,7 +484,7 @@ Begin with a minimal personality:
 
 Test that it starts and runs, then add complexity.
 
-### 2. Use Self-Model for Configuration
+### 2. Use Self-Model for configuration
 
 Store personality configuration in the self-model, not in code:
 
@@ -496,7 +496,7 @@ max_concurrent_analyses = 3
 
 This allows the personality to **adapt its behavior** based on its own state.
 
-### 3. Design for Idempotency
+### 3. Design for idempotency
 
 Personalities should be **idempotent**—running the same operation twice should have the same result:
 
@@ -504,13 +504,13 @@ Personalities should be **idempotent**—running the same operation twice should
 - Check if a skill exists before writing it
 - Use unique IDs for goals and sub-goals
 
-### 4. Handle Errors Gracefully
+### 4. Handle errors gracefully
 
 - Catch tool errors and continue with fallback behavior
 - Log errors to memory for later inspection
 - Use `goal_update_status` to mark goals as `paused` on repeated failures
 
-### 5. Document the Personality
+### 5. Document the personality
 
 Include in your `README.md`:
 - What the personality does
@@ -519,14 +519,14 @@ Include in your `README.md`:
 - How to interact with it
 - Examples of its growth loop
 
-### 6. Version the Personality
+### 6. Version the personality
 
 Use semantic versioning for your personality:
 - Update `self/identity/version` on releases
 - Document breaking changes
 - Maintain a changelog
 
-### 7. Test the Personality
+### 7. Test the personality
 
 Test your personality with:
 - Manual interaction via TUI
@@ -536,9 +536,9 @@ Test your personality with:
 
 ---
 
-## Example Personalities
+## Example personalities
 
-### 1. Code Review Assistant (Alice)
+### 1. Code review assistant (Alice)
 
 - **Purpose**: Review PRs and identify patterns
 - **Tools**: GitHub API (via sandboxed tool), file analysis
@@ -546,7 +546,7 @@ Test your personality with:
 - **Growth**: Writes skills for new patterns found in PRs
 - **Schedule**: Hourly wake to check for new PRs
 
-### 2. Security Monitor (Bob)
+### 2. Security monitor (Bob)
 
 - **Purpose**: Monitor repositories for security issues
 - **Tools**: CVE database access, dependency scanning
@@ -554,7 +554,7 @@ Test your personality with:
 - **Growth**: Writes skills for new vulnerability types
 - **Schedule**: Daily wake to scan dependencies
 
-### 3. Research Assistant (Charlie)
+### 3. Research assistant (Charlie)
 
 - **Purpose**: Research topics and write reports
 - **Tools**: Web search, page reading, file storage
@@ -562,7 +562,7 @@ Test your personality with:
 - **Growth**: Writes skills for new research techniques
 - **Schedule**: On-demand (triggered by queued messages)
 
-### 4. Documentation Generator (Dana)
+### 4. Documentation generator (Dana)
 
 - **Purpose**: Generate documentation from code
 - **Tools**: File reading, code analysis
@@ -572,9 +572,9 @@ Test your personality with:
 
 ---
 
-## Deployment Patterns
+## Deployment patterns
 
-### Local Development
+### Local development
 
 ```bash
 # Clone the personality
@@ -593,7 +593,7 @@ docker run -it \
   personality-alice
 ```
 
-### Production Deployment
+### Production deployment
 
 ```bash
 # Pull the personality image
@@ -609,7 +609,7 @@ docker run -d \
   ghcr.io/your-org/personality-alice:latest
 ```
 
-### Kubernetes Deployment
+### Kubernetes deployment
 
 ```yaml
 # personality-alice-deployment.yaml
@@ -653,7 +653,7 @@ spec:
 
 ## Troubleshooting
 
-### Personality Won't Start
+### Personality won't start
 
 1. **Check the bootstrap file path**:
    ```bash
@@ -671,7 +671,7 @@ spec:
    docker logs alice | grep "error"
    ```
 
-### Messages Are Dropped
+### Messages are dropped
 
 1. **Check the queue**:
    ```bash
@@ -688,7 +688,7 @@ spec:
    nine status
    ```
 
-### Personality Doesn't Grow
+### Personality doesn't grow
 
 1. **Check the standing agent**:
    ```bash
@@ -719,6 +719,16 @@ spec:
 
 ---
 
-## See Also
+## See also
 
 - [ADR: Personality Pattern](../adr/personality-pattern.md) – The design document for this feature
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| A personality is configuration, not a feature | It is a `nine.toml`, a set of skills, and optionally some sandboxed tools, packaged in an image. Nothing in the daemon knows what a personality is. |
+| Each needs its own image and container | There is no way to run two personalities in one daemon. They are separate deployments with separate databases. |
+| Self-model bootstrap is best-effort | The bootstrap seeds an initial self-model; what the instance believes about itself after that is whatever reflection wrote. |
+| Skills are copied, not shared | Two personalities that need the same skill each carry their own copy. There is no shared skill registry. |
+| Still the design under `adr/` | The pattern is documented and usable, but it remains a convention rather than a supported product surface — see [`adr/personality-pattern.md`](../adr/personality-pattern.md). |

@@ -1,4 +1,4 @@
-# Nine — Build Order (the playbook)
+# Nine — build order (the playbook)
 
 This is the procedural core of the spec. Build Nine in the phases below, in order. Each
 phase has:
@@ -19,7 +19,7 @@ autonomy, and delegation layered on.
 
 ---
 
-## Phase 0 — Foundations: config, store, protocol types
+## Phase 0 — foundations: config, store, protocol types
 
 **Goal.** A process can load configuration, open the one database, and speak the wire
 format (even if nothing answers yet).
@@ -66,7 +66,7 @@ streamed chunks in order into the response and maps `done_reason`/tool calls cor
 
 ---
 
-## Phase 2 — Embedder
+## Phase 2 — embedder
 
 **Goal.** Text can be embedded for relevance ranking and semantic search.
 
@@ -85,7 +85,7 @@ ranking is bypassed (all candidates returned).
 
 ---
 
-## Phase 3 — Plugin manager and default plugins
+## Phase 3 — plugin manager and default plugins
 
 **Goal.** External capabilities exist as subprocesses behind one contract.
 
@@ -116,7 +116,7 @@ manager reports the failure without crashing the host.
 
 ---
 
-## Phase 4 — Context builder
+## Phase 4 — context builder
 
 **Goal.** A turn's full LLM request can be assembled within a fixed token budget.
 
@@ -135,7 +135,7 @@ are never dropped.
 
 ---
 
-## Phase 5 — Agent loop and dispatcher
+## Phase 5 — agent loop and dispatcher
 
 **Goal.** A single ReAct turn runs end to end against the queue and tools.
 
@@ -164,7 +164,7 @@ observation.
 
 ---
 
-## Phase 6 — Agent worker, daemon socket server, checkpoints, notifications
+## Phase 6 — agent worker, daemon socket server, checkpoints, notifications
 
 **Goal.** **A real client can hold an interactive conversation with streaming output.**
 This is the first end-to-end milestone.
@@ -190,7 +190,7 @@ the client. `nine status` lists uptime, active agents, and loaded plugins.
 
 ---
 
-## Phase 7 — Attach and reconnect
+## Phase 7 — attach and reconnect
 
 **Goal.** A disconnected session can be resumed and its missed output redrawn.
 
@@ -204,7 +204,7 @@ daemon restart, `attach` rebuilds the session from its checkpoint.
 
 ---
 
-## Phase 8 — Session plans and the routine framework
+## Phase 8 — session plans and the routine framework
 
 **Goal.** Sessions can run autonomous turns on an idle timer.
 
@@ -224,7 +224,7 @@ autonomous turn to run ~1s after the last turn, going through the full turn pipe
 
 ---
 
-## Phase 9 — Self-model and the reflection routine
+## Phase 9 — self-model and the reflection routine
 
 **Goal.** Nine keeps a current self-description and reflects on a timer.
 
@@ -245,7 +245,7 @@ self-model block.
 
 ---
 
-## Phase 10 — Goals and pursue sessions
+## Phase 10 — goals and pursue sessions
 
 **Goal.** Open-ended goals are tracked and pursued autonomously in the background.
 
@@ -264,7 +264,7 @@ spawns and the response says `limit_reached`. `nine goals` lists goals.
 
 ---
 
-## Phase 11 — Sub-agents
+## Phase 11 — sub-agents
 
 **Goal.** A turn can delegate one task or a parallel batch to child agents.
 
@@ -282,7 +282,7 @@ a grandchild at depth 2 cannot (the tool is absent).
 
 ---
 
-## Phase 12 — Workflows
+## Phase 12 — workflows
 
 **Goal.** Multi-step plans are durable, inspectable, and resumable.
 
@@ -303,7 +303,7 @@ after an unclean restart the scrub fails the interrupted step.
 
 ---
 
-## Phase 13 — Supervisor, stall detection, gaps
+## Phase 13 — supervisor, stall detection, gaps
 
 **Goal.** A single oversight loop reacts to stalls, gaps, and plugin crashes.
 
@@ -328,7 +328,7 @@ caller.
 
 ---
 
-## Phase 14 — Human-in-the-loop
+## Phase 14 — human-in-the-loop
 
 **Goal.** Interactive sessions can pause for human input and gate risky tools.
 
@@ -348,7 +348,7 @@ non-`y` answer fails it. A background session offered the same tool name never p
 
 ---
 
-## Phase 15 — Skills and the self-improvement boundary
+## Phase 15 — skills and the self-improvement boundary
 
 **Goal.** Nine can write and retrieve skills — and nothing more invasive.
 
@@ -387,7 +387,7 @@ without an LLM call; the TUI shows tool calls live. (Once Phase 14 ships, a pend
 
 ---
 
-## Phase 17 — Startup wiring and resume
+## Phase 17 — startup wiring and resume
 
 **Goal.** A single `runDaemon` brings the whole graph up in the correct order and
 restores background autonomy.
@@ -415,7 +415,7 @@ automatically; ordinary conversations come back on `attach`.
 
 ---
 
-## Phase 18 — Event journal, retention, and subscriptions
+## Phase 18 — event journal, retention, and subscriptions
 
 **Goal.** Every session's trajectory is durably recorded, replayable, and subscribable —
 the substrate the durable supervisor (Phase 13) and reactive enrichment build on.

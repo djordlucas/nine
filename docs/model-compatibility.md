@@ -149,3 +149,12 @@ After a Track-L run:
 
 The `reports/` JSON is the raw record (git-ignored run artifacts); this file is
 the curated, committed summary humans read.
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Small models only | The matrix covers models that fit a 16 GB machine. Nine is developed against small models as a baseline; behavior on large hosted models is unmeasured. |
+| One hardware profile per column | Results are per host profile. A model's score does not transfer across hardware, quantization, or `num_ctx`. |
+| A snapshot, not a guarantee | Each column comes from one Track-L report on one date. Model releases move; a passing row can stop being true without this file changing. |
+| Curated by hand | `reports/` JSON is the raw record and is git-ignored. This file is the summary someone copied across, so it can lag the last run. |

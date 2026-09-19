@@ -1575,19 +1575,6 @@ func renderChatMsg(sb *strings.Builder, msg chatMsg, width int, showDetail bool,
 	sb.WriteString(box)
 }
 
-func renderMarkdown(r *glamour.TermRenderer, text string) string {
-	if r == nil {
-		return "  " + text + "\n"
-	}
-	out, err := r.Render(text)
-	if err != nil {
-		return "  " + text + "\n"
-	}
-	out = strings.TrimLeft(out, "\n")
-	out = strings.TrimRight(out, "\n")
-	return out + "\n"
-}
-
 // thinkingView is the live state renderThinking draws: the in-flight step, the
 // phase it's waiting on, and everything accumulated so far this turn.
 type thinkingView struct {

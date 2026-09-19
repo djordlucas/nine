@@ -51,10 +51,8 @@ Zero means **unbounded**, and zero is the default. That direction is
 deliberate: the tools Nine ships are stateless, and defaulting to one would
 reintroduce exactly the serialization this transport exists to remove.
 
-The consequence is worth stating plainly, because it is the one thing a plugin
-author can get silently wrong: **a plugin that forgets to declare a cap gets
-unbounded concurrency.** Any plugin holding shared mutable state must declare
-its own limit.
+**A plugin that declares no cap gets unbounded concurrency.** Any plugin
+holding shared mutable state must declare its own limit.
 
 ## Sockets and startup
 
@@ -68,9 +66,8 @@ directory, and the known limitation is that the private directory created by
 one user blocks another on a shared machine.
 
 The daemon dials with retry while the plugin starts. A process that exits
-before listening fails immediately with its own exit status rather than waiting
-out the readiness budget and reporting a socket timeout — the cause and the
-symptom are different things, and the cause is more useful.
+before listening fails immediately with its own exit status, rather than
+waiting out the readiness budget and reporting a socket timeout.
 
 Stale sockets are removed before listening and on exit. Process lifecycle is
 unchanged: a plugin is still a child process, still watched, so a crash is still
@@ -81,6 +78,15 @@ isolated to that plugin.
 An MCP server reaches Nine through this same plugin contract rather than as a
 separate client in the core. Servers that run as a subprocess speak stdio;
 hosted ones are reached over HTTP at a URL. Either way the daemon sees a plugin.
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Unbounded concurrency by default | `max_concurrent` defaults to 0, meaning unbounded. A plugin with shared mutable state that forgets to declare a cap is raced. Defaulting to 1 would reintroduce the serialization this transport removes. |
+| Hardcoded socket directory | Socket paths live under a short fixed directory because macOS caps a Unix socket path at 104 bytes and the darwin temporary path overflows it. The private directory created by one user blocks another on a shared machine. |
+| One direction only | The daemon dials the plugin; a plugin never calls back into the daemon. A plugin reports completion by being asked, not by pushing. |
+| No hot reload of a running plugin | A settings change takes effect on `nine plugins reload` for user plugins, or a daemon restart for built-ins. |
 
 ## Related
 

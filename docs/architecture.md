@@ -1,4 +1,4 @@
-# Nine — Architecture
+# Architecture
 
 This document walks the actual runtime: the process topology, the goroutine model,
 the precise lifecycle of a turn, how state is assembled and budgeted, and how every
@@ -653,7 +653,7 @@ tools, not the daemon.
    └─ LoadGeneratedTools(store, host, mgr)    ← project the stored catalog in
 ```
 
-The ordering is load-bearing twice. The host opens **after** the plugin manager,
+Two orderings are enforced. The host opens **after** the plugin manager,
 so every plugin tool name is already reserved and a colliding sandboxed tool is
 *skipped* rather than allowed to override (`pluginCollides`); and
 `SetAgentConfig` runs **before** the first `LoadGenerated`, which refuses to
@@ -1092,3 +1092,18 @@ Go toolchain, no git, and no source tree.
     single namespace; later registrations are skipped with a reported reason,
     never allowed to shadow an earlier one.
 ```
+
+---
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Single host, single daemon | All state lives in one daemon process and one SQLite file. There is no clustering, no replication, and no remote client — the socket is local. |
+| One SQLite writer | Every durable write goes through one file, so concurrent writes serialize. |
+| Turns are sequential per session | Each worker's inbox holds one turn. Concurrency is across sessions, not within one. |
+| No CPU metering in the sandbox | wazero has no fuel metering, so a wall-clock deadline is the only bound on a sandboxed tool call. |
+| Token budgeting is estimated | Context accounting uses a 4-characters-per-token approximation calibrated against one tokenizer. |
+| Trimming, not compaction | Over-budget history is dropped from the front rather than summarized. |
+| One LLM provider at a time | No routing across models within a deployment. |
+| Two supervisor events unhandled | `EventGoalStalls` and `EventGapReported` are delivered but not yet acted on. |

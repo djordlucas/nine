@@ -35,7 +35,7 @@ func TestRunHelpAliases(t *testing.T) {
 		if err := c.Run([]string{arg}, &config.Config{}); err != nil {
 			t.Fatalf("Run(%q): %v", arg, err)
 		}
-		if !strings.Contains(out.String(), "# CLI Usage") {
+		if !strings.Contains(out.String(), "# CLI usage") {
 			t.Errorf("Run(%q) did not print usage reference:\n%s", arg, out.String())
 		}
 	}
@@ -54,7 +54,7 @@ func TestRunUnknownFlagShowsHelp(t *testing.T) {
 	if !strings.Contains(errBuf.String(), "unknown command: --nope") {
 		t.Errorf("expected unknown-command note on stderr, got: %q", errBuf.String())
 	}
-	if !strings.Contains(out.String(), "# CLI Usage") {
+	if !strings.Contains(out.String(), "# CLI usage") {
 		t.Errorf("expected usage reference on stdout, got: %q", out.String())
 	}
 }

@@ -1,49 +1,39 @@
-# Plugin capabilities — settings, a cache dir, and long-running work
+# Plugin capabilities
 
-- **Status:** **Implemented** (rev 3). All three capabilities are built; the
-  normative contract is `spec/contracts/plugin.md` (R-PLUG.10/11/12) and the
-  authoring guide is `plugins.md`. This note is kept as the design rationale.
-- **Date:** 2026-07-30 (rev 1: 2026-07-25).
-- **Two small deviations from the design, both behaviour-preserving:** the sweeper
-  polls on an age-based backoff computed in SQL (`JobsDueForPoll`) rather
-  than per-job timers, and `job_wait` blocks on a sweeper-signalled `JobWaiters`
-  channel with a poll fallback (the eval harness wires no signaller).
-- **Supersedes:** the rev-1 proposal, `plugin-host-api.md` (renamed to this
-  file), which added a *host API* — a reverse channel letting a plugin call back
-  into the daemon to read and write memory. **That feature is dropped** (§2). What remains, and what this rev
-  proposes, are three additive capabilities that a plugin gets *without* any new
-  direction of communication.
-- **Motivation:** make a plugin a first-class, self-sufficient process. It should
-  be able to (1) read its own operator-supplied configuration, (2) write scratch
-  files somewhere Nine manages, and (3) start work that outlives the call that
-  started it — a download, a scan, a long script — and let the agent either wait
-  for it or check back later.
-- **Depends on:** the plugin HTTP-over-Unix-socket transport
-  (`plugins-http-transport.md`, `spec/contracts/plugin.md`), the notification
-  feed, the tool-output spill
-  (`tool-output.md`) for large job results, and the pull-not-push
-  discipline of `event-journal.md` for how a finished job reaches the model.
+A plugin gets three capabilities from the daemon, all carried on the existing
+daemon-to-plugin transport:
+
+| Capability | Shape | Section |
+|------------|-------|---------|
+| Pass-through settings | `[plugin.<name>.settings]` in `nine.toml` becomes environment variables at spawn. Nine declares no schema, so an operator can configure a third-party plugin without rebuilding Nine. | §3 |
+| Cache directory | A per-plugin scratch dir created by the manager and handed over as `NINE_PLUGIN_CACHE_DIR`. Wiped when the plugin exits unless `persist_cache = true`. | §4 |
+| Long-running jobs | A tool call may return a job id instead of a result. The daemon records the job, polls the plugin for status, and surfaces completion on a later turn. The model gets `job_wait`, `job_check` and `job_list`. | §5 |
+
+The plugin contract carries two methods for this (`plugin.job_status`,
+`plugin.job_cancel`), one describe flag, one call-result field, and two
+environment variables. All are optional; a plugin that uses none is unaffected.
+
+The normative contract is `spec/contracts/plugin.md` (R-PLUG.10/11/12) and the
+authoring guide is [plugins.md](plugins.md). This document explains the
+mechanism and the reasoning behind it.
 
 ---
 
-## 1. TL;DR — recommendation
+## 1. Design constraints
 
-Three additive capabilities, all carried on the **existing** daemon → plugin
+All three capabilities are additive and ride the existing daemon-to-plugin
 transport. No new socket, no reverse channel, no capability tokens.
 
-| # | Capability | Shape |
-|---|---|---|
-| 1 | **Pass-through settings** (§3) | `[plugin.<name>.settings]` in `nine.toml` → environment variables at spawn. Nine never declares a schema, so an operator can configure a third-party plugin without rebuilding Nine. |
-| 2 | **Cache directory** (§4) | A per-plugin scratch dir created by the manager, handed over as `NINE_PLUGIN_CACHE_DIR`, **wiped when the plugin exits**. A per-plugin `persist_cache = true` (default **false**) keeps it across restarts. |
-| 3 | **Long-running jobs** (§5) | A tool call may return a **job id** instead of a result. The daemon records the job in the database, **polls the plugin** for status over the transport it already uses, and surfaces completion on a later turn. The model gets `job_wait` (blocking) and `job_check` / `job_list` (non-blocking). |
+Two deviations from the original design, both behaviour-preserving:
 
-The plugin contract grows two methods (`plugin.job_status`, `plugin.job_cancel`),
-one describe flag, one call-result field, and two env vars — all additive, all
-optional. A plugin that uses none of it is unaffected.
+- The sweeper polls on an age-based backoff computed in SQL (`JobsDueForPoll`)
+  rather than per-job timers.
+- `job_wait` blocks on a sweeper-signalled `JobWaiters` channel with a poll
+  fallback, because the eval harness wires no signaller.
 
 ---
 
-## 2. Dropped: the host API
+## 2. No reverse channel
 
 Rev 1 proposed a `host.*` RPC surface on a second Unix socket that plugins would
 dial to read and write Nine's memory, authenticated by a per-process capability
@@ -537,37 +527,23 @@ none of this reaches the daemon↔client protocol.
 
 ---
 
-## 7. Phases
+## 7. Build order
 
-Each phase is independently shippable and independently useful.
+All seven phases shipped. They were built in this order, each independently
+useful: settings pass-through, cache dir, the plugin-side job SDK, the
+daemon-side job registry, the model-facing job tools, hardening and graceful
+shutdown, then docs and spec.
 
-1. **Settings pass-through** — `[plugin.<name>.settings]`, key/value validation,
-   `PluginEnvs` generalized to defaults + settings for every plugin including
-   user plugins. Smallest change, immediate payoff.
-2. **Cache dir** — config root, per-plugin ephemeral/persistent dirs, creation at
-   spawn, removal at stop, boot sweep, the two env vars, `Probe` always ephemeral.
-3. **Job SDK (plugin half)** — `plugin.Job` / `JobHandler` / `NewJobs`,
-   `job_status` + `job_cancel` handlers, `async_jobs` in describe, detached job
-   context, the `max_concurrent` worker pool and `queued` state, per-job
-   directories, terminal-job TTL eviction, protocol version bump and widened
-   check. `testplugin` gains a slow job; `slowplugin` (which already advertises a
-   cap) covers the concurrent-agents-one-plugin case.
-4. **Job registry (daemon half)** — the `jobs` table, `job_id` handling in the
-   dispatcher, the sweeper, completion → cap-or-spill → notification → journal.
-5. **Model-facing tools** — `job_wait` / `job_check` / `job_list` / `job_cancel`,
-   plus the context-builder surfacing of outstanding jobs.
-6. **Hardening + graceful shutdown** — boot sweep marking `running` rows `lost`,
-   `job_max_seconds`, `max_jobs_per_conversation`, and the signal handler
-   `daemon` lacks today: on SIGINT/SIGTERM, `job_cancel` every running
-   job, then `Manager.StopAll`. Without it a `kill` orphans every plugin process
-   (and its jobs, cache dir, and socket) rather than stopping it.
-7. **Docs & spec** — the §6 list, then `/sync-nine`.
+Graceful shutdown is the part worth knowing about operationally: on SIGINT or
+SIGTERM the daemon cancels every running job and then calls `Manager.StopAll`.
+Without it a `kill` orphans every plugin process along with its jobs, cache dir
+and socket.
 
 ---
 
 ## 8. Eval scenarios
 
-The unit and integration tests in §7 prove the *mechanism* works — a plugin can
+The unit and integration tests prove the *mechanism* works — a plugin can
 detach work, the daemon can poll and surface it. What they do not exercise is the
 **model behaviour** the feature exists to shape: posture, memory, and escalation.
 Those belong in the in-process eval harness (`evals.md`), one scenario each,
@@ -655,9 +631,9 @@ phase 6 (completion delivery), and `/sync-evals` reconciles the harness after.
   sub-agent takes no further turn of its own to receive it (parent-delivery is a
   deferred refinement).
 
-## 10. Open questions
+## 10. Limits
 
-**None outstanding.** Q1 (`cache_dir` default) and Q2 (protocol version) are
+No open questions outstanding. Q1 (`cache_dir` default) and Q2 (protocol version) are
 settled in §4 and §6; Q3 (waking an idle owner) and Q4 (jobs with no live
 conversation) in §5 *Remembering across turns*; Q5 (MCP) and Q6 (progress
 granularity) in §5 *Contract additions*.
