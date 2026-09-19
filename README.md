@@ -76,6 +76,19 @@ on modest hardware. Currently tested against `qwen3.5:4b`, `qwen3.5:9b`, `gemma4
 and `gemma4:e2b` on a 16 GB M4
 ([model compatibility](docs/model-compatibility.md)).
 
+## Screenshots
+
+<table>
+<tr>
+<td><img src="docs/img/nine_what_is_ai_agent_runtime.png" alt="Nine TUI answering &quot;What is an AI agent runtime?&quot; by searching its own docs"></td>
+<td><img src="docs/img/nine_tell_me_one_headline.png" alt="Nine TUI fetching the current time and searching the web for a news headline"></td>
+</tr>
+<tr>
+<td><img src="docs/img/nine_memory.png" alt="Nine TUI writing a joke and storing it with memory_set"></td>
+<td><img src="docs/img/nine_subagent.png" alt="Nine TUI spawning a sub-agent to research banana farming while researching carrot farming itself"></td>
+</tr>
+</table>
+
 ## Key concepts
 
 | Concept | Description |
