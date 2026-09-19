@@ -65,10 +65,9 @@ developed against small models to stay useful on modest hardware. Currently test
 </table>
 
 ## Key concepts
-
 | Concept | Description |
 |---------|-------------|
-| **UI** | Interact with Nine through CLI or TUI, eventually with API |
+| **UI** | CLI or TUI, both thin clients over the daemon's Unix socket |
 | **Daemon** | Long-running background process; manages agents, plugins and state |
 | **Agent** | An LLM agent running the ReAct loop |
 | **Plugin** | A tool container — a standalone binary, or an MCP server |
@@ -84,50 +83,12 @@ developed against small models to stay useful on modest hardware. Currently test
 | **Checkpoint** | Serialized agent state persisted to the database |
 | **Journal** | Append-only record of every step |
 
-## Project status
-
-**Experimental, stabilizing.**
-Interfaces change without notice, there is no support promise or stability guarantee.
-It is under active development, and tested — but not yet tested heavily.
-
-Every feature lands with tests: unit tests, hermetic harness tests for the daemon and
-its wire protocol, integration tests against a real container and a real model, and an
-eval suite that both replays recorded sessions deterministically and runs a live-model
-matrix ([docs/evals.md](docs/evals.md),
-[model compatibility](docs/model-compatibility.md)). What that does not yet buy is
-user mileage. The failure modes that only long uninterrupted runs, unusual hardware,
-or an unfamiliar model turn up are still ahead of it.
-Expect rough edges in that territory — please open an issue when you hit one.
-
-Nine is not hardened, yet, but will be eventually.
-
-See [Contributing](#contributing) before opening a pull request.
-
-## Roadmap
-
-What is planned but not yet built. Items are not dated, and land in whatever order
-makes sense.
-
-| Status | Item | What and why |
-|--------|------|--------------|
-| **Planned** | **Improve sandboxed tools** | They are a bit basic for now, so more capabilities and more documented use cases: FS/env gaps, runtime wasm grants, binary data support, missing JS globals, per-tool timeouts, http audit, secret sharing, CLI commands, structured tool errors. |
-| **Planned** | **REST API / remote access** | Today the daemon speaks a newline-delimited JSON protocol over a Unix socket, which means every client has to live on the same machine. A REST API over HTTP would open the same surface — conversations, goals, workflows, the journal — to clients that do not: a browser UI, a phone, another host on your network. Remote access also brings authentication and transport security with it, so this lands alongside the hardening work, not before it. |
-| **Partial** | **TUI improvements** | The TUI is a capable conversation client with slash commands that surface goals, workflows, tools, skills, memory and the context breakdown — but those views are mostly read-only, and the parts of Nine that reward watching over time have no place in it: the journal `nine trace` reads back, the notifications standing agents raise, background sessions moving while you type. Seeing and steering the autonomous tier from the same screen you converse on, rather than from a second terminal running the CLI, is the direction. Migrated to the charm.land v2 ecosystem (bubbletea, lipgloss, bubbles, glamour) and redesigned tool call display with backend labels, styled JSON key:value rendering, and separator rules. |
-| **Planned** | **Hardening** | Ensure Nine is as safe as possible. |
-| **Planned** | **Model routing** | Route different work to different models within one deployment. Currently, Nine only uses one model at a time. |
-| **Partial** | **Add different LLM backends** | Add llama.cpp and vLLM. Both speak an OpenAI-compatible API, so one adapter covers them. Two things already point at this: an unrecognized `[llm].provider` is refused at startup rather than silently falling back, so a new backend registers there; and the context budget's bytes-per-token estimate is calibrated against one tokenizer, so a second backend needs its own measurement — the estimate-vs-actual reconciliation is in place to produce it. Mistral API backend has been added. |
-| **Planned** | **Codebase improvements** | Architectural refactoring and performance optimizations to improve maintainability, testability, and runtime efficiency. See [`adr/codebase-improvement.md`](adr/codebase-improvement.md). |
-| **Planned** | **More built-in plugins** | — |
-## AI Use / Methodology
-
-This project was made with the author's ideas, experience, and orchestration and built with Claude.
-
 ## Quick start
 
-### Base requirements
+The Docker path. For a native build, prerequisites, and the full Makefile
+target list, see [Installation](#installation).
 
-- Docker
-- Ollama
+You need Docker and a running Ollama.
 
 Nine defaults to Ollama at `host.docker.internal:11434`, so pull a model on the host
 first:
@@ -176,8 +137,87 @@ make shell             # sh into nine's container for debug
 The daemon auto-starts on first use. Later calls share the same daemon and
 conversation history. Run `nine` with no arguments for the interactive TUI.
 
-## Architecture
+## Installation
 
+### Prerequisites
+
+| Requirement | Version | Notes |
+|-------------|---------|-------|
+| Go | 1.26+ | Native build |
+| Node.js | 18+ | Optional — only for `npx`-launched MCP servers |
+| Docker | 24+ | Container build (one container, no compose) |
+| golangci-lint | latest | Optional, for `make lint` |
+
+Plus a running [Ollama](https://ollama.com) with a model pulled.
+
+Sandboxed tools need nothing extra to run: the QuickJS interpreter they execute on is
+committed to the repo as a pre-built wasm artifact with a recorded SHA-256, and the
+wasm runtime and JS bundler are pure-Go libraries. Rebuilding that interpreter
+(`make quickjs-wasm`) is a separate step and the only thing that wants a
+wasi-sdk; `make quickjs-verify` re-checks the committed hash.
+
+### Build from source
+
+```bash
+git clone https://github.com/djordlucas/nine
+cd nine
+make all
+```
+
+**Nine ships as a single binary.** That build produces exactly one file, `dist/nine`,
+and it is everything: the CLI, the TUI, the daemon, and the four built-in plugins.
+Deploying Nine is copying one file.
+
+Nine looks for its config, in order: `$NINE_CONFIG`, `./nine.toml`, `/nine.toml`,
+then `~/.nine/nine.toml`. The repo's `nine.toml` works as-is against a local Ollama;
+the database is created on first run at `~/.nine/nine.db`.
+
+### Docker (single container)
+
+The deployment unit is **one container** running the daemon under s6-overlay
+([adr/single-container.md](adr/single-container.md)). Its database is a file on
+the `/data` volume, so there is no second service to orchestrate and no
+docker-compose file; `docker run` is wrapped in Makefile targets:
+
+```bash
+make up                # built runtime image
+make up-hot            # hot-reload: rebuilds and restarts the daemon on any .go change
+make down              # stop, keeping all data
+make destroy           # remove everything, including all data volumes and images
+```
+
+The runtime image holds the compiled binary, the plugins, and the built-in skills
+— no Go toolchain, no Node, no npm, and no source tree. Nine does not build
+native code at runtime, and sandboxed tools do not change that: the wasm interpreter
+and the JS bundler are both compiled in. Hot-reload mode bind-mounts the source and rebuilds
+via `inotifywait` — this is the development path. Neither image ships a browser (the
+dev image does carry Node for `npx` MCP servers), and `tools.d/` is mounted at
+`/tools.d` — though the subsystem still needs
+`[tools] enabled = true` in the `nine.toml` you mount, which no environment variable
+can flip on.
+
+That is the container's whole configuration story: it reuses the same `nine.toml`
+written for the native layout, and overrides the handful of values that differ —
+LLM endpoint, database path, plugin and workspace paths — through environment variables
+rather than a second config file. Those overrides win over the file. The most useful:
+
+| Variable | Description |
+|----------|-------------|
+| `NINE_CONFIG` | Explicit config path, skipping the search order |
+| `NINE_LLM_PROVIDER` / `NINE_LLM_MODEL` / `NINE_LLM_ENDPOINT` | Override the LLM without editing config |
+| `NINE_DB_PATH` | Override the database file path |
+| `NINE_PLUGINS_BIN` / `NINE_WORKSPACE_ROOT` | Override the plugin and workspace paths (how the container reuses `nine.toml`) |
+| `NINE_TOOLS_USER_DIR` | Override the sandboxed-tool directory. Deliberately the *only* tool override — whether the subsystem runs at all stays in `nine.toml` |
+| `SEARCH_PROVIDER` / `SEARCH_API_KEY` | `web_search` backend: `brave` or `serpapi`. Unset uses DuckDuckGo, no key needed. |
+| `NINE_LOG_LEVEL` / `NINE_LOG_FORMAT` | `debug`/`info`/`warn`/`error`; `text`/`json` |
+
+Configuration belongs to the operator, not the agent: Nine cannot rewrite `nine.toml`
+at runtime. Change a setting by editing the file and restarting the daemon. Full
+reference: [docs/configuration.md](docs/configuration.md).
+
+The full Makefile target list is in [docs/installation.md](docs/installation.md).
+
+## Architecture
 Nine is a daemon/client pair. The CLI is thin — it opens a Unix socket, sends a
 message, prints the reply. Everything long-lived is in the daemon.
 
@@ -278,7 +318,6 @@ The full treatment — topology, concurrency, the turn lifecycle, boot sequence,
 invariants that hold it together — is in [docs/architecture.md](docs/architecture.md).
 
 ## Plugins
-
 Plugins are tool containers. A plugin advertises the tools it supports and in turn
 Nine advertises the tools to the model. By adding plugins, users can add functionality.
 Plugins may run asynchronous jobs — the plugin protocol supports it.
@@ -287,7 +326,7 @@ Nine ships four plugins — `shell`, `files`, `http`, and `time`. They are serve
 the `nine` binary itself: the daemon starts each by re-executing itself as
 `nine plugin serve <name>`, so they keep their own process and crash isolation without
 their own artifact. A crashing plugin cannot take the daemon or an active conversation
-down with it. More built-ins to come eventually.
+down with it.
 
 Beyond those, an **MCP server** declared as an `[[mcp.server]]` becomes a plugin too —
 its own process, its own roster row, tools prefixed with the server's name. That is how
@@ -352,7 +391,6 @@ External MCP servers are supported as an exception, speaking JSON-RPC 2.0 over s
 See [docs/plugins.md](docs/plugins.md) and [docs/plugins-http-transport.md](docs/plugins-http-transport.md).
 
 ## Sandboxed tools
-
 Sandboxed tools are three files you drop in a directory — two if the tool takes no
 arguments. The daemon runs them in a wasm sandbox, in-process, with exactly the
 capabilities the operator granted; by default, **none**. No subprocess, no compile step,
@@ -535,7 +573,6 @@ the design rationale and the capability model in full are in
 `spec/contracts/toolvm.md` (`nine spec toolvm`).
 
 ## Skills
-
 Skills are how Nine improves what it *knows*; generated tools, where an operator turned
 that tier on, are how it improves what it can *do*. A skill is a markdown how-to note
 with YAML frontmatter, stored in the database:
@@ -561,88 +598,7 @@ like a goal or a workflow. It does not generate plugins, write itself a capabili
 grant (yet), rewrite its config, or rebuild its source at runtime. See:
 [docs/self-modification.md](docs/self-modification.md).
 
-## Installation
-
-### Prerequisites
-
-| Requirement | Version | Notes |
-|-------------|---------|-------|
-| Go | 1.26+ | Native build |
-| Node.js | 18+ | Optional — only for `npx`-launched MCP servers |
-| Docker | 24+ | Container build (one container, no compose) |
-| golangci-lint | latest | Optional, for `make lint` |
-
-Plus a running [Ollama](https://ollama.com) with a model pulled.
-
-Sandboxed tools need nothing extra to run: the QuickJS interpreter they execute on is
-committed to the repo as a pre-built wasm artifact with a recorded SHA-256, and the
-wasm runtime and JS bundler are pure-Go libraries. Rebuilding that interpreter
-(`make quickjs-wasm`) is a separate step and the only thing that wants a
-wasi-sdk; `make quickjs-verify` re-checks the committed hash.
-
-### Build from source
-
-```bash
-git clone https://github.com/djordlucas/nine
-cd nine
-make all
-```
-
-**Nine ships as a single binary.** That build produces exactly one file, `dist/nine`,
-and it is everything: the CLI, the TUI, the daemon, and the four built-in plugins.
-Deploying Nine is copying one file.
-
-Nine looks for its config, in order: `$NINE_CONFIG`, `./nine.toml`, `/nine.toml`,
-then `~/.nine/nine.toml`. The repo's `nine.toml` works as-is against a local Ollama;
-the database is created on first run at `~/.nine/nine.db`.
-
-### Docker (single container)
-
-The deployment unit is **one container** running the daemon under s6-overlay
-([adr/single-container.md](adr/single-container.md)). Its database is a file on
-the `/data` volume, so there is no second service to orchestrate and no
-docker-compose file; `docker run` is wrapped in Makefile targets:
-
-```bash
-make up                # built runtime image
-make up-hot            # hot-reload: rebuilds and restarts the daemon on any .go change
-make down              # stop, keeping all data
-make destroy           # remove everything, including all data volumes and images
-```
-
-The runtime image holds the compiled binary, the plugins, and the built-in skills
-— no Go toolchain, no Node, no npm, and no source tree. Nine does not build
-native code at runtime, and sandboxed tools do not change that: the wasm interpreter
-and the JS bundler are both compiled in. Hot-reload mode bind-mounts the source and rebuilds
-via `inotifywait` — this is the development path. Neither image ships a browser (the
-dev image does carry Node for `npx` MCP servers), and `tools.d/` is mounted at
-`/tools.d` — though the subsystem still needs
-`[tools] enabled = true` in the `nine.toml` you mount, which no environment variable
-can flip on.
-
-That is the container's whole configuration story: it reuses the same `nine.toml`
-written for the native layout, and overrides the handful of values that differ —
-LLM endpoint, database path, plugin and workspace paths — through environment variables
-rather than a second config file. Those overrides win over the file. The most useful:
-
-| Variable | Description |
-|----------|-------------|
-| `NINE_CONFIG` | Explicit config path, skipping the search order |
-| `NINE_LLM_PROVIDER` / `NINE_LLM_MODEL` / `NINE_LLM_ENDPOINT` | Override the LLM without editing config |
-| `NINE_DB_PATH` | Override the database file path |
-| `NINE_PLUGINS_BIN` / `NINE_WORKSPACE_ROOT` | Override the plugin and workspace paths (how the container reuses `nine.toml`) |
-| `NINE_TOOLS_USER_DIR` | Override the sandboxed-tool directory. Deliberately the *only* tool override — whether the subsystem runs at all stays in `nine.toml` |
-| `SEARCH_PROVIDER` / `SEARCH_API_KEY` | `web_search` backend: `brave` or `serpapi`. Unset uses DuckDuckGo, no key needed. |
-| `NINE_LOG_LEVEL` / `NINE_LOG_FORMAT` | `debug`/`info`/`warn`/`error`; `text`/`json` |
-
-Configuration belongs to the operator, not the agent: Nine cannot rewrite `nine.toml`
-at runtime. Change a setting by editing the file and restarting the daemon. Full
-reference: [docs/configuration.md](docs/configuration.md).
-
-The full Makefile target list is in [docs/installation.md](docs/installation.md).
-
 ## Documentation
-
 The documentation and specs live in this repo and inside the binary, rendered as
 markdown when invoked:
 
@@ -665,14 +621,61 @@ Highlights:
 - [Human-in-the-loop](docs/hitl.md) — `ask_human` and approval gates
 - [Glossary](docs/glossary.md) — every concept in one place
 
-## Contributing
+## Project status
+**Experimental, stabilizing.**
+Interfaces change without notice, there is no support promise or stability guarantee.
+It is under active development, and tested — but not yet tested heavily.
 
+Every feature lands with tests: unit tests, hermetic harness tests for the daemon and
+its wire protocol, integration tests against a real container and a real model, and an
+eval suite that both replays recorded sessions deterministically and runs a live-model
+matrix ([docs/evals.md](docs/evals.md),
+[model compatibility](docs/model-compatibility.md)). What that does not yet buy is
+user mileage. The failure modes that only long uninterrupted runs, unusual hardware,
+or an unfamiliar model turn up are still ahead of it.
+Expect rough edges in that territory — please open an issue when you hit one.
+
+See [Contributing](#contributing) before opening a pull request.
+
+## Roadmap
+Planned work, undated, landing in whatever order makes sense. Shipped items are
+removed from this table rather than marked done.
+
+| Item | Status | Detail |
+|------|--------|--------|
+| Hardening | Planned | Nine is not hardened. See [Limits](#limits) for what that means today. |
+| REST API / remote access | Planned | The daemon speaks newline-delimited JSON over a Unix socket, so every client must be on the same host. HTTP would open conversations, goals, workflows and the journal to a browser UI, a phone, or another machine. Lands with the hardening work, because it brings authentication and transport security with it. |
+| Model routing | Planned | Route different work to different models in one deployment. Nine uses one model at a time. |
+| More LLM backends | Partial | Mistral is supported. llama.cpp and vLLM both speak an OpenAI-compatible API, so one adapter covers them. |
+| Richer sandboxed tools | Planned | FS and env gaps, runtime wasm grants, binary data, missing JS globals, per-tool timeouts, HTTP audit, secret sharing, CLI commands, structured tool errors. |
+| TUI improvements | Partial | Slash-command views are read-only, and the journal, notifications, and moving background sessions have no place in the TUI. Migrated to charm.land v2 (bubbletea, lipgloss, bubbles, glamour). |
+| More built-in plugins | Planned | — |
+| Codebase improvements | Planned | Refactoring and performance work — [`adr/codebase-improvement.md`](adr/codebase-improvement.md). |
+| Re-enable CodeQL scanning | Blocked | CodeQL and SARIF upload need a public repository or GitHub Advanced Security. Re-add the CodeQL job and the Trivy `upload-sarif` steps once this repo is public. |
+| Fix eval-runner daemon hang | Planned | `tests/evals/runner` spins up a real in-process daemon per test and intermittently deadlocks under CI load on a turn whose reply never arrives. Excluded from the CI gate until fixed; `make eval-replay` still runs. |
+
+## Limits
+| Limit | Detail |
+|-------|--------|
+| Not hardened | Only sandboxed tools run behind a real boundary. The `shell` plugin and native plugins run as the daemon's process user with its full filesystem and network reach. Run Nine in Docker or under a restricted user when pointing it at anything untrusted. |
+| Single host | The daemon listens on a Unix socket, so every client runs on the same machine. No authentication, no transport security. |
+| One model at a time | No routing across models within a deployment. |
+| Ollama and Mistral only | Other providers are refused at startup rather than falling back. |
+| Small-model baseline | Tested against `qwen3.5:4b`, `qwen3.5:9b`, `gemma4:e4b` and `gemma4:e2b` on a 16 GB M4. Behavior on large hosted models is unmeasured — [model compatibility](docs/model-compatibility.md). |
+| Interfaces change without notice | No stability guarantee and no support promise while the project is experimental. |
+| Low user mileage | Failure modes that only long runs, unusual hardware, or an unfamiliar model turn up have not been hit yet. |
+| Config is operator-only | Nine cannot rewrite `nine.toml` at runtime. Changing a setting means editing the file and restarting the daemon. This is deliberate. |
+| No external pull requests | Deliberate — see [Contributing](#contributing). |
+
+## AI Use / Methodology
+This project was made with the author's ideas, experience, and orchestration and built with Claude.
+
+## Contributing
 **Issues yes, pull requests no.** Bug reports, questions, and ideas are genuinely
 welcome — please open an issue. Pull requests won't be merged; this is a personal
 project developed solo, and keeping it single-author is a deliberate choice.
 
 ## Security
-
 **Sandboxed tools are sandboxed; nothing else is.** The wasm host is a real boundary —
 default-deny capabilities, one instance per call, an SSRF-checked HTTP path — and it
 applies to sandboxed tools only. Everything around it is unchanged: the `shell` plugin
@@ -688,7 +691,6 @@ dependencies for that tier is the riskiest switch in the system; leave it off un
 have a reason, and leave the `net.http` interlock in place if you turn it on.
 
 ## License
-
 GPL-3.0-or-later. See [LICENSE](LICENSE).
 
 Copyright (C) 2026 The Nine Authors

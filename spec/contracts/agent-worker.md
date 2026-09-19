@@ -1,4 +1,4 @@
-# Contract — Agent Worker (session lifecycle)
+# Contract — agent worker (session lifecycle)
 
 **Status:** Built · **Depends on:** agent loop, checkpoint store, notification store, session plans · **Used by:** daemon, sub-agents
 
@@ -8,7 +8,7 @@ interactive conversations, the self-reflection session, and goal pursue sessions
 
 ---
 
-## R-WORK.1 — One session, one serial worker, serialized turns (I1)
+## R-WORK.1 — one session, one serial worker, serialized turns (I1)
 
 The worker's `inbox` is a **single-slot** hand-off (capacity 1). A caller submitting a new
 turn waits until the current one finishes, making turns strictly sequential per session.
@@ -25,7 +25,7 @@ worker loop — wait for whichever happens first:
 
 ---
 
-## R-WORK.2 — Turn pipeline (`processTurn`)
+## R-WORK.2 — turn pipeline (`processTurn`)
 
 ```text
 turnReq on inbox
@@ -49,7 +49,7 @@ returned.
 
 ---
 
-## R-WORK.3 — Notifications (push delivery)
+## R-WORK.3 — notifications (push delivery)
 
 Before running the loop, the worker fetches pending notifications for this agent and
 prepends them to the message text. This is the **push** path: a completed/errored
@@ -58,7 +58,7 @@ surfaces it with no polling. (The **pull** path is `nine goals`/`nine workflows`
 
 ---
 
-## R-WORK.4 — Stall detection
+## R-WORK.4 — stall detection
 
 ```text
 turn completes:
@@ -76,7 +76,7 @@ can react (e.g. the pursue routine pauses its goal).
 
 ---
 
-## R-WORK.5 — Progress streaming
+## R-WORK.5 — progress streaming
 
 During a turn the daemon registers a `progressFn`; `emitEvent` pushes events onto a
 **bounded buffer** (cap **256**) that the connection handler forwards to the client.
@@ -86,7 +86,7 @@ to the replay buffer (R-WORK.6).
 
 ---
 
-## R-WORK.6 — Replay buffer (reattach support)
+## R-WORK.6 — replay buffer (reattach support)
 
 Every emitted `tool_*`/`sub_agent_*` event is also pushed into a bounded ring buffer
 (`replayBufCap = 200`) and the last completed response is recorded. On `attach`, the
@@ -101,7 +101,7 @@ loop event → emitEvent ─┬→ progressFn (live, if a client is attached)
 
 ---
 
-## R-WORK.7 — Clean shutdown
+## R-WORK.7 — clean shutdown
 
 `stop()` signals the inbox closed and waits for the worker to acknowledge, ensuring it
 drains the current turn and exits before the worker is discarded. Sub-agent workers are created with
@@ -109,7 +109,7 @@ empty `StallConfig{}` (no stall detection) since they are short-lived and synchr
 
 ---
 
-## R-WORK.8 — Durable event journal (distinct from progress/replay)
+## R-WORK.8 — durable event journal (distinct from progress/replay)
 
 Separately from the **in-memory** progress stream (R-WORK.5) and reattach ring
 (R-WORK.6), each worker records its full trajectory to the **durable** `session_events`

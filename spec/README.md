@@ -1,4 +1,4 @@
-# Nine — Generation Spec
+# Nine — generation spec
 
 This directory is a **generation playbook**: a complete, implementation-agnostic
 specification for building Nine from scratch. It tells you *what* to build, *in what
@@ -108,8 +108,8 @@ If you only want to build one subsystem, jump to its contract and follow its
 
 ## Status of the reference implementation
 
-These contracts describe the system **as currently built** in this repository. A few
-load-bearing facts worth stating up front:
+These contracts describe the system **as currently built** in this repository.
+Facts that the rest depends on:
 
 - Stall detection fires at **5** consecutive no-tool turns.
 - `run_agents` default group timeout is the daemon task timeout, **1800s / 30 min**.
@@ -124,6 +124,25 @@ load-bearing facts worth stating up front:
   ([`event-journal.md`](contracts/event-journal.md), [`subscriptions.md`](contracts/subscriptions.md)).
 
 Each contract carries a **Status** line — `Built` (present in the reference tree),
-`Partial`, or `Planned` (specified as part of the target design but not yet implemented).
-**All contracts are currently `Built`** (HITL now ships: `internal/runtime/hitl.go`,
-`internal/agent/register_human.go`).
+`Partial`, `Design`, or `Planned` (specified as part of the target design but not yet
+implemented).
+
+## Limits
+
+Two contracts are not `Built`, so [`conformance.md`](conformance.md) carries no
+rows for them. A requirement with no implementation has no observable check.
+
+| Contract | Status | Detail |
+|----------|--------|--------|
+| [`agent-policy.md`](contracts/agent-policy.md) | `Planned` | Specified as part of the target design. No implementation, so no conformance rows. Its reference symbols are listed as planned. |
+| [`api.md`](contracts/api.md) | `Design` | The HTTP surface is specified ahead of parts of its implementation. WebSocket support is listed but not built. |
+
+Other gaps the contracts name rather than hide:
+
+| Gap | Where |
+|-----|-------|
+| llama.cpp and vLLM backends | [`llm-provider.md`](contracts/llm-provider.md) — planned, with model routing across them a stated goal |
+| `ask_human` in the dispatcher taxonomy | [`dispatcher.md`](contracts/dispatcher.md) |
+| Config schema and DB schema versioning | [`docs/versioning.md`](../docs/versioning.md#limits) — neither has a migration path yet |
+
+Where this index and a contract disagree about status, the contract wins.

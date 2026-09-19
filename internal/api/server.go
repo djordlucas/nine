@@ -27,7 +27,6 @@ import (
 type Server struct {
 	config     config.APIConfig
 	socketPath string
-	daemonConn *protocol.Client
 	connMu     sync.Mutex
 
 	// rateLimiters maps client IPs to their rate limiters

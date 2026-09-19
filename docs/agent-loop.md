@@ -1,8 +1,8 @@
-# Agent Loop Architecture
+# Agent loop
 
 The agent loop is a stateful ReAct (Reason + Act) implementation. Each `Loop` holds conversation history and a scratchpad, and iterates between LLM calls and tool dispatches until the model produces a final answer with no tool calls.
 
-## Component Diagram
+## Component diagram
 
 ```mermaid
 flowchart TD
@@ -80,7 +80,7 @@ flowchart TD
     style Callbacks fill:#2a1a3a,color:#fff
 ```
 
-## ReAct Inner Loop (sequence)
+## ReAct inner loop (sequence)
 
 ```mermaid
 sequenceDiagram
@@ -123,7 +123,7 @@ sequenceDiagram
 
 The `Dispatcher` is a registry of `handlers` (tool name → function). It routes every tool call, expands `x-nine-ref` arguments, runs post-call hooks, and caps output at 2048 tokens (~8 000 chars) — spilling anything larger to the file store and returning a head+tail preview naming the path ([tool-output-spill.md](tool-output.md)).
 
-### Tool Categories
+### Tool categories
 
 | Category | Tools |
 |----------|-------|
@@ -135,7 +135,7 @@ The `Dispatcher` is a registry of `handlers` (tool name → function). It routes
 | Supervision | `gap_report` |
 | Plugin tools | any tool registered via `RegisterPlugin` |
 
-### Wiring Model
+### Wiring model
 
 `Dispatcher.New()` returns an **empty** dispatcher (an empty handler map). The
 daemon adds handlers at startup via the `Register*` functions — only the tools a
@@ -156,11 +156,11 @@ Dispatcher.New()                  → empty handler map
   └─ RegisterPlugin(mgr, plugin)  → plugin tool handlers
 ```
 
-### Post-call Hooks
+### Post-call hooks
 
 `AddHook(toolName, fn)` registers callbacks that fire after every successful call to that tool. (Skill description embedding is done inline by the `skill_write` / `skill_modify` handlers in `RegisterSkillTools`, not via a hook.)
 
-## Loop State
+## Loop state
 
 | Field | Description |
 |-------|-------------|
@@ -172,7 +172,7 @@ Dispatcher.New()                  → empty handler map
 
 `SaveCheckpoint()` serialises `history` and `scratchpad` to JSON. `LoadCheckpoint()` restores them. Called by the runner after every turn.
 
-## Context Assembly (`Builder`)
+## Context assembly (`Builder`)
 
 On each inner loop iteration `BuildWithUsage` assembles the full LLM request:
 - System prompt: current time + session ID + `SystemCore` + `SystemExtras` + self-model
@@ -184,3 +184,12 @@ On each inner loop iteration `BuildWithUsage` assembles the full LLM request:
 crosses 90% of the budget, the loop also emits a one-shot `notice` warning that the
 oldest history is being trimmed to fit (re-arms once usage drops back below the
 threshold). See [Context Builder](context-builder.md).
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Fixed retry count | `dispatchWithRetry` makes up to three attempts with no backoff between them. A tool failing for a persistent reason costs three calls before the observation records the failure. |
+| No partial-turn recovery | A checkpoint is written after a turn completes. A daemon killed mid-turn resumes from the previous turn, and the scratchpad of the interrupted turn is lost. |
+| History grows unbounded | `history` is never trimmed by the loop, only by the context builder when assembling a request. A long session keeps every message in the checkpoint. |
+| Output cap is global | The dispatcher caps every tool result at 2048 tokens. The cap is not per-tool, so a tool whose useful output is consistently larger always spills. |

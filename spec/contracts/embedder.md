@@ -1,4 +1,4 @@
-# Contract — Embedder
+# Contract — embedder
 
 **Status:** Built · **Depends on:** config, memory store (for vector put/query) · **Used by:** context builder, skills, semantic memory/file search, self-model
 
@@ -9,7 +9,7 @@ or vice versa.
 
 ---
 
-## R-EMB.1 — Interface
+## R-EMB.1 — interface
 
 ```interface
 Embedder {
@@ -22,7 +22,7 @@ store's vector methods (see [`memory-store.md`](memory-store.md) R-MEM.6).
 
 ---
 
-## R-EMB.2 — Providers
+## R-EMB.2 — providers
 
 Built from `[embeddings]` config:
 
@@ -40,7 +40,7 @@ A conforming implementation **MUST** provide `keyword` as a no-network default a
 
 ---
 
-## R-EMB.3 — Two embedding code paths
+## R-EMB.3 — two embedding code paths
 
 There are exactly two ways embeddings get produced, and they **MUST** be kept distinct:
 
@@ -63,7 +63,7 @@ No embedding logic lives inside a plugin subprocess.
 
 ---
 
-## R-EMB.4 — Namespaces
+## R-EMB.4 — namespaces
 
 All vectors are stored namespaced to avoid cross-domain collisions during similarity
 search: `skills` for skill descriptions, `session-index` for per-turn session vectors
@@ -74,7 +74,7 @@ the store. See R-MEM.6.
 
 ---
 
-## R-EMB.5 — Determinism & degradation
+## R-EMB.5 — determinism & degradation
 
 - `keyword` embedding **MUST** be deterministic for identical input (so re-indexing is
   stable).

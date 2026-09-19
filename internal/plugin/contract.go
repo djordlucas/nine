@@ -74,14 +74,6 @@ type CallResult struct {
 	JobID string `json:"job_id,omitempty"`
 }
 
-// rpcRequest is a JSON-RPC 2.0 request.
-type rpcRequest struct {
-	JSONRPC string `json:"jsonrpc"`
-	ID      int    `json:"id"`
-	Method  string `json:"method"`
-	Params  any    `json:"params"`
-}
-
 // rpcError is the error object in a JSON-RPC 2.0 response.
 type rpcError struct {
 	Code    int    `json:"code"`
