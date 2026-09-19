@@ -121,7 +121,7 @@ type AgentWorker struct {
 
 	mu         sync.Mutex
 	progressFn func(protocol.Msg) // called from worker goroutine on each tool event
-	busy       bool               // true while processTurn is running; guarded by mu
+	busy       bool               // true from turn start until its reply is sent; guarded by mu
 	// drainQueuedFn, when set, is called after each turn completes. If it
 	// returns a non-empty string, the worker immediately starts another turn
 	// with that text. Used to auto-process queued messages left unconsumed by
@@ -305,11 +305,6 @@ func (w *AgentWorker) processTurn(req turnReq) {
 	turn := w.turnN
 	w.busy = true
 	w.mu.Unlock()
-	defer func() {
-		w.mu.Lock()
-		w.busy = false
-		w.mu.Unlock()
-	}()
 	w.llmCallN = 0
 	w.toolN = 0
 	w.replay.clearResponse() // new turn supersedes any buffered response
@@ -352,6 +347,14 @@ func (w *AgentWorker) processTurn(req turnReq) {
 	w.checkStall(req.ctx)
 	w.checkpoint()
 	w.armIdleTimer()
+	// Clear busy before delivering the reply, not after: a client that sends its
+	// next message the moment this reply lands must get a turn of its own. Were
+	// busy still set, the daemon would queue that message and drainQueued would
+	// run it with no one listening for the reply. A turn arriving now waits in
+	// the inbox until this goroutine is free, so nothing runs concurrently.
+	w.mu.Lock()
+	w.busy = false
+	w.mu.Unlock()
 	req.respCh <- turnResp{text: result, err: err}
 	if w.onComplete != nil {
 		w.onComplete(w.id)
