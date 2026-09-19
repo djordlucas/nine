@@ -18,62 +18,37 @@ Nine is developed against small models as a baseline.
 
 It ships as a single binary (Docker, Linux, Mac OS) that implements client, server and plugins roles at once.
 Each Nine session runs a dedicated agent loop that can plan work, do tool calls, persist data and
-orchestrate sub-agent loops. Sessions may run interactively with the TUI, or in the background through
-scheduled and periodic goals. Running in the background, Nine holds every conversation, goal, memories
-and session events in one SQLite file on your disk.
+orchestrate sub-agent loops, interactively via the TUI or in the background through scheduled and
+periodic goals. Everything — conversations, goals, memories, session events — lives in one SQLite file.
 
 Nine is:
 
-**Modular.** Nine handles built-in tools (http, fs, shell, time), custom plugins, MCP, WASM and JS tools.
-Tools reach the agent through one dispatcher with several backends behind it:
+**Modular.** Built-in tools (http, fs, shell, time), custom plugins, MCP, WASM and JS tools all
+reach the agent through one dispatcher, backed by in-process core tools, native plugins over a Unix
+socket, external MCP servers, and agent- or user-supplied JS/Wasm code. Roles gate which of them a
+given worker may call.
 
-- In-process core tools
-- Native plugins as user supplied binaries over a Unix socket
-- External MCP servers
-- Agent generated JavaScript tools (running in Wasm)
-- User-supplied JS or Wasm code (running in Wasm, with configurable capabilities)
+**Persistent.** State is not a process that dies with your terminal. Conversations, goals, workflows,
+memory, files, skills and generated tools live in a database file, and every turn is checkpointed —
+kill the daemon mid-task and it resumes with the same history and plan. The model reaches that state
+through ordinary tools: key/value memory, durable file storage, and text/semantic search over it.
 
-Roles gate which of them a given worker may call.
+**Autonomous.** Sessions can also continue — or start — without user supervision. Given a goal, Nine
+spawns a background session that wakes on an interval to push it forward. **Standing agents** declared
+in `nine.toml` skip the human entirely: cron-scheduled, narrowly tool-scoped, surfacing findings to
+`nine notifications`. Background work always runs at lower priority than your active conversation.
 
-**Persistent.** State is not a process that dies with your terminal. Conversations,
-goals, workflows, memory, files, skills and generated tools live in a database file, and
-every turn is checkpointed — kill the daemon mid-task and it resumes with the same
-history, the same plan, and the same place in it. The model reaches that state through
-ordinary tools: key/value memory (`memory_get/set/delete/list`), durable file storage
-(`file_store/fetch/list`), and both text and semantic search over it
-(`file_search_text`, `memory_query`, `file_search_semantic`).
-At boot, additional plugin and WASM tools are automatically verified and loaded from the filesystem.
+**Auditable.** An append-only journal records every step the agent has ever taken — turn boundaries,
+the exact LLM request/response, tool I/O, context usage, sub-agent lifecycle. `nine trace` and
+`nine replay` read it back; `nine context` shows the session's current context.
 
-**Autonomous.** Sessions can also continue — or start — without user supervision.
-Given a goal — an open-ended request — Nine spawns a background session that wakes on
-an interval to push it forward. **Standing agents** declared in `nine.toml` skip the
-human entirely: they come up on boot, wake on a cron schedule, stay narrowly
-tool-scoped, and surface findings to `nine notifications`. To build experience and
-identify capability gaps, Nine also runs a self-reflection session that analyses
-previous sessions.
-Background work is always queued with lower priority so the conversation you're having with Nine
-remains responsive.
+**Evolving.** Nine writes its own skills — markdown how-to notes, retrieved into context when relevant.
+Where enabled, it also writes its own sandboxed tools at runtime (JS/Wasm) to close capability gaps:
+the agent writes the code, the operator writes the capability grants.
 
-**Auditable.** An append-only journal records every step the agent has ever taken —
-turn boundaries, the exact LLM request and response, tool I/O with latency and errors,
-context usage, sub-agent lifecycle.
-
-- `nine trace` reads it back
-- `nine replay` reprints a single turn in full detail — every LLM call and every tool's
-  I/O — so you can read exactly what happened
-- `nine context` displays the session's current context
-
-**Evolving.** Nine improves what it knows how to do by writing skills — markdown how-to
-notes, semantically retrieved into context when they are relevant to the task. Where the
-operator turns that tier on, it also improves what it can *do*, writing its own
-sandboxed tools at runtime to close the gaps it hits, using JS (QuickJS, EsBuild) and Wasm.
-The boundary is firm in both cases: the agent writes the code, the operator writes the
-capability grants.
-
-**Local**. Built to run against a local model (currently through Ollama) with a SQLite
-database. By design, it is developed against smaller models to make sure it stays useful
-on modest hardware. Currently tested against `qwen3.5:4b`, `qwen3.5:9b`, `gemma4:e4b`
-and `gemma4:e2b` on a 16 GB M4
+**Local.** Built to run against a local model (currently through Ollama) with a SQLite database,
+developed against small models to stay useful on modest hardware. Currently tested against
+`qwen3.5:4b`, `qwen3.5:9b`, `gemma4:e4b` and `gemma4:e2b` on a 16 GB M4
 ([model compatibility](docs/model-compatibility.md)).
 
 ## Screenshots
@@ -135,17 +110,12 @@ makes sense.
 
 | Status | Item | What and why |
 |--------|------|--------------|
-| **Done** | **Readme and doc improvements** | Add use cases and demos. |
-| **Done** | **Buffered input** | Support sending more input while Nine is busy in a session. |
 | **Planned** | **Improve sandboxed tools** | They are a bit basic for now, so more capabilities and more documented use cases: FS/env gaps, runtime wasm grants, binary data support, missing JS globals, per-tool timeouts, http audit, secret sharing, CLI commands, structured tool errors. |
-| **Done** | **Durable state for sandboxed tools** | A wasm tool is instantiated fresh for every call and torn down after it, so nothing survives — not a global, not a cached credential, not a parsed index. That isolation is worth keeping, but it currently leaves a tool with no way to remember anything except by writing a file, and only where `fs.write` was granted. A scoped, capability-gated store the host owns would give tools memory between calls without giving them the run of the disk. Designed in `adr/durable-and-long-running-tools.md`. |
-| **Done** | **Long-running sandboxed tools** | Every call runs to completion under a wall-clock deadline — five seconds by default — which makes the tool tier strictly request/response: no background work, no jobs that outlive the turn that started them. Today that work belongs to goals, standing agents, and native plugins, which are whole processes. Letting a sandboxed tool start something and be asked about it later cuts against the per-call teardown the isolation story rests on, so it is a design change rather than a setting. Designed in `adr/durable-and-long-running-tools.md`, which pairs it with durable state: a job becomes a sequence of ordinary calls carrying a cursor, so nothing outlives the instance. |
 | **Planned** | **REST API / remote access** | Today the daemon speaks a newline-delimited JSON protocol over a Unix socket, which means every client has to live on the same machine. A REST API over HTTP would open the same surface — conversations, goals, workflows, the journal — to clients that do not: a browser UI, a phone, another host on your network. Remote access also brings authentication and transport security with it, so this lands alongside the hardening work, not before it. |
 | **Partial** | **TUI improvements** | The TUI is a capable conversation client with slash commands that surface goals, workflows, tools, skills, memory and the context breakdown — but those views are mostly read-only, and the parts of Nine that reward watching over time have no place in it: the journal `nine trace` reads back, the notifications standing agents raise, background sessions moving while you type. Seeing and steering the autonomous tier from the same screen you converse on, rather than from a second terminal running the CLI, is the direction. Migrated to the charm.land v2 ecosystem (bubbletea, lipgloss, bubbles, glamour) and redesigned tool call display with backend labels, styled JSON key:value rendering, and separator rules. |
 | **Planned** | **Hardening** | Ensure Nine is as safe as possible. |
 | **Planned** | **Model routing** | Route different work to different models within one deployment. Currently, Nine only uses one model at a time. |
 | **Partial** | **Add different LLM backends** | Add llama.cpp and vLLM. Both speak an OpenAI-compatible API, so one adapter covers them. Two things already point at this: an unrecognized `[llm].provider` is refused at startup rather than silently falling back, so a new backend registers there; and the context budget's bytes-per-token estimate is calibrated against one tokenizer, so a second backend needs its own measurement — the estimate-vs-actual reconciliation is in place to produce it. Mistral API backend has been added. |
-| **Done** | **Standing tools** | Recurring deterministic work has no cheap home: every way to run something on a cadence — standing agents, goal sessions, session-plan routines — puts an LLM turn in the loop, so watching a file every ten seconds costs thousands of turns a day to be told nothing happened. A sandboxed tool run indefinitely by the daemon, declared in config or generated on request, does that work with no model in the loop and under the capability model a cron script and a native plugin both sit outside of. Designed in `adr/standing-tools.md`. |
 | **Planned** | **Codebase improvements** | Architectural refactoring and performance optimizations to improve maintainability, testability, and runtime efficiency. See [`adr/codebase-improvement.md`](adr/codebase-improvement.md). |
 | **Planned** | **More built-in plugins** | — |
 ## AI Use / Methodology
