@@ -89,7 +89,7 @@ Workflows that still have `pending` steps are left `active` so the LLM can resum
 | `/workflows` | List active and recent workflows |
 | `/status` | Shows active workflows alongside agents and sub-agents |
 
-## Limitations
+## Limits
 
 - **No goroutine kill on stop** — `workflow stop` marks steps as cancelled but does not interrupt running sub-agent goroutines. They continue to their natural completion; results are discarded. Hard cancellation is deferred.
 - **Single-owner** — a workflow belongs to the agent that created it. Sub-agents cannot create child workflows (depth-capped the same way `run_agent` is).

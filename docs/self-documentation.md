@@ -1,4 +1,4 @@
-# Self-Documentation
+# Self-documentation
 
 Nine ships its own manual inside its binary and can retrieve it on demand. When
 you ask how Nine works, it searches the `docs/` and `spec/` trees compiled into
@@ -6,7 +6,7 @@ the running binary and answers from the text rather than from impression.
 
 ---
 
-## Why Retrieval Rather Than Context
+## Why retrieval rather than context
 
 The bundled corpus is about 730 KB across roughly 570 sections. Placing any
 meaningful portion of it in every turn would consume the context budget for the
@@ -24,7 +24,7 @@ docs Nine cites are always the docs its own version ships (see
 
 ---
 
-## The Tools
+## The tools
 
 | Tool | Effect |
 |---|---|
@@ -123,7 +123,7 @@ silently answer from whichever sections happened to make it in.
 
 ---
 
-## Ranking: Two Retrievers, Fused
+## Ranking: two retrievers, fused
 
 `doc_search` is a **hybrid**. It runs two independent retrievers and fuses their
 rankings:
@@ -169,10 +169,10 @@ questions (`TestDocSearchRetrievalQuality`):
 | Lexical only (no embedder) | 21/30 | 25/30 |
 | **Hybrid (live)** | **24/30** | **27/30** |
 
-Worth noting the middle row: a daemon with **no embedder at all** now retrieves
-better than the original vector-only implementation did with one. The two
-retrievers are close in strength and fail on different queries, which is exactly
-the condition under which fusing them pays.
+A daemon with **no embedder at all** now retrieves better than the original
+vector-only implementation did with one. The two retrievers are close in
+strength and fail on different queries, which is the condition under which
+fusing them pays.
 
 Top 5 is the number that matters, since that is what `doc_search` returns by
 default: it decides whether the answer is in front of the model at all — 90% of
@@ -192,7 +192,7 @@ Two things follow for anyone relying on this:
 
 ---
 
-## Using It Well
+## Using it well
 
 The [`self-documentation` skill](../skills/self-documentation.md) carries the
 policy: search before answering questions about Nine, read the section rather
@@ -220,9 +220,21 @@ and it returns a paraphrase where the value was in the quote.
 
 ---
 
-## Keeping It Accurate
+## Keeping it accurate
 
 The index is only as good as the documents, and the documents are kept in
 lockstep with the code by `/sync-nine`. A behavior change that skips the
 embedded docs does not merely leave the docs stale — it teaches Nine to state
 the stale behavior as fact, with a citation.
+
+---
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Retrieval is best-effort | Ranking is designed to make the manual reachable, not to be right on the first try. The model can re-query or `doc_read` a topic by name when the first hit is wrong. |
+| Only `docs/` and `spec/` are indexed | `adr/` is deliberately excluded: it records superseded reasoning, which would answer questions about the present with the reasoning of the past. |
+| Accuracy depends on `/sync-nine` | A behavior change that skips the embedded docs does not just leave them stale — Nine states the stale behavior as fact, with a citation. |
+| Delegation rarely pays | Spawning a sub-agent for a specific lookup costs more than the section it would read, and returns a paraphrase where the value was the quote. It is worth it only for synthesis across many documents. |
+| Docs ship per binary | The index is built from the documents embedded at build time, so a running daemon answers from its own version's docs, not the repo's current state. |

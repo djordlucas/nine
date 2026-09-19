@@ -480,7 +480,7 @@ func extensionForMIME(mime string) string {
 		sub = sub[i+1:]
 	}
 	for _, r := range sub {
-		if !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9') {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') {
 			return ".bin"
 		}
 	}

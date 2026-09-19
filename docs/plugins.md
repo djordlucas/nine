@@ -28,9 +28,9 @@ Several tools (memory, file storage, semantic search, and skills) are **core-int
 
 ---
 
-## Built-in Plugins
+## Built-in plugins
 
-### `shell` — Run Shell Commands
+### `shell` — run shell commands
 
 | Tool | Description |
 |------|-------------|
@@ -48,7 +48,7 @@ Run "ls -la /tmp" and tell me the five largest files.
 
 ---
 
-### `files` — Read and Write Files
+### `files` — read and write files
 
 | Tool | Description |
 |------|-------------|
@@ -70,7 +70,7 @@ Read /work/notes.txt and then write a summary to /work/summary.txt
 
 ---
 
-### Memory & File Tools (Core)
+### Memory & file tools (core)
 
 Unlike the plugins below, these tools are **core-intercepted**: they're wired
 directly into the agent loop and call
@@ -101,7 +101,7 @@ Find files related to database migrations.
 
 ---
 
-### Skill Tools (Core)
+### Skill tools (core)
 
 Also **core-intercepted** (backed by the `skills` table in the memory store, no
 subprocess). Skills are markdown how-to notes; built-in ones are immutable, and
@@ -116,7 +116,7 @@ Nine can author its own. See [Skills](skills.md).
 
 ---
 
-### `http` — HTTP and Web
+### `http` — HTTP and web
 
 | Tool | Description |
 |------|-------------|
@@ -142,7 +142,7 @@ snapshot tools for anything needing JavaScript, a login, or interaction.
 
 ---
 
-### `time` — Current Date and Time
+### `time` — current date and time
 
 | Tool | Description |
 |------|-------------|
@@ -159,7 +159,7 @@ What's the current date and time?
 
 ---
 
-### `mcp` — Model Context Protocol servers
+### `mcp` — model context protocol servers
 
 An MCP server is a plugin. Each `[[mcp.server]]` you declare gets its own bridge
 process, so it has the same shape and the same controls as anything else here.
@@ -240,7 +240,7 @@ through Playwright's MCP server end to end.
 
 ---
 
-## Adding a Plugin
+## Adding a plugin
 
 Plugins are part of the source repo and are compiled into the image at build time.
 Nine cannot generate, build, or load a plugin at runtime — adding a capability means
@@ -330,7 +330,7 @@ to every tool, including MCP servers, with no plugin involvement
 
 ---
 
-## User Plugins
+## User plugins
 
 Built-in plugins are baked into the image. **User plugins** are operator-supplied
 executables Nine discovers at boot from `[plugins].user_dir` (env
@@ -389,7 +389,7 @@ See `plugins.d/README.md` for an operator walkthrough.
 
 ---
 
-## Plugin Lifecycle
+## Plugin lifecycle
 
 ```
 build time            built-in:  go build ./cmd/nine    (handlers linked into nine)
@@ -410,7 +410,7 @@ daemon start          built-in:  TryStartBuiltin → spawn `nine plugin serve <n
 
 ---
 
-## Environment Variables Passed to Plugins
+## Environment variables passed to plugins
 
 The plugin manager passes these to each subprocess:
 
@@ -489,3 +489,14 @@ Inside `Run`, use `plugin.JobDir(ctx)` for per-job scratch and
 honours the plugin's `max_concurrent` for jobs (excess jobs queue) and evicts
 finished jobs after a TTL. Jobs are native-plugin only (protocol v2); MCP servers
 cannot use them. See [Plugin capabilities § 5](plugin-capabilities.md).
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Fixed at build time | Built-in plugins are compiled into the `nine` binary. Adding one means editing the source repo and rebuilding; there is no runtime path for an agent or an operator to add a native plugin. |
+| User plugins need a restart or reload | A new plugin under `[plugins].user_dir` is discovered at boot. `nine plugins reload` picks up changes for user plugins; built-ins need a daemon restart. |
+| Unbounded concurrency by default | `max_concurrent` defaults to 0, meaning unbounded. A plugin holding shared mutable state must declare its own cap. |
+| No capability sandbox | A plugin is an ordinary subprocess running as the daemon's process user, with the daemon's filesystem and network reach. Only sandboxed tools run behind a capability boundary. |
+| MCP tools are invisible to built-in roles | Their names carry an operator-chosen prefix, and role allowlists match exactly. |
+| A plugin cannot call back | The daemon dials the plugin and never the reverse. A plugin reports long-running work by being polled. |

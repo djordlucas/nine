@@ -43,21 +43,17 @@ Status flows from the goal, not from configuration. An operator can declare a
 done, it is done — re-adding the declaration does not resurrect it. Deciding
 that its work is finished is the agent's call to make.
 
-## Resource bounds
+## Limits
 
-Two limits keep background pursuit from consuming the daemon:
+| Limit | Detail |
+|-------|--------|
+| Ten concurrent goal sessions | `daemon.max_goal_sessions`, default 10. At the cap, creating a goal still records the goal but starts no session for it. The goal is real and unattended rather than queued, so how far behind pursuit has fallen stays visible. |
+| Sub-goals get no session | Only top-level goals are paired with a session. A goal spawned by another is worked on by the session already pursuing its parent. |
+| Five-minute wake interval | An idle goal session wakes on a fixed timer. The cycle supplies the occasion and the goal, not a plan — what counts as useful action is left to the model. |
+| Stall detection releases the slot | A stalled session pauses its goal and frees its slot, so one wedged pursuit cannot hold capacity indefinitely. Progress on that goal stops until it is resumed. |
+| Only some roles create them | A role that may not spawn goals creates no goal sessions. |
 
-**A cap on concurrent sessions**, ten by default, configurable with
-`daemon.max_goal_sessions`. At the cap, creating a goal still records the goal
-— you do not silently lose it — but no session starts for it. The goal is real
-and unattended, which is the honest outcome, rather than a queue that hides how
-far behind pursuit has fallen.
-
-**Stall detection.** A session that stalls pauses its goal and releases its
-slot, so one wedged pursuit cannot hold capacity against the others
-indefinitely.
-
-Spawning is idempotent. A goal that already has a session does not get a second
+Spawning is idempotent: a goal that already has a session does not get a second
 one, whatever asks.
 
 ## Related

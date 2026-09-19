@@ -1,4 +1,4 @@
-# Contract — Agent Policy
+# Contract — agent policy
 
 **Status:** Planned · **Depends on:** agent loop, llm provider (queue), dispatcher, context builder, agent worker · **Used by:** agent worker, roles (planned, `docs/roles.md`)
 
@@ -25,7 +25,7 @@ authoritative description of the built system.
 
 ---
 
-## R-POLICY.1 — The ownership split: the policy decides, the host executes
+## R-POLICY.1 — the ownership split: the policy decides, the host executes
 
 Responsibilities are split as follows. A conforming implementation **MUST NOT** move a
 host-side responsibility into a policy (a policy that talks to the database or an LLM
@@ -48,7 +48,7 @@ A policy never sees tool display names (I8), never chooses its own queue priorit
 
 ---
 
-## R-POLICY.2 — The decision exchange
+## R-POLICY.2 — the decision exchange
 
 A policy implements one operation, invoked by the host once per event:
 
@@ -112,7 +112,7 @@ cancellation and timeouts bound it (R-POLICY.6).
 
 ---
 
-## R-POLICY.3 — Turn state is externalized
+## R-POLICY.3 — turn state is externalized
 
 `TurnState` is the policy's intra-turn working memory (the generalization of the ReAct
 scratchpad). Its schema is **policy-owned and opaque to the host**, with these hard
@@ -136,7 +136,7 @@ requirements:
 
 ---
 
-## R-POLICY.4 — Purity and the single-exchange discipline
+## R-POLICY.4 — purity and the single-exchange discipline
 
 These rules are what keep the seam liftable to another transport or runtime later.
 They are conformance requirements *now*, while everything is in-process:
@@ -155,7 +155,7 @@ They are conformance requirements *now*, while everything is in-process:
 
 ---
 
-## R-POLICY.5 — Host execution semantics
+## R-POLICY.5 — host execution semantics
 
 How the host executes each action, preserving the existing contracts unchanged:
 
@@ -187,7 +187,7 @@ How the host executes each action, preserving the existing contracts unchanged:
 
 ---
 
-## R-POLICY.6 — Turn lifecycle, cancellation, and failure containment
+## R-POLICY.6 — turn lifecycle, cancellation, and failure containment
 
 - **Serialization.** `Decide` is invoked by the session's serial worker only; it is
   never called concurrently for the same session (I1).
@@ -206,7 +206,7 @@ How the host executes each action, preserving the existing contracts unchanged:
 
 ---
 
-## R-POLICY.7 — Context assembly stays host-side
+## R-POLICY.7 — context assembly stays host-side
 
 The token budget, priority classes, tool relevance filtering, and the 4-chars/token
 model of [`context-builder.md`](context-builder.md) are platform behavior and apply
@@ -218,7 +218,7 @@ contract and are out of scope for v1.
 
 ---
 
-## R-POLICY.8 — Registry, selection, and the code boundary
+## R-POLICY.8 — registry, selection, and the code boundary
 
 - Policies are identified by a stable **name** and resolved through a
   `PolicyRegistry` built at daemon boot.
@@ -237,7 +237,7 @@ contract and are out of scope for v1.
 
 ---
 
-## R-POLICY.9 — The default `react` policy
+## R-POLICY.9 — the default `react` policy
 
 The `react` policy is the ReAct inner loop of [`agent-loop.md`](agent-loop.md)
 re-expressed as decisions, and it anchors backward compatibility:
@@ -260,7 +260,7 @@ re-expressed as decisions, and it anchors backward compatibility:
 
 ---
 
-## R-POLICY.10 — Determinism and replay
+## R-POLICY.10 — determinism and replay
 
 Because all inputs arrive as events (R-POLICY.4), a turn is characterized by
 `(initial state, event sequence)`. Re-running `Decide` over a recorded event sequence

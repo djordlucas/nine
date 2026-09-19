@@ -1,4 +1,4 @@
-# Contract — Agent Loop (ReAct)
+# Contract — agent loop (ReAct)
 
 **Status:** Built · **Depends on:** context builder, llm queue, dispatcher, embedder · **Used by:** agent worker, sub-agents
 
@@ -9,7 +9,7 @@ serialization (invariant I1).
 
 ---
 
-## R-LOOP.1 — Turn structure
+## R-LOOP.1 — turn structure
 
 ```text
 Run(ctx, userText):
@@ -52,7 +52,7 @@ time-only preamble unchanged.
 
 ---
 
-## R-LOOP.2 — The scratchpad is the turn's working memory
+## R-LOOP.2 — the scratchpad is the turn's working memory
 
 `scratchpad` is a list of `ScratchpadEntry{Thought, ToolName, ToolArgs, Observation}`.
 When the context is rebuilt, each entry **MUST** expand into an assistant message (the
@@ -65,7 +65,7 @@ prior actions on the next iteration.
 
 ---
 
-## R-LOOP.3 — History
+## R-LOOP.3 — history
 
 `history` is the accumulated `[]Message` of user/assistant turns. It is **never** cleared
 between turns unless `ClearHistory()` is called explicitly (e.g. `/new`). History is
@@ -74,7 +74,7 @@ mutated by trimming.
 
 ---
 
-## R-LOOP.4 — Tool-call retry
+## R-LOOP.4 — tool-call retry
 
 `dispatchWithRetry` calls the dispatcher up to `maxToolRetries + 1` times
 (`maxToolRetries = 2`, so **3 attempts total**), returning on the first success. After
@@ -83,7 +83,7 @@ thrown. A conforming implementation **MUST** retry exactly 3 times total by defa
 
 ---
 
-## R-LOOP.5 — Empty-answer retry and fallback
+## R-LOOP.5 — empty-answer retry and fallback
 
 A response with no tool calls **and** no text is treated as a failed draw, not as an
 answer: the loop **MUST** re-issue the call up to `maxEmptyAnswerRetries` (2, so **3
@@ -102,7 +102,7 @@ whoever is reading, and a long-lived session that read it back would learn to im
 
 ---
 
-## R-LOOP.6 — Progress callbacks
+## R-LOOP.6 — progress callbacks
 
 The loop exposes settable callbacks the worker wires per turn and clears after:
 `OnThinking(llmCallN, think)`, `OnContextUpdate(used, budget)`, `OnToolStart(name, display,
@@ -119,7 +119,7 @@ implementation **MUST** make it safe against the worker clearing it after `Run` 
 
 ---
 
-## R-LOOP.7 — Checkpoint unit & stall signal
+## R-LOOP.7 — checkpoint unit & stall signal
 
 - `SaveState()` serializes `{history, scratchpad}` to JSON; `LoadState(data)` restores
   them. Checkpointing happens **outside** the loop, in the worker, after `Run` returns
@@ -130,7 +130,7 @@ implementation **MUST** make it safe against the worker clearing it after `Run` 
 
 ---
 
-## R-LOOP.8 — Priority is a property of the loop's owner
+## R-LOOP.8 — priority is a property of the loop's owner
 
 Each loop submits to the queue at the priority of its owner (supervisor / conversation /
 background). The loop does not choose its own priority arbitrarily; it is set when the

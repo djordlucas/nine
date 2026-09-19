@@ -177,3 +177,23 @@ func TestStallDetectionNoOnStall(t *testing.T) {
 		}
 	}
 }
+
+// TestNotBusyOnceReplySent guards the race that swallowed replies: a client
+// that sends its next message the moment a reply lands must find the worker
+// idle, or the daemon queues the message and its reply goes nowhere. The
+// onComplete callback is held open to widen the window after the reply.
+func TestNotBusyOnceReplySent(t *testing.T) {
+	w := runtime.NewAgentWorkerForTest("agent-busy", workerLoop(constProvider("ok")), nil, nil, runtime.StallConfig{})
+	t.Cleanup(func() { w.StopAgentWorker() })
+
+	release := make(chan struct{})
+	w.SetOnCompleteForTest(func(string) { <-release })
+	defer close(release)
+
+	if _, err := w.TurnAgentWorker(t.Context(), "hello"); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+	if w.IsBusyForTest() {
+		t.Fatal("worker still busy after its reply was sent; a follow-up message would be queued and its reply lost")
+	}
+}

@@ -21,10 +21,9 @@ does not merely lack the description of one.
 
 ## Roles are skills
 
-A role is a skill that declares a role block in its frontmatter. This is not a
-coincidence of implementation: a role's persona is exactly the kind of thing
-skills already are, so roles reuse skill storage, seeding, and authoring
-wholesale. Writing a new role means writing a skill.
+A role is a skill that declares a role block in its frontmatter. A persona is
+the kind of content skills already hold, so roles reuse skill storage, seeding
+and authoring wholesale. Writing a new role means writing a skill.
 
 Built-in roles ship with Nine. Operators can author their own, and so can
 agents — with one restriction covered under [boundaries](#the-self-improvement-boundary).
@@ -65,7 +64,7 @@ Every leaf role except `executor` is barred from delegating, so a coarse leaf
 cannot spawn further work. `analyst` having *no* tools is the point of it: it
 is asked to think, and it has nothing else available to do.
 
-## Why coarse named roles rather than per-task tool lists
+## Why roles are coarse
 
 Handing each sub-agent a bespoke tool list would be more precise. Named roles
 are used instead, for reasons that compound:
@@ -114,9 +113,19 @@ roles. The structural flags are what it cannot set: an agent-authored role is
 forced to leaf defaults, so it cannot grant itself persistence, delegation,
 goal-spawning, or the ability to prompt a human.
 
-The reasoning is that a system able to author its own privileges has no
-boundary at all, only a preference. An agent may describe a new kind of worker;
-it may not promote one.
+A system able to author its own privileges has a preference, not a boundary. An
+agent may describe a new kind of worker; it may not promote one.
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Omitting `tools` grants everything | A `tools` list of `"*"` grants every tool, and leaving the key out does the same. An empty list grants none. A role written without thinking about tools is maximally privileged, not minimal. |
+| Built-in roles cannot reach MCP tools | Allowlists match tool names exactly, and an MCP server's tools carry an operator-chosen prefix, so no built-in role can name one. Author a role naming the prefixed tools, or use a role that takes all tools. |
+| Agent-authored roles are forced to leaf defaults | Nine can write roles, because roles are skills, but cannot set the structural flags: no persistence, delegation, goal-spawning, or prompting a human. |
+| Only `executor` sub-delegates | Every other leaf role is barred from delegating, so a coarse leaf cannot spawn further work. |
+| Personas are advisory | A persona is context and can be dropped under budget pressure. Only the tool allowlist is enforced, at session build and again at call time. |
+| Delegation depth is capped separately | The cap is a guardrail behind the role system, not part of it. A role that may delegate still does not delegate without limit. |
 
 ## Related
 

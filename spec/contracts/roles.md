@@ -1,4 +1,4 @@
-# Contract — Roles: worker kinds as data
+# Contract — roles: worker kinds as data
 
 **Status:** Built · **Depends on:** skills, dispatcher, context builder, orchestration, session plans · **Used by:** loop builder, delegation tools
 
@@ -12,7 +12,7 @@ is the normative contract.
 
 ---
 
-## R-ROLE.1 — Frontmatter format
+## R-ROLE.1 — frontmatter format
 
 A skill ([`skills.md`](skills.md) R-SKILL.1) **MAY** carry an optional `role:`
 frontmatter block. A skill *with* a role block is *also* a role; a skill *without* one
@@ -31,18 +31,18 @@ role:
 A malformed role block **MUST NOT** fail skill loading — the skill degrades to a plain
 knowledge skill.
 
-## R-ROLE.2 — Wildcard tools
+## R-ROLE.2 — wildcard tools
 
 `tools: "*"` (or an omitted `tools` key with a role block present) means **all
 available tools**. An explicit list means a **strict allowlist**.
 
-## R-ROLE.3 — The role body is the persona
+## R-ROLE.3 — the role body is the persona
 
 The skill's markdown body becomes the role's system prompt. An empty body falls back to
 the daemon's configured system prompt (so the orchestrator, whose body is empty, runs on
 the daemon prompt).
 
-## R-ROLE.4 — Two-boundary enforcement
+## R-ROLE.4 — two-boundary enforcement
 
 A role's tool set **MUST** be enforced at *both*:
 
@@ -53,7 +53,7 @@ A role's tool set **MUST** be enforced at *both*:
 Wildcard roles keep the full handler set (including registered-but-unadvertised
 tools such as `gap_report` and the embedding-backed memory tools).
 
-## R-ROLE.5 — Roles only narrow, never widen
+## R-ROLE.5 — roles only narrow, never widen
 
 For allowlist roles, the effective tool set is the **intersection** of the allowlist
 with the tools the daemon exposes. A name the daemon does not expose (unknown tool, or
@@ -61,7 +61,7 @@ a plugin that is not running) **MUST** be silently dropped, never created.
 `gap_report` remains registered regardless of role — it is the escape hatch when no
 allowed tool fits.
 
-## R-ROLE.6 — Depth becomes a guardrail
+## R-ROLE.6 — depth becomes a guardrail
 
 Termination of delegation is primarily structural: leaf roles have `delegates: false`.
 A **depthGuard** (default seed **2**, configurable via `roles.max_delegation_depth`,
@@ -69,7 +69,7 @@ decremented on each spawn) is the backstop: when it reaches 0, delegation tools 
 registered even for a delegating role. Runaway recursion stays structurally impossible
 (I6, R-ORCH.3).
 
-## R-ROLE.7 — Agent-authored roles are purely restrictive
+## R-ROLE.7 — agent-authored roles are purely restrictive
 
 A role block on an **agent-authored** skill MAY declare a `tools` allowlist (which, by
 R-ROLE.5, can only narrow). Its **structural flags MUST be ignored** and forced to leaf
@@ -87,7 +87,7 @@ written at runtime via `skill_write`) stay purely restrictive.
 Both kinds are equally bound by R-ROLE.5: a `tools` list can only ever narrow the
 daemon's surface. Trust governs structure, never the allowlist.
 
-## R-ROLE.8 — Role selection at delegation time
+## R-ROLE.8 — role selection at delegation time
 
 `run_agent` input and each `run_agents` task gain an optional `role` field (string).
 The tool schema **SHOULD** enumerate the available leaf roles with one-line descriptions
@@ -115,7 +115,7 @@ prompt (the `executor` is exactly that case) — and **MUST NOT** be given to a 
 cannot delegate, for which it is dead text. Names alone belong here; the one-line
 descriptions are already in the tool schema.
 
-## R-ROLE.9 — Resolution and fallback
+## R-ROLE.9 — resolution and fallback
 
 A role registry resolves names: built-ins first (embedded role skills, loaded at
 boot), then agent-authored role skills (looked up in the store at resolve time, so a
@@ -123,7 +123,7 @@ boot), then agent-authored role skills (looked up in the store at resolve time, 
 to `roles.default_leaf` (default `executor`) — never an error. A spawned child always
 runs as a **leaf**: root-only structural flags are ignored on the delegation path.
 
-## R-ROLE.10 — The leaf persona
+## R-ROLE.10 — the leaf persona
 
 A spawned leaf's system core **MUST** be its role body (the executor body for a default
 leaf) — never the orchestrator's daemon prompt. The executor role body carries the

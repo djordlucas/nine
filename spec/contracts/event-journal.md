@@ -1,4 +1,4 @@
-# Contract — Session Event Journal
+# Contract — session event journal
 
 **Status:** Built · **Depends on:** memory store, agent worker · **Used by:** trace/replay, retention, subscriptions
 
@@ -11,7 +11,7 @@ design: `adr/event-log.md`.
 
 ---
 
-## R-EVT.1 — Append-only, ordered, typed
+## R-EVT.1 — append-only, ordered, typed
 
 `session_events` rows are **append-only** and **never mutated** in place. Each row is
 `{seq INTEGER PRIMARY KEY AUTOINCREMENT, agent_id, turn, span_id, parent_span_id, type,
@@ -22,7 +22,7 @@ daemon-private, R-MEM.4).
 
 ---
 
-## R-EVT.2 — Producer: the async batched sink
+## R-EVT.2 — producer: the async batched sink
 
 Events are produced by `runtime.NewSQLEventSink`, an **async, batched** writer wired into
 each `AgentWorker`. Writing **MUST** stay off the turn's critical path (a slow or failed
@@ -59,7 +59,7 @@ links a parent to its children across the flat, per-`agent_id` log.
 
 ---
 
-## R-EVT.3 — Read surface: trace & replay
+## R-EVT.3 — read surface: trace & replay
 
 - **`nine trace <agent-id> [--turn N] [--sub-agents]`** renders a session's journal
   directly from the table — it **MUST** work with the daemon down (it opens the store
@@ -80,7 +80,7 @@ links a parent to its children across the flat, per-`agent_id` log.
 
 ---
 
-## R-EVT.4 — Retention (bounded growth)
+## R-EVT.4 — retention (bounded growth)
 
 A boot-time scrub bounds journal size: `SessionEventsScrub(keepTurns, maxAge)` prunes,
 per agent, events outside the most recent `keepTurns` turns and (independently) events
@@ -90,7 +90,7 @@ valid, replayable prefix per agent.
 
 ---
 
-## R-EVT.5 — Read methods
+## R-EVT.5 — read methods
 
 | Method | Purpose |
 |--------|---------|

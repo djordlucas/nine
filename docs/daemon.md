@@ -1,8 +1,8 @@
-# Daemon Architecture
+# Daemon
 
 The daemon is a Unix-socket server that routes user turns to per-conversation agent loops and persists state via checkpoints.
 
-## Component Diagram
+## Component diagram
 
 ```mermaid
 flowchart TD
@@ -71,7 +71,7 @@ flowchart TD
     style Supervisor fill:#2a1a3a,color:#fff
 ```
 
-## Key Flows
+## Key flows
 
 ### 1. Startup
 `EnsureDaemon` auto-forks the process if no daemon is reachable on the socket; the client then connects over the Unix socket.
@@ -80,7 +80,7 @@ flowchart TD
 - `new_conversation` — creates a `runner` with a fresh `agent.Loop`
 - `attach` — restores a runner from the `CheckpointStore` if not already in memory
 
-### 3. Turn Processing
+### 3. Turn processing
 `user_turn` queues into the runner's `inbox` channel (capacity 1, serializing turns). The runner:
 1. Prepends any pending notifications from `NotifStore`
 2. Runs the LLM loop via `agent.Loop.Run`
@@ -88,7 +88,7 @@ flowchart TD
 4. Saves a checkpoint to `CheckpointStore`
 5. Calls `onComplete` callback
 
-### 4. Streaming Progress
+### 4. Streaming progress
 While the loop runs, events flow back to the client in real time:
 - `tool_start` / `tool_end` — tool call lifecycle with input/output
 - `context_update` — context window usage
@@ -103,7 +103,7 @@ Receives events asynchronously from runners:
 - `EventGoalStalls` / `EventGapReported` — reserved for gap/stall handling
 - `EventPluginCrashed` — calls `PluginRebuildFn` to restart the plugin
 
-### 6. Direct Dispatch (no runner)
+### 6. Direct dispatch (no runner)
 These message types are handled synchronously in the dispatch loop:
 - `status` — uptime, active agents, loaded plugins
 - `list_goals` / `list_reflections` / `list_workflows`
@@ -117,7 +117,7 @@ These message types are handled synchronously in the dispatch loop:
 
 All messages are newline-delimited JSON (`Msg` struct). The full message type reference and the client used by the CLI/TUI live in `protocol`, kept separate from the daemon implementation so client code doesn't pull in the whole runtime.
 
-## Source Files
+## Source files
 
 | File | Responsibility |
 |------|---------------|
@@ -132,3 +132,12 @@ The wire protocol and client live in `protocol`:
 |------|---------------|
 | `protocol.go` | Shared types: `Msg`, `ProgressEvent`, `StatusInfo` |
 | `client.go` | Client-side dial, `EnsureDaemon`, typed request methods |
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Local clients only | The daemon listens on a Unix socket, so every client runs on the same host. There is no authentication and no transport security. A REST API is on the roadmap and lands with the hardening work. |
+| One turn at a time per conversation | Each worker's inbox has capacity 1, so turns are strictly sequential within a conversation. Concurrency is across conversations, not within one. |
+| Two supervisor events are reserved | `EventGoalStalls` and `EventGapReported` are delivered but not yet acted on. |
+| No graceful client resume | A client that disconnects mid-turn loses the progress stream. The turn completes and is checkpointed, but the streamed output is not replayed on reattach. |

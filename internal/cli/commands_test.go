@@ -38,7 +38,7 @@ func TestRunTypoSuggestsCommand(t *testing.T) {
 		if !strings.Contains(note, "did you mean") || !strings.Contains(note, tc.want) {
 			t.Errorf("Run(%q): stderr = %q, want a suggestion of %q", tc.arg, note, tc.want)
 		}
-		if !strings.Contains(out.String(), "# CLI Usage") {
+		if !strings.Contains(out.String(), "# CLI usage") {
 			t.Errorf("Run(%q): expected usage reference on stdout", tc.arg)
 		}
 	}
