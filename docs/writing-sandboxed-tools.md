@@ -227,6 +227,21 @@ you actually got rather than leaving you to hardcode a guess.
 deliberately: a tool reading a PNG should not have to discover that its data was mangled on
 the way in.
 
+**Files larger than your memory.** A call is capped at 16 MiB of linear memory, and
+workspaces hold files bigger than that, so `readFile` is the wrong tool past a few
+megabytes:
+
+| Call | Use it for |
+|---|---|
+| `readRange(path, offset, length)` | A window of a large file, as bytes. `readRangeText` decodes it |
+| `appendFile(path, data)` | Adding to the end without reading what is already there |
+| `rename(from, to)` | Relocating a file, or replacing one atomically: write a temporary, then rename over the target |
+| `remove(path)` | One file, or one empty directory. Never recursive |
+| `copyFile(from, to)` | A copy that streams through a fixed buffer rather than going resident |
+
+A paging loop over `readRange` holds one window whatever the file's size, which is how
+`edit_file` changes a line in a 200 MB log.
+
 **Nothing here is what confines you.** The mount is a wazero pre-open, so a tool scoped to
 `/data` cannot climb out of it — `..`, an absolute path, and a symlink all fail — without
 Nine writing a single check. The capability checks in `nine:fs` exist only so that an
