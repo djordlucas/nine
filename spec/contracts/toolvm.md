@@ -353,6 +353,13 @@ validation, and no host function is permitted to grow one: a pre-open is a real 
 primitive, and re-implementing containment as a check of Nine's own would trade an
 enforced boundary for a reviewed one.
 
+`nine:fs` **MUST** offer positional and structural operations, not whole-file access alone:
+a ranged read, an append, a rename, and a non-recursive remove. A call's memory cap
+(R-TVM.5) is smaller than the files a workspace holds, so whole-file reads put the larger
+half of any workspace out of reach; and without a rename there is no atomic replacement,
+which is what keeps an interrupted write from destroying the file it was editing. Each is
+an ordinary libc call inside the pre-open, so none of them widens what a grant reaches.
+
 The interpreter is built from a pinned tag by `internal/toolvm/quickjs/build.sh`,
 committed with a recorded SHA-256, and rebuilt only on a deliberate bump
 (`make quickjs-wasm`). CI re-checks the hash (`make quickjs-verify`). An ordinary
