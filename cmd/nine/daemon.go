@@ -286,6 +286,13 @@ func runDaemon() {
 	// bound (adr/tool-output-spill.md §5).
 	go runtime.RunSpillSweeper(ctx, store)
 
+	// Deleted and overwritten workspace files are kept under .nine/trash/ so a
+	// mistake in an ungated session is recoverable. That directory is on the
+	// operator's own disk, so it is bounded by both age and size
+	// (adr/file-namespaces.md §9).
+	go runtime.RunTrashSweeper(ctx, cfg.Workspace.Root,
+		cfg.Workspace.TrashRetentionDuration(), cfg.Workspace.TrashSizeBound())
+
 	// Any *plugin* job still marked running belongs to a plugin the previous
 	// daemon left behind (this boot spawned fresh ones), so it is unreachable:
 	// mark such rows lost and tell their owners (docs/plugin-capabilities.md §5).

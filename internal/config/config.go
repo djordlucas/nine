@@ -547,6 +547,46 @@ func (h HITLConfig) GateSubAgentsEnabled() bool {
 
 type WorkspaceConfig struct {
 	Root string `toml:"root"`
+
+	// TrashRetention is how long a deleted or overwritten file is kept under
+	// .nine/trash/ before the sweep removes it, in days. Zero uses
+	// DefaultTrashRetentionDays; a negative value disables the age sweep, which
+	// leaves TrashMaxBytes as the only bound.
+	TrashRetention int `toml:"trash_retention_days"`
+
+	// TrashMaxBytes bounds the trash's total size, oldest entry removed first.
+	// The trash lives inside the workspace — the operator's own disk — so an age
+	// bound alone is not enough: a week of large deletions can outgrow a volume
+	// long before anything expires. Zero uses DefaultTrashMaxBytes.
+	TrashMaxBytes int64 `toml:"trash_max_bytes"`
+}
+
+// Trash defaults. Retention matches the spill window: both are debris from work
+// that has moved on, and one number is easier to reason about than two.
+const (
+	DefaultTrashRetentionDays = 7
+	DefaultTrashMaxBytes      = 1 << 30 // 1 GiB
+)
+
+// TrashRetentionDuration resolves the configured retention, distinguishing
+// unset (the default applies) from a deliberate negative (no age sweep).
+func (w WorkspaceConfig) TrashRetentionDuration() time.Duration {
+	switch {
+	case w.TrashRetention == 0:
+		return DefaultTrashRetentionDays * 24 * time.Hour
+	case w.TrashRetention < 0:
+		return 0
+	default:
+		return time.Duration(w.TrashRetention) * 24 * time.Hour
+	}
+}
+
+// TrashSizeBound resolves the configured size ceiling; zero means the default.
+func (w WorkspaceConfig) TrashSizeBound() int64 {
+	if w.TrashMaxBytes <= 0 {
+		return DefaultTrashMaxBytes
+	}
+	return w.TrashMaxBytes
 }
 
 // SkillsConfig points at the operator's own skills and roles
