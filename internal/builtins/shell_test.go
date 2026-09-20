@@ -3,6 +3,8 @@ package builtins_test
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -143,6 +145,74 @@ func TestShellSecurityAllowed(t *testing.T) {
 			_, err := m.Call(context.Background(), p, "shell", args)
 			if err != nil && strings.Contains(err.Error(), "blocked") {
 				t.Errorf("command %q should be allowed (%s) but was blocked", tc.cmd, tc.reason)
+			}
+		})
+	}
+}
+
+// Nine writes files in one place, so `ls notes.txt` in the shell and
+// read_file("notes.txt") in the sandbox must mean the same file. The daemon
+// passes the workspace down as NINE_WORKSPACE and the shell runs there.
+func TestShellRunsInWorkspace(t *testing.T) {
+	ws := t.TempDir()
+	resolved, err := filepath.EvalSymlinks(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ws, "notes.txt"), []byte("pangolin-8321\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	p, m := start(t, "shell", "NINE_WORKSPACE="+ws)
+
+	r, err := m.Call(context.Background(), p, "shell", json.RawMessage(`{"command":"pwd -P"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pwd struct {
+		Stdout string `json:"stdout"`
+	}
+	json.Unmarshal([]byte(r.Output), &pwd) //nolint:errcheck
+	if got := strings.TrimSpace(pwd.Stdout); got != resolved {
+		t.Errorf("pwd = %q, want %q", got, resolved)
+	}
+
+	// The point of the working directory: a relative path resolves in the
+	// workspace, which is what the sandboxed file tools also mean by it.
+	r, err = m.Call(context.Background(), p, "shell", json.RawMessage(`{"command":"cat notes.txt"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cat struct {
+		Stdout   string `json:"stdout"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(r.Output), &cat) //nolint:errcheck
+	if cat.ExitCode != 0 || !strings.Contains(cat.Stdout, "pangolin-8321") {
+		t.Errorf("cat notes.txt = %+v, want the workspace file's contents", cat)
+	}
+}
+
+// An operator with no workspace configured keeps the previous behavior rather
+// than having every command fail, and so does one whose configured root does not
+// exist yet.
+func TestShellWithoutWorkspaceKeepsWorking(t *testing.T) {
+	for _, tc := range []struct{ name, env string }{
+		{"unset", ""},
+		{"missing directory", "NINE_WORKSPACE=/nonexistent/nine-workspace"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var env []string
+			if tc.env != "" {
+				env = append(env, tc.env)
+			}
+			p, m := start(t, "shell", env...)
+			r, err := m.Call(context.Background(), p, "shell", json.RawMessage(`{"command":"echo still-here"}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(r.Output, "still-here") {
+				t.Errorf("output = %q, want the command to have run", r.Output)
 			}
 		})
 	}

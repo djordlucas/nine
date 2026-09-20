@@ -205,3 +205,35 @@ func TestPluginSettingsValidation(t *testing.T) {
 		})
 	}
 }
+
+// `shell` runs its commands in the workspace, so it receives the same root the
+// sandboxed file tools are mounted at. Without it the shell resolved relative
+// paths against the daemon's own working directory, and `ls notes.txt` named a
+// different file than read_file("notes.txt").
+func TestPluginEnvsShellGetsWorkspace(t *testing.T) {
+	cfg, err := loadTOML(t, `
+[workspace]
+root = "/srv/work"
+`)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	for _, name := range []string{"shell", "files"} {
+		if got := envMap(cfg.PluginEnvs(name))["NINE_WORKSPACE"]; got != "/srv/work" {
+			t.Errorf("%s NINE_WORKSPACE = %q, want /srv/work", name, got)
+		}
+	}
+}
+
+// With no workspace configured there is no root to hand down, and the shell
+// keeps running wherever the daemon does.
+func TestPluginEnvsShellWithoutWorkspace(t *testing.T) {
+	cfg, err := loadTOML(t, ``)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got, ok := envMap(cfg.PluginEnvs("shell"))["NINE_WORKSPACE"]; ok {
+		t.Errorf("NINE_WORKSPACE = %q, want it absent", got)
+	}
+}

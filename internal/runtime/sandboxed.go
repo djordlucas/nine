@@ -75,6 +75,15 @@ func OpenSandboxedTools(ctx context.Context, cfg *config.Config, store *memory.S
 
 	// The workspace a shipped tool that declares fs is mounted at. Same root the
 	// `files` plugin used, so a model's /work paths keep meaning what they meant.
+	//
+	// Created if absent: the mount, and `shell`'s working directory, are the same
+	// directory, and a tool that declares fs fails to load against a root that is
+	// not there. An operator who configured a root meant for it to exist.
+	if root := cfg.Workspace.Root; root != "" {
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			slog.Warn("workspace root could not be created", "root", root, "err", err)
+		}
+	}
 	host.SetShippedWorkspace(toolvm.ShippedWorkspace{Host: cfg.Workspace.Root})
 
 	// First-party tools first: the namespace rule is first-registered wins, so a
