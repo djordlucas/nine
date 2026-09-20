@@ -201,6 +201,35 @@ var migrations = []migrationStep{
 	{name: "conversations_queued_messages", fn: func(q sqlExec) error {
 		return addColumnIfMissing(q, "conversations", "queued_messages", "TEXT NOT NULL DEFAULT '[]'")
 	}},
+
+	// 10 \u2192 11: the workspace index. CREATE TABLE IF NOT EXISTS in initSchema
+	// covers a fresh database; a database in the field needs the same two
+	// objects created here. Nothing is backfilled: the index is derived, and the
+	// first scan after this boot fills it from the directory itself.
+	{name: "workspace_index", fn: func(q sqlExec) error {
+		if _, err := q.Exec(`CREATE TABLE IF NOT EXISTS workspace_files (
+			path         TEXT PRIMARY KEY,
+			size         INTEGER NOT NULL,
+			mtime_ms     INTEGER NOT NULL,
+			indexed      INTEGER NOT NULL DEFAULT 0,
+			reason       TEXT NOT NULL DEFAULT '',
+			first_seen   TEXT NOT NULL,
+			last_changed TEXT NOT NULL
+		)`); err != nil {
+			return err
+		}
+		if _, err := q.Exec(
+			`CREATE INDEX IF NOT EXISTS workspace_files_changed ON workspace_files(last_changed)`); err != nil {
+			return err
+		}
+		_, err := q.Exec(`CREATE VIRTUAL TABLE IF NOT EXISTS workspace_fts USING fts5(
+			content,
+			content='',
+			contentless_delete=1,
+			tokenize='porter unicode61 remove_diacritics 2'
+		)`)
+		return err
+	}},
 }
 
 // hasTableTx reports whether a table exists, using the passed handle so it
