@@ -1,4 +1,5 @@
-nine stdlib rev 1 — csv, date, diff
+nine stdlib rev 2 — csv, date, diff; fs gains readRange, appendFile, rename,
+remove and copyFile
 
 Authored in-house rather than vendored, so every module is known to run under the
 trimmed QuickJS blob (no std/os; R-TVM.9) and carries no transitive surface. Bump

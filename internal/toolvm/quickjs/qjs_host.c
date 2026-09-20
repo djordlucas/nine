@@ -458,6 +458,184 @@ static JSValue js_nine_fs_stat(JSContext *ctx, JSValueConst this_val, int argc,
     return o;
 }
 
+/* Read a window of a file: `length` bytes from byte `offset`. Returns a
+ * Uint8Array, short at end of file, empty past it.
+ *
+ * This is what makes a file larger than the interpreter's own memory usable. A
+ * tool editing a 200 MB log reads it in windows and never holds more than one;
+ * readFile would need the whole thing resident, and the memory cap (16 MiB by
+ * default, R-TVM.5) is smaller than the files a workspace holds. */
+static JSValue js_nine_fs_read_range(JSContext *ctx, JSValueConst this_val, int argc,
+                                     JSValueConst *argv) {
+    (void)this_val;
+    if (argc < 3) return JS_ThrowTypeError(ctx, "readRange requires a path, offset and length");
+    const char *path = JS_ToCString(ctx, argv[0]);
+    if (!path) return JS_EXCEPTION;
+
+    int64_t offset = 0, length = 0;
+    if (JS_ToInt64(ctx, &offset, argv[1]) || JS_ToInt64(ctx, &length, argv[2])) {
+        JS_FreeCString(ctx, path);
+        return JS_EXCEPTION;
+    }
+    if (offset < 0) offset = 0;
+    if (length <= 0) {
+        JS_FreeCString(ctx, path);
+        return JS_NewUint8ArrayCopy(ctx, NULL, 0);
+    }
+
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        JSValue e = JS_ThrowTypeError(ctx, "cannot read %s", path);
+        JS_FreeCString(ctx, path);
+        return e;
+    }
+    if (fseek(f, (long)offset, SEEK_SET) != 0) {
+        fclose(f);
+        JS_FreeCString(ctx, path);
+        /* Seeking past the end is not an error on every platform; an empty
+         * window terminates a paging loop cleanly either way. */
+        return JS_NewUint8ArrayCopy(ctx, NULL, 0);
+    }
+
+    uint8_t *buf = malloc((size_t)length);
+    if (!buf) { fclose(f); JS_FreeCString(ctx, path); return JS_ThrowOutOfMemory(ctx); }
+
+    size_t got = fread(buf, 1, (size_t)length, f);
+    int failed = ferror(f);
+    fclose(f);
+    if (failed) {
+        free(buf);
+        JSValue e = JS_ThrowTypeError(ctx, "error reading %s", path);
+        JS_FreeCString(ctx, path);
+        return e;
+    }
+    JS_FreeCString(ctx, path);
+
+    JSValue out = JS_NewUint8ArrayCopy(ctx, buf, got);
+    free(buf);
+    return out;
+}
+
+/* Append to a file, creating it when absent. Accepts a string (UTF-8) or any
+ * ArrayBuffer/view, matching writeFile. Appending is not writeFile with extra
+ * steps: a tool adding a line to a log would otherwise read the whole file back
+ * and rewrite it, which is both the memory problem above and a window in which
+ * an interrupted write loses what was already there. */
+static JSValue js_nine_fs_append(JSContext *ctx, JSValueConst this_val, int argc,
+                                 JSValueConst *argv) {
+    (void)this_val;
+    if (argc < 2) return JS_ThrowTypeError(ctx, "appendFile requires a path and data");
+    const char *path = JS_ToCString(ctx, argv[0]);
+    if (!path) return JS_EXCEPTION;
+
+    const uint8_t *data = NULL;
+    size_t len = 0;
+    const char *as_str = NULL;
+    size_t offset = 0, bytes_per = 0;
+    JSValue ab = JS_UNDEFINED;
+
+    if (JS_IsString(argv[1])) {
+        as_str = JS_ToCStringLen(ctx, &len, argv[1]);
+        if (!as_str) { JS_FreeCString(ctx, path); return JS_EXCEPTION; }
+        data = (const uint8_t *)as_str;
+    } else {
+        ab = JS_GetTypedArrayBuffer(ctx, argv[1], &offset, &len, &bytes_per);
+        if (JS_IsException(ab)) {
+            JS_FreeValue(ctx, ab);
+            size_t ab_len = 0;
+            uint8_t *raw = JS_GetArrayBuffer(ctx, &ab_len, argv[1]);
+            if (!raw) {
+                JS_FreeCString(ctx, path);
+                return JS_ThrowTypeError(ctx, "appendFile: data must be a string or binary");
+            }
+            data = raw;
+            len = ab_len;
+        } else {
+            size_t ab_len = 0;
+            uint8_t *raw = JS_GetArrayBuffer(ctx, &ab_len, ab);
+            JS_FreeValue(ctx, ab);
+            if (!raw) {
+                JS_FreeCString(ctx, path);
+                return JS_ThrowTypeError(ctx, "appendFile: data must be a string or binary");
+            }
+            data = raw + offset;
+        }
+    }
+
+    FILE *f = fopen(path, "ab");
+    if (!f) {
+        if (as_str) JS_FreeCString(ctx, as_str);
+        JSValue e = JS_ThrowTypeError(ctx, "cannot append to %s", path);
+        JS_FreeCString(ctx, path);
+        return e;
+    }
+    size_t wrote = len ? fwrite(data, 1, len, f) : 0;
+    int failed = fclose(f) != 0 || wrote != len;
+    if (as_str) JS_FreeCString(ctx, as_str);
+    if (failed) {
+        JSValue e = JS_ThrowTypeError(ctx, "error appending to %s", path);
+        JS_FreeCString(ctx, path);
+        return e;
+    }
+    JS_FreeCString(ctx, path);
+    return JS_NewInt64(ctx, (int64_t)len);
+}
+
+/* Rename within the pre-open. This is the primitive behind three things a tool
+ * could not do at all: relocating a file without copying it, replacing a file
+ * atomically (write a temporary, rename over the target), and moving a deleted
+ * file into a trash directory instead of destroying it. All three are one inode
+ * operation, whatever the file's size. */
+static JSValue js_nine_fs_rename(JSContext *ctx, JSValueConst this_val, int argc,
+                                 JSValueConst *argv) {
+    (void)this_val;
+    if (argc < 2) return JS_ThrowTypeError(ctx, "rename requires a source and destination");
+    const char *from = JS_ToCString(ctx, argv[0]);
+    if (!from) return JS_EXCEPTION;
+    const char *to = JS_ToCString(ctx, argv[1]);
+    if (!to) { JS_FreeCString(ctx, from); return JS_EXCEPTION; }
+
+    int rc = rename(from, to);
+    if (rc != 0) {
+        JSValue e = JS_ThrowTypeError(ctx, "cannot rename %s to %s", from, to);
+        JS_FreeCString(ctx, from);
+        JS_FreeCString(ctx, to);
+        return e;
+    }
+    JS_FreeCString(ctx, from);
+    JS_FreeCString(ctx, to);
+    return JS_UNDEFINED;
+}
+
+/* Remove one file or one empty directory. Not recursive: a tool that means to
+ * delete a tree must walk it and say so at every step, and nothing here can
+ * erase a directory by accident. */
+static JSValue js_nine_fs_unlink(JSContext *ctx, JSValueConst this_val, int argc,
+                                 JSValueConst *argv) {
+    (void)this_val;
+    if (argc < 1) return JS_ThrowTypeError(ctx, "remove requires a path");
+    const char *path = JS_ToCString(ctx, argv[0]);
+    if (!path) return JS_EXCEPTION;
+
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        JSValue e = JS_ThrowTypeError(ctx, "cannot remove %s: no such file", path);
+        JS_FreeCString(ctx, path);
+        return e;
+    }
+    int rc = S_ISDIR(st.st_mode) ? rmdir(path) : unlink(path);
+    if (rc != 0) {
+        JSValue e = JS_ThrowTypeError(ctx, S_ISDIR(st.st_mode)
+                                               ? "cannot remove directory %s (is it empty?)"
+                                               : "cannot remove %s",
+                                      path);
+        JS_FreeCString(ctx, path);
+        return e;
+    }
+    JS_FreeCString(ctx, path);
+    return JS_UNDEFINED;
+}
+
 /* One environment variable. The host passes only the keys the operator named, so
  * this cannot observe a key that was not granted — the filtering is wazero's, not
  * a check here that could be wrong. */
@@ -621,6 +799,14 @@ __attribute__((export_name("nine_run"))) uint64_t nine_run(uint32_t ptr, uint32_
                       JS_NewCFunction(ctx, js_nine_fs_readdir, "__nine_fs_readdir", 1));
     JS_SetPropertyStr(ctx, global, "__nine_fs_stat",
                       JS_NewCFunction(ctx, js_nine_fs_stat, "__nine_fs_stat", 1));
+    JS_SetPropertyStr(ctx, global, "__nine_fs_read_range",
+                      JS_NewCFunction(ctx, js_nine_fs_read_range, "__nine_fs_read_range", 3));
+    JS_SetPropertyStr(ctx, global, "__nine_fs_append",
+                      JS_NewCFunction(ctx, js_nine_fs_append, "__nine_fs_append", 2));
+    JS_SetPropertyStr(ctx, global, "__nine_fs_rename",
+                      JS_NewCFunction(ctx, js_nine_fs_rename, "__nine_fs_rename", 2));
+    JS_SetPropertyStr(ctx, global, "__nine_fs_unlink",
+                      JS_NewCFunction(ctx, js_nine_fs_unlink, "__nine_fs_unlink", 1));
     JS_SetPropertyStr(ctx, global, "__nine_env",
                       JS_NewCFunction(ctx, js_nine_env, "__nine_env", 1));
     JS_SetPropertyStr(ctx, global, "__nine_random",
