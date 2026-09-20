@@ -128,6 +128,8 @@ session:
   config:                            # per-case nine.toml overrides (dotted keys)
     tools.max_output_tokens: 150     # honored: the dispatcher output cap, so a small
                                      # fixture can exercise the spill path
+    tools.agent.enabled: true        # honored: turns on tool_write/tool_delete
+    tools.agent.eval: true           # honored: also offers js_eval (needs enabled)
 
 # ── HITL script: canned human answers, matched in order to ask_human calls ──
 human_answers: []                    # e.g. ["yes", "the staging cluster"]
@@ -379,6 +381,8 @@ strongest available assertion for that feature.
 | workflows | multi-step task auto-closes | side-effect `workflows.status=done` | multi_step |
 | sub-agents | `run_agents` fan-out | `sub_agents.count` ≥ 2 | delegation |
 | goals | open-ended request | side-effect goal + pursue session | multi_step |
+| generated tools | `tool_write` a tool, call it in a later turn | `tools_all_of:[tool_write,<name>]` + answer | multi_step |
+| generated tools | one-off computation via `js_eval`, nothing persisted | `tools_all_of:[js_eval]`, `tools_none_of:[tool_write]` + answer | basic |
 | roles | report-writer denied `shell` | `llm_request.tool_advertised_none_of:[shell]` | basic |
 | HITL | needs clarification | `ask_human` fired; resumes on `human_answers` | hitl |
 | approval gate | gated `shell` needs approval | approval prompt; blocked on "no" | hitl |
@@ -421,4 +425,5 @@ To add coverage, or to have an LLM expand the corpus:
 | Live runs are nondeterministic | Track L runs against a real model, so a pass fraction is a sample. Track R is the deterministic half. |
 | Cases assume a clean store | Each case assumes a fresh store and workspace. A case that leaks state breaks the next one rather than failing itself. |
 | No exact-wording assertions | Free-text wording is not asserted on, so a regression that changes only phrasing is invisible to the suite. |
+| Only some `session.config` keys are honored | The harness reads `tools.max_output_tokens`, `tools.agent.enabled` and `tools.agent.eval`. Any other key is ignored without an error, so a case that sets one runs with the production default. |
 | Generated cases need review | The generator prompt produces plausible YAML; nothing checks that a generated case actually forces the behavior it names. |
