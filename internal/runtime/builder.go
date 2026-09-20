@@ -160,9 +160,11 @@ type AgentBuilder struct {
 	subAgentMu      sync.RWMutex
 	activeSubAgents []protocol.SubAgentInfo
 
-	// toolVecs caches per-tool description embeddings (keyed by tool name) so the
-	// context builder can rank tools by relevance to the query. Tool descriptions
-	// are static after boot, so each is embedded at most once across all sessions.
+	// toolVecs caches per-tool description embeddings, keyed by the embedded text
+	// (name and description), so the context builder can rank tools by relevance
+	// to the query. Each distinct description is embedded at most once across all
+	// sessions; a generated tool rewritten with a new description gets a new
+	// vector rather than its predecessor's.
 	toolVecMu sync.Mutex
 	toolVecs  map[string][]float32
 }
@@ -174,8 +176,9 @@ func (f *AgentBuilder) toolVector(emb embed.Embedder, td llm.ToolDef) []float32 
 	if emb == nil {
 		return nil
 	}
+	text := td.Name + ": " + td.Description
 	f.toolVecMu.Lock()
-	if v, ok := f.toolVecs[td.Name]; ok {
+	if v, ok := f.toolVecs[text]; ok {
 		f.toolVecMu.Unlock()
 		return v
 	}
@@ -183,7 +186,6 @@ func (f *AgentBuilder) toolVector(emb embed.Embedder, td llm.ToolDef) []float32 
 
 	// Embed outside the lock — this may be a network call for a remote embedder.
 	// A concurrent miss for the same tool just recomputes; the result is identical.
-	text := td.Name + ": " + td.Description
 	vec, err := emb.Embed(context.Background(), text)
 	if err != nil {
 		slog.Debug("embed tool failed", "tool", td.Name, "err", err)
@@ -194,7 +196,7 @@ func (f *AgentBuilder) toolVector(emb embed.Embedder, td llm.ToolDef) []float32 
 	if f.toolVecs == nil {
 		f.toolVecs = make(map[string][]float32)
 	}
-	f.toolVecs[td.Name] = vec
+	f.toolVecs[text] = vec
 	f.toolVecMu.Unlock()
 	return vec
 }
@@ -397,13 +399,6 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 			d.RegisterPlugin(lc.Mgr, p)
 		}
 	}
-	// Sandboxed tools are a second backend behind the same dispatcher, indexed
-	// here exactly as plugin tools are. With the host disabled — the default —
-	// this is a no-op and the loop is byte-for-byte the loop it was before.
-	if lc.Tools != nil {
-		d.RegisterSandboxed(lc.Tools)
-	}
-
 	f.registerCoreTools(d, lc, agentID, onConsumed)
 
 	// shellTools are conferred by the session shell, not the role's allowlist —
@@ -536,6 +531,15 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		d.RestrictTo(allow)
 	}
 
+	// Sandboxed tools are a second backend behind the same dispatcher, registered
+	// last so a core or plugin tool keeps any name they share, and filtered by the
+	// role's allowlist here rather than by RestrictTo. With the host disabled — the
+	// default — this is a no-op and the loop is byte-for-byte the loop it was before.
+	allowSandboxed := func(name string) bool { return role.AllTools || slices.Contains(role.Tools, name) }
+	if lc.Tools != nil {
+		d.SyncSandboxed(lc.Tools, allowSandboxed)
+	}
+
 	// Boundary 1 of R-ROLE.4: the advertised tool list. The role enum is
 	// rendered from the live registry only for roles that can delegate —
 	// nothing else advertises run_agent, so nothing else needs it (R-ROLE.8).
@@ -544,28 +548,56 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		roleEnum = f.roles.RoleEnum()
 	}
 
-	tools := buildToolList(lc, role, shellTools, roleEnum)
-	if role.Interactive && f.cfg.HITL != nil {
-		tools = append(tools, ninectx.ToolWithVector{Tool: agent.AskHumanDef})
+	assembleTools := func() []ninectx.ToolWithVector {
+		tools := buildToolList(lc, role, shellTools, roleEnum)
+		if role.Interactive && f.cfg.HITL != nil {
+			tools = append(tools, ninectx.ToolWithVector{Tool: agent.AskHumanDef})
+		}
+
+		// The generated meta-tool defs are not in InterceptedDefs, so buildToolList's
+		// shell-tool pass cannot advertise them — append them here, the way AskHumanDef
+		// is. Handlers were registered above; their names are in shellTools, so an
+		// allowlist role keeps them.
+		for _, def := range generatedDefs {
+			tools = append(tools, ninectx.ToolWithVector{Tool: def})
+		}
+
+		// Populate each tool's description embedding (cached) so the context builder
+		// ranks non-always tools by relevance to the query rather than insertion order.
+		for i := range tools {
+			tools[i].Vector = f.toolVector(lc.Embedder, tools[i].Tool)
+		}
+		return tools
+	}
+	tools := assembleTools()
+
+	// A loop lives as long as its session, but the sandboxed catalog can change
+	// under it: tool_write and tool_delete edit it, and so does a developer-tool
+	// reload. So each turn starts by comparing the host's catalog with the one this
+	// loop last saw, and on any change re-syncs the handlers and re-assembles the
+	// advertised list — which is what makes "write it this turn, use it next turn"
+	// (docs/sandboxed-tools.md §9.1) true for the session that wrote it. The host
+	// replaces a tool's *Tool on every load, so pointer identity catches rewrites
+	// too. A turn in flight keeps the set it started with.
+	var toolsForTurn func() []ninectx.ToolWithVector
+	if lc.Tools != nil {
+		seen := lc.Tools.Tools()
+		toolsForTurn = func() []ninectx.ToolWithVector {
+			current := lc.Tools.Tools()
+			if slices.Equal(current, seen) {
+				return nil
+			}
+			seen = current
+			d.SyncSandboxed(lc.Tools, allowSandboxed)
+			tools = assembleTools()
+			return tools
+		}
 	}
 
-	// The generated meta-tool defs are not in InterceptedDefs, so buildToolList's
-	// shell-tool pass cannot advertise them — append them here, the way AskHumanDef
-	// is. Handlers were registered above; their names are in shellTools, so an
-	// allowlist role keeps them.
-	for _, def := range generatedDefs {
-		tools = append(tools, ninectx.ToolWithVector{Tool: def})
-	}
-
-	// Populate each tool's description embedding (cached) so the context builder
-	// ranks non-always tools by relevance to the query rather than insertion order.
-	for i := range tools {
-		tools[i].Vector = f.toolVector(lc.Embedder, tools[i].Tool)
-	}
 	// tool_search ranks — and tool_list enumerates — the finalized advertised set
 	// (vectors populated above), so register them now that `tools` is complete.
-	// The closure returns this loop's slice, so results only ever include tools
-	// it can actually call.
+	// The closure reads this loop's current slice, which toolsForTurn replaces when
+	// the catalog changes, so results only ever include tools it can actually call.
 	getTools := func() []ninectx.ToolWithVector { return tools }
 	agent.RegisterToolSearch(d, lc.Embedder, getTools)
 	agent.RegisterToolList(d, getTools)
@@ -673,6 +705,7 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		Priority:       llm.PriorityConversation,
 		MaxTokens:      2048,
 		Tools:          tools,
+		ToolsForTurn:   toolsForTurn,
 		Embedder:       lc.Embedder,
 		SelfModelFn:    selfModelFn,
 		EnrichmentFn:   enrichmentFn,

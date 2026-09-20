@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 
 	"nine/internal/plugin"
 	"nine/internal/toolvm"
@@ -164,30 +166,70 @@ func (d *Dispatcher) RegisterSandboxed(h SandboxedHost) {
 		return
 	}
 	for _, t := range h.Tools() {
-		toolName := t.Name
-		d.declareRefParams(toolName, t.InputSchema)
-		d.backends[toolName] = "wasm"
-		d.handlers[toolName] = func(ctx context.Context, args json.RawMessage) (string, error) {
-			out, err := h.CallOutput(ctx, toolName, args)
-			if err != nil {
-				return "", err
-			}
-			if out.Continue != nil {
-				// The tool did bounded work and asked to be called again, so this
-				// turn gets an acknowledgement and the job runs on past it. Same
-				// shape as a plugin returning a job id, and the model sees the same
-				// vocabulary: a handle it can job_wait or job_check.
-				if d.jobs == nil {
-					return "", fmt.Errorf(
-						"tool %q asked to run as a background job, but background jobs are not enabled here", toolName)
-				}
-				return d.jobs.StartToolJob(ctx, toolName, args, out.Continue)
-			}
-			if out.Bytes != nil {
-				return d.storeToolBytes(ctx, toolName, out)
-			}
-			return out.Text, nil
+		d.registerSandboxedTool(h, t)
+	}
+}
+
+// SyncSandboxed brings the sandboxed handlers in line with the host's current
+// catalog, for a loop that outlives a change to it: a tool written with
+// tool_write since the loop was built gains a handler, and one deleted or evicted
+// loses its handler. allow is the role's allowlist (nil admits every name), applied
+// on the same terms as RestrictTo. A handler this method did not install — a core
+// or plugin tool — is never replaced, so core and plugin tools win a name
+// collision. Call it after every other registration, and between turns, never
+// mid-turn.
+func (d *Dispatcher) SyncSandboxed(h SandboxedHost, allow func(name string) bool) {
+	if h == nil {
+		return
+	}
+	current := make(map[string]bool)
+	for _, t := range h.Tools() {
+		if allow != nil && !allow(t.Name) {
+			continue
 		}
+		if _, has := d.handlers[t.Name]; has && d.backends[t.Name] != "wasm" {
+			continue
+		}
+		current[t.Name] = true
+		d.registerSandboxedTool(h, t)
+	}
+	for name, b := range d.backends {
+		if b == "wasm" && !current[name] {
+			delete(d.handlers, name)
+			delete(d.backends, name)
+			delete(d.refParams, name)
+		}
+	}
+}
+
+// registerSandboxedTool installs the handler for one sandboxed tool. The handler
+// resolves the tool by name at call time, so a rewrite of the same name runs the
+// new source without re-registering.
+func (d *Dispatcher) registerSandboxedTool(h SandboxedHost, t *toolvm.Tool) {
+	toolName := t.Name
+	delete(d.refParams, toolName) // a rewritten schema may have dropped a ref param
+	d.declareRefParams(toolName, t.InputSchema)
+	d.backends[toolName] = "wasm"
+	d.handlers[toolName] = func(ctx context.Context, args json.RawMessage) (string, error) {
+		out, err := h.CallOutput(ctx, toolName, args)
+		if err != nil {
+			return "", err
+		}
+		if out.Continue != nil {
+			// The tool did bounded work and asked to be called again, so this
+			// turn gets an acknowledgement and the job runs on past it. Same
+			// shape as a plugin returning a job id, and the model sees the same
+			// vocabulary: a handle it can job_wait or job_check.
+			if d.jobs == nil {
+				return "", fmt.Errorf(
+					"tool %q asked to run as a background job, but background jobs are not enabled here", toolName)
+			}
+			return d.jobs.StartToolJob(ctx, toolName, args, out.Continue)
+		}
+		if out.Bytes != nil {
+			return d.storeToolBytes(ctx, toolName, out)
+		}
+		return out.Text, nil
 	}
 }
 
@@ -266,7 +308,7 @@ func (d *Dispatcher) AddHook(toolName string, h Hook) {
 func (d *Dispatcher) Dispatch(ctx context.Context, toolName string, args json.RawMessage) (CallResult, error) {
 	fn, ok := d.handlers[toolName]
 	if !ok {
-		return CallResult{}, fmt.Errorf("unknown tool: %s", toolName)
+		return CallResult{}, fmt.Errorf("unknown tool: %s%s", toolName, d.didYouMean(toolName))
 	}
 
 	// Normalize nil/empty args to {} so every handler can json.Unmarshal
@@ -309,4 +351,52 @@ func (d *Dispatcher) Backend(toolName string) string {
 		return b
 	}
 	return "builtin"
+}
+
+// didYouMean names the registered tools closest to a name the model invented,
+// as a suffix for the unknown-tool error. A model that reaches for a plausible
+// wrapper — `tool_call` for a tool it just wrote — is one hop from the right
+// call, and a bare "unknown tool" gives it nothing to correct with. Empty when
+// nothing is close enough to suggest.
+func (d *Dispatcher) didYouMean(name string) string {
+	var near []string
+	for candidate := range d.handlers {
+		if strings.Contains(candidate, name) || strings.Contains(name, candidate) ||
+			editDistance(name, candidate) <= 2 {
+			near = append(near, candidate)
+		}
+	}
+	hint := ". Call a tool by its exact name"
+	if _, ok := d.handlers["tool_list"]; ok {
+		hint += "; tool_list shows the tools you have"
+	}
+	if len(near) == 0 {
+		return hint
+	}
+	sort.Strings(near)
+	if len(near) > 3 {
+		near = near[:3]
+	}
+	return fmt.Sprintf(". Did you mean %s?%s", strings.Join(near, ", "), hint)
+}
+
+// editDistance is Levenshtein distance, used only to rank near-miss tool names.
+func editDistance(a, b string) int {
+	prev := make([]int, len(b)+1)
+	cur := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		cur[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			cur[j] = min(min(cur[j-1]+1, prev[j]+1), prev[j-1]+cost)
+		}
+		prev, cur = cur, prev
+	}
+	return prev[len(b)]
 }

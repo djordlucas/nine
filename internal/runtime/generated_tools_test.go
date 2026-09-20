@@ -42,12 +42,15 @@ func TestGeneratedToolWriteMakesToolCallable(t *testing.T) {
 	}
 
 	// A pure transform: no capabilities declared, so it runs under the empty grant.
-	evicted, err := gt.Write(context.Background(), genSpec("double", `export default ({n}) => ({ out: n*2 });`, nil))
+	res, err := gt.Write(context.Background(), genSpec("double", `export default ({n}) => ({ out: n*2 });`, nil))
 	if err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if len(evicted) != 0 {
-		t.Fatalf("nothing should evict from an empty catalog: %v", evicted)
+	if len(res.Evicted) != 0 {
+		t.Fatalf("nothing should evict from an empty catalog: %v", res.Evicted)
+	}
+	if res.Unchanged {
+		t.Error("a first write reported itself as unchanged")
 	}
 
 	tool := host.Get("double")
@@ -241,5 +244,62 @@ func genSpec(name, source string, caps json.RawMessage) agent.GeneratedToolSpec 
 		InputSchema:  json.RawMessage(`{"type":"object"}`),
 		Source:       source,
 		Capabilities: caps,
+	}
+}
+
+// A rewrite that changes nothing says so, and one that changes the source does
+// not. It is the only signal a looping model gets that its write was a no-op.
+func TestGeneratedToolWriteReportsNoOpRewrite(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	host := OpenSandboxedTools(context.Background(), enabledAgentCfg(), store, nil)
+	t.Cleanup(func() { _ = host.Close(context.Background()) })
+	gt := NewGeneratedToolStore(store, host, nil, nil, false)
+
+	spec := genSpec("same", `export default () => 1;`, nil)
+	if _, err := gt.Write(context.Background(), spec); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	res, err := gt.Write(context.Background(), spec)
+	if err != nil {
+		t.Fatalf("rewrite: %v", err)
+	}
+	if !res.Unchanged {
+		t.Error("a byte-identical rewrite was not reported as unchanged")
+	}
+
+	res, err = gt.Write(context.Background(), genSpec("same", `export default () => 2;`, nil))
+	if err != nil {
+		t.Fatalf("rewrite with new source: %v", err)
+	}
+	if res.Unchanged {
+		t.Error("a rewrite with different source was reported as unchanged")
+	}
+}
+
+// A tool whose input_schema is not a JSON object is refused at write time: it
+// becomes the tool's `parameters` in every later LLM request, and a provider
+// that rejects the malformed field fails the whole turn.
+func TestGeneratedToolWriteRefusesNonObjectSchema(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	host := OpenSandboxedTools(context.Background(), enabledAgentCfg(), store, nil)
+	t.Cleanup(func() { _ = host.Close(context.Background()) })
+	d := agent.New()
+	agent.RegisterGeneratedTools(d, NewGeneratedToolStore(store, host, nil, nil, false), false)
+
+	args := []byte(`{"name":"bad","description":"d","source":"export default () => 1;",` +
+		`"input_schema":"{\"type\":\"object\"}"}`)
+	if _, err := d.Dispatch(context.Background(), "tool_write", args); err == nil {
+		t.Fatal("a string input_schema was accepted; it must be refused")
+	}
+	if _, ok, _ := store.GeneratedToolGet("bad"); ok {
+		t.Error("a refused write left a row behind")
 	}
 }

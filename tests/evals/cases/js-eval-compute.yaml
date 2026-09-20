@@ -1,0 +1,26 @@
+id: js-eval-compute
+description: "Answer a one-off computation with js_eval rather than persisting a tool. The sum of the primes below 100000 (454396537) is not something a model can recall or do in its head, so the answer proves the snippet ran."
+track: live
+tier: basic
+tags: [tools, generated, js-eval]
+
+session:
+  config:
+    tools.agent.enabled: true
+    tools.agent.eval: true
+
+prompts:
+  - "What is the sum of all prime numbers below 100000? Run a quick JavaScript snippet to compute it. This is a one-off, so don't save it as a tool."
+
+expect:
+  trajectory:
+    tools_all_of: [js_eval]
+    tools_none_of: [tool_write]
+    no_stall: true
+  answer:
+    matches: "454,?396,?537"
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small
