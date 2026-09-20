@@ -11,6 +11,7 @@
 // cannot escape it, because the guest has nothing else to resolve against.
 
 import { stat, writeFile, appendFile, mkdir, rename, readRange } from "nine:fs";
+import { hunks } from "nine:diff";
 
 const ROOT = "/work";
 
@@ -69,7 +70,7 @@ function resolve(path) {
   return `${ROOT}/${p}`;
 }
 
-export default function ({ path, content, mode, if_unchanged }) {
+export default function ({ path, content, mode, if_unchanged, preview }) {
   const target = resolve(path);
   const body = String(content ?? "");
   const append = String(mode ?? "") === "append";
@@ -90,6 +91,22 @@ export default function ({ path, content, mode, if_unchanged }) {
           `Read it again and redo the change against the current contents.`,
       );
     }
+  }
+
+  // preview shows what the write would change, and changes nothing.
+  if (preview) {
+    const before = info === null ? "" : readWhole(target, info.size);
+    const h = hunks(before, append ? before + body : body);
+    return JSON.stringify({
+      preview: true,
+      path: target,
+      exists: info !== null,
+      added_lines: h.added,
+      removed_lines: h.removed,
+      diff: h.text,
+      truncated: h.truncated,
+      note: "Nothing was written. Call again without preview to apply this.",
+    });
   }
 
   const cut = target.lastIndexOf("/");
@@ -133,4 +150,18 @@ function sameContent(target, size, body) {
     }
   }
   return true;
+}
+
+// readWhole reads a file in windows. A preview of a file too large to diff
+// usefully is bounded here rather than by failing: the caller gets the head,
+// and the counts still describe what would happen to it.
+function readWhole(target, size) {
+  const MAX = 1 << 20;
+  const take = Math.min(size, MAX);
+  let out = "";
+  const WINDOW = 1 << 18;
+  for (let at = 0; at < take; at += WINDOW) {
+    out += new TextDecoder().decode(readRange(target, at, Math.min(WINDOW, take - at)));
+  }
+  return out;
 }
