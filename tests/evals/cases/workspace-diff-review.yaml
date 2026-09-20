@@ -1,0 +1,36 @@
+id: workspace-diff-review
+description: "Report an edit back as a diff a person can review. Guards diff_file against the trashed previous version: the answer must show both the old line and the new one, not a prose summary."
+track: live
+tier: multi_step
+tags: [files, workspace, diff, review]
+
+# Gated until diff reporting ships (adr/file-namespaces.md phase 5).
+requires_env: [NINE_EVAL_WORKSPACE_TOOLS]
+
+setup:
+  files:
+    /work/config/service.yaml: |
+      name: billing-api
+      replicas: 3
+      timeout_seconds: 30
+      region: eu-west-1
+
+prompts:
+  - "In /work/config/service.yaml, change timeout_seconds from 30 to 90."
+  - "Show me exactly what you changed, as a diff."
+
+expect:
+  side_effects:
+    files:
+      /work/config/service.yaml: { contains: "timeout_seconds: 90" }
+  trajectory:
+    tools_all_of: [edit_file, diff_file]
+    max_turns: 3
+    no_stall: true
+  answer:
+    contains: ["-timeout_seconds: 30", "+timeout_seconds: 90"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: medium
