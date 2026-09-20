@@ -1104,6 +1104,26 @@ plugin already accepted, so a model that learned `/work/notes.txt` keeps working
 declaring `fs` with no workspace configured **MUST** fail to load rather than register with
 a capability that silently does nothing. The daemon creates the root if it is absent.
 
+**Deleting is recoverable.** A shipped tool that removes or replaces a workspace file
+**MUST** move the previous contents under `.nine/trash/` rather than destroy them, and
+**MUST** offer a way to list and restore them. Approval gates arm only for interactive
+sessions (`hitl.md` R-HITL.5), so a goal session, a standing agent, or any sub-agent
+deletes with nobody to stop it; recoverability is what stands in for the supervision those
+runs do not have. The trash lives inside the workspace because a path outside it is one the
+operator never offered, and because a rename within the mount costs nothing while a copy
+across volumes costs the whole file. Identical content **MUST NOT** be trashed on
+overwrite, or a tool that rewrites a file unchanged fills the trash with copies of it.
+
+`.nine/` is Nine's own bookkeeping inside the operator's directory. The write tools
+**MUST** refuse it, so the record of what was deleted cannot be rewritten by the agent
+that deleted it, and it **MUST** be excluded from a repository the operator mounted.
+
+A conforming implementation **MUST** bound the trash by **both** age and total size. Age
+alone lets a week of large deletions outgrow the volume; size alone keeps a single stale
+file for ever on a quiet system. Age **MUST** be taken from the trash entry, not the file's
+mtime: a rename preserves mtime, so a trashed file otherwise reports when it was last
+written, which may be long before anyone deleted it.
+
 The workspace has two names: the guest mount and the host directory `shell` runs in and
 prints. A conforming implementation **MUST** accept the host path in a shipped fs tool's
 `path` argument and map it onto the mount, because a model that copies a path out of shell

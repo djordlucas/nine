@@ -14,9 +14,50 @@
 // far more reliably than it writes a regular expression, and an exact match has
 // one obvious meaning when it fails.
 
-import { stat, readRange, writeFile, appendFile, rename, remove } from "nine:fs";
+import { stat, readRange, writeFile, appendFile, rename, remove, mkdir } from "nine:fs";
 
 const ROOT = "/work";
+
+const STATE = `${ROOT}/.nine`;
+const TRASH = `${STATE}/trash`;
+
+// refuseState keeps Nine's own bookkeeping out of reach of the file tools.
+// trash_list and restore_file are the only way into .nine/, and they reach
+// nothing else under it.
+function refuseState(target) {
+  if (target === STATE || target.startsWith(STATE + "/")) {
+    throw new Error(
+      `${target} is Nine's own bookkeeping and is not writable. ` +
+        `Use trash_list and restore_file to reach a deleted file.`,
+    );
+  }
+}
+
+// The entry name the daemon's sweeper parses for age: <UTC>-<random>.
+// Duplicated per tool for the reason resolve() is: a tool's source is served
+// under one specifier, so there is no sibling to import.
+function entryName() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  const stamp =
+    `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}` +
+    `T${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`;
+  const rand = Array.from(crypto.getRandomValues(new Uint8Array(4)))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return `${stamp}-${rand}`;
+}
+
+// trashTo moves a file aside instead of destroying it. Overwriting a file
+// destroys its contents as thoroughly as deleting it does, and the agent doing
+// the overwriting is frequently a session nobody is watching.
+function trashTo(target) {
+  const rel = target.slice(ROOT.length + 1);
+  const dest = `${TRASH}/${entryName()}/${rel}`;
+  mkdir(dest.slice(0, dest.lastIndexOf("/")));
+  rename(target, dest);
+  return dest;
+}
 
 // Duplicated from read_file.js — see the note there.
 function resolve(path) {
@@ -41,6 +82,7 @@ const enc = (s) => new TextEncoder().encode(s);
 
 export default function ({ path, old_text, new_text, expect }) {
   const target = resolve(path);
+  refuseState(target);
 
   const oldStr = String(old_text ?? "");
   if (oldStr === "") throw new Error("old_text is required and cannot be empty");
@@ -87,6 +129,10 @@ export default function ({ path, old_text, new_text, expect }) {
       cursor = at + oldBytes.length;
     }
     copyRange(target, tmp, cursor, info.size - cursor);
+    // The original is moved aside rather than replaced, so the version before
+    // the edit is recoverable. Two renames, no copy: an edit to a 200 MB file
+    // costs the same as an edit to a small one.
+    trashTo(target);
     rename(tmp, target);
   } catch (e) {
     // A failed edit must not leave debris beside the file it did not change.

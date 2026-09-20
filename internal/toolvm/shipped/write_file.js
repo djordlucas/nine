@@ -10,9 +10,50 @@
 // Containment is wazero's pre-open: mkdir walks components inside the mount and
 // cannot escape it, because the guest has nothing else to resolve against.
 
-import { stat, writeFile, appendFile, mkdir } from "nine:fs";
+import { stat, writeFile, appendFile, mkdir, rename, readRange } from "nine:fs";
 
 const ROOT = "/work";
+
+const STATE = `${ROOT}/.nine`;
+const TRASH = `${STATE}/trash`;
+
+// refuseState keeps Nine's own bookkeeping out of reach of the file tools.
+// trash_list and restore_file are the only way into .nine/, and they reach
+// nothing else under it.
+function refuseState(target) {
+  if (target === STATE || target.startsWith(STATE + "/")) {
+    throw new Error(
+      `${target} is Nine's own bookkeeping and is not writable. ` +
+        `Use trash_list and restore_file to reach a deleted file.`,
+    );
+  }
+}
+
+// The entry name the daemon's sweeper parses for age: <UTC>-<random>.
+// Duplicated per tool for the reason resolve() is: a tool's source is served
+// under one specifier, so there is no sibling to import.
+function entryName() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  const stamp =
+    `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}` +
+    `T${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`;
+  const rand = Array.from(crypto.getRandomValues(new Uint8Array(4)))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return `${stamp}-${rand}`;
+}
+
+// trashTo moves a file aside instead of destroying it. Overwriting a file
+// destroys its contents as thoroughly as deleting it does, and the agent doing
+// the overwriting is frequently a session nobody is watching.
+function trashTo(target) {
+  const rel = target.slice(ROOT.length + 1);
+  const dest = `${TRASH}/${entryName()}/${rel}`;
+  mkdir(dest.slice(0, dest.lastIndexOf("/")));
+  rename(target, dest);
+  return dest;
+}
 
 // Duplicated from read_file.js — see the note there.
 function resolve(path) {
@@ -32,6 +73,8 @@ export default function ({ path, content, mode, if_unchanged }) {
   const target = resolve(path);
   const body = String(content ?? "");
   const append = String(mode ?? "") === "append";
+
+  refuseState(target);
 
   const info = stat(target);
   if (info !== null && info.isDirectory) throw new Error(`${target} is a directory`);
@@ -62,6 +105,32 @@ export default function ({ path, content, mode, if_unchanged }) {
     return `appended ${body.length} character(s) to ${target}`;
   }
 
+  // The previous contents go to the trash first, so an overwrite is as
+  // recoverable as a delete. Identical content is not trashed: rewriting a file
+  // with what it already holds is common, and a copy per rewrite would fill the
+  // trash with duplicates of a file that never changed.
+  let trashed = false;
+  if (info !== null && !sameContent(target, info.size, body)) {
+    trashTo(target);
+    trashed = true;
+  }
+
   writeFile(target, body);
-  return `wrote ${target}`;
+  return `wrote ${target}${trashed ? " (previous version is in the trash)" : ""}`;
+}
+
+// sameContent reports whether the file already holds exactly `body`, comparing
+// in windows so a large file is never resident.
+function sameContent(target, size, body) {
+  const bytes = new TextEncoder().encode(body);
+  if (bytes.length !== size) return false;
+  const WINDOW = 1 << 20;
+  for (let at = 0; at < size; at += WINDOW) {
+    const chunk = readRange(target, at, WINDOW);
+    if (chunk.length === 0) return false;
+    for (let i = 0; i < chunk.length; i++) {
+      if (chunk[i] !== bytes[at + i]) return false;
+    }
+  }
+  return true;
 }
