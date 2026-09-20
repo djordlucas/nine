@@ -53,6 +53,10 @@ const hostFSWrite = globalThis.__nine_fs_write;
 const hostFSMkdir = globalThis.__nine_fs_mkdir;
 const hostFSReadDir = globalThis.__nine_fs_readdir;
 const hostFSStat = globalThis.__nine_fs_stat;
+const hostFSReadRange = globalThis.__nine_fs_read_range;
+const hostFSAppend = globalThis.__nine_fs_append;
+const hostFSRename = globalThis.__nine_fs_rename;
+const hostFSUnlink = globalThis.__nine_fs_unlink;
 const hostEnv = globalThis.__nine_env;
 const hostRandom = globalThis.__nine_random;
 const hostState = globalThis.__nine_state;
@@ -65,6 +69,10 @@ globalThis[Symbol.for("nine.internal")] = Object.freeze({
   fsMkdir: (p) => hostFSMkdir(p),
   fsReadDir: (p) => hostFSReadDir(p),
   fsStat: (p) => hostFSStat(p),
+  fsReadRange: (p, off, len) => hostFSReadRange(p, off, len),
+  fsAppend: (p, d) => hostFSAppend(p, d),
+  fsRename: (a, b) => hostFSRename(a, b),
+  fsUnlink: (p) => hostFSUnlink(p),
   env: (n) => hostEnv(n),
   random: (n) => hostRandom(n),
   state: (req) => hostState(req),
@@ -112,6 +120,10 @@ delete globalThis.__nine_fs_write;
 delete globalThis.__nine_fs_mkdir;
 delete globalThis.__nine_fs_readdir;
 delete globalThis.__nine_fs_stat;
+delete globalThis.__nine_fs_read_range;
+delete globalThis.__nine_fs_append;
+delete globalThis.__nine_fs_rename;
+delete globalThis.__nine_fs_unlink;
 delete globalThis.__nine_env;
 delete globalThis.__nine_random;
 delete globalThis.__nine_state;
