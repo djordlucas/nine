@@ -61,6 +61,9 @@ Run "ls -la /tmp" and tell me the five largest files.
 | `edit_file` | Replace exact text in an existing file, leaving the rest unchanged. Never loads the file into context, so it works past the context window. |
 | `move_file` | Move or rename a file. Relinks rather than copying. |
 | `copy_file` | Copy a file, streaming rather than going through context. |
+| `delete_file` | Delete one file or one empty directory. The file moves to the trash rather than being destroyed. |
+| `trash_list` | List what is recoverable from the trash, newest first. |
+| `restore_file` | Restore a trashed file. Never overwrites an existing file. |
 
 **Paths and the workspace root.** When a workspace root is configured
 (`workspace.root` / `NINE_WORKSPACE`), paths resolve against it: a relative path

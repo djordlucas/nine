@@ -137,6 +137,37 @@ var shippedTools = []shippedTool{
 		Declaration: Declaration{FS: []string{"write"}},
 	},
 	{
+		Name:        "delete_file",
+		DisplayName: "Delete File",
+		Description: "Delete one file, or one empty directory, from the WORKSPACE FILESYSTEM. The file is moved to Nine's trash rather than destroyed, so a mistake can be undone with trash_list and restore_file until the trash is swept. There is no recursive delete: delete a directory's contents first. Prefer this over `rm` in the shell, which destroys a file outright.",
+		Schema:      `{"type":"object","required":["path"],"properties":{"path":{"type":"string"}}}`,
+		File:        "shipped/delete_file.js",
+		Declaration: Declaration{FS: []string{"write"}},
+	},
+	{
+		Name:        "trash_list",
+		DisplayName: "List Trash",
+		Description: "List files recoverable from the trash, newest first: everything delete_file removed and every version write_file or edit_file replaced. Pass path to narrow to a path fragment. Each result names a trash entry to hand to restore_file.",
+		Schema: `{"type":"object","properties":{
+			"path":{"type":"string","description":"Only entries whose original path contains this text."},
+			"limit":{"type":"integer","description":"Maximum entries to return (default 50)."}
+		}}`,
+		File:        "shipped/trash_list.js",
+		Declaration: Declaration{FS: []string{"read"}},
+	},
+	{
+		Name:        "restore_file",
+		DisplayName: "Restore File",
+		Description: "Restore a file from the trash to the workspace, by the entry name trash_list reports. Restores to its original path unless to names another. Never overwrites: if something already occupies the destination the call fails, since recovering one file by destroying another is not a recovery.",
+		Schema: `{"type":"object","required":["entry"],"properties":{
+			"entry":{"type":"string","description":"Trash entry name from trash_list, e.g. 20260920T143015Z-1f2e3d4c."},
+			"path":{"type":"string","description":"Which file to restore, when the entry holds more than one."},
+			"to":{"type":"string","description":"Destination path; defaults to where the file came from."}
+		}}`,
+		File:        "shipped/restore_file.js",
+		Declaration: Declaration{FS: []string{"write"}},
+	},
+	{
 		Name:        "http_get",
 		DisplayName: "HTTP GET",
 		Description: "Fetch a URL and return its status and body.",
