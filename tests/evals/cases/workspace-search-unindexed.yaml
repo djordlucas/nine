@@ -1,0 +1,36 @@
+id: workspace-search-unindexed
+description: "Search a file the scan skipped. index_max_file_bytes is lowered to a few bytes so the fixture is over the ceiling, proving a named path is scanned from disk when the index has nothing for it."
+track: live
+tier: multi_step
+tags: [files, workspace, search]
+
+# Gated until the workspace index ships (adr/file-namespaces.md phase 5).
+requires_env: [NINE_EVAL_WORKSPACE_TOOLS]
+
+session:
+  config:
+    workspace.index_max_file_bytes: 64
+
+setup:
+  files:
+    /work/logs/import.log: |
+      2026-09-18T09:00:01Z start import batch=41
+      2026-09-18T09:04:12Z warn slow shard=7
+      2026-09-18T09:06:44Z error checksum mismatch record=88213
+      2026-09-18T09:06:45Z abort batch=41
+
+prompts:
+  - "Search /work/logs/import.log for the checksum error and tell me exactly which record number failed."
+
+expect:
+  trajectory:
+    tools_all_of: [file_search_text]
+    max_turns: 2
+    no_stall: true
+  answer:
+    contains: ["88213"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: medium

@@ -1,0 +1,33 @@
+id: workspace-restore-trash
+description: "Recover a deleted file from the trash. Guards trash_list and restore_file: a mistaken delete in an ungated session must be undoable by the agent that made it."
+track: live
+tier: multi_step
+tags: [files, workspace, trash]
+
+# Gated until the trash ships (adr/file-namespaces.md phase 4).
+requires_env: [NINE_EVAL_WORKSPACE_TOOLS]
+
+setup:
+  files:
+    /work/notes/pricing.md: "Enterprise tier lands at 4200 per seat per year.\n"
+
+prompts:
+  - "Delete /work/notes/pricing.md."
+  - "That was a mistake — bring it back and tell me the per-seat price it contains."
+
+expect:
+  side_effects:
+    files:
+      /work/notes/pricing.md: { contains: "4200" }
+  trajectory:
+    tools_all_of: [delete_file, restore_file]
+    tools_any_of: [trash_list]
+    max_turns: 3
+    no_stall: true
+  answer:
+    contains: ["4200"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: medium
