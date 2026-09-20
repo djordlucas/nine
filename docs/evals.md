@@ -65,6 +65,25 @@ The fix is to remove the model's freedom to change the input: read a **fixture f
 the cap via `session.config` so a small fixture is over-cap. If a case's precondition
 depends on the model following an instruction exactly, it will eventually not.
 
+**Corollary: a case measures the model; don't tune the prompt to pass it.** When a case
+fails on one model, the fix is in nine or in the case — not in wording added to steer that
+model over the bar. `tool-write-call` is the worked example. It failed on `qwen3.5:4b` for
+four reasons that turned out to be nine's (a written tool never reached the writing session;
+a malformed `input_schema` 400'd every later turn; `tool_write` misreported when a tool was
+callable; an identical rewrite reported success), and those were fixed. What remained was the
+model preferring to delegate the call, and the considered fix — a system-prompt line telling
+models not to delegate work their own tools cover — was declined:
+
+- It pushes against `delegate-subagent` and `workflow-plan`, whose point is that the model
+  *does* delegate.
+- Prompt text is only measurable statistically, and 4b's spread on this case was already
+  0/3–2/3 across runs, so several full matrices per variant would be needed to tell a real
+  effect from noise.
+- It taxes every session's context to lift one 4B model over one case's bar.
+
+The case declares `expected_pass_min_class: medium` instead, which records the finding rather
+than hiding it: the grid still prints 4b's score, marked tolerated.
+
 ### Debugging one case: `TestDiagLiveTrajectory`
 
 When a case fails and the report's failure list is not enough, run it **once** with the
@@ -204,7 +223,12 @@ returns events in `seq` order with these payloads (see `journal`):
 
 Mappings:
 
-- **`tools_all_of` / `any_of` / `none_of`** → the set of `tool_start.name` across the session.
+- **`tools_all_of` / `any_of` / `none_of`** → the set of `tool_start.name` in the driven
+  session's own journal. A tool a sub-agent called is **not** in it: a sub-agent journals
+  under its own agent id, and `sub_agents` is what asserts over delegation. A case whose
+  point is that *this* session used a tool therefore fails when the model delegates the
+  call, which is the intended reading — see `tool-write-call`, where a sub-agent's loop is
+  built after the write and could always see the tool.
 - **`max_turns` / `min_turns`** → count of `turn_end` (user-triggered) events.
 - **`no_stall`** → no `turn_end.error == "stall"` and no `supervisor` event of kind stall.
 - **`gap_report`** → a `tool_start.name == "gap_report"` (or the supervisor `gap_reported` event).
