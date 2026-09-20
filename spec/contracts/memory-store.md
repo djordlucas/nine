@@ -86,7 +86,6 @@ the dispatcher calls the embedder and then the store; see
 | `file_fetch` (windowed) | `FileFetchRange(path, offset, limit)` → `FileSlice{content, offset, chars, total}` | reads a window of a large file; offsets are **characters**, sliced in the database so the file is never materialized whole |
 | `file_search_text` | `FileSearchTextScoped(query, pathPrefix, limit)` | FTS5 full-text search ranked by `bm25`, highlighted via `snippet`; an optional path prefix scopes the search to one file or directory |
 | `memory_embed` / `memory_query` | `VectorStore`, `VectorQuery(ns, vec, topK)` | **core-intercepted** |
-| `file_search_semantic` | `VectorQuery` over file chunks | **core-intercepted** |
 | `skill_*` | `SkillUpsert/Get/List/Delete`, `SkillNamesBySource` | see [`skills.md`](skills.md) |
 
 **Search input is untrusted.** `file_search_text` receives whatever the model composed,
