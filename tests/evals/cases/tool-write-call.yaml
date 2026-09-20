@@ -1,0 +1,29 @@
+id: tool-write-call
+description: "Write a reusable tool with tool_write in one turn, then call it by name in a later turn. The function is a one-liner, so the case tests the write-then-call path rather than the model's algorithm skill; its result (3119) is not something a model can work out in its head, so a correct answer means the tool ran."
+track: live
+tier: multi_step
+tags: [tools, generated, self-modification]
+
+session:
+  config:
+    tools.agent.enabled: true
+
+prompts:
+  - "Create a reusable tool named char_code_sum that takes a string `text` and returns the sum of the UTF-16 character codes of every character in it. Declare `text` in its input_schema, and save it with tool_write."
+  - "Use your char_code_sum tool on the text sandboxed-tools-written-by-nine and tell me the result."
+
+expect:
+  trajectory:
+    tools_all_of: [tool_write, char_code_sum]
+    no_stall: true
+  answer:
+    matches: "3,?119"
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  # Measured 2026-09-19: qwen3.5:9b calls the tool it wrote 3/3. qwen3.5:4b sees
+  # it advertised but usually delegates the call to a sub-agent, which the
+  # trajectory does not count — a sub-agent's loop is built after the write, so
+  # counting it would pass the case for the wrong reason.
+  expected_pass_min_class: medium

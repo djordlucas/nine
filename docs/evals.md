@@ -65,6 +65,25 @@ The fix is to remove the model's freedom to change the input: read a **fixture f
 the cap via `session.config` so a small fixture is over-cap. If a case's precondition
 depends on the model following an instruction exactly, it will eventually not.
 
+**Corollary: a case measures the model; don't tune the prompt to pass it.** When a case
+fails on one model, the fix is in nine or in the case — not in wording added to steer that
+model over the bar. `tool-write-call` is the worked example. It failed on `qwen3.5:4b` for
+four reasons that turned out to be nine's (a written tool never reached the writing session;
+a malformed `input_schema` 400'd every later turn; `tool_write` misreported when a tool was
+callable; an identical rewrite reported success), and those were fixed. What remained was the
+model preferring to delegate the call, and the considered fix — a system-prompt line telling
+models not to delegate work their own tools cover — was declined:
+
+- It pushes against `delegate-subagent` and `workflow-plan`, whose point is that the model
+  *does* delegate.
+- Prompt text is only measurable statistically, and 4b's spread on this case was already
+  0/3–2/3 across runs, so several full matrices per variant would be needed to tell a real
+  effect from noise.
+- It taxes every session's context to lift one 4B model over one case's bar.
+
+The case declares `expected_pass_min_class: medium` instead, which records the finding rather
+than hiding it: the grid still prints 4b's score, marked tolerated.
+
 ### Debugging one case: `TestDiagLiveTrajectory`
 
 When a case fails and the report's failure list is not enough, run it **once** with the
@@ -128,6 +147,8 @@ session:
   config:                            # per-case nine.toml overrides (dotted keys)
     tools.max_output_tokens: 150     # honored: the dispatcher output cap, so a small
                                      # fixture can exercise the spill path
+    tools.agent.enabled: true        # honored: turns on tool_write/tool_delete
+    tools.agent.eval: true           # honored: also offers js_eval (needs enabled)
 
 # ── HITL script: canned human answers, matched in order to ask_human calls ──
 human_answers: []                    # e.g. ["yes", "the staging cluster"]
@@ -202,7 +223,12 @@ returns events in `seq` order with these payloads (see `journal`):
 
 Mappings:
 
-- **`tools_all_of` / `any_of` / `none_of`** → the set of `tool_start.name` across the session.
+- **`tools_all_of` / `any_of` / `none_of`** → the set of `tool_start.name` in the driven
+  session's own journal. A tool a sub-agent called is **not** in it: a sub-agent journals
+  under its own agent id, and `sub_agents` is what asserts over delegation. A case whose
+  point is that *this* session used a tool therefore fails when the model delegates the
+  call, which is the intended reading — see `tool-write-call`, where a sub-agent's loop is
+  built after the write and could always see the tool.
 - **`max_turns` / `min_turns`** → count of `turn_end` (user-triggered) events.
 - **`no_stall`** → no `turn_end.error == "stall"` and no `supervisor` event of kind stall.
 - **`gap_report`** → a `tool_start.name == "gap_report"` (or the supervisor `gap_reported` event).
@@ -379,6 +405,8 @@ strongest available assertion for that feature.
 | workflows | multi-step task auto-closes | side-effect `workflows.status=done` | multi_step |
 | sub-agents | `run_agents` fan-out | `sub_agents.count` ≥ 2 | delegation |
 | goals | open-ended request | side-effect goal + pursue session | multi_step |
+| generated tools | `tool_write` a tool, call it in a later turn | `tools_all_of:[tool_write,<name>]` + answer | multi_step |
+| generated tools | one-off computation via `js_eval`, nothing persisted | `tools_all_of:[js_eval]`, `tools_none_of:[tool_write]` + answer | basic |
 | roles | report-writer denied `shell` | `llm_request.tool_advertised_none_of:[shell]` | basic |
 | HITL | needs clarification | `ask_human` fired; resumes on `human_answers` | hitl |
 | approval gate | gated `shell` needs approval | approval prompt; blocked on "no" | hitl |
@@ -421,4 +449,5 @@ To add coverage, or to have an LLM expand the corpus:
 | Live runs are nondeterministic | Track L runs against a real model, so a pass fraction is a sample. Track R is the deterministic half. |
 | Cases assume a clean store | Each case assumes a fresh store and workspace. A case that leaks state breaks the next one rather than failing itself. |
 | No exact-wording assertions | Free-text wording is not asserted on, so a regression that changes only phrasing is invisible to the suite. |
+| Only some `session.config` keys are honored | The harness reads `tools.max_output_tokens`, `tools.agent.enabled` and `tools.agent.eval`. Any other key is ignored without an error, so a case that sets one runs with the production default. |
 | Generated cases need review | The generator prompt produces plausible YAML; nothing checks that a generated case actually forces the behavior it names. |
