@@ -1124,6 +1124,20 @@ file for ever on a quiet system. Age **MUST** be taken from the trash entry, not
 mtime: a rename preserves mtime, so a trashed file otherwise reports when it was last
 written, which may be long before anyone deleted it.
 
+**A change is reviewable.** A conforming implementation **MUST** be able to render a
+workspace change as a diff at three points: before it happens (the write tools take a
+`preview` argument that returns the diff and writes nothing), inside an approval prompt,
+and after the fact against the trashed previous version. An approval gate that names only
+the path asks a human to approve a change it has not shown them.
+
+The prompt's diff **MUST** come from the tool's own preview rather than a second
+implementation: what the human approves has to be what the tool then performs. A preview
+that fails **MUST NOT** fail the approval — the gate falls back to naming the path, since a
+prompt with less detail is better than a tool that cannot run. Both the diff and the prompt
+**MUST** be bounded; an oversized change **MUST** still report how many lines it touches,
+because a prompt that scrolls is one nobody reads, and a truncated diff that renders as
+empty hides the largest changes exactly when they matter most.
+
 The workspace has two names: the guest mount and the host directory `shell` runs in and
 prints. A conforming implementation **MUST** accept the host path in a shipped fs tool's
 `path` argument and map it onto the mount, because a model that copies a path out of shell
