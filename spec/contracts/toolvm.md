@@ -1095,7 +1095,15 @@ A shipped tool that declares `fs` is mounted at the operator's workspace
 (`[workspace].root`), under the fixed guest path `/work` — the alias the `files`
 plugin already accepted, so a model that learned `/work/notes.txt` keeps working. A tool
 declaring `fs` with no workspace configured **MUST** fail to load rather than register with
-a capability that silently does nothing.
+a capability that silently does nothing. The daemon creates the root if it is absent.
+
+The workspace has two names: the guest mount and the host directory `shell` runs in and
+prints. A conforming implementation **MUST** accept the host path in a shipped fs tool's
+`path` argument and map it onto the mount, because a model that copies a path out of shell
+output otherwise names a file the guest has no name for. The mapping is argument
+normalization performed by the host, which knows both names; the guest is still told only
+its mount (R-TVM.8), and a path outside the root is passed through unchanged for the
+pre-open to refuse.
 
 **A shipped tool has no more access to host state than any other.** This is the tier's
 sharpest constraint and the easiest to forget, because the code is first-party. The

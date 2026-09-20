@@ -157,7 +157,7 @@ and no source tree** (N3).
   database file path.
 - `NINE_BIN` and `NINE_PLUGIN_SOCKET` are passed to every plugin subprocess (the plugin
   binary directory and the per-plugin Unix socket the plugin listens on); some plugins
-  receive extra env (e.g. `NINE_WORKSPACE` for `files`, `NINE_MCP_SERVER` for an
+  receive extra env (e.g. `NINE_WORKSPACE` for `files` and `shell`, `NINE_MCP_SERVER` for an
   `mcp` bridge instance).
 
 ---

@@ -74,7 +74,7 @@ environment comes from a hard-coded switch in `factory`:
 ```go
 func (cfg *Config) PluginEnvs(name string) []string {
 	switch name {
-	case "files":   // NINE_WORKSPACE
+	case "files", "shell":   // NINE_WORKSPACE
 	}
 }
 ```
