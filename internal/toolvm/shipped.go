@@ -71,8 +71,14 @@ var shippedTools = []shippedTool{
 	{
 		Name:        "read_file",
 		DisplayName: "Read File",
-		Description: "Read a file from the WORKSPACE FILESYSTEM. Paths resolve under /work; a relative path is taken as relative to it. This is not the memory file store — use file_fetch for a path you stored with file_store.",
-		Schema:      `{"type":"object","required":["path"],"properties":{"path":{"type":"string","description":"Path under the workspace, e.g. notes.txt or /work/notes.txt"}}}`,
+		Description: "Read a file from the WORKSPACE FILESYSTEM. Paths resolve under /work; a relative path is taken as relative to it. Read part of a large file with lines (\"120-180\") or with offset and limit, rather than pulling the whole thing into context. Pass line_numbers when you intend to edit, so you can name the exact text for edit_file. A windowed read also returns a version token for write_file's if_unchanged. This is not the memory file store — use file_fetch for a path you stored with file_store.",
+		Schema: `{"type":"object","required":["path"],"properties":{
+			"path":{"type":"string","description":"Path under the workspace, e.g. notes.txt or /work/notes.txt"},
+			"lines":{"type":"string","description":"1-based inclusive line range, e.g. \"120-180\" or \"120\". Preferred over offset/limit for text."},
+			"offset":{"type":"integer","description":"Byte offset to start at (default 0)."},
+			"limit":{"type":"integer","description":"Maximum bytes to return; omit or 0 for the rest of the file."},
+			"line_numbers":{"type":"boolean","description":"Prefix each line with its number."}
+		}}`,
 		File:        "shipped/read_file.js",
 		Declaration: Declaration{FS: []string{"read"}},
 	},
@@ -83,9 +89,51 @@ var shippedTools = []shippedTool{
 		// path", and the memory file store already disambiguates itself against
 		// read_file — the pointer needs to go both ways, or a prompt phrased as
 		// "store two files" lands here and the searchable copy is never made.
-		Description: "Write content to a file on the WORKSPACE FILESYSTEM, creating parent directories as needed. Paths resolve under /work. This is not the memory file store: a file written here is not full-text searchable and file_search_text will not find it — use file_store for anything you intend to look up later.",
-		Schema:      `{"type":"object","required":["path","content"],"properties":{"path":{"type":"string"},"content":{"type":"string"}}}`,
+		Description: "Write content to a file on the WORKSPACE FILESYSTEM, creating parent directories as needed. Paths resolve under /work. Replaces the file whole: to change part of an existing file use edit_file, and to add to the end pass mode=append. This is not the memory file store: a file written here is not full-text searchable and file_search_text will not find it — use file_store for anything you intend to look up later.",
+		Schema: `{"type":"object","required":["path","content"],"properties":{
+			"path":{"type":"string"},
+			"content":{"type":"string"},
+			"mode":{"type":"string","enum":["replace","append"],"description":"replace (default) rewrites the file; append adds to the end without reading it."},
+			"if_unchanged":{"type":"string","description":"A version token from read_file. The write fails if the file changed since then."}
+		}}`,
 		File:        "shipped/write_file.js",
+		Declaration: Declaration{FS: []string{"write"}},
+	},
+	{
+		Name:        "edit_file",
+		DisplayName: "Edit File",
+		Description: "Replace exact text in a WORKSPACE FILESYSTEM file, leaving the rest byte-for-byte unchanged. Use this rather than write_file whenever the file already exists: it never loads the file into your context, so it works on a file far larger than your context window. old_text must match the file exactly, including indentation and line breaks — read the region with read_file(lines) first. The call fails, changing nothing, when the number of matches is not what you said to expect.",
+		Schema: `{"type":"object","required":["path","old_text","new_text"],"properties":{
+			"path":{"type":"string"},
+			"old_text":{"type":"string","description":"Exact text to replace. Include enough surrounding lines to make it unique."},
+			"new_text":{"type":"string","description":"Replacement text. Empty deletes the matched text."},
+			"expect":{"description":"How many occurrences to replace: a positive integer (default 1), or \"all\"."}
+		}}`,
+		File:        "shipped/edit_file.js",
+		Declaration: Declaration{FS: []string{"write"}},
+	},
+	{
+		Name:        "move_file",
+		DisplayName: "Move File",
+		Description: "Move or rename a file inside the WORKSPACE FILESYSTEM. The file is relinked, not copied and not read, so this costs nothing for a large file and never spends context on its contents. Refuses an existing destination unless overwrite is true.",
+		Schema: `{"type":"object","required":["from","to"],"properties":{
+			"from":{"type":"string"},
+			"to":{"type":"string"},
+			"overwrite":{"type":"boolean","description":"Replace the destination if it exists (default false)."}
+		}}`,
+		File:        "shipped/move_file.js",
+		Declaration: Declaration{FS: []string{"write"}},
+	},
+	{
+		Name:        "copy_file",
+		DisplayName: "Copy File",
+		Description: "Copy a file inside the WORKSPACE FILESYSTEM. The contents stream from one path to the other without passing through your context, so a large file costs nothing to duplicate. Refuses an existing destination unless overwrite is true.",
+		Schema: `{"type":"object","required":["from","to"],"properties":{
+			"from":{"type":"string"},
+			"to":{"type":"string"},
+			"overwrite":{"type":"boolean","description":"Replace the destination if it exists (default false)."}
+		}}`,
+		File:        "shipped/copy_file.js",
 		Declaration: Declaration{FS: []string{"write"}},
 	},
 	{

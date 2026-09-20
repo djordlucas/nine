@@ -10,7 +10,7 @@
 // Containment is wazero's pre-open: mkdir walks components inside the mount and
 // cannot escape it, because the guest has nothing else to resolve against.
 
-import { writeFile, mkdir } from "nine:fs";
+import { stat, writeFile, appendFile, mkdir } from "nine:fs";
 
 const ROOT = "/work";
 
@@ -28,12 +28,40 @@ function resolve(path) {
   return `${ROOT}/${p}`;
 }
 
-export default function ({ path, content }) {
+export default function ({ path, content, mode, if_unchanged }) {
   const target = resolve(path);
+  const body = String(content ?? "");
+  const append = String(mode ?? "") === "append";
+
+  const info = stat(target);
+  if (info !== null && info.isDirectory) throw new Error(`${target} is a directory`);
+
+  // if_unchanged carries the version read_file returned. Two sub-agents writing
+  // one file otherwise both succeed and the later one silently wins; with the
+  // token, the loser is told what happened while its copy is still recoverable.
+  if (if_unchanged !== undefined && if_unchanged !== null && String(if_unchanged) !== "") {
+    const now = info === null ? "absent" : `${Math.round(info.mtimeMs)}-${info.size}`;
+    if (now !== String(if_unchanged)) {
+      throw new Error(
+        `${target} changed since you read it (version ${now}, you passed ${if_unchanged}). ` +
+          `Read it again and redo the change against the current contents.`,
+      );
+    }
+  }
+
   const cut = target.lastIndexOf("/");
   const parent = cut <= 0 ? "" : target.slice(0, cut);
   // Idempotent and cheap: an existing directory is success.
   if (parent && parent !== ROOT) mkdir(parent);
-  writeFile(target, String(content ?? ""));
+
+  // Appending is not a whole-file rewrite with extra steps: adding a line to a
+  // log otherwise costs the file's size in memory and loses it entirely if the
+  // write is cut short.
+  if (append) {
+    appendFile(target, body);
+    return `appended ${body.length} character(s) to ${target}`;
+  }
+
+  writeFile(target, body);
   return `wrote ${target}`;
 }
