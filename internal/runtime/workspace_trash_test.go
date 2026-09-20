@@ -12,13 +12,12 @@ import (
 // .nine/trash/<UTC>-<random>/<original relative path>.
 func seedTrashEntry(t *testing.T, root string, at time.Time, rel, body string) string {
 	t.Helper()
-	name := at.UTC().Format("20060102T150405Z") + "-" + strings.Repeat("a", 8)
-	// A second entry in the same second needs a distinct name; the suffix is
+	// Two entries seeded in the same second need distinct names; the suffix is
 	// random in production, and unique-per-call here.
+	var name string
 	for i := 0; ; i++ {
-		candidate := at.UTC().Format("20060102T150405Z") + "-" + string(rune('a'+i)) + "0000000"
-		if _, err := os.Stat(filepath.Join(root, WorkspaceTrashDir, candidate)); os.IsNotExist(err) {
-			name = candidate
+		name = at.UTC().Format("20060102T150405Z") + "-" + string(rune('a'+i)) + "0000000"
+		if _, err := os.Stat(filepath.Join(root, WorkspaceTrashDir, name)); os.IsNotExist(err) {
 			break
 		}
 	}
