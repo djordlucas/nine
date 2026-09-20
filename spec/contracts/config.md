@@ -108,6 +108,9 @@ show_context = true             # show the context-usage bar (a ⚠ warning show
 root = ""                       # the directory agent file tools and `shell` work in
 trash_retention_days = 7        # age bound on .nine/trash/; -1 disables it
 trash_max_bytes      = 1073741824  # size bound on .nine/trash/, oldest entry first
+scan_interval_seconds = 60         # workspace rescan period
+index_max_file_bytes  = 8388608    # per-file index ceiling; larger files still list
+index_max_files       = 50000      # per-scan bound; search reports truncation
 ```
 
 Notes:

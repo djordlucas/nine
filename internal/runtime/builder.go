@@ -70,6 +70,11 @@ type LoopConfig struct {
 	// eval harness, where job_wait falls back to polling.
 	JobWaiters *JobWaiters
 
+	// Workspace is the index over the operator's directory, or nil when no
+	// workspace is configured. It backs list_files and the workspace half of
+	// file_search_text.
+	Workspace agent.WorkspaceBackend
+
 	// Tools is the sandboxed-tool host (spec/contracts/toolvm.md), or nil when
 	// the subsystem is disabled. Its tools are registered and advertised
 	// alongside plugin tools and are subject to the same role allowlist.
@@ -746,6 +751,9 @@ func (f *AgentBuilder) registerCoreTools(d *agent.Dispatcher, lc LoopConfig, age
 		f.cfg.Sup.Post(Event{Kind: EventGapReported, AgentID: agentID, Payload: desc})
 	})
 	agent.RegisterMemoryTools(d, lc.Memory, lc.Embedder, protectedKeyPrefixes, lc.SurfaceMemories)
+	// The workspace index, when one is configured: file_search_text then covers
+	// the operator's directory as well as the store, and list_files exists.
+	d.SetWorkspace(lc.Workspace)
 	agent.RegisterSkillTools(d, lc.Memory, lc.Embedder)
 	agent.RegisterDocTools(d, lc.Memory, lc.Embedder)
 	agent.RegisterQueuedTools(d, lc.Memory, func() string { return agentID }, onConsumed)

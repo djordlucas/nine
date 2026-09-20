@@ -42,7 +42,7 @@ a fake repository.
 
 ## R-MEM.2 — schema (exactly these tables)
 
-The reference database contains these **twenty** tables. An implementation **MUST**
+The reference database contains these **twenty-one** tables. An implementation **MUST**
 provide equivalent storage for each; it **MUST NOT** require additional operational
 tables to be agent-visible (R-MEM.4).
 
@@ -67,6 +67,7 @@ tables to be agent-visible (R-MEM.4).
 | `jobs` | long-running work tracked across turns and restarts, for both backends — a plugin's detached goroutine and a resumable sandboxed tool (see [`plugin.md`](plugin.md), [`toolvm.md`](toolvm.md) R-TVM.19). Was `plugin_jobs`; `backend` says which, and `cursor`/`calls` belong to the tool backend | daemon-private |
 | `standing_tools` | resumable tools the daemon runs indefinitely on their own cadence (see [`toolvm.md`](toolvm.md) R-TVM.20); `wake_agent` makes one a standing agent's condition trigger. Separate from `jobs`: a job is conversation-owned and terminates, a standing run is operator-owned, reconciled by a stable id, and has no terminal state | daemon-private |
 | `tool_state` | a sandboxed tool's durable state, keyed `(tool, scope_key, key)` — the store behind the `state` capability (see [`toolvm.md`](toolvm.md) R-TVM.18). Deliberately separate from `kv`, which is Nine's own namespace and must not become tool-writable | daemon-private |
+| `workspace_files` | the workspace index: one row per file under `[workspace].root`, with its size, mtime, whether its text is searchable and why not. Its companion `workspace_fts` is **contentless** — postings only, with snippets read back from the file — because the text's home is the operator's disk, not this database (R-MEM.12) | daemon-private |
 
 There is **no `plugin_registry` table** (plugins are immutable image content) and **no
 `tasks` table** (finite work is a sub-agent or a workflow step).
@@ -268,6 +269,35 @@ silently dismantle configured behaviour.
 Retention has three distinguishable states — unset (the default applies), a
 number, and `0` (disabled) — so the configuration **MUST NOT** collapse the first
 and last.
+
+---
+
+## R-MEM.12 — the workspace index
+
+The workspace is shared with the operator and with whatever they run in it, so the index
+over it **MUST** be derived from the filesystem. A write through a Nine tool **MUST NOT**
+be treated as the record of what exists: a bind mount arrives full, a `git pull` adds a
+thousand files, and a dropped file was never a tool call at all.
+
+A conforming implementation **MUST**:
+
+- **Scan at startup and on an interval**, and **MUST** refresh the subtree a search or
+  listing names before answering it, so a file written seconds ago is already there.
+- **Keep no second copy of the text.** The FTS table is contentless; snippets are read
+  from the file. An external-content table would double the disk a repository costs, and
+  its snippets would quote the file as it was indexed rather than as it is.
+- **Record what it did not index, and why.** An oversized file, a binary, an unreadable
+  one: each still lists, with a reason, and a search reports how many files under its
+  prefix it could not look at. A search that answers "no matches" without saying it never
+  read half the tree teaches the agent the text is not there.
+- **Search a named file that carries no postings** by reading it. The per-file ceiling
+  decides what is searchable *without being asked*, not what is reachable.
+- **Not conclude anything from a truncated scan.** A scan that stopped at its file bound
+  has not seen the rest of the tree, so it **MUST NOT** drop the rows it never reached.
+
+The per-file ceiling exists for **churn**, not storage: an FTS document has no append, so
+a file that grows retracts and retokenizes its whole contents on every scan that sees it
+change.
 
 ---
 
