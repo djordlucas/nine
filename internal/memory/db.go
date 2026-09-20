@@ -290,6 +290,30 @@ func initSchema(d db) error {
 			INSERT INTO files_fts(files_fts, rowid, content) VALUES('delete', old.rowid, old.content);
 			INSERT INTO files_fts(rowid, content)            VALUES (new.rowid, new.content);
 		END`,
+		// The workspace index (workspace_index.go). Derived state over the
+		// operator's directory: a file Nine never wrote — a bind mount that
+		// arrived full, a git pull, a dropped file — is searchable because the
+		// scan found it, not because a tool recorded it.
+		`CREATE TABLE IF NOT EXISTS workspace_files (
+			path         TEXT PRIMARY KEY,
+			size         INTEGER NOT NULL,
+			mtime_ms     INTEGER NOT NULL,
+			indexed      INTEGER NOT NULL DEFAULT 0,
+			reason       TEXT NOT NULL DEFAULT '',
+			first_seen   TEXT NOT NULL,
+			last_changed TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS workspace_files_changed ON workspace_files(last_changed)`,
+		// Contentless, unlike files_fts: the text's home is the operator's disk,
+		// and an external-content table here would put a second copy of every
+		// indexed file in this database. contentless_delete lets a changed file
+		// retract its postings without the old text, which nothing keeps.
+		`CREATE VIRTUAL TABLE IF NOT EXISTS workspace_fts USING fts5(
+			content,
+			content='',
+			contentless_delete=1,
+			tokenize='porter unicode61 remove_diacritics 2'
+		)`,
 		// vectors.embedding holds packed little-endian float32 (see encodeVector).
 		// Similarity is computed in Go: the Postgres version's index on
 		// (namespace, dim) was a plain btree, never an ANN index, so ranking was

@@ -559,6 +559,19 @@ type WorkspaceConfig struct {
 	// bound alone is not enough: a week of large deletions can outgrow a volume
 	// long before anything expires. Zero uses DefaultTrashMaxBytes.
 	TrashMaxBytes int64 `toml:"trash_max_bytes"`
+
+	// ScanIntervalSeconds is how often the workspace is rescanned for files
+	// changed outside Nine. Zero uses 60s.
+	ScanIntervalSeconds int `toml:"scan_interval_seconds"`
+
+	// IndexMaxFileBytes is the largest file whose text is indexed. The bound is
+	// about churn rather than storage: FTS5 rewrites a document's whole posting
+	// list when it changes, so a large file that grows costs its full size in
+	// tokenization on every scan that sees it. Zero uses 8 MiB.
+	IndexMaxFileBytes int64 `toml:"index_max_file_bytes"`
+
+	// IndexMaxFiles bounds one scan. Zero uses 50,000.
+	IndexMaxFiles int `toml:"index_max_files"`
 }
 
 // Trash defaults. Retention matches the spill window: both are debris from work
@@ -579,6 +592,30 @@ func (w WorkspaceConfig) TrashRetentionDuration() time.Duration {
 	default:
 		return time.Duration(w.TrashRetention) * 24 * time.Hour
 	}
+}
+
+// ScanIntervalOrDefault resolves the rescan period.
+func (w WorkspaceConfig) ScanIntervalOrDefault() time.Duration {
+	if w.ScanIntervalSeconds <= 0 {
+		return 60 * time.Second
+	}
+	return time.Duration(w.ScanIntervalSeconds) * time.Second
+}
+
+// IndexMaxFileBytesOrDefault resolves the per-file index ceiling (8 MiB).
+func (w WorkspaceConfig) IndexMaxFileBytesOrDefault() int64 {
+	if w.IndexMaxFileBytes <= 0 {
+		return 8 << 20
+	}
+	return w.IndexMaxFileBytes
+}
+
+// IndexMaxFilesOrDefault resolves the per-scan file bound.
+func (w WorkspaceConfig) IndexMaxFilesOrDefault() int {
+	if w.IndexMaxFiles <= 0 {
+		return 50_000
+	}
+	return w.IndexMaxFiles
 }
 
 // TrashSizeBound resolves the configured size ceiling; zero means the default.

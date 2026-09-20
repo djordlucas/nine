@@ -65,6 +65,7 @@ Run "ls -la /tmp" and tell me the five largest files.
 | `trash_list` | List what is recoverable from the trash, newest first. |
 | `restore_file` | Restore a trashed file. Never overwrites an existing file. |
 | `diff_file` | Show what changed in a file, as a unified diff against the version before the last change. |
+| `list_files` | List workspace files by prefix, glob, or what changed since a timestamp. |
 
 **Paths and the workspace root.** When a workspace root is configured
 (`workspace.root` / `NINE_WORKSPACE`), paths resolve against it: a relative path
