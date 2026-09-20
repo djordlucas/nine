@@ -51,7 +51,7 @@ There are exactly two ways embeddings get produced, and they **MUST** be kept di
    relevance ranking (cached by tool name, held **in memory** — not written to the
    `vectors` table, so there is no `tools:` namespace). These call the embedder directly.
 2. **Agent-invoked (core-intercepted tools).** `memory_embed`, `memory_query`,
-   `file_search_semantic`, `skill_search`, and `tool_search` are tools the agent calls;
+   `skill_search` and `tool_search` are tools the agent calls;
    the **dispatcher** intercepts them, calls the embedder, and routes to the store (or,
    for `tool_search`, ranks the in-memory tool-description vectors). Each is embedder-gated
    — absent an embedder it is neither registered nor advertised. The agent never holds the

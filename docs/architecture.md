@@ -429,9 +429,8 @@ collision is a load failure, not a silent override:
                         • gap_report
  shell, read_file,      • memory_embed /        tools.d/*.js|.wasm  (developer)
  write_file, http_get,    memory_query          store rows          (generated)
- web_search, skill_*,   • file_search_semantic  tool_write / tool_delete /
- time, mcp tools, …     • run_agent/run_agents    js_eval are themselves core
-                        • workflow_* / goal_*
+ web_search, skill_*,   • run_agent/run_agents  tool_write / tool_delete /
+ time, mcp tools, …     • workflow_* / goal_*     js_eval are themselves core
 ```
 
 The three differ in *isolation*, which is the reason to have three: a plugin is
