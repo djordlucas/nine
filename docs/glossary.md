@@ -360,7 +360,8 @@ plugin manager's responsibility. See [Plugins § Plugin Lifecycle](plugins.md#pl
 
 **Default plugins** — Shipped with Nine and auto-loaded at startup: `shell`
 (`shell`), the workspace file tools (`read_file`, `write_file`, `edit_file`,
-`move_file`, `copy_file`, `delete_file`, `trash_list`, `restore_file`), `http`
+`move_file`, `copy_file`, `delete_file`, `trash_list`, `restore_file`,
+`diff_file`), `http`
 (`http_get`, `http_post`, `web_search`, `web_page_read`), and `time` (`time`).
 Memory/file/vector and skill tools are core-intercepted, not a subprocess
 plugin. See [Plugins](plugins.md).

@@ -15,6 +15,7 @@
 // one obvious meaning when it fails.
 
 import { stat, readRange, writeFile, appendFile, rename, remove, mkdir } from "nine:fs";
+import { hunks } from "nine:diff";
 
 const ROOT = "/work";
 
@@ -80,7 +81,7 @@ const WINDOW = 1 << 20;
 
 const enc = (s) => new TextEncoder().encode(s);
 
-export default function ({ path, old_text, new_text, expect }) {
+export default function ({ path, old_text, new_text, expect, preview }) {
   const target = resolve(path);
   refuseState(target);
 
@@ -119,6 +120,11 @@ export default function ({ path, old_text, new_text, expect }) {
         `or pass expect to match the count you intend.`,
     );
   }
+  // preview shows the change without making it. The diff covers a window around
+  // each match rather than the file: the tool knows the offsets, so a 200 MB
+  // file costs the same preview as a small one.
+  if (preview) return previewHunks(target, info.size, hits, oldBytes, newStr);
+
   const tmp = `${target}.nine-edit-${Date.now().toString(36)}`;
   try {
     writeFile(tmp, new Uint8Array(0));
@@ -221,4 +227,52 @@ function countLines(path, offset) {
     for (let at = chunk.indexOf(0x0a); at !== -1; at = chunk.indexOf(0x0a, at + 1)) line++;
   }
   return line;
+}
+
+// previewHunks renders the diff of each replacement in context, reading only
+// the neighbourhood of the match.
+function previewHunks(target, size, hits, oldBytes, newStr) {
+  const PAD = 2000; // bytes of surrounding text, trimmed to line boundaries
+  const parts = [];
+  let added = 0;
+  let removed = 0;
+
+  for (const at of hits) {
+    const from = Math.max(0, at - PAD);
+    const to = Math.min(size, at + oldBytes.length + PAD);
+    const region = new TextDecoder().decode(readRange(target, from, to - from));
+    const oldStr = new TextDecoder().decode(oldBytes);
+    const idx = region.indexOf(oldStr);
+    if (idx < 0) continue;
+    const after = region.slice(0, idx) + newStr + region.slice(idx + oldStr.length);
+    const h = hunks(trimToLines(region, from > 0, to < size), trimToLines(after, from > 0, to < size));
+    if (h.text === "") continue;
+    parts.push(h.text);
+    added += h.added;
+    removed += h.removed;
+  }
+
+  return JSON.stringify({
+    preview: true,
+    path: target,
+    occurrences: hits.length,
+    added_lines: added,
+    removed_lines: removed,
+    diff: parts.join("\n"),
+    note: "Nothing was written. Call again without preview to apply this.",
+  });
+}
+
+// trimToLines drops the partial first and last lines of a byte window, so a
+// diff never reports a line the window merely cut in half.
+function trimToLines(text, cutHead, cutTail) {
+  if (cutHead) {
+    const nl = text.indexOf("\n");
+    if (nl >= 0) text = text.slice(nl + 1);
+  }
+  if (cutTail) {
+    const nl = text.lastIndexOf("\n");
+    if (nl >= 0) text = text.slice(0, nl);
+  }
+  return text;
 }

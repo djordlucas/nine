@@ -64,6 +64,7 @@ Run "ls -la /tmp" and tell me the five largest files.
 | `delete_file` | Delete one file or one empty directory. The file moves to the trash rather than being destroyed. |
 | `trash_list` | List what is recoverable from the trash, newest first. |
 | `restore_file` | Restore a trashed file. Never overwrites an existing file. |
+| `diff_file` | Show what changed in a file, as a unified diff against the version before the last change. |
 
 **Paths and the workspace root.** When a workspace root is configured
 (`workspace.root` / `NINE_WORKSPACE`), paths resolve against it: a relative path
