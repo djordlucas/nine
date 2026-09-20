@@ -83,6 +83,8 @@ type AssemblyConfig struct {
 	TaskTimeoutSeconds int
 	HITL               *HITL
 	ApprovalTools      []string
+	// Workspace is the index over [workspace].root, or nil when unset.
+	Workspace agent.WorkspaceBackend
 	GateSubAgents      bool
 	PlanApproval       string
 	PlanMode           string
@@ -123,6 +125,7 @@ func Assemble(c AssemblyConfig) *Assembly {
 			MaxJobsTotal:           c.MaxJobsTotal,
 			JobWaiters:             c.JobWaiters,
 			Tools:                  c.Tools,
+			Workspace:              c.Workspace,
 			GeneratedTools:         c.GeneratedTools,
 			GeneratedEval:          c.GeneratedEval,
 		},

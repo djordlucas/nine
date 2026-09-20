@@ -146,6 +146,14 @@ root = "./dist"
 # trash_retention_days = 7        # -1 disables the age bound, leaving size alone
 # trash_max_bytes      = 1073741824
 
+# Files here are full-text searchable, including ones Nine never wrote: a bind
+# mount that arrived full, a git pull, a file you dropped in. A background scan
+# keeps the index in step with the directory, and a search refreshes the subtree
+# it is about to look at.
+# scan_interval_seconds = 60
+# index_max_file_bytes  = 8388608     # larger files still list, and are searched when named
+# index_max_files       = 50000       # a scan stopping here says so in search results
+
 [skills]
 # Your own skills and roles, seeded alongside the built-ins on every boot
 # (docs/skills.md). Layout mirrors the built-ins:

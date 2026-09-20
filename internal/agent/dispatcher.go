@@ -59,6 +59,10 @@ func (e *ApprovalError) Unwrap() error { return e.Err }
 type Dispatcher struct {
 	handlers map[string]func(context.Context, json.RawMessage) (string, error)
 	backends map[string]string
+	// workspace is the index over the operator's directory, when one is
+	// configured. file_search_text consults it in addition to the store, so one
+	// search covers both what a tool stored and what is on disk.
+	workspace WorkspaceBackend
 	hooks    map[string][]Hook
 	gated    map[string]bool
 	approve  ApprovalFn

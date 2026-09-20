@@ -276,7 +276,7 @@ func RegisterMemoryTools(d *Dispatcher, store *memory.Store, embedder embed.Embe
 		return store.FileListString(req.Prefix)
 	}
 
-	d.handlers["file_search_text"] = func(_ context.Context, args json.RawMessage) (string, error) {
+	d.handlers["file_search_text"] = func(ctx context.Context, args json.RawMessage) (string, error) {
 		var req struct {
 			Query string `json:"query"`
 			Path  string `json:"path"`
@@ -288,6 +288,15 @@ func RegisterMemoryTools(d *Dispatcher, store *memory.Store, embedder embed.Embe
 		results, err := store.FileSearchTextScoped(req.Query, req.Path, req.Limit)
 		if err != nil {
 			return "", err
+		}
+		// The workspace is the other place text lives. Searching only the store
+		// is what made a file written with write_file invisible to the tool that
+		// exists to find it.
+		if d.workspace != nil && !strings.HasPrefix(req.Path, SpillPathPrefix) {
+			hits, skipped, scanned, werr := d.workspace.Search(ctx, req.Query, req.Path, req.Limit)
+			if werr == nil {
+				return workspaceSearchOutput(store, req.Query, req.Path, results, hits, skipped, scanned)
+			}
 		}
 		// A bare "null" for no hits teaches the model nothing, and a live model
 		// answered it by inventing a value. Say why there were none — and if the
