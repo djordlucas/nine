@@ -242,6 +242,12 @@ megabytes:
 A paging loop over `readRange` holds one window whatever the file's size, which is how
 `edit_file` changes a line in a 200 MB log.
 
+`nine:diff` renders a change for a person to read: `lineDiff` and `unified` compare two
+strings line by line, and `hunks(a, b, { context, maxLines })` returns only the changed
+regions with surrounding context, plus the added and removed counts. Prefer `hunks` for
+anything a human sees — `unified` emits every line of both inputs, which is unreadable for
+one line changed in a file of five thousand.
+
 **Nothing here is what confines you.** The mount is a wazero pre-open, so a tool scoped to
 `/data` cannot climb out of it — `..`, an absolute path, and a symlink all fail — without
 Nine writing a single check. The capability checks in `nine:fs` exist only so that an

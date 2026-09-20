@@ -935,7 +935,13 @@ func (f *AgentBuilder) registerApprovalGates(d *agent.Dispatcher, askerID string
 		if genSet[toolName] && onCapability && !declaresCapability(args) && !standing {
 			return nil
 		}
-		ans, err := hitl.AskFrom(ctx, askerID, gate.owner, gate.origin, approvalQuestion(toolName, args), nil)
+		// A path names the file; a diff names the change, which is what the
+		// human is actually being asked about (approval_diff.go).
+		question := approvalQuestion(toolName, args)
+		if diff := approvalDiff(ctx, f.cfg.Loop.Tools, toolName, args); diff != "" {
+			question = approvalQuestionWithDiff(toolName, args, diff)
+		}
+		ans, err := hitl.AskFrom(ctx, askerID, gate.owner, gate.origin, question, nil)
 		if err != nil {
 			return &agent.ApprovalError{Err: fmt.Errorf("tool %s approval failed: %w", toolName, err)}
 		}
@@ -1029,6 +1035,20 @@ func approvalQuestion(toolName string, args json.RawMessage) string {
 		detail = "Args: " + a
 	}
 	return fmt.Sprintf("Run tool %q?\n\n%s\n\nEnter \"yes\" to proceed, anything else to cancel.", toolName, detail)
+}
+
+// approvalQuestionWithDiff is approvalQuestion for a file tool whose change can
+// be shown. The path stays — it says which file — and the diff follows it.
+func approvalQuestionWithDiff(toolName string, args json.RawMessage, diff string) string {
+	var fields map[string]json.RawMessage
+	_ = json.Unmarshal(args, &fields)
+	var path string
+	if raw, ok := fields["path"]; ok {
+		_ = json.Unmarshal(raw, &path)
+	}
+	return fmt.Sprintf(
+		"Run tool %q?\n\nPath: %s\n\n%s\n\nEnter \"yes\" to proceed, anything else to cancel.",
+		toolName, path, diff)
 }
 
 // capsSummary renders a generated tool's declared capabilities for the approval
