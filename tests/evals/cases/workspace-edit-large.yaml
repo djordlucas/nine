@@ -1,0 +1,39 @@
+id: workspace-edit-large
+description: "Change one region of a file with edit_file instead of rewriting it whole. Guards the large-file edit path: the model must target exact text, and the untouched regions must survive byte-for-byte."
+track: live
+tier: multi_step
+tags: [files, workspace, edit]
+
+# Gated until the workspace file tools ship (adr/file-namespaces.md phase 3).
+# Reported as skipped, not failed, while edit_file does not exist.
+requires_env: [NINE_EVAL_WORKSPACE_TOOLS]
+
+setup:
+  files:
+    /work/config/service.yaml: |
+      # service configuration — do not reformat
+      name: billing-api
+      replicas: 3
+      region: eu-west-1
+      timeout_seconds: 30
+      retry_budget: 0.2
+      marker_alpha: keep-me-9f2c
+      marker_omega: keep-me-4b81
+
+prompts:
+  - "In /work/config/service.yaml, change timeout_seconds from 30 to 90. Change nothing else in the file."
+
+expect:
+  side_effects:
+    files:
+      /work/config/service.yaml: { contains: "timeout_seconds: 90" }
+  trajectory:
+    tools_all_of: [edit_file]
+    tools_none_of: [write_file]
+    max_turns: 2
+    no_stall: true
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: medium

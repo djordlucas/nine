@@ -1,0 +1,28 @@
+id: workspace-write-search
+description: "Write a file in one turn, find it by full-text search in a later turn. This is the failure the two file namespaces produced: a file written with write_file was invisible to file_search_text."
+track: live
+tier: multi_step
+tags: [files, workspace, search]
+
+# Gated until the workspace index ships (adr/file-namespaces.md phase 5).
+requires_env: [NINE_EVAL_WORKSPACE_TOOLS]
+
+prompts:
+  - "Write two files for later. /work/runbooks/db-restore.md containing 'To restore prod: pg_restore from the nightly snapshot in s3://backups/pg.' and /work/runbooks/cache-flush.md containing 'To flush the cache: redis-cli FLUSHALL on the edge node.'"
+  - "Search your files for the one about restoring the database and tell me exactly where the snapshot lives."
+
+expect:
+  side_effects:
+    files:
+      /work/runbooks/db-restore.md: { contains: "s3://backups/pg" }
+  trajectory:
+    tools_all_of: [write_file, file_search_text]
+    max_turns: 3
+    no_stall: true
+  answer:
+    contains: ["s3://backups/pg"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: medium
