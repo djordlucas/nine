@@ -93,20 +93,6 @@ func TestSkillWriteAndModifyRefuseUserSkills(t *testing.T) {
 	}
 }
 
-func TestFileSearchSemanticDefaultTopK(t *testing.T) {
-	store := newTestStore(t)
-	d := agent.New()
-	agent.RegisterMemoryTools(d, store, embed.EmbedderFunc(func(_ context.Context, _ string) ([]float32, error) {
-		return []float32{1, 0}, nil
-	}), nil, false)
-
-	_, err := d.Dispatch(context.Background(), "file_search_semantic",
-		json.RawMessage(`{"query":"test"}`))
-	if err != nil {
-		t.Fatalf("dispatch: %v", err)
-	}
-}
-
 func TestMemorySetIndexesAndDeleteRemovesFromPool(t *testing.T) {
 	store := newTestStore(t)
 	d := agent.New()

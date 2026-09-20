@@ -73,12 +73,6 @@ var memoryToolDefs = []llm.ToolDef{
 		Description: "Embed a query and return the most semantically similar stored items from a namespace.",
 		InputSchema: json.RawMessage(`{"type":"object","required":["namespace","query"],"properties":{"namespace":{"type":"string"},"query":{"type":"string"},"top_k":{"type":"integer","description":"Number of results (default 5)"}}}`),
 	},
-	{
-		Name:        "file_search_semantic",
-		DisplayName: "Semantic Search",
-		Description: "Embed a query and search stored files by semantic similarity.",
-		InputSchema: json.RawMessage(`{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"top_k":{"type":"integer"}}}`),
-	},
 }
 
 // RegisterMemoryTools registers KV, file, and (when embedder is non-nil)
@@ -140,31 +134,6 @@ func RegisterMemoryTools(d *Dispatcher, store *memory.Store, embedder embed.Embe
 			return string(data), nil
 		}
 
-		d.handlers["file_search_semantic"] = func(_ context.Context, args json.RawMessage) (string, error) {
-			var req struct {
-				Query string `json:"query"`
-				TopK  int    `json:"top_k"`
-			}
-			if err := json.Unmarshal(args, &req); err != nil {
-				return "", fmt.Errorf("file_search_semantic: %w", err)
-			}
-			if req.TopK <= 0 {
-				req.TopK = 5
-			}
-			vec, err := embedder.Embed(context.Background(), req.Query)
-			if err != nil {
-				return "", fmt.Errorf("embed: %w", err)
-			}
-			results, err := store.VectorQuery("files", vec, req.TopK)
-			if err != nil {
-				return "", fmt.Errorf("vector query: %w", err)
-			}
-			data, err := json.Marshal(map[string]any{"results": results})
-			if err != nil {
-				return "", err
-			}
-			return string(data), nil
-		}
 	}
 
 	d.handlers["memory_get"] = func(_ context.Context, args json.RawMessage) (string, error) {

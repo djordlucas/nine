@@ -198,7 +198,7 @@ it is unusable, and is the sole owner of the database handles (the "single
 gateway" invariant — a one-connection writer pool plus a read-only pool, since
 SQLite serializes writes). Agent-facing K/V (`memory_get/set/delete/list`), file storage
 (`file_store/fetch/list`, `file_search_text`), and (core-intercepted) vector ops
-(`memory_embed`/`memory_query`/`file_search_semantic`) are exposed as tools.
+(`memory_embed`/`memory_query`) are exposed as tools.
 Operational tables (`conversations`, `goals`, `notifications`,
 `user_notifications`, `workflows`, `session_plans`,
 `human_requests`, `interactive_sessions`, `session_events`, `event_cursors`,
@@ -276,7 +276,7 @@ runtime generation. See [Plugins](plugins.md) and
 
 **Core-intercepted tools** — Tools that appear in the agent's tool list but
 are handled directly by the Tool Dispatcher, with no plugin subprocess:
-`gap_report`, `memory_embed`, `memory_query`, `file_search_semantic`,
+`gap_report`, `memory_embed`, `memory_query`,
 `run_agent`, `run_agents`, the `workflow_*` tools, and the `goal_*` tools.
 Registered by `AgentBuilder.registerCoreTools` and `registerSubAgentTools`
 when each loop is built.
