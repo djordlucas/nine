@@ -42,6 +42,10 @@ Run "ls -la /tmp" and tell me the five largest files.
 ```
 
 **Notes:**
+- Commands run in the workspace root (`workspace.root` / `NINE_WORKSPACE`), so a
+  relative path names the same file for `shell` as it does for `read_file` and
+  `write_file`. With no workspace configured, commands run in the daemon's own
+  working directory.
 - Commands run as the daemon's process user.
 - Default timeout is 30 seconds.
 - Nine does not sandbox commands — use Docker or a restricted user for untrusted workloads.

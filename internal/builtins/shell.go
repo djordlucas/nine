@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"time"
 
@@ -18,7 +19,7 @@ func serveShell() {
 		[]plugin.ToolDefinition{{
 			Name:        "shell",
 			DisplayName: "Shell",
-			Description: "Execute a shell command and return its stdout, stderr, and exit code as JSON. Destructive commands (recursive deletion, disk formatting, sudo, force-push, etc.) are blocked unless NINE_SHELL_UNSAFE=1 is set.",
+			Description: "Execute a shell command and return its stdout, stderr, and exit code as JSON. Commands run in the workspace, so a relative path means the same file here as it does to read_file and write_file. Destructive commands (recursive deletion, disk formatting, sudo, force-push, etc.) are blocked unless NINE_SHELL_UNSAFE=1 is set.",
 			InputSchema: plugin.Schema(`{
 				"type":"object",
 				"required":["command"],
@@ -30,6 +31,26 @@ func serveShell() {
 		}},
 		map[string]plugin.ToolHandler{"shell": runShell},
 	)
+}
+
+// workspaceDir returns the directory shell commands run in: the workspace the
+// daemon passed down as NINE_WORKSPACE. Nine has one place it writes files, and
+// a shell whose relative paths resolved somewhere else — the daemon's own
+// working directory, which is wherever it was started — made `ls notes.txt`
+// and `read_file("notes.txt")` disagree about which file that is.
+//
+// An empty or missing directory yields "", which leaves the process where it
+// was: an operator running without a workspace configured keeps the old
+// behavior rather than failing every command.
+func workspaceDir() string {
+	root := os.Getenv("NINE_WORKSPACE")
+	if root == "" {
+		return ""
+	}
+	if fi, err := os.Stat(root); err != nil || !fi.IsDir() {
+		return ""
+	}
+	return root
 }
 
 func runShell(ctx context.Context, args json.RawMessage) (string, error) {
@@ -55,6 +76,7 @@ func runShell(ctx context.Context, args json.RawMessage) (string, error) {
 
 	var stdout, stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, "sh", "-c", p.Command)
+	cmd.Dir = workspaceDir()
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 

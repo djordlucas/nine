@@ -384,7 +384,7 @@ JSON-RPC server loop for a plugin, so a plugin's `main` only passes its
 
 **`NINE_BIN`** — Environment variable passed to every plugin subprocess: the
 plugin binary directory. Individual plugins may receive extra env vars at
-startup: the built-in defaults (e.g. `NINE_WORKSPACE` for `files`), an operator's
+startup: the built-in defaults (e.g. `NINE_WORKSPACE` for `files` and `shell`), an operator's
 `[plugin.<name>.settings]` (passed through verbatim), and the cache-dir vars
 below. See [Plugin capabilities](plugin-capabilities.md).
 
