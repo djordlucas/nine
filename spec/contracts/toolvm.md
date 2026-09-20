@@ -399,10 +399,14 @@ silently meaning nothing is the worst available failure mode.
 
 ## R-TVM.11 — visibility, reload, and reporting
 
-A newly-loaded tool is picked up by **subsequently-built agent loops**; turns already in
-flight keep the tool set they started with. This is exactly `plugins reload` semantics
-(R-PLUG.9) and needs no new push machinery — a tool set that mutated mid-turn would make
-the turn unreplayable, and `adr/event-log.md` depends on replay.
+A newly-loaded or removed tool reaches every agent loop at that loop's **next turn**,
+including a loop that already exists, such as the session that wrote the tool. Each turn
+starts by comparing the host's catalog with the one the loop last saw; on a change it
+re-syncs the loop's dispatch handlers and advertised tool list. Turns already in flight
+keep the tool set they started with, because a tool set that mutated mid-turn would make
+the turn unreplayable, and `adr/event-log.md` depends on replay. No push machinery is
+involved: the loop pulls at its turn boundary. Plugin tools differ: a plugin started by
+`plugins reload` reaches only subsequently-built loops (R-PLUG.9).
 
 Sandboxed tools are advertised on the same footing as plugin tools and intersected with a
 role's allowlist the same way (boundary 1 of R-ROLE.4).
@@ -420,8 +424,9 @@ role's allowlist the same way (boundary 1 of R-ROLE.4).
 `plugin_call` **MUST** resolve a sandboxed tool against the host itself, not through
 a dispatcher snapshot: its reach must match `list_tools` (R-PROTO.5), and a dispatcher
 built once at daemon assembly would keep answering from the tool set that existed at boot,
-so a tool added by `nine tools reload` would be listed but uncallable. Agent loops have no
-such requirement — they are rebuilt per turn, which *is* the next-turn visibility above.
+so a tool added by `nine tools reload` would be listed but uncallable. Agent loops meet the
+same need by re-syncing from the host at the start of each turn, which *is* the next-turn
+visibility above.
 
 The skipped entries are why the reporting surface is required: R-TVM.6 makes a capability
 mismatch a load failure rather than a degraded tool, and that promise is only kept if the
@@ -603,7 +608,14 @@ The operator confers a single **ceiling** — `[tools.agent.capabilities]` — t
   budget, so an unbounded catalog degrades ranking for the built-in tools too. A write that
   crosses the cap evicts the least-recently-called tools and names them in its result.
 - **Visibility is next-turn** (R-TVM.11): a tool written this turn is callable from the next
-  loop built, exactly as `plugins reload` behaves. `tool_write`'s result says so explicitly.
+  turn of every loop, the writing session's included. `tool_write`'s result says when: a name
+  new to the loop waits for the next turn; a tool the loop already carries is callable now, and
+  a rewrite takes effect on its next call.
+- **Refused writes.** `tool_write` **MUST** refuse a write byte-identical to the stored tool —
+  nothing is written, and reporting success is what lets a model rewrite the same source turn
+  after turn — and **MUST** refuse an `input_schema` that is not a JSON object, which would
+  otherwise become the tool's `parameters` and fail every turn that advertises it. A row stored
+  before that check is skipped at load rather than projected.
 - **`js_eval`** (`[tools.agent] eval`) runs one snippet under the identical rules and persists
   **nothing** — no name, no row, no catalog entry. It is not a softer tier, only a less
   persistent one; it exists so iteration does not accrete single-use tools into the catalog.

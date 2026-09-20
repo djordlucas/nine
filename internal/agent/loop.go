@@ -43,6 +43,11 @@ type Config struct {
 	Priority     int // llm.PrioritySupervisor / PriorityConversation / PriorityBackground
 	MaxTokens    int // per-completion token limit; 0 → 4096
 	Tools        []ninectx.ToolWithVector
+	// ToolsForTurn, when set, is called at the start of every Run. A non-nil
+	// result replaces Tools from that turn on; nil means the tool set is
+	// unchanged. It lets a long-lived loop pick up tools that appeared or
+	// disappeared since it was built, between turns and never within one.
+	ToolsForTurn func() []ninectx.ToolWithVector
 	Embedder     embed.Embedder                                       // nil = no query embedding / tool ranking
 	SelfModelFn  func(ctx context.Context, queryVec []float32) string // nil = no self-model
 	// EnrichmentFn optionally returns pull-surfaced enrichment for the current
@@ -311,13 +316,6 @@ type ConversationState struct {
 
 // NewLoop returns an agent loop ready to accept user turns.
 func NewLoop(cfg Config, builder *ninectx.Builder, queue *llm.Queue, dispatcher *Dispatcher) *Loop {
-	dn := make(map[string]string, len(cfg.Tools))
-	for _, tw := range cfg.Tools {
-		if tw.Tool.DisplayName != "" {
-			dn[tw.Tool.Name] = tw.Tool.DisplayName
-		}
-	}
-
 	mode := cfg.PlanMode
 	if mode == "" {
 		mode = PlanModePlanOnly
@@ -327,8 +325,30 @@ func NewLoop(cfg Config, builder *ninectx.Builder, queue *llm.Queue, dispatcher 
 		builder:      builder,
 		queue:        queue,
 		dispatcher:   dispatcher,
-		displayNames: dn,
+		displayNames: displayNames(cfg.Tools),
 		planMode:     mode,
+	}
+}
+
+// displayNames indexes the tools that declare a display name.
+func displayNames(tools []ninectx.ToolWithVector) map[string]string {
+	dn := make(map[string]string, len(tools))
+	for _, tw := range tools {
+		if tw.Tool.DisplayName != "" {
+			dn[tw.Tool.Name] = tw.Tool.DisplayName
+		}
+	}
+	return dn
+}
+
+// refreshTools applies ToolsForTurn at the start of a turn.
+func (l *Loop) refreshTools() {
+	if l.cfg.ToolsForTurn == nil {
+		return
+	}
+	if tools := l.cfg.ToolsForTurn(); tools != nil {
+		l.cfg.Tools = tools
+		l.displayNames = displayNames(tools)
 	}
 }
 
@@ -340,6 +360,7 @@ func NewLoop(cfg Config, builder *ninectx.Builder, queue *llm.Queue, dispatcher 
 // dispatched sequentially, each recorded as its own scratchpad entry. This
 // is the uncommon case in ReAct; single-tool responses are the norm.
 func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
+	l.refreshTools()
 	l.history = append(l.history, llm.Message{Role: "user", Text: userText})
 	l.scratchpad = l.scratchpad[:0]
 	l.lastToolCount = 0

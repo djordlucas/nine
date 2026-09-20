@@ -46,7 +46,7 @@
 | 4 | **Capabilities are conferred, never claimed** (§6–§8) | Default is the empty set: no filesystem, no network, no env, no clock. Every capability is an explicitly-exported host function or a wazero pre-open. A manifest *declares a need*; only operator config *grants*. |
 | 5 | **Dependencies never resolve at call time** (§4.2) | Developers **pre-bundle** their deps at dev time; generated tools get a curated, vendored `nine:*` stdlib. Module resolution is always host-side against a closed allowlist. |
 | 6 | **External packages: opt-in and allowlisted** (§4.4) | Off by default. When enabled, an operator **names the permitted packages** (transitive deps included); Nine resolves, integrity-checks, and bundles them **in-process at write time** via esbuild — never in the sandbox, never at call time. No install scripts ever run. `deps` + `net.http` is refused by default. |
-| 7 | **Visibility is next-turn** (§9) | A new tool is picked up by subsequently-built agent loops. This is already how `plugins reload` behaves — no new push machinery. |
+| 7 | **Visibility is next-turn** (§9) | A new tool reaches every agent loop, including the session that wrote it, at that loop's next turn. The loop pulls the change at its turn boundary; there is no push machinery. |
 
 **Do not take `github.com/fastschema/qjs`** (§10). Use wazero directly.
 
@@ -509,6 +509,25 @@ what the approval gate keys on (§9.4). A tool that declares nothing — the com
 case — gets nothing, regardless of how permissive the ceiling is. Least privilege
 is per tool, not per tier.
 
+**What `tool_write` answers.** The result names when the tool can be called,
+because a model that cannot tell waits or writes it again. A name new to the
+loop is "callable from your next turn"; a tool the loop already carries is
+callable in this turn, and a rewrite of it takes effect on the next call, since
+the handler resolves the source by name at call time.
+
+Two writes are refused rather than stored, both because the refusal is the
+useful answer (§7):
+
+- **A write that changes nothing.** Byte-identical source, description, schema
+  and declaration means nothing was written, and reporting success is what lets a
+  model rewrite the same source turn after turn. The refusal says the tool exists
+  and to call it instead.
+- **An `input_schema` that is not a JSON object.** It becomes the tool's
+  `parameters` in every request that advertises the tool, and a provider that
+  rejects the malformed field fails the whole turn — one bad tool would break
+  every turn of every session that loads it. A row stored before this check is
+  skipped at load.
+
 The symmetry with skills is deliberate:
 
 | | Skill | Generated tool |
@@ -814,22 +833,22 @@ plugin, where that intent is explicit and reviewed.
 
 ### 9.1 A new tool is visible next turn
 
-This needs no new machinery, because the semantics already exist. From
-`userplugins`:
+**Write it this turn, use it next turn**, in every loop, including the session that
+wrote it. A session's loop lives as long as the session, so it cannot rely on being
+rebuilt. Instead, each turn starts by comparing the host's catalog with the one the loop
+last saw. On a change, it re-syncs the loop's dispatch handlers
+(`Dispatcher.SyncSandboxed`) and re-assembles its advertised tool list, so `tool_search`
+and `tool_list` see the change too. The host replaces a tool's record on every load, so a
+rewrite of an existing name counts as a change.
 
-> Newly-started plugins are picked up by subsequently-built agent loops (the
-> builder reads `Running()` at build time); turns already in flight keep the tool
-> set they started with.
+In-flight turns keep the tool set they started with, because a tool set that mutated
+mid-turn would make a turn unreplayable, and `event-journal.md` depends on replay. This
+is the pull-not-push discipline of `event-journal.md`: new capability *enriches a later
+turn's context* rather than interrupting a live one.
 
-`buildToolList` (`internal/runtime/builder.go:820`) reads the tool set when a loop
-is built. A sandboxed tool registered in the store is picked up the same way, so:
-**write it this turn, use it next turn.** In-flight turns keep the tool set they
-started with, which is exactly right — a tool set that mutated mid-turn would
-make a turn unreplayable, and `event-journal.md` depends on replay.
-
-It is also precisely the pull-not-push discipline of `event-journal.md`:
-new capability *enriches a later turn's context* rather than interrupting a live
-one.
+Core and plugin tools keep any name they share with a sandboxed tool, at build and on
+every re-sync. Plugin tools themselves are not re-synced: a plugin started by `plugins
+reload` reaches only loops built after it.
 
 ### 9.2 Catalog pressure is the sleeper problem
 
