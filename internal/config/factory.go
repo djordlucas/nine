@@ -391,7 +391,10 @@ func (cfg *Config) PluginEnvs(name string) []string {
 // plugin so it works out of the box. Operator settings layer on top (PluginEnvs).
 func (cfg *Config) pluginDefaults(name string) []string {
 	switch name {
-	case "files":
+	// `shell` runs its commands in the workspace and `files` mounted it: both
+	// need the same root, because Nine writes files in one place and a relative
+	// path must mean the same file to every tool that takes one.
+	case "files", "shell":
 		if cfg.Workspace.Root != "" {
 			return []string{"NINE_WORKSPACE=" + cfg.Workspace.Root}
 		}

@@ -3,4 +3,8 @@ set -e
 
 mkdir -p /data/workspace
 
+# Same /work alias the runtime image installs, so the sandboxed file tools and
+# `shell` name the workspace identically.
+[ -e /work ] || ln -s /data/workspace /work
+
 exec sh /nine-src/docker/dev-entrypoint.sh
