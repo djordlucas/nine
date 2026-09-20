@@ -483,6 +483,16 @@ func (h *Host) callWithJob(ctx context.Context, t *Tool, args json.RawMessage, j
 	name := t.Name
 	timeout := t.effectiveTimeout(h.timeout)
 
+	// A shipped fs tool accepts the workspace's host path as well as its guest
+	// path, because `shell` prints the host one and models pass on what they
+	// read (workspace_path.go).
+	if t.Shipped && len(t.Grant.FSWrite)+len(t.Grant.FSRead) > 0 {
+		h.mu.RLock()
+		hostRoot := h.shippedWorkspace.Host
+		h.mu.RUnlock()
+		args = rewriteWorkspacePath(args, hostRoot)
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	ctx = context.WithValue(ctx, toolNameKey{}, name)

@@ -1,8 +1,13 @@
 #!/command/with-contenv sh
 set -e
 
-# /data holds everything durable: the SQLite database file and the files-plugin
-# workspace, on one volume.
+# /data holds everything durable: the SQLite database file and the workspace,
+# on one volume.
 mkdir -p /data/workspace
+
+# /work is the path the sandboxed file tools use for the workspace. Linking it
+# here gives `shell` the same name for the same directory, so a path printed by
+# one tool resolves in the other.
+[ -e /work ] || ln -s /data/workspace /work
 
 exec nine daemon
