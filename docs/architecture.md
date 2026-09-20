@@ -724,7 +724,7 @@ differs from a developer tool in provenance, not in enforcement.
  tool_write  ─► deps.Bundler at WRITE time, IN THE DAEMON: resolve imports,
      │           verify each tarball checksum, run no install scripts, inline
      │        ─► store row + host.LoadGenerated
-     │        ─► visible NEXT TURN (loops in flight keep the tool set they began with)
+     │        ─► visible NEXT TURN in every loop (turns in flight keep their tool set)
  tool_delete ─► row removed, tool unregistered
  js_eval     ─► same sandbox, same rules, persists nothing
 ```

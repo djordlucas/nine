@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"nine/internal/llm"
 )
@@ -91,9 +92,21 @@ func GeneratedToolDefs(evalEnabled bool) []llm.ToolDef {
 // GeneratedToolStore is the persistence the generated tier needs, narrowed so
 // the agent package does not depend on the memory store's full surface.
 type GeneratedToolStore interface {
-	Write(ctx context.Context, t GeneratedToolSpec) (evicted []string, err error)
+	Write(ctx context.Context, t GeneratedToolSpec) (WriteResult, error)
 	Delete(ctx context.Context, name string) error
 	Eval(ctx context.Context, source string, caps json.RawMessage, args json.RawMessage) (string, error)
+}
+
+// WriteResult reports what a write did, so the model can be told something more
+// useful than "ok" — which tools the cap evicted, and whether the write changed
+// anything at all. A model that cannot tell a no-op rewrite from a real one has
+// no signal that it is looping, and small models do loop here.
+type WriteResult struct {
+	// Evicted names the least-recently-called tools dropped to stay under the cap.
+	Evicted []string
+	// Unchanged reports a write byte-identical to the stored tool: same source,
+	// description and schema.
+	Unchanged bool
 }
 
 // GeneratedToolSpec is one proposed tool, as the model described it.
@@ -158,8 +171,25 @@ func RegisterGeneratedTools(d *Dispatcher, s GeneratedToolStore, evalEnabled boo
 		case req.Source == "":
 			return "", fmt.Errorf("tool_write: source is required")
 		}
+		// A schema that is not a JSON object is refused here rather than stored:
+		// it becomes this tool's `parameters` in every later LLM request, and a
+		// provider that rejects the malformed field fails the whole turn — one bad
+		// tool would take down every turn of every session that advertises it. The
+		// refusal is a message the model can act on (docs/sandboxed-tools.md §7).
+		if len(req.InputSchema) > 0 {
+			var obj map[string]json.RawMessage
+			if err := json.Unmarshal(req.InputSchema, &obj); err != nil {
+				return "", fmt.Errorf(
+					"tool_write: input_schema must be a JSON Schema object like "+
+						`{"type":"object","properties":{...}}, not %s`, firstToken(req.InputSchema))
+			}
+		}
 
-		evicted, err := s.Write(ctx, GeneratedToolSpec{
+		// Whether the tool is callable *now* is the dispatcher's to answer: a tool
+		// this loop already carries can be called in this very turn, and only a
+		// name new to the loop waits for the next one (docs/sandboxed-tools.md §9.1).
+		callableNow := d.Has(req.Name)
+		res, err := s.Write(ctx, GeneratedToolSpec{
 			Name:         req.Name,
 			Description:  req.Description,
 			InputSchema:  req.InputSchema,
@@ -172,12 +202,35 @@ func RegisterGeneratedTools(d *Dispatcher, s GeneratedToolStore, evalEnabled boo
 			return "", err
 		}
 
-		// Saying "next turn" explicitly heads off the obvious failure: the model
-		// writes a tool and immediately tries to call it, which cannot work — the
-		// tool set is fixed when a loop is built (§9.1).
-		msg := fmt.Sprintf("Wrote tool %q. It is callable from your next turn.", req.Name)
-		if len(evicted) > 0 {
-			msg += fmt.Sprintf(" Evicted %d least-recently-used tool(s) to stay under the cap: %v.", len(evicted), evicted)
+		// Say exactly when the tool can be called, because the obvious failure is a
+		// model that writes a tool and then cannot tell whether to call it or write
+		// it again. A name new to this loop waits for the next turn, which keeps the
+		// tool set it started with (§9.1). A tool the loop already carries is callable
+		// in this turn, and a rewrite of it takes effect on the next call, because the
+		// handler resolves the source by name at call time.
+		// A write that changes nothing is a failure, not a success: nothing was
+		// written. Reporting it as done is what lets a model rewrite the same
+		// source turn after turn, which is exactly the loop small models fall into
+		// once they have a tool they cannot decide to call.
+		if res.Unchanged {
+			return "", fmt.Errorf(
+				"tool %q already exists with this exact source; nothing was written. "+
+					"It is in your tools: call %s directly instead of writing it again",
+				req.Name, req.Name)
+		}
+		var msg string
+		switch {
+		case callableNow:
+			msg = fmt.Sprintf("Updated tool %q. The new source takes effect on your next call to it.", req.Name)
+		default:
+			msg = fmt.Sprintf("Wrote tool %q. It is callable from your next turn.", req.Name)
+		}
+		if callableNow {
+			msg += fmt.Sprintf(" It is in your tools now: call %s directly rather than writing it again.", req.Name)
+		}
+		if len(res.Evicted) > 0 {
+			msg += fmt.Sprintf(" Evicted %d least-recently-used tool(s) to stay under the cap: %v.",
+				len(res.Evicted), res.Evicted)
 		}
 		return msg, nil
 	}
@@ -215,4 +268,23 @@ func RegisterGeneratedTools(d *Dispatcher, s GeneratedToolStore, evalEnabled boo
 		}
 		return s.Eval(ctx, req.Source, req.Capabilities, req.Args)
 	}
+}
+
+// firstToken describes the shape of a malformed JSON value for an error message,
+// without echoing the whole value back at the model.
+func firstToken(raw json.RawMessage) string {
+	t := strings.TrimSpace(string(raw))
+	if t == "" {
+		return "an empty value"
+	}
+	switch t[0] {
+	case '"':
+		return "a string"
+	case '[':
+		return "an array"
+	}
+	if len(t) > 20 {
+		t = t[:20] + "…"
+	}
+	return t
 }
