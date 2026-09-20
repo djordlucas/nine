@@ -637,7 +637,7 @@ the agent loop well is recorded in [Model compatibility](model-compatibility.md)
 Embeddings power two features:
 
 1. **Semantic tool selection** — Only the most relevant tools are included in each LLM turn, preserving context budget.
-2. **Semantic file search** — `file_search_semantic` finds files by meaning, not just exact text.
+2. **Memory surfacing** — each `memory_set` is embedded so a later turn can pull back the memories relevant to it.
 
 The default (`keyword`) uses a built-in feature-hashing embedder that requires no model and no network access. Switch to `ollama` for higher quality ranking.
 
