@@ -134,9 +134,17 @@ api_key  = ""
 theme = "dark"  # "auto" detects terminal background; "light" or "dark" to force
 
 [workspace]
-# Files-plugin working directory. The container overrides this to the mounted
+# The one directory Nine writes agent files into: the sandboxed file tools are
+# mounted here and `shell` runs here. The container overrides it to the mounted
 # volume at /data/workspace (NINE_WORKSPACE_ROOT).
 root = "./dist"
+
+# Deleted and overwritten files are moved to .nine/trash/ inside the workspace,
+# not destroyed, so a mistake in an unsupervised session can be undone
+# (trash_list, restore_file). The trash sits on your disk, so it is bounded by
+# both age and size; the sweep runs hourly, oldest entry first.
+# trash_retention_days = 7        # -1 disables the age bound, leaving size alone
+# trash_max_bytes      = 1073741824
 
 [skills]
 # Your own skills and roles, seeded alongside the built-ins on every boot
