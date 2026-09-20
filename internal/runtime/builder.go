@@ -524,7 +524,7 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 	// gap_report survives every allowlist — it is the escape hatch when no
 	// allowed tool fits (R-ROLE.5). Wildcard roles keep the full handler set,
 	// including the registered-but-unadvertised tools (gap_report,
-	// memory_embed/memory_query/file_search_semantic), exactly as before roles.
+	// memory_embed/memory_query), exactly as before roles.
 	if !role.AllTools {
 		allow := append([]string{"gap_report"}, role.Tools...)
 		allow = append(allow, shellTools...)

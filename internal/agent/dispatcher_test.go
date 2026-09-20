@@ -11,9 +11,6 @@ import (
 	"testing"
 
 	"nine/internal/agent"
-	"nine/internal/embed"
-	"nine/internal/memory"
-	"nine/internal/memory/memtest"
 	"nine/internal/plugin"
 )
 
@@ -199,57 +196,6 @@ func TestRegisterPlugin(t *testing.T) {
 	// testplugin echoes args back as output
 	if res.Output != `{"message":"hello"}` {
 		t.Errorf("output = %q, want %q", res.Output, `{"message":"hello"}`)
-	}
-}
-
-func newDispatcherTestStore(t *testing.T) *memory.Store {
-	t.Helper()
-	store, err := memtest.Open(t)
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	return store
-}
-
-func TestWireFileSearchSemantic(t *testing.T) {
-	store := newDispatcherTestStore(t)
-	// Pre-seed a vector so the query can return a result.
-	if err := store.VectorStore("doc:doc.md", "files", "doc.md", []float32{1, 0}); err != nil {
-		t.Fatalf("seed vector: %v", err)
-	}
-
-	mockEmbedder := embed.EmbedderFunc(func(_ context.Context, _ string) ([]float32, error) {
-		return []float32{1, 0}, nil
-	})
-
-	d := agent.New()
-	agent.RegisterMemoryTools(d, store, mockEmbedder, nil, false)
-
-	res, err := d.Dispatch(context.Background(), "file_search_semantic",
-		json.RawMessage(`{"query":"test","top_k":1}`))
-	if err != nil {
-		t.Fatalf("Dispatch: %v", err)
-	}
-	if !strings.Contains(res.Output, "doc.md") {
-		t.Errorf("output = %q, want it to contain 'doc.md'", res.Output)
-	}
-}
-
-func TestWireFileSearchSemanticDefaultTopK(t *testing.T) {
-	store := newDispatcherTestStore(t)
-	mockEmbedder := embed.EmbedderFunc(func(_ context.Context, _ string) ([]float32, error) {
-		return []float32{1, 0}, nil
-	})
-
-	d := agent.New()
-	agent.RegisterMemoryTools(d, store, mockEmbedder, nil, false)
-
-	// Omit top_k — should default to 5. With empty store returns no error.
-	_, err := d.Dispatch(context.Background(), "file_search_semantic",
-		json.RawMessage(`{"query":"test"}`))
-	if err != nil {
-		t.Fatalf("Dispatch: %v", err)
 	}
 }
 

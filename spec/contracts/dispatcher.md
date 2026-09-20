@@ -82,7 +82,7 @@ TOOL CALL
    │      operator-installed, from [tools].user_dir (see toolvm.md)
    └── CORE-INTERCEPTED TOOLS (Register* at build) handled in-process, no subprocess:
           gap_report
-          memory_embed, memory_query, file_search_semantic
+          memory_embed, memory_query
           tool_list, tool_search  (skill_list/skill_search: see skills.md)
           tool_write, tool_delete, js_eval  (generated tier; only with [tools.agent] — toolvm.md R-TVM.14)
           run_agent, run_agents
