@@ -53,4 +53,82 @@ export function unified(a, b) {
     .join("\n");
 }
 
-export default { lineDiff, unified };
+// hunks(a, b, { context, maxLines }) -> a unified diff carrying only the
+// changed regions, each under an @@ header, with `context` unchanged lines
+// around it.
+//
+// `unified` above emits every line of both inputs, which is unreadable for the
+// case that matters most: one line changed in a file of five thousand. A person
+// approving an edit, and a model reporting one, both need the change and enough
+// around it to recognize where it is.
+//
+// Returns { text, added, removed, truncated } rather than a bare string: a
+// caller that cannot show the whole thing still has the counts to report, and
+// "3 lines changed, diff truncated" beats a diff cut off mid-hunk.
+export function hunks(a, b, opts = {}) {
+  const context = Number.isInteger(opts.context) ? opts.context : 3;
+  const maxLines = Number.isInteger(opts.maxLines) ? opts.maxLines : 400;
+
+  const d = lineDiff(a, b);
+  let added = 0;
+  let removed = 0;
+  for (const it of d) {
+    if (it.type === "add") added++;
+    else if (it.type === "del") removed++;
+  }
+  if (added === 0 && removed === 0) {
+    return { text: "", added: 0, removed: 0, truncated: false };
+  }
+
+  // Mark every line within `context` of a change, then emit the marked runs.
+  const keep = new Array(d.length).fill(false);
+  for (let i = 0; i < d.length; i++) {
+    if (d[i].type === "eq") continue;
+    for (let j = Math.max(0, i - context); j <= Math.min(d.length - 1, i + context); j++) {
+      keep[j] = true;
+    }
+  }
+
+  const out = [];
+  const sign = { eq: " ", del: "-", add: "+" };
+  let oldLine = 1;
+  let newLine = 1;
+  let truncated = false;
+
+  for (let i = 0; i < d.length; ) {
+    if (!keep[i]) {
+      if (d[i].type !== "add") oldLine++;
+      if (d[i].type !== "del") newLine++;
+      i++;
+      continue;
+    }
+    const startOld = oldLine;
+    const startNew = newLine;
+    const body = [];
+    while (i < d.length && keep[i]) {
+      body.push(sign[d[i].type] + d[i].line);
+      if (d[i].type !== "add") oldLine++;
+      if (d[i].type !== "del") newLine++;
+      i++;
+    }
+    // A hunk larger than the remaining budget is cut, not dropped. Dropping it
+    // returns an empty diff for exactly the change that most needs looking at:
+    // the big one.
+    const room = maxLines - out.length - 1;
+    if (room <= 0) {
+      truncated = true;
+      break;
+    }
+    out.push(`@@ -${startOld} +${startNew} @@`);
+    if (body.length > room) {
+      out.push(...body.slice(0, room));
+      truncated = true;
+      break;
+    }
+    out.push(...body);
+  }
+
+  return { text: out.join("\n"), added, removed, truncated };
+}
+
+export default { lineDiff, unified, hunks };
