@@ -181,7 +181,16 @@ func runDaemon() {
 	// builder, daemon, event sink) shared with the eval harness. Production-only
 	// bootstrap — subscribers, standing agents, resume, instance name — is layered
 	// on below against the returned daemon (docs/evals.md §5).
+	// The workspace index: a scanner keeping it in step with the directory, and
+	// the backend the file tools search. A file Nine never wrote — from a bind
+	// mount, a git pull, or someone dropping one in — is findable because the
+	// scan saw it (adr/file-namespaces.md §6).
+	workspaceScanner := runtime.NewWorkspaceScanner(store, cfg.Workspace.Root,
+		cfg.Workspace.IndexMaxFileBytesOrDefault(), cfg.Workspace.IndexMaxFilesOrDefault(),
+		cfg.Workspace.ScanIntervalOrDefault())
+
 	asm := runtime.Assemble(runtime.AssemblyConfig{
+		Workspace:              runtime.NewWorkspaceBackend(store, workspaceScanner, cfg.Workspace.Root),
 		SocketPath:             cfg.SocketPath(),
 		Store:                  store,
 		Plugins:                pluginManager,
@@ -285,6 +294,12 @@ func runDaemon() {
 	// and hourly thereafter so large results cannot grow the file store without
 	// bound (adr/tool-output-spill.md §5).
 	go runtime.RunSpillSweeper(ctx, store)
+
+	// The workspace scan: once at boot in the background, then on its interval.
+	// A large workspace must not hold up startup, and a search before the first
+	// scan finishes says so rather than reporting an empty index as an empty
+	// directory.
+	go workspaceScanner.Run(ctx)
 
 	// Deleted and overwritten workspace files are kept under .nine/trash/ so a
 	// mistake in an ungated session is recoverable. That directory is on the
