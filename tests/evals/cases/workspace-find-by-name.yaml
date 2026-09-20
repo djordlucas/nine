@@ -1,0 +1,34 @@
+id: workspace-find-by-name
+description: "Locate a file by name rather than by content. Guards list_files' pattern argument: a role without shell must be able to answer 'where is the config' without walking every directory."
+track: live
+tier: basic
+tags: [files, workspace, list]
+
+# Gated until list_files ships (adr/file-namespaces.md phase 6).
+requires_env: [NINE_EVAL_WORKSPACE_TOOLS]
+
+setup:
+  files:
+    /work/src/api/handler.go: "package api\n"
+    /work/src/api/handler_test.go: "package api\n"
+    /work/src/worker/queue.go: "package worker\n"
+    /work/src/worker/queue_test.go: "package worker\n"
+    /work/README.md: "Build with make.\n"
+
+prompts:
+  - "List every Go test file in this workspace by name. Do not read their contents."
+
+expect:
+  trajectory:
+    tools_all_of: [list_files]
+    tools_none_of: [read_file]
+    max_turns: 2
+    no_stall: true
+  answer:
+    contains: ["handler_test.go", "queue_test.go"]
+    not_contains: ["README.md"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

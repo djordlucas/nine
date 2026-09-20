@@ -5,12 +5,13 @@
 - **Depends on:** `tool-output-spill.md`, `rich-js-tools.md` (§6.4, why `nine:fs`
   is libc rather than host functions), `spec/contracts/memory-store.md` (R-MEM.2,
   R-MEM.3, R-MEM.9), `spec/contracts/dispatcher.md` (R-DISP.2),
-  `spec/contracts/toolvm.md`, the shipped sandboxed tools
-  (`internal/toolvm/shipped.go`).
+  `spec/contracts/hitl.md` (R-HITL.5), `spec/contracts/toolvm.md`, the shipped
+  sandboxed tools (`internal/toolvm/shipped.go`).
 - **Amends:** R-MEM.2 and R-MEM.3 (the `files` table stops holding agent-authored
   files), R-MEM.9 (the `spill/` write refusal moves from `file_store` to
-  `write_file`), R-DISP.2 (the truncation notice names `read_file`), the `nine:fs`
-  module (gains `remove`, `rename`, ranged reads and appends).
+  `write_file`), R-DISP.2 (the truncation notice names `read_file`), R-HITL.5 (a
+  gated file tool's `ask_human` carries a diff), the `nine:fs` module (gains
+  `remove`, `rename`, `copy`, ranged reads and appends).
 
 The agent sees three file namespaces, and choosing the wrong one is the most
 common model error recorded in `tool-output-spill.md`. This note proposes one
@@ -19,7 +20,9 @@ truncated tool output as the single read-only exception:
 
 1. **Agent-written files live in the workspace only.** `file_store`, `file_list`
    and `file_fetch` are retired. The agent's file tools become `read_file`,
-   `write_file`, `edit_file`, `delete_file`, `list_files` and `file_search_text`.
+   `write_file`, `edit_file`, `move_file`, `copy_file`, `delete_file`,
+   `list_files`, `file_search_text`, `diff_file`, `trash_list` and
+   `restore_file` (§10).
 2. **Spilled tool output stays in the `files` table**, agent-readable and never
    agent-writable, addressed as `spill/...` exactly as today (§3).
 3. **`read_file` reads both.** The dispatcher serves a `spill/...` path from the
@@ -31,9 +34,11 @@ truncated tool output as the single read-only exception:
    visible to search and listing (§6).
 6. **`edit_file` changes part of a file without rewriting it**, so a file larger
    than the context window is still editable (§7).
-7. **`delete_file` moves a file to `.nine/trash/` inside the workspace**, swept on
-   a retention window. `write_file` and `edit_file` move the previous version
-   there too (§8).
+7. **Every change is reviewable as a diff** — before it happens, after it
+   happened, and inside an approval prompt (§8).
+8. **`delete_file` moves a file to `.nine/trash/` inside the workspace**, swept on
+   a retention window, and `restore_file` brings one back. `write_file` and
+   `edit_file` move the previous version there too (§9).
 
 ---
 
@@ -91,13 +96,19 @@ Three consequences:
   paths resolve wherever the daemon was started, and `/work` does not exist
   outside the sandbox. This is from reading `shell.go` and the s6 run script; it
   has not been reproduced against a running daemon.
-- **The trash lives inside the workspace** (§8), not in a sibling directory.
-- **Nine's own bookkeeping in the workspace lives under `.nine/`**, which is
-  excluded from search, listing and agent writes.
+- **The trash lives inside the workspace** (§9), not in a sibling directory.
+- **Nine's own bookkeeping in the workspace lives under `.nine/`**: the trash,
+  extracted document text (§6), and a `.gitignore` that keeps all of it out of a
+  repository the operator mounted.
 
 The sandboxed tools are confined by wazero's pre-open, which is one mount: the
 root. `shell` is a subprocess holding the daemon's own authority, so its working
 directory is a default, not a confinement — see Limits.
+
+**A write budget.** `[workspace].max_bytes` (default unset) bounds what the agent
+may add to the root. Checked before a write, it fails with an error naming the
+budget rather than filling the operator's volume, which a loop that writes on
+every turn will otherwise do.
 
 ## 5. What agent-written files lose when they leave the database
 
@@ -106,6 +117,7 @@ directory is a default, not a confinement — see Limits.
 | Full-text search via `files_fts` triggers | A derived contentless index over the workspace root (§6) |
 | Windowed reads (`file_fetch` `offset`/`limit`) | `read_file` gains `offset` and `limit` |
 | Copy by reference (`file_store` `content_ref`) | `write_file` gains a `content_ref` property marked `x-nine-ref`. `RegisterSandboxed` already indexes ref-marked properties (`dispatcher.go`) |
+| Copy from one path to another | `copy_file`, which streams host-side so the bytes never enter context |
 | Semantic search (`file_search_semantic`) | None needed. The tool queries the `files` vector namespace, which nothing writes, so it can only return empty results. Delete it |
 | Durability | Unchanged: the workspace and `nine.db` are on the same `/data` volume |
 | Session deletion | Unchanged: `files` rows were never part of the R-MEM.11 cascade |
@@ -165,6 +177,28 @@ prefix were skipped. The same holds at the scan bound
 search results. A partial index presenting itself as complete is the failure mode
 to avoid, because the agent reads "no matches" as "not there".
 
+### Documents that are not text
+
+A dropped PDF is the motivating case for this section, and byte-level it is not
+UTF-8: unindexed by the rule above, and — worse — `read_file` today decodes bytes
+with a non-fatal `TextDecoder` (`internal/toolvm/shipped/read_file.js`), so
+reading one returns replacement characters that a model may treat as content.
+
+Two changes:
+
+- **`read_file` refuses non-UTF-8 content**, naming the file as binary and giving
+  its size and type. An error the model can act on beats mojibake it cannot
+  detect.
+- **The scanner extracts text from known document formats** into
+  `.nine/extracted/<path>.txt`, which is indexed and readable in its place. The
+  extraction is a rendition, not the file: `list_files` shows the original with
+  `extracted: true`, and a search hit names the original path.
+
+Extraction runs as a sandboxed tool under the same capability rules as any other,
+so a format Nine cannot parse is a missing tool rather than a special case in the
+daemon. Formats covered at phase 5: PDF and plain-text-bearing archives. Anything
+else lists with `indexed: false` and a reason.
+
 **Journal events are a later phase.** Emitting a session event per external
 change would let a standing agent react to a dropped file
 (`adr/reactive-events.md`), and the scanner is the natural producer. It is out of
@@ -183,6 +217,7 @@ past the context window, and lossy before it.
   `expect`, reporting the count found. No partial application, and no silent
   edit of the wrong occurrence.
 - `expect: "all"` replaces every occurrence and reports how many.
+- `preview: true` returns the diff and writes nothing (§8).
 - The result names the path, the number of replacements, and the line numbers
   touched.
 - It refuses a file that is not valid UTF-8, and any path under `.nine/`.
@@ -193,7 +228,7 @@ straddle a boundary undetected), writes the result to a temporary file beside th
 original, then renames the temporary over the original. Memory stays bounded by
 the window, well inside the sandbox's limits.
 
-That needs three additions to `nine:fs`, all ordinary libc calls in the existing
+That needs four additions to `nine:fs`, all ordinary libc calls in the existing
 pre-open, which is what `rich-js-tools.md` §6.4 asks for — containment stays
 wazero's rather than becoming a path check Nine owns:
 
@@ -202,16 +237,58 @@ wazero's rather than becoming a path check Nine owns:
 | `readRange(path, offset, length)` | `fseek` + `fread` |
 | `appendFile(path, data)` | `fopen(path, "ab")` |
 | `rename(from, to)` | `rename` |
+| `copy(from, to)` | `fread`/`fwrite` in a fixed buffer |
 
-`read_file` gains `offset` and `limit` over the same `readRange`, plus a
-`line_numbers` option, so a model can locate a region with `file_search_text`,
-read it with line numbers, and name exact text to `edit_file`.
+**Reading a region to edit it.** `read_file` gains `offset` and `limit` over
+`readRange`, a `lines: "120-180"` range, and `line_numbers`. Models reason in
+lines and `edit_file` reports line numbers, so a character-only window leaves the
+model converting between two coordinate systems. The sequence is: locate with
+`file_search_text`, read the region with `lines`, name exact text to `edit_file`.
+
+**Appending.** `write_file(mode: "append")` adds to the end over `appendFile`.
+Without it, adding a line to a log is a whole-file read, edit and rewrite.
+
+**Concurrent edits.** `read_file` returns a `version` token (mtime and size).
+`write_file` and `edit_file` accept `if_unchanged: <token>` and fail if the file
+changed since that read, naming who to re-read. It is optional, so a single-writer
+case stays a single call, and it makes two sub-agents editing one file a reported
+conflict rather than a silent loss.
 
 **Atomic replacement comes free.** Writing to a temporary and renaming means an
 interrupted edit leaves the original intact, which `write_file` does not manage
 today. `write_file` adopts the same sequence.
 
-## 8. Deletion and the trash
+## 8. Reporting a change for review
+
+A person supervising an agent needs to see what it changed, in the form they
+already read changes in. Three points in the lifecycle produce a unified diff,
+all built from the `nine:diff` module that sandboxed tools already have
+(`internal/toolvm/stdlib/diff.js`).
+
+| When | Mechanism | Who reads it |
+|------|-----------|--------------|
+| Before the write | `edit_file(preview: true)` and `write_file(preview: true)` return the diff and change nothing | The model, checking its own targeting before committing to it |
+| At an approval gate | A tool named in `[hitl].require_approval` has its auto-generated `ask_human` carry the diff instead of raw JSON arguments (R-HITL.5) | The human being asked to approve |
+| After the write | `diff_file(path)` diffs the current file against its most recent `.nine/trash/` entry — the previous version, kept there by every overwrite, edit and delete (§9) | The model, reporting what it did; the human, reading that report |
+
+`diff_file` costs nothing extra to store: the trash already holds the previous
+version, so the "before" side is a file on disk, not a copy made for the purpose.
+Passing `against: "trash:<entry>"` diffs an older version, and `list_files` with
+`changed_since` plus `diff_file` per path is how an agent answers "show me
+everything you changed this turn".
+
+**Diffs are bounded.** `nine:diff` computes a longest-common-subsequence over
+lines, which is exact and quadratic, and the sandbox's 5-second deadline
+(R-TVM.4) bounds it. A diff over `[workspace].diff_max_bytes` (default 1 MiB per
+side) is not computed; the result reports lines added and removed and the byte
+delta instead. `edit_file`'s preview does not pay this at all: the tool knows the
+match offsets, so it diffs a context window around each replacement rather than
+the file.
+
+An over-cap diff that the model asks for anyway is spilled to the store like any
+large tool result (R-DISP.2), so the model reads the parts it needs by path.
+
+## 9. Deletion, the trash, and restoring
 
 `delete_file` removes one file or one empty directory. There is no recursive
 delete, matching the shell guard's refusal of `rm -r`. It refuses the workspace
@@ -233,8 +310,18 @@ recoverable instead.
 | Sweep age | The timestamp in the entry name. A file's own mtime survives `rename` and records its last write, not its deletion |
 | Sweep | The spill sweeper's hourly loop, against `[workspace].trash_retention` (default 7 days), plus `[workspace].trash_max_bytes` (default 1 GiB), oldest entry first. The workspace is the operator's disk, so the trash carries a size bound as well as an age bound |
 | Git hygiene | The daemon creates `.nine/.gitignore` containing `*`, so a workspace that is a git repository is not dirtied by Nine's bookkeeping |
-| Agent access | `.nine/` is excluded from the index, from `list_files` and from every write tool. `read_file` can still read a trashed file, so an agent that notices its own mistake can copy the contents back |
-| Approval | Not gated by default. An operator can add `delete_file` to `[hitl].require_approval` |
+| Approval | Not gated by default. An operator can add `delete_file` to `[hitl].require_approval`, and the prompt carries the diff (§8) |
+
+**Restoring.** `trash_list(path)` lists entries, newest first, with their
+timestamps and sizes; `restore_file(entry, to)` renames one back, refusing to
+clobber an existing file unless `to` names a free path. Both are scoped to
+`.nine/trash/` and are the only agent access into `.nine/` — the rest of it stays
+excluded from the index, from `list_files` and from every write tool.
+
+Without these two, an agent that deletes the wrong file cannot recover it even
+though the bytes are still there, which makes the trash a benefit only to an
+operator watching at the time. The same pair is what makes `diff_file` (§8)
+possible.
 
 **Mechanism.** With the trash inside the mount, `nine:fs remove` is a `mkdir`
 plus a `rename` in the pre-open — the same libc surface §7 already adds, and no
@@ -242,18 +329,26 @@ new host function. `remove` always trashes, including for generated tools: one
 rule for every deletion through `nine:fs` is simpler to state than a per-tool
 policy, and the sweep bounds the cost.
 
-## 9. Tool surface after the change
+## 10. Tool surface after the change
 
 | Tool | Change |
 |------|--------|
-| `read_file` | Adds `offset`, `limit`, `line_numbers`. The dispatcher serves `spill/...` from the store; other paths go to the sandbox |
-| `write_file` | Adds `content_ref`. Writes through a temporary and renames. Trashes the previous version. Refuses `spill/...` and `.nine/...` |
-| `edit_file` | New shipped sandboxed tool (§7) |
-| `delete_file` | New shipped sandboxed tool (§8) |
-| `list_files` | New shipped sandboxed tool, `fs` read grant. Lists workspace paths under an optional prefix, with `changed_since`. Replaces `file_list`, which roles without `shell` otherwise lose |
+| `read_file` | Adds `offset`, `limit`, `lines`, `line_numbers`, and a `version` token. Refuses non-UTF-8 content. The dispatcher serves `spill/...` from the store; other paths go to the sandbox |
+| `write_file` | Adds `content_ref`, `mode: "append"`, `if_unchanged`, `preview`. Writes through a temporary and renames. Trashes the previous version. Refuses `spill/...` and `.nine/...` |
+| `edit_file` | New. Exact-text replacement with `expect` and `preview` (§7) |
+| `move_file` | New. Renames within the mount, so relocating a file costs no reads and no context. Refuses an existing destination unless `overwrite: true`, which trashes the destination first |
+| `copy_file` | New. Streams host-side in a fixed buffer; the bytes never enter context |
+| `delete_file` | New. One file or one empty directory, to the trash (§9) |
+| `trash_list`, `restore_file` | New. List and recover trashed versions (§9) |
+| `diff_file` | New. Unified diff of a file against its previous version or a named trash entry (§8) |
+| `list_files` | New, `fs` read grant. Lists paths under a prefix, with `pattern` (glob over the indexed path column), `changed_since`, and per-entry `size`, `indexed` and `extracted`. An exact path returns one entry, which is how an agent stats a file. Replaces `file_list` |
 | `file_search_text` | Searches the workspace index and spills. A `spill/` prefix searches spills; another prefix searches the workspace; no prefix searches both and labels each hit |
 | `shell` | Runs with `cmd.Dir` set to the workspace root and `NINE_WORKSPACE` in its environment |
 | `file_store`, `file_fetch`, `file_list`, `file_search_semantic` | Removed |
+
+A rename is a rename, not a read-write-delete: `move_file` exists because without
+it, relocating a file over the context window is impossible, and relocating any
+file wastes the whole file's tokens twice.
 
 New configuration, all under `[workspace]`:
 
@@ -262,25 +357,33 @@ New configuration, all under `[workspace]`:
 | `scan_interval` | 60s | Period of the background rescan |
 | `index_max_file_bytes` | 8 MiB | Largest file the scan indexes; a larger file still lists, reads, and is searched when named |
 | `index_max_files` | 50,000 | Scan bound; search reports truncation |
+| `extract_documents` | true | Extract text from known document formats into `.nine/extracted/` (§6) |
+| `diff_max_bytes` | 1 MiB | Per-side ceiling on a computed diff; above it, counts instead (§8) |
 | `trash_retention` | 7 days | Age at which a trash entry is swept |
 | `trash_max_bytes` | 1 GiB | Size bound on the trash, oldest entry first |
+| `max_bytes` | unset | Budget for what the agent may add to the root (§4) |
 
-## 10. Roles
+## 11. Roles
 
 | Role | Today | After |
 |------|-------|-------|
-| `software-dev` | `shell, read_file, write_file, file_store, file_fetch, file_list, file_search_text, …` | `shell, read_file, write_file, edit_file, delete_file, list_files, file_search_text, …` |
-| `report-writer` | `read_file, file_store, file_fetch, file_list, file_search_text, …` (no `shell`, no `write_file`) | `read_file, write_file, edit_file, delete_file, list_files, file_search_text, …` |
-| `monitor` | `file_search_text, file_fetch, …` | `file_search_text, read_file, list_files, …` |
+| `software-dev` | `shell, read_file, write_file, file_store, file_fetch, file_list, file_search_text, …` | `shell, read_file, write_file, edit_file, move_file, copy_file, delete_file, list_files, file_search_text, diff_file, trash_list, restore_file, …` |
+| `report-writer` | `read_file, file_store, file_fetch, file_list, file_search_text, …` (no `shell`, no `write_file`) | `read_file, write_file, edit_file, move_file, copy_file, delete_file, list_files, file_search_text, diff_file, trash_list, restore_file, …` |
+| `monitor` | `file_search_text, file_fetch, …` | `file_search_text, read_file, list_files, diff_file, …` |
 
 `report-writer` persists reports with `file_store` today, which cannot touch the
 workspace. After the change it needs `write_file`, which reaches the whole
 workspace, including files a sibling sub-agent is editing. The trash makes every
 overwrite and delete recoverable, which is what makes the grant acceptable
 without a per-role `fs` scope. The restriction `roles-design.md` relies on,
-"cannot `shell`", still holds. `monitor` gets no write tools.
+"cannot `shell`", still holds. `monitor` gets `diff_file` but no write tools: it
+reports what changed, and changes nothing.
 
-## 11. Migration
+Thirteen file tools is a larger surface than the six they replace, and tool
+ranking (`tool-exposition.md`) already selects per turn, so the cost lands on the
+ranking budget rather than on every prompt.
+
+## 12. Migration
 
 On first boot after the change, a one-time step writes each non-`spill/` row of
 `files` to the same relative path under the workspace root, then deletes the row.
@@ -292,7 +395,7 @@ The step writes outside the database, so it cannot be an R-MEM.10 migration step
 which must commit atomically with its version bump. It runs from bootstrap, and
 re-runs safely because it deletes a row only after writing the file.
 
-## 12. Sequencing
+## 13. Sequencing
 
 Each phase ships on its own and leaves Nine working.
 
@@ -300,11 +403,12 @@ Each phase ships on its own and leaves Nine working.
 |-------|--------|----------------------|
 | 1 | `shell` runs in the workspace root with `NINE_WORKSPACE` set; `read_file`/`write_file` accept the host-root alias | It fixes the §4 finding whatever happens to the rest |
 | 2 | Delete `file_search_semantic` | It is dead today |
-| 3 | `nine:fs` gains `readRange`, `appendFile`, `rename`; `read_file` gains `offset`/`limit`/`line_numbers`; `edit_file` ships | Large files become editable, which nothing today allows |
-| 4 | `.nine/` layout and `.gitignore`; trash, sweep and bounds; `nine:fs remove`; `delete_file`; `write_file`/`edit_file` trash the previous version and write through a rename | Deletion without `shell`, recoverable overwrites, atomic writes |
-| 5 | Workspace index: boot scan, periodic scan, scoped refresh, skip rules, `changed_since`; `file_search_text` covers the workspace; `list_files` ships | Bind-mounted and externally changed files become findable |
-| 6 | `read_file` serves `spill/`; `write_file` gains `content_ref`; the truncation notice names `read_file` | Spills become readable with the tool the model already uses |
-| 7 | Remove `file_store`/`file_fetch`/`file_list`; migrate rows; update roles, descriptions, recovery messages | Completes the change |
+| 3 | `nine:fs` gains `readRange`, `appendFile`, `rename`, `copy`; `read_file` gains `offset`/`limit`/`lines`/`line_numbers`/`version` and refuses non-UTF-8; `write_file` gains `mode: "append"` and `if_unchanged`; `edit_file`, `move_file` and `copy_file` ship | Large files become editable and movable, which nothing today allows |
+| 4 | `.nine/` layout and `.gitignore`; trash, sweep and bounds; `nine:fs remove`; `delete_file`, `trash_list`, `restore_file`; `write_file`/`edit_file` trash the previous version and write through a rename | Deletion without `shell`, recoverable overwrites, atomic writes |
+| 5 | `diff_file`; `preview` on `edit_file`/`write_file`; approval prompts carry diffs | A supervised change becomes reviewable before and after it happens |
+| 6 | Workspace index: boot scan, periodic scan, scoped refresh, skip rules, `changed_since`, `pattern`; document extraction; `file_search_text` covers the workspace; `list_files` ships | Bind-mounted and externally changed files become findable |
+| 7 | `read_file` serves `spill/`; `write_file` gains `content_ref`; the truncation notice names `read_file` | Spills become readable with the tool the model already uses |
+| 8 | Remove `file_store`/`file_fetch`/`file_list`; migrate rows; `[workspace].max_bytes`; update roles, descriptions, recovery messages | Completes the change |
 
 **Evals ship with this note**, gated on `NINE_EVAL_WORKSPACE_TOOLS` so they are
 reported as skipped rather than failed until the tools they name exist:
@@ -312,19 +416,23 @@ reported as skipped rather than failed until the tools they name exist:
 | Case | Phase | Asserts |
 |------|-------|---------|
 | `workspace-edit-large` | 3 | `edit_file` is used and `write_file` is not, and the untouched lines survive |
+| `workspace-move-file` | 3 | A file is relocated with `move_file`, without its contents passing through a read |
 | `workspace-delete-trash` | 4 | `delete_file` removes a file and a later listing no longer reports it |
-| `workspace-external-file` | 5 | A file placed in the workspace before the session starts is found by `file_search_text` |
-| `workspace-search-unindexed` | 5 | With `index_max_file_bytes` lowered to 64, a named file over the ceiling is still searched |
-| `workspace-write-search` | 5 | `write_file` in one turn, `file_search_text` finds it in a later turn — the failure the split namespaces produced |
+| `workspace-restore-trash` | 4 | A deleted file is recovered with `trash_list` and `restore_file` |
+| `workspace-diff-review` | 5 | After an edit, the agent reports the change as a diff naming both the old and new line |
+| `workspace-find-by-name` | 6 | A file is located by name pattern, not by content |
+| `workspace-external-file` | 6 | A file placed in the workspace before the session starts is found by `file_search_text` |
+| `workspace-search-unindexed` | 6 | With `index_max_file_bytes` lowered to 64, a named file over the ceiling is still searched |
+| `workspace-write-search` | 6 | `write_file` in one turn, `file_search_text` finds it in a later turn — the failure the split namespaces produced |
 
 Phase 3 also needs a generated multi-MB fixture in the harness: a case file cannot
 carry one inline, and `workspace-edit-large` proves the targeting, not the size.
-Phase 7 updates `file-store-search`, `replay-file-store-search`, `spill-read-back`
+Phase 8 updates `file-store-search`, `replay-file-store-search`, `spill-read-back`
 and `spill-ref-passing`, and removes the `NINE_EVAL_WORKSPACE_TOOLS` gate from the
-five cases above. The replay journals under `tests/evals/replay/` record advertised
+cases above. The replay journals under `tests/evals/replay/` record advertised
 tool lists and must be regenerated.
 
-Phase 7 touches the spec contracts named in the header, `spec/conformance.md`,
+Phase 8 touches the spec contracts named in the header, `spec/conformance.md`,
 `docs/` (`tool-output.md`, `glossary.md`, `architecture.md`, `agent-loop.md`,
 `configuration.md`, `evals.md`, `plugins.md`, `writing-sandboxed-tools.md`,
 `personalities.md`), `README.md`, and the three role skills.
@@ -338,14 +446,18 @@ No plugin wire contract changes: plugins cannot call the file tools, and
 |-------|--------|
 | Unverified shell finding | §4's claim that `shell` does not run in the workspace comes from reading `shell.go` and the s6 run script. Phase 1 starts by reproducing it. |
 | `shell` is not confined to the workspace | Setting `cmd.Dir` fixes where relative paths resolve; it does not stop `cd /`. `shell` is a subprocess with the daemon's authority, and confining it is a separate design. The destructive-command guard is unchanged. |
-| `shell rm` bypasses the trash | The trash covers `nine:fs`. `rm file` in `shell` still deletes permanently; the `delete_file` description steers the model away from it. Blocking non-recursive `rm` in the shell guard was rejected as too disruptive for development work. |
+| `shell` bypasses the trash and the budget | `rm file`, an overwrite by a build, and `max_bytes` are all invisible to a subprocess. The trash and the budget cover `nine:fs` only; the tool descriptions steer the model to the tools that honor them. |
 | The trash consumes the operator's disk | It lives in the workspace by design (§4). `trash_max_bytes` and `trash_retention` bound it; a workspace on a small volume needs them tuned. |
+| Restore does not undo a sequence | `restore_file` recovers one version of one path. An agent that made ten changes must restore ten entries, in an order it works out itself. There is no transaction and no snapshot. |
+| Document extraction is format-bound | Phase 6 covers PDF and text-bearing archives. Anything else lists with `indexed: false` and a reason, which is honest but not searchable. Adding a format is adding a sandboxed tool. |
+| Extracted text drifts | A rendition under `.nine/extracted/` is refreshed when the scan sees the source change. Between the change and the next scan, a search hit can quote text the document no longer contains. |
 | `.gitignore` support is partial | The scan honors literal names, directory entries and `*` globs in a root `.gitignore`. Nested ignore files, negation and pattern edge cases are not implemented; the effect is extra indexed files, not missing ones. |
 | Contentless deletes need SQLite 3.43+ | The index retracts postings with `contentless_delete=1`. If the bundled SQLite predates it, the fallback is an external-content index over a path+content table, which costs a second copy of every indexed file on disk. |
 | Direct scan is unranked | Searching a named unindexed file matches literal terms in one pass, with no stemming and no `bm25` ranking. A search that spans the workspace and one large named file therefore mixes two kinds of result, and says which is which. |
 | Snippet cost | Building a snippet re-reads the file from disk, so a search returning many hits from large files does many ranged reads. Hits are capped by `limit`, which bounds it. |
+| Diffs are line-level and bounded | `nine:diff` is an exact LCS over lines, quadratic in their number. Above `diff_max_bytes` a change is reported as counts, not content, and a minified or single-line file diffs as one replaced line whatever changed inside it. |
+| `if_unchanged` is optional | A conflict is detected only when the caller passes the token it read. Two sub-agents that both omit it still race, and the second write stands. Mandatory tokens were rejected: they would make every one-shot write a two-call sequence. |
 | Scan cost on a large workspace | A repository over `index_max_files` is indexed up to the bound and searches say so. A workspace that changes constantly may need a watcher rather than a 60-second rescan; that is out of scope. |
-| Concurrent edits are last-writer-wins | `edit_file` and `write_file` rename over the target. Two sub-agents editing one file both succeed, and the second result stands. No locking is proposed. |
 | Symlinks are not followed out of the root | A symlink inside the workspace pointing outside is listed but not indexed, and reads through it are whatever the pre-open allows. |
 | Read-only mounts surface late | A read-only bind mount fails at the first write with the operating system's error. Nine does not probe writability at boot. |
 | External-change events are unbuilt | `changed_since` lets an agent pull what changed. Pushing a change into a standing agent's turn needs the subscription design in `adr/reactive-events.md`. |

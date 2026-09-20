@@ -1,0 +1,32 @@
+id: workspace-move-file
+description: "Relocate a file with move_file. Guards the rename path: the file moves without its contents passing through a read, so a file over the context window can be reorganized."
+track: live
+tier: basic
+tags: [files, workspace, move]
+
+# Gated until the workspace file tools ship (adr/file-namespaces.md phase 3).
+requires_env: [NINE_EVAL_WORKSPACE_TOOLS]
+
+setup:
+  files:
+    /work/inbox/vendor-assessment.md: |
+      Vendor assessment, Q3.
+      Renewal falls due on 2026-11-30. Codeword juniper-51.
+
+prompts:
+  - "Move /work/inbox/vendor-assessment.md to /work/reports/vendor-assessment.md. Do not read the file."
+
+expect:
+  side_effects:
+    files:
+      /work/reports/vendor-assessment.md: { contains: "juniper-51" }
+  trajectory:
+    tools_all_of: [move_file]
+    tools_none_of: [read_file, write_file]
+    max_turns: 2
+    no_stall: true
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small
