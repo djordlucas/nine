@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"strings"
 	"time"
 
@@ -86,27 +87,27 @@ func NewGeneratedToolStoreWithStanding(store *memory.Store, host *toolvm.Host, m
 
 // Write validates a proposed tool against the ceiling and the namespace, persists
 // it, evicts down to the cap, and re-projects the catalog into the host.
-func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec) ([]string, error) {
+func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec) (agent.WriteResult, error) {
 	decl, err := parseDeclaration(spec.Capabilities)
 	if err != nil {
-		return nil, err
+		return agent.WriteResult{}, err
 	}
 	// Refuse before persisting: a capability the ceiling excludes, a colliding
 	// name, or a malformed name must come back as a message the model can act on
 	// (§7), not as a row left behind that never loads.
 	if _, err := g.host.CheckGenerated(spec.Name, decl, pluginCollides(g.mgr)); err != nil {
-		return nil, err
+		return agent.WriteResult{}, err
 	}
 	// Same discipline for the long-running lifecycle. It is checked here rather
 	// than only at load so the refusal reaches the model as a message it can act
 	// on, instead of a tool that persists and then silently never registers.
 	if spec.Standing != nil {
 		if err := g.checkStandingRequest(spec); err != nil {
-			return nil, err
+			return agent.WriteResult{}, err
 		}
 	}
 	if spec.Resumable && !g.host.AllowLongRunningGenerated() {
-		return nil, fmt.Errorf(
+		return agent.WriteResult{}, fmt.Errorf(
 			"long-running generated tools are not enabled on this instance " +
 				"([tools.agent] allow_long_running). Rewrite the tool to finish in one call, " +
 				"or use gap_report to ask an operator to enable it")
@@ -117,13 +118,30 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 	// imports but nine:* and no way to reach the network.
 	source, lock, err := g.bundle(ctx, spec.Source, decl)
 	if err != nil {
-		return nil, err
+		return agent.WriteResult{}, err
 	}
 	var lockJSON json.RawMessage
 	if !lock.Empty() {
 		if lockJSON, err = json.Marshal(lock); err != nil {
-			return nil, err
+			return agent.WriteResult{}, err
 		}
+	}
+
+	// A rewrite that changes nothing is reported as such: it is the shape a
+	// looping model produces, and saying "wrote it" again gives it no way to
+	// notice. Compared before the upsert, which would overwrite the evidence.
+	unchanged := false
+	if prev, ok, perr := g.store.GeneratedToolGet(spec.Name); perr == nil && ok {
+		// Capabilities are compared as parsed declarations, not as bytes: the store
+		// normalises an omitted object to "{}", so the raw forms of two identical
+		// writes differ.
+		prevDecl, derr := parseDeclaration(prev.Capabilities)
+		unchanged = derr == nil &&
+			prev.Source == source &&
+			prev.Description == spec.Description &&
+			string(prev.InputSchema) == string(spec.InputSchema) &&
+			reflect.DeepEqual(prevDecl, decl) &&
+			prev.Resumable == spec.Resumable
 	}
 
 	if err := g.store.GeneratedToolUpsert(memory.GeneratedTool{
@@ -138,12 +156,12 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 		Lockfile:     lockJSON,
 		Resumable:    spec.Resumable,
 	}); err != nil {
-		return nil, err
+		return agent.WriteResult{}, err
 	}
 
 	evicted, err := g.store.GeneratedToolEvictOldest(g.host.MaxGeneratedTools())
 	if err != nil {
-		return nil, err
+		return agent.WriteResult{}, err
 	}
 
 	// Audit (§9.3). tool_write is an ordinary dispatched tool, so the loop already
@@ -158,12 +176,12 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 
 	if spec.Standing != nil {
 		if err := g.promoteToStanding(spec); err != nil {
-			return nil, err
+			return agent.WriteResult{}, err
 		}
 	}
 
 	g.reload(ctx)
-	return evicted, nil
+	return agent.WriteResult{Evicted: evicted, Unchanged: unchanged}, nil
 }
 
 // checkStandingRequest refuses a standing promotion before anything is
@@ -368,6 +386,19 @@ func LoadGeneratedTools(ctx context.Context, store *memory.Store, host *toolvm.H
 			// is a should-not-happen guarded loudly, not a normal path.
 			slog.Warn("generated tool declaration", "tool", r.Name, "err", err)
 			continue
+		}
+		// A schema that is not a JSON object would become this tool's `parameters`
+		// in every LLM request that advertises it, and a provider rejecting that
+		// field fails the whole turn. Write-time validation refuses one now; a row
+		// stored before that check is skipped here rather than allowed to break
+		// every session that loads it.
+		if len(r.InputSchema) > 0 {
+			var obj map[string]json.RawMessage
+			if jerr := json.Unmarshal(r.InputSchema, &obj); jerr != nil {
+				slog.Warn("generated tool input_schema is not a JSON object; skipping",
+					"tool", r.Name, "err", jerr)
+				continue
+			}
 		}
 		gens = append(gens, toolvm.Generated{
 			Name:        r.Name,

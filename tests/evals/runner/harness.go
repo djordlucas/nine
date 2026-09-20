@@ -196,13 +196,26 @@ func (h *Harness) Run(ctx context.Context, c *Case, provider llm.Provider) (res 
 	if terr != nil {
 		return nil, fmt.Errorf("open sandboxed tool host: %w", terr)
 	}
+	// The generated tier (tool_write/tool_delete/js_eval) is off by default, as in
+	// production; a case opts in with session.config "tools.agent.enabled" (and
+	// "tools.agent.eval" for js_eval). The policy must be installed before any
+	// generated tool loads, mirroring OpenSandboxedTools. No ceiling and no deps
+	// bundler: a case-written tool runs capability-free and import-free.
+	generatedOn := caseBool(c, "tools.agent.enabled")
+	toolHost.SetAgentConfig(toolvm.AgentConfig{Enabled: generatedOn})
 	toolHost.SetShippedWorkspace(toolvm.ShippedWorkspace{Host: workspace})
 	toolHost.LoadShipped(ctx, nil)
 	r.cleanups = append(r.cleanups, func() { toolHost.Close(ctx) }) //nolint:errcheck
+	var generatedTools agent.GeneratedToolStore
+	if generatedOn {
+		generatedTools = runtime.NewGeneratedToolStoreWithStanding(store, toolHost, pluginMgr, nil, false, false, 0)
+	}
 
 	sock := filepath.Join(workspace, "d.sock")
 	asm := runtime.Assemble(runtime.AssemblyConfig{
 		Tools:               toolHost,
+		GeneratedTools:      generatedTools,
+		GeneratedEval:       generatedOn && caseBool(c, "tools.agent.eval"),
 		SocketPath:          sock,
 		Store:               store,
 		Plugins:             pluginMgr,
@@ -424,6 +437,12 @@ func maxToolOutputTokens(harnessDefault int, c *Case) int {
 		return int(n)
 	}
 	return harnessDefault
+}
+
+// caseBool reads a boolean session.config override; absent or non-bool is false.
+func caseBool(c *Case, key string) bool {
+	b, _ := c.Session.Config[key].(bool)
+	return b
 }
 
 // startCaseMCPServers brings up one `mcp` bridge per server the case declares.
