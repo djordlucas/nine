@@ -94,7 +94,8 @@ var shippedTools = []shippedTool{
 			"path":{"type":"string"},
 			"content":{"type":"string"},
 			"mode":{"type":"string","enum":["replace","append"],"description":"replace (default) rewrites the file; append adds to the end without reading it."},
-			"if_unchanged":{"type":"string","description":"A version token from read_file. The write fails if the file changed since then."}
+			"if_unchanged":{"type":"string","description":"A version token from read_file. The write fails if the file changed since then."},
+			"preview":{"type":"boolean","description":"Return the diff this write would make and write nothing."}
 		}}`,
 		File:        "shipped/write_file.js",
 		Declaration: Declaration{FS: []string{"write"}},
@@ -107,7 +108,8 @@ var shippedTools = []shippedTool{
 			"path":{"type":"string"},
 			"old_text":{"type":"string","description":"Exact text to replace. Include enough surrounding lines to make it unique."},
 			"new_text":{"type":"string","description":"Replacement text. Empty deletes the matched text."},
-			"expect":{"description":"How many occurrences to replace: a positive integer (default 1), or \"all\"."}
+			"expect":{"description":"How many occurrences to replace: a positive integer (default 1), or \"all\"."},
+			"preview":{"type":"boolean","description":"Return the diff this edit would make and write nothing."}
 		}}`,
 		File:        "shipped/edit_file.js",
 		Declaration: Declaration{FS: []string{"write"}},
@@ -166,6 +168,17 @@ var shippedTools = []shippedTool{
 		}}`,
 		File:        "shipped/restore_file.js",
 		Declaration: Declaration{FS: []string{"write"}},
+	},
+	{
+		Name:        "diff_file",
+		DisplayName: "Diff File",
+		Description: "Show what changed in a workspace file, as a unified diff against the version before the most recent change. Use it to report an edit back to the person you are working for, rather than describing the change in prose. Only a file that write_file, edit_file or delete_file has changed has a previous version; pass against with a trash entry name from trash_list to compare with an older one.",
+		Schema: `{"type":"object","required":["path"],"properties":{
+			"path":{"type":"string"},
+			"against":{"type":"string","description":"Trash entry name to compare against; defaults to the most recent version of this file."}
+		}}`,
+		File:        "shipped/diff_file.js",
+		Declaration: Declaration{FS: []string{"read"}},
 	},
 	{
 		Name:        "http_get",
