@@ -96,7 +96,6 @@ tools are simply always available.
 | `file_search_text` | Full-text search over stored file content. |
 | `memory_embed` | Embed text and store the resulting vector under a namespace and key. |
 | `memory_query` | Embed a query and return the most semantically similar stored items from a namespace. |
-| `file_search_semantic` | Embed a query and search stored files by semantic similarity. |
 
 **Example prompts:**
 ```
