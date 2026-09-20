@@ -83,6 +83,11 @@ func OpenSandboxedTools(ctx context.Context, cfg *config.Config, store *memory.S
 		if err := os.MkdirAll(root, 0o755); err != nil {
 			slog.Warn("workspace root could not be created", "root", root, "err", err)
 		}
+		// The trash and its .gitignore, so the first delete does not have to
+		// create them and a mounted repository is never dirtied.
+		if err := PrepareWorkspaceState(root); err != nil {
+			slog.Warn("workspace state directory could not be prepared", "root", root, "err", err)
+		}
 	}
 	host.SetShippedWorkspace(toolvm.ShippedWorkspace{Host: cfg.Workspace.Root})
 

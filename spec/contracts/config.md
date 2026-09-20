@@ -105,7 +105,9 @@ theme        = "light"          # light | dark
 show_context = true             # show the context-usage bar (a ⚠ warning shows at ≥90% even when false)
 
 [workspace]
-root = ""                       # files-plugin working directory
+root = ""                       # the directory agent file tools and `shell` work in
+trash_retention_days = 7        # age bound on .nine/trash/; -1 disables it
+trash_max_bytes      = 1073741824  # size bound on .nine/trash/, oldest entry first
 ```
 
 Notes:
