@@ -1,0 +1,32 @@
+id: workspace-delete-trash
+description: "Delete a workspace file and confirm it is gone. Guards delete_file and the trash: the file leaves the workspace, and a later listing does not report it."
+track: live
+tier: multi_step
+tags: [files, workspace, delete]
+
+# Gated until the workspace file tools ship (adr/file-namespaces.md phase 4).
+requires_env: [NINE_EVAL_WORKSPACE_TOOLS]
+
+setup:
+  files:
+    /work/notes/keep.md: "Quarterly plan: hire two engineers in Q3.\n"
+    /work/notes/obsolete-draft.md: "Superseded draft. Codeword tangerine-77.\n"
+
+prompts:
+  - "Delete /work/notes/obsolete-draft.md — it is superseded."
+  - "List the files under /work/notes and tell me exactly which ones are there now."
+
+expect:
+  trajectory:
+    tools_all_of: [delete_file]
+    tools_any_of: [list_files]
+    max_turns: 3
+    no_stall: true
+  answer:
+    contains: ["keep.md"]
+    not_contains: ["obsolete-draft.md"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: medium

@@ -1,0 +1,32 @@
+id: workspace-external-file
+description: "Find a file Nine never wrote. The fixture is placed in the workspace before the session starts, so only a filesystem-derived index can surface it — the bind-mount and git-pull case."
+track: live
+tier: multi_step
+tags: [files, workspace, search]
+
+# Gated until the workspace index ships (adr/file-namespaces.md phase 5).
+requires_env: [NINE_EVAL_WORKSPACE_TOOLS]
+
+setup:
+  files:
+    /work/incoming/vendor-report.md: |
+      Vendor assessment, Q3.
+      The incident response SLA is four hours for severity one.
+      Contract renewal falls due on 2026-11-30.
+    /work/incoming/unrelated.md: "Cafeteria menu for the week.\n"
+
+prompts:
+  - "Someone dropped files into your workspace that you did not create. Search them for the incident response SLA and tell me exactly how long it is."
+
+expect:
+  trajectory:
+    tools_all_of: [file_search_text]
+    max_turns: 2
+    no_stall: true
+  answer:
+    contains: ["four hours"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: medium

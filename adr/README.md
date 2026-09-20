@@ -57,6 +57,7 @@ changed; the document stays as the record and is not rewritten.
 | `codebase-improvement.md` | Design note: prioritized improvements across the tree |
 | `durable-and-long-running-tools.md` | Giving a sandboxed tool memory and letting work outlive a turn. Amends I-TVM.3. |
 | `event-log.md` | Investigation behind the session journal. Written against PostgreSQL; the store is SQLite. |
+| `file-namespaces.md` | The workspace as the agent's only file namespace: external changes, editing large files, deletion to a trash. Retires `file_store`. |
 | `personality-pattern.md` | Packaging complete Nine instances as specialized agents; self-model bootstrapping |
 | `predefined-agents-design.md` | Standing agents as config-seeded goals: motivation, work breakdown, phasing |
 | `reactive-events.md` | Event subscriptions: reacting to the journal |
