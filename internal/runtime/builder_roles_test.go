@@ -278,7 +278,10 @@ func TestCoarseRoleEnforcesBothBoundaries(t *testing.T) {
 			t.Errorf("report-writer advertises %q; allowlist must exclude it (boundary 1)", banned)
 		}
 	}
-	for _, want := range []string{"memory_get", "memory_set", "file_store", "skill_read"} {
+	// Core-intercepted tools only: this builder has no sandboxed host, so the
+	// file tools that live there (write_file, edit_file, …) are not advertised
+	// here whatever the role allows.
+	for _, want := range []string{"memory_get", "memory_set", "file_search_text", "skill_read"} {
 		if !subTools[want] {
 			t.Errorf("report-writer missing allowed tool %q", want)
 		}
@@ -382,7 +385,7 @@ func TestReflectionRoleIsNarrowed(t *testing.T) {
 			t.Errorf("reflection missing %q", want)
 		}
 	}
-	for _, banned := range []string{"run_agent", "goal_create", "skill_write", "file_store"} {
+	for _, banned := range []string{"run_agent", "goal_create", "skill_write", "list_files"} {
 		if tools[banned] {
 			t.Errorf("reflection advertises %q; role must narrow it away (adr/roles-design.md §4)", banned)
 		}
@@ -425,7 +428,7 @@ func TestMonitorPursueShellToolSurface(t *testing.T) {
 		}
 	}
 	// Delegation and goal creation stay gated; the monitor allowlist bans writes.
-	for _, banned := range []string{"goal_create", "run_agent", "run_agents", "shell", "file_store"} {
+	for _, banned := range []string{"goal_create", "run_agent", "run_agents", "shell", "write_file", "delete_file"} {
 		if tools[banned] {
 			t.Errorf("monitor pursue shell advertises %q; it must stay gated/narrowed", banned)
 		}
@@ -608,7 +611,7 @@ func TestCoreDispatcherHoldsClientReachableTools(t *testing.T) {
 	core := b.CoreDispatcher()
 	for _, name := range []string{
 		"memory_get", "memory_set", "memory_list", "memory_delete",
-		"file_store", "file_fetch", "file_list", "file_search_text",
+		"file_search_text", "list_files",
 		"skill_list", "skill_read", "skill_write", "skill_modify",
 		"doc_read", "doc_search",
 	} {

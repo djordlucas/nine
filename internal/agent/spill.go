@@ -8,7 +8,7 @@ import (
 )
 
 // SpillPathPrefix is the reserved file-store namespace that over-cap tool
-// output is written to. It is daemon-owned: `file_store` refuses to write
+// output is written to. It is daemon-owned: no tool writes
 // under it (see RegisterMemoryTools) so a spill is always exactly what a tool
 // returned, never something the model composed. Nothing under this prefix is
 // embedded into the vector pool either, so a spilled blob can never be
@@ -118,7 +118,7 @@ func spillPreview(output string, previewChars int, path string) string {
 
 	// The instructions name tools to CALL, with their arguments spelled out as
 	// arguments. An earlier revision wrote them as function signatures —
-	// "file_fetch(path, offset, limit)" — and live models responded by writing
+	// "read_file(path, offset, limit)" — and live models responded by writing
 	// code (a Python snippet, a JSON fragment) instead of issuing a tool call.
 	// Phrasing shapes behavior here, so keep it imperative and tool-shaped.
 	banner := fmt.Sprintf(

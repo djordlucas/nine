@@ -69,7 +69,7 @@ func TestToolBytesGoToTheFileStore(t *testing.T) {
 	}
 
 	// What the model reads.
-	for _, want := range []string{"7 bytes", "image/png", "spill/agent/render-png.b64", "file_fetch", "_ref"} {
+	for _, want := range []string{"7 bytes", "image/png", "spill/agent/render-png.b64", "read_file", "_ref"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("banner does not mention %q:\n%s", want, out)
 		}

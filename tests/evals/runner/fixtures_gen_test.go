@@ -76,16 +76,19 @@ func TestGenerateSeedFixtures(t *testing.T) {
 		{Text: "Deploy steps: run make build, then nine daemon restart.", StopReason: "end_turn"},
 	})
 
-	// replay-file-store-search: store a file, then find it by full-text search.
-	genFixture(t, h, "replay-file-store-search", Setup{}, []string{
-		"Store a file at runbooks/db-restore.md with content 'To restore prod: pg_restore from the nightly snapshot in s3://backups/pg.'",
-		"Search your stored files for the database restore runbook and tell me exactly where the snapshot lives.",
+	// replay-workspace-write-search: write a file, then find it by full-text
+	// search. This was replay-file-store-search until file_store was retired;
+	// the loop/dispatcher/context path it guards is the same one, over the
+	// workspace rather than the store (adr/file-namespaces.md).
+	genFixture(t, h, "replay-workspace-write-search", Setup{}, []string{
+		"Write a file at runbooks/db-restore.md with content 'To restore prod: pg_restore from the nightly snapshot in s3://backups/pg.'",
+		"Search your files for the database restore runbook and tell me exactly where the snapshot lives.",
 	}, []llm.Response{
-		{ToolCalls: []llm.ToolCall{toolCall("f1", "file_store", map[string]any{
+		{ToolCalls: []llm.ToolCall{toolCall("f1", "write_file", map[string]any{
 			"path":    "runbooks/db-restore.md",
 			"content": "To restore prod: pg_restore from the nightly snapshot in s3://backups/pg.",
 		})}, StopReason: "tool_use"},
-		{Text: "Stored runbooks/db-restore.md.", StopReason: "end_turn"},
+		{Text: "Wrote runbooks/db-restore.md.", StopReason: "end_turn"},
 		{ToolCalls: []llm.ToolCall{toolCall("s1", "file_search_text", map[string]any{
 			"query": "restore database snapshot",
 		})}, StopReason: "tool_use"},

@@ -95,9 +95,6 @@ tools are simply always available.
 | `memory_set` | Store a value in the key-value store. |
 | `memory_delete` | Delete a key from the key-value store. |
 | `memory_list` | List keys in the key-value store, optionally filtered by prefix. |
-| `file_store` | Store a file by path and content, indexed for full-text search. |
-| `file_fetch` | Fetch a stored file by path. |
-| `file_list` | List stored files, optionally filtered by path prefix. |
 | `file_search_text` | Full-text search over stored file content. |
 | `memory_embed` | Embed text and store the resulting vector under a namespace and key. |
 | `memory_query` | Embed a query and return the most semantically similar stored items from a namespace. |
