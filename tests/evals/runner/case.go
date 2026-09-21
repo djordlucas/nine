@@ -164,12 +164,16 @@ type SideEffects struct {
 	Vectors       *VectorExpect          `yaml:"vectors"`
 }
 
-// StringMatch is a tolerant string assertion: at most one of Equals/Contains/
+// StringMatch is a tolerant assertion over a file: at most one of Equals/Contains/
 // Matches is set (validated). Empty matches nothing meaningful and is rejected.
 type StringMatch struct {
 	Equals   *string `yaml:"equals"`
 	Contains string  `yaml:"contains"`
 	Matches  string  `yaml:"matches"` // regexp
+	// Absent asserts the file is not there at all. A delete case has nothing
+	// else to assert on: the strong evidence that a file was removed is its
+	// absence, and every content matcher needs a file to read first.
+	Absent bool `yaml:"absent"`
 }
 
 // WorkflowExpect asserts over the workflows table.
@@ -419,11 +423,14 @@ func (m StringMatch) validate() error {
 	if m.Matches != "" {
 		n++
 	}
+	if m.Absent {
+		n++
+	}
 	if n == 0 {
-		return fmt.Errorf("must set one of equals|contains|matches")
+		return fmt.Errorf("must set one of equals|contains|matches|absent")
 	}
 	if n > 1 {
-		return fmt.Errorf("set only one of equals|contains|matches")
+		return fmt.Errorf("set only one of equals|contains|matches|absent")
 	}
 	return nil
 }
