@@ -305,29 +305,17 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "page size (default 50, max 1000)",
-                        "name": "limit",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "items to skip (default 0)",
-                        "name": "offset",
-                        "in": "query"
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/api.GetHistoryResponse"
-                        }
-                    },
                     "400": {
                         "description": "missing id",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "501": {
+                        "description": "not implemented",
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
@@ -453,9 +441,6 @@ const docTemplate = `{
                     }
                 ],
                 "description": "Replays a specific turn in a conversation, re-running the LLM call and tool invocations.",
-                "consumes": [
-                    "application/json"
-                ],
                 "produces": [
                     "application/json"
                 ],
@@ -470,26 +455,17 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
-                    },
-                    {
-                        "description": "turn to replay",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/api.ReplayRequest"
-                        }
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "400": {
+                        "description": "missing id",
                         "schema": {
-                            "$ref": "#/definitions/api.ReplayResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
-                    "400": {
-                        "description": "missing id or invalid body",
+                    "501": {
+                        "description": "not implemented",
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
@@ -571,29 +547,17 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "turn number to trace (default: the latest turn)",
-                        "name": "turn",
-                        "in": "query"
-                    },
-                    {
-                        "type": "boolean",
-                        "description": "include traces from sub-agent turns",
-                        "name": "sub_agents",
-                        "in": "query"
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/api.GetTraceResponse"
-                        }
-                    },
                     "400": {
                         "description": "missing id",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "501": {
+                        "description": "not implemented",
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
@@ -662,6 +626,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
+                    },
+                    "404": {
+                        "description": "topic not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -717,9 +687,6 @@ const docTemplate = `{
                     }
                 ],
                 "description": "Creates a new background goal that spawns a session waking periodically to make progress.",
-                "consumes": [
-                    "application/json"
-                ],
                 "produces": [
                     "application/json"
                 ],
@@ -727,26 +694,9 @@ const docTemplate = `{
                     "goals"
                 ],
                 "summary": "Create a goal",
-                "parameters": [
-                    {
-                        "description": "goal definition",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/api.CreateGoalRequest"
-                        }
-                    }
-                ],
                 "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/api.CreateGoalResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "invalid request",
+                    "501": {
+                        "description": "not implemented",
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
@@ -790,6 +740,18 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
+                    },
+                    "404": {
+                        "description": "goal not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "daemon unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
                     }
                 }
             },
@@ -817,14 +779,14 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/api.DeleteGoalResponse"
-                        }
-                    },
                     "400": {
                         "description": "missing id",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "501": {
+                        "description": "not implemented",
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
@@ -1051,25 +1013,11 @@ const docTemplate = `{
                     "skills"
                 ],
                 "summary": "List skills",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "page size (default 50, max 1000)",
-                        "name": "limit",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "items to skip (default 0)",
-                        "name": "offset",
-                        "in": "query"
-                    }
-                ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "501": {
+                        "description": "not implemented",
                         "schema": {
-                            "$ref": "#/definitions/api.ListSkillsResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -1133,6 +1081,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "missing topic",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "topic not found",
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
@@ -1280,6 +1234,18 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "missing name",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "tool not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "daemon unavailable",
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
@@ -1627,51 +1593,12 @@ const docTemplate = `{
                 }
             }
         },
-        "api.CreateGoalRequest": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "priority": {
-                    "type": "integer"
-                }
-            }
-        },
-        "api.CreateGoalResponse": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "string"
-                },
-                "session_id": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                }
-            }
-        },
         "api.DeleteConversationResponse": {
             "type": "object",
             "properties": {
                 "deleted_events": {
                     "type": "integer"
                 },
-                "id": {
-                    "type": "string"
-                },
-                "message": {
-                    "type": "string"
-                }
-            }
-        },
-        "api.DeleteGoalResponse": {
-            "type": "object",
-            "properties": {
                 "id": {
                     "type": "string"
                 },
@@ -1805,23 +1732,6 @@ const docTemplate = `{
                 }
             }
         },
-        "api.GetHistoryResponse": {
-            "type": "object",
-            "properties": {
-                "agent_id": {
-                    "type": "string"
-                },
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/api.HistoryEntry"
-                    }
-                },
-                "pagination": {
-                    "$ref": "#/definitions/api.Pagination"
-                }
-            }
-        },
         "api.GetSpecResponse": {
             "type": "object",
             "properties": {
@@ -1863,21 +1773,6 @@ const docTemplate = `{
                 },
                 "plugin": {
                     "type": "string"
-                }
-            }
-        },
-        "api.GetTraceResponse": {
-            "type": "object",
-            "properties": {
-                "agent_id": {
-                    "type": "string"
-                },
-                "sub_agents": {
-                    "type": "boolean"
-                },
-                "trace": {},
-                "turn": {
-                    "type": "integer"
                 }
             }
         },
@@ -1926,34 +1821,6 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "version": {
-                    "type": "string"
-                }
-            }
-        },
-        "api.HistoryEntry": {
-            "type": "object",
-            "properties": {
-                "agent_id": {
-                    "type": "string"
-                },
-                "text": {
-                    "type": "string"
-                },
-                "timestamp": {
-                    "type": "string"
-                },
-                "tool_input": {},
-                "tool_name": {
-                    "type": "string"
-                },
-                "tool_output": {
-                    "type": "string"
-                },
-                "turn_number": {
-                    "type": "integer"
-                },
-                "type": {
-                    "description": "user_turn, response, tool_start, tool_end",
                     "type": "string"
                 }
             }
@@ -2018,20 +1885,6 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/api.PluginInfo"
-                    }
-                },
-                "pagination": {
-                    "$ref": "#/definitions/api.Pagination"
-                }
-            }
-        },
-        "api.ListSkillsResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/api.SkillInfo"
                     }
                 },
                 "pagination": {
@@ -2190,26 +2043,6 @@ const docTemplate = `{
                 }
             }
         },
-        "api.ReplayRequest": {
-            "type": "object",
-            "properties": {
-                "turn": {
-                    "type": "integer"
-                }
-            }
-        },
-        "api.ReplayResponse": {
-            "type": "object",
-            "properties": {
-                "agent_id": {
-                    "type": "string"
-                },
-                "result": {},
-                "turn": {
-                    "type": "integer"
-                }
-            }
-        },
         "api.SendMessageRequest": {
             "type": "object",
             "properties": {
@@ -2235,30 +2068,6 @@ const docTemplate = `{
                 },
                 "turn_id": {
                     "type": "string"
-                }
-            }
-        },
-        "api.SkillInfo": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "source": {
-                    "description": "builtin, user, generated",
-                    "type": "string"
-                },
-                "tags": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 }
             }
         },

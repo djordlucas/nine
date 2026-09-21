@@ -82,35 +82,10 @@ definitions:
       role:
         type: string
     type: object
-  api.CreateGoalRequest:
-    properties:
-      description:
-        type: string
-      name:
-        type: string
-      priority:
-        type: integer
-    type: object
-  api.CreateGoalResponse:
-    properties:
-      id:
-        type: string
-      session_id:
-        type: string
-      status:
-        type: string
-    type: object
   api.DeleteConversationResponse:
     properties:
       deleted_events:
         type: integer
-      id:
-        type: string
-      message:
-        type: string
-    type: object
-  api.DeleteGoalResponse:
-    properties:
       id:
         type: string
       message:
@@ -198,17 +173,6 @@ definitions:
       updated_at:
         type: string
     type: object
-  api.GetHistoryResponse:
-    properties:
-      agent_id:
-        type: string
-      data:
-        items:
-          $ref: '#/definitions/api.HistoryEntry'
-        type: array
-      pagination:
-        $ref: '#/definitions/api.Pagination'
-    type: object
   api.GetSpecResponse:
     properties:
       content:
@@ -237,16 +201,6 @@ definitions:
         type: string
       plugin:
         type: string
-    type: object
-  api.GetTraceResponse:
-    properties:
-      agent_id:
-        type: string
-      sub_agents:
-        type: boolean
-      trace: {}
-      turn:
-        type: integer
     type: object
   api.GoalInfo:
     properties:
@@ -278,25 +232,6 @@ definitions:
       uptime_seconds:
         type: integer
       version:
-        type: string
-    type: object
-  api.HistoryEntry:
-    properties:
-      agent_id:
-        type: string
-      text:
-        type: string
-      timestamp:
-        type: string
-      tool_input: {}
-      tool_name:
-        type: string
-      tool_output:
-        type: string
-      turn_number:
-        type: integer
-      type:
-        description: user_turn, response, tool_start, tool_end
         type: string
     type: object
   api.ListConversationsResponse:
@@ -338,15 +273,6 @@ definitions:
       data:
         items:
           $ref: '#/definitions/api.PluginInfo'
-        type: array
-      pagination:
-        $ref: '#/definitions/api.Pagination'
-    type: object
-  api.ListSkillsResponse:
-    properties:
-      data:
-        items:
-          $ref: '#/definitions/api.SkillInfo'
         type: array
       pagination:
         $ref: '#/definitions/api.Pagination'
@@ -449,19 +375,6 @@ definitions:
           $ref: '#/definitions/api.ToolInfo'
         type: array
     type: object
-  api.ReplayRequest:
-    properties:
-      turn:
-        type: integer
-    type: object
-  api.ReplayResponse:
-    properties:
-      agent_id:
-        type: string
-      result: {}
-      turn:
-        type: integer
-    type: object
   api.SendMessageRequest:
     properties:
       force_think:
@@ -479,22 +392,6 @@ definitions:
         type: string
       turn_id:
         type: string
-    type: object
-  api.SkillInfo:
-    properties:
-      created_at:
-        type: string
-      description:
-        type: string
-      name:
-        type: string
-      source:
-        description: builtin, user, generated
-        type: string
-      tags:
-        items:
-          type: string
-        type: array
     type: object
   api.StatusResponse:
     properties:
@@ -773,23 +670,15 @@ paths:
         name: id
         required: true
         type: string
-      - description: page size (default 50, max 1000)
-        in: query
-        name: limit
-        type: integer
-      - description: items to skip (default 0)
-        in: query
-        name: offset
-        type: integer
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.GetHistoryResponse'
         "400":
           description: missing id
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "501":
+          description: not implemented
           schema:
             $ref: '#/definitions/api.ErrorResponse'
       security:
@@ -871,8 +760,6 @@ paths:
       - conversations
   /conversations/{id}/replay:
     post:
-      consumes:
-      - application/json
       description: Replays a specific turn in a conversation, re-running the LLM call
         and tool invocations.
       parameters:
@@ -881,21 +768,15 @@ paths:
         name: id
         required: true
         type: string
-      - description: turn to replay
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/api.ReplayRequest'
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.ReplayResponse'
         "400":
-          description: missing id or invalid body
+          description: missing id
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "501":
+          description: not implemented
           schema:
             $ref: '#/definitions/api.ErrorResponse'
       security:
@@ -947,23 +828,15 @@ paths:
         name: id
         required: true
         type: string
-      - description: 'turn number to trace (default: the latest turn)'
-        in: query
-        name: turn
-        type: integer
-      - description: include traces from sub-agent turns
-        in: query
-        name: sub_agents
-        type: boolean
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.GetTraceResponse'
         "400":
           description: missing id
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "501":
+          description: not implemented
           schema:
             $ref: '#/definitions/api.ErrorResponse'
       security:
@@ -1006,6 +879,10 @@ paths:
           description: missing topic
           schema:
             $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: topic not found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Get documentation
@@ -1041,26 +918,13 @@ paths:
       tags:
       - goals
     post:
-      consumes:
-      - application/json
       description: Creates a new background goal that spawns a session waking periodically
         to make progress.
-      parameters:
-      - description: goal definition
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/api.CreateGoalRequest'
       produces:
       - application/json
       responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/api.CreateGoalResponse'
-        "400":
-          description: invalid request
+        "501":
+          description: not implemented
           schema:
             $ref: '#/definitions/api.ErrorResponse'
       security:
@@ -1080,12 +944,12 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.DeleteGoalResponse'
         "400":
           description: missing id
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "501":
+          description: not implemented
           schema:
             $ref: '#/definitions/api.ErrorResponse'
       security:
@@ -1111,6 +975,14 @@ paths:
             $ref: '#/definitions/api.GetGoalResponse'
         "400":
           description: missing id
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: goal not found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "503":
+          description: daemon unavailable
           schema:
             $ref: '#/definitions/api.ErrorResponse'
       security:
@@ -1254,22 +1126,13 @@ paths:
     get:
       description: Returns all available skills (builtin, user, and generated) with
         names, descriptions, and tags.
-      parameters:
-      - description: page size (default 50, max 1000)
-        in: query
-        name: limit
-        type: integer
-      - description: items to skip (default 0)
-        in: query
-        name: offset
-        type: integer
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "501":
+          description: not implemented
           schema:
-            $ref: '#/definitions/api.ListSkillsResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: List skills
@@ -1308,6 +1171,10 @@ paths:
             $ref: '#/definitions/api.GetSpecResponse'
         "400":
           description: missing topic
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: topic not found
           schema:
             $ref: '#/definitions/api.ErrorResponse'
       security:
@@ -1382,6 +1249,14 @@ paths:
             $ref: '#/definitions/api.GetToolResponse'
         "400":
           description: missing name
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "404":
+          description: tool not found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "503":
+          description: daemon unavailable
           schema:
             $ref: '#/definitions/api.ErrorResponse'
       security:

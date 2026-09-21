@@ -4,10 +4,13 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
+
+	"nine/internal/docindex"
 )
 
 // =============================================================================
@@ -638,9 +641,7 @@ func (s *Server) handleStopConversation(w http.ResponseWriter, r *http.Request) 
 // @Tags         conversations
 // @Produce      json
 // @Param        id path string true "conversation id"
-// @Param        limit query int false "page size (default 50, max 1000)"
-// @Param        offset query int false "items to skip (default 0)"
-// @Success      200 {object} GetHistoryResponse
+// @Failure      501 {object} ErrorResponse "not implemented"
 // @Failure      400 {object} ErrorResponse "missing id"
 // @Security     BearerAuth
 // @Router       /conversations/{id}/history [get]
@@ -652,20 +653,9 @@ func (s *Server) handleGetHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, err := parsePageParams(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error(), nil)
-		return
-	}
-
-	// TODO: Implement proper history retrieval via daemon socket.
-	// For now, return a placeholder.
-	data, pagination := paginate([]HistoryEntry{}, page)
-	writeJSON(w, http.StatusOK, GetHistoryResponse{
-		AgentID:    id,
-		Data:       data,
-		Pagination: pagination,
-	})
+	writeNotImplemented(w, "the wire protocol exposes no journal query; "+
+		"attach carries a transcript but registers the caller as attached, "+
+		"which a read must not do")
 }
 
 // handleGetTrace returns a detailed trace of a specific turn.
@@ -674,9 +664,7 @@ func (s *Server) handleGetHistory(w http.ResponseWriter, r *http.Request) {
 // @Tags         conversations
 // @Produce      json
 // @Param        id path string true "conversation id"
-// @Param        turn query int false "turn number to trace (default: the latest turn)"
-// @Param        sub_agents query bool false "include traces from sub-agent turns"
-// @Success      200 {object} GetTraceResponse
+// @Failure      501 {object} ErrorResponse "not implemented"
 // @Failure      400 {object} ErrorResponse "missing id"
 // @Security     BearerAuth
 // @Router       /conversations/{id}/trace [get]
@@ -688,36 +676,19 @@ func (s *Server) handleGetTrace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	turn, err := queryInt(r, "turn", 0)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error(), nil)
-		return
-	}
-	subAgents, err := queryBool(r, "sub_agents")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error(), nil)
-		return
-	}
-
-	// TODO: Implement proper trace retrieval via daemon socket.
-	// For now, return a placeholder.
-	writeJSON(w, http.StatusOK, GetTraceResponse{
-		AgentID:   id,
-		Turn:      turn,
-		SubAgents: subAgents,
-	})
+	writeNotImplemented(w, "the wire protocol exposes no per-turn trace; "+
+		"`nine trace` reads the memory store directly, which the API process "+
+		"must not do (API-A-1)")
 }
 
 // handleReplay replays a specific turn.
 // @Summary      Replay a turn
 // @Description  Replays a specific turn in a conversation, re-running the LLM call and tool invocations.
 // @Tags         conversations
-// @Accept       json
 // @Produce      json
 // @Param        id path string true "conversation id"
-// @Param        request body ReplayRequest true "turn to replay"
-// @Success      200 {object} ReplayResponse
-// @Failure      400 {object} ErrorResponse "missing id or invalid body"
+// @Failure      400 {object} ErrorResponse "missing id"
+// @Failure      501 {object} ErrorResponse "not implemented"
 // @Security     BearerAuth
 // @Router       /conversations/{id}/replay [post]
 func (s *Server) handleReplay(w http.ResponseWriter, r *http.Request) {
@@ -728,19 +699,7 @@ func (s *Server) handleReplay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req ReplayRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request",
-			"invalid request body", nil)
-		return
-	}
-
-	// TODO: Implement proper replay via daemon socket.
-	// For now, return a placeholder.
-	writeJSON(w, http.StatusOK, ReplayResponse{
-		AgentID: id,
-		Turn:    req.Turn,
-	})
+	writeNotImplemented(w, "the wire protocol exposes no replay message")
 }
 
 // =============================================================================
@@ -802,37 +761,14 @@ func (s *Server) handleListGoals(w http.ResponseWriter, r *http.Request) {
 // @Summary      Create a goal
 // @Description  Creates a new background goal that spawns a session waking periodically to make progress.
 // @Tags         goals
-// @Accept       json
 // @Produce      json
-// @Param        request body CreateGoalRequest true "goal definition"
-// @Success      201 {object} CreateGoalResponse
-// @Failure      400 {object} ErrorResponse "invalid request"
+// @Failure      501 {object} ErrorResponse "not implemented"
 // @Security     BearerAuth
 // @Router       /goals [post]
 func (s *Server) handleCreateGoal(w http.ResponseWriter, r *http.Request) {
-	var req CreateGoalRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request",
-			"invalid request body", nil)
-		return
-	}
-
-	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, "invalid_request",
-			"goal name is required", nil)
-		return
-	}
-
-	// TODO: Implement proper goal creation via daemon socket.
-	// Currently, goals are managed through agent tools (goal_create, goal_get, etc.)
-	// which are not directly accessible via the socket protocol.
-	// For now, return a placeholder.
-	// See: internal/agent/register_goals.go for the tool implementations.
-	writeJSON(w, http.StatusCreated, CreateGoalResponse{
-		ID:        "goal-" + fmt.Sprintf("%d", time.Now().UnixNano()),
-		Status:    "created",
-		SessionID: "",
-	})
+	writeNotImplemented(w, "goal creation exists only as the agent tool "+
+		"goal_create, which is gated behind a role's Delegates flag; routing "+
+		"the API through it would have to decide what role an HTTP caller has")
 }
 
 // handleGetGoal returns goal details.
@@ -843,6 +779,8 @@ func (s *Server) handleCreateGoal(w http.ResponseWriter, r *http.Request) {
 // @Param        id path string true "goal id"
 // @Success      200 {object} GetGoalResponse
 // @Failure      400 {object} ErrorResponse "missing id"
+// @Failure      404 {object} ErrorResponse "goal not found"
+// @Failure      503 {object} ErrorResponse "daemon unavailable"
 // @Security     BearerAuth
 // @Router       /goals/{id} [get]
 func (s *Server) handleGetGoal(w http.ResponseWriter, r *http.Request) {
@@ -853,14 +791,38 @@ func (s *Server) handleGetGoal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement proper goal retrieval via daemon socket.
-	// Currently, goals are managed through agent tools (goal_create, goal_get, etc.)
-	// which are not directly accessible via the socket protocol.
-	// For now, return a placeholder.
-	// See: internal/agent/register_goals.go for the tool implementations.
-	writeJSON(w, http.StatusOK, GetGoalResponse{
-		ID: id,
-	})
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "service_unavailable",
+			err.Error(), nil)
+		return
+	}
+	defer cl.Close()
+
+	// The wire protocol exposes the goal list but no single-goal query, so
+	// select from the list rather than adding a message type for one reader.
+	raw, err := cl.ListGoals()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "server_error",
+			err.Error(), nil)
+		return
+	}
+
+	rows, err := decodeList[wireGoal](raw, "goals")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "server_error", err.Error(), nil)
+		return
+	}
+
+	for _, row := range rows {
+		if row.ID == id {
+			writeJSON(w, http.StatusOK, GetGoalResponse(toGoalInfo(row)))
+			return
+		}
+	}
+
+	writeError(w, http.StatusNotFound, "not_found",
+		"goal not found", map[string]any{"id": id})
 }
 
 // handleDeleteGoal deletes a goal.
@@ -869,7 +831,7 @@ func (s *Server) handleGetGoal(w http.ResponseWriter, r *http.Request) {
 // @Tags         goals
 // @Produce      json
 // @Param        id path string true "goal id"
-// @Success      200 {object} DeleteGoalResponse
+// @Failure      501 {object} ErrorResponse "not implemented"
 // @Failure      400 {object} ErrorResponse "missing id"
 // @Security     BearerAuth
 // @Router       /goals/{id} [delete]
@@ -881,15 +843,9 @@ func (s *Server) handleDeleteGoal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement proper goal deletion via daemon socket.
-	// Currently, goals are managed through agent tools (goal_create, goal_get, etc.)
-	// which are not directly accessible via the socket protocol.
-	// For now, return a placeholder.
-	// See: internal/agent/register_goals.go for the tool implementations.
-	writeJSON(w, http.StatusOK, DeleteGoalResponse{
-		Message: "goal deleted",
-		ID:      id,
-	})
+	writeNotImplemented(w, "no goal deletion exists to call: the tool surface "+
+		"has goal_create, goal_get, goal_list and goal_update_status, and the "+
+		"wire protocol has no goal mutation message")
 }
 
 // =============================================================================
@@ -1177,6 +1133,8 @@ func (s *Server) handleCallTool(w http.ResponseWriter, r *http.Request) {
 // @Param        name path string true "tool name"
 // @Success      200 {object} GetToolResponse
 // @Failure      400 {object} ErrorResponse "missing name"
+// @Failure      404 {object} ErrorResponse "tool not found"
+// @Failure      503 {object} ErrorResponse "daemon unavailable"
 // @Security     BearerAuth
 // @Router       /tools/{name} [get]
 func (s *Server) handleGetTool(w http.ResponseWriter, r *http.Request) {
@@ -1187,11 +1145,37 @@ func (s *Server) handleGetTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement proper tool info retrieval via daemon socket.
-	// For now, return a placeholder.
-	writeJSON(w, http.StatusOK, GetToolResponse{
-		Name: name,
-	})
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "service_unavailable",
+			err.Error(), nil)
+		return
+	}
+	defer cl.Close()
+
+	tools, err := cl.ListTools()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "server_error",
+			err.Error(), nil)
+		return
+	}
+
+	for _, tool := range tools {
+		if tool.Name != name {
+			continue
+		}
+		writeJSON(w, http.StatusOK, GetToolResponse{
+			Name:        tool.Name,
+			Description: tool.Description,
+			Plugin:      tool.Plugin,
+			Kind:        "plugin",
+			Loaded:      true,
+		})
+		return
+	}
+
+	writeError(w, http.StatusNotFound, "not_found",
+		"tool not found", map[string]any{"name": name})
 }
 
 // handleReloadTools reloads sandboxed tools.
@@ -1416,26 +1400,12 @@ func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request)
 // @Description  Returns all available skills (builtin, user, and generated) with names, descriptions, and tags.
 // @Tags         skills
 // @Produce      json
-// @Param        limit query int false "page size (default 50, max 1000)"
-// @Param        offset query int false "items to skip (default 0)"
-// @Success      200 {object} ListSkillsResponse
+// @Failure      501 {object} ErrorResponse "not implemented"
 // @Security     BearerAuth
 // @Router       /skills [get]
 func (s *Server) handleListSkills(w http.ResponseWriter, r *http.Request) {
-	page, err := parsePageParams(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error(), nil)
-		return
-	}
-
-	// Skills are accessed through the memory store, not directly via socket
-	// TODO: Implement proper skills listing via daemon socket.
-	// For now, return a placeholder.
-	data, pagination := paginate([]SkillInfo{}, page)
-	writeJSON(w, http.StatusOK, ListSkillsResponse{
-		Data:       data,
-		Pagination: pagination,
-	})
+	writeNotImplemented(w, "skills live in the memory store and the wire "+
+		"protocol exposes no skills query")
 }
 
 // =============================================================================
@@ -1524,11 +1494,7 @@ func (s *Server) handleAttachSession(w http.ResponseWriter, r *http.Request) {
 // @Security     BearerAuth
 // @Router       /docs [get]
 func (s *Server) handleListDocs(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement proper docs listing.
-	// For now, return a placeholder.
-	writeJSON(w, http.StatusOK, ListDocsResponse{
-		Topics: []string{"overview", "usage", "configuration", "plugins", "architecture"},
-	})
+	writeTopics(w, docindex.Docs())
 }
 
 // handleGetDocs returns specific documentation.
@@ -1539,6 +1505,7 @@ func (s *Server) handleListDocs(w http.ResponseWriter, r *http.Request) {
 // @Param        topic path string true "documentation topic"
 // @Success      200 {object} GetDocsResponse
 // @Failure      400 {object} ErrorResponse "missing topic"
+// @Failure      404 {object} ErrorResponse "topic not found"
 // @Security     BearerAuth
 // @Router       /docs/{topic} [get]
 func (s *Server) handleGetDocs(w http.ResponseWriter, r *http.Request) {
@@ -1549,12 +1516,14 @@ func (s *Server) handleGetDocs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement proper docs retrieval.
-	// For now, return a placeholder.
-	writeJSON(w, http.StatusOK, GetDocsResponse{
-		Topic:   topic,
-		Content: "Documentation for " + topic + " would appear here.",
-	})
+	content, ok := readTopic(docindex.Docs(), topic)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found",
+			"documentation topic not found", map[string]any{"topic": topic})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, GetDocsResponse{Topic: topic, Content: content})
 }
 
 // handleListSpec lists specification topics.
@@ -1566,11 +1535,7 @@ func (s *Server) handleGetDocs(w http.ResponseWriter, r *http.Request) {
 // @Security     BearerAuth
 // @Router       /spec [get]
 func (s *Server) handleListSpec(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement proper spec listing.
-	// For now, return a placeholder.
-	writeJSON(w, http.StatusOK, ListSpecResponse{
-		Topics: []string{"wire-protocol", "plugin", "toolvm", "api"},
-	})
+	writeTopics(w, docindex.Spec())
 }
 
 // handleGetSpec returns specific specification.
@@ -1581,6 +1546,7 @@ func (s *Server) handleListSpec(w http.ResponseWriter, r *http.Request) {
 // @Param        topic path string true "specification topic"
 // @Success      200 {object} GetSpecResponse
 // @Failure      400 {object} ErrorResponse "missing topic"
+// @Failure      404 {object} ErrorResponse "topic not found"
 // @Security     BearerAuth
 // @Router       /spec/{topic} [get]
 func (s *Server) handleGetSpec(w http.ResponseWriter, r *http.Request) {
@@ -1591,12 +1557,57 @@ func (s *Server) handleGetSpec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement proper spec retrieval.
-	// For now, return a placeholder.
-	writeJSON(w, http.StatusOK, GetSpecResponse{
-		Topic:   topic,
-		Content: "Specification for " + topic + " would appear here.",
-	})
+	content, ok := readTopic(docindex.Spec(), topic)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found",
+			"specification topic not found", map[string]any{"topic": topic})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, GetSpecResponse{Topic: topic, Content: content})
+}
+
+// writeNotImplemented reports an endpoint the daemon cannot yet serve.
+//
+// The alternative these replace was a 200 carrying invented data — an empty
+// list, an echo of the request, or a fabricated id for a goal that was never
+// created. A client cannot tell that apart from a real answer, so the failure
+// stayed invisible. 501 names the gap, and `detail` says what the daemon would
+// have to expose to close it.
+func writeNotImplemented(w http.ResponseWriter, detail string) {
+	writeError(w, http.StatusNotImplemented, "not_implemented",
+		"endpoint not implemented", map[string]any{"detail": detail})
+}
+
+// writeTopics lists a bundle's topics. The bundles are embedded at build time,
+// so this needs no daemon.
+func writeTopics(w http.ResponseWriter, bundle docindex.Bundle) {
+	topics, err := bundle.Topics()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "server_error", err.Error(), nil)
+		return
+	}
+
+	names := make([]string, 0, len(topics))
+	for _, t := range topics {
+		names = append(names, t.Name)
+	}
+
+	writeJSON(w, http.StatusOK, ListDocsResponse{Topics: names})
+}
+
+// readTopic resolves a topic name to its Markdown body. Resolve accepts both
+// the short name and an explicit relative path such as "contracts/api".
+func readTopic(bundle docindex.Bundle, topic string) (string, bool) {
+	path, ok := bundle.Resolve(topic)
+	if !ok {
+		return "", false
+	}
+	body, err := fs.ReadFile(bundle.FS, path)
+	if err != nil {
+		return "", false
+	}
+	return string(body), true
 }
 
 // =============================================================================
