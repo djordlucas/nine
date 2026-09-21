@@ -33,4 +33,5 @@ expect:
 runs: 3
 pass_threshold: "2/3"
 models:
-  expected_pass_min_class: medium
+  # Measured, not guessed: 3/3 twice on qwen3.5:9b (small).
+  expected_pass_min_class: small
