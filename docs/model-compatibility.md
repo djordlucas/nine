@@ -61,6 +61,43 @@ capability tier; `Host` is the profile it ran on.
 | `file-store-search` (medium) | ✗ 1/3 | ✓ 3/3 | ✓ 2/3 | ✓ 3/3 |
 | `delegate-subagent` (medium) | ✗ 1/3 | ✗ 0/3 | ✓ 3/3 | ✓ 3/3 |
 
+### Workspace file tools (2026-09-21, H1)
+
+From two runs of the nine `workspace-*` cases on `qwen3.5:9b` (small), plus the
+pre-existing suite. Recorded because the class field is a finding, not an estimate:
+a case marked above every model on the machine can never fail the suite, and one
+marked below what it reliably reaches fails it for no reason.
+
+| Case | Run 1 | Run 2 | Recorded class |
+|------|:---:|:---:|:---:|
+| `workspace-delete-trash` | 3/3 | 3/3 | small |
+| `workspace-diff-review` | 3/3 | 3/3 | small |
+| `workspace-edit-large` | 3/3 | 3/3 | small |
+| `workspace-find-by-name` | 3/3 | 3/3 | small |
+| `workspace-move-file` | 3/3 | 3/3 | small |
+| `workspace-restore-trash` | 0/3 | 2/3 | medium |
+| `workspace-search-unindexed` | 2/3 | 2/3 | medium |
+| `workspace-write-search` | 2/3 | 1/3 | medium |
+| `workspace-external-file` | 3/3 | 1/3 | medium |
+
+The `restore-trash` jump is a corrected assertion, not a model difference: run 1
+required the model to quote the restored file's contents back, which a correct
+restore does not entail.
+
+Where the misses cluster: `file_search_text` is not reliably chosen at this size.
+`external-file` and `write-search` both failed runs with "`file_search_text` never
+called" — the model answered by reading or listing instead, reaching the right
+answer the wrong way. The index and the tool work; tool *selection* is the gap.
+
+**`gemma4:12b` is not usable on H1.** Nine runs took 109 minutes and died of
+`context deadline exceeded` rather than grading: a 12B model exceeds
+`[llm].timeout_seconds` on ordinary turns at 16 GB. H1 therefore has no
+medium-class model, so a `medium` case reports locally but cannot fail the suite.
+
+`tool-output-spill` is marginal here independently of the workspace work: 1/3 on
+current main, 2/3 on `a011dbb` (the commit before the truncation banner changed).
+Three runs a side cannot separate those, and 2/3 is the threshold itself.
+
 Source runs (all on H1, post-fix): `gemma4:e2b` — `reports/20260724-170752.json`
 (**10/12**); `gemma4:e4b` — `reports/20260724-182911.json` (**11/12**);
 `qwen3.5:4b` and `qwen3.5:9b` — `reports/20260724-195901.json` /

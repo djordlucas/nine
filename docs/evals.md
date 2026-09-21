@@ -349,6 +349,17 @@ p50/p95 latency, tokens.
 Observed results per model — which models have been run, how they did, and on what
 hardware — are tracked in [model-compatibility.md](model-compatibility.md).
 
+**A class nothing can reach is not a gate.** Marking a case `medium` on a machine whose
+models are all nano or small means its failures are always tolerated and never fatal — it
+reports, but it cannot fail the suite. Set the class from a measured result rather than an
+estimate: the lowest class that passes it *reliably*, not the lowest that has passed it
+once. A case that sits exactly at its threshold on a class has not cleared it.
+
+Be wary of reaching for a larger model to get a stricter gate. On a 16 GB machine a 12B
+model can exceed `[llm].timeout_seconds` on ordinary turns, and a run that dies of
+`context deadline exceeded` grades nothing: the report shows a failed case with no
+assertion behind it, which looks like a defect and is not one.
+
 ---
 
 ## 7. Non-determinism, judging, and pitfalls

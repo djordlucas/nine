@@ -81,6 +81,12 @@ func (g *grader) gradeSideEffects() {
 			continue
 		}
 		content, ok := readWorkspaceFile(abs)
+		if m.Absent {
+			if ok {
+				g.fail("side_effect file %s: still exists", path)
+			}
+			continue
+		}
 		if !ok {
 			g.fail("side_effect file %s: not found", path)
 			continue
