@@ -2,8 +2,12 @@ package api
 
 import (
 	"encoding/json"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -377,48 +381,288 @@ func TestRateLimitMiddleware_Disabled(t *testing.T) {
 }
 
 // =============================================================================
-// Utility Function Tests
+// Daemon Connection Lifetime Tests
 // =============================================================================
 
-func TestGetClientIP_FromXForwardedFor(t *testing.T) {
-	req := httptest.NewRequest("GET", "/test", nil)
-	req.Header.Set("X-Forwarded-For", "203.0.113.195, 70.41.3.18, 150.172.238.178")
-	req.RemoteAddr = "192.168.1.1:12345"
+// newSocketProbe listens on a throwaway Unix socket and reports, on the
+// returned channel, each connection the peer closes. It stands in for the
+// daemon: protocol.Connect is a bare dial, so no handshake is needed.
+func newSocketProbe(t *testing.T) (socketPath string, closed <-chan struct{}) {
+	t.Helper()
 
-	ip := getClientIP(req)
-	if ip != "203.0.113.195" {
-		t.Errorf("Expected '203.0.113.195', got '%s'", ip)
+	dir, err := os.MkdirTemp("", "nine-api")
+	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	socketPath = filepath.Join(dir, "d.sock")
+	ln, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	t.Cleanup(func() { ln.Close() })
+
+	ch := make(chan struct{}, 64)
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				// Blocks until the API side closes its half. A leaked client
+				// never gets here, which is what the test detects.
+				io.Copy(io.Discard, c) //nolint:errcheck
+				ch <- struct{}{}
+			}(conn)
+		}
+	}()
+
+	return socketPath, ch
+}
+
+// Health is the most frequently polled endpoint on the server — a Kubernetes
+// liveness probe hits it every few seconds. Probing the daemon without closing
+// the socket leaks one descriptor per call until the process runs out.
+func TestHandleHealth_ClosesDaemonConnection(t *testing.T) {
+	socketPath, closed := newSocketProbe(t)
+
+	s := NewServer(Config{
+		APIConfig:  config.APIConfig{},
+		SocketPath: socketPath,
+		Version:    "test",
+		StartTime:  time.Now(),
+	})
+
+	const probes = 5
+	for i := 0; i < probes; i++ {
+		req := httptest.NewRequest("GET", "/api/v1/health", nil)
+		w := httptest.NewRecorder()
+		s.handleHealth(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("Probe %d: expected 200, got %d", i+1, w.Code)
+		}
+	}
+
+	deadline := time.After(5 * time.Second)
+	for i := 0; i < probes; i++ {
+		select {
+		case <-closed:
+		case <-deadline:
+			t.Fatalf("Only %d of %d health probes closed their daemon connection — "+
+				"the rest leaked", i, probes)
+		}
 	}
 }
 
-func TestGetClientIP_FromXRealIP(t *testing.T) {
+// =============================================================================
+// Middleware Ordering Tests
+// =============================================================================
+
+// Rate limiting must apply to requests that fail authentication. When auth sits
+// outside the limiter, a 401 short-circuits before any token is spent and
+// bearer-token guessing runs unthrottled — so this asserts the chain order, not
+// just that a limiter exists somewhere.
+func TestMiddlewareOrder_RateLimitsUnauthenticatedRequests(t *testing.T) {
+	const burst = 3
+
+	s := NewServer(Config{
+		APIConfig: config.APIConfig{
+			AuthToken: "correct-horse-battery-staple",
+			RateLimit: config.APIRateLimitConfig{
+				Enabled:           true,
+				RequestsPerMinute: 60,
+				BurstSize:         burst,
+			},
+		},
+		Version:   "test",
+		StartTime: time.Now(),
+	})
+
+	handler := s.createHandler()
+
+	var statuses []int
+	for i := 0; i < burst+3; i++ {
+		req := httptest.NewRequest("GET", "/api/v1/conversations", nil)
+		req.Header.Set("Authorization", "Bearer wrong-guess")
+		req.RemoteAddr = "203.0.113.9:12345"
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+		statuses = append(statuses, w.Code)
+	}
+
+	// The burst is spent on 401s, then the limiter takes over.
+	for i := 0; i < burst; i++ {
+		if statuses[i] != http.StatusUnauthorized {
+			t.Errorf("Request %d: expected 401 while burst remains, got %d", i+1, statuses[i])
+		}
+	}
+	if last := statuses[len(statuses)-1]; last != http.StatusTooManyRequests {
+		t.Errorf("Expected 429 once the burst is exhausted, got %d (statuses: %v) — "+
+			"failed auth is not counting against the rate limit", last, statuses)
+	}
+}
+
+// CORS preflight has to answer before auth, since browsers send it without
+// credentials. This guards the other half of the ordering change.
+func TestMiddlewareOrder_PreflightSucceedsWithoutAuth(t *testing.T) {
+	s := NewServer(Config{
+		APIConfig: config.APIConfig{AuthToken: "secret"},
+		Version:   "test",
+		StartTime: time.Now(),
+	})
+
+	req := httptest.NewRequest("OPTIONS", "/api/v1/conversations", nil)
+	req.RemoteAddr = "203.0.113.9:12345"
+	w := httptest.NewRecorder()
+
+	s.createHandler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Errorf("Expected preflight to return 204 without a token, got %d", w.Code)
+	}
+}
+
+// =============================================================================
+// Utility Function Tests
+// =============================================================================
+
+// serverWithTrustedProxies builds a bare server whose only configured behaviour
+// is the trusted-proxy allowlist, for exercising clientIP.
+func serverWithTrustedProxies(t *testing.T, entries ...string) *Server {
+	t.Helper()
+	return NewServer(Config{
+		APIConfig: config.APIConfig{TrustedProxies: entries},
+		Version:   "test",
+		StartTime: time.Now(),
+	})
+}
+
+// A request arriving straight from a client must be keyed on its peer address.
+// Honouring X-Forwarded-For here is the spoofing bug: a client that varies the
+// header gets a fresh rate-limit bucket on every request.
+func TestClientIP_IgnoresForwardedHeadersFromUntrustedPeer(t *testing.T) {
+	s := serverWithTrustedProxies(t)
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.Header.Set("X-Forwarded-For", "203.0.113.195")
+	req.Header.Set("X-Real-IP", "203.0.113.50")
+	req.RemoteAddr = "192.168.1.1:12345"
+
+	if ip := s.clientIP(req); ip != "192.168.1.1" {
+		t.Errorf("Expected peer '192.168.1.1' (forwarding headers untrusted), got '%s'", ip)
+	}
+}
+
+// The same spoofing attempt must not yield distinct rate-limit keys.
+func TestClientIP_SpoofedHeaderCannotMintNewBuckets(t *testing.T) {
+	s := serverWithTrustedProxies(t)
+
+	seen := make(map[string]bool)
+	for _, spoof := range []string{"1.1.1.1", "2.2.2.2", "3.3.3.3"} {
+		req := httptest.NewRequest("GET", "/test", nil)
+		req.Header.Set("X-Forwarded-For", spoof)
+		req.RemoteAddr = "192.168.1.1:12345"
+		seen[s.clientIP(req)] = true
+	}
+
+	if len(seen) != 1 {
+		t.Errorf("Expected all spoofed requests to share one rate-limit key, got %d keys: %v", len(seen), seen)
+	}
+}
+
+func TestClientIP_TrustsForwardedHeaderFromConfiguredProxy(t *testing.T) {
+	s := serverWithTrustedProxies(t, "192.168.1.0/24")
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.Header.Set("X-Forwarded-For", "203.0.113.195")
+	req.RemoteAddr = "192.168.1.1:12345"
+
+	if ip := s.clientIP(req); ip != "203.0.113.195" {
+		t.Errorf("Expected forwarded '203.0.113.195', got '%s'", ip)
+	}
+}
+
+// With a chain of proxies, the rightmost untrusted hop is the last address the
+// client could not have forged — everything to its left came from the client.
+func TestClientIP_WalksChainToLastUntrustedHop(t *testing.T) {
+	s := serverWithTrustedProxies(t, "192.168.1.1", "10.0.0.0/8")
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.Header.Set("X-Forwarded-For", "1.2.3.4, 203.0.113.195, 10.0.0.7")
+	req.RemoteAddr = "192.168.1.1:12345"
+
+	if ip := s.clientIP(req); ip != "203.0.113.195" {
+		t.Errorf("Expected '203.0.113.195' (rightmost untrusted hop), got '%s'", ip)
+	}
+}
+
+func TestClientIP_TrustedProxyFallsBackToXRealIP(t *testing.T) {
+	s := serverWithTrustedProxies(t, "192.168.1.1")
+
 	req := httptest.NewRequest("GET", "/test", nil)
 	req.Header.Set("X-Real-IP", "203.0.113.50")
 	req.RemoteAddr = "192.168.1.1:12345"
 
-	ip := getClientIP(req)
-	if ip != "203.0.113.50" {
+	if ip := s.clientIP(req); ip != "203.0.113.50" {
 		t.Errorf("Expected '203.0.113.50', got '%s'", ip)
 	}
 }
 
-func TestGetClientIP_FromRemoteAddr(t *testing.T) {
+// A trusted proxy that forwards nothing leaves the peer as the only address.
+func TestClientIP_TrustedProxyWithoutHeaders(t *testing.T) {
+	s := serverWithTrustedProxies(t, "192.168.1.1")
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.RemoteAddr = "192.168.1.1:12345"
+
+	if ip := s.clientIP(req); ip != "192.168.1.1" {
+		t.Errorf("Expected '192.168.1.1', got '%s'", ip)
+	}
+}
+
+func TestClientIP_FromRemoteAddr(t *testing.T) {
+	s := serverWithTrustedProxies(t)
+
 	req := httptest.NewRequest("GET", "/test", nil)
 	req.RemoteAddr = "203.0.113.1:12345"
 
-	ip := getClientIP(req)
-	if ip != "203.0.113.1" {
+	if ip := s.clientIP(req); ip != "203.0.113.1" {
 		t.Errorf("Expected '203.0.113.1', got '%s'", ip)
 	}
 }
 
-func TestGetClientIP_FallbackToRemoteAddr(t *testing.T) {
-	req := httptest.NewRequest("GET", "/test", nil)
-	req.RemoteAddr = "192.168.1.1:12345"
+// A peer address with no port must still produce a usable key rather than an
+// empty string, which would collapse every such client into one bucket.
+func TestClientIP_RemoteAddrWithoutPort(t *testing.T) {
+	s := serverWithTrustedProxies(t)
 
-	ip := getClientIP(req)
-	if ip != "192.168.1.1" {
-		t.Errorf("Expected '192.168.1.1', got '%s'", ip)
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.RemoteAddr = "203.0.113.1"
+
+	if ip := s.clientIP(req); ip != "203.0.113.1" {
+		t.Errorf("Expected '203.0.113.1', got '%s'", ip)
+	}
+}
+
+func TestParseTrustedProxies(t *testing.T) {
+	prefixes, rejected := parseTrustedProxies([]string{
+		"10.0.0.0/8",
+		" 192.168.1.7 ",
+		"",
+		"fd00::/8",
+		"not-an-ip",
+	})
+
+	if len(prefixes) != 3 {
+		t.Errorf("Expected 3 parsed prefixes, got %d: %v", len(prefixes), prefixes)
+	}
+	if len(rejected) != 1 || rejected[0] != "not-an-ip" {
+		t.Errorf("Expected 'not-an-ip' to be rejected, got %v", rejected)
 	}
 }
 

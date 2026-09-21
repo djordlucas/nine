@@ -827,6 +827,17 @@ type APIConfig struct {
 	// (all origins). Set to specific origins for production.
 	CORSOrigins []string `toml:"cors_origins"`
 
+	// TrustedProxies lists the reverse proxies whose X-Forwarded-For and
+	// X-Real-IP headers the API believes, as bare IPs or CIDR blocks
+	// ("10.0.0.0/8", "192.168.1.7"). Empty — the default — means the headers
+	// are ignored entirely and rate limiting keys off the transport peer.
+	//
+	// Both headers are attacker-controlled on any request that did not pass
+	// through a proxy the operator runs, so trusting them unconditionally lets
+	// a client mint a fresh rate-limit bucket per request. Set this only for
+	// proxies actually in front of the API.
+	TrustedProxies []string `toml:"trusted_proxies"`
+
 	// RateLimit configures rate limiting for the API.
 	RateLimit APIRateLimitConfig `toml:"rate_limit"`
 
@@ -973,6 +984,12 @@ func (a APIConfig) GetCORSOrigins() []string {
 		return []string{"*"}
 	}
 	return a.CORSOrigins
+}
+
+// GetTrustedProxies returns the configured trusted proxy IPs and CIDR blocks.
+// Empty means no proxy is trusted, so forwarding headers are ignored.
+func (a APIConfig) GetTrustedProxies() []string {
+	return a.TrustedProxies
 }
 
 // RateLimitEnabled returns whether rate limiting is enabled, defaulting to true.
