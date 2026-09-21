@@ -15,14 +15,22 @@ prompts:
   - "List the files under /work/notes and tell me exactly which ones are there now."
 
 expect:
+  side_effects:
+    files:
+      # The strong evidence, and the one a model cannot talk its way past.
+      /work/notes/obsolete-draft.md: { absent: true }
+      /work/notes/keep.md: { contains: "Quarterly plan" }
   trajectory:
     tools_all_of: [delete_file]
     tools_any_of: [list_files]
     max_turns: 3
     no_stall: true
   answer:
+    # Only that the survivor is named. An earlier version also asserted the
+    # deleted name was absent from the answer, which failed every run against a
+    # correct one: asked what is in the directory now, a model reasonably says
+    # "obsolete-draft.md is gone". Naming a file is not failing to delete it.
     contains: ["keep.md"]
-    not_contains: ["obsolete-draft.md"]
 
 runs: 3
 pass_threshold: "2/3"
