@@ -105,6 +105,7 @@ auth_token = ""            # Optional bearer token for authentication
 timeout_seconds = 30       # Request timeout (default: 30)
 max_connections = 100      # Maximum concurrent connections (default: 100)
 cors_origins = ["*"]        # CORS allowed origins
+trusted_proxies = []        # Proxies whose forwarding headers are believed (default: none)
 ```
 
 Command-line overrides:
@@ -981,20 +982,37 @@ The API server:
 - **MUST** implement resource-level access control
 - **MUST** log all access attempts
 
-### API-SEC-3: input validation
+### API-SEC-3: client address attribution
+
+The API server:
+
+1. **MUST NOT** derive a client address from `X-Forwarded-For` or `X-Real-IP`
+   unless the transport peer is a configured trusted proxy
+2. **MUST** default to an empty trusted-proxy set, keying on the transport peer
+3. **MUST** resolve a trusted forwarding chain right to left, selecting the
+   rightmost address that is not itself a trusted proxy
+4. **MUST** apply rate limiting before authentication, so requests that fail
+   authentication consume rate-limit budget
+
+Both forwarding headers are set by the sender. Trusting them from an arbitrary
+peer lets a client obtain a fresh rate-limit bucket per request by varying the
+header, and rate limiting applied after authentication leaves credential
+guessing unthrottled.
+
+### API-SEC-4: input validation
 
 - **MUST** validate all request parameters
 - **MUST** sanitize user input
 - **MUST** enforce size limits on request bodies
 - **MUST** enforce rate limiting (configurable)
 
-### API-SEC-4: transport security
+### API-SEC-5: transport security
 
 - **SHOULD** support HTTPS/TLS
 - **SHOULD** support mutual TLS (mTLS)
 - **MUST** handle sensitive data appropriately
 
-### API-SEC-5: CORS
+### API-SEC-6: CORS
 
 - **MUST** respect configured CORS origins
 - **MUST** include appropriate CORS headers
@@ -1132,10 +1150,13 @@ func serveAPI() {
 ### API-IMPL-2: request flow
 
 ```
-HTTP Request → Middleware (auth, rate limit) → Handler → 
-Socket Client → Daemon → Socket Response → 
+HTTP Request → recovery → logging → CORS → rate limit → auth → Handler →
+Socket Client → Daemon → Socket Response →
 Handler → HTTP Response
 ```
+
+Rate limiting precedes authentication (API-SEC-3.4). CORS precedes both so
+preflight requests answer without credentials.
 
 ### API-IMPL-3: error handling
 
@@ -1217,6 +1238,7 @@ auth_token = ""
 timeout_seconds = 30
 max_connections = 100
 cors_origins = ["*"]
+trusted_proxies = []
 
 [api.rate_limit]
 enabled = true
@@ -1240,6 +1262,7 @@ NINE_API_AUTH_TOKEN=secret
 NINE_API_TIMEOUT_SECONDS=30
 NINE_API_MAX_CONNECTIONS=100
 NINE_API_CORS_ORIGINS=*
+NINE_API_TRUSTED_PROXIES=10.0.0.0/8,192.168.1.7
 ```
 
 ### Command-line flags

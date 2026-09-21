@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"strings"
@@ -32,6 +33,10 @@ type Server struct {
 	// rateLimiters maps client IPs to their rate limiters
 	rateLimiters  map[string]*rateLimiter
 	rateMu        sync.Mutex
+
+	// trustedProxies is config.APIConfig.TrustedProxies parsed once at
+	// construction. Empty means forwarding headers are never believed.
+	trustedProxies []netip.Prefix
 
 	httpServer *http.Server
 	version    string
@@ -125,14 +130,44 @@ func NewServer(cfg Config) *Server {
 		MaxHeaderBytes: 1 << 20, // 1 MB
 	}
 
+	trusted, rejected := parseTrustedProxies(cfg.APIConfig.GetTrustedProxies())
+	for _, entry := range rejected {
+		slog.Warn("ignoring unparseable api.trusted_proxies entry; expected an IP or CIDR", "entry", entry)
+	}
+
 	return &Server{
 		config:     cfg.APIConfig,
 		socketPath: cfg.SocketPath,
 		httpServer: server,
 		rateLimiters: make(map[string]*rateLimiter),
+		trustedProxies: trusted,
 		version:    cfg.Version,
 		startTime:  cfg.StartTime,
 	}
+}
+
+// parseTrustedProxies converts config entries into prefixes, accepting both
+// CIDR blocks and bare addresses. Unparseable entries are returned rather than
+// silently dropped so the caller can warn: a typo here fails open, quietly
+// restoring the header spoofing the allowlist exists to prevent.
+func parseTrustedProxies(entries []string) (prefixes []netip.Prefix, rejected []string) {
+	for _, entry := range entries {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if prefix, err := netip.ParsePrefix(entry); err == nil {
+			prefixes = append(prefixes, prefix.Masked())
+			continue
+		}
+		if addr, err := netip.ParseAddr(entry); err == nil {
+			addr = addr.Unmap()
+			prefixes = append(prefixes, netip.PrefixFrom(addr, addr.BitLen()))
+			continue
+		}
+		rejected = append(rejected, entry)
+	}
+	return prefixes, rejected
 }
 
 // Run starts the API server.
@@ -216,9 +251,16 @@ func (s *Server) createHandler() http.Handler {
 	// Register routes
 	s.registerRoutes(mux)
 
-	// Wrap with middleware
-	handler := s.rateLimitMiddleware(mux)
-	handler = s.authMiddleware(handler)
+	// Wrap with middleware. Order matters: the chain is built inside-out, so
+	// this runs recovery -> logging -> CORS -> rate limit -> auth -> mux.
+	//
+	// Rate limiting sits OUTSIDE auth deliberately. With auth outermost a
+	// rejected request short-circuits before the limiter is consulted, which
+	// leaves bearer-token guessing completely unthrottled — the one request
+	// class that most needs a ceiling. CORS stays outside both so preflight
+	// still answers without a token.
+	handler := s.authMiddleware(mux)
+	handler = s.rateLimitMiddleware(handler)
 	handler = s.corsMiddleware(handler)
 	handler = s.loggingMiddleware(handler)
 	handler = s.recoveryMiddleware(handler)
@@ -330,26 +372,73 @@ func writeError(w http.ResponseWriter, statusCode int, code, message string, det
 	})
 }
 
-// getClientIP extracts the client IP from the request.
-func getClientIP(r *http.Request) string {
-	// Check X-Forwarded-For header (for reverse proxies)
+// clientIP returns the address rate limiting is keyed on.
+//
+// X-Forwarded-For and X-Real-IP are set by whoever sent the request, so they
+// are only consulted when the transport peer is itself a configured trusted
+// proxy. Believing them unconditionally hands any client a fresh rate-limit
+// bucket per request for the cost of one varying header, which makes the
+// limiter decorative. With no trusted proxies configured — the default — the
+// headers are ignored and the peer address wins.
+func (s *Server) clientIP(r *http.Request) string {
+	peer, ok := peerAddr(r)
+	if !ok || !s.trustsProxy(peer) {
+		return remoteHost(r)
+	}
+
+	// The peer is a proxy we run, so the forwarding chain is credible up to the
+	// first hop we do not run. Walking right to left stops at the last address
+	// an untrusted client could not have forged: everything further left was
+	// supplied by the client itself.
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first IP in the list
-		ips := strings.Split(xff, ",")
-		if len(ips) > 0 {
-			return strings.TrimSpace(ips[0])
+		hops := strings.Split(xff, ",")
+		for i := len(hops) - 1; i >= 0; i-- {
+			hop, err := netip.ParseAddr(strings.TrimSpace(hops[i]))
+			if err != nil {
+				continue
+			}
+			if hop = hop.Unmap(); !s.trustsProxy(hop) {
+				return hop.String()
+			}
 		}
 	}
 
-	// Check X-Real-IP header
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
+	if xri := strings.TrimSpace(r.Header.Get("X-Real-IP")); xri != "" {
+		if addr, err := netip.ParseAddr(xri); err == nil {
+			return addr.Unmap().String()
+		}
 	}
 
-	// Fall back to RemoteAddr
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	return peer.String()
+}
+
+// trustsProxy reports whether addr is one of the configured reverse proxies.
+func (s *Server) trustsProxy(addr netip.Addr) bool {
+	for _, prefix := range s.trustedProxies {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
+}
+
+// peerAddr parses the transport peer address out of RemoteAddr. It reports
+// false for anything unparseable (a Unix socket peer, say), which callers must
+// treat as untrusted rather than as a match.
+func peerAddr(r *http.Request) (netip.Addr, bool) {
+	addr, err := netip.ParseAddr(remoteHost(r))
+	if err != nil {
+		return netip.Addr{}, false
+	}
+	return addr.Unmap(), true
+}
+
+// remoteHost strips the port from RemoteAddr, falling back to the raw value so
+// a peer that carries no port still produces a stable rate-limit key.
+func remoteHost(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
 	}
-	return ip
+	return host
 }

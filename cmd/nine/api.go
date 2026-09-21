@@ -79,6 +79,7 @@ type apiFlags struct {
 	tlsEnabled  bool
 	tlsCert     string
 	tlsKey      string
+	trustedProxies []string
 }
 
 // parseAPIFlags parses API-specific command-line flags.
@@ -154,6 +155,11 @@ func parseAPIFlags(args []string) apiFlags {
 				flags.corsOrigins = strings.Split(args[i+1], ",")
 				i++
 			}
+		case "--trusted-proxies":
+			if i+1 < len(args) {
+				flags.trustedProxies = strings.Split(args[i+1], ",")
+				i++
+			}
 		case "--tls":
 			flags.tlsEnabled = true
 		case "--tls-cert":
@@ -216,6 +222,9 @@ func parseAPIFlags(args []string) apiFlags {
 	if v := os.Getenv("NINE_API_CORS_ORIGINS"); v != "" {
 		flags.corsOrigins = strings.Split(v, ",")
 	}
+	if v := os.Getenv("NINE_API_TRUSTED_PROXIES"); v != "" {
+		flags.trustedProxies = strings.Split(v, ",")
+	}
 
 	return flags
 }
@@ -243,6 +252,9 @@ func mergeAPIConfig(fileCfg config.APIConfig, flags apiFlags) config.APIConfig {
 	}
 	if len(flags.corsOrigins) > 0 {
 		merged.CORSOrigins = flags.corsOrigins
+	}
+	if len(flags.trustedProxies) > 0 {
+		merged.TrustedProxies = flags.trustedProxies
 	}
 	if flags.tlsEnabled {
 		merged.TLS.Enabled = true
