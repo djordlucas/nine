@@ -183,20 +183,18 @@ definitions:
         type: string
       description:
         type: string
-      events_count:
-        type: integer
       id:
         type: string
-      name:
+      parent_id:
         type: string
-      priority:
-        type: integer
-      progress:
-        type: string
-      session_id:
+      parent_type:
         type: string
       status:
         type: string
+      subtree:
+        items:
+          type: string
+        type: array
       updated_at:
         type: string
     type: object
@@ -256,21 +254,18 @@ definitions:
         type: string
       description:
         type: string
-      events_count:
-        type: integer
       id:
         type: string
-      name:
+      parent_id:
         type: string
-      priority:
-        type: integer
-      progress:
-        type: string
-      session_id:
+      parent_type:
         type: string
       status:
-        description: active, completed, failed, paused
         type: string
+      subtree:
+        items:
+          type: string
+        type: array
       updated_at:
         type: string
     type: object
@@ -392,6 +387,8 @@ definitions:
     type: object
   api.Notification:
     properties:
+      agent_id:
+        type: string
       created_at:
         type: string
       id:
@@ -400,15 +397,6 @@ definitions:
         type: string
       seen:
         type: boolean
-      severity:
-        description: info, warning, error
-        type: string
-      source:
-        type: string
-      title:
-        type: string
-      type:
-        type: string
     type: object
   api.Pagination:
     properties:
@@ -577,19 +565,23 @@ definitions:
     type: object
   api.WorkflowInfo:
     properties:
+      agent_id:
+        type: string
+      completed_steps:
+        type: integer
       created_at:
         type: string
-      current_step:
-        type: integer
       id:
         type: string
       name:
         type: string
       status:
-        description: running, completed, failed, cancelled
+        description: active, done, failed, cancelled
         type: string
       steps:
         type: integer
+      updated_at:
+        type: string
     type: object
 host: localhost:8080
 info:
