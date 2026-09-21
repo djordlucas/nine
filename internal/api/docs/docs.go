@@ -1782,26 +1782,23 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
-                "events_count": {
-                    "type": "integer"
-                },
                 "id": {
                     "type": "string"
                 },
-                "name": {
+                "parent_id": {
                     "type": "string"
                 },
-                "priority": {
-                    "type": "integer"
-                },
-                "progress": {
-                    "type": "string"
-                },
-                "session_id": {
+                "parent_type": {
                     "type": "string"
                 },
                 "status": {
                     "type": "string"
+                },
+                "subtree": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "updated_at": {
                     "type": "string"
@@ -1893,27 +1890,23 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
-                "events_count": {
-                    "type": "integer"
-                },
                 "id": {
                     "type": "string"
                 },
-                "name": {
+                "parent_id": {
                     "type": "string"
                 },
-                "priority": {
-                    "type": "integer"
-                },
-                "progress": {
-                    "type": "string"
-                },
-                "session_id": {
+                "parent_type": {
                     "type": "string"
                 },
                 "status": {
-                    "description": "active, completed, failed, paused",
                     "type": "string"
+                },
+                "subtree": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "updated_at": {
                     "type": "string"
@@ -2102,6 +2095,9 @@ const docTemplate = `{
         "api.Notification": {
             "type": "object",
             "properties": {
+                "agent_id": {
+                    "type": "string"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -2113,19 +2109,6 @@ const docTemplate = `{
                 },
                 "seen": {
                     "type": "boolean"
-                },
-                "severity": {
-                    "description": "info, warning, error",
-                    "type": "string"
-                },
-                "source": {
-                    "type": "string"
-                },
-                "title": {
-                    "type": "string"
-                },
-                "type": {
-                    "type": "string"
                 }
             }
         },
@@ -2383,11 +2366,14 @@ const docTemplate = `{
         "api.WorkflowInfo": {
             "type": "object",
             "properties": {
-                "created_at": {
+                "agent_id": {
                     "type": "string"
                 },
-                "current_step": {
+                "completed_steps": {
                     "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
                 },
                 "id": {
                     "type": "string"
@@ -2396,11 +2382,14 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "status": {
-                    "description": "running, completed, failed, cancelled",
+                    "description": "active, done, failed, cancelled",
                     "type": "string"
                 },
                 "steps": {
                     "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         }
