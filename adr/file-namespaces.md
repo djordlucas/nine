@@ -1,7 +1,10 @@
 # Design note — The workspace as the agent's filesystem
 
-- **Status:** Proposed.
-- **Date:** 2026-09-20.
+- **Status:** Implemented, phases 1–8 (PRs #162, #163, #164, #165, #166, #168,
+  #170, #171). Document extraction (§6) was dropped from phase 6 and is unbuilt.
+  Three places where the implementation diverged from this note are corrected
+  in place below, marked **As built**.
+- **Date:** 2026-09-20. Corrected 2026-09-21, after implementation.
 - **Depends on:** `tool-output-spill.md`, `rich-js-tools.md` (§6.4, why `nine:fs`
   is libc rather than host functions), `spec/contracts/memory-store.md` (R-MEM.2,
   R-MEM.3, R-MEM.9), `spec/contracts/dispatcher.md` (R-DISP.2),
@@ -94,12 +97,13 @@ Three consequences:
   environment. A relative path then means the same file to `shell`, `read_file`,
   `write_file` and `edit_file`. Today `runShell` sets no directory, so relative
   paths resolve wherever the daemon was started, and `/work` does not exist
-  outside the sandbox. This is from reading `shell.go` and the s6 run script; it
-  has not been reproduced against a running daemon.
+  outside the sandbox. **As built:** confirmed at the plugin boundary rather than
+  against a running daemon — `TestShellRunsInWorkspace` starts the `shell`
+  built-in with `NINE_WORKSPACE` set and asserts `pwd -P` and a relative `cat`
+  resolve in the workspace.
 - **The trash lives inside the workspace** (§9), not in a sibling directory.
 - **Nine's own bookkeeping in the workspace lives under `.nine/`**: the trash,
-  extracted document text (§6), and a `.gitignore` that keeps all of it out of a
-  repository the operator mounted.
+  and a `.gitignore` keeping all of it out of a repository the operator mounted.
 
 The sandboxed tools are confined by wazero's pre-open, which is one mount: the
 root. `shell` is a subprocess holding the daemon's own authority, so its working
@@ -196,8 +200,14 @@ Two changes:
 
 Extraction runs as a sandboxed tool under the same capability rules as any other,
 so a format Nine cannot parse is a missing tool rather than a special case in the
-daemon. Formats covered at phase 5: PDF and plain-text-bearing archives. Anything
-else lists with `indexed: false` and a reason.
+daemon. Anything it cannot read lists with `indexed: false` and a reason.
+
+**As built: only the first of the two shipped.** `read_file` refuses non-UTF-8
+content. Extraction does not exist: it was dropped from phase 6 when that change
+was already large, and parsing PDF inside the sandbox is a design of its own
+rather than a detail of this one. A dropped PDF therefore lists with
+`indexed: false` and a reason, and is not searchable — honest, but not the case
+this section opens with. The `extracted` flag on `list_files` is unbuilt with it.
 
 **Journal events are a later phase.** Emitting a session event per external
 change would let a standing agent react to a dropped file
@@ -323,11 +333,21 @@ though the bytes are still there, which makes the trash a benefit only to an
 operator watching at the time. The same pair is what makes `diff_file` (§8)
 possible.
 
-**Mechanism.** With the trash inside the mount, `nine:fs remove` is a `mkdir`
-plus a `rename` in the pre-open — the same libc surface §7 already adds, and no
-new host function. `remove` always trashes, including for generated tools: one
-rule for every deletion through `nine:fs` is simpler to state than a per-tool
-policy, and the sweep bounds the cost.
+**Mechanism.** With the trash inside the mount, trashing is a `mkdir` plus a
+`rename` in the pre-open — the same libc surface §7 already adds, and no new
+host function.
+
+**As built: `nine:fs remove` does not trash.** This note proposed that it always
+would, for every caller, on the grounds that one rule beats a per-tool policy.
+That was wrong in a way only writing it showed: `edit_file` uses `remove` to
+clean up its own temporary when an edit fails, and any tool that writes scratch
+files uses it the same way. Trashing at the primitive layer fills the trash with
+build debris and buries the deletions someone might actually want back.
+
+Trashing is therefore at the **tool** layer — `delete_file`, `write_file` and
+`edit_file` each move the previous version aside before destroying it — and
+`remove` is a plain unlink. The rule an agent sees is unchanged: every deletion
+it can perform is recoverable. What changed is where the rule lives.
 
 ## 10. Tool surface after the change
 
@@ -341,10 +361,19 @@ policy, and the sweep bounds the cost.
 | `delete_file` | New. One file or one empty directory, to the trash (§9) |
 | `trash_list`, `restore_file` | New. List and recover trashed versions (§9) |
 | `diff_file` | New. Unified diff of a file against its previous version or a named trash entry (§8) |
-| `list_files` | New, `fs` read grant. Lists paths under a prefix, with `pattern` (glob over the indexed path column), `changed_since`, and per-entry `size`, `indexed` and `extracted`. An exact path returns one entry, which is how an agent stats a file. Replaces `file_list` |
+| `list_files` | New. Lists paths under a prefix, with `pattern` (glob over the indexed path column), `changed_since`, and per-entry `size` and `indexed`. An exact path returns one entry, which is how an agent stats a file. Replaces `file_list`. **As built: core-intercepted, not sandboxed** — see below |
 | `file_search_text` | Searches the workspace index and spills. A `spill/` prefix searches spills; another prefix searches the workspace; no prefix searches both and labels each hit |
 | `shell` | Runs with `cmd.Dir` set to the workspace root and `NINE_WORKSPACE` in its environment |
 | `file_store`, `file_fetch`, `file_list`, `file_search_semantic` | Removed |
+
+**As built: `list_files` is core-intercepted.** This note put it in the sandboxed
+tier with an `fs` read grant, alongside the other file tools. But two of its three
+arguments — `changed_since` and the `indexed` flag — are answered from the index,
+which a sandboxed tool cannot reach: it has a filesystem mount, not a database
+handle. Shipping it sandboxed would have meant either a directory walk that
+cannot answer them, or a second source of truth about what exists in the
+workspace. It is registered with the other core tools instead, and reports that
+no workspace is configured rather than being silently absent when there is none.
 
 A rename is a rename, not a read-write-delete: `move_file` exists because without
 it, relocating a file over the context window is impossible, and relocating any
@@ -357,7 +386,6 @@ New configuration, all under `[workspace]`:
 | `scan_interval` | 60s | Period of the background rescan |
 | `index_max_file_bytes` | 8 MiB | Largest file the scan indexes; a larger file still lists, reads, and is searched when named |
 | `index_max_files` | 50,000 | Scan bound; search reports truncation |
-| `extract_documents` | true | Extract text from known document formats into `.nine/extracted/` (§6) |
 | `diff_max_bytes` | 1 MiB | Per-side ceiling on a computed diff; above it, counts instead (§8) |
 | `trash_retention` | 7 days | Age at which a trash entry is swept |
 | `trash_max_bytes` | 1 GiB | Size bound on the trash, oldest entry first |
@@ -406,7 +434,7 @@ Each phase ships on its own and leaves Nine working.
 | 3 | `nine:fs` gains `readRange`, `appendFile`, `rename`, `copy`; `read_file` gains `offset`/`limit`/`lines`/`line_numbers`/`version` and refuses non-UTF-8; `write_file` gains `mode: "append"` and `if_unchanged`; `edit_file`, `move_file` and `copy_file` ship | Large files become editable and movable, which nothing today allows |
 | 4 | `.nine/` layout and `.gitignore`; trash, sweep and bounds; `nine:fs remove`; `delete_file`, `trash_list`, `restore_file`; `write_file`/`edit_file` trash the previous version and write through a rename | Deletion without `shell`, recoverable overwrites, atomic writes |
 | 5 | `diff_file`; `preview` on `edit_file`/`write_file`; approval prompts carry diffs | A supervised change becomes reviewable before and after it happens |
-| 6 | Workspace index: boot scan, periodic scan, scoped refresh, skip rules, `changed_since`, `pattern`; document extraction; `file_search_text` covers the workspace; `list_files` ships | Bind-mounted and externally changed files become findable |
+| 6 | Workspace index: boot scan, periodic scan, scoped refresh, skip rules, `changed_since`, `pattern`; `file_search_text` covers the workspace; `list_files` ships. Document extraction was dropped from this phase and is unbuilt (§6) | Bind-mounted and externally changed files become findable |
 | 7 | `read_file` serves `spill/`; `write_file` gains `content_ref`; the truncation notice names `read_file` | Spills become readable with the tool the model already uses |
 | 8 | Remove `file_store`/`file_fetch`/`file_list`; migrate rows; `[workspace].max_bytes`; update roles, descriptions, recovery messages | Completes the change |
 
@@ -444,13 +472,12 @@ No plugin wire contract changes: plugins cannot call the file tools, and
 
 | Limit | Detail |
 |-------|--------|
-| Unverified shell finding | §4's claim that `shell` does not run in the workspace comes from reading `shell.go` and the s6 run script. Phase 1 starts by reproducing it. |
+| The shell finding was never reproduced end to end | §4's claim came from reading `shell.go` and the s6 run script, and the fix is covered at the plugin boundary. Neither the original behaviour nor the fix was observed through a running daemon with a live model. |
 | `shell` is not confined to the workspace | Setting `cmd.Dir` fixes where relative paths resolve; it does not stop `cd /`. `shell` is a subprocess with the daemon's authority, and confining it is a separate design. The destructive-command guard is unchanged. |
 | `shell` bypasses the trash and the budget | `rm file`, an overwrite by a build, and `max_bytes` are all invisible to a subprocess. The trash and the budget cover `nine:fs` only; the tool descriptions steer the model to the tools that honor them. |
 | The trash consumes the operator's disk | It lives in the workspace by design (§4). `trash_max_bytes` and `trash_retention` bound it; a workspace on a small volume needs them tuned. |
 | Restore does not undo a sequence | `restore_file` recovers one version of one path. An agent that made ten changes must restore ten entries, in an order it works out itself. There is no transaction and no snapshot. |
-| Document extraction is format-bound | Phase 6 covers PDF and text-bearing archives. Anything else lists with `indexed: false` and a reason, which is honest but not searchable. Adding a format is adding a sandboxed tool. |
-| Extracted text drifts | A rendition under `.nine/extracted/` is refreshed when the scan sees the source change. Between the change and the next scan, a search hit can quote text the document no longer contains. |
+| Document extraction is unbuilt | A PDF or other non-text document lists with `indexed: false` and a reason, and is not searchable. It was dropped from phase 6 (§6); nothing else in this note depends on it. |
 | `.gitignore` support is partial | The scan honors literal names, directory entries and `*` globs in a root `.gitignore`. Nested ignore files, negation and pattern edge cases are not implemented; the effect is extra indexed files, not missing ones. |
 | Contentless deletes need SQLite 3.43+ | The index retracts postings with `contentless_delete=1`. If the bundled SQLite predates it, the fallback is an external-content index over a path+content table, which costs a second copy of every indexed file on disk. |
 | Direct scan is unranked | Searching a named unindexed file matches literal terms in one pass, with no stemming and no `bm25` ranking. A search that spans the workspace and one large named file therefore mixes two kinds of result, and says which is which. |

@@ -48,6 +48,7 @@ changed; the document stays as the record and is not rewritten.
 | `tui-slash-suggestions.md` | Slash-command suggestions in the TUI | yes |
 | `architecture-wiring.md` | Boot order, end-to-end data flows, component map. Names types and call sites. | yes |
 | `roles-design.md` | Worker kinds as data; migration off depth-based gating | yes |
+| `file-namespaces.md` | The workspace as the agent's only file namespace: external changes, editing large files, deletion to a trash. Retires `file_store`. Three divergences corrected in place; document extraction unbuilt. | phases 1–8, 2026-09-21 |
 
 ### Proposed
 
@@ -58,7 +59,6 @@ changed; the document stays as the record and is not rewritten.
 | `durable-and-long-running-tools.md` | Giving a sandboxed tool memory and letting work outlive a turn. Amends I-TVM.3. |
 | `generated-tool-authoring-loop.md` | Shortening the write→fail→rewrite loop for agent-authored tools: parse at write time, dry-run, logs on failure, stdlib gaps, catalog hygiene. |
 | `event-log.md` | Investigation behind the session journal. Written against PostgreSQL; the store is SQLite. |
-| `file-namespaces.md` | The workspace as the agent's only file namespace: external changes, editing large files, deletion to a trash. Retires `file_store`. |
 | `personality-pattern.md` | Packaging complete Nine instances as specialized agents; self-model bootstrapping |
 | `predefined-agents-design.md` | Standing agents as config-seeded goals: motivation, work breakdown, phasing |
 | `reactive-events.md` | Event subscriptions: reacting to the journal |
