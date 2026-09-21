@@ -200,6 +200,28 @@ client.
 
 ---
 
+## Endpoints that return 501
+
+Six endpoints are declared but not backed by the daemon. Each returns `501
+not_implemented` with a `details.detail` naming what is missing:
+
+| Endpoint | Missing |
+|----------|---------|
+| `GET /conversations/{id}/history` | no journal query on the wire protocol |
+| `GET /conversations/{id}/trace` | no per-turn trace on the wire protocol |
+| `POST /conversations/{id}/replay` | no replay message on the wire protocol |
+| `POST /goals` | `goal_create` is role-gated; an HTTP caller has no role |
+| `DELETE /goals/{id}` | no goal deletion exists to call |
+| `GET /skills` | no skills query on the wire protocol |
+
+They previously returned `200` with invented data — an empty list, an echo of
+the request, or a fabricated id for a goal that was never created. Use the CLI
+for these until the wire protocol carries them: `nine trace`, `nine replay` and
+`nine skills` read the memory store directly, which the API process must not do
+(spec API-A-1).
+
+---
+
 ## Pagination
 
 List endpoints take `limit` and `offset` in the query string and return a
@@ -265,7 +287,7 @@ All errors follow a consistent shape:
 }
 ```
 
-Standard error codes: `invalid_request` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404), `conflict` (409), `timeout` (408), `too_many_requests` (429), `server_error` (500), `service_unavailable` (503).
+Standard error codes: `invalid_request` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404), `conflict` (409), `timeout` (408), `too_many_requests` (429), `server_error` (500), `not_implemented` (501), `service_unavailable` (503).
 
 ---
 

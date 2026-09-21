@@ -138,45 +138,6 @@ type StopConversationResponse struct {
 // History and Trace Types
 // =============================================================================
 
-// HistoryEntry represents a single history entry
-type HistoryEntry struct {
-	Type        string    `json:"type"` // user_turn, response, tool_start, tool_end
-	AgentID     string    `json:"agent_id"`
-	Text        string    `json:"text,omitempty"`
-	ToolName    string    `json:"tool_name,omitempty"`
-	ToolInput   any       `json:"tool_input,omitempty"`
-	ToolOutput  string    `json:"tool_output,omitempty"`
-	Timestamp   time.Time `json:"timestamp"`
-	TurnNumber  int       `json:"turn_number"`
-}
-
-// GetHistoryResponse is the response for GET /api/v1/conversations/{id}/history
-type GetHistoryResponse struct {
-	AgentID    string         `json:"agent_id"`
-	Data       []HistoryEntry `json:"data"`
-	Pagination Pagination      `json:"pagination,omitempty"`
-}
-
-// GetTraceResponse is the response for GET /api/v1/conversations/{id}/trace
-type GetTraceResponse struct {
-	AgentID    string `json:"agent_id"`
-	Turn       int    `json:"turn"`
-	SubAgents bool   `json:"sub_agents"`
-	Trace     any    `json:"trace"`
-}
-
-// ReplayRequest is the request for POST /api/v1/conversations/{id}/replay
-type ReplayRequest struct {
-	Turn int `json:"turn"`
-}
-
-// ReplayResponse is the response for POST /api/v1/conversations/{id}/replay
-type ReplayResponse struct {
-	AgentID string `json:"agent_id"`
-	Turn    int    `json:"turn"`
-	Result  any    `json:"result"`
-}
-
 // =============================================================================
 // Goal Types
 // =============================================================================
@@ -195,20 +156,6 @@ type GoalInfo struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-// CreateGoalRequest is the request for POST /api/v1/goals
-type CreateGoalRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Priority    int    `json:"priority"`
-}
-
-// CreateGoalResponse is the response for POST /api/v1/goals
-type CreateGoalResponse struct {
-	ID       string `json:"id"`
-	Status   string `json:"status"`
-	SessionID string `json:"session_id,omitempty"`
-}
-
 // ListGoalsResponse is the response for GET /api/v1/goals
 type ListGoalsResponse struct {
 	Data       []GoalInfo   `json:"data"`
@@ -218,12 +165,6 @@ type ListGoalsResponse struct {
 // GetGoalResponse is the response for GET /api/v1/goals/{id}. One goal has the
 // same shape as a goal in a list.
 type GetGoalResponse = GoalInfo
-
-// DeleteGoalResponse is the response for DELETE /api/v1/goals/{id}
-type DeleteGoalResponse struct {
-	Message string `json:"message"`
-	ID      string `json:"id"`
-}
 
 // =============================================================================
 // Workflow Types
@@ -371,21 +312,6 @@ type ListNotificationsResponse struct {
 // =============================================================================
 // Skill Types
 // =============================================================================
-
-// SkillInfo contains information about a skill
-type SkillInfo struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Tags        []string `json:"tags,omitempty"`
-	Source      string   `json:"source"` // builtin, user, generated
-	CreatedAt   time.Time `json:"created_at"`
-}
-
-// ListSkillsResponse is the response for GET /api/v1/skills
-type ListSkillsResponse struct {
-	Data       []SkillInfo `json:"data"`
-	Pagination Pagination   `json:"pagination,omitempty"`
-}
 
 // =============================================================================
 // Session Types

@@ -6,7 +6,7 @@ import (
 	"strconv"
 )
 
-// Pagination bounds (spec/contracts/api.md API-HTTP-5).
+// Pagination bounds (spec/contracts/api.md API-HTTP-6).
 const (
 	// DefaultPageLimit is the page size applied when a request omits `limit`.
 	DefaultPageLimit = 50
