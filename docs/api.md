@@ -200,6 +200,57 @@ client.
 
 ---
 
+## Pagination
+
+List endpoints take `limit` and `offset` in the query string and return a
+`pagination` block alongside `data`:
+
+```bash
+curl 'http://localhost:8080/api/v1/conversations?limit=10&offset=20'
+```
+
+```json
+{
+  "data": [ ... ],
+  "pagination": { "limit": 10, "offset": 20, "total": 57, "has_more": true }
+}
+```
+
+| Parameter | Default | Constraint |
+|-----------|---------|------------|
+| `limit` | 50 | 1–1000 |
+| `offset` | 0 | ≥ 0 |
+
+A malformed or out-of-range value is a `400 invalid_request`, not a silent
+fallback to the default. An `offset` past the end returns an empty page.
+
+Paging is offset based; there is no cursor. The daemon returns a full result
+set per call, so a cursor would only re-encode the offset.
+
+---
+
+## Query parameters, not request bodies
+
+Four operations take arguments in the query string. They previously took a JSON
+body on `GET`/`DELETE`, which OpenAPI 3.x leaves undefined — generated clients
+drop it and Swagger UI will not send it.
+
+| Operation | Parameters |
+|-----------|------------|
+| `GET /conversations/{id}/context` | `verbose` |
+| `GET /conversations/{id}/trace` | `turn`, `sub_agents` |
+| `GET /notifications` | `all`, `limit`, `offset` |
+| `DELETE /conversations/{id}` | `force` |
+
+```bash
+curl 'http://localhost:8080/api/v1/conversations/abc/trace?turn=3&sub_agents=true'
+curl -X DELETE 'http://localhost:8080/api/v1/conversations/abc?force=true'
+```
+
+A body sent to these operations is ignored.
+
+---
+
 ## Error format
 
 All errors follow a consistent shape:

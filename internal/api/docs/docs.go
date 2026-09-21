@@ -38,6 +38,20 @@ const docTemplate = `{
                     "conversations"
                 ],
                 "summary": "List conversations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "page size (default 50, max 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "items to skip (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -161,9 +175,6 @@ const docTemplate = `{
                     }
                 ],
                 "description": "Deletes a conversation and all its event journal data.",
-                "consumes": [
-                    "application/json"
-                ],
                 "produces": [
                     "application/json"
                 ],
@@ -180,12 +191,10 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "force flag",
-                        "name": "request",
-                        "in": "body",
-                        "schema": {
-                            "$ref": "#/definitions/api.DeleteConversationRequest"
-                        }
+                        "type": "boolean",
+                        "description": "delete even when the conversation is protected",
+                        "name": "force",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -224,9 +233,6 @@ const docTemplate = `{
                     }
                 ],
                 "description": "Returns the context builder breakdown for a conversation — token usage, sections, tool ranking.",
-                "consumes": [
-                    "application/json"
-                ],
                 "produces": [
                     "application/json"
                 ],
@@ -243,12 +249,10 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "verbose flag",
-                        "name": "request",
-                        "in": "body",
-                        "schema": {
-                            "$ref": "#/definitions/api.GetContextRequest"
-                        }
+                        "type": "boolean",
+                        "description": "include the full per-section breakdown",
+                        "name": "verbose",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -301,6 +305,18 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page size (default 50, max 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "items to skip (default 0)",
+                        "name": "offset",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -541,9 +557,6 @@ const docTemplate = `{
                     }
                 ],
                 "description": "Returns the detailed LLM call and tool I/O trace for a specific turn in a conversation.",
-                "consumes": [
-                    "application/json"
-                ],
                 "produces": [
                     "application/json"
                 ],
@@ -560,12 +573,16 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "trace options",
-                        "name": "request",
-                        "in": "body",
-                        "schema": {
-                            "$ref": "#/definitions/api.GetTraceRequest"
-                        }
+                        "type": "integer",
+                        "description": "turn number to trace (default: the latest turn)",
+                        "name": "turn",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "include traces from sub-agent turns",
+                        "name": "sub_agents",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -664,6 +681,20 @@ const docTemplate = `{
                     "goals"
                 ],
                 "summary": "List goals",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "page size (default 50, max 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "items to skip (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -829,9 +860,6 @@ const docTemplate = `{
                     }
                 ],
                 "description": "Returns user notifications, optionally including already-seen ones.",
-                "consumes": [
-                    "application/json"
-                ],
                 "produces": [
                     "application/json"
                 ],
@@ -841,12 +869,22 @@ const docTemplate = `{
                 "summary": "List notifications",
                 "parameters": [
                     {
-                        "description": "include all notifications",
-                        "name": "request",
-                        "in": "body",
-                        "schema": {
-                            "$ref": "#/definitions/api.ListNotificationsRequest"
-                        }
+                        "type": "boolean",
+                        "description": "include notifications already marked seen",
+                        "name": "all",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page size (default 50, max 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "items to skip (default 0)",
+                        "name": "offset",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -880,6 +918,20 @@ const docTemplate = `{
                     "plugins"
                 ],
                 "summary": "List plugins",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "page size (default 50, max 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "items to skip (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -999,6 +1051,20 @@ const docTemplate = `{
                     "skills"
                 ],
                 "summary": "List skills",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "page size (default 50, max 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "items to skip (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1120,6 +1186,20 @@ const docTemplate = `{
                     "tools"
                 ],
                 "summary": "List tools",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "page size (default 50, max 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "items to skip (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1286,6 +1366,20 @@ const docTemplate = `{
                     "workflows"
                 ],
                 "summary": "List workflows",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "page size (default 50, max 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "items to skip (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1561,14 +1655,6 @@ const docTemplate = `{
                 }
             }
         },
-        "api.DeleteConversationRequest": {
-            "type": "object",
-            "properties": {
-                "force": {
-                    "type": "boolean"
-                }
-            }
-        },
         "api.DeleteConversationResponse": {
             "type": "object",
             "properties": {
@@ -1628,14 +1714,6 @@ const docTemplate = `{
                 },
                 "status": {
                     "type": "string"
-                }
-            }
-        },
-        "api.GetContextRequest": {
-            "type": "object",
-            "properties": {
-                "verbose": {
-                    "type": "boolean"
                 }
             }
         },
@@ -1791,17 +1869,6 @@ const docTemplate = `{
                 }
             }
         },
-        "api.GetTraceRequest": {
-            "type": "object",
-            "properties": {
-                "sub_agents": {
-                    "type": "boolean"
-                },
-                "turn": {
-                    "type": "integer"
-                }
-            }
-        },
         "api.GetTraceResponse": {
             "type": "object",
             "properties": {
@@ -1934,14 +2001,6 @@ const docTemplate = `{
                 },
                 "pagination": {
                     "$ref": "#/definitions/api.Pagination"
-                }
-            }
-        },
-        "api.ListNotificationsRequest": {
-            "type": "object",
-            "properties": {
-                "all": {
-                    "type": "boolean"
                 }
             }
         },
@@ -2078,9 +2137,6 @@ const docTemplate = `{
                 },
                 "limit": {
                     "type": "integer"
-                },
-                "next_cursor": {
-                    "type": "string"
                 },
                 "offset": {
                     "type": "integer"

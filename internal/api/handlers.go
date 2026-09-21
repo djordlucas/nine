@@ -290,11 +290,19 @@ func (s *Server) handleCreateConversation(w http.ResponseWriter, r *http.Request
 // @Description  Returns all active, idle, and stopped conversations (agent sessions).
 // @Tags         conversations
 // @Produce      json
+// @Param        limit query int false "page size (default 50, max 1000)"
+// @Param        offset query int false "items to skip (default 0)"
 // @Success      200 {object} ListConversationsResponse
 // @Failure      503 {object} ErrorResponse "daemon unavailable"
 // @Security     BearerAuth
 // @Router       /conversations [get]
 func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request) {
+	page, err := parsePageParams(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error(), nil)
+		return
+	}
+
 	cl, err := s.getDaemonClient()
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "service_unavailable",
@@ -328,8 +336,10 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		})
 	}
 
+	data, pagination := paginate(conversations, page)
 	writeJSON(w, http.StatusOK, ListConversationsResponse{
-		Data: conversations,
+		Data:       data,
+		Pagination: pagination,
 	})
 }
 
@@ -460,10 +470,9 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 // @Summary      Get conversation context
 // @Description  Returns the context builder breakdown for a conversation — token usage, sections, tool ranking.
 // @Tags         conversations
-// @Accept       json
 // @Produce      json
 // @Param        id path string true "conversation id"
-// @Param        request body GetContextRequest false "verbose flag"
+// @Param        verbose query bool false "include the full per-section breakdown"
 // @Success      200 {object} GetContextResponse
 // @Failure      400 {object} ErrorResponse "missing id"
 // @Failure      404 {object} ErrorResponse "conversation not found"
@@ -478,10 +487,8 @@ func (s *Server) handleGetContext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req GetContextRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err.Error() != "EOF" {
-		writeError(w, http.StatusBadRequest, "invalid_request",
-			"invalid request body", nil)
+	if _, err := queryBool(r, "verbose"); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error(), nil)
 		return
 	}
 
@@ -526,10 +533,9 @@ func (s *Server) handleGetContext(w http.ResponseWriter, r *http.Request) {
 // @Summary      Delete a conversation
 // @Description  Deletes a conversation and all its event journal data.
 // @Tags         conversations
-// @Accept       json
 // @Produce      json
 // @Param        id path string true "conversation id"
-// @Param        request body DeleteConversationRequest false "force flag"
+// @Param        force query bool false "delete even when the conversation is protected"
 // @Success      200 {object} DeleteConversationResponse
 // @Failure      400 {object} ErrorResponse "missing id"
 // @Failure      404 {object} ErrorResponse "conversation not found"
@@ -544,10 +550,8 @@ func (s *Server) handleDeleteConversation(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	var req DeleteConversationRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err.Error() != "EOF" {
-		writeError(w, http.StatusBadRequest, "invalid_request",
-			"invalid request body", nil)
+	if _, err := queryBool(r, "force"); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error(), nil)
 		return
 	}
 
@@ -634,6 +638,8 @@ func (s *Server) handleStopConversation(w http.ResponseWriter, r *http.Request) 
 // @Tags         conversations
 // @Produce      json
 // @Param        id path string true "conversation id"
+// @Param        limit query int false "page size (default 50, max 1000)"
+// @Param        offset query int false "items to skip (default 0)"
 // @Success      200 {object} GetHistoryResponse
 // @Failure      400 {object} ErrorResponse "missing id"
 // @Security     BearerAuth
@@ -646,11 +652,19 @@ func (s *Server) handleGetHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	page, err := parsePageParams(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error(), nil)
+		return
+	}
+
 	// TODO: Implement proper history retrieval via daemon socket.
 	// For now, return a placeholder.
+	data, pagination := paginate([]HistoryEntry{}, page)
 	writeJSON(w, http.StatusOK, GetHistoryResponse{
-		AgentID: id,
-		Data:    []HistoryEntry{},
+		AgentID:    id,
+		Data:       data,
+		Pagination: pagination,
 	})
 }
 
@@ -658,10 +672,10 @@ func (s *Server) handleGetHistory(w http.ResponseWriter, r *http.Request) {
 // @Summary      Trace a turn
 // @Description  Returns the detailed LLM call and tool I/O trace for a specific turn in a conversation.
 // @Tags         conversations
-// @Accept       json
 // @Produce      json
 // @Param        id path string true "conversation id"
-// @Param        request body GetTraceRequest false "trace options"
+// @Param        turn query int false "turn number to trace (default: the latest turn)"
+// @Param        sub_agents query bool false "include traces from sub-agent turns"
 // @Success      200 {object} GetTraceResponse
 // @Failure      400 {object} ErrorResponse "missing id"
 // @Security     BearerAuth
@@ -674,19 +688,23 @@ func (s *Server) handleGetTrace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req GetTraceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err.Error() != "EOF" {
-		writeError(w, http.StatusBadRequest, "invalid_request",
-			"invalid request body", nil)
+	turn, err := queryInt(r, "turn", 0)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error(), nil)
+		return
+	}
+	subAgents, err := queryBool(r, "sub_agents")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error(), nil)
 		return
 	}
 
 	// TODO: Implement proper trace retrieval via daemon socket.
 	// For now, return a placeholder.
 	writeJSON(w, http.StatusOK, GetTraceResponse{
-		AgentID:    id,
-		Turn:       req.Turn,
-		SubAgents: req.SubAgents,
+		AgentID:   id,
+		Turn:      turn,
+		SubAgents: subAgents,
 	})
 }
 
@@ -734,11 +752,19 @@ func (s *Server) handleReplay(w http.ResponseWriter, r *http.Request) {
 // @Description  Returns all goals (active, completed, failed, paused) across all sessions.
 // @Tags         goals
 // @Produce      json
+// @Param        limit query int false "page size (default 50, max 1000)"
+// @Param        offset query int false "items to skip (default 0)"
 // @Success      200 {object} ListGoalsResponse
 // @Failure      503 {object} ErrorResponse "daemon unavailable"
 // @Security     BearerAuth
 // @Router       /goals [get]
 func (s *Server) handleListGoals(w http.ResponseWriter, r *http.Request) {
+	page, err := parsePageParams(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error(), nil)
+		return
+	}
+
 	cl, err := s.getDaemonClient()
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "service_unavailable",
@@ -763,8 +789,10 @@ func (s *Server) handleListGoals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	data, pagination := paginate(goals, page)
 	writeJSON(w, http.StatusOK, ListGoalsResponse{
-		Data: goals,
+		Data:       data,
+		Pagination: pagination,
 	})
 }
 
@@ -871,11 +899,19 @@ func (s *Server) handleDeleteGoal(w http.ResponseWriter, r *http.Request) {
 // @Description  Returns all workflows (running, completed, failed, cancelled) across all sessions.
 // @Tags         workflows
 // @Produce      json
+// @Param        limit query int false "page size (default 50, max 1000)"
+// @Param        offset query int false "items to skip (default 0)"
 // @Success      200 {object} ListWorkflowsResponse
 // @Failure      503 {object} ErrorResponse "daemon unavailable"
 // @Security     BearerAuth
 // @Router       /workflows [get]
 func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
+	page, err := parsePageParams(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error(), nil)
+		return
+	}
+
 	cl, err := s.getDaemonClient()
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "service_unavailable",
@@ -900,8 +936,10 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	data, pagination := paginate(workflows, page)
 	writeJSON(w, http.StatusOK, ListWorkflowsResponse{
-		Data: workflows,
+		Data:       data,
+		Pagination: pagination,
 	})
 }
 
@@ -1006,11 +1044,19 @@ func (s *Server) handleFailWorkflow(w http.ResponseWriter, r *http.Request) {
 // @Description  Returns all available tools (plugins, sandboxed, and generated).
 // @Tags         tools
 // @Produce      json
+// @Param        limit query int false "page size (default 50, max 1000)"
+// @Param        offset query int false "items to skip (default 0)"
 // @Success      200 {object} ListToolsResponse
 // @Failure      503 {object} ErrorResponse "daemon unavailable"
 // @Security     BearerAuth
 // @Router       /tools [get]
 func (s *Server) handleListTools(w http.ResponseWriter, r *http.Request) {
+	page, err := parsePageParams(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error(), nil)
+		return
+	}
+
 	cl, err := s.getDaemonClient()
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "service_unavailable",
@@ -1041,8 +1087,10 @@ func (s *Server) handleListTools(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	data, pagination := paginate(toolInfos, page)
 	writeJSON(w, http.StatusOK, ListToolsResponse{
-		Data: toolInfos,
+		Data:       data,
+		Pagination: pagination,
 	})
 }
 
@@ -1201,11 +1249,19 @@ func (s *Server) handleReloadTools(w http.ResponseWriter, r *http.Request) {
 // @Description  Returns all plugins (builtin and user), their loaded status, tools, and errors.
 // @Tags         plugins
 // @Produce      json
+// @Param        limit query int false "page size (default 50, max 1000)"
+// @Param        offset query int false "items to skip (default 0)"
 // @Success      200 {object} ListPluginsResponse
 // @Failure      503 {object} ErrorResponse "daemon unavailable"
 // @Security     BearerAuth
 // @Router       /plugins [get]
 func (s *Server) handleListPlugins(w http.ResponseWriter, r *http.Request) {
+	page, err := parsePageParams(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error(), nil)
+		return
+	}
+
 	cl, err := s.getDaemonClient()
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "service_unavailable",
@@ -1234,8 +1290,10 @@ func (s *Server) handleListPlugins(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	data, pagination := paginate(pluginInfos, page)
 	writeJSON(w, http.StatusOK, ListPluginsResponse{
-		Data: pluginInfos,
+		Data:       data,
+		Pagination: pagination,
 	})
 }
 
@@ -1292,18 +1350,23 @@ func (s *Server) handleReloadPlugins(w http.ResponseWriter, r *http.Request) {
 // @Summary      List notifications
 // @Description  Returns user notifications, optionally including already-seen ones.
 // @Tags         notifications
-// @Accept       json
 // @Produce      json
-// @Param        request body ListNotificationsRequest false "include all notifications"
+// @Param        all query bool false "include notifications already marked seen"
+// @Param        limit query int false "page size (default 50, max 1000)"
+// @Param        offset query int false "items to skip (default 0)"
 // @Success      200 {object} ListNotificationsResponse
 // @Failure      503 {object} ErrorResponse "daemon unavailable"
 // @Security     BearerAuth
 // @Router       /notifications [get]
 func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request) {
-	var req ListNotificationsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err.Error() != "EOF" {
-		writeError(w, http.StatusBadRequest, "invalid_request",
-			"invalid request body", nil)
+	all, err := queryBool(r, "all")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error(), nil)
+		return
+	}
+	page, err := parsePageParams(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error(), nil)
 		return
 	}
 
@@ -1315,7 +1378,7 @@ func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request)
 	}
 	defer cl.Close()
 
-	raw, err := cl.ListNotifications(req.All)
+	raw, err := cl.ListNotifications(all)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "server_error",
 			err.Error(), nil)
@@ -1331,8 +1394,10 @@ func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	data, pagination := paginate(notifications, page)
 	writeJSON(w, http.StatusOK, ListNotificationsResponse{
-		Data: notifications,
+		Data:       data,
+		Pagination: pagination,
 	})
 }
 
@@ -1345,15 +1410,25 @@ func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request)
 // @Description  Returns all available skills (builtin, user, and generated) with names, descriptions, and tags.
 // @Tags         skills
 // @Produce      json
+// @Param        limit query int false "page size (default 50, max 1000)"
+// @Param        offset query int false "items to skip (default 0)"
 // @Success      200 {object} ListSkillsResponse
 // @Security     BearerAuth
 // @Router       /skills [get]
 func (s *Server) handleListSkills(w http.ResponseWriter, r *http.Request) {
+	page, err := parsePageParams(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error(), nil)
+		return
+	}
+
 	// Skills are accessed through the memory store, not directly via socket
 	// TODO: Implement proper skills listing via daemon socket.
 	// For now, return a placeholder.
+	data, pagination := paginate([]SkillInfo{}, page)
 	writeJSON(w, http.StatusOK, ListSkillsResponse{
-		Data: []SkillInfo{},
+		Data:       data,
+		Pagination: pagination,
 	})
 }
 
