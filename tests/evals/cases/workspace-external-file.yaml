@@ -27,4 +27,8 @@ expect:
 runs: 3
 pass_threshold: "2/3"
 models:
+  # Measured, not guessed, and measured twice: 3/3 then 1/3 on qwen3.5:9b
+  # (small). The failures were the model answering from read_file/list_files
+  # instead of searching — the tool works, it just is not reliably chosen at
+  # this size. One clean run is not reliability, so the finding is medium.
   expected_pass_min_class: medium
