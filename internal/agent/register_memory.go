@@ -38,24 +38,6 @@ var memoryToolDefs = []llm.ToolDef{
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"prefix":{"type":"string"}}}`),
 	},
 	{
-		Name:        "file_store",
-		DisplayName: "File Store",
-		Description: "Store a file by path and content so you can find it again later — full-text searchable with file_search_text, and retrievable by path with file_fetch. This is your own memory file store, separate from the workspace filesystem that shell, read_file and write_file use; prefer it whenever you are keeping something to recall in a later turn. To copy an already-stored file — a spilled tool output, typically — to a new path without reading it, pass content_ref instead of content.",
-		InputSchema: json.RawMessage(`{"type":"object","required":["path"],"properties":{"path":{"type":"string"},"content":{"type":"string"},"content_ref":{"type":"string","x-nine-ref":true,"description":"A MEMORY FILE-STORE path whose content to store at path, e.g. a spill/... path from a truncated tool result. NOT a filesystem path: a file created by shell or write_file is not in the store. Used instead of content; the data never passes through your context."}}}`),
-	},
-	{
-		Name:        "file_fetch",
-		DisplayName: "File Fetch",
-		Description: "Fetch a stored file by path. For a large file, read it in windows with offset and limit rather than all at once — an over-large result is capped and spilled again.",
-		InputSchema: json.RawMessage(`{"type":"object","required":["path"],"properties":{"path":{"type":"string"},"offset":{"type":"integer","description":"Character offset to start reading at (default 0)."},"limit":{"type":"integer","description":"Maximum characters to return; omit or 0 for the whole file."}}}`),
-	},
-	{
-		Name:        "file_list",
-		DisplayName: "File List",
-		Description: "List stored files, optionally filtered by path prefix.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"prefix":{"type":"string"}}}`),
-	},
-	{
 		Name:        "file_search_text",
 		DisplayName: "File Search",
 		Description: "Full-text search over stored file content. Pass path to search inside one file (or one directory prefix) — the way to find the relevant region of a large spilled tool output.",
@@ -207,75 +189,6 @@ func RegisterMemoryTools(d *Dispatcher, store *memory.Store, embedder embed.Embe
 		return store.KVListString(req.Prefix)
 	}
 
-	d.handlers["file_store"] = func(_ context.Context, args json.RawMessage) (string, error) {
-		var req struct {
-			Path    string `json:"path"`
-			Content string `json:"content"`
-			// ContentRef arrives already expanded: the dispatcher replaced the
-			// path the model supplied with the content stored there (refs.go).
-			ContentRef string `json:"content_ref"`
-		}
-		if err := json.Unmarshal(args, &req); err != nil {
-			return "", fmt.Errorf("file_store: %w", err)
-		}
-		if strings.HasPrefix(req.Path, SpillPathPrefix) {
-			return "", fmt.Errorf("file_store: %q is reserved for spilled tool output and is not writable; choose another path", req.Path)
-		}
-		content := req.Content
-		if content == "" && req.ContentRef != "" {
-			content = req.ContentRef
-		}
-		if err := store.FileStore(req.Path, content); err != nil {
-			return "", err
-		}
-		return "ok", nil
-	}
-
-	d.handlers["file_fetch"] = func(_ context.Context, args json.RawMessage) (string, error) {
-		var req struct {
-			Path   string `json:"path"`
-			Offset int    `json:"offset"`
-			Limit  int    `json:"limit"`
-		}
-		if err := json.Unmarshal(args, &req); err != nil {
-			return "", fmt.Errorf("file_fetch: %w", err)
-		}
-		// A plain whole-file fetch stays a plain string result; only a windowed
-		// read reports its position, which the model needs to page onwards.
-		if req.Offset <= 0 && req.Limit <= 0 {
-			content, found, err := store.FileFetch(req.Path)
-			if err != nil {
-				return "", err
-			}
-			if !found {
-				return "", fmt.Errorf("file_fetch: %s", missingStorePath(store, req.Path))
-			}
-			return content, nil
-		}
-		slice, found, err := store.FileFetchRange(req.Path, req.Offset, req.Limit)
-		if err != nil {
-			return "", err
-		}
-		if !found {
-			return "", fmt.Errorf("file_fetch: %s", missingStorePath(store, req.Path))
-		}
-		data, err := json.Marshal(slice)
-		if err != nil {
-			return "", err
-		}
-		return string(data), nil
-	}
-
-	d.handlers["file_list"] = func(_ context.Context, args json.RawMessage) (string, error) {
-		var req struct {
-			Prefix string `json:"prefix"`
-		}
-		if err := json.Unmarshal(args, &req); err != nil {
-			return "", fmt.Errorf("file_list: %w", err)
-		}
-		return store.FileListString(req.Prefix)
-	}
-
 	d.handlers["file_search_text"] = func(ctx context.Context, args json.RawMessage) (string, error) {
 		var req struct {
 			Query string `json:"query"`
@@ -315,7 +228,7 @@ func RegisterMemoryTools(d *Dispatcher, store *memory.Store, embedder embed.Embe
 
 // noSearchHitsMessage explains an empty file_search_text result. Nine has two
 // file namespaces — the workspace filesystem (shell, read_file, write_file) and
-// the memory file store (file_store, file_fetch, spilled output) — and a model
+// the memory file store (spilled tool output, read with read_file) — and a model
 // that searches the wrong one gets zero hits for a reason it cannot see.
 func noSearchHitsMessage(store *memory.Store, query, pathFilter string) string {
 	if pathFilter == "" {

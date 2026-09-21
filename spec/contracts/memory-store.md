@@ -83,8 +83,7 @@ the dispatcher calls the embedder and then the store; see
 | Tool(s) | Store methods | Notes |
 |---------|---------------|-------|
 | `memory_get/set/delete/list` | `Get`, `Set`, `Delete`, `List(prefix)` | exact-key K/V; `List` is prefix-scan |
-| `file_store/fetch/list` | `FileStore`, `FileFetch`, `FileList(prefix)` | arbitrary content storage; `file_store` refuses the reserved `spill/` prefix |
-| `file_fetch` (windowed) | `FileFetchRange(path, offset, limit)` → `FileSlice{content, offset, chars, total}` | reads a window of a large file; offsets are **characters**, sliced in the database so the file is never materialized whole |
+| `read_file` (a `spill/` path) | `FileFetch`, `FileFetchRange(path, offset, limit)` → `FileSlice{content, offset, chars, total}` | the dispatcher routes a `spill/` path to the store and every other path to the workspace, so one read tool spans both. Offsets are **characters**, sliced in the database so the file is never materialized whole |
 | `file_search_text` | `FileSearchTextScoped(query, pathPrefix, limit)` | FTS5 full-text search ranked by `bm25`, highlighted via `snippet`; an optional path prefix scopes the search to one file or directory |
 | `memory_embed` / `memory_query` | `VectorStore`, `VectorQuery(ns, vec, topK)` | **core-intercepted** |
 | `skill_*` | `SkillUpsert/Get/List/Delete`, `SkillNamesBySource` | see [`skills.md`](skills.md) |
@@ -202,7 +201,8 @@ Over-cap tool output is written to `files` under `spill/<agent-id>/`
 ([`dispatcher.md`](dispatcher.md) R-DISP.2). That prefix carries two invariants, both of
 which keep untrusted tool output from being laundered into trusted context:
 
-- **Not agent-writable.** `file_store` **MUST** refuse a path under `spill/`, so a
+- **Not agent-writable.** No agent tool writes this table — the daemon is its only
+  writer — and `write_file` **MUST** refuse a workspace path under `spill/`, so a
   spilled file is always exactly what a tool returned — never something the model
   composed there and later cited as a tool result. It stays agent-*readable*: reading it
   back is the point.

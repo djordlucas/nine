@@ -345,7 +345,7 @@ plan_approval = "on-risky"
 # max_output_tokens — the per-result tool output cap (docs/tool-output.md).
 # A result larger than this is written whole to the memory file store under
 # spill/<agent-id>/ and replaced in context by a short preview naming the path,
-# which the agent can read back with file_fetch(offset, limit) or search with
+# which the agent can read back with read_file(offset, limit) or search with
 # file_search_text(query, path). Nothing is discarded, so raising this is rarely
 # necessary — do it only when models should routinely see more of a large result
 # inline. Default 2048 (~8192 characters).

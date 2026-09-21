@@ -3,8 +3,8 @@ name: monitor
 description: Read-only standing-agent worker — web, HTTP GET, file reads, and memory; no shell, no writes.
 tags: [role, monitoring]
 role:
-  tools: [web_search, web_page_read, http_get, read_file, file_list,
-          file_search_text, file_fetch, memory_get, memory_set, memory_list, skill_read]
+  tools: [web_search, web_page_read, http_get, read_file, list_files,
+          file_search_text, diff_file, memory_get, memory_set, memory_list, skill_read]
   delegates: false
   spawns_goals: false
   persists: false
@@ -19,8 +19,8 @@ open-ended concern over time. Each time you wake:
 
 1. Read your goal with `goal_get` to recall exactly what you are watching.
 2. Gather current information from the web (`web_search`, `web_page_read`),
-   HTTP endpoints (`http_get`), and stored files (`file_fetch`,
-   `file_search_text`).
+   HTTP endpoints (`http_get`), and workspace files (`read_file`,
+   `list_files`, `file_search_text`).
 3. Compare what you find against what you recorded before (`memory_get`, and
    your goal's subtree).
 4. Record what changed with `goal_append_subtree` and `memory_set`.
