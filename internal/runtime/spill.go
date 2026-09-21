@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -34,7 +36,7 @@ const spillSweepInterval = time.Hour
 // Together they let a large payload move from one tool to another entirely
 // inside the daemon: the model routes it by handle and never spends context on
 // the bytes.
-func registerLargeOutput(d *agent.Dispatcher, store *memory.Store, agentID string) {
+func registerLargeOutput(d *agent.Dispatcher, store *memory.Store, agentID string, workspaceRoot string) {
 	if store == nil {
 		return
 	}
@@ -52,12 +54,19 @@ func registerLargeOutput(d *agent.Dispatcher, store *memory.Store, agentID strin
 		if err != nil {
 			return "", err
 		}
-		if !found {
-			// Same wording the file tools use for an unreadable path, so a model
-			// learns one lesson about the two namespaces rather than two.
-			return "", agent.MissingStorePathError(store, p)
+		if found {
+			return content, nil
 		}
-		return content, nil
+		// A ref names a payload, and a payload can sit in either namespace: a
+		// spill in the store, or a workspace file the agent produced earlier.
+		// Resolving only the store would mean "copy this file" worked for a
+		// truncated tool result and failed for an ordinary one.
+		if body, werr := readWorkspaceFile(workspaceRoot, p); werr == nil {
+			return body, nil
+		}
+		// Same wording the file tools use for an unreadable path, so a model
+		// learns one lesson about the two namespaces rather than two.
+		return "", agent.MissingStorePathError(store, p)
 	})
 }
 
@@ -155,4 +164,37 @@ func RunSpillSweeper(ctx context.Context, store *memory.Store) {
 			sweep()
 		}
 	}
+}
+
+// readWorkspaceFile reads a workspace-relative (or /work/...) path from the
+// operator's directory, for a ref that names a file rather than a spill.
+//
+// The path is resolved against the root and then checked to be under it: a ref
+// argument is model-supplied text, and this reads with the daemon's own
+// authority rather than through the sandbox's pre-open.
+func readWorkspaceFile(root, p string) (string, error) {
+	if root == "" {
+		return "", fmt.Errorf("no workspace configured")
+	}
+	rel := strings.TrimPrefix(p, "/work/")
+	if rel == "/work" {
+		return "", fmt.Errorf("not a file")
+	}
+	full := filepath.Join(root, filepath.FromSlash(rel))
+	cleanRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	cleanFull, err := filepath.Abs(full)
+	if err != nil {
+		return "", err
+	}
+	if cleanFull != cleanRoot && !strings.HasPrefix(cleanFull, cleanRoot+string(filepath.Separator)) {
+		return "", fmt.Errorf("%s is outside the workspace", p)
+	}
+	body, err := os.ReadFile(cleanFull) //nolint:gosec // checked to be inside the workspace root
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
 }
