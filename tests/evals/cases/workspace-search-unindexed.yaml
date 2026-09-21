@@ -31,4 +31,6 @@ expect:
 runs: 3
 pass_threshold: "2/3"
 models:
+  # 2/3 on qwen3.5:9b (small) — at the threshold, not reliably above it, so the
+  # finding stays medium. See docs/evals.md on the local medium-class gap.
   expected_pass_min_class: medium

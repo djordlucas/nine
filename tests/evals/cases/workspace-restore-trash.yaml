@@ -23,7 +23,11 @@ expect:
     max_turns: 3
     no_stall: true
   answer:
-    contains: ["4200"]
+    # Naming what it brought back, not quoting it. The proof that the restore
+    # worked is the side effect above; requiring the model to also read the file
+    # and repeat its contents tested reading comprehension, and failed 3/3 on a
+    # small model that had restored the file correctly.
+    contains: ["pricing.md"]
 
 runs: 3
 pass_threshold: "2/3"
