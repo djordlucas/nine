@@ -20,7 +20,7 @@ import (
 //
 // This is deliberately **declared, not inferred**. Expanding any argument that
 // merely looks like a path would corrupt tools whose arguments are genuinely
-// paths — file_fetch(path) would have its path replaced by the file's contents.
+// paths — read_file(path) would have its path replaced by the file's contents.
 // Only properties a tool marks are ever touched.
 const RefMarker = "x-nine-ref"
 
@@ -113,7 +113,7 @@ func (d *Dispatcher) expandRefs(ctx context.Context, toolName string, args json.
 			return nil, fmt.Errorf("%s: resolving %s reference %q: %w", toolName, name, path, err)
 		}
 		if len(content) > MaxRefBytes {
-			return nil, fmt.Errorf("%s: %s reference %q is %d bytes, over the %d-byte limit; read it in slices with file_fetch(path, offset, limit) instead",
+			return nil, fmt.Errorf("%s: %s reference %q is %d bytes, over the %d-byte limit; read it in slices with read_file(path, offset, limit) instead",
 				toolName, name, path, len(content), MaxRefBytes)
 		}
 		enc, err := json.Marshal(content)

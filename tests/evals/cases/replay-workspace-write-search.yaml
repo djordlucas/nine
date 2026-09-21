@@ -1,0 +1,13 @@
+id: replay-workspace-write-search
+description: "Deterministic Track-R fixture: write a file, then locate it by full-text search in a later turn. Guards the loop/dispatcher/context code across a write_file/file_search_text roundtrip, not the model."
+track: replay
+tier: basic
+tags: [files, search, replay]
+
+prompts:
+  - "Write a file at runbooks/db-restore.md with content 'To restore prod: pg_restore from the nightly snapshot in s3://backups/pg.'"
+  - "Search your files for the database restore runbook and tell me exactly where the snapshot lives."
+
+expect:
+  answer:
+    contains: ["s3://backups/pg"]

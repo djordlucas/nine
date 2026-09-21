@@ -63,7 +63,7 @@ expect:
   trajectory:
     tools_all_of: [read_file]
     # Either retrieval route is fine; the point is that one was necessary.
-    tools_any_of: [file_search_text, file_fetch]
+    tools_any_of: [file_search_text, read_file]
     spills: { min: 1 }
     max_turns: 1
     no_stall: true

@@ -4,8 +4,6 @@ track: live
 tier: multi_step
 tags: [files, workspace, trash]
 
-# Gated until the trash ships (adr/file-namespaces.md phase 4).
-requires_env: [NINE_EVAL_WORKSPACE_TOOLS]
 
 setup:
   files:

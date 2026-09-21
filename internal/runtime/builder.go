@@ -323,7 +323,7 @@ var protectedKeyPrefixes = []string{
 // coreToolNames are the memory/file/skill tools available at every nesting depth.
 var coreToolNames = []string{
 	"memory_get", "memory_set", "memory_delete", "memory_list",
-	"file_store", "file_fetch", "file_list", "file_search_text",
+	"file_search_text", "list_files", "diff_file",
 	"skill_list", "skill_read", "skill_write", "skill_modify",
 	"queued_messages_get", "queued_message_mark_consumed",
 	"queued_messages_mark_all_consumed", "queued_messages_count",
@@ -1013,7 +1013,7 @@ func truncate(s string, n int) string {
 }
 
 // approvalQuestion builds a tool-aware approval prompt: shell shows its
-// command, write_file/file_store its path, everything else truncated JSON args.
+// command, a file tool its path, everything else truncated JSON args.
 func approvalQuestion(toolName string, args json.RawMessage) string {
 	var detail string
 	var fields map[string]json.RawMessage
@@ -1028,7 +1028,7 @@ func approvalQuestion(toolName string, args json.RawMessage) string {
 	switch toolName {
 	case "shell":
 		detail = "Command: " + unquote("command")
-	case "write_file", "file_store":
+	case "write_file", "edit_file", "delete_file":
 		detail = "Path: " + unquote("path")
 	case "tool_write":
 		// The two things §9.4 says a human is actually being asked to weigh: the

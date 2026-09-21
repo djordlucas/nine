@@ -109,6 +109,15 @@ func (s *Store) FileDeleteOlderThan(pathPrefix string, olderThan time.Duration) 
 	return res.RowsAffected()
 }
 
+// FileDelete removes one stored file. Used by the one-time migration that moved
+// agent-authored files into the workspace (adr/file-namespaces.md §12); the
+// retention sweep uses FileDeleteOlderThan instead, which is bounded by prefix
+// and age so it can never clear the table.
+func (s *Store) FileDelete(path string) error {
+	_, err := s.db.Exec(`DELETE FROM files WHERE path = ?`, path)
+	return err
+}
+
 // FileList returns paths with the given prefix, sorted. Pass "" for all.
 func (s *Store) FileList(prefix string) ([]string, error) {
 	var (

@@ -65,7 +65,7 @@ name: data-wrangler
 description: Clean and reshape datasets — files and shell, no network.
 tags: [role, data]
 role:
-  tools: [shell, read_file, write_file, file_list]
+  tools: [shell, read_file, write_file, list_files]
   delegates: false
 ---
 

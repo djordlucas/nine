@@ -4,8 +4,6 @@ track: live
 tier: basic
 tags: [files, workspace, move]
 
-# Gated until the workspace file tools ship (adr/file-namespaces.md phase 3).
-requires_env: [NINE_EVAL_WORKSPACE_TOOLS]
 
 setup:
   files:
