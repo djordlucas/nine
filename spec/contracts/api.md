@@ -158,14 +158,33 @@ Standard error codes:
 | `server_error` | 500 | Internal server error |
 | `service_unavailable` | 503 | Daemon not running or unreachable |
 
-### API-HTTP-4: pagination
+### API-HTTP-4: request argument placement
 
-For list endpoints that support pagination:
+Operations **MUST NOT** carry arguments in a request body on `GET` or `DELETE`.
+OpenAPI 3.x leaves a request body on those methods undefined, so generated
+clients drop it and interactive documentation will not send it. Such arguments
+belong in the query string.
 
-**Request parameters:**
-- `limit`: Maximum items per page (default: 50, max: 1000)
-- `offset`: Number of items to skip (default: 0)
-- `cursor`: Opaque cursor for next page (alternative to offset)
+A body sent to one of these operations is ignored, not an error.
+
+### API-HTTP-5: pagination
+
+Paging is offset based. The daemon materialises a full result set per call, so
+there is no server-side stream for an opaque cursor to point into; a cursor
+could only re-encode the offset while implying a stability the slice does not
+have.
+
+**Request parameters (query string):**
+
+| Parameter | Type | Default | Constraint |
+|-----------|------|---------|------------|
+| `limit` | int | 50 | 1–1000 |
+| `offset` | int | 0 | ≥ 0 |
+
+A list endpoint **MUST** reject a malformed or out-of-range value with `400
+invalid_request` rather than substituting the default, and **MUST** validate
+before dialling the daemon. An `offset` past the end of the set returns an
+empty page, not an error.
 
 **Response envelope:**
 ```json
@@ -175,11 +194,12 @@ For list endpoints that support pagination:
     "limit": 50,
     "offset": 0,
     "total": 100,
-    "next_cursor": "...",
     "has_more": true
   }
 }
 ```
+
+`data` **MUST** serialise as `[]` rather than `null` for an empty page.
 
 ---
 
@@ -306,12 +326,7 @@ Send a message to a conversation (execute a turn).
 
 Get conversation context breakdown.
 
-**Request:**
-```json
-{
-  "verbose": false
-}
-```
+**Query parameters:** `verbose` (bool, default false)
 
 **Response:** Same as CLI `nine context` output, formatted as JSON.
 
@@ -319,12 +334,7 @@ Get conversation context breakdown.
 
 Delete a conversation and all its data.
 
-**Request:**
-```json
-{
-  "force": false
-}
-```
+**Query parameters:** `force` (bool, default false)
 
 **Response:**
 ```json
@@ -379,13 +389,8 @@ Get conversation message history.
 
 Get detailed trace of a specific turn.
 
-**Request:**
-```json
-{
-  "turn": 1,
-  "sub_agents": false
-}
-```
+**Query parameters:** `turn` (int, default 0 — the latest turn), `sub_agents`
+(bool, default false)
 
 **Response:** Same as CLI `nine trace` output, formatted as JSON.
 
@@ -648,12 +653,8 @@ Reload user plugins.
 
 Get user notifications.
 
-**Request:**
-```json
-{
-  "all": false
-}
-```
+**Query parameters:** `all` (bool, default false), plus `limit` and `offset`
+(API-HTTP-5)
 
 **Response:**
 ```json

@@ -100,11 +100,6 @@ definitions:
       status:
         type: string
     type: object
-  api.DeleteConversationRequest:
-    properties:
-      force:
-        type: boolean
-    type: object
   api.DeleteConversationResponse:
     properties:
       deleted_events:
@@ -144,11 +139,6 @@ definitions:
         type: string
       status:
         type: string
-    type: object
-  api.GetContextRequest:
-    properties:
-      verbose:
-        type: boolean
     type: object
   api.GetContextResponse:
     properties:
@@ -250,13 +240,6 @@ definitions:
       plugin:
         type: string
     type: object
-  api.GetTraceRequest:
-    properties:
-      sub_agents:
-        type: boolean
-      turn:
-        type: integer
-    type: object
   api.GetTraceResponse:
     properties:
       agent_id:
@@ -346,11 +329,6 @@ definitions:
       pagination:
         $ref: '#/definitions/api.Pagination'
     type: object
-  api.ListNotificationsRequest:
-    properties:
-      all:
-        type: boolean
-    type: object
   api.ListNotificationsResponse:
     properties:
       data:
@@ -438,8 +416,6 @@ definitions:
         type: boolean
       limit:
         type: integer
-      next_cursor:
-        type: string
       offset:
         type: integer
       total:
@@ -633,6 +609,15 @@ paths:
   /conversations:
     get:
       description: Returns all active, idle, and stopped conversations (agent sessions).
+      parameters:
+      - description: page size (default 50, max 1000)
+        in: query
+        name: limit
+        type: integer
+      - description: items to skip (default 0)
+        in: query
+        name: offset
+        type: integer
       produces:
       - application/json
       responses:
@@ -682,8 +667,6 @@ paths:
       - conversations
   /conversations/{id}:
     delete:
-      consumes:
-      - application/json
       description: Deletes a conversation and all its event journal data.
       parameters:
       - description: conversation id
@@ -691,11 +674,10 @@ paths:
         name: id
         required: true
         type: string
-      - description: force flag
-        in: body
-        name: request
-        schema:
-          $ref: '#/definitions/api.DeleteConversationRequest'
+      - description: delete even when the conversation is protected
+        in: query
+        name: force
+        type: boolean
       produces:
       - application/json
       responses:
@@ -754,8 +736,6 @@ paths:
       - conversations
   /conversations/{id}/context:
     get:
-      consumes:
-      - application/json
       description: Returns the context builder breakdown for a conversation — token
         usage, sections, tool ranking.
       parameters:
@@ -764,11 +744,10 @@ paths:
         name: id
         required: true
         type: string
-      - description: verbose flag
-        in: body
-        name: request
-        schema:
-          $ref: '#/definitions/api.GetContextRequest'
+      - description: include the full per-section breakdown
+        in: query
+        name: verbose
+        type: boolean
       produces:
       - application/json
       responses:
@@ -802,6 +781,14 @@ paths:
         name: id
         required: true
         type: string
+      - description: page size (default 50, max 1000)
+        in: query
+        name: limit
+        type: integer
+      - description: items to skip (default 0)
+        in: query
+        name: offset
+        type: integer
       produces:
       - application/json
       responses:
@@ -960,8 +947,6 @@ paths:
       - conversations
   /conversations/{id}/trace:
     get:
-      consumes:
-      - application/json
       description: Returns the detailed LLM call and tool I/O trace for a specific
         turn in a conversation.
       parameters:
@@ -970,11 +955,14 @@ paths:
         name: id
         required: true
         type: string
-      - description: trace options
-        in: body
-        name: request
-        schema:
-          $ref: '#/definitions/api.GetTraceRequest'
+      - description: 'turn number to trace (default: the latest turn)'
+        in: query
+        name: turn
+        type: integer
+      - description: include traces from sub-agent turns
+        in: query
+        name: sub_agents
+        type: boolean
       produces:
       - application/json
       responses:
@@ -1035,6 +1023,15 @@ paths:
     get:
       description: Returns all goals (active, completed, failed, paused) across all
         sessions.
+      parameters:
+      - description: page size (default 50, max 1000)
+        in: query
+        name: limit
+        type: integer
+      - description: items to skip (default 0)
+        in: query
+        name: offset
+        type: integer
       produces:
       - application/json
       responses:
@@ -1145,15 +1142,20 @@ paths:
       - health
   /notifications:
     get:
-      consumes:
-      - application/json
       description: Returns user notifications, optionally including already-seen ones.
       parameters:
-      - description: include all notifications
-        in: body
-        name: request
-        schema:
-          $ref: '#/definitions/api.ListNotificationsRequest'
+      - description: include notifications already marked seen
+        in: query
+        name: all
+        type: boolean
+      - description: page size (default 50, max 1000)
+        in: query
+        name: limit
+        type: integer
+      - description: items to skip (default 0)
+        in: query
+        name: offset
+        type: integer
       produces:
       - application/json
       responses:
@@ -1174,6 +1176,15 @@ paths:
     get:
       description: Returns all plugins (builtin and user), their loaded status, tools,
         and errors.
+      parameters:
+      - description: page size (default 50, max 1000)
+        in: query
+        name: limit
+        type: integer
+      - description: items to skip (default 0)
+        in: query
+        name: offset
+        type: integer
       produces:
       - application/json
       responses:
@@ -1251,6 +1262,15 @@ paths:
     get:
       description: Returns all available skills (builtin, user, and generated) with
         names, descriptions, and tags.
+      parameters:
+      - description: page size (default 50, max 1000)
+        in: query
+        name: limit
+        type: integer
+      - description: items to skip (default 0)
+        in: query
+        name: offset
+        type: integer
       produces:
       - application/json
       responses:
@@ -1326,6 +1346,15 @@ paths:
   /tools:
     get:
       description: Returns all available tools (plugins, sandboxed, and generated).
+      parameters:
+      - description: page size (default 50, max 1000)
+        in: query
+        name: limit
+        type: integer
+      - description: items to skip (default 0)
+        in: query
+        name: offset
+        type: integer
       produces:
       - application/json
       responses:
@@ -1433,6 +1462,15 @@ paths:
     get:
       description: Returns all workflows (running, completed, failed, cancelled) across
         all sessions.
+      parameters:
+      - description: page size (default 50, max 1000)
+        in: query
+        name: limit
+        type: integer
+      - description: items to skip (default 0)
+        in: query
+        name: offset
+        type: integer
       produces:
       - application/json
       responses:
