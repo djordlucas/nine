@@ -156,6 +156,7 @@ Standard error codes:
 | `conflict` | 409 | Resource already exists |
 | `timeout` | 408 | Request timeout |
 | `server_error` | 500 | Internal server error |
+| `not_implemented` | 501 | Endpoint declared but not backed by the daemon |
 | `service_unavailable` | 503 | Daemon not running or unreachable |
 
 ### API-HTTP-4: request argument placement
@@ -167,7 +168,18 @@ belong in the query string.
 
 A body sent to one of these operations is ignored, not an error.
 
-### API-HTTP-5: pagination
+### API-HTTP-5: unimplemented endpoints
+
+An endpoint the daemon cannot serve **MUST** return `501 not_implemented` with
+a `details.detail` naming what is missing. It **MUST NOT** return `200` with an
+empty list, an echo of the request, or a synthesised identifier, and **MUST
+NOT** declare a success schema it cannot produce.
+
+A caller cannot distinguish invented data from a real answer, so a stub that
+returns `200` is indistinguishable from a working endpoint until something
+downstream depends on it.
+
+### API-HTTP-6: pagination
 
 Paging is offset based. The daemon materialises a full result set per call, so
 there is no server-side stream for an opaque cursor to point into; a cursor
@@ -654,7 +666,7 @@ Reload user plugins.
 Get user notifications.
 
 **Query parameters:** `all` (bool, default false), plus `limit` and `offset`
-(API-HTTP-5)
+(API-HTTP-6)
 
 **Response:**
 ```json
@@ -1102,26 +1114,35 @@ All API configuration options **MUST** be available via CLI flags.
 
 | CLI Command | API Endpoint | Status |
 |-------------|--------------|--------|
-| `nine send` | POST `/api/v1/conversations/{id}/messages` | Required |
-| `nine status` | GET `/api/v1/status` | Required |
-| `nine goals` | GET `/api/v1/goals` | Required |
-| `nine workflows` | GET `/api/v1/workflows` | Required |
-| `nine tools` | GET `/api/v1/tools` | Required |
-| `nine plugins` | GET `/api/v1/plugins` | Required |
-| `nine sessions` | GET `/api/v1/conversations` | Required |
-| `nine context` | GET `/api/v1/conversations/{id}/context` | Required |
-| `nine trace` | GET `/api/v1/conversations/{id}/trace` | Required |
-| `nine replay` | POST `/api/v1/conversations/{id}/replay` | Required |
-| `nine stop` | POST `/api/v1/conversations/{id}/stop` | Required |
-| `nine session delete` | DELETE `/api/v1/conversations/{id}` | Required |
-| `nine workflow stop` | POST `/api/v1/workflows/{id}/stop` | Required |
-| `nine workflow fail` | POST `/api/v1/workflows/{id}/fail` | Required |
-| `nine plugins reload` | POST `/api/v1/plugins/reload` | Required |
-| `nine tools reload` | POST `/api/v1/tools/reload` | Required |
-| `nine notifications` | GET `/api/v1/notifications` | Required |
-| `nine docs` | GET `/api/v1/docs` | Required |
-| `nine spec` | GET `/api/v1/spec` | Required |
-| `nine tool call` | POST `/api/v1/tools/{name}/call` | Required |
+| `nine send` | POST `/api/v1/conversations/{id}/messages` | Implemented |
+| `nine status` | GET `/api/v1/status` | Implemented |
+| `nine goals` | GET `/api/v1/goals` | Implemented |
+| `nine workflows` | GET `/api/v1/workflows` | Implemented |
+| `nine tools` | GET `/api/v1/tools` | Implemented |
+| `nine plugins` | GET `/api/v1/plugins` | Implemented |
+| `nine sessions` | GET `/api/v1/conversations` | Implemented |
+| `nine context` | GET `/api/v1/conversations/{id}/context` | Implemented |
+| `nine trace` | GET `/api/v1/conversations/{id}/trace` | 501 — no journal query on the wire protocol |
+| `nine replay` | POST `/api/v1/conversations/{id}/replay` | 501 — no replay message on the wire protocol |
+| `nine stop` | POST `/api/v1/conversations/{id}/stop` | Implemented |
+| `nine session delete` | DELETE `/api/v1/conversations/{id}` | Implemented |
+| `nine workflow stop` | POST `/api/v1/workflows/{id}/stop` | Implemented |
+| `nine workflow fail` | POST `/api/v1/workflows/{id}/fail` | Implemented |
+| `nine plugins reload` | POST `/api/v1/plugins/reload` | Implemented |
+| `nine tools reload` | POST `/api/v1/tools/reload` | Implemented |
+| `nine notifications` | GET `/api/v1/notifications` | Implemented |
+| `nine docs` | GET `/api/v1/docs` | Implemented |
+| `nine spec` | GET `/api/v1/spec` | Implemented |
+| `nine tool call` | POST `/api/v1/tools/{name}/call` | Implemented |
+| — | GET `/api/v1/conversations/{id}/history` | 501 — no journal query on the wire protocol |
+| — | POST `/api/v1/goals` | 501 — `goal_create` is role-gated; caller role undecided |
+| — | DELETE `/api/v1/goals/{id}` | 501 — no goal deletion exists to call |
+| — | GET `/api/v1/skills` | 501 — no skills query on the wire protocol |
+
+Closing the `501` rows needs daemon work, not API work: each names a query or
+mutation the wire protocol does not carry. `POST /goals` additionally needs a
+policy decision, since `goal_create` is gated behind a role's `Delegates` flag
+and an HTTP caller has no role.
 
 ---
 
@@ -1286,6 +1307,7 @@ nine api serve --port 8080 --host 0.0.0.0 --auth-token secret --timeout 30
 | `timeout` | 408 | Request timeout | Yes |
 | `too_many_requests` | 429 | Rate limited | Yes |
 | `server_error` | 500 | Internal error | Yes |
+| `not_implemented` | 501 | Not backed by the daemon | No |
 | `service_unavailable` | 503 | Daemon not available | Yes |
 
 ---

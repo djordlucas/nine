@@ -54,14 +54,6 @@ func TestQueryParams_RejectMalformedValues(t *testing.T) {
 			func(s *Server) http.HandlerFunc { return s.handleDeleteConversation },
 		},
 		{
-			"trace turn", "GET", "/api/v1/conversations/abc/trace?turn=first",
-			func(s *Server) http.HandlerFunc { return s.handleGetTrace },
-		},
-		{
-			"trace sub_agents", "GET", "/api/v1/conversations/abc/trace?sub_agents=yes-please",
-			func(s *Server) http.HandlerFunc { return s.handleGetTrace },
-		},
-		{
 			"notifications all", "GET", "/api/v1/notifications?all=sometimes",
 			func(s *Server) http.HandlerFunc { return s.handleListNotifications },
 		},
@@ -88,47 +80,68 @@ func TestQueryParams_RejectMalformedValues(t *testing.T) {
 
 // A JSON body on these operations is now inert. Previously it carried the
 // arguments; sending one must not resurrect that path.
-func TestQueryParams_BodyIsIgnored(t *testing.T) {
-	s := bareServer(t)
-
-	req := httptest.NewRequest("GET", "/api/v1/conversations/abc/trace?turn=7",
-		strings.NewReader(`{"turn": 99, "sub_agents": true}`))
-	req.SetPathValue("id", "abc")
-	w := httptest.NewRecorder()
-
-	s.handleGetTrace(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("Expected 200, got %d", w.Code)
+//
+// Asserted without a daemon by pitting the two against each other: the body is
+// well-formed and would be accepted, the query value is not. A 400 can only
+// come from the query being what the handler reads.
+func TestQueryParams_QueryBeatsBody(t *testing.T) {
+	tests := []struct {
+		name    string
+		method  string
+		target  string
+		body    string
+		handler func(*Server) http.HandlerFunc
+	}{
+		{
+			"context", "GET", "/api/v1/conversations/abc/context?verbose=bogus",
+			`{"verbose": true}`,
+			func(s *Server) http.HandlerFunc { return s.handleGetContext },
+		},
+		{
+			"delete", "DELETE", "/api/v1/conversations/abc?force=bogus",
+			`{"force": true}`,
+			func(s *Server) http.HandlerFunc { return s.handleDeleteConversation },
+		},
+		{
+			"notifications", "GET", "/api/v1/notifications?all=bogus",
+			`{"all": true}`,
+			func(s *Server) http.HandlerFunc { return s.handleListNotifications },
+		},
 	}
 
-	var resp GetTraceResponse
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("decoding response: %v", err)
-	}
-	if resp.Turn != 7 {
-		t.Errorf("Expected turn 7 from the query string, got %d — the body is still being read", resp.Turn)
-	}
-	if resp.SubAgents {
-		t.Error("Expected sub_agents false (absent from the query), got true — the body is still being read")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := bareServer(t)
+			req := httptest.NewRequest(tc.method, tc.target, strings.NewReader(tc.body))
+			req.SetPathValue("id", "abc")
+			w := httptest.NewRecorder()
+
+			tc.handler(s)(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("Expected 400 from the query value, got %d — the body is still being read", w.Code)
+			}
+		})
 	}
 }
 
-func TestQueryParams_TraceReadsQueryString(t *testing.T) {
+// The mirror of the above: a malformed body with a valid query must not fail.
+// Reaching the daemon (503, none running) proves the body was never parsed.
+func TestQueryParams_MalformedBodyIsNotParsed(t *testing.T) {
 	s := bareServer(t)
 
-	req := httptest.NewRequest("GET", "/api/v1/conversations/abc/trace?turn=3&sub_agents=true", nil)
+	req := httptest.NewRequest("GET", "/api/v1/conversations/abc/context?verbose=true",
+		strings.NewReader(`{ this is not json`))
 	req.SetPathValue("id", "abc")
 	w := httptest.NewRecorder()
 
-	s.handleGetTrace(w, req)
+	s.handleGetContext(w, req)
 
-	var resp GetTraceResponse
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("decoding response: %v", err)
+	if w.Code == http.StatusBadRequest {
+		t.Fatal("Expected the malformed body to be ignored, got 400 — it is still being parsed")
 	}
-	if resp.Turn != 3 || !resp.SubAgents {
-		t.Errorf("Expected turn=3 sub_agents=true, got turn=%d sub_agents=%v", resp.Turn, resp.SubAgents)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("Expected 503 (daemon path reached), got %d", w.Code)
 	}
 }
 
@@ -148,9 +161,7 @@ func TestPagination_RejectedBeforeDaemonDial(t *testing.T) {
 		{"workflows", func(s *Server) http.HandlerFunc { return s.handleListWorkflows }},
 		{"tools", func(s *Server) http.HandlerFunc { return s.handleListTools }},
 		{"plugins", func(s *Server) http.HandlerFunc { return s.handleListPlugins }},
-		{"skills", func(s *Server) http.HandlerFunc { return s.handleListSkills }},
 		{"notifications", func(s *Server) http.HandlerFunc { return s.handleListNotifications }},
-		{"history", func(s *Server) http.HandlerFunc { return s.handleGetHistory }},
 	}
 
 	for _, tc := range tests {
@@ -167,31 +178,6 @@ func TestPagination_RejectedBeforeDaemonDial(t *testing.T) {
 				t.Fatalf("Expected 400 for limit=99999, got %d", w.Code)
 			}
 		})
-	}
-}
-
-// A stubbed list endpoint still reports a well-formed page rather than omitting
-// the envelope.
-func TestPagination_StubEndpointsReportAPage(t *testing.T) {
-	s := bareServer(t)
-
-	req := httptest.NewRequest("GET", "/api/v1/skills?limit=5&offset=0", nil)
-	w := httptest.NewRecorder()
-	s.handleListSkills(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("Expected 200, got %d", w.Code)
-	}
-
-	var resp ListSkillsResponse
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("decoding response: %v", err)
-	}
-	if resp.Pagination.Limit != 5 {
-		t.Errorf("Expected limit 5 echoed back, got %d", resp.Pagination.Limit)
-	}
-	if resp.Pagination.HasMore {
-		t.Error("Expected has_more false for an empty list")
 	}
 }
 
