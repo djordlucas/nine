@@ -181,18 +181,18 @@ type ReplayResponse struct {
 // Goal Types
 // =============================================================================
 
-// GoalInfo contains information about a goal
+// GoalInfo is a goal as the daemon stores it. The fields mirror memory.Goal —
+// a goal carries no name, priority, owning session or progress note, and
+// earlier revisions of this type advertised all four.
 type GoalInfo struct {
 	ID          string    `json:"id"`
-	Name        string    `json:"name"`
 	Description string    `json:"description"`
-	Status      string    `json:"status"` // active, completed, failed, paused
-	Priority    int       `json:"priority"`
+	Status      string    `json:"status"`
+	ParentID    string    `json:"parent_id,omitempty"`
+	ParentType  string    `json:"parent_type,omitempty"`
+	Subtree     []string  `json:"subtree,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
-	SessionID   string    `json:"session_id"`
-	Progress    string    `json:"progress,omitempty"`
-	EventsCount int       `json:"events_count,omitempty"`
 }
 
 // CreateGoalRequest is the request for POST /api/v1/goals
@@ -215,19 +215,9 @@ type ListGoalsResponse struct {
 	Pagination Pagination   `json:"pagination,omitempty"`
 }
 
-// GetGoalResponse is the response for GET /api/v1/goals/{id}
-type GetGoalResponse struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	Status      string    `json:"status"`
-	Priority    int       `json:"priority"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	SessionID   string    `json:"session_id"`
-	Progress    string    `json:"progress,omitempty"`
-	EventsCount int       `json:"events_count,omitempty"`
-}
+// GetGoalResponse is the response for GET /api/v1/goals/{id}. One goal has the
+// same shape as a goal in a list.
+type GetGoalResponse = GoalInfo
 
 // DeleteGoalResponse is the response for DELETE /api/v1/goals/{id}
 type DeleteGoalResponse struct {
@@ -239,14 +229,18 @@ type DeleteGoalResponse struct {
 // Workflow Types
 // =============================================================================
 
-// WorkflowInfo contains information about a workflow
+// WorkflowInfo is a workflow as the daemon stores it (workflow.Workflow).
+// Steps and CompletedSteps summarise the stored step list, which the daemon
+// sends in full; CurrentStep is not a thing the store records.
 type WorkflowInfo struct {
-	ID           string    `json:"id"`
-	Name         string    `json:"name"`
-	Status       string    `json:"status"` // running, completed, failed, cancelled
-	Steps        int       `json:"steps"`
-	CurrentStep  int       `json:"current_step"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	Status         string    `json:"status"` // active, done, failed, cancelled
+	AgentID        string    `json:"agent_id,omitempty"`
+	Steps          int       `json:"steps"`
+	CompletedSteps int       `json:"completed_steps"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // ListWorkflowsResponse is the response for GET /api/v1/workflows
@@ -358,16 +352,14 @@ type ReloadPluginsResponse struct {
 // Notification Types
 // =============================================================================
 
-// Notification contains information about a user notification
+// Notification is one entry of the human-facing feed
+// (memory.UserNotification). The store records no title, severity or type.
 type Notification struct {
 	ID        string    `json:"id"`
-	Title     string    `json:"title"`
+	AgentID   string    `json:"agent_id,omitempty"`
 	Message   string    `json:"message"`
-	Severity  string    `json:"severity"` // info, warning, error
-	CreatedAt time.Time `json:"created_at"`
 	Seen      bool      `json:"seen"`
-	Source    string    `json:"source"`
-	Type      string    `json:"type"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // ListNotificationsResponse is the response for GET /api/v1/notifications

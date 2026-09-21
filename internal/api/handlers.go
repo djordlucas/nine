@@ -780,13 +780,15 @@ func (s *Server) handleListGoals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse raw goals data
-	var goals []GoalInfo
-	if err := json.Unmarshal([]byte(raw), &goals); err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"data": raw,
-		})
+	rows, err := decodeList[wireGoal](raw, "goals")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "server_error", err.Error(), nil)
 		return
+	}
+
+	goals := make([]GoalInfo, 0, len(rows))
+	for _, row := range rows {
+		goals = append(goals, toGoalInfo(row))
 	}
 
 	data, pagination := paginate(goals, page)
@@ -927,13 +929,15 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse raw workflows data
-	var workflows []WorkflowInfo
-	if err := json.Unmarshal([]byte(raw), &workflows); err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"data": raw,
-		})
+	rows, err := decodeList[wireWorkflow](raw, "workflows")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "server_error", err.Error(), nil)
 		return
+	}
+
+	workflows := make([]WorkflowInfo, 0, len(rows))
+	for _, row := range rows {
+		workflows = append(workflows, toWorkflowInfo(row))
 	}
 
 	data, pagination := paginate(workflows, page)
@@ -1385,13 +1389,15 @@ func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Parse notifications data
-	var notifications []Notification
-	if err := json.Unmarshal([]byte(raw), &notifications); err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"data": raw,
-		})
+	rows, err := decodeList[wireNotification](raw, "notifications")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "server_error", err.Error(), nil)
 		return
+	}
+
+	notifications := make([]Notification, 0, len(rows))
+	for _, row := range rows {
+		notifications = append(notifications, toNotification(row))
 	}
 
 	data, pagination := paginate(notifications, page)
