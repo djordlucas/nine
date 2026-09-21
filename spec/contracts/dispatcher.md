@@ -52,7 +52,12 @@ The preview **MUST**:
   from the elision point to the front took a small local model from 1/3 to 2/3 on the
   `tool-output-spill` eval.)
 - **name tools to call, imperatively** — not function signatures. Live models shown
-  `file_fetch(path, offset, limit)` responded by writing code instead of calling a tool.
+  `read_file(path, offset, limit)` responded by writing code instead of calling a tool.
+- **name a tool that can serve what it describes.** The tool the banner points at
+  **MUST** read the spill path it just printed. A conforming implementation routes a
+  `spill/` path from the same read tool that reads the workspace, rather than shipping a
+  second one: the agent otherwise holds two read tools over two namespaces, and reaching
+  into the wrong one is the most common model error this contract records.
 - **keep both ends** — head ≈ ⅔, tail ≈ ⅓ of the preview budget. Errors, totals, and
   closing structure live at the *end* of a long output; a head-only cut discards
   exactly that.
@@ -175,14 +180,14 @@ reads each plugin `ToolDefinition.InputSchema`; `New()` reads `InterceptedDefs`.
 Rules:
 
 - **Declared, never inferred.** Only marked properties are resolved. An argument that
-  merely *looks like* a path **MUST NOT** be expanded — `file_fetch(path)` takes a real
+  merely *looks like* a path **MUST NOT** be expanded — `read_file(path)` takes a real
   path, and expanding it would replace the path with the file's contents.
 - **Optional.** A marked property is ref-*capable*, not required; an absent or empty
   value is left untouched.
 - **Errors surface.** An unresolvable path **MUST** fail the call, naming the path, so
   the model can correct it. It is never silently passed through as a literal.
 - **Bounded.** One expansion is capped at `MaxRefBytes` (8 MiB); over it the call fails
-  and the error points at `file_fetch` windowing.
+  and the error points at `read_file` windowing.
 - **Approval and hooks see the original arguments.** The R-HITL approval gate and
   R-DISP.5 hooks receive the model's unexpanded arguments — a human approving a call
   reads the handle the model chose, not the payload behind it — and a rejected call

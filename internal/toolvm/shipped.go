@@ -89,13 +89,14 @@ var shippedTools = []shippedTool{
 		// path", and the memory file store already disambiguates itself against
 		// read_file — the pointer needs to go both ways, or a prompt phrased as
 		// "store two files" lands here and the searchable copy is never made.
-		Description: "Write content to a file on the WORKSPACE FILESYSTEM, creating parent directories as needed. Paths resolve under /work. Replaces the file whole: to change part of an existing file use edit_file, and to add to the end pass mode=append. This is not the memory file store: a file written here is not full-text searchable and file_search_text will not find it — use file_store for anything you intend to look up later.",
+		Description: "Write content to a file on the WORKSPACE FILESYSTEM, creating parent directories as needed. To copy a large payload — a spilled tool result, typically — pass content_ref with its path instead of content, and the bytes never enter your context. Paths resolve under /work. Replaces the file whole: to change part of an existing file use edit_file, and to add to the end pass mode=append. This is not the memory file store: a file written here is not full-text searchable and file_search_text will not find it — use file_store for anything you intend to look up later.",
 		Schema: `{"type":"object","required":["path","content"],"properties":{
 			"path":{"type":"string"},
 			"content":{"type":"string"},
 			"mode":{"type":"string","enum":["replace","append"],"description":"replace (default) rewrites the file; append adds to the end without reading it."},
 			"if_unchanged":{"type":"string","description":"A version token from read_file. The write fails if the file changed since then."},
-			"preview":{"type":"boolean","description":"Return the diff this write would make and write nothing."}
+			"preview":{"type":"boolean","description":"Return the diff this write would make and write nothing."},
+			"content_ref":{"type":"string","x-nine-ref":true,"description":"A path whose content to write here — a spill/... path from a truncated tool result, or another workspace file. Used instead of content; the data never passes through your context."}
 		}}`,
 		File:        "shipped/write_file.js",
 		Declaration: Declaration{FS: []string{"write"}},

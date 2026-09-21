@@ -85,6 +85,8 @@ type AssemblyConfig struct {
 	ApprovalTools      []string
 	// Workspace is the index over [workspace].root, or nil when unset.
 	Workspace agent.WorkspaceBackend
+	// WorkspaceRoot is [workspace].root itself, for the ref resolver.
+	WorkspaceRoot string
 	GateSubAgents      bool
 	PlanApproval       string
 	PlanMode           string
@@ -126,6 +128,7 @@ func Assemble(c AssemblyConfig) *Assembly {
 			JobWaiters:             c.JobWaiters,
 			Tools:                  c.Tools,
 			Workspace:              c.Workspace,
+			WorkspaceRoot:          c.WorkspaceRoot,
 			GeneratedTools:         c.GeneratedTools,
 			GeneratedEval:          c.GeneratedEval,
 		},
