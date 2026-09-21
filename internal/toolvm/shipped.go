@@ -71,7 +71,7 @@ var shippedTools = []shippedTool{
 	{
 		Name:        "read_file",
 		DisplayName: "Read File",
-		Description: "Read a file from the WORKSPACE FILESYSTEM. Paths resolve under /work; a relative path is taken as relative to it. Read part of a large file with lines (\"120-180\") or with offset and limit, rather than pulling the whole thing into context. Pass line_numbers when you intend to edit, so you can name the exact text for edit_file. A windowed read also returns a version token for write_file's if_unchanged. This is not the memory file store — use file_fetch for a path you stored with file_store.",
+		Description: "Read a file from the WORKSPACE FILESYSTEM. Paths resolve under /work; a relative path is taken as relative to it. Read part of a large file with lines (\"120-180\") or with offset and limit, rather than pulling the whole thing into context. Pass line_numbers when you intend to edit, so you can name the exact text for edit_file. A windowed read also returns a version token for write_file's if_unchanged. A spill/... path from a truncated tool result is read with this same tool.",
 		Schema: `{"type":"object","required":["path"],"properties":{
 			"path":{"type":"string","description":"Path under the workspace, e.g. notes.txt or /work/notes.txt"},
 			"lines":{"type":"string","description":"1-based inclusive line range, e.g. \"120-180\" or \"120\". Preferred over offset/limit for text."},
@@ -85,11 +85,10 @@ var shippedTools = []shippedTool{
 	{
 		Name:        "write_file",
 		DisplayName: "Write File",
-		// Names file_store explicitly. Both tools answer to "store a file at this
-		// path", and the memory file store already disambiguates itself against
-		// read_file — the pointer needs to go both ways, or a prompt phrased as
-		// "store two files" lands here and the searchable copy is never made.
-		Description: "Write content to a file on the WORKSPACE FILESYSTEM, creating parent directories as needed. To copy a large payload — a spilled tool result, typically — pass content_ref with its path instead of content, and the bytes never enter your context. Paths resolve under /work. Replaces the file whole: to change part of an existing file use edit_file, and to add to the end pass mode=append. This is not the memory file store: a file written here is not full-text searchable and file_search_text will not find it — use file_store for anything you intend to look up later.",
+		// One place to put a file. The memory file store this used to compete with
+		// is gone (adr/file-namespaces.md): a file written here is indexed by the
+		// workspace scan, so file_search_text finds it without a second copy.
+		Description: "Write content to a file on the WORKSPACE FILESYSTEM, creating parent directories as needed. To copy a large payload — a spilled tool result, typically — pass content_ref with its path instead of content, and the bytes never enter your context. Paths resolve under /work. Replaces the file whole: to change part of an existing file use edit_file, and to add to the end pass mode=append. A file written here is full-text searchable with file_search_text once the workspace scan sees it.",
 		Schema: `{"type":"object","required":["path","content"],"properties":{
 			"path":{"type":"string"},
 			"content":{"type":"string"},

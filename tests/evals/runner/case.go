@@ -84,7 +84,12 @@ type Case struct {
 
 // Setup are fixtures written into the isolated store and workspace before the run.
 type Setup struct {
-	Files  map[string]string     `yaml:"files"`  // workspace path -> content
+	Files map[string]string `yaml:"files"` // workspace path -> content
+	// StoredFiles seeds the memory file store (the `files` table), keyed by
+	// stored path. Needed because no agent tool writes that table any more —
+	// file_store is retired (adr/file-namespaces.md) and the daemon is the only
+	// writer — so a case exercising spill reading has to be handed one.
+	StoredFiles map[string]string `yaml:"stored_files"`
 	KV     map[string]string     `yaml:"kv"`     // pre-seeded key/value memory
 	Skills map[string]SkillSetup `yaml:"skills"` // skill name -> skill
 	Goals  []string              `yaml:"goals"`  // pre-seeded goal descriptions

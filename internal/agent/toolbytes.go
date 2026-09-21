@@ -15,7 +15,7 @@ import (
 // A model cannot read bytes, so returning them to it is never the answer; what a
 // tool needs is somewhere to *put* an artifact — a rendered image, a compressed
 // archive — and a way to refer to it afterwards. The file store already is that
-// place, with the retrieval machinery (`file_fetch`, `*_ref`) built and taught,
+// place, with the retrieval machinery (`read_file`, `*_ref`) built and taught,
 // so this reuses it rather than inventing a second destination.
 //
 // The bytes are stored base64-encoded, which is not a shortcut. The store is a
@@ -100,7 +100,7 @@ func byteResultBanner(n int, mediaType, path string) string {
 			"Do NOT try to reconstruct or guess the content. To use it:\n"+
 			"  * give the path above to another tool's *_ref argument to hand it the whole\n"+
 			"    content without reading it yourself;\n"+
-			"  * or call file_fetch with path set to the path above to read the base64 text\n"+
+			"  * or call read_file with path set to the path above to read the base64 text\n"+
 			"    in windows, if you genuinely need the encoding itself.]",
 		n, what, path)
 }

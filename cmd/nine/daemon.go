@@ -137,6 +137,12 @@ func runDaemon() {
 		slog.Warn("seed docs index", "err", err)
 	}
 
+	// Files an agent saved with the retired file_store move into the workspace,
+	// keeping their paths, so anything that recorded where it put a file still
+	// finds it there (adr/file-namespaces.md §12). A no-op after the first boot
+	// that runs it.
+	runtime.MigrateStoredFilesToWorkspace(store, cfg.Workspace.Root)
+
 	// Bootstrap the self-model with the current plugin list, so it can answer questions about them.
 	if err := runtime.BootstrapSelfKV(store, pluginManager.ListRunning()); err != nil {
 		slog.Error("failed to bootstrap self KV", "err", err)
