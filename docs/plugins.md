@@ -56,7 +56,7 @@ Run "ls -la /tmp" and tell me the five largest files.
 
 | Tool | Description |
 |------|-------------|
-| `read_file` | Read the contents of a file at a given path. `lines` or `offset`/`limit` read part of a large file; `line_numbers` prefixes each line with its number. Refuses a file that is not text. |
+| `read_file` | Read a workspace file, or a `spill/...` path holding truncated tool output. `lines` or `offset`/`limit` read part of a large file; `line_numbers` prefixes each line with its number. Refuses a file that is not text. |
 | `write_file` | Write content to a file, creating parent directories as needed. `mode=append` adds to the end; `if_unchanged` refuses the write if the file changed since it was read. |
 | `edit_file` | Replace exact text in an existing file, leaving the rest unchanged. Never loads the file into context, so it works past the context window. |
 | `move_file` | Move or rename a file. Relinks rather than copying. |

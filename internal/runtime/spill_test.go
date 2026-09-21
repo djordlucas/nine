@@ -75,7 +75,7 @@ func TestSpillThenRefRoundTrip(t *testing.T) {
 			consumed = req.Content
 			return "consumed", nil
 		})
-	registerLargeOutput(d, store, "agent-42")
+	registerLargeOutput(d, store, "agent-42", "")
 
 	// Step 1: the over-cap fetch spills.
 	res, err := d.Dispatch(context.Background(), "fetch_big", nil)
@@ -139,7 +139,7 @@ func TestRegisterLargeOutputWithNilStore(t *testing.T) {
 	d.InjectHandler("big", func(context.Context, json.RawMessage) (string, error) {
 		return strings.Repeat("x", agent.DefaultMaxOutputTokens*8), nil
 	})
-	registerLargeOutput(d, nil, "agent-1") // must not panic or register a sink
+	registerLargeOutput(d, nil, "agent-1", "") // must not panic or register a sink
 
 	res, err := d.Dispatch(context.Background(), "big", nil)
 	if err != nil {

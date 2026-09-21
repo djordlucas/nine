@@ -74,6 +74,9 @@ type LoopConfig struct {
 	// workspace is configured. It backs list_files and the workspace half of
 	// file_search_text.
 	Workspace agent.WorkspaceBackend
+	// WorkspaceRoot is [workspace].root, for the ref resolver: a *_ref argument
+	// may name a workspace file as well as a spill.
+	WorkspaceRoot string
 
 	// Tools is the sandboxed-tool host (spec/contracts/toolvm.md), or nil when
 	// the subsystem is disabled. Its tools are registered and advertised
@@ -544,6 +547,10 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 	if lc.Tools != nil {
 		d.SyncSandboxed(lc.Tools, allowSandboxed)
 	}
+	// read_file answers for spilled output too, once the sandboxed handler it
+	// wraps is in place. One read tool over both namespaces is what stops the
+	// most common model error in adr/tool-output-spill.md from being possible.
+	agent.RegisterSpillReader(d, lc.Memory)
 
 	// Boundary 1 of R-ROLE.4: the advertised tool list. The role enum is
 	// rendered from the live registry only for roles that can delegate —
@@ -760,7 +767,7 @@ func (f *AgentBuilder) registerCoreTools(d *agent.Dispatcher, lc LoopConfig, age
 	// Over-cap tool results spill to the file store and come back by path, for
 	// this loop and any sub-agent loop built from it.
 	d.SetMaxOutputTokens(lc.MaxToolOutputTokens) // no-op when unset
-	registerLargeOutput(d, lc.Memory, agentID)
+	registerLargeOutput(d, lc.Memory, agentID, lc.WorkspaceRoot)
 }
 
 // directCallAgentID attributes work done on the plugin_call path — gap reports,

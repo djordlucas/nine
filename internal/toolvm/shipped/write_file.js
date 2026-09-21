@@ -70,9 +70,12 @@ function resolve(path) {
   return `${ROOT}/${p}`;
 }
 
-export default function ({ path, content, mode, if_unchanged, preview }) {
+export default function ({ path, content, mode, if_unchanged, preview, content_ref }) {
   const target = resolve(path);
-  const body = String(content ?? "");
+  // content_ref arrives already expanded: the daemon replaced the path the
+  // model supplied with the content stored there (internal/agent/refs.go), so
+  // by the time it reaches here it is the payload, not a reference.
+  const body = String(content ?? content_ref ?? "");
   const append = String(mode ?? "") === "append";
 
   refuseState(target);

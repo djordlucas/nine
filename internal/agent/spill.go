@@ -107,7 +107,7 @@ func (d *Dispatcher) capOrSpill(ctx context.Context, toolName, output string) Ca
 //
 // The two slices together total previewChars, so the preview's context cost is
 // bounded and predictable. Counts are in characters, matching the unit
-// file_fetch's offset/limit address, so the model can slice the remainder
+// read_file's offset/limit address, so the model can slice the remainder
 // without a unit conversion.
 func spillPreview(output string, previewChars int, path string) string {
 	head := clipHead(output, int(float64(previewChars)*spilledHeadFraction))
@@ -130,7 +130,7 @@ func spillPreview(output string, previewChars int, path string) string {
 			"call one of these tools now:\n"+
 			"  * file_search_text — set query to the text you are looking for and path to\n"+
 			"    the path above, to find where it occurs in the full output.\n"+
-			"  * file_fetch — set path to the path above, plus offset and limit, to read\n"+
+			"  * read_file — set path to the path above, plus offset and limit, to read\n"+
 			"    one window of the full output at a time.\n"+
 			"You can also give the path above to another tool's *_ref argument to hand it\n"+
 			"the entire content without reading it yourself.]\n\n",
