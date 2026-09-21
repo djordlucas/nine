@@ -191,6 +191,7 @@ func runDaemon() {
 
 	asm := runtime.Assemble(runtime.AssemblyConfig{
 		Workspace:              runtime.NewWorkspaceBackend(store, workspaceScanner, cfg.Workspace.Root),
+		WorkspaceRoot:          cfg.Workspace.Root,
 		SocketPath:             cfg.SocketPath(),
 		Store:                  store,
 		Plugins:                pluginManager,
