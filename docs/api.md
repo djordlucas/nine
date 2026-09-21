@@ -169,9 +169,34 @@ auth_token = ""
 timeout_seconds = 30
 max_connections = 100
 cors_origins = ["*"]
+trusted_proxies = []        # proxies whose X-Forwarded-For the API believes
 ```
 
-Environment variable overrides: `NINE_API_PORT`, `NINE_API_HOST`, `NINE_API_AUTH_TOKEN`, etc.
+Environment variable overrides: `NINE_API_PORT`, `NINE_API_HOST`, `NINE_API_AUTH_TOKEN`, `NINE_API_TRUSTED_PROXIES`, etc.
+
+### Running behind a reverse proxy
+
+`trusted_proxies` is empty by default, so the API keys rate limiting on the
+transport peer address and ignores `X-Forwarded-For` and `X-Real-IP`. Both
+headers are set by whoever sends the request: believing them unconditionally
+lets a client vary the header to get a fresh rate-limit bucket per request.
+
+With a proxy in front, list it as a bare IP or CIDR block so client addresses
+survive the hop:
+
+```toml
+[api]
+trusted_proxies = ["10.0.0.0/8", "192.168.1.7"]
+```
+
+```bash
+nine api serve --trusted-proxies 10.0.0.0/8,192.168.1.7
+```
+
+The API then reads the forwarding chain right to left and keys on the rightmost
+address that is not itself a trusted proxy — the last hop a client could not
+have forged. List every proxy in the chain; a hop left out is treated as the
+client.
 
 ---
 

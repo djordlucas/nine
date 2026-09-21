@@ -123,7 +123,7 @@ func (s *Server) rateLimitMiddleware(next http.Handler) http.Handler {
 		}
 
 		// Get client IP
-		ip := getClientIP(r)
+		ip := s.clientIP(r)
 
 		s.rateMu.Lock()
 		limiter, exists := s.rateLimiters[ip]
@@ -164,9 +164,15 @@ func (s *Server) rateLimitMiddleware(next http.Handler) http.Handler {
 // @Success      200 {object} HealthResponse
 // @Router       /health [get]
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	// Check if daemon is connected
-	_, err := s.getDaemonClient()
+	// Check if daemon is connected. The probe opens a real socket, so it has to
+	// be closed again: health is the most frequently polled endpoint on the
+	// server, and leaking one descriptor per call exhausts the process under any
+	// ordinary liveness probe.
+	cl, err := s.getDaemonClient()
 	daemonConnected := err == nil
+	if daemonConnected {
+		defer cl.Close()
+	}
 
 	status := "healthy"
 	if !daemonConnected {
