@@ -242,7 +242,7 @@ Mappings:
   predict.
 - **`llm_request.tool_advertised_none_of`** → the tool name never appears in any `llm_request.tool_names` (proves role gating at the advertised boundary, R-ROLE.4).
 - **`side_effects.*`** → read the isolated store/workspace *after* the run: `kv` via
-  `store.Get`, files via the workspace dir or `file_fetch`, `workflows` via
+  `store.Get`, files via the workspace dir or `read_file`, `workflows` via
   `store.WorkflowList`, `goals` via `store.GoalList` + a pursue session in `nine status`,
   `notifications` via `store.UserNotificationList`, `vectors` via `store.VectorQuery`.
 
@@ -397,7 +397,7 @@ strongest available assertion for that feature.
 | time (sandboxed tool) | current time | `tools_all_of:[time]` + answer regex | smoke |
 | shell | run a safe command | `tools_all_of:[shell]` + answer | smoke/basic |
 | files (sandboxed tools) | read/write a path | side-effect: file content | basic |
-| files (store) | `file_store`→`file_search_text` | side-effect + tool trajectory | basic |
+| files (workspace) | `write_file`→`file_search_text` | side-effect + tool trajectory | basic |
 | http/web | fetch/search a page | `tools_any_of:[http_get,web_search,web_page_read]` | basic |
 | KV memory | set→get roundtrip; list | side-effect `kv` + answer | basic |
 | semantic memory | `memory_embed`→`memory_query` | side-effect `vectors` | multi_step |

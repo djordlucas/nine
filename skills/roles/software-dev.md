@@ -3,8 +3,9 @@ name: software-dev
 description: Implement and modify code — edit files, run builds and tests via shell.
 tags: [role, coding, dev]
 role:
-  tools: [shell, read_file, write_file, file_store, file_fetch, file_list,
-          file_search_text, memory_get, memory_set, memory_list, skill_read, skill_list]
+  tools: [shell, read_file, write_file, edit_file, move_file, copy_file, delete_file,
+          list_files, file_search_text, diff_file, trash_list, restore_file,
+          memory_get, memory_set, memory_list, skill_read, skill_list]
   delegates: false
   spawns_goals: false
   persists: false

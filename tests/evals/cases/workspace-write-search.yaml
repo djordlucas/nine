@@ -4,8 +4,6 @@ track: live
 tier: multi_step
 tags: [files, workspace, search]
 
-# Gated until the workspace index ships (adr/file-namespaces.md phase 5).
-requires_env: [NINE_EVAL_WORKSPACE_TOOLS]
 
 prompts:
   - "Write two files for later. /work/runbooks/db-restore.md containing 'To restore prod: pg_restore from the nightly snapshot in s3://backups/pg.' and /work/runbooks/cache-flush.md containing 'To flush the cache: redis-cli FLUSHALL on the edge node.'"

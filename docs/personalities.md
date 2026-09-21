@@ -194,7 +194,7 @@ name: code-reviewer
 description: Code review specialist with autonomous learning
 tags: [role, code-review, learning]
 role:
-  tools: [file_read, file_search_text, file_list, memory_get, memory_set, memory_list, skill_write, skill_list, goal_create, goal_get, goal_list, goal_update_status, input_queue]
+  tools: [read_file, file_search_text, list_files, memory_get, memory_set, memory_list, skill_write, skill_list, goal_create, goal_get, goal_list, goal_update_status, input_queue]
   delegates: true
   spawns_goals: false
   persists: true

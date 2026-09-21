@@ -4,9 +4,6 @@ track: live
 tier: multi_step
 tags: [files, workspace, edit]
 
-# Gated until the workspace file tools ship (adr/file-namespaces.md phase 3).
-# Reported as skipped, not failed, while edit_file does not exist.
-requires_env: [NINE_EVAL_WORKSPACE_TOOLS]
 
 setup:
   files:

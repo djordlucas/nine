@@ -21,6 +21,20 @@ const TRASH = `${STATE}/trash`;
 // refuseState keeps Nine's own bookkeeping out of reach of the file tools.
 // trash_list and restore_file are the only way into .nine/, and they reach
 // nothing else under it.
+// refuseSpill keeps the reserved prefix out of the workspace. read_file routes
+// a spill/... path to the store, so a workspace file written there would be
+// addressable by no tool at all — and a path that *looks* like a spill is
+// exactly what a model would later cite as tool output.
+function refuseSpill(target) {
+  const rel = target.slice(ROOT.length + 1);
+  if (rel === "spill" || rel.startsWith("spill/")) {
+    throw new Error(
+      `${target} is reserved: spill/ holds truncated tool output, which only Nine writes. ` +
+        `Choose another path.`,
+    );
+  }
+}
+
 function refuseState(target) {
   if (target === STATE || target.startsWith(STATE + "/")) {
     throw new Error(
@@ -79,6 +93,7 @@ export default function ({ path, content, mode, if_unchanged, preview, content_r
   const append = String(mode ?? "") === "append";
 
   refuseState(target);
+  refuseSpill(target);
 
   const info = stat(target);
   if (info !== null && info.isDirectory) throw new Error(`${target} is a directory`);

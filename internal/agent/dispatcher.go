@@ -29,7 +29,7 @@ type CallResult struct {
 	SpillPath string
 	// OutputChars is the length of the tool's original output, set only when it
 	// exceeded the cap. Output alone cannot report it — it is the preview.
-	// Characters, not bytes: it is the unit file_fetch's offset/limit address,
+	// Characters, not bytes: it is the unit read_file's offset/limit address,
 	// so the model can do arithmetic between the two.
 	OutputChars int
 	// Backend labels which backend ran the tool ("builtin", "plugin", "tool").

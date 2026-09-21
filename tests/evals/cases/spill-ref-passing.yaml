@@ -1,5 +1,5 @@
 id: spill-ref-passing
-description: "A large tool output is handed to a second tool by reference (file_store's content_ref), so the payload never passes through the model's context."
+description: "A large tool output is handed to a second tool by reference (write_file's content_ref), so the payload never passes through the model's context."
 track: live
 tier: multi_step
 tags: [spill, refs, files, large-output]
@@ -48,19 +48,19 @@ session:
     tools.max_output_tokens: 150
 
 prompts:
-  - "Read the file /work/audit.txt. Its contents are too large to fit in your context and will be stored for you automatically at a spill/... path named in the truncation notice. Without reading the rest yourself, archive the COMPLETE contents into the memory file store at path archive/audit.txt, by passing that spill/... path as file_store's content_ref argument."
+  - "Read the file /work/audit.txt. Its contents are too large to fit in your context and will be stored for you automatically at a spill/... path named in the truncation notice. Without reading the rest yourself, archive the COMPLETE contents to /work/archive/audit.txt, by passing that spill/... path as write_file's content_ref argument."
 
 expect:
   trajectory:
-    tools_all_of: [read_file, file_store]
+    tools_all_of: [read_file, write_file]
     spills: { min: 1 }
     max_turns: 1
     no_stall: true
   side_effects:
-    stored_files:
+    files:
       # The needle is in the elided middle: present only if the daemon expanded
       # the ref, not if the model copied what it could see.
-      "archive/audit.txt": { contains: "pangolin-count=8321" }
+      /work/archive/audit.txt: { contains: "pangolin-count=8321" }
 
 runs: 3
 pass_threshold: "2/3"

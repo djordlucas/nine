@@ -783,7 +783,7 @@ cannot be opened.
 ```
    nine.db (SQLite)
    ├─ kv                 agent K/V memory          (memory_get/set/delete/list)
-   ├─ files              content + FTS5 index      (file_store/fetch/list/search_text)
+   ├─ files              spilled tool output + FTS5 (read_file, file_search_text)
    ├─ vectors            float32 blob embeddings   (skills, session-index, agent namespaces)
    ├─ conversations      message history, scratchpad, status
    ├─ goals              open-ended intentions, parent link for sub-goals
