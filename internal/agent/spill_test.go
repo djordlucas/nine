@@ -283,3 +283,19 @@ func ExampleDispatcher_SetSpill() {
 	fmt.Println(res.SpillPath, res.Truncated)
 	// Output: spill/demo/fetch-01.txt true
 }
+
+// The notice is the only instruction a model gets at the moment its output is
+// cut, so it must name a tool that exists and can serve the window it
+// describes. read_file reads spills now; file_fetch is on its way out.
+func TestSpillPreviewNamesReadFile(t *testing.T) {
+	notice := spillPreview(strings.Repeat("x", 5000), 400, "spill/agent-1/tool-abcd.txt")
+	if !strings.Contains(notice, "read_file") {
+		t.Errorf("banner does not name read_file:\n%s", notice)
+	}
+	if strings.Contains(notice, "file_fetch") {
+		t.Errorf("banner still names file_fetch:\n%s", notice)
+	}
+	if !strings.Contains(notice, "file_search_text") {
+		t.Errorf("banner no longer names file_search_text:\n%s", notice)
+	}
+}
