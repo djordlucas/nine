@@ -114,20 +114,10 @@ type SendMessageResponse struct {
 	TurnID      string    `json:"turn_id,omitempty"`
 }
 
-// GetContextRequest is the request for GET /api/v1/conversations/{id}/context
-type GetContextRequest struct {
-	Verbose bool `json:"verbose"`
-}
-
 // GetContextResponse is the response for GET /api/v1/conversations/{id}/context
 type GetContextResponse struct {
 	AgentID  string    `json:"agent_id"`
 	Context any       `json:"context"`
-}
-
-// DeleteConversationRequest is the request for DELETE /api/v1/conversations/{id}
-type DeleteConversationRequest struct {
-	Force bool `json:"force"`
 }
 
 // DeleteConversationResponse is the response for DELETE /api/v1/conversations/{id}
@@ -165,12 +155,6 @@ type GetHistoryResponse struct {
 	AgentID    string         `json:"agent_id"`
 	Data       []HistoryEntry `json:"data"`
 	Pagination Pagination      `json:"pagination,omitempty"`
-}
-
-// GetTraceRequest is the request for GET /api/v1/conversations/{id}/trace
-type GetTraceRequest struct {
-	Turn       int  `json:"turn"`
-	SubAgents bool `json:"sub_agents"`
 }
 
 // GetTraceResponse is the response for GET /api/v1/conversations/{id}/trace
@@ -386,11 +370,6 @@ type Notification struct {
 	Type      string    `json:"type"`
 }
 
-// ListNotificationsRequest is the request for GET /api/v1/notifications
-type ListNotificationsRequest struct {
-	All bool `json:"all"`
-}
-
 // ListNotificationsResponse is the response for GET /api/v1/notifications
 type ListNotificationsResponse struct {
 	Data       []Notification `json:"data"`
@@ -466,13 +445,14 @@ type GetSpecResponse struct {
 // Pagination Types
 // =============================================================================
 
-// Pagination contains pagination information
+// Pagination describes the page a list response carries. Paging is offset
+// based: the daemon materialises a full result set per call, so there is no
+// server-side stream for an opaque cursor to point into.
 type Pagination struct {
-	Limit       int    `json:"limit"`
-	Offset      int    `json:"offset"`
-	Total       int    `json:"total"`
-	NextCursor  string `json:"next_cursor,omitempty"`
-	HasMore     bool   `json:"has_more"`
+	Limit   int  `json:"limit"`
+	Offset  int  `json:"offset"`
+	Total   int  `json:"total"`
+	HasMore bool `json:"has_more"`
 }
 
 // =============================================================================
