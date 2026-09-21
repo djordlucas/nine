@@ -45,7 +45,7 @@ See [Agent Loop § Dispatcher](agent-loop.md#dispatcher).
 
 **Spill (`spill/<agent-id>/…`)** — A tool result too large for the output cap,
 written whole to the memory file store and replaced in the model's context by a
-head+tail preview naming the path. The namespace is daemon-owned: `file_store`
+head+tail preview naming the path. The namespace is daemon-owned: `write_file`
 cannot write to it and nothing in it is embedded, so untrusted tool output can
 never be pull-surfaced into a later turn as fact.
 
@@ -197,7 +197,7 @@ Nine's persistent state — *not* a plugin subprocess. Opens a file
 it is unusable, and is the sole owner of the database handles (the "single
 gateway" invariant — a one-connection writer pool plus a read-only pool, since
 SQLite serializes writes). Agent-facing K/V (`memory_get/set/delete/list`), file storage
-(`file_store/fetch/list`, `file_search_text`), and (core-intercepted) vector ops
+(`file_search_text`, `list_files`), and (core-intercepted) vector ops
 (`memory_embed`/`memory_query`) are exposed as tools.
 Operational tables (`conversations`, `goals`, `notifications`,
 `user_notifications`, `workflows`, `session_plans`,

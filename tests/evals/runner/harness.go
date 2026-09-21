@@ -212,7 +212,16 @@ func (h *Harness) Run(ctx context.Context, c *Case, provider llm.Provider) (res 
 	}
 
 	sock := filepath.Join(workspace, "d.sock")
+	// The workspace index, as the daemon wires it. A case that writes a file and
+	// then searches for it is exercising the scan, so the harness has to run one
+	// — with a short interval, since an eval case is over in seconds.
+	workspaceScanner := runtime.NewWorkspaceScanner(store, workspace,
+		runtime.DefaultIndexMaxFileBytes, runtime.DefaultIndexMaxFiles, time.Second)
+	workspaceScanner.ScanAll(context.Background())
+
 	asm := runtime.Assemble(runtime.AssemblyConfig{
+		Workspace:           runtime.NewWorkspaceBackend(store, workspaceScanner, workspace),
+		WorkspaceRoot:       workspace,
 		Tools:               toolHost,
 		GeneratedTools:      generatedTools,
 		GeneratedEval:       generatedOn && caseBool(c, "tools.agent.eval"),
@@ -339,6 +348,11 @@ func applySetup(store *memory.Store, embedder embed.Embedder, workspace string, 
 	for k, v := range s.KV {
 		if err := store.Set(k, v); err != nil {
 			return fmt.Errorf("seed kv %q: %w", k, err)
+		}
+	}
+	for path, content := range s.StoredFiles {
+		if err := store.FileStore(path, content); err != nil {
+			return fmt.Errorf("seed stored file %q: %w", path, err)
 		}
 	}
 	for name, sk := range s.Skills {

@@ -1,11 +1,11 @@
 [
   {
     "seq": 3,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 1,
     "span_id": "t1",
     "type": "turn_start",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
       "input": "Save a skill named deploy-nine documenting our deploy steps: run make build, then nine daemon restart.",
       "trigger": "user"
@@ -13,39 +13,38 @@
   },
   {
     "seq": 4,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 1,
     "span_id": "t1.llm1",
     "parent_span_id": "t1",
     "type": "thinking",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
       "llm_call_n": 1
     }
   },
   {
     "seq": 5,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 1,
     "span_id": "t1",
     "type": "context_update",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
-      "used": 2281,
+      "used": 6128,
       "budget": 100000
     }
   },
   {
     "seq": 6,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 1,
     "span_id": "t1.llm1",
     "parent_span_id": "t1",
     "type": "llm_request",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
-      "budget": 100000,
-      "system": "Current time: 2026-07-24T13:12:19Z\n\n\nYou are Nine operating in sub-agent mode.\nYou have a specific, finite task to complete. Use the available tools to\naccomplish it. When done, provide a brief confirmation of what was completed.\nDo not ask clarifying questions — make reasonable assumptions and proceed.\n\n\nWhen delegating with run_agent or run_agents, pick the narrowest role that fits the task (monitor, report-writer, software-dev, sysadmin); use executor only when no narrower role matches. Each role's description is in the run_agent tool schema.\n\n## Environment\nRuntime: host\n",
+      "system": "Current time: 2026-09-21T03:29:54Z\nSession ID: 1b33addd-380c-45c4-a4fe-4c6365fc11dd\n\n\nYou are Nine operating in sub-agent mode.\nYou have a specific, finite task to complete. Use the available tools to\naccomplish it. When done, provide a brief confirmation of what was completed.\nDo not ask clarifying questions — make reasonable assumptions and proceed.\n\n\nWhen delegating with run_agent or run_agents, pick the narrowest role that fits the task (monitor, report-writer, software-dev, sysadmin); use executor only when no narrower role matches. Each role's description is in the run_agent tool schema.\n\n## Environment\n",
       "messages": [
         {
           "Role": "user",
@@ -54,21 +53,25 @@
           "ToolResults": null
         }
       ],
-      "llm_call_n": 1,
-      "max_tokens": 2048,
       "tool_names": [
+        "diff_file",
         "memory_get",
         "memory_set",
         "memory_delete",
         "memory_list",
-        "file_store",
-        "file_fetch",
-        "file_list",
         "file_search_text",
         "skill_list",
         "skill_read",
         "skill_write",
         "skill_modify",
+        "queued_messages_get",
+        "queued_message_mark_consumed",
+        "queued_messages_mark_all_consumed",
+        "queued_messages_count",
+        "queued_messages_unconsumed_count",
+        "list_files",
+        "doc_search",
+        "doc_read",
         "run_agent",
         "run_agents",
         "workflow_create",
@@ -80,108 +83,127 @@
         "goal_get",
         "goal_list",
         "goal_update_status",
-        "goal_append_subtree"
+        "tool_list",
+        "job_wait",
+        "job_check",
+        "job_list",
+        "job_cancel",
+        "copy_file",
+        "delete_file",
+        "edit_file",
+        "http_get",
+        "http_post",
+        "move_file",
+        "read_file",
+        "restore_file",
+        "time",
+        "trash_list",
+        "web_page_read",
+        "web_search",
+        "write_file"
       ],
-      "tokens_used": 2281
+      "max_tokens": 2048,
+      "tokens_used": 6128,
+      "budget": 100000,
+      "llm_call_n": 1
     }
   },
   {
     "seq": 7,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 1,
     "span_id": "t1.llm1",
     "parent_span_id": "t1",
     "type": "llm_response",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
       "text": "",
-      "llm_call_n": 1,
       "tool_calls": [
         {
           "ID": "w1",
           "Name": "skill_write",
-          "Input": {
-            "name": "deploy-nine",
+          "input": {
             "content": "Deploy steps:\n1. make build\n2. nine daemon restart",
-            "description": "How to deploy nine."
+            "description": "How to deploy nine.",
+            "name": "deploy-nine"
           }
         }
       ],
-      "stop_reason": "tool_use"
+      "stop_reason": "tool_use",
+      "llm_call_n": 1
     }
   },
   {
     "seq": 8,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 1,
     "span_id": "t1.tool1",
     "parent_span_id": "t1.llm1",
     "type": "tool_start",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
       "name": "skill_write",
       "input": {
-        "name": "deploy-nine",
         "content": "Deploy steps:\n1. make build\n2. nine daemon restart",
-        "description": "How to deploy nine."
+        "description": "How to deploy nine.",
+        "name": "deploy-nine"
       }
     }
   },
   {
     "seq": 9,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 1,
     "span_id": "t1.tool1",
     "parent_span_id": "t1.llm1",
     "type": "tool_end",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
       "name": "skill_write",
       "input": {
-        "name": "deploy-nine",
         "content": "Deploy steps:\n1. make build\n2. nine daemon restart",
-        "description": "How to deploy nine."
+        "description": "How to deploy nine.",
+        "name": "deploy-nine"
       },
       "output": "ok",
-      "attempts": 1,
-      "duration_ms": 0
+      "duration_ms": 0,
+      "attempts": 1
     }
   },
   {
     "seq": 10,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 1,
     "span_id": "t1.llm2",
     "parent_span_id": "t1",
     "type": "thinking",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
       "llm_call_n": 2
     }
   },
   {
     "seq": 11,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 1,
     "span_id": "t1",
     "type": "context_update",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
-      "used": 2316,
+      "used": 6169,
       "budget": 100000
     }
   },
   {
     "seq": 12,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 1,
     "span_id": "t1.llm2",
     "parent_span_id": "t1",
     "type": "llm_request",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
-      "budget": 100000,
-      "system": "Current time: 2026-07-24T13:12:19Z\n\n\nYou are Nine operating in sub-agent mode.\nYou have a specific, finite task to complete. Use the available tools to\naccomplish it. When done, provide a brief confirmation of what was completed.\nDo not ask clarifying questions — make reasonable assumptions and proceed.\n\n\nWhen delegating with run_agent or run_agents, pick the narrowest role that fits the task (monitor, report-writer, software-dev, sysadmin); use executor only when no narrower role matches. Each role's description is in the run_agent tool schema.\n\n## Environment\nRuntime: host\n",
+      "system": "Current time: 2026-09-21T03:29:54Z\nSession ID: 1b33addd-380c-45c4-a4fe-4c6365fc11dd\n\n\nYou are Nine operating in sub-agent mode.\nYou have a specific, finite task to complete. Use the available tools to\naccomplish it. When done, provide a brief confirmation of what was completed.\nDo not ask clarifying questions — make reasonable assumptions and proceed.\n\n\nWhen delegating with run_agent or run_agents, pick the narrowest role that fits the task (monitor, report-writer, software-dev, sysadmin); use executor only when no narrower role matches. Each role's description is in the run_agent tool schema.\n\n## Environment\n",
       "messages": [
         {
           "Role": "user",
@@ -196,10 +218,10 @@
             {
               "ID": "w1",
               "Name": "skill_write",
-              "Input": {
-                "name": "deploy-nine",
+              "input": {
                 "content": "Deploy steps:\n1. make build\n2. nine daemon restart",
-                "description": "How to deploy nine."
+                "description": "How to deploy nine.",
+                "name": "deploy-nine"
               }
             }
           ],
@@ -211,28 +233,32 @@
           "ToolCalls": null,
           "ToolResults": [
             {
+              "ToolCallID": "w1",
               "Content": "ok",
-              "IsError": false,
-              "ToolCallID": "w1"
+              "IsError": false
             }
           ]
         }
       ],
-      "llm_call_n": 2,
-      "max_tokens": 2048,
       "tool_names": [
+        "diff_file",
         "memory_get",
         "memory_set",
         "memory_delete",
         "memory_list",
-        "file_store",
-        "file_fetch",
-        "file_list",
         "file_search_text",
         "skill_list",
         "skill_read",
         "skill_write",
         "skill_modify",
+        "queued_messages_get",
+        "queued_message_mark_consumed",
+        "queued_messages_mark_all_consumed",
+        "queued_messages_count",
+        "queued_messages_unconsumed_count",
+        "list_files",
+        "doc_search",
+        "doc_read",
         "run_agent",
         "run_agents",
         "workflow_create",
@@ -244,45 +270,65 @@
         "goal_get",
         "goal_list",
         "goal_update_status",
-        "goal_append_subtree"
+        "tool_list",
+        "job_wait",
+        "job_check",
+        "job_list",
+        "job_cancel",
+        "copy_file",
+        "delete_file",
+        "edit_file",
+        "http_get",
+        "http_post",
+        "move_file",
+        "read_file",
+        "restore_file",
+        "time",
+        "trash_list",
+        "web_page_read",
+        "web_search",
+        "write_file"
       ],
-      "tokens_used": 2316
+      "max_tokens": 2048,
+      "tokens_used": 6169,
+      "budget": 100000,
+      "llm_call_n": 2
     }
   },
   {
     "seq": 13,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 1,
     "span_id": "t1.llm2",
     "parent_span_id": "t1",
     "type": "llm_response",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
       "text": "Saved the deploy-nine skill.",
-      "llm_call_n": 2,
-      "stop_reason": "end_turn"
+      "stop_reason": "end_turn",
+      "llm_call_n": 2
     }
   },
   {
     "seq": 14,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 1,
     "span_id": "t1",
     "type": "turn_end",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
       "result": "Saved the deploy-nine skill.",
       "tool_count": 1,
-      "duration_ms": 2
+      "duration_ms": 0
     }
   },
   {
     "seq": 15,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 2,
     "span_id": "t2",
     "type": "turn_start",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
       "input": "What are the deploy steps from your saved deploy-nine skill?",
       "trigger": "user"
@@ -290,39 +336,38 @@
   },
   {
     "seq": 16,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 2,
     "span_id": "t2.llm1",
     "parent_span_id": "t2",
     "type": "thinking",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
       "llm_call_n": 1
     }
   },
   {
     "seq": 17,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 2,
     "span_id": "t2",
     "type": "context_update",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
-      "used": 2303,
+      "used": 6155,
       "budget": 100000
     }
   },
   {
     "seq": 18,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 2,
     "span_id": "t2.llm1",
     "parent_span_id": "t2",
     "type": "llm_request",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
-      "budget": 100000,
-      "system": "Current time: 2026-07-24T13:12:19Z\n\n\nYou are Nine operating in sub-agent mode.\nYou have a specific, finite task to complete. Use the available tools to\naccomplish it. When done, provide a brief confirmation of what was completed.\nDo not ask clarifying questions — make reasonable assumptions and proceed.\n\n\nWhen delegating with run_agent or run_agents, pick the narrowest role that fits the task (monitor, report-writer, software-dev, sysadmin); use executor only when no narrower role matches. Each role's description is in the run_agent tool schema.\n\n## Environment\nRuntime: host\n",
+      "system": "Current time: 2026-09-21T03:29:54Z\nSession ID: 1b33addd-380c-45c4-a4fe-4c6365fc11dd\n\n\nYou are Nine operating in sub-agent mode.\nYou have a specific, finite task to complete. Use the available tools to\naccomplish it. When done, provide a brief confirmation of what was completed.\nDo not ask clarifying questions — make reasonable assumptions and proceed.\n\n\nWhen delegating with run_agent or run_agents, pick the narrowest role that fits the task (monitor, report-writer, software-dev, sysadmin); use executor only when no narrower role matches. Each role's description is in the run_agent tool schema.\n\n## Environment\n",
       "messages": [
         {
           "Role": "user",
@@ -343,21 +388,25 @@
           "ToolResults": null
         }
       ],
-      "llm_call_n": 1,
-      "max_tokens": 2048,
       "tool_names": [
+        "diff_file",
         "memory_get",
         "memory_set",
         "memory_delete",
         "memory_list",
-        "file_store",
-        "file_fetch",
-        "file_list",
         "file_search_text",
         "skill_list",
         "skill_read",
         "skill_write",
         "skill_modify",
+        "queued_messages_get",
+        "queued_message_mark_consumed",
+        "queued_messages_mark_all_consumed",
+        "queued_messages_count",
+        "queued_messages_unconsumed_count",
+        "list_files",
+        "doc_search",
+        "doc_read",
         "run_agent",
         "run_agents",
         "workflow_create",
@@ -369,42 +418,62 @@
         "goal_get",
         "goal_list",
         "goal_update_status",
-        "goal_append_subtree"
+        "tool_list",
+        "job_wait",
+        "job_check",
+        "job_list",
+        "job_cancel",
+        "copy_file",
+        "delete_file",
+        "edit_file",
+        "http_get",
+        "http_post",
+        "move_file",
+        "read_file",
+        "restore_file",
+        "time",
+        "trash_list",
+        "web_page_read",
+        "web_search",
+        "write_file"
       ],
-      "tokens_used": 2303
+      "max_tokens": 2048,
+      "tokens_used": 6155,
+      "budget": 100000,
+      "llm_call_n": 1
     }
   },
   {
     "seq": 19,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 2,
     "span_id": "t2.llm1",
     "parent_span_id": "t2",
     "type": "llm_response",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
       "text": "",
-      "llm_call_n": 1,
       "tool_calls": [
         {
           "ID": "r1",
           "Name": "skill_read",
-          "Input": {
+          "input": {
             "name": "deploy-nine"
           }
         }
       ],
-      "stop_reason": "tool_use"
+      "stop_reason": "tool_use",
+      "llm_call_n": 1
     }
   },
   {
     "seq": 20,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 2,
     "span_id": "t2.tool1",
     "parent_span_id": "t2.llm1",
     "type": "tool_start",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
       "name": "skill_read",
       "input": {
@@ -414,57 +483,56 @@
   },
   {
     "seq": 21,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 2,
     "span_id": "t2.tool1",
     "parent_span_id": "t2.llm1",
     "type": "tool_end",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
       "name": "skill_read",
       "input": {
         "name": "deploy-nine"
       },
       "output": "Deploy steps:\n1. make build\n2. nine daemon restart",
-      "attempts": 1,
-      "duration_ms": 0
+      "duration_ms": 0,
+      "attempts": 1
     }
   },
   {
     "seq": 22,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 2,
     "span_id": "t2.llm2",
     "parent_span_id": "t2",
     "type": "thinking",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
       "llm_call_n": 2
     }
   },
   {
     "seq": 23,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 2,
     "span_id": "t2",
     "type": "context_update",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
-      "used": 2325,
+      "used": 6180,
       "budget": 100000
     }
   },
   {
     "seq": 24,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 2,
     "span_id": "t2.llm2",
     "parent_span_id": "t2",
     "type": "llm_request",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
-      "budget": 100000,
-      "system": "Current time: 2026-07-24T13:12:19Z\n\n\nYou are Nine operating in sub-agent mode.\nYou have a specific, finite task to complete. Use the available tools to\naccomplish it. When done, provide a brief confirmation of what was completed.\nDo not ask clarifying questions — make reasonable assumptions and proceed.\n\n\nWhen delegating with run_agent or run_agents, pick the narrowest role that fits the task (monitor, report-writer, software-dev, sysadmin); use executor only when no narrower role matches. Each role's description is in the run_agent tool schema.\n\n## Environment\nRuntime: host\n",
+      "system": "Current time: 2026-09-21T03:29:54Z\nSession ID: 1b33addd-380c-45c4-a4fe-4c6365fc11dd\n\n\nYou are Nine operating in sub-agent mode.\nYou have a specific, finite task to complete. Use the available tools to\naccomplish it. When done, provide a brief confirmation of what was completed.\nDo not ask clarifying questions — make reasonable assumptions and proceed.\n\n\nWhen delegating with run_agent or run_agents, pick the narrowest role that fits the task (monitor, report-writer, software-dev, sysadmin); use executor only when no narrower role matches. Each role's description is in the run_agent tool schema.\n\n## Environment\n",
       "messages": [
         {
           "Role": "user",
@@ -491,7 +559,7 @@
             {
               "ID": "r1",
               "Name": "skill_read",
-              "Input": {
+              "input": {
                 "name": "deploy-nine"
               }
             }
@@ -504,28 +572,32 @@
           "ToolCalls": null,
           "ToolResults": [
             {
+              "ToolCallID": "r1",
               "Content": "Deploy steps:\n1. make build\n2. nine daemon restart",
-              "IsError": false,
-              "ToolCallID": "r1"
+              "IsError": false
             }
           ]
         }
       ],
-      "llm_call_n": 2,
-      "max_tokens": 2048,
       "tool_names": [
+        "diff_file",
         "memory_get",
         "memory_set",
         "memory_delete",
         "memory_list",
-        "file_store",
-        "file_fetch",
-        "file_list",
         "file_search_text",
         "skill_list",
         "skill_read",
         "skill_write",
         "skill_modify",
+        "queued_messages_get",
+        "queued_message_mark_consumed",
+        "queued_messages_mark_all_consumed",
+        "queued_messages_count",
+        "queued_messages_unconsumed_count",
+        "list_files",
+        "doc_search",
+        "doc_read",
         "run_agent",
         "run_agents",
         "workflow_create",
@@ -537,36 +609,56 @@
         "goal_get",
         "goal_list",
         "goal_update_status",
-        "goal_append_subtree"
+        "tool_list",
+        "job_wait",
+        "job_check",
+        "job_list",
+        "job_cancel",
+        "copy_file",
+        "delete_file",
+        "edit_file",
+        "http_get",
+        "http_post",
+        "move_file",
+        "read_file",
+        "restore_file",
+        "time",
+        "trash_list",
+        "web_page_read",
+        "web_search",
+        "write_file"
       ],
-      "tokens_used": 2325
+      "max_tokens": 2048,
+      "tokens_used": 6180,
+      "budget": 100000,
+      "llm_call_n": 2
     }
   },
   {
     "seq": 25,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 2,
     "span_id": "t2.llm2",
     "parent_span_id": "t2",
     "type": "llm_response",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
       "text": "Deploy steps: run make build, then nine daemon restart.",
-      "llm_call_n": 2,
-      "stop_reason": "end_turn"
+      "stop_reason": "end_turn",
+      "llm_call_n": 2
     }
   },
   {
     "seq": 26,
-    "agent_id": "c1fd84f0-041f-4eac-ba00-f184b643bf8a",
+    "agent_id": "1b33addd-380c-45c4-a4fe-4c6365fc11dd",
     "turn": 2,
     "span_id": "t2",
     "type": "turn_end",
-    "ts": "2026-07-24T09:12:19.527469-04:00",
+    "ts": "2026-09-21T03:29:54.521159Z",
     "payload": {
       "result": "Deploy steps: run make build, then nine daemon restart.",
       "tool_count": 1,
-      "duration_ms": 1
+      "duration_ms": 0
     }
   }
 ]

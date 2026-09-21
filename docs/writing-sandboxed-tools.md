@@ -90,7 +90,7 @@ The bytes are saved in the memory file store, base64-encoded, at this path:
 ```
 
 It can pass that path to another tool's `*_ref` argument to hand over the whole content, or
-read the base64 with `file_fetch` if it genuinely needs the encoding.
+read the base64 with `read_file` if it genuinely needs the encoding.
 
 They are stored base64-encoded because the file store is a text column that replaces NUL
 bytes with U+FFFD — raw bytes would not survive it, and base64 survives exactly. Returning

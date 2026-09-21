@@ -4,8 +4,6 @@ track: live
 tier: multi_step
 tags: [files, workspace, search]
 
-# Gated until the workspace index ships (adr/file-namespaces.md phase 5).
-requires_env: [NINE_EVAL_WORKSPACE_TOOLS]
 
 session:
   config:

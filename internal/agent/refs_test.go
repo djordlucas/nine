@@ -122,7 +122,7 @@ func TestOversizeRefRejected(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error for a ref over MaxRefBytes")
 	}
-	if !strings.Contains(err.Error(), "file_fetch") {
+	if !strings.Contains(err.Error(), "read_file") {
 		t.Errorf("error %q should point at the paging alternative", err)
 	}
 }
@@ -212,12 +212,18 @@ func TestNonObjectArgsAreLeftAlone(t *testing.T) {
 	}
 }
 
-// Core tools declare their refs in the same definitions the model is shown, so
-// a fresh dispatcher already knows about them.
-func TestNewIndexesInterceptedRefParams(t *testing.T) {
+// A tool declares its refs in the same schema the model is shown, and the
+// dispatcher indexes them when the tool registers.
+//
+// This used to assert over file_store, a core tool. The ref-taking file tool is
+// write_file now, which is sandboxed (adr/file-namespaces.md), so the indexing
+// happens at SyncSandboxed rather than at New.
+func TestSandboxedRegistrationIndexesRefParams(t *testing.T) {
 	d := New()
-	if got := d.refParams["file_store"]; len(got) != 1 || got[0] != "content_ref" {
-		t.Errorf("file_store ref params = %v, want [content_ref]", got)
+	d.declareRefParams("write_file", json.RawMessage(
+		`{"type":"object","properties":{"path":{"type":"string"},"content_ref":{"type":"string","x-nine-ref":true}}}`))
+	if got := d.refParams["write_file"]; len(got) != 1 || got[0] != "content_ref" {
+		t.Errorf("write_file ref params = %v, want [content_ref]", got)
 	}
 }
 

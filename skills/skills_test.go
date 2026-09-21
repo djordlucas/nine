@@ -161,9 +161,13 @@ func TestDefaultsIncludeBuiltinRoles(t *testing.T) {
 	if r := roles["reflection"]; r != nil && r.AllTools {
 		t.Error("reflection must have a narrow allowlist, not AllTools")
 	}
+	// report-writer cannot run commands. It does write files: the store it used
+	// to write to is gone, and the trash makes an overwrite recoverable
+	// (adr/file-namespaces.md §11). "cannot shell" is the restriction
+	// roles-design.md relies on, and it still holds.
 	if r := roles["report-writer"]; r != nil {
 		for _, tool := range r.Tools {
-			if tool == "shell" || tool == "write_file" {
+			if tool == "shell" {
 				t.Errorf("report-writer allowlist must not contain %q", tool)
 			}
 		}
