@@ -37,7 +37,7 @@ string and a failure are indistinguishable to a reader.
 A spilled result is an ordinary file in the store, so the normal file tools
 reach it:
 
-- `file_fetch` takes an offset and a limit, so the model can read a window
+- `read_file` takes an offset and a limit, so the model can read a window
   rather than pulling the whole payload back into its context.
 - `file_search_text` takes a path, so the model can search *inside* one spilled
   file instead of searching the whole store.
@@ -72,7 +72,7 @@ string.
 | A reference needs a handle from the same turn | Passing a payload by reference requires the model to know the handle, which means it came from an earlier result in that same turn. |
 | References are declared, never inferred | A tool must mark an input as a file-store reference. Nine does not guess that a string looks like a path and swap in file contents. |
 | The cap is global | `max_output_tokens` applies to every tool result. It is not per-tool, so a tool whose useful output is consistently larger always spills. |
-| Preview shape is fixed | The model sees a head and a tail. A result whose signal sits in the middle needs a `file_fetch` or `file_search_text` call to reach. |
+| Preview shape is fixed | The model sees a head and a tail. A result whose signal sits in the middle needs a `read_file` or `file_search_text` call to reach. |
 
 > Why the dispatcher rather than a tool-facing API, and the options weighed —
 > [../adr/tool-output-spill.md](../adr/tool-output-spill.md).
