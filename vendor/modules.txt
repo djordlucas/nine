@@ -23,7 +23,7 @@ charm.land/glamour/v2/styles
 charm.land/lipgloss/v2
 charm.land/lipgloss/v2/compat
 charm.land/lipgloss/v2/table
-# github.com/BurntSushi/toml v1.4.0
+# github.com/BurntSushi/toml v1.6.0
 ## explicit; go 1.18
 github.com/BurntSushi/toml
 github.com/BurntSushi/toml/internal
