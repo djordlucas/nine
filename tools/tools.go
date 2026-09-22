@@ -5,4 +5,7 @@
 // nine itself.
 package tools
 
-import _ "github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen"
+import (
+	_ "github.com/daveshanley/vacuum"
+	_ "github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen"
+)

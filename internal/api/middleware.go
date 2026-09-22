@@ -105,8 +105,6 @@ func (s *Server) recoveryMiddleware(next http.Handler) http.Handler {
 
 // rateLimitMiddleware implements rate limiting.
 func (s *Server) rateLimitMiddleware(next http.Handler) http.Handler {
-	// For now, implement a simple token bucket rate limiter
-	// In production, consider using a more sophisticated implementation
 	if !s.config.RateLimitEnabled() {
 		return next
 	}
@@ -120,16 +118,7 @@ func (s *Server) rateLimitMiddleware(next http.Handler) http.Handler {
 			}
 		}
 
-		// Get client IP
-		ip := s.clientIP(r)
-
-		s.rateMu.Lock()
-		limiter, exists := s.rateLimiters[ip]
-		if !exists {
-			limiter = newRateLimiter(s.config.RequestsPerMinute(), s.config.BurstSize())
-			s.rateLimiters[ip] = limiter
-		}
-		s.rateMu.Unlock()
+		limiter := s.limiterFor(s.clientIP(r))
 
 		// Check rate limit
 		if !limiter.allow() {

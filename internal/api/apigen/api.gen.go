@@ -60,12 +60,12 @@ func (e ErrorDetailsCode) Valid() bool {
 	}
 }
 
-// AttachSessionRequest defines model for AttachSessionRequest.
+// AttachSessionRequest Which session to attach to.
 type AttachSessionRequest struct {
 	AgentId string `json:"agent_id"`
 }
 
-// AttachSessionResponse defines model for AttachSessionResponse.
+// AttachSessionResponse A session's identity plus the transcript needed to resume following it.
 type AttachSessionResponse struct {
 	AgentId         *string        `json:"agent_id,omitempty"`
 	History         *[]interface{} `json:"history,omitempty"`
@@ -76,13 +76,14 @@ type AttachSessionResponse struct {
 	Role            *string        `json:"role,omitempty"`
 }
 
-// CallToolRequest defines model for CallToolRequest.
+// CallToolRequest Arguments for a direct tool invocation, bypassing the model.
 type CallToolRequest struct {
+	// Args Tool arguments, shaped by that tool's own input schema.
 	Args      interface{} `json:"args,omitempty"`
 	LiveState *bool       `json:"live_state,omitempty"`
 }
 
-// CallToolResponse defines model for CallToolResponse.
+// CallToolResponse The result of a direct tool invocation.
 type CallToolResponse struct {
 	DurationMs *int    `json:"duration_ms,omitempty"`
 	Output     *string `json:"output,omitempty"`
@@ -90,7 +91,7 @@ type CallToolResponse struct {
 	ToolName   *string `json:"tool_name,omitempty"`
 }
 
-// ConversationInfo defines model for ConversationInfo.
+// ConversationInfo One conversation in a listing. Role, plan mode and timestamps are absent: the daemon's session roster does not carry them.
 type ConversationInfo struct {
 	AgeSeconds  *int       `json:"age_seconds,omitempty"`
 	Attached    *bool      `json:"attached,omitempty"`
@@ -105,12 +106,12 @@ type ConversationInfo struct {
 	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
 }
 
-// CreateConversationRequest defines model for CreateConversationRequest.
+// CreateConversationRequest Options for a new conversation.
 type CreateConversationRequest struct {
 	Interactive *bool `json:"interactive,omitempty"`
 }
 
-// CreateConversationResponse defines model for CreateConversationResponse.
+// CreateConversationResponse The conversation that was created.
 type CreateConversationResponse struct {
 	CreatedAt    *time.Time `json:"created_at,omitempty"`
 	Id           string     `json:"id"`
@@ -118,14 +119,14 @@ type CreateConversationResponse struct {
 	Role         *string    `json:"role,omitempty"`
 }
 
-// DeleteConversationResponse defines model for DeleteConversationResponse.
+// DeleteConversationResponse Confirmation that a conversation and its journal were removed.
 type DeleteConversationResponse struct {
 	DeletedEvents *int    `json:"deleted_events,omitempty"`
 	Id            *string `json:"id,omitempty"`
 	Message       *string `json:"message,omitempty"`
 }
 
-// ErrorDetails defines model for ErrorDetails.
+// ErrorDetails What went wrong: a stable code, a human-readable message, and any structured context.
 type ErrorDetails struct {
 	// Code Stable, machine-readable error code
 	Code    ErrorDetailsCode        `json:"code"`
@@ -136,25 +137,28 @@ type ErrorDetails struct {
 // ErrorDetailsCode Stable, machine-readable error code
 type ErrorDetailsCode string
 
-// ErrorResponse defines model for ErrorResponse.
+// ErrorResponse The error shape every failing request returns.
 type ErrorResponse struct {
+	// Error What went wrong: a stable code, a human-readable message, and any structured context.
 	Error ErrorDetails `json:"error"`
 }
 
-// FailWorkflowResponse defines model for FailWorkflowResponse.
+// FailWorkflowResponse Confirmation that a workflow was marked failed.
 type FailWorkflowResponse struct {
 	Id      *string `json:"id,omitempty"`
 	Message *string `json:"message,omitempty"`
 	Status  *string `json:"status,omitempty"`
 }
 
-// GetContextResponse defines model for GetContextResponse.
+// GetContextResponse A conversation's context breakdown as the context builder reports it.
 type GetContextResponse struct {
-	AgentId *string     `json:"agent_id,omitempty"`
+	AgentId *string `json:"agent_id,omitempty"`
+
+	// Context The context builder's breakdown, whose shape is the builder's to define.
 	Context interface{} `json:"context,omitempty"`
 }
 
-// GetConversationResponse defines model for GetConversationResponse.
+// GetConversationResponse One conversation's detail, including its context breakdown.
 type GetConversationResponse struct {
 	Context     *map[string]interface{} `json:"context,omitempty"`
 	CreatedAt   *time.Time              `json:"created_at,omitempty"`
@@ -168,13 +172,13 @@ type GetConversationResponse struct {
 	UpdatedAt   *time.Time              `json:"updated_at,omitempty"`
 }
 
-// GetDocsResponse defines model for GetDocsResponse.
+// GetDocsResponse One documentation topic's Markdown source.
 type GetDocsResponse struct {
 	Content string `json:"content"`
 	Topic   string `json:"topic"`
 }
 
-// GetGoalResponse defines model for GetGoalResponse.
+// GetGoalResponse One goal's detail. Identical in shape to a goal in a listing.
 type GetGoalResponse struct {
 	CreatedAt   *time.Time `json:"created_at,omitempty"`
 	Description *string    `json:"description,omitempty"`
@@ -186,17 +190,19 @@ type GetGoalResponse struct {
 	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
 }
 
-// GetSpecResponse defines model for GetSpecResponse.
+// GetSpecResponse One specification topic's Markdown source.
 type GetSpecResponse struct {
 	Content string `json:"content"`
 	Topic   string `json:"topic"`
 }
 
-// GetToolResponse defines model for GetToolResponse.
+// GetToolResponse One tool's detail. Capabilities and the input schema are absent unless the daemon reports them.
 type GetToolResponse struct {
-	Capabilities *[]string   `json:"capabilities,omitempty"`
-	Description  *string     `json:"description,omitempty"`
-	Generated    *bool       `json:"generated,omitempty"`
+	Capabilities *[]string `json:"capabilities,omitempty"`
+	Description  *string   `json:"description,omitempty"`
+	Generated    *bool     `json:"generated,omitempty"`
+
+	// InputSchema The tool's JSON Schema for its arguments, passed through as the tool declares it.
 	InputSchema  interface{} `json:"input_schema,omitempty"`
 	Kind         *string     `json:"kind,omitempty"`
 	Loaded       *bool       `json:"loaded,omitempty"`
@@ -205,7 +211,7 @@ type GetToolResponse struct {
 	Plugin       *string     `json:"plugin,omitempty"`
 }
 
-// GoalInfo defines model for GoalInfo.
+// GoalInfo A goal as the daemon stores it. A goal carries no name, priority, owning session or progress note.
 type GoalInfo struct {
 	CreatedAt   *time.Time `json:"created_at,omitempty"`
 	Description *string    `json:"description,omitempty"`
@@ -217,7 +223,7 @@ type GoalInfo struct {
 	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
 }
 
-// HealthResponse defines model for HealthResponse.
+// HealthResponse The API server's own health, and whether it can reach the daemon.
 type HealthResponse struct {
 	DaemonConnected bool   `json:"daemon_connected"`
 	Status          string `json:"status"`
@@ -225,60 +231,72 @@ type HealthResponse struct {
 	Version         string `json:"version"`
 }
 
-// ListConversationsResponse defines model for ListConversationsResponse.
+// ListConversationsResponse A page of conversations.
 type ListConversationsResponse struct {
-	Data       *[]ConversationInfo `json:"data,omitempty"`
-	Pagination *Pagination         `json:"pagination,omitempty"`
+	Data *[]ConversationInfo `json:"data,omitempty"`
+
+	// Pagination Which page a list response carries. Paging is offset based; there is no cursor.
+	Pagination *Pagination `json:"pagination,omitempty"`
 }
 
-// ListDocsResponse defines model for ListDocsResponse.
+// ListDocsResponse The documentation topics this build embeds.
 type ListDocsResponse struct {
 	Topics []string `json:"topics"`
 }
 
-// ListGoalsResponse defines model for ListGoalsResponse.
+// ListGoalsResponse A page of goals.
 type ListGoalsResponse struct {
-	Data       *[]GoalInfo `json:"data,omitempty"`
+	Data *[]GoalInfo `json:"data,omitempty"`
+
+	// Pagination Which page a list response carries. Paging is offset based; there is no cursor.
 	Pagination *Pagination `json:"pagination,omitempty"`
 }
 
-// ListNotificationsResponse defines model for ListNotificationsResponse.
+// ListNotificationsResponse A page of notifications.
 type ListNotificationsResponse struct {
-	Data       *[]Notification `json:"data,omitempty"`
-	Pagination *Pagination     `json:"pagination,omitempty"`
+	Data *[]Notification `json:"data,omitempty"`
+
+	// Pagination Which page a list response carries. Paging is offset based; there is no cursor.
+	Pagination *Pagination `json:"pagination,omitempty"`
 }
 
-// ListPluginsResponse defines model for ListPluginsResponse.
+// ListPluginsResponse A page of plugins.
 type ListPluginsResponse struct {
-	Data       *[]PluginInfo `json:"data,omitempty"`
-	Pagination *Pagination   `json:"pagination,omitempty"`
+	Data *[]PluginInfo `json:"data,omitempty"`
+
+	// Pagination Which page a list response carries. Paging is offset based; there is no cursor.
+	Pagination *Pagination `json:"pagination,omitempty"`
 }
 
-// ListSpecResponse defines model for ListSpecResponse.
+// ListSpecResponse The specification topics this build embeds.
 type ListSpecResponse struct {
 	Topics []string `json:"topics"`
 }
 
-// ListToolsResponse defines model for ListToolsResponse.
+// ListToolsResponse A page of tools.
 type ListToolsResponse struct {
-	Data       *[]ToolInfo `json:"data,omitempty"`
+	Data *[]ToolInfo `json:"data,omitempty"`
+
+	// Pagination Which page a list response carries. Paging is offset based; there is no cursor.
 	Pagination *Pagination `json:"pagination,omitempty"`
 }
 
-// ListWorkflowsResponse defines model for ListWorkflowsResponse.
+// ListWorkflowsResponse A page of workflows.
 type ListWorkflowsResponse struct {
-	Data       *[]WorkflowInfo `json:"data,omitempty"`
-	Pagination *Pagination     `json:"pagination,omitempty"`
+	Data *[]WorkflowInfo `json:"data,omitempty"`
+
+	// Pagination Which page a list response carries. Paging is offset based; there is no cursor.
+	Pagination *Pagination `json:"pagination,omitempty"`
 }
 
-// MemoryStats defines model for MemoryStats.
+// MemoryStats Row counts from the daemon's store.
 type MemoryStats struct {
 	EventsCount    *int `json:"events_count,omitempty"`
 	MemoriesCount  *int `json:"memories_count,omitempty"`
 	WorkflowsCount *int `json:"workflows_count,omitempty"`
 }
 
-// Notification defines model for Notification.
+// Notification One entry of the human-facing feed. The store records no title, severity or type.
 type Notification struct {
 	AgentId   *string    `json:"agent_id,omitempty"`
 	CreatedAt *time.Time `json:"created_at,omitempty"`
@@ -287,7 +305,7 @@ type Notification struct {
 	Seen      *bool      `json:"seen,omitempty"`
 }
 
-// Pagination defines model for Pagination.
+// Pagination Which page a list response carries. Paging is offset based; there is no cursor.
 type Pagination struct {
 	HasMore bool `json:"has_more"`
 	Limit   int  `json:"limit"`
@@ -295,7 +313,7 @@ type Pagination struct {
 	Total   int  `json:"total"`
 }
 
-// PluginInfo defines model for PluginInfo.
+// PluginInfo One plugin's roster entry. Disabled distinguishes a plugin switched off by the operator from one that failed to load.
 type PluginInfo struct {
 	Disabled *bool   `json:"disabled,omitempty"`
 	Error    *string `json:"error,omitempty"`
@@ -307,7 +325,7 @@ type PluginInfo struct {
 	Tools  *[]string `json:"tools,omitempty"`
 }
 
-// ReloadPluginsResponse defines model for ReloadPluginsResponse.
+// ReloadPluginsResponse The plugin roster after a reload, with how many loaded and how many failed.
 type ReloadPluginsResponse struct {
 	FailedCount *int          `json:"failed_count,omitempty"`
 	LoadedCount *int          `json:"loaded_count,omitempty"`
@@ -315,19 +333,19 @@ type ReloadPluginsResponse struct {
 	Plugins     *[]PluginInfo `json:"plugins,omitempty"`
 }
 
-// ReloadToolsResponse defines model for ReloadToolsResponse.
+// ReloadToolsResponse The sandboxed-tool roster after a reload.
 type ReloadToolsResponse struct {
 	Message *string     `json:"message,omitempty"`
 	Tools   *[]ToolInfo `json:"tools,omitempty"`
 }
 
-// SendMessageRequest defines model for SendMessageRequest.
+// SendMessageRequest A user message to run as a turn.
 type SendMessageRequest struct {
 	ForceThink *bool  `json:"force_think,omitempty"`
 	Text       string `json:"text"`
 }
 
-// SendMessageResponse defines model for SendMessageResponse.
+// SendMessageResponse The agent's reply to a turn.
 type SendMessageResponse struct {
 	AgentId     *string    `json:"agent_id,omitempty"`
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
@@ -335,39 +353,41 @@ type SendMessageResponse struct {
 	TurnId      *string    `json:"turn_id,omitempty"`
 }
 
-// StatusResponse defines model for StatusResponse.
+// StatusResponse The daemon's status: uptime, active sessions and the plugin roster.
 type StatusResponse struct {
 	ActiveSessions *int                    `json:"active_sessions,omitempty"`
 	Config         *map[string]interface{} `json:"config,omitempty"`
-	Memory         *MemoryStats            `json:"memory,omitempty"`
-	Plugins        *[]PluginInfo           `json:"plugins,omitempty"`
-	Status         *string                 `json:"status,omitempty"`
-	Tools          *[]ToolInfo             `json:"tools,omitempty"`
-	Uptime         *string                 `json:"uptime,omitempty"`
-	Version        *string                 `json:"version,omitempty"`
+
+	// Memory Row counts from the daemon's store.
+	Memory  *MemoryStats  `json:"memory,omitempty"`
+	Plugins *[]PluginInfo `json:"plugins,omitempty"`
+	Status  *string       `json:"status,omitempty"`
+	Tools   *[]ToolInfo   `json:"tools,omitempty"`
+	Uptime  *string       `json:"uptime,omitempty"`
+	Version *string       `json:"version,omitempty"`
 }
 
-// StopConversationResponse defines model for StopConversationResponse.
+// StopConversationResponse Confirmation that a conversation was stopped, its history kept.
 type StopConversationResponse struct {
 	Id      *string `json:"id,omitempty"`
 	Message *string `json:"message,omitempty"`
 	Status  *string `json:"status,omitempty"`
 }
 
-// StopWorkflowResponse defines model for StopWorkflowResponse.
+// StopWorkflowResponse Confirmation that a workflow was cancelled.
 type StopWorkflowResponse struct {
 	Id      *string `json:"id,omitempty"`
 	Message *string `json:"message,omitempty"`
 	Status  *string `json:"status,omitempty"`
 }
 
-// StreamConnected defines model for StreamConnected.
+// StreamConnected The stream handshake, sent once when a client attaches.
 type StreamConnected struct {
 	AgentId string `json:"agent_id"`
 	Message string `json:"message"`
 }
 
-// StreamDone defines model for StreamDone.
+// StreamDone The turn finished; no further events follow for it.
 type StreamDone struct {
 	AgentId   string `json:"agent_id"`
 	Timestamp int64  `json:"timestamp"`
@@ -378,35 +398,37 @@ type StreamEvent struct {
 	union json.RawMessage
 }
 
-// StreamResponseChunk defines model for StreamResponseChunk.
+// StreamResponseChunk A fragment of the agent's reply as it is produced.
 type StreamResponseChunk struct {
 	Text      string `json:"text"`
 	Timestamp int64  `json:"timestamp"`
 }
 
-// StreamToolEnd defines model for StreamToolEnd.
+// StreamToolEnd A tool call finished, with its output.
 type StreamToolEnd struct {
 	Timestamp  int64   `json:"timestamp"`
 	ToolName   string  `json:"tool_name"`
 	ToolOutput *string `json:"tool_output,omitempty"`
 }
 
-// StreamToolStart defines model for StreamToolStart.
+// StreamToolStart A tool call began, with the arguments it was given.
 type StreamToolStart struct {
 	Timestamp int64 `json:"timestamp"`
 
-	// ToolInput Tool arguments, shaped by the tool's own schema
+	// ToolInput Tool arguments, shaped by that tool's own input schema.
 	ToolInput interface{} `json:"tool_input,omitempty"`
 	ToolName  string      `json:"tool_name"`
 }
 
-// ToolInfo defines model for ToolInfo.
+// ToolInfo One tool in a listing, with where it came from and whether it loaded.
 type ToolInfo struct {
-	Capabilities *[]string   `json:"capabilities,omitempty"`
-	Description  *string     `json:"description,omitempty"`
-	Error        *string     `json:"error,omitempty"`
-	Generated    *bool       `json:"generated,omitempty"`
-	InputSchema  interface{} `json:"input_schema,omitempty"`
+	Capabilities *[]string `json:"capabilities,omitempty"`
+	Description  *string   `json:"description,omitempty"`
+	Error        *string   `json:"error,omitempty"`
+	Generated    *bool     `json:"generated,omitempty"`
+
+	// InputSchema The tool's JSON Schema for its arguments, passed through as the tool declares it.
+	InputSchema interface{} `json:"input_schema,omitempty"`
 
 	// Kind plugin, sandboxed, generated
 	Kind         *string `json:"kind,omitempty"`
@@ -416,7 +438,7 @@ type ToolInfo struct {
 	Plugin       *string `json:"plugin,omitempty"`
 }
 
-// WorkflowInfo defines model for WorkflowInfo.
+// WorkflowInfo A workflow as the daemon stores it. Steps and completed_steps summarise the stored step list; the store records no current step.
 type WorkflowInfo struct {
 	AgentId        *string    `json:"agent_id,omitempty"`
 	CompletedSteps *int       `json:"completed_steps,omitempty"`
@@ -430,10 +452,10 @@ type WorkflowInfo struct {
 	UpdatedAt *time.Time `json:"updated_at,omitempty"`
 }
 
-// TooManyRequests defines model for TooManyRequests.
+// TooManyRequests The error shape every failing request returns.
 type TooManyRequests = ErrorResponse
 
-// Unauthorized defines model for Unauthorized.
+// Unauthorized The error shape every failing request returns.
 type Unauthorized = ErrorResponse
 
 // ListConversationsParams defines parameters for ListConversations.
