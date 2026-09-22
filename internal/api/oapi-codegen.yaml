@@ -11,10 +11,12 @@ generate:
   models: true
   std-http-server: true # net/http ServeMux patterns, matching the existing router
   strict-server: true # typed request/response objects per operation
-# embedded-spec is deliberately off: it pulls kin-openapi in purely to hand back
-# a document the server already has on disk, which openapi.yaml is served from
-# via go:embed. Turning it on is the prerequisite for spec-driven request
-# validation (oapi-codegen/nethttp-middleware), which is worth the dependency
-# only if that validation replaces the hand-written checks in params.go.
+  # embedded-spec is what the request validator loads (internal/api/validate.go).
+  # It costs a kin-openapi dependency — measured at ~1.5 MB vendored across five
+  # modules — and buys enforcement of everything the document already states:
+  # required body fields, declared types, and page bounds. The alternative was
+  # re-asserting each by hand in Go, which is where a constraint and its
+  # statement drift apart.
+  embedded-spec: true
 output-options:
   nullable-type: true

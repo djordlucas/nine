@@ -52,10 +52,34 @@ already did.
 ```bash
 make openapi        # regenerate internal/api/apigen from openapi.yaml
 make openapi-check  # fail if the committed output is stale (runs in CI)
+make openapi-lint   # lint the document, failing on warnings (runs in CI)
 ```
+
+`internal/api/.vacuum.yaml` holds the lint ruleset, including the rules this API
+contradicts on purpose — snake_case properties, operations that return only
+`501`, and the fields that are deliberately arbitrary JSON.
 
 The generator lives in `tools/`, its own Go module, so its dependencies stay
 out of nine's graph and out of `vendor/`.
+
+### Request validation
+
+Incoming requests are validated against the document before a handler runs
+(`internal/api/validate.go`): required body fields, declared types, and the page
+bounds `limit` and `offset` carry. A failure is a `400` in the standard error
+shape.
+
+Two things stay outside it:
+
+- **Authentication.** nine's bearer token is optional and the document declares
+  operations secured unconditionally, so auth is left to the middleware, which
+  knows whether a token is configured.
+- **The document routes.** `/api/v1/openapi*` are not operations the document
+  declares, so validation is scoped to the generated routes.
+
+If the embedded document cannot be loaded, validation is skipped and logged
+rather than refusing to start — it is parsed by the generator at build time, so
+that cannot happen in a built binary, and the handlers' own checks still run.
 
 ### Reading it at runtime
 

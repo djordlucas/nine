@@ -1014,6 +1014,16 @@ guessing unthrottled.
 
 ### API-SEC-4: input validation
 
+Requests **MUST** be validated against the OpenAPI document before a handler
+runs: required body fields, declared types, and declared parameter ranges. The
+API server **MUST** report a validation failure in the standard error shape
+(API-HTTP-3), not the transport's default.
+
+Authentication is out of scope for that validation: bearer auth is optional
+(API-HTTP-2) while the document declares operations secured unconditionally, so
+the middleware enforces it.
+
+
 - **MUST** validate all request parameters
 - **MUST** sanitize user input
 - **MUST** enforce size limits on request bodies
