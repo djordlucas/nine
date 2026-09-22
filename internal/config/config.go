@@ -99,6 +99,14 @@ type ToolsConfig struct {
 	// (16 MiB).
 	MemoryMB int `toml:"memory_mb"`
 
+	// MaxConcurrent bounds how many sandboxed tool calls run at once, across
+	// every tool and every conversation. 0 uses toolvm.DefaultMaxConcurrent (8).
+	//
+	// memory_mb is per call, so this is what multiplies it: the two together are
+	// the host's worst-case memory. It is the turn-driven counterpart of
+	// job_workers, which bounds the sweeper's share the same way.
+	MaxConcurrent int `toml:"max_concurrent"`
+
 	// CacheDir is the root for the generated tier's dependency cache: extracted,
 	// integrity-verified npm packages, content-addressed and shared across tools
 	// (docs/sandboxed-tools.md §4.4). Empty uses os.UserCacheDir()/nine/tools.

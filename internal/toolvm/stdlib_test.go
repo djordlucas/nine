@@ -235,3 +235,64 @@ func TestStdlibHTMLFindByClass(t *testing.T) {
 		t.Errorf("prefix class matched:\n%s", out)
 	}
 }
+
+// A call ships the modules its source can name, not all eight. The saving is the
+// point — the whole library is 30 KB of JSON on every call — but the property
+// under test is that narrowing never costs a tool an import it uses.
+func TestACallShipsOnlyTheModulesItsSourceCanName(t *testing.T) {
+	h := stdlibHost(t)
+	const src = `
+import { parse } from "nine:csv";
+export default () => String(parse("a,b\n1,2").length);
+`
+	if out := loadGen(t, h, "narrow", src, `{}`); out != "2" {
+		t.Fatalf("output = %q, want the tool's own import to still resolve", out)
+	}
+
+	got := h.Get("narrow").modules
+	if _, ok := got["nine:csv"]; !ok {
+		t.Error("the module the tool imports was not shipped")
+	}
+	if _, ok := got["nine:html"]; ok {
+		t.Error("nine:html was shipped to a tool that never names it")
+	}
+	// The allowlist is unchanged: what a tool *may* import is still the stdlib.
+	if len(h.Get("narrow").Imports()) != len(stdlibSpecifiers) {
+		t.Errorf("Imports() = %v, want the whole allowlist", h.Get("narrow").Imports())
+	}
+}
+
+// A dynamic import of a literal is a legitimate way to reach a module, so the
+// scan must see it — it is not an import statement and a parser-shaped check
+// would have missed it.
+func TestADynamicImportOfALiteralStillResolves(t *testing.T) {
+	h := stdlibHost(t)
+	const src = `
+export default async () => {
+  const { parse } = await import("nine:csv");
+  return String(parse("a\n1").length);
+};
+`
+	if out := loadGen(t, h, "dynamic", src, `{}`); out != "2" {
+		t.Errorf("output = %q, want a dynamically imported module to resolve", out)
+	}
+}
+
+// A specifier the source never spells cannot be found by a substring scan, so
+// that shape gets the whole library rather than a resolver error its author
+// would have no way to read.
+func TestAComputedImportFallsBackToTheWholeLibrary(t *testing.T) {
+	h := stdlibHost(t)
+	const src = `
+export default async (args) => {
+  const { parse } = await import("nine:" + args.mod);
+  return String(parse("a\n1").length);
+};
+`
+	if out := loadGen(t, h, "computed", src, `{"mod":"csv"}`); out != "2" {
+		t.Errorf("output = %q, want a computed specifier to still resolve", out)
+	}
+	if got := len(h.Get("computed").modules); got != len(stdlibSpecifiers) {
+		t.Errorf("shipped %d modules, want the whole library", got)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -121,7 +122,7 @@ description = "Claims the same name."
 	}
 }
 
-// Load replaces the set wholesale, so it doubles as reload — the property the
+// Load replaces the developer set, so it doubles as reload — the property the
 // `nine tools reload` path depends on.
 func TestLoadIsReload(t *testing.T) {
 	dir := t.TempDir()
@@ -145,6 +146,94 @@ description = "First."
 
 	if out := call(t, h, "one", `{}`); out != "second" {
 		t.Errorf("output = %q after reload, want the new source", out)
+	}
+}
+
+// Reload replaces the *developer* set and nothing else. It used to replace the
+// whole registry, which meant re-reading a directory the shipped tier does not
+// live in deleted the shipped tier: after one `nine tools reload` the model had
+// no file tools until the daemon restarted.
+func TestReloadKeepsTheShippedTier(t *testing.T) {
+	ctx := context.Background()
+	h := openHost(t, t.TempDir(), nil)
+	h.LoadShipped(ctx, nil)
+	if h.Get("time") == nil {
+		t.Fatal("precondition: the shipped tool \"time\" did not load")
+	}
+
+	h.Load(ctx, nil)
+
+	if h.Get("time") == nil {
+		t.Error("reloading the developer directory evicted the shipped tool \"time\"")
+	}
+}
+
+// The other half of the same property: a developer tool deleted from the
+// directory must still disappear on reload, which is what the wholesale replace
+// used to buy.
+func TestReloadDropsAToolRemovedFromTheDirectory(t *testing.T) {
+	dir := t.TempDir()
+	writeTool(t, dir, "gone", `
+name = "gone"
+kind = "js"
+entrypoint = "./gone.js"
+description = "Here for now."
+`, `export default () => "here";`)
+
+	h := openHost(t, dir, nil)
+	if h.Get("gone") == nil {
+		t.Fatal("precondition: the tool did not load")
+	}
+
+	for _, f := range []string{"gone.toml", "gone.js"} {
+		if err := os.Remove(filepath.Join(dir, f)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.Load(context.Background(), nil)
+
+	if h.Get("gone") != nil {
+		t.Error("a tool deleted from the directory survived the reload")
+	}
+}
+
+// "No override, ever" holds across tiers, not just within one: the shipped tier
+// registers first and a developer tool may not take one of its names, on a
+// reload as much as at boot.
+func TestADeveloperToolCannotTakeAShippedName(t *testing.T) {
+	dir := t.TempDir()
+	writeTool(t, dir, "mine", `
+name = "time"
+kind = "js"
+entrypoint = "./mine.js"
+description = "Claims a shipped name."
+`, `export default () => "mine";`)
+
+	ctx := context.Background()
+	h, err := Open(ctx, Config{UserDir: dir})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { h.Close(context.Background()) }) //nolint:errcheck
+
+	h.LoadShipped(ctx, nil)
+	h.Load(ctx, nil)
+
+	// The shipped implementation is the one that answers.
+	if out := call(t, h, "time", `{}`); out == "mine" {
+		t.Error("a developer tool replaced the shipped tool of the same name")
+	}
+	var skipped *Status
+	for i, st := range h.Status() {
+		if st.Name == "time" && !st.Loaded {
+			skipped = &h.Status()[i]
+		}
+	}
+	if skipped == nil {
+		t.Fatalf("the colliding tool was not reported as skipped: %+v", h.Status())
+	}
+	if !strings.Contains(skipped.Err, "shipped") {
+		t.Errorf("collision error = %q, want it to name the shipped tier", skipped.Err)
 	}
 }
 

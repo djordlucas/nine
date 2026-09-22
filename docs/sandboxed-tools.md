@@ -124,15 +124,23 @@ Dispatch(tool, args)
 | Bound | Mechanism | Default |
 |---|---|---|
 | Wall clock | `WithCloseOnContextDone(true)` + context deadline | 5s |
-| Memory | `WithMemoryLimitPages` | 256 pages (16 MiB) |
+| Memory | `WithMemoryLimitPages`, per call | 256 pages (16 MiB) |
+| Concurrency | a host semaphore held across instantiation | 8 calls (`[tools] max_concurrent`) |
 | Output | the dispatcher's existing cap + spill (R-DISP.2) | 2048 tokens |
 | CPU | **none — see below** | — |
+
+Memory and concurrency are one bound in two halves: `memory_mb` is what a single
+call may hold, `max_concurrent` is how many calls may hold it at once, and their
+product is the host's worst case — 128 MiB at the defaults. A call that arrives
+with every slot taken waits, and the wait is charged to the turn's context rather
+than to the tool's own deadline, so queueing never shortens the time a tool gets
+to run.
 
 wazero has **no fuel/gas metering**. The wall-clock deadline is the only CPU
 bound, and it is enforced by closing the module out from under the guest. This is
 adequate (a spinning tool dies in 5s and the model observes a normal failure) but
-it must be written down rather than assumed: an operator running many concurrent
-sessions is trusting the deadline, not a work budget.
+it must be written down rather than assumed: an operator is trusting a deadline
+and a concurrency cap, not a work budget.
 
 ---
 
