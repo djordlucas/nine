@@ -50,11 +50,12 @@ func OpenSandboxedTools(ctx context.Context, cfg *config.Config, store *memory.S
 	}
 
 	host, err := toolvm.Open(ctx, toolvm.Config{
-		UserDir:  cfg.Tools.UserDir,
-		Grants:   toolGrants(cfg),
-		Timeout:  timeout,
-		Timeouts: timeouts,
-		MemoryMB: cfg.Tools.MemoryMB,
+		UserDir:       cfg.Tools.UserDir,
+		Grants:        toolGrants(cfg),
+		Timeout:       timeout,
+		Timeouts:      timeouts,
+		MemoryMB:      cfg.Tools.MemoryMB,
+		MaxConcurrent: cfg.Tools.MaxConcurrent,
 		// Usage bookkeeping for LRU eviction (§9.2). Best-effort and after the
 		// fact: a touch failure must not fail the tool call the model is waiting on.
 		TouchGenerated: touchGenerated(store),
@@ -95,31 +96,12 @@ func OpenSandboxedTools(ctx context.Context, cfg *config.Config, store *memory.S
 	// developer or generated tool must not be able to take a shipped tool's name
 	// and silently replace first-party behavior.
 	host.LoadShipped(ctx, pluginCollides(mgr))
-	
-	// Load user tools into a temporary host, then merge with shipped tools.
-	// This preserves shipped tools while still allowing user tools to be loaded.
-	// We use a temporary host to collect user tools without affecting the main host yet.
-	tempHost, err := toolvm.Open(ctx, toolvm.Config{
-		UserDir:  cfg.Tools.UserDir,
-		Grants:   toolGrants(cfg),
-		Timeout:  timeout,
-		Timeouts: timeouts,
-		MemoryMB: cfg.Tools.MemoryMB,
-		TouchGenerated: touchGenerated(store),
-		StateStore: newToolStateStore(store),
-	})
-	if err != nil {
-		slog.Error("sandboxed tools disabled: cannot open temporary wasm host for user tools", "err", err)
-		return nil
-	}
-	tempHost.SetShippedWorkspace(toolvm.ShippedWorkspace{Host: cfg.Workspace.Root})
-	tempHost.Load(ctx, pluginCollides(mgr))
-	
-	// Merge user tools into main host, but don't overwrite shipped tools.
-	// Shipped tools have priority (first-registered wins).
-	// We use a helper function in the toolvm package to access internal state.
-	toolvm.MergeUserTools(host, tempHost)
-	
+
+	// Then the operator's own directory. Load merges into the registry rather
+	// than replacing it, so the shipped tier above survives this and every later
+	// `nine tools reload`.
+	host.Load(ctx, pluginCollides(mgr))
+
 	// Project the stored catalog into the host, so tools the agent wrote in a
 	// previous run are callable from this one's first turn.
 	LoadGeneratedTools(ctx, store, host, mgr)

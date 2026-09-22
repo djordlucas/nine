@@ -160,9 +160,19 @@ anything across a session except through a capability it was granted.
 | Bound | Mechanism | Default |
 |---|---|---|
 | Wall clock | context deadline + `WithCloseOnContextDone(true)` | 5s (`[tools] timeout`, overridable per tool) |
-| Memory | `WithMemoryLimitPages` | 16 MiB (`[tools] memory_mb`) |
+| Memory | `WithMemoryLimitPages`, per call | 16 MiB (`[tools] memory_mb`) |
+| Concurrency | a host semaphore held across instantiation | 8 calls (`[tools] max_concurrent`) |
 | Output | the dispatcher's existing cap + spill (R-DISP.2) | 2048 tokens |
 | CPU | **none — see below** | — |
+
+The host **MUST** bound simultaneous calls. Memory is capped per call, so without
+a concurrency bound the host's worst case is whatever the turns in flight ask
+for; the two multiply, and `[tools] max_concurrent` is the second factor. A call
+that finds every slot taken **MUST** wait rather than fail, and the wait **MUST**
+be bounded by the caller's context rather than by the tool's own deadline — a
+call that queued for four seconds and then ran under a one-second remainder would
+report a timeout that describes the queue and not the tool. A caller whose
+context ends while queued **MUST** be told it was queueing.
 
 The wall clock **MAY** be overridden for a named tool with `[tool.<name>] timeout`, which
 takes precedence over `[tools] timeout` for that tool alone. It is a resource bound, not a
@@ -182,9 +192,10 @@ spent most of its budget does not get a request bound longer than its remaining 
 
 wazero has **no fuel/gas metering**. The wall-clock deadline is the only CPU bound, and it
 is enforced by closing the module out from under the guest. This is adequate — a spinning
-tool dies at the deadline and the model observes a normal failure — but an operator
-running many concurrent sessions is trusting the deadline, **not** a work budget, and that
-is a stated limitation rather than an assumption.
+tool dies at the deadline and the model observes a normal failure — but an operator is
+trusting a deadline and a concurrency cap, **not** a work budget, and that is a stated
+limitation rather than an assumption. `max_concurrent` bounds how many spinning tools can
+burn a core at once; it does not bound the work any one of them does.
 
 A call that exceeds the deadline **MUST** report a timeout naming the tool, not a generic
 instantiation or trap failure.

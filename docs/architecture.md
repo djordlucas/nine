@@ -674,6 +674,8 @@ tool; instantiation happens once per **call**.
         ├─ ctx deadline = [tools].timeout (default 5s)
         │     wazero has no fuel metering, so this is the ONLY CPU bound
         ├─ linear memory capped at [tools].memory_mb (default 16 MiB, 256 pages)
+        ├─ one of [tools].max_concurrent call slots (default 8) held throughout
+        │     memory_mb x max_concurrent is the host's worst case
         ├─ stdout/stderr → io.Discard, argv denied wholesale (no argv in a call)
         └─ on return: instance closed, TouchGenerated(name) recorded for LRU
 ```

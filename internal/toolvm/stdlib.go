@@ -2,6 +2,7 @@ package toolvm
 
 import (
 	"embed"
+	"strings"
 	"sync"
 )
 
@@ -67,4 +68,106 @@ func stdlibModules() map[string]string {
 		}
 	})
 	return stdlibCache
+}
+
+// reachableStdlib is the subset of the `nine:*` library a given source can name,
+// and it is what a call ships in place of the whole library.
+//
+// The module map crosses the ABI as JSON on every call, so a module the tool
+// never imports is not free: the eight together are 30 KB of text the host
+// marshals and the guest JSON-parses before a line of the tool runs, which
+// measures at about 1 ms of a 7 ms call — paid in full by `time`, which imports
+// none of them. Narrowing the map is the same allowlist minus the entries this
+// source has no way to reach, so no tool loses an import it could have used.
+//
+// The test is whether the specifier appears in the source at all, not whether it
+// appears in an import statement. `await import("nine:csv")` is a legitimate way
+// to reach a module (§4.3 resolves dynamic imports from the same map), and a scan
+// that only understood static imports would break it. Over-inclusion is the safe
+// direction and the only cost is the byte count this is trying to reduce — a
+// mention in a comment ships the module, which is fine.
+//
+// One shape a substring scan cannot see is a specifier the source never spells:
+// `import("nine:" + kind)`. That falls back to the whole library rather than to a
+// resolver failure the author would have no way to read.
+func reachableStdlib(source string) map[string]string {
+	all := stdlibModules()
+	if hasComputedImport(source) {
+		return all
+	}
+
+	out := make(map[string]string, 4)
+	// A worklist rather than one pass: a stdlib module may import another, and a
+	// tool that reaches `nine:a` must get whatever `nine:a` itself imports. None
+	// do today, which is exactly why this is worth writing down — the next one
+	// will not come with a reminder.
+	pending := []string{source}
+	for len(pending) > 0 {
+		src := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		for spec, mod := range all {
+			if _, seen := out[spec]; seen {
+				continue
+			}
+			if strings.Contains(src, spec) {
+				out[spec] = mod
+				pending = append(pending, mod)
+			}
+		}
+	}
+	return out
+}
+
+// hasComputedImport reports whether the source calls import() on anything but a
+// complete string literal. Such a call can name a module this package cannot
+// predict, so its presence turns the narrowing above off for that tool.
+//
+// "Complete" is the whole point, and the reason this is not a one-line check for
+// a leading quote: `import("nine:" + kind)` opens with a quote and is computed
+// all the same, and reading it as a literal ships nothing the tool can use. So
+// the argument counts as literal only if the closing quote is followed by the
+// closing parenthesis — anything else between them is an expression.
+func hasComputedImport(source string) bool {
+	const kw = "import("
+	for i := 0; ; {
+		j := strings.Index(source[i:], kw)
+		if j < 0 {
+			return false
+		}
+		i += j + len(kw)
+		rest := strings.TrimLeft(source[i:], " \t\r\n")
+		if rest == "" {
+			return true
+		}
+		quote := rest[0]
+		if quote != '"' && quote != '\'' && quote != '`' {
+			return true
+		}
+		end := closingQuote(rest[1:], quote)
+		if end < 0 {
+			return true
+		}
+		if tail := strings.TrimLeft(rest[1+end+1:], " \t\r\n"); tail == "" || tail[0] != ')' {
+			return true
+		}
+	}
+}
+
+// closingQuote returns the index in s of the next unescaped quote, or -1. A
+// template literal containing a substitution never reaches its close as far as
+// this is concerned, which is the conservative answer: it is computed.
+func closingQuote(s string, quote byte) int {
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			i++
+		case '$':
+			if quote == '`' && i+1 < len(s) && s[i+1] == '{' {
+				return -1
+			}
+		case quote:
+			return i
+		}
+	}
+	return -1
 }
