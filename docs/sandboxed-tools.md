@@ -297,10 +297,21 @@ The rule is unconditional and survives §4.4 intact, because **external packages
 are resolved at write time and bundled away**. By the time a tool is callable it
 has no imports left at all.
 
-**Bytecode.** The harness and the `nine:*` modules are the same bytes on every
-call, so they are precompiled to QuickJS bytecode once and instantiated from
-that. Under per-call instantiation (§3) this moves parsing off the hot path
-entirely: only the tool's own source is compiled per call.
+**Bytecode.** The harness is precompiled to QuickJS bytecode at build time and
+read back with `JS_ReadObject`, because compiling it *was* the call. Handing the
+guest 32 KB of harness JavaScript inside the envelope — escaped into JSON by the
+host, JSON-parsed by the guest, then compiled — cost 4.8 ms of a 6 ms call, on
+every call, to produce the same program each time. Executing the harness costs
+0.14 ms by comparison. A `time` call went from 7.1 ms to 1.3 ms.
+
+The bytecode does not travel in the envelope: the envelope is JSON and bytecode
+is bytes, so base64 would have cost more than the source it replaced. The host
+writes it into guest memory and names it through a `nine_harness` export the blob
+provides for the purpose.
+
+The `nine:*` modules are **not** precompiled. They are ordinary source, and a
+call ships only the ones its tool can name (§4.2), which is cheaper than
+precompiling all eight would be.
 
 ### 4.4 External dependencies — opt-in, allowlisted, resolved at write time
 
@@ -970,8 +981,10 @@ internal/toolvm/quickjs/
   VERSION            # quickjs-ng v0.16.1 · wasi-sdk-33
   qjs.wasm           # the artifact (~1 MB, committed)
   qjs.wasm.sha256    # recorded hash, verified in CI
-  build.sh           # clone at tag → wasi-sdk → emit qjs.wasm
+  build.sh           # clone at tag → wasi-sdk → emit qjs.wasm + harness.bc
   harness.js         # the run(argsJSON) → JSON wrapper (§4)
+  harness.bc         # harness.js as QuickJS bytecode — this is what ships
+  harness.bc.sha256  # hash of harness.js, so stale bytecode fails a test
   stdlib/            # the curated `nine:*` modules (§4.2), pinned + vendored
 ```
 
@@ -982,6 +995,13 @@ module's exports, so a future bump cannot quietly reintroduce them.
 
 Three properties this has to hold:
 
+- **Editing the harness does not rebuild the blob.** `make harness-bc`
+  recompiles `harness.bc` alone, leaving `qjs.wasm` and its hash untouched, so
+  ordinary harness work is not a binary-artifact review. It uses the same pinned
+  checkout as the blob, because bytecode carries a `BC_VERSION` the interpreter
+  checks — a mismatch fails at the first call rather than subtly. A test compares
+  `harness.bc.sha256` against `harness.js`, so an edit that skips the target is
+  caught rather than shipped.
 - **Not in the default build.** `make quickjs-wasm` is a separate target,
   invoked only on a version bump. The blob is committed, so an ordinary
   `make build` needs no wasi-sdk, no clang, no clone — and critically **the
