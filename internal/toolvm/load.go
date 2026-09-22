@@ -32,8 +32,29 @@ type Collides func(toolName string) (owner string, taken bool)
 // Any single failure is surfaced (logged at ERROR and kept in Status) but never
 // aborts the others, so one bad drop-in cannot take the daemon down.
 func (h *Host) Load(ctx context.Context, collides Collides) {
-	tools := map[string]*Tool{}
+	h.mu.Lock()
+	// Drop the previously-loaded developer set and keep the other two tiers,
+	// exactly as LoadGenerated drops only its own. Replacing the whole registry
+	// instead — which this did until the tiers outnumbered it — makes `nine tools
+	// reload` evict every shipped and generated tool as a side effect of
+	// re-reading a directory they do not live in, and the model loses its file
+	// tools until the daemon restarts.
+	for name, t := range h.tools {
+		if !t.Shipped && !t.Generated {
+			delete(h.tools, name)
+		}
+	}
+	// What survives is what a candidate must not collide with. The namespace rule
+	// is first-registered wins and shipped tools register first, so this is also
+	// what stops a developer tool from taking `read_file` on a reload.
+	existing := make(map[string]*Tool, len(h.tools))
+	for k, v := range h.tools {
+		existing[k] = v
+	}
+	h.mu.Unlock()
+
 	var status []Status
+	loaded := 0
 
 	for _, d := range discoverTools(h.cfg.UserDir) {
 		st := Status{Name: d.Name, ManifestPath: d.ManifestPath}
@@ -51,7 +72,7 @@ func (h *Host) Load(ctx context.Context, collides Collides) {
 		}
 		st.Capabilities = grant.Summary()
 
-		if owner, taken := firstCollision(d.Name, tools, collides); taken {
+		if owner, taken := firstCollision(d.Name, existing, collides); taken {
 			status = append(status, skip(st, fmt.Errorf("tool %q already provided by %q", d.Name, owner), "collision"))
 			continue
 		}
@@ -61,20 +82,24 @@ func (h *Host) Load(ctx context.Context, collides Collides) {
 			continue
 		}
 
-		tools[d.Name] = t
+		h.mu.Lock()
+		h.tools[d.Name] = t
+		h.mu.Unlock()
+		existing[d.Name] = t
+
 		st.Loaded = true
+		loaded++
 		status = append(status, st)
 		slog.Info("sandboxed tool loaded",
 			"name", d.Name, "kind", d.Manifest.Kind, "capabilities", st.Capabilities)
 	}
 
 	h.mu.Lock()
-	h.tools = tools
 	h.status = status
 	h.mu.Unlock()
 
 	slog.Info("seeded sandboxed tools",
-		"dir", h.cfg.UserDir, "loaded", len(tools), "skipped", len(status)-len(tools))
+		"dir", h.cfg.UserDir, "loaded", loaded, "skipped", len(status)-loaded)
 }
 
 // skip records a rejected candidate and logs it. Every rejection is loud: a tool
@@ -93,13 +118,28 @@ func skip(st Status, err error, stage string) Status {
 // first is what settles tool-vs-tool collisions in favor of the first loaded,
 // which combined with the deterministic order makes the outcome reproducible.
 func firstCollision(name string, accepted map[string]*Tool, collides Collides) (string, bool) {
-	if _, ok := accepted[name]; ok {
-		return "another sandboxed tool", true
+	if t, ok := accepted[name]; ok {
+		return tierName(t), true
 	}
 	if collides == nil {
 		return "", false
 	}
 	return collides(name)
+}
+
+// tierName names the tier a registered tool came from, so a collision tells the
+// operator what they are up against. "a shipped tool" says rename yours;
+// "another sandboxed tool" sent them looking for a second file in their own
+// directory, which for a shipped name does not exist.
+func tierName(t *Tool) string {
+	switch {
+	case t.Shipped:
+		return "a shipped tool"
+	case t.Generated:
+		return "a generated tool"
+	default:
+		return "another sandboxed tool"
+	}
 }
 
 // compile turns an accepted candidate into a callable Tool. A `js` tool shares
@@ -170,22 +210,4 @@ func checkABI(mod wazero.CompiledModule) error {
 		}
 	}
 	return nil
-}
-
-// MergeUserTools merges user tools from tempHost into targetHost,
-// but does not overwrite existing tools (shipped tools have priority).
-// This is used by OpenSandboxedTools to preserve shipped tools while
-// still loading user tools.
-func MergeUserTools(targetHost, tempHost *Host) {
-	targetHost.mu.Lock()
-	defer targetHost.mu.Unlock()
-	
-	for _, tool := range tempHost.Tools() {
-		// Only add if the name doesn't already exist (shipped tool takes precedence)
-		if _, exists := targetHost.tools[tool.Name]; !exists {
-			targetHost.tools[tool.Name] = tool
-		}
-	}
-	// Append user tool statuses to target host status
-	targetHost.status = append(targetHost.status, tempHost.Status()...)
 }
