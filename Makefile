@@ -19,7 +19,7 @@ GOFLAGS  := -mod=vendor
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS  := -ldflags "-X main.Version=$(VERSION)"
 
-.PHONY: all dev build openapi openapi-silent test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-generate quickjs-wasm quickjs-verify
+.PHONY: all dev build openapi openapi-check test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-generate quickjs-wasm quickjs-verify
 
 dev: build
 
@@ -32,25 +32,25 @@ all: dev
 
 build:
 	@mkdir -p $(DIST)
-	$(MAKE) openapi-silent
 	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(DIST)/$(BINARY) $(CMD)
 
-# Regenerate the OpenAPI/Swagger spec from handler annotations (docs/api.md).
-# As a build dependency this is a silent no-op if swag is not installed.
-# As a standalone command (make openapi) it fails loudly.
+# Regenerate the API models and server interface from internal/api/openapi.yaml.
+# The document is the source of truth (docs/api.md): a handler that disagrees
+# with it fails to compile. The generator lives in the tools module so its
+# dependencies stay out of nine's own graph and out of vendor/.
 openapi:
-	@command -v swag >/dev/null 2>&1 || { \
-		echo "swag not found — install with: go install github.com/swaggo/swag/cmd/swag@latest"; \
+	go -C tools run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen \
+		-config ../internal/api/oapi-codegen.yaml ../internal/api/openapi.yaml
+
+# Fail if the committed generated code does not match the document. Run in CI:
+# without it the two drift apart silently, which is the failure the spec-first
+# layout exists to prevent.
+openapi-check: openapi
+	@git diff --exit-code -- internal/api/apigen || { \
+		echo ""; \
+		echo "internal/api/apigen is stale — run 'make openapi' and commit the result."; \
 		exit 1; \
 	}
-	swag init -d internal/api -o internal/api/docs -g docs.go --parseDependency --parseInternal
-
-# Silent variant used as a build dependency — falls back to the committed spec
-# if swag is not installed, so CI and developers without the CLI are not blocked.
-openapi-silent:
-	@command -v swag >/dev/null 2>&1 && \
-		swag init -d internal/api -o internal/api/docs -g docs.go --parseDependency --parseInternal -q || \
-		true
 
 FORCE:
 

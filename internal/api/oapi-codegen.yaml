@@ -1,0 +1,20 @@
+# Code generation for the Nine HTTP API (spec/contracts/api.md).
+#
+# openapi.yaml is the source of truth: the models and the server interface are
+# generated from it, so a handler that disagrees with the document fails to
+# compile rather than silently serving a different shape.
+package: apigen
+# Paths are relative to the tools module, which is where the generator runs
+# (see the openapi target in the Makefile).
+output: ../internal/api/apigen/api.gen.go
+generate:
+  models: true
+  std-http-server: true # net/http ServeMux patterns, matching the existing router
+  strict-server: true # typed request/response objects per operation
+# embedded-spec is deliberately off: it pulls kin-openapi in purely to hand back
+# a document the server already has on disk, which openapi.yaml is served from
+# via go:embed. Turning it on is the prerequisite for spec-driven request
+# validation (oapi-codegen/nethttp-middleware), which is worth the dependency
+# only if that validation replaces the hand-written checks in params.go.
+output-options:
+  nullable-type: true

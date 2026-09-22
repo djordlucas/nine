@@ -1,0 +1,1871 @@
+openapi: 3.1.0
+info:
+  title: Nine API
+  version: '1.0'
+  description: 'HTTP/REST API for the Nine AI agent runtime. Provides feature parity with the CLI — conversations,
+    goals, workflows, tools, plugins, skills, and more.
+
+    The API runs as a separate process that communicates with the daemon via Unix socket.'
+  license:
+    name: GPL-3.0-only
+    identifier: GPL-3.0-only
+  contact:
+    name: Nine
+    url: https://github.com/djordlucas/nine
+servers:
+- url: '{scheme}://{host}:{port}/api/v1'
+  description: A running nine API server
+  variables:
+    scheme:
+      enum:
+      - http
+      - https
+      default: http
+    host:
+      default: localhost
+    port:
+      default: '8080'
+paths:
+  /conversations:
+    get:
+      operationId: listConversations
+      summary: List conversations
+      description: Returns all active, idle, and stopped conversations (agent sessions).
+      tags:
+      - conversations
+      parameters:
+      - name: limit
+        in: query
+        description: Maximum items to return
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 50
+      - name: offset
+        in: query
+        description: Items to skip before the page
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListConversationsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+    post:
+      operationId: createConversation
+      summary: Create a conversation
+      description: Creates a new conversation (agent session) with the daemon.
+      tags:
+      - conversations
+      requestBody:
+        description: conversation config
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateConversationRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateConversationResponse'
+        '400':
+          description: invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+  /conversations/{id}:
+    get:
+      operationId: getConversation
+      summary: Get conversation details
+      description: Returns details and context for a specific conversation by ID.
+      tags:
+      - conversations
+      parameters:
+      - name: id
+        in: path
+        description: conversation id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetConversationResponse'
+        '400':
+          description: missing id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+    delete:
+      operationId: deleteConversation
+      summary: Delete a conversation
+      description: Deletes a conversation and all its event journal data.
+      tags:
+      - conversations
+      parameters:
+      - name: id
+        in: path
+        description: conversation id
+        required: true
+        schema:
+          type: string
+      - name: force
+        in: query
+        description: delete even when the conversation is protected
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteConversationResponse'
+        '400':
+          description: missing id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+  /conversations/{id}/context:
+    get:
+      operationId: getConversationContext
+      summary: Get conversation context
+      description: Returns the context builder breakdown for a conversation — token usage, sections, tool
+        ranking.
+      tags:
+      - conversations
+      parameters:
+      - name: id
+        in: path
+        description: conversation id
+        required: true
+        schema:
+          type: string
+      - name: verbose
+        in: query
+        description: include the full per-section breakdown
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetContextResponse'
+        '400':
+          description: missing id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+  /conversations/{id}/history:
+    get:
+      operationId: getConversationHistory
+      summary: Get conversation history
+      description: Returns the ordered message and tool-call history for a conversation.
+      tags:
+      - conversations
+      parameters:
+      - name: id
+        in: path
+        description: conversation id
+        required: true
+        schema:
+          type: string
+      responses:
+        '400':
+          description: missing id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '501':
+          description: not implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+  /conversations/{id}/messages:
+    post:
+      operationId: sendMessage
+      summary: Send a message
+      description: Sends a user message to a conversation and returns the agent's response.
+      tags:
+      - conversations
+      parameters:
+      - name: id
+        in: path
+        description: conversation id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        description: message to send
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendMessageResponse'
+        '400':
+          description: invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+  /conversations/{id}/messages/stream:
+    get:
+      operationId: streamMessages
+      summary: Stream conversation messages
+      description: Opens a Server-Sent Events stream for a conversation, forwarding tool events and response
+        chunks in real time.
+      tags:
+      - conversations
+      parameters:
+      - name: id
+        in: path
+        description: conversation id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: An event stream. Each event carries a JSON payload; the event name selects which
+            member of StreamEvent it is.
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/StreamEvent'
+        '400':
+          description: missing id
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: daemon unavailable
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+  /conversations/{id}/replay:
+    post:
+      operationId: replayTurn
+      summary: Replay a turn
+      description: Replays a specific turn in a conversation, re-running the LLM call and tool invocations.
+      tags:
+      - conversations
+      parameters:
+      - name: id
+        in: path
+        description: conversation id
+        required: true
+        schema:
+          type: string
+      responses:
+        '400':
+          description: missing id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '501':
+          description: not implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+  /conversations/{id}/stop:
+    post:
+      operationId: stopConversation
+      summary: Stop a conversation
+      description: Stops a conversation's session, ending the agent worker but preserving the event journal.
+      tags:
+      - conversations
+      parameters:
+      - name: id
+        in: path
+        description: conversation id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StopConversationResponse'
+        '400':
+          description: missing id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+  /conversations/{id}/trace:
+    get:
+      operationId: getConversationTrace
+      summary: Trace a turn
+      description: Returns the detailed LLM call and tool I/O trace for a specific turn in a conversation.
+      tags:
+      - conversations
+      parameters:
+      - name: id
+        in: path
+        description: conversation id
+        required: true
+        schema:
+          type: string
+      responses:
+        '400':
+          description: missing id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '501':
+          description: not implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+  /docs:
+    get:
+      operationId: listDocs
+      summary: List documentation topics
+      description: Returns a list of available documentation topics.
+      tags:
+      - system
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListDocsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+      - bearerAuth: []
+  /docs/{topic}:
+    get:
+      operationId: getDocs
+      summary: Get documentation
+      description: Returns the markdown content for a specific documentation topic.
+      tags:
+      - system
+      parameters:
+      - name: topic
+        in: path
+        description: documentation topic
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetDocsResponse'
+        '400':
+          description: missing topic
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: topic not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+      - bearerAuth: []
+  /goals:
+    get:
+      operationId: listGoals
+      summary: List goals
+      description: Returns all goals (active, completed, failed, paused) across all sessions.
+      tags:
+      - goals
+      parameters:
+      - name: limit
+        in: query
+        description: Maximum items to return
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 50
+      - name: offset
+        in: query
+        description: Items to skip before the page
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListGoalsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+    post:
+      operationId: createGoal
+      summary: Create a goal
+      description: Creates a new background goal that spawns a session waking periodically to make progress.
+      tags:
+      - goals
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '501':
+          description: not implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+  /goals/{id}:
+    get:
+      operationId: getGoal
+      summary: Get goal details
+      description: Returns details for a specific goal by ID, including progress and event count.
+      tags:
+      - goals
+      parameters:
+      - name: id
+        in: path
+        description: goal id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetGoalResponse'
+        '400':
+          description: missing id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: goal not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+    delete:
+      operationId: deleteGoal
+      summary: Delete a goal
+      description: Deletes a goal and stops its background session.
+      tags:
+      - goals
+      parameters:
+      - name: id
+        in: path
+        description: goal id
+        required: true
+        schema:
+          type: string
+      responses:
+        '400':
+          description: missing id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '501':
+          description: not implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+  /health:
+    get:
+      operationId: getHealth
+      summary: Check API health
+      description: Returns the API server health status, including daemon connectivity and uptime.
+      tags:
+      - health
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+      security: []
+  /notifications:
+    get:
+      operationId: listNotifications
+      summary: List notifications
+      description: Returns user notifications, optionally including already-seen ones.
+      tags:
+      - notifications
+      parameters:
+      - name: all
+        in: query
+        description: include notifications already marked seen
+        schema:
+          type: boolean
+      - name: limit
+        in: query
+        description: Maximum items to return
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 50
+      - name: offset
+        in: query
+        description: Items to skip before the page
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListNotificationsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+  /plugins:
+    get:
+      operationId: listPlugins
+      summary: List plugins
+      description: Returns all plugins (builtin and user), their loaded status, tools, and errors.
+      tags:
+      - plugins
+      parameters:
+      - name: limit
+        in: query
+        description: Maximum items to return
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 50
+      - name: offset
+        in: query
+        description: Items to skip before the page
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListPluginsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+  /plugins/reload:
+    post:
+      operationId: reloadPlugins
+      summary: Reload plugins
+      description: Reloads user plugins from the filesystem, returning the new loaded set.
+      tags:
+      - plugins
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReloadPluginsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+  /sessions/attach:
+    post:
+      operationId: attachSession
+      summary: Attach to a session
+      description: Attaches to an existing conversation session, returning replay events, history, and
+        any pending response.
+      tags:
+      - sessions
+      requestBody:
+        description: session to attach to
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttachSessionRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachSessionResponse'
+        '400':
+          description: invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+  /skills:
+    get:
+      operationId: listSkills
+      summary: List skills
+      description: Returns all available skills (builtin, user, and generated) with names, descriptions,
+        and tags.
+      tags:
+      - skills
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '501':
+          description: not implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+  /spec:
+    get:
+      operationId: listSpec
+      summary: List specification topics
+      description: Returns a list of available specification topics.
+      tags:
+      - system
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListSpecResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+      - bearerAuth: []
+  /spec/{topic}:
+    get:
+      operationId: getSpec
+      summary: Get specification
+      description: Returns the markdown content for a specific specification topic.
+      tags:
+      - system
+      parameters:
+      - name: topic
+        in: path
+        description: specification topic
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetSpecResponse'
+        '400':
+          description: missing topic
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: topic not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security:
+      - bearerAuth: []
+  /status:
+    get:
+      operationId: getStatus
+      summary: Get daemon status
+      description: Returns the daemon's current status, including sessions, plugins, tools, and memory
+        stats.
+      tags:
+      - health
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+  /tools:
+    get:
+      operationId: listTools
+      summary: List tools
+      description: Returns all available tools (plugins, sandboxed, and generated).
+      tags:
+      - tools
+      parameters:
+      - name: limit
+        in: query
+        description: Maximum items to return
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 50
+      - name: offset
+        in: query
+        description: Items to skip before the page
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListToolsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+  /tools/reload:
+    post:
+      operationId: reloadTools
+      summary: Reload tools
+      description: Reloads sandboxed and generated tools from the filesystem.
+      tags:
+      - tools
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReloadToolsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+  /tools/{name}:
+    get:
+      operationId: getTool
+      summary: Get tool details
+      description: Returns details for a specific tool by name, including input schema and capabilities.
+      tags:
+      - tools
+      parameters:
+      - name: name
+        in: path
+        description: tool name
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetToolResponse'
+        '400':
+          description: missing name
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: tool not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+  /tools/{name}/call:
+    post:
+      operationId: callTool
+      summary: Call a tool
+      description: Invokes a tool by name with the given arguments, bypassing the agent loop.
+      tags:
+      - tools
+      parameters:
+      - name: name
+        in: path
+        description: tool name
+        required: true
+        schema:
+          type: string
+      requestBody:
+        description: tool call arguments
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CallToolRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CallToolResponse'
+        '400':
+          description: invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: tool not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+  /workflows:
+    get:
+      operationId: listWorkflows
+      summary: List workflows
+      description: Returns all workflows (running, completed, failed, cancelled) across all sessions.
+      tags:
+      - workflows
+      parameters:
+      - name: limit
+        in: query
+        description: Maximum items to return
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 50
+      - name: offset
+        in: query
+        description: Items to skip before the page
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListWorkflowsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+  /workflows/{id}/fail:
+    post:
+      operationId: failWorkflow
+      summary: Fail a workflow
+      description: Marks a workflow as failed by ID.
+      tags:
+      - workflows
+      parameters:
+      - name: id
+        in: path
+        description: workflow id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FailWorkflowResponse'
+        '400':
+          description: missing id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: workflow not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+  /workflows/{id}/stop:
+    post:
+      operationId: stopWorkflow
+      summary: Stop a workflow
+      description: Cancels a running workflow by ID.
+      tags:
+      - workflows
+      parameters:
+      - name: id
+        in: path
+        description: workflow id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StopWorkflowResponse'
+        '400':
+          description: missing id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: workflow not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+components:
+  schemas:
+    AttachSessionRequest:
+      type: object
+      properties:
+        agent_id:
+          type: string
+    AttachSessionResponse:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        history:
+          type: array
+          items: {}
+        instance_name:
+          type: string
+        name:
+          type: string
+        pending_response:
+          type: string
+        replay_events:
+          type: array
+          items: {}
+        role:
+          type: string
+    CallToolRequest:
+      type: object
+      properties:
+        args: {}
+        live_state:
+          type: boolean
+    CallToolResponse:
+      type: object
+      properties:
+        duration_ms:
+          type: integer
+        output:
+          type: string
+        success:
+          type: boolean
+        tool_name:
+          type: string
+    ConversationInfo:
+      type: object
+      properties:
+        age_seconds:
+          type: integer
+        attached:
+          type: boolean
+        created_at:
+          type: string
+        events_count:
+          type: integer
+        id:
+          type: string
+        name:
+          type: string
+        plan_mode:
+          type: string
+        protected:
+          type: boolean
+        role:
+          type: string
+        status:
+          type: string
+        updated_at:
+          type: string
+    CreateConversationRequest:
+      type: object
+      properties:
+        interactive:
+          type: boolean
+    CreateConversationResponse:
+      type: object
+      properties:
+        created_at:
+          type: string
+        id:
+          type: string
+        instance_name:
+          type: string
+        role:
+          type: string
+    DeleteConversationResponse:
+      type: object
+      properties:
+        deleted_events:
+          type: integer
+        id:
+          type: string
+        message:
+          type: string
+    ErrorDetails:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Stable, machine-readable error code
+          enum:
+          - invalid_request
+          - unauthorized
+          - forbidden
+          - not_found
+          - conflict
+          - timeout
+          - too_many_requests
+          - server_error
+          - not_implemented
+          - service_unavailable
+        details:
+          type: object
+          additionalProperties: {}
+        message:
+          type: string
+      required:
+      - code
+      - message
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetails'
+      required:
+      - error
+    FailWorkflowResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        message:
+          type: string
+        status:
+          type: string
+    GetContextResponse:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        context: {}
+    GetConversationResponse:
+      type: object
+      properties:
+        context:
+          type: object
+          additionalProperties: {}
+        created_at:
+          type: string
+        events_count:
+          type: integer
+        id:
+          type: string
+        name:
+          type: string
+        plan_mode:
+          type: string
+        protected:
+          type: boolean
+        role:
+          type: string
+        status:
+          type: string
+        updated_at:
+          type: string
+    GetDocsResponse:
+      type: object
+      properties:
+        content:
+          type: string
+        topic:
+          type: string
+    GetGoalResponse:
+      type: object
+      properties:
+        created_at:
+          type: string
+        description:
+          type: string
+        id:
+          type: string
+        parent_id:
+          type: string
+        parent_type:
+          type: string
+        status:
+          type: string
+        subtree:
+          type: array
+          items:
+            type: string
+        updated_at:
+          type: string
+    GetSpecResponse:
+      type: object
+      properties:
+        content:
+          type: string
+        topic:
+          type: string
+    GetToolResponse:
+      type: object
+      properties:
+        capabilities:
+          type: array
+          items:
+            type: string
+        description:
+          type: string
+        generated:
+          type: boolean
+        input_schema: {}
+        kind:
+          type: string
+        loaded:
+          type: boolean
+        manifest_path:
+          type: string
+        name:
+          type: string
+        plugin:
+          type: string
+    GoalInfo:
+      type: object
+      properties:
+        created_at:
+          type: string
+        description:
+          type: string
+        id:
+          type: string
+        parent_id:
+          type: string
+        parent_type:
+          type: string
+        status:
+          type: string
+        subtree:
+          type: array
+          items:
+            type: string
+        updated_at:
+          type: string
+    HealthResponse:
+      type: object
+      properties:
+        daemon_connected:
+          type: boolean
+        status:
+          type: string
+        uptime_seconds:
+          type: integer
+        version:
+          type: string
+    ListConversationsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationInfo'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    ListDocsResponse:
+      type: object
+      properties:
+        topics:
+          type: array
+          items:
+            type: string
+    ListGoalsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/GoalInfo'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    ListNotificationsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    ListPluginsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PluginInfo'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    ListSpecResponse:
+      type: object
+      properties:
+        topics:
+          type: array
+          items:
+            type: string
+    ListToolsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolInfo'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    ListWorkflowsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowInfo'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    MemoryStats:
+      type: object
+      properties:
+        events_count:
+          type: integer
+        memories_count:
+          type: integer
+        workflows_count:
+          type: integer
+    Notification:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        created_at:
+          type: string
+        id:
+          type: string
+        message:
+          type: string
+        seen:
+          type: boolean
+    Pagination:
+      type: object
+      properties:
+        has_more:
+          type: boolean
+        limit:
+          type: integer
+        offset:
+          type: integer
+        total:
+          type: integer
+      required:
+      - limit
+      - offset
+      - total
+      - has_more
+    PluginInfo:
+      type: object
+      properties:
+        disabled:
+          type: boolean
+        error:
+          type: string
+        loaded:
+          type: boolean
+        name:
+          type: string
+        source:
+          description: builtin, user
+          type: string
+        tools:
+          type: array
+          items:
+            type: string
+    ReloadPluginsResponse:
+      type: object
+      properties:
+        failed_count:
+          type: integer
+        loaded_count:
+          type: integer
+        message:
+          type: string
+        plugins:
+          type: array
+          items:
+            $ref: '#/components/schemas/PluginInfo'
+    ReloadToolsResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        tools:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolInfo'
+    SendMessageRequest:
+      type: object
+      properties:
+        force_think:
+          type: boolean
+        text:
+          type: string
+    SendMessageResponse:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        completed_at:
+          type: string
+        text:
+          type: string
+        turn_id:
+          type: string
+    StatusResponse:
+      type: object
+      properties:
+        active_sessions:
+          type: integer
+        config:
+          type: object
+          additionalProperties: true
+        memory:
+          $ref: '#/components/schemas/MemoryStats'
+        plugins:
+          type: array
+          items:
+            $ref: '#/components/schemas/PluginInfo'
+        status:
+          type: string
+        tools:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolInfo'
+        uptime:
+          type: string
+        version:
+          type: string
+    StopConversationResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        message:
+          type: string
+        status:
+          type: string
+    StopWorkflowResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        message:
+          type: string
+        status:
+          type: string
+    StreamConnected:
+      type: object
+      required:
+      - message
+      - agent_id
+      properties:
+        message:
+          type: string
+        agent_id:
+          type: string
+    StreamDone:
+      type: object
+      required:
+      - agent_id
+      - timestamp
+      properties:
+        agent_id:
+          type: string
+        timestamp:
+          type: integer
+          format: int64
+    StreamEvent:
+      description: One server-sent event. The SSE event name (connected, tool_start, tool_end, response_chunk,
+        done, error) selects the member.
+      oneOf:
+      - $ref: '#/components/schemas/StreamConnected'
+      - $ref: '#/components/schemas/StreamToolStart'
+      - $ref: '#/components/schemas/StreamToolEnd'
+      - $ref: '#/components/schemas/StreamResponseChunk'
+      - $ref: '#/components/schemas/StreamDone'
+      - $ref: '#/components/schemas/ErrorResponse'
+    StreamResponseChunk:
+      type: object
+      required:
+      - text
+      - timestamp
+      properties:
+        text:
+          type: string
+        timestamp:
+          type: integer
+          format: int64
+    StreamToolEnd:
+      type: object
+      required:
+      - tool_name
+      - timestamp
+      properties:
+        tool_name:
+          type: string
+        tool_output:
+          type: string
+        timestamp:
+          type: integer
+          format: int64
+    StreamToolStart:
+      type: object
+      required:
+      - tool_name
+      - timestamp
+      properties:
+        tool_name:
+          type: string
+        tool_input:
+          description: Tool arguments, shaped by the tool's own schema
+        timestamp:
+          type: integer
+          format: int64
+    ToolInfo:
+      type: object
+      properties:
+        capabilities:
+          type: array
+          items:
+            type: string
+        description:
+          type: string
+        error:
+          type: string
+        generated:
+          type: boolean
+        input_schema: {}
+        kind:
+          description: plugin, sandboxed, generated
+          type: string
+        loaded:
+          type: boolean
+        manifest_path:
+          type: string
+        name:
+          type: string
+        plugin:
+          type: string
+    WorkflowInfo:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        completed_steps:
+          type: integer
+        created_at:
+          type: string
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          description: active, done, failed, cancelled
+          type: string
+        steps:
+          type: integer
+        updated_at:
+          type: string
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content: &id001
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds until a retry may succeed
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          schema:
+            type: integer
+      content: *id001
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Bearer token authentication. Required only when the server is configured with an auth_token;
+        the API is open otherwise.
+security:
+- bearerAuth: []

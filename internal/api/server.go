@@ -17,9 +17,6 @@ import (
 	"syscall"
 	"time"
 
-	httpSwagger "github.com/swaggo/http-swagger/v2"
-
-	"nine/internal/api/docs"
 	"nine/internal/config"
 	"nine/internal/protocol"
 )
@@ -325,14 +322,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Streaming endpoints (SSE)
 	mux.HandleFunc("GET /api/v1/conversations/{id}/messages/stream", s.handleStreamMessages)
 
-	// Swagger UI and OpenAPI spec
-	mux.HandleFunc("/api/v1/swagger/", httpSwagger.Handler(
-		httpSwagger.URL("/api/v1/swagger/doc.json"),
-	))
-	mux.HandleFunc("/api/v1/swagger/doc.json", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(docs.SwaggerInfo.ReadDoc())) //nolint:errcheck
-	})
+	// The OpenAPI document and a browser for it
+	s.registerSpecRoutes(mux)
 }
 
 // getDaemonClient returns a connected client to the daemon.
