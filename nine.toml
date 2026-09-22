@@ -193,6 +193,8 @@ root = "./dist"
 # timeout   = "5s"     # the only CPU bound there is; wazero has no fuel metering
 #                      # override for one tool with [tool.<name>] timeout below
 # memory_mb = 16
+# max_concurrent = 8   # how many calls run at once; memory_mb is per call, so
+#                      # the two multiply into the host's worst-case memory
 
 # Capability grants, per named tool. A tool's manifest DECLARES what it needs;
 # only this GRANTS. The two must name the same capabilities or the tool fails to

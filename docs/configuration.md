@@ -463,6 +463,14 @@ timeout = "5s"
 # Per-call linear memory cap. Default 16.
 memory_mb = 16
 
+# How many tool calls run at once, across every tool and conversation. Default 8.
+#
+# The other half of memory_mb: that is what one call may hold, this is how many
+# may hold it, and 8 x 16 MiB is the host's 128 MiB worst case. A call arriving
+# with every slot taken waits; the wait is charged to the turn, not to the call's
+# own deadline. job_workers below bounds the sweeper's share the same way.
+max_concurrent = 8
+
 # Long-running tools: bounds on a tool that runs as a background job.
 #
 # A tool whose manifest says `resumable = true` may end a call by asking to be
