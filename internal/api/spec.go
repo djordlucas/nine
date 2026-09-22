@@ -63,6 +63,16 @@ func (s *Server) registerSpecRoutes(mux *http.ServeMux) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(specBrowser) //nolint:errcheck
 	})
+
+	// Anything else under the API prefix. ServeMux would otherwise answer with
+	// its plain-text default, which a client parsing this API's error envelope
+	// cannot decode — every other failure it can see is JSON. The pattern is
+	// the least specific under the prefix, so every registered route still
+	// wins over it.
+	mux.HandleFunc(apiBasePath+"/", func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, http.StatusNotFound, "not_found", "no such endpoint",
+			map[string]any{"path": r.URL.Path})
+	})
 }
 
 // specBrowser renders the document with Scalar, which reads OpenAPI 3.1.

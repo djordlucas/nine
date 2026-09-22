@@ -52,10 +52,11 @@ func notImplementedBody(detail string) apigen.ErrorResponse {
 
 // page turns the generated optional limit/offset into validated bounds.
 //
-// The generated router parses the types, so a non-integer never reaches here.
-// Range checking is still ours: enforcing it in the document instead would mean
-// running the spec-driven validation middleware, which the codegen config
-// explains is not wired up.
+// The generated router parses the types and the request validator enforces the
+// range the document declares, so neither a non-integer nor an out-of-range
+// value normally reaches here. These checks stay as the backstop that makes
+// validate.go's fail-open safe: if the embedded document could not be loaded,
+// validation is skipped and this is what still holds the bound.
 func page(limit, offset *int) (pageParams, error) {
 	p := pageParams{Limit: DefaultPageLimit}
 
