@@ -19,7 +19,7 @@ GOFLAGS  := -mod=vendor
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS  := -ldflags "-X main.Version=$(VERSION)"
 
-.PHONY: all dev build openapi openapi-check test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-generate quickjs-wasm quickjs-verify
+.PHONY: all dev build openapi openapi-check openapi-lint test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-generate quickjs-wasm quickjs-verify
 
 dev: build
 
@@ -41,6 +41,14 @@ build:
 openapi:
 	go -C tools run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen \
 		-config ../internal/api/oapi-codegen.yaml ../internal/api/openapi.yaml
+
+# Lint the OpenAPI document. Gates on warnings, not just errors: the document
+# currently has none, and a new schema without a description or an operation
+# without a declared tag should be caught while it is still being written.
+# internal/api/.vacuum.yaml records which rules this API contradicts on purpose.
+openapi-lint:
+	go -C tools run github.com/daveshanley/vacuum lint \
+		--fail-severity warn -r ../internal/api/.vacuum.yaml ../internal/api/openapi.yaml
 
 # Fail if the committed generated code does not match the document. Run in CI:
 # without it the two drift apart silently, which is the failure the spec-first

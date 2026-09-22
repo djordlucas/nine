@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"slices"
 	"os/signal"
 	"strings"
 	"sync"
@@ -28,9 +29,11 @@ type Server struct {
 	socketPath string
 	connMu     sync.Mutex
 
-	// rateLimiters maps client IPs to their rate limiters
-	rateLimiters  map[string]*rateLimiter
-	rateMu        sync.Mutex
+	// rateLimiters maps client IPs to their rate limiters, swept by
+	// limiterFor so it does not grow one entry per client forever.
+	rateLimiters map[string]*rateLimiter
+	lastSweep    time.Time
+	rateMu       sync.Mutex
 
 	// trustedProxies is config.APIConfig.TrustedProxies parsed once at
 	// construction. Empty means forwarding headers are never believed.
@@ -96,6 +99,83 @@ func (rl *rateLimiter) resetSeconds() int {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	return 60
+}
+
+// idleSince reports when this limiter last saw a request.
+func (rl *rateLimiter) idleSince() time.Time {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	return rl.lastUpdate
+}
+
+// Bounds on the per-client limiter map.
+const (
+	// rateLimiterTTL is how long an idle limiter is kept. Tokens refill fully
+	// within one minute, so past that a kept limiter and a fresh one behave
+	// identically — which is what makes eviction lossless rather than a way of
+	// handing someone a clean budget early.
+	rateLimiterTTL = 2 * time.Minute
+
+	// maxRateLimiters caps the map. Without a cap it grows one entry per
+	// distinct client address forever: a slow leak in normal use, and the
+	// memory cost of a wide client base.
+	maxRateLimiters = 10000
+
+	// rateLimiterSweepEvery is how often the sweep runs at most, so a busy
+	// server does not walk the map on every request.
+	rateLimiterSweepEvery = 30 * time.Second
+)
+
+// sweepRateLimiters drops limiters idle beyond the TTL, and if the map is still
+// over the cap, the most idle of what remains. Callers must hold rateMu.
+//
+// Eviction is safe for the same reason in both cases: a limiter whose tokens
+// have fully refilled carries no state a fresh one would not.
+func (s *Server) sweepRateLimiters(now time.Time) {
+	for ip, limiter := range s.rateLimiters {
+		if now.Sub(limiter.idleSince()) > rateLimiterTTL {
+			delete(s.rateLimiters, ip)
+		}
+	}
+
+	if len(s.rateLimiters) <= maxRateLimiters {
+		return
+	}
+
+	// Still over the cap: evict most-idle first until it fits.
+	type entry struct {
+		ip   string
+		idle time.Time
+	}
+	entries := make([]entry, 0, len(s.rateLimiters))
+	for ip, limiter := range s.rateLimiters {
+		entries = append(entries, entry{ip: ip, idle: limiter.idleSince()})
+	}
+	slices.SortFunc(entries, func(a, b entry) int { return a.idle.Compare(b.idle) })
+
+	for i := 0; i < len(entries) && len(s.rateLimiters) > maxRateLimiters; i++ {
+		delete(s.rateLimiters, entries[i].ip)
+	}
+}
+
+// limiterFor returns the limiter for ip, creating it if needed, and sweeps the
+// map on the way when enough time has passed.
+func (s *Server) limiterFor(ip string) *rateLimiter {
+	s.rateMu.Lock()
+	defer s.rateMu.Unlock()
+
+	now := time.Now()
+	if now.Sub(s.lastSweep) >= rateLimiterSweepEvery {
+		s.sweepRateLimiters(now)
+		s.lastSweep = now
+	}
+
+	limiter, ok := s.rateLimiters[ip]
+	if !ok {
+		limiter = newRateLimiter(s.config.RequestsPerMinute(), s.config.BurstSize())
+		s.rateLimiters[ip] = limiter
+	}
+	return limiter
 }
 
 // responseWriter wraps http.ResponseWriter to capture the status code.
