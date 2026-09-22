@@ -2,8 +2,12 @@ package api
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"nine/internal/config"
 )
 
 // =============================================================================
@@ -101,5 +105,65 @@ func TestValidation_DoesNotCoverTheDocumentRoutes(t *testing.T) {
 func TestValidation_DoesNotEnforceOptionalAuth(t *testing.T) {
 	if w := do(t, "GET", "/api/v1/docs", nil); w.Code != http.StatusOK {
 		t.Fatalf("Expected 200 with no token on a server with auth off, got %d", w.Code)
+	}
+}
+
+// Authentication must still be enforced with the validator in the chain.
+//
+// GHSA-r277-6w6q-xmqw is about a validator whose authenticator always
+// succeeds, which makes a document's security requirements unenforced. This
+// asserts the property that advisory is about: with a token configured, an
+// unauthenticated request never reaches a handler, and the validator does not
+// change that.
+func TestValidation_AuthIsStillEnforcedWhenConfigured(t *testing.T) {
+	const token = "correct-horse-battery-staple"
+
+	handler := NewServer(Config{
+		APIConfig: config.APIConfig{AuthToken: token},
+		Version:   "test",
+		StartTime: time.Now(),
+	}).createHandler()
+
+	call := func(header string) int {
+		req := httptest.NewRequest("GET", "/api/v1/conversations", nil)
+		if header != "" {
+			req.Header.Set("Authorization", header)
+		}
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	if code := call(""); code != http.StatusUnauthorized {
+		t.Errorf("Expected 401 with no token, got %d", code)
+	}
+	if code := call("Bearer wrong"); code != http.StatusUnauthorized {
+		t.Errorf("Expected 401 with a wrong token, got %d", code)
+	}
+	// With the right token the request gets past auth and validation and
+	// reaches the daemon, which is not running here.
+	if code := call("Bearer " + token); code != http.StatusServiceUnavailable {
+		t.Errorf("Expected 503 with the right token, got %d", code)
+	}
+}
+
+// A secured endpoint must not be reachable unauthenticated even though the
+// validator's copy of the document carries no security requirements.
+func TestValidation_StrippedSecurityDoesNotOpenEndpoints(t *testing.T) {
+	handler := NewServer(Config{
+		APIConfig: config.APIConfig{AuthToken: "secret"},
+		Version:   "test",
+		StartTime: time.Now(),
+	}).createHandler()
+
+	// /docs needs no daemon, so without auth it would answer 200 if the
+	// stripped requirements had made it public.
+	req := httptest.NewRequest("GET", "/api/v1/docs", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("Expected 401 for an unauthenticated request, got %d (body: %s)",
+			w.Code, w.Body.String())
 	}
 }

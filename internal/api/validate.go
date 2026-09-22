@@ -7,7 +7,6 @@ import (
 	"net/http"
 
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/getkin/kin-openapi/openapi3filter"
 	nethttpmiddleware "github.com/oapi-codegen/nethttp-middleware"
 
 	"nine/internal/api/apigen"
@@ -41,17 +40,31 @@ func requestValidator() (apigen.MiddlewareFunc, error) {
 	// base path lets the router strip the prefix and find the operation.
 	swagger.Servers = openapi3.Servers{{URL: apiBasePath}}
 
+	// Strip the security requirements from this copy of the document.
+	//
+	// Authentication is authMiddleware's job and runs strictly before this:
+	// the middleware chain wraps the mux, and the validator is a middleware
+	// inside it. Only the middleware knows whether a token is configured,
+	// since nine's bearer auth is optional while the document declares
+	// operations secured unconditionally.
+	//
+	// Removing the requirements is what says that. The alternative — leaving
+	// them and supplying openapi3filter.NoopAuthenticationFunc — is the exact
+	// shape GHSA-r277-6w6q-xmqw describes: an authenticator that always
+	// succeeds, where a reader cannot tell a deliberate carve-out from a
+	// forgotten one, and where moving this middleware outside authMiddleware
+	// would silently become a bypass. With no requirements there is no
+	// authenticator to stub and nothing to fail open.
+	swagger.Security = nil
+	for _, item := range swagger.Paths.Map() {
+		for _, op := range item.Operations() {
+			op.Security = nil
+		}
+	}
+
 	return nethttpmiddleware.OapiRequestValidatorWithOptions(swagger,
 		&nethttpmiddleware.Options{
 			SilenceServersWarning: true,
-			Options: openapi3filter.Options{
-				// Authentication is authMiddleware's job, and only it knows
-				// whether a token is configured — nine's bearer auth is
-				// optional, while the document declares operations secured
-				// unconditionally. Left to the validator, every request would
-				// be rejected as unauthenticated on a server with auth off.
-				AuthenticationFunc: openapi3filter.NoopAuthenticationFunc,
-			},
 			ErrorHandlerWithOpts: func(
 				ctx context.Context,
 				err error,
