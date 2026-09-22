@@ -455,10 +455,23 @@ enabled = false
 # with no manifest beside it is never loaded. Unset loads nothing.
 user_dir = "/etc/nine/tools.d"
 
-# Per-call wall clock. This is the ONLY CPU bound the host has — wazero offers no
-# fuel metering — so a spinning tool is killed at the deadline rather than by a
-# work budget. Default 5s.
+# Per-call wall clock. Default 5s.
 timeout = "5s"
+
+# Per-call work budget for a `js` tool, in operations. Default 50,000,000;
+# a negative value turns it off.
+#
+# This bounds what a call DOES, where timeout bounds how long it takes — a
+# deadline is a property of the machine, a budget is a property of the tool. It
+# is enforced by an uncatchable interrupt, so a tool cannot try/catch past it.
+#
+# Calibrated well above real work: every shipped tool finishes under 10,000
+# operations, parsing 20,000 CSV rows costs 1.7M, and a one-million-pass loop
+# costs 2.0M. A runaway tool meets 50M in well under a second.
+#
+# A `wasm` tool is NOT metered by this — the budget is QuickJS's interrupt
+# handler and a raw module has no interpreter to interrupt.
+max_ops = 50000000
 
 # Per-call linear memory cap. Default 16.
 memory_mb = 16
@@ -555,9 +568,10 @@ job_workers      = 4         # 0 uses 4
 #   [tool.untrusted]
 #   timeout = "1s"         # and this one should have less
 #
-# Worth having because the deadline is the only CPU bound the host has: a single
-# global value has to accommodate the slowest tool, which then hands that same
-# budget to a tool with an infinite loop. An outbound HTTP request is bounded at
+# Worth having because a single global value has to accommodate the slowest tool,
+# which then hands that same allowance to a tool that is merely stuck.
+# [tool.<name>] max_ops overrides the work budget the same way, for the same
+# reason. An outbound HTTP request is bounded at
 # four fifths of the time the call has left, so raising the deadline raises that
 # with it. `nine tools show <name>` prints the override when one is set.
 

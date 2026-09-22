@@ -99,6 +99,18 @@ type ToolsConfig struct {
 	// (16 MiB).
 	MemoryMB int `toml:"memory_mb"`
 
+	// MaxOps is the per-call work budget for a `js` tool, in operations. 0 uses
+	// toolvm.DefaultMaxOps (50,000,000); a negative value turns the budget off,
+	// leaving the wall clock as the only bound.
+	//
+	// It bounds what a call *does*, where timeout bounds how long it takes. The
+	// difference is that a deadline is a property of the machine — the same tool
+	// passes on an idle host and fails on a loaded one — while a work budget is a
+	// property of the tool. A `wasm` tool is not metered by it: the budget is
+	// QuickJS's interrupt handler, and a raw module has no interpreter to
+	// interrupt.
+	MaxOps int `toml:"max_ops"`
+
 	// MaxConcurrent bounds how many sandboxed tool calls run at once, across
 	// every tool and every conversation. 0 uses toolvm.DefaultMaxConcurrent (8).
 	//
@@ -331,13 +343,20 @@ type ToolEntry struct {
 	//
 	// It exists because one slow tool otherwise sets the deadline for every tool:
 	// raising the global bound to accommodate a tool that legitimately takes
-	// twenty seconds also hands twenty seconds to a tool with an infinite loop,
-	// and the deadline is the only CPU bound the host has. Naming the tool keeps
-	// the exception where it belongs.
+	// twenty seconds also hands twenty seconds to a tool that is merely stuck.
+	// Naming the tool keeps the exception where it belongs.
 	//
 	// It is a resource bound rather than a capability, which is why it sits here
 	// and not under [capabilities] (spec/contracts/toolvm.md R-TVM.4).
 	Timeout string `toml:"timeout"`
+
+	// MaxOps overrides `[tools] max_ops` for this one tool. 0 inherits it; a
+	// negative value turns the budget off for this tool alone.
+	//
+	// Same argument as Timeout above, applied to work rather than time: a tool
+	// that legitimately grinds should not have to raise the budget for every
+	// other tool to get its own.
+	MaxOps int `toml:"max_ops"`
 }
 
 // ToolCapabilities is the grant side of the capability model. Every field

@@ -56,6 +56,8 @@ func OpenSandboxedTools(ctx context.Context, cfg *config.Config, store *memory.S
 		Timeouts:      timeouts,
 		MemoryMB:      cfg.Tools.MemoryMB,
 		MaxConcurrent: cfg.Tools.MaxConcurrent,
+		MaxOps:        cfg.Tools.MaxOps,
+		MaxOpsPerTool: toolMaxOps(cfg),
 		// Usage bookkeeping for LRU eviction (§9.2). Best-effort and after the
 		// fact: a touch failure must not fail the tool call the model is waiting on.
 		TouchGenerated: touchGenerated(store),
@@ -249,6 +251,23 @@ func toolGrants(cfg *config.Config) map[string]toolvm.Grant {
 			HTTP:    httpGrant(caps.Net.HTTP),
 			State:   stateGrant(caps.State),
 		}
+	}
+	return out
+}
+
+// toolMaxOps collects the per-tool `[tool.<name>] max_ops` overrides. Unlike a
+// timeout there is nothing to parse and nothing to reject, so a bad value is not
+// a thing that exists here: 0 is "inherit" and negative is "off".
+func toolMaxOps(cfg *config.Config) map[string]int {
+	var out map[string]int
+	for name, entry := range cfg.Tool {
+		if entry.MaxOps == 0 {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]int, len(cfg.Tool))
+		}
+		out[name] = entry.MaxOps
 	}
 	return out
 }

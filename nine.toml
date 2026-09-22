@@ -190,8 +190,12 @@ root = "./dist"
 # [tools]
 # enabled   = true
 # user_dir  = "./tools.d"
-# timeout   = "5s"     # the only CPU bound there is; wazero has no fuel metering
-#                      # override for one tool with [tool.<name>] timeout below
+# timeout   = "5s"     # per-call wall clock; override for one tool with
+#                      # [tool.<name>] timeout below
+# max_ops   = 50000000 # per-call work budget for a `js` tool, in operations —
+#                      # what a call DOES, where timeout is how long it takes.
+#                      # Uncatchable, so a tool cannot try/catch past it. A
+#                      # `wasm` tool is not metered: no interpreter to interrupt.
 # memory_mb = 16
 # max_concurrent = 8   # how many calls run at once; memory_mb is per call, so
 #                      # the two multiply into the host's worst-case memory
