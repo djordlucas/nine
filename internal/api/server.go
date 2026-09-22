@@ -11,15 +11,14 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"slices"
 	"os/signal"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	httpSwagger "github.com/swaggo/http-swagger/v2"
-
-	"nine/internal/api/docs"
+	"nine/internal/api/apigen"
 	"nine/internal/config"
 	"nine/internal/protocol"
 )
@@ -30,9 +29,11 @@ type Server struct {
 	socketPath string
 	connMu     sync.Mutex
 
-	// rateLimiters maps client IPs to their rate limiters
-	rateLimiters  map[string]*rateLimiter
-	rateMu        sync.Mutex
+	// rateLimiters maps client IPs to their rate limiters, swept by
+	// limiterFor so it does not grow one entry per client forever.
+	rateLimiters map[string]*rateLimiter
+	lastSweep    time.Time
+	rateMu       sync.Mutex
 
 	// trustedProxies is config.APIConfig.TrustedProxies parsed once at
 	// construction. Empty means forwarding headers are never believed.
@@ -98,6 +99,83 @@ func (rl *rateLimiter) resetSeconds() int {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	return 60
+}
+
+// idleSince reports when this limiter last saw a request.
+func (rl *rateLimiter) idleSince() time.Time {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	return rl.lastUpdate
+}
+
+// Bounds on the per-client limiter map.
+const (
+	// rateLimiterTTL is how long an idle limiter is kept. Tokens refill fully
+	// within one minute, so past that a kept limiter and a fresh one behave
+	// identically — which is what makes eviction lossless rather than a way of
+	// handing someone a clean budget early.
+	rateLimiterTTL = 2 * time.Minute
+
+	// maxRateLimiters caps the map. Without a cap it grows one entry per
+	// distinct client address forever: a slow leak in normal use, and the
+	// memory cost of a wide client base.
+	maxRateLimiters = 10000
+
+	// rateLimiterSweepEvery is how often the sweep runs at most, so a busy
+	// server does not walk the map on every request.
+	rateLimiterSweepEvery = 30 * time.Second
+)
+
+// sweepRateLimiters drops limiters idle beyond the TTL, and if the map is still
+// over the cap, the most idle of what remains. Callers must hold rateMu.
+//
+// Eviction is safe for the same reason in both cases: a limiter whose tokens
+// have fully refilled carries no state a fresh one would not.
+func (s *Server) sweepRateLimiters(now time.Time) {
+	for ip, limiter := range s.rateLimiters {
+		if now.Sub(limiter.idleSince()) > rateLimiterTTL {
+			delete(s.rateLimiters, ip)
+		}
+	}
+
+	if len(s.rateLimiters) <= maxRateLimiters {
+		return
+	}
+
+	// Still over the cap: evict most-idle first until it fits.
+	type entry struct {
+		ip   string
+		idle time.Time
+	}
+	entries := make([]entry, 0, len(s.rateLimiters))
+	for ip, limiter := range s.rateLimiters {
+		entries = append(entries, entry{ip: ip, idle: limiter.idleSince()})
+	}
+	slices.SortFunc(entries, func(a, b entry) int { return a.idle.Compare(b.idle) })
+
+	for i := 0; i < len(entries) && len(s.rateLimiters) > maxRateLimiters; i++ {
+		delete(s.rateLimiters, entries[i].ip)
+	}
+}
+
+// limiterFor returns the limiter for ip, creating it if needed, and sweeps the
+// map on the way when enough time has passed.
+func (s *Server) limiterFor(ip string) *rateLimiter {
+	s.rateMu.Lock()
+	defer s.rateMu.Unlock()
+
+	now := time.Now()
+	if now.Sub(s.lastSweep) >= rateLimiterSweepEvery {
+		s.sweepRateLimiters(now)
+		s.lastSweep = now
+	}
+
+	limiter, ok := s.rateLimiters[ip]
+	if !ok {
+		limiter = newRateLimiter(s.config.RequestsPerMinute(), s.config.BurstSize())
+		s.rateLimiters[ip] = limiter
+	}
+	return limiter
 }
 
 // responseWriter wraps http.ResponseWriter to capture the status code.
@@ -268,71 +346,29 @@ func (s *Server) createHandler() http.Handler {
 	return handler
 }
 
-// registerRoutes registers all API routes.
+// apiBasePath prefixes every operation the document declares. The generated
+// router and the request validator both need it, and they must agree.
+const apiBasePath = "/api/v1"
+
+// registerRoutes mounts the generated router plus the document routes.
+//
+// Every operation is routed from internal/api/openapi.yaml: apigen derives the
+// patterns and the parameter binding from the document, so a route cannot drift
+// from it by hand. Only the OpenAPI document itself is registered separately,
+// since it is not an operation the document describes.
 func (s *Server) registerRoutes(mux *http.ServeMux) {
-	// Health and status
-	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
-	mux.HandleFunc("GET /api/v1/status", s.handleStatus)
-
-	// Conversations (sessions)
-	mux.HandleFunc("POST /api/v1/conversations", s.handleCreateConversation)
-	mux.HandleFunc("GET /api/v1/conversations", s.handleListConversations)
-	mux.HandleFunc("GET /api/v1/conversations/{id}", s.handleGetConversation)
-	mux.HandleFunc("POST /api/v1/conversations/{id}/messages", s.handleSendMessage)
-	mux.HandleFunc("GET /api/v1/conversations/{id}/context", s.handleGetContext)
-	mux.HandleFunc("GET /api/v1/conversations/{id}/history", s.handleGetHistory)
-	mux.HandleFunc("GET /api/v1/conversations/{id}/trace", s.handleGetTrace)
-	mux.HandleFunc("POST /api/v1/conversations/{id}/replay", s.handleReplay)
-	mux.HandleFunc("DELETE /api/v1/conversations/{id}", s.handleDeleteConversation)
-	mux.HandleFunc("POST /api/v1/conversations/{id}/stop", s.handleStopConversation)
-
-	// Goals
-	mux.HandleFunc("GET /api/v1/goals", s.handleListGoals)
-	mux.HandleFunc("POST /api/v1/goals", s.handleCreateGoal)
-	mux.HandleFunc("GET /api/v1/goals/{id}", s.handleGetGoal)
-	mux.HandleFunc("DELETE /api/v1/goals/{id}", s.handleDeleteGoal)
-
-	// Workflows
-	mux.HandleFunc("GET /api/v1/workflows", s.handleListWorkflows)
-	mux.HandleFunc("POST /api/v1/workflows/{id}/stop", s.handleStopWorkflow)
-	mux.HandleFunc("POST /api/v1/workflows/{id}/fail", s.handleFailWorkflow)
-
-	// Tools
-	mux.HandleFunc("GET /api/v1/tools", s.handleListTools)
-	mux.HandleFunc("GET /api/v1/tools/{name}", s.handleGetTool)
-	mux.HandleFunc("POST /api/v1/tools/{name}/call", s.handleCallTool)
-	mux.HandleFunc("POST /api/v1/tools/reload", s.handleReloadTools)
-
-	// Plugins
-	mux.HandleFunc("GET /api/v1/plugins", s.handleListPlugins)
-	mux.HandleFunc("POST /api/v1/plugins/reload", s.handleReloadPlugins)
-
-	// Notifications
-	mux.HandleFunc("GET /api/v1/notifications", s.handleListNotifications)
-
-	// Skills
-	mux.HandleFunc("GET /api/v1/skills", s.handleListSkills)
-
-	// Sessions
-	mux.HandleFunc("POST /api/v1/sessions/attach", s.handleAttachSession)
-
-	// System
-	mux.HandleFunc("GET /api/v1/docs", s.handleListDocs)
-	mux.HandleFunc("GET /api/v1/docs/{topic}", s.handleGetDocs)
-	mux.HandleFunc("GET /api/v1/spec", s.handleListSpec)
-	mux.HandleFunc("GET /api/v1/spec/{topic}", s.handleGetSpec)
-
-	// Streaming endpoints (SSE)
-	mux.HandleFunc("GET /api/v1/conversations/{id}/messages/stream", s.handleStreamMessages)
-
-	// Swagger UI and OpenAPI spec
-	mux.HandleFunc("/api/v1/swagger/", httpSwagger.Handler(
-		httpSwagger.URL("/api/v1/swagger/doc.json"),
-	))
-	mux.HandleFunc("/api/v1/swagger/doc.json", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(docs.SwaggerInfo.ReadDoc())) //nolint:errcheck
+	apigen.HandlerWithOptions(apigen.NewStrictHandler(s, nil), apigen.StdHTTPServerOptions{
+		BaseURL:    apiBasePath,
+		BaseRouter: mux,
+		// Validation is scoped to the generated routes, so the routes that
+		// serve the document are not checked against it.
+		Middlewares: s.validationMiddleware(),
+		// Without this a binding failure returns net/http's plain-text
+		// default, which a client parsing our error envelope cannot decode.
+		ErrorHandlerFunc: requestBindingError,
 	})
+
+	s.registerSpecRoutes(mux)
 }
 
 // getDaemonClient returns a connected client to the daemon.
@@ -350,26 +386,11 @@ func (s *Server) getDaemonClient() (*protocol.Client, error) {
 	return cl, nil
 }
 
-// writeJSON writes a JSON response.
-func writeJSON(w http.ResponseWriter, statusCode int, data any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	if data != nil {
-		json.NewEncoder(w).Encode(data)
-	}
-}
-
 // writeError writes an error response.
 func writeError(w http.ResponseWriter, statusCode int, code, message string, details map[string]any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(ErrorResponse{
-		Error: ErrorDetails{
-			Code:    code,
-			Message: message,
-			Details: details,
-		},
-	})
+	json.NewEncoder(w).Encode(errorBody(code, message, details)) //nolint:errcheck
 }
 
 // clientIP returns the address rate limiting is keyed on.

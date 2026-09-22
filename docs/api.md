@@ -36,34 +36,64 @@ nine api stop      # stop the API server
 
 ---
 
-## OpenAPI / Swagger spec
+## OpenAPI document
 
-The API spec is generated at build time from swag annotations on the handler functions in `internal/api/handlers.go`. The generated files live in `internal/api/docs/` and are committed to the repo:
+`internal/api/openapi.yaml` is an OpenAPI 3.1 document and the source of truth
+for this API. `internal/api/apigen/` — the request/response models and the
+server interface — is generated from it, so a handler that disagrees with the
+document fails to compile rather than silently serving a different shape.
 
-| File | Content |
-|------|---------|
-| `internal/api/docs/swagger.json` | OpenAPI 2.0 JSON spec |
-| `internal/api/docs/swagger.yaml` | OpenAPI 2.0 YAML spec |
-| `internal/api/docs/docs.go` | Generated Go code that registers the spec at runtime |
+This inverts the previous arrangement, where the document was generated from
+swag annotations on the handlers and could only ever describe whatever the code
+already did.
 
-### Regenerating the spec
-
-After adding or changing handler annotations:
+### Regenerating
 
 ```bash
-swag init -d internal/api -o internal/api/docs -g docs.go --parseDependency --parseInternal
+make openapi        # regenerate internal/api/apigen from openapi.yaml
+make openapi-check  # fail if the committed output is stale (runs in CI)
+make openapi-lint   # lint the document, failing on warnings (runs in CI)
 ```
 
-The annotations are Go comments directly above each handler function — `@Summary`, `@Description`, `@Tags`, `@Param`, `@Success`, `@Failure`, `@Router`. Package-level metadata (title, version, base path, security scheme) is in `internal/api/docs.go`.
+`internal/api/.vacuum.yaml` holds the lint ruleset, including the rules this API
+contradicts on purpose — snake_case properties, operations that return only
+`501`, and the fields that are deliberately arbitrary JSON.
 
-### Accessing the spec at runtime
+The generator lives in `tools/`, its own Go module, so its dependencies stay
+out of nine's graph and out of `vendor/`.
+
+### Request validation
+
+Incoming requests are validated against the document before a handler runs
+(`internal/api/validate.go`): required body fields, declared types, and the page
+bounds `limit` and `offset` carry. A failure is a `400` in the standard error
+shape.
+
+Two things stay outside it:
+
+- **Authentication.** nine's bearer token is optional and the document declares
+  operations secured unconditionally, so auth is left to the middleware, which
+  knows whether a token is configured.
+- **The document routes.** `/api/v1/openapi*` are not operations the document
+  declares, so validation is scoped to the generated routes.
+
+If the embedded document cannot be loaded, validation is skipped and logged
+rather than refusing to start — it is parsed by the generator at build time, so
+that cannot happen in a built binary, and the handlers' own checks still run.
+
+### Reading it at runtime
 
 | URL | What |
 |-----|------|
-| `http://localhost:8080/api/v1/swagger/` | Swagger UI — interactive browser for all endpoints |
-| `http://localhost:8080/api/v1/swagger/doc.json` | Raw OpenAPI JSON |
+| `http://localhost:8080/api/v1/openapi.yaml` | The document, as committed |
+| `http://localhost:8080/api/v1/openapi.json` | The same document as JSON |
+| `http://localhost:8080/api/v1/openapi/` | Browsable reference (Scalar) |
 
-The Swagger UI lets you browse all 29 endpoints, see their request/response schemas, and execute requests directly from the browser.
+The document is embedded in the binary, so the two file routes need no network.
+The browser page loads its renderer from a CDN and does.
+
+The path is `/api/v1/openapi` rather than `/api/v1/docs`, which is already the
+documentation-topic endpoint.
 
 ---
 
@@ -200,6 +230,79 @@ client.
 
 ---
 
+## Endpoints that return 501
+
+Six endpoints are declared but not backed by the daemon. Each returns `501
+not_implemented` with a `details.detail` naming what is missing:
+
+| Endpoint | Missing |
+|----------|---------|
+| `GET /conversations/{id}/history` | no journal query on the wire protocol |
+| `GET /conversations/{id}/trace` | no per-turn trace on the wire protocol |
+| `POST /conversations/{id}/replay` | no replay message on the wire protocol |
+| `POST /goals` | `goal_create` is role-gated; an HTTP caller has no role |
+| `DELETE /goals/{id}` | no goal deletion exists to call |
+| `GET /skills` | no skills query on the wire protocol |
+
+They previously returned `200` with invented data — an empty list, an echo of
+the request, or a fabricated id for a goal that was never created. Use the CLI
+for these until the wire protocol carries them: `nine trace`, `nine replay` and
+`nine skills` read the memory store directly, which the API process must not do
+(spec API-A-1).
+
+---
+
+## Pagination
+
+List endpoints take `limit` and `offset` in the query string and return a
+`pagination` block alongside `data`:
+
+```bash
+curl 'http://localhost:8080/api/v1/conversations?limit=10&offset=20'
+```
+
+```json
+{
+  "data": [ ... ],
+  "pagination": { "limit": 10, "offset": 20, "total": 57, "has_more": true }
+}
+```
+
+| Parameter | Default | Constraint |
+|-----------|---------|------------|
+| `limit` | 50 | 1–1000 |
+| `offset` | 0 | ≥ 0 |
+
+A malformed or out-of-range value is a `400 invalid_request`, not a silent
+fallback to the default. An `offset` past the end returns an empty page.
+
+Paging is offset based; there is no cursor. The daemon returns a full result
+set per call, so a cursor would only re-encode the offset.
+
+---
+
+## Query parameters, not request bodies
+
+Four operations take arguments in the query string. They previously took a JSON
+body on `GET`/`DELETE`, which OpenAPI 3.x leaves undefined — generated clients
+drop it and Swagger UI will not send it.
+
+| Operation | Parameters |
+|-----------|------------|
+| `GET /conversations/{id}/context` | `verbose` |
+| `GET /conversations/{id}/trace` | `turn`, `sub_agents` |
+| `GET /notifications` | `all`, `limit`, `offset` |
+| `DELETE /conversations/{id}` | `force` |
+
+```bash
+curl 'http://localhost:8080/api/v1/conversations/abc/trace?turn=3&sub_agents=true'
+curl -X DELETE 'http://localhost:8080/api/v1/conversations/abc?force=true'
+```
+
+A body sent to these operations is ignored.
+
+---
+
 ## Error format
 
 All errors follow a consistent shape:
@@ -214,7 +317,7 @@ All errors follow a consistent shape:
 }
 ```
 
-Standard error codes: `invalid_request` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404), `conflict` (409), `timeout` (408), `too_many_requests` (429), `server_error` (500), `service_unavailable` (503).
+Standard error codes: `invalid_request` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404), `conflict` (409), `timeout` (408), `too_many_requests` (429), `server_error` (500), `not_implemented` (501), `service_unavailable` (503).
 
 ---
 

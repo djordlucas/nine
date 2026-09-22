@@ -24,11 +24,6 @@ DAEMON=""
 
 build() {
 	echo "[dev] building nine…"
-	# Regenerate the OpenAPI spec from handler annotations before compiling.
-	# swag is installed in the dev image (Dockerfile go-build stage); -mod=mod
-	# is needed because swag parses the module graph and vendor mode blocks it.
-	GOFLAGS=-mod=mod swag init -d /nine-src/internal/api -o /nine-src/internal/api/docs -g docs.go --parseDependency --parseInternal -q 2>/dev/null || \
-		echo "[dev] warning: swag init failed, using committed spec"
 	go build -o /usr/local/bin/nine ./cmd/nine || return 1
 	echo "[dev] build ok"
 }

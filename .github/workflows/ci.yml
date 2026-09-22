@@ -24,10 +24,25 @@ jobs:
         with:
           go-version: "1.26"
           cache: true
-          cache-dependency-path: go.sum
+          # Both modules. The tools module builds the code generator and the
+          # OpenAPI linter, whose trees are disjoint from nine's own — vacuum
+          # alone is ~490 packages. Keyed on go.sum only, none of that is
+          # cached and every run recompiles it from source.
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
 
       - name: Build
         run: make build
+
+      # The generated API code must match internal/api/openapi.yaml. Without
+      # this the document and the server drift apart silently, which is the
+      # failure the spec-first layout exists to prevent.
+      - name: OpenAPI drift
+        run: make openapi-check
+
+      - name: OpenAPI lint
+        run: make openapi-lint
 
       # tests/evals/runner spins up a real in-process daemon per test and
       # deadlocks intermittently under CI load (the agent worker hangs on a
