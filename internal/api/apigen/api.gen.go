@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/oapi-codegen/runtime"
 )
@@ -61,7 +62,7 @@ func (e ErrorDetailsCode) Valid() bool {
 
 // AttachSessionRequest defines model for AttachSessionRequest.
 type AttachSessionRequest struct {
-	AgentId *string `json:"agent_id,omitempty"`
+	AgentId string `json:"agent_id"`
 }
 
 // AttachSessionResponse defines model for AttachSessionResponse.
@@ -91,17 +92,17 @@ type CallToolResponse struct {
 
 // ConversationInfo defines model for ConversationInfo.
 type ConversationInfo struct {
-	AgeSeconds  *int    `json:"age_seconds,omitempty"`
-	Attached    *bool   `json:"attached,omitempty"`
-	CreatedAt   *string `json:"created_at,omitempty"`
-	EventsCount *int    `json:"events_count,omitempty"`
-	Id          *string `json:"id,omitempty"`
-	Name        *string `json:"name,omitempty"`
-	PlanMode    *string `json:"plan_mode,omitempty"`
-	Protected   *bool   `json:"protected,omitempty"`
-	Role        *string `json:"role,omitempty"`
-	Status      *string `json:"status,omitempty"`
-	UpdatedAt   *string `json:"updated_at,omitempty"`
+	AgeSeconds  *int       `json:"age_seconds,omitempty"`
+	Attached    *bool      `json:"attached,omitempty"`
+	CreatedAt   *time.Time `json:"created_at,omitempty"`
+	EventsCount *int       `json:"events_count,omitempty"`
+	Id          *string    `json:"id,omitempty"`
+	Name        *string    `json:"name,omitempty"`
+	PlanMode    *string    `json:"plan_mode,omitempty"`
+	Protected   *bool      `json:"protected,omitempty"`
+	Role        *string    `json:"role,omitempty"`
+	Status      *string    `json:"status,omitempty"`
+	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
 }
 
 // CreateConversationRequest defines model for CreateConversationRequest.
@@ -111,10 +112,10 @@ type CreateConversationRequest struct {
 
 // CreateConversationResponse defines model for CreateConversationResponse.
 type CreateConversationResponse struct {
-	CreatedAt    *string `json:"created_at,omitempty"`
-	Id           *string `json:"id,omitempty"`
-	InstanceName *string `json:"instance_name,omitempty"`
-	Role         *string `json:"role,omitempty"`
+	CreatedAt    *time.Time `json:"created_at,omitempty"`
+	Id           string     `json:"id"`
+	InstanceName *string    `json:"instance_name,omitempty"`
+	Role         *string    `json:"role,omitempty"`
 }
 
 // DeleteConversationResponse defines model for DeleteConversationResponse.
@@ -156,7 +157,7 @@ type GetContextResponse struct {
 // GetConversationResponse defines model for GetConversationResponse.
 type GetConversationResponse struct {
 	Context     *map[string]interface{} `json:"context,omitempty"`
-	CreatedAt   *string                 `json:"created_at,omitempty"`
+	CreatedAt   *time.Time              `json:"created_at,omitempty"`
 	EventsCount *int                    `json:"events_count,omitempty"`
 	Id          *string                 `json:"id,omitempty"`
 	Name        *string                 `json:"name,omitempty"`
@@ -164,31 +165,31 @@ type GetConversationResponse struct {
 	Protected   *bool                   `json:"protected,omitempty"`
 	Role        *string                 `json:"role,omitempty"`
 	Status      *string                 `json:"status,omitempty"`
-	UpdatedAt   *string                 `json:"updated_at,omitempty"`
+	UpdatedAt   *time.Time              `json:"updated_at,omitempty"`
 }
 
 // GetDocsResponse defines model for GetDocsResponse.
 type GetDocsResponse struct {
-	Content *string `json:"content,omitempty"`
-	Topic   *string `json:"topic,omitempty"`
+	Content string `json:"content"`
+	Topic   string `json:"topic"`
 }
 
 // GetGoalResponse defines model for GetGoalResponse.
 type GetGoalResponse struct {
-	CreatedAt   *string   `json:"created_at,omitempty"`
-	Description *string   `json:"description,omitempty"`
-	Id          *string   `json:"id,omitempty"`
-	ParentId    *string   `json:"parent_id,omitempty"`
-	ParentType  *string   `json:"parent_type,omitempty"`
-	Status      *string   `json:"status,omitempty"`
-	Subtree     *[]string `json:"subtree,omitempty"`
-	UpdatedAt   *string   `json:"updated_at,omitempty"`
+	CreatedAt   *time.Time `json:"created_at,omitempty"`
+	Description *string    `json:"description,omitempty"`
+	Id          *string    `json:"id,omitempty"`
+	ParentId    *string    `json:"parent_id,omitempty"`
+	ParentType  *string    `json:"parent_type,omitempty"`
+	Status      *string    `json:"status,omitempty"`
+	Subtree     *[]string  `json:"subtree,omitempty"`
+	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
 }
 
 // GetSpecResponse defines model for GetSpecResponse.
 type GetSpecResponse struct {
-	Content *string `json:"content,omitempty"`
-	Topic   *string `json:"topic,omitempty"`
+	Content string `json:"content"`
+	Topic   string `json:"topic"`
 }
 
 // GetToolResponse defines model for GetToolResponse.
@@ -206,22 +207,22 @@ type GetToolResponse struct {
 
 // GoalInfo defines model for GoalInfo.
 type GoalInfo struct {
-	CreatedAt   *string   `json:"created_at,omitempty"`
-	Description *string   `json:"description,omitempty"`
-	Id          *string   `json:"id,omitempty"`
-	ParentId    *string   `json:"parent_id,omitempty"`
-	ParentType  *string   `json:"parent_type,omitempty"`
-	Status      *string   `json:"status,omitempty"`
-	Subtree     *[]string `json:"subtree,omitempty"`
-	UpdatedAt   *string   `json:"updated_at,omitempty"`
+	CreatedAt   *time.Time `json:"created_at,omitempty"`
+	Description *string    `json:"description,omitempty"`
+	Id          *string    `json:"id,omitempty"`
+	ParentId    *string    `json:"parent_id,omitempty"`
+	ParentType  *string    `json:"parent_type,omitempty"`
+	Status      *string    `json:"status,omitempty"`
+	Subtree     *[]string  `json:"subtree,omitempty"`
+	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
 }
 
 // HealthResponse defines model for HealthResponse.
 type HealthResponse struct {
-	DaemonConnected *bool   `json:"daemon_connected,omitempty"`
-	Status          *string `json:"status,omitempty"`
-	UptimeSeconds   *int    `json:"uptime_seconds,omitempty"`
-	Version         *string `json:"version,omitempty"`
+	DaemonConnected bool   `json:"daemon_connected"`
+	Status          string `json:"status"`
+	UptimeSeconds   *int   `json:"uptime_seconds,omitempty"`
+	Version         string `json:"version"`
 }
 
 // ListConversationsResponse defines model for ListConversationsResponse.
@@ -232,7 +233,7 @@ type ListConversationsResponse struct {
 
 // ListDocsResponse defines model for ListDocsResponse.
 type ListDocsResponse struct {
-	Topics *[]string `json:"topics,omitempty"`
+	Topics []string `json:"topics"`
 }
 
 // ListGoalsResponse defines model for ListGoalsResponse.
@@ -255,7 +256,7 @@ type ListPluginsResponse struct {
 
 // ListSpecResponse defines model for ListSpecResponse.
 type ListSpecResponse struct {
-	Topics *[]string `json:"topics,omitempty"`
+	Topics []string `json:"topics"`
 }
 
 // ListToolsResponse defines model for ListToolsResponse.
@@ -279,11 +280,11 @@ type MemoryStats struct {
 
 // Notification defines model for Notification.
 type Notification struct {
-	AgentId   *string `json:"agent_id,omitempty"`
-	CreatedAt *string `json:"created_at,omitempty"`
-	Id        *string `json:"id,omitempty"`
-	Message   *string `json:"message,omitempty"`
-	Seen      *bool   `json:"seen,omitempty"`
+	AgentId   *string    `json:"agent_id,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	Id        *string    `json:"id,omitempty"`
+	Message   *string    `json:"message,omitempty"`
+	Seen      *bool      `json:"seen,omitempty"`
 }
 
 // Pagination defines model for Pagination.
@@ -322,16 +323,16 @@ type ReloadToolsResponse struct {
 
 // SendMessageRequest defines model for SendMessageRequest.
 type SendMessageRequest struct {
-	ForceThink *bool   `json:"force_think,omitempty"`
-	Text       *string `json:"text,omitempty"`
+	ForceThink *bool  `json:"force_think,omitempty"`
+	Text       string `json:"text"`
 }
 
 // SendMessageResponse defines model for SendMessageResponse.
 type SendMessageResponse struct {
-	AgentId     *string `json:"agent_id,omitempty"`
-	CompletedAt *string `json:"completed_at,omitempty"`
-	Text        *string `json:"text,omitempty"`
-	TurnId      *string `json:"turn_id,omitempty"`
+	AgentId     *string    `json:"agent_id,omitempty"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	Text        *string    `json:"text,omitempty"`
+	TurnId      *string    `json:"turn_id,omitempty"`
 }
 
 // StatusResponse defines model for StatusResponse.
@@ -417,16 +418,16 @@ type ToolInfo struct {
 
 // WorkflowInfo defines model for WorkflowInfo.
 type WorkflowInfo struct {
-	AgentId        *string `json:"agent_id,omitempty"`
-	CompletedSteps *int    `json:"completed_steps,omitempty"`
-	CreatedAt      *string `json:"created_at,omitempty"`
-	Id             *string `json:"id,omitempty"`
-	Name           *string `json:"name,omitempty"`
+	AgentId        *string    `json:"agent_id,omitempty"`
+	CompletedSteps *int       `json:"completed_steps,omitempty"`
+	CreatedAt      *time.Time `json:"created_at,omitempty"`
+	Id             *string    `json:"id,omitempty"`
+	Name           *string    `json:"name,omitempty"`
 
 	// Status active, done, failed, cancelled
-	Status    *string `json:"status,omitempty"`
-	Steps     *int    `json:"steps,omitempty"`
-	UpdatedAt *string `json:"updated_at,omitempty"`
+	Status    *string    `json:"status,omitempty"`
+	Steps     *int       `json:"steps,omitempty"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
 }
 
 // TooManyRequests defines model for TooManyRequests.
@@ -1890,6 +1891,20 @@ func (response ListConversations200JSONResponse) VisitListConversationsResponse(
 	return err
 }
 
+type ListConversations400JSONResponse ErrorResponse
+
+func (response ListConversations400JSONResponse) VisitListConversationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListConversations401JSONResponse struct{ UnauthorizedJSONResponse }
 
 func (response ListConversations401JSONResponse) VisitListConversationsResponse(w http.ResponseWriter) error {
@@ -1926,6 +1941,20 @@ func (response ListConversations429JSONResponse) VisitListConversationsResponse(
 		w.Header().Set("X-RateLimit-Reset", fmt.Sprint(*response.Headers.XRateLimitReset))
 	}
 	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListConversations500JSONResponse ErrorResponse
+
+func (response ListConversations500JSONResponse) VisitListConversationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -2016,6 +2045,20 @@ func (response CreateConversation429JSONResponse) VisitCreateConversationRespons
 		w.Header().Set("X-RateLimit-Reset", fmt.Sprint(*response.Headers.XRateLimitReset))
 	}
 	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateConversation500JSONResponse ErrorResponse
+
+func (response CreateConversation500JSONResponse) VisitCreateConversationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -2125,6 +2168,20 @@ func (response DeleteConversation429JSONResponse) VisitDeleteConversationRespons
 	return err
 }
 
+type DeleteConversation500JSONResponse ErrorResponse
+
+func (response DeleteConversation500JSONResponse) VisitDeleteConversationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type DeleteConversation503JSONResponse ErrorResponse
 
 func (response DeleteConversation503JSONResponse) VisitDeleteConversationResponse(w http.ResponseWriter) error {
@@ -2225,6 +2282,20 @@ func (response GetConversation429JSONResponse) VisitGetConversationResponse(w ht
 		w.Header().Set("X-RateLimit-Reset", fmt.Sprint(*response.Headers.XRateLimitReset))
 	}
 	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetConversation500JSONResponse ErrorResponse
+
+func (response GetConversation500JSONResponse) VisitGetConversationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -2334,6 +2405,20 @@ func (response GetConversationContext429JSONResponse) VisitGetConversationContex
 	return err
 }
 
+type GetConversationContext500JSONResponse ErrorResponse
+
+func (response GetConversationContext500JSONResponse) VisitGetConversationContextResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetConversationContext503JSONResponse ErrorResponse
 
 func (response GetConversationContext503JSONResponse) VisitGetConversationContextResponse(w http.ResponseWriter) error {
@@ -2354,20 +2439,6 @@ type GetConversationHistoryRequestObject struct {
 
 type GetConversationHistoryResponseObject interface {
 	VisitGetConversationHistoryResponse(w http.ResponseWriter) error
-}
-
-type GetConversationHistory400JSONResponse ErrorResponse
-
-func (response GetConversationHistory400JSONResponse) VisitGetConversationHistoryResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
 }
 
 type GetConversationHistory401JSONResponse struct{ UnauthorizedJSONResponse }
@@ -2515,6 +2586,20 @@ func (response SendMessage429JSONResponse) VisitSendMessageResponse(w http.Respo
 	return err
 }
 
+type SendMessage500JSONResponse ErrorResponse
+
+func (response SendMessage500JSONResponse) VisitSendMessageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type SendMessage503JSONResponse ErrorResponse
 
 func (response SendMessage503JSONResponse) VisitSendMessageResponse(w http.ResponseWriter) error {
@@ -2580,47 +2665,18 @@ func (response StreamMessages200TexteventStreamResponse) VisitStreamMessagesResp
 	}
 }
 
-type StreamMessages400TexteventStreamResponse struct {
-	Body          io.Reader
-	ContentLength int64
-}
+type StreamMessages400JSONResponse ErrorResponse
 
-func (response StreamMessages400TexteventStreamResponse) VisitStreamMessagesResponse(w http.ResponseWriter) error {
+func (response StreamMessages400JSONResponse) VisitStreamMessagesResponse(w http.ResponseWriter) error {
 
-	w.Header().Set("Content-Type", "text/event-stream")
-	if response.ContentLength != 0 {
-		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
-	}
-	w.WriteHeader(400)
-
-	if closer, ok := response.Body.(io.ReadCloser); ok {
-		defer closer.Close()
-	}
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		// If w doesn't support flushing, fall back to io.Copy.
-		_, err := io.Copy(w, response.Body)
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
-	// text/event-stream messages are typically small; use a
-	// modest buffer and flush after each chunk so clients see
-	// events immediately instead of waiting on OS buffering.
-	buf := make([]byte, 4096)
-	for {
-		n, err := response.Body.Read(buf)
-		if n > 0 {
-			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
-				return writeErr
-			}
-			flusher.Flush()
-		}
-		if err != nil {
-			if err == io.EOF {
-				return nil
-			}
-			return err
-		}
-	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
 }
 
 type StreamMessages401JSONResponse struct{ UnauthorizedJSONResponse }
@@ -2663,47 +2719,18 @@ func (response StreamMessages429JSONResponse) VisitStreamMessagesResponse(w http
 	return err
 }
 
-type StreamMessages503TexteventStreamResponse struct {
-	Body          io.Reader
-	ContentLength int64
-}
+type StreamMessages503JSONResponse ErrorResponse
 
-func (response StreamMessages503TexteventStreamResponse) VisitStreamMessagesResponse(w http.ResponseWriter) error {
+func (response StreamMessages503JSONResponse) VisitStreamMessagesResponse(w http.ResponseWriter) error {
 
-	w.Header().Set("Content-Type", "text/event-stream")
-	if response.ContentLength != 0 {
-		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
-	}
-	w.WriteHeader(503)
-
-	if closer, ok := response.Body.(io.ReadCloser); ok {
-		defer closer.Close()
-	}
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		// If w doesn't support flushing, fall back to io.Copy.
-		_, err := io.Copy(w, response.Body)
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
-	// text/event-stream messages are typically small; use a
-	// modest buffer and flush after each chunk so clients see
-	// events immediately instead of waiting on OS buffering.
-	buf := make([]byte, 4096)
-	for {
-		n, err := response.Body.Read(buf)
-		if n > 0 {
-			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
-				return writeErr
-			}
-			flusher.Flush()
-		}
-		if err != nil {
-			if err == io.EOF {
-				return nil
-			}
-			return err
-		}
-	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
 }
 
 type ReplayTurnRequestObject struct {
@@ -2712,20 +2739,6 @@ type ReplayTurnRequestObject struct {
 
 type ReplayTurnResponseObject interface {
 	VisitReplayTurnResponse(w http.ResponseWriter) error
-}
-
-type ReplayTurn400JSONResponse ErrorResponse
-
-func (response ReplayTurn400JSONResponse) VisitReplayTurnResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
 }
 
 type ReplayTurn401JSONResponse struct{ UnauthorizedJSONResponse }
@@ -2872,6 +2885,20 @@ func (response StopConversation429JSONResponse) VisitStopConversationResponse(w 
 	return err
 }
 
+type StopConversation500JSONResponse ErrorResponse
+
+func (response StopConversation500JSONResponse) VisitStopConversationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type StopConversation503JSONResponse ErrorResponse
 
 func (response StopConversation503JSONResponse) VisitStopConversationResponse(w http.ResponseWriter) error {
@@ -2892,20 +2919,6 @@ type GetConversationTraceRequestObject struct {
 
 type GetConversationTraceResponseObject interface {
 	VisitGetConversationTraceResponse(w http.ResponseWriter) error
-}
-
-type GetConversationTrace400JSONResponse ErrorResponse
-
-func (response GetConversationTrace400JSONResponse) VisitGetConversationTraceResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
 }
 
 type GetConversationTrace401JSONResponse struct{ UnauthorizedJSONResponse }
@@ -3023,6 +3036,20 @@ func (response ListDocs429JSONResponse) VisitListDocsResponse(w http.ResponseWri
 	return err
 }
 
+type ListDocs500JSONResponse ErrorResponse
+
+func (response ListDocs500JSONResponse) VisitListDocsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetDocsRequestObject struct {
 	Topic string `json:"topic"`
 }
@@ -3135,6 +3162,20 @@ func (response ListGoals200JSONResponse) VisitListGoalsResponse(w http.ResponseW
 	return err
 }
 
+type ListGoals400JSONResponse ErrorResponse
+
+func (response ListGoals400JSONResponse) VisitListGoalsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListGoals401JSONResponse struct{ UnauthorizedJSONResponse }
 
 func (response ListGoals401JSONResponse) VisitListGoalsResponse(w http.ResponseWriter) error {
@@ -3171,6 +3212,20 @@ func (response ListGoals429JSONResponse) VisitListGoalsResponse(w http.ResponseW
 		w.Header().Set("X-RateLimit-Reset", fmt.Sprint(*response.Headers.XRateLimitReset))
 	}
 	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListGoals500JSONResponse ErrorResponse
+
+func (response ListGoals500JSONResponse) VisitListGoalsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3256,20 +3311,6 @@ type DeleteGoalRequestObject struct {
 
 type DeleteGoalResponseObject interface {
 	VisitDeleteGoalResponse(w http.ResponseWriter) error
-}
-
-type DeleteGoal400JSONResponse ErrorResponse
-
-func (response DeleteGoal400JSONResponse) VisitDeleteGoalResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
 }
 
 type DeleteGoal401JSONResponse struct{ UnauthorizedJSONResponse }
@@ -3416,6 +3457,20 @@ func (response GetGoal429JSONResponse) VisitGetGoalResponse(w http.ResponseWrite
 	return err
 }
 
+type GetGoal500JSONResponse ErrorResponse
+
+func (response GetGoal500JSONResponse) VisitGetGoalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetGoal503JSONResponse ErrorResponse
 
 func (response GetGoal503JSONResponse) VisitGetGoalResponse(w http.ResponseWriter) error {
@@ -3473,6 +3528,20 @@ func (response ListNotifications200JSONResponse) VisitListNotificationsResponse(
 	return err
 }
 
+type ListNotifications400JSONResponse ErrorResponse
+
+func (response ListNotifications400JSONResponse) VisitListNotificationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListNotifications401JSONResponse struct{ UnauthorizedJSONResponse }
 
 func (response ListNotifications401JSONResponse) VisitListNotificationsResponse(w http.ResponseWriter) error {
@@ -3513,6 +3582,20 @@ func (response ListNotifications429JSONResponse) VisitListNotificationsResponse(
 	return err
 }
 
+type ListNotifications500JSONResponse ErrorResponse
+
+func (response ListNotifications500JSONResponse) VisitListNotificationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListNotifications503JSONResponse ErrorResponse
 
 func (response ListNotifications503JSONResponse) VisitListNotificationsResponse(w http.ResponseWriter) error {
@@ -3545,6 +3628,20 @@ func (response ListPlugins200JSONResponse) VisitListPluginsResponse(w http.Respo
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPlugins400JSONResponse ErrorResponse
+
+func (response ListPlugins400JSONResponse) VisitListPluginsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3585,6 +3682,20 @@ func (response ListPlugins429JSONResponse) VisitListPluginsResponse(w http.Respo
 		w.Header().Set("X-RateLimit-Reset", fmt.Sprint(*response.Headers.XRateLimitReset))
 	}
 	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPlugins500JSONResponse ErrorResponse
+
+func (response ListPlugins500JSONResponse) VisitListPluginsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3660,6 +3771,20 @@ func (response ReloadPlugins429JSONResponse) VisitReloadPluginsResponse(w http.R
 		w.Header().Set("X-RateLimit-Reset", fmt.Sprint(*response.Headers.XRateLimitReset))
 	}
 	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReloadPlugins500JSONResponse ErrorResponse
+
+func (response ReloadPlugins500JSONResponse) VisitReloadPluginsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3764,6 +3889,20 @@ func (response AttachSession429JSONResponse) VisitAttachSessionResponse(w http.R
 		w.Header().Set("X-RateLimit-Reset", fmt.Sprint(*response.Headers.XRateLimitReset))
 	}
 	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AttachSession500JSONResponse ErrorResponse
+
+func (response AttachSession500JSONResponse) VisitAttachSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3900,6 +4039,20 @@ func (response ListSpec429JSONResponse) VisitListSpecResponse(w http.ResponseWri
 		w.Header().Set("X-RateLimit-Reset", fmt.Sprint(*response.Headers.XRateLimitReset))
 	}
 	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSpec500JSONResponse ErrorResponse
+
+func (response ListSpec500JSONResponse) VisitListSpecResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4055,6 +4208,20 @@ func (response GetStatus429JSONResponse) VisitGetStatusResponse(w http.ResponseW
 	return err
 }
 
+type GetStatus500JSONResponse ErrorResponse
+
+func (response GetStatus500JSONResponse) VisitGetStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetStatus503JSONResponse ErrorResponse
 
 func (response GetStatus503JSONResponse) VisitGetStatusResponse(w http.ResponseWriter) error {
@@ -4087,6 +4254,20 @@ func (response ListTools200JSONResponse) VisitListToolsResponse(w http.ResponseW
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTools400JSONResponse ErrorResponse
+
+func (response ListTools400JSONResponse) VisitListToolsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4127,6 +4308,20 @@ func (response ListTools429JSONResponse) VisitListToolsResponse(w http.ResponseW
 		w.Header().Set("X-RateLimit-Reset", fmt.Sprint(*response.Headers.XRateLimitReset))
 	}
 	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTools500JSONResponse ErrorResponse
+
+func (response ListTools500JSONResponse) VisitListToolsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4202,6 +4397,20 @@ func (response ReloadTools429JSONResponse) VisitReloadToolsResponse(w http.Respo
 		w.Header().Set("X-RateLimit-Reset", fmt.Sprint(*response.Headers.XRateLimitReset))
 	}
 	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReloadTools500JSONResponse ErrorResponse
+
+func (response ReloadTools500JSONResponse) VisitReloadToolsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4306,6 +4515,20 @@ func (response GetTool429JSONResponse) VisitGetToolResponse(w http.ResponseWrite
 		w.Header().Set("X-RateLimit-Reset", fmt.Sprint(*response.Headers.XRateLimitReset))
 	}
 	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTool500JSONResponse ErrorResponse
+
+func (response GetTool500JSONResponse) VisitGetToolResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4415,6 +4638,20 @@ func (response CallTool429JSONResponse) VisitCallToolResponse(w http.ResponseWri
 	return err
 }
 
+type CallTool500JSONResponse ErrorResponse
+
+func (response CallTool500JSONResponse) VisitCallToolResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CallTool503JSONResponse ErrorResponse
 
 func (response CallTool503JSONResponse) VisitCallToolResponse(w http.ResponseWriter) error {
@@ -4447,6 +4684,20 @@ func (response ListWorkflows200JSONResponse) VisitListWorkflowsResponse(w http.R
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListWorkflows400JSONResponse ErrorResponse
+
+func (response ListWorkflows400JSONResponse) VisitListWorkflowsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4487,6 +4738,20 @@ func (response ListWorkflows429JSONResponse) VisitListWorkflowsResponse(w http.R
 		w.Header().Set("X-RateLimit-Reset", fmt.Sprint(*response.Headers.XRateLimitReset))
 	}
 	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListWorkflows500JSONResponse ErrorResponse
+
+func (response ListWorkflows500JSONResponse) VisitListWorkflowsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4595,6 +4860,20 @@ func (response FailWorkflow429JSONResponse) VisitFailWorkflowResponse(w http.Res
 	return err
 }
 
+type FailWorkflow500JSONResponse ErrorResponse
+
+func (response FailWorkflow500JSONResponse) VisitFailWorkflowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type FailWorkflow503JSONResponse ErrorResponse
 
 func (response FailWorkflow503JSONResponse) VisitFailWorkflowResponse(w http.ResponseWriter) error {
@@ -4695,6 +4974,20 @@ func (response StopWorkflow429JSONResponse) VisitStopWorkflowResponse(w http.Res
 		w.Header().Set("X-RateLimit-Reset", fmt.Sprint(*response.Headers.XRateLimitReset))
 	}
 	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StopWorkflow500JSONResponse ErrorResponse
+
+func (response StopWorkflow500JSONResponse) VisitStopWorkflowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
 }

@@ -95,13 +95,13 @@ func TestToGoalInfo(t *testing.T) {
 		UpdatedAt:   "2026-08-05T12:34:56.123456Z",
 	})
 
-	if got.ID != "g1" || got.Description != "ship it" || got.Status != "active" {
+	if deref(got.Id) != "g1" || deref(got.Description) != "ship it" || deref(got.Status) != "active" {
 		t.Errorf("Unexpected mapping: %+v", got)
 	}
-	if got.ParentID != "p1" || len(got.Subtree) != 1 {
+	if deref(got.ParentId) != "p1" || got.Subtree == nil || len(*got.Subtree) != 1 {
 		t.Errorf("Expected parent and subtree to survive mapping: %+v", got)
 	}
-	if got.CreatedAt.IsZero() || got.UpdatedAt.IsZero() {
+	if got.CreatedAt == nil || got.UpdatedAt == nil {
 		t.Errorf("Expected both timestamps parsed, got %v / %v", got.CreatedAt, got.UpdatedAt)
 	}
 }
@@ -120,18 +120,18 @@ func TestToWorkflowInfo_SummarisesSteps(t *testing.T) {
 		},
 	})
 
-	if got.Steps != 4 {
-		t.Errorf("Expected 4 steps, got %d", got.Steps)
+	if deref(got.Steps) != 4 {
+		t.Errorf("Expected 4 steps, got %v", got.Steps)
 	}
-	if got.CompletedSteps != 2 {
-		t.Errorf("Expected 2 completed (done + skipped), got %d", got.CompletedSteps)
+	if deref(got.CompletedSteps) != 2 {
+		t.Errorf("Expected 2 completed (done + skipped), got %v", got.CompletedSteps)
 	}
 }
 
 func TestToWorkflowInfo_NoSteps(t *testing.T) {
 	got := toWorkflowInfo(wireWorkflow{ID: "w1"})
-	if got.Steps != 0 || got.CompletedSteps != 0 {
-		t.Errorf("Expected 0/0 for a workflow with no steps, got %d/%d", got.Steps, got.CompletedSteps)
+	if deref(got.Steps) != 0 || deref(got.CompletedSteps) != 0 {
+		t.Errorf("Expected 0/0 for a workflow with no steps, got %v/%v", got.Steps, got.CompletedSteps)
 	}
 }
 
@@ -144,10 +144,20 @@ func TestToNotification(t *testing.T) {
 		CreatedAt: "2026-08-04T12:34:56.123456Z",
 	})
 
-	if got.ID != "n1" || got.AgentID != "agent-7" || got.Message != "build failed" || !got.Seen {
+	if deref(got.Id) != "n1" || deref(got.AgentId) != "agent-7" ||
+		deref(got.Message) != "build failed" || !deref(got.Seen) {
 		t.Errorf("Unexpected mapping: %+v", got)
 	}
-	if got.CreatedAt.IsZero() {
+	if got.CreatedAt == nil {
 		t.Error("Expected created_at parsed")
 	}
+}
+
+// deref reads an optional generated field, zero meaning absent.
+func deref[T any](v *T) T {
+	if v == nil {
+		var zero T
+		return zero
+	}
+	return *v
 }

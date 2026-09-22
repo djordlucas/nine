@@ -56,16 +56,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ListConversationsResponse'
+        '400':
+          description: invalid paging
+          content: &id001
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
         '503':
           description: daemon unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
     post:
@@ -89,21 +95,18 @@ paths:
               schema:
                 $ref: '#/components/schemas/CreateConversationResponse'
         '400':
-          description: invalid request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          description: invalid request body
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
         '503':
           description: daemon unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
   /conversations/{id}:
@@ -129,26 +132,20 @@ paths:
                 $ref: '#/components/schemas/GetConversationResponse'
         '400':
           description: missing id
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           description: conversation not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
         '503':
           description: daemon unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
     delete:
@@ -178,26 +175,20 @@ paths:
                 $ref: '#/components/schemas/DeleteConversationResponse'
         '400':
           description: missing id
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           description: conversation not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
         '503':
           description: daemon unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
   /conversations/{id}/context:
@@ -229,26 +220,20 @@ paths:
                 $ref: '#/components/schemas/GetContextResponse'
         '400':
           description: missing id
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           description: conversation not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
         '503':
           description: daemon unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
   /conversations/{id}/history:
@@ -266,22 +251,13 @@ paths:
         schema:
           type: string
       responses:
-        '400':
-          description: missing id
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
         '501':
           description: not implemented
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
   /conversations/{id}/messages:
@@ -313,27 +289,21 @@ paths:
               schema:
                 $ref: '#/components/schemas/SendMessageResponse'
         '400':
-          description: invalid request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          description: missing id or empty text
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           description: conversation not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
         '503':
           description: daemon unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
   /conversations/{id}/messages/stream:
@@ -361,20 +331,14 @@ paths:
                 $ref: '#/components/schemas/StreamEvent'
         '400':
           description: missing id
-          content:
-            text/event-stream:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
         '503':
           description: daemon unavailable
-          content:
-            text/event-stream:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
   /conversations/{id}/replay:
@@ -392,22 +356,13 @@ paths:
         schema:
           type: string
       responses:
-        '400':
-          description: missing id
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
         '501':
           description: not implemented
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
   /conversations/{id}/stop:
@@ -433,26 +388,20 @@ paths:
                 $ref: '#/components/schemas/StopConversationResponse'
         '400':
           description: missing id
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           description: conversation not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
         '503':
           description: daemon unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
   /conversations/{id}/trace:
@@ -470,22 +419,13 @@ paths:
         schema:
           type: string
       responses:
-        '400':
-          description: missing id
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
         '501':
           description: not implemented
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
   /docs:
@@ -506,6 +446,9 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
       security:
       - bearerAuth: []
   /docs/{topic}:
@@ -531,18 +474,12 @@ paths:
                 $ref: '#/components/schemas/GetDocsResponse'
         '400':
           description: missing topic
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           description: topic not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '429':
           $ref: '#/components/responses/TooManyRequests'
       security:
@@ -577,16 +514,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ListGoalsResponse'
+        '400':
+          description: invalid paging
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
         '503':
           description: daemon unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
     post:
@@ -602,10 +542,7 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         '501':
           description: not implemented
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
   /goals/{id}:
@@ -631,26 +568,20 @@ paths:
                 $ref: '#/components/schemas/GetGoalResponse'
         '400':
           description: missing id
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           description: goal not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
         '503':
           description: daemon unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
     delete:
@@ -667,22 +598,13 @@ paths:
         schema:
           type: string
       responses:
-        '400':
-          description: missing id
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
         '501':
           description: not implemented
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
   /health:
@@ -735,16 +657,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ListNotificationsResponse'
+        '400':
+          description: invalid paging
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
         '503':
           description: daemon unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
   /plugins:
@@ -777,16 +702,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ListPluginsResponse'
+        '400':
+          description: invalid paging
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
         '503':
           description: daemon unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
   /plugins/reload:
@@ -807,12 +735,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
         '503':
           description: daemon unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
   /sessions/attach:
@@ -838,27 +766,21 @@ paths:
               schema:
                 $ref: '#/components/schemas/AttachSessionResponse'
         '400':
-          description: invalid request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          description: invalid request body
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           description: session not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
         '503':
           description: daemon unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
   /skills:
@@ -876,10 +798,7 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         '501':
           description: not implemented
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
   /spec:
@@ -900,6 +819,9 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
       security:
       - bearerAuth: []
   /spec/{topic}:
@@ -925,18 +847,12 @@ paths:
                 $ref: '#/components/schemas/GetSpecResponse'
         '400':
           description: missing topic
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           description: topic not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '429':
           $ref: '#/components/responses/TooManyRequests'
       security:
@@ -960,12 +876,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
         '503':
           description: daemon unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
   /tools:
@@ -998,16 +914,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ListToolsResponse'
+        '400':
+          description: invalid paging
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
         '503':
           description: daemon unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
   /tools/reload:
@@ -1028,12 +947,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
         '503':
           description: daemon unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
   /tools/{name}:
@@ -1059,26 +978,20 @@ paths:
                 $ref: '#/components/schemas/GetToolResponse'
         '400':
           description: missing name
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           description: tool not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
         '503':
           description: daemon unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
   /tools/{name}/call:
@@ -1110,27 +1023,21 @@ paths:
               schema:
                 $ref: '#/components/schemas/CallToolResponse'
         '400':
-          description: invalid request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          description: missing name or invalid args
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           description: tool not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
         '503':
           description: daemon unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
   /workflows:
@@ -1163,16 +1070,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ListWorkflowsResponse'
+        '400':
+          description: invalid paging
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
         '503':
           description: daemon unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
   /workflows/{id}/fail:
@@ -1198,26 +1108,20 @@ paths:
                 $ref: '#/components/schemas/FailWorkflowResponse'
         '400':
           description: missing id
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           description: workflow not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
         '503':
           description: daemon unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
   /workflows/{id}/stop:
@@ -1243,26 +1147,20 @@ paths:
                 $ref: '#/components/schemas/StopWorkflowResponse'
         '400':
           description: missing id
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           description: workflow not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
         '503':
           description: daemon unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          content: *id001
       security:
       - bearerAuth: []
 components:
@@ -1272,6 +1170,8 @@ components:
       properties:
         agent_id:
           type: string
+      required:
+      - agent_id
     AttachSessionResponse:
       type: object
       properties:
@@ -1317,6 +1217,7 @@ components:
           type: boolean
         created_at:
           type: string
+          format: date-time
         events_count:
           type: integer
         id:
@@ -1333,6 +1234,7 @@ components:
           type: string
         updated_at:
           type: string
+          format: date-time
     CreateConversationRequest:
       type: object
       properties:
@@ -1343,12 +1245,15 @@ components:
       properties:
         created_at:
           type: string
+          format: date-time
         id:
           type: string
         instance_name:
           type: string
         role:
           type: string
+      required:
+      - id
     DeleteConversationResponse:
       type: object
       properties:
@@ -1413,6 +1318,7 @@ components:
           additionalProperties: {}
         created_at:
           type: string
+          format: date-time
         events_count:
           type: integer
         id:
@@ -1429,6 +1335,7 @@ components:
           type: string
         updated_at:
           type: string
+          format: date-time
     GetDocsResponse:
       type: object
       properties:
@@ -1436,11 +1343,15 @@ components:
           type: string
         topic:
           type: string
+      required:
+      - topic
+      - content
     GetGoalResponse:
       type: object
       properties:
         created_at:
           type: string
+          format: date-time
         description:
           type: string
         id:
@@ -1457,6 +1368,7 @@ components:
             type: string
         updated_at:
           type: string
+          format: date-time
     GetSpecResponse:
       type: object
       properties:
@@ -1464,6 +1376,9 @@ components:
           type: string
         topic:
           type: string
+      required:
+      - topic
+      - content
     GetToolResponse:
       type: object
       properties:
@@ -1491,6 +1406,7 @@ components:
       properties:
         created_at:
           type: string
+          format: date-time
         description:
           type: string
         id:
@@ -1507,6 +1423,7 @@ components:
             type: string
         updated_at:
           type: string
+          format: date-time
     HealthResponse:
       type: object
       properties:
@@ -1518,6 +1435,10 @@ components:
           type: integer
         version:
           type: string
+      required:
+      - status
+      - daemon_connected
+      - version
     ListConversationsResponse:
       type: object
       properties:
@@ -1534,6 +1455,8 @@ components:
           type: array
           items:
             type: string
+      required:
+      - topics
     ListGoalsResponse:
       type: object
       properties:
@@ -1568,6 +1491,8 @@ components:
           type: array
           items:
             type: string
+      required:
+      - topics
     ListToolsResponse:
       type: object
       properties:
@@ -1602,6 +1527,7 @@ components:
           type: string
         created_at:
           type: string
+          format: date-time
         id:
           type: string
         message:
@@ -1671,6 +1597,8 @@ components:
           type: boolean
         text:
           type: string
+      required:
+      - text
     SendMessageResponse:
       type: object
       properties:
@@ -1678,6 +1606,7 @@ components:
           type: string
         completed_at:
           type: string
+          format: date-time
         text:
           type: string
         turn_id:
@@ -1826,6 +1755,7 @@ components:
           type: integer
         created_at:
           type: string
+          format: date-time
         id:
           type: string
         name:
@@ -1837,10 +1767,11 @@ components:
           type: integer
         updated_at:
           type: string
+          format: date-time
   responses:
     Unauthorized:
       description: Missing or invalid bearer token
-      content: &id001
+      content: &id002
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
@@ -1860,7 +1791,7 @@ components:
         X-RateLimit-Reset:
           schema:
             type: integer
-      content: *id001
+      content: *id002
   securitySchemes:
     bearerAuth:
       type: http

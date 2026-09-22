@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"nine/internal/api"
+	"nine/internal/api/apigen"
 	"nine/internal/config"
 )
 
@@ -236,12 +236,7 @@ func (a *APIClient) doRequest(method, path string, body any) ([]byte, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		var errResp struct {
-			Error struct {
-				Code    string `json:"code"`
-				Message string `json:"message"`
-			} `json:"error"`
-		}
+		var errResp apigen.ErrorResponse
 		if err := json.NewDecoder(resp.Body).Decode(&errResp); err == nil {
 			return nil, fmt.Errorf("%s: %s", errResp.Error.Code, errResp.Error.Message)
 		}
@@ -252,12 +247,12 @@ func (a *APIClient) doRequest(method, path string, body any) ([]byte, error) {
 }
 
 // Status returns the API server status.
-func (a *APIClient) Status() (*api.StatusResponse, error) {
+func (a *APIClient) Status() (*apigen.StatusResponse, error) {
 	data, err := a.doRequest("GET", "/status", nil)
 	if err != nil {
 		return nil, err
 	}
-	var result api.StatusResponse
+	var result apigen.StatusResponse
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, err
 	}
@@ -265,12 +260,12 @@ func (a *APIClient) Status() (*api.StatusResponse, error) {
 }
 
 // Health returns the API server health.
-func (a *APIClient) Health() (*api.HealthResponse, error) {
+func (a *APIClient) Health() (*apigen.HealthResponse, error) {
 	data, err := a.doRequest("GET", "/health", nil)
 	if err != nil {
 		return nil, err
 	}
-	var result api.HealthResponse
+	var result apigen.HealthResponse
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, err
 	}
