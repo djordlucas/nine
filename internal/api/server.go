@@ -346,6 +346,10 @@ func (s *Server) createHandler() http.Handler {
 	return handler
 }
 
+// apiBasePath prefixes every operation the document declares. The generated
+// router and the request validator both need it, and they must agree.
+const apiBasePath = "/api/v1"
+
 // registerRoutes mounts the generated router plus the document routes.
 //
 // Every operation is routed from internal/api/openapi.yaml: apigen derives the
@@ -354,8 +358,11 @@ func (s *Server) createHandler() http.Handler {
 // since it is not an operation the document describes.
 func (s *Server) registerRoutes(mux *http.ServeMux) {
 	apigen.HandlerWithOptions(apigen.NewStrictHandler(s, nil), apigen.StdHTTPServerOptions{
-		BaseURL:    "/api/v1",
+		BaseURL:    apiBasePath,
 		BaseRouter: mux,
+		// Validation is scoped to the generated routes, so the routes that
+		// serve the document are not checked against it.
+		Middlewares: s.validationMiddleware(),
 		// Without this a binding failure returns net/http's plain-text
 		// default, which a client parsing our error envelope cannot decode.
 		ErrorHandlerFunc: requestBindingError,

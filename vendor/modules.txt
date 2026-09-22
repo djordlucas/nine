@@ -109,14 +109,27 @@ github.com/evanw/esbuild/internal/runtime
 github.com/evanw/esbuild/internal/sourcemap
 github.com/evanw/esbuild/internal/xxhash
 github.com/evanw/esbuild/pkg/api
+# github.com/getkin/kin-openapi v0.142.0
+## explicit; go 1.25
+github.com/getkin/kin-openapi/openapi3
+github.com/getkin/kin-openapi/openapi3filter
+github.com/getkin/kin-openapi/routers
+github.com/getkin/kin-openapi/routers/gorillamux
+github.com/getkin/kin-openapi/routers/legacy
+github.com/getkin/kin-openapi/routers/legacy/pathpattern
+# github.com/go-openapi/jsonpointer v1.0.0
+## explicit; go 1.25.0
+github.com/go-openapi/jsonpointer
+github.com/go-openapi/jsonpointer/jsonname
 # github.com/google/uuid v1.6.0
 ## explicit
 github.com/google/uuid
 # github.com/gorilla/css v1.0.1
 ## explicit; go 1.20
 github.com/gorilla/css/scanner
-# github.com/kr/pretty v0.3.0
-## explicit; go 1.12
+# github.com/gorilla/mux v1.8.1
+## explicit; go 1.20
+github.com/gorilla/mux
 # github.com/lucasb-eyer/go-colorful v1.4.1
 ## explicit; go 1.12
 github.com/lucasb-eyer/go-colorful
@@ -136,10 +149,19 @@ github.com/muesli/cancelreader
 # github.com/ncruces/go-strftime v1.0.0
 ## explicit; go 1.17
 github.com/ncruces/go-strftime
+# github.com/oapi-codegen/nethttp-middleware v1.2.0
+## explicit; go 1.25.0
+github.com/oapi-codegen/nethttp-middleware
 # github.com/oapi-codegen/runtime v1.7.0
 ## explicit; go 1.24.0
 github.com/oapi-codegen/runtime
 github.com/oapi-codegen/runtime/types
+# github.com/oasdiff/yaml v0.1.1
+## explicit; go 1.25
+github.com/oasdiff/yaml
+# github.com/oasdiff/yaml3 v0.0.14
+## explicit; go 1.25
+github.com/oasdiff/yaml3
 # github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec
 ## explicit; go 1.12
 github.com/remyoudompheng/bigfft
@@ -151,6 +173,10 @@ github.com/rivo/uniseg
 # github.com/sahilm/fuzzy v0.1.3
 ## explicit; go 1.24.5
 github.com/sahilm/fuzzy
+# github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
+## explicit; go 1.21
+github.com/santhosh-tekuri/jsonschema/v6
+github.com/santhosh-tekuri/jsonschema/v6/kind
 # github.com/tetratelabs/wazero v1.12.0
 ## explicit; go 1.25.0
 github.com/tetratelabs/wazero
@@ -227,17 +253,22 @@ golang.org/x/term
 # golang.org/x/text v0.41.0
 ## explicit; go 1.25.0
 golang.org/x/text/cases
+golang.org/x/text/feature/plural
 golang.org/x/text/internal
+golang.org/x/text/internal/catmsg
+golang.org/x/text/internal/format
 golang.org/x/text/internal/language
 golang.org/x/text/internal/language/compact
+golang.org/x/text/internal/number
+golang.org/x/text/internal/stringset
 golang.org/x/text/internal/tag
 golang.org/x/text/language
+golang.org/x/text/message
+golang.org/x/text/message/catalog
 golang.org/x/text/transform
 golang.org/x/text/unicode/norm
 # golang.org/x/tools v0.49.0
 ## explicit; go 1.25.0
-# gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
-## explicit; go 1.11
 # gopkg.in/yaml.v3 v3.0.1
 ## explicit
 gopkg.in/yaml.v3
