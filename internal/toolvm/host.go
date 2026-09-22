@@ -34,6 +34,16 @@ const (
 	// DefaultMemoryMB caps a call's linear memory: 16 MiB, or 256 wasm pages.
 	DefaultMemoryMB = 16
 
+	// DefaultMaxConcurrent bounds simultaneous calls across every tool.
+	//
+	// Without it the memory cap is per call and nothing multiplies it: each
+	// concurrent call is an instance entitled to MemoryMB, and the number of
+	// concurrent calls was whatever the turns in flight happened to ask for. The
+	// job sweeper has had this bound since it existed ([tools] job_workers); the
+	// turn-driven path had none. Eight against the 16 MiB default is 128 MiB of
+	// worst case, which is high enough that an ordinary deployment never queues.
+	DefaultMaxConcurrent = 8
+
 	wasmPageSize = 64 * 1024
 )
 
@@ -44,9 +54,11 @@ type Config struct {
 	UserDir string
 	// Grants are the operator's `[tool.<name>]` tables, keyed by tool name.
 	Grants map[string]Grant
-	// Timeout and MemoryMB override the defaults above when non-zero.
-	Timeout  time.Duration
-	MemoryMB int
+	// Timeout, MemoryMB and MaxConcurrent override the defaults above when
+	// non-zero.
+	Timeout       time.Duration
+	MemoryMB      int
+	MaxConcurrent int
 
 	// Timeouts overrides Timeout for named tools, from `[tool.<name>] timeout`.
 	// One tool that legitimately takes twenty seconds should not force twenty
@@ -104,9 +116,19 @@ type Tool struct {
 	module wazero.CompiledModule
 	// source is the tool's JavaScript, for KindJS only.
 	source string
-	// imports is this tool's module allowlist: specifier -> source. Empty for a
-	// developer tool, whose dependencies are already bundled into source (§4.2).
-	imports map[string]string
+	// modules is what this tool's calls ship to the guest resolver: specifier ->
+	// source, narrowed to the `nine:*` modules this source can actually name
+	// (reachableStdlib). It is not the allowlist — see Tool.Imports, which reports
+	// what the tool *may* import. Empty for a `wasm` tool, which has no resolver.
+	modules map[string]string
+
+	// head caches the constant part of this tool's guest input — see
+	// envelopeHead. Built on first call rather than at load, so a host holding a
+	// large generated catalog does not encode an envelope per tool for tools no
+	// turn asks for.
+	headOnce sync.Once
+	head     []byte
+	headErr  error
 }
 
 // Status is the outcome of loading one candidate, for `nine tools` reporting. A
@@ -146,6 +168,12 @@ type Host struct {
 	// mounted at, under the fixed guest path /work.
 	shippedWorkspace ShippedWorkspace
 	agent            AgentConfig
+
+	// sem bounds simultaneous calls: one slot is held from just before
+	// instantiation until just after the instance is closed. Buffered to the
+	// resolved limit, so an operator raising it raises the worst-case memory with
+	// it, deliberately.
+	sem chan struct{}
 
 	// qjs is the compiled QuickJS blob, shared by every `js` tool. Compiling it
 	// is by far the most expensive thing this package does (~1 MB of wasm), so it
@@ -192,7 +220,19 @@ func Open(ctx context.Context, cfg Config) (*Host, error) {
 		return nil, fmt.Errorf("toolvm: instantiate wasi: %w", err)
 	}
 
-	h := &Host{cfg: cfg, rt: rt, timeout: timeout, memoryMB: memMB, tools: map[string]*Tool{}}
+	maxConc := cfg.MaxConcurrent
+	if maxConc <= 0 {
+		maxConc = DefaultMaxConcurrent
+	}
+
+	h := &Host{
+		cfg:      cfg,
+		rt:       rt,
+		timeout:  timeout,
+		memoryMB: memMB,
+		tools:    map[string]*Tool{},
+		sem:      make(chan struct{}, maxConc),
+	}
 
 	if err := h.registerHostFunctions(ctx); err != nil {
 		rt.Close(ctx) //nolint:errcheck
@@ -493,6 +533,16 @@ func (h *Host) callWithJob(ctx context.Context, t *Tool, args json.RawMessage, j
 		args = rewriteWorkspacePath(args, hostRoot)
 	}
 
+	// A slot first, and before the tool's own clock starts. A call that queued
+	// for four seconds and then got one second to run would be timing out for a
+	// reason that has nothing to do with it; the wait is bounded by the caller's
+	// context — the turn's — which is the deadline that actually owns it.
+	release, err := h.acquire(ctx, name)
+	if err != nil {
+		return Output{}, err
+	}
+	defer release()
+
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	ctx = context.WithValue(ctx, toolNameKey{}, name)
@@ -565,6 +615,31 @@ func (h *Host) callWithJob(ctx context.Context, t *Tool, args json.RawMessage, j
 		return Output{Bytes: raw, MediaType: res.MediaType}, nil
 	}
 	return Output{Text: res.Output}, nil
+}
+
+// acquire takes one of the concurrency slots, returning the function that gives
+// it back. It blocks until a slot is free or ctx ends.
+//
+// The uncontended path is a single non-blocking send, so the bound costs a busy
+// daemon nothing until it is actually reached — and when it is reached, the wait
+// is logged, because a tool that is merely queued looks exactly like a tool that
+// is slow from anywhere else.
+func (h *Host) acquire(ctx context.Context, name string) (func(), error) {
+	select {
+	case h.sem <- struct{}{}:
+		return func() { <-h.sem }, nil
+	default:
+	}
+
+	slog.Debug("sandboxed tool waiting for a call slot", "tool", name, "limit", cap(h.sem))
+	select {
+	case h.sem <- struct{}{}:
+		return func() { <-h.sem }, nil
+	case <-ctx.Done():
+		return nil, fmt.Errorf(
+			"tool %q gave up waiting for one of the %d concurrent call slots ([tools] max_concurrent): %w",
+			name, cap(h.sem), ctx.Err())
+	}
 }
 
 // explainOOM adds the operator-facing context a bare allocation failure lacks.

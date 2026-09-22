@@ -110,15 +110,56 @@ func (t *Tool) inputForJob(args json.RawMessage, job *JobContext) ([]byte, error
 		return args, nil
 	}
 
-	// Copied rather than aliased, and the tool's own source written last, so no
-	// allowlist entry can shadow the entry point.
-	modules := make(map[string]string, len(t.imports)+1)
-	for k, v := range t.imports {
-		modules[k] = v
+	head, err := t.envelopeHead()
+	if err != nil {
+		return nil, err
 	}
-	modules[toolModuleSpecifier] = t.source
 
-	return json.Marshal(envelope{Harness: harness(), Modules: modules, Args: args, Job: job})
+	// head is `{"harness":…,"modules":{…}` — everything constant — so a call only
+	// has to append what varies. The guest reads the envelope by property name
+	// (qjs_host.c), so writing args and job last is free.
+	out := make([]byte, 0, len(head)+len(args)+64)
+	out = append(out, head...)
+	out = append(out, `,"args":`...)
+	out = append(out, args...)
+	if job != nil {
+		j, err := json.Marshal(job)
+		if err != nil {
+			return nil, fmt.Errorf("tool %q: encode job context: %w", t.Name, err)
+		}
+		out = append(out, `,"job":`...)
+		out = append(out, j...)
+	}
+	return append(out, '}'), nil
+}
+
+// envelopeHead is the constant part of this tool's guest input: the harness and
+// the module map, encoded once and reused for every call.
+//
+// Encoding it per call was ~57 µs of every call and a 68 KB allocation, to
+// produce the same bytes each time — the harness and the module map cannot
+// change once the tool is loaded, because both are fixed at registration. What
+// varies is the arguments, which are appended.
+func (t *Tool) envelopeHead() ([]byte, error) {
+	t.headOnce.Do(func() {
+		// Copied rather than aliased, and the tool's own source written last, so
+		// no allowlist entry can shadow the entry point.
+		modules := make(map[string]string, len(t.modules)+1)
+		for k, v := range t.modules {
+			modules[k] = v
+		}
+		modules[toolModuleSpecifier] = t.source
+
+		// Args and Job are omitempty, so this is the head with nothing variable
+		// in it; dropping the closing brace leaves it open for the append above.
+		b, err := json.Marshal(envelope{Harness: harness(), Modules: modules})
+		if err != nil {
+			t.headErr = fmt.Errorf("tool %q: encode envelope: %w", t.Name, err)
+			return
+		}
+		t.head = b[:len(b)-1]
+	})
+	return t.head, t.headErr
 }
 
 // reservedJobKey is the argument name a resumable `wasm` tool receives its job
@@ -164,10 +205,20 @@ func mergeJobIntoArgs(args json.RawMessage, job *JobContext) ([]byte, error) {
 
 // Imports returns the module specifiers this tool may import, sorted — for
 // `nine tools show`, so a tool's import surface is inspectable rather than
-// folklore. Empty for a developer tool.
+// folklore. Empty for a `wasm` tool, which has no module resolver.
+//
+// This is the allowlist, deliberately, and not the subset a call actually ships:
+// Tool.modules is narrowed to what the current source can name, so reporting it
+// here would tell an author that `nine:csv` is unavailable to a tool that has
+// simply not imported it yet — and would list `nine:date` for a tool that only
+// mentions it in a comment. What an author wants from `nine tools show` is what
+// they may reach.
 func (t *Tool) Imports() []string {
-	out := make([]string, 0, len(t.imports))
-	for k := range t.imports {
+	if t.Kind != KindJS {
+		return nil
+	}
+	out := make([]string, 0, len(stdlibSpecifiers))
+	for k := range stdlibSpecifiers {
 		out = append(out, k)
 	}
 	sort.Strings(out)
