@@ -1,6 +1,10 @@
 quickjs-ng v0.16.1 · wasi-sdk-33
 
-Built by build.sh (make quickjs-wasm). Do not edit by hand; do not rebuild
-casually. Bumping either pin above is a deliberate change reviewed in its own
-PR, where the qjs.wasm diff and the qjs.wasm.sha256 change are the artifact
-under review. `make quickjs-verify` re-checks the hash.
+Built by build.sh (make quickjs-wasm), which emits qjs.wasm and harness.bc —
+the harness as QuickJS bytecode, which is what the daemon embeds. Do not edit
+by hand; do not rebuild casually. Bumping either pin above is a deliberate
+change reviewed in its own PR, where the qjs.wasm diff and the qjs.wasm.sha256
+change are the artifact under review. `make quickjs-verify` re-checks the hash.
+
+Editing harness.js needs `make harness-bc` only, which rebuilds harness.bc and
+leaves qjs.wasm alone.
