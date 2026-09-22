@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"nine/internal/api/apigen"
 	"nine/internal/config"
 )
 
@@ -194,7 +195,7 @@ func TestAuthMiddleware_InvalidToken(t *testing.T) {
 	}
 
 	// Check error response
-	var errResp ErrorResponse
+	var errResp ErrorEnvelope
 	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
 		t.Fatalf("Failed to decode error response: %v", err)
 	}
@@ -337,7 +338,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 	}
 
 	// Check error response
-	var errResp ErrorResponse
+	var errResp ErrorEnvelope
 	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
 		t.Fatalf("Failed to decode error response: %v", err)
 	}
@@ -440,7 +441,13 @@ func TestHandleHealth_ClosesDaemonConnection(t *testing.T) {
 	for i := 0; i < probes; i++ {
 		req := httptest.NewRequest("GET", "/api/v1/health", nil)
 		w := httptest.NewRecorder()
-		s.handleHealth(w, req)
+		resp, err := s.GetHealth(req.Context(), apigen.GetHealthRequestObject{})
+		if err != nil {
+			t.Fatalf("Probe %d: %v", i+1, err)
+		}
+		if err := resp.VisitGetHealthResponse(w); err != nil {
+			t.Fatalf("Probe %d: %v", i+1, err)
+		}
 
 		if w.Code != http.StatusOK {
 			t.Fatalf("Probe %d: expected 200, got %d", i+1, w.Code)
@@ -704,33 +711,8 @@ func TestNewServer(t *testing.T) {
 }
 
 // =============================================================================
-// JSON Response Helper Tests
+// Error Response Helper Tests
 // =============================================================================
-
-func TestWriteJSON(t *testing.T) {
-	w := httptest.NewRecorder()
-
-	data := map[string]string{"key": "value"}
-	writeJSON(w, http.StatusOK, data)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", w.Code)
-	}
-
-	contentType := w.Header().Get("Content-Type")
-	if contentType != "application/json" {
-		t.Errorf("Expected Content-Type 'application/json', got '%s'", contentType)
-	}
-
-	var result map[string]string
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
-		t.Fatalf("Failed to decode response: %v", err)
-	}
-
-	if result["key"] != "value" {
-		t.Errorf("Expected 'value', got '%s'", result["key"])
-	}
-}
 
 func TestWriteError(t *testing.T) {
 	w := httptest.NewRecorder()
@@ -746,7 +728,7 @@ func TestWriteError(t *testing.T) {
 		t.Errorf("Expected Content-Type 'application/json', got '%s'", contentType)
 	}
 
-	var errResp ErrorResponse
+	var errResp ErrorEnvelope
 	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
 		t.Fatalf("Failed to decode error response: %v", err)
 	}
@@ -769,7 +751,7 @@ func TestWriteError_WithDetails(t *testing.T) {
 	}
 	writeError(w, http.StatusNotFound, "not_found", "resource not found", details)
 
-	var errResp ErrorResponse
+	var errResp ErrorEnvelope
 	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
 		t.Fatalf("Failed to decode error response: %v", err)
 	}
@@ -786,220 +768,6 @@ func TestWriteError_WithDetails(t *testing.T) {
 // =============================================================================
 // Type Tests - JSON Serialization
 // =============================================================================
-
-func TestErrorResponse_JSON(t *testing.T) {
-	errResp := ErrorResponse{
-		Error: ErrorDetails{
-			Code:    "test_error",
-			Message: "Test error message",
-			Details: map[string]any{
-				"field": "value",
-			},
-		},
-	}
-
-	data, err := json.Marshal(errResp)
-	if err != nil {
-		t.Fatalf("Failed to marshal ErrorResponse: %v", err)
-	}
-
-	var decoded ErrorResponse
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("Failed to unmarshal ErrorResponse: %v", err)
-	}
-
-	if decoded.Error.Code != "test_error" {
-		t.Errorf("Expected code 'test_error', got '%s'", decoded.Error.Code)
-	}
-
-	if decoded.Error.Message != "Test error message" {
-		t.Errorf("Expected message 'Test error message', got '%s'", decoded.Error.Message)
-	}
-
-	if decoded.Error.Details["field"] != "value" {
-		t.Errorf("Expected detail field 'value', got '%v'", decoded.Error.Details["field"])
-	}
-}
-
-func TestHealthResponse_JSON(t *testing.T) {
-	resp := HealthResponse{
-		Status:          "healthy",
-		DaemonConnected: true,
-		UptimeSeconds:   120,
-		Version:         "1.0.0",
-	}
-
-	data, err := json.Marshal(resp)
-	if err != nil {
-		t.Fatalf("Failed to marshal HealthResponse: %v", err)
-	}
-
-	var decoded HealthResponse
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("Failed to unmarshal HealthResponse: %v", err)
-	}
-
-	if decoded.Status != "healthy" {
-		t.Errorf("Expected status 'healthy', got '%s'", decoded.Status)
-	}
-
-	if !decoded.DaemonConnected {
-		t.Error("Expected DaemonConnected to be true")
-	}
-
-	if decoded.UptimeSeconds != 120 {
-		t.Errorf("Expected uptime 120, got %d", decoded.UptimeSeconds)
-	}
-}
-
-func TestCreateConversationRequest_JSON(t *testing.T) {
-	req := CreateConversationRequest{
-		Interactive: true,
-	}
-
-	data, err := json.Marshal(req)
-	if err != nil {
-		t.Fatalf("Failed to marshal CreateConversationRequest: %v", err)
-	}
-
-	var decoded CreateConversationRequest
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("Failed to unmarshal CreateConversationRequest: %v", err)
-	}
-
-	if !decoded.Interactive {
-		t.Error("Expected Interactive to be true")
-	}
-}
-
-func TestConversationInfo_JSON(t *testing.T) {
-	now := time.Now().UTC()
-	info := ConversationInfo{
-		ID:           "session-123",
-		Name:         "Test Session",
-		Role:         "assistant",
-		PlanMode:     "auto",
-		Status:       "running",
-		CreatedAt:    now,
-		UpdatedAt:    now,
-		EventsCount:  5,
-		Protected:    false,
-		Attached:     true,
-		AgeSeconds:   300,
-	}
-
-	data, err := json.Marshal(info)
-	if err != nil {
-		t.Fatalf("Failed to marshal ConversationInfo: %v", err)
-	}
-
-	var decoded ConversationInfo
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("Failed to unmarshal ConversationInfo: %v", err)
-	}
-
-	if decoded.ID != "session-123" {
-		t.Errorf("Expected ID 'session-123', got '%s'", decoded.ID)
-	}
-
-	if decoded.Name != "Test Session" {
-		t.Errorf("Expected Name 'Test Session', got '%s'", decoded.Name)
-	}
-
-	if decoded.Status != "running" {
-		t.Errorf("Expected Status 'running', got '%s'", decoded.Status)
-	}
-}
-
-func TestSendMessageRequest_JSON(t *testing.T) {
-	req := SendMessageRequest{
-		Text:       "Hello, world!",
-		ForceThink: true,
-	}
-
-	data, err := json.Marshal(req)
-	if err != nil {
-		t.Fatalf("Failed to marshal SendMessageRequest: %v", err)
-	}
-
-	var decoded SendMessageRequest
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("Failed to unmarshal SendMessageRequest: %v", err)
-	}
-
-	if decoded.Text != "Hello, world!" {
-		t.Errorf("Expected Text 'Hello, world!', got '%s'", decoded.Text)
-	}
-
-	if !decoded.ForceThink {
-		t.Error("Expected ForceThink to be true")
-	}
-}
-
-func TestToolInfo_JSON(t *testing.T) {
-	inputSchema := json.RawMessage(`{"type": "object"}`)
-	tool := ToolInfo{
-		Name:        "test_tool",
-		Description: "A test tool",
-		Plugin:      "test_plugin",
-		Kind:        "plugin",
-		Loaded:      true,
-		InputSchema: inputSchema,
-		Capabilities: []string{"read", "write"},
-		ManifestPath: "/path/to/manifest.json",
-		Generated:   false,
-	}
-
-	data, err := json.Marshal(tool)
-	if err != nil {
-		t.Fatalf("Failed to marshal ToolInfo: %v", err)
-	}
-
-	var decoded ToolInfo
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("Failed to unmarshal ToolInfo: %v", err)
-	}
-
-	if decoded.Name != "test_tool" {
-		t.Errorf("Expected Name 'test_tool', got '%s'", decoded.Name)
-	}
-
-	if decoded.Kind != "plugin" {
-		t.Errorf("Expected Kind 'plugin', got '%s'", decoded.Kind)
-	}
-
-	if len(decoded.Capabilities) != 2 {
-		t.Errorf("Expected 2 capabilities, got %d", len(decoded.Capabilities))
-	}
-}
-
-func TestPluginInfo_JSON(t *testing.T) {
-	plugin := PluginInfo{
-		Name:   "test_plugin",
-		Source: "user",
-		Loaded: true,
-		Tools:  []string{"tool1", "tool2"},
-		Error:  "",
-	}
-
-	data, err := json.Marshal(plugin)
-	if err != nil {
-		t.Fatalf("Failed to marshal PluginInfo: %v", err)
-	}
-
-	var decoded PluginInfo
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("Failed to unmarshal PluginInfo: %v", err)
-	}
-
-	if decoded.Name != "test_plugin" {
-		t.Errorf("Expected Name 'test_plugin', got '%s'", decoded.Name)
-	}
-
-	if len(decoded.Tools) != 2 {
-		t.Errorf("Expected 2 tools, got %d", len(decoded.Tools))
-	}
-}
 
 // =============================================================================
 // Response Writer Tests

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"nine/internal/api/apigen"
 )
 
 // The daemon answers list queries with a single-key object wrapping the rows —
@@ -92,6 +94,17 @@ func decodeList[T any](raw, key string) ([]T, error) {
 	return rows, nil
 }
 
+// optionalTime is parseStoredTime for an optional field: an unparseable or
+// absent value is omitted rather than serialised as the zero date, which a
+// client would otherwise read as a real timestamp in year 1.
+func optionalTime(s string) *time.Time {
+	t := parseStoredTime(s)
+	if t.IsZero() {
+		return nil
+	}
+	return &t
+}
+
 // parseStoredTime reads the fixed-width RFC3339 UTC timestamp every nine store
 // writes (see memory's stored-timestamp invariant). An unparseable value yields
 // the zero time rather than an error: a malformed timestamp on one row should
@@ -108,22 +121,29 @@ func parseStoredTime(s string) time.Time {
 }
 
 // toGoalInfo maps a daemon goal row to the API representation.
-func toGoalInfo(g wireGoal) GoalInfo {
-	return GoalInfo{
-		ID:          g.ID,
-		Description: g.Description,
-		Status:      g.Status,
-		ParentID:    g.ParentID,
-		ParentType:  g.ParentType,
-		Subtree:     g.Subtree,
-		CreatedAt:   parseStoredTime(g.CreatedAt),
-		UpdatedAt:   parseStoredTime(g.UpdatedAt),
+func toGoalInfo(g wireGoal) apigen.GoalInfo {
+	out := apigen.GoalInfo{
+		Id:          ptr(g.ID),
+		Description: ptr(g.Description),
+		Status:      ptr(g.Status),
+		CreatedAt:   optionalTime(g.CreatedAt),
+		UpdatedAt:   optionalTime(g.UpdatedAt),
 	}
+	if g.ParentID != "" {
+		out.ParentId = ptr(g.ParentID)
+	}
+	if g.ParentType != "" {
+		out.ParentType = ptr(g.ParentType)
+	}
+	if len(g.Subtree) > 0 {
+		out.Subtree = ptr(g.Subtree)
+	}
+	return out
 }
 
 // toWorkflowInfo maps a daemon workflow row to the API representation,
 // summarising the step list as a total and a completed count.
-func toWorkflowInfo(w wireWorkflow) WorkflowInfo {
+func toWorkflowInfo(w wireWorkflow) apigen.WorkflowInfo {
 	completed := 0
 	for _, step := range w.Steps {
 		switch step.Status {
@@ -132,25 +152,31 @@ func toWorkflowInfo(w wireWorkflow) WorkflowInfo {
 		}
 	}
 
-	return WorkflowInfo{
-		ID:             w.ID,
-		Name:           w.Name,
-		Status:         w.Status,
-		AgentID:        w.AgentID,
-		Steps:          len(w.Steps),
-		CompletedSteps: completed,
-		CreatedAt:      parseStoredTime(w.CreatedAt),
-		UpdatedAt:      parseStoredTime(w.UpdatedAt),
+	out := apigen.WorkflowInfo{
+		Id:             ptr(w.ID),
+		Name:           ptr(w.Name),
+		Status:         ptr(w.Status),
+		Steps:          ptr(len(w.Steps)),
+		CompletedSteps: ptr(completed),
+		CreatedAt:      optionalTime(w.CreatedAt),
+		UpdatedAt:      optionalTime(w.UpdatedAt),
 	}
+	if w.AgentID != "" {
+		out.AgentId = ptr(w.AgentID)
+	}
+	return out
 }
 
 // toNotification maps a daemon notification row to the API representation.
-func toNotification(n wireNotification) Notification {
-	return Notification{
-		ID:        n.ID,
-		AgentID:   n.AgentID,
-		Message:   n.Message,
-		Seen:      n.Seen,
-		CreatedAt: parseStoredTime(n.CreatedAt),
+func toNotification(n wireNotification) apigen.Notification {
+	out := apigen.Notification{
+		Id:        ptr(n.ID),
+		Message:   ptr(n.Message),
+		Seen:      ptr(n.Seen),
+		CreatedAt: optionalTime(n.CreatedAt),
 	}
+	if n.AgentID != "" {
+		out.AgentId = ptr(n.AgentID)
+	}
+	return out
 }

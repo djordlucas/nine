@@ -85,7 +85,9 @@ func TestOpenAPI_DoesNotShadowDocsEndpoint(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("Expected /api/v1/docs to still list topics, got %d", w.Code)
 	}
-	var resp ListDocsResponse
+	var resp struct {
+		Topics []string `json:"topics"`
+	}
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decoding: %v", err)
 	}
