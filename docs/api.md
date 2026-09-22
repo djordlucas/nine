@@ -36,34 +36,40 @@ nine api stop      # stop the API server
 
 ---
 
-## OpenAPI / Swagger spec
+## OpenAPI document
 
-The API spec is generated at build time from swag annotations on the handler functions in `internal/api/handlers.go`. The generated files live in `internal/api/docs/` and are committed to the repo:
+`internal/api/openapi.yaml` is an OpenAPI 3.1 document and the source of truth
+for this API. `internal/api/apigen/` — the request/response models and the
+server interface — is generated from it, so a handler that disagrees with the
+document fails to compile rather than silently serving a different shape.
 
-| File | Content |
-|------|---------|
-| `internal/api/docs/swagger.json` | OpenAPI 2.0 JSON spec |
-| `internal/api/docs/swagger.yaml` | OpenAPI 2.0 YAML spec |
-| `internal/api/docs/docs.go` | Generated Go code that registers the spec at runtime |
+This inverts the previous arrangement, where the document was generated from
+swag annotations on the handlers and could only ever describe whatever the code
+already did.
 
-### Regenerating the spec
-
-After adding or changing handler annotations:
+### Regenerating
 
 ```bash
-swag init -d internal/api -o internal/api/docs -g docs.go --parseDependency --parseInternal
+make openapi        # regenerate internal/api/apigen from openapi.yaml
+make openapi-check  # fail if the committed output is stale (runs in CI)
 ```
 
-The annotations are Go comments directly above each handler function — `@Summary`, `@Description`, `@Tags`, `@Param`, `@Success`, `@Failure`, `@Router`. Package-level metadata (title, version, base path, security scheme) is in `internal/api/docs.go`.
+The generator lives in `tools/`, its own Go module, so its dependencies stay
+out of nine's graph and out of `vendor/`.
 
-### Accessing the spec at runtime
+### Reading it at runtime
 
 | URL | What |
 |-----|------|
-| `http://localhost:8080/api/v1/swagger/` | Swagger UI — interactive browser for all endpoints |
-| `http://localhost:8080/api/v1/swagger/doc.json` | Raw OpenAPI JSON |
+| `http://localhost:8080/api/v1/openapi.yaml` | The document, as committed |
+| `http://localhost:8080/api/v1/openapi.json` | The same document as JSON |
+| `http://localhost:8080/api/v1/openapi/` | Browsable reference (Scalar) |
 
-The Swagger UI lets you browse all 29 endpoints, see their request/response schemas, and execute requests directly from the browser.
+The document is embedded in the binary, so the two file routes need no network.
+The browser page loads its renderer from a CDN and does.
+
+The path is `/api/v1/openapi` rather than `/api/v1/docs`, which is already the
+documentation-topic endpoint.
 
 ---
 
