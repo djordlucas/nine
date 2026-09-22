@@ -1,21 +1,19 @@
 package api
 
 import (
-	"net/http"
-	"net/http/httptest"
 	"testing"
 )
 
 // =============================================================================
-// Query Parameter Parsing
+// Page Bounds
 // =============================================================================
 
-func newQueryRequest(query string) *http.Request {
-	return httptest.NewRequest("GET", "/test?"+query, nil)
-}
+// The generated router parses limit and offset, so a non-integer never reaches
+// page(). What remains ours is the range, which the document declares and the
+// server enforces.
 
-func TestParsePageParams_Defaults(t *testing.T) {
-	p, err := parsePageParams(newQueryRequest(""))
+func TestPage_Defaults(t *testing.T) {
+	p, err := page(nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -27,8 +25,8 @@ func TestParsePageParams_Defaults(t *testing.T) {
 	}
 }
 
-func TestParsePageParams_Explicit(t *testing.T) {
-	p, err := parsePageParams(newQueryRequest("limit=10&offset=25"))
+func TestPage_Explicit(t *testing.T) {
+	p, err := page(ptr(10), ptr(25))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -37,26 +35,30 @@ func TestParsePageParams_Explicit(t *testing.T) {
 	}
 }
 
-// A malformed page parameter is rejected rather than silently replaced by the
-// default: a client that mistypes `limit` should learn that, not receive a
-// differently sized page than it asked for.
-func TestParsePageParams_Rejects(t *testing.T) {
-	for _, query := range []string{
-		"limit=abc",
-		"limit=0",
-		"limit=-1",
-		"limit=1001",
-		"offset=abc",
-		"offset=-1",
-	} {
-		if _, err := parsePageParams(newQueryRequest(query)); err == nil {
-			t.Errorf("Expected %q to be rejected", query)
-		}
+// An out-of-range value is an error rather than a silent clamp: a client asking
+// for 5000 items should learn the cap, not receive 1000 and assume that was all.
+func TestPage_RejectsOutOfRange(t *testing.T) {
+	tests := []struct {
+		name          string
+		limit, offset *int
+	}{
+		{"limit zero", ptr(0), nil},
+		{"limit negative", ptr(-1), nil},
+		{"limit above maximum", ptr(MaxPageLimit + 1), nil},
+		{"offset negative", nil, ptr(-1)},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := page(tc.limit, tc.offset); err == nil {
+				t.Error("Expected an error")
+			}
+		})
 	}
 }
 
-func TestParsePageParams_AcceptsMaxLimit(t *testing.T) {
-	p, err := parsePageParams(newQueryRequest("limit=1000"))
+func TestPage_AcceptsMaximumLimit(t *testing.T) {
+	p, err := page(ptr(MaxPageLimit), nil)
 	if err != nil {
 		t.Fatalf("limit at the maximum must be accepted: %v", err)
 	}
@@ -65,37 +67,15 @@ func TestParsePageParams_AcceptsMaxLimit(t *testing.T) {
 	}
 }
 
-func TestQueryBool(t *testing.T) {
-	cases := map[string]bool{"v=true": true, "v=1": true, "v=false": false, "v=0": false, "": false}
-	for query, want := range cases {
-		got, err := queryBool(newQueryRequest(query), "v")
-		if err != nil {
-			t.Errorf("%q: unexpected error: %v", query, err)
-			continue
-		}
-		if got != want {
-			t.Errorf("%q: expected %v, got %v", query, want, got)
-		}
+func TestDerefBool(t *testing.T) {
+	if derefBool(nil) {
+		t.Error("Expected absent to be false")
 	}
-
-	if _, err := queryBool(newQueryRequest("v=maybe"), "v"); err == nil {
-		t.Error("Expected 'maybe' to be rejected as a boolean")
+	if !derefBool(ptr(true)) {
+		t.Error("Expected true")
 	}
-}
-
-func TestQueryInt(t *testing.T) {
-	got, err := queryInt(newQueryRequest("n=7"), "n", 3)
-	if err != nil || got != 7 {
-		t.Errorf("Expected 7, got %d (err: %v)", got, err)
-	}
-
-	got, err = queryInt(newQueryRequest(""), "n", 3)
-	if err != nil || got != 3 {
-		t.Errorf("Expected default 3, got %d (err: %v)", got, err)
-	}
-
-	if _, err := queryInt(newQueryRequest("n=x"), "n", 3); err == nil {
-		t.Error("Expected 'x' to be rejected as an integer")
+	if derefBool(ptr(false)) {
+		t.Error("Expected false")
 	}
 }
 
@@ -107,15 +87,15 @@ func TestPaginate(t *testing.T) {
 	items := []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
 
 	tests := []struct {
-		name       string
-		params     pageParams
-		wantPage   []int
-		wantTotal  int
+		name        string
+		params      pageParams
+		wantPage    []int
+		wantTotal   int
 		wantHasMore bool
 	}{
 		{"first page", pageParams{Limit: 3, Offset: 0}, []int{0, 1, 2}, 10, true},
 		{"middle page", pageParams{Limit: 3, Offset: 3}, []int{3, 4, 5}, 10, true},
-		{"last full page", pageParams{Limit: 3, Offset: 9}, []int{9}, 10, false},
+		{"last partial page", pageParams{Limit: 3, Offset: 9}, []int{9}, 10, false},
 		{"limit exceeds total", pageParams{Limit: 50, Offset: 0}, items, 10, false},
 		{"offset at end", pageParams{Limit: 3, Offset: 10}, []int{}, 10, false},
 		{"offset past end", pageParams{Limit: 3, Offset: 999}, []int{}, 10, false},
@@ -123,14 +103,14 @@ func TestPaginate(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			page, pagination := paginate(items, tc.params)
+			got, pagination := paginate(items, tc.params)
 
-			if len(page) != len(tc.wantPage) {
-				t.Fatalf("Expected page %v, got %v", tc.wantPage, page)
+			if len(got) != len(tc.wantPage) {
+				t.Fatalf("Expected page %v, got %v", tc.wantPage, got)
 			}
-			for i := range page {
-				if page[i] != tc.wantPage[i] {
-					t.Fatalf("Expected page %v, got %v", tc.wantPage, page)
+			for i := range got {
+				if got[i] != tc.wantPage[i] {
+					t.Fatalf("Expected page %v, got %v", tc.wantPage, got)
 				}
 			}
 			if pagination.Total != tc.wantTotal {
@@ -150,15 +130,15 @@ func TestPaginate(t *testing.T) {
 // An empty page must serialise as [] rather than null, so clients can iterate
 // without a nil check.
 func TestPaginate_EmptyPageIsNotNil(t *testing.T) {
-	page, _ := paginate([]int{1, 2, 3}, pageParams{Limit: 10, Offset: 99})
-	if page == nil {
+	got, _ := paginate([]int{1, 2, 3}, pageParams{Limit: 10, Offset: 99})
+	if got == nil {
 		t.Error("Expected an empty slice, got nil")
 	}
 }
 
 func TestPaginate_NilInput(t *testing.T) {
-	page, pagination := paginate[int](nil, pageParams{Limit: 10, Offset: 0})
-	if page == nil {
+	got, pagination := paginate[int](nil, pageParams{Limit: 10, Offset: 0})
+	if got == nil {
 		t.Error("Expected an empty slice, got nil")
 	}
 	if pagination.Total != 0 || pagination.HasMore {

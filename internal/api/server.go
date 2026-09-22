@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"nine/internal/api/apigen"
 	"nine/internal/config"
 	"nine/internal/protocol"
 )
@@ -265,64 +266,21 @@ func (s *Server) createHandler() http.Handler {
 	return handler
 }
 
-// registerRoutes registers all API routes.
+// registerRoutes mounts the generated router plus the document routes.
+//
+// Every operation is routed from internal/api/openapi.yaml: apigen derives the
+// patterns and the parameter binding from the document, so a route cannot drift
+// from it by hand. Only the OpenAPI document itself is registered separately,
+// since it is not an operation the document describes.
 func (s *Server) registerRoutes(mux *http.ServeMux) {
-	// Health and status
-	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
-	mux.HandleFunc("GET /api/v1/status", s.handleStatus)
+	apigen.HandlerWithOptions(apigen.NewStrictHandler(s, nil), apigen.StdHTTPServerOptions{
+		BaseURL:    "/api/v1",
+		BaseRouter: mux,
+		// Without this a binding failure returns net/http's plain-text
+		// default, which a client parsing our error envelope cannot decode.
+		ErrorHandlerFunc: requestBindingError,
+	})
 
-	// Conversations (sessions)
-	mux.HandleFunc("POST /api/v1/conversations", s.handleCreateConversation)
-	mux.HandleFunc("GET /api/v1/conversations", s.handleListConversations)
-	mux.HandleFunc("GET /api/v1/conversations/{id}", s.handleGetConversation)
-	mux.HandleFunc("POST /api/v1/conversations/{id}/messages", s.handleSendMessage)
-	mux.HandleFunc("GET /api/v1/conversations/{id}/context", s.handleGetContext)
-	mux.HandleFunc("GET /api/v1/conversations/{id}/history", s.handleGetHistory)
-	mux.HandleFunc("GET /api/v1/conversations/{id}/trace", s.handleGetTrace)
-	mux.HandleFunc("POST /api/v1/conversations/{id}/replay", s.handleReplay)
-	mux.HandleFunc("DELETE /api/v1/conversations/{id}", s.handleDeleteConversation)
-	mux.HandleFunc("POST /api/v1/conversations/{id}/stop", s.handleStopConversation)
-
-	// Goals
-	mux.HandleFunc("GET /api/v1/goals", s.handleListGoals)
-	mux.HandleFunc("POST /api/v1/goals", s.handleCreateGoal)
-	mux.HandleFunc("GET /api/v1/goals/{id}", s.handleGetGoal)
-	mux.HandleFunc("DELETE /api/v1/goals/{id}", s.handleDeleteGoal)
-
-	// Workflows
-	mux.HandleFunc("GET /api/v1/workflows", s.handleListWorkflows)
-	mux.HandleFunc("POST /api/v1/workflows/{id}/stop", s.handleStopWorkflow)
-	mux.HandleFunc("POST /api/v1/workflows/{id}/fail", s.handleFailWorkflow)
-
-	// Tools
-	mux.HandleFunc("GET /api/v1/tools", s.handleListTools)
-	mux.HandleFunc("GET /api/v1/tools/{name}", s.handleGetTool)
-	mux.HandleFunc("POST /api/v1/tools/{name}/call", s.handleCallTool)
-	mux.HandleFunc("POST /api/v1/tools/reload", s.handleReloadTools)
-
-	// Plugins
-	mux.HandleFunc("GET /api/v1/plugins", s.handleListPlugins)
-	mux.HandleFunc("POST /api/v1/plugins/reload", s.handleReloadPlugins)
-
-	// Notifications
-	mux.HandleFunc("GET /api/v1/notifications", s.handleListNotifications)
-
-	// Skills
-	mux.HandleFunc("GET /api/v1/skills", s.handleListSkills)
-
-	// Sessions
-	mux.HandleFunc("POST /api/v1/sessions/attach", s.handleAttachSession)
-
-	// System
-	mux.HandleFunc("GET /api/v1/docs", s.handleListDocs)
-	mux.HandleFunc("GET /api/v1/docs/{topic}", s.handleGetDocs)
-	mux.HandleFunc("GET /api/v1/spec", s.handleListSpec)
-	mux.HandleFunc("GET /api/v1/spec/{topic}", s.handleGetSpec)
-
-	// Streaming endpoints (SSE)
-	mux.HandleFunc("GET /api/v1/conversations/{id}/messages/stream", s.handleStreamMessages)
-
-	// The OpenAPI document and a browser for it
 	s.registerSpecRoutes(mux)
 }
 
@@ -341,26 +299,11 @@ func (s *Server) getDaemonClient() (*protocol.Client, error) {
 	return cl, nil
 }
 
-// writeJSON writes a JSON response.
-func writeJSON(w http.ResponseWriter, statusCode int, data any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	if data != nil {
-		json.NewEncoder(w).Encode(data)
-	}
-}
-
 // writeError writes an error response.
 func writeError(w http.ResponseWriter, statusCode int, code, message string, details map[string]any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(ErrorResponse{
-		Error: ErrorDetails{
-			Code:    code,
-			Message: message,
-			Details: details,
-		},
-	})
+	json.NewEncoder(w).Encode(errorBody(code, message, details)) //nolint:errcheck
 }
 
 // clientIP returns the address rate limiting is keyed on.
