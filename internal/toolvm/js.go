@@ -67,7 +67,11 @@ func harness() []byte {
 // whose arguments happen to describe a JavaScript program.
 type envelope struct {
 	Modules map[string]string `json:"modules"`
-	Args    json.RawMessage   `json:"args,omitempty"`
+	// Checks is the per-call work budget in the guest's own unit — interrupt
+	// checks, not the operations the operator configured. Zero is omitted and
+	// leaves the call unmetered.
+	Checks uint32          `json:"checks,omitempty"`
+	Args   json.RawMessage `json:"args,omitempty"`
 	// Job is present only when this call is one of a long-running sequence. The
 	// harness passes it to the tool as a second argument; an ordinary call omits
 	// it and the tool sees undefined.
@@ -125,8 +129,8 @@ func (t *Tool) inputForJob(args json.RawMessage, job *JobContext) ([]byte, error
 		return nil, err
 	}
 
-	// head is `{"modules":{…}` — everything constant — so a call only has to
-	// append what varies. The guest reads the envelope by property name
+	// head is `{"modules":{…},"checks":n` — everything constant — so a call only
+	// has to append what varies. The guest reads the envelope by property name
 	// (qjs_host.c), so writing args and job last is free.
 	out := make([]byte, 0, len(head)+len(args)+64)
 	out = append(out, head...)
@@ -161,7 +165,7 @@ func (t *Tool) envelopeHead() ([]byte, error) {
 
 		// Args and Job are omitempty, so this is the head with nothing variable
 		// in it; dropping the closing brace leaves it open for the append above.
-		b, err := json.Marshal(envelope{Modules: modules})
+		b, err := json.Marshal(envelope{Modules: modules, Checks: t.checks})
 		if err != nil {
 			t.headErr = fmt.Errorf("tool %q: encode envelope: %w", t.Name, err)
 			return
