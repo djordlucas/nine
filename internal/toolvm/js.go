@@ -17,7 +17,7 @@ import (
 // `make build` needs no wasi-sdk and the runtime image gains no toolchain
 // (docs/sandboxed-tools.md §10.1).
 //
-//go:embed quickjs/qjs.wasm quickjs/harness.js
+//go:embed quickjs/qjs.wasm quickjs/harness.bc
 var quickjsFS embed.FS
 
 // toolModuleSpecifier is what harness.js imports to reach the author's code. It
@@ -37,25 +37,35 @@ func quickJSBlob() []byte {
 
 var (
 	harnessOnce sync.Once
-	harnessSrc  string
+	harnessBC   []byte
 )
 
-func harness() string {
+// harness returns the precompiled harness: QuickJS module bytecode built from
+// quickjs/harness.js by `make harness-bc`.
+//
+// It is bytecode rather than source because compiling it was the call. Handing
+// the guest 32 KB of JavaScript inside the envelope — escaped into JSON here,
+// JSON-parsed there, then compiled — cost 4.8 ms of a 6 ms call, every call, to
+// produce the same program each time. Running the harness costs 0.14 ms.
+//
+// It does not ride in the envelope, because the envelope is JSON and this is
+// bytes: base64 would have cost more than the source it replaced. The host
+// writes it into guest memory and names it through the `nine_harness` export.
+func harness() []byte {
 	harnessOnce.Do(func() {
-		b, err := quickjsFS.ReadFile("quickjs/harness.js")
+		b, err := quickjsFS.ReadFile("quickjs/harness.bc")
 		if err != nil {
-			panic("toolvm: harness missing from binary: " + err.Error())
+			panic("toolvm: harness bytecode missing from binary: " + err.Error())
 		}
-		harnessSrc = string(b)
+		harnessBC = b
 	})
-	return harnessSrc
+	return harnessBC
 }
 
 // envelope is the input a `js` tool's module receives. It is the tool's "args"
 // as far as the ABI is concerned — the QuickJS blob is an ordinary wasm tool
 // whose arguments happen to describe a JavaScript program.
 type envelope struct {
-	Harness string            `json:"harness"`
 	Modules map[string]string `json:"modules"`
 	Args    json.RawMessage   `json:"args,omitempty"`
 	// Job is present only when this call is one of a long-running sequence. The
@@ -115,8 +125,8 @@ func (t *Tool) inputForJob(args json.RawMessage, job *JobContext) ([]byte, error
 		return nil, err
 	}
 
-	// head is `{"harness":…,"modules":{…}` — everything constant — so a call only
-	// has to append what varies. The guest reads the envelope by property name
+	// head is `{"modules":{…}` — everything constant — so a call only has to
+	// append what varies. The guest reads the envelope by property name
 	// (qjs_host.c), so writing args and job last is free.
 	out := make([]byte, 0, len(head)+len(args)+64)
 	out = append(out, head...)
@@ -133,13 +143,12 @@ func (t *Tool) inputForJob(args json.RawMessage, job *JobContext) ([]byte, error
 	return append(out, '}'), nil
 }
 
-// envelopeHead is the constant part of this tool's guest input: the harness and
-// the module map, encoded once and reused for every call.
+// envelopeHead is the constant part of this tool's guest input: the module map,
+// encoded once and reused for every call.
 //
-// Encoding it per call was ~57 µs of every call and a 68 KB allocation, to
-// produce the same bytes each time — the harness and the module map cannot
-// change once the tool is loaded, because both are fixed at registration. What
-// varies is the arguments, which are appended.
+// Encoding it per call produced the same bytes each time — the module map cannot
+// change once the tool is loaded. What varies is the arguments, which are
+// appended.
 func (t *Tool) envelopeHead() ([]byte, error) {
 	t.headOnce.Do(func() {
 		// Copied rather than aliased, and the tool's own source written last, so
@@ -152,7 +161,7 @@ func (t *Tool) envelopeHead() ([]byte, error) {
 
 		// Args and Job are omitempty, so this is the head with nothing variable
 		// in it; dropping the closing brace leaves it open for the append above.
-		b, err := json.Marshal(envelope{Harness: harness(), Modules: modules})
+		b, err := json.Marshal(envelope{Modules: modules})
 		if err != nil {
 			t.headErr = fmt.Errorf("tool %q: encode envelope: %w", t.Name, err)
 			return
