@@ -50,11 +50,12 @@ func OpenSandboxedTools(ctx context.Context, cfg *config.Config, store *memory.S
 	}
 
 	host, err := toolvm.Open(ctx, toolvm.Config{
-		UserDir:  cfg.Tools.UserDir,
-		Grants:   toolGrants(cfg),
-		Timeout:  timeout,
-		Timeouts: timeouts,
-		MemoryMB: cfg.Tools.MemoryMB,
+		UserDir:       cfg.Tools.UserDir,
+		Grants:        toolGrants(cfg),
+		Timeout:       timeout,
+		Timeouts:      timeouts,
+		MemoryMB:      cfg.Tools.MemoryMB,
+		MaxConcurrent: cfg.Tools.MaxConcurrent,
 		// Usage bookkeeping for LRU eviction (§9.2). Best-effort and after the
 		// fact: a touch failure must not fail the tool call the model is waiting on.
 		TouchGenerated: touchGenerated(store),
