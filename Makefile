@@ -19,7 +19,7 @@ GOFLAGS  := -mod=vendor
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS  := -ldflags "-X main.Version=$(VERSION)"
 
-.PHONY: all dev build openapi openapi-check openapi-lint test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-generate quickjs-wasm quickjs-verify
+.PHONY: all dev build openapi openapi-check openapi-lint test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-generate quickjs-wasm quickjs-verify harness-bc
 
 dev: build
 
@@ -71,6 +71,11 @@ FORCE:
 
 quickjs-wasm:
 	sh internal/toolvm/quickjs/build.sh
+
+# Recompile harness.js to bytecode without touching qjs.wasm. This is what an
+# edit to harness.js needs: the daemon embeds the bytecode, not the JavaScript.
+harness-bc:
+	sh internal/toolvm/quickjs/build.sh --harness-only
 
 # Verify the committed blob against its recorded hash. A binary artifact in the
 # tree is only acceptable if changing it is loud; this is what makes it loud in

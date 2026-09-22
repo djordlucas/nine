@@ -578,7 +578,7 @@ func (h *Host) callWithJob(ctx context.Context, t *Tool, args json.RawMessage, j
 	}
 	defer mod.Close(context.WithoutCancel(ctx)) //nolint:errcheck // teardown of a discarded instance
 
-	out, err := callGuest(ctx, mod, input)
+	out, err := callGuest(ctx, mod, input, t.Kind == KindJS)
 	if err != nil {
 		if ctx.Err() != nil {
 			return Output{}, fmt.Errorf("tool %q timed out after %s", name, timeout)
@@ -722,12 +722,20 @@ func (h *Host) moduleConfig(t *Tool) wazero.ModuleConfig {
 	return cfg
 }
 
-// callGuest performs the ABI handshake: allocate, write, run, read.
-func callGuest(ctx context.Context, mod api.Module, input []byte) ([]byte, error) {
+// callGuest performs the ABI handshake: allocate, write, run, read. For a `js`
+// tool it first installs the precompiled harness, which the QuickJS blob reads
+// as bytecode instead of compiling source out of the envelope.
+func callGuest(ctx context.Context, mod api.Module, input []byte, js bool) ([]byte, error) {
 	alloc := mod.ExportedFunction(exportAlloc)
 	run := mod.ExportedFunction(exportRun)
 	if alloc == nil || run == nil {
 		return nil, fmt.Errorf("module does not export the Nine ABI (%s, %s)", exportAlloc, exportRun)
+	}
+
+	if js {
+		if err := installHarness(ctx, mod, alloc); err != nil {
+			return nil, err
+		}
 	}
 
 	// One byte more than the input, and a NUL written into it. This is part of
@@ -779,6 +787,36 @@ func callGuest(ctx context.Context, mod api.Module, input []byte) ([]byte, error
 	out := make([]byte, len(buf))
 	copy(out, buf)
 	return out, nil
+}
+
+// installHarness writes the harness bytecode into guest memory and tells the
+// guest where it is, which the QuickJS blob requires before nine_run.
+//
+// It is a raw write rather than a field in the envelope: the envelope is JSON,
+// the harness is bytes, and base64 would have cost more than the JavaScript this
+// replaced. A memcpy into linear memory costs neither an escape nor a parse.
+func installHarness(ctx context.Context, mod api.Module, alloc api.Function) error {
+	bc := harness()
+	res, err := alloc.Call(ctx, uint64(len(bc)))
+	if err != nil {
+		return fmt.Errorf("%s for the harness: %w", exportAlloc, err)
+	}
+	if len(res) != 1 || res[0] == 0 || res[0] > math.MaxUint32 {
+		return fmt.Errorf("%s returned no usable memory for the %d-byte harness", exportAlloc, len(bc))
+	}
+	ptr := uint32(res[0]) //nolint:gosec // bounded by the MaxUint32 check above
+	if !mod.Memory().Write(ptr, bc) {
+		return fmt.Errorf("the %d-byte harness does not fit in the tool's memory", len(bc))
+	}
+
+	install := mod.ExportedFunction(exportHarness)
+	if install == nil {
+		return fmt.Errorf("the QuickJS blob does not export %s; rebuild it with make quickjs-wasm", exportHarness)
+	}
+	if _, err := install.Call(ctx, uint64(ptr), uint64(len(bc))); err != nil {
+		return fmt.Errorf("%s: %w", exportHarness, err)
+	}
+	return nil
 }
 
 // ToLLMDef converts a Tool to the llm.ToolDef the agent loop and context builder

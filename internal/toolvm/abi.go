@@ -60,6 +60,12 @@ const ABIVersion = 1
 const (
 	exportAlloc = "nine_alloc"
 	exportRun   = "nine_run"
+
+	// exportHarness is the QuickJS blob's own, and is not part of the tool ABI: a
+	// `wasm` tool neither exports nor needs it, and checkABI does not look for
+	// it. The host calls it before nine_run to name the precompiled harness it
+	// has just written into guest memory (see installHarness).
+	exportHarness = "nine_harness"
 )
 
 // hostModule is the name of the one module of host functions the guest may
