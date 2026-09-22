@@ -1,0 +1,34 @@
+# Linting rules for internal/api/openapi.yaml (make openapi-lint).
+#
+# CI gates on errors — an unresolvable $ref, a malformed schema, a duplicate
+# operation id. Warnings are advisory and printed, not fatal, so tightening the
+# document stays a deliberate act rather than a build break.
+#
+# The rules turned off below are ones this API contradicts on purpose. Each is
+# off with a reason, so a future reader can tell a decision from an oversight.
+extends: [[vacuum:oas, recommended]]
+
+rules:
+  # The wire format is snake_case (agent_id, created_at) and has been since the
+  # API shipped. Renaming to camelCase would break every client for a style
+  # preference.
+  camel-case-properties: off
+
+  # Six operations return only 501: the daemon exposes no query or mutation
+  # behind them (spec/contracts/api.md API-HTTP-5). Declaring a 2xx they cannot
+  # produce is the failure this rule would push us into.
+  operation-success-response: off
+
+  # args, context, input_schema and tool_input are arbitrary JSON whose shape is
+  # set elsewhere — a tool's own input schema, the context builder's output. An
+  # absent `type` is how JSON Schema 2020-12 says "any"; each carries a
+  # description saying so.
+  oas-missing-type: off
+
+  # /plugins/reload, /tools/reload and /sessions/attach are actions on the
+  # daemon, not resources. Naming them as nouns would describe them less well.
+  no-http-verbs-in-path: off
+
+  # Examples would have to be maintained by hand against a document that is
+  # already generated into typed Go. Worth adding, not worth gating.
+  oas3-missing-example: off
