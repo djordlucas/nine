@@ -290,8 +290,44 @@ show_context = true
 
 
 [workspace]
-# Working directory for file operations. Optional.
+# The one directory Nine writes agent files into: the sandboxed file tools are
+# mounted here and `shell` runs here. Optional; the container overrides it to
+# the mounted volume at /data/workspace (NINE_WORKSPACE_ROOT).
 # root = "./workspace"
+
+# Deleted and overwritten files move to .nine/trash/ inside the workspace
+# rather than being destroyed, so a mistake in an unsupervised session can be
+# undone (trash_list, restore_file). The trash sits on the operator's disk, so
+# it is bounded by both age and size; the sweep runs hourly, oldest entry first.
+#
+# trash_retention_days — days a trashed file is kept. Unset uses 7. A negative
+# value disables the age sweep, leaving trash_max_bytes as the only bound.
+# trash_retention_days = 7
+#
+# trash_max_bytes — total trash size, oldest entry removed first. An age bound
+# alone is not enough: a week of large deletions can outgrow a volume before
+# anything expires. Unset uses 1 GiB.
+# trash_max_bytes = 1073741824
+
+# Files in the workspace are full-text searchable, including ones Nine never
+# wrote — a bind mount that arrived full, a git pull, a file dropped in. A
+# background scan keeps the index in step with the directory, and a search
+# refreshes the subtree it is about to look at.
+#
+# scan_interval_seconds — how often the workspace is rescanned for files
+# changed outside Nine. Unset uses 60.
+# scan_interval_seconds = 60
+#
+# index_max_file_bytes — largest file whose text is indexed. The bound is about
+# churn, not storage: FTS5 rewrites a document's whole posting list when it
+# changes, so a large file that grows costs its full size in tokenization on
+# every scan that sees it. Larger files still list, and are searched when named
+# directly. Unset uses 8 MiB.
+# index_max_file_bytes = 8388608
+#
+# index_max_files — files examined in one scan. A scan that stops here says so
+# in search results. Unset uses 50000.
+# index_max_files = 50000
 
 [skills]
 # Directory holding your own skills and roles, seeded on every boot alongside
@@ -322,6 +358,59 @@ require_approval = []
 # the sub-agent. Sub-agents never get ask_human either way, and a non-interactive
 # session's sub-agents are never gated — no human is attached to ask.
 gate_sub_agents = true
+
+[api]
+# HTTP API over the daemon's Unix socket (docs/api.md has the endpoint surface).
+# Off by default; when off, `nine api serve` still works but the daemon does not
+# start the server automatically.
+enabled = false
+#
+# port — HTTP listen port. Unset uses 8080.
+port = 8080
+#
+# host — bind address. Unset uses "localhost" (IPv4 loopback only). Use
+# "0.0.0.0" to listen on all interfaces.
+host = "localhost"
+#
+# auth_token — bearer token required on every request
+# (`Authorization: Bearer <token>`). Empty disables authentication. Also
+# settable via --auth-token or NINE_API_AUTH_TOKEN.
+auth_token = ""
+#
+# timeout_seconds — per-request timeout. Unset uses 30. A longer request
+# returns 504.
+timeout_seconds = 30
+#
+# max_connections — concurrent connection ceiling. Unset uses 100.
+max_connections = 100
+#
+# cors_origins — allowed CORS origins. Unset allows all; narrow it in
+# production.
+cors_origins = ["*"]
+#
+# trusted_proxies — reverse proxies whose X-Forwarded-For and X-Real-IP headers
+# the API believes, as bare IPs or CIDR blocks. Empty — the default — ignores
+# both headers and keys rate limiting off the transport peer. Both headers are
+# attacker-controlled on any request that did not pass through a proxy you run,
+# so trusting them unconditionally lets a client mint a fresh rate-limit bucket
+# per request. Set this only for proxies actually in front of the API.
+trusted_proxies = []
+
+[api.rate_limit]
+# Rate limiting is applied before authentication, so an unauthenticated flood is
+# bounded too.
+enabled             = true
+requests_per_minute = 60    # unset uses 60
+burst_size          = 10    # short bursts above the limit; unset uses 10
+# excluded_paths — paths exempt from rate limiting. Unset uses the two probes.
+excluded_paths = ["/api/v1/health", "/api/v1/status"]
+
+[api.tls]
+# HTTPS. Off by default, which is correct for a loopback bind behind a proxy
+# that terminates TLS itself.
+enabled   = false
+cert_path = ""
+key_path  = ""
 
 [planning]
 # Plan-before-execute policy (../adr/thinking-and-planning.md). Both keys have a
