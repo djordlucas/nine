@@ -18,6 +18,14 @@
 
 set -euo pipefail
 
+# Two entry points, one set of pins. `--harness-only` rebuilds harness.bc alone,
+# which is what an edit to harness.js needs: the bytecode must come from the same
+# QuickJS the blob embeds (BC_VERSION is checked at load), and keeping both here
+# is what stops the two pins from drifting apart. A harness edit does not touch
+# qjs.wasm and does not need reviewing as a binary diff.
+harness_only=0
+if [ "${1:-}" = "--harness-only" ]; then harness_only=1; fi
+
 QUICKJS_TAG="v0.16.1"
 WASI_SDK_VERSION="33"
 WASI_SDK_RELEASE="wasi-sdk-33"
@@ -93,6 +101,44 @@ sources=(
   "${here}/qjs_host.c"
 )
 
+# ── the harness, precompiled ─────────────────────────────────────────────────
+# harness.js is compiled to QuickJS module bytecode and embedded in the daemon,
+# because parsing it *was* the call: 4.8 ms of a 6 ms call was escaping 32 KB of
+# harness into JSON, parsing that JSON, and compiling the result — every call,
+# for the same program. Executing it costs 0.14 ms.
+#
+# qjsc comes from the same pinned checkout as the interpreter. Bytecode carries a
+# BC_VERSION the reader checks, so a qjsc from anywhere else fails loudly at the
+# first call rather than subtly.
+#
+# -s strips the source text but keeps debug info, so a stack trace through the
+# harness still names lines. Tool code is never bytecode — only this file is.
+
+qjsc="${work}/qjsc"
+if [ ! -x "${qjsc}" ] || [ "${src}/quickjs.c" -nt "${qjsc}" ]; then
+  echo "==> building qjsc (quickjs-ng ${QUICKJS_TAG})"
+  cc -O1 -I"${src}" -o "${qjsc}" \
+    "${src}/qjsc.c" "${src}/quickjs.c" "${src}/dtoa.c" \
+    "${src}/libregexp.c" "${src}/libunicode.c" "${src}/quickjs-libc.c" \
+    -DCONFIG_VERSION="\"${version}\"" -lm -lpthread
+fi
+
+echo "==> compiling harness.js to bytecode"
+"${qjsc}" -m -s -n "nine:harness" -N nine_harness_bc \
+  -b -o "${here}/harness.bc" "${here}/harness.js"
+
+# The blob and the bytecode are built from one source file, and Go embeds the
+# bytecode rather than the JavaScript. Recording the source hash is what makes an
+# edit to harness.js that skipped this script a test failure instead of a harness
+# that silently lags its own source (TestHarnessBytecodeMatchesItsSource).
+( cd "${here}" && shasum -a 256 harness.js > harness.bc.sha256 )
+echo "==> $(wc -c < "${here}/harness.bc") bytes of bytecode"
+
+if [ "${harness_only}" = "1" ]; then
+  echo "==> harness.bc only; qjs.wasm untouched"
+  exit 0
+fi
+
 echo "==> building qjs.wasm (quickjs-ng ${QUICKJS_TAG}, wasi-sdk-${WASI_SDK_VERSION})"
 "${CC}" \
   --target=wasm32-wasip1 \
@@ -108,6 +154,7 @@ echo "==> building qjs.wasm (quickjs-ng ${QUICKJS_TAG}, wasi-sdk-${WASI_SDK_VERS
   -lwasi-emulated-process-clocks \
   -Wl,--export=nine_alloc \
   -Wl,--export=nine_run \
+  -Wl,--export=nine_harness \
   -Wl,--no-entry \
   -Wl,--strip-all \
   -Wl,--gc-sections
@@ -121,10 +168,14 @@ echo "==> building qjs.wasm (quickjs-ng ${QUICKJS_TAG}, wasi-sdk-${WASI_SDK_VERS
 cat > "${here}/VERSION" <<EOF
 quickjs-ng ${QUICKJS_TAG} · wasi-sdk-${WASI_SDK_VERSION}
 
-Built by build.sh (make quickjs-wasm). Do not edit by hand; do not rebuild
-casually. Bumping either pin above is a deliberate change reviewed in its own
-PR, where the qjs.wasm diff and the qjs.wasm.sha256 change are the artifact
-under review. \`make quickjs-verify\` re-checks the hash.
+Built by build.sh (make quickjs-wasm), which emits qjs.wasm and harness.bc —
+the harness as QuickJS bytecode, which is what the daemon embeds. Do not edit
+by hand; do not rebuild casually. Bumping either pin above is a deliberate
+change reviewed in its own PR, where the qjs.wasm diff and the qjs.wasm.sha256
+change are the artifact under review. \`make quickjs-verify\` re-checks the hash.
+
+Editing harness.js needs \`make harness-bc\` only, which rebuilds harness.bc and
+leaves qjs.wasm alone.
 EOF
 
 echo "==> $(shasum -a 256 "${out}")"

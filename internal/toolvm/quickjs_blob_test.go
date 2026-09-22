@@ -103,14 +103,20 @@ func TestQuickJSBlobImportsAndExportsAreClosed(t *testing.T) {
 		t.Errorf("blob does not import the %q host module", hostModule)
 	}
 
-	// _initialize is the reactor entry point wazero calls itself.
-	allowed := map[string]bool{exportAlloc: true, exportRun: true, "_initialize": true}
+	// _initialize is the reactor entry point wazero calls itself. nine_harness
+	// is the blob's own, not part of the tool ABI: it names the precompiled
+	// harness the host has written into linear memory, and confers nothing — it
+	// stores a pointer the host just chose, in an instance that is destroyed when
+	// the call returns.
+	allowed := map[string]bool{
+		exportAlloc: true, exportRun: true, exportHarness: true, "_initialize": true,
+	}
 	for name := range mod.ExportedFunctions() {
 		if !allowed[name] {
 			t.Errorf("blob exports an unexpected function: %s", name)
 		}
 	}
-	for _, name := range []string{exportAlloc, exportRun} {
+	for _, name := range []string{exportAlloc, exportRun, exportHarness} {
 		if _, ok := mod.ExportedFunctions()[name]; !ok {
 			t.Errorf("blob does not export %q", name)
 		}
