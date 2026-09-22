@@ -182,7 +182,7 @@ func (h *Host) compile(ctx context.Context, d discovered, grant Grant) (*Tool, e
 		// admitting a hand-written tool costs nothing and removes the oddity that
 		// the author who cannot ask Nine to write them a CSV parser was the one
 		// denied the CSV parser.
-		t.imports = stdlibModules()
+		t.modules = reachableStdlib(t.source)
 		return t, nil
 	}
 

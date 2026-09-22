@@ -128,7 +128,7 @@ func (h *Host) LoadGenerated(ctx context.Context, tools []Generated, collides Co
 			// a tool may import any nine: module and nothing else. External npm
 			// imports are bundled into Source at write time (§4.4), so by call time
 			// the only imports left are these.
-			imports: stdlibModules(),
+			modules: reachableStdlib(g.Source),
 		}
 
 		h.mu.Lock()
@@ -254,7 +254,7 @@ func (h *Host) EvalGenerated(ctx context.Context, source string, decl Declaratio
 		source:      source,
 		// Same import surface as a catalogued generated tool (§4.2): js_eval is a
 		// less-persistent tier, not a softer one.
-		imports: stdlibModules(),
+		modules: reachableStdlib(source),
 	}
 	// js_eval is never resumable, so Tool.Resumable stays false and h.call refuses
 	// a `continue` envelope for us. Stated here because the reason is not the
