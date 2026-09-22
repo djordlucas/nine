@@ -295,7 +295,7 @@ func (h *Host) LoadShipped(ctx context.Context, collides Collides) {
 			Shipped:     true,
 			module:      h.qjs,
 			source:      string(src),
-			imports:     stdlibModules(),
+			modules:     reachableStdlib(string(src)),
 		}
 
 		h.mu.Lock()

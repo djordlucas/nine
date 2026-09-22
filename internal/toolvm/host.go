@@ -104,9 +104,19 @@ type Tool struct {
 	module wazero.CompiledModule
 	// source is the tool's JavaScript, for KindJS only.
 	source string
-	// imports is this tool's module allowlist: specifier -> source. Empty for a
-	// developer tool, whose dependencies are already bundled into source (§4.2).
-	imports map[string]string
+	// modules is what this tool's calls ship to the guest resolver: specifier ->
+	// source, narrowed to the `nine:*` modules this source can actually name
+	// (reachableStdlib). It is not the allowlist — see Tool.Imports, which reports
+	// what the tool *may* import. Empty for a `wasm` tool, which has no resolver.
+	modules map[string]string
+
+	// head caches the constant part of this tool's guest input — see
+	// envelopeHead. Built on first call rather than at load, so a host holding a
+	// large generated catalog does not encode an envelope per tool for tools no
+	// turn asks for.
+	headOnce sync.Once
+	head     []byte
+	headErr  error
 }
 
 // Status is the outcome of loading one candidate, for `nine tools` reporting. A
