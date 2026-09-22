@@ -25,6 +25,27 @@ servers:
       default: localhost
     port:
       default: '8080'
+tags:
+- name: health
+  description: Server health and daemon status.
+- name: conversations
+  description: 'Agent sessions: create, send a turn, inspect context, stop, delete.'
+- name: goals
+  description: Background goals and the sessions that pursue them.
+- name: workflows
+  description: Multi-step workflows and their lifecycle.
+- name: tools
+  description: The tool roster and direct tool invocation.
+- name: plugins
+  description: Plugin roster and reload.
+- name: notifications
+  description: The human-facing notification feed.
+- name: skills
+  description: Skill roster.
+- name: sessions
+  description: Attaching to a running session.
+- name: system
+  description: Bundled documentation and specification.
 paths:
   /conversations:
     get:
@@ -1166,6 +1187,7 @@ paths:
 components:
   schemas:
     AttachSessionRequest:
+      description: Which session to attach to.
       type: object
       properties:
         agent_id:
@@ -1173,6 +1195,7 @@ components:
       required:
       - agent_id
     AttachSessionResponse:
+      description: A session's identity plus the transcript needed to resume following it.
       type: object
       properties:
         agent_id:
@@ -1192,12 +1215,15 @@ components:
         role:
           type: string
     CallToolRequest:
+      description: Arguments for a direct tool invocation, bypassing the model.
       type: object
       properties:
-        args: {}
+        args:
+          description: Tool arguments, shaped by that tool's own input schema.
         live_state:
           type: boolean
     CallToolResponse:
+      description: The result of a direct tool invocation.
       type: object
       properties:
         duration_ms:
@@ -1209,6 +1235,8 @@ components:
         tool_name:
           type: string
     ConversationInfo:
+      description: 'One conversation in a listing. Role, plan mode and timestamps are absent: the daemon''s
+        session roster does not carry them.'
       type: object
       properties:
         age_seconds:
@@ -1236,11 +1264,13 @@ components:
           type: string
           format: date-time
     CreateConversationRequest:
+      description: Options for a new conversation.
       type: object
       properties:
         interactive:
           type: boolean
     CreateConversationResponse:
+      description: The conversation that was created.
       type: object
       properties:
         created_at:
@@ -1255,6 +1285,7 @@ components:
       required:
       - id
     DeleteConversationResponse:
+      description: Confirmation that a conversation and its journal were removed.
       type: object
       properties:
         deleted_events:
@@ -1264,6 +1295,7 @@ components:
         message:
           type: string
     ErrorDetails:
+      description: 'What went wrong: a stable code, a human-readable message, and any structured context.'
       type: object
       properties:
         code:
@@ -1289,6 +1321,7 @@ components:
       - code
       - message
     ErrorResponse:
+      description: The error shape every failing request returns.
       type: object
       properties:
         error:
@@ -1296,6 +1329,7 @@ components:
       required:
       - error
     FailWorkflowResponse:
+      description: Confirmation that a workflow was marked failed.
       type: object
       properties:
         id:
@@ -1305,12 +1339,15 @@ components:
         status:
           type: string
     GetContextResponse:
+      description: A conversation's context breakdown as the context builder reports it.
       type: object
       properties:
         agent_id:
           type: string
-        context: {}
+        context:
+          description: The context builder's breakdown, whose shape is the builder's to define.
     GetConversationResponse:
+      description: One conversation's detail, including its context breakdown.
       type: object
       properties:
         context:
@@ -1337,6 +1374,7 @@ components:
           type: string
           format: date-time
     GetDocsResponse:
+      description: One documentation topic's Markdown source.
       type: object
       properties:
         content:
@@ -1347,6 +1385,7 @@ components:
       - topic
       - content
     GetGoalResponse:
+      description: One goal's detail. Identical in shape to a goal in a listing.
       type: object
       properties:
         created_at:
@@ -1370,6 +1409,7 @@ components:
           type: string
           format: date-time
     GetSpecResponse:
+      description: One specification topic's Markdown source.
       type: object
       properties:
         content:
@@ -1380,6 +1420,8 @@ components:
       - topic
       - content
     GetToolResponse:
+      description: One tool's detail. Capabilities and the input schema are absent unless the daemon reports
+        them.
       type: object
       properties:
         capabilities:
@@ -1390,7 +1432,8 @@ components:
           type: string
         generated:
           type: boolean
-        input_schema: {}
+        input_schema:
+          description: The tool's JSON Schema for its arguments, passed through as the tool declares it.
         kind:
           type: string
         loaded:
@@ -1402,6 +1445,8 @@ components:
         plugin:
           type: string
     GoalInfo:
+      description: A goal as the daemon stores it. A goal carries no name, priority, owning session or
+        progress note.
       type: object
       properties:
         created_at:
@@ -1425,6 +1470,7 @@ components:
           type: string
           format: date-time
     HealthResponse:
+      description: The API server's own health, and whether it can reach the daemon.
       type: object
       properties:
         daemon_connected:
@@ -1440,6 +1486,7 @@ components:
       - daemon_connected
       - version
     ListConversationsResponse:
+      description: A page of conversations.
       type: object
       properties:
         data:
@@ -1449,6 +1496,7 @@ components:
         pagination:
           $ref: '#/components/schemas/Pagination'
     ListDocsResponse:
+      description: The documentation topics this build embeds.
       type: object
       properties:
         topics:
@@ -1458,6 +1506,7 @@ components:
       required:
       - topics
     ListGoalsResponse:
+      description: A page of goals.
       type: object
       properties:
         data:
@@ -1467,6 +1516,7 @@ components:
         pagination:
           $ref: '#/components/schemas/Pagination'
     ListNotificationsResponse:
+      description: A page of notifications.
       type: object
       properties:
         data:
@@ -1476,6 +1526,7 @@ components:
         pagination:
           $ref: '#/components/schemas/Pagination'
     ListPluginsResponse:
+      description: A page of plugins.
       type: object
       properties:
         data:
@@ -1485,6 +1536,7 @@ components:
         pagination:
           $ref: '#/components/schemas/Pagination'
     ListSpecResponse:
+      description: The specification topics this build embeds.
       type: object
       properties:
         topics:
@@ -1494,6 +1546,7 @@ components:
       required:
       - topics
     ListToolsResponse:
+      description: A page of tools.
       type: object
       properties:
         data:
@@ -1503,6 +1556,7 @@ components:
         pagination:
           $ref: '#/components/schemas/Pagination'
     ListWorkflowsResponse:
+      description: A page of workflows.
       type: object
       properties:
         data:
@@ -1512,6 +1566,7 @@ components:
         pagination:
           $ref: '#/components/schemas/Pagination'
     MemoryStats:
+      description: Row counts from the daemon's store.
       type: object
       properties:
         events_count:
@@ -1521,6 +1576,7 @@ components:
         workflows_count:
           type: integer
     Notification:
+      description: One entry of the human-facing feed. The store records no title, severity or type.
       type: object
       properties:
         agent_id:
@@ -1535,6 +1591,7 @@ components:
         seen:
           type: boolean
     Pagination:
+      description: Which page a list response carries. Paging is offset based; there is no cursor.
       type: object
       properties:
         has_more:
@@ -1551,6 +1608,8 @@ components:
       - total
       - has_more
     PluginInfo:
+      description: One plugin's roster entry. Disabled distinguishes a plugin switched off by the operator
+        from one that failed to load.
       type: object
       properties:
         disabled:
@@ -1569,6 +1628,7 @@ components:
           items:
             type: string
     ReloadPluginsResponse:
+      description: The plugin roster after a reload, with how many loaded and how many failed.
       type: object
       properties:
         failed_count:
@@ -1582,6 +1642,7 @@ components:
           items:
             $ref: '#/components/schemas/PluginInfo'
     ReloadToolsResponse:
+      description: The sandboxed-tool roster after a reload.
       type: object
       properties:
         message:
@@ -1591,6 +1652,7 @@ components:
           items:
             $ref: '#/components/schemas/ToolInfo'
     SendMessageRequest:
+      description: A user message to run as a turn.
       type: object
       properties:
         force_think:
@@ -1600,6 +1662,7 @@ components:
       required:
       - text
     SendMessageResponse:
+      description: The agent's reply to a turn.
       type: object
       properties:
         agent_id:
@@ -1612,6 +1675,7 @@ components:
         turn_id:
           type: string
     StatusResponse:
+      description: 'The daemon''s status: uptime, active sessions and the plugin roster.'
       type: object
       properties:
         active_sessions:
@@ -1636,6 +1700,7 @@ components:
         version:
           type: string
     StopConversationResponse:
+      description: Confirmation that a conversation was stopped, its history kept.
       type: object
       properties:
         id:
@@ -1645,6 +1710,7 @@ components:
         status:
           type: string
     StopWorkflowResponse:
+      description: Confirmation that a workflow was cancelled.
       type: object
       properties:
         id:
@@ -1654,6 +1720,7 @@ components:
         status:
           type: string
     StreamConnected:
+      description: The stream handshake, sent once when a client attaches.
       type: object
       required:
       - message
@@ -1664,6 +1731,7 @@ components:
         agent_id:
           type: string
     StreamDone:
+      description: The turn finished; no further events follow for it.
       type: object
       required:
       - agent_id
@@ -1685,6 +1753,7 @@ components:
       - $ref: '#/components/schemas/StreamDone'
       - $ref: '#/components/schemas/ErrorResponse'
     StreamResponseChunk:
+      description: A fragment of the agent's reply as it is produced.
       type: object
       required:
       - text
@@ -1696,6 +1765,7 @@ components:
           type: integer
           format: int64
     StreamToolEnd:
+      description: A tool call finished, with its output.
       type: object
       required:
       - tool_name
@@ -1709,6 +1779,7 @@ components:
           type: integer
           format: int64
     StreamToolStart:
+      description: A tool call began, with the arguments it was given.
       type: object
       required:
       - tool_name
@@ -1717,11 +1788,12 @@ components:
         tool_name:
           type: string
         tool_input:
-          description: Tool arguments, shaped by the tool's own schema
+          description: Tool arguments, shaped by that tool's own input schema.
         timestamp:
           type: integer
           format: int64
     ToolInfo:
+      description: One tool in a listing, with where it came from and whether it loaded.
       type: object
       properties:
         capabilities:
@@ -1734,7 +1806,8 @@ components:
           type: string
         generated:
           type: boolean
-        input_schema: {}
+        input_schema:
+          description: The tool's JSON Schema for its arguments, passed through as the tool declares it.
         kind:
           description: plugin, sandboxed, generated
           type: string
@@ -1747,6 +1820,8 @@ components:
         plugin:
           type: string
     WorkflowInfo:
+      description: A workflow as the daemon stores it. Steps and completed_steps summarise the stored
+        step list; the store records no current step.
       type: object
       properties:
         agent_id:

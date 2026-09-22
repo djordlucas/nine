@@ -35,6 +35,9 @@ jobs:
       - name: OpenAPI drift
         run: make openapi-check
 
+      - name: OpenAPI lint
+        run: make openapi-lint
+
       # tests/evals/runner spins up a real in-process daemon per test and
       # deadlocks intermittently under CI load (the agent worker hangs on a
       # turn whose reply never arrives; see "Fix eval-runner daemon hang" in

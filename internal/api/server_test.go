@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -786,4 +787,119 @@ func TestResponseWriter_WriteHeader(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Errorf("Expected response code 201, got %d", w.Code)
 	}
+}
+
+// =============================================================================
+// Rate Limiter Map Bounds
+// =============================================================================
+
+// The map grew one entry per distinct client address and never shrank.
+func TestRateLimiters_IdleEntriesAreEvicted(t *testing.T) {
+	s := NewServer(Config{
+		APIConfig: config.APIConfig{
+			RateLimit: config.APIRateLimitConfig{Enabled: true, RequestsPerMinute: 60, BurstSize: 5},
+		},
+		Version:   "test",
+		StartTime: time.Now(),
+	})
+
+	// Three clients, all last seen well beyond the TTL.
+	stale := time.Now().Add(-2 * rateLimiterTTL)
+	for _, ip := range []string{"198.51.100.1", "198.51.100.2", "198.51.100.3"} {
+		limiter := newRateLimiter(60, 5)
+		limiter.lastUpdate = stale
+		s.rateLimiters[ip] = limiter
+	}
+
+	// A fresh client arrives; the sweep runs on the way.
+	s.limiterFor("203.0.113.9")
+
+	if len(s.rateLimiters) != 1 {
+		t.Errorf("Expected the three idle entries evicted and only the new one kept, got %d: %v",
+			len(s.rateLimiters), keysOf(s.rateLimiters))
+	}
+	if _, ok := s.rateLimiters["203.0.113.9"]; !ok {
+		t.Error("Expected the active client's limiter to survive the sweep")
+	}
+}
+
+// An entry still inside the TTL carries budget a client is actively spending,
+// so evicting it would hand them a fresh allowance early.
+func TestRateLimiters_ActiveEntriesSurvive(t *testing.T) {
+	s := NewServer(Config{
+		APIConfig: config.APIConfig{
+			RateLimit: config.APIRateLimitConfig{Enabled: true, RequestsPerMinute: 60, BurstSize: 5},
+		},
+		Version:   "test",
+		StartTime: time.Now(),
+	})
+
+	active := s.limiterFor("203.0.113.1")
+	active.allow()
+
+	// Force a sweep by backdating the last one.
+	s.rateMu.Lock()
+	s.lastSweep = time.Now().Add(-2 * rateLimiterSweepEvery)
+	s.rateMu.Unlock()
+
+	s.limiterFor("203.0.113.2")
+
+	if _, ok := s.rateLimiters["203.0.113.1"]; !ok {
+		t.Error("Expected a recently active limiter to survive the sweep")
+	}
+}
+
+// Past the cap, the most idle entries go until the map fits.
+func TestRateLimiters_CapIsEnforced(t *testing.T) {
+	s := NewServer(Config{
+		APIConfig: config.APIConfig{
+			RateLimit: config.APIRateLimitConfig{Enabled: true, RequestsPerMinute: 60, BurstSize: 5},
+		},
+		Version:   "test",
+		StartTime: time.Now(),
+	})
+
+	// All within the TTL, so the TTL pass cannot free anything and the cap
+	// has to do the work.
+	now := time.Now()
+	for i := 0; i < maxRateLimiters+50; i++ {
+		limiter := newRateLimiter(60, 5)
+		limiter.lastUpdate = now.Add(-time.Duration(i) * time.Millisecond)
+		s.rateLimiters[fmt.Sprintf("10.0.%d.%d", i/256, i%256)] = limiter
+	}
+
+	s.rateMu.Lock()
+	s.sweepRateLimiters(now)
+	s.rateMu.Unlock()
+
+	if len(s.rateLimiters) > maxRateLimiters {
+		t.Errorf("Expected the map trimmed to at most %d, got %d", maxRateLimiters, len(s.rateLimiters))
+	}
+}
+
+// The sweep must not run on every request — it walks the whole map.
+func TestRateLimiters_SweepIsThrottled(t *testing.T) {
+	s := NewServer(Config{
+		APIConfig: config.APIConfig{
+			RateLimit: config.APIRateLimitConfig{Enabled: true, RequestsPerMinute: 60, BurstSize: 5},
+		},
+		Version:   "test",
+		StartTime: time.Now(),
+	})
+
+	s.limiterFor("203.0.113.1")
+	first := s.lastSweep
+
+	s.limiterFor("203.0.113.2")
+	if !s.lastSweep.Equal(first) {
+		t.Error("Expected the sweep to be throttled, but it ran again immediately")
+	}
+}
+
+func keysOf(m map[string]*rateLimiter) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
