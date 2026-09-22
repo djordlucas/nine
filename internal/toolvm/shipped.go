@@ -298,6 +298,8 @@ func (h *Host) LoadShipped(ctx context.Context, collides Collides) {
 			modules:     reachableStdlib(string(src)),
 		}
 
+		h.setWorkBudget(t)
+
 		h.mu.Lock()
 		h.tools[s.Name] = t
 		h.mu.Unlock()

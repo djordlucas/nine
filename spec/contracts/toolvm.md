@@ -163,7 +163,7 @@ anything across a session except through a capability it was granted.
 | Memory | `WithMemoryLimitPages`, per call | 16 MiB (`[tools] memory_mb`) |
 | Concurrency | a host semaphore held across instantiation | 8 calls (`[tools] max_concurrent`) |
 | Output | the dispatcher's existing cap + spill (R-DISP.2) | 2048 tokens |
-| CPU | **none — see below** | — |
+| Work (`js` only) | QuickJS interrupt handler | 50M operations (`[tools] max_ops`, overridable per tool) |
 
 The host **MUST** bound simultaneous calls. Memory is capped per call, so without
 a concurrency bound the host's worst case is whatever the turns in flight ask
@@ -190,12 +190,26 @@ call being killed under it. That ratio generalizes the fixed 4s-of-5s default ra
 replacing it, and it is computed from the context deadline, so a tool that has already
 spent most of its budget does not get a request bound longer than its remaining life.
 
-wazero has **no fuel/gas metering**. The wall-clock deadline is the only CPU bound, and it
-is enforced by closing the module out from under the guest. This is adequate — a spinning
-tool dies at the deadline and the model observes a normal failure — but an operator is
-trusting a deadline and a concurrency cap, **not** a work budget, and that is a stated
-limitation rather than an assumption. `max_concurrent` bounds how many spinning tools can
-burn a core at once; it does not bound the work any one of them does.
+A `js` call **MUST** be bounded by work as well as by time. The host converts the
+operator's budget into interrupt checks and the guest installs a QuickJS interrupt handler
+before anything the envelope named is evaluated, the harness included, so no code runs
+unmetered. Exhaustion **MUST** be sticky and **MUST** surface as an ordinary tool error
+carrying `error_detail.code = "E_WORK_BUDGET"`; the host renders the sentence, because the
+guest counts checks and knows neither the configured number nor the key that raises it.
+
+The bound **MUST NOT** be catchable. QuickJS marks the interrupt uncatchable, so the
+unwinder skips every `catch` and an `async` function propagates rather than rejecting — a
+tool cannot wrap its loop in `try`/`catch` and continue. A budget a tool can decline is not
+a bound.
+
+The unit is approximate: QuickJS polls its handler once per 10,000 backward jumps and
+calls, so an "operation" is a loop iteration or a call rather than a bytecode op, and the
+bound is granular to ±10,000. This is stated rather than hidden because the number an
+operator sets is not the number the guest counts.
+
+A **`wasm` tool is not metered.** wazero has no fuel/gas metering and a raw module has no
+interpreter to interrupt, so for those tools the wall-clock deadline remains the only bound
+and that is a stated limitation rather than an assumption.
 
 A call that exceeds the deadline **MUST** report a timeout naming the tool, not a generic
 instantiation or trap failure.

@@ -131,6 +131,8 @@ func (h *Host) LoadGenerated(ctx context.Context, tools []Generated, collides Co
 			modules: reachableStdlib(g.Source),
 		}
 
+		h.setWorkBudget(t)
+
 		h.mu.Lock()
 		h.tools[g.Name] = t
 		h.mu.Unlock()
@@ -256,6 +258,8 @@ func (h *Host) EvalGenerated(ctx context.Context, source string, decl Declaratio
 		// less-persistent tier, not a softer one.
 		modules: reachableStdlib(source),
 	}
+	h.setWorkBudget(t)
+
 	// js_eval is never resumable, so Tool.Resumable stays false and h.call refuses
 	// a `continue` envelope for us. Stated here because the reason is not the
 	// generic one: js_eval persists nothing by definition (R-TVM.14), and a job is

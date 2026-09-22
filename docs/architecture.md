@@ -672,7 +672,7 @@ tool; instantiation happens once per **call**.
         ├─ fresh wazero instance from the compiled module   ← ONE PER CALL
         │     no globals, no cache, no credential survives it
         ├─ ctx deadline = [tools].timeout (default 5s)
-        │     wazero has no fuel metering, so this is the ONLY CPU bound
+        │     bounds elapsed time; [tools].max_ops bounds work done
         ├─ linear memory capped at [tools].memory_mb (default 16 MiB, 256 pages)
         ├─ one of [tools].max_concurrent call slots (default 8) held throughout
         │     memory_mb x max_concurrent is the host's worst case
@@ -1087,8 +1087,8 @@ Go toolchain, no git, and no source tree.
     directions or the tool does not load. Ungranted reach is not denied at call
     time — there is no host function to call.
 11. **One sandbox instance per call.** No global state, no cache, and no
-    credential survives a sandboxed tool call; the wall-clock deadline is the
-    only CPU bound, since wazero has no fuel metering.
+    credential survives a sandboxed tool call; a `js` call is bounded by both a
+    wall-clock deadline and a work budget, a `wasm` call by the deadline alone.
 12. **One tool name, one backend.** Core, plugin, and sandboxed tools share a
     single namespace; later registrations are skipped with a reported reason,
     never allowed to shadow an earlier one.
@@ -1103,7 +1103,7 @@ Go toolchain, no git, and no source tree.
 | Single host, single daemon | All state lives in one daemon process and one SQLite file. There is no clustering, no replication, and no remote client — the socket is local. |
 | One SQLite writer | Every durable write goes through one file, so concurrent writes serialize. |
 | Turns are sequential per session | Each worker's inbox holds one turn. Concurrency is across sessions, not within one. |
-| No CPU metering in the sandbox | wazero has no fuel metering, so a wall-clock deadline is the only bound on a sandboxed tool call. |
+| No CPU metering for `wasm` tools | A `js` tool is metered by QuickJS's interrupt handler (`[tools] max_ops`); wazero offers no fuel metering, so a raw `wasm` tool is bounded only by the wall clock. |
 | Token budgeting is estimated | Context accounting uses a 4-characters-per-token approximation calibrated against one tokenizer. |
 | Trimming, not compaction | Over-budget history is dropped from the front rather than summarized. |
 | One LLM provider at a time | No routing across models within a deployment. |
