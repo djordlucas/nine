@@ -121,6 +121,34 @@ static char *nine_module_normalize(JSContext *ctx, const char *base_name,
     return js_strdup(ctx, name);
 }
 
+/* ── ABI: the harness ─────────────────────────────────────────────────────
+ *
+ * The host writes the precompiled harness — QuickJS module bytecode, built from
+ * harness.js by `make harness-bc` — into guest memory and names it here, once,
+ * before nine_run.
+ *
+ * It is bytecode rather than source because parsing *was* the call. Of a 6 ms
+ * call, 4.8 ms was the host escaping 32 KB of harness into JSON, the guest
+ * parsing that JSON, and QuickJS compiling the result — every call, to produce
+ * the same program every time. Executing the harness costs 0.14 ms by
+ * comparison. JS_ReadObject skips all of the first and none of the second.
+ *
+ * It rides beside the envelope rather than inside it because the envelope is
+ * JSON and this is bytes: base64 would have cost more than the source did.
+ *
+ * The pointer is into this instance's own linear memory and the instance is
+ * destroyed when the call returns (§3), so these statics cannot outlive the
+ * call that set them or be read by another.
+ */
+static const uint8_t *g_harness = NULL;
+static uint32_t g_harness_len = 0;
+
+__attribute__((export_name("nine_harness"))) void nine_harness(uint32_t ptr,
+                                                               uint32_t len) {
+    g_harness = (const uint8_t *)(uintptr_t)ptr;
+    g_harness_len = len;
+}
+
 static JSModuleDef *nine_module_load(JSContext *ctx, const char *name, void *opaque) {
     nine_modules *set = opaque;
 
@@ -726,9 +754,12 @@ static uint64_t fail(JSContext *ctx) {
  *
  * Input is the envelope the host wrote at `ptr`:
  *
- *   { "harness": "<js>", "modules": { "<specifier>": "<js>", ... },
+ *   { "modules": { "<specifier>": "<js>", ... },
  *     "args": <the model's arguments>,
  *     "job": { "cursor": "<opaque>", "call": <n> } }
+ *
+ * The harness is not in it: the host installs it separately, as bytecode,
+ * through nine_harness above.
  *
  * `job` is present only when the host is running this tool as a long-running
  * job; an ordinary call omits it and the harness passes undefined.
@@ -813,17 +844,29 @@ __attribute__((export_name("nine_run"))) uint64_t nine_run(uint32_t ptr, uint32_
                       JS_NewCFunction(ctx, js_nine_random, "__nine_random", 1));
     JS_FreeValue(ctx, global);
 
-    JSValue harness = JS_GetPropertyStr(ctx, envelope, "harness");
-    size_t hlen = 0;
-    const char *hsrc = JS_ToCStringLen(ctx, &hlen, harness);
-    JS_FreeValue(ctx, harness);
-    if (!hsrc) {
+    if (!g_harness || g_harness_len == 0) {
+        result = pack_owned(
+            "{\"ok\":false,\"error\":\"the host did not install a harness\"}");
+        goto done;
+    }
+
+    /* Reading bytecode is only safe for input the host controls, which this is:
+     * it is built from harness.js at build time and embedded in the daemon, and
+     * a tool never reaches it. Everything a tool supplies is still source. */
+    JSValue mod = JS_ReadObject(ctx, g_harness, g_harness_len, JS_READ_OBJ_BYTECODE);
+    if (JS_IsException(mod)) {
+        result = fail(ctx);
+        goto done;
+    }
+    /* Links the harness's `nine:tool` import through the resolver installed
+     * above, exactly as evaluating the source did. */
+    if (JS_ResolveModule(ctx, mod) < 0) {
+        JS_FreeValue(ctx, mod);
         result = fail(ctx);
         goto done;
     }
 
-    JSValue ev = JS_Eval(ctx, hsrc, hlen, "nine:harness", JS_EVAL_TYPE_MODULE);
-    JS_FreeCString(ctx, hsrc);
+    JSValue ev = JS_EvalFunction(ctx, mod); /* consumes mod */
     if (JS_IsException(ev)) {
         JS_FreeValue(ctx, ev);
         result = fail(ctx);
