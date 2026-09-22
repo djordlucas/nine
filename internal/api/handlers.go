@@ -160,12 +160,6 @@ func (s *Server) rateLimitMiddleware(next http.Handler) http.Handler {
 // =============================================================================
 
 // handleHealth checks API server health.
-// @Summary      Check API health
-// @Description  Returns the API server health status, including daemon connectivity and uptime.
-// @Tags         health
-// @Produce      json
-// @Success      200 {object} HealthResponse
-// @Router       /health [get]
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	// Check if daemon is connected. The probe opens a real socket, so it has to
 	// be closed again: health is the most frequently polled endpoint on the
@@ -191,14 +185,6 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleStatus returns daemon status.
-// @Summary      Get daemon status
-// @Description  Returns the daemon's current status, including sessions, plugins, tools, and memory stats.
-// @Tags         health
-// @Produce      json
-// @Success      200 {object} StatusResponse
-// @Failure      503 {object} ErrorResponse "daemon unavailable"
-// @Security     BearerAuth
-// @Router       /status [get]
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	cl, err := s.getDaemonClient()
 	if err != nil {
@@ -245,17 +231,6 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 
 // handleCreateConversation creates a new conversation.
-// @Summary      Create a conversation
-// @Description  Creates a new conversation (agent session) with the daemon.
-// @Tags         conversations
-// @Accept       json
-// @Produce      json
-// @Param        request body CreateConversationRequest true "conversation config"
-// @Success      201 {object} CreateConversationResponse
-// @Failure      400 {object} ErrorResponse "invalid request"
-// @Failure      503 {object} ErrorResponse "daemon unavailable"
-// @Security     BearerAuth
-// @Router       /conversations [post]
 func (s *Server) handleCreateConversation(w http.ResponseWriter, r *http.Request) {
 	var req CreateConversationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -289,16 +264,6 @@ func (s *Server) handleCreateConversation(w http.ResponseWriter, r *http.Request
 }
 
 // handleListConversations lists all conversations.
-// @Summary      List conversations
-// @Description  Returns all active, idle, and stopped conversations (agent sessions).
-// @Tags         conversations
-// @Produce      json
-// @Param        limit query int false "page size (default 50, max 1000)"
-// @Param        offset query int false "items to skip (default 0)"
-// @Success      200 {object} ListConversationsResponse
-// @Failure      503 {object} ErrorResponse "daemon unavailable"
-// @Security     BearerAuth
-// @Router       /conversations [get]
 func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request) {
 	page, err := parsePageParams(r)
 	if err != nil {
@@ -347,17 +312,6 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 }
 
 // handleGetConversation returns conversation details.
-// @Summary      Get conversation details
-// @Description  Returns details and context for a specific conversation by ID.
-// @Tags         conversations
-// @Produce      json
-// @Param        id path string true "conversation id"
-// @Success      200 {object} GetConversationResponse
-// @Failure      400 {object} ErrorResponse "missing id"
-// @Failure      404 {object} ErrorResponse "conversation not found"
-// @Failure      503 {object} ErrorResponse "daemon unavailable"
-// @Security     BearerAuth
-// @Router       /conversations/{id} [get]
 func (s *Server) handleGetConversation(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -407,19 +361,6 @@ func (s *Server) handleGetConversation(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSendMessage sends a message to a conversation (executes a turn).
-// @Summary      Send a message
-// @Description  Sends a user message to a conversation and returns the agent's response.
-// @Tags         conversations
-// @Accept       json
-// @Produce      json
-// @Param        id path string true "conversation id"
-// @Param        request body SendMessageRequest true "message to send"
-// @Success      200 {object} SendMessageResponse
-// @Failure      400 {object} ErrorResponse "invalid request"
-// @Failure      404 {object} ErrorResponse "conversation not found"
-// @Failure      503 {object} ErrorResponse "daemon unavailable"
-// @Security     BearerAuth
-// @Router       /conversations/{id}/messages [post]
 func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -470,18 +411,6 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGetContext returns conversation context breakdown.
-// @Summary      Get conversation context
-// @Description  Returns the context builder breakdown for a conversation — token usage, sections, tool ranking.
-// @Tags         conversations
-// @Produce      json
-// @Param        id path string true "conversation id"
-// @Param        verbose query bool false "include the full per-section breakdown"
-// @Success      200 {object} GetContextResponse
-// @Failure      400 {object} ErrorResponse "missing id"
-// @Failure      404 {object} ErrorResponse "conversation not found"
-// @Failure      503 {object} ErrorResponse "daemon unavailable"
-// @Security     BearerAuth
-// @Router       /conversations/{id}/context [get]
 func (s *Server) handleGetContext(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -533,18 +462,6 @@ func (s *Server) handleGetContext(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleDeleteConversation deletes a conversation and all its data.
-// @Summary      Delete a conversation
-// @Description  Deletes a conversation and all its event journal data.
-// @Tags         conversations
-// @Produce      json
-// @Param        id path string true "conversation id"
-// @Param        force query bool false "delete even when the conversation is protected"
-// @Success      200 {object} DeleteConversationResponse
-// @Failure      400 {object} ErrorResponse "missing id"
-// @Failure      404 {object} ErrorResponse "conversation not found"
-// @Failure      503 {object} ErrorResponse "daemon unavailable"
-// @Security     BearerAuth
-// @Router       /conversations/{id} [delete]
 func (s *Server) handleDeleteConversation(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -585,17 +502,6 @@ func (s *Server) handleDeleteConversation(w http.ResponseWriter, r *http.Request
 }
 
 // handleStopConversation stops a conversation (end session but keep history).
-// @Summary      Stop a conversation
-// @Description  Stops a conversation's session, ending the agent worker but preserving the event journal.
-// @Tags         conversations
-// @Produce      json
-// @Param        id path string true "conversation id"
-// @Success      200 {object} StopConversationResponse
-// @Failure      400 {object} ErrorResponse "missing id"
-// @Failure      404 {object} ErrorResponse "conversation not found"
-// @Failure      503 {object} ErrorResponse "daemon unavailable"
-// @Security     BearerAuth
-// @Router       /conversations/{id}/stop [post]
 func (s *Server) handleStopConversation(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -636,15 +542,6 @@ func (s *Server) handleStopConversation(w http.ResponseWriter, r *http.Request) 
 // =============================================================================
 
 // handleGetHistory returns conversation message history.
-// @Summary      Get conversation history
-// @Description  Returns the ordered message and tool-call history for a conversation.
-// @Tags         conversations
-// @Produce      json
-// @Param        id path string true "conversation id"
-// @Failure      501 {object} ErrorResponse "not implemented"
-// @Failure      400 {object} ErrorResponse "missing id"
-// @Security     BearerAuth
-// @Router       /conversations/{id}/history [get]
 func (s *Server) handleGetHistory(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -659,15 +556,6 @@ func (s *Server) handleGetHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGetTrace returns a detailed trace of a specific turn.
-// @Summary      Trace a turn
-// @Description  Returns the detailed LLM call and tool I/O trace for a specific turn in a conversation.
-// @Tags         conversations
-// @Produce      json
-// @Param        id path string true "conversation id"
-// @Failure      501 {object} ErrorResponse "not implemented"
-// @Failure      400 {object} ErrorResponse "missing id"
-// @Security     BearerAuth
-// @Router       /conversations/{id}/trace [get]
 func (s *Server) handleGetTrace(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -682,15 +570,6 @@ func (s *Server) handleGetTrace(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleReplay replays a specific turn.
-// @Summary      Replay a turn
-// @Description  Replays a specific turn in a conversation, re-running the LLM call and tool invocations.
-// @Tags         conversations
-// @Produce      json
-// @Param        id path string true "conversation id"
-// @Failure      400 {object} ErrorResponse "missing id"
-// @Failure      501 {object} ErrorResponse "not implemented"
-// @Security     BearerAuth
-// @Router       /conversations/{id}/replay [post]
 func (s *Server) handleReplay(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -707,16 +586,6 @@ func (s *Server) handleReplay(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 
 // handleListGoals lists all goals.
-// @Summary      List goals
-// @Description  Returns all goals (active, completed, failed, paused) across all sessions.
-// @Tags         goals
-// @Produce      json
-// @Param        limit query int false "page size (default 50, max 1000)"
-// @Param        offset query int false "items to skip (default 0)"
-// @Success      200 {object} ListGoalsResponse
-// @Failure      503 {object} ErrorResponse "daemon unavailable"
-// @Security     BearerAuth
-// @Router       /goals [get]
 func (s *Server) handleListGoals(w http.ResponseWriter, r *http.Request) {
 	page, err := parsePageParams(r)
 	if err != nil {
@@ -758,13 +627,6 @@ func (s *Server) handleListGoals(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleCreateGoal creates a new goal.
-// @Summary      Create a goal
-// @Description  Creates a new background goal that spawns a session waking periodically to make progress.
-// @Tags         goals
-// @Produce      json
-// @Failure      501 {object} ErrorResponse "not implemented"
-// @Security     BearerAuth
-// @Router       /goals [post]
 func (s *Server) handleCreateGoal(w http.ResponseWriter, r *http.Request) {
 	writeNotImplemented(w, "goal creation exists only as the agent tool "+
 		"goal_create, which is gated behind a role's Delegates flag; routing "+
@@ -772,17 +634,6 @@ func (s *Server) handleCreateGoal(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGetGoal returns goal details.
-// @Summary      Get goal details
-// @Description  Returns details for a specific goal by ID, including progress and event count.
-// @Tags         goals
-// @Produce      json
-// @Param        id path string true "goal id"
-// @Success      200 {object} GetGoalResponse
-// @Failure      400 {object} ErrorResponse "missing id"
-// @Failure      404 {object} ErrorResponse "goal not found"
-// @Failure      503 {object} ErrorResponse "daemon unavailable"
-// @Security     BearerAuth
-// @Router       /goals/{id} [get]
 func (s *Server) handleGetGoal(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -826,15 +677,6 @@ func (s *Server) handleGetGoal(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleDeleteGoal deletes a goal.
-// @Summary      Delete a goal
-// @Description  Deletes a goal and stops its background session.
-// @Tags         goals
-// @Produce      json
-// @Param        id path string true "goal id"
-// @Failure      501 {object} ErrorResponse "not implemented"
-// @Failure      400 {object} ErrorResponse "missing id"
-// @Security     BearerAuth
-// @Router       /goals/{id} [delete]
 func (s *Server) handleDeleteGoal(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -853,16 +695,6 @@ func (s *Server) handleDeleteGoal(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 
 // handleListWorkflows lists all workflows.
-// @Summary      List workflows
-// @Description  Returns all workflows (running, completed, failed, cancelled) across all sessions.
-// @Tags         workflows
-// @Produce      json
-// @Param        limit query int false "page size (default 50, max 1000)"
-// @Param        offset query int false "items to skip (default 0)"
-// @Success      200 {object} ListWorkflowsResponse
-// @Failure      503 {object} ErrorResponse "daemon unavailable"
-// @Security     BearerAuth
-// @Router       /workflows [get]
 func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 	page, err := parsePageParams(r)
 	if err != nil {
@@ -904,17 +736,6 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleStopWorkflow stops/cancels a workflow.
-// @Summary      Stop a workflow
-// @Description  Cancels a running workflow by ID.
-// @Tags         workflows
-// @Produce      json
-// @Param        id path string true "workflow id"
-// @Success      200 {object} StopWorkflowResponse
-// @Failure      400 {object} ErrorResponse "missing id"
-// @Failure      404 {object} ErrorResponse "workflow not found"
-// @Failure      503 {object} ErrorResponse "daemon unavailable"
-// @Security     BearerAuth
-// @Router       /workflows/{id}/stop [post]
 func (s *Server) handleStopWorkflow(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -950,17 +771,6 @@ func (s *Server) handleStopWorkflow(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleFailWorkflow marks a workflow as failed.
-// @Summary      Fail a workflow
-// @Description  Marks a workflow as failed by ID.
-// @Tags         workflows
-// @Produce      json
-// @Param        id path string true "workflow id"
-// @Success      200 {object} FailWorkflowResponse
-// @Failure      400 {object} ErrorResponse "missing id"
-// @Failure      404 {object} ErrorResponse "workflow not found"
-// @Failure      503 {object} ErrorResponse "daemon unavailable"
-// @Security     BearerAuth
-// @Router       /workflows/{id}/fail [post]
 func (s *Server) handleFailWorkflow(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -1000,16 +810,6 @@ func (s *Server) handleFailWorkflow(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 
 // handleListTools lists all available tools.
-// @Summary      List tools
-// @Description  Returns all available tools (plugins, sandboxed, and generated).
-// @Tags         tools
-// @Produce      json
-// @Param        limit query int false "page size (default 50, max 1000)"
-// @Param        offset query int false "items to skip (default 0)"
-// @Success      200 {object} ListToolsResponse
-// @Failure      503 {object} ErrorResponse "daemon unavailable"
-// @Security     BearerAuth
-// @Router       /tools [get]
 func (s *Server) handleListTools(w http.ResponseWriter, r *http.Request) {
 	page, err := parsePageParams(r)
 	if err != nil {
@@ -1055,19 +855,6 @@ func (s *Server) handleListTools(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleCallTool calls a tool directly (bypassing the LLM).
-// @Summary      Call a tool
-// @Description  Invokes a tool by name with the given arguments, bypassing the agent loop.
-// @Tags         tools
-// @Accept       json
-// @Produce      json
-// @Param        name path string true "tool name"
-// @Param        request body CallToolRequest true "tool call arguments"
-// @Success      200 {object} CallToolResponse
-// @Failure      400 {object} ErrorResponse "invalid request"
-// @Failure      404 {object} ErrorResponse "tool not found"
-// @Failure      503 {object} ErrorResponse "daemon unavailable"
-// @Security     BearerAuth
-// @Router       /tools/{name}/call [post]
 func (s *Server) handleCallTool(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if name == "" {
@@ -1126,17 +913,6 @@ func (s *Server) handleCallTool(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGetTool returns tool details.
-// @Summary      Get tool details
-// @Description  Returns details for a specific tool by name, including input schema and capabilities.
-// @Tags         tools
-// @Produce      json
-// @Param        name path string true "tool name"
-// @Success      200 {object} GetToolResponse
-// @Failure      400 {object} ErrorResponse "missing name"
-// @Failure      404 {object} ErrorResponse "tool not found"
-// @Failure      503 {object} ErrorResponse "daemon unavailable"
-// @Security     BearerAuth
-// @Router       /tools/{name} [get]
 func (s *Server) handleGetTool(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if name == "" {
@@ -1179,14 +955,6 @@ func (s *Server) handleGetTool(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleReloadTools reloads sandboxed tools.
-// @Summary      Reload tools
-// @Description  Reloads sandboxed and generated tools from the filesystem.
-// @Tags         tools
-// @Produce      json
-// @Success      200 {object} ReloadToolsResponse
-// @Failure      503 {object} ErrorResponse "daemon unavailable"
-// @Security     BearerAuth
-// @Router       /tools/reload [post]
 func (s *Server) handleReloadTools(w http.ResponseWriter, r *http.Request) {
 	cl, err := s.getDaemonClient()
 	if err != nil {
@@ -1233,16 +1001,6 @@ func (s *Server) handleReloadTools(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 
 // handleListPlugins lists all plugins.
-// @Summary      List plugins
-// @Description  Returns all plugins (builtin and user), their loaded status, tools, and errors.
-// @Tags         plugins
-// @Produce      json
-// @Param        limit query int false "page size (default 50, max 1000)"
-// @Param        offset query int false "items to skip (default 0)"
-// @Success      200 {object} ListPluginsResponse
-// @Failure      503 {object} ErrorResponse "daemon unavailable"
-// @Security     BearerAuth
-// @Router       /plugins [get]
 func (s *Server) handleListPlugins(w http.ResponseWriter, r *http.Request) {
 	page, err := parsePageParams(r)
 	if err != nil {
@@ -1286,14 +1044,6 @@ func (s *Server) handleListPlugins(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleReloadPlugins reloads user plugins.
-// @Summary      Reload plugins
-// @Description  Reloads user plugins from the filesystem, returning the new loaded set.
-// @Tags         plugins
-// @Produce      json
-// @Success      200 {object} ReloadPluginsResponse
-// @Failure      503 {object} ErrorResponse "daemon unavailable"
-// @Security     BearerAuth
-// @Router       /plugins/reload [post]
 func (s *Server) handleReloadPlugins(w http.ResponseWriter, r *http.Request) {
 	cl, err := s.getDaemonClient()
 	if err != nil {
@@ -1335,17 +1085,6 @@ func (s *Server) handleReloadPlugins(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 
 // handleListNotifications returns user notifications.
-// @Summary      List notifications
-// @Description  Returns user notifications, optionally including already-seen ones.
-// @Tags         notifications
-// @Produce      json
-// @Param        all query bool false "include notifications already marked seen"
-// @Param        limit query int false "page size (default 50, max 1000)"
-// @Param        offset query int false "items to skip (default 0)"
-// @Success      200 {object} ListNotificationsResponse
-// @Failure      503 {object} ErrorResponse "daemon unavailable"
-// @Security     BearerAuth
-// @Router       /notifications [get]
 func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request) {
 	all, err := queryBool(r, "all")
 	if err != nil {
@@ -1396,13 +1135,6 @@ func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request)
 // =============================================================================
 
 // handleListSkills lists all skills.
-// @Summary      List skills
-// @Description  Returns all available skills (builtin, user, and generated) with names, descriptions, and tags.
-// @Tags         skills
-// @Produce      json
-// @Failure      501 {object} ErrorResponse "not implemented"
-// @Security     BearerAuth
-// @Router       /skills [get]
 func (s *Server) handleListSkills(w http.ResponseWriter, r *http.Request) {
 	writeNotImplemented(w, "skills live in the memory store and the wire "+
 		"protocol exposes no skills query")
@@ -1413,18 +1145,6 @@ func (s *Server) handleListSkills(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 
 // handleAttachSession attaches to an existing session for streaming.
-// @Summary      Attach to a session
-// @Description  Attaches to an existing conversation session, returning replay events, history, and any pending response.
-// @Tags         sessions
-// @Accept       json
-// @Produce      json
-// @Param        request body AttachSessionRequest true "session to attach to"
-// @Success      200 {object} AttachSessionResponse
-// @Failure      400 {object} ErrorResponse "invalid request"
-// @Failure      404 {object} ErrorResponse "session not found"
-// @Failure      503 {object} ErrorResponse "daemon unavailable"
-// @Security     BearerAuth
-// @Router       /sessions/attach [post]
 func (s *Server) handleAttachSession(w http.ResponseWriter, r *http.Request) {
 	var req AttachSessionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1486,28 +1206,11 @@ func (s *Server) handleAttachSession(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 
 // handleListDocs lists documentation topics.
-// @Summary      List documentation topics
-// @Description  Returns a list of available documentation topics.
-// @Tags         system
-// @Produce      json
-// @Success      200 {object} ListDocsResponse
-// @Security     BearerAuth
-// @Router       /docs [get]
 func (s *Server) handleListDocs(w http.ResponseWriter, r *http.Request) {
 	writeTopics(w, docindex.Docs())
 }
 
 // handleGetDocs returns specific documentation.
-// @Summary      Get documentation
-// @Description  Returns the markdown content for a specific documentation topic.
-// @Tags         system
-// @Produce      json
-// @Param        topic path string true "documentation topic"
-// @Success      200 {object} GetDocsResponse
-// @Failure      400 {object} ErrorResponse "missing topic"
-// @Failure      404 {object} ErrorResponse "topic not found"
-// @Security     BearerAuth
-// @Router       /docs/{topic} [get]
 func (s *Server) handleGetDocs(w http.ResponseWriter, r *http.Request) {
 	topic := r.PathValue("topic")
 	if topic == "" {
@@ -1527,28 +1230,11 @@ func (s *Server) handleGetDocs(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleListSpec lists specification topics.
-// @Summary      List specification topics
-// @Description  Returns a list of available specification topics.
-// @Tags         system
-// @Produce      json
-// @Success      200 {object} ListSpecResponse
-// @Security     BearerAuth
-// @Router       /spec [get]
 func (s *Server) handleListSpec(w http.ResponseWriter, r *http.Request) {
 	writeTopics(w, docindex.Spec())
 }
 
 // handleGetSpec returns specific specification.
-// @Summary      Get specification
-// @Description  Returns the markdown content for a specific specification topic.
-// @Tags         system
-// @Produce      json
-// @Param        topic path string true "specification topic"
-// @Success      200 {object} GetSpecResponse
-// @Failure      400 {object} ErrorResponse "missing topic"
-// @Failure      404 {object} ErrorResponse "topic not found"
-// @Security     BearerAuth
-// @Router       /spec/{topic} [get]
 func (s *Server) handleGetSpec(w http.ResponseWriter, r *http.Request) {
 	topic := r.PathValue("topic")
 	if topic == "" {
@@ -1615,16 +1301,6 @@ func readTopic(bundle docindex.Bundle, topic string) (string, bool) {
 // =============================================================================
 
 // handleStreamMessages streams conversation messages via SSE.
-// @Summary      Stream conversation messages
-// @Description  Opens a Server-Sent Events stream for a conversation, forwarding tool events and response chunks in real time.
-// @Tags         conversations
-// @Produce      text/event-stream
-// @Param        id path string true "conversation id"
-// @Success      200 {string} string "SSE stream"
-// @Failure      400 {object} ErrorResponse "missing id"
-// @Failure      503 {object} ErrorResponse "daemon unavailable"
-// @Security     BearerAuth
-// @Router       /conversations/{id}/messages/stream [get]
 func (s *Server) handleStreamMessages(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {

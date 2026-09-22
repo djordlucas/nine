@@ -29,6 +29,12 @@ jobs:
       - name: Build
         run: make build
 
+      # The generated API code must match internal/api/openapi.yaml. Without
+      # this the document and the server drift apart silently, which is the
+      # failure the spec-first layout exists to prevent.
+      - name: OpenAPI drift
+        run: make openapi-check
+
       # tests/evals/runner spins up a real in-process daemon per test and
       # deadlocks intermittently under CI load (the agent worker hangs on a
       # turn whose reply never arrives; see "Fix eval-runner daemon hang" in
