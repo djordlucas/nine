@@ -34,6 +34,37 @@ const (
 	// DefaultMemoryMB caps a call's linear memory: 16 MiB, or 256 wasm pages.
 	DefaultMemoryMB = 16
 
+	// DefaultMaxOps is the per-call work budget for a `js` tool, in operations.
+	//
+	// Calibrated rather than guessed. Every shipped tool finishes inside a single
+	// interrupt check (under 10,000 operations); parsing 20,000 CSV rows through
+	// nine:csv costs 1.7M, sorting 100,000 numbers 2.1M, and a one-million-pass
+	// loop 2.0M. Fifty million is roughly a 25-million-pass tight loop, or 25x
+	// the heaviest realistic workload measured.
+	//
+	// It is deliberately tighter than the wall clock. On the machine this was
+	// calibrated on the budget runs out in about 750ms, so a runaway tool now
+	// fails in well under a second instead of burning the full 5s deadline — and
+	// fails with a sentence naming the key to raise, which a deadline never gave
+	// anyone. The cost of that is real and worth stating: a tool that today burns
+	// four seconds of CPU will meet this budget first. Tool calls here are
+	// LLM-gated events where an ordinary call costs ~1.25ms, so a call doing 50M
+	// operations is already 600x normal, but an operator running something
+	// genuinely heavy will need [tool.<name>] max_ops — and will be told so.
+	DefaultMaxOps = 50_000_000
+
+	// opsPerCheck converts the operator's budget into the interrupt checks the
+	// guest counts. QuickJS polls its interrupt handler once per
+	// JS_INTERRUPT_COUNTER_INIT (10,000) polls, and a poll is a backward jump or
+	// a call — loop iterations and function calls, not every bytecode op.
+	//
+	// So "operations" is an approximation, and deliberately the operator-facing
+	// one: a number with four zeroes on the end is easier to reason about than a
+	// count of interrupt checks, and the granularity of the bound (±10,000
+	// operations) is irrelevant at any budget worth setting. If a future QuickJS
+	// changes its constant, the budget shifts by that factor and nothing breaks.
+	opsPerCheck = 10_000
+
 	// DefaultMaxConcurrent bounds simultaneous calls across every tool.
 	//
 	// Without it the memory cap is per call and nothing multiplies it: each
@@ -59,6 +90,17 @@ type Config struct {
 	Timeout       time.Duration
 	MemoryMB      int
 	MaxConcurrent int
+
+	// MaxOps is the per-call work budget for a `js` tool, in operations, from
+	// `[tools] max_ops`. Zero uses DefaultMaxOps; negative disables the budget,
+	// which leaves the wall clock as the only bound, as it was before this
+	// existed.
+	MaxOps int
+
+	// MaxOpsPerTool overrides MaxOps for named tools, from `[tool.<name>]
+	// max_ops`. A tool that legitimately grinds should not force its budget onto
+	// every other tool, which is the same argument per-tool timeouts already won.
+	MaxOpsPerTool map[string]int
 
 	// Timeouts overrides Timeout for named tools, from `[tool.<name>] timeout`.
 	// One tool that legitimately takes twenty seconds should not force twenty
@@ -90,6 +132,13 @@ type Tool struct {
 	// Timeout is this tool's per-call deadline: the operator's override for it,
 	// or zero to use the host's. Resolved at load so a call reads one field.
 	Timeout time.Duration
+
+	// MaxOps is this tool's resolved work budget in operations, 0 when unmetered.
+	// Kept for `nine tools show`; the guest is handed checks, not operations.
+	MaxOps int
+	// checks is MaxOps in the guest's own unit, resolved at registration because
+	// it is baked into the cached envelope head.
+	checks uint32
 	// ManifestPath is where this tool came from, for `nine tools show`. Empty for
 	// a generated tool, which came from the store rather than a file.
 	ManifestPath string
@@ -154,6 +203,8 @@ type Host struct {
 	// memoryMB is the resolved per-call memory cap, kept so a failure can name
 	// the limit it hit rather than leaving an author to guess at it.
 	memoryMB int
+	// maxOps is the resolved default work budget, in operations. 0 is unmetered.
+	maxOps int
 
 	mu     sync.RWMutex
 	tools  map[string]*Tool
@@ -224,12 +275,22 @@ func Open(ctx context.Context, cfg Config) (*Host, error) {
 	if maxConc <= 0 {
 		maxConc = DefaultMaxConcurrent
 	}
+	// Negative is the operator turning the budget off, which is distinct from
+	// leaving it unset — so it cannot collapse into the default the way a
+	// non-positive memory or timeout does.
+	maxOps := cfg.MaxOps
+	if maxOps == 0 {
+		maxOps = DefaultMaxOps
+	} else if maxOps < 0 {
+		maxOps = 0
+	}
 
 	h := &Host{
 		cfg:      cfg,
 		rt:       rt,
 		timeout:  timeout,
 		memoryMB: memMB,
+		maxOps:   maxOps,
 		tools:    map[string]*Tool{},
 		sem:      make(chan struct{}, maxConc),
 	}
@@ -594,7 +655,11 @@ func (h *Host) callWithJob(ctx context.Context, t *Tool, args json.RawMessage, j
 		// The tool's own failure, surfaced as an ordinary tool error: the model
 		// can read it and try different arguments, which is exactly what it
 		// should do with "date is not a valid ISO-8601 string".
-		return Output{}, &CallError{Tool: name, Message: h.explainOOM(res.Error, len(input)), Detail: res.ErrorDetail}
+		msg := h.explainOOM(res.Error, len(input))
+		if res.ErrorDetail != nil && res.ErrorDetail.Code == CodeWorkBudget {
+			msg = t.explainWorkBudget()
+		}
+		return Output{}, &CallError{Tool: name, Message: msg, Detail: res.ErrorDetail}
 	}
 	if res.Continue != nil {
 		// A tool that never declared itself resumable must not be able to acquire
@@ -642,6 +707,27 @@ func (h *Host) acquire(ctx context.Context, name string) (func(), error) {
 	}
 }
 
+// CodeWorkBudget is the failure code the guest reports when a call runs out of
+// work budget. The guest reports a code rather than a sentence because the
+// sentence needs the configured number and the key to raise, and the guest knows
+// neither — it counts checks, and the operator configured operations.
+const CodeWorkBudget = "E_WORK_BUDGET"
+
+// explainWorkBudget is the sentence a model and an operator both have to act on,
+// so it names the budget, the key that sets it, and the key that raises it for
+// this tool alone.
+//
+// Matching on a code rather than on message text is the difference between this
+// and explainOOM below: one is a contract the guest and host agreed on, the
+// other is a guess at how QuickJS words an allocation failure.
+func (t *Tool) explainWorkBudget() string {
+	return fmt.Sprintf(
+		"exceeded its work budget of %d operations — this is a bound on work done, "+
+			"not time taken, and it is set by [tools] max_ops; raise it for this tool "+
+			"alone with [tool.%s] max_ops, or make the tool do less",
+		t.MaxOps, t.Name)
+}
+
 // explainOOM adds the operator-facing context a bare allocation failure lacks.
 //
 // A guest that exhausts its linear memory reports whatever its own runtime says —
@@ -661,6 +747,23 @@ func (h *Host) explainOOM(msg string, inputLen int) string {
 		"%s — this call is capped at %d MiB of memory ([tools] memory_mb) and its input was %d bytes; "+
 			"note the result is JSON-encoded on the way out, so a large string costs roughly twice its length",
 		msg, h.memoryMB, inputLen)
+}
+
+// setWorkBudget resolves a tool's work budget and stores it in both units: the
+// operator's operations, for reporting, and the guest's checks, which the cached
+// envelope head carries. Every path that builds a Tool calls this, so a shipped
+// or generated tool is metered exactly as a developer tool is.
+func (h *Host) setWorkBudget(t *Tool) {
+	ops := h.maxOps
+	if over, ok := h.cfg.MaxOpsPerTool[t.Name]; ok {
+		if over < 0 {
+			ops = 0
+		} else if over > 0 {
+			ops = over
+		}
+	}
+	t.MaxOps = ops
+	t.checks = uint32(ops / opsPerCheck) //nolint:gosec // bounded by config
 }
 
 // effectiveTimeout is this tool's deadline: its own override, or the host's.
