@@ -277,17 +277,23 @@ func TestPublishedConfigIsConservative(t *testing.T) {
 		t.Error("docker/nine.toml declares [tools.agent]; the generated-tool tier must stay off in the published image")
 	}
 
-	// [tools] enabled must be false. Match the key in the [tools] table only.
+	// The shipped sandboxed tools are on — they are the agent's filesystem, and
+	// without them the image can neither read nor write a file. What must stay
+	// off is user_dir: the shipped set is embedded in the binary and reviewed,
+	// a directory of tools is neither. Match keys in the [tools] table only.
 	toolsIdx := regexp.MustCompile(`(?m)^\s*\[tools\]`).FindStringIndex(cfg)
 	if toolsIdx == nil {
-		t.Fatal("docker/nine.toml has no [tools] section; sandboxed tools must be explicitly off")
+		t.Fatal("docker/nine.toml has no [tools] section; the tier must be set explicitly")
 	}
 	rest := cfg[toolsIdx[1]:]
 	if next := regexp.MustCompile(`(?m)^\s*\[`).FindStringIndex(rest); next != nil {
 		rest = rest[:next[0]]
 	}
-	if !regexp.MustCompile(`(?m)^\s*enabled\s*=\s*false`).MatchString(rest) {
-		t.Error("docker/nine.toml does not set [tools] enabled = false")
+	if !regexp.MustCompile(`(?m)^\s*enabled\s*=\s*true`).MatchString(rest) {
+		t.Error("docker/nine.toml does not set [tools] enabled = true; the image would ship with no file tools")
+	}
+	if regexp.MustCompile(`(?m)^\s*user_dir\s*=`).MatchString(rest) {
+		t.Error("docker/nine.toml sets [tools] user_dir; the published image loads only the shipped tools")
 	}
 
 	// Durable state belongs on the volume, not in the image's writable layer,
