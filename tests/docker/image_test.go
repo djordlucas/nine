@@ -183,6 +183,36 @@ func TestDataIsWritableByServiceUser(t *testing.T) {
 	}
 }
 
+// TestBuiltinPluginsStart asserts the shell built-in actually starts in the
+// image. It is the agent's only filesystem capability there, because the
+// sandboxed tier that carries write_file is off in the baked config.
+//
+// The regression this exists for: s6-setuidgid changes uid and gid and nothing
+// else, so the daemon ran as uid 1000 with HOME still pointing at root's home.
+// os.UserCacheDir() reads $HOME, the plugin host tried to create /root/.cache,
+// and shell failed to start — while the daemon stayed up and healthy and every
+// other assertion in this file still passed. A plugin that never loads is
+// invisible from the outside; only the roster shows it.
+func TestBuiltinPluginsStart(t *testing.T) {
+	id := startContainer(t)
+
+	out, err := dockerRun(t, "exec", "-u", "nine", id, "nine", "plugins")
+	if err != nil {
+		t.Fatalf("nine plugins: %v", err)
+	}
+	if !strings.Contains(out, "shell") {
+		logs, _ := dockerRun(t, "logs", id)
+		t.Fatalf("shell is not in the plugin roster:\n%s\n\ncontainer logs:\n%s", out, logs)
+	}
+
+	// The daemon logs the failure and carries on, so a started-then-died plugin
+	// looks the same from the roster alone.
+	logs, _ := dockerRun(t, "logs", id)
+	if strings.Contains(logs, "built-in plugin start failed") {
+		t.Errorf("a built-in plugin failed to start:\n%s", logs)
+	}
+}
+
 // TestWorkspaceAliasResolves covers the /work alias, which the init-perms
 // oneshot creates as root before either service starts. It cannot be made by
 // the services themselves: they run as uid 1000 and the link lands at the
