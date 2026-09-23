@@ -1,4 +1,8 @@
-# Publishes the runtime image to GHCR and Docker Hub.
+# Publishes the runtime image to GHCR, and to Docker Hub if its secrets are set.
+#
+# A package first published to a personal namespace is private by default, so
+# releasing from a private repository needs no visibility step here; the steps
+# that do care are marked below.
 #
 # Order matters and is the point of this file: build once, scan what was built,
 # and only then push. A scan that runs after the push has already shipped the
@@ -210,8 +214,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Docker Hub is optional: without the secrets the workflow still publishes
-      # to GHCR rather than failing the release.
+      # Docker Hub is optional and currently unused: with no DOCKERHUB_USERNAME
+      # secret set, the workflow publishes to GHCR alone rather than failing.
+      #
+      # Leave it that way while the GHCR package is private. Pushing to a Docker
+      # Hub repository that does not exist yet creates it public, which would
+      # publish an image the GHCR side is deliberately keeping private. Setting
+      # the secrets is the opt-in, and it means creating the Docker Hub
+      # repository first, with the visibility you actually want.
       - name: Log in to Docker Hub
         id: dockerhub
         if: env.DOCKERHUB_USERNAME != ''
@@ -268,6 +278,12 @@ jobs:
       # Keyless: the signature is bound to this workflow's OIDC identity and
       # recorded in the public Rekor transparency log. There is no private key
       # to store, leak, or rotate. docs/docker-image.md has the verify command.
+      #
+      # The signature itself lands in the (private) GHCR repository, but the
+      # Rekor entry is public and carries this repository's name, the workflow
+      # path and the image digest. That discloses that private releases are
+      # happening, though not their contents. `--tlog-upload=false` suppresses
+      # it, at the cost of needing `--insecure-ignore-tlog` to verify.
       - name: Sign the images
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -279,8 +295,18 @@ jobs:
             cosign sign --yes "${DOCKERHUB_IMAGE}@${DIGEST}"
           fi
 
+      # GitHub's attestation API is only available to public repositories on
+      # Free/Pro/Team; a private repository needs GitHub Enterprise Cloud. This
+      # repository is private, so the step is expected to fail and must not take
+      # the release with it — by this point the image is already pushed, so a
+      # hard failure would leave a published image behind a red run.
+      #
+      # The build's own `provenance: mode=max` and `sbom: true` above are
+      # registry-side attestations on the manifest and are unaffected. Drop the
+      # continue-on-error when the repository goes public.
       - name: Attest build provenance (GHCR)
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        continue-on-error: true
         with:
           subject-name: ${{ env.GHCR_IMAGE }}
           subject-digest: ${{ steps.build.outputs.digest }}
