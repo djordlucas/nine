@@ -17,12 +17,19 @@ type CallError struct {
 	Tool    string
 	Message string
 	Detail  *ErrorDetail
+
+	// Logs is what the tool printed through `nine.log` before it failed, oldest
+	// first and bounded (calllog.go). Empty on a tool that printed nothing, and
+	// never set on success — logs a caller did not ask for are noise, and these
+	// are only worth their space when they explain something.
+	Logs []string
 }
 
 func (e *CallError) Error() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "tool %q: %s", e.Tool, e.Message)
 	if e.Detail == nil {
+		writeLogs(&b, e.Logs)
 		return b.String()
 	}
 
@@ -51,7 +58,24 @@ func (e *CallError) Error() string {
 	if len(e.Detail.Cause) > 0 {
 		fmt.Fprintf(&b, "; caused by: %s", strings.Join(e.Detail.Cause, ": "))
 	}
+	writeLogs(&b, e.Logs)
 	return b.String()
+}
+
+// writeLogs appends what the tool printed, as its own indented block.
+//
+// A block rather than an inline list, because the reader is a language model
+// deciding what to change: six printed values on six lines are scannable, and
+// the same six joined by commas read as one more sentence about the error.
+func writeLogs(b *strings.Builder, logs []string) {
+	if len(logs) == 0 {
+		return
+	}
+	b.WriteString("\nprinted before failing:")
+	for _, l := range logs {
+		b.WriteString("\n  ")
+		b.WriteString(l)
+	}
 }
 
 // Retryable reports whether the tool said trying again could work. The second
