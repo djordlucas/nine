@@ -135,6 +135,14 @@ retried three times, so none of this is required.
 `console.log` works and goes to the daemon log. It is the only way out of the sandbox you
 have without a grant.
 
+**If your tool fails, the last 8 lines it printed come back with the error.** That is what
+`console.log` is for here: print the values you would want to see if this call went wrong,
+because on a failure they are what the caller reads instead of guessing at your code. A
+successful call returns its result and nothing else.
+
+**Do not print credentials.** A failure message is read by the model and written to the
+turn, so anything you print on the way to failing goes with it.
+
 ### The manifest
 
 | Field | Required | Notes |
@@ -523,7 +531,7 @@ Around it, the host objects a tool actually reaches for:
 
 | | Notes |
 |---|---|
-| `console.*` | Goes to the daemon log. |
+| `console.*` | Goes to the daemon log; the last 8 lines also come back attached to a failure. Do not print credentials. |
 | `fetch` | A subset, with the `net.http` grant. See above. |
 | `TextEncoder` / `TextDecoder` | **UTF-8 only.** Another label throws rather than quietly producing UTF-8. |
 | `URL` / `URLSearchParams` | A pragmatic subset — absolute URLs and resolution against a base. No IDNA, no full WHATWG state machine. |
