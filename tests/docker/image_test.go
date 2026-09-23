@@ -124,7 +124,11 @@ func TestDaemonRunsAsNonRoot(t *testing.T) {
 
 	// docker top reports the host-side view of every process in the container,
 	// which is harder to fool than asking the container about itself.
-	out := mustDocker(t, "top", id, "-eo", "user,args")
+	//
+	// pid has to be in the format string even though nothing here reads it: the
+	// daemon parses the ps output to find the PID column and map host pids back
+	// to the container, and refuses the request outright without it.
+	out := mustDocker(t, "top", id, "-eo", "pid,user,args")
 
 	var sawDaemon bool
 	for _, line := range strings.Split(out, "\n") {
@@ -133,10 +137,10 @@ func TestDaemonRunsAsNonRoot(t *testing.T) {
 		}
 		sawDaemon = true
 		fields := strings.Fields(line)
-		if len(fields) == 0 {
+		if len(fields) < 2 {
 			continue
 		}
-		user := fields[0]
+		user := fields[1]
 		if user == "root" || user == "0" {
 			t.Errorf("a nine process runs as root: %s", line)
 		}
