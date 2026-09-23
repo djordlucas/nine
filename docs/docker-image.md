@@ -94,15 +94,18 @@ Three ways, in increasing order of control:
 3. **Derive an image.** `FROM ghcr.io/djordlucas/nine:1.4.2`, then add an MCP
    server's runtime or your own `tools.d`.
 
-The baked config is deliberately narrower than the repo's `nine.toml`, which is
-a development config:
+The baked config is narrower than the repo's `nine.toml`, which is a development
+config. It is not narrower everywhere: the sandboxed tools are on, because an
+agent that cannot read or write a file is not a working default.
 
 | Setting | Baked value | Why |
 |---------|-------------|-----|
-| `[tools] enabled` | `false` | The sandboxed-tool tier is opt-in. No environment variable turns it on. |
-| `[tools.agent]` | absent | Nine does not write its own tools unless an operator asks for it. |
+| `[tools] enabled` | `true` | The shipped sandboxed tools are the agent's filesystem — `read_file`, `write_file`, `edit_file` and the rest. Without them it cannot open a file. They are embedded in the binary, so nothing is mounted to get them. |
+| `[tools] user_dir` | unset | Only the shipped, reviewed tools load. A directory of tools is not read. |
+| `[tools.agent]` | absent | Nine does not write its own tools. Running a reviewed tool and authoring a new one are different powers; the image keeps the second off. |
+| `[daemon] self_reflection` | `30m` | Every tick is an LLM call. At the 2m default an idle container bills a metered API around the clock. `off` removes it. |
 | `[memory] path` | `/data/nine.db` | The container's writable layer is discarded when the container is replaced. |
-| `[workspace] root` | `/data/workspace` | Scopes the files plugin to the volume. |
+| `[workspace] root` | `/data/workspace` | Scopes the workspace to the volume. |
 | `[embeddings] provider` | `keyword` | Ranking works with no model and no network. |
 
 Full reference: [configuration.md](configuration.md).
@@ -179,6 +182,7 @@ Supply-chain properties:
 | No browser, no Node | An MCP server needing either must come from a derived image or a hosted URL — [browser.md](browser.md). |
 | arm64 is emulated at build time | The Go binary cross-compiles, but the Debian layers build under QEMU, so arm64 releases are slower to produce. The image itself is native. |
 | Contract tests run on amd64 only | Both architectures are scanned, but the container tests drive real containers, and running them under QEMU would add emulation flakiness to a release gate. |
+| `docker stop` exits 137 | s6-linux-init runs its shutdown in container mode and ends by SIGKILLing what remains, PID 1 included, so a clean stop still reports 137. Every service stops in dependency order first — check the logs, not the status. Orchestrators that read the exit code see a crash where there was none. |
 | `latest` is a moving target | It changes on every stable release. Pin a version or a digest for anything that matters. |
 | The package is private | Every pull needs `docker login ghcr.io` with a `read:packages` token, including on CI runners. |
 | No GitHub attestation | `gh attestation verify` needs a public repository or GitHub Enterprise Cloud. Verify with cosign and the buildx attestations instead. |
