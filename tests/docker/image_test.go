@@ -183,6 +183,41 @@ func TestDataIsWritableByServiceUser(t *testing.T) {
 	}
 }
 
+// TestWorkspaceAliasResolves covers the /work alias, which the init-perms
+// oneshot creates as root before either service starts. It cannot be made by
+// the services themselves: they run as uid 1000 and the link lands at the
+// filesystem root.
+//
+// The sandboxed file tools address the workspace as /work and `shell` sees
+// /data/workspace, so a path one prints has to resolve for the other. A broken
+// link fails no service and shows up only as an agent that cannot find a file
+// it just wrote.
+func TestWorkspaceAliasResolves(t *testing.T) {
+	vol := fmt.Sprintf("nine-test-work-%d", time.Now().UnixNano())
+	t.Cleanup(func() { _, _ = dockerRun(t, "volume", "rm", "-f", vol) })
+
+	// A named volume mounted over /data is the case that matters: it shadows
+	// whatever the image put there, so the alias has to survive a boot where
+	// /data arrives empty and root-owned.
+	id := startContainer(t, "-v", vol+":/data")
+
+	target, err := dockerRun(t, "exec", id, "readlink", "-f", "/work")
+	if err != nil {
+		listing, _ := dockerRun(t, "exec", id, "ls", "-la", "/")
+		t.Fatalf("/work does not resolve: %v\n/ holds:\n%s", err, listing)
+	}
+	if target != "/data/workspace" {
+		t.Errorf("/work resolves to %q, want /data/workspace", target)
+	}
+
+	// Same directory, both names, and writable as the service user — the point
+	// of the alias rather than just its existence.
+	if _, err := dockerRun(t, "exec", "-u", "1000", id, "sh", "-c",
+		"touch /work/.probe && test -f /data/workspace/.probe && rm /work/.probe"); err != nil {
+		t.Errorf("uid 1000 cannot write through /work to /data/workspace: %v", err)
+	}
+}
+
 // TestNoBuildToolchainInImage asserts the runtime image ships what Nine needs
 // and nothing that would let it — or anything that compromises it — build code.
 func TestNoBuildToolchainInImage(t *testing.T) {
