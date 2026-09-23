@@ -8,9 +8,12 @@ Three ways to run Nine, in increasing order of effort:
 | Build the image from a clone | Docker, the repo | Changing the image, or auditing the build |
 | Native build | Go 1.26+, the repo | Developing Nine |
 
-The published image is the shortest path and needs no clone:
+The published image is the shortest path and needs no clone. It is a private
+package, so authenticate to GHCR first with a `read:packages` token:
 
 ```bash
+echo "$CR_PAT" | docker login ghcr.io -u <your-github-username> --password-stdin
+
 docker run -d --name nine \
   -p 127.0.0.1:8080:8080 \
   --add-host host.docker.internal:host-gateway \

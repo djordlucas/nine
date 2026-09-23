@@ -1,7 +1,16 @@
 # Container image
 
-Nine publishes a runtime image to two registries. Pulling one is the supported
-way to run Nine without a source checkout.
+Nine publishes a runtime image to GHCR. Pulling it is the supported way to run
+Nine without a source checkout.
+
+The package is private, which means a pull needs credentials. Authenticate once
+with a GitHub personal access token carrying the `read:packages` scope:
+
+```bash
+echo "$CR_PAT" | docker login ghcr.io -u <your-github-username> --password-stdin
+```
+
+Then:
 
 ```bash
 docker run -d --name nine \
@@ -19,13 +28,18 @@ run. It expects an Ollama on the host at port 11434; point it elsewhere with
 
 ## Registries
 
-| Registry | Reference |
-|----------|-----------|
-| GitHub Container Registry | `ghcr.io/djordlucas/nine` |
-| Docker Hub | `docker.io/djordlucas/nine` |
+| Registry | Reference | Status |
+|----------|-----------|--------|
+| GitHub Container Registry | `ghcr.io/djordlucas/nine` | Published, private |
+| Docker Hub | `docker.io/djordlucas/nine` | Not published |
 
-Both carry the same digest for a given release. GHCR is the primary: it is
-pushed first and is where the build provenance attestation lives.
+GHCR is the only registry in use. The release workflow can also push to Docker
+Hub, but that stays off while GHCR is private: pushing to a Docker Hub
+repository that does not exist yet creates it public.
+
+Access to the GHCR package follows the repository. To let someone else pull,
+invite them under the package's *Manage access*; to let another repository's
+workflow pull, add it under *Manage Actions access*.
 
 ## Tags
 
@@ -108,16 +122,23 @@ cosign verify ghcr.io/djordlucas/nine:latest \
 The identity regexp is the check that matters. Without it, cosign accepts a
 signature from any workflow in any repository.
 
-Build provenance and the SBOM ride along as attestations:
+Build provenance and the SBOM ride along on the manifest:
 
 ```bash
-# Who built it, from which commit, with which workflow
-gh attestation verify oci://ghcr.io/djordlucas/nine:latest --repo djordlucas/nine
-
 # What is inside it
 docker buildx imagetools inspect ghcr.io/djordlucas/nine:latest \
   --format '{{ json .SBOM.SPDX }}'
+
+# How it was built
+docker buildx imagetools inspect ghcr.io/djordlucas/nine:latest \
+  --format '{{ json .Provenance.SLSA }}'
 ```
+
+`gh attestation verify` does not work here. GitHub's attestation API is limited
+to public repositories outside GitHub Enterprise Cloud, so the release
+workflow's attestation step is expected to fail and is marked
+`continue-on-error`. The buildx attestations above and the cosign signature are
+unaffected — they live on the image, not in GitHub.
 
 `make image-verify` runs the cosign command above.
 
@@ -159,4 +180,6 @@ Supply-chain properties:
 | arm64 is emulated at build time | The Go binary cross-compiles, but the Debian layers build under QEMU, so arm64 releases are slower to produce. The image itself is native. |
 | Contract tests run on amd64 only | Both architectures are scanned, but the container tests drive real containers, and running them under QEMU would add emulation flakiness to a release gate. |
 | `latest` is a moving target | It changes on every stable release. Pin a version or a digest for anything that matters. |
-| Docker Hub pulls are rate-limited | Anonymous pulls hit Docker's limits. GHCR does not apply them. |
+| The package is private | Every pull needs `docker login ghcr.io` with a `read:packages` token, including on CI runners. |
+| No GitHub attestation | `gh attestation verify` needs a public repository or GitHub Enterprise Cloud. Verify with cosign and the buildx attestations instead. |
+| Signing is publicly logged | Keyless cosign records the repository name, workflow path and image digest in the public Rekor log, even though the image itself is private. |

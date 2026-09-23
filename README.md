@@ -11,7 +11,6 @@
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8.svg)](go.mod)
 [![Status: experimental](https://img.shields.io/badge/status-experimental-orange.svg)](#project-status)
 [![GHCR](https://img.shields.io/badge/ghcr.io-djordlucas%2Fnine-blue?logo=github)](https://github.com/djordlucas/nine/pkgs/container/nine)
-[![Docker Hub](https://img.shields.io/badge/docker.io-djordlucas%2Fnine-blue?logo=docker)](https://hub.docker.com/r/djordlucas/nine)
 
 Nine is an **AI agent runtime**.
 Use Nine to research subjects, work on codebases, automate processes, experiment.
@@ -87,10 +86,12 @@ developed against small models to stay useful on modest hardware. Currently test
 
 ## Quick start
 
-No clone needed — the image ships a working config.
+No clone needed — the image ships a working config. The image is private, so
+authenticate first with a GitHub token carrying `read:packages`.
 
 ```bash
-# 1. A model on the host
+# 1. Registry access and a model on the host
+echo "$CR_PAT" | docker login ghcr.io -u <your-github-username> --password-stdin
 ollama pull qwen3.5:4b
 
 # 2. Nine
@@ -104,9 +105,9 @@ docker run -d --name nine \
 docker exec -it -u nine nine nine
 ```
 
-Also on Docker Hub as `djordlucas/nine`. Both registries carry the same digest,
-for `linux/amd64` and `linux/arm64`. Tags, signature verification and the
-configuration surface: [docs/docker-image.md](docs/docker-image.md).
+Published for `linux/amd64` and `linux/arm64`. Registry access, tags, signature
+verification and the configuration surface:
+[docs/docker-image.md](docs/docker-image.md).
 
 Point Nine at a different LLM without a config file:
 
