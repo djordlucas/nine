@@ -8,4 +8,11 @@ set -e
 #
 # /data and the /work alias are prepared by the init-perms oneshot, which this
 # service depends on.
+# s6-setuidgid changes the uid and gid, and nothing else: HOME stays whatever
+# the root supervision tree had, which is /root. os.UserCacheDir() derives
+# $HOME/.cache from it, so the plugin host would try to create /root/.cache as
+# uid 1000 and the shell plugin would fail to start. useradd set /data as this
+# user's home; this is what makes the running process agree.
+export HOME=/data
+
 exec s6-setuidgid nine nine daemon
