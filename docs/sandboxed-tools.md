@@ -127,7 +127,7 @@ Dispatch(tool, args)
 | Memory | `WithMemoryLimitPages`, per call | 256 pages (16 MiB) |
 | Concurrency | a host semaphore held across instantiation | 8 calls (`[tools] max_concurrent`) |
 | Output | the dispatcher's existing cap + spill (R-DISP.2) | 2048 tokens |
-| CPU | **none — see below** | — |
+| Work | QuickJS interrupt handler, `js` tools only | 50M operations (`[tools] max_ops`) |
 
 Memory and concurrency are one bound in two halves: `memory_mb` is what a single
 call may hold, `max_concurrent` is how many calls may hold it at once, and their
@@ -136,11 +136,26 @@ with every slot taken waits, and the wait is charged to the turn's context rathe
 than to the tool's own deadline, so queueing never shortens the time a tool gets
 to run.
 
-wazero has **no fuel/gas metering**. The wall-clock deadline is the only CPU
-bound, and it is enforced by closing the module out from under the guest. This is
-adequate (a spinning tool dies in 5s and the model observes a normal failure) but
-it must be written down rather than assumed: an operator is trusting a deadline
-and a concurrency cap, not a work budget.
+**The work budget bounds what a call does; the deadline bounds how long it
+takes.** The difference is that a deadline is a property of the machine — the
+same tool passes on an idle host and fails on a loaded one — while a budget is a
+property of the tool, so a tool that is too expensive fails the same way
+everywhere.
+
+It is a real bound, not a suggestion. QuickJS throws an **uncatchable** error
+when the budget runs out, so a tool cannot wrap its loop in `try`/`catch` and
+carry on; the unwinder skips every handler and an `async` function propagates
+instead of rejecting. Exhaustion is sticky, so nothing resumes after the throw.
+
+The unit is approximate and deliberately so: QuickJS polls its interrupt handler
+once per 10,000 backward jumps and calls, so "operations" means loop iterations
+and function calls rather than bytecode ops. At any budget worth setting, the
+±10,000 granularity is irrelevant.
+
+**A `wasm` tool is not metered.** The budget is the interpreter's interrupt
+handler, and a raw module has no interpreter to interrupt — wazero itself offers
+no fuel metering. For those tools the wall clock remains the only bound, which is
+a stated limitation rather than an assumption.
 
 ---
 
@@ -667,8 +682,8 @@ The instance model is untouched, and that is the point. Each call is created and
 exactly as before, under the same deadline and the same memory cap. Work outlives the turn
 because the *host* holds the cursor, never because anything outlives the instance. The
 alternatives — keeping an instance alive, or detaching one onto a goroutine — were rejected
-for the same reason: the wall-clock deadline is the only CPU bound the host has, and
-detaching from it leaves none.
+for the same reason: the deadline and the work budget are both per call, and detaching
+from a call leaves neither.
 
 It runs as a **job**, in the registry long-running plugin work already uses, and an agent
 sees no difference: `job_check`, `job_wait`, `job_list`, `job_cancel`, unchanged. Two
