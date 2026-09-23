@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -330,7 +331,12 @@ func (h *Host) registerHostFunctions(ctx context.Context) error {
 			if !ok {
 				return
 			}
-			slog.Info("sandboxed tool log", "tool", name, "msg", string(buf))
+			msg := string(buf)
+			// The daemon log keeps every line in full, as it always has; the
+			// per-call buffer is the bounded copy a failure can carry back to
+			// the model, which cannot read the daemon's log.
+			slog.Info("sandboxed tool log", "tool", name, "msg", msg)
+			logFor(ctx).add(msg)
 		}).
 		Export("log").
 		NewFunctionBuilder().
@@ -621,6 +627,10 @@ func (h *Host) callWithJob(ctx context.Context, t *Tool, args json.RawMessage, j
 	// guest is told, never what it is allowed.
 	grant := t.Grant
 	ctx = context.WithValue(ctx, grantKey{}, &grant)
+	// One log buffer per call, so what a tool printed can be handed back if it
+	// fails. It lives exactly as long as the call does.
+	printed := &callLog{}
+	ctx = context.WithValue(ctx, callLogKey{}, printed)
 
 	input, err := t.inputForJob(args, job)
 	if err != nil {
@@ -642,14 +652,14 @@ func (h *Host) callWithJob(ctx context.Context, t *Tool, args json.RawMessage, j
 	out, err := callGuest(ctx, mod, input, t.Kind == KindJS)
 	if err != nil {
 		if ctx.Err() != nil {
-			return Output{}, fmt.Errorf("tool %q timed out after %s", name, timeout)
+			return Output{}, withLogs(fmt.Errorf("tool %q timed out after %s", name, timeout), printed)
 		}
-		return Output{}, fmt.Errorf("tool %q: %w", name, err)
+		return Output{}, withLogs(fmt.Errorf("tool %q: %w", name, err), printed)
 	}
 
 	var res Result
 	if err := json.Unmarshal(out, &res); err != nil {
-		return Output{}, fmt.Errorf("tool %q returned a malformed result: %w", name, err)
+		return Output{}, withLogs(fmt.Errorf("tool %q returned a malformed result: %w", name, err), printed)
 	}
 	if !res.OK {
 		// The tool's own failure, surfaced as an ordinary tool error: the model
@@ -659,7 +669,7 @@ func (h *Host) callWithJob(ctx context.Context, t *Tool, args json.RawMessage, j
 		if res.ErrorDetail != nil && res.ErrorDetail.Code == CodeWorkBudget {
 			msg = t.explainWorkBudget()
 		}
-		return Output{}, &CallError{Tool: name, Message: msg, Detail: res.ErrorDetail}
+		return Output{}, &CallError{Tool: name, Message: msg, Detail: res.ErrorDetail, Logs: printed.taken()}
 	}
 	if res.Continue != nil {
 		// A tool that never declared itself resumable must not be able to acquire
@@ -705,6 +715,21 @@ func (h *Host) acquire(ctx context.Context, name string) (func(), error) {
 			"tool %q gave up waiting for one of the %d concurrent call slots ([tools] max_concurrent): %w",
 			name, cap(h.sem), ctx.Err())
 	}
+}
+
+// withLogs appends what the tool printed to a host-side failure — a timeout, a
+// trap, a malformed result. Those are not CallErrors, because they are Nine
+// failing to run the tool rather than the tool failing, but the printed lines
+// are worth just as much: a tool that timed out usually said where it got to.
+func withLogs(err error, printed *callLog) error {
+	logs := printed.taken()
+	if len(logs) == 0 {
+		return err
+	}
+	var b strings.Builder
+	b.WriteString(err.Error())
+	writeLogs(&b, logs)
+	return errors.New(b.String())
 }
 
 // CodeWorkBudget is the failure code the guest reports when a call runs out of
