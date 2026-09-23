@@ -172,6 +172,8 @@ func (h *Host) compile(ctx context.Context, d discovered, grant Grant) (*Tool, e
 		Resumable:    d.Manifest.Resumable,
 	}
 
+	h.setWorkBudget(t)
+
 	if d.Manifest.Kind == KindJS {
 		t.module = h.qjs
 		t.source = string(d.Source)

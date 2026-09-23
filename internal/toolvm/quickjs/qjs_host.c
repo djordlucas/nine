@@ -724,7 +724,59 @@ static JSValue js_nine_caps(JSContext *ctx, JSValueConst this_val, int argc,
  * JS_JSONStringify rather than sprintf means a message containing quotes or
  * newlines — a syntax error quoting the offending line, say — cannot corrupt
  * the JSON the host is about to parse. */
+/* ── the work budget ──────────────────────────────────────────────────────
+ *
+ * The wall clock bounds how long a tool runs; this bounds how much it *does*.
+ * The difference matters because a deadline is a property of the machine — the
+ * same tool passes on a fast host and fails on a loaded one — while a work
+ * budget is a property of the tool.
+ *
+ * QuickJS calls the interrupt handler once every JS_INTERRUPT_COUNTER_INIT
+ * polls, and a poll happens at a backward jump or a call: loop iterations and
+ * function calls, not every bytecode op. So the unit here is *checks*, and the
+ * host converts the operator's "operations" into them — the conversion is
+ * approximate by nature and belongs where it can be named, not in this file.
+ *
+ * Returning non-zero makes QuickJS throw an **uncatchable** InternalError
+ * (JS_ThrowInterrupted calls JS_SetUncatchableError), which is what makes this
+ * a bound rather than a suggestion: the unwinder skips every `catch` for such an
+ * error and an async function propagates it instead of rejecting, so a tool
+ * cannot wrap its loop in try/catch and keep going.
+ *
+ * Exhaustion is sticky. Once the budget is gone every later check fails too, so
+ * nothing resumes after the throw.
+ */
+static int g_budget_on = 0;
+static uint32_t g_checks_left = 0;
+static int g_budget_spent = 0;
+
+static int nine_interrupt(JSRuntime *rt, void *opaque) {
+    (void)rt;
+    (void)opaque;
+    if (!g_budget_on) return 0;
+    if (g_budget_spent) return 1;
+    if (g_checks_left > 0) {
+        g_checks_left--;
+        return 0;
+    }
+    g_budget_spent = 1;
+    return 1;
+}
+
+/* The budget failure, as an ordinary tool error carrying a stable code. The
+ * message the operator reads is the host's to write: it knows the configured
+ * number and the key to raise, and this file knows neither. */
+static uint64_t budget_failure(void) {
+    return pack_owned(
+        "{\"ok\":false,\"error\":\"exceeded its work budget\","
+        "\"error_detail\":{\"code\":\"E_WORK_BUDGET\",\"retryable\":false}}");
+}
+
 static uint64_t fail(JSContext *ctx) {
+    /* An exhausted budget reports as itself, whatever the interpreter happened
+     * to throw on the way out. Every failure path funnels through here. */
+    if (g_budget_spent) return budget_failure();
+
     JSValue exc = JS_GetException(ctx);
 
     JSValue msg = JS_UNDEFINED;
@@ -756,7 +808,8 @@ static uint64_t fail(JSContext *ctx) {
  *
  *   { "modules": { "<specifier>": "<js>", ... },
  *     "args": <the model's arguments>,
- *     "job": { "cursor": "<opaque>", "call": <n> } }
+ *     "job": { "cursor": "<opaque>", "call": <n> },
+ *     "checks": <the work budget, in interrupt checks; absent is unmetered> }
  *
  * The harness is not in it: the host installs it separately, as bytecode,
  * through nine_harness above.
@@ -797,6 +850,24 @@ __attribute__((export_name("nine_run"))) uint64_t nine_run(uint32_t ptr, uint32_
         set.modules = JS_NewObject(ctx);
     }
     JS_SetModuleLoaderFunc(rt, nine_module_normalize, nine_module_load, &set);
+
+    /* The work budget, installed before anything the envelope named is
+     * evaluated — the harness included, so no code runs unmetered. The statics
+     * are reset rather than trusted: this instance is fresh (§3), but a bound
+     * that depends on that being true is a bound waiting to be wrong. */
+    g_budget_on = 0;
+    g_budget_spent = 0;
+    g_checks_left = 0;
+    JSValue checks = JS_GetPropertyStr(ctx, envelope, "checks");
+    if (JS_IsNumber(checks)) {
+        uint32_t n = 0;
+        if (JS_ToUint32(ctx, &n, checks) == 0 && n > 0) {
+            g_budget_on = 1;
+            g_checks_left = n;
+            JS_SetInterruptHandler(rt, nine_interrupt, NULL);
+        }
+    }
+    JS_FreeValue(ctx, checks);
 
     /* The harness reads its arguments and writes its result through these two
      * globals. Passing arguments as a parsed value rather than a string spares
@@ -908,7 +979,12 @@ __attribute__((export_name("nine_run"))) uint64_t nine_run(uint32_t ptr, uint32_
 
     if (!JS_IsString(out)) {
         JS_FreeValue(ctx, out);
-        result = pack_owned("{\"ok\":false,\"error\":\"tool produced no result\"}");
+        /* An uncatchable interrupt unwinds past the harness's own error
+         * handling, so a spent budget arrives here as a missing result rather
+         * than as an exception. */
+        result = g_budget_spent
+                     ? budget_failure()
+                     : pack_owned("{\"ok\":false,\"error\":\"tool produced no result\"}");
         goto done;
     }
 

@@ -536,8 +536,7 @@ Around it, the host objects a tool actually reaches for:
 
 ### Timers do not sleep
 
-A tool runs inside one turn under a wall-clock deadline that is also the only CPU bound
-there is, so it must never sleep. Timers therefore run in **virtual time**: the queue
+A tool runs inside one turn under a wall-clock deadline, so it must never sleep. Timers therefore run in **virtual time**: the queue
 executes in deadline order, and no real time passes.
 
 ```js
@@ -759,17 +758,21 @@ Copy either into your `[tools].user_dir`; nothing in `examples/` is loaded.
 - **Every call is a fresh instance.** No global survives, no module-level cache works, and
   two calls cannot observe each other. Do not try to memoize across calls — write a pure
   function.
-- **Five seconds, 16 MiB.** Both are operator-tunable (`[tools] timeout`, `memory_mb`), and
-  the deadline can be set for one tool alone:
+- **Five seconds, 16 MiB, 50M operations.** A `js` tool is bounded by elapsed time, memory,
+  and work done — the last of those counts loop iterations and calls, is enforced by an
+  uncatchable interrupt, and cannot be caught. All three are operator-tunable
+  (`[tools] timeout`, `memory_mb`, `max_ops`), and the deadline and the budget can both be
+  set for one tool alone:
 
   ```toml
   [tool.slow_report]
-  timeout = "30s"      # this tool only; everything else keeps [tools] timeout
+  timeout = "30s"       # this tool only; everything else keeps [tools] timeout
+  max_ops = 500000000   # likewise for the work budget
   ```
 
   Worth asking for if your tool legitimately needs it, and worth *not* asking for otherwise:
-  the deadline is the only CPU bound there is, so a global value has to accommodate the
-  slowest tool, and naming yours is what keeps that from applying to everything. An outbound
+  a global value has to accommodate the most demanding tool, and naming yours is what keeps
+  that allowance from applying to everything. An outbound
   HTTP request is bounded at four fifths of whatever the call has left, so raising the
   deadline raises that too.
   There is no CPU metering, so an infinite loop is killed by the wall clock, not by a work
