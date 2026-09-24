@@ -11,6 +11,13 @@ A workflow has:
 
 Steps have their own statuses: `pending`, `running`, `done`, `failed`, or `skipped`.
 
+**A workflow is passive.** It has no session, no scheduler, and no driver, so it
+advances only when a model calls a `workflow_*` tool inside a turn. That is what
+separates it from a [goal](goal-sessions.md), which owns a session and wakes
+itself on a timer. The axis is autonomy, not ordering: a workflow is a ledger of
+delegated work the model keeps, and a goal is an intention something acts on
+between your turns.
+
 ## When Nine uses workflows
 
 The LLM decides when to create a workflow. The system prompt steers it toward workflows for any request that requires multiple independent sub-agents. Simple one-turn requests need no workflow.
@@ -91,6 +98,9 @@ Workflows that still have `pending` steps are left `active` so the LLM can resum
 
 ## Limits
 
-- **No goroutine kill on stop** — `workflow stop` marks steps as cancelled but does not interrupt running sub-agent goroutines. They continue to their natural completion; results are discarded. Hard cancellation is deferred.
-- **Single-owner** — a workflow belongs to the agent that created it. Sub-agents cannot create child workflows (depth-capped the same way `run_agent` is).
-- **No real-time streaming** — step status changes are delivered as notifications at the start of the next turn, not mid-turn. True real-time push is deferred.
+| Limit | Detail |
+|-------|--------|
+| No goroutine kill on stop | `workflow stop` marks steps as cancelled but does not interrupt running sub-agent goroutines. They continue to their natural completion and their results are discarded. Hard cancellation is deferred. |
+| Single-owner | A workflow belongs to the agent that created it. The `workflow_*` tools are registered only for a delegating role with depth remaining, the same gate `run_agent` sits behind, so a leaf sub-agent cannot create a child workflow. |
+| No real-time streaming | Step status changes are delivered as notifications at the start of the next turn, not mid-turn. True real-time push is deferred. |
+| Nothing drives a workflow | A workflow with `pending` steps and no model calling `workflow_*` sits at `active` indefinitely. It is a record of intent, not a scheduler — `nine workflow fail` is the cleanup path when one will never complete. |

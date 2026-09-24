@@ -131,7 +131,8 @@ conversation gets; `idle-reflection` and `pursue` are idle-capable and get
 their own resumable background sessions.
 
 **Self-reflection session (`idle-reflection` routine)** — A single fixed
-session (agent ID `self-reflection`) that wakes every 2 minutes and asks the
+session (agent ID `self-reflection`) that wakes on the `[daemon] self_reflection`
+cadence (2 minutes by default, `"off"` to remove it) and asks the
 model to update `self/capabilities` and `self/learned` via `memory_set`. Each
 turn is recorded by the journal under its own `agent_id`, read back with
 `nine reflections [agent-id]` (or `/reflections`). It is a routine kind, not a
