@@ -863,8 +863,11 @@ Four properties:
 - **Grants are per named tool.** There is no wildcard `[tool."*"]`. An operator
   granting filesystem access to a *developer* tool does so to a tool they have
   read.
-- **Read at load.** A grant change reaches a running tool only on `nine tools
-  reload` or restart, matching R-PLUG.10.
+- **Read at boot.** The host resolves grants, timeouts and budgets from
+  `nine.toml` when the daemon assembles it, and nothing re-reads the file while it
+  runs. `nine tools reload` re-scans `user_dir` and re-reads manifests against the
+  grants already held, so it picks up a new or edited *tool*; a changed *grant*
+  needs a restart.
 
 ### 7.1 On the default workspace-read ceiling
 
@@ -1126,7 +1129,7 @@ depending on one reviewed commit of C.
 | Limit | Detail |
 |-------|--------|
 | `net.http` is the hard capability | wazero has no network, so `net.http` is entirely a host function and its security is entirely Nine's problem. It carries its own SSRF, rebinding and redirect-laundering checks (§8). Getting it wrong turns every generated tool into an SSRF primitive. |
-| Grants are read at load | A change to `[tool.<name>]` reaches a running tool only on `nine tools reload` or a restart, matching R-PLUG.10. A *tool* added or rewritten is visible at the next turn without either (§9.1). |
+| Grants are read at boot | A change to `[tool.<name>]` needs a daemon restart: `nine tools reload` re-scans the directory but resolves against the grants read at assembly. A *tool* added, edited or reloaded is visible at the next turn without a restart (§9.1). |
 | `wasm` tools are unmetered | The work budget is QuickJS's interrupt handler, and wazero offers no fuel metering, so for a raw module the wall clock is the only bound. The kind is specified but unsupported — JavaScript is the supported language (`writing-sandboxed-tools.md`). |
 | No per-tool memory cap | `timeout` and `max_ops` are overridable for one named tool; `memory_mb` is global, so one memory-hungry tool raises the host's worst case for every concurrent call. |
 | Generated tools are `js` only | `tool_write` takes source, never a `.wasm` blob: a binary blob is not reviewable, and there is no reason to accept one. |

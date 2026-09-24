@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"nine/internal/llm"
-	llmollama "nine/internal/llm/ollama"
 	llmmistral "nine/internal/llm/mistral"
+	llmollama "nine/internal/llm/ollama"
 )
 
 // DefaultSocketPath is the Unix socket path used when none is configured.
@@ -236,13 +236,6 @@ func (cfg *Config) CheckProvider() error {
 		cfg.LLM.Provider, []string{ProviderOllama, ProviderMistral})
 }
 
-// BuildProvider constructs an LLM provider from cfg, with environment variable
-// overrides applied on top.
-//
-// Ollama is the only chat backend: Nine targets local models, so there is
-// nothing to switch on. An unrecognized provider is refused at startup by
-// CheckProvider, so reaching here with one means a caller skipped that check;
-// it is logged and Ollama is built anyway, because BuildProvider cannot fail
 // BuildProvider constructs an LLM provider from cfg, with environment variable
 // overrides applied on top.
 //
