@@ -500,7 +500,8 @@ security is Nine's problem. Two gates must both pass: the hostname matches the t
 immediately before connect so there is no window to re-resolve into. Loopback,
 link-local (including the cloud metadata address `169.254.169.254`), and RFC 1918 are
 refused on every redirect hop regardless of the allowlist, `Authorization`/`Cookie` are
-stripped across origins, and there is no bare `"*"`.
+stripped across origins. A bare `"*"` in `allow_hosts` grants any host and still no
+address — the second gate is not subject to the allowlist.
 
 Bounds are always on: **one instance per call** (no global, no cache, no credential
 survives a call), a 5s wall clock, and 16 MiB — the last two operator-tunable. wazero

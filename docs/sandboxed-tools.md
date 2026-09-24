@@ -1,30 +1,23 @@
 # Sandboxed tools
 
-- **Status:** **Stages 1–6 built** (rev 1) — the design is fully implemented. This
-  note remains the design rationale; the normative contract for what exists is
-  `spec/contracts/toolvm.md` (`R-TVM.*`) and the authoring guide is
-  `writing-sandboxed-tools.md`. Stage 6 (the `nine:*` stdlib, §4.2, and
-  external npm dependencies with the write-time esbuild bundler, §4.4, incl. the
-  `deps`+`net.http` interlock) is `R-TVM.15`.
-  **Built:** the wazero host and ABI (§3–§4), the `js` kind with a trimmed
-  QuickJS blob (§4.1) and a closed import allowlist (§4.3), developer tools with
-  manifests (§5.1), the capability model end to end (§6–§7) — `fs` and `env`,
-  conferred never claimed — **`net.http` with the full §8 checklist** and its
-  adversarial tests (SSRF, DNS rebinding, redirect laundering, credential
-  stripping), and now the **generated tier** (§5.2–§5.3, §9): `tool_write` /
-  `tool_delete` / `js_eval`, the `tools` table, the operator ceiling with per-tool
-  declarations, the catalog cap with LRU eviction, the conditional `require_approval`
-  gate (§9.4), and write/delete audit to the daemon log (§9.3). See `R-TVM.14`.
-  Stage 6 completed the set: the `nine:*` stdlib (§4.2), and external npm
-  dependencies (§4.4) resolved + integrity-checked + bundled at write time via
-  esbuild in-process, with the `deps`+`net.http` interlock. Nothing designed here
-  remains unbuilt.
-- **Date:** 2026-08-06 (proposed), stages 1–3 landed 2026-08-06, stage 4 on
-  2026-08-07, stages 5–6 on 2026-08-08.
-- **Motivation:** two capabilities that today have no home. (1) A **developer**
-  wants to add a permanent tool without writing a Go plugin, building a binary,
-  and rebuilding the image. (2) **Nine** wants to write a tool for a job it does
-  not have a tool for — the gap its `gap_report` already names but cannot close.
+Nine executes tools as wasm modules in-process, each with the capability set the
+operator conferred and nothing else. This document is the design rationale; the
+normative contract is `spec/contracts/toolvm.md` (`R-TVM.*`) and the authoring
+guide is `writing-sandboxed-tools.md`.
+
+**Three tiers write tools; one runtime executes them.** **Shipped** tools are
+compiled into the binary (§5.4), **developer** tools are a file and a manifest the
+operator installs (§5.1), and **generated** tools are rows Nine writes itself
+(§5.2). All three share the ABI, the instance model, the capability model, and the
+audit trail.
+
+- **Motivation:** three capabilities that otherwise have no home. (1) A
+  **developer** wants to add a permanent tool without writing a Go plugin, building
+  a binary, and rebuilding the image. (2) **Nine** wants to write a tool for a job
+  it does not have a tool for — the gap its `gap_report` already names but cannot
+  close. (3) Nine's **own** first-party capabilities ran as plugins, which are
+  subprocesses holding the daemon's uid, rather than under a capability model
+  (§5.4).
 - **Additive.** The native plugin system (`spec/contracts/plugin.md`) is untouched:
   same transport, same `plugin.ProtocolVersion`, same lifecycle. Sandboxed tools
   are a *second* backend behind the *same* dispatcher, and a deployment that
@@ -42,7 +35,7 @@
 |---|---|---|
 | 1 | **Wasm host** (§3) | `toolvm`, built on **wazero** (pure Go, no CGO). One wasm instance **per call**, torn down after. Registers handlers on the existing `Dispatcher` exactly like `RegisterPlugin` does. |
 | 2 | **JS is a guest, not the host** (§4) | QuickJS-NG compiled to wasm is *one pre-supplied guest module*. A developer may equally ship a raw `.wasm` built from Rust/TinyGo/Zig. Same ABI, same capability model. |
-| 3 | **Two authors, two trust tiers** (§5) | **Developer tools** are files on disk with a manifest, installed by the operator. **Generated tools** are rows in SQLite, authored by Nine. Different ceilings, one runtime. |
+| 3 | **Three authors, three trust tiers** (§5) | **Shipped tools** are compiled into the binary and granted what they declare. **Developer tools** are files on disk with a manifest, installed by the operator. **Generated tools** are rows in SQLite, authored by Nine. Different ceilings, one runtime. |
 | 4 | **Capabilities are conferred, never claimed** (§6–§8) | Default is the empty set: no filesystem, no network, no env, no clock. Every capability is an explicitly-exported host function or a wazero pre-open. A manifest *declares a need*; only operator config *grants*. |
 | 5 | **Dependencies never resolve at call time** (§4.2) | Developers **pre-bundle** their deps at dev time; generated tools get a curated, vendored `nine:*` stdlib. Module resolution is always host-side against a closed allowlist. |
 | 6 | **External packages: opt-in and allowlisted** (§4.4) | Off by default. When enabled, an operator **names the permitted packages** (transitive deps included); Nine resolves, integrity-checks, and bundles them **in-process at write time** via esbuild — never in the sandbox, never at call time. No install scripts ever run. `deps` + `net.http` is refused by default. |
@@ -71,6 +64,7 @@ about *writing code* is the one a generated tool changes. The distinction:
 | | Code | Capabilities |
 |---|---|---|
 | **Native plugin** | operator (build time) | operator (`nine.toml`) |
+| **Shipped sandboxed tool** | Nine's maintainers (build time) | the tool's own declaration (§5.4) |
 | **Developer sandboxed tool** | developer (file on disk) | operator (`nine.toml`) |
 | **Generated sandboxed tool** | **Nine** (runtime) | operator (`nine.toml`) |
 
@@ -83,8 +77,9 @@ The old rationale — "runtime code generation makes the running system drift fr
 its source" — was aimed at *native* code: a rebuilt binary genuinely does drift,
 and cannot be reasoned about from the repo. A generated tool does not drift the
 binary. It is **store state**, exactly like a goal, a workflow, or an agent skill:
-listable, readable, exportable, deletable, and journalled. `nine tools list` shows
-you the whole set. The property that `docs/` and the binary match its version is
+listable, readable, exportable, deletable, and journalled. `nine tools` shows
+you the whole set, and `nine tools show <name>` its source, grant and
+provenance. The property that `docs/` and the binary match its version is
 untouched.
 
 ---
@@ -100,11 +95,12 @@ already ≥100ms events, and Nine makes at most a handful per turn. Against that
 instantiating a cached module is noise. In exchange, per-call instantiation buys
 the strongest property in the design:
 
-**No state survives a call.** Not a global, not a cached credential, not a
-poisoned prototype, not a half-freed heap. Two calls to the same tool cannot
-observe each other, and a tool cannot accumulate anything across a session. A
-long-lived shared runtime would need all of that reasoned about; a fresh instance
-makes it true by construction.
+**No state survives a call implicitly.** Not a global, not a cached credential,
+not a poisoned prototype, not a half-freed heap. Two calls to the same tool cannot
+observe each other *through the machine*, and a tool accumulates nothing across a
+session except through a capability it was granted (§6.4). A long-lived shared
+runtime would need all of that reasoned about; a fresh instance makes it true by
+construction.
 
 It also removes the entire class of use-after-free bugs that a long-lived
 Go↔JS value bridge carries (§10).
@@ -123,11 +119,19 @@ Dispatch(tool, args)
 
 | Bound | Mechanism | Default |
 |---|---|---|
-| Wall clock | `WithCloseOnContextDone(true)` + context deadline | 5s |
-| Memory | `WithMemoryLimitPages`, per call | 256 pages (16 MiB) |
+| Wall clock | `WithCloseOnContextDone(true)` + context deadline | 5s (`[tools] timeout`, overridable per tool) |
+| Memory | `WithMemoryLimitPages`, per call | 256 pages (16 MiB) (`[tools] memory_mb`) |
 | Concurrency | a host semaphore held across instantiation | 8 calls (`[tools] max_concurrent`) |
 | Output | the dispatcher's existing cap + spill (R-DISP.2) | 2048 tokens |
-| Work | QuickJS interrupt handler, `js` tools only | 50M operations (`[tools] max_ops`) |
+| Work | QuickJS interrupt handler, `js` tools only | 50M operations (`[tools] max_ops`, overridable per tool) |
+
+The wall clock and the work budget are the two an operator may name per tool,
+with `[tool.<name>] timeout` and `[tool.<name>] max_ops`. Without the override a
+single global value forces the most permissive tool's requirement onto every other
+tool: raising the deadline for one tool that legitimately takes twenty seconds
+hands twenty seconds to a tool that is merely stuck. Both are resource bounds
+rather than capabilities, so they sit outside `[capabilities]` and confer nothing.
+Memory has no per-tool form.
 
 Memory and concurrency are one bound in two halves: `memory_mb` is what a single
 call may hold, `max_concurrent` is how many calls may hold it at once, and their
@@ -281,10 +285,22 @@ import { parseDate, isoWeek } from "nine:date";
 export default ({ csv }) => ({ rows: parse(csv).length });
 ```
 
-The candidate set is deliberately boring — CSV, date arithmetic, YAML/TOML,
-a diff, maybe a string-distance function. These are the things a tool-writing
-agent actually reaches for, and each one it *cannot* import is a wheel it will
-reinvent badly inside a 5-second deadline.
+The set is deliberately boring, and each module it *cannot* import is a wheel a
+tool-writing agent reinvents badly inside a 5-second deadline:
+
+| Module | Contents | Gated by a capability |
+|---|---|---|
+| `nine:csv` | parse and format delimited text | no |
+| `nine:date` | date arithmetic and ISO-8601 formatting | no |
+| `nine:diff` | a textual diff | no |
+| `nine:html` | text extraction from a page — a tokenizer, not a DOM | no |
+| `nine:fs` | ranged read, write, append, rename, remove, mkdir | `fs.read` / `fs.write` |
+| `nine:env` | the granted environment keys | `env` |
+| `nine:state` | the host-owned store that outlives a call (§6.4) | `state` |
+| `nine:job` | ending a call with a cursor (§6.5) | `resumable` in the manifest |
+
+Importing one of the gated modules grants nothing: a tool with no grant gets a
+sentence saying so rather than reach.
 
 ### 4.3 Imports are a capability
 
@@ -479,7 +495,7 @@ ranking (§9.2).
 
 ---
 
-## 5. Two authors, two trust tiers
+## 5. Three authors, three trust tiers
 
 ### 5.1 Developer tools — permanent, operator-installed
 
@@ -604,6 +620,34 @@ catalog of plausible ones.
 Resolved dependencies are cached (§4.4), so iterating on the same library across
 several `js_eval` calls hits the network once.
 
+### 5.4 Shipped tools — first-party, in the binary
+
+Nine's own capabilities are sandboxed tools whose source is compiled into the
+daemon binary: the workspace file tools (`read_file`, `write_file`, `edit_file`,
+`move_file`, `copy_file`, `delete_file`, `diff_file`, `restore_file`,
+`trash_list`), the fetching tools (`http_get`, `http_post`, `web_page_read`,
+`web_search`), and `time`. They run through the same host, ABI, instance model and
+bounds as every other tool.
+
+They were plugins, and a plugin is a subprocess holding the daemon's uid — so a
+tool that read a clock had, in principle, the reach to read the operator's home
+directory. Under this tier `time` declares nothing and therefore has nothing.
+
+**A shipped tool is granted what it declares**, which is the one way the tier
+differs from the other two. It is a reduction rather than a new trust: the
+operator already ran this code as a plugin with strictly more authority. The grant
+still appears in `nine tools`, and the host refuses a declaration it cannot
+enforce rather than registering a tool whose capability silently does nothing.
+
+| Property | Detail |
+|---|---|
+| Load order | **First**, before developer and generated tools. The namespace rule is first-registered-wins, so loading them last would let another tier take a first-party name. |
+| `fs` mount | The operator's `[workspace] root`, at the fixed guest path `/work`. A tool declaring `fs` with no workspace configured fails to load; the daemon creates the root if it is absent. |
+| Host paths | The host maps a `[workspace] root`-relative or absolute host path in a `path` argument onto the mount, because a model that copies a path out of `shell` output otherwise names a file the guest has no name for. |
+| Deletion | Recoverable: a removed or replaced file moves under `.nine/trash/`, listed by `trash_list` and restored by `restore_file`, bounded by both age and total size. Identical content is not trashed on overwrite. `.nine/` is refused to the write tools. |
+| Review | The write tools take `preview`, which returns the diff and writes nothing; the same preview renders inside an approval prompt (`hitl.md`). |
+| No ambient host state | `time` reports **UTC**, where the plugin it replaced reported the daemon's local zone. The guest has no timezone database, and a tool cannot know the host's zone unless the host confers it. |
+
 ---
 
 ## 6. The capability model
@@ -633,7 +677,7 @@ module and none are exported to it.
 |---|---|---|---|
 | `fs.read` | list of host paths → guest paths | **none** | wazero `WithReadOnlyDirMount` |
 | `fs.write` | list of host paths → guest paths | **none** | wazero `WithDirMount` |
-| `net.http` | host allowlist, methods, max bytes, timeout | **none** | host fn (§8) |
+| `net.http` | host allowlist, methods, max bytes | **none** | host fn (§8) |
 | `env` | explicit key allowlist | **none** | `WithEnv`, per key |
 | `clock` | — | **granted** | `WithSysWalltime` |
 | `random` | — | **granted** | `WithRandSource` |
@@ -643,6 +687,15 @@ module and none are exported to it.
 `clock`, `random`, and `log` are on by default because they leak nothing and
 every non-trivial tool needs them. Everything with reach — the filesystem, the
 network, the process environment — starts at nothing.
+
+`fs.write` includes creating a directory and its missing parents, recursively and
+idempotently. Without it a granted tool could write `a.txt` and not `notes/a.txt`,
+with no other way to make the directory — and confinement stays the pre-open's,
+since the guest has nothing but its mount to resolve a path against.
+
+A `net.http` request is bounded at four fifths of the time the call has left, so
+a slow remote host surfaces as an HTTP timeout the tool can catch and report
+rather than as the whole call being killed under it.
 
 `env` deserves its explicit-allowlist treatment rather than an all-or-nothing
 flag: the daemon's environment holds LLM provider API keys. A tool granted "env"
@@ -756,19 +809,33 @@ memory_mb = 16
 
 # ── A developer tool: named grants, reviewed by the operator ──────────────
 [tool.csv_stats]
+timeout = "20s"       # this tool only; a resource bound, not a capability (§3)
+max_ops = 200000000   # this tool only; negative turns the budget off
+
 [tool.csv_stats.capabilities.fs]
 read = [{ host = "/srv/data", guest = "/data" }]
 
 [tool.csv_stats.capabilities.net.http]
-allow_hosts = ["api.example.com"]     # exact or "*.example.com"; no bare "*"
+allow_hosts = ["api.example.com"]     # exact, "*.example.com", or a bare "*"
 methods     = ["GET"]
 max_bytes   = 1048576
+
+[tool.geocode.capabilities.state]      # §6.4
+scope        = "conversation"          # required: "tool" or "conversation"
+max_keys     = 128
+max_value_kb = 64
+ttl          = "24h"                   # omit for no expiry
 
 # ── The ceiling for everything Nine writes itself ─────────────────────────
 [tools.agent]
 enabled  = true
 eval     = true       # allow js_eval (§5.3)
 max_tools = 64        # catalog pressure — §9
+
+allow_long_running = false   # may a generated tool run as a job? — §6.5
+allow_standing     = false   # may one be promoted to a standing run? — §6.6
+max_standing       = 4       # how many standing runs may exist at once
+allow_network_deps = false   # lift the deps + net.http interlock — §4.4
 
 # Gate on substance, not on every write (§9.4):
 #   "on_capability" | "always" | "never"
@@ -857,9 +924,15 @@ Blocking by *hostname* is not enough; the check must be on the **resolved IPs**,
 after DNS, and re-done after each redirect, or DNS rebinding walks straight
 through it.
 
-The allowlist is matched against resolved addresses, and **there is no bare
-`"*"`** — an operator who wants an unrestricted egress tool should write a native
-plugin, where that intent is explicit and reviewed.
+`allow_hosts` **may be a bare `"*"`**, meaning any host. The wildcard grants any
+*host* and never any *address*: every connection is checked at dial time, so
+loopback, link-local, private ranges and multicast stay refused whatever the
+allowlist says, and being at dial time that check also survives redirects and DNS
+rebinding. Refusing the wildcard used to point an operator at a native plugin
+instead, which is a subprocess with the daemon's uid and none of the checks above
+— less safety, not more. A tool whose hosts *are* knowable still names them:
+`web_search` is granted its three search endpoints, and the wildcard is for the
+fetching tools that exist to retrieve whatever URL a model chose.
 
 ---
 
@@ -871,8 +944,8 @@ plugin, where that intent is explicit and reviewed.
 wrote it. A session's loop lives as long as the session, so it cannot rely on being
 rebuilt. Instead, each turn starts by comparing the host's catalog with the one the loop
 last saw. On a change, it re-syncs the loop's dispatch handlers
-(`Dispatcher.SyncSandboxed`) and re-assembles its advertised tool list, so `tool_search`
-and `tool_list` see the change too. The host replaces a tool's record on every load, so a
+against the host and re-assembles its advertised tool list, so `tool_search` and
+`tool_list` see the change too. The host replaces a tool's record on every load, so a
 rewrite of an existing name counts as a change.
 
 In-flight turns keep the tool set they started with, because a tool set that mutated
@@ -887,7 +960,7 @@ reload` reaches only loops built after it.
 ### 9.2 Catalog pressure is the sleeper problem
 
 An agent that can write tools will write tools. Every one competes for the
-context budget in `selectTools` (`internal/context/builder.go:232`), and a
+context builder's tool budget (`tool-selection.md`), and a
 catalog of 200 half-redundant generated tools **degrades the ranking for the
 built-in tools too** — the agent poisons its own tool selection and gets worse at
 everything, not just at the generated tools.
@@ -932,6 +1005,11 @@ A gate that fires rarely is a gate that gets read.
 The two triggers are exactly the two things §7.1 and §4.4 identify as
 consequential: **reach** and **third-party code**. A tool with neither is
 genuinely inert, and there is nothing for a human to usefully evaluate.
+
+**A standing promotion always reaches a human**, including under
+`require_approval = "never"`: a catalogued tool runs when a turn calls it, where a
+standing run continues until somebody stops it, and the write that starts one is
+the only moment to say no (§6.6).
 
 In non-interactive deployments there is no gate at all, so the ceiling in
 `[tools.agent.capabilities]` and `deps.mode` are the only controls — which is why
@@ -1048,9 +1126,11 @@ depending on one reviewed commit of C.
 | Limit | Detail |
 |-------|--------|
 | `net.http` is the hard capability | wazero has no network, so `net.http` is entirely a host function and its security is entirely Nine's problem. It carries its own SSRF, rebinding and redirect-laundering checks (§8). Getting it wrong turns every generated tool into an SSRF primitive. |
-| No hot reload | The host loads modules at boot and per call. Adding a developer tool means restarting the daemon. |
-| Capability gaps | `fs` and `env` cover the common cases; runtime wasm grants, binary data, per-tool timeouts, structured tool errors and secret sharing are not built. |
-| Nothing survives a call | A module is instantiated fresh per call and torn down after it — no globals, no cached credentials, no parsed index. Durable state and long-running work are designed in [`adr/durable-and-long-running-tools.md`](../adr/durable-and-long-running-tools.md). |
+| Grants are read at load | A change to `[tool.<name>]` reaches a running tool only on `nine tools reload` or a restart, matching R-PLUG.10. A *tool* added or rewritten is visible at the next turn without either (§9.1). |
+| `wasm` tools are unmetered | The work budget is QuickJS's interrupt handler, and wazero offers no fuel metering, so for a raw module the wall clock is the only bound. The kind is specified but unsupported — JavaScript is the supported language (`writing-sandboxed-tools.md`). |
+| No per-tool memory cap | `timeout` and `max_ops` are overridable for one named tool; `memory_mb` is global, so one memory-hungry tool raises the host's worst case for every concurrent call. |
+| Generated tools are `js` only | `tool_write` takes source, never a `.wasm` blob: a binary blob is not reviewable, and there is no reason to accept one. |
+| No implicit state | A module is instantiated fresh per call and torn down after it — no globals, no cached credentials, no parsed index. What persists does so through the granted `state` store (§6.4), named by the tool and bounded by quota. |
 | Trimmed JS surface | The interpreter surface is deliberately narrowed (§4.1). Globals a Node or browser author expects are absent, and the import surface is closed. |
 | External deps are off by default | `allow_network_deps` gates them, and turning it on removes the property that makes external dependencies safe. The `net.http` interlock (§4.4) is then the only thing between a compromised transitive dependency and your source tree. |
 | The generated tier is off by default | `[tools.agent] enabled` gates it. The agent writes code; the operator writes grants; they are never the same actor. |

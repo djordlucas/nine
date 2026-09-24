@@ -597,8 +597,10 @@ env = ["TZ"]
 # hostname resolves to. That is what stops DNS rebinding: the check runs on the
 # address, immediately before connect, and again on every redirect hop.
 #
-# There is no bare "*". If you want a tool with unrestricted egress, write a
-# native plugin — where that intent is explicit and gets reviewed.
+# A bare "*" is permitted and means any host. It grants no address: the second
+# gate above still refuses loopback, link-local and private ranges. Name the
+# hosts when they are knowable — the wildcard is for a tool that fetches
+# whatever URL a model chose.
 [tool.weather.capabilities.net.http]
 allow_hosts = ["api.weather.example", "*.cdn.weather.example"]  # exact, or a
                                                     # leading "*." (not the apex)
