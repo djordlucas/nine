@@ -127,13 +127,20 @@ The `Dispatcher` is a registry of `handlers` (tool name → function). It routes
 
 | Category | Tools |
 |----------|-------|
-| Memory | `memory_embed`, `memory_query` |
-| Catalog | `tool_list` (full enumeration of the advertised tool set), `tool_search`, `skill_search` (embedder-gated catalog search) |
+| Memory | `memory_get`, `memory_set`, `memory_delete`, `memory_list`, `memory_embed`, `memory_query`, `file_search_text` |
+| Workspace | `list_files` (the rest of the file tools are shipped sandboxed tools) |
+| Catalog | `tool_list` (full enumeration of the advertised tool set), `tool_search`, `skill_list`, `skill_search` (both embedder-gated where they rank) |
+| Skills | `skill_read`, `skill_write`, `skill_modify` |
+| Documentation | `doc_search`, `doc_read` |
 | Sub-agents | `run_agent`, `run_agents` |
 | Workflows | `workflow_create`, `workflow_get`, `workflow_update`, `workflow_list`, `workflow_retry_step` |
 | Goals | `goal_create`, `goal_get`, `goal_list`, `goal_update_status` |
+| Jobs | `job_check`, `job_wait`, `job_list`, `job_cancel` |
+| Queued messages | `queued_messages_get`, `queued_message_mark_consumed`, and the count/mark-all variants |
+| Human output | `notify_user` |
 | Supervision | `gap_report` |
 | Plugin tools | any tool registered via `RegisterPlugin` |
+| Sandboxed tools | the shipped, developer and generated tiers, routed into the wasm host |
 
 ### Wiring model
 
@@ -176,7 +183,7 @@ Dispatcher.New()                  → empty handler map
 
 On each inner loop iteration `BuildWithUsage` assembles the full LLM request:
 - System prompt: current time + session ID + `SystemCore` + `SystemExtras` + self-model
-- Tool list: intercepted tools (always included) + plugin tools ranked by `queryVec` relevance
+- Tool list: the always-include set (core tools, the role's own capability tools, `ask_human` where interactive) plus up to 20 more ranked by `queryVec` relevance
 - History: trimmed to fit the context budget
 - Scratchpad: current turn's observations
 
@@ -189,7 +196,7 @@ threshold). See [Context Builder](context-builder.md).
 
 | Limit | Detail |
 |-------|--------|
-| Fixed retry count | `dispatchWithRetry` makes up to three attempts with no backoff between them. A tool failing for a persistent reason costs three calls before the observation records the failure. |
+| Fixed retry count, no backoff | `dispatchWithRetry` makes up to three attempts, immediately one after another. A tool that fails for a reason nobody declared costs three calls before the observation records it. Three kinds of failure skip the retries entirely, because repeating them cannot help: a human's refusal of an approval, a tool that reported `retryable: false`, and a call the model sent no arguments for. |
 | No partial-turn recovery | A checkpoint is written after a turn completes. A daemon killed mid-turn resumes from the previous turn, and the scratchpad of the interrupted turn is lost. |
 | History grows unbounded | `history` is never trimmed by the loop, only by the context builder when assembling a request. A long session keeps every message in the checkpoint. |
 | Output cap is global | The dispatcher caps every tool result at 2048 tokens. The cap is not per-tool, so a tool whose useful output is consistently larger always spills. |
