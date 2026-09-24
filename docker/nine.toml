@@ -23,6 +23,15 @@ endpoint       = "http://host.docker.internal:11434"
 num_ctx        = 32768
 max_concurrent = 1
 
+[daemon]
+# How often the idle self-reflection session wakes and thinks. It maintains
+# Nine's self-model, so it ships on — but every tick is an LLM call, and a
+# published image runs unattended against whatever endpoint it is pointed at.
+# At the 2m default an idle container bills a metered API around the clock and
+# monopolises a single-slot local model; 30m keeps the behaviour without that.
+# "off" removes it entirely.
+self_reflection = "30m"
+
 [memory]
 # The /data volume holds every durable thing: this database and the workspace.
 path = "/data/nine.db"
@@ -45,10 +54,19 @@ provider = "keyword"
 require_approval = ["shell", "write_file"]
 
 [tools]
-# The sandboxed-tool tier is off in the published image. Turning it on means
-# mounting a directory of tools and your own config; no environment variable
-# flips it, which is deliberate (docs/sandboxed-tools.md).
-enabled = false
+# The sandboxed-tool tier is on: it carries read_file, write_file, edit_file and
+# the rest of the workspace filesystem, so without it the agent cannot read or
+# write a file at all. Nothing is mounted to get them — qjs.wasm, the harness
+# bytecode and all 14 shipped tools are embedded in the binary, and `user_dir`
+# stays unset, so no tool outside that set is loaded.
+#
+# These run in a wasm sandbox with declared filesystem capabilities, scoped to
+# the workspace. The `shell` plugin, which is also on, executes arbitrary
+# commands — so this is the narrower of the two capabilities the image ships,
+# not a widening of what the agent can reach (docs/sandboxed-tools.md).
+enabled = true
 
-# [tools.agent] is absent, so Nine cannot write its own tools. That tier is off
-# by default everywhere; it is named here only so its absence is legible.
+# [tools.agent] is absent, so Nine cannot write its own tools. That is the tier
+# this image keeps off: running a shipped, reviewed tool is not the same as
+# letting the agent author and execute a new one. Off by default everywhere; it
+# is named here only so its absence is legible.
