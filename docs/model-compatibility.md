@@ -46,6 +46,12 @@ may pass on a faster one. Always read a result together with its host profile.
 Cases × models, from the most recent run of each model. `Class` is the model's
 capability tier; `Host` is the profile it ran on.
 
+**This is the 12-case corpus as it stood in 2026-07.** The corpus is now 28 live
+cases; the rows added since — the `workspace-*` set, the spill, generated-tool and
+`skill-search` cases — have not been run across all four models, and the workspace
+set has its own table below. A case absent from this table is unmeasured on that
+model, not failing.
+
 | Case (min class) | `gemma4:e2b` (nano · H1) | `gemma4:e4b` (nano · H1) | `qwen3.5:4b` (small · H1) | `qwen3.5:9b` (small · H1) |
 |------------------|:---:|:---:|:---:|:---:|
 | `shell-echo` (nano) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 |
@@ -58,8 +64,12 @@ capability tier; `Host` is the profile it ran on.
 | `goal-create` (medium) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 |
 | `workflow-plan` (medium) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 |
 | `skill-write-recall` (small) | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 | ✓ 3/3 |
-| `file-store-search` (medium) | ✗ 1/3 | ✓ 3/3 | ✓ 2/3 | ✓ 3/3 |
+| `file-store-search` (medium) † | ✗ 1/3 | ✓ 3/3 | ✓ 2/3 | ✓ 3/3 |
 | `delegate-subagent` (medium) | ✗ 1/3 | ✗ 0/3 | ✓ 3/3 | ✓ 3/3 |
+
+† `file-store-search` was retired with the `file_store` / `file_fetch` /
+`file_list` tools it exercised. The row is the record of a run, not a case you can
+re-run; `workspace-write-search` is the nearest current equivalent.
 
 ### Workspace file tools (2026-09-21, H1)
 
@@ -195,3 +205,4 @@ the curated, committed summary humans read.
 | One hardware profile per column | Results are per host profile. A model's score does not transfer across hardware, quantization, or `num_ctx`. |
 | A snapshot, not a guarantee | Each column comes from one Track-L report on one date. Model releases move; a passing row can stop being true without this file changing. |
 | Curated by hand | `reports/` JSON is the raw record and is git-ignored. This file is the summary someone copied across, so it can lag the last run. |
+| The matrix lags the corpus | The main table is 12 cases from 2026-07 against a corpus that now holds 28 live ones. Most of the difference has been measured on one model only, so "not in the table" means unmeasured rather than passing. |

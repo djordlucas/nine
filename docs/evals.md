@@ -298,9 +298,10 @@ pass fraction ≥ `pass_threshold`. Everything in §1–§3 applies. Requirement
   `id=<agent-id>`) or the protocol client `c.Turn(id, text)` as the existing
   `tests/integration` tests do.
 - **Wall-clock budget**: the `-timeout` is per *matrix*, not per case, so it scales
-  with the model list. The full 18-case suite takes **~33 minutes** for one small
-  local model, so the default is `7200s`; override with `NINE_EVAL_TIMEOUT` for a
-  longer matrix or a slower host:
+  with the model list. The corpus is **28 live cases** (plus 5 replay fixtures on
+  Track R), and one small local model took ~33 minutes over the 18 that existed
+  when this was measured, so the default is `7200s`; override with
+  `NINE_EVAL_TIMEOUT` for a longer matrix or a slower host:
 
   ```sh
   NINE_EVAL_TIMEOUT=4h NINE_EVAL_MODELS=qwen3.5:4b,qwen3.5:9b make eval-live
@@ -311,7 +312,7 @@ pass fraction ≥ `pass_threshold`. Everything in §1–§3 applies. Requirement
 - **Progress is reported per case**, as each verdict lands:
 
   ```text
-  INFO eval case ok n=4/18 case=kv-roundtrip model=qwen3.5:4b passes=3/3 threshold=2/3 took=6m51s
+  INFO eval case ok n=4/28 case=kv-roundtrip model=qwen3.5:4b passes=3/3 threshold=2/3 took=6m51s
   ```
 
   This matters because the grid renders only after the whole matrix finishes. Without
@@ -393,8 +394,8 @@ tests/evals/
 - **Nightly / on-demand**: the full Track-L matrix; write `reports/<date>.json` and a
   rendered cases × models grid; track **pass-rate trend per model/tier** — a drop is
   the regression signal regardless of cause (model swap, prompt edit, code change).
-- Build on `tests/integration/setup_test.go`'s existing harness (Docker + Ollama
-  bring-up, `NINE_LLM_MODEL` selection) rather than starting fresh.
+- The harness in `runner/` builds an in-process daemon per case, so a run needs no
+  container; the Docker + Ollama bring-up in `tests/integration` is a separate path.
 
 ---
 
@@ -462,3 +463,5 @@ To add coverage, or to have an LLM expand the corpus:
 | No exact-wording assertions | Free-text wording is not asserted on, so a regression that changes only phrasing is invisible to the suite. |
 | Only some `session.config` keys are honored | The harness reads `tools.max_output_tokens`, `tools.agent.enabled` and `tools.agent.eval`. Any other key is ignored without an error, so a case that sets one runs with the production default. |
 | Generated cases need review | The generator prompt produces plausible YAML; nothing checks that a generated case actually forces the behavior it names. |
+| Eight feature rows have no case | §9 asks for ≥1 case per row. The corpus covers 28 live cases across `smoke`, `basic`, `multi_step` and `delegation`; **nothing covers** HTTP/web fetching, HITL (`ask_human`), the approval gate, `gap_report`, stall detection, safety (`rm -rf`, SSRF to loopback), context-budget pressure, or related-session surfacing. The `hitl` and `safety` tiers have no cases at all, so those two tier names are aspirational. |
+| Long-running plugin jobs are untested end to end | The mechanism has unit tests; the model behavior around a job — waiting posture, remembering an outstanding one, escalation — has no eval case ([plugin-capabilities.md](plugin-capabilities.md) §8). |
