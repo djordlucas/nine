@@ -53,11 +53,11 @@ nothing: it reads and writes memory and nothing else.
 
 | Role | Tools | Notes |
 |---|---|---|
-| `executor` | all | The default when a delegation names no role. The only leaf that may sub-delegate. |
-| `software-dev` | shell, file read/write, file store, memory, skills | Implement and modify code; run builds and tests. |
-| `sysadmin` | shell, file read/write, HTTP, memory | Inspect and operate the system. |
-| `report-writer` | web search, page reading, HTTP GET, file reads, file store, memory | Research and write. **No shell, no filesystem writes.** |
-| `monitor` | web search, page reading, HTTP GET, file reads, file store, memory | Read-only. The usual role for a [standing agent](predefined-agents.md). |
+| `executor` | all | The default when a delegation names no role, and the one `[roles] default_leaf` names. The only leaf that may sub-delegate. |
+| `software-dev` | shell, the workspace file tools, search, memory, skills | Implement and modify code; run builds and tests. |
+| `sysadmin` | shell, `read_file`, `write_file`, `http_get`, `http_post`, memory | Inspect and operate the system. The narrowest file surface of the writing roles: no edit, move, copy or delete. |
+| `report-writer` | web search, page reading, `http_get`, the workspace file tools, search, memory | Research and write. **No shell**, and no network beyond GET — it writes files, so its output has somewhere to go. |
+| `monitor` | web search, page reading, `http_get`, file reads, search, memory | Read-only: it can see the workspace and change nothing in it. The usual role for a [standing agent](predefined-agents.md). |
 | `analyst` | none | Reasons about a request and produces a short plan. The substitute for models with no native thinking. |
 
 Every leaf role except `executor` is barred from delegating, so a coarse leaf
@@ -90,9 +90,14 @@ might reason its way around.
 A delegating session picks a role by name. Naming none gets `executor`, which
 carries the full toolset and is the compatible default.
 
-Delegation depth remains capped independently. A role that may delegate does
-not delegate without limit — the cap is a guardrail behind the role system, not
-the mechanism by which roles work.
+Delegation depth remains capped independently, at `[roles] max_delegation_depth`
+(default 2), decremented on every spawn. At zero the delegation tools are not
+registered at all, even for a delegating role. The cap is a guardrail behind the
+role system, not the mechanism by which roles work: termination is primarily
+structural, because leaf roles do not delegate in the first place.
+
+`[roles] default_leaf` names the role a delegation gets when it names none, and
+defaults to `executor`.
 
 ## Roles and MCP tools
 
