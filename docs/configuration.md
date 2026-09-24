@@ -22,9 +22,9 @@ shipping a second file. The database path needs no override there: it defaults t
 
 ```toml
 [llm]
-# Chat LLM backend to use. Ollama is the only one: Nine runs on local models.
-# Leave it unset for the default; any other value is refused at startup rather
-# than quietly served by a different backend.
+# Chat LLM backend to use: "ollama" (the default) or "mistral". Leave it unset
+# for the default; any other value is refused at startup rather than quietly
+# served by a different backend.
 provider = "ollama"
 
 # Model name. Examples: qwen3.5:4b, qwen3.5:9b, gemma4:e2b, llama3.2
@@ -46,6 +46,10 @@ max_concurrent = 1
 # HTTP timeout for a single model call, in seconds. 0 uses the adapter default
 # (300s); a negative value removes the timeout, leaving only turn cancellation.
 timeout_seconds = 0
+
+# API key for a remote provider (Mistral), sent as a bearer token. Ignored by
+# Ollama. NINE_LLM_API_KEY overrides it, which is how it stays out of the file.
+api_key = ""
 
 # Stream the model's extended-thinking reasoning as a live trace in the TUI
 # (sends think:true and drops the /no_think suppression; the model must
@@ -338,6 +342,20 @@ show_context = true
 # reason and the daemon still starts; check them with `nine skills validate`.
 # Unset or missing disables user skills entirely.
 # user_dir = "./skills.d"
+
+[roles]
+# Worker-role resolution for delegation (docs/roles.md).
+#
+# default_leaf — the role a delegation gets when it names none. Default
+# "executor", which is the narrow one: a delegation that did not ask for reach
+# should not receive it.
+default_leaf = "executor"
+#
+# max_delegation_depth — how many levels of delegation may nest. Default 2,
+# decremented on every spawn; at zero a sub-agent has no delegation tool at all,
+# which is what stops a loop from spawning itself forever.
+max_delegation_depth = 2
+
 
 [hitl]
 # Human-in-the-loop (docs/hitl.md). Interactive TUI conversations only.
@@ -717,9 +735,11 @@ allow = [                           # allowlist mode only: the packages an opera
 
 ## LLM providers
 
-`ollama` is the only chat provider. Nine is built for local models, so there is
-nothing to choose between: any other `provider` value is logged as unknown at
-boot and the Ollama adapter is used anyway (Nine still starts).
+**`ollama` (the default) and `mistral` are the chat providers.** Any other
+`provider` value is refused at startup, after environment overrides are applied:
+naming a backend wrong is a mistake rather than a preference, and serving a
+different model than the one asked for is the worst available outcome, since the
+daemon boots and the answers simply come from somewhere else.
 
 ### Ollama
 
@@ -742,6 +762,24 @@ ollama pull qwen3.5:4b
 generous enough for a large model on CPU; set a negative value to remove the
 bound entirely and rely on turn cancellation alone. Which models actually drive
 the agent loop well is recorded in [Model compatibility](model-compatibility.md).
+
+### Mistral
+
+```toml
+[llm]
+provider = "mistral"
+model    = "mistral-small"       # whatever the endpoint serves
+endpoint = ""                      # empty uses https://api.mistral.ai/v1
+api_key  = ""                      # or NINE_LLM_API_KEY
+```
+
+`api_key` is sent as a bearer token. `num_ctx` and `thinking` are Ollama's and
+are ignored here; `timeout_seconds` applies to both. The endpoint is
+OpenAI-compatible, so an internal gateway speaking that API can be named here
+instead.
+
+Everything else about a turn is unchanged. A remote provider does change what
+leaves the machine, which is the trade the operator is making.
 
 ---
 
@@ -790,6 +828,7 @@ Environment variables take priority over `nine.toml` values.
 | `NINE_LLM_PROVIDER` | Override `llm.provider` |
 | `NINE_LLM_MODEL` | Override `llm.model` |
 | `NINE_LLM_ENDPOINT` | Override `llm.endpoint` |
+| `NINE_LLM_API_KEY` | Override `llm.api_key` — the bearer token for a remote provider |
 | `NINE_EMBED_PROVIDER` | Override `embeddings.provider` |
 | `NINE_DB_PATH` | Override `memory.path` |
 | `NINE_PLUGINS_BIN` | Override `plugins.bin` |
@@ -801,9 +840,12 @@ Environment variables take priority over `nine.toml` values.
 | `NINE_TOOLS_USER_DIR` | Override `tools.user_dir` (sandboxed tools). Only the path — `[tools] enabled` is deliberately not env-overridable, so a stray variable cannot switch the subsystem on. |
 | `SEARCH_PROVIDER` | `web_search` backend: `brave` or `serpapi`. Unset uses DuckDuckGo, which needs no key. |
 | `SEARCH_API_KEY` | API key for the chosen `SEARCH_PROVIDER` |
+| `NINE_SHELL_UNSAFE` | Set to `1` to bypass the `shell` tool's destructive-command checks (recursive deletion, disk formatting, `sudo`, force-push) |
 | `NINE_LOG_LEVEL` | Logging verbosity: `debug`, `info`, `warn`, `error` |
 | `NINE_LOG_FORMAT` | Log format: `text` (default) or `json` |
 | `NINE_LOG_FILE` | Set to `off` to disable file logging (logs go to stderr only) |
+
+The HTTP API has its own `NINE_API_*` overrides, listed in [API](api.md).
 
 Logs default to `nine.log` beside the binary, falling back to stderr when that
 file cannot be opened (an installed binary in a read-only directory) as well as
@@ -842,7 +884,7 @@ provider/model/endpoint at launch without editing the file — convenient in Doc
 
 | Limit | Detail |
 |-------|--------|
-| No runtime reload | Nine cannot modify `nine.toml`, and nothing re-reads it while the daemon runs. Every change needs a restart. |
+| No runtime reload | Nine cannot modify `nine.toml`, and nothing re-reads it while the daemon runs. Every change needs a restart — including a capability grant, since `nine tools reload` and `nine plugins reload` re-scan their directories against the config read at boot. |
 | No schema version | `nine.toml` carries no `schema_version` and there is no migrate-on-load, so an incompatible config change would break older files. See [versioning](versioning.md#limits). |
 | Environment overrides are a fixed set | Only the documented `NINE_*` variables override the file. Whether the sandboxed-tool subsystem runs at all stays in `nine.toml` by design — `NINE_TOOLS_USER_DIR` is deliberately the only tool-related override. |
 | Ollama and Mistral only | An unrecognized `[llm].provider` is refused at startup rather than falling back. |
