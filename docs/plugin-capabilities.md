@@ -527,27 +527,26 @@ none of this reaches the daemon↔client protocol.
 
 ---
 
-## 7. Build order
+## 7. Shutdown
 
-All seven phases shipped. They were built in this order, each independently
-useful: settings pass-through, cache dir, the plugin-side job SDK, the
-daemon-side job registry, the model-facing job tools, hardening and graceful
-shutdown, then docs and spec.
+On SIGINT or SIGTERM the daemon stops accepting work, waits for in-flight turns
+to save their state, asks every running job to cancel, and then stops the plugin
+processes — which is what removes their ephemeral cache directories and sockets.
+The job-cancellation step is bounded at five seconds so an unresponsive plugin
+cannot hang the shutdown.
 
-Graceful shutdown is the part worth knowing about operationally: on SIGINT or
-SIGTERM the daemon cancels every running job and then calls `Manager.StopAll`.
-Without it a `kill` orphans every plugin process along with its jobs, cache dir
-and socket.
+Without that sequence a `kill` orphans every plugin process along with its jobs,
+cache directory and socket.
 
 ---
 
-## 8. Eval scenarios
+## 8. Model behavior the tests do not cover
 
-The unit and integration tests prove the *mechanism* works — a plugin can
-detach work, the daemon can poll and surface it. What they do not exercise is the
-**model behaviour** the feature exists to shape: posture, memory, and escalation.
-Those belong in the in-process eval harness (`evals.md`), one scenario each,
-asserting on the transcript rather than on daemon state:
+The unit and integration tests prove the *mechanism* works — a plugin can detach
+work, the daemon can poll and surface it. They do not exercise the **model
+behaviour** the feature exists to shape, and **no eval case covers it today**
+(`evals.md`). Five scenarios would, each asserting on the transcript rather than
+on daemon state:
 
 1. **Posture — wait vs move on.** Given a job whose ack reads as fast, the model
    `job_wait`s; given one described as long (a large download), it starts the job
@@ -570,10 +569,9 @@ asserting on the transcript rather than on daemon state:
    acts on the result without having been told to poll — the pull-only delivery
    path (§5) exercised end to end.
 
-Each maps to an assertion made elsewhere in §5/§9; together they are the
-acceptance bar for the model-facing half, distinct from the plugin/daemon unit
-tests that only prove the mechanism runs. They land with phase 5 (the tools) and
-phase 6 (completion delivery), and `/sync-evals` reconciles the harness after.
+Each maps to an assertion made elsewhere in §5/§9. Together they would be the
+acceptance bar for the model-facing half, distinct from the plugin and daemon
+unit tests that only prove the mechanism runs.
 
 ---
 
@@ -590,10 +588,9 @@ phase 6 (completion delivery), and `/sync-evals` reconciles the harness after.
   documentation says, and operator settings beat Nine's built-in defaults.
 - **Plugin-private state is a directory, not a memory namespace** — no grants, no
   scope prefix, no risk of leaking into the agent's context.
-- **Ephemeral is the default; persistence is opt-in per plugin**, and the random
-  suffix plus boot sweep make "wiped on exit" hold even after a hard kill — which
-  today is the *only* thing that makes it hold, since nothing stops plugins on
-  shutdown (§5, phase 6).
+- **Ephemeral is the default; persistence is opt-in per plugin.** A graceful
+  shutdown removes the directory (§7); the random suffix and the boot sweep are
+  what make "wiped on exit" hold after a hard kill, where nothing ran.
 - **A job is lost, never resumed, across a daemon restart** — the row is marked
   `lost` and the human is told, rather than the daemon guessing at a plugin
   process it can no longer reach.
@@ -633,17 +630,10 @@ phase 6 (completion delivery), and `/sync-evals` reconciles the harness after.
 
 ## 10. Limits
 
-No open questions outstanding. Q1 (`cache_dir` default) and Q2 (protocol version) are
-settled in §4 and §6; Q3 (waking an idle owner) and Q4 (jobs with no live
-conversation) in §5 *Remembering across turns*; Q5 (MCP) and Q6 (progress
-granularity) in §5 *Contract additions*.
-
-Two things are deliberately **deferred**, each recorded where it belongs rather
-than left as a question:
-
-1. **Resuming a job across a daemon restart** (§5) — possible only for a plugin
-   that persists its own job state to a persistent cache dir, and it needs a
-   plugin-side durability contract no current use case justifies.
-2. **Hot-reloading settings into a running plugin** (§3) — a `plugin.configure`
-   RPC would do it; today a settings change takes effect on
-   `nine plugins reload` (user plugins) or daemon restart (built-ins).
+| Limit | Detail |
+|-------|--------|
+| No job survives a restart | A job is marked `lost` and the human is told, rather than the daemon guessing at a plugin process it can no longer reach. Resuming one is possible only for a plugin that persists its own job state to a persistent cache dir, and that needs a plugin-side durability contract no current use case justifies. |
+| Settings are read at spawn | Changing `[plugin.<name>.settings]` takes effect on `nine plugins reload` (user plugins) or a daemon restart (built-ins). A `plugin.configure` RPC would hot-reload them; it is deliberately not built. |
+| No eval covers the model half | The mechanism has unit and integration tests; the behavior it exists to shape — waiting posture, remembering an outstanding job, escalation — has none (§8). |
+| Jobs are native-plugin only | An MCP server cannot detach work. The bridge speaks the MCP protocol, which has no equivalent, and the stdio transport is serial anyway. |
+| Ephemeral cache survives a hard kill only by sweep | A graceful shutdown removes it; after a `kill -9` the directory persists until the next boot's sweep. |
