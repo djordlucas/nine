@@ -7,6 +7,14 @@ the QuickJS harness (`internal/toolvm/quickjs/`), the `tools` table
 which closed the state and duration gaps · **Amends:** none — every proposal here
 works inside R-TVM.14 as written
 
+> **Since this note was written (2026-09-23).** **W3 has shipped** — a failing call now
+> carries the tail of what it printed, bounded per call, failure-only; `docs/` and
+> `spec/` describe it and this section stays as the record of why. Two premises below
+> have also gone stale, and are left in place rather than rewritten: §1's item 4 says
+> QuickJS ships no `crypto`, but `crypto.getRandomValues` and `crypto.randomUUID` landed
+> with `adr/rich-js-tools.md`, so **W4's `nine:uuid` half is already covered** and only
+> `nine:hash` is a live gap. W1, W2 and W5 are unbuilt as described.
+
 A generated tool is written blind. `tool_write` persists the row, the next turn
 advertises the tool, and only the first real call reveals whether the code
 parses, whether it reads the arguments it declared, and what it printed on the

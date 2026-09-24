@@ -1,26 +1,48 @@
-FROM golang:1.26-alpine AS go-build
-
-RUN apk add --no-cache git
+# Base images are pinned by manifest-list digest, not by tag. A tag is mutable,
+# so a digest is the only way a rebuild of an old commit produces the image that
+# commit was tested against. Dependabot's docker ecosystem bumps these (see
+# .github/dependabot.yml); the tag beside each digest is what it reads.
+FROM golang:1.26-alpine@sha256:51a7c389a5ddaf82f527191a1e9bff9928655130a44e4975dd1d7e0acf59f1ae AS go-build
 
 WORKDIR /nine-src
 COPY . .
 
+# VERSION is what `nine version` reports and what the image's
+# org.opencontainers.image.version label carries. The release workflow passes
+# the git tag; a local build falls back to "dev" rather than silently claiming
+# a release number.
+ARG VERSION=dev
+
 # One binary: the shell/files/http/time plugins are served out of nine itself
 # (`nine plugin serve <name>`, internal/builtins), so there is no per-plugin
 # build loop and nothing to copy into /opt/nine/bin at all.
-RUN go build -mod=vendor -o /usr/local/bin/nine ./cmd/nine
+#
+# CGO_ENABLED=0 makes it a static binary — the SQLite driver is a pure-Go
+# translation, not a cgo binding, so nothing needs libc. -trimpath strips local
+# filesystem paths from the binary so the output does not depend on where it was
+# built. -w -s drop DWARF and the symbol table.
+RUN CGO_ENABLED=0 go build \
+      -mod=vendor \
+      -trimpath \
+      -ldflags "-s -w -X main.Version=${VERSION}" \
+      -o /usr/local/bin/nine ./cmd/nine
 
 # ── s6-overlay fetch stage (shared by dev + runtime) ──────────────────────────
 # s6-overlay supervises the daemon (adr/single-container.md): it reaps orphaned
 # children (an MCP server's process tree, for one), forwards docker stop's
 # SIGTERM, and restarts the service if it exits. Fetched once here and copied
 # into both final stages rather than downloaded twice.
-FROM debian:bookworm-slim AS s6-fetch
+FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 AS s6-fetch
 ARG S6_OVERLAY_VERSION=3.2.3.2
 ARG TARGETARCH
 RUN apt-get update && apt-get dist-upgrade -y && apt-get install -y --no-install-recommends \
       curl xz-utils ca-certificates && \
     rm -rf /var/lib/apt/lists/*
+
+# Each s6-overlay tarball is verified against its published SHA-256 before it is
+# unpacked. Without this the build trusts whatever the release URL returns, and
+# an unverified tarball unpacks as root into /.
+COPY docker/s6-overlay.sha256 /tmp/s6-overlay.sha256
 RUN case "$TARGETARCH" in \
       amd64)   S6_ARCH=x86_64 ;; \
       arm64)   S6_ARCH=aarch64 ;; \
@@ -32,12 +54,16 @@ RUN case "$TARGETARCH" in \
       *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
     esac && \
     mkdir -p /out && \
-    curl -fsSL -o /tmp/noarch.tar.xz \
+    curl -fsSL -o /tmp/s6-overlay-noarch.tar.xz \
       "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz" && \
-    curl -fsSL -o /tmp/arch.tar.xz \
+    curl -fsSL -o "/tmp/s6-overlay-${S6_ARCH}.tar.xz" \
       "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${S6_ARCH}.tar.xz" && \
-    tar -C /out -Jxpf /tmp/noarch.tar.xz && \
-    tar -C /out -Jxpf /tmp/arch.tar.xz
+    cd /tmp && \
+    grep -E "  (s6-overlay-noarch|s6-overlay-${S6_ARCH})\.tar\.xz\$" /tmp/s6-overlay.sha256 > /tmp/want.sha256 && \
+    test "$(wc -l < /tmp/want.sha256)" -eq 2 && \
+    sha256sum -c /tmp/want.sha256 && \
+    tar -C /out -Jxpf /tmp/s6-overlay-noarch.tar.xz && \
+    tar -C /out -Jxpf "/tmp/s6-overlay-${S6_ARCH}.tar.xz"
 
 # ── Dev stage (hot-reload) ────────────────────────────────────────────────────
 # The source tree is bind-mounted at runtime; docker/dev-entrypoint.sh (wrapped
@@ -45,7 +71,11 @@ RUN case "$TARGETARCH" in \
 # .go change — which now covers the Go plugins too, since they are served out of
 # that same binary. The Go toolchain lives here (not in the runtime image), so
 # this stage is dev-only.
-FROM debian:bookworm-slim AS dev
+#
+# This stage runs as root, unlike runtime. It is never published: it exists to
+# rebuild bind-mounted source and own a shared Go cache, both of which want the
+# host uid. `make up-hot` builds it locally.
+FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 AS dev
 
 COPY --from=s6-fetch /out/ /
 
@@ -53,7 +83,7 @@ COPY --from=s6-fetch /out/ /
 # directive, so the toolchain comes from the go-build stage instead (its Go
 # binaries are statically linked and run fine on glibc, unrelated to that
 # stage's own Alpine base) — this also keeps the dev toolchain in lockstep with
-# whatever golang:1.26-alpine tag go-build uses, with nothing to track here.
+# whatever golang:1.26-alpine digest go-build uses, with nothing to track here.
 # The nine binary itself is pure Go — the SQLite driver is a Go translation of
 # SQLite, not a cgo binding — so it likewise carries no libc dependency across
 # stages.
@@ -99,8 +129,9 @@ VOLUME /data
 EXPOSE 8080
 ENTRYPOINT ["/init"]
 
-# ── Runtime stage (production) ────────────────────────────────────────────────
-FROM debian:bookworm-slim AS runtime
+# ── Runtime stage (production, published) ─────────────────────────────────────
+# This is the stage published to ghcr.io/djordlucas/nine and docker.io/djordlucas/nine.
+FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 AS runtime
 
 COPY --from=s6-fetch /out/ /
 
@@ -114,6 +145,15 @@ RUN apt-get update && apt-get dist-upgrade -y && apt-get install -y --no-install
       ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+# The daemon and the API server run as this unprivileged user. s6-overlay itself
+# stays root — it supervises, reaps orphans, and forwards signals, which need
+# it — and each service drops to `nine` via s6-setuidgid in its run script.
+#
+# uid/gid 1000 is deliberate: it matches the first ordinary user on most Linux
+# hosts, so a bind-mounted /data from the host is writable without a chown.
+RUN groupadd --system --gid 1000 nine && \
+    useradd --system --uid 1000 --gid 1000 --home-dir /data --shell /usr/sbin/nologin nine
+
 ENV NINE_BIN=/opt/nine/bin
 
 COPY --from=go-build /usr/local/bin/nine /usr/local/bin/nine
@@ -123,13 +163,61 @@ COPY --from=go-build /usr/local/bin/nine /usr/local/bin/nine
 # copying compiled plugin binaries in, and those are gone now that the built-ins
 # live in the nine binary. The daemon still resolves the path, and a user plugin
 # mounted at runtime lands here. The dev stage does the same.
-RUN mkdir -p /opt/nine/bin
+#
+# /data is created and owned here so the image works with no volume at all. A
+# named or bind-mounted volume shadows this, which is what init-perms fixes at
+# boot.
+RUN mkdir -p /opt/nine/bin /data/workspace && \
+    chown -R nine:nine /data && \
+    chmod 0755 /opt/nine/bin
 
-COPY docker/s6/common/user-bundles.d/ /etc/s6-overlay/user-bundles.d/
-COPY docker/s6/runtime/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
-RUN chmod +x /etc/s6-overlay/s6-rc.d/nine/run /etc/s6-overlay/s6-rc.d/api/run
+# A default config so `docker run ghcr.io/djordlucas/nine` works with no clone
+# and no mounted file. Conservative on purpose — sandboxed tools off, every path
+# under /data. An operator's own file mounted at /nine.toml shadows it, and the
+# NINE_LLM_* environment overrides work without one.
+COPY docker/nine.toml /nine.toml
+
+# The runtime bundle adds init-perms on top of the shared nine + api services.
+# It is stage-specific because the dev stage has no init-perms service, and a
+# bundle naming a service that does not exist fails the s6 boot.
+COPY docker/s6/common/user-bundles.d/  /etc/s6-overlay/user-bundles.d/
+COPY docker/s6/runtime/user-bundles.d/ /etc/s6-overlay/user-bundles.d/
+COPY docker/s6/runtime/s6-rc.d/        /etc/s6-overlay/s6-rc.d/
+COPY docker/s6/runtime/scripts/        /etc/s6-overlay/scripts/
+RUN chmod +x /etc/s6-overlay/s6-rc.d/nine/run \
+             /etc/s6-overlay/s6-rc.d/api/run \
+             /etc/s6-overlay/scripts/init-perms.sh
 
 # /data carries all durable state: the SQLite database and the workspace.
 VOLUME /data
 EXPOSE 8080
+
+# `nine status` reaches the daemon over its Unix socket, so it probes the thing
+# that matters without adding curl to the image.
+#
+# The grep is required, not defensive: with no daemon reachable, `nine status`
+# prints "no daemon running" and exits 0, because the query itself succeeded.
+# A bare `CMD nine status` would therefore report healthy against a dead daemon.
+# "Uptime:" is the first line of a real status (internal/cli.printStatus), and
+# tests/docker asserts the container reaches healthy.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD /usr/local/bin/nine status 2>&1 | grep -q '^Uptime:'
+
 ENTRYPOINT ["/init"]
+
+# Labels last: they change on every release, and a trailing layer of metadata
+# does not invalidate the cache for anything above it. VERSION and the two
+# git-derived values are passed by the release workflow.
+ARG VERSION=dev
+ARG VCS_REF=unknown
+ARG BUILD_DATE=unknown
+LABEL org.opencontainers.image.title="nine" \
+      org.opencontainers.image.description="Self-contained AI agent daemon" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.source="https://github.com/djordlucas/nine" \
+      org.opencontainers.image.documentation="https://github.com/djordlucas/nine/blob/main/docs/docker-image.md" \
+      org.opencontainers.image.licenses="GPL-3.0-or-later" \
+      org.opencontainers.image.vendor="The Nine Authors" \
+      org.opencontainers.image.base.name="debian:bookworm-slim"

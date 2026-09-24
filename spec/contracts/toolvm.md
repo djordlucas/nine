@@ -211,6 +211,19 @@ A **`wasm` tool is not metered.** wazero has no fuel/gas metering and a raw modu
 interpreter to interrupt, so for those tools the wall-clock deadline remains the only bound
 and that is a stated limitation rather than an assumption.
 
+**A failing call MUST carry the tail of what it printed.** A tool reaches `nine.log`
+through an import granted to every tool, and until a call fails those lines are the
+daemon's alone — the model that wrote the tool cannot read them. A failure **MUST** append
+the most recent lines, bounded in count and bytes, to the error the caller receives; a
+**success MUST NOT**, because logs nobody asked for are noise. This confers nothing: the
+lines were already printed through a granted import, and this only stops discarding them
+when they turn out to explain something.
+
+The bound is on the buffer, not on the tool: a tool printing in a loop keeps the lines
+nearest its failure, since those are the ones that explain it. Because the buffer reaches
+the model and the turn, a tool that prints a credential has published it — the authoring
+guide says so, and that is the stated cost of the feature rather than a defect in it.
+
 A call that exceeds the deadline **MUST** report a timeout naming the tool, not a generic
 instantiation or trap failure.
 
@@ -230,7 +243,7 @@ pre-open, or a host function the daemon exports. Anything else is not "denied" �
 | `env` | explicit key allowlist | **none** | `WithEnv`, per key |
 | `clock` | — | **granted** | `WithSysWalltime` / `WithSysNanotime` |
 | `random` | — | **granted** | `WithRandSource` |
-| `log` | — | **granted** | host fn `nine.log` → `slog` |
+| `log` | — | **granted** | host fn `nine.log` → `slog`, and the tail of it onto a failure (R-TVM.4) |
 | `state` | scope (**required**), quotas, ttl | **none** | host fn `nine.state` → `tool_state` — R-TVM.18 |
 
 `clock`, `random`, and `log` are unconditional because they leak nothing and every
