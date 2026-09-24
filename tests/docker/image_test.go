@@ -183,6 +183,70 @@ func TestDataIsWritableByServiceUser(t *testing.T) {
 	}
 }
 
+// TestSandboxedToolsAreAvailable asserts the agent can actually reach a file in
+// the image. write_file is a wasm tool (internal/toolvm/shipped.go), so this
+// exercises the whole stack: qjs.wasm loads out of the binary, the harness runs,
+// the declared filesystem capability resolves to the workspace, and the bytes
+// land on the volume.
+//
+// Asserted by behaviour rather than by reading the config, because the config
+// saying enabled = true is not evidence that a tool ran. The image previously
+// shipped with no file tools and no working shell, and every shape assertion in
+// this file passed the whole time.
+func TestSandboxedToolsAreAvailable(t *testing.T) {
+	id := startContainer(t)
+
+	out, err := dockerRun(t, "exec", "-u", "nine", id, "nine", "tool", "call", "write_file",
+		`{"path":"sandbox-probe.txt","content":"written by a sandboxed tool"}`)
+	if err != nil {
+		logs, _ := dockerRun(t, "logs", id)
+		t.Fatalf("write_file did not run: %v\noutput: %s\n\ncontainer logs:\n%s", err, out, logs)
+	}
+	if !strings.Contains(out, `"ok": true`) {
+		t.Errorf("write_file did not report success:\n%s", out)
+	}
+
+	// The tool's own report is not proof the bytes landed; read them back.
+	content, err := dockerRun(t, "exec", id, "cat", "/data/workspace/sandbox-probe.txt")
+	if err != nil {
+		listing, _ := dockerRun(t, "exec", id, "ls", "-la", "/data/workspace")
+		t.Fatalf("no file at /data/workspace/sandbox-probe.txt: %v\nworkspace holds:\n%s", err, listing)
+	}
+	if content != "written by a sandboxed tool" {
+		t.Errorf("file content = %q, want %q", content, "written by a sandboxed tool")
+	}
+}
+
+// TestBuiltinPluginsStart asserts the shell built-in actually starts in the
+// image. It is the agent's only filesystem capability there, because the
+// sandboxed tier that carries write_file is off in the baked config.
+//
+// The regression this exists for: s6-setuidgid changes uid and gid and nothing
+// else, so the daemon ran as uid 1000 with HOME still pointing at root's home.
+// os.UserCacheDir() reads $HOME, the plugin host tried to create /root/.cache,
+// and shell failed to start — while the daemon stayed up and healthy and every
+// other assertion in this file still passed. A plugin that never loads is
+// invisible from the outside; only the roster shows it.
+func TestBuiltinPluginsStart(t *testing.T) {
+	id := startContainer(t)
+
+	out, err := dockerRun(t, "exec", "-u", "nine", id, "nine", "plugins")
+	if err != nil {
+		t.Fatalf("nine plugins: %v", err)
+	}
+	if !strings.Contains(out, "shell") {
+		logs, _ := dockerRun(t, "logs", id)
+		t.Fatalf("shell is not in the plugin roster:\n%s\n\ncontainer logs:\n%s", out, logs)
+	}
+
+	// The daemon logs the failure and carries on, so a started-then-died plugin
+	// looks the same from the roster alone.
+	logs, _ := dockerRun(t, "logs", id)
+	if strings.Contains(logs, "built-in plugin start failed") {
+		t.Errorf("a built-in plugin failed to start:\n%s", logs)
+	}
+}
+
 // TestWorkspaceAliasResolves covers the /work alias, which the init-perms
 // oneshot creates as root before either service starts. It cannot be made by
 // the services themselves: they run as uid 1000 and the link lands at the

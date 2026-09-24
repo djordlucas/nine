@@ -8,5 +8,8 @@ while [ ! -S /tmp/nine.sock ]; do
 done
 
 # Same privilege drop as the daemon: 8080 is above 1024, so binding it needs no
-# capability.
+# capability. HOME for the same reason the daemon sets it — s6-setuidgid leaves
+# it pointing at root's home, and os.UserCacheDir() reads it.
+export HOME=/data
+
 exec s6-setuidgid nine nine api serve --host 0.0.0.0 --port 8080
