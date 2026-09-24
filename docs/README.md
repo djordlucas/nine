@@ -33,6 +33,7 @@ before the first run.
 | Document | Covers |
 |----------|--------|
 | [Installation](installation.md) | Build from source, Docker, first run |
+| [Container image](docker-image.md) | The published image: registries, tags, verification, configuration |
 | [CLI usage](usage.md) | Commands, interactive TUI, slash commands, background tasks |
 | [Configuration](configuration.md) | `nine.toml` reference, LLM providers, environment variables |
 
