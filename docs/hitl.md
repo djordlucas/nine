@@ -19,8 +19,6 @@ Both cases route through the same mechanism — `ask_human` — so the TUI has o
 
 The daemon learns whether a session is interactive from the `new_conversation` protocol message (`Interactive: true`). The TUI sets this flag; the CLI fire-and-forget path does not. Interactive session IDs are persisted in the `interactive_sessions` DB table so the flag survives daemon restarts.
 
-`LoopFactory` gains a second parameter, `interactive bool`. `AgentBuilder.build()` registers `ask_human` conditionally on this flag; gates are keyed off a `gateCtx` threaded down the spawn chain instead. All background session creation paths pass `false`.
-
 ---
 
 ## `ask_human` tool
@@ -45,13 +43,11 @@ Available only in interactive sessions.
 
 ### Behavior
 
-1. Check `store.HumanRequestGetPending(agentID)` — if a pending request exists from before a restart, reuse its ID and question, re-emit the question to the TUI.
-2. Otherwise create a new row in `human_requests`, compute `expires_at = now + timeout_seconds`.
-3. Register a `chan string` in the daemon's in-memory `hitlStore`.
-4. Emit `human_input_required` via the session's progress stream.
-5. Block: `select` on the channel, `ctx.Done()`, or the expiry time.
-6. On answer: update DB row (`status='answered'`, `answer`, `answered_at`), return the answer string to the LLM.
-7. On timeout or cancellation: update DB row (`status='timed_out'`), return an error the LLM can reason about: `"no response from human (timed out)"`.
+1. If this agent already has a pending question — one asked before a restart — its ID and text are reused rather than a second one being asked.
+2. Otherwise the question is recorded as pending, with an expiry `timeout_seconds` from now.
+3. The question is emitted on the session's progress stream and the call blocks, waiting for an answer, the turn's cancellation, or that expiry.
+4. An answer is recorded with its timestamp and returned to the model as the tool's result.
+5. A timeout or cancellation is recorded as `timed_out` and returned to the model as an error it can reason about: `"no response from human (timed out)"`.
 
 ### Restart recovery
 
@@ -80,7 +76,9 @@ Command: rm -rf /tmp/old
 Enter "yes" to proceed, anything else to cancel.
 ```
 
-The question format is tool-aware: `shell` shows `command`, `write_file` shows `path`, `tool_write`/`js_eval` show the tool name and its declared capabilities, everything else falls back to truncated JSON args.
+The question format is tool-aware: `shell` shows `command`, `tool_write`/`js_eval` show the tool name and its declared capabilities, everything else falls back to truncated JSON args.
+
+**A file write shows the change, not the path.** `write_file` and `edit_file` prompts carry a diff, bounded at 40 lines — a path names which file is about to change and does not answer the only question the gate asks. The diff comes from the tool's own `preview` argument rather than a second implementation, so what the human approves is what the tool then performs, and nothing is written to produce it. A preview that fails never blocks the approval: the prompt falls back to naming the path, since a human deciding with less information beats a tool that cannot run.
 
 ### The generated-tools gate
 
@@ -88,9 +86,18 @@ The generated tier (`sandboxed-tools.md` §9.4, `spec/contracts/toolvm.md` R-TVM
 
 | `[tools.agent].require_approval` | Gates |
 |---|---|
-| `on_capability` *(default)* | only a write/eval whose **declared capabilities are non-empty** — a pure transform passes without a prompt |
+| `on_capability` *(default)* | a write/eval that **declares any capability**, or whose source **imports an external package** — a pure transform with neither passes without a prompt |
 | `always` | every write and every eval |
-| `never` | nothing; the ceiling is the only control |
+| `never` | nothing except a standing promotion — otherwise the ceiling is the only control |
+
+Two decisions sit underneath that table:
+
+- **A standing promotion always prompts**, including under `never`. A catalogued
+  tool runs when a turn calls it; a standing one runs on its own cadence until
+  somebody stops it, and the write that starts one is the only moment to refuse.
+- **Unparseable arguments gate.** A `tool_write` whose JSON cannot be read counts
+  as declaring everything, because fail-closed is the only safe direction for an
+  approval decision.
 
 The default gates on **substance, not frequency**: prompting on a capability-free date-formatting tool trains the reflex that defeats the prompt that matters — a tool asking for workspace read. Both switches share the one dispatcher gate, so a generated tool armed here is gated on exactly the same owning-interactive-session terms as any `[hitl]` entry (below); a non-interactive deployment has no gate, so there the ceiling in `[tools.agent.capabilities]` is the whole control.
 
@@ -131,37 +138,16 @@ Two new message types in `protocol.Msg`:
 
 ---
 
-## DB schema
+## What is persisted
 
-Two tables in the store:
+Two tables carry human-in-the-loop state across restarts:
 
-```sql
-CREATE TABLE IF NOT EXISTS human_requests (
-    id          TEXT PRIMARY KEY,
-    agent_id    TEXT NOT NULL,
-    question    TEXT NOT NULL,
-    options     TEXT,            -- JSON array or NULL
-    status      TEXT NOT NULL DEFAULT 'pending',  -- pending | answered | timed_out
-    answer      TEXT,
-    created_at  TEXT NOT NULL,
-    answered_at TEXT,
-    expires_at  TEXT NOT NULL
-);
+| Table | Holds | Why it is durable |
+|-------|-------|-------------------|
+| `human_requests` | one row per question: the asking agent, the text, any options, `pending`/`answered`/`timed_out`, the answer, and an expiry | A question outlives the daemon that asked it. A human who answers while the daemon is down has their answer honoured when it comes back. |
+| `interactive_sessions` | the IDs of conversations a human started | Whether a session may ask at all is a property of the session, not of the current process, so it survives a restart. |
 
-CREATE TABLE IF NOT EXISTS interactive_sessions (
-    id TEXT PRIMARY KEY
-);
-```
-
-New methods on `memory.Store`:
-- `HumanRequestCreate(id, agentID, question string, options []string, expiresAt time.Time) error`
-- `HumanRequestGetPending(agentID string) (*HumanRequest, error)`
-- `HumanRequestAnswer(id, answer string) error`
-- `HumanRequestExpireStale(now time.Time) error` — called at daemon startup
-- `InteractiveSessionAdd(id string) error`
-- `InteractiveSessionExists(id string) (bool, error)`
-
-At daemon startup, `HumanRequestExpireStale` marks any `pending` row whose `expires_at` is in the past as `timed_out`. Remaining `pending` rows are recovered naturally when their sessions resume and re-call `ask_human`.
+At startup, every `pending` row already past its expiry is marked `timed_out`. The rest are recovered when their sessions resume and ask again.
 
 ---
 
@@ -179,39 +165,18 @@ The status bar shows a `?` badge whenever there is a pending unanswered question
 
 ---
 
-## Daemon wiring (`hitlStore`)
+## Answer routing
 
-```go
-type hitlStore struct {
-    mu      sync.Mutex
-    pending map[string]chan string  // requestID → answer channel
-}
-```
+The daemon keeps an in-memory map from request ID to a waiting call. A question registers there before it blocks; an incoming answer finds it by request ID, hands over the text, and removes the entry.
 
-- `ask_human` registers a channel before blocking.
-- `human_input_answer` dispatch finds the channel by `RequestID`, sends the answer, and removes the entry.
-- On daemon shutdown all blocked `ask_human` calls receive a cancellation via `ctx.Done()` and write `timed_out` to the DB. The pending requests survive in the DB for the next boot.
-
----
-
-## Implementation order
-
-1. DB schema + `memory.Store` methods
-2. Protocol message types + `ProgressEvent` extension
-3. `hitlStore` + `human_input_answer` dispatch in daemon
-4. `newConversation(interactive bool)` + `interactive_sessions` persistence
-5. `LoopFactory` signature change + `AgentBuilder` conditional registration
-6. `ask_human` tool handler (restart recovery included)
-7. TUI question panel + answer routing
-8. Approval gates: dispatcher `approvalFn`, `[hitl]` config, auto-question generation
-
-Steps 1–7 deliver a working `ask_human`. Step 8 adds automatic gates on top.
+On shutdown every blocked question is cancelled and written to the store as `timed_out`. The rows survive for the next boot, which is what makes restart recovery work: the state that matters is in the store, and the map is only how a live answer reaches a live call.
 
 ---
 
 ## Limits
 
 - **Non-interactive sessions cannot ask** — sub-agents and background sessions that need human input must surface it to their parent conversation via their return value or a notification; they cannot call `ask_human` directly.
-- **One pending question per session** — `HumanRequestGetPending` returns at most one row. Concurrent `ask_human` calls within the same turn are serialised (first one blocks the loop before the second is issued).
+- **One pending question per asking loop** — a loop has at most one question outstanding, and concurrent `ask_human` calls within one turn serialise behind each other. Several sub-agents of one conversation can each be waiting at once, which is why the TUI queues them.
+- **An approval diff is truncated at 40 lines** — a larger change is approved on a partial view, with the line counts naming what was not shown. A prompt that scrolls is one nobody reads, which is the failure the bound exists to prevent.
 - **No goroutine interruption on timeout** — when a question times out, `ask_human` returns an error to the LLM. Any tool call the LLM subsequently makes may still proceed; timeout is not equivalent to task cancellation.
 - **Approval gate scope** — the `[hitl].require_approval` list is global; there is no per-session or per-argument pattern matching for it. Fine-grained rules (e.g., "approve `shell` only for destructive-looking commands") are deferred. The generated-tools gate (`[tools.agent].require_approval = "on_capability"`) is the one per-argument exception, and only for `tool_write`/`js_eval`.
