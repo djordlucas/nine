@@ -516,8 +516,12 @@ set to `1` for local Ollama models to avoid contention.
 **`max_goal_sessions` (`daemon.max_goal_sessions`)** — Cap on concurrently
 running `pursue` sessions, default 10 (`DefaultMaxGoalSessions`).
 
-**Token counting** — Approximated as 4 characters ≈ 1 token everywhere in the
-context builder (no tokenizer dependency).
+**Token counting** — Approximated as **3.45 bytes ≈ 1 token** throughout the
+context builder, with no tokenizer dependency; the divisor deliberately
+over-estimates, since under-counting spends headroom the context window does not
+have. The dispatcher's output cap is the one place still counting 4 bytes to the
+token (2048 tokens ⇒ 8192 characters), because it bounds a result rather than a
+request.
 
 **Volume layout (`/data/`)** — Holds `nine.db` (the SQLite database, plus its
 `-wal`/`-shm` sidecars) and `workspace/` (the sandboxed tools' workspace). All primary
