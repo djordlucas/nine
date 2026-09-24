@@ -601,8 +601,9 @@ letting a policy decision look like a response invites `if (res.ok)` to swallow 
 > built once at boot while an audit record belongs to a session — a hook configured at Open
 > could not know one.
 
-**There is no bare `"*"`.** An operator who wants unrestricted egress should write a
-native plugin, where that intent is explicit and reviewed. Config validation refuses it.
+**A bare `"*"` is permitted** and grants any host, never any address: the dial-time
+check above is not subject to the allowlist (see the amendment at the head of this
+requirement). A tool whose hosts are knowable **MUST** name them.
 
 ---
 
