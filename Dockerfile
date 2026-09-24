@@ -32,7 +32,7 @@ RUN CGO_ENABLED=0 go build \
 # children (an MCP server's process tree, for one), forwards docker stop's
 # SIGTERM, and restarts the service if it exits. Fetched once here and copied
 # into both final stages rather than downloaded twice.
-FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 AS s6-fetch
+FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 AS s6-fetch
 ARG S6_OVERLAY_VERSION=3.2.3.2
 ARG TARGETARCH
 RUN apt-get update && apt-get dist-upgrade -y && apt-get install -y --no-install-recommends \
@@ -75,7 +75,7 @@ RUN case "$TARGETARCH" in \
 # This stage runs as root, unlike runtime. It is never published: it exists to
 # rebuild bind-mounted source and own a shared Go cache, both of which want the
 # host uid. `make up-hot` builds it locally.
-FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 AS dev
+FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 AS dev
 
 COPY --from=s6-fetch /out/ /
 
@@ -131,7 +131,7 @@ ENTRYPOINT ["/init"]
 
 # ── Runtime stage (production, published) ─────────────────────────────────────
 # This is the stage published to ghcr.io/djordlucas/nine and docker.io/djordlucas/nine.
-FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 AS runtime
+FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 AS runtime
 
 COPY --from=s6-fetch /out/ /
 
