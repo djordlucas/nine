@@ -28,7 +28,7 @@ it creates a second agent rather than renaming the first.
 `when` is a third alternative — a **condition**: a cheap sandboxed predicate
 evaluated on its own cadence, waking the agent only when it finds something. It
 composes with a clock rather than replacing it. See
-[scheduling](scheduling.md#conditions-waking-on-a-predicate-rather-than-a-clock).
+[scheduling](scheduling.md#condition-triggers).
 
 ```toml
 when = { tool = "cve_scan", interval = "10s", args = { manifest = "/srv/app/go.sum" } }
@@ -37,6 +37,19 @@ when = { tool = "cve_scan", interval = "10s", args = { manifest = "/srv/app/go.s
 `schedule` and `interval` are alternatives — a cron expression or a fixed
 cadence. Setting neither gets the default goal-session cadence. See
 [scheduling](scheduling.md).
+
+A session can also carry **extra routines** beside its pursue shell, each waking
+on its own cadence:
+
+```toml
+[[agent.routine]]
+kind     = "idle-reflection"
+interval = "30m"
+```
+
+A routine never sets a role: the pursue shell is the session's role-bearing
+routine, a session has exactly one role, and two claimants would make it depend
+on ordering.
 
 `role` defaults to `monitor`, which is read-only: web and HTTP reads, file
 reads, and memory. An agent that needs to change things opts into a wider role
@@ -63,16 +76,6 @@ Removing an entry stops Nine reconciling that goal; it does not tear the goal
 down. Reactivating a finished agent is a deliberate act — set its goal status
 back to active.
 
-## Limits worth knowing
-
-**Configuration is read at boot.** Re-activating a paused agent while the daemon
-runs does not re-spawn its session with the configured role and trigger until
-the next restart.
-
-**Role, delegation and trigger are not stored on the goal.** They are re-read
-from configuration each boot. The durable state is the goal — its description
-and status — and the session's plan.
-
 ## Related
 
 - [Goal sessions](goal-sessions.md) — the machinery a standing agent runs on
@@ -82,3 +85,13 @@ and status — and the session's plan.
 
 > The design, the phasing, and why this needed no new primitive —
 > [../adr/predefined-agents-design.md](../adr/predefined-agents-design.md).
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| Configuration is read at boot | Re-activating a paused agent while the daemon runs does not re-spawn its session with the configured role and trigger until the next restart. |
+| Role, delegation and trigger are not on the goal | They are re-read from configuration each boot. The durable state is the goal — its description and status — and the session's plan. |
+| Renaming `id` creates a second agent | Reconciliation keys on `id`, so an edited id leaves the old goal in place and adds a new one. |
+| A standing agent counts against the goal cap | It runs on an ordinary goal session, so `daemon.max_goal_sessions` (default 10) bounds standing agents and conversational goals together. |
+| A condition trigger needs the tool host | `when` is a standing tool underneath, so it requires `[tools] enabled`. |
