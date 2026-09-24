@@ -21,6 +21,14 @@ mkdir -p /data/workspace
 # it is created here rather than in the unprivileged service.
 [ -e /work ] || ln -s /data/workspace /work
 
+# Plugin and sandboxed-tool caches live under $HOME/.cache (HOME=/data for the
+# services). Durable rather than /tmp, because persistent plugin caches share
+# the root. Ownership is set unconditionally: the chown below only fires when
+# /data is not already ours, so on a second boot these would stay root-owned and
+# the plugin host would fail to start.
+mkdir -p /data/.cache/nine
+chown nine:nine /data/.cache /data/.cache/nine 2>/dev/null || true
+
 owner="$(stat -c '%u' /data 2>/dev/null || echo unknown)"
 if [ "$owner" != "1000" ]; then
 	# A read-only bind mount is a legitimate configuration; say so and carry on
