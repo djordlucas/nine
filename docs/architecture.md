@@ -916,7 +916,7 @@ The idle scheduler lives in the worker's `select`:
                  └────────────────────────────────────────┘
 
                  ┌──────── self-reflection session ───────┐
-   agentID:      │ "self-reflection"  (fixed)             │  wakes every 2 min,
+   agentID:      │ "self-reflection"  (fixed)             │  wakes every 2 min*,
    profile:      │ [idle-reflection]                      │  updates self/* KV,
                  │ eager-persisted, resumed at boot       │  records to the journal
                  └────────────────────────────────────────┘
@@ -927,6 +927,9 @@ The idle scheduler lives in the worker's `select`:
                  │ eager, capped by max_goal_sessions(10) │  syncs goals.status
                  └────────────────────────────────────────┘
 ```
+
+\* The reflection cadence is `[daemon] self_reflection`; 2 minutes is the default,
+and `"off"` removes the session. The pursue interval is fixed.
 
 On daemon restart, `ResumeSessions` walks `session_plans` and restarts every
 `active` plan that has an idle-capable routine (`planNeedsResume`) — so background
@@ -944,8 +947,9 @@ they come back on demand via `attach`.
    │   consumed via a resumable cursor that survives restart           │
    │   events:  EventAgentCompletes | EventGoalStalls                  │
    │            EventGapReported    | EventPluginCrashed               │
-   │   actions: log events, diagnose gaps, or surface them to the user │
-   │            (a crashed plugin is logged; restart is the manager's) │
+   │   actions: every event is logged, and nothing yet acts on the    │
+   │            first three; a crashed plugin is the manager's to     │
+   │            restart. The switch arm is where a reaction plugs in. │
    └───────────▲───────────────────────▲──────────────────────────────┘
                │ gap_report tool         │ stall detector (Limit=5 no-tool turns)
                │                          │

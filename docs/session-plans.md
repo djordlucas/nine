@@ -138,10 +138,17 @@ alongside.
 
 ### `idle-reflection` — self-reflection session
 
-A single, fixed session with agent ID `self-reflection`
-(`SelfReflectionAgentID`) runs the `idle-reflection` routine. It's created once by
-`ReconcileSelfReflection` on first daemon start, with `idle_interval_seconds` set to
-2 minutes, and resumed on every subsequent restart via `ResumeSessions`.
+A single session with agent ID `self-reflection` (`SelfReflectionAgentID`) runs
+the `idle-reflection` routine. It is created once by `ReconcileSelfReflection` on
+first daemon start and resumed on every subsequent restart via `ResumeSessions`.
+
+**The cadence is `[daemon] self_reflection`**, a Go duration, defaulting to
+2 minutes when unset — reflection is how Nine maintains its own self-model, so it
+ships on. `"off"`, `"none"`, `"0"` or any non-positive duration removes it, and
+removal is subtractive rather than merely skipped: an existing session is
+deactivated so the resume pass stops reviving it. An unparseable value is logged
+and falls back to the default, because a typo should not silently switch a
+background behavior off.
 
 - **`OnIdle`** always has work: it returns `ReflectionPrompt`, which asks the model to
   call `memory_set` to update:
@@ -201,7 +208,7 @@ Each pursue session's idle interval (`PursueIdleInterval`) is 5 minutes.
 
 | Limit | Detail |
 |-------|--------|
-| Fixed pursue interval | `PursueIdleInterval` is 5 minutes and is not configurable per goal. |
+| Fixed pursue interval | `PursueIdleInterval` is 5 minutes and is not configurable per goal — unlike the reflection cadence, which `[daemon] self_reflection` sets. |
 | Goal-session cap | `daemon.max_goal_sessions`, default 10. Past the cap a goal is recorded without a background session, and `goal_create` reports `pursue_session: "limit_reached"`. |
 | Sub-goals get no session | A goal with `parent_type: "goal"` is worked inside its parent's pursue loop. |
 | No backfill across restarts | A routine's `lastFire` resets to the worker's start time on restart, so an occurrence missed while the daemon was down is not replayed. |
