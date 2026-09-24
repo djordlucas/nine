@@ -438,9 +438,10 @@ different registries.
 
 **Skill** — A named markdown how-to note (`name`, `description`, `tags`, body)
 stored in the `skills` table. Never preloaded; the description is
-embedded into the `skills` vector namespace and the self-model surfaces relevant
-names (context priority 5, dropped first under budget pressure), which the agent
-then reads in full via `skill_read`. See [Skills](skills.md).
+embedded into the `skills` vector namespace and the self-model surfaces the three
+most relevant names (inside the priority-2.5 block, capped at 600 tokens and
+omitted when the budget is tight), which the agent then reads in full via
+`skill_read`. See [Skills](skills.md).
 
 **Built-in vs. agent skills** — Built-in skills are seeded from the binary
 (repo `skills/*.md`, embedded at build) on every boot and are **immutable** at

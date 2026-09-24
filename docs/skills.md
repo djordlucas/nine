@@ -86,8 +86,9 @@ It runs the same validation the daemon runs at boot and reports every problem pe
 
 | Tool | Effect |
 |---|---|
-| `skill_list` | List all skills (built-in and agent-authored) with names, descriptions, tags |
+| `skill_list` | List every skill — built-in, user, and agent-authored — with names, descriptions, tags |
 | `skill_read` | Read a skill's full content by name |
+| `skill_search` | Rank skills against a natural-language query, when the exact name is unknown. Needs an embedder |
 | `skill_write` | Create or replace one of Nine's own skills (refuses built-in and user skills) |
 | `skill_modify` | Update one of Nine's own skills (refuses built-in and user skills) |
 
@@ -113,11 +114,11 @@ Edit (or add) a `.md` file in the repo's `skills/` directory and rebuild. On the
 
 Two mechanisms.
 
-**Passively**, relevant skill *names* are injected into the self-model block (context priority 5 — dropped first under budget pressure). Names only: the body is never preloaded. For complex turns with long histories the hint may be trimmed away entirely.
+**Passively**, the *names* of the **three** most relevant skills are injected into the self-model block, ranked by cosine similarity to the current message. That block rides at context priority 2.5, capped at 600 tokens and omitted entirely when the budget is tight. Names only: the body is never preloaded.
 
 **Actively**, the system prompt tells the agent to consult skills before a task with an established procedure — `skill_search` with a short description (or `skill_list` where no embedder is configured, since `skill_search` is embedder-gated), then `skill_read` the hit. This is default behaviour, not something a caller has to ask for.
 
-The active path exists because the passive one is not enough on its own. A name is not a procedure, and priority 5 is the first thing dropped under budget pressure — so on exactly the long, complex turns where a skill would help most, the hint is likeliest to be gone. It also carries knowledge the tool descriptions cannot: which tools *this* deployment has for a job, and what to do when it lacks them. `web-research` is the worked example — it branches on whether a browser MCP server is loaded (see [browser.md](browser.md)).
+The active path exists because the passive one is not enough on its own. A name is not a procedure, three is a narrow window onto a large catalog, and the block is dropped under budget pressure — so on exactly the long, complex turns where a skill would help most, the hint is likeliest to be gone. It also carries knowledge the tool descriptions cannot: which tools *this* deployment has for a job, and what to do when it lacks them. `web-research` is the worked example — it branches on whether a browser MCP server is loaded (see [browser.md](browser.md)).
 
 If a skill is critical, you can still name it explicitly:
 
@@ -145,7 +146,7 @@ Use skills for knowledge that should influence how the agent approaches a class 
 | Limit | Detail |
 |-------|--------|
 | Built-in skills are immutable at runtime | `skill_write` and `skill_modify` refuse built-in and user skills. Changing a built-in means editing `skills/*.md` and rebuilding; a user skill's file is its source of truth. |
-| The passive hint is dropped first | Relevant skill names ride at context priority 5, the first thing trimmed under budget pressure. On long, complex turns — where a skill helps most — the hint is likeliest to be gone. The active `skill_search` path exists to cover that. |
+| The passive hint is three names, and droppable | The self-model block carries the top three skills by similarity, capped at 600 tokens and omitted when the budget is tight. On long, complex turns — where a skill helps most — it is likeliest to be gone. The active `skill_search` path exists to cover that. |
 | Names only, never bodies | The passive path injects skill names. A body reaches context only through an explicit `skill_read`. |
 | `skill_search` needs an embedder | It is embedder-gated. With no embedder configured, use `skill_list`. |
 | No versioning or history | A `skill_modify` replaces the content. There is no revision history and no way to diff or roll back. |
