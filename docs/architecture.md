@@ -57,17 +57,19 @@ fetched (`npx`) or hosted elsewhere (§10).
    │                   │ HTTP over     │ database/sql (modernc sqlite)      │
    │                   │ unix socket   │                                    │
    │      ┌────────────┴───────┐       ▼                                    │
-   │      ▼     ▼     ▼     ▼   ▼   ┌──────────────────┐                     │
-   │   shell files http time  mcp:* │  SQLite (one file)                    │
+   │      ▼                 ▼       ┌──────────────────┐                     │
+   │   shell              mcp:*     │  SQLite (one file)                    │
    │   (plugin subprocesses)        │  nine database   │                    │
    │                                └──────────────────┘                    │
    └──────────────────────────────────────────────────────────────────────┘
 ```
 
-`memory`, `files` (durable store), and `skills` are **in-process** capabilities
-of `memory.Store`, not plugin subprocesses. The plugin subprocesses are `shell`,
-`files` (workspace filesystem `read_file`/`write_file`), `http`, `time`, one
-`mcp` bridge per declared `[[mcp.server]]`, and any user plugin.
+Memory, the durable file store, and skills are **in-process** capabilities of
+`memory.Store`, not plugin subprocesses. The plugin subprocesses are `shell`, one
+`mcp` bridge per declared `[[mcp.server]]`, and any user plugin. The workspace
+file tools, the fetching tools and `time` are **shipped sandboxed tools** in the
+binary (§11) — they were plugins, and moving them put Nine's own capabilities
+under the capability model instead of the daemon's uid.
 
 **Sandboxed tools** (`toolvm.Host`, §11) are in-process too, but for the opposite
 reason: not because they are trusted, but because a wasm module needs no process
@@ -426,11 +428,14 @@ collision is a load failure, not a silent override:
  handler =             builder.go)              handler = host.Call(name, …)
    m.Call(plugin, …)   in-process, no           → wazero instance, in-process,
  → HTTP plugin.call      subprocess:              capabilities only (§11)
-                        • gap_report
- shell, read_file,      • memory_embed /        tools.d/*.js|.wasm  (developer)
- write_file, http_get,    memory_query          store rows          (generated)
- web_search, skill_*,   • run_agent/run_agents  tool_write / tool_delete /
- time, mcp tools, …     • workflow_* / goal_*     js_eval are themselves core
+                        • memory_* / skill_*
+ shell,                 • list_files            binary tools   (shipped)
+ mcp:<server> tools     • doc_* / job_*         tools.d/*.js   (developer)
+                        • run_agent/run_agents  store rows     (generated)
+                        • workflow_* / goal_*
+                        • gap_report            read_file, write_file, edit_file,
+                        tool_write / js_eval    http_get, web_search, time, …
+                        are themselves core
 ```
 
 The three differ in *isolation*, which is the reason to have three: a plugin is
@@ -648,15 +653,21 @@ tools, not the daemon.
    │     wazero runtime: no FS mounted, no env passed, no network to configure
    │
    ├─ host.SetAgentConfig(agentConfig(cfg))   ← [tools.agent]: on/off, ceiling, cap
+   ├─ host.SetShippedWorkspace([workspace].root)  ← mounted at /work, created if absent
+   ├─ host.LoadShipped(ctx, pluginCollides(mgr))  ← first-party tools, from the binary
    ├─ host.Load(ctx, pluginCollides(mgr))     ← walk [tools].user_dir manifests
    └─ LoadGeneratedTools(store, host, mgr)    ← project the stored catalog in
 ```
 
-Two orderings are enforced. The host opens **after** the plugin manager,
-so every plugin tool name is already reserved and a colliding sandboxed tool is
-*skipped* rather than allowed to override (`pluginCollides`); and
-`SetAgentConfig` runs **before** the first `LoadGenerated`, which refuses to
-register anything while the generated tier is off. Compilation happens once per
+Three orderings are enforced. The host opens **after** the plugin manager, so
+every plugin tool name is already reserved and a colliding sandboxed tool is
+*skipped* rather than allowed to override (`pluginCollides`); `SetAgentConfig`
+runs **before** the first `LoadGenerated`, which refuses to register anything
+while the generated tier is off; and **shipped tools load first**, because the
+namespace rule is first-registered-wins and a developer or generated tool must
+not be able to take a first-party name and replace its behavior. Each later load
+merges into the registry rather than replacing it, so the shipped tier survives
+every `nine tools reload`. Compilation happens once per
 tool; instantiation happens once per **call**.
 
 | Kind | Module | ABI |
@@ -1107,4 +1118,4 @@ Go toolchain, no git, and no source tree.
 | Token budgeting is estimated | Context accounting uses a 4-characters-per-token approximation calibrated against one tokenizer. |
 | Trimming, not compaction | Over-budget history is dropped from the front rather than summarized. |
 | One LLM provider at a time | No routing across models within a deployment. |
-| Two supervisor events unhandled | `EventGoalStalls` and `EventGapReported` are delivered but not yet acted on. |
+| Three supervisor events unhandled | `EventGoalStalls`, `EventGapReported` and `EventAgentCompletes` are delivered and logged, and nothing acts on them. The switch arm is where a reaction would plug in. |

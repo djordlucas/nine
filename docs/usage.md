@@ -110,6 +110,7 @@ The picker stays out of the way while Nine is waiting on an answer to an
 | `/memory [key]` | List all KV memory keys, or show the value at a specific key | `/memory self/identity` |
 | `/goals` | List active goals | `/goals` |
 | `/workflows` | List active and recent workflows | `/workflows` |
+| `/standing [id]` | List standing tools, or show one with its recent activity | `/standing corpus` |
 | `/plan-mode <mode>` | Change the session's reasoning mode live: `off`, `plan-only`, or `always` | `/plan-mode always` |
 | `/think <message>` | Send a message with reasoning forced on for this one turn | `/think reconcile these two specs` |
 | `/new` | Start a fresh conversation | `/new` |
