@@ -474,7 +474,10 @@ the dispatcher handler set.
 
 `ninectx.Builder` packs one LLM request into a
 fixed token budget (`context_budget`, defaults to `num_ctx`). Token counting is
-a deliberate approximation: **4 characters ≈ 1 token**, no tokenizer dependency.
+a deliberate approximation: **3.45 bytes ≈ 1 token**, no tokenizer dependency.
+The divisor sits just below the lowest ratio measured against provider-reported
+usage, because under-counting spends context headroom that was never there
+([context-builder.md](context-builder.md#token-counting)).
 
 Allocation is strictly by priority — higher priorities are subtracted from the
 budget first; lower ones get whatever remains:
