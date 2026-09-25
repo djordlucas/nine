@@ -1,8 +1,6 @@
 # Queued messages
 
-**Status:** Implemented  **Feature:** Per-session message buffering for user replies during active turns
-
-Queued messages allow users to send additional messages to Nine while a session is actively processing a turn. These messages are **not automatically included** in the model's context, preventing them from interfering with the current turn's reasoning. Instead, they are held in a separate queue and the model is notified of their existence via a system message.
+A message sent while a session is mid-turn is held in a per-session queue instead of joining the current turn's context. Queued messages allow users to send additional messages to Nine while a session is actively processing a turn. These messages are **not automatically included** in the model's context, preventing them from interfering with the current turn's reasoning. Instead, they are held in a separate queue and the model is notified of their existence via a system message.
 
 ## Overview
 
@@ -10,8 +8,10 @@ When a user sends a message while Nine is busy (e.g., waiting for an LLM respons
 
 1. **No context pollution** - Queued messages don't appear in the model's context until explicitly consumed
 2. **No message duplication** - Messages exist in either the queue OR the conversation history, never both
-3. **Model control** - The model decides when and which messages to process
+3. **Model control** - The model decides when and which messages to process within a turn
 4. **Hybrid consumption** - The model can process some messages and leave others in the queue
+
+**Nothing is lost by a model that ignores the queue.** After every turn the worker drains one unconsumed message and starts another turn with it, so a message the model never read still gets a turn of its own rather than waiting for the user to ask again. The queue is a buffer against interrupting a turn in flight, not a mailbox the model may decline to open.
 
 ## How it works
 
@@ -57,13 +57,14 @@ flowchart TD
 
 ### Turn lifecycle with queued messages
 
-1. **User sends message during busy turn** > Message is added to the queue (not to history)
-2. **Next turn starts** > System message includes: `"[System: There are N queued messages from the user. Use queued_messages_get to read them.]"`
-3. **Model calls `queued_messages_get`** > Returns all queued messages with their consumption status
-4. **Model processes messages** > Can read, analyze, and decide which to consume
-5. **Model marks messages as consumed** > Using `queued_message_mark_consumed` for individual messages or `queued_messages_mark_all_consumed` for all
-6. **Consumed messages moved to history** > Messages are appended to conversation history as user messages
-7. **Next turn** > Only unconsumed messages remain in queue; consumed messages now appear in context
+1. **User sends message during busy turn** → Message is added to the queue (not to history)
+2. **Next turn starts** → System message includes: `"[System: There are N queued messages from the user. Use queued_messages_get to read them.]"`
+3. **Model calls `queued_messages_get`** → Returns all queued messages with their consumption status
+4. **Model processes messages** → Can read, analyze, and decide which to consume
+5. **Model marks messages as consumed** → Using `queued_message_mark_consumed` for individual messages or `queued_messages_mark_all_consumed` for all
+6. **Consumed messages moved to history** → Messages are appended to conversation history as user messages
+7. **Next turn** → Only unconsumed messages remain in queue; consumed messages now appear in context
+8. **Anything left unconsumed** → The worker drains the oldest of them, marks it consumed, and immediately starts a further turn with that text
 
 ## Tools
 
@@ -182,11 +183,13 @@ Nine: [finishes thinking, starts turn]
       [Sees messages but decides to finish current task first]
       [Completes current analysis without consuming queued messages]
       
-      [Next turn starts]
-      [System: There are 2 queued messages from the user. Use queued_messages_get to read them.]
+      [The worker drains the oldest unconsumed message and starts a turn with it]
+      [System: There is 1 queued message from the user. Use queued_messages_get to read them.]
       queued_messages_get
-      [Now processes the queued messages]
+      [Now processes the remaining queued message]
 ```
+
+Deferring is a delay, not a refusal: the drain turns each ignored message into its own turn, one per turn, oldest first.
 
 ## Data structure
 
@@ -215,7 +218,7 @@ type QueuedMessage struct {
 
 ### Database schema
 
-The `queued_messages` column was added in schema version 10 (migration step 9  10).
+The `queued_messages` column was added in schema version 10 (migration step 9 → 10).
 
 **Migration:** `conversations_queued_messages` - adds the column with default `[]`
 
@@ -253,23 +256,17 @@ The system does not automatically clean up consumed messages from the queue. Thi
 
 No configuration is required. The queued messages feature is always available when the daemon is running.
 
-## Limits
-
-1. **No automatic consumption** - Messages are never automatically moved to history
-2. **No TUI/CLI/API integration yet** - Currently only the model can access queued messages through tools
-3. **No size limits** - There is currently no limit on the number or size of queued messages
-4. **No expiration** - Queued messages do not expire automatically
-
-## Future enhancements
-
-- CLI command to view queued messages for a session
-- TUI indicator showing queued message count
-- API endpoint to manage queued messages
-- Configuration options for queued message behavior
-- Automatic cleanup of fully-consumed queues
-
 ## See also
 
 - [Agent loop](agent-loop.md) - How turns are processed
 - [Context builder](context-builder.md) - How context is assembled
 - [Memory store contract](../spec/contracts/memory-store.md) - Database schema and operations
+
+## Limits
+
+| Limit | Detail |
+|-------|--------|
+| One message drained per turn | The post-turn drain takes the oldest unconsumed message and starts one turn with it, so three ignored messages take three turns to clear. |
+| Consumed messages are never pruned | A consumed message stays in the column with `consumed: true`, so the stored queue grows for the life of the conversation. `queued_messages_count` counts those too; `queued_messages_unconsumed_count` is the one that reflects outstanding work. |
+| No size or age limit | Nothing bounds how many messages a queue holds or how large one is, and nothing expires them. |
+| Almost no operator surface | The TUI marks a message `[queued]` as it sends it. No CLI command lists a session's queue, no API endpoint manages it, and there is no configuration. |
