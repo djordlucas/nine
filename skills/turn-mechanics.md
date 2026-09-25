@@ -1,6 +1,6 @@
 ---
 name: turn-mechanics
-description: What the loop does silently around you — history trimmed oldest-first, tool results discarded at the end of a turn, and failed tools already retried three times
+description: What the loop does silently around you — history trimmed oldest-first, tool results dropped from context at the turn's end, and failed tools already retried three times
 tags: [context, history, scratchpad, retries, persistence, turn]
 ---
 
@@ -8,9 +8,9 @@ tags: [context, history, scratchpad, retries, persistence, turn]
 
 Two mechanisms change what you should do, and neither announces itself:
 
-1. **Tool results do not survive the turn.** Your scratchpad is cleared the
-   moment you produce an answer. Only the conversation — user messages and your
-   answers — carries forward.
+1. **Tool results leave your context at the turn's end.** Your scratchpad is
+   cleared the moment you produce an answer. Only the conversation — user
+   messages and your answers — carries forward.
 2. **The oldest history is dropped when the budget is tight**, silently, with
    no marker. The conversation simply appears to start later than it did.
 
@@ -18,14 +18,20 @@ Both point the same way: **write down anything you will need later.** Your
 context is not a record of the session, and treating it as one is how you end
 up confidently wrong about what you already established.
 
+Neither is destruction. Every model call and every tool call, with its full
+result, is in the event journal — you can read it back (see [Recovering a
+result you no longer hold](#recovering-a-result-you-no-longer-hold)). But the
+journal costs a shell call and a search, so recording what matters as you go is
+the cheaper path, not the only one.
+
 ### What survives a turn, and what does not
 
 | | Survives | Notes |
 |---|---|---|
 | Your final answer | ✓ | Appended to history as an assistant message |
 | The user's messages | ✓ | Appended as they arrive |
-| Tool calls and their results | ✗ | The scratchpad is cleared on the answer, and again at the start of the next turn |
-| Your reasoning between tool calls | ✗ | Same scratchpad |
+| Tool calls and their results | ✗ in context | The scratchpad is cleared on the answer and at the start of the next turn. The journal keeps them — recoverable, not gone. |
+| Your reasoning between tool calls | ✗ in context | Same scratchpad, same journal |
 | `memory_set` values | ✓ | Stored; read them back with `memory_get` |
 | Files you wrote | ✓ | On the workspace filesystem |
 | A goal or workflow | ✓ | Persisted; `goal_list` and `workflow_list` recover them |
@@ -40,8 +46,8 @@ you answer:
   session.
 - `write_file` it, for anything long.
 
-Reporting "I've analysed the tree" without saying what you found means the
-analysis is gone.
+Reporting "I've analysed the tree" without saying what you found leaves the
+next turn with no answer and a journal to go digging through.
 
 ### Your context is trimmed from the front
 
@@ -68,6 +74,35 @@ A long turn can also lose the *earliest* tool results while still running. If
 you are working through many tool calls and an early result matters, restate it
 in a later step rather than assuming you can still see it.
 
+### Recovering a result you no longer hold
+
+The event journal records every model call and every tool call — arguments,
+result, timing — append-only, and it outlives the turn. When you need a tool
+result that has left your context, read it back through `shell`:
+
+```
+shell({"command": "nine sessions"})
+# → ID, STATUS, AGE, EVENTS, NOTE — find the session you are in
+
+shell({"command": "nine trace <agent-id>"})
+# → one line per event: the timeline of the session
+
+shell({"command": "nine trace <agent-id> --turn 4"})
+# → just that turn
+
+shell({"command": "nine replay <agent-id> --turn 4"})
+# → that turn in full: each inner LLM call, each tool's arguments and output
+```
+
+`nine trace` for "what happened", `nine replay` for "what exactly did that tool
+return". Both open the store read-only and work with the daemon up or down, so
+running one never blocks the daemon or gets blocked by it. Add `--sub-agents`
+to `nine trace` to nest a delegated sub-agent's own journal inline.
+
+Use this to recover a specific result you can identify — not to reconstruct a
+session wholesale. A trace is long, and reading it back spends the context you
+were trying to save.
+
 ### A failed tool was already retried
 
 A tool call that fails is retried automatically — **three attempts in total**
@@ -91,7 +126,9 @@ again.
 | Limit | Detail |
 |---|---|
 | You are not told when history is trimmed | The 90% warning goes to the human's client, not into your context. You cannot detect the gap; assume it may have happened on any long session. |
-| No compaction or summary | Trimmed history is dropped, not summarized. What falls out is gone from the turn entirely. |
-| The scratchpad is per-turn by design | It is cleared on the answer and at the start of the next `Run`. This is not a bug to work around; it is why durable notes exist. |
+| No compaction or summary | Trimmed history is dropped, not summarized. It is gone from the *turn*; the journal still holds it. |
+| The scratchpad is per-turn by design | Cleared on the answer and at the start of the next `Run`. This is not a bug to work around; it is why durable notes exist. |
+| Reading the journal needs `shell` | `nine trace` and `nine replay` are commands, not tools. A role without `shell` — `report-writer`, `monitor`, `code-reviewer` — cannot reach the journal at all. |
+| You are not told your own agent ID | Nothing puts it in your context. `nine sessions` lists the roster and you infer which row is yours, which is ambiguous when several sessions are active. |
 | Retry count is fixed | Three attempts, not configurable from a tool call. A tool needing more is a tool that should report non-retryable. |
 | Tool definitions are charged before history | A turn with many ranked tools has less room for conversation than one with few. |
