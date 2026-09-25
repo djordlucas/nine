@@ -19,7 +19,7 @@ Nine provides all the primitives needed to build an autonomous agent:
 
 The personality pattern **packages these primitives** into a deployable artifact that:
 
-1. **Starts with a predefined identity** (via self-model bootstrapping)
+1. **Starts with a predefined identity** (KV seeds under `self/`)
 2. **Has custom knowledge** (via skills directory)
 3. **Has custom capabilities** (via sandboxed tools)
 4. **Runs autonomously** (via standing agents and goals)
@@ -53,7 +53,6 @@ personality-<name>/
 ├── Dockerfile                  # Builds on Nine runtime image
 ├── README.md                   # Personality documentation
 ├── nine.toml                   # Nine configuration
-├── self-model.toml             # Self-model bootstrap file (optional)
 ├── skills/                     # Personality-specific skills (optional)
 │   ├── <role-name>.md         # Role definition(s)
 │   └── <skill-name>.md        # Knowledge skills
@@ -92,9 +91,6 @@ ENV NINE_CONFIG=/etc/nine-personality/nine.toml
 # Set data path (persistent volume)
 ENV NINE_DB_PATH=/data/nine.db
 
-# Optional: Set bootstrap self-model path
-ENV NINE_BOOTSTRAP_SELF_MODEL=/etc/nine-personality/self-model.toml
-
 # Optional: Set workspace root
 ENV NINE_WORKSPACE_ROOT=/workspace
 
@@ -123,10 +119,6 @@ max_concurrent = 1
 socket_path = "/tmp/nine.sock"
 max_goal_sessions = 5
 
-# Optional: Enable self-model bootstrapping
-[bootstrap]
-self_model_path = "/etc/nine-personality/self-model.toml"
-
 # The personality as a standing agent
 [[agent]]
 id = "alice"
@@ -144,44 +136,37 @@ enabled = true
 max_tools = 32
 require_approval = "on_capability"
 
-[tools.agent.capabilities.net]
-http = [{ allow_hosts = ["api.github.com", "raw.githubusercontent.com"] }]
+# The ceiling a generated tool may be granted — never an automatic grant.
+[tools.agent.capabilities.net.http]
+allow_hosts = ["api.github.com", "raw.githubusercontent.com"]
+methods     = ["GET"]          # required; there is no implicit default
 
 # Skills configuration
 [skills]
 user_dir = "/etc/nine-personality/skills"
-
-# Buffered input configuration (optional)
-[daemon]
-max_queue_size = 100
 ```
 
-### Step 4: create the Self-Model bootstrap (optional)
+Every table appears once: TOML rejects a repeated `[daemon]`, so a second block
+for it is a parse error rather than a merge.
 
-The self-model bootstrap file seeds the agent's identity and initial state on first boot. If not provided, Nine uses its built-in defaults.
+### Step 4: seed the self-model (optional)
 
-```toml
-# personality-alice/self-model.toml
-[identity]
-name = "Alice"
-version = "1.0.0"
-purpose = "Autonomous Go code review assistant"
+Nine writes `self/identity` and `self/capabilities` into the KV store on first
+start, and only if `self/identity` is absent. There is no bootstrap *file*: the
+seeds are fixed strings in the daemon, and `self/learned` is deliberately left
+for the first reflection turn to create.
 
-[persona]
-description = "Alice is a senior Go engineer. She reviews PRs, identifies patterns, writes skills, and maintains a knowledge base of best practices."
-role = "code-reviewer"
-growth_goal = "Analyze PRs and write skills for new patterns"
+To give a personality its own identity text, write the keys yourself before or
+after first boot — they are ordinary KV entries:
 
-[capabilities]
-initial = "Can analyze Go code, identify patterns, write skills, store insights in memory, search files"
-
-[state]
-last_pr_checked = "2024-01-01T00:00:00Z"
-skills_written = 0
-prs_analyzed = 0
+```bash
+nine "Set self/identity to: Alice is a senior Go engineer who reviews PRs, \
+identifies patterns, and maintains a knowledge base of best practices."
 ```
 
-The bootstrap file is loaded **once, on first boot**, and its contents are written to the KV store under the `self/` prefix. Subsequent boots skip the bootstrap if `self/_bootstrapped` exists.
+From then on the self-model is the agent's to maintain: the reflection routine
+updates `self/capabilities` and `self/learned` on its own cadence
+([session-plans.md](session-plans.md)).
 
 ### Step 5: create skills
 
@@ -194,7 +179,7 @@ name: code-reviewer
 description: Code review specialist with autonomous learning
 tags: [role, code-review, learning]
 role:
-  tools: [read_file, file_search_text, list_files, memory_get, memory_set, memory_list, skill_write, skill_list, goal_create, goal_get, goal_list, goal_update_status, input_queue]
+  tools: [read_file, file_search_text, list_files, memory_get, memory_set, memory_list, skill_write, skill_list, goal_create, goal_get, goal_list, goal_update_status, queued_messages_get]
   delegates: true
   spawns_goals: false
   persists: true
@@ -288,152 +273,17 @@ docker exec -it alice nine "Alice, analyze this PR"
 
 ---
 
-## Self-Model bootstrapping
+## Input while the agent is busy
 
-### How it works
+A message sent to a session that is mid-turn is **queued**, not dropped, and the
+model is told it is there. After the turn ends, anything the model left
+unconsumed is drained one message at a time, each starting a further turn.
 
-On first boot, Nine checks for a bootstrap file at the path specified by:
-
-1. `[bootstrap].self_model_path` in `nine.toml`
-2. `NINE_BOOTSTRAP_SELF_MODEL` environment variable
-
-If a bootstrap file is found and `self/_bootstrapped` does not exist in the KV store:
-
-1. The file is parsed as TOML
-2. Each section `[section]` is written to `self/<section>/` in the KV store
-3. Keys within a section are written as `self/<section>/<key>`
-4. `self/_bootstrapped` is set to `true` to prevent re-running on subsequent boots
-
-### Bootstrap file format
-
-The bootstrap file is a standard TOML file. Top-level sections become sub-prefixes under `self/`.
-
-```toml
-[identity]
-name = "Alice"
-version = "1.0.0"
-
-[persona]
-description = "A helpful assistant"
-role = "orchestrator"
-
-[state]
-last_update = "2024-01-01T00:00:00Z"
-```
-
-This writes:
-- `self/identity/name = "Alice"`
-- `self/identity/version = "1.0.0"`
-- `self/persona/description = "A helpful assistant"`
-- `self/persona/role = "orchestrator"`
-- `self/state/last_update = "2024-01-01T00:00:00Z"`
-- `self/_bootstrapped = "true"`
-
-### Bootstrap behavior
-
-- **Idempotent**: Runs only once per database. If `self/_bootstrapped` exists, the bootstrap is skipped.
-- **Optional**: If no bootstrap file is configured, Nine uses its built-in defaults.
-- **Operator-controlled**: The bootstrap file path is set in configuration or environment, not by the agent.
-- **Read-only**: Nine never writes to the bootstrap file, only reads from it.
-
----
-
-## Buffered input
-
-### Overview
-
-Buffered input allows operators to **queue multiple messages** for a personality to process, even when the agent is busy. This is essential for personalities that receive external input (webhooks, scheduled data dumps, API calls).
-
-### How it works
-
-When a message is sent to a busy agent:
-
-1. The message is inserted into the `input_queue` table in the database
-2. A unique queue ID is returned
-3. When the agent becomes idle, it checks the queue and processes the next message
-
-Messages are processed in **FIFO order within priority levels** (high-priority messages are processed before normal-priority messages).
-
-### Using buffered input
-
-#### Via CLI
-
-```bash
-# Queue a message (processed immediately if agent is idle, queued if busy)
-nine "Alice, review this PR"
-
-# Queue a message for a specific agent
-nine send --id alice "Review PR #123"
-
-# Queue a high-priority message
-nine send --id alice --priority 1 "Urgent: security review needed"
-```
-
-#### Via Unix socket (programmatic)
-
-```json
-# Request
-{
-  "method": "session.send",
-  "params": {
-    "agent_id": "alice",
-    "message": "Review PR #123",
-    "priority": 0
-  }
-}
-
-# Response
-{
-  "result": {
-    "queue_id": "550e8400-e29b-41d4-a716-446655440000",
-    "position": 0
-  }
-}
-```
-
-### Queue management
-
-```bash
-# List queued messages
-nine queue list
-
-# List queued messages for a specific agent
-nine queue list --agent alice
-
-# Show a specific queued message
-nine queue show 550e8400-e29b-41d4-a716-446655440000
-
-# Delete a queued message
-nine queue delete 550e8400-e29b-41d4-a716-446655440000
-
-# Clear all queued messages for an agent
-nine queue flush --agent alice
-```
-
-### Configuration
-
-```toml
-[daemon]
-# Global defaults
-max_queue_size = 100           # Maximum messages per agent queue
-max_queue_rate_per_minute = 0 # 0 = no limit
-
-# Per-agent overrides (optional)
-[agent."alice"]
-max_queue_size = 50
-max_queue_rate_per_minute = 10
-```
-
-### Queue behavior
-
-- **Persistent**: Queued messages survive daemon restarts
-- **Ordered**: Messages are processed in FIFO order within priority levels
-- **Prioritized**: High-priority (priority=1) messages are processed before normal-priority (priority=0) messages
-- **Flow-controlled**: If the queue is full, new messages are rejected with an error
-- **Rate-limited**: Processing can be rate-limited per agent
-- **Auditable**: Processed messages retain their `processed_at` timestamp and any errors
-
----
+There is no priority, no queue-management CLI, and no configurable size — the
+queue is a column on the conversation row and a set of model-facing tools. See
+[queued-messages.md](queued-messages.md) for the tools and the drain, and use
+`nine send --id <id> <message>` to deliver input to a named session from a
+script.
 
 ## Personality growth loop
 
@@ -480,7 +330,7 @@ A personality's **growth loop** improves its knowledge and capabilities over tim
 Begin with a minimal personality:
 - A `nine.toml` with a standing agent
 - A basic role skill
-- No custom tools or bootstrap
+- No custom tools, and the default self-model seeds
 
 Test that it starts and runs, then add complexity.
 
@@ -655,15 +505,15 @@ spec:
 
 ### Personality won't start
 
-1. **Check the bootstrap file path**:
+1. **Check the config was found**:
    ```bash
-   docker logs alice | grep "bootstrap"
+   docker logs alice | grep -i "config"
    ```
 
-2. **Verify the bootstrap file is valid TOML**:
+2. **Check the config parses**. An unknown key is ignored silently, but a
+   malformed file or a repeated table is a load error and appears in the log:
    ```bash
-   # Use a TOML validator
-   toml-validate self-model.toml
+   docker logs alice | grep -i "toml\|parse"
    ```
 
 3. **Check for missing dependencies**:
@@ -671,19 +521,15 @@ spec:
    docker logs alice | grep "error"
    ```
 
-### Messages are dropped
+### Messages appear to be ignored
 
-1. **Check the queue**:
-   ```bash
-   nine queue list --agent alice
-   ```
+A message sent while the session is mid-turn is queued rather than dropped, and
+the model is told it is waiting. Nothing lists a queue from the CLI, so the
+checks are indirect: the model reads it with `queued_messages_get`, and an
+unconsumed message starts its own turn once the current one ends
+([queued-messages.md](queued-messages.md)).
 
-2. **Check queue limits**:
-   ```bash
-   nine config | grep max_queue_size
-   ```
-
-3. **Check agent status**:
+1. **Check agent status**:
    ```bash
    nine status
    ```
@@ -729,6 +575,6 @@ spec:
 |-------|--------|
 | A personality is configuration, not a feature | It is a `nine.toml`, a set of skills, and optionally some sandboxed tools, packaged in an image. Nothing in the daemon knows what a personality is. |
 | Each needs its own image and container | There is no way to run two personalities in one daemon. They are separate deployments with separate databases. |
-| Self-model bootstrap is best-effort | The bootstrap seeds an initial self-model; what the instance believes about itself after that is whatever reflection wrote. |
+| The self-model is seeded once, then owned by the agent | `self/identity` and `self/capabilities` are written on first start only, and only when `self/identity` is absent. After that, what the instance believes about itself is whatever reflection wrote. There is no bootstrap file and no re-seed. |
 | Skills are copied, not shared | Two personalities that need the same skill each carry their own copy. There is no shared skill registry. |
 | Still the design under `adr/` | The pattern is documented and usable, but it remains a convention rather than a supported product surface — see [`adr/personality-pattern.md`](../adr/personality-pattern.md). |
