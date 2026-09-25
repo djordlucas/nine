@@ -885,7 +885,7 @@ provider/model/endpoint at launch without editing the file — convenient in Doc
 | Limit | Detail |
 |-------|--------|
 | No runtime reload | Nine cannot modify `nine.toml`, and nothing re-reads it while the daemon runs. Every change needs a restart — including a capability grant, since `nine tools reload` and `nine plugins reload` re-scan their directories against the config read at boot. |
-| No schema version | `nine.toml` carries no `schema_version` and there is no migrate-on-load, so an incompatible config change would break older files. See [versioning](versioning.md#limits). |
+| No config schema version | `nine.toml` carries no `schema_version` and there is no migrate-on-load, so an incompatible config change would break older files. The **store** does have versioned migrations; config is the axis that does not. See [versioning](versioning.md#limits). |
 | Environment overrides are a fixed set | Only the documented `NINE_*` variables override the file. Whether the sandboxed-tool subsystem runs at all stays in `nine.toml` by design — `NINE_TOOLS_USER_DIR` is deliberately the only tool-related override. |
 | Ollama and Mistral only | An unrecognized `[llm].provider` is refused at startup rather than falling back. |
 | Unknown keys are not rejected | A misspelled key is ignored rather than reported, so a setting can silently fail to apply. |

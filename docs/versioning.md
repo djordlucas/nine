@@ -2,16 +2,17 @@
 
 Nine has more than one thing that needs versioning, and they change at
 different rates. A single number can't carry all of it, so Nine versions four
-surfaces independently. Only the first is user-facing; the rest are internal
-compatibility contracts that bump *only* when a real break happens.
+surfaces independently, with a fifth unimplemented. Only the first is
+user-facing; the rest are internal compatibility contracts that bump *only* when
+a real break happens.
 
 | Surface | Protects | Scheme | Lives in |
 |---|---|---|---|
 | **Release version** | "which Nine is this" (user-facing) | SemVer, git-tag driven | git tag `vX.Y.Z` → injected at build |
 | **Plugin protocol** | daemon ↔ native plugin wire compat | single integer, bump on break | `plugin.ProtocolVersion` |
 | **Sandboxed tool ABI** | daemon ↔ wasm guest compat | single integer, bump on break | `toolvm.ABIVersion` |
+| **Memory DB schema** | SQLite schema | sequential forward migrations, applied on open | `PRAGMA user_version`, currently **11** |
 | **Config schema** | `nine.toml` shape | not implemented — see [Limits](#limits) | — |
-| **Memory DB schema** | SQLite schema | idempotent `CREATE TABLE IF NOT EXISTS` on open; no migration runner — see [Limits](#limits) | `internal/memory.initSchema` |
 
 The release version also names the container image. A `v*` tag builds and
 publishes `ghcr.io/djordlucas/nine` — see [Container image](docker-image.md) for
@@ -149,12 +150,46 @@ How it works:
   reports it — rather than instantiating the module and letting the mismatch
   surface as a mystery trap on first call.
 
+## 3. Memory DB schema version
+
+The store carries its version in `PRAGMA user_version`, and a migration runner
+brings an older database forward on `Open`. The current version is **11**.
+
+The version is **derived from the step list**, not declared beside it: step *i*
+moves a database from version *i* to *i+1*, so the version is how many steps
+exist. A hand-maintained constant would be a second source of truth for the same
+fact, and the failure when the two disagree is silent — a step that never runs, or
+an index past the end of the list. Appending a step is the only way to bump the
+version.
+
+Four rules hold for a step:
+
+- **Forward only.** There is no down-step. A rollback that has to reverse a
+  destructive change cannot restore the data the change dropped, so the honest
+  recovery from a bad migration is to restore the file and run a corrected forward
+  step. Every step runs in a transaction, which is what makes that recovery clean.
+- **Append only.** Renumbering an existing entry silently re-runs or skips it
+  against databases already in the field.
+- **Safe at its "from" version, including against a database an earlier binary
+  patched ad hoc** — several of these steps were unconditional statements on every
+  `Open` before the runner existed. A step need *not* be safe against a fresh
+  database: `initSchema` creates the current shape and stamps it at the current
+  version without running any step, so a step like a column rename would fail
+  there.
+- **All work through the handle it is given.** The writer pool holds exactly one
+  connection and the running transaction owns it, so reaching for the enclosing
+  database instead deadlocks.
+
+What the eleven steps have done: added a column `CREATE TABLE IF NOT EXISTS` could
+not add to an existing table, dropped two tables whose shape was wrong
+(`reflections` had no agent id), renamed `stages` to `aspects` and then to
+`routines`, renamed `plugin_jobs` to `jobs`, and added the standing-tool, queued-
+message and workspace-index columns.
+
 ## Limits
 
-Neither remaining versioning axis is implemented. Both are additive work that
-must land before the change that needs them, not after.
-
-| Axis | State today | What is needed |
-|------|-------------|----------------|
-| Config schema | `nine.toml` carries no `schema_version`. An upgraded daemon reading an older file relies on the config shape not having changed incompatibly. | A `schema_version` integer plus migrate-on-load, in place *before* the first incompatible config change. |
-| Memory DB schema | `initSchema` applies the schema idempotently on `Open` (`CREATE TABLE IF NOT EXISTS`). Additive changes are safe. `PRAGMA user_version` records a generation, but there is no migration table and no migration runner. | A migrations table in `memory` with sequential numbers applied on open, before the first backward-incompatible schema change. |
+| Limit | Detail |
+|-------|--------|
+| No config schema version | `nine.toml` carries no `schema_version` and nothing migrates it, so an upgraded daemon reading an older file relies on the config shape not having changed incompatibly. What is needed is a `schema_version` integer plus migrate-on-load, in place *before* the first incompatible config change rather than after. |
+| Unknown config keys are ignored | Independently of versioning: a misspelled key is neither applied nor reported, so a setting can silently fail to take effect ([configuration.md](configuration.md#limits)). |
+| No down-migrations | A newer binary migrates a database forward; an older binary against a migrated database is not supported and is not detected. Restoring the file is the only path back. |

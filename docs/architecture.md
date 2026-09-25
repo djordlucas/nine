@@ -792,9 +792,12 @@ A single **SQLite** database file (driver: `modernc.org/sqlite` via `database/sq
 — pure Go, no cgo) holds everything. `Store` is the **sole owner**
 of the database handles — the "single gateway" invariant. Since SQLite serializes
 writes, that is a one-connection writer pool plus a concurrent read-only pool, with
-statements routed by leading keyword. The schema is applied idempotently on `Open`
-(`CREATE TABLE IF NOT EXISTS`, no migration runner), which fails fast if the file
-cannot be opened.
+statements routed by leading keyword. A fresh database gets the current schema
+idempotently on `Open` (`CREATE TABLE IF NOT EXISTS`) stamped at the current
+`PRAGMA user_version`; an existing one is brought forward by a sequential,
+forward-only migration runner, each step in its own transaction
+([versioning.md](versioning.md#3-memory-db-schema-version)). Either path fails
+fast if the file cannot be opened.
 
 ```
    nine.db (SQLite)
