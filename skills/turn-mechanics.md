@@ -19,8 +19,8 @@ context is not a record of the session, and treating it as one is how you end
 up confidently wrong about what you already established.
 
 Neither is destruction. Every model call and every tool call, with its full
-result, is in the event journal — you can read it back (see [Recovering a
-result you no longer hold](#recovering-a-result-you-no-longer-hold)). But the
+result, is in the event journal — you can read it back (see [Finding and recovering a
+result you no longer hold](#finding-and-recovering-a-result-you-no-longer-hold)). But the
 journal costs a shell call and a search, so recording what matters as you go is
 the cheaper path, not the only one.
 
@@ -74,7 +74,7 @@ A long turn can also lose the *earliest* tool results while still running. If
 you are working through many tool calls and an early result matters, restate it
 in a later step rather than assuming you can still see it.
 
-### Recovering a result you no longer hold
+### Finding and recovering a result you no longer hold
 
 The event journal records every model call and every tool call — arguments,
 result, timing — append-only, and it outlives the turn. When you need a tool
@@ -103,6 +103,33 @@ Use this to recover a specific result you can identify — not to reconstruct a
 session wholesale. A trace is long, and reading it back spends the context you
 were trying to save.
 
+**The journal is searchable two ways**, and they answer different questions.
+
+*Which session was that?* — completed turns are embedded into the
+`session-index` vector namespace, one vector per turn, keyed by the session's
+agent ID. Query it like any other namespace:
+
+```
+memory_query({"namespace": "session-index", "query": "the retry bug in the HTTP client"})
+# → [{"key": "<agent-id>", "score": 0.81}, ...]  — sessions, ranked
+```
+
+The key is an agent ID you can hand straight to `nine trace`. What is embedded
+is each turn's **answer text**, not its tool output — so this finds the session
+that *concluded* something, not the call that returned it. Use it to locate the
+session, then trace or replay to get the result itself.
+
+*Where in this session?* — `nine trace` prints one line per event, so plain
+text search over it works:
+
+```
+shell({"command": "nine trace <agent-id> | grep -n 'edit_file'"})
+shell({"command": "nine trace <agent-id> | grep -i 'error'"})
+```
+
+Find the turn number that way, then `nine replay <agent-id> --turn N` for that
+turn in full.
+
 ### A failed tool was already retried
 
 A tool call that fails is retried automatically — **three attempts in total**
@@ -128,7 +155,9 @@ again.
 | You are not told when history is trimmed | The 90% warning goes to the human's client, not into your context. You cannot detect the gap; assume it may have happened on any long session. |
 | No compaction or summary | Trimmed history is dropped, not summarized. It is gone from the *turn*; the journal still holds it. |
 | The scratchpad is per-turn by design | Cleared on the answer and at the start of the next `Run`. This is not a bug to work around; it is why durable notes exist. |
-| Reading the journal needs `shell` | `nine trace` and `nine replay` are commands, not tools. A role without `shell` — `report-writer`, `monitor`, `code-reviewer` — cannot reach the journal at all. |
+| Reading the journal needs `shell` | `nine trace` and `nine replay` are commands, not tools. A role without `shell` — `report-writer`, `monitor`, `code-reviewer` — can search `session-index` but cannot read a trace. |
+| `session-index` is optional | It is written only when `[daemon] related_sessions_index` is on and an embedder is configured. Query it and get nothing back, and it may simply be off. |
+| The index holds answers, not tool output | One vector per completed turn, embedded from the answer text. It finds the session, never the specific tool result. |
 | You are not told your own agent ID | Nothing puts it in your context. `nine sessions` lists the roster and you infer which row is yours, which is ambiguous when several sessions are active. |
 | Retry count is fixed | Three attempts, not configurable from a tool call. A tool needing more is a tool that should report non-retryable. |
 | Tool definitions are charged before history | A turn with many ranked tools has less room for conversation than one with few. |
