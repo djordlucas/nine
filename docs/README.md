@@ -60,7 +60,7 @@ Ordered outside in.
 
 | Document | Covers |
 |----------|--------|
-| [Plugins](plugins.md) | Built-in plugins, writing custom plugins, the plugin lifecycle |
+| [Plugins](plugins.md) | The tool catalog by tier — plugins, shipped sandboxed tools, core — and writing your own |
 | [Plugin transport](plugins-http-transport.md) | HTTP over a Unix socket: the contract and concurrency bounds |
 | [Plugin capabilities](plugin-capabilities.md) | Per-plugin settings, cache directories, and long-running jobs |
 | [Browser automation](browser.md) | Driving a browser via Playwright's MCP server |
@@ -92,13 +92,17 @@ Ordered outside in.
 
 | Command | Shows |
 |---------|-------|
-| `/status` | Daemon uptime, loaded plugins, active agents |
-| `/tools` | All available tools, grouped by plugin |
-| `/skills` | Registered skills |
-| `/memory` | The KV memory store |
-| `/config` | Running configuration |
-| `/new` | Starts a fresh conversation |
-| `/clear` | Clears the screen |
+| `/sessions` | Running sessions, with IDs to reattach to |
+| `/status` | Daemon uptime, active agents, loaded plugins |
+| `/context [id]` | The assembled-context token breakdown, with no model call |
+| `/tools [filter]` | Every tool the session can call |
+| `/standing [id]` | Standing tools, or one with its recent activity |
+| `/goals`, `/workflows` | Goals, and active and recent workflows |
+| `/plan-mode <mode>` | The session's reasoning mode: `off`, `plan-only`, `always` |
+| `/think <message>` | One message with reasoning forced on |
+| `/new`, `/clear` | A fresh conversation; a cleared screen |
+
+[CLI usage](usage.md#tui-slash-commands) documents them all with examples.
 
 ## Limits
 

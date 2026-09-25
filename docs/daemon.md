@@ -21,9 +21,9 @@ flowchart TD
         D --> DISPATCH
     end
 
-    subgraph Runners["Per-Conversation Runners"]
-        R1[runner A]
-        R2[runner B]
+    subgraph Runners["Per-Conversation AgentWorkers"]
+        R1[AgentWorker A]
+        R2[AgentWorker B]
         INBOX[inbox chan\nbuffered=1]
         LOOP[agent.Loop\nLLM calls]
 
@@ -37,14 +37,12 @@ flowchart TD
     end
 
     subgraph Supervisor["Supervisor"]
-        SUP[Supervisor\nevent loop]
+        SUP[Supervisor\ndurable cursor over the journal]
         EVENTS["EventAgentCompletes\nEventGoalStalls\nEventGapReported\nEventPluginCrashed"]
-        IDLE[Idle Timer]
-        REBUILD[PluginRebuildFn]
+        LOG[logged; nothing acts on them yet]
 
         SUP --> EVENTS
-        EVENTS -->|"agent_completes"| IDLE
-        EVENTS -->|"plugin_crashed"| REBUILD
+        EVENTS --> LOG
     end
 
     C -->|"newline-delimited JSON\nnew_conversation / attach\nuser_turn / status\nlist_* / workflow_*\nplugin_call"| SOCK
@@ -77,11 +75,11 @@ flowchart TD
 `EnsureDaemon` auto-forks the process if no daemon is reachable on the socket; the client then connects over the Unix socket.
 
 ### 2. Conversations
-- `new_conversation` — creates a `runner` with a fresh `agent.Loop`
-- `attach` — restores a runner from the `CheckpointStore` if not already in memory
+- `new_conversation` — creates an `AgentWorker` with a fresh `agent.Loop`
+- `attach` — restores a worker from the `CheckpointStore` if not already in memory
 
 ### 3. Turn processing
-`user_turn` queues into the runner's `inbox` channel (capacity 1, serializing turns). The runner:
+`user_turn` queues into the worker's `inbox` channel (capacity 1, serializing turns). The worker:
 1. Prepends any pending notifications from `NotifStore`
 2. Runs the LLM loop via `agent.Loop.Run`
 3. Checks for stall (consecutive no-tool turns)
@@ -98,10 +96,14 @@ While the loop runs, events flow back to the client in real time:
 The final `response` + `done` messages are sent once the turn completes.
 
 ### 5. Supervisor
-Receives events asynchronously from runners:
-- `EventAgentCompletes` — resets the idle timer
-- `EventGoalStalls` / `EventGapReported` — reserved for gap/stall handling
-- `EventPluginCrashed` — calls `PluginRebuildFn` to restart the plugin
+Receives events asynchronously, through a durable cursor over the journal so a
+posted event survives a restart. **Every event is logged and nothing acts on any
+of them yet** — the handler's switch is where a reaction would plug in:
+
+- `EventAgentCompletes`, `EventGoalStalls`, `EventGapReported` — logged
+- `EventPluginCrashed` — logged; restarting the subprocess is the plugin
+  manager's responsibility, and no agent-reachable path rebuilds a plugin
+  (R-PLUG.7)
 
 ### 6. Direct dispatch (no runner)
 These message types are handled synchronously in the dispatch loop:
@@ -122,8 +124,8 @@ All messages are newline-delimited JSON (`Msg` struct). The full message type re
 | File | Responsibility |
 |------|---------------|
 | `daemon.go` | Unix socket server, connection handling, dispatch |
-| `session_worker.go` | Per-conversation agent loop wrapper, stall detection, checkpointing |
-| `supervisor.go` | Async event handling, idle timer, plugin rebuild |
+| `agent_worker.go` | Per-conversation agent loop wrapper, stall detection, checkpointing |
+| `supervisor.go` | Async event intake over a durable journal cursor |
 | `store.go` | SQL-backed `CheckpointStore` and `NotifStore` implementations |
 
 The wire protocol and client live in `protocol`:
@@ -137,7 +139,7 @@ The wire protocol and client live in `protocol`:
 
 | Limit | Detail |
 |-------|--------|
-| Local clients only | The daemon listens on a Unix socket, so every client runs on the same host. There is no authentication and no transport security. A REST API is on the roadmap and lands with the hardening work. |
+| Local clients only | The daemon listens on a Unix socket, so every client runs on the same host, with no authentication and no transport security on that socket. Reaching it over the network means running `nine api`, which has its own auth ([api.md](api.md)) and translates to this same socket. |
 | One turn at a time per conversation | Each worker's inbox has capacity 1, so turns are strictly sequential within a conversation. Concurrency is across conversations, not within one. |
-| Two supervisor events are reserved | `EventGoalStalls` and `EventGapReported` are delivered but not yet acted on. |
-| No graceful client resume | A client that disconnects mid-turn loses the progress stream. The turn completes and is checkpointed, but the streamed output is not replayed on reattach. |
+| No supervisor reactions | All four events are delivered and logged; nothing acts on them. A crashed plugin is the manager's to restart. |
+| Reattach replays a bounded window | A client that disconnects mid-turn does not lose the turn: it completes, and `attach` returns up to 50 buffered tool and sub-agent events plus the last completed response, falling back to a journal-derived replay when the in-memory ring is empty. What is *not* replayed is the text stream — `response_chunk` events are not buffered, so a reattaching client sees the finished response rather than watching it arrive. |

@@ -43,8 +43,9 @@ const (
 
 // HTTPGrant is the resolved `net.http` capability for one tool.
 type HTTPGrant struct {
-	// AllowHosts is the hostname allowlist. Never empty for a granted tool, and
-	// never a bare "*" — config validation refuses both.
+	// AllowHosts is the hostname allowlist. Never empty for a granted tool;
+	// a bare "*" means any host, which grants no address — every dial is still
+	// checked against the unconditional rejections in ssrf.go.
 	AllowHosts []string
 	// Methods is the permitted HTTP method allowlist, upper-cased.
 	Methods []string

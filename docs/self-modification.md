@@ -79,11 +79,14 @@ plugins. Configuration changes are made by editing
 
 ## Plugins are fixed
 
-Nine ships four plugins — `shell`, `files`, `http` and `time` — alongside its
-sandboxed tools. All four are immutable image content: they are compiled into
-the `nine` binary and served as `nine plugin serve <name>`. There
-is no mechanism for an agent to add, build, or replace a plugin at runtime. To
-add a built-in capability, add a plugin to the source repo and rebuild the image.
+Nine ships one plugin, `shell`, alongside its sandboxed tools. It is immutable
+image content: compiled into the `nine` binary and served as
+`nine plugin serve shell`. Reading and writing files, fetching over HTTP and
+reading the clock were plugins too, and are now shipped sandboxed tools — first-party
+capabilities under the capability model rather than subprocesses holding the
+daemon's uid. There is no mechanism for an agent to add, build, or replace a
+plugin at runtime. To add a built-in capability, add a plugin to the source repo
+and rebuild the image.
 
 An `[[mcp.server]]` is the operator's escape hatch from that, not the agent's: it
 adds a capability without a rebuild, but only by editing `nine.toml` and
@@ -102,6 +105,7 @@ existing binary) is the plugin manager's responsibility — no recompilation is 
 | Skills only | Nine writes skills and, where enabled, sandboxed tools. It does not generate native plugins, rewrite `nine.toml`, or rebuild its own source. Deliberate: a daemon that changes its own form is hard to reason about, debug and trust. |
 | Built-in skills are immutable at runtime | `skill_write` and `skill_modify` refuse to touch a skill seeded from the binary. Changing one means editing `skills/*.md` and rebuilding. |
 | Generated tools are off by default | `[tools.agent] enabled` gates the tier that lets Nine write its own tools. |
+| Duration is gated separately from reach | A generated tool that runs as a job needs `[tools.agent] allow_long_running`, and one that runs **standing** — indefinitely, on its own cadence — needs `allow_standing`. The capability ceiling cannot express this: it bounds what a tool may *reach*, and duration is not reach. A standing promotion is approved by a human even when `require_approval = "never"`. |
 | Capabilities are never agent-writable | `tool_write` writes JavaScript and a capability *declaration*. The operator writes the ceiling (`[tools.agent.capabilities]`) that bounds what any generated tool may be granted. A tool that declares nothing gets nothing. |
 | Config changes need a restart | Editing `nine.toml` takes effect on daemon restart. There is no reload path, for agent or operator. |
 | Adding a built-in plugin needs a rebuild | An `[[mcp.server]]` is the operator's way to add a capability without rebuilding; it still requires editing `nine.toml` and restarting. Nothing an agent does at runtime can declare one. |

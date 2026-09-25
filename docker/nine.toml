@@ -37,7 +37,8 @@ self_reflection = "30m"
 path = "/data/nine.db"
 
 [workspace]
-# The filesystem root the files plugin is scoped to. Keeping it inside /data
+# The filesystem root the workspace file tools are scoped to, mounted at /work
+# inside the sandbox. Keeping it inside /data
 # means a `docker run -v nine-data:/data` keeps the agent's files across
 # restarts, and nothing it writes escapes the volume.
 root = "/data/workspace"

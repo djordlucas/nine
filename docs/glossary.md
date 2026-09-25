@@ -36,8 +36,8 @@ priority than background work but lower than active conversations. See
 [Architecture § 14 Autonomy & oversight](architecture.md#14-autonomy--oversight-components).
 
 **Tool Dispatcher** — Routes each tool call
-to its registered handler: plugin tools via `plugin.call`, core-intercepted
-tools in-process. Fires post-call hooks on success and caps every result at
+to its registered handler: plugin tools via `plugin.call`, sandboxed tools into
+the wasm host, core-intercepted tools in-process. Fires post-call hooks on success and caps every result at
 ~2048 tokens, spilling larger output to the file store
 ([tool-output-spill.md](tool-output.md)). Handlers are registered at
 loop-build time via `RegisterPlugin` and the `Register*` functions.
@@ -131,7 +131,8 @@ conversation gets; `idle-reflection` and `pursue` are idle-capable and get
 their own resumable background sessions.
 
 **Self-reflection session (`idle-reflection` routine)** — A single fixed
-session (agent ID `self-reflection`) that wakes every 2 minutes and asks the
+session (agent ID `self-reflection`) that wakes on the `[daemon] self_reflection`
+cadence (2 minutes by default, `"off"` to remove it) and asks the
 model to update `self/capabilities` and `self/learned` via `memory_set`. Each
 turn is recorded by the journal under its own `agent_id`, read back with
 `nine reflections [agent-id]` (or `/reflections`). It is a routine kind, not a
@@ -274,22 +275,32 @@ long-running work. Plugins are compiled into the image at build time; there is n
 runtime generation. See [Plugins](plugins.md) and
 [Architecture § 10 Plugin subsystem](architecture.md#10-plugin-subsystem).
 
-**Core-intercepted tools** — Tools that appear in the agent's tool list but
-are handled directly by the Tool Dispatcher, with no plugin subprocess:
-`gap_report`, `memory_embed`, `memory_query`,
-`run_agent`, `run_agents`, the `workflow_*` tools, and the `goal_*` tools.
-Registered by `AgentBuilder.registerCoreTools` and `registerSubAgentTools`
-when each loop is built.
+**Core-intercepted tools** — Tools handled directly by the Tool Dispatcher, in
+process, with neither a subprocess nor a sandbox: the `memory_*` and
+`file_search_text` store tools, `list_files`, the `skill_*`, `doc_*`, `job_*`,
+`workflow_*`, `goal_*` and `queued_message*` groups, `tool_search`/`tool_list`,
+`notify_user`, the delegation tools (`run_agent`, `run_agents`), and
+`gap_report`. They reach Nine's own state, which is why they are neither granted
+nor sandboxed. Registered per loop, and exempt from relevance ranking
+([tool selection](tool-selection.md)).
 
 **Sandboxed tool** — A wasm module the daemon executes **in-process**, in a
 wazero sandbox, with an explicitly conferred capability set. A *second backend
 behind the same Tool Dispatcher* as plugins — registered, advertised, and
 role-filtered identically — but neither a subprocess (unlike a **plugin**) nor
-built in (unlike a **core-intercepted tool**). Installed by an operator as two
-files in `[tools].user_dir`: a `.js` or `.wasm` entrypoint and a `.toml`
-manifest. Off unless `[tools] enabled` is set. See
-[Sandboxed tools](writing-sandboxed-tools.md) and
+built in (unlike a **core-intercepted tool**). Three tiers write them and one
+runtime executes them: **shipped** (first-party, in the binary), **developer**
+(two files in `[tools].user_dir`), and **generated** (rows Nine wrote itself).
+The whole host, shipped tools included, is off unless `[tools] enabled` is set.
+See [Sandboxed tools](writing-sandboxed-tools.md) and
 [contract](../spec/contracts/toolvm.md).
+
+**Shipped tool** — A sandboxed tool whose source is compiled into the `nine`
+binary: the workspace file tools, the fetching tools, and `time`. They were
+plugins, which is to say subprocesses holding the daemon's uid; under this tier
+each is **granted what it declares** and that grant appears in `nine tools`.
+First-party code the operator already ran with strictly more authority, so the
+grant is a reduction made explicit rather than a new trust (R-TVM.16).
 
 **Tool kind (`js` / `wasm`)** — How a sandboxed tool's module is obtained. A
 `wasm` tool is the developer's own module, built from Rust, TinyGo, Zig, or C. A
@@ -428,9 +439,10 @@ different registries.
 
 **Skill** — A named markdown how-to note (`name`, `description`, `tags`, body)
 stored in the `skills` table. Never preloaded; the description is
-embedded into the `skills` vector namespace and the self-model surfaces relevant
-names (context priority 5, dropped first under budget pressure), which the agent
-then reads in full via `skill_read`. See [Skills](skills.md).
+embedded into the `skills` vector namespace and the self-model surfaces the three
+most relevant names (inside the priority-2.5 block, capped at 600 tokens and
+omitted when the budget is tight), which the agent then reads in full via
+`skill_read`. See [Skills](skills.md).
 
 **Built-in vs. agent skills** — Built-in skills are seeded from the binary
 (repo `skills/*.md`, embedded at build) on every boot and are **immutable** at
@@ -505,8 +517,12 @@ set to `1` for local Ollama models to avoid contention.
 **`max_goal_sessions` (`daemon.max_goal_sessions`)** — Cap on concurrently
 running `pursue` sessions, default 10 (`DefaultMaxGoalSessions`).
 
-**Token counting** — Approximated as 4 characters ≈ 1 token everywhere in the
-context builder (no tokenizer dependency).
+**Token counting** — Approximated as **3.45 bytes ≈ 1 token** throughout the
+context builder, with no tokenizer dependency; the divisor deliberately
+over-estimates, since under-counting spends headroom the context window does not
+have. The dispatcher's output cap is the one place still counting 4 bytes to the
+token (2048 tokens ⇒ 8192 characters), because it bounds a result rather than a
+request.
 
 **Volume layout (`/data/`)** — Holds `nine.db` (the SQLite database, plus its
 `-wal`/`-shm` sidecars) and `workspace/` (the sandboxed tools' workspace). All primary
@@ -552,7 +568,7 @@ workflows whose steps are now all terminal; workflows with remaining
 
 **TUI slash commands** — `/help`, `/sessions`, `/status`, `/config`,
 `/context [id]`, `/plan-mode <mode>`, `/goals`, `/workflows`,
-`/tools [filter]`, `/skills [name]`, `/memory [key]`, `/new`,
+`/tools [filter]`, `/standing [id]`, `/skills [name]`, `/memory [key]`, `/new`,
 `/think <message>`, `/clear`. Handled locally — no LLM tokens consumed
 (`/think` is the exception: it sends a real turn). Typing `/` opens a picker
 that filters the list as you type. See
