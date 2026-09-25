@@ -355,3 +355,26 @@ Authorization = "Bearer t"`, "use env with command"},
 		})
 	}
 }
+
+// The packaged self-model's path is overridable by environment, like the plugin,
+// skill and tool directories: an image that mounts its own file should not have
+// to rewrite the config it inherited (adr/personality-pattern.md §4).
+func TestBootstrapSelfModelPathFromEnv(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Bootstrap.SelfModelPath = "/from/file.toml"
+
+	t.Setenv("NINE_BOOTSTRAP_SELF_MODEL", "/from/env.toml")
+	config.ApplyEnvOverrides(cfg)
+	if cfg.Bootstrap.SelfModelPath != "/from/env.toml" {
+		t.Errorf("self_model_path = %q, want the environment's value", cfg.Bootstrap.SelfModelPath)
+	}
+
+	// An empty variable leaves the file's value alone rather than clearing it,
+	// which is what every other NINE_* override does.
+	t.Setenv("NINE_BOOTSTRAP_SELF_MODEL", "")
+	cfg.Bootstrap.SelfModelPath = "/from/file.toml"
+	config.ApplyEnvOverrides(cfg)
+	if cfg.Bootstrap.SelfModelPath != "/from/file.toml" {
+		t.Errorf("self_model_path = %q, want the file's value", cfg.Bootstrap.SelfModelPath)
+	}
+}

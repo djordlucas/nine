@@ -143,6 +143,16 @@ func runDaemon() {
 	// that runs it.
 	runtime.MigrateStoredFilesToWorkspace(store, cfg.Workspace.Root)
 
+	// A packaged self-model, if the operator configured one, runs first: it fills
+	// self/identity so the generic default below is never written over the
+	// identity this instance was shipped with (adr/personality-pattern.md §4).
+	// A malformed file stops the boot rather than silently producing generic Nine
+	// under a personality's name.
+	if _, err := runtime.BootstrapSelfModel(store, cfg.Bootstrap.SelfModelPath); err != nil {
+		slog.Error("self-model bootstrap failed", "err", err)
+		os.Exit(1)
+	}
+
 	// Bootstrap the self-model with the current plugin list, so it can answer questions about them.
 	if err := runtime.BootstrapSelfKV(store, pluginManager.ListRunning()); err != nil {
 		slog.Error("failed to bootstrap self KV", "err", err)
