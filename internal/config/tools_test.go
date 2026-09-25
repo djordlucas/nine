@@ -202,3 +202,27 @@ func TestNetHTTPGrantAcceptsDeliberateWildcard(t *testing.T) {
 		t.Errorf("allow_hosts = %+v, want the wildcard preserved", g)
 	}
 }
+
+// The `[bootstrap]` table reaches the struct: a tag typo here would leave the
+// path empty and the feature silently off, which is exactly the failure the
+// packaged self-model exists to avoid (adr/personality-pattern.md §4).
+func TestBootstrapTableParses(t *testing.T) {
+	cfg, err := loadTOML(t, "[bootstrap]\nself_model_path = \"/etc/nine/self-model.toml\"\n")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got := cfg.Bootstrap.SelfModelPath; got != "/etc/nine/self-model.toml" {
+		t.Errorf("self_model_path = %q, want the configured path", got)
+	}
+}
+
+// Absent is the shipped posture and must load cleanly.
+func TestBootstrapTableAbsent(t *testing.T) {
+	cfg, err := loadTOML(t, "[llm]\nmodel = \"x\"\n")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.Bootstrap.SelfModelPath != "" {
+		t.Errorf("self_model_path = %q, want empty", cfg.Bootstrap.SelfModelPath)
+	}
+}

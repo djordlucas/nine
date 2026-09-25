@@ -53,8 +53,13 @@ func (a *Assembler) Build(_ context.Context, queryVec []float32) string {
 		fmt.Fprintf(&sb, "Runtime: %s\n", a.runtime)
 	}
 
-	// Self-knowledge from KV
-	for _, key := range []string{"self/identity", "self/capabilities", "self/learned"} {
+	// Self-knowledge from KV.
+	//
+	// `self/persona` is here for a packaged instance (adr/personality-pattern.md
+	// §4): a bootstrap file's `[persona]` section lands there, and a key nothing
+	// reads would make the section decorative. It is absent on a stock
+	// deployment, and an absent key costs a lookup and no context.
+	for _, key := range []string{"self/identity", "self/persona", "self/capabilities", "self/learned"} {
 		val := a.store.KVGetString(key)
 		if val != "" {
 			sb.WriteString("\n## " + key + "\n")

@@ -343,6 +343,22 @@ show_context = true
 # Unset or missing disables user skills entirely.
 # user_dir = "./skills.d"
 
+[bootstrap]
+# A self-model seeded on first boot (docs/personalities.md). Each section of the
+# named TOML file becomes one `self/<section>` KV entry holding its fields, and
+# self/identity, self/persona and self/capabilities are read into every turn.
+#
+# Unset is the default: an instance nobody packaged gets Nine's generic
+# self-description. The file is read once per database — a sentinel records that
+# it ran — so an instance that has revised its own self-model is not reset to the
+# packaged text on restart. NINE_BOOTSTRAP_SELF_MODEL overrides the path.
+#
+# A missing file warns and boots with the defaults; a malformed one stops the
+# boot, because an instance whose identity is quietly wrong is worse than one
+# that does not start.
+# self_model_path = "/etc/nine/self-model.toml"
+
+
 [roles]
 # Worker-role resolution for delegation (docs/roles.md).
 #
@@ -829,6 +845,7 @@ Environment variables take priority over `nine.toml` values.
 | `NINE_LLM_MODEL` | Override `llm.model` |
 | `NINE_LLM_ENDPOINT` | Override `llm.endpoint` |
 | `NINE_LLM_API_KEY` | Override `llm.api_key` — the bearer token for a remote provider |
+| `NINE_BOOTSTRAP_SELF_MODEL` | Override `bootstrap.self_model_path` — the self-model seeded on first boot |
 | `NINE_EMBED_PROVIDER` | Override `embeddings.provider` |
 | `NINE_DB_PATH` | Override `memory.path` |
 | `NINE_PLUGINS_BIN` | Override `plugins.bin` |
