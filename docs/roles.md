@@ -58,6 +58,7 @@ nothing: it reads and writes memory and nothing else.
 | `sysadmin` | shell, `read_file`, `write_file`, `http_get`, `http_post`, memory | Inspect and operate the system. The narrowest file surface of the writing roles: no edit, move, copy or delete. |
 | `report-writer` | web search, page reading, `http_get`, the workspace file tools, search, memory | Research and write. **No shell**, and no network beyond GET — it writes files, so its output has somewhere to go. |
 | `monitor` | web search, page reading, `http_get`, file reads, search, memory | Read-only: it can see the workspace and change nothing in it. The usual role for a [standing agent](predefined-agents.md). |
+| `code-reviewer` | `read_file`, `list_files`, `file_search_text`, `diff_file`, `trash_list`, memory, skills | Review code without changing it. **No shell**, so it cannot run the tests of what it reviews. |
 | `analyst` | none | Reasons about a request and produces a short plan. The substitute for models with no native thinking. |
 
 Every leaf role except `executor` is barred from delegating, so a coarse leaf

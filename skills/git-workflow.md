@@ -51,10 +51,16 @@ These are always safe to run:
 - `git status`, `git log`, `git diff`, `git show`
 - `git branch`, `git stash list`
 
-These are destructive — confirm with user first:
-- `git reset --hard`, `git checkout -- .`
-- `git push --force`, `git branch -D`
-- `git clean -fd`
+These are **blocked by the shell guard** and return an error rather than
+running — do not plan around them:
+- `git reset --hard`
+- `git push --force`
+- `git clean -f`
+
+These are destructive but not blocked — confirm with the user first:
+- `git checkout -- .`, `git branch -D`, `git stash drop`
+
+See the `shell-usage` skill for the full blocklist.
 
 ### Undoing mistakes
 
