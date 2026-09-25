@@ -15,7 +15,7 @@ import (
 // also covers operator- and agent-authored role skills — from the role
 // registry and passes it to SubAgentDefs; this constant only serves storeless
 // callers (tests, builders with no memory store).
-const DefaultRoleEnum = "One of: executor (default; full toolset), software-dev (implement/modify code: shell + files), sysadmin (operate the system: shell, files, http), report-writer (web research and writing; no shell), monitor (read-only: web, http GET, file reads, memory; no shell or writes)."
+const DefaultRoleEnum = "One of: executor (default; full toolset), software-dev (implement/modify code: shell + files), sysadmin (operate the system: shell, files, http), report-writer (web research and writing; no shell), monitor (read-only: web, http GET, file reads, memory; no shell or writes), code-reviewer (read and judge code: file reads, search, diffs; no shell, no writes)."
 
 // roleFieldDescription wraps a rendered leaf-role list in the guidance the
 // model needs to choose well. Empty roleEnum falls back to DefaultRoleEnum.
