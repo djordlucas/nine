@@ -6,7 +6,14 @@ tags: [shell, bash, commands, safety]
 
 ## Shell Tool Usage
 
-The `shell` tool runs commands via `sh -c`. Use it for file operations, build tasks, git, and anything the other tools don't cover.
+The `shell` tool runs commands via `sh -c`, **in the workspace** — a relative
+path means the same file here as it does to `read_file` and `write_file`. Use
+it for build tasks, git, pipelines, and anything the other tools don't cover.
+
+**Reach for the file tools first for file work.** `read_file`, `write_file`,
+`edit_file` and the rest keep large files out of your context and put deletions
+in a recoverable trash; `rm` in a shell destroys outright. See the
+`file-management` skill.
 
 ### Basic usage
 
@@ -46,8 +53,9 @@ The following commands are **blocked by default** and will return an error:
 | Category | Blocked examples |
 |---|---|
 | Recursive deletion | `rm -rf`, `rm -r`, `rm --recursive` |
+| Secure deletion | `shred` |
 | Disk operations | `dd of=/dev/…`, `mkfs`, `fdisk`, `parted`, `diskutil erase` |
-| System control | `shutdown`, `reboot`, `halt`, `systemctl stop/disable` |
+| System control | `shutdown`, `reboot`, `halt`, `init 0/6`, `systemctl stop/disable` |
 | Privilege escalation | `sudo`, `su` |
 | Shell injection | `… \| bash`, `… \| sh`, `bash <(…)` |
 | Destructive git | `git push --force`, `git reset --hard`, `git clean -f` |
