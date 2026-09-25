@@ -470,7 +470,7 @@ out of the embedded filesystem, so what Nine cites always matches its own
 version. Never preloaded — the standing context cost is two tool definitions.
 See [Self-Documentation](self-documentation.md).
 
-**Default skills** — The repo's `skills/*.md` (e.g. `task-management`,
+**Default skills** — The repo's `skills/*.md` (e.g. `workflow-tracking`,
 `git-workflow`, `go-development`), embedded into the binary and seeded into the
 `skills` table on every boot (`runtime.SeedSkills`).
 

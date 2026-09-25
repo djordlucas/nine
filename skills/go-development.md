@@ -22,7 +22,7 @@ make all          # same as make build — nothing else ships as its own artifac
 ```bash
 go test -mod=vendor ./...            # all tests
 go test -mod=vendor ./internal/...   # specific package tree
-go test -mod=vendor -v -run TestFoo ./internal/daemon/  # single test
+go test -mod=vendor -v -run TestFoo ./internal/runtime/ # single test
 make test
 ```
 
@@ -53,16 +53,22 @@ go mod vendor
 
 | Package | Purpose |
 |---------|---------|
-| `nine/internal/llm` | Provider-agnostic LLM interface |
-| `nine/internal/agent` | ReAct loop and tool dispatcher |
-| `nine/internal/daemon` | Unix socket server, runners, client |
-| `nine/internal/context` | Token-budget-aware context builder |
-| `nine/internal/pluginutil` | Plugin boilerplate |
+| `nine/internal/runtime` | The daemon — Unix-socket server, agent workers, routines |
+| `nine/internal/agent` | Agent loop and tool dispatcher |
+| `nine/internal/protocol` | Newline-delimited JSON wire protocol between clients and daemon |
+| `nine/internal/memory` | SQLite store — checkpoints, goals, workflows, skills, the event journal |
+| `nine/internal/llm` | Provider-agnostic LLM interface and request queue |
+| `nine/internal/context` | Token-budget-aware context builder (package `ninectx`) |
+| `nine/internal/selfmodel` | Assembles the agent's self-description each turn |
+| `nine/internal/toolvm` | Sandboxed wasm host for shipped and generated tools |
+| `nine/internal/builtins` | Handlers for the built-in plugins and MCP servers |
+| `nine/internal/config` | Config parsing (`nine.toml`) |
+| `nine/internal/cli`, `nine/internal/tui` | The thin clients |
 | `nine/internal/embed` | Embedding interface |
 
 ### Common idioms used here
 
 - `slog.Info/Debug/Warn` for structured logging
 - `json.RawMessage` for deferred JSON decoding
-- Plugin tools return `(string, error)` — JSON-encode structured output
+- Tool handlers return `(string, error)` — JSON-encode structured output
 - `context.Context` is always the first parameter for cancellable ops
