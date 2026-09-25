@@ -1,6 +1,16 @@
 # Personality Pattern for Nine
 
-**Status:** Proposed · **Author:** · **Date:** 2025-XX-XX
+**Status:** Phase 1 built; phase 2 withdrawn · **Date:** proposed 2025, revised 2026-09-24
+
+> **Where this stands.** §4 (self-model bootstrapping) is implemented, with the
+> revisions recorded in §4.6 — the per-field key mapping this note originally
+> sketched would not have worked. §5 (buffered input) is **withdrawn**: its goal
+> was met by queued messages, built separately, and §5.6 records what that does
+> and does not cover. §7's phases are updated to match.
+>
+> The pattern itself shipped as `docs/personalities.md` before either feature
+> existed, so that page documented both as working for a year. The corrected page
+> now names them; this note is the record of what was proposed and what happened.
 **Related:** [predefined-agents-design.md](predefined-agents-design.md), [roles-design.md](roles-design.md), [session-plans.md](../docs/session-plans.md)
 
 ---
@@ -207,7 +217,52 @@ Order of operations:
 
 ---
 
+### 4.6 What the build changed (2026-09-24)
+
+Three revisions, each because the sketch above would not have produced the
+behavior it promised.
+
+**One key per section, not one per field.** §4.2.2 mapped `[identity]` onto
+`self/identity/name`, `self/identity/version` and so on. The self-model assembler
+reads *whole keys by name* — `self/identity`, `self/capabilities`,
+`self/learned` — so none of those per-field keys would ever have reached a turn.
+Worse, `self/identity` would then be filled by the generic default, and a
+packaged instance would have introduced itself as stock Nine while its authored
+identity sat unread in the store. A section is now rendered to `field: value`
+lines and written to `self/<section>`, which is the key the assembler already
+reads. Fields are sorted, so one file always produces one text.
+
+**`self/persona` is surfaced.** A `[persona]` section was central to the
+reference personality and had nowhere to go. The assembler now reads it between
+identity and capabilities. It is absent on a stock deployment and costs a lookup.
+
+**The sentinel is the only idempotency check.** §4.2.4 offered two — "skip if
+`self/identity/name` exists" *or* a sentinel. The first cannot work: `self/identity`
+is written on every fresh database by `BootstrapSelfKV`, so keying on it would
+make the packaged file win only a race. `self/_bootstrapped` answers the question
+that actually matters, *has this file already run here*, and is written last so a
+failure part-way retries the whole file rather than resuming into a half-applied
+self-model.
+
+A fourth point the sketch got right and is worth keeping explicit: a **missing**
+configured file warns and boots with defaults, while a **malformed** one stops
+the boot. The difference is that a typo'd path is a deployment mistake the
+operator can see in the log, whereas a file that parses halfway would produce an
+instance whose identity is quietly wrong.
+
+---
+
 ## 5. Buffered Input
+
+> **Withdrawn (2026-09-24).** The goal below was met by **queued messages**,
+> designed and built separately: a `queued_messages` column on the conversation
+> row, five model-facing tools, and a post-turn drain that starts a turn for each
+> message the model left unconsumed (`docs/queued-messages.md`). Building §5 on
+> top of that would be a second queue for the same job. §5.6 records the delta —
+> the parts of this design that queued messages does *not* provide, and whether
+> each is worth building on its own.
+>
+> The rest of this section is kept as the original proposal.
 
 ### 5.1 Goal
 
@@ -334,6 +389,25 @@ The existing input paths (TUI, CLI `nine <message>`, `nine send`) are **unified*
 - API input (via Unix socket) is queued if the agent is busy, processed immediately if idle
 
 This maintains backward compatibility while adding queuing for non-interactive input.
+
+---
+
+### 5.6 What queued messages covers, and what it does not (2026-09-24)
+
+| This design asked for | Queued messages | Verdict |
+|---|---|---|
+| Accept input while the agent is busy | Yes — the message is queued, not dropped, and the model is told it is waiting | Met |
+| Persistent across restarts | Yes — a column on the conversation row | Met |
+| FIFO per session | Yes | Met |
+| Nothing is lost if the model ignores it | Yes, and more directly than this design: the post-turn drain starts a turn per unconsumed message | Met |
+| Priority (high jumps the queue) | No | **Not built.** Worth revisiting only with a caller that has two urgency classes. No such caller exists. |
+| A durable row per message with `processed_at` and `error` | No — a message is text with a consumed flag | **Not built.** The journal already records what a turn did with its input, which is where a failure would be read. |
+| `nine queue list/show/delete/flush` | No | **Not built.** Nothing lists a queue from the CLI, which is a real gap for an operator debugging a stuck personality. The cheapest version is `nine queue list <agent-id>` alone. |
+| Queue size and rate limits | No | **Not built.** Unbounded, and consumed messages are never pruned, so a long-lived conversation's queue only grows. |
+
+The first four are the reason this section is withdrawn rather than deferred. The
+last four are the honest residue: none of them blocks the personality pattern,
+and the CLI view is the one an operator is most likely to miss.
 
 ---
 
@@ -468,32 +542,39 @@ Your purpose: {{ memory_get("self/identity/purpose") }}.
 
 ## 7. Implementation Plan
 
-### 7.1 Phase 1: Self-Model Bootstrapping
+### 7.1 Phase 1: Self-Model Bootstrapping — **built (2026-09-24)**
 
-1. Add `Bootstrap` config section with `SelfModelPath` field
-2. Add `NINE_BOOTSTRAP_SELF_MODEL` environment variable support
-3. Implement `loadSelfModelBootstrap` function in `cmd/nine/daemon.go`
-4. Add `self/_bootstrapped` sentinel to prevent re-running
-5. Add tests for bootstrap file parsing and loading
-6. Update `BootstrapSelfKV` to skip if bootstrap already ran
+1. ✅ `[bootstrap] self_model_path`, with `NINE_BOOTSTRAP_SELF_MODEL` overriding it
+2. ✅ `runtime.BootstrapSelfModel`, called from `cmd/nine/daemon.go` before
+   `BootstrapSelfKV` — in `internal/runtime/selfmodel_bootstrap.go` rather than in
+   `cmd`, so it is testable without a daemon
+3. ✅ `self/_bootstrapped`, written last
+4. ✅ Sections rendered to `self/<section>`, not per-field keys (§4.6)
+5. ✅ `self/persona` surfaced by the assembler (§4.6)
+6. ✅ Twelve tests, including the two orderings that matter: the packaged
+   identity beats the generic default, and a second boot does not overwrite a
+   self-model the instance has since revised
 
-**Gate:** A Nine instance with a bootstrap file configured starts with the self-model seeded from that file, and the bootstrap only runs once.
+`BootstrapSelfKV` needed no change: it already skips a database that has
+`self/identity`, which the bootstrap has written by the time it runs.
 
-### 7.2 Phase 2: Buffered Input
+**Gate:** met — a configured instance starts with the file's self-model, the file
+runs once per database, and a malformed file stops the boot.
 
-1. Add `input_queue` table to the store schema
-2. Implement `InputQueueAdd` and `InputQueueList` store methods
-3. Add `input_queue` core tool
-4. Modify `AgentWorker` to check the queue at turn start and after turn completion
-5. Add priority handling (high-priority messages jump the queue)
-6. Add CLI commands: `nine queue list`, `nine queue show`, `nine queue delete`, `nine queue flush`
-7. Add configuration for queue limits and rate limits
-8. Update existing input paths (CLI, API) to use the queue
-9. Add tests for queue operations and processing
+### 7.2 Phase 2: Buffered Input — **withdrawn (2026-09-24)**
 
-**Gate:** Messages sent via CLI when the agent is busy are queued and processed in order. High-priority messages are processed before normal-priority messages.
+Superseded by queued messages (`docs/queued-messages.md`), which met the goal
+with a column rather than a table. §5.6 lists what that leaves unbuilt; the only
+item with a plausible caller today is a CLI view of a session's queue, which is
+one command and not a phase.
 
-### 7.3 Phase 3: Documentation
+### 7.3 Phase 3: Documentation — **built, then corrected**
+
+`docs/personalities.md` shipped with this note, before either feature existed,
+and documented both as working until 2026-09-24. It now describes the built
+bootstrap and points at queued messages, and its Limits name what this note
+proposed and never got. The example personality under `examples/` was never
+added.
 
 1. Add `docs/personalities.md` with:
    - The personality pattern overview

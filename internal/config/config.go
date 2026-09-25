@@ -33,6 +33,12 @@ type Config struct {
 	// process that communicates with the daemon via Unix socket.
 	API APIConfig `toml:"api"`
 
+	// Bootstrap is the `[bootstrap]` table: a declarative self-model seeded on
+	// first boot (adr/personality-pattern.md §4). It exists so a packaged
+	// instance starts knowing who it is, rather than starting as generic Nine and
+	// being told in its first conversation.
+	Bootstrap BootstrapConfig `toml:"bootstrap"`
+
 	// Plugin holds per-plugin `[plugin.<name>]` tables (singular), sibling to the
 	// plural `[plugins]` subsystem table above — the same split `[agent]` and
 	// `[[agent]]` already use. It carries operator settings passed through to a
@@ -820,6 +826,23 @@ type PluginsConfig struct {
 	// (spec/contracts/plugins.md). The container overrides this with
 	// NINE_PLUGINS_USER_DIR.
 	UserDir string `toml:"user_dir"`
+}
+
+// BootstrapConfig is the `[bootstrap]` table: where to find the declarative
+// self-model an instance starts with (adr/personality-pattern.md §4).
+type BootstrapConfig struct {
+	// SelfModelPath names a TOML file whose sections become `self/*` KV entries
+	// on first boot. Empty disables it, which is the shipped posture: an
+	// unconfigured Nine seeds the generic defaults it always has.
+	//
+	// The file is read once per database. It is the operator's, never the
+	// agent's: nothing at runtime writes it, and re-running the daemon does not
+	// re-apply it, so an instance that has since revised its own self-model is
+	// not reset to the packaged text on every restart.
+	//
+	// NINE_BOOTSTRAP_SELF_MODEL overrides it, which is how a personality image
+	// points at a file it mounts without rewriting the config it inherited.
+	SelfModelPath string `toml:"self_model_path"`
 }
 
 // APIConfig holds the HTTP API server configuration for remote access to

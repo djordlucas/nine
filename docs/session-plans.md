@@ -159,11 +159,14 @@ background behavior off.
   `/reflections`).
 
 This is how the agent's self-model stays current without user interaction. The
-`Assembler` reads `self/identity`, `self/capabilities`, and
+`Assembler` reads `self/identity`, `self/persona`, `self/capabilities` and
 `self/learned` from the KV store every turn and injects them as the `SystemSelf` block
 of the context (see [Context Builder](context-builder.md) and
-[Agent Loop](agent-loop.md)). `BootstrapSelfKV` seeds `self/identity` and
-`self/capabilities` on first start (`self/learned` is created by the first reflection).
+[Agent Loop](agent-loop.md)). On first start those keys are seeded either from a
+packaged self-model file, when the operator configured one
+([personalities.md](personalities.md)), or from Nine's generic defaults —
+`self/learned` is created by the first reflection either way, and `self/persona`
+only exists if a file set it.
 
 ### `pursue` — background goal pursuit
 

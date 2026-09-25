@@ -444,6 +444,14 @@ most relevant names (inside the priority-2.5 block, capped at 600 tokens and
 omitted when the budget is tight), which the agent then reads in full via
 `skill_read`. See [Skills](skills.md).
 
+**Self-model bootstrap (`[bootstrap] self_model_path`)** — A TOML file whose
+sections are written to `self/*` on an instance's first boot, so a packaged Nine
+starts knowing who it is (`docs/personalities.md`). One key per section:
+`[identity]` becomes `self/identity`, holding its fields as `field: value` lines.
+It runs before the built-in defaults, so the packaged identity is what the model
+reads, and once per database — the `self/_bootstrapped` sentinel means an
+instance that has revised its own self-model is not reset on restart.
+
 **Built-in vs. agent skills** — Built-in skills are seeded from the binary
 (repo `skills/*.md`, embedded at build) on every boot and are **immutable** at
 runtime. Agent skills are authored by Nine via `skill_write`/`skill_modify`,
