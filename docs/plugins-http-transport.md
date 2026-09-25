@@ -30,16 +30,28 @@ system instead of from a bind address someone can get wrong.
 
 ```
 POST http://unix/rpc
-  body:  {"method": "<plugin.describe | plugin.call>", "params": {…}}
+  body:  {"method": "<plugin.describe | plugin.call
+                     | plugin.job_status | plugin.job_cancel>", "params": {…}}
   reply: {"result": {…}}                          success
       |  {"error": {"code": N, "message": "…"}}   failure
 ```
 
-The HTTP status is **always 200**; failures live in the body envelope. Two
-methods only: `plugin.describe` announces the tools, `plugin.call` runs one.
+The HTTP status is **always 200**; failures live in the body envelope. Four
+methods, and only the first two are required:
 
-There is no request id. Correlation is per-connection, which is the whole point
-of the change.
+| Method | Does | Since |
+|---|---|---|
+| `plugin.describe` | announce the tools, the advertised `max_concurrent`, and the protocol version | v1 |
+| `plugin.call` | run one tool | v1 |
+| `plugin.job_status` | report on detached work the daemon is polling | v2 |
+| `plugin.job_cancel` | ask for detached work to stop | v2 |
+
+A v1 plugin that implements neither job method remains fully functional — the
+daemon accepts protocol `{1, 2}` and treats a v1 plugin as one without jobs
+([versioning.md](versioning.md#2-plugin-protocol-version)).
+
+There is no request id: correlation is per-connection, which is what buys
+concurrency without a correlation scheme in the payload.
 
 ## Concurrency is opt-in to serialize
 
