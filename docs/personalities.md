@@ -152,9 +152,10 @@ for it is a parse error rather than a merge.
 ### Step 4: seed the self-model (optional)
 
 Nine writes `self/identity` and `self/capabilities` into the KV store on first
-start, and only if `self/identity` is absent. There is no bootstrap *file*: the
-seeds are fixed strings in the daemon, and `self/learned` is deliberately left
-for the first reflection turn to create.
+start, and only if `self/identity` is absent. There is no bootstrap *file* — one
+is designed in [`adr/personality-pattern.md`](../adr/personality-pattern.md) §4
+and was never built. The seeds are fixed strings in the daemon, and
+`self/learned` is deliberately left for the first reflection turn to create.
 
 To give a personality its own identity text, write the keys yourself before or
 after first boot — they are ordinary KV entries:
@@ -578,3 +579,5 @@ unconsumed message starts its own turn once the current one ends
 | The self-model is seeded once, then owned by the agent | `self/identity` and `self/capabilities` are written on first start only, and only when `self/identity` is absent. After that, what the instance believes about itself is whatever reflection wrote. There is no bootstrap file and no re-seed. |
 | Skills are copied, not shared | Two personalities that need the same skill each carry their own copy. There is no shared skill registry. |
 | Still the design under `adr/` | The pattern is documented and usable, but it remains a convention rather than a supported product surface — see [`adr/personality-pattern.md`](../adr/personality-pattern.md). |
+| Two features the ADR asked for were never built | That ADR is **Proposed**, and it names two Nine-side changes as required: a **self-model bootstrap file** (`[bootstrap] self_model_path`, mapping TOML sections into `self/<section>/<key>`) and a **buffered input queue** (an `input_queue` table, per-message priority, and `nine queue` subcommands). Neither exists. The pattern works without them because everything else it needs — standing agents, roles, skills, tools, goals — already did. |
+| The input-queue goal is met differently | "Accept input while the agent is busy" is covered by [queued messages](queued-messages.md): a column on the conversation row, model-facing tools, and a post-turn drain. What the ADR wanted and this does not provide is priority ordering, a durable per-message row with error state, and any CLI to inspect or flush a queue. |
