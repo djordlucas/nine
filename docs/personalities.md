@@ -19,7 +19,7 @@ Nine provides all the primitives needed to build an autonomous agent:
 
 The personality pattern **packages these primitives** into a deployable artifact that:
 
-1. **Starts with a predefined identity** (KV seeds under `self/`)
+1. **Starts with a predefined identity** (a self-model file seeded under `self/`)
 2. **Has custom knowledge** (via skills directory)
 3. **Has custom capabilities** (via sandboxed tools)
 4. **Runs autonomously** (via standing agents and goals)
@@ -53,6 +53,7 @@ personality-<name>/
 ├── Dockerfile                  # Builds on Nine runtime image
 ├── README.md                   # Personality documentation
 ├── nine.toml                   # Nine configuration
+├── self-model.toml             # Identity seeded on first boot (optional)
 ├── skills/                     # Personality-specific skills (optional)
 │   ├── <role-name>.md         # Role definition(s)
 │   └── <skill-name>.md        # Knowledge skills
@@ -151,23 +152,55 @@ for it is a parse error rather than a merge.
 
 ### Step 4: seed the self-model (optional)
 
-Nine writes `self/identity` and `self/capabilities` into the KV store on first
-start, and only if `self/identity` is absent. There is no bootstrap *file* — one
-is designed in [`adr/personality-pattern.md`](../adr/personality-pattern.md) §4
-and was never built. The seeds are fixed strings in the daemon, and
-`self/learned` is deliberately left for the first reflection turn to create.
+A personality starts knowing who it is by shipping a **self-model file**: a TOML
+file whose sections become `self/*` entries on the instance's first boot.
 
-To give a personality its own identity text, write the keys yourself before or
-after first boot — they are ordinary KV entries:
+```toml
+# personality-alice/self-model.toml
+[identity]
+name = "Alice"
+purpose = "Autonomous Go code review assistant"
 
-```bash
-nine "Set self/identity to: Alice is a senior Go engineer who reviews PRs, \
-identifies patterns, and maintains a knowledge base of best practices."
+[persona]
+description = "Alice is a senior Go engineer. She reviews PRs, identifies patterns, writes skills, and maintains a knowledge base of best practices."
+tone = "Direct. States the problem, then the fix."
+
+[capabilities]
+initial = "Can analyze Go code, identify patterns, write skills, store insights in memory, search files"
 ```
 
-From then on the self-model is the agent's to maintain: the reflection routine
-updates `self/capabilities` and `self/learned` on its own cadence
-([session-plans.md](session-plans.md)).
+Point Nine at it:
+
+```toml
+[bootstrap]
+self_model_path = "/etc/nine-personality/self-model.toml"
+```
+
+or `NINE_BOOTSTRAP_SELF_MODEL=/etc/nine-personality/self-model.toml`, which is
+how an image names a file it mounts without rewriting the config it inherited.
+
+**Each section becomes one key**, holding its fields as `field: value` lines:
+`[identity]` becomes `self/identity`, `[persona]` becomes `self/persona`. Three
+of those keys — `self/identity`, `self/persona`, `self/capabilities` — are read
+into every turn's self-model block, along with `self/learned`, which the file
+should leave alone: it is where reflection writes. Any other section is stored
+and reachable with `memory_get`, but does not ride in the context.
+
+A field's value can be a string, a number, a boolean, or a list (rendered
+comma-separated). A nested table is refused with a named error rather than
+flattened.
+
+| Behavior | Detail |
+|---|---|
+| Runs once per database | A `self/_bootstrapped` sentinel is written last. An instance that has since revised its own self-model is not reset to the packaged text on the next restart. |
+| Beats the built-in defaults | It runs before them, so `self/identity` is the file's, not the generic description of Nine. |
+| A missing file warns | A configured path that is not there logs and boots with the defaults — a typo should not take the daemon down. |
+| A malformed file stops the boot | An instance that believes it is generic Nine while its operator believes it is Alice is the failure this prevents. |
+
+After first boot the self-model is the agent's: reflection updates
+`self/capabilities` and `self/learned` on its own cadence
+([session-plans.md](session-plans.md)). The file is the starting point, not a
+description maintained from outside.
 
 ### Step 5: create skills
 
@@ -576,8 +609,9 @@ unconsumed message starts its own turn once the current one ends
 |-------|--------|
 | A personality is configuration, not a feature | It is a `nine.toml`, a set of skills, and optionally some sandboxed tools, packaged in an image. Nothing in the daemon knows what a personality is. |
 | Each needs its own image and container | There is no way to run two personalities in one daemon. They are separate deployments with separate databases. |
-| The self-model is seeded once, then owned by the agent | `self/identity` and `self/capabilities` are written on first start only, and only when `self/identity` is absent. After that, what the instance believes about itself is whatever reflection wrote. There is no bootstrap file and no re-seed. |
+| The self-model is seeded once, then owned by the agent | With no file configured, `self/identity` and `self/capabilities` get Nine's generic defaults on first start. Either way, what the instance believes about itself after that is whatever reflection wrote. |
 | Skills are copied, not shared | Two personalities that need the same skill each carry their own copy. There is no shared skill registry. |
 | Still the design under `adr/` | The pattern is documented and usable, but it remains a convention rather than a supported product surface — see [`adr/personality-pattern.md`](../adr/personality-pattern.md). |
-| Two features the ADR asked for were never built | That ADR is **Proposed**, and it names two Nine-side changes as required: a **self-model bootstrap file** (`[bootstrap] self_model_path`, mapping TOML sections into `self/<section>/<key>`) and a **buffered input queue** (an `input_queue` table, per-message priority, and `nine queue` subcommands). Neither exists. The pattern works without them because everything else it needs — standing agents, roles, skills, tools, goals — already did. |
+| Only the surfaced keys reach a turn | `self/identity`, `self/persona`, `self/capabilities` and `self/learned` ride in the self-model block. A file section named anything else is stored under `self/<section>` and reachable with `memory_get`, but nothing puts it in front of the model. |
+| The self-model is seeded, never re-synced | Editing the file after first boot changes nothing: the sentinel has been written. Re-seeding means clearing `self/_bootstrapped` and the keys by hand, or starting from a fresh database. |
 | The input-queue goal is met differently | "Accept input while the agent is busy" is covered by [queued messages](queued-messages.md): a column on the conversation row, model-facing tools, and a post-turn drain. What the ADR wanted and this does not provide is priority ordering, a durable per-message row with error state, and any CLI to inspect or flush a queue. |
