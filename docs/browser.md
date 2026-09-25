@@ -146,8 +146,14 @@ text or a value the tree does not carry.
 **Images** — screenshots — come back as MCP image content. Nine decodes them and
 writes them into the plugin's cache dir, then names the file in the text reply
 rather than inlining hundreds of kilobytes of base64 into the context window.
-The agent reads the bytes back with `read_file` when it needs them. See
-[plugin-capabilities.md §4](plugin-capabilities.md) for the cache dir.
+See [plugin-capabilities.md §4](plugin-capabilities.md) for the cache dir.
+
+**A screenshot is named, not necessarily readable.** The cache dir defaults to
+`os.UserCacheDir()/nine/plugins`, outside the workspace, and `read_file` is a
+shipped sandboxed tool confined to the workspace mount — so a path under the
+cache dir is refused by the pre-open rather than read. Point
+`[plugins].cache_dir` inside `[workspace].root` if the agent needs to read its
+own screenshots back.
 
 ---
 
@@ -284,6 +290,7 @@ matched exactly and the prefix is yours to choose, so built-in roles like
 | No URL allowlist | The server exposes no equivalent of a per-URL allow or block list. A configured browser can reach whatever the host can. See §5. |
 | 24 tools in the catalog | Every tool's name, description and schema enters the context window each turn. Against `qwen3.5:4b` at `num_ctx = 32768` that is a real fraction of the budget. Declare the server only on instances that browse. |
 | Needs `npx` and a browser | Neither runtime image ships a browser. The dev image carries Node for `npx` MCP servers; the runtime image does not. |
+| Screenshots land outside the sandbox | The plugin cache dir defaults outside `[workspace].root`, and `read_file` is confined to the workspace mount, so a screenshot is named in the reply and not readable by the agent unless the cache dir is moved inside the workspace. |
 | Opt-in end-to-end test | `NINE_PLAYWRIGHT_TEST=1 go test ./internal/builtins/ -run Playwright` needs `npx` and an installed browser, so it does not run in the default suite. |
 | Built-in roles cannot call it | Allowlists match tool names exactly, and MCP tools carry an operator-chosen prefix, so no built-in role names one. `report-writer` researches over HTTP for this reason. |
 
