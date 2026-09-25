@@ -125,7 +125,7 @@ manager reports the failure without crashing the host.
   default top-20 + always-include), P2.5 self-model (cap ~600 tokens), P3 history
   (trim oldest), P4 scratchpad (trim oldest), P5 extras (dropped if < 200 tokens
   remain).
-- Token model: **4 characters ≈ 1 token**, no tokenizer dependency.
+- Token model: **3.45 bytes ≈ 1 token**, no tokenizer dependency.
 - Tool relevance filtering by cosine similarity to the query vector; always-include
   tools (memory/file + core-intercepted) bypass filtering.
 

@@ -198,8 +198,10 @@ ollama pull qwen3.5:4b
 
 The daemon starts automatically and stays running in the background.
 
-Ollama is the only chat backend — Nine runs on local models. Pick one that can
-actually drive the agent loop: [Model compatibility](model-compatibility.md)
+Ollama is the default backend and the one Nine is developed against; `mistral`
+is the other, for an OpenAI-compatible endpoint
+([configuration.md](configuration.md#mistral)). On a local model, pick one that
+can actually drive the agent loop: [Model compatibility](model-compatibility.md)
 records which models have been run and how they did.
 
 ---
@@ -232,6 +234,13 @@ records which models have been run and how they did.
 | `make logs` | Follow the container's logs |
 | `make down` | Remove the container, keeping all data volumes |
 | `make destroy` | Remove the container **and all data volumes and images** |
+
+The rest of the Makefile is documented where its subject is: `image`,
+`image-test`, `image-scan` and `image-verify` in
+[Container image](docker-image.md), `eval-replay` / `eval-live` /
+`eval-generate` in [Evals](evals.md), `openapi` and its lint/check pair in
+[HTTP API](api.md), and `quickjs-wasm` / `harness-bc` in
+[Sandboxed tools](sandboxed-tools.md#101-building-the-quickjs-blob).
 
 ---
 

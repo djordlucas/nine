@@ -59,6 +59,8 @@ nine tools show <name>           Print one sandboxed tool in full: kind, status,
                                  resolved grant, manifest path
 nine tools reload                Re-scan [tools].user_dir and reload sandboxed
                                  tools live
+nine tools deps                  List the external npm packages generated tools
+                                 resolved, with the tool that asked for each
 nine tool validate [path]        Check a sandboxed tool's manifest, entrypoint,
                                  schema, and ABI exports (defaults to
                                  [tools].user_dir; works with the daemon down)
@@ -110,6 +112,7 @@ The picker stays out of the way while Nine is waiting on an answer to an
 | `/memory [key]` | List all KV memory keys, or show the value at a specific key | `/memory self/identity` |
 | `/goals` | List active goals | `/goals` |
 | `/workflows` | List active and recent workflows | `/workflows` |
+| `/standing [id]` | List standing tools, or show one with its recent activity | `/standing corpus` |
 | `/plan-mode <mode>` | Change the session's reasoning mode live: `off`, `plan-only`, or `always` | `/plan-mode always` |
 | `/think <message>` | Send a message with reasoning forced on for this one turn | `/think reconcile these two specs` |
 | `/new` | Start a fresh conversation | `/new` |
@@ -601,5 +604,5 @@ NINE_LOG_FORMAT=json NINE_LOG_LEVEL=info ./nine daemon
 | Local clients only | The CLI and TUI reach the daemon over a Unix socket on the same host. |
 | No conversation reset command | Starting genuinely fresh means restarting the daemon. `/new` starts a new conversation but leaves the daemon's other state in place. |
 | TUI views are read-only | Slash commands surface goals, workflows, tools, skills, memory and the context breakdown, but do not let you edit them. |
-| The journal has no TUI view | `nine trace`, `nine replay` and `nine context` are CLI-only; nothing surfaces them inside the TUI. |
+| The journal has no TUI view | `nine trace` and `nine replay` are CLI-only; nothing surfaces the journal inside the TUI. The context breakdown is the exception — `/context [id]` is the same view as `nine context`. |
 | Config changes need a restart | Editing `nine.toml` takes effect on daemon restart. |

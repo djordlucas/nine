@@ -329,7 +329,8 @@ In the dev container, the API server is an s6 longrun service. When the hot-relo
 
 | Limit | Detail |
 |-------|--------|
-| Local transport underneath | The API server is a translation layer over the daemon's Unix socket, so it runs on the same host as the daemon. |
-| No WebSocket support | Streaming a turn's progress events over HTTP is not implemented. A conversation turn is request/response. |
+| Local transport underneath | The API server is a translation layer over the daemon's Unix socket, so it runs on the same host as the daemon. It is also the only way to reach Nine over a network: the socket itself carries no authentication, and `auth_token` is the API server's. |
+| Six endpoints return 501 | History, trace, replay, goal create, goal delete and skills are declared in the spec and not backed by the wire protocol. They report what is missing rather than inventing a response. |
+| Streaming is SSE only | `GET /conversations/{id}/messages/stream` attaches to a session's progress events as `text/event-stream`, flushed per event. There is no WebSocket, so a client cannot send over the same connection — a turn is still posted to `/messages`. |
 | Spec is generated, not hand-checked | The OpenAPI document is regenerated from annotations. An endpoint whose annotation drifts from its handler produces a spec that is wrong in the same way. |
 | Startup races the daemon | The API server polls for the daemon socket on startup and refuses requests until the daemon is ready. |
