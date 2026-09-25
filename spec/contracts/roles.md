@@ -145,6 +145,7 @@ Seeded from `skills/roles/*.md` (embedded, immutable — R-SKILL.2 applies):
 | `sysadmin` | shell + file + http allowlist | ✗ | ✗ | ✗ | ✗ | — |
 | `report-writer` | web + workspace-file allowlist (**no `shell`**, no method beyond `http_get`) | ✗ | ✗ | ✗ | ✗ | — |
 | `monitor` | web + read-only file allowlist (**no write of any kind**) | ✗ | ✗ | ✗ | ✗ | — |
+| `code-reviewer` | read-only file allowlist + memory (**no `shell`, no web**) | ✗ | ✗ | ✗ | ✗ | — |
 | `analyst` | none (`tools: ""`) | ✗ | ✗ | ✗ | ✗ | — |
 
 The daemon resolves a session's role from its plan profile: `active` → orchestrator,
