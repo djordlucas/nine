@@ -154,6 +154,7 @@ turn, so anything you print on the way to failing goes with it.
 | `input_schema` | | Path to a JSON Schema file. Omit for a tool taking no arguments. |
 | `display_name` | | Human-friendly label for the TUI. Never reaches the model. |
 | `abi` | | Guest ABI version. Omit; it defaults correctly. |
+| `resumable` | | `true` lets the tool end a call with `again()` and be called back — see [Work too long for one call](#work-too-long-for-one-call). Without it the envelope is refused. |
 | `[capabilities]` | | What you need. See below. |
 
 **The manifest is authoritative** — it is where the model's view of your tool comes from,
@@ -210,7 +211,7 @@ $ nine tools
 | `clock`, `random` | `Date.now()`, `crypto.getRandomValues()` | ✅ |
 | `log` | `console.*` | ✅ |
 | `net.http` | `fetch()` | ❌ declare + grant |
-| `fs.read` / `fs.write` | `import … from "nine:fs"` | ❌ declare + grant |
+| `fs.read` / `fs.write` | `import … from "nine:fs"` — `fs.write` covers `mkdir` | ❌ declare + grant |
 | `env` | `import { get } from "nine:env"` | ❌ declare + grant |
 | `state` | `import { get, set } from "nine:state"` | ❌ declare + grant |
 | long-running | `import { again } from "nine:job"` | ❌ `resumable = true` in the manifest |
@@ -244,6 +245,8 @@ megabytes:
 | `readRange(path, offset, length)` | A window of a large file, as bytes. `readRangeText` decodes it |
 | `appendFile(path, data)` | Adding to the end without reading what is already there |
 | `rename(from, to)` | Relocating a file, or replacing one atomically: write a temporary, then rename over the target |
+| `mkdir(path)` | A directory and its missing parents. Recursive and idempotent, so call it before a write rather than checking first. Needs `fs.write` |
+| `exists(path)` | Whether a path is there, without throwing on the answer |
 | `remove(path)` | One file, or one empty directory. Never recursive |
 | `copyFile(from, to)` | A copy that streams through a fixed buffer rather than going resident |
 
@@ -733,8 +736,9 @@ with the same algorithm either side:
 | `wasm` | 3.4 ms |
 | `js` | 706 ms |
 
-A `js` tool also pays ~5.7 ms of fixed overhead per call, since each call instantiates a
-fresh 1 MB interpreter — irrelevant against a model turn that takes seconds. The ~200×
+A `js` tool also pays about a millisecond of fixed overhead per call, since each call
+instantiates a fresh 1 MB interpreter — irrelevant against a model turn that takes
+seconds. The ~200×
 compute gap is not irrelevant: a JS tool hashing a megabyte would exhaust the five-second
 deadline. If your tool does that kind of work, build a `.wasm`. Otherwise write JavaScript.
 
@@ -783,8 +787,8 @@ Copy either into your `[tools].user_dir`; nothing in `examples/` is loaded.
   that allowance from applying to everything. An outbound
   HTTP request is bounded at four fifths of whatever the call has left, so raising the
   deadline raises that too.
-  There is no CPU metering, so an infinite loop is killed by the wall clock, not by a work
-  budget.
+  An infinite loop in a `js` tool trips the work budget; in a `wasm` tool, which the
+  budget cannot reach, the wall clock kills it.
 - **Large results are spilled**, not lost — a result over the per-call token cap is written
   to the file store and replaced with a short preview the model can read back by path.
 - **A new tool is visible next turn.** Loops already in flight keep the tool set they
@@ -809,9 +813,11 @@ Copy either into your `[tools].user_dir`; nothing in `examples/` is loaded.
 | Limit | Detail |
 |-------|--------|
 | The `wasm` kind is specified, not supported | The ABI is defined and documented, but raw `.wasm` tools are not a supported authoring path today. Write JS. |
-| Nothing survives a call | A module is instantiated fresh per call and torn down after it. No globals, no cached credentials, no parsed index. Persist through a granted `fs` path, or wait for durable state. |
+| Nothing survives a call implicitly | A module is instantiated fresh per call and torn down after it. No globals, no cached credentials, no parsed index. What persists does so through a granted `fs` path or the `state` store, never by accident. |
 | Bundle your own dependencies | The shipped file must contain no `import`. External npm dependencies are a separate, off-by-default tier. |
 | A trimmed JS surface | QuickJS is deliberately narrowed. Globals a Node or browser author expects are absent, and the import surface is closed — see *What JavaScript you get*. |
-| Wall-clock deadline only | There is no CPU or memory metering; wazero has no fuel. A tool is bounded by its timeout alone. |
-| Adding a tool needs a reload | Tools are discovered from `[tools].user_dir`. Run `nine plugins reload`, or restart the daemon. |
+| A `wasm` tool has no work budget | The budget is the QuickJS interrupt handler, and wazero offers no fuel metering, so a raw module is bounded by the wall clock and its memory cap alone. A `js` tool has all three. |
+| No per-tool memory cap | `timeout` and `max_ops` can be set for one named tool; `memory_mb` is the whole subsystem's. |
+| The operator owns `state` scope | Your manifest declares `state = true` and nothing else. Whether your keys are shared across conversations or separated per conversation is the operator's `scope`, and your tool cannot change it — read it back with `scope()` if it matters. |
+| Adding a tool needs a reload | Tools are discovered from `[tools].user_dir`. Run `nine tools reload`, or restart the daemon. |
 | Capabilities are the operator's | Declaring a capability in the manifest does not grant it. The operator grants it by name in `nine.toml`, and a declaration with no matching grant fails the load. |

@@ -97,6 +97,28 @@ sequenceDiagram
     R->>R: onComplete(agentID)
 ```
 
+## End-of-turn hooks
+
+After `agent.Loop.Run` returns, the worker runs four hooks in order, and the
+order matters: a stall has to be seen before the routines are notified, because
+`OnTurnEnd` is how a pursue routine learns to pause its goal.
+
+1. **Stall detection** — see below.
+2. **Routine `OnTurnEnd`** — every active routine on the session plan, which is
+   where a goal's status is synced ([session-plans.md](session-plans.md)).
+3. **Checkpoint** — serialize loop state and persist it.
+4. **Re-arm the idle scheduler** — compute the next wake across the session's
+   idle-capable routines.
+
+A turn also carries two things on its context rather than taking them from boot
+configuration, because the sandboxed-tool host is daemon-wide: the journal
+destination for a tool's outbound HTTP, and the conversation a
+`scope = "conversation"` state grant resolves against.
+
+Queued messages are drained here too — a message sent while the worker was busy
+is folded into the next turn rather than starting one
+([queued-messages.md](queued-messages.md)).
+
 ## Stall detection
 
 The AgentWorker tracks consecutive turns where `agent.Loop.LastRunToolCount() == 0`. When `stallN` reaches `StallConfig.Limit`, `OnStall` fires and the counter resets.
@@ -129,6 +151,7 @@ Stall detection is disabled when `Limit == 0` or `OnStall == nil`.
 | `prependNotifications` | Fetches pending notifs and prepends them to the message |
 | `checkStall` | Increments/resets stall counter; fires `OnStall` at threshold |
 | `checkpoint` | Serializes loop state and persists via `saveCkpt` |
+| `setDrainQueued` | Installs the hook that folds queued messages into the next turn |
 
 ## Limits
 
@@ -138,4 +161,5 @@ Stall detection is disabled when `Limit == 0` or `OnStall == nil`.
 | Stall detection is off by default in tests | `Limit == 0` or `OnStall == nil` disables it entirely. |
 | Checkpoint granularity is one turn | State is serialized after a turn completes. A daemon killed mid-turn resumes from the previous turn and loses that turn's scratchpad. |
 | Progress buffer can drop | `progressCh` is buffered at 256 events. A turn emitting faster than the client consumes can overflow it. |
+| The replay ring is bounded | Each worker keeps the last 200 tool and sub-agent events for a reattaching client and sends at most 50. A longer disconnection loses the earliest of them, and `response_chunk` events are never buffered, so the text stream itself is not replayed. |
 | No per-turn timeout | The worker blocks on `agent.Loop.Run` for as long as the loop takes. Bounding a turn is the loop's and the LLM queue's job, not the worker's. |

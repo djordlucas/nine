@@ -327,8 +327,10 @@ ttl          = "24h"       # optional; omit for no expiry
   daemon's environment holds LLM provider credentials; a tool granted one wholesale would
   be a credential exfiltration primitive. A refusal, not a filter — an operator who meant
   it finds out at load.
-- **Read at load.** A grant change reaches a running tool only on `nine tools reload` or
-  restart, matching R-PLUG.10.
+- **Read at boot.** A conforming implementation resolves grants when it builds the host
+  and **MUST NOT** re-read `nine.toml` while the daemon runs. `nine tools reload` re-scans
+  `user_dir` against the grants already held — it picks up a new or edited tool, and a
+  changed grant needs a restart.
 
 ---
 
@@ -601,8 +603,9 @@ letting a policy decision look like a response invites `if (res.ok)` to swallow 
 > built once at boot while an audit record belongs to a session — a hook configured at Open
 > could not know one.
 
-**There is no bare `"*"`.** An operator who wants unrestricted egress should write a
-native plugin, where that intent is explicit and reviewed. Config validation refuses it.
+**A bare `"*"` is permitted** and grants any host, never any address: the dial-time
+check above is not subject to the allowlist (see the amendment at the head of this
+requirement). A tool whose hosts are knowable **MUST** name them.
 
 ---
 

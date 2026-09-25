@@ -24,7 +24,7 @@ Capabilities Nine does not implement itself arrive two further ways, both of whi
 
 Sharing the binary does not widen what a plugin process does. `plugin serve` is dispatched before nine's normal startup, so a plugin child loads **no config file** (the operator's `nine.toml` carries the embeddings API key and every other plugin's settings), writes **no** `nine.log`, and holds no way to start a daemon or TUI. Its output goes to stderr, which the daemon captures. Run by hand without `NINE_PLUGIN_SOCKET`, it refuses to start.
 
-Several tools (memory, file storage, semantic search, and skills) are **core-intercepted**: built directly into the agent loop rather than served by a subprocess. See [Memory & File Tools](#memory--file-tools-core) and [Skill Tools](#skill-tools-core) below.
+Several tools — memory, semantic search, workspace listing, and skills — are **core-intercepted**: built directly into the agent loop rather than served by a subprocess or run in the sandbox. See [Core-intercepted tools](#core-intercepted-tools) below.
 
 ---
 
@@ -52,7 +52,14 @@ Run "ls -la /tmp" and tell me the five largest files.
 
 ---
 
-### `files` — read and write files
+## Shipped sandboxed tools
+
+These are **not plugins**. They are first-party [sandboxed tools](sandboxed-tools.md#54-shipped-tools--first-party-in-the-binary)
+compiled into the binary and run in the wasm host with a declared, operator-visible
+grant — where as plugins they held the daemon's uid. `nine tools` lists them with
+the grant each one resolved.
+
+### Workspace files
 
 | Tool | Description |
 |------|-------------|
@@ -65,7 +72,6 @@ Run "ls -la /tmp" and tell me the five largest files.
 | `trash_list` | List what is recoverable from the trash, newest first. |
 | `restore_file` | Restore a trashed file. Never overwrites an existing file. |
 | `diff_file` | Show what changed in a file, as a unified diff against the version before the last change. |
-| `list_files` | List workspace files by prefix, glob, or what changed since a timestamp. |
 
 **Paths and the workspace root.** When a workspace root is configured
 (`workspace.root` / `NINE_WORKSPACE`), paths resolve against it: a relative path
@@ -82,49 +88,7 @@ Read /work/notes.txt and then write a summary to /work/summary.txt
 
 ---
 
-### Memory & file tools (core)
-
-Unlike the plugins below, these tools are **core-intercepted**: they're wired
-directly into the agent loop and call
-`Store` in-process. There is no `memory` plugin subprocess — these
-tools are simply always available.
-
-| Tool | Description |
-|------|-------------|
-| `memory_get` | Retrieve a value from the key-value store by key. |
-| `memory_set` | Store a value in the key-value store. |
-| `memory_delete` | Delete a key from the key-value store. |
-| `memory_list` | List keys in the key-value store, optionally filtered by prefix. |
-| `file_search_text` | Full-text search over stored file content. |
-| `memory_embed` | Embed text and store the resulting vector under a namespace and key. |
-| `memory_query` | Embed a query and return the most semantically similar stored items from a namespace. |
-
-**Example prompts:**
-```
-Remember that my AWS region is us-west-2.
-What AWS region did I configure?
-Store the output of this script as 'last_run_log'.
-Find files related to database migrations.
-```
-
----
-
-### Skill tools (core)
-
-Also **core-intercepted** (backed by the `skills` table in the memory store, no
-subprocess). Skills are markdown how-to notes; built-in ones are immutable, and
-Nine can author its own. See [Skills](skills.md).
-
-| Tool | Description |
-|------|-------------|
-| `skill_list` | List all skills with names, descriptions, and tags. |
-| `skill_read` | Read a skill's full content by name. |
-| `skill_write` | Create or replace one of Nine's own skills (refuses built-in names). |
-| `skill_modify` | Update one of Nine's own skills (refuses built-in skills). |
-
----
-
-### `http` — HTTP and web
+### HTTP and web
 
 | Tool | Description |
 |------|-------------|
@@ -150,15 +114,21 @@ snapshot tools for anything needing JavaScript, a login, or interaction.
 
 ---
 
-### `time` — current date and time
+### The clock
 
 | Tool | Description |
 |------|-------------|
-| `time` | Return the current date and time, including the local timezone. |
+| `time` | Return the current date and time in **UTC**, as ISO-8601 and a readable form. |
 
 The system prompt instructs the agent to call this before any time-sensitive
 research (news, current events, prices, status) so it never reasons from a stale or
 assumed date.
+
+**It reports UTC, where the plugin it replaced reported the daemon's local zone.**
+A sandboxed tool has no more access to host state than any other: the guest
+carries no timezone database, and a tool cannot learn the host's zone unless the
+host confers it. That is the tier's constraint showing through, and the price of
+the clock no longer running with the daemon's authority.
 
 **Example prompt:**
 ```
@@ -167,10 +137,56 @@ What's the current date and time?
 
 ---
 
-### `mcp` — model context protocol servers
+## Core-intercepted tools
 
-An MCP server is a plugin. Each `[[mcp.server]]` you declare gets its own bridge
-process, so it has the same shape and the same controls as anything else here.
+These are wired directly into the agent loop and call the store in
+process. There is no subprocess and no sandbox: they reach Nine's own
+state without leaving it.
+
+### Memory and search
+
+| Tool | Description |
+|------|-------------|
+| `memory_get` | Retrieve a value from the key-value store by key. |
+| `memory_set` | Store a value in the key-value store. |
+| `memory_delete` | Delete a key from the key-value store. |
+| `memory_list` | List keys in the key-value store, optionally filtered by prefix. |
+| `file_search_text` | Full-text search over stored file content, including one spilled tool result by path. |
+| `list_files` | List workspace files by prefix, glob, or what changed since a timestamp. |
+| `memory_embed` | Embed text and store the resulting vector under a namespace and key. |
+| `memory_query` | Embed a query and return the most semantically similar stored items from a namespace. |
+
+**Example prompts:**
+```
+Remember that my AWS region is us-west-2.
+What AWS region did I configure?
+Store the output of this script as 'last_run_log'.
+Find files related to database migrations.
+```
+
+---
+
+### Skills
+
+Also **core-intercepted** (backed by the `skills` table in the memory store, no
+subprocess). Skills are markdown how-to notes; built-in ones are immutable, and
+Nine can author its own. See [Skills](skills.md).
+
+| Tool | Description |
+|------|-------------|
+| `skill_list` | List all skills with names, descriptions, and tags. |
+| `skill_read` | Read a skill's full content by name. |
+| `skill_write` | Create or replace one of Nine's own skills (refuses built-in names). |
+| `skill_modify` | Update one of Nine's own skills (refuses built-in skills). |
+
+---
+
+## MCP servers
+
+An [MCP](https://modelcontextprotocol.io) server is a capability Nine does not build.
+Declare one in `nine.toml` and it becomes a plugin in every respect: its own process,
+its own crash isolation, its own row in `nine plugins`, its own entry in
+`[plugins].disabled`.
 
 ```toml
 [[mcp.server]]
@@ -208,31 +224,6 @@ answers with either a JSON body or an SSE stream, its choice per request. A sess
 the server issues on connect is echoed on every later request. Exactly one of `command`
 or `url` is set per server; mixing `env` with `url` (or `headers` with `command`) is a
 config error rather than a silently ignored setting.
-
----
-
-## MCP servers
-
-An [MCP](https://modelcontextprotocol.io) server is a capability Nine does not build.
-Declare one in `nine.toml` and it becomes a plugin in every respect — its own process,
-its own crash isolation, its own row in `nine plugins`, its own entry in
-`[plugins].disabled`:
-
-```toml
-[[mcp.server]]
-name    = "github"
-command = "npx"
-args    = ["-y", "@modelcontextprotocol/server-github"]
-[mcp.server.env]
-GITHUB_PERSONAL_ACCESS_TOKEN = "ghp_..."
-```
-
-The daemon starts one `mcp` bridge process per server. Its tools arrive **prefixed with
-the server name** — `github__create_issue` — so two servers exposing the same tool name
-cannot collide and silently lose one. The plugin itself is named `mcp:github`.
-
-A hosted server is reached by `url` instead of `command` (MCP streamable HTTP), with
-`headers` for auth in place of `env`.
 
 Two things to know before relying on one:
 
@@ -429,8 +420,9 @@ The plugin manager passes these to each subprocess:
 | `NINE_PLUGIN_CACHE_DIR` | per-plugin scratch dir | Cache directory (below) |
 | `NINE_PLUGIN_CACHE_PERSISTENT` | `0`/`1` | Whether the cache dir persists |
 
-Individual plugins also receive their built-in defaults (e.g. `NINE_WORKSPACE`
-for `files`) plus any operator settings. An MCP bridge additionally receives
+Individual plugins also receive their built-in defaults (`NINE_WORKSPACE` for
+`shell`, so a relative path means the same file there as in the workspace tools)
+plus any operator settings. An MCP bridge additionally receives
 `NINE_MCP_SERVER`, the JSON spec of the one server it fronts.
 
 ### Operator settings (no rebuild needed)
@@ -446,7 +438,7 @@ key or tuning is set in config, not code:
 WEATHER_API_KEY = "sk-…"
 UNITS           = "metric"
 
-[plugin.files.settings]
+[plugin.shell.settings]
 NINE_WORKSPACE = "/srv/data"   # operator settings override a built-in default
 ```
 
@@ -506,5 +498,6 @@ cannot use them. See [Plugin capabilities § 5](plugin-capabilities.md).
 | User plugins need a restart or reload | A new plugin under `[plugins].user_dir` is discovered at boot. `nine plugins reload` picks up changes for user plugins; built-ins need a daemon restart. |
 | Unbounded concurrency by default | `max_concurrent` defaults to 0, meaning unbounded. A plugin holding shared mutable state must declare its own cap. |
 | No capability sandbox | A plugin is an ordinary subprocess running as the daemon's process user, with the daemon's filesystem and network reach. Only sandboxed tools run behind a capability boundary. |
+| A reloaded plugin reaches only new loops | `nine plugins reload` starts the plugin, but a session already running keeps the tool set its loop was built with. Sandboxed tools differ — they re-sync at every turn boundary — so a reloaded plugin tool reaches an existing conversation only after it ends. |
 | MCP tools are invisible to built-in roles | Their names carry an operator-chosen prefix, and role allowlists match exactly. |
 | A plugin cannot call back | The daemon dials the plugin and never the reverse. A plugin reports long-running work by being polled. |

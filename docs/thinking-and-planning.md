@@ -29,7 +29,10 @@ those and rarely on the rest, since by then the approach is already chosen.
 the benefit lands almost entirely on the first one.
 
 Change it live in the TUI with `/plan-mode off | plan-only | always`. The
-setting applies to that session, leaving the configured default alone.
+setting applies to that session, leaving the configured default alone. For a
+single turn, `/think <message>` forces reasoning on without changing the
+session's mode — the way to think hard about one question in a session running
+`off`.
 
 ## Watching it reason
 
@@ -57,11 +60,20 @@ you are asked:
 | `on` | Always prompt before a plan executes. |
 | `on-risky` | **Default.** Prompt only when the plan intends to use a tool that requires approval. |
 
-`on-risky` follows the same list of approval-requiring tools as
-[human-in-the-loop](hitl.md) generally, so a tool you have marked dangerous
-gets a checkpoint at the planning stage as well as at the call itself. The
-difference matters: at the planning stage you can redirect the approach, while
-at the call you can only permit or refuse the step.
+`on-risky` reads the same `require_approval` list as
+[human-in-the-loop](hitl.md), so a tool you have marked dangerous gets a
+checkpoint at the planning stage as well as at the call itself. The difference
+matters: at the planning stage you can redirect the approach, while at the call
+you can only permit or refuse the step.
+
+**The risky check is a text match on the plan.** It looks for an approval-listed
+tool *named in the plan the model wrote*, not for what the plan will actually do.
+A plan that intends to run a command without saying `shell` does not prompt, and
+the call-time gate is what catches it.
+
+The prompt offers `approve` and `clarify`. Approving proceeds; anything else is
+folded back in as clarification and the reasoning pass runs again with it, which
+is how a plan gets redirected rather than merely stopped.
 
 Approval is interactive by nature, so it applies to TUI conversations. A
 background session has nobody to ask.
@@ -72,7 +84,8 @@ background session has nobody to ask.
 |-------|--------|
 | Thinking needs model support | The live trace requires a model that advertises the capability, and currently works with Ollama. See [model compatibility](model-compatibility.md). |
 | Approval is interactive only | `plan_approval` applies to TUI conversations. A background session has nobody to ask, so a plan there runs unapproved whatever the setting. |
-| Approval redirects, it does not edit | At the planning stage you can redirect the approach or refuse it. There is no way to edit the plan in place and continue. |
+| Approval redirects, it does not edit | Answering anything but `approve` re-runs the reasoning pass with your answer as clarification. There is no way to edit the plan in place and continue from it. |
+| The risky check reads the plan's words | `on-risky` matches an approval-listed tool name in the plan text. A plan that will use a gated tool without naming it is not caught here — only at the call. |
 | Reasoning cost is per call | `always` pays the reasoning cost on every call in a turn. The benefit lands almost entirely on the first, which is why `plan-only` is the default. |
 
 ## Related

@@ -427,9 +427,9 @@ type ToolNetGrant struct {
 
 // ToolHTTPGrant is the shape §8 specifies.
 type ToolHTTPGrant struct {
-	// AllowHosts is required and may not be a bare "*". Entries are exact names
-	// ("api.example.com") or single-wildcard subdomain patterns
-	// ("*.example.com", which does not match the apex).
+	// AllowHosts is required. Entries are exact names ("api.example.com"),
+	// single-wildcard subdomain patterns ("*.example.com", which does not match
+	// the apex), or a bare "*" for any host.
 	//
 	// This is only half the control: the allowlist is a *name* check, and a name
 	// resolves wherever its owner points it. The other half — rejecting

@@ -8,7 +8,8 @@ assesses the goal, acts, and goes back to sleep.
 
 The pairing is exact. A goal session's identity *is* its goal's, so there is no
 separate bookkeeping tying the two together and no way for them to disagree
-about which goal is being pursued.
+about which goal is being pursued. Spawning is idempotent for the same reason: a
+goal that already has a session does not get a second one, whatever asks.
 
 ## The cycle
 
@@ -50,11 +51,8 @@ that its work is finished is the agent's call to make.
 | Ten concurrent goal sessions | `daemon.max_goal_sessions`, default 10. At the cap, creating a goal still records the goal but starts no session for it. The goal is real and unattended rather than queued, so how far behind pursuit has fallen stays visible. |
 | Sub-goals get no session | Only top-level goals are paired with a session. A goal spawned by another is worked on by the session already pursuing its parent. |
 | Five-minute wake interval | An idle goal session wakes on a fixed timer. The cycle supplies the occasion and the goal, not a plan — what counts as useful action is left to the model. |
-| Stall detection releases the slot | A stalled session pauses its goal and frees its slot, so one wedged pursuit cannot hold capacity indefinitely. Progress on that goal stops until it is resumed. |
+| Stall detection releases the slot | Five consecutive turns that call no tool count as a stall. The routine then pauses its goal, which frees the slot, so one wedged pursuit cannot hold capacity indefinitely. Progress on that goal stops until it is resumed. |
 | Only some roles create them | A role that may not spawn goals creates no goal sessions. |
-
-Spawning is idempotent: a goal that already has a session does not get a second
-one, whatever asks.
 
 ## Related
 

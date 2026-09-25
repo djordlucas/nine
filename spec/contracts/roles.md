@@ -143,7 +143,9 @@ Seeded from `skills/roles/*.md` (embedded, immutable — R-SKILL.2 applies):
 | `executor` (default leaf) | `*` | ✓ (guard-capped) | ✗ | ✗ | ✗ | — |
 | `software-dev` | shell + file + memory allowlist | ✗ | ✗ | ✗ | ✗ | — |
 | `sysadmin` | shell + file + http allowlist | ✗ | ✗ | ✗ | ✗ | — |
-| `report-writer` | web + stored-file allowlist (**no `shell`, no `write_file`**) | ✗ | ✗ | ✗ | ✗ | — |
+| `report-writer` | web + workspace-file allowlist (**no `shell`**, no method beyond `http_get`) | ✗ | ✗ | ✗ | ✗ | — |
+| `monitor` | web + read-only file allowlist (**no write of any kind**) | ✗ | ✗ | ✗ | ✗ | — |
+| `analyst` | none (`tools: ""`) | ✗ | ✗ | ✗ | ✗ | — |
 
 The daemon resolves a session's role from its plan profile: `active` → orchestrator,
 `idle-reflection` → reflection, `pursue` → pursue. `orchestrator` and `executor` carry

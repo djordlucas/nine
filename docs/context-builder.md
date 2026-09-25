@@ -120,11 +120,31 @@ Entries with no `ToolName` produce only the assistant message (pure thought, no 
 
 ## Token counting
 
-All token estimates use a **4 chars ≈ 1 token** approximation, consistent with Claude model tokenisation:
+All token estimates use **3.45 bytes per token**, held as a rational number so
+counting stays integer arithmetic.
+
+It was 4 bytes — the approximation quoted for Claude models — and measurement
+says that is too generous for what Nine actually sends. Reconciling the estimate
+against provider-reported usage over real turns put the true ratio between 3.48
+and 3.64, with the old estimate under-counting on **every** call by 9–13%.
+
+**Under-counting is the harmful direction.** The budget exists to keep a request
+inside the model's context window, so believing a request is 12% smaller than it
+is spends headroom that was never there; over-counting only trims a little more
+than strictly necessary. The divisor therefore sits just below the smallest
+ratio observed rather than at the median — 3.45 over-estimates by ~2.5%
+typically and under-counted on no measured call, where 3.5 still under-counts on
+a few.
+
+The ratio is not per-content-class: it held across prose, code, tool-heavy and
+non-ASCII turns, because the system prompt and tool schemas dominate every
+request and swamp the user's own text. It is not tokenizer-independent, though —
+it was measured against one model family, and a model whose tokenizer differs
+materially wants its own number.
 
 | Function | What it counts |
 |----------|---------------|
-| `countTokens(s)` | `(len(s) + 3) / 4` |
+| `countTokens(s)` | `len(s)` bytes at 3.45 bytes/token, rounded up |
 | `toolTokens(t)` | name + description + input schema |
 | `messageTokens(m)` | text + tool call names/inputs + tool result contents |
 | `scratchpadTokens(e)` | thought + observation + tool name/args |
@@ -140,7 +160,7 @@ All token estimates use a **4 chars ≈ 1 token** approximation, consistent with
 
 | Limit | Detail |
 |-------|--------|
-| Token counts are estimated | Every count uses a 4-characters-per-token approximation calibrated against one tokenizer. A model that tokenizes differently is budgeted inaccurately, and a second LLM backend needs its own measurement. A real tokenizer is designed in [`adr/accurate-token-counting.md`](../adr/accurate-token-counting.md). |
+| Token counts are estimated | Every count uses a 3.45-bytes-per-token approximation measured against one model family. A model that tokenizes differently is budgeted inaccurately, and a second LLM backend needs its own measurement — the reconciliation logging against provider-reported usage is how that is found out. A real tokenizer is designed in [`adr/accurate-token-counting.md`](../adr/accurate-token-counting.md). |
 | Ranking needs an embedder | With `[embeddings].provider = "none"` there is no embedder, every tool scores 0, and ranking degrades to insertion order under the `TopN` cap. |
 | Tool vectors are cached at boot | Each tool's `name: description` is embedded once and cached by name. A description that changes at runtime keeps its old vector. |
 | Trimming is not compaction | Over-budget history is dropped from the front, not summarized. Content that falls out of the window is gone from the turn. |
