@@ -32,7 +32,7 @@ building it yourself.
 | Docker | 24+ | Required — runs the whole stack in one container. Only this is needed to run the published image. |
 | Go | 1.26+ | For development (build from source) |
 | Node.js | 18+ | Optional — only to run `npx`-launched MCP servers (e.g. a browser) |
-| golangci-lint | Latest | Optional, for `make lint` |
+| golangci-lint | Latest | Optional — only for `make lint-host`; `make lint` runs it pinned, in a container |
 
 An LLM provider is also required — see [Configuration](configuration.md) for options.
 
@@ -218,10 +218,27 @@ records which models have been run and how they did.
 | `make test-v` | Run tests with verbose output |
 | `make cover` | Generate `dist/coverage.out` |
 | `make cover-html` | Open HTML coverage report in browser |
-| `make lint` | Run golangci-lint |
+| `make lint` | Run golangci-lint from a pinned container image (reproducible; needs Docker) |
+| `make lint-host` | Run the golangci-lint installed on `PATH` — quicker, but version-dependent |
 | `make model` | Pull the default Ollama model (`qwen3.5:4b`) |
 | `make integration-test` | Run integration tests (requires Docker + Ollama) |
 | `make clean` | Remove `dist/` |
+
+**The gate**
+
+GitHub Actions is disabled for this repository, so nothing runs these on a
+push. `make ci` is what a merge should pass.
+
+| Target | Description |
+|--------|-------------|
+| `make ci` | Build, OpenAPI drift + lint, tests, eval gate, lint, and the Docker image contract tests. Needs a running Docker daemon; nothing else to install. |
+| `make ci-test` | The test step alone. Excludes `tests/evals/runner`, which starts a real in-process daemon per test and deadlocks intermittently; `make test` still runs everything. |
+| `make scan` | Trivy over the filesystem and the runtime image — CRITICAL and HIGH, fixable only. |
+| `make scan-fs` | The filesystem half of `make scan`. |
+
+The scan targets run Trivy as a container and `make lint` runs golangci-lint
+as one, both at pinned versions, so there is nothing to install beyond Docker
+and no machine-to-machine drift in what the gate reports.
 
 **Deploy (single container)**
 

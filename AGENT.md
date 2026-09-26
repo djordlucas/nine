@@ -90,6 +90,25 @@ section last, and no superseded content.
 
 A change that does not pass both is not ready to commit.
 
+**Before merging, run `make ci`.** GitHub Actions is disabled for this
+repository, so nothing runs these on a push — the local gate is the only gate.
+
+| Command | Mirrors | Covers |
+|---|---|---|
+| `make ci` | the CI workflow | build, OpenAPI drift + lint, tests, eval gate, lint, Docker image contract tests |
+| `make scan` | the Security Scan workflow | Trivy over the filesystem and the runtime image, CRITICAL+HIGH, fixable only |
+
+Both need only a running Docker daemon. golangci-lint and Trivy each run from
+a pinned container image, so there is nothing to install and the result does
+not depend on the machine — `make lint` used to run whatever was on `PATH`,
+and the workflow installed `@latest` at run time, so the two disagreed. `make
+lint-host` uses the installed binary when you want a quicker inner loop.
+
+`make ci` runs `ci-test` rather than `test`: `tests/evals/runner` starts a real
+in-process daemon per test and deadlocks intermittently, so it is excluded from
+the gate exactly as the workflow excluded it. `make test` still runs
+everything.
+
 ## Tests & toolchain
 
 - Go **1.26**. Build with `make build` (`make dev` and `make all` are the same
