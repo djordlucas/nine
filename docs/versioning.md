@@ -1,8 +1,8 @@
 # Versioning
 
 Nine has more than one thing that needs versioning, and they change at
-different rates. A single number can't carry all of it, so Nine versions four
-surfaces independently, with a fifth unimplemented. Only the first is
+different rates. A single number can't carry all of it, so Nine versions five
+surfaces independently. Only the first is
 user-facing; the rest are internal compatibility contracts that bump *only* when
 a real break happens.
 
@@ -12,7 +12,7 @@ a real break happens.
 | **Plugin protocol** | daemon ↔ native plugin wire compat | single integer, bump on break | `plugin.ProtocolVersion` |
 | **Sandboxed tool ABI** | daemon ↔ wasm guest compat | single integer, bump on break | `toolvm.ABIVersion` |
 | **Memory DB schema** | SQLite schema | sequential forward migrations, applied on open | `PRAGMA user_version`, currently **11** |
-| **Config schema** | `nine.toml` shape | not implemented — see [Limits](#limits) | — |
+| **Config schema** | `nine.toml` shape | single integer, bump on break | `schema_version` in `nine.toml`, currently **1** |
 
 The release version also names the container image. A `v*` tag builds and
 publishes `ghcr.io/djordlucas/nine` — see [Container image](docker-image.md) for
@@ -186,10 +186,52 @@ not add to an existing table, dropped two tables whose shape was wrong
 `routines`, renamed `plugin_jobs` to `jobs`, and added the standing-tool, queued-
 message and workspace-index columns.
 
+## 4. Config schema version
+
+`nine.toml` carries an optional top-level `schema_version` naming the **shape
+of the file** — not the version of Nine that wrote it.
+
+```toml
+schema_version = 1
+```
+
+| Value | Behavior |
+|---|---|
+| absent | Treated as 1. Every file written before the field existed is a schema-1 file, so omitting it stays correct rather than becoming an error on every existing deployment. |
+| ≤ current | Loaded, migrating forward through each intervening step. |
+| > current | **Refused**, and the daemon does not start. |
+
+The refusal is a hard stop rather than a fallthrough, and that distinction is
+the whole reason the field is useful. Nine tries four config paths in order
+(`docs/configuration.md`), and every other load failure logs a warning and
+moves to the next one — ending, if nothing loads, on an empty config. A newer
+config treated that way would boot the daemon on defaults: no workspace, no
+model override, no API auth token, and a clean-looking startup line. Refusing
+outright is the only outcome that does not turn a version check into an
+outage you cannot see.
+
+Migration is **in-memory**: an older shape is read into the current struct.
+`nine.toml` is never rewritten, so the operator's file stays the operator's —
+the same rule that forbids a runtime config-rewrite tool.
+
+### Unrecognised keys
+
+A key the file carries that nothing reads is logged at load:
+
+```
+WARN config keys were not recognised and had no effect; check for a typo
+     path=nine.toml keys="llm.provdier"
+```
+
+The decoder always knew; the answer was previously discarded. A typo now
+announces itself instead of silently leaving a setting at its default.
+
+---
+
 ## Limits
 
 | Limit | Detail |
 |-------|--------|
-| No config schema version | `nine.toml` carries no `schema_version` and nothing migrates it, so an upgraded daemon reading an older file relies on the config shape not having changed incompatibly. What is needed is a `schema_version` integer plus migrate-on-load, in place *before* the first incompatible config change rather than after. |
-| Unknown config keys are ignored | Independently of versioning: a misspelled key is neither applied nor reported, so a setting can silently fail to take effect ([configuration.md](configuration.md#limits)). |
+| No config migrations written yet | The mechanism is in place and the list is empty, which is the point: it landed *before* the first incompatible change rather than after, when it could no longer tell an old file from a new one. |
+| Unknown config keys are reported, not refused | A key nothing reads is logged as a warning at load. It does not fail the boot, because a key from a newer Nine is a reason to tell the operator rather than to refuse an otherwise usable file. |
 | No down-migrations | A newer binary migrates a database forward; an older binary against a migrated database is not supported and is not detected. Restoring the file is the only path back. |

@@ -2,15 +2,30 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
+
+	"nine/internal/logsafe"
 )
 
 type Config struct {
+	// SchemaVersion is the shape of this file, not the version of Nine that
+	// wrote it (docs/versioning.md §Config schema). It exists so an
+	// incompatible change to the config layout can be detected rather than
+	// silently half-applied, and it is deliberately in place *before* the
+	// first such change: a version added afterwards cannot tell an old file
+	// from a new one.
+	//
+	// Absent means 1. Every file written before this field existed is a
+	// schema-1 file, so omitting it stays correct rather than becoming a
+	// missing-value error on every existing deployment.
+	SchemaVersion int `toml:"schema_version"`
+
 	LLM        LLMConfig        `toml:"llm"`
 	Daemon     DaemonConfig     `toml:"daemon"`
 	Plugins    PluginsConfig    `toml:"plugins"`
@@ -1083,15 +1098,85 @@ type EmbeddingsConfig struct {
 	APIKey   string `toml:"api_key"`
 }
 
+// CurrentConfigSchema is the config shape this binary understands. Bump it in
+// the same change that makes an incompatible alteration to the layout, and add
+// the matching step to configMigrations.
+const CurrentConfigSchema = 1
+
+// SchemaTooNewError is returned when a config declares a shape this binary does
+// not know. It is a distinct type because the caller must not treat it the way
+// it treats a missing file: falling through to the next path would boot the
+// daemon on defaults, silently dropping every setting the operator wrote —
+// including an API auth token, which turns a safety check into an exposure.
+type SchemaTooNewError struct {
+	Path  string
+	Found int
+	Known int
+}
+
+func (e *SchemaTooNewError) Error() string {
+	return fmt.Sprintf("%s declares config schema version %d; this binary understands %d — "+
+		"run the version of nine that wrote it, or update the file to this schema",
+		e.Path, e.Found, e.Known)
+}
+
+// configMigrations[i] brings a config from schema i+1 to i+2, mirroring the
+// store's migration list (internal/memory/migrate.go). Empty today: the point
+// of landing the mechanism now is that the first incompatible change has a
+// place to go.
+var configMigrations []func(*Config) error
+
 func Load(path string) (*Config, error) {
 	var cfg Config
-	if _, err := toml.DecodeFile(path, &cfg); err != nil {
+	md, err := toml.DecodeFile(path, &cfg)
+	if err != nil {
 		return nil, err
 	}
+
+	// Absent is 1, not 0: a file written before the field existed is a
+	// schema-1 file.
+	if cfg.SchemaVersion == 0 {
+		cfg.SchemaVersion = 1
+	}
+	if cfg.SchemaVersion > CurrentConfigSchema {
+		return nil, &SchemaTooNewError{Path: path, Found: cfg.SchemaVersion, Known: CurrentConfigSchema}
+	}
+	for v := cfg.SchemaVersion; v < CurrentConfigSchema; v++ {
+		if err := configMigrations[v-1](&cfg); err != nil {
+			return nil, fmt.Errorf("migrate config %d→%d: %w", v, v+1, err)
+		}
+	}
+	cfg.SchemaVersion = CurrentConfigSchema
+
+	warnUndecoded(path, md)
+
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// warnUndecoded reports keys the file carries that nothing read.
+//
+// A misspelled key was previously neither applied nor reported, so a setting
+// could silently fail to take effect — the decoder knew all along and Load
+// threw the answer away. This warns rather than failing: a key from a newer
+// Nine is a reason to tell the operator, not to refuse a config that is
+// otherwise fine.
+func warnUndecoded(path string, md toml.MetaData) {
+	undecoded := md.Undecoded()
+	if len(undecoded) == 0 {
+		return
+	}
+	keys := make([]string, 0, len(undecoded))
+	for _, k := range undecoded {
+		keys = append(keys, k.String())
+	}
+	//nolint:gosec // G706: both values go through logsafe.Value, which strips the
+	// control characters a forged log line needs. gosec traces the taint from the
+	// file into the sink but does not recognise a sanitiser.
+	slog.Warn("config keys were not recognised and had no effect; check for a typo",
+		"path", logsafe.Value(path), "keys", logsafe.Value(strings.Join(keys, ", ")))
 }
 
 // Validate checks per-plugin invariants that TOML decoding cannot express, so a
