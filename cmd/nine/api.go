@@ -34,9 +34,12 @@ func serveAPIAndExit() {
 	mergedCfg := mergeAPIConfig(cfg.API, apiCfg)
 
 	// Log configuration
+	//nolint:gosec // G706: the host is operator input from os.Args, and is run
+	// through api.SafeLogValue regardless. gosec traces the taint but does not
+	// recognise the sanitiser.
 	slog.Info("starting nine API server",
 		"version", Version,
-		"host", mergedCfg.GetHost(),
+		"host", api.SafeLogValue(mergedCfg.GetHost()),
 		"port", mergedCfg.GetPort(),
 		"auth_enabled", mergedCfg.AuthToken != "",
 		"tls_enabled", mergedCfg.TLSEnabled(),
@@ -85,6 +88,11 @@ type apiFlags struct {
 // parseAPIFlags parses API-specific command-line flags.
 // Note: args[0] is intentionally skipped as it contains the command name ("serve").
 // The actual flags start from args[1] onwards.
+//
+//nolint:gosec // G706: every os.Args value logged below goes through
+// api.SafeLogValue, which strips the control characters a forged log line
+// needs. gosec's taint analysis follows the value but does not recognise a
+// sanitiser, so it reports the sink regardless.
 func parseAPIFlags(args []string) apiFlags {
 	var flags apiFlags
 	flags.port = config.DefaultAPIPort
@@ -101,10 +109,10 @@ func parseAPIFlags(args []string) apiFlags {
 					if p >= 1 && p <= 65535 {
 						flags.port = p
 					} else {
-						slog.Warn("invalid port number, using default", "port", args[i+1], "default", config.DefaultAPIPort)
+						slog.Warn("invalid port number, using default", "port", api.SafeLogValue(args[i+1]), "default", config.DefaultAPIPort)
 					}
 				} else {
-					slog.Warn("invalid port value, using default", "value", args[i+1], "default", config.DefaultAPIPort)
+					slog.Warn("invalid port value, using default", "value", api.SafeLogValue(args[i+1]), "default", config.DefaultAPIPort)
 				}
 				i++
 			}
@@ -130,10 +138,10 @@ func parseAPIFlags(args []string) apiFlags {
 					if t > 0 {
 						flags.timeout = t
 					} else {
-						slog.Warn("invalid timeout value, using default", "value", args[i+1], "default", config.DefaultAPITimeoutSeconds)
+						slog.Warn("invalid timeout value, using default", "value", api.SafeLogValue(args[i+1]), "default", config.DefaultAPITimeoutSeconds)
 					}
 				} else {
-					slog.Warn("invalid timeout value, using default", "value", args[i+1], "default", config.DefaultAPITimeoutSeconds)
+					slog.Warn("invalid timeout value, using default", "value", api.SafeLogValue(args[i+1]), "default", config.DefaultAPITimeoutSeconds)
 				}
 				i++
 			}
@@ -143,10 +151,10 @@ func parseAPIFlags(args []string) apiFlags {
 					if m > 0 {
 						flags.maxConn = m
 					} else {
-						slog.Warn("invalid max-connections value, using default", "value", args[i+1], "default", config.DefaultAPIMaxConnections)
+						slog.Warn("invalid max-connections value, using default", "value", api.SafeLogValue(args[i+1]), "default", config.DefaultAPIMaxConnections)
 					}
 				} else {
-					slog.Warn("invalid max-connections value, using default", "value", args[i+1], "default", config.DefaultAPIMaxConnections)
+					slog.Warn("invalid max-connections value, using default", "value", api.SafeLogValue(args[i+1]), "default", config.DefaultAPIMaxConnections)
 				}
 				i++
 			}

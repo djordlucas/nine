@@ -152,9 +152,14 @@ prerequisites, and the full Makefile target list.
 | Go | 1.26+ | Native build |
 | Node.js | 18+ | Optional — only for `npx`-launched MCP servers |
 | Docker | 24+ | Container build (one container, no compose) |
-| golangci-lint | latest | Optional, for `make lint` |
+| golangci-lint | latest | Optional — only for `make lint-host`. `make lint` runs it pinned, in a container |
 
 Plus a running [Ollama](https://ollama.com) with a model pulled.
+
+**`make ci` is the gate.** GitHub Actions is disabled for this repository, so
+nothing runs on a push — run it locally before merging. `make scan` adds the
+Trivy passes. Both need only Docker: the linter and the scanner each run from
+a pinned image, so the result does not depend on what you have installed.
 
 Sandboxed tools need nothing extra to run: the QuickJS interpreter they execute on is
 committed to the repo as a pre-built wasm artifact with a recorded SHA-256, and the
@@ -197,7 +202,7 @@ make destroy           # remove everything, including all data volumes and image
 
 make image             # build the runtime image exactly as a release does
 make image-test        # assert the image contract (non-root, no toolchain, versions)
-make image-scan        # the same Trivy gate CI applies before a push
+make image-scan        # Trivy against the runtime image (see `make scan`)
 make image-verify      # verify a published image's cosign signature
 ```
 
@@ -667,8 +672,8 @@ removed from this table rather than marked done.
 | TUI improvements | Partial | Slash-command views are read-only, and the journal, notifications, and moving background sessions have no place in the TUI. Migrated to charm.land v2 (bubbletea, lipgloss, bubbles, glamour). |
 | More built-in plugins | Planned | — |
 | Codebase improvements | Planned | Refactoring and performance work — [`adr/codebase-improvement.md`](adr/codebase-improvement.md). |
-| Re-enable CodeQL scanning | Blocked | CodeQL and SARIF upload need a public repository or GitHub Advanced Security. Re-add the CodeQL job and the Trivy `upload-sarif` steps once this repo is public. |
-| Fix eval-runner daemon hang | Planned | `tests/evals/runner` spins up a real in-process daemon per test and intermittently deadlocks under CI load on a turn whose reply never arrives. Excluded from the CI gate until fixed; `make eval-replay` still runs. |
+| Re-enable hosted CI | Blocked | GitHub Actions is disabled for this repository to avoid private-repo minutes; `make ci` and `make scan` are the gate meanwhile. CodeQL and SARIF upload additionally need a public repository or GitHub Advanced Security. |
+| Fix eval-runner daemon hang | Planned | `tests/evals/runner` spins up a real in-process daemon per test and intermittently deadlocks under CI load on a turn whose reply never arrives. Excluded from `make ci` until fixed; `make eval-replay` still runs. |
 
 ## Limits
 | Limit | Detail |
