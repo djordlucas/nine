@@ -1,4 +1,7 @@
-package api
+// Package logsafe prepares untrusted strings for log records. It lives on its
+// own because the need is not one subsystem's: request fields, config keys and
+// command-line arguments all reach a log line from outside the process.
+package logsafe
 
 import "strings"
 
@@ -6,7 +9,7 @@ import "strings"
 // attacker-sized, and an unbounded one turns a log line into a payload.
 const maxLogValueLen = 256
 
-// SafeLogValue prepares an untrusted string for a log record.
+// Value prepares an untrusted string for a log record.
 //
 // Control characters are removed rather than escaped. A newline or carriage
 // return in a request path is how a forged log line gets written — the
@@ -18,7 +21,7 @@ const maxLogValueLen = 256
 //
 // The value is truncated to maxLogValueLen, with an ellipsis marking that it
 // was cut so a reader does not mistake the tail for the whole.
-func SafeLogValue(s string) string {
+func Value(s string) string {
 	s = strings.Map(func(r rune) rune {
 		// C0 controls and DEL. Anything printable, including UTF-8 beyond
 		// ASCII, is kept: the risk here is line structure, not character set.

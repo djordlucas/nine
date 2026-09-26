@@ -9,6 +9,13 @@ Nine is configured via a single TOML file. Nine looks for the config file in thi
 
 The first file found wins. If none is found, Nine starts with default (zero) values.
 
+**One failure is fatal rather than skipped.** A file declaring a
+`schema_version` newer than the binary understands stops the daemon instead of
+falling through to the next path — continuing would boot on defaults and
+discard every setting you wrote, including an API auth token, while looking
+like a clean start. A parse error or a validation error still logs a warning
+and moves on. See [Schema version](#schema-version).
+
 There is one `nine.toml` for every deployment. It is written for the native layout
 (local Ollama, plugins in `./dist/bin`), and the container overrides the values that
 differ — `NINE_LLM_ENDPOINT`, `NINE_PLUGINS_BIN`, `NINE_WORKSPACE_ROOT` — rather than
@@ -899,6 +906,39 @@ provider/model/endpoint at launch without editing the file — convenient in Doc
 
 ---
 
+## Schema version
+
+```toml
+schema_version = 1
+```
+
+An optional top-level integer naming the **shape of the file**, not the version
+of Nine that wrote it. Omit it and it means 1 — every config written before the
+field existed is a schema-1 file.
+
+| Value | Behavior |
+|---|---|
+| absent | Treated as 1 |
+| ≤ the binary's current schema | Loaded, migrating forward in memory |
+| > the binary's current schema | Refused; the daemon does not start |
+
+Nine never rewrites `nine.toml`. Migration reads an older shape into the
+current one at load; the file on disk stays exactly as you wrote it.
+
+### Keys nothing reads
+
+A key Nine does not recognise is reported at load rather than ignored:
+
+```
+WARN config keys were not recognised and had no effect; check for a typo
+     path=nine.toml keys="llm.provdier"
+```
+
+The setting still has no effect — that part has not changed — but a typo now
+says so instead of leaving you to wonder why a value did not apply.
+
+---
+
 ## Limits
 
 | Limit | Detail |
@@ -907,4 +947,4 @@ provider/model/endpoint at launch without editing the file — convenient in Doc
 | No config schema version | `nine.toml` carries no `schema_version` and there is no migrate-on-load, so an incompatible config change would break older files. The **store** does have versioned migrations; config is the axis that does not. See [versioning](versioning.md#limits). |
 | Environment overrides are a fixed set | Only the documented `NINE_*` variables override the file. Whether the sandboxed-tool subsystem runs at all stays in `nine.toml` by design — `NINE_TOOLS_USER_DIR` is deliberately the only tool-related override. |
 | Ollama and Mistral only | An unrecognized `[llm].provider` is refused at startup rather than falling back. |
-| Unknown keys are not rejected | A misspelled key is ignored rather than reported, so a setting can silently fail to apply. |
+| Unknown keys warn rather than fail | A key nothing reads is logged at load, naming the key. It does not stop the boot: a key from a newer Nine is worth reporting, not worth refusing an otherwise usable file over. |

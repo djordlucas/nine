@@ -36,14 +36,22 @@ func TestLoadDefaultResolutionOrder(t *testing.T) {
 
 	// $NINE_CONFIG has highest precedence.
 	t.Setenv("NINE_CONFIG", envFile)
-	if cfg := config.LoadDefault(); cfg.LLM.Provider != "from-nine-config" {
+	cfg, err := config.LoadDefault()
+	if err != nil {
+		t.Fatalf("LoadDefault: %v", err)
+	}
+	if cfg.LLM.Provider != "from-nine-config" {
 		t.Errorf("with NINE_CONFIG set, provider = %q, want from-nine-config", cfg.LLM.Provider)
 	}
 
 	// Unset $NINE_CONFIG (and no ./nine.toml, no /nine.toml): falls through to
 	// $HOME/.nine/nine.toml.
 	t.Setenv("NINE_CONFIG", "")
-	if cfg := config.LoadDefault(); cfg.LLM.Provider != "from-home" {
+	cfg, err = config.LoadDefault()
+	if err != nil {
+		t.Fatalf("LoadDefault: %v", err)
+	}
+	if cfg.LLM.Provider != "from-home" {
 		t.Errorf("without NINE_CONFIG, provider = %q, want from-home (~/.nine fallback)", cfg.LLM.Provider)
 	}
 }
