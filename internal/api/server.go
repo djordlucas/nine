@@ -248,6 +248,42 @@ func parseTrustedProxies(entries []string) (prefixes []netip.Prefix, rejected []
 	return prefixes, rejected
 }
 
+// isLoopbackHost reports whether host reaches only the local machine. An
+// unresolvable name is treated as non-loopback: the exposure warning below
+// should err toward warning, not toward silence.
+func isLoopbackHost(host string) bool {
+	h := strings.ToLower(strings.TrimSpace(host))
+	h = strings.TrimSuffix(strings.TrimPrefix(h, "["), "]")
+	if h == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(h); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
+}
+
+// warnIfExposed says so when the server is reachable from the network with no
+// authentication in front of it.
+//
+// The API can start conversations, and a conversation can run shell commands,
+// so an unauthenticated listener on a routable address is a remote shell. Auth
+// exists — `[api] auth_token`, `--auth-token`, `NINE_API_AUTH_TOKEN` — it is
+// simply off until set, and "auth_enabled=false" in a structured startup line
+// is not a thing anyone reads. This is a warning rather than a refusal because
+// the published image binds 0.0.0.0 by default (docker/s6/runtime), and a
+// refusal would stop it booting.
+func warnIfExposed(host string, authToken string) {
+	if authToken != "" || isLoopbackHost(host) {
+		return
+	}
+	slog.Warn("API is listening on a non-loopback address with NO authentication — "+
+		"anyone who can reach this port can start conversations, which can run shell commands. "+
+		"Set [api] auth_token (or --auth-token / NINE_API_AUTH_TOKEN), "+
+		"or publish the port to loopback only (-p 127.0.0.1:8080:8080)",
+		"host", host)
+}
+
 // Run starts the API server.
 func (s *Server) Run() error {
 	slog.Info("starting nine API server",
@@ -257,6 +293,7 @@ func (s *Server) Run() error {
 		"auth_enabled", s.config.AuthToken != "",
 		"tls_enabled", s.config.TLSEnabled(),
 		"rate_limit_enabled", s.config.RateLimitEnabled())
+	warnIfExposed(s.config.GetHost(), s.config.AuthToken)
 
 	// Verify daemon is running and we can connect
 	if !protocol.CanConnect(s.socketPath) {
