@@ -240,6 +240,16 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 			return err
 		}
 		return c.Replay(cfg, args[1], turn)
+	case "backup":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: nine backup <destination.db>")
+		}
+		return c.Backup(cfg, args[1])
+	case "restore":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: nine restore <snapshot.db>")
+		}
+		return c.Restore(cfg, args[1])
 	case "attach":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: nine attach <agent-id>")
@@ -301,7 +311,7 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 var knownCommands = []string{
 	"help", "docs", "spec", "version", "daemon", "goals", "reflections",
 	"notifications", "workflows", "workflow", "send", "skills", "plugins",
-	"plugin", "tools", "tool", "status", "context", "trace", "replay", "attach",
+	"plugin", "tools", "tool", "status", "context", "trace", "replay", "attach", "backup", "restore",
 	"stop",
 }
 
