@@ -19,7 +19,7 @@ GOFLAGS  := -mod=vendor
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS  := -ldflags "-X main.Version=$(VERSION)"
 
-.PHONY: all dev build openapi openapi-check openapi-lint test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-generate quickjs-wasm quickjs-verify harness-bc image image-test image-scan image-verify
+.PHONY: all dev build openapi openapi-check openapi-lint test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-generate quickjs-wasm quickjs-verify harness-bc image image-test image-scan image-verify ci ci-test scan scan-fs lint-host
 
 dev: build
 
@@ -110,7 +110,29 @@ cover-html: cover
 
 # ── lint ──────────────────────────────────────────────────────────────────────
 
+# golangci-lint runs pinned, in a container. The workflow did `go install
+# …@latest` at run time and this target ran whatever was on PATH, so the gate's
+# answer depended on which machine asked and when — the first local run turned
+# up three gosec findings that the last green CI run had not reported. Pinning
+# the image is what makes the result reproducible.
+#
+# The cache volume is what keeps a second run quick — without it every run
+# recompiles the analysis from cold.
+GOLANGCI_VERSION := v2.11.1
+GOLANGCI_IMAGE   := golangci/golangci-lint:$(GOLANGCI_VERSION)
+
 lint:
+	docker run --rm \
+	  -v $(PWD):/app \
+	  -v nine-golangci-cache:/root/.cache \
+	  -w /app \
+	  -e GOFLAGS=$(GOFLAGS) \
+	  $(GOLANGCI_IMAGE) \
+	  golangci-lint run ./...
+
+# lint-host uses whatever golangci-lint is installed. Quicker for an inner
+# loop; not the gate, because its answer depends on the machine.
+lint-host:
 	golangci-lint run ./...
 
 # ── container deployment ──────────────────────────────────────────────────────
@@ -247,6 +269,57 @@ image-scan: image
 	    --ignore-unfixed \
 	    --exit-code 1 \
 	    $(IMAGE_REF)
+
+# ── local CI ──────────────────────────────────────────────────────────────────
+#
+# GitHub Actions is disabled for this repository, so these are the gate. `ci`
+# is what the CI workflow ran and `scan` is what the Security Scan workflow
+# ran; between them they cover everything except the SARIF uploads, which only
+# existed to feed GitHub's Security tab.
+#
+# Run `make ci` before merging. It needs a Docker daemon (image-test) and
+# golangci-lint on PATH.
+
+# ci-test mirrors the CI test step rather than calling `test`: tests/evals/
+# runner spins up a real in-process daemon per test and deadlocks
+# intermittently, so the workflow excluded it and so does this. `make test`
+# still runs everything when you want it.
+ci-test:
+	$(GO) list $(GOFLAGS) ./... | grep -v '/tests/evals/runner' \
+	  | xargs $(GO) test $(GOFLAGS) -timeout 20m
+
+# Steps are invoked in the recipe rather than listed as prerequisites so the
+# order holds under `make -j`. openapi-check regenerates into the tree and then
+# diffs it, which a parallel sibling can make fail for no reason.
+ci:
+	@$(MAKE) build
+	@$(MAKE) openapi-check
+	@$(MAKE) openapi-lint
+	@$(MAKE) ci-test
+	@$(MAKE) eval-replay
+	@$(MAKE) lint
+	@$(MAKE) image-test
+	@echo ""
+	@echo "ci: passed — build, openapi drift + lint, tests, eval gate, lint, image tests"
+	@echo "     run 'make scan' for the vulnerability scans"
+
+# scan-fs is the filesystem half of the Security Scan workflow. Trivy runs in a
+# container here for the same reason image-scan does: no local install, and the
+# scanner version is pinned by the tag rather than by whatever is on PATH.
+scan-fs:
+	docker run --rm \
+	  -v $(PWD):/src:ro \
+	  aquasec/trivy:latest fs \
+	    --severity CRITICAL,HIGH \
+	    --ignore-unfixed \
+	    --exit-code 1 \
+	    /src
+
+scan:
+	@$(MAKE) scan-fs
+	@$(MAKE) image-scan
+	@echo ""
+	@echo "scan: passed — filesystem and image, CRITICAL+HIGH, fixable only"
 
 # Verify a published image's signature and provenance. Needs cosign.
 # Override IMAGE to check Docker Hub instead: make image-verify IMAGE=djordlucas/nine:latest
