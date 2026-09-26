@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"strconv"
@@ -10,6 +11,8 @@ import (
 	"nine/internal/api"
 	"nine/internal/config"
 	"nine/internal/protocol"
+
+	"nine/internal/logsafe"
 )
 
 // serveAPIAndExit runs the HTTP API server as a separate process.
@@ -25,7 +28,14 @@ func serveAPIAndExit() {
 	})))
 
 	// Load configuration
-	cfg := config.LoadDefault()
+	cfg, err := config.LoadDefault()
+	if err != nil {
+		// A config Nine cannot understand is a stop, not a warning: running on
+		// defaults would look like a clean boot while silently dropping every
+		// setting the operator wrote.
+		fmt.Fprintln(os.Stderr, "nine: "+err.Error())
+		os.Exit(1)
+	}
 
 	// Parse API-specific command-line flags
 	apiCfg := parseAPIFlags(os.Args[1:])
@@ -35,11 +45,11 @@ func serveAPIAndExit() {
 
 	// Log configuration
 	//nolint:gosec // G706: the host is operator input from os.Args, and is run
-	// through api.SafeLogValue regardless. gosec traces the taint but does not
+	// through logsafe.Value regardless. gosec traces the taint but does not
 	// recognise the sanitiser.
 	slog.Info("starting nine API server",
 		"version", Version,
-		"host", api.SafeLogValue(mergedCfg.GetHost()),
+		"host", logsafe.Value(mergedCfg.GetHost()),
 		"port", mergedCfg.GetPort(),
 		"auth_enabled", mergedCfg.AuthToken != "",
 		"tls_enabled", mergedCfg.TLSEnabled(),
@@ -60,8 +70,8 @@ func serveAPIAndExit() {
 	apiServer := api.NewServer(api.Config{
 		APIConfig:  mergedCfg,
 		SocketPath: socketPath,
-		Version:   Version,
-		StartTime: startTime,
+		Version:    Version,
+		StartTime:  startTime,
 	})
 
 	if err := apiServer.Run(); err != nil {
@@ -73,15 +83,15 @@ func serveAPIAndExit() {
 
 // apiFlags holds command-line flags for the API server.
 type apiFlags struct {
-	port        int
-	host        string
-	authToken   string
-	timeout     int
-	maxConn     int
-	corsOrigins []string
-	tlsEnabled  bool
-	tlsCert     string
-	tlsKey      string
+	port           int
+	host           string
+	authToken      string
+	timeout        int
+	maxConn        int
+	corsOrigins    []string
+	tlsEnabled     bool
+	tlsCert        string
+	tlsKey         string
 	trustedProxies []string
 }
 
@@ -89,10 +99,11 @@ type apiFlags struct {
 // Note: args[0] is intentionally skipped as it contains the command name ("serve").
 // The actual flags start from args[1] onwards.
 //
-//nolint:gosec // G706: every os.Args value logged below goes through
-// api.SafeLogValue, which strips the control characters a forged log line
+// api.logsafe.Value, which strips the control characters a forged log line
 // needs. gosec's taint analysis follows the value but does not recognise a
 // sanitiser, so it reports the sink regardless.
+//
+//nolint:gosec // G706: every os.Args value logged below goes through
 func parseAPIFlags(args []string) apiFlags {
 	var flags apiFlags
 	flags.port = config.DefaultAPIPort
@@ -109,10 +120,10 @@ func parseAPIFlags(args []string) apiFlags {
 					if p >= 1 && p <= 65535 {
 						flags.port = p
 					} else {
-						slog.Warn("invalid port number, using default", "port", api.SafeLogValue(args[i+1]), "default", config.DefaultAPIPort)
+						slog.Warn("invalid port number, using default", "port", logsafe.Value(args[i+1]), "default", config.DefaultAPIPort)
 					}
 				} else {
-					slog.Warn("invalid port value, using default", "value", api.SafeLogValue(args[i+1]), "default", config.DefaultAPIPort)
+					slog.Warn("invalid port value, using default", "value", logsafe.Value(args[i+1]), "default", config.DefaultAPIPort)
 				}
 				i++
 			}
@@ -138,10 +149,10 @@ func parseAPIFlags(args []string) apiFlags {
 					if t > 0 {
 						flags.timeout = t
 					} else {
-						slog.Warn("invalid timeout value, using default", "value", api.SafeLogValue(args[i+1]), "default", config.DefaultAPITimeoutSeconds)
+						slog.Warn("invalid timeout value, using default", "value", logsafe.Value(args[i+1]), "default", config.DefaultAPITimeoutSeconds)
 					}
 				} else {
-					slog.Warn("invalid timeout value, using default", "value", api.SafeLogValue(args[i+1]), "default", config.DefaultAPITimeoutSeconds)
+					slog.Warn("invalid timeout value, using default", "value", logsafe.Value(args[i+1]), "default", config.DefaultAPITimeoutSeconds)
 				}
 				i++
 			}
@@ -151,10 +162,10 @@ func parseAPIFlags(args []string) apiFlags {
 					if m > 0 {
 						flags.maxConn = m
 					} else {
-						slog.Warn("invalid max-connections value, using default", "value", api.SafeLogValue(args[i+1]), "default", config.DefaultAPIMaxConnections)
+						slog.Warn("invalid max-connections value, using default", "value", logsafe.Value(args[i+1]), "default", config.DefaultAPIMaxConnections)
 					}
 				} else {
-					slog.Warn("invalid max-connections value, using default", "value", api.SafeLogValue(args[i+1]), "default", config.DefaultAPIMaxConnections)
+					slog.Warn("invalid max-connections value, using default", "value", logsafe.Value(args[i+1]), "default", config.DefaultAPIMaxConnections)
 				}
 				i++
 			}
