@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"nine/internal/config"
@@ -46,6 +47,10 @@ func (c *CLI) Restore(cfg *config.Config, src string) error {
 	}
 	if absSrc == dst {
 		return fmt.Errorf("%s is the live database, not a snapshot of one", absSrc)
+	}
+
+	if isArchivePath(absSrc) {
+		return c.restoreArchive(cfg, absSrc, dst)
 	}
 
 	// Check the snapshot before touching anything. A file that is not a Nine
@@ -128,4 +133,91 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return out.Close()
+}
+
+// restoreArchive unpacks a combined backup: the database and the workspace,
+// restored together because they were captured together.
+//
+// Everything is staged and checked before anything in place is touched, so a
+// corrupt or foreign archive fails with the live state untouched. Staging sits
+// beside the workspace rather than in the system temp directory, which keeps
+// the workspace move a rename on one filesystem instead of a copy of every
+// file.
+func (c *CLI) restoreArchive(cfg *config.Config, src, dst string) error {
+	workRoot := cfg.Workspace.Root
+	if workRoot == "" {
+		return fmt.Errorf("no workspace is configured ([workspace].root); " +
+			"an archive restores the workspace as well and needs somewhere to put it")
+	}
+	absWork, err := filepath.Abs(workRoot)
+	if err != nil {
+		return fmt.Errorf("resolve workspace path: %w", err)
+	}
+
+	stage, err := os.MkdirTemp(filepath.Dir(absWork), ".nine-restore-")
+	if err != nil {
+		return fmt.Errorf("create staging directory: %w", err)
+	}
+	defer os.RemoveAll(stage) //nolint:errcheck
+
+	workFiles, err := extractArchive(src, stage)
+	if err != nil {
+		return fmt.Errorf("unpack %s: %w", src, err)
+	}
+
+	stagedDB := filepath.Join(stage, archiveDBEntry)
+	if _, err := os.Stat(stagedDB); err != nil {
+		return fmt.Errorf("%s holds no %s; it is not a nine backup archive", src, archiveDBEntry)
+	}
+	version, err := memory.InspectSnapshot(stagedDB)
+	if err != nil {
+		return fmt.Errorf("read snapshot from %s: %w", src, err)
+	}
+	if known := memory.SchemaVersion(); version > known {
+		return fmt.Errorf("archive %s holds schema version %d; this binary understands %d — "+
+			"restore it with the version of nine that wrote it", src, version, known)
+	}
+
+	stamp := time.Now().UTC().Format("20060102T150405Z")
+	displacedDB, err := displace(dst, stamp)
+	if err != nil {
+		return err
+	}
+	if err := copyFile(stagedDB, dst); err != nil {
+		return fmt.Errorf("copy snapshot into place: %w", err)
+	}
+
+	var displacedWork string
+	stagedWork := filepath.Join(stage, strings.TrimSuffix(archiveWorkPrefix, "/"))
+	if _, err := os.Stat(stagedWork); err == nil {
+		if _, err := os.Stat(absWork); err == nil {
+			displacedWork = fmt.Sprintf("%s.replaced-%s", absWork, stamp)
+			if err := os.Rename(absWork, displacedWork); err != nil {
+				return fmt.Errorf("move workspace aside: %w", err)
+			}
+		}
+		if err := os.Rename(stagedWork, absWork); err != nil {
+			return fmt.Errorf("install workspace: %w", err)
+		}
+	}
+
+	fmt.Fprintf(c.Out, "restored from: %s\n", src)
+	fmt.Fprintf(c.Out, "  store:     %s (schema version %d)\n", dst, version)
+	fmt.Fprintf(c.Out, "  workspace: %s (%d files)\n", absWork, workFiles)
+	for _, p := range displacedDB {
+		fmt.Fprintf(c.Out, "  displaced: %s\n", p)
+	}
+	if displacedWork != "" {
+		fmt.Fprintf(c.Out, "  displaced: %s\n", displacedWork)
+	}
+	if len(displacedDB) > 0 {
+		fmt.Fprintf(c.Out, "undo with: mv %s %s\n", displacedDB[0], dst)
+		if displacedWork != "" {
+			fmt.Fprintf(c.Out, "           rm -rf %s && mv %s %s\n", absWork, displacedWork, absWork)
+		}
+	}
+	if known := memory.SchemaVersion(); version < known {
+		fmt.Fprintf(c.Out, "note: schema %d will migrate to %d when the daemon next opens it\n", version, known)
+	}
+	return nil
 }
