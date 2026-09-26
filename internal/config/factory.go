@@ -27,7 +27,13 @@ const DefaultEventRetentionTurns = 200
 
 // LoadDefault finds and loads nine.toml from standard locations, applying
 // environment variable overrides. Returns an empty config if no file is found.
-func LoadDefault() *Config {
+//
+// It returns an error only for a config whose schema this binary does not
+// understand. That case must not be swallowed the way an unparseable file is:
+// falling through to the next path would boot the daemon on defaults, quietly
+// discarding every setting the operator wrote — an API auth token among them.
+// Every other failure stays a warning and moves on to the next path.
+func LoadDefault() (*Config, error) {
 	paths := []string{
 		os.Getenv("NINE_CONFIG"),
 		"nine.toml",
@@ -41,7 +47,13 @@ func LoadDefault() *Config {
 		cfg, err := Load(p)
 		if err == nil {
 			ApplyEnvOverrides(cfg)
-			return cfg
+			return cfg, nil
+		}
+		// A config from a newer Nine is the one failure worth stopping for.
+		// Continuing would run on defaults and look like a clean boot.
+		var tooNew *SchemaTooNewError
+		if errors.As(err, &tooNew) {
+			return nil, err
 		}
 		// A missing file is normal — try the next path. Anything else (a TOML
 		// parse error, a settings-validation error) means a config file is present
@@ -55,7 +67,7 @@ func LoadDefault() *Config {
 	}
 	cfg := &Config{}
 	ApplyEnvOverrides(cfg)
-	return cfg
+	return cfg, nil
 }
 
 // ApplyEnvOverrides applies NINE_* environment variables on top of cfg.
