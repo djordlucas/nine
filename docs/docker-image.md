@@ -175,7 +175,7 @@ Supply-chain properties:
 
 | Limit | Detail |
 |-------|--------|
-| No authentication on the API | Port 8080 speaks to anyone who reaches it. Bind it to localhost (`-p 127.0.0.1:8080:8080`) or put it behind a reverse proxy. The daemon's own socket is local-only. |
+| API auth is off unless you set it | The image runs `nine api serve --host 0.0.0.0`, so port 8080 answers anyone who reaches it until a token is configured. Set `NINE_API_AUTH_TOKEN` (or `[api] auth_token`), or publish to loopback only (`-p 127.0.0.1:8080:8080`). Nine logs a warning at startup in this state. The daemon's own socket is local-only. |
 | Container isolation is the boundary | Only sandboxed tools run behind a capability boundary. The `shell` plugin runs commands as uid 1000 with that user's full reach inside the container. Do not point it at anything you do not trust. |
 | uid 1000 is fixed | A bind-mounted `/data` owned by another uid is chowned at boot when the volume root is not already 1000. A read-only mount logs a warning and the daemon cannot write. |
 | No package installs at runtime | Running unprivileged means the agent cannot `apt-get install`. Derive an image instead. |
