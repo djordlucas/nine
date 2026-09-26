@@ -6,20 +6,36 @@ database, so an upgrade that goes wrong cannot be undone by running the old
 binary again — it refuses the newer schema rather than corrupting it.
 
 ```sh
-nine backup /data/backups/nine-$(date -u +%Y%m%dT%H%M%SZ).db
+nine backup /data/backups/nine-$(date -u +%Y%m%dT%H%M%SZ).tar.gz
 ```
 
 ## Backing up
 
-`nine backup <destination.db>` writes a single, self-contained snapshot. The
-daemon can be running; it does not need to be stopped and does not need to be
-up.
+**The destination's extension names what is captured.**
+
+| Destination | Contains |
+|---|---|
+| `….db` | The store alone |
+| `….tar.gz` | The store **and** the workspace, in one archive |
+
+The daemon can be running either way; it does not need to be stopped and does
+not need to be up.
 
 ```sh
 $ nine backup /data/backups/nine-20260925T171500Z.db
 snapshot written: /data/backups/nine-20260925T171500Z.db (4.2 MiB)
 source: /data/nine.db
+
+$ nine backup /data/backups/nine-20260925T171500Z.tar.gz
+archive written: /data/backups/nine-20260925T171500Z.tar.gz (18.4 MiB)
+  store:     /data/nine.db
+  workspace: /data/workspace (214 files)
 ```
+
+Take the archive unless you know the workspace holds nothing you need. The
+store references the filesystem — a spill path, a workspace index row — so a
+database restored beside a workspace from a different moment describes files
+that are not there. Capturing them together is the only way they cannot drift.
 
 **Do not back up by copying `nine.db`.** The store runs in WAL mode, so that
 file alone is not the database — the `-wal` sidecar holds committed
@@ -62,9 +78,26 @@ displaced: /data/nine.db.replaced-20260925T181200Z
 undo with: mv /data/nine.db.replaced-20260925T181200Z /data/nine.db
 ```
 
-**Nothing is deleted.** The database being replaced, and its sidecars, are
-renamed with a timestamp — so a restore aimed at the wrong snapshot is itself
-reversible, and the command prints the `mv` that undoes it.
+Restoring an archive brings the workspace back with the store:
+
+```
+restored from: /data/backups/nine-20260925T171500Z.tar.gz
+  store:     /data/nine.db (schema version 11)
+  workspace: /data/workspace (214 files)
+  displaced: /data/nine.db.replaced-20260925T181200Z
+  displaced: /data/workspace.replaced-20260925T181200Z
+undo with: mv /data/nine.db.replaced-20260925T181200Z /data/nine.db
+           rm -rf /data/workspace && mv /data/workspace.replaced-20260925T181200Z /data/workspace
+```
+
+**Nothing is deleted.** The database being replaced, its sidecars, and the
+whole previous workspace directory are renamed with a timestamp — so a restore
+aimed at the wrong snapshot is itself reversible, and the command prints the
+commands that undo it.
+
+An archive is unpacked and checked in full **before** anything in place is
+touched, so a corrupt or foreign archive fails with the live store and
+workspace exactly as they were.
 
 The checks run before anything moves, so a refused restore leaves the live
 database exactly where it was:
@@ -73,6 +106,8 @@ database exactly where it was:
 |---|---|
 | The daemon is reachable | It holds the database open; swapping the file underneath corrupts both the restore and the sessions in flight. |
 | The source is not a Nine database | An empty or unrelated file opens cleanly in SQLite and would otherwise install as an empty store. |
+| An archive holds no `nine.db` | It is not a Nine backup, whatever else is in it. |
+| An archive entry escapes the destination | A `../` or absolute path in a tar is how an archive writes outside the directory you named. Nine's own backups never contain one. |
 | The snapshot's schema is newer than the binary | Restore it with the version of Nine that wrote it. A schema cannot be migrated backwards. |
 | The source *is* the live database | Nothing to do, and the displacement would move the file out from under the copy. |
 
@@ -129,15 +164,26 @@ is never rewritten by Nine, so a setting that changes shape between versions
 breaks at startup rather than being migrated. Read the release notes before
 upgrading, and keep the config file under version control.
 
-## What a snapshot contains
+## What a backup contains
 
-Everything in the single SQLite file: conversation history and checkpoints,
-goals, workflows, the event journal, agent-authored skills, notifications,
-generated tools, and the vector store.
+| | `….db` | `….tar.gz` |
+|---|:---:|:---:|
+| Conversation history and checkpoints | ✓ | ✓ |
+| Goals, workflows, notifications | ✓ | ✓ |
+| The event journal | ✓ | ✓ |
+| Agent-authored skills and generated tools | ✓ | ✓ |
+| The vector store | ✓ | ✓ |
+| Workspace files the agent wrote | — | ✓ |
+| `.nine/trash/` — deleted and overwritten files | — | ✓ |
 
-It does **not** contain the workspace filesystem. Files the agent wrote with
-`write_file` live on the workspace volume, and `.nine/trash/` with them. Back
-that up separately if it holds anything you need.
+The trash is always in the archive. It is what `restore_file` recovers from, so
+a backup that dropped it could not undo a deletion — at the cost of carrying
+files already marked for removal, bounded by `trash_max_bytes` (1 GiB by
+default). Lower that bound if archive size matters more than deep undo.
+
+**Symlinks are skipped**, and the count is reported. A link is a path rather
+than content: archiving one would recreate a pointer into the host filesystem
+on extract, somewhere it did not exist before.
 
 ## Retention: what is already being discarded
 
@@ -166,6 +212,8 @@ journal is your audit trail, set `event_retention_turns = -1` and bound it with
 | Restore needs the daemon stopped | `nine restore` refuses while the socket is reachable. Stopping and starting it is yours to do. |
 | Snapshots are not incremental | Each one is a full copy of the database. Size grows with history; prune old snapshots yourself. |
 | A long snapshot grows the WAL | `VACUUM INTO` holds a read transaction for its duration, which stops the WAL being checkpointed past that point. Writes continue; the `-wal` sidecar is briefly larger. Only noticeable on a large database. |
-| The workspace is not included | Only the SQLite store. Workspace files and the trash need their own backup. |
+| A `.db` backup is the store alone | Use a `.tar.gz` destination to capture the workspace with it. |
+| Archives are whole-tree | Every workspace file is re-archived each time; there is no incremental mode. A large workspace makes a large archive. |
+| Symlinks are not preserved | Skipped on archive and absent on restore, deliberately. Their targets are not ours to recreate. |
 | Downgrade needs a snapshot | Once a migration runs there is no path back but the file you saved first. |
 | No config migration | `nine.toml` has no schema version and no migrate-on-load, so a changed config shape fails at startup rather than being upgraded. |
