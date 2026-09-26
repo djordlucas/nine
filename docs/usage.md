@@ -65,6 +65,8 @@ nine tool validate [path]        Check a sandboxed tool's manifest, entrypoint,
                                  schema, and ABI exports (defaults to
                                  [tools].user_dir; works with the daemon down)
 
+nine backup <destination.db>     Write a consistent snapshot of the store; no
+                                 downtime, one file, refuses to overwrite
 nine trace <agent-id> [--turn N] [--sub-agents]
                                  Print a session's event journal (or one turn);
                                  --sub-agents nests delegated sub-agent traces
@@ -384,6 +386,21 @@ retrieval, as a real turn would, to rank tools and surface the self-model). Add
 ```
 
 In the TUI, `/context` targets the current session (or `/context <id>` another one).
+
+### `nine backup` — snapshot the store
+
+```bash
+nine backup /data/backups/nine-$(date -u +%Y%m%dT%H%M%SZ).db
+```
+
+Writes one self-contained SQLite file. The daemon can be running: the store is
+opened read-only and the snapshot comes from `VACUUM INTO`, so it never blocks
+the writer and never produces the torn copy that `cp` of a live WAL database
+does. The destination must not already exist.
+
+Take one before every upgrade — a schema migration is forward-only, and an
+older binary refuses a database a newer one has migrated. See
+[Operations](operations.md).
 
 ### `nine trace` — inspect a session's journal
 

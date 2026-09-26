@@ -36,6 +36,7 @@ before the first run.
 | [Container image](docker-image.md) | The published image: registries, tags, verification, configuration |
 | [CLI usage](usage.md) | Commands, interactive TUI, slash commands, background tasks |
 | [Configuration](configuration.md) | `nine.toml` reference, LLM providers, environment variables |
+| [Operations](operations.md) | Backup, restore, upgrade, and what retention is already discarding |
 
 ## Architecture
 
