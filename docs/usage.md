@@ -67,6 +67,8 @@ nine tool validate [path]        Check a sandboxed tool's manifest, entrypoint,
 
 nine backup <destination.db>     Write a consistent snapshot of the store; no
                                  downtime, one file, refuses to overwrite
+nine restore <snapshot.db>       Replace the live store with a snapshot; the
+                                 daemon must be stopped, nothing is deleted
 nine trace <agent-id> [--turn N] [--sub-agents]
                                  Print a session's event journal (or one turn);
                                  --sub-agents nests delegated sub-agent traces
@@ -400,6 +402,24 @@ does. The destination must not already exist.
 
 Take one before every upgrade — a schema migration is forward-only, and an
 older binary refuses a database a newer one has migrated. See
+[Operations](operations.md).
+
+### `nine restore` — put a snapshot back
+
+```bash
+docker stop nine
+nine restore /data/backups/nine-20260925T171500Z.db
+docker start nine
+```
+
+Refuses while the daemon is reachable, refuses a file that is not a Nine
+database, and refuses a snapshot written by a newer Nine — all before anything
+moves, so a rejected restore leaves the live database untouched.
+
+The database it replaces is renamed with a timestamp rather than deleted, along
+with its `-wal` and `-shm` sidecars, and the command prints the `mv` that undoes
+it. Displacing those sidecars is the reason to use this over `cp`: left behind,
+SQLite pairs them with the restored database and the data is silently wrong. See
 [Operations](operations.md).
 
 ### `nine trace` — inspect a session's journal
