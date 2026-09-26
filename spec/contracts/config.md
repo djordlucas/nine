@@ -167,6 +167,36 @@ and no source tree** (N3).
 
 ---
 
+## R-CFG.6 — schema version and unrecognised keys
+
+`nine.toml` carries an optional top-level `schema_version` integer naming the
+**shape of the file**, not the version of Nine that wrote it.
+
+| Value | Meaning |
+|---|---|
+| absent | Schema 1. Every file written before the field existed is a schema-1 file, so omitting it stays correct. |
+| ≤ the implementation's current schema | Loaded, migrating forward through each intervening step. |
+| > the implementation's current schema | **Refused.** |
+
+A conforming implementation **MUST** refuse a config whose `schema_version`
+exceeds the one it understands, and **MUST NOT** degrade that refusal into
+loading a different file or an empty config: continuing on defaults discards
+every setting the operator wrote, including credentials, while presenting as a
+clean start. Every other load failure (a parse error, a validation error) stays
+non-fatal and falls through to the next path in R-CFG.1.
+
+Migration is **in-memory only**, reading an older shape into the current one.
+`nine.toml` is never rewritten — R-CFG.3 still holds.
+
+An implementation **SHOULD** report keys present in the file that nothing read.
+A misspelled key is otherwise neither applied nor reported, so a setting can
+silently fail to take effect. This is a warning, not a failure: a key from a
+newer Nine is a reason to tell the operator, not to refuse an otherwise usable
+config.
+
+---
+
 ## Reference symbols
 
-`internal/config/config.go` (`Config` and section structs, `Load`, `LoadDefault`).
+`internal/config/config.go` (`Config` and section structs, `Load`, `LoadDefault`,
+`CurrentConfigSchema`, `SchemaTooNewError`, `configMigrations`).

@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"nine/internal/logsafe"
 )
 
 // HTTP middleware: authentication, CORS, logging, panic recovery and rate
@@ -80,15 +82,15 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 
 		duration := time.Since(start)
 		//nolint:gosec // G706: every request-derived value goes through
-		// SafeLogValue, which strips the control characters a forged log line
+		// logsafe.Value, which strips the control characters a forged log line
 		// needs. gosec's taint analysis does not recognise a sanitiser.
 		slog.Info("API request",
-			"method", SafeLogValue(r.Method),
-			"path", SafeLogValue(r.URL.Path),
+			"method", logsafe.Value(r.Method),
+			"path", logsafe.Value(r.URL.Path),
 			"status", wrapped.statusCode,
 			"duration_ms", duration.Milliseconds(),
-			"remote_addr", SafeLogValue(r.RemoteAddr),
-			"user_agent", SafeLogValue(r.UserAgent()))
+			"remote_addr", logsafe.Value(r.RemoteAddr),
+			"user_agent", logsafe.Value(r.UserAgent()))
 	})
 }
 
@@ -97,8 +99,8 @@ func (s *Server) recoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
-				//nolint:gosec // G706: the path is sanitised by SafeLogValue; see above.
-				slog.Error("panic in API handler", "err", err, "path", SafeLogValue(r.URL.Path))
+				//nolint:gosec // G706: the path is sanitised by logsafe.Value; see above.
+				slog.Error("panic in API handler", "err", err, "path", logsafe.Value(r.URL.Path))
 				writeError(w, http.StatusInternalServerError, "server_error",
 					fmt.Sprintf("internal server error: %v", err), nil)
 			}

@@ -36,7 +36,14 @@ func main() {
 
 	logsToStderr := setupLogger()
 
-	cfg := config.LoadDefault()
+	cfg, err := config.LoadDefault()
+	if err != nil {
+		// A config Nine cannot understand is a stop, not a warning: running on
+		// defaults would look like a clean boot while silently dropping every
+		// setting the operator wrote.
+		fmt.Fprintln(os.Stderr, "nine: "+err.Error())
+		os.Exit(1)
+	}
 
 	c := cli.New(os.Args[0])
 	c.Version = Version

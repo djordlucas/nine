@@ -1,3 +1,8 @@
+# The shape of this file, not the version of Nine that wrote it. Absent means 1.
+# A file declaring a schema newer than the binary understands stops the daemon
+# rather than being skipped — see docs/versioning.md §4.
+schema_version = 1
+
 ## Nine configuration.
 ##
 ## This is the only config file: the same nine.toml serves the native and the

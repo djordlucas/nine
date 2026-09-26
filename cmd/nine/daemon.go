@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -21,7 +22,14 @@ import (
 
 func runDaemon() {
 	// Load configuration
-	cfg := config.LoadDefault()
+	cfg, err := config.LoadDefault()
+	if err != nil {
+		// A config Nine cannot understand is a stop, not a warning: running on
+		// defaults would look like a clean boot while silently dropping every
+		// setting the operator wrote.
+		fmt.Fprintln(os.Stderr, "nine: "+err.Error())
+		os.Exit(1)
+	}
 
 	// Refuse a backend Nine does not have, rather than quietly serving a
 	// different one. Checked here, against the effective config, because
