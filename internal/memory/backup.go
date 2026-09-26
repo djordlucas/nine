@@ -43,3 +43,33 @@ func (s *Store) BackupTo(path string) (string, error) {
 	}
 	return abs, nil
 }
+
+// SchemaVersion reports the schema version this binary understands. A database
+// recorded at a higher version was written by a newer Nine and is refused on
+// open rather than migrated backwards.
+func SchemaVersion() int { return schemaVersion() }
+
+// InspectSnapshot reads the schema version out of the database at path without
+// migrating it, so a candidate file can be checked before it is put anywhere.
+// Open() would migrate what it finds; this deliberately does not.
+func InspectSnapshot(path string) (int, error) {
+	s, err := OpenReadOnly(path)
+	if err != nil {
+		return 0, err
+	}
+	defer s.Close() //nolint:errcheck
+	v, err := userVersion(s.db)
+	if err != nil {
+		return 0, err
+	}
+	// A file SQLite can open but that carries no schema is not a Nine
+	// database — an empty file opens cleanly and reports version 0.
+	ok, err := hasTableTx(s.db, "kv")
+	if err != nil {
+		return 0, err
+	}
+	if !ok {
+		return 0, fmt.Errorf("%s is not a nine database (no kv table)", path)
+	}
+	return v, nil
+}

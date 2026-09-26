@@ -46,28 +46,58 @@ nine backup /tmp/check.db && ls -la /tmp/check.db
 
 ## Restoring
 
-Stop the daemon, put the snapshot where `[memory].path` points, and start it
-again. There is no restore command, because a restore is a file move the
-operator should see.
+Stop the daemon, then `nine restore <snapshot.db>`:
 
 ```sh
-docker stop nine                                # or Ctrl-C a foreground `nine daemon`
-mv /data/nine.db /data/nine.db.displaced        # keep it until you are satisfied
-rm -f /data/nine.db-wal /data/nine.db-shm       # stale sidecars of the old file
-cp /data/backups/nine-20260925T171500Z.db /data/nine.db
+docker stop nine          # or interrupt a foreground `nine daemon`
+nine restore /data/backups/nine-20260925T171500Z.db
 docker start nine
 ```
+
+```
+restored: /data/nine.db
+from:     /data/backups/nine-20260925T171500Z.db (schema version 11)
+displaced: /data/nine.db.replaced-20260925T181200Z
+           /data/nine.db-wal.replaced-20260925T181200Z
+undo with: mv /data/nine.db.replaced-20260925T181200Z /data/nine.db
+```
+
+**Nothing is deleted.** The database being replaced, and its sidecars, are
+renamed with a timestamp — so a restore aimed at the wrong snapshot is itself
+reversible, and the command prints the `mv` that undoes it.
+
+The checks run before anything moves, so a refused restore leaves the live
+database exactly where it was:
+
+| Refused when | Because |
+|---|---|
+| The daemon is reachable | It holds the database open; swapping the file underneath corrupts both the restore and the sessions in flight. |
+| The source is not a Nine database | An empty or unrelated file opens cleanly in SQLite and would otherwise install as an empty store. |
+| The snapshot's schema is newer than the binary | Restore it with the version of Nine that wrote it. A schema cannot be migrated backwards. |
+| The source *is* the live database | Nothing to do, and the displacement would move the file out from under the copy. |
+
+A snapshot at an **older** schema restores fine; its migrations run when the
+daemon next opens it, and the command says so.
 
 There is no stop command for the daemon: `nine daemon` runs in the foreground,
 and `nine stop <agent-id>` terminates a *session*, not the process. Stop the
 container, or interrupt the foreground process.
 
-**Remove the old `-wal` and `-shm` files.** A snapshot has none of its own, and
-sidecars left from the database you replaced belong to a file that is no longer
-there.
+### Doing it by hand
 
-Restoring an older snapshot into a newer binary is fine — any migrations it
-still needs are applied on open. The reverse is not: see below.
+If you are recovering somewhere `nine` is not available, the order matters:
+
+```sh
+mv /data/nine.db /data/nine.db.displaced
+rm -f /data/nine.db-wal /data/nine.db-shm       # stale sidecars of the old file
+cp /data/backups/nine-20260925T171500Z.db /data/nine.db
+```
+
+**Removing the old `-wal` and `-shm` is the step to not skip.** A snapshot has
+no sidecars of its own, and the ones left from the database you replaced belong
+to a file that is no longer there. SQLite will pair them with the restored
+database and the result is wrong data, with no error. `nine restore` exists
+because that failure is silent.
 
 ## Upgrading
 
@@ -133,7 +163,7 @@ journal is your audit trail, set `event_retention_turns = -1` and bound it with
 | Limit | Detail |
 |---|---|
 | No scheduled backups | `nine backup` is a command, not a timer. Drive it from cron or a systemd timer on the host. |
-| No restore command | Restoring is a deliberate file move with the daemon stopped. Nothing automates it. |
+| Restore needs the daemon stopped | `nine restore` refuses while the socket is reachable. Stopping and starting it is yours to do. |
 | Snapshots are not incremental | Each one is a full copy of the database. Size grows with history; prune old snapshots yourself. |
 | A long snapshot grows the WAL | `VACUUM INTO` holds a read transaction for its duration, which stops the WAL being checkpointed past that point. Writes continue; the `-wal` sidecar is briefly larger. Only noticeable on a large database. |
 | The workspace is not included | Only the SQLite store. Workspace files and the trash need their own backup. |
