@@ -65,6 +65,11 @@ nine tool validate [path]        Check a sandboxed tool's manifest, entrypoint,
                                  schema, and ABI exports (defaults to
                                  [tools].user_dir; works with the daemon down)
 
+nine backup <dest.db|.tar.gz>    Snapshot the store (.db) or the store and the
+                                 workspace together (.tar.gz); no downtime
+nine restore <snapshot.db|.tar.gz>
+                                 Put a snapshot back; the daemon must be
+                                 stopped, nothing is deleted
 nine trace <agent-id> [--turn N] [--sub-agents]
                                  Print a session's event journal (or one turn);
                                  --sub-agents nests delegated sub-agent traces
@@ -384,6 +389,49 @@ retrieval, as a real turn would, to rank tools and surface the self-model). Add
 ```
 
 In the TUI, `/context` targets the current session (or `/context <id>` another one).
+
+### `nine backup` — snapshot the store
+
+```bash
+nine backup /data/backups/nine-$(date -u +%Y%m%dT%H%M%SZ).db
+```
+
+The extension names what is captured: `.db` is the store alone, `.tar.gz` is
+the store and the workspace in one archive. Take the archive unless the
+workspace holds nothing you need — the store references files on disk, so a
+database restored beside a workspace from another moment describes files that
+are not there.
+
+The daemon can be running: the store is opened read-only and the snapshot comes
+from `VACUUM INTO`, so it never blocks the writer and never produces the torn
+copy that `cp` of a live WAL database does. The destination must not already
+exist.
+
+Take one before every upgrade — a schema migration is forward-only, and an
+older binary refuses a database a newer one has migrated. See
+[Operations](operations.md).
+
+### `nine restore` — put a snapshot back
+
+```bash
+docker stop nine
+nine restore /data/backups/nine-20260925T171500Z.db
+docker start nine
+```
+
+A `.tar.gz` restores the workspace alongside the store, displacing the previous
+workspace directory the same way.
+
+Refuses while the daemon is reachable, refuses a file that is not a Nine
+database or archive, refuses a snapshot written by a newer Nine, and refuses an
+archive entry whose path escapes the destination — all before anything moves,
+so a rejected restore leaves the live state untouched.
+
+The database it replaces is renamed with a timestamp rather than deleted, along
+with its `-wal` and `-shm` sidecars, and the command prints the `mv` that undoes
+it. Displacing those sidecars is the reason to use this over `cp`: left behind,
+SQLite pairs them with the restored database and the data is silently wrong. See
+[Operations](operations.md).
 
 ### `nine trace` — inspect a session's journal
 

@@ -181,7 +181,7 @@ jobs:
     needs: [meta, verify]
     if: github.event_name == 'push' || inputs.push
     permissions:
-      contents: read
+      contents: write # create the GitHub release for the tag
       packages: write # push to GHCR
       id-token: write # keyless cosign signing and provenance attestation
       attestations: write
@@ -311,6 +311,57 @@ jobs:
           subject-name: ${{ env.GHCR_IMAGE }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
+
+      # A tag on its own is invisible: `gh release list` stays empty and there is
+      # nowhere to read what changed. This turns each tag into a release page,
+      # which works the same on a private repository.
+      #
+      # continue-on-error for the reason the attestation step above carries it:
+      # the image is already pushed by now, so a failure here must not paint an
+      # otherwise successful release red.
+      - name: Create GitHub release
+        if: github.ref_type == 'tag'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG already exists; leaving it alone"
+            exit 0
+          fi
+          # An annotated tag carries its own notes, used verbatim — so do not
+          # repeat the version as its first line, or the release page shows it
+          # twice under the title. A lightweight one has none,
+          # so fall back to the commit list since the previous tag rather than
+          # publishing an empty release.
+          if [ "$(git cat-file -t "$TAG")" = "tag" ]; then
+            git tag -l --format='%(contents)' "$TAG" > notes.md
+          else
+            prev="$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)"
+            if [ -n "$prev" ]; then
+              git log --no-merges --format='- %s' "$prev..$TAG" > notes.md
+            else
+              git log --no-merges --format='- %s' "$TAG" > notes.md
+            fi
+          fi
+          {
+            echo
+            echo '---'
+            echo
+            echo "Image: \`${GHCR_IMAGE}:${TAG#v}\`"
+            echo "Digest: \`${DIGEST}\`"
+          } >> notes.md
+          # A prerelease is any tag with a hyphen (v1.2.3-rc1), matching the
+          # `latest` gate in the metadata step above.
+          flags=()
+          case "$TAG" in
+            *-*) flags+=(--prerelease) ;;
+          esac
+          gh release create "$TAG" --verify-tag --title "$TAG" \
+            --notes-file notes.md "${flags[@]}"
 
       - name: Summary
         env:
