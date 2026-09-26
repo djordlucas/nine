@@ -105,7 +105,18 @@ Authentication is optional. When `auth_token` is configured (via `--auth-token` 
 Authorization: Bearer <token>
 ```
 
-Without a configured token, the API is open. This is the default in the dev container.
+Without a configured token, the API is open — and that is the default in **both**
+published images, which run `nine api serve --host 0.0.0.0`. The API can start
+conversations, and a conversation can run shell commands, so an unauthenticated
+listener on a routable address is a remote shell.
+
+Nine logs a warning at startup when it binds a non-loopback address with no
+token. Either set a token, or publish the port to loopback only:
+
+```bash
+docker run -e NINE_API_AUTH_TOKEN=… -p 8080:8080 …   # authenticated
+docker run -p 127.0.0.1:8080:8080 …                  # local only
+```
 
 ---
 
