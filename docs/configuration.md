@@ -408,7 +408,9 @@ host = "localhost"
 #
 # auth_token — bearer token required on every request
 # (`Authorization: Bearer <token>`). Empty disables authentication. Also
-# settable via --auth-token or NINE_API_AUTH_TOKEN.
+# settable via --auth-token or NINE_API_AUTH_TOKEN. Nine warns at startup if
+# host is non-loopback and this is empty: the API can start conversations, and
+# a conversation can run shell commands.
 auth_token = ""
 #
 # timeout_seconds — per-request timeout. Unset uses 30. A longer request

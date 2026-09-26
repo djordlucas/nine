@@ -660,7 +660,7 @@ removed from this table rather than marked done.
 | Item | Status | Detail |
 |------|--------|--------|
 | Hardening | Planned | Nine is not hardened. See [Limits](#limits) for what that means today. |
-| REST API / remote access | Planned | The daemon speaks newline-delimited JSON over a Unix socket, so every client must be on the same host. HTTP would open conversations, goals, workflows and the journal to a browser UI, a phone, or another machine. Lands with the hardening work, because it brings authentication and transport security with it. |
+| Remote access | Partial | The REST API ships, with bearer-token auth and TLS — [docs/api.md](docs/api.md). It is still a translation layer over the local Unix socket, so the API server runs on the daemon's host and six endpoints are not yet backed by the wire protocol. There is no multi-host story. |
 | Model routing | Planned | Route different work to different models in one deployment. Nine uses one model at a time. |
 | More LLM backends | Partial | Mistral is supported. llama.cpp and vLLM both speak an OpenAI-compatible API, so one adapter covers them. |
 | Richer sandboxed tools | Planned | FS and env gaps, runtime wasm grants, binary data, missing JS globals, per-tool timeouts, HTTP audit, secret sharing, CLI commands, structured tool errors. |
@@ -674,7 +674,7 @@ removed from this table rather than marked done.
 | Limit | Detail |
 |-------|--------|
 | Not hardened | Only sandboxed tools run behind a real boundary. The `shell` plugin and native plugins run as the daemon's process user with its full filesystem and network reach. In the published image that user is an unprivileged uid 1000, so the reach stops at the container. |
-| No API authentication | Port 8080 speaks to whoever reaches it. Bind it to localhost or front it with a proxy. |
+| API auth is off until configured | The API supports a bearer token (`[api] auth_token`, `--auth-token`, `NINE_API_AUTH_TOKEN`) and TLS. Neither is on by default, and the published image binds `0.0.0.0` — set a token, or publish the port to loopback. Nine warns at startup when it binds a non-loopback address with no token. |
 | Single host | The daemon listens on a Unix socket, so every client runs on the same machine. No authentication, no transport security. |
 | One model at a time | No routing across models within a deployment. |
 | Ollama and Mistral only | Other providers are refused at startup rather than falling back. |
