@@ -2,8 +2,12 @@
 
 - **Status:** Assessment, 2026-09-26. Non-normative: this note records a
   judgement, not a contract. Nothing here changes behavior, so no `spec/`
-  requirement moves on account of it. Findings carry stable IDs (`C1`…`C11`) so
+  requirement moves on account of it. Findings carry stable IDs (`C1`…`C12`) so
   they can be lifted into the roadmap without being restated.
+
+  **Update, 2026-09-27:** `C5` and `C12` are closed and `C4`'s default-posture half
+  is closed, by `capability-grants.md`. A struck-through row keeps its ID rather
+  than being deleted — the record is what was found, not what is still open.
 - **Date:** 2026-09-26.
 - **Scope:** the shipped surface as of `c572c92` — `README.md`, all 38 documents
   under `docs/` including every `## Limits` section, `spec/contracts/`,
@@ -30,11 +34,12 @@ four subsystems whose concept is built and whose loop is not closed (`C2`).
 |---|---|---|---|
 | **C1** | Eight feature rows have no eval case; the `hitl` and `safety` tiers have none at all | **High** | M |
 | **C2** | Workflows, the supervisor, `gap_report` and subscriptions are each built with nothing consuming the result; a workflow step carries no link to the sub-agent running it | **High** | M |
-| **C4** | The capability boundary covers only the tier that is off by default; `shell`, `files` and plugins run with the daemon's full reach | **High** | L |
-| **C5** | The gap → tool → capability path dead-ends at an operator TOML edit plus a restart, with no request primitive | Medium | M |
+| **C4** | ~~The capability boundary covers only the tier that is off by default~~ **half closed** — both tiers now default on with a workspace ceiling (`capability-grants.md`); `shell`, `files` and plugins still run with the daemon's full reach | **High** | L |
+| **C5** | ~~The gap → tool → capability path dead-ends at an operator TOML edit plus a restart~~ **closed** — `capability_request` plus `nine grants`, applied to the running daemon (`capability-grants.md`) | Medium | M |
 | **C6** | Autonomy is timer-driven; the journal subscription machinery that would make it event-driven drives one subscriber | Medium | M |
 | **C7** | `internal/llm/openai/` is an empty placeholder, and the adapter it would hold is the highest-leverage roadmap row | Medium | S |
 | **C11** | Workflow dependency gating is advertised in `README.md`, implemented, tested, and unreachable from any tool | Medium | S |
+| **C12** | `TestEveryClientMsgTypeIsDispatched` reads a silent connection as "routed", so a field-less wire verb with no handler ships — **closed**, `TestEveryQueryKindIsAnswered` (`capability-grants.md` §5) | Medium | S |
 | **C8** | `internal/api` is the least-tested large package (8443 source / 1876 test lines) and six of its endpoints return 501 | Medium | M |
 | **C3** | `docs/daemon.md` misstates supervisor event coverage in both directions | Low | S |
 | **C9** | `README.md` §Security contradicts §Limits on whether the API has authentication | Low | S |
@@ -129,6 +134,11 @@ So one event is handled and never emitted, and the doc is wrong about all four.
 
 ### C4 — The capability boundary covers the tier that is off by default
 
+**Half closed 2026-09-27** ([`capability-grants.md`](capability-grants.md)): both tiers
+now default on with a workspace ceiling, so the boundary guards the tier that runs.
+The other half stands — `shell`, `files` and every plugin still run as the daemon's
+process user.
+
 Generated and sandboxed tools run behind a real boundary: default-deny
 capabilities, one wazero instance per call, an SSRF-checked HTTP path. That tier
 is gated by `[tools.agent] enabled`, which is off by default. The tools the
@@ -144,6 +154,11 @@ is the strongest version of the hardening row on the roadmap, and `C1`'s safety
 cases are its precondition.
 
 ### C5 — No path from a discovered gap to a granted capability
+
+**Closed 2026-09-27** ([`capability-grants.md`](capability-grants.md)). What follows is
+the finding as written. Three segments turned out to be wrong rather than one: the
+refusal named an unadvertised tool, nothing persisted a request, and a grant needed a
+restart.
 
 The agent can detect a capability gap (`gap_report`), write a tool (`tool_write`),
 and then stop: the tool declares a need, and nothing can grant it without an

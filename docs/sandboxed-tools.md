@@ -860,16 +860,20 @@ Four properties:
 - **Refusal is a usable signal.** If Nine writes a tool reaching for `net.http`
   and the ceiling excludes it, `tool_write` **fails with a message the model can
   read** — "capability net.http is not available to generated tools" — so the
-  agent rewrites without it or calls `gap_report` for a human to decide. That
-  failure path is a feature.
+  agent rewrites without it or calls `capability_request` to ask an operator. That
+  failure path is a feature, and `capability_request` is what makes it a path
+  rather than a dead end: see §7.2.
 - **Grants are per named tool.** There is no wildcard `[tool."*"]`. An operator
   granting filesystem access to a *developer* tool does so to a tool they have
   read.
-- **Read at boot.** The host resolves developer-tool grants, timeouts and budgets
-  from `nine.toml` when the daemon assembles it, and nothing re-reads the file
-  while it runs. `nine tools reload` re-scans `user_dir` and re-reads manifests
-  against the grants already held, so it picks up a new or edited *tool*; a changed
-  `[tool.<name>]` *grant* needs a restart.
+- **Read at boot, reconciled into the store.** The generated tier's ceiling lives
+  in the database, and `nine.toml` is written into it at every boot — the file's
+  grants as `config` rows, the workspace fallback as `default` rows, an operator's
+  approvals as `approved` rows that a boot leaves alone. `nine grants` shows all
+  three with their source. Developer-tool grants (`[tool.<name>]`) are still read
+  at boot only: `nine tools reload` re-scans `user_dir` and re-reads manifests
+  against the grants already held, so it picks up a new or edited *tool*, and a
+  changed `[tool.<name>]` grant needs a restart.
 
 ### 7.1 On the default workspace ceiling
 
@@ -902,6 +906,53 @@ should grant a narrower mount explicitly, which replaces the derived default
 rather than adding to it.
 
 ---
+
+### 7.2 Requesting a capability the ceiling excludes
+
+A refusal ends in `capability_request`: the agent names the capability, why it needs
+it, and the narrowest scope that would work. That records a pending request and posts
+it to `nine notifications`. Nothing is granted.
+
+An operator decides, from whichever surface they are already in:
+
+```
+nine grants                     # requests waiting, and the ceiling in force
+nine grants approve <id>        # confer it
+nine grants deny <id>
+nine grants revoke <grant-id>   # withdraw one you approved earlier
+```
+
+`/grants` in the TUI takes the same verbs, and the API has `GET /capabilities` and
+`POST /capabilities/{id}/decision`. All three reach one service in the daemon.
+
+**An approval applies to the running daemon.** The ceiling is recomputed, installed
+on the live host, and every stored generated tool is re-resolved against it — so the
+tool that could not load becomes callable on the next turn, with no restart. A
+revocation does the same in reverse: a tool that no longer fits stops loading.
+
+The ceiling is stored, and `nine.toml` is reconciled into it at every boot:
+
+| `source` | Comes from | Survives a boot |
+|---|---|---|
+| `default` | `[workspace].root`, derived | rewritten each boot |
+| `config` | `[tools.agent.capabilities]` | rewritten each boot |
+| `approved` | an operator's decision | yes, until revoked |
+
+The file therefore stays authoritative for what it declares while an approval
+outlives a restart. A grant you add to `nine.toml` appears at the next boot, one you
+edit changes, and **one you remove stops applying** — which is the case that matters,
+because a ceiling an operator narrows in the file and that does not narrow is a
+control that lies. Only an `approved` grant is revocable from the CLI; a `config` or
+`default` grant would reappear at the next boot, so narrowing one is an edit to the
+file.
+
+A requested scope is checked against the same validators the file is held to, at
+request time — an empty `allow_hosts`, a relative mount, a reserved `NINE_*` key are
+refused to the model, which can rewrite the request, rather than to you.
+
+The invariant is untouched. `capability_request` inserts a pending row and can do
+nothing else; no tool reaches a method that confers a capability. The agent writes
+the code, the operator writes the grants, and they are never the same actor.
 
 ## 8. `net.http` — the one capability that needs real work
 

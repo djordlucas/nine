@@ -717,6 +717,11 @@ require_approval = "on_capability"
 #
 # Note there is no variable expansion in this file: a host path is a literal absolute path, and
 # a relative one is refused at load. That is why the workspace default is derived in code.
+#
+# This table is reconciled into the store at every boot, as `config` grants beside the derived
+# `default` ones and any an operator approved (`nine grants`). The file stays authoritative for
+# what it declares — add a grant and it appears, remove one and it stops applying — while an
+# approved grant survives a restart. See docs/sandboxed-tools.md §7.2.
 [tools.agent.capabilities.fs]
 read  = [{ host = "/srv/data", guest = "/data" }]    # replaces the workspace default
 write = [{ host = "/srv/out",  guest = "/out" }]
