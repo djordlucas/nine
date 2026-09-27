@@ -75,7 +75,22 @@ func OpenSandboxedTools(ctx context.Context, cfg *config.Config, store *memory.S
 	// The generated tier's operator policy — the ceiling, the cap, whether it is on
 	// at all — must be installed before the first LoadGenerated, which refuses to
 	// register anything while the tier is off.
-	host.SetAgentConfig(agentConfig(cfg))
+	//
+	// The ceiling comes from the store, and `nine.toml` is reconciled into it here:
+	// the file's grants are rewritten as `config` rows and the workspace fallback as
+	// `default` rows, while an operator's `approved` rows survive untouched
+	// (capability_grants.go). One code path then reads the ceiling whether a grant
+	// came from the file or from an approval, and a grant the file stops declaring
+	// stops applying.
+	ac := agentConfig(cfg)
+	if grants, err := ReconcileCapabilityGrants(store, cfg); err != nil {
+		// The file's own ceiling is still available, so a store that cannot be
+		// reconciled costs the approved grants rather than the whole tier.
+		slog.Error("capability grants not reconciled; using the config ceiling alone", "err", err)
+	} else if store != nil {
+		ac.Ceiling = CeilingFromGrants(grants)
+	}
+	host.SetAgentConfig(ac)
 
 	// The workspace a shipped tool that declares fs is mounted at. Same root the
 	// `files` plugin used, so a model's /work paths keep meaning what they meant.
