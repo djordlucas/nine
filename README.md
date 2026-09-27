@@ -75,7 +75,7 @@ developed against small models to stay useful on modest hardware. Currently test
 | **Plugin** | A tool container — a standalone binary, or an MCP server |
 | **Sandboxed tool** | User supplied JS or wasm run in-process in a wasm sandbox (Wazero), through capabilities grants |
 | **Generated tool** | A sandboxed tool Nine wrote itself, stored as a row; its code is the agent's, its capabilities the operator's |
-| **Capability** | A conferred reach — `fs`, `env`, `net.http` — declared by a tool's manifest and granted only in `nine.toml` |
+| **Capability** | A conferred reach — `fs`, `env`, `net.http` — declared by a tool's manifest, granted by the operator in `nine.toml` or by approving a request |
 | **Skill** | Markdown how-to note, semantically retrieved into context |
 | **Goal** | An open-ended intention with no end condition, pursued in the background |
 | **Workflow** | A finite multi-step plan for sub-agent delegation |
@@ -617,10 +617,11 @@ tax. Built-in skills are embedded in the binary and seeded into the database on 
 boot, so editing one and rebuilding updates it; skills the agent wrote itself are left
 alone.
 
-The boundary is deliberate: Nine writes skills, and sandboxed-tool code where the
-operator enabled that tier — both of which are store state, listable and deletable
-like a goal or a workflow. It does not generate plugins, write itself a capability
-grant (yet), rewrite its config, or rebuild its source at runtime. See:
+The boundary is deliberate: Nine writes skills and sandboxed-tool code — both store
+state, listable and deletable like a goal or a workflow. It does not generate plugins,
+write itself a capability grant, rewrite its config, or rebuild its source at runtime.
+It can *ask* for a capability: `capability_request` records a request an operator
+approves or denies, and an approval takes effect without a restart. See:
 [docs/self-modification.md](docs/self-modification.md).
 
 ## Documentation
@@ -690,7 +691,7 @@ removed from this table rather than marked done.
 | Small-model baseline | Tested against `qwen3.5:4b`, `qwen3.5:9b`, `gemma4:e4b` and `gemma4:e2b` on a 16 GB M4. Behavior on large hosted models is unmeasured — [model compatibility](docs/model-compatibility.md). |
 | Interfaces change without notice | No stability guarantee and no support promise while the project is experimental. |
 | Low user mileage | Failure modes that only long runs, unusual hardware, or an unfamiliar model turn up have not been hit yet. |
-| Config is operator-only | Nine cannot rewrite `nine.toml` at runtime. Changing a setting means editing the file and restarting the daemon. This is deliberate. |
+| Config is operator-only | Nine cannot rewrite `nine.toml` at runtime. Changing a setting means editing the file and restarting the daemon. This is deliberate. The one exception is not an exception to it: an approved capability grant is recorded in the store and installed on the running daemon, and nothing writes the file. |
 | No external pull requests | Deliberate — see [Contributing](#contributing). |
 
 ## AI Use / Methodology

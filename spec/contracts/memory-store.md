@@ -42,7 +42,7 @@ a fake repository.
 
 ## R-MEM.2 — schema (exactly these tables)
 
-The reference database contains these **twenty-one** tables. An implementation **MUST**
+The reference database contains these **twenty-three** tables. An implementation **MUST**
 provide equivalent storage for each; it **MUST NOT** require additional operational
 tables to be agent-visible (R-MEM.4).
 
@@ -65,6 +65,8 @@ tables to be agent-visible (R-MEM.4).
 | `event_cursors` | per-subscriber durable journal position | daemon-private |
 | `related_sessions` | derived cross-session links (see [`subscriptions.md`](subscriptions.md)) | daemon-private |
 | `jobs` | long-running work tracked across turns and restarts, for both backends — a plugin's detached goroutine and a resumable sandboxed tool (see [`plugin.md`](plugin.md), [`toolvm.md`](toolvm.md) R-TVM.19). Was `plugin_jobs`; `backend` says which, and `cursor`/`calls` belong to the tool backend | daemon-private |
+| `capability_requests` | the agent asking an operator to widen the generated tier's capability ceiling ([`toolvm.md`](toolvm.md) R-TVM.14). A record of the asking with a `pending`/`approved`/`denied` outcome, never itself a grant | daemon-private |
+| `capability_grants` | what the generated tier's ceiling **is**. `source` distinguishes `default` (derived from `[workspace].root`), `config` (from `[tools.agent.capabilities]`) and `approved` (conferred by an operator answering a request). The first two are rewritten from `nine.toml` at every boot; only the third persists across one independently | daemon-private |
 | `standing_tools` | resumable tools the daemon runs indefinitely on their own cadence (see [`toolvm.md`](toolvm.md) R-TVM.20); `wake_agent` makes one a standing agent's condition trigger. Separate from `jobs`: a job is conversation-owned and terminates, a standing run is operator-owned, reconciled by a stable id, and has no terminal state | daemon-private |
 | `tool_state` | a sandboxed tool's durable state, keyed `(tool, scope_key, key)` — the store behind the `state` capability (see [`toolvm.md`](toolvm.md) R-TVM.18). Deliberately separate from `kv`, which is Nine's own namespace and must not become tool-writable | daemon-private |
 | `workspace_files` | the workspace index: one row per file under `[workspace].root`, with its size, mtime, whether its text is searchable and why not. Its companion `workspace_fts` is **contentless** — postings only, with snippets read back from the file — because the text's home is the operator's disk, not this database (R-MEM.12) | daemon-private |
@@ -113,6 +115,7 @@ tables, notifications, or session plans through a tool call.
 | Reflections | `ReflectionCreate/List` |
 | Session plans | `SessionPlanGet/Save/ListActive` |
 | HITL | `human_requests` / `interactive_sessions` state (see [`hitl.md`](hitl.md)) |
+| Capabilities | `CapabilityRequestList/Get/Decide`, `CapabilityGrantList/Revoke`, `CapabilityGrantsReconcile`. `CapabilityRequestCreate` is the sole exception and the reason the split exists: it is reachable from the agent through the core-intercepted `capability_request` tool, it can insert a `pending` row and nothing else, and no method that *confers* a capability is reachable from a tool at all ([`toolvm.md`](toolvm.md) R-TVM.14) |
 | Event journal | `SessionEventsAppend`, `SessionEventsByAgent`, `SessionEventsAfter`, `SessionEventsScrub`, `LatestTurnResult` (see [`event-journal.md`](event-journal.md)) |
 | Subscriptions | `EventCursorGet/Set`, `RelatedSessionAdd`, `RelatedSessions` (see [`subscriptions.md`](subscriptions.md)) |
 | Spill retention | `FileDeleteOlderThan(pathPrefix, age)` — the sweep for spilled tool output. **MUST** reject an empty prefix and a non-positive age, so it can never clear the store (see [`../../adr/tool-output-spill.md`](../../adr/tool-output-spill.md) §6) |

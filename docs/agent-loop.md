@@ -138,7 +138,8 @@ The `Dispatcher` is a registry of `handlers` (tool name → function). It routes
 | Jobs | `job_check`, `job_wait`, `job_list`, `job_cancel` |
 | Queued messages | `queued_messages_get`, `queued_message_mark_consumed`, and the count/mark-all variants |
 | Human output | `notify_user` |
-| Supervision | `gap_report` |
+| Supervision | `gap_report` (registered, not advertised — it reaches the supervisor, and nothing acts on the event yet) |
+| Capabilities | `capability_request` — ask an operator to widen the generated-tool ceiling ([sandboxed-tools.md](sandboxed-tools.md) §7.2) |
 | Plugin tools | any tool registered via `RegisterPlugin` |
 | Sandboxed tools | the shipped, developer and generated tiers, routed into the wasm host |
 
