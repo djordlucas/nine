@@ -56,6 +56,7 @@ changed; the document stays as the record and is not rewritten.
 |----------|-----------------|
 | `accurate-token-counting.md` | Real tokenizer behind a feature flag, replacing the character estimate |
 | `codebase-improvement.md` | Design note: prioritized improvements across the tree |
+| `critic.md` | Assessment of the feature set, the limits and the positioning: findings `C1`–`C11`, what is differentiated, and where Nine should be aimed |
 | `durable-and-long-running-tools.md` | Giving a sandboxed tool memory and letting work outlive a turn. Amends I-TVM.3. |
 | `generated-tool-authoring-loop.md` | Shortening the write→fail→rewrite loop for agent-authored tools: parse at write time, dry-run, logs on failure, stdlib gaps, catalog hygiene. |
 | `event-log.md` | Investigation behind the session journal. Written against PostgreSQL; the store is SQLite. |
