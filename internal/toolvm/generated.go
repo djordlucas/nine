@@ -95,7 +95,7 @@ func (h *Host) LoadGenerated(ctx context.Context, tools []Generated, collides Co
 			status = append(status, skip(st, fmt.Errorf(
 				"long-running generated tools are not enabled on this instance "+
 					"([tools.agent] allow_long_running); rewrite it to finish in one call, "+
-					"or use gap_report to ask an operator"), "resumable"))
+					"or call capability_request to ask an operator"), "resumable"))
 			continue
 		}
 

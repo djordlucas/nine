@@ -230,6 +230,46 @@ var migrations = []migrationStep{
 		)`)
 		return err
 	}},
+
+	// 11 → 12: capability requests and grants. CREATE TABLE IF NOT EXISTS in
+	// initSchema covers a fresh database; a database in the field needs the same
+	// objects created here.
+	//
+	// Nothing is backfilled and nothing needs to be. Every `config` and `default`
+	// grant is rewritten from nine.toml and the workspace on the first boot after
+	// this step, and there are no `approved` grants yet by definition — before this
+	// table existed there was no way to approve one.
+	{name: "capability_grants", fn: func(q sqlExec) error {
+		if _, err := q.Exec(`CREATE TABLE IF NOT EXISTS capability_requests (
+			id         TEXT PRIMARY KEY,
+			agent_id   TEXT NOT NULL,
+			tool_name  TEXT NOT NULL DEFAULT '',
+			capability TEXT NOT NULL,
+			params     TEXT,
+			reason     TEXT NOT NULL DEFAULT '',
+			status     TEXT NOT NULL DEFAULT 'pending',
+			created_at TEXT NOT NULL DEFAULT ` + nowExpr + `,
+			decided_at TEXT
+		)`); err != nil {
+			return err
+		}
+		if _, err := q.Exec(
+			`CREATE INDEX IF NOT EXISTS capability_requests_status ON capability_requests(status, created_at)`); err != nil {
+			return err
+		}
+		if _, err := q.Exec(`CREATE TABLE IF NOT EXISTS capability_grants (
+			id         TEXT PRIMARY KEY,
+			source     TEXT NOT NULL,
+			capability TEXT NOT NULL,
+			params     TEXT,
+			request_id TEXT,
+			created_at TEXT NOT NULL DEFAULT ` + nowExpr + `
+		)`); err != nil {
+			return err
+		}
+		_, err := q.Exec(`CREATE INDEX IF NOT EXISTS capability_grants_source ON capability_grants(source)`)
+		return err
+	}},
 }
 
 // hasTableTx reports whether a table exists, using the passed handle so it

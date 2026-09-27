@@ -1506,3 +1506,54 @@ func validateHTTPGrant(table string, g *ToolHTTPGrant) error {
 	}
 	return nil
 }
+
+// CapabilityGrantParams is one capability's scope, in the shape a capability
+// request or a stored grant carries it: flat, capability-agnostic, and only the
+// fields that capability uses.
+type CapabilityGrantParams struct {
+	Mounts     []ToolMount // fs.read, fs.write
+	Env        []string    // env
+	AllowHosts []string    // net.http
+	Methods    []string    // net.http
+	MaxBytes   int         // net.http
+	Scope      string      // state
+	MaxKeys    int
+	MaxValueKB int
+	MaxTotalKB int
+	TTL        string
+}
+
+// ValidateCapabilityGrant holds a grant that did not come from nine.toml to the
+// same rules the file is held to.
+//
+// It exists because the generated tier's ceiling now lives in the store, where an
+// operator's approval can put a grant the file never declared. Without this the
+// store could hold a ceiling nine.toml could not express — an empty `allow_hosts`,
+// a relative mount host, a reserved `NINE_*` env key — and the file's validators
+// would be a rule that applied only to operators who happened to use a file.
+//
+// The rules are not restated: the params are mapped into the same
+// ToolCapabilities shape and handed to the same validator the loader uses.
+func ValidateCapabilityGrant(capability string, p CapabilityGrantParams) error {
+	var caps ToolCapabilities
+	switch capability {
+	case "fs.read":
+		caps.FS.Read = p.Mounts
+	case "fs.write":
+		caps.FS.Write = p.Mounts
+	case "env":
+		caps.Env = p.Env
+	case "net.http":
+		caps.Net.HTTP = &ToolHTTPGrant{
+			AllowHosts: p.AllowHosts, Methods: p.Methods, MaxBytes: p.MaxBytes,
+		}
+	case "state":
+		caps.State = &ToolStateGrant{
+			Scope: p.Scope, MaxKeys: p.MaxKeys,
+			MaxValueKB: p.MaxValueKB, MaxTotalKB: p.MaxTotalKB, TTL: p.TTL,
+		}
+	default:
+		return fmt.Errorf("unknown capability %q", capability)
+	}
+	return validateToolEntry("tools.agent.capabilities", ToolEntry{Capabilities: caps})
+}

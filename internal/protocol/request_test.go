@@ -148,6 +148,7 @@ func TestEveryClientMsgTypeDecodes(t *testing.T) {
 		protocol.TypeWorkflowFail:     {Text: "wf-1"},
 		protocol.TypePluginCall:       {ToolName: "echo"},
 		protocol.TypeHumanInputAnswer: {AgentID: "a1", RequestID: "r1"},
+		protocol.TypeGrantsDecide:     {RequestID: "cr1", Text: "approve"},
 	}
 	for _, mt := range protocol.ClientMsgTypes {
 		m := fill[mt]

@@ -46,6 +46,8 @@ tags:
   description: Attaching to a running session.
 - name: system
   description: Bundled documentation and specification.
+- name: capabilities
+  description: The generated-tool capability ceiling, and the agent's requests to widen it.
 paths:
   /conversations:
     get:
@@ -950,6 +952,93 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+  /capabilities:
+    get:
+      operationId: listCapabilities
+      summary: List capability grants and requests
+      description: |
+        Returns the generated-tool capability ceiling in force and every request the
+        agent has made to widen it.
+
+        A grant's source is `default` (derived from the workspace root), `config`
+        (from nine.toml) or `approved` (conferred by an operator answering a
+        request). The first two are rewritten from the file at every daemon boot;
+        only `approved` grants persist across one independently.
+      tags:
+      - capabilities
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListCapabilitiesResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+  /capabilities/{id}/decision:
+    post:
+      operationId: decideCapability
+      summary: Approve, deny or revoke a capability
+      description: |
+        Settles a pending capability request, or revokes a grant an earlier approval
+        conferred.
+
+        The decision applies to the running daemon: an approval widens the ceiling
+        and a revocation narrows it, and the generated tool catalog is re-projected
+        against the result, so a tool that could not load becomes callable — or
+        stops being — on its next turn, with no restart.
+
+        `approve` and `deny` take a request id; `revoke` takes a grant id. Only an
+        `approved` grant is revocable, because a `config` or `default` grant is
+        rewritten from nine.toml at the next boot.
+      tags:
+      - capabilities
+      parameters:
+      - name: id
+        in: path
+        description: request id for approve/deny, grant id for revoke
+        required: true
+        schema:
+          type: string
+      requestBody:
+        description: the decision to apply
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CapabilityDecisionRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapabilityDecisionResponse'
+        '400':
+          description: unknown action, or no such request or grant
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
   /tools/reload:
     post:
       operationId: reloadTools
@@ -1641,6 +1730,96 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PluginInfo'
+    CapabilityGrant:
+      description: One capability in force for the generated-tool tier.
+      type: object
+      properties:
+        capability:
+          description: 'One of: fs.read, fs.write, net.http, env, state.'
+          type: string
+        created_at:
+          type: string
+        id:
+          type: string
+        params:
+          description: The scope this grant confers, as JSON. Shape depends on the capability.
+          type: string
+        request_id:
+          description: The request this grant came from, when its source is approved.
+          type: string
+        source:
+          description: >-
+            Where the grant came from: default (derived from the workspace root),
+            config (nine.toml) or approved (an operator's decision). Only approved
+            grants survive a boot independently of the file.
+          type: string
+      required:
+      - id
+      - source
+      - capability
+    CapabilityRequest:
+      description: One request from the agent for a capability the ceiling does not permit.
+      type: object
+      properties:
+        agent_id:
+          type: string
+        capability:
+          type: string
+        created_at:
+          type: string
+        decided_at:
+          type: string
+        id:
+          type: string
+        params:
+          description: The scope requested, as JSON. Empty when the agent named none.
+          type: string
+        reason:
+          description: Why the agent says it needs the capability. An operator reads this to decide.
+          type: string
+        status:
+          description: 'One of: pending, approved, denied.'
+          type: string
+        tool_name:
+          type: string
+      required:
+      - id
+      - capability
+      - status
+    CapabilityDecisionRequest:
+      description: A decision on one capability request or grant.
+      type: object
+      properties:
+        action:
+          description: approve or deny a request, or revoke a grant an approval conferred.
+          type: string
+          enum:
+          - approve
+          - deny
+          - revoke
+      required:
+      - action
+    CapabilityDecisionResponse:
+      description: What the decision did.
+      type: object
+      properties:
+        message:
+          description: A human-readable description of the outcome, including whether it took effect without a restart.
+          type: string
+      required:
+      - message
+    ListCapabilitiesResponse:
+      description: The capability ceiling in force, and the requests to widen it.
+      type: object
+      properties:
+        grants:
+          type: array
+          items:
+            $ref: '#/components/schemas/CapabilityGrant'
+        requests:
+          type: array
+          items:
+            $ref: '#/components/schemas/CapabilityRequest'
     ReloadToolsResponse:
       description: The sandboxed-tool roster after a reload.
       type: object

@@ -47,6 +47,17 @@ func SubAgentDefs(roleEnum string) []llm.ToolDef {
 			InputSchema: json.RawMessage(`{"type":"object","required":["description"],"properties":{"description":{"type":"string","description":"What capability is missing and why"}}}`),
 		},
 		{
+			Name:        "capability_request",
+			DisplayName: "Request Capability",
+			Description: "Ask the operator to grant a capability the generated-tool ceiling does not currently permit. Use this when writing a tool failed because a capability is not available on this instance: the request is queued for a human, who approves or denies it. Approval takes effect without a restart, so retry the write after one is granted. Requesting does not grant — you never confer a capability on yourself.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["capability","reason"],"properties":{` +
+				`"capability":{"type":"string","enum":["fs.read","fs.write","net.http","env","state"],"description":"The capability to request, exactly as the refusal named it."},` +
+				`"reason":{"type":"string","description":"Why the task cannot be done without it. A human reads this and nothing else about your intent, so be specific about what the tool does with the reach."},` +
+				`"tool_name":{"type":"string","description":"The tool that needs it, if you have already named one."},` +
+				`"params":{"type":"object","description":"What the capability should be scoped to, narrowest that works. For net.http: {\"allow_hosts\":[\"api.example.com\"],\"methods\":[\"GET\"]}. For env: {\"env\":[\"TZ\"]}. For fs: {\"mounts\":[{\"host\":\"/srv/data\",\"guest\":\"/data\"}]}. A broad request is likelier to be denied."}` +
+				`}}`),
+		},
+		{
 			Name:        "run_agent",
 			DisplayName: "Run Agent",
 			Description: "Spawn a sub-agent to execute a single self-contained task and return its final answer. Use this to isolate a focused piece of work or delegate a subtask. For multiple independent tasks at once, use run_agents.",
@@ -63,6 +74,36 @@ func SubAgentDefs(roleEnum string) []llm.ToolDef {
 
 // subAgentToolDefs is the static default set folded into InterceptedDefs.
 var subAgentToolDefs = SubAgentDefs("")
+
+// CapabilityRequester records an agent's request for a capability the ceiling does
+// not permit. It returns the text the tool reports back to the model.
+//
+// It is deliberately not a grant path: the implementation inserts a pending row an
+// operator decides on, and has no way to confer anything. The agent writes the
+// code, the operator writes the grants.
+type CapabilityRequester func(ctx context.Context, capability, reason, toolName string, params json.RawMessage) (string, error)
+
+// RegisterCapabilityRequest registers the capability_request handler into d.
+func RegisterCapabilityRequest(d *Dispatcher, request CapabilityRequester) {
+	d.handlers["capability_request"] = func(ctx context.Context, args json.RawMessage) (string, error) {
+		var req struct {
+			Capability string          `json:"capability"`
+			Reason     string          `json:"reason"`
+			ToolName   string          `json:"tool_name"`
+			Params     json.RawMessage `json:"params"`
+		}
+		if err := json.Unmarshal(args, &req); err != nil {
+			return "", fmt.Errorf("capability_request: %w", err)
+		}
+		if req.Capability == "" {
+			return "", fmt.Errorf("capability_request: capability is required")
+		}
+		if req.Reason == "" {
+			return "", fmt.Errorf("capability_request: reason is required — a human reads it to decide")
+		}
+		return request(ctx, req.Capability, req.Reason, req.ToolName, req.Params)
+	}
+}
 
 // RegisterGapReport registers the gap_report handler into d. post is called
 // with the description whenever the agent reports a capability gap.

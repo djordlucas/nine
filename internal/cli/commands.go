@@ -91,6 +91,22 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 	case "notifications":
 		all := len(args) > 1 && args[1] == "--all"
 		return c.Notifications(cfg, all)
+	case "grants":
+		if len(args) < 2 {
+			return c.Grants(cfg, false)
+		}
+		switch args[1] {
+		case "list":
+			return c.Grants(cfg, len(args) > 2 && args[2] == "--all")
+		case "approve", "deny", "revoke":
+			id := ""
+			if len(args) > 2 {
+				id = args[2]
+			}
+			return c.GrantsDecide(cfg, args[1], id)
+		default:
+			return fmt.Errorf("usage: nine grants [list [--all]|approve <id>|deny <id>|revoke <id>]")
+		}
 	case "workflows":
 		return c.Workflows(cfg)
 	case "workflow":
@@ -310,7 +326,7 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 // command and suggest the intended one. Kept in sync with the switch in Run.
 var knownCommands = []string{
 	"help", "docs", "spec", "version", "daemon", "goals", "reflections",
-	"notifications", "workflows", "workflow", "send", "skills", "plugins",
+	"notifications", "grants", "workflows", "workflow", "send", "skills", "plugins",
 	"plugin", "tools", "tool", "status", "context", "trace", "replay", "attach", "backup", "restore",
 	"stop",
 }
