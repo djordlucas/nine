@@ -488,10 +488,11 @@ max_output_tokens = 2048
 
 # ── Sandboxed tools ──────────────────────────────────────────────────────────
 # A wasm tool host: JavaScript or .wasm tools an operator installs as two files,
-# run in-process with an explicitly conferred capability set. OFF by default —
-# leaving `enabled` unset means no host, no tools, and agent loops identical to
-# what they were before this subsystem existed.
-enabled = false
+# run in-process with an explicitly conferred capability set. ON by default: this
+# tier carries the workspace file tools (read_file, write_file, edit_file and the
+# rest), so `enabled = false` means no host, no file tools, and agent loops
+# identical to what they were before this subsystem existed.
+enabled = true
 
 # Where developer tools live: a `<name>.js` or `<name>.wasm` beside a
 # `<name>.toml` manifest, the same sidecar layout [plugins].user_dir uses. A file
@@ -680,12 +681,17 @@ max_total_kb = 256           # 0 uses 1024
 ttl          = "24h"         # optional; omit for no expiry
 
 # ── Generated tools: the tier Nine writes itself ─────────────────────────────
-# OFF by default and independent of [tools] enabled above — an operator may want developer
-# tools without letting the agent author any. When on, the agent gets tool_write/tool_delete
-# (and js_eval, separately switched); the tools it writes are rows in the store, listable and
-# deletable, and run under exactly the same sandbox and bounds as a developer tool.
+# ON by default, and gated by [tools] enabled above it: the tier runs on the host, so turning
+# the host off turns this off too. The agent gets tool_write/tool_delete (and js_eval,
+# separately switched); the tools it writes are rows in the store, listable and deletable, and
+# run under exactly the same sandbox and bounds as a developer tool.
+#
+# What bounds the tier is the ceiling below, not this switch. A generated tool is granted only
+# what it declares and only what the ceiling permits, and the default ceiling is the workspace
+# — the same directory the shipped file tools reach and `shell` runs in. Set enabled = false to
+# keep the host and its shipped tools without letting the agent author any.
 [tools.agent]
-enabled          = false            # turns on tool_write / tool_delete
+enabled          = true             # the default; false keeps the host without tool_write
 eval             = true             # additionally allow js_eval — run a snippet, persist nothing
 max_tools        = 64               # catalog cap; least-recently-called tools are evicted past it
 
@@ -701,10 +707,19 @@ require_approval = "on_capability"
 # The CEILING — the MAXIMUM a generated tool may be granted, never an automatic grant. A tool
 # that declares nothing gets nothing, however permissive this is; a tool cannot declare its way
 # past it. Same shape as [tool.<name>.capabilities]. Narrowing it retroactively disables a tool
-# that no longer fits, on the next load. Omit it entirely to keep every generated tool inert.
+# that no longer fits, on the next load.
+#
+# Omitting the fs table does NOT leave generated tools inert: with no fs grant of your own the
+# ceiling defaults to [workspace].root, read and write, mounted at /work — the same directory
+# and the same guest path the shipped file tools use, so one file has one name whichever tier
+# reaches it. An fs grant here REPLACES that default rather than adding to it, which is how you
+# narrow it. Every other capability — net.http, env, state — has no default grant at all.
+#
+# Note there is no variable expansion in this file: a host path is a literal absolute path, and
+# a relative one is refused at load. That is why the workspace default is derived in code.
 [tools.agent.capabilities.fs]
-read = [{ host = "${NINE_WORKSPACE}", guest = "/workspace" }]  # narrow to a subdirectory if the
-                                                    # workspace holds secrets
+read  = [{ host = "/srv/data", guest = "/data" }]    # replaces the workspace default
+write = [{ host = "/srv/out",  guest = "/out" }]
 
 # ── The nine:* stdlib and external npm dependencies ──────────────────────────
 # A generated tool may always `import` the curated nine:* stdlib — nine:csv, nine:date,

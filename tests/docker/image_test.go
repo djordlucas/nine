@@ -218,8 +218,9 @@ func TestSandboxedToolsAreAvailable(t *testing.T) {
 }
 
 // TestBuiltinPluginsStart asserts the shell built-in actually starts in the
-// image. It is the agent's only filesystem capability there, because the
-// sandboxed tier that carries write_file is off in the baked config.
+// image. The sandboxed tier that carries write_file is on in the baked config, so
+// shell is not the agent's only route to a file — it is the unsandboxed one, which
+// is why its own startup is worth asserting separately.
 //
 // The regression this exists for: s6-setuidgid changes uid and gid and nothing
 // else, so the daemon ran as uid 1000 with HOME still pointing at root's home.

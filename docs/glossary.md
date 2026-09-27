@@ -322,12 +322,15 @@ the store's `tools` table holding the tool's `js` source and its capability
 **declaration** — never a grant. It runs through the exact same sandbox, ABI, and
 bounds as a **developer tool**; the differences are that the *agent* wrote the code
 and that the operator confers a **capability ceiling** rather than a per-tool grant.
-Off unless `[tools.agent] enabled`. *Nine cannot grant itself capabilities*
-(R-PLUG.7) holds unchanged: `tool_write` writes code, never a grant.
+On unless `[tools.agent] enabled = false`, and gated by `[tools] enabled` above it.
+*Nine cannot grant itself capabilities* (R-PLUG.7) holds unchanged: `tool_write`
+writes code, never a grant.
 
 **Capability ceiling (`[tools.agent.capabilities]`)** — The **maximum** any
 generated tool may be granted, and the operator's only lever over a tier where the
-agent writes the code. Not a default: a generated tool receives a capability only
+agent writes the code. Defaults to `[workspace].root`, read and write, derived at
+boot; an explicit fs grant replaces that default rather than adding to it. Not a
+per-tool default: a generated tool receives a capability only
 if it **declares** it, so a tool that declares nothing runs with nothing however
 permissive the ceiling is — and a tool cannot declare its way past it. Re-resolved
 on every load, so narrowing the ceiling disables a tool that no longer fits rather

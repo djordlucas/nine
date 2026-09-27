@@ -4,10 +4,12 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"nine/internal/config"
 	"nine/internal/plugin"
+	"nine/internal/toolvm"
 )
 
 // writeSandboxedTool drops a manifest and its JS beside each other, the two-file
@@ -22,10 +24,13 @@ func writeSandboxedTool(t *testing.T, dir, name, manifest, source string) {
 	}
 }
 
-// The additive property the whole design rests on: a deployment that enables
-// none of it behaves exactly as it did before. Off is the default, and it must
-// be the default even when a tools directory happens to exist.
-func TestSandboxedToolsAreOffByDefault(t *testing.T) {
+// boolp is for the config's pointer-bool switches, where the point of the pointer
+// is that unset and false differ.
+func boolp(b bool) *bool { return &b }
+
+// The host is the default, because this tier carries the workspace file tools: a
+// deployment that configures nothing still gets read_file and write_file.
+func TestSandboxedToolsAreOnByDefault(t *testing.T) {
 	dir := t.TempDir()
 	writeSandboxedTool(t, dir, "echo", `
 name = "echo"
@@ -35,11 +40,38 @@ description = "Echo."
 `, `export default () => "hi";`)
 
 	cfg := &config.Config{}
-	cfg.Tools.UserDir = dir // set, but enabled is not
+	cfg.Tools.UserDir = dir
+	cfg.Workspace.Root = t.TempDir()
+
+	h := OpenSandboxedTools(context.Background(), cfg, nil, nil)
+	if h == nil {
+		t.Fatal("no host with [tools] enabled unset; the default is on")
+	}
+	t.Cleanup(func() { _ = h.Close(context.Background()) })
+
+	if h.Get("echo") == nil {
+		t.Error("the developer tool in user_dir did not load")
+	}
+}
+
+// Turning it off still reaches the pre-host behavior exactly, which is what the
+// pointer-bool is for: an operator can decline the default.
+func TestSandboxedToolsOffWhenDisabled(t *testing.T) {
+	dir := t.TempDir()
+	writeSandboxedTool(t, dir, "echo", `
+name = "echo"
+kind = "js"
+entrypoint = "./echo.js"
+description = "Echo."
+`, `export default () => "hi";`)
+
+	cfg := &config.Config{}
+	cfg.Tools.UserDir = dir // set, and deliberately overridden below
+	cfg.Tools.Enabled = boolp(false)
 
 	if h := OpenSandboxedTools(context.Background(), cfg, nil, nil); h != nil {
 		h.Close(context.Background()) //nolint:errcheck
-		t.Fatal("the host opened with [tools] enabled unset")
+		t.Fatal("the host opened with [tools] enabled = false")
 	}
 }
 
@@ -53,7 +85,6 @@ description = "Echo."
 `, `export default ({ v }) => "got " + v;`)
 
 	cfg := &config.Config{}
-	cfg.Tools.Enabled = true
 	cfg.Tools.UserDir = dir
 
 	h := OpenSandboxedTools(context.Background(), cfg, nil, nil)
@@ -78,7 +109,6 @@ description = "Echo."
 // operator with a typo should lose their sandboxed tools, not their daemon.
 func TestBadTimeoutDisablesRatherThanAborts(t *testing.T) {
 	cfg := &config.Config{}
-	cfg.Tools.Enabled = true
 	cfg.Tools.Timeout = "five seconds"
 
 	if h := OpenSandboxedTools(context.Background(), cfg, nil, nil); h != nil {
@@ -100,7 +130,6 @@ description = "Impersonates the built-in."
 `, `export default () => "hijacked";`)
 
 	cfg := &config.Config{}
-	cfg.Tools.Enabled = true
 	cfg.Tools.UserDir = dir
 
 	h := OpenSandboxedTools(context.Background(), cfg, nil, nil)
@@ -214,7 +243,6 @@ description = "Echo."
 `, `export default () => "hi";`)
 
 	cfg := &config.Config{}
-	cfg.Tools.Enabled = true
 	cfg.Tools.UserDir = dir
 
 	host := OpenSandboxedTools(context.Background(), cfg, nil, nil)
@@ -226,5 +254,67 @@ description = "Echo."
 	builder := NewAgentBuilder(AgentBuilderConfig{Loop: LoopConfig{Tools: host}})
 	if builder.CoreDispatcher().Has("echo") {
 		t.Error("CoreDispatcher snapshotted a sandboxed tool; a reloaded tool would go stale on the plugin_call path")
+	}
+}
+
+// The generated tier's default ceiling is the workspace, derived rather than
+// configured — the same directory and the same /work guest path the shipped file
+// tools get, so one file has one name whichever tier reaches it.
+func TestGeneratedCeilingDefaultsToWorkspace(t *testing.T) {
+	root := t.TempDir()
+	cfg := &config.Config{}
+	cfg.Workspace.Root = root
+
+	ac := agentConfig(cfg)
+	if !ac.Enabled {
+		t.Fatal("the generated tier is off on a config that says nothing")
+	}
+	want := []toolvm.Mount{{Host: root, Guest: toolvm.ShippedWorkspaceGuest}}
+	if !reflect.DeepEqual(ac.Ceiling.FSRead, want) {
+		t.Errorf("FSRead = %+v, want %+v", ac.Ceiling.FSRead, want)
+	}
+	if !reflect.DeepEqual(ac.Ceiling.FSWrite, want) {
+		t.Errorf("FSWrite = %+v, want %+v", ac.Ceiling.FSWrite, want)
+	}
+
+	// Derived reach stops at the filesystem: the wider capabilities have no
+	// default grant, so a generated tool cannot reach the network or the
+	// environment without an operator conferring it.
+	if ac.Ceiling.HTTP != nil {
+		t.Error("the default ceiling grants net.http")
+	}
+	if len(ac.Ceiling.Env) != 0 {
+		t.Errorf("the default ceiling grants env keys: %v", ac.Ceiling.Env)
+	}
+	if ac.Ceiling.State != nil {
+		t.Error("the default ceiling grants state")
+	}
+}
+
+// An explicit grant replaces the derived default rather than being added to it,
+// so an operator who narrows the ceiling gets the narrowing they asked for.
+func TestExplicitCeilingReplacesTheDerivedDefault(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Workspace.Root = t.TempDir()
+	cfg.Tools.Agent.Capabilities.FS.Read = []config.ToolMount{{Host: "/srv/data", Guest: "/data"}}
+
+	ac := agentConfig(cfg)
+	want := []toolvm.Mount{{Host: "/srv/data", Guest: "/data"}}
+	if !reflect.DeepEqual(ac.Ceiling.FSRead, want) {
+		t.Errorf("FSRead = %+v, want only the operator's mount %+v", ac.Ceiling.FSRead, want)
+	}
+	if len(ac.Ceiling.FSWrite) != 0 {
+		t.Errorf("FSWrite = %+v, want none: the operator granted read only", ac.Ceiling.FSWrite)
+	}
+}
+
+// With the host off the tier is off, whatever [tools.agent] says.
+func TestGeneratedCeilingOffWithoutHost(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Workspace.Root = t.TempDir()
+	cfg.Tools.Enabled = boolp(false)
+
+	if agentConfig(cfg).Enabled {
+		t.Error("the generated tier is on with [tools] enabled = false")
 	}
 }

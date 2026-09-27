@@ -131,7 +131,7 @@ read = [{ host = "/srv/data", guest = "/data" }]
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if !cfg.Tools.Enabled || cfg.Tools.UserDir != "/etc/nine/tools.d" {
+	if !cfg.Tools.IsEnabled() || cfg.Tools.UserDir != "/etc/nine/tools.d" {
 		t.Errorf("[tools] = %+v", cfg.Tools)
 	}
 	if cfg.Tools.Timeout != "5s" || cfg.Tools.MemoryMB != 16 {
@@ -143,14 +143,64 @@ read = [{ host = "/srv/data", guest = "/data" }]
 	}
 }
 
-// An empty config must stay valid: the subsystem is off and nothing is required.
+// An empty config must stay valid, and must resolve to the on-by-default posture:
+// the host runs and the generated tier with it, because both carry defaults an
+// unconfigured deployment needs rather than opt-ins it has to discover.
 func TestEmptyConfigIsValid(t *testing.T) {
 	cfg, err := loadTOML(t, "")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.Tools.Enabled {
-		t.Error("[tools] enabled defaults to true")
+	if !cfg.Tools.IsEnabled() {
+		t.Error("[tools] enabled does not default to true")
+	}
+	if !cfg.Tools.Agent.IsEnabled() {
+		t.Error("[tools.agent] enabled does not default to true")
+	}
+	if !cfg.Tools.GeneratedEnabled() {
+		t.Error("GeneratedEnabled is false on an empty config")
+	}
+}
+
+// Unset and false are different answers, which is the whole reason these two are
+// pointers: an operator must be able to decline a default that is now on.
+func TestToolsDisabledExplicitly(t *testing.T) {
+	cfg, err := loadTOML(t, `
+[tools]
+enabled = false
+
+[tools.agent]
+enabled = false
+`)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Tools.IsEnabled() {
+		t.Error("[tools] enabled = false did not turn the host off")
+	}
+	if cfg.Tools.Agent.IsEnabled() {
+		t.Error("[tools.agent] enabled = false did not turn the tier off")
+	}
+}
+
+// The host gate sits above the tier gate: the generated tier runs on the host, so
+// with the host off it is off whatever it asked for.
+func TestGeneratedTierNeedsTheHost(t *testing.T) {
+	cfg, err := loadTOML(t, `
+[tools]
+enabled = false
+
+[tools.agent]
+enabled = true
+`)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Tools.Agent.IsEnabled() {
+		t.Error("[tools.agent] enabled = true was not read")
+	}
+	if cfg.Tools.GeneratedEnabled() {
+		t.Error("GeneratedEnabled is true with [tools] enabled = false")
 	}
 }
 
@@ -168,19 +218,24 @@ func TestToolsUserDirEnvOverride(t *testing.T) {
 	}
 }
 
-// Deliberately not overridable. Turning the sandboxed-tool host on is an
-// operator decision that belongs in nine.toml; an environment variable able to
-// switch it on would mean a deployment gaining a whole execution subsystem from
-// a stray export.
+// Deliberately not overridable, in either direction. Whether the sandboxed-tool
+// host runs is an operator decision that belongs in nine.toml; an environment
+// variable able to move it would mean a deployment gaining or losing a whole
+// execution subsystem from a stray export. Now that the default is on, the
+// direction that matters is off: a NINE_TOOLS_ENABLED=false must not silently
+// take the file tools away.
 func TestToolsEnabledIsNotEnvOverridable(t *testing.T) {
-	t.Setenv("NINE_TOOLS_ENABLED", "true")
+	t.Setenv("NINE_TOOLS_ENABLED", "false")
 	t.Setenv("NINE_TOOLS_USER_DIR", "/tools.d")
 
 	cfg := &Config{}
 	ApplyEnvOverrides(cfg)
 
-	if cfg.Tools.Enabled {
-		t.Error("[tools] enabled was switched on by an environment variable")
+	if !cfg.Tools.IsEnabled() {
+		t.Error("[tools] enabled was switched off by an environment variable")
+	}
+	if cfg.Tools.Enabled != nil {
+		t.Error("an environment variable set the pointer at all")
 	}
 }
 
@@ -225,4 +280,36 @@ func TestBootstrapTableAbsent(t *testing.T) {
 	if cfg.Bootstrap.SelfModelPath != "" {
 		t.Errorf("self_model_path = %q, want empty", cfg.Bootstrap.SelfModelPath)
 	}
+}
+
+// The workspace root has a default because an unset one is not neutral: every
+// shipped tool that declares fs is skipped without it, and with [tools] enabled
+// defaulting to true that would be the out-of-the-box state.
+func TestWorkspaceRootPrecedence(t *testing.T) {
+	t.Run("env wins over the file", func(t *testing.T) {
+		t.Setenv("NINE_WORKSPACE_ROOT", "/from/env")
+		cfg := &Config{}
+		cfg.Workspace.Root = "/from/file"
+		if got := cfg.WorkspaceRoot(); got != "/from/env" {
+			t.Errorf("WorkspaceRoot() = %q, want the environment to win", got)
+		}
+	})
+
+	t.Run("file wins over the default", func(t *testing.T) {
+		t.Setenv("NINE_WORKSPACE_ROOT", "")
+		cfg := &Config{}
+		cfg.Workspace.Root = "/from/file"
+		if got := cfg.WorkspaceRoot(); got != "/from/file" {
+			t.Errorf("WorkspaceRoot() = %q, want the file's value", got)
+		}
+	})
+
+	// The platform default is never empty, which is the property that matters:
+	// whatever it resolves to, a shipped fs tool has a root to mount.
+	t.Run("never empty", func(t *testing.T) {
+		t.Setenv("NINE_WORKSPACE_ROOT", "")
+		if got := (&Config{}).WorkspaceRoot(); got == "" {
+			t.Error("WorkspaceRoot() is empty with nothing configured; every fs tool would skip")
+		}
+	})
 }

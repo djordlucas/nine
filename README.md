@@ -44,8 +44,9 @@ the exact LLM request/response, tool I/O, context usage, sub-agent lifecycle. `n
 `nine replay` read it back; `nine context` shows the session's current context.
 
 **Evolving.** Nine writes its own skills — markdown how-to notes, retrieved into context when relevant.
-Where enabled, it also writes its own sandboxed tools at runtime (JS/Wasm) to close capability gaps:
-the agent writes the code, the operator writes the capability grants.
+It also writes its own sandboxed tools at runtime (JS/Wasm) to close capability gaps, bounded by a
+capability ceiling that defaults to the workspace: the agent writes the code, the operator writes the
+capability grants.
 
 **Local.** Built to run against a local model (currently through Ollama) with a SQLite database,
 developed against small models to stay useful on modest hardware. Currently tested against
@@ -514,22 +515,25 @@ has no fuel metering, so the deadline is the only CPU bound.
 
 ### The tier Nine writes itself
 
-Nine can also write its own tools at runtime — the gap its `gap_report` names but
-could not previously close. These are rows in the store rather than files on disk, but
-they run in the identical sandbox under the identical rules. The tier is currently off by
-default and independent of `[tools] enabled`; with it off, `tool_write`, `tool_delete`,
-and `js_eval` are neither registered nor advertised, and a loop is identical to one
-built before the tier existed:
+Nine writes its own tools at runtime. These are rows in the store rather than files on
+disk, but they run in the identical sandbox under the identical rules. The tier is **on
+by default**, with `[workspace].root` as its ceiling — read and write, at `/work`, the
+same directory the shipped file tools reach and `shell` runs in. It is gated by `[tools]
+enabled` above it, and setting either to false leaves `tool_write`, `tool_delete` and
+`js_eval` neither registered nor advertised, and a loop identical to one built before the
+tier existed.
+
+Nothing needs writing to get that. What an operator writes here is a narrowing:
 
 ```toml
 [tools.agent]
-enabled          = true
-eval             = true             # allow js_eval — run a snippet, persist nothing
+enabled          = false            # keep the host and its shipped tools, without this tier
+eval             = false            # disallow js_eval — a snippet that persists nothing
 max_tools        = 64               # catalog cap; least-recently-called are evicted
-require_approval = "on_capability"  # prompt a human only when a tool asks for reach
+require_approval = "always"         # prompt on every write, not only those asking for reach
 
-[tools.agent.capabilities.fs]       # the ceiling, not a grant
-read = [{ host = "${NINE_WORKSPACE}", guest = "/workspace" }]
+[tools.agent.capabilities.fs]       # the ceiling, not a grant — replaces the workspace default
+read = [{ host = "/srv/data", guest = "/data" }]
 ```
 
 `[tools.agent.capabilities]` is a **ceiling**: the most any generated tool may be
@@ -715,11 +719,16 @@ cosign and carries an SBOM and build provenance —
 The API on port 8080 has no authentication. Bind it to localhost, as the quick start
 does, or put it behind a reverse proxy.
 
-Two settings deserve a deliberate decision rather than a default. Enabling
-`[tools.agent]` lets the agent write code that then runs — bounded by the ceiling you
-confer, which is worth narrowing if your workspace holds secrets. Enabling external npm
-dependencies for that tier is the riskiest switch in the system; leave it off unless you
-have a reason, and leave the `net.http` interlock in place if you turn it on.
+`[tools.agent]` is on by default, so the agent writes code that then runs — bounded by a
+ceiling that defaults to `[workspace].root`, read and write. That is the same directory the
+shipped file tools reach and `shell` runs in, so it is not new reach for the agent; what it
+adds is reach for a *generated tool's dependencies*. Narrow the ceiling with an explicit fs
+grant if your workspace holds secrets, or set `enabled = false` to keep the host without the
+tier.
+
+Enabling external npm dependencies for that tier is the riskiest switch in the system and is
+off by default; leave it off unless you have a reason, and leave the `net.http` interlock in
+place if you turn it on. `allow_long_running` and `allow_standing` are likewise off.
 
 ## License
 GPL-3.0-or-later. See [LICENSE](LICENSE).
