@@ -16,6 +16,8 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"nine/internal/config"
 )
 
 // repoRoot is this package's path relative to the repository root.
@@ -267,41 +269,69 @@ func TestReleaseGateIsAGate(t *testing.T) {
 	}
 }
 
-// TestPublishedConfigIsConservative asserts the config baked into the image
-// does not enable the tiers that let the agent run code it wrote or reach the
-// host filesystem. A published default reaches people who never read it.
+// TestPublishedConfigIsConservative asserts the posture the config baked into the
+// image resolves to. A published default reaches people who never read it.
+//
+// It loads the file rather than matching its text, because since the tool tiers
+// defaulted on, an absent key means the feature is *enabled* — so the absence of
+// a section is no longer evidence of anything, and the old textual form of this
+// test would have passed a config that turned everything on. Loading also covers
+// this file with the unknown-key warning that only the repo's own nine.toml had.
 func TestPublishedConfigIsConservative(t *testing.T) {
-	cfg := readRepoFile(t, "docker/nine.toml")
-
-	if regexp.MustCompile(`(?m)^\s*\[tools\.agent\]`).MatchString(cfg) {
-		t.Error("docker/nine.toml declares [tools.agent]; the generated-tool tier must stay off in the published image")
+	cfg, err := config.Load(filepath.Join(repoRoot, "docker/nine.toml"))
+	if err != nil {
+		t.Fatalf("the published config does not load: %v", err)
 	}
 
-	// The shipped sandboxed tools are on — they are the agent's filesystem, and
-	// without them the image can neither read nor write a file. What must stay
-	// off is user_dir: the shipped set is embedded in the binary and reviewed,
-	// a directory of tools is neither. Match keys in the [tools] table only.
-	toolsIdx := regexp.MustCompile(`(?m)^\s*\[tools\]`).FindStringIndex(cfg)
-	if toolsIdx == nil {
-		t.Fatal("docker/nine.toml has no [tools] section; the tier must be set explicitly")
+	// The two tiers are on, and both are the reason the agent can touch a file at
+	// all: the shipped tools are its filesystem, and the generated tier is bounded
+	// by the same workspace those tools reach.
+	if !cfg.Tools.IsEnabled() {
+		t.Error("[tools] is off; the image would ship with no file tools")
 	}
-	rest := cfg[toolsIdx[1]:]
-	if next := regexp.MustCompile(`(?m)^\s*\[`).FindStringIndex(rest); next != nil {
-		rest = rest[:next[0]]
+	if !cfg.Tools.GeneratedEnabled() {
+		t.Error("[tools.agent] is off; the published image is meant to carry the generated tier")
 	}
-	if !regexp.MustCompile(`(?m)^\s*enabled\s*=\s*true`).MatchString(rest) {
-		t.Error("docker/nine.toml does not set [tools] enabled = true; the image would ship with no file tools")
+
+	// Everything with reach beyond the workspace stays off. These are the switches
+	// a published default must not make for someone.
+	for _, c := range []struct {
+		on   bool
+		what string
+	}{
+		{cfg.Tools.Agent.DepsMode() != config.DepsModeOff, "[tools.agent.deps] mode is not off; external npm packages must be an operator's decision"},
+		{cfg.Tools.Agent.AllowNetworkDeps, "allow_network_deps is on; a networked dependency plus net.http is an exfiltration path"},
+		{cfg.Tools.Agent.AllowLongRunning, "allow_long_running is on; duration is conferred, not defaulted"},
+		{cfg.Tools.Agent.AllowStanding, "allow_standing is on; a self-scheduling generated tool is conferred, not defaulted"},
+		{cfg.Tools.Agent.Capabilities.Net.HTTP != nil, "the generated-tool ceiling grants net.http; the shipped web tools cover that need"},
+		{len(cfg.Tools.Agent.Capabilities.Env) > 0, "the generated-tool ceiling grants environment keys"},
+		{cfg.Tools.Agent.RequireApproval == config.ToolApprovalNever, `require_approval is "never"; the published default must keep the gate`},
+	} {
+		if c.on {
+			t.Error("docker/nine.toml: " + c.what)
+		}
 	}
-	if regexp.MustCompile(`(?m)^\s*user_dir\s*=`).MatchString(rest) {
-		t.Error("docker/nine.toml sets [tools] user_dir; the published image loads only the shipped tools")
+
+	// The ceiling must stay the workspace. An explicit fs grant in this file would
+	// replace the derived workspace mount rather than add to it, so a grant here is
+	// a widening even when it looks like documentation.
+	if fs := cfg.Tools.Agent.Capabilities.FS; len(fs.Read) > 0 || len(fs.Write) > 0 {
+		t.Errorf("docker/nine.toml grants an explicit fs ceiling (%+v); the derived workspace mount is the intended bound", fs)
+	}
+
+	// The shipped set is embedded in the binary and reviewed; a directory of tools
+	// is neither.
+	if cfg.Tools.UserDir != "" {
+		t.Errorf("[tools] user_dir = %q; the published image loads only the shipped tools", cfg.Tools.UserDir)
 	}
 
 	// Durable state belongs on the volume, not in the image's writable layer,
 	// which is discarded when the container is replaced.
-	for _, want := range []string{`path = "/data/nine.db"`, `root = "/data/workspace"`} {
-		if !strings.Contains(cfg, want) {
-			t.Errorf("docker/nine.toml is missing %s; state must live on the /data volume", want)
-		}
+	if cfg.Memory.Path != "/data/nine.db" {
+		t.Errorf("[memory] path = %q, want /data/nine.db", cfg.Memory.Path)
+	}
+	if cfg.Workspace.Root != "/data/workspace" {
+		t.Errorf("[workspace] root = %q, want /data/workspace", cfg.Workspace.Root)
 	}
 }
 

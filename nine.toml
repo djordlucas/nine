@@ -187,13 +187,15 @@ root = "./dist"
 # (copy one in). JS is the supported language; a .wasm module from another
 # language runs on a specified but unsupported contract (`nine spec toolvm`).
 #
-# OFF by default. Leaving `enabled` unset means no host, no tools, and agent
-# loops exactly as they were. See tools.d/README.md for a working example, and
-# `nine tools` for the roster (including anything that failed to load, and why).
-# The container overrides the directory with NINE_TOOLS_USER_DIR, but `enabled`
-# stays a deliberate decision here.
+# ON by default: this tier carries the workspace file tools (read_file,
+# write_file, edit_file and the rest), so a deployment without it cannot touch a
+# file. Set `enabled = false` to decline it. See tools.d/README.md for a working
+# example, and `nine tools` for the roster (including anything that failed to
+# load, and why). The container overrides the directory with
+# NINE_TOOLS_USER_DIR; `enabled` is not environment-overridable in either
+# direction.
 # [tools]
-# enabled   = true
+# enabled   = true     # the default; false turns the host off entirely
 # user_dir  = "./tools.d"
 # timeout   = "5s"     # per-call wall clock; override for one tool with
 #                      # [tool.<name>] timeout below
@@ -230,18 +232,28 @@ root = "./dist"
 # max_bytes   = 1048576                   # response cap; 0 uses 1 MiB
 
 # Generated tools: the tier Nine writes itself (docs/sandboxed-tools.md, R-TVM.14/15).
-# OFF by default and independent of [tools] enabled. The ceiling is the MAXIMUM a
-# generated tool may be granted, never an automatic grant — a tool that declares
-# nothing gets nothing. Generated tools may always import the nine:* stdlib
-# (nine:csv, nine:date, nine:diff); external npm packages are a separate, riskier
-# switch, resolved and bundled at write time and OFF by default.
+# ON by default, and gated by [tools] enabled above it — the tier runs on the
+# host, so turning the host off turns this off with it. The ceiling is the MAXIMUM
+# a generated tool may be granted, never an automatic grant: a tool that declares
+# nothing gets nothing, however wide the ceiling is. Generated tools may always
+# import the nine:* stdlib (nine:csv, nine:date, nine:diff); external npm packages
+# are a separate, riskier switch, resolved and bundled at write time and OFF by
+# default.
+#
+# The default ceiling is the workspace, read and write, derived from
+# [workspace].root at boot — the same directory and the same /work guest path the
+# shipped file tools use. Grant any fs mount below and you replace that default
+# rather than adding to it. Note there is no variable expansion in this file: a
+# host path is a literal absolute path, which is exactly why the default is
+# derived in code instead of written here.
 # [tools.agent]
-# enabled          = true
+# enabled          = true             # the default; false keeps the host without the tier
 # eval             = true             # allow js_eval (run a snippet, persist nothing)
 # max_tools        = 64               # catalog cap; least-recently-used are evicted
 # require_approval = "on_capability"  # on_capability (default) | always | never
 # [tools.agent.capabilities.fs]
-# read = [{ host = "${NINE_WORKSPACE}", guest = "/workspace" }]   # narrow if secrets live here
+# read  = [{ host = "/srv/data", guest = "/data" }]   # absolute; replaces the workspace default
+# write = [{ host = "/srv/out",  guest = "/out" }]
 # [tools.agent.deps]
 # mode  = "allowlist"                 # off (default) | allowlist | open ; frozen = true to pin
 # allow = [{ name = "date-fns", version = "^4.1.0" }]
@@ -285,5 +297,8 @@ plan_approval = "on-risky"
 # description = "Monitor this repo for security issues; triage new CVEs affecting our deps."
 # role        = "monitor"
 # schedule    = "0 9 * * 1-5"   # weekdays at 09:00  (or e.g. interval = "24h")
-[tools]
-enabled = true
+
+# This development config takes the defaults for both tool tiers: the sandboxed
+# host runs, and the generated tier with it, with the workspace as the ceiling.
+# The reference block above documents every key. Nothing is set here because
+# nothing needs overriding — `enabled` defaults to true on both.

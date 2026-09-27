@@ -6,8 +6,9 @@ A **sandboxed tool** is a wasm module that the daemon executes **in-process**, w
 explicitly conferred set of capabilities and nothing else. It is a *second backend behind
 the same dispatcher* as native plugins (`spec/contracts/plugin.md`), not a replacement:
 the plugin contract, its transport, and `plugin.ProtocolVersion` are untouched, and a
-deployment that leaves `[tools] enabled` unset behaves exactly as it did before this
-subsystem existed.
+deployment that sets `[tools] enabled = false` behaves exactly as it did before this
+subsystem existed. `enabled` defaults to **true**, because this tier carries the workspace
+file tools (R-TVM.16) — without it an agent cannot read or write a file.
 
 The design rationale is `docs/sandboxed-tools.md`; the authoring guide is
 `docs/writing-sandboxed-tools.md`. This file is normative.
@@ -618,9 +619,19 @@ deliberately **no grant**. It runs through the exact host, ABI (R-TVM.1), instan
 (R-TVM.3), bounds (R-TVM.4), and audit (R-TVM.12) a developer tool does. Kind is always
 `js`: the agent cannot supply a `.wasm` blob, because a binary is not reviewable.
 
-The tier is **off unless `[tools.agent] enabled`**. With it off, `tool_write`, `tool_delete`,
-and `js_eval` are neither registered nor advertised, and a loop is identical to one built
-before the tier existed (I-TVM.6 extends to it).
+The tier is **on unless `[tools.agent] enabled = false`**, and is gated by `[tools] enabled`
+above it: the generated tier runs on the host, so with the host off the tier is off whatever
+it says. With the tier off, `tool_write`, `tool_delete`, and `js_eval` are neither registered
+nor advertised, and a loop is identical to one built before the tier existed (I-TVM.6 extends
+to it).
+
+The default is on because the ceiling, not this switch, is the control that bounds the tier:
+a tool is granted only what it declares and only what the operator has conferred, so a tier
+that is on with a narrow ceiling is not a tier that is unbounded. The **default ceiling is the
+workspace, read and write**, derived from `[workspace].root` at the `ShippedWorkspaceGuest`
+path the shipped tools use — the same directory `shell` already runs in. An explicit
+`[tools.agent.capabilities]` fs grant **replaces** that derived default rather than adding to
+it, so narrowing the ceiling narrows it.
 
 ### The ceiling, not a grant
 
@@ -1091,8 +1102,9 @@ R-TVM.19 adds a second lifecycle to the same tool. Both halves of
   exposes no `exec`, no `urlGet`, and no `evalScript` (R-TVM.9).
 - **I-TVM.8** — `nine.caps` describes a grant and never confers one. Nothing reads it back
   to make an enforcement decision.
-- **I-TVM.6** — `[tools] enabled` unset ⇒ no host, no tools, and loops identical to those
-  built before this subsystem existed.
+- **I-TVM.6** — `[tools] enabled = false` ⇒ no host, no tools, and loops identical to those
+  built before this subsystem existed. The flag is a pointer in config precisely so that an
+  operator declining the default is distinguishable from one who said nothing.
 - **I-TVM.7** — A sandboxed tool cannot reach a loopback, link-local, or private address,
   whatever its `allow_hosts` says and whatever any hostname resolves to.
 

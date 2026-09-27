@@ -639,12 +639,14 @@ and the only one that is neither a subprocess nor a core handler: JS and wasm
 tools run **inside the daemon process**, in a wazero sandbox, with exactly the
 capabilities the operator conferred — by default, none.
 
-The subsystem is additive by construction. `runtime.OpenSandboxedTools`
-(`sandboxed`) returns **nil** unless `[tools] enabled` is
-set, every consumer downstream treats a nil host as "no sandboxed tools", and a
+The subsystem remains separable by construction, though it is now on by default:
+`runtime.OpenSandboxedTools` returns **nil** when `[tools] enabled` is false,
+every consumer downstream treats a nil host as "no sandboxed tools", and a
 failure to open the wasm runtime is logged and degraded to nil rather than
 aborting the boot — an operator whose sandbox will not start should lose the
-tools, not the daemon.
+tools, not the daemon. What changed with the default is the cost of that
+degradation: the shipped file tools live in this tier, so a nil host is an agent
+that cannot read or write a file.
 
 ### Host lifecycle
 

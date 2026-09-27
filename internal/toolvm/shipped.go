@@ -236,8 +236,10 @@ var shippedTools = []shippedTool{
 // load rather than registering with a capability that silently does nothing.
 type ShippedWorkspace struct{ Host string }
 
-// shippedWorkspaceGuest is where the workspace appears inside the sandbox.
-const shippedWorkspaceGuest = "/work"
+// ShippedWorkspaceGuest is where the workspace appears inside the sandbox. It is
+// the guest path for both shipped tools and the generated tier's default ceiling
+// (runtime.agentConfig), so one file has one name whichever tier reaches it.
+const ShippedWorkspaceGuest = "/work"
 
 // SetShippedWorkspace installs the mount used by shipped tools that declare fs.
 // Must be called before LoadShipped.
@@ -336,7 +338,7 @@ func resolveShipped(d Declaration, ws ShippedWorkspace, allowHosts, allowMethods
 		if ws.Host == "" {
 			return Grant{}, fmt.Errorf("shipped tool declares fs %v but no workspace is configured", d.FS)
 		}
-		m := Mount{Host: ws.Host, Guest: shippedWorkspaceGuest}
+		m := Mount{Host: ws.Host, Guest: ShippedWorkspaceGuest}
 		for _, verb := range d.FS {
 			switch verb {
 			case "read":

@@ -14,8 +14,6 @@ import (
 // host itself enabled, plus [tools.agent].
 func enabledAgentCfg() *config.Config {
 	cfg := &config.Config{}
-	cfg.Tools.Enabled = true
-	cfg.Tools.Agent.Enabled = true
 	cfg.Tools.Agent.Eval = true
 	return cfg
 }
@@ -180,8 +178,8 @@ func TestGeneratedEvalPersistsNothing(t *testing.T) {
 	}
 }
 
-// The tier stays off unless [tools.agent] opts in, even with the host enabled.
-func TestGeneratedTierOffWithoutAgentConfig(t *testing.T) {
+// The tier is off when [tools.agent] opts out, with the host still enabled.
+func TestGeneratedTierOffWhenAgentDisabled(t *testing.T) {
 	store, err := memtest.Open(t)
 	if err != nil {
 		t.Fatal(err)
@@ -189,16 +187,38 @@ func TestGeneratedTierOffWithoutAgentConfig(t *testing.T) {
 	t.Cleanup(func() { _ = store.Close() })
 
 	cfg := &config.Config{}
-	cfg.Tools.Enabled = true // host on, but [tools.agent] left off
+	cfg.Tools.Agent.Enabled = boolp(false) // host on by default, generated tier refused
 
 	host := OpenSandboxedTools(context.Background(), cfg, store, nil)
 	t.Cleanup(func() { _ = host.Close(context.Background()) })
 
 	if host.AgentEnabled() {
-		t.Fatal("generated tier is on without [tools.agent] enabled")
+		t.Fatal("generated tier is on with [tools.agent] enabled = false")
 	}
 	if gt := NewGeneratedToolStore(store, host, nil, nil, false); gt != nil {
 		t.Fatal("NewGeneratedToolStore returned a backend for a disabled tier")
+	}
+}
+
+// The host gate is above the tier gate: [tools] enabled = false turns the
+// generated tier off whatever [tools.agent] says, which is the dependency
+// ToolsConfig.GeneratedEnabled states once so no call site has to.
+func TestGeneratedTierOffWithoutHost(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	cfg := &config.Config{}
+	cfg.Tools.Enabled = boolp(false)
+	cfg.Tools.Agent.Enabled = boolp(true)
+
+	if cfg.Tools.GeneratedEnabled() {
+		t.Error("GeneratedEnabled is true with the host off")
+	}
+	if host := OpenSandboxedTools(context.Background(), cfg, store, nil); host != nil {
+		t.Fatal("a host was built with [tools] enabled = false")
 	}
 }
 
