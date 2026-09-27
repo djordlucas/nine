@@ -609,24 +609,27 @@ Pure-ESM, zero-dependency packages bundle fine. Anything touching a Node builtin
 
 ## Generated tools: the tier Nine writes itself
 
-Everything above is about **developer** tools — files you install. Nine can also write its
-own tools at runtime, when the operator turns the generated tier on. These live in Nine's
-store rather than on disk, but they run in the identical sandbox under the identical rules,
-and they get two import routes a developer tool does not.
+Everything above is about **developer** tools — files you install. Nine also writes its own
+tools at runtime. These live in Nine's store rather than on disk, but they run in the
+identical sandbox under the identical rules, and they get two import routes a developer tool
+does not.
 
-Turn the tier on (off by default, and independent of `[tools] enabled`):
+The tier is **on by default**, with the workspace as its ceiling, so there is nothing to turn
+on. What an operator writes here is a *narrowing*, or one of the wider switches:
 
 ```toml
 [tools.agent]
-enabled          = true
-eval             = true            # also allow one-off snippets that persist nothing
-max_tools        = 64             # cap the catalog; least-recently-used are evicted
-require_approval = "on_capability" # prompt a human only when a tool asks for reach
+enabled          = false           # keep the host and its shipped tools, without this tier
+eval             = false           # disallow one-off snippets that persist nothing
+max_tools        = 64              # cap the catalog; least-recently-used are evicted
+require_approval = "always"        # prompt on every write, not only those asking for reach
 
 # The ceiling: the MOST any generated tool may be granted — never automatic. A tool that
-# declares nothing still gets nothing. Narrow the mount if your workspace holds secrets.
+# declares nothing still gets nothing. Omitting this table leaves the default in place:
+# [workspace].root, read and write, at /work. An fs grant here REPLACES that default, which
+# is how you narrow it if your workspace holds secrets.
 [tools.agent.capabilities.fs]
-read = [{ host = "${NINE_WORKSPACE}", guest = "/workspace" }]
+read = [{ host = "/srv/data", guest = "/data" }]
 ```
 
 ### The `nine:*` standard library

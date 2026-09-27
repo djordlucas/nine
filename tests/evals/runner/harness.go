@@ -196,13 +196,25 @@ func (h *Harness) Run(ctx context.Context, c *Case, provider llm.Provider) (res 
 	if terr != nil {
 		return nil, fmt.Errorf("open sandboxed tool host: %w", terr)
 	}
-	// The generated tier (tool_write/tool_delete/js_eval) is off by default, as in
-	// production; a case opts in with session.config "tools.agent.enabled" (and
-	// "tools.agent.eval" for js_eval). The policy must be installed before any
-	// generated tool loads, mirroring OpenSandboxedTools. No ceiling and no deps
-	// bundler: a case-written tool runs capability-free and import-free.
+	// The generated tier (tool_write/tool_delete/js_eval) is off unless a case opts
+	// in with session.config "tools.agent.enabled" (and "tools.agent.eval" for
+	// js_eval). That is the one place the harness deliberately does *not* mirror
+	// production, where the tier and its workspace ceiling are both on by default:
+	// a case must state the reach it exercises, so a case that does not mention
+	// generated tools cannot start writing them when a default moves.
+	//
+	// The policy is installed before any generated tool loads, mirroring
+	// OpenSandboxedTools. An opted-in case gets the production default ceiling —
+	// the workspace, read and write, at the same guest path shipped tools use — so
+	// what it exercises is what a deployment has. Still no deps bundler: a
+	// case-written tool is import-free.
 	generatedOn := caseBool(c, "tools.agent.enabled")
-	toolHost.SetAgentConfig(toolvm.AgentConfig{Enabled: generatedOn})
+	agentCfg := toolvm.AgentConfig{Enabled: generatedOn}
+	if generatedOn {
+		m := []toolvm.Mount{{Host: workspace, Guest: toolvm.ShippedWorkspaceGuest}}
+		agentCfg.Ceiling = toolvm.Ceiling{Grant: toolvm.Grant{FSRead: m, FSWrite: m}}
+	}
+	toolHost.SetAgentConfig(agentCfg)
 	toolHost.SetShippedWorkspace(toolvm.ShippedWorkspace{Host: workspace})
 	toolHost.LoadShipped(ctx, nil)
 	r.cleanups = append(r.cleanups, func() { toolHost.Close(ctx) }) //nolint:errcheck

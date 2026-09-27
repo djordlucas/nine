@@ -66,10 +66,10 @@ func mapHostPath(p, hostRoot string) (string, bool) {
 	root := path.Clean(hostRoot)
 	clean := path.Clean(p)
 	if clean == root {
-		return shippedWorkspaceGuest, true
+		return ShippedWorkspaceGuest, true
 	}
 	if !strings.HasPrefix(clean, root+"/") {
 		return p, false
 	}
-	return path.Join(shippedWorkspaceGuest, strings.TrimPrefix(clean, root+"/")), true
+	return path.Join(ShippedWorkspaceGuest, strings.TrimPrefix(clean, root+"/")), true
 }
