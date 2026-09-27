@@ -48,8 +48,14 @@ type Declaration struct {
 
 // Mount is one host→guest filesystem mapping.
 type Mount struct {
-	Host  string
-	Guest string
+	// Tagged because a Mount is serialized into a stored capability grant's params
+	// (runtime.grantParams), and an agent's capability_request names the same fields
+	// in a tool schema. Untagged, the same mount would be written `{"Host":…}` by
+	// the daemon and `{"host":…}` by the model — both readable, since Go matches
+	// field names case-insensitively, but two shapes for one thing in a payload the
+	// API hands to clients verbatim.
+	Host  string `json:"host"`
+	Guest string `json:"guest"`
 }
 
 // Grant is what the operator confers on one named tool, from `[tool.<name>]`.
@@ -320,7 +326,9 @@ type Ceiling struct{ Grant }
 //
 // The refusal is a usable signal rather than a dead end: it comes back as a
 // message the model can read, so the agent rewrites without the capability or
-// calls gap_report for a human to decide. That failure path is a feature.
+// calls capability_request for a human to decide. That failure path is a feature,
+// and capability_request is what makes it a path rather than a dead end: an approved
+// request widens the ceiling on the running daemon, so the same write then succeeds.
 func resolveCeiling(decl Declaration, ceiling Ceiling) (Grant, error) {
 	declared, err := decl.capabilities()
 	if err != nil {
@@ -332,7 +340,7 @@ func resolveCeiling(decl Declaration, ceiling Ceiling) (Grant, error) {
 		if !slices.Contains(available, c) {
 			return Grant{}, fmt.Errorf(
 				"capability %s is not available to generated tools on this instance; "+
-					"rewrite the tool without it, or use gap_report to ask an operator to widen [tools.agent.capabilities]", c)
+					"rewrite the tool without it, or call capability_request to ask an operator to grant it", c)
 		}
 	}
 

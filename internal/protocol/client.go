@@ -613,3 +613,43 @@ func (c *Client) SetPlanMode(agentID, mode string) (string, error) {
 	}
 	return reply.Text, nil
 }
+
+// ListCapabilities requests the generated tier's capability picture: every grant
+// in force with its source, and every request the agent has made.
+func (c *Client) ListCapabilities() (CapabilityState, error) {
+	if err := c.send(NewQueryMsg(TypeGrantsList)); err != nil {
+		return CapabilityState{}, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return CapabilityState{}, err
+	}
+	if err := expectReply(reply, TypeGrantsList); err != nil {
+		return CapabilityState{}, err
+	}
+	var state CapabilityState
+	if err := json.Unmarshal([]byte(reply.Text), &state); err != nil {
+		return CapabilityState{}, fmt.Errorf("decode capability state: %w", err)
+	}
+	return state, nil
+}
+
+// DecideCapability settles a capability request ("approve"/"deny") or revokes a
+// grant ("revoke"), returning the daemon's description of what happened.
+//
+// An approval takes effect on the running daemon: the ceiling widens and the
+// generated catalog is re-projected against it, so a tool that previously could
+// not load becomes callable on the next turn without a restart.
+func (c *Client) DecideCapability(id, action string) (string, error) {
+	if err := c.send(NewGrantsDecideMsg(id, action)); err != nil {
+		return "", err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return "", err
+	}
+	if err := expectReply(reply, TypeGrantsDecide); err != nil {
+		return "", err
+	}
+	return reply.Text, nil
+}

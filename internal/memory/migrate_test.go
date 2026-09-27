@@ -32,6 +32,19 @@ func versionAt(t *testing.T, path string) int {
 	return v
 }
 
+// hasTableAt answers from sqlite_master rather than the Store, so it can inspect a
+// database the way an older binary left it.
+func hasTableAt(t *testing.T, path, table string) bool {
+	t.Helper()
+	w := openRaw(t, path)
+	rows, err := w.Query(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`, table)
+	if err != nil {
+		t.Fatalf("sqlite_master: %v", err)
+	}
+	defer rows.Close() //nolint:errcheck
+	return rows.Next()
+}
+
 func hasColumn(t *testing.T, path, table, column string) bool {
 	t.Helper()
 	w := openRaw(t, path)
@@ -586,5 +599,47 @@ func TestMigratesPluginJobsIntoJobs(t *testing.T) {
 	// The old table is gone, so nothing writes to it by accident afterwards.
 	if hasTable(store.db, "plugin_jobs") {
 		t.Error("plugin_jobs still exists after the migration")
+	}
+}
+
+// A database left by a binary from before the capability tables exist must gain
+// them, and gain them empty: an approved grant is a decision nobody made yet.
+func TestMigratesDatabaseMissingCapabilityTables(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nine.db")
+
+	// The shape a binary at version 11 left: conversations present so Open does
+	// not treat this as a fresh database, and stamped one step behind the tables
+	// this step adds.
+	func() {
+		w := openRaw(t, path)
+		mustExec(t, w, `CREATE TABLE conversations (id TEXT PRIMARY KEY)`)
+		mustExec(t, w, `PRAGMA user_version = 11`)
+	}()
+
+	if hasTableAt(t, path, "capability_grants") {
+		t.Fatal("precondition failed: the fixture already has capability_grants")
+	}
+
+	store, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer store.Close() //nolint:errcheck
+
+	for _, table := range []string{"capability_requests", "capability_grants"} {
+		if !hasTableAt(t, path, table) {
+			t.Errorf("migration did not create %s", table)
+		}
+	}
+	if got := versionAt(t, path); got != schemaVersion() {
+		t.Errorf("user_version = %d, want %d", got, schemaVersion())
+	}
+
+	// Usable, not merely present.
+	if err := store.CapabilityRequestCreate("r1", "c1", "t", "net.http", "", ""); err != nil {
+		t.Errorf("the migrated table does not accept a request: %v", err)
+	}
+	if grants, err := store.CapabilityGrantList(); err != nil || len(grants) != 0 {
+		t.Errorf("grants = %v, err = %v; a migrated database confers nothing", grants, err)
 	}
 }

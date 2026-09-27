@@ -40,6 +40,7 @@ var slashCmds = []slashCmd{
 	{"workflows", "", "list active and recent workflows"},
 	{"tools", "[filter]", "list all tools (optional name filter)"},
 	{"standing", "[id]", "list standing tools, or show one with its recent activity"},
+	{"grants", "[approve|deny|revoke <id>]", "capability requests and the ceiling in force, or decide one"},
 	{"skills", "[name]", "list skills, or show a specific skill"},
 	{"memory", "[key]", "list KV keys, or show a specific key's value"},
 	{"new", "", "start a fresh conversation"},
@@ -109,6 +110,8 @@ func runCmd(cmd, arg string, client *protocol.Client, cfg *config.Config, curAge
 		return cmdSessions(client)
 	case "standing":
 		return cmdStanding(client, arg)
+	case "grants":
+		return cmdGrants(client, arg)
 	default:
 		return "", fmt.Errorf("%w /%s — type /help for a list", errUnknownCmd, cmd)
 	}
@@ -140,6 +143,103 @@ func cmdHelp() string {
 // Read-only, like every other slash command here. Stopping and starting one is
 // deliberately CLI-only (`nine tool stop`): a keystroke away from halting
 // something that runs unattended is the wrong ergonomics.
+// cmdGrants lists the generated tier's capability ceiling and the requests to
+// widen it, and — unlike the other listing views — can decide one.
+//
+// It mutates because the alternative is worse: the agent surfaces a request to
+// `nine notifications`, which the TUI shows, and then the operator has to leave the
+// session to act on it. `/plan-mode` is the existing precedent for a slash command
+// that changes state.
+func cmdGrants(client *protocol.Client, arg string) (string, error) {
+	if arg != "" {
+		fields := strings.Fields(arg)
+		action := fields[0]
+		switch action {
+		case "approve", "deny", "revoke":
+			if len(fields) < 2 {
+				return "", fmt.Errorf("/grants %s needs an id — run /grants to see them", action)
+			}
+			return client.DecideCapability(fields[1], action)
+		default:
+			return "", fmt.Errorf("/grants %q is not approve, deny or revoke", action)
+		}
+	}
+
+	state, err := client.ListCapabilities()
+	if err != nil {
+		return "", err
+	}
+
+	var b strings.Builder
+	pending := 0
+	for _, r := range state.Requests {
+		if r.Status == "pending" {
+			pending++
+		}
+	}
+	if pending == 0 {
+		b.WriteString("No capability requests waiting.\n")
+	} else {
+		fmt.Fprintf(&b, "%d capability request(s) waiting:\n", pending)
+		for _, r := range state.Requests {
+			if r.Status != "pending" {
+				continue
+			}
+			fmt.Fprintf(&b, "  %s  %s", r.ID, r.Capability)
+			if r.ToolName != "" {
+				fmt.Fprintf(&b, " for %s", r.ToolName)
+			}
+			b.WriteString("\n")
+			if r.Reason != "" {
+				fmt.Fprintf(&b, "      %s\n", r.Reason)
+			}
+		}
+		b.WriteString("\n  /grants approve <id>   /grants deny <id>\n")
+	}
+
+	fmt.Fprintf(&b, "\nCeiling in force (%d):\n", len(state.Grants))
+	if len(state.Grants) == 0 {
+		b.WriteString("  none — any capability a generated tool declares is refused\n")
+	}
+	for _, g := range state.Grants {
+		fmt.Fprintf(&b, "  %-9s %-9s %s\n", g.Source, g.Capability, grantScope(g.Params))
+	}
+	return b.String(), nil
+}
+
+// grantScope renders a grant's parameters in one line, reporting what the JSON says
+// rather than interpreting it so an unfamiliar shape still shows something.
+func grantScope(params string) string {
+	if params == "" {
+		return ""
+	}
+	var p struct {
+		Mounts []struct {
+			Host  string `json:"host"`
+			Guest string `json:"guest"`
+		} `json:"mounts"`
+		Env        []string `json:"env"`
+		AllowHosts []string `json:"allow_hosts"`
+		Scope      string   `json:"scope"`
+	}
+	if err := json.Unmarshal([]byte(params), &p); err != nil {
+		return params
+	}
+	var parts []string
+	for _, m := range p.Mounts {
+		parts = append(parts, m.Host+" => "+m.Guest)
+	}
+	parts = append(parts, p.Env...)
+	parts = append(parts, p.AllowHosts...)
+	if p.Scope != "" {
+		parts = append(parts, "scope "+p.Scope)
+	}
+	if len(parts) == 0 {
+		return params
+	}
+	return strings.Join(parts, "; ")
+}
+
 func cmdStanding(client *protocol.Client, arg string) (string, error) {
 	if arg != "" {
 		r, err := client.ShowStanding(arg, 10)

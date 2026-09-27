@@ -86,7 +86,7 @@ type AssemblyConfig struct {
 	// Workspace is the index over [workspace].root, or nil when unset.
 	Workspace agent.WorkspaceBackend
 	// WorkspaceRoot is [workspace].root itself, for the ref resolver.
-	WorkspaceRoot string
+	WorkspaceRoot      string
 	GateSubAgents      bool
 	PlanApproval       string
 	PlanMode           string
@@ -106,6 +106,15 @@ type AssemblyConfig struct {
 // bootstrap Assembly documents as intentionally omitted.
 func Assemble(c AssemblyConfig) *Assembly {
 	ckpt, notif, notifAdd := NewStores(c.Store)
+
+	// The human-facing notification feed. Shared by notify_user and by a capability
+	// request, which is the one message an operator must see even though no session
+	// of theirs produced it.
+	notifyUser := func(agentID, text string) {
+		if err := c.Store.UserNotificationCreate(memory.NewID(), agentID, text); err != nil {
+			slog.Warn("post user notification", "agent_id", agentID, "err", err)
+		}
+	}
 
 	supervisor := NewSupervisor(64)
 	supervisor.Attach(c.Store)
@@ -134,11 +143,11 @@ func Assemble(c AssemblyConfig) *Assembly {
 		},
 		InitialQueue: c.Queue,
 		NotifAdd:     notifAdd,
-		NotifyUser: func(agentID, text string) {
-			if err := c.Store.UserNotificationCreate(memory.NewID(), agentID, text); err != nil {
-				slog.Warn("post user notification", "agent_id", agentID, "err", err)
-			}
-		},
+		NotifyUser:   notifyUser,
+		// The path out of a ceiling refusal (capability_grants.go). Wired from the
+		// same store and the same notification feed, so a request an agent makes
+		// while nobody is watching still reaches `nine notifications`.
+		RequestCapability:      NewCapabilityRequester(c.Store, notifyUser),
 		Sup:                    supervisor,
 		TaskTimeoutSeconds:     c.TaskTimeoutSeconds,
 		HITL:                   c.HITL,

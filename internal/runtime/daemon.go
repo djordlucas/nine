@@ -137,12 +137,16 @@ type Daemon struct {
 	tools *toolvm.Host // sandboxed-tool host (see ConfigureSandboxedTools); nil = disabled
 	// standing drives standing tools (see ConfigureStandingTools); nil = none.
 	standing *StandingRunner
-	core     *agent.Dispatcher // core-intercepted tools, for plugin_call (see ConfigureCoreTools)
-	store    queryBackend
-	plans    PlanStore
-	sup      *Supervisor
-	hitl     *HITL
-	sink     EventSink // durable session-event journal for new workers (nil = disabled)
+
+	// grants answers and settles capability requests (see ConfigureCapabilities);
+	// nil on a daemon with no store, which has no ceiling to report or change.
+	grants *CapabilityService
+	core   *agent.Dispatcher // core-intercepted tools, for plugin_call (see ConfigureCoreTools)
+	store  queryBackend
+	plans  PlanStore
+	sup    *Supervisor
+	hitl   *HITL
+	sink   EventSink // durable session-event journal for new workers (nil = disabled)
 
 	maxGoalSessions int // see SetMaxGoalSessions
 
@@ -590,7 +594,12 @@ func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.M
 			d.handleToolsList(enc)
 		case protocol.TypeToolsReload:
 			d.handleToolsReload(enc)
+		case protocol.TypeGrantsList:
+			d.handleGrantsList(enc)
 		}
+
+	case protocol.GrantsDecideReq:
+		d.handleGrantsDecide(enc, r)
 	}
 }
 
@@ -731,6 +740,14 @@ func (d *Daemon) ConfigureStandingTools(r *StandingRunner) { d.standing = r }
 func (d *Daemon) ConfigureSandboxedTools(h *toolvm.Host) {
 	d.tools = h
 }
+
+// ConfigureCapabilities installs the capability surface behind `grants_list` and
+// `grants_decide`. Nil leaves those messages answering that no store is present.
+func (d *Daemon) ConfigureCapabilities(s *CapabilityService) { d.grants = s }
+
+// Capabilities exposes the capability surface so the API server can serve the same
+// decision path the CLI and TUI use rather than reimplementing it.
+func (d *Daemon) Capabilities() *CapabilityService { return d.grants }
 
 // ConfigureCoreTools stores the dispatcher carrying the core-intercepted tools
 // (memory/file/skill/doc — the ones handled in-process rather than by a
