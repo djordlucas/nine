@@ -322,12 +322,24 @@ the store's `tools` table holding the tool's `js` source and its capability
 **declaration** — never a grant. It runs through the exact same sandbox, ABI, and
 bounds as a **developer tool**; the differences are that the *agent* wrote the code
 and that the operator confers a **capability ceiling** rather than a per-tool grant.
-Off unless `[tools.agent] enabled`. *Nine cannot grant itself capabilities*
-(R-PLUG.7) holds unchanged: `tool_write` writes code, never a grant.
+On unless `[tools.agent] enabled = false`, and gated by `[tools] enabled` above it.
+*Nine cannot grant itself capabilities* (R-PLUG.7) holds unchanged: `tool_write`
+writes code, never a grant.
+
+**Capability request** — The agent asking an operator to widen the **capability
+ceiling**, through the `capability_request` tool, after a `tool_write` was refused for
+want of a capability. It records a pending row and confers nothing; an operator
+settles it with `nine grants`, `/grants` or the API. An approval takes effect on the
+running daemon. Distinct from a **gap report**, which tells the supervisor a
+capability is missing and has no decision attached.
 
 **Capability ceiling (`[tools.agent.capabilities]`)** — The **maximum** any
 generated tool may be granted, and the operator's only lever over a tier where the
-agent writes the code. Not a default: a generated tool receives a capability only
+agent writes the code. Held in the store, with `nine.toml` reconciled into it at every
+boot: a grant's `source` is `default` (derived from `[workspace].root`, read and
+write), `config` (the file) or `approved` (an operator's decision). An explicit fs
+grant replaces the derived default rather than adding to it. Not a
+per-tool default: a generated tool receives a capability only
 if it **declares** it, so a tool that declares nothing runs with nothing however
 permissive the ceiling is — and a tool cannot declare its way past it. Re-resolved
 on every load, so narrowing the ceiling disables a tool that no longer fits rather

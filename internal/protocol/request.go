@@ -108,6 +108,14 @@ type HumanAnswerReq struct {
 	Answer    string
 }
 
+// GrantsDecideReq settles one capability request, or revokes one grant in force.
+// Action is "approve", "deny" or "revoke"; ID names a request for the first two
+// and a grant for the third.
+type GrantsDecideReq struct {
+	ID     string
+	Action string
+}
+
 // QueryReq is every request that carries no fields of its own — status and the
 // list/reload verbs. They share a struct rather than each having an empty one:
 // an empty struct per type would be eleven names that differ in nothing, and a
@@ -129,6 +137,7 @@ func (WorkflowFailReq) Type() MsgType      { return TypeWorkflowFail }
 func (ListNotificationsReq) Type() MsgType { return TypeListNotifications }
 func (PluginCallReq) Type() MsgType        { return TypePluginCall }
 func (HumanAnswerReq) Type() MsgType       { return TypeHumanInputAnswer }
+func (GrantsDecideReq) Type() MsgType      { return TypeGrantsDecide }
 func (q QueryReq) Type() MsgType           { return q.Kind }
 
 // queryKinds are the field-less requests QueryReq stands for.
@@ -136,7 +145,7 @@ var queryKinds = map[MsgType]bool{
 	TypeStatus: true, TypeListGoals: true, TypeListWorkflows: true,
 	TypeListTools: true, TypePluginsList: true, TypePluginsReload: true,
 	TypeToolsList: true, TypeToolsReload: true, TypeSessionsList: true,
-	TypeStandingList: true,
+	TypeStandingList: true, TypeGrantsList: true,
 }
 
 // DecodeRequest turns a wire message into the typed request it represents.
@@ -188,6 +197,8 @@ func DecodeRequest(m Msg) (Request, error) {
 		return PluginCallReq{Tool: m.ToolName, Args: m.ToolInput}, nil
 	case TypeHumanInputAnswer:
 		return HumanAnswerReq{AgentID: m.AgentID, RequestID: m.RequestID, Answer: m.Answer}, nil
+	case TypeGrantsDecide:
+		return GrantsDecideReq{ID: m.RequestID, Action: m.Text}, nil
 	}
 	return nil, fmt.Errorf("unknown message type: %s", m.Type)
 }

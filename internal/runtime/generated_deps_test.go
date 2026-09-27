@@ -66,8 +66,6 @@ func TestWriteBundlesExternalDependency(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	cfg := &config.Config{}
-	cfg.Tools.Enabled = true
-	cfg.Tools.Agent.Enabled = true
 	host := OpenSandboxedTools(context.Background(), cfg, store, nil)
 	t.Cleanup(func() { _ = host.Close(context.Background()) })
 
@@ -110,8 +108,6 @@ func TestWriteRefusesDepWhenDepsOff(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	cfg := &config.Config{}
-	cfg.Tools.Enabled = true
-	cfg.Tools.Agent.Enabled = true
 	host := OpenSandboxedTools(context.Background(), cfg, store, nil)
 	t.Cleanup(func() { _ = host.Close(context.Background()) })
 

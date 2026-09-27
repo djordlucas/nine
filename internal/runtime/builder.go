@@ -102,7 +102,14 @@ type AgentBuilderConfig struct {
 	// NotifyUser posts a message to the human-facing notification feed for a
 	// goal-owning background shell (notify_user tool; docs/predefined-agents.md
 	// §5 piece 2). Nil disables the tool (e.g. in tests).
-	NotifyUser         func(agentID, text string)
+	NotifyUser func(agentID, text string)
+	// RequestCapability builds the capability_request handler for one agent: the
+	// path out of a ceiling refusal, where the agent asks an operator to widen the
+	// generated tier's ceiling. Nil disables the tool (e.g. in tests).
+	//
+	// It returns a requester per agent rather than taking an agentID, so the
+	// closure carries the asking session and the handler cannot name another.
+	RequestCapability  func(agentID string) agent.CapabilityRequester
 	Sup                *Supervisor
 	TaskTimeoutSeconds int // default 1800 (30 min) when 0
 
@@ -322,6 +329,7 @@ var protectedKeyPrefixes = []string{
 
 // coreToolNames are the memory/file/skill tools available at every nesting depth.
 var coreToolNames = []string{
+	"capability_request",
 	"memory_get", "memory_set", "memory_delete", "memory_list",
 	"file_search_text", "list_files", "diff_file",
 	"skill_list", "skill_read", "skill_write", "skill_modify",
@@ -757,6 +765,12 @@ func (f *AgentBuilder) registerCoreTools(d *agent.Dispatcher, lc LoopConfig, age
 	agent.RegisterGapReport(d, func(desc string) {
 		f.cfg.Sup.Post(Event{Kind: EventGapReported, AgentID: agentID, Payload: desc})
 	})
+	// The path out of a ceiling refusal. Unlike gap_report, this one is advertised
+	// (coreToolNames), because a refusal that names a tool the model cannot see is
+	// not a usable signal.
+	if f.cfg.RequestCapability != nil {
+		agent.RegisterCapabilityRequest(d, f.cfg.RequestCapability(agentID))
+	}
 	agent.RegisterMemoryTools(d, lc.Memory, lc.Embedder, protectedKeyPrefixes, lc.SurfaceMemories)
 	// The workspace index, when one is configured: file_search_text then covers
 	// the operator's directory as well as the store, and list_files exists.

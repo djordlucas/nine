@@ -119,12 +119,20 @@ func TestLoadWarnsOnUnknownKeys(t *testing.T) {
 
 // A misspelled key must not be mistaken for a valid one, and a valid one must
 // not be reported. Guards against the warning becoming noise nobody reads.
-func TestRealConfigProducesNoUnknownKeyWarning(t *testing.T) {
-	logs := captureLogs(t)
-	if _, err := config.Load("../../nine.toml"); err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if strings.Contains(logs.String(), "not recognised") {
-		t.Errorf("the repo's own nine.toml reports unknown keys:\n%s", logs.String())
+//
+// Both shipped configs are covered. The published one matters more: it reaches
+// people who never open it, and a typo there would be reported to an operator who
+// is not reading the container's logs.
+func TestShippedConfigsProduceNoUnknownKeyWarning(t *testing.T) {
+	for _, path := range []string{"../../nine.toml", "../../docker/nine.toml"} {
+		t.Run(path, func(t *testing.T) {
+			logs := captureLogs(t)
+			if _, err := config.Load(path); err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if strings.Contains(logs.String(), "not recognised") {
+				t.Errorf("%s reports unknown keys:\n%s", path, logs.String())
+			}
+		})
 	}
 }

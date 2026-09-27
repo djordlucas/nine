@@ -19,8 +19,6 @@ import (
 func TestWrittenToolReachesTheWritingSessionNextTurn(t *testing.T) {
 	store := newRoleTestStore(t)
 	cfg := &config.Config{}
-	cfg.Tools.Enabled = true
-	cfg.Tools.Agent.Enabled = true
 	host := runtime.OpenSandboxedTools(context.Background(), cfg, store, nil)
 	if host == nil {
 		t.Fatal("sandboxed host did not open")

@@ -177,7 +177,7 @@ fusing them pays.
 **The live number moves with the documents**, not only with the code:
 `TestDocSearchRetrievalQuality` measures the corpus the binary currently
 carries, and editing a document reshuffles what ranks against these questions.
-It currently reports **24/30 and 25/30**. The floors it enforces (22 and 25) are
+It currently reports **26/30 and 27/30**. The floors it enforces (22 and 25) are
 what stop a change to chunking, indexing, or fusion from quietly making
 retrieval worse.
 
@@ -240,7 +240,7 @@ the stale behavior as fact, with a citation.
 | Limit | Detail |
 |-------|--------|
 | Retrieval is best-effort | Ranking is designed to make the manual reachable, not to be right on the first try. The model can re-query or `doc_read` a topic by name when the first hit is wrong. |
-| The quality floor is sensitive to edits | `TestDocSearchRetrievalQuality` measures the shipped corpus, so editing the documents moves it with no code change. Top 5 currently sits **on** its floor of 25/30: a doc change that costs one hit fails the suite, and the fix is usually the wording of the section that should have won, not the retriever. |
+| The quality floor is sensitive to edits | `TestDocSearchRetrievalQuality` measures the shipped corpus, so editing the documents moves it with no code change. Top 5 currently reports 27/30 against a floor of 25, so there is two hits of headroom: a doc change that costs three fails the suite, and the fix is usually the wording of the section that should have won, not the retriever. |
 | Only `docs/` and `spec/` are indexed | `adr/` is deliberately excluded: it records superseded reasoning, which would answer questions about the present with the reasoning of the past. |
 | Accuracy depends on `/sync-nine` | A behavior change that skips the embedded docs does not just leave them stale — Nine states the stale behavior as fact, with a citation. |
 | Delegation rarely pays | Spawning a sub-agent for a specific lookup costs more than the section it would read, and returns a paraphrase where the value was the quote. It is worth it only for synthesis across many documents. |

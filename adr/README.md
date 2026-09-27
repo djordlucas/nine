@@ -48,6 +48,7 @@ changed; the document stays as the record and is not rewritten.
 | `tui-slash-suggestions.md` | Slash-command suggestions in the TUI | yes |
 | `architecture-wiring.md` | Boot order, end-to-end data flows, component map. Names types and call sites. | yes |
 | `roles-design.md` | Worker kinds as data; migration off depth-based gating | yes |
+| `capability-grants.md` | Defaulting both tool tiers on, and moving the generated tier's ceiling into the store so an operator can grant a requested capability without a restart | 2026-09-27 |
 | `file-namespaces.md` | The workspace as the agent's only file namespace: external changes, editing large files, deletion to a trash. Retires `file_store`. Three divergences corrected in place; document extraction unbuilt. | phases 1–8, 2026-09-21 |
 
 ### Proposed

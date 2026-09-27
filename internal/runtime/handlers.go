@@ -960,3 +960,43 @@ func toolCallEnvelope(out toolvm.Output) map[string]any {
 	}
 	return env
 }
+
+// handleGrantsList returns the generated tier's capability picture: every grant in
+// force with its source, and every request the agent has made.
+func (d *Daemon) handleGrantsList(enc *json.Encoder) {
+	if d.grants == nil {
+		enc.Encode(protocol.NewErrorMsg("capability grants are unavailable: this daemon has no store")) //nolint:errcheck
+		return
+	}
+	state, err := d.grants.State()
+	if err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	payload, err := json.Marshal(state)
+	if err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	enc.Encode(protocol.NewTextMsg(protocol.TypeGrantsList, string(payload))) //nolint:errcheck
+}
+
+// handleGrantsDecide settles a capability request, or revokes a grant in force.
+//
+// An approval or a revocation takes effect on this running daemon: the ceiling is
+// recomputed from the store and installed on the host, and the generated catalog is
+// re-projected against it. A tool that could not load for want of a capability
+// becomes callable, and one that no longer fits stops being — both on the next turn,
+// without a restart.
+func (d *Daemon) handleGrantsDecide(enc *json.Encoder, r protocol.GrantsDecideReq) {
+	if d.grants == nil {
+		enc.Encode(protocol.NewErrorMsg("capability grants are unavailable: this daemon has no store")) //nolint:errcheck
+		return
+	}
+	text, err := d.grants.Decide(context.Background(), r.ID, r.Action)
+	if err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	enc.Encode(protocol.NewTextMsg(protocol.TypeGrantsDecide, text)) //nolint:errcheck
+}

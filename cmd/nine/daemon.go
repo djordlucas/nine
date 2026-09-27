@@ -304,6 +304,10 @@ func runDaemon() {
 	standing := runtime.NewStandingRunner(store, toolHost, cfg.Tools.JobMinDelayMS, cfg.Tools.JobWorkers)
 	standing.SetWaker(daemon)
 	daemon.ConfigureStandingTools(standing)
+	// The capability surface behind `nine grants`, the TUI's /grants view and the
+	// API's /capabilities endpoints — one decision path for all three, because an
+	// approval widens the live ceiling and that must not be three implementations.
+	daemon.ConfigureCapabilities(runtime.NewCapabilityService(store, cfg, toolHost, pluginManager))
 	// So `tool_delete` on a generated standing tool also drops its activity ring.
 	runtime.LinkStandingTools(generatedTools, standing)
 	go runtime.RunStandingTools(ctx, standing,

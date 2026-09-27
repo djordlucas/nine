@@ -163,7 +163,22 @@ GET    /api/v1/tools              GET /api/v1/tools/{name}
 POST   /api/v1/tools/{name}/call  POST /api/v1/tools/reload
 
 GET    /api/v1/plugins            POST /api/v1/plugins/reload
+
+GET    /api/v1/capabilities       POST /api/v1/capabilities/{id}/decision
 ```
+
+`GET /capabilities` returns the generated-tool ceiling in force — each grant with its
+`source`, one of `default`, `config` or `approved` — together with every request the
+agent has made to widen it.
+
+`POST /capabilities/{id}/decision` takes `{"action": "approve"|"deny"|"revoke"}`. An
+approval or revocation applies to the running daemon: the ceiling is installed on the
+live tool host and the generated catalog re-projected against it, so a tool that
+could not load becomes callable on its next turn with no restart. `approve` and
+`deny` take a request id; `revoke` takes a grant id, and only an `approved` grant is
+revocable — a `config` or `default` grant is rewritten from `nine.toml` at the next
+boot. A bad action, an already-settled request and an unrevocable grant are all
+`400`. See [sandboxed-tools.md](sandboxed-tools.md) §7.2.
 
 ### Other
 

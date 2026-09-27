@@ -110,7 +110,7 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 		return agent.WriteResult{}, fmt.Errorf(
 			"long-running generated tools are not enabled on this instance " +
 				"([tools.agent] allow_long_running). Rewrite the tool to finish in one call, " +
-				"or use gap_report to ask an operator to enable it")
+				"or call capability_request to ask an operator to enable it")
 	}
 
 	// Resolve and inline external npm dependencies now, at write time, once (§4.4).
@@ -192,7 +192,7 @@ func (g *generatedTools) checkStandingRequest(spec agent.GeneratedToolSpec) erro
 		return fmt.Errorf(
 			"standing tools are not enabled for generated tools on this instance " +
 				"([tools.agent] allow_standing). Write it as an ordinary tool and call it " +
-				"when you need it, or use gap_report to ask an operator")
+				"when you need it, or call capability_request to ask an operator")
 	}
 	if !spec.Resumable {
 		// A standing run is a sequence of cycles, and a tool that cannot end a

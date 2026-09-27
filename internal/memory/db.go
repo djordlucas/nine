@@ -441,6 +441,45 @@ func initSchema(d db) error {
 		`CREATE TABLE IF NOT EXISTS interactive_sessions (
 			id TEXT PRIMARY KEY
 		)`,
+		// capability_requests: the agent asking an operator to widen the generated
+		// tier's ceiling (spec/contracts/toolvm.md R-TVM.14). A request is a
+		// conversation with an outcome and is never itself a grant — approving one
+		// writes a capability_grants row, which is the state that confers.
+		//
+		// Daemon-private. The agent reaches this table only through
+		// capability_request, which inserts a pending row and can do nothing else.
+		`CREATE TABLE IF NOT EXISTS capability_requests (
+			id         TEXT PRIMARY KEY,
+			agent_id   TEXT NOT NULL,
+			tool_name  TEXT NOT NULL DEFAULT '',
+			capability TEXT NOT NULL,
+			params     TEXT,
+			reason     TEXT NOT NULL DEFAULT '',
+			status     TEXT NOT NULL DEFAULT 'pending',
+			created_at TEXT NOT NULL DEFAULT ` + nowExpr + `,
+			decided_at TEXT
+		)`,
+		`CREATE INDEX IF NOT EXISTS capability_requests_status ON capability_requests(status, created_at)`,
+		// capability_grants: what the generated tier's ceiling actually is.
+		//
+		// `source` is the whole design. `config` and `default` rows are derived —
+		// deleted and rewritten from nine.toml and from the workspace on every boot,
+		// so the file stays authoritative for what it declares and a grant it stops
+		// declaring stops applying. `approved` rows are durable and survive that
+		// reconciliation, because an operator conferred them through a decision
+		// rather than a file. The effective ceiling is the union.
+		//
+		// This is the doctrine standing_tools states for its own split:
+		// configuration owns the definition, the runtime owns the state.
+		`CREATE TABLE IF NOT EXISTS capability_grants (
+			id         TEXT PRIMARY KEY,
+			source     TEXT NOT NULL,
+			capability TEXT NOT NULL,
+			params     TEXT,
+			request_id TEXT,
+			created_at TEXT NOT NULL DEFAULT ` + nowExpr + `
+		)`,
+		`CREATE INDEX IF NOT EXISTS capability_grants_source ON capability_grants(source)`,
 		// session_events: append-only execution journal (adr/event-log.md §6).
 		//
 		// AUTOINCREMENT is required, not stylistic. A plain INTEGER PRIMARY KEY

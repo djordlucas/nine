@@ -49,6 +49,8 @@ const (
 	TypeStandingList      MsgType = "standing_list"
 	TypeToolsList         MsgType = "tools_list"
 	TypeToolsReload       MsgType = "tools_reload"
+	TypeGrantsList        MsgType = "grants_list"
+	TypeGrantsDecide      MsgType = "grants_decide"
 )
 
 // Daemon → client.
@@ -143,6 +145,8 @@ var ClientMsgTypes = []MsgType{
 	TypeStandingList,
 	TypeToolsList,
 	TypeToolsReload,
+	TypeGrantsList,
+	TypeGrantsDecide,
 	TypeHumanInputAnswer,
 }
 
@@ -174,6 +178,9 @@ const (
 //	"plugins_reload"   — re-scan the user-plugin dir and reload; no extra fields
 //	"tools_list"       — request the sandboxed-tool roster; no extra fields
 //	"tools_reload"     — re-scan the sandboxed-tool dir and reload; no extra fields
+//	"grants_list"      — capability requests and grants; no extra fields
+//	"grants_decide"    — settle a capability request or revoke a grant;
+//	                     RequestID = the id, Text = approve|deny|revoke
 //
 // Daemon → client:
 //
@@ -191,6 +198,8 @@ const (
 //	"plugins_reload"   — reload result; Text carries the JSON-encoded PluginStatus array
 //	"tools_list"       — sandboxed-tool roster; Text carries JSON-encoded SandboxedToolStatus array
 //	"tools_reload"     — reload result; Text carries the JSON-encoded SandboxedToolStatus array
+//	"grants_list"      — capability state; Text carries JSON-encoded CapabilityState
+//	"grants_decide"    — decision result; Text carries a human-readable sentence
 //	"tool_start"       — tool call started; ToolName + ToolInput + Timestamp set
 //	"tool_end"         — tool call finished; ToolName + ToolInput + ToolOutput + Timestamp set
 //	"context_update"   — context assembled; ContextUsed + ContextBudget set
@@ -363,6 +372,43 @@ type PluginStatus struct {
 // tool that half-works, and this is where an operator reads it. Capabilities is
 // the *resolved* grant — what the tool actually runs with, never what its
 // manifest asked for.
+// CapabilityState is the generated tier's capability picture: what is in force,
+// and what the agent has asked for.
+//
+// One payload rather than two calls because the two are read together — a pending
+// request is only meaningful against the ceiling it wants to widen.
+type CapabilityState struct {
+	Grants   []CapabilityGrantInfo   `json:"grants"`
+	Requests []CapabilityRequestInfo `json:"requests"`
+}
+
+// CapabilityGrantInfo is one grant in force. Source is `default` (derived from
+// [workspace].root), `config` (from nine.toml) or `approved` (conferred by an
+// operator answering a request) — reported so an operator can see which reach came
+// from the file and which from a decision.
+type CapabilityGrantInfo struct {
+	ID         string `json:"id"`
+	Source     string `json:"source"`
+	Capability string `json:"capability"`
+	Params     string `json:"params,omitempty"`
+	RequestID  string `json:"request_id,omitempty"`
+	CreatedAt  string `json:"created_at"`
+}
+
+// CapabilityRequestInfo is one request the agent made for a capability the ceiling
+// does not permit.
+type CapabilityRequestInfo struct {
+	ID         string `json:"id"`
+	AgentID    string `json:"agent_id"`
+	ToolName   string `json:"tool_name,omitempty"`
+	Capability string `json:"capability"`
+	Params     string `json:"params,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+	Status     string `json:"status"`
+	CreatedAt  string `json:"created_at"`
+	DecidedAt  string `json:"decided_at,omitempty"`
+}
+
 type SandboxedToolStatus struct {
 	Name   string `json:"name"`
 	Kind   string `json:"kind,omitempty"`
@@ -710,6 +756,17 @@ func NewHumanInputAnswerMsg(agentID, requestID, answer string) Msg {
 		AgentID:   agentID,
 		RequestID: requestID,
 		Answer:    answer,
+	}
+}
+
+// NewGrantsDecideMsg settles a capability request, or revokes a grant in force.
+// action is "approve", "deny" or "revoke"; id names a request for the first two
+// and a grant for the third.
+func NewGrantsDecideMsg(id, action string) Msg {
+	return Msg{
+		Type:      TypeGrantsDecide,
+		RequestID: id,
+		Text:      action,
 	}
 }
 
