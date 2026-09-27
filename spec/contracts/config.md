@@ -57,12 +57,15 @@ bin = ""                        # dir of plugins shipping their own binary; Nine
 #   KEY = "value"               #   keys are env-var names, values TOML scalars; reserved NINE_PLUGIN_* rejected
 
 # Sandboxed tools (toolvm.md is normative for the whole [tools] / [tool.<name>] surface).
-# [tools] enabled unset ⇒ no host, no tools. [tools.agent] is the generated tier (R-TVM.14):
-# off and independent of [tools] enabled — an operator may want developer tools without
-# letting the agent author any.
+# [tools] enabled defaults to TRUE: the tier carries the workspace file tools, so enabled =
+# false means no host and no way to read or write a file. [tools.agent] is the generated tier
+# (R-TVM.14), also defaulting to true, and gated by [tools] enabled above it. Both are *bool
+# in Go so that unset and false are distinguishable (ToolsConfig.IsEnabled,
+# ToolsConfig.GeneratedEnabled).
+# [tools] enabled   = true          # default; false turns the host off entirely
 # [tools] cache_dir = ""            # dependency cache root; default os.UserCacheDir()/nine/tools
 # [tools.agent]
-# enabled            = false        # turns on tool_write/tool_delete
+# enabled            = true         # default; false keeps the host without tool_write/tool_delete
 # eval               = false        # additionally allow js_eval
 # max_tools          = 64           # catalog cap; LRU eviction past it
 # require_approval   = "on_capability" # on_capability (default) | always | never — validated at load
@@ -70,6 +73,8 @@ bin = ""                        # dir of plugins shipping their own binary; Nine
 # [tools.agent.capabilities]        # the CEILING: the maximum a generated tool may be granted,
 #   fs = { read = [ … ] }           #   never an automatic grant. A tool that declares nothing
 #                                   #   gets nothing. Same shape as [tool.<name>.capabilities].
+#                                   #   DEFAULT: [workspace].root, read+write, derived at boot.
+#                                   #   An explicit fs grant REPLACES that default, not adds.
 # [tools.agent.deps]                # external npm deps (R-TVM.15); off by default
 #   mode          = "off"           #   off (default) | allowlist | open — validated at load
 #   registry      = ""              #   npm-compatible base URL; empty = public registry
@@ -105,7 +110,11 @@ theme        = "light"          # light | dark
 show_context = true             # show the context-usage bar (a ⚠ warning shows at ≥90% even when false)
 
 [workspace]
-root = ""                       # the directory agent file tools and `shell` work in
+root = ""                       # the directory agent file tools and `shell` work in.
+                                # Empty resolves to NINE_WORKSPACE_ROOT, else /data/workspace
+                                # when /data exists, else ~/.nine/workspace — never empty
+                                # (Config.WorkspaceRoot). A shipped tool that declares fs is
+                                # skipped without a root, so there is no neutral unset state.
 trash_retention_days = 7        # age bound on .nine/trash/; -1 disables it
 trash_max_bytes      = 1073741824  # size bound on .nine/trash/, oldest entry first
 scan_interval_seconds = 60         # workspace rescan period

@@ -1,9 +1,11 @@
 # Default configuration baked into the published image at /nine.toml.
 #
 # It exists so `docker run ghcr.io/djordlucas/nine` works without cloning the
-# repository. It is deliberately more conservative than the repo's own
-# nine.toml, which is a development config: the sandboxed-tool tier is off, and
-# every path points at the /data volume rather than the source tree.
+# repository. It is deliberately more conservative than the repo's own nine.toml,
+# which is a development config: no developer tool directory is loaded, self
+# reflection runs at a quarter of the rate, and every path points at the /data
+# volume rather than the source tree. Both tool tiers are on, as they are by
+# default — what keeps this narrow is the capability ceiling, not the switches.
 #
 # To change anything here, mount your own file over it:
 #
@@ -65,9 +67,32 @@ require_approval = ["shell", "write_file"]
 # the workspace. The `shell` plugin, which is also on, executes arbitrary
 # commands — so this is the narrower of the two capabilities the image ships,
 # not a widening of what the agent can reach (docs/sandboxed-tools.md).
+#
+# Stated rather than omitted: `enabled` defaults to true, and this line is here so
+# a reader of the published config does not have to know that.
 enabled = true
 
-# [tools.agent] is absent, so Nine cannot write its own tools. That is the tier
-# this image keeps off: running a shipped, reviewed tool is not the same as
-# letting the agent author and execute a new one. Off by default everywhere; it
-# is named here only so its absence is legible.
+[tools.agent]
+# The generated tier is on: Nine can write its own tools. Its ceiling is the
+# workspace, read and write, derived from [workspace].root — the same directory
+# the shipped file tools reach and `shell` already runs in. A generated tool is
+# therefore strictly narrower than the `shell` this image also ships: wasm, one
+# instance per call, no network, no environment, and nothing outside /work.
+#
+# A tool that declares no capability is granted none, whatever the ceiling says,
+# and `require_approval` defaults to "on_capability" — so a tool that asks for
+# filesystem reach prompts a human in an interactive session, while a pure
+# transform does not.
+enabled = true
+
+# Everything with wider reach stays off, and is named here so the posture is
+# legible rather than inferred from absence:
+#
+#   [tools.agent.deps] mode    external npm packages (default "off")
+#   allow_network_deps         a networked dependency plus net.http (default false)
+#   allow_long_running         a tool whose work outlives one call (default false)
+#   allow_standing             a tool that runs on its own cadence (default false)
+#   [tools.agent.capabilities.net.http]  outbound HTTP (no default grant)
+#
+# `web_search`, `web_page_read` and `http_get` are shipped tools, so the agent can
+# reach the web without any generated tool being granted net.http.

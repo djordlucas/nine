@@ -35,6 +35,13 @@ nine goals                       List active goals
 nine reflections [agent-id]      Reflection history from the journal (default: self-reflection)
 nine notifications [--all]       Show the human-facing notification feed
                                  (--all includes already-seen entries)
+nine grants                      Capability requests waiting, and the generated-tool
+                                 ceiling in force with each grant's source
+nine grants approve <id>         Grant a requested capability — takes effect on the
+                                 running daemon, no restart
+nine grants deny <id>            Refuse it; nothing is granted
+nine grants revoke <grant-id>    Withdraw a grant an earlier approval conferred
+
 nine workflows                   List workflows (active and recent)
 nine workflow stop <id>          Cancel an ongoing workflow
 nine workflow fail <id>          Mark a stale workflow as failed
@@ -118,6 +125,7 @@ The picker stays out of the way while Nine is waiting on an answer to an
 | `/goals` | List active goals | `/goals` |
 | `/workflows` | List active and recent workflows | `/workflows` |
 | `/standing [id]` | List standing tools, or show one with its recent activity | `/standing corpus` |
+| `/grants [approve\|deny\|revoke <id>]` | Capability requests and the ceiling in force, or decide one without leaving the session | `/grants approve 59488812` |
 | `/plan-mode <mode>` | Change the session's reasoning mode live: `off`, `plan-only`, or `always` | `/plan-mode always` |
 | `/think <message>` | Send a message with reasoning forced on for this one turn | `/think reconcile these two specs` |
 | `/new` | Start a fresh conversation | `/new` |
@@ -239,6 +247,34 @@ includes ones already seen:
 ```
 
 This reads directly from the store, so it works even when the daemon is down.
+
+### `nine grants`
+
+The operator's side of the generated-tool capability loop. When a tool Nine wrote
+needs a capability its ceiling does not permit, the write is refused and the agent
+can call `capability_request` — which records a pending request and posts it to
+`nine notifications`. Nothing is granted by asking.
+
+```bash
+./nine grants                     # requests waiting, and the ceiling in force
+./nine grants list --all          # including already-decided requests
+./nine grants approve <id>        # confer it
+./nine grants deny <id>
+./nine grants revoke <grant-id>   # withdraw one you approved earlier
+```
+
+An approval or a revocation **applies to the running daemon**: the ceiling is
+installed on the live tool host and every generated tool re-resolved against it, so
+a tool that could not load becomes callable on its next turn with no restart.
+
+The listing names each grant's source — `default` (derived from `[workspace].root`),
+`config` (from `nine.toml`) or `approved` (yours). The first two are rewritten from
+the file at every boot, so removing a grant from `nine.toml` removes it; only an
+`approved` grant persists independently, and only one of those is revocable here.
+
+These need a running daemon and deliberately do not start one: a grant approved
+against a daemon spawned for the purpose would take effect in a process that then
+exits. Full design: [sandboxed-tools.md](sandboxed-tools.md) §7.2.
 
 ### `nine workflows` / `nine workflow`
 
@@ -651,6 +687,6 @@ NINE_LOG_FORMAT=json NINE_LOG_LEVEL=info ./nine daemon
 |-------|--------|
 | Local clients only | The CLI and TUI reach the daemon over a Unix socket on the same host. |
 | No conversation reset command | Starting genuinely fresh means restarting the daemon. `/new` starts a new conversation but leaves the daemon's other state in place. |
-| TUI views are read-only | Slash commands surface goals, workflows, tools, skills, memory and the context breakdown, but do not let you edit them. |
+| TUI views are read-only, with two exceptions | Slash commands surface goals, workflows, tools, skills, memory and the context breakdown without letting you edit them. `/plan-mode` and `/grants approve\|deny\|revoke` are the exceptions: both decide something an operator would otherwise have to leave the session to do. |
 | The journal has no TUI view | `nine trace` and `nine replay` are CLI-only; nothing surfaces the journal inside the TUI. The context breakdown is the exception — `/context [id]` is the same view as `nine context`. |
 | Config changes need a restart | Editing `nine.toml` takes effect on daemon restart. |

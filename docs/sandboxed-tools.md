@@ -842,9 +842,11 @@ allow_network_deps = false   # lift the deps + net.http interlock — §4.4
 require_approval = "on_capability"
 
 # The MAXIMUM a generated tool may be granted — not an automatic grant.
-# A tool that declares nothing still gets nothing.
+# A tool that declares nothing still gets nothing. Omit the fs table and the
+# ceiling defaults to [workspace].root, read and write, at /work; an fs grant
+# here replaces that default rather than adding to it.
 [tools.agent.capabilities.fs]
-read = [{ host = "${NINE_WORKSPACE}", guest = "/workspace" }]
+read = [{ host = "/srv/data", guest = "/data" }]
 ```
 
 Four properties:
@@ -858,42 +860,99 @@ Four properties:
 - **Refusal is a usable signal.** If Nine writes a tool reaching for `net.http`
   and the ceiling excludes it, `tool_write` **fails with a message the model can
   read** — "capability net.http is not available to generated tools" — so the
-  agent rewrites without it or calls `gap_report` for a human to decide. That
-  failure path is a feature.
+  agent rewrites without it or calls `capability_request` to ask an operator. That
+  failure path is a feature, and `capability_request` is what makes it a path
+  rather than a dead end: see §7.2.
 - **Grants are per named tool.** There is no wildcard `[tool."*"]`. An operator
   granting filesystem access to a *developer* tool does so to a tool they have
   read.
-- **Read at boot.** The host resolves grants, timeouts and budgets from
-  `nine.toml` when the daemon assembles it, and nothing re-reads the file while it
-  runs. `nine tools reload` re-scans `user_dir` and re-reads manifests against the
-  grants already held, so it picks up a new or edited *tool*; a changed *grant*
-  needs a restart.
+- **Read at boot, reconciled into the store.** The generated tier's ceiling lives
+  in the database, and `nine.toml` is written into it at every boot — the file's
+  grants as `config` rows, the workspace fallback as `default` rows, an operator's
+  approvals as `approved` rows that a boot leaves alone. `nine grants` shows all
+  three with their source. Developer-tool grants (`[tool.<name>]`) are still read
+  at boot only: `nine tools reload` re-scans `user_dir` and re-reads manifests
+  against the grants already held, so it picks up a new or edited *tool*, and a
+  changed `[tool.<name>]` grant needs a restart.
 
-### 7.1 On the default workspace-read ceiling
+### 7.1 On the default workspace ceiling
 
-Shipping `fs.read` over the workspace as the default ceiling is a deliberate
-choice for usefulness, and it has one consequence worth naming precisely.
+The default ceiling is the workspace, `fs.read` **and** `fs.write`, derived from
+`[workspace].root` at boot rather than written in the file — a deliberate choice
+for usefulness, with one consequence worth naming precisely.
 
-It grants the *agent* no new reach: file reading already covered the
-workspace, so nothing becomes visible to Nine that was not already. What changes
-is the reach of **a tool's dependencies** (§4.4). With an empty ceiling, a hostile
-npm package can only return a wrong answer. With workspace read, it can *see the
-workspace* — and if it could also reach the network, exfiltrate it.
+It grants the *agent* no new reach. The shipped file tools already read and write
+the workspace, and `shell` runs in it, so nothing becomes reachable to Nine that
+was not already. What changes is the reach of **a tool's dependencies** (§4.4).
+With an empty ceiling, a hostile npm package can only return a wrong answer. With
+the workspace ceiling it can *see* the workspace, and — this is what the write
+grant adds — *modify* it: a tool the agent called to reformat one file could, via a
+compromised dependency, rewrite another.
 
-It cannot, because of the §4.4 interlock. That interlock is now the only thing
-standing between a compromised transitive dependency and your source tree. Two
-things follow, neither optional:
+Neither can leave the machine, because of the §4.4 interlock, which is the only
+thing standing between a compromised transitive dependency and your source tree.
+Three things follow, none optional:
 
 1. `allow_network_deps` stays off. Turning it on with this ceiling is the one
    combination that makes a supply-chain compromise materially dangerous.
 2. `deps.mode = "allowlist"` is strongly preferred over `"open"` on any instance
    whose workspace holds anything you would not publish.
+3. The workspace is a working directory, not a source of truth. `.nine/trash/`
+   retains overwritten files (`docs/operations.md`), but a workspace holding the
+   only copy of something is a workspace one bad tool ruins.
 
-An operator running a workspace with secrets in it — `.env`, private keys,
-credentials — should narrow the mount to a subdirectory rather than accept
-`${NINE_WORKSPACE}` wholesale. The `guest` path makes that a one-line change.
+An operator whose workspace holds secrets — `.env`, private keys, credentials —
+should grant a narrower mount explicitly, which replaces the derived default
+rather than adding to it.
 
 ---
+
+### 7.2 Requesting a capability the ceiling excludes
+
+A refusal ends in `capability_request`: the agent names the capability, why it needs
+it, and the narrowest scope that would work. That records a pending request and posts
+it to `nine notifications`. Nothing is granted.
+
+An operator decides, from whichever surface they are already in:
+
+```
+nine grants                     # requests waiting, and the ceiling in force
+nine grants approve <id>        # confer it
+nine grants deny <id>
+nine grants revoke <grant-id>   # withdraw one you approved earlier
+```
+
+`/grants` in the TUI takes the same verbs, and the API has `GET /capabilities` and
+`POST /capabilities/{id}/decision`. All three reach one service in the daemon.
+
+**An approval applies to the running daemon.** The ceiling is recomputed, installed
+on the live host, and every stored generated tool is re-resolved against it — so the
+tool that could not load becomes callable on the next turn, with no restart. A
+revocation does the same in reverse: a tool that no longer fits stops loading.
+
+The ceiling is stored, and `nine.toml` is reconciled into it at every boot:
+
+| `source` | Comes from | Survives a boot |
+|---|---|---|
+| `default` | `[workspace].root`, derived | rewritten each boot |
+| `config` | `[tools.agent.capabilities]` | rewritten each boot |
+| `approved` | an operator's decision | yes, until revoked |
+
+The file therefore stays authoritative for what it declares while an approval
+outlives a restart. A grant you add to `nine.toml` appears at the next boot, one you
+edit changes, and **one you remove stops applying** — which is the case that matters,
+because a ceiling an operator narrows in the file and that does not narrow is a
+control that lies. Only an `approved` grant is revocable from the CLI; a `config` or
+`default` grant would reappear at the next boot, so narrowing one is an edit to the
+file.
+
+A requested scope is checked against the same validators the file is held to, at
+request time — an empty `allow_hosts`, a relative mount, a reserved `NINE_*` key are
+refused to the model, which can rewrite the request, rather than to you.
+
+The invariant is untouched. `capability_request` inserts a pending row and can do
+nothing else; no tool reaches a method that confers a capability. The agent writes
+the code, the operator writes the grants, and they are never the same actor.
 
 ## 8. `net.http` — the one capability that needs real work
 
@@ -1136,5 +1195,5 @@ depending on one reviewed commit of C.
 | No implicit state | A module is instantiated fresh per call and torn down after it — no globals, no cached credentials, no parsed index. What persists does so through the granted `state` store (§6.4), named by the tool and bounded by quota. |
 | Trimmed JS surface | The interpreter surface is deliberately narrowed (§4.1). Globals a Node or browser author expects are absent, and the import surface is closed. |
 | External deps are off by default | `allow_network_deps` gates them, and turning it on removes the property that makes external dependencies safe. The `net.http` interlock (§4.4) is then the only thing between a compromised transitive dependency and your source tree. |
-| The generated tier is off by default | `[tools.agent] enabled` gates it. The agent writes code; the operator writes grants; they are never the same actor. |
+| The generated tier's bound is its ceiling, not its switch | `[tools.agent] enabled` defaults to true; what bounds the tier is `[tools.agent.capabilities]`, which defaults to the workspace and grants nothing a tool has not declared. The agent writes code; the operator writes grants; they are never the same actor. |
 | `scope = "tool"` is cross-conversation | A tool-scoped namespace is shared by every caller, which is what a cache wants and is also a channel from one conversation into another. `scope = "conversation"` closes it. |

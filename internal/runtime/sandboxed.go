@@ -20,9 +20,10 @@ import (
 // OpenSandboxedTools builds the sandboxed-tool host from config and loads the
 // developer tools in [tools].user_dir, or returns nil when the subsystem is off.
 //
-// nil is the default and the shipped posture. Every caller downstream treats a
-// nil host as "no sandboxed tools", so a deployment that never sets
-// `[tools] enabled` builds exactly the loops it did before this existed.
+// A host is the default: `[tools] enabled` defaults to true, because this tier
+// carries the workspace file tools. Every caller downstream still treats a nil
+// host as "no sandboxed tools", so an operator who sets `enabled = false` builds
+// exactly the loops they would have before this existed.
 //
 // A failure to open the host is logged and yields nil rather than aborting the
 // boot: an operator whose wasm runtime will not start should lose the sandboxed
@@ -33,7 +34,7 @@ import (
 // that drives LRU eviction; a nil store leaves the generated tier off, whatever
 // [tools.agent] says.
 func OpenSandboxedTools(ctx context.Context, cfg *config.Config, store *memory.Store, mgr toolOwner) *toolvm.Host {
-	if !cfg.Tools.Enabled {
+	if !cfg.Tools.IsEnabled() {
 		return nil
 	}
 
@@ -74,7 +75,22 @@ func OpenSandboxedTools(ctx context.Context, cfg *config.Config, store *memory.S
 	// The generated tier's operator policy — the ceiling, the cap, whether it is on
 	// at all — must be installed before the first LoadGenerated, which refuses to
 	// register anything while the tier is off.
-	host.SetAgentConfig(agentConfig(cfg))
+	//
+	// The ceiling comes from the store, and `nine.toml` is reconciled into it here:
+	// the file's grants are rewritten as `config` rows and the workspace fallback as
+	// `default` rows, while an operator's `approved` rows survive untouched
+	// (capability_grants.go). One code path then reads the ceiling whether a grant
+	// came from the file or from an approval, and a grant the file stops declaring
+	// stops applying.
+	ac := agentConfig(cfg)
+	if grants, err := ReconcileCapabilityGrants(store, cfg); err != nil {
+		// The file's own ceiling is still available, so a store that cannot be
+		// reconciled costs the approved grants rather than the whole tier.
+		slog.Error("capability grants not reconciled; using the config ceiling alone", "err", err)
+	} else if store != nil {
+		ac.Ceiling = CeilingFromGrants(grants)
+	}
+	host.SetAgentConfig(ac)
 
 	// The workspace a shipped tool that declares fs is mounted at. Same root the
 	// `files` plugin used, so a model's /work paths keep meaning what they meant.
@@ -82,7 +98,11 @@ func OpenSandboxedTools(ctx context.Context, cfg *config.Config, store *memory.S
 	// Created if absent: the mount, and `shell`'s working directory, are the same
 	// directory, and a tool that declares fs fails to load against a root that is
 	// not there. An operator who configured a root meant for it to exist.
-	if root := cfg.Workspace.Root; root != "" {
+	// Resolved rather than read: an unset [workspace].root would skip every shipped
+	// tool that declares fs, which with this tier on by default would be the
+	// out-of-the-box state (config.WorkspaceRoot).
+	root := cfg.WorkspaceRoot()
+	if root != "" {
 		if err := os.MkdirAll(root, 0o755); err != nil {
 			slog.Warn("workspace root could not be created", "root", root, "err", err)
 		}
@@ -92,7 +112,7 @@ func OpenSandboxedTools(ctx context.Context, cfg *config.Config, store *memory.S
 			slog.Warn("workspace state directory could not be prepared", "root", root, "err", err)
 		}
 	}
-	host.SetShippedWorkspace(toolvm.ShippedWorkspace{Host: cfg.Workspace.Root})
+	host.SetShippedWorkspace(toolvm.ShippedWorkspace{Host: root})
 
 	// First-party tools first: the namespace rule is first-registered wins, so a
 	// developer or generated tool must not be able to take a shipped tool's name
@@ -116,13 +136,31 @@ func OpenSandboxedTools(ctx context.Context, cfg *config.Config, store *memory.S
 func agentConfig(cfg *config.Config) toolvm.AgentConfig {
 	a := cfg.Tools.Agent
 	caps := a.Capabilities
+
+	// The default ceiling is the workspace, derived the same way the shipped tools'
+	// mount is (SetShippedWorkspace above), so a generated tool and a shipped tool
+	// name the same file the same way. Derived rather than written in TOML because
+	// the root varies by deployment and nothing expands variables in config values.
+	//
+	// A fallback, not an override: an operator who granted any fs mount gets
+	// exactly that and nothing added. And still a ceiling, not a grant — a tool
+	// that declares no fs capability is mounted nothing, however wide this is
+	// (toolvm.resolveCeiling).
+	fsRead, fsWrite := mounts(caps.FS.Read), mounts(caps.FS.Write)
+	if len(fsRead) == 0 && len(fsWrite) == 0 {
+		if root := cfg.WorkspaceRoot(); root != "" {
+			m := []toolvm.Mount{{Host: root, Guest: toolvm.ShippedWorkspaceGuest}}
+			fsRead, fsWrite = m, m
+		}
+	}
+
 	return toolvm.AgentConfig{
-		Enabled:          a.Enabled,
+		Enabled:          cfg.Tools.GeneratedEnabled(),
 		MaxTools:         a.MaxTools,
 		AllowLongRunning: a.AllowLongRunning,
 		Ceiling: toolvm.Ceiling{Grant: toolvm.Grant{
-			FSRead:  mounts(caps.FS.Read),
-			FSWrite: mounts(caps.FS.Write),
+			FSRead:  fsRead,
+			FSWrite: fsWrite,
 			Env:     caps.Env,
 			HTTP:    httpGrant(caps.Net.HTTP),
 			State:   stateGrant(caps.State),

@@ -64,7 +64,8 @@ The invariant holds: **no agent-reachable path writes a capability grant.** `too
 the **ceiling** (`[tools.agent.capabilities]`) that bounds what any generated tool may be
 granted, and a tool that declares nothing gets nothing. *Nine cannot grant itself
 capabilities* (R-PLUG.7) holds unchanged — the agent writes the code, the operator writes the
-grants, and they are never the same actor. The generated tier is **off by default**
+grants, and they are never the same actor. The generated tier is **on by default**, bounded
+by a ceiling that defaults to the workspace
 (`[tools.agent] enabled`). Nothing about the toolchain property below changes: the QuickJS
 interpreter is built ahead of time from pinned tags and committed as an artifact, so even a
 generated tool adds no compiler to the runtime image — the agent writes JavaScript for a
@@ -104,8 +105,8 @@ existing binary) is the plugin manager's responsibility — no recompilation is 
 |-------|--------|
 | Skills only | Nine writes skills and, where enabled, sandboxed tools. It does not generate native plugins, rewrite `nine.toml`, or rebuild its own source. Deliberate: a daemon that changes its own form is hard to reason about, debug and trust. |
 | Built-in skills are immutable at runtime | `skill_write` and `skill_modify` refuse to touch a skill seeded from the binary. Changing one means editing `skills/*.md` and rebuilding. |
-| Generated tools are off by default | `[tools.agent] enabled` gates the tier that lets Nine write its own tools. |
+| Generated tools are bounded by a ceiling, not by being off | `[tools.agent] enabled` defaults to true. The bound is `[tools.agent.capabilities]`, which defaults to the workspace — the same directory the shipped file tools and `shell` already reach — and confers nothing a tool has not declared. Set `enabled = false` to keep the host without the tier. |
 | Duration is gated separately from reach | A generated tool that runs as a job needs `[tools.agent] allow_long_running`, and one that runs **standing** — indefinitely, on its own cadence — needs `allow_standing`. The capability ceiling cannot express this: it bounds what a tool may *reach*, and duration is not reach. A standing promotion is approved by a human even when `require_approval = "never"`. |
-| Capabilities are never agent-writable | `tool_write` writes JavaScript and a capability *declaration*. The operator writes the ceiling (`[tools.agent.capabilities]`) that bounds what any generated tool may be granted. A tool that declares nothing gets nothing. |
-| Config changes need a restart | Editing `nine.toml` takes effect on daemon restart. There is no reload path, for agent or operator. |
+| Capabilities are never agent-writable | `tool_write` writes JavaScript and a capability *declaration*. The operator writes every grant. `capability_request` lets the agent **ask** — it records a pending request a human decides on, and cannot confer anything. A tool that declares nothing gets nothing. |
+| Config changes need a restart, except a grant | Editing `nine.toml` takes effect on daemon restart, for agent or operator. The one thing that changes live is the generated tier's capability ceiling: an approved request is installed on the running host and the tool catalog re-projected against it. Nothing writes `nine.toml` — the grant is recorded in the store, and the file is reconciled into it at each boot ([sandboxed-tools.md](sandboxed-tools.md) §7.2). |
 | Adding a built-in plugin needs a rebuild | An `[[mcp.server]]` is the operator's way to add a capability without rebuilding; it still requires editing `nine.toml` and restarting. Nothing an agent does at runtime can declare one. |

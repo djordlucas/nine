@@ -11,7 +11,7 @@ a real break happens.
 | **Release version** | "which Nine is this" (user-facing) | SemVer, git-tag driven | git tag `vX.Y.Z` → injected at build |
 | **Plugin protocol** | daemon ↔ native plugin wire compat | single integer, bump on break | `plugin.ProtocolVersion` |
 | **Sandboxed tool ABI** | daemon ↔ wasm guest compat | single integer, bump on break | `toolvm.ABIVersion` |
-| **Memory DB schema** | SQLite schema | sequential forward migrations, applied on open | `PRAGMA user_version`, currently **11** |
+| **Memory DB schema** | SQLite schema | sequential forward migrations, applied on open | `PRAGMA user_version`, currently **12** |
 | **Config schema** | `nine.toml` shape | single integer, bump on break | `schema_version` in `nine.toml`, currently **1** |
 
 The release version also names the container image. A `v*` tag builds and

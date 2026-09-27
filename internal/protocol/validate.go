@@ -79,6 +79,10 @@ var clientMsgSpecs = map[MsgType]clientMsgSpec{
 
 	TypePluginCall:       {required: []fieldRule{needToolName}},
 	TypeHumanInputAnswer: {required: []fieldRule{needRequestID}},
+
+	// Both are required: a decision with no id, or an id with no verb, must not
+	// resolve to a default. Widening a capability ceiling is not a place for one.
+	TypeGrantsDecide: {required: []fieldRule{needRequestID, needText}},
 }
 
 // ValidateClient checks an inbound client message carries what its type needs.

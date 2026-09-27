@@ -82,6 +82,8 @@ Msg {
 | `plugins_reload` | — | re-scan `[plugins].user_dir` and reload user plugins live (built-ins untouched) |
 | `tools_list` | — | request the sandboxed-tool roster (with resolved capabilities and skip reasons) |
 | `tools_reload` | — | re-scan `[tools].user_dir` and reload sandboxed tools live |
+| `grants_list` | — | the generated tier's capability ceiling and the requests to widen it |
+| `grants_decide` | `request_id`, `text` | settle a capability request (`approve`/`deny`) or revoke a grant (`revoke`). Both fields are required: a decision with no id, or an id with no verb, **MUST NOT** resolve to a default |
 
 `plugin_call` (R-PROTO.5) is the only way to reach a tool without an agent loop; the CLI
 uses it for `nine workflow fail` when the daemon is up and for diagnostics.
@@ -102,6 +104,8 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `status` / `list_*` | `text` = JSON payload | the requested read (StatusInfo / array) |
 | `plugins_list` / `plugins_reload` | `text` = JSON `[]PluginStatus` | the plugin roster (each: `name`, `source`, `loaded`, `tools`, `error`) |
 | `tools_list` / `tools_reload` | `text` = JSON `[]SandboxedToolStatus` | the sandboxed-tool roster (see R-PROTO.4a) |
+| `grants_list` | `text` = JSON `CapabilityState` | grants in force, each with its `source`, plus every capability request and its status ([`toolvm.md`](toolvm.md) R-TVM.14) |
+| `grants_decide` | `text` = a sentence | what the decision did, including whether it took effect without a restart |
 | `context` | `text` = JSON `ninectx.Report` | per-section token breakdown + assembled prompt/messages |
 | `workflow_stop` / `workflow_fail` | `text` = `"stopped"` / `"failed"` | operator-command result |
 | `session_stop` | `text` = human-readable outcome (`stopped <id>`, `stopped N session(s)`) | terminate result (or `error` when the id is unknown) |

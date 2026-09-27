@@ -96,11 +96,21 @@ type ToolsConfig struct {
 	// keeps agent.DefaultMaxOutputTokens (2048).
 	MaxOutputTokens int `toml:"max_output_tokens"`
 
-	// Enabled turns the sandboxed-tool host on (spec/contracts/toolvm.md). Off by
-	// default: a deployment that never sets it behaves exactly as it did before
-	// the host existed, which is the additive property the whole design rests on
+	// Enabled turns the sandboxed-tool host on (spec/contracts/toolvm.md).
+	// Defaults to true; set it false to run without the host at all.
+	//
+	// On by default because this tier carries the workspace file tools —
+	// read_file, write_file, edit_file and the rest — so a deployment without it
+	// cannot read or write a file. It is also the *narrower* of the two
+	// capabilities Nine ships: `shell` runs commands as the daemon's process user
+	// with its full reach, while these run in a wasm sandbox scoped to declared
+	// filesystem capabilities. Defaulting it on reduces the share of the agent's
+	// reach that sits outside a boundary; it does not widen the total
 	// (docs/sandboxed-tools.md §1).
-	Enabled bool `toml:"enabled"`
+	//
+	// A pointer so that "unset" and "false" are distinguishable: read it through
+	// IsEnabled, never directly.
+	Enabled *bool `toml:"enabled"`
 
 	// UserDir holds developer sandboxed tools, discovered at boot from the same
 	// sidecar-manifest layout user plugins use: a `<name>.js` or `<name>.wasm`
@@ -168,11 +178,22 @@ type ToolsConfig struct {
 	JobMinDelayMS int `toml:"job_min_delay_ms"`
 
 	// Agent is the `[tools.agent]` table: the generated tier, where Nine writes
-	// its own tools (docs/sandboxed-tools.md §5.2). Off by default and
-	// independent of `enabled` — an operator may want developer tools without
-	// letting the agent author any.
+	// its own tools (docs/sandboxed-tools.md §5.2). On by default, and gated by
+	// `enabled` underneath: the generated tier needs the host, so turning the host
+	// off turns this off with it whatever it says.
 	Agent ToolsAgentConfig `toml:"agent"`
 }
+
+// IsEnabled reports whether the sandboxed-tool host should run. Unset means yes
+// — see the Enabled field for why the default is on.
+func (c ToolsConfig) IsEnabled() bool { return c.Enabled == nil || *c.Enabled }
+
+// GeneratedEnabled reports whether the generated tier should run, honoring the
+// host gate above it. The generated tier executes on the host, so `[tools]
+// enabled = false` turns it off whatever `[tools.agent] enabled` says — this
+// method is where that dependency is stated once instead of being rediscovered
+// at each call site.
+func (c ToolsConfig) GeneratedEnabled() bool { return c.IsEnabled() && c.Agent.IsEnabled() }
 
 // ToolsAgentConfig governs generated tools: the ones Nine writes itself.
 //
@@ -182,8 +203,21 @@ type ToolsConfig struct {
 // the other. A generated tool that could grant itself filesystem access would be
 // a shell with extra steps.
 type ToolsAgentConfig struct {
-	// Enabled turns on `tool_write`. Off by default.
-	Enabled bool `toml:"enabled"`
+	// Enabled turns on `tool_write`. Defaults to true; set it false to keep the
+	// host's shipped and developer tools without letting the agent author any.
+	//
+	// On by default because closing a capability gap by writing a tool is the
+	// behavior this design exists to make safe, and a tier nobody runs is a design
+	// nobody benefits from. What bounds it is Capabilities below, which grants
+	// nothing a tool does not declare and nothing the operator has not conferred —
+	// the ceiling, not this switch, is the control that matters.
+	//
+	// Gated by `[tools] enabled` underneath: the generated tier runs on the host,
+	// so with the host off this has no effect whatever it says.
+	//
+	// A pointer so that "unset" and "false" are distinguishable: read it through
+	// IsEnabled, never directly.
+	Enabled *bool `toml:"enabled"`
 
 	// Eval additionally allows `js_eval` — one execution, nothing persisted
 	// (§5.3). It is not a third trust tier: it runs under exactly the
@@ -290,6 +324,12 @@ const (
 	DepsModeAllowlist = "allowlist"
 	DepsModeOpen      = "open"
 )
+
+// IsEnabled reports whether the generated tier should run. Unset means yes — see
+// the Enabled field. This answers for `[tools.agent]` alone; the caller is
+// responsible for the `[tools] enabled` gate underneath it, which is why
+// ToolsConfig.GeneratedEnabled exists and is the one to prefer.
+func (a ToolsAgentConfig) IsEnabled() bool { return a.Enabled == nil || *a.Enabled }
 
 // DepsMode returns the effective deps mode, defaulting to off.
 func (a ToolsAgentConfig) DepsMode() string {
@@ -1465,4 +1505,55 @@ func validateHTTPGrant(table string, g *ToolHTTPGrant) error {
 		return fmt.Errorf("[%s]: net.http max_bytes must not be negative", table)
 	}
 	return nil
+}
+
+// CapabilityGrantParams is one capability's scope, in the shape a capability
+// request or a stored grant carries it: flat, capability-agnostic, and only the
+// fields that capability uses.
+type CapabilityGrantParams struct {
+	Mounts     []ToolMount // fs.read, fs.write
+	Env        []string    // env
+	AllowHosts []string    // net.http
+	Methods    []string    // net.http
+	MaxBytes   int         // net.http
+	Scope      string      // state
+	MaxKeys    int
+	MaxValueKB int
+	MaxTotalKB int
+	TTL        string
+}
+
+// ValidateCapabilityGrant holds a grant that did not come from nine.toml to the
+// same rules the file is held to.
+//
+// It exists because the generated tier's ceiling now lives in the store, where an
+// operator's approval can put a grant the file never declared. Without this the
+// store could hold a ceiling nine.toml could not express — an empty `allow_hosts`,
+// a relative mount host, a reserved `NINE_*` env key — and the file's validators
+// would be a rule that applied only to operators who happened to use a file.
+//
+// The rules are not restated: the params are mapped into the same
+// ToolCapabilities shape and handed to the same validator the loader uses.
+func ValidateCapabilityGrant(capability string, p CapabilityGrantParams) error {
+	var caps ToolCapabilities
+	switch capability {
+	case "fs.read":
+		caps.FS.Read = p.Mounts
+	case "fs.write":
+		caps.FS.Write = p.Mounts
+	case "env":
+		caps.Env = p.Env
+	case "net.http":
+		caps.Net.HTTP = &ToolHTTPGrant{
+			AllowHosts: p.AllowHosts, Methods: p.Methods, MaxBytes: p.MaxBytes,
+		}
+	case "state":
+		caps.State = &ToolStateGrant{
+			Scope: p.Scope, MaxKeys: p.MaxKeys,
+			MaxValueKB: p.MaxValueKB, MaxTotalKB: p.MaxTotalKB, TTL: p.TTL,
+		}
+	default:
+		return fmt.Errorf("unknown capability %q", capability)
+	}
+	return validateToolEntry("tools.agent.capabilities", ToolEntry{Capabilities: caps})
 }

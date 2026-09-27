@@ -6,8 +6,9 @@ A **sandboxed tool** is a wasm module that the daemon executes **in-process**, w
 explicitly conferred set of capabilities and nothing else. It is a *second backend behind
 the same dispatcher* as native plugins (`spec/contracts/plugin.md`), not a replacement:
 the plugin contract, its transport, and `plugin.ProtocolVersion` are untouched, and a
-deployment that leaves `[tools] enabled` unset behaves exactly as it did before this
-subsystem existed.
+deployment that sets `[tools] enabled = false` behaves exactly as it did before this
+subsystem existed. `enabled` defaults to **true**, because this tier carries the workspace
+file tools (R-TVM.16) — without it an agent cannot read or write a file.
 
 The design rationale is `docs/sandboxed-tools.md`; the authoring guide is
 `docs/writing-sandboxed-tools.md`. This file is normative.
@@ -618,9 +619,19 @@ deliberately **no grant**. It runs through the exact host, ABI (R-TVM.1), instan
 (R-TVM.3), bounds (R-TVM.4), and audit (R-TVM.12) a developer tool does. Kind is always
 `js`: the agent cannot supply a `.wasm` blob, because a binary is not reviewable.
 
-The tier is **off unless `[tools.agent] enabled`**. With it off, `tool_write`, `tool_delete`,
-and `js_eval` are neither registered nor advertised, and a loop is identical to one built
-before the tier existed (I-TVM.6 extends to it).
+The tier is **on unless `[tools.agent] enabled = false`**, and is gated by `[tools] enabled`
+above it: the generated tier runs on the host, so with the host off the tier is off whatever
+it says. With the tier off, `tool_write`, `tool_delete`, and `js_eval` are neither registered
+nor advertised, and a loop is identical to one built before the tier existed (I-TVM.6 extends
+to it).
+
+The default is on because the ceiling, not this switch, is the control that bounds the tier:
+a tool is granted only what it declares and only what the operator has conferred, so a tier
+that is on with a narrow ceiling is not a tier that is unbounded. The **default ceiling is the
+workspace, read and write**, derived from `[workspace].root` at the `ShippedWorkspaceGuest`
+path the shipped tools use — the same directory `shell` already runs in. An explicit
+`[tools.agent.capabilities]` fs grant **replaces** that derived default rather than adding to
+it, so narrowing the ceiling narrows it.
 
 ### The ceiling, not a grant
 
@@ -630,8 +641,8 @@ The operator confers a single **ceiling** — `[tools.agent.capabilities]` — t
 - A tool receives a capability only if it **declares** it; a tool that declares nothing runs
   with nothing, whatever the ceiling permits. Least privilege is per tool, not per tier.
 - Declaring a capability the ceiling excludes is a **refusal**, returned to the model as a
-  message it can act on — it rewrites without the capability or calls `gap_report`. A tool
-  cannot request its way past the ceiling.
+  message it can act on — it rewrites without the capability or calls `capability_request`. A
+  tool cannot request its way past the ceiling; the *agent* can ask an operator to raise it.
 - The declaration is **re-resolved against the current ceiling on every load**, so narrowing
   the ceiling disables a tool that no longer fits rather than leaving it running with reach
   the operator has withdrawn.
@@ -642,7 +653,51 @@ The operator confers a single **ceiling** — `[tools.agent.capabilities]` — t
 > **The invariant this preserves.** R-PLUG.7's "**Nine cannot grant itself capabilities**"
 > is unchanged. `tool_write` writes *code*; it has no column and no path to write a *grant*.
 > The agent writes the code, the operator writes the ceiling, and they are never the same
-> actor — the one asymmetry the whole tier exists to enforce.
+> actor — the one asymmetry the whole tier exists to enforce. `capability_request` does not
+> weaken it: it inserts a `pending` row an operator decides on, and no tool reaches a method
+> that confers anything ([`memory-store.md`](memory-store.md) R-MEM.4).
+
+### Where the ceiling lives
+
+The ceiling is **stored**, and `nine.toml` is reconciled into it at every boot. The store is
+the source of truth for what is in force; the file declares the operator's baseline.
+
+Each grant row carries a `source`:
+
+| `source` | Written by | Lifetime |
+|---|---|---|
+| `default` | the daemon, from `[workspace].root` | deleted and re-derived on every boot |
+| `config` | `[tools.agent.capabilities]` | deleted and re-inserted on every boot |
+| `approved` | an operator answering a capability request | durable until revoked |
+
+A boot **MUST** delete every `default` and `config` row and rewrite them from the file and
+the workspace, and **MUST NOT** touch an `approved` row. The effective ceiling is the union.
+
+Delete-and-reinsert rather than a diff is what makes the file behave as both a first-boot
+seed and a change feed with no sentinel and no stored snapshot: a grant the file adds
+appears, one it edits changes, one it stops declaring **stops applying**, and one it never
+mentioned is untouched. The last two are the requirement — a ceiling an operator narrows in
+the file and that does not narrow is a security control that lies.
+
+A grant that did not come from the file **MUST** be validated against the same rules the
+file is held to (`config.ValidateCapabilityGrant`), so the store cannot hold a ceiling
+`nine.toml` could not express. Validation happens at **request** time, not approval time, so
+the refusal reaches the model rather than the operator.
+
+### Requesting a capability
+
+`capability_request` is the path out of a ceiling refusal, and unlike `gap_report` it is
+**advertised** — a refusal naming a tool the model cannot see is not a usable signal.
+
+- It records a `pending` row and surfaces it to the operator's notification feed. It confers
+  nothing and **MUST NOT** be able to.
+- An operator settles it through one path — `nine grants`, the TUI's `/grants`, or the API's
+  `/capabilities/{id}/decision` — all of which reach the same service in the daemon, because
+  only the process running the agents can install a ceiling on its live host.
+- An approval **MUST** take effect without a restart: the ceiling is recomputed from the
+  store, installed with `SetAgentConfig`, and the generated catalog re-projected against it,
+  so a tool that skipped for want of a capability registers and reaches the model on its next
+  turn. A revocation takes the same path in reverse.
 
 ### Lifecycle
 
@@ -1091,8 +1146,9 @@ R-TVM.19 adds a second lifecycle to the same tool. Both halves of
   exposes no `exec`, no `urlGet`, and no `evalScript` (R-TVM.9).
 - **I-TVM.8** — `nine.caps` describes a grant and never confers one. Nothing reads it back
   to make an enforcement decision.
-- **I-TVM.6** — `[tools] enabled` unset ⇒ no host, no tools, and loops identical to those
-  built before this subsystem existed.
+- **I-TVM.6** — `[tools] enabled = false` ⇒ no host, no tools, and loops identical to those
+  built before this subsystem existed. The flag is a pointer in config precisely so that an
+  operator declining the default is distinguishable from one who said nothing.
 - **I-TVM.7** — A sandboxed tool cannot reach a loopback, link-local, or private address,
   whatever its `allow_hosts` says and whatever any hostname resolves to.
 

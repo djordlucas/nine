@@ -184,6 +184,42 @@ func (cfg *Config) DatabasePath() (string, error) {
 	return filepath.Join(home, ".nine", "nine.db"), nil
 }
 
+// WorkspaceRoot returns the directory the workspace file tools are scoped to and
+// `shell` runs in, honoring NINE_WORKSPACE_ROOT, then nine.toml's
+// [workspace].root, then a platform default.
+//
+// The default follows DatabasePath's: /data inside the container, where the
+// mounted volume already holds the database, and ~/.nine beside it natively. One
+// volume, one directory, all durable state.
+//
+// There is a default at all because an unset root is not a neutral state. Every
+// shipped tool that declares fs — read_file, write_file, edit_file, and the six
+// others — is skipped at load when no workspace is configured, so a deployment
+// that never named a root gets a running host with no way to touch a file. The
+// sandboxed tier is on by default ([tools] enabled), which makes that the
+// out-of-the-box case rather than an unusual one.
+//
+// The environment is read here as well as in ApplyEnvOverrides, for the same
+// reason DatabasePath does it: a Config built as a literal — the eval harness, a
+// test — never passes through ApplyEnvOverrides, and this accessor should give
+// the same answer whoever assembled the Config.
+func (cfg *Config) WorkspaceRoot() string {
+	if v := os.Getenv("NINE_WORKSPACE_ROOT"); v != "" {
+		return v
+	}
+	if cfg.Workspace.Root != "" {
+		return cfg.Workspace.Root
+	}
+	if fi, err := os.Stat("/data"); err == nil && fi.IsDir() {
+		return "/data/workspace"
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "workspace"
+	}
+	return filepath.Join(home, ".nine", "workspace")
+}
+
 // dsnSchemeRE matches a leading URL scheme (RFC 3986 §3.1) followed by "://".
 // Requiring the slashes keeps a legitimate Windows drive path ("C:\db") and a
 // relative path containing a colon from being mistaken for a DSN.

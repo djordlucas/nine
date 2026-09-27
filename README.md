@@ -44,8 +44,9 @@ the exact LLM request/response, tool I/O, context usage, sub-agent lifecycle. `n
 `nine replay` read it back; `nine context` shows the session's current context.
 
 **Evolving.** Nine writes its own skills — markdown how-to notes, retrieved into context when relevant.
-Where enabled, it also writes its own sandboxed tools at runtime (JS/Wasm) to close capability gaps:
-the agent writes the code, the operator writes the capability grants.
+It also writes its own sandboxed tools at runtime (JS/Wasm) to close capability gaps, bounded by a
+capability ceiling that defaults to the workspace: the agent writes the code, the operator writes the
+capability grants.
 
 **Local.** Built to run against a local model (currently through Ollama) with a SQLite database,
 developed against small models to stay useful on modest hardware. Currently tested against
@@ -74,7 +75,7 @@ developed against small models to stay useful on modest hardware. Currently test
 | **Plugin** | A tool container — a standalone binary, or an MCP server |
 | **Sandboxed tool** | User supplied JS or wasm run in-process in a wasm sandbox (Wazero), through capabilities grants |
 | **Generated tool** | A sandboxed tool Nine wrote itself, stored as a row; its code is the agent's, its capabilities the operator's |
-| **Capability** | A conferred reach — `fs`, `env`, `net.http` — declared by a tool's manifest and granted only in `nine.toml` |
+| **Capability** | A conferred reach — `fs`, `env`, `net.http` — declared by a tool's manifest, granted by the operator in `nine.toml` or by approving a request |
 | **Skill** | Markdown how-to note, semantically retrieved into context |
 | **Goal** | An open-ended intention with no end condition, pursued in the background |
 | **Workflow** | A finite multi-step plan for sub-agent delegation |
@@ -514,22 +515,25 @@ has no fuel metering, so the deadline is the only CPU bound.
 
 ### The tier Nine writes itself
 
-Nine can also write its own tools at runtime — the gap its `gap_report` names but
-could not previously close. These are rows in the store rather than files on disk, but
-they run in the identical sandbox under the identical rules. The tier is currently off by
-default and independent of `[tools] enabled`; with it off, `tool_write`, `tool_delete`,
-and `js_eval` are neither registered nor advertised, and a loop is identical to one
-built before the tier existed:
+Nine writes its own tools at runtime. These are rows in the store rather than files on
+disk, but they run in the identical sandbox under the identical rules. The tier is **on
+by default**, with `[workspace].root` as its ceiling — read and write, at `/work`, the
+same directory the shipped file tools reach and `shell` runs in. It is gated by `[tools]
+enabled` above it, and setting either to false leaves `tool_write`, `tool_delete` and
+`js_eval` neither registered nor advertised, and a loop identical to one built before the
+tier existed.
+
+Nothing needs writing to get that. What an operator writes here is a narrowing:
 
 ```toml
 [tools.agent]
-enabled          = true
-eval             = true             # allow js_eval — run a snippet, persist nothing
+enabled          = false            # keep the host and its shipped tools, without this tier
+eval             = false            # disallow js_eval — a snippet that persists nothing
 max_tools        = 64               # catalog cap; least-recently-called are evicted
-require_approval = "on_capability"  # prompt a human only when a tool asks for reach
+require_approval = "always"         # prompt on every write, not only those asking for reach
 
-[tools.agent.capabilities.fs]       # the ceiling, not a grant
-read = [{ host = "${NINE_WORKSPACE}", guest = "/workspace" }]
+[tools.agent.capabilities.fs]       # the ceiling, not a grant — replaces the workspace default
+read = [{ host = "/srv/data", guest = "/data" }]
 ```
 
 `[tools.agent.capabilities]` is a **ceiling**: the most any generated tool may be
@@ -613,10 +617,11 @@ tax. Built-in skills are embedded in the binary and seeded into the database on 
 boot, so editing one and rebuilding updates it; skills the agent wrote itself are left
 alone.
 
-The boundary is deliberate: Nine writes skills, and sandboxed-tool code where the
-operator enabled that tier — both of which are store state, listable and deletable
-like a goal or a workflow. It does not generate plugins, write itself a capability
-grant (yet), rewrite its config, or rebuild its source at runtime. See:
+The boundary is deliberate: Nine writes skills and sandboxed-tool code — both store
+state, listable and deletable like a goal or a workflow. It does not generate plugins,
+write itself a capability grant, rewrite its config, or rebuild its source at runtime.
+It can *ask* for a capability: `capability_request` records a request an operator
+approves or denies, and an approval takes effect without a restart. See:
 [docs/self-modification.md](docs/self-modification.md).
 
 ## Documentation
@@ -686,7 +691,7 @@ removed from this table rather than marked done.
 | Small-model baseline | Tested against `qwen3.5:4b`, `qwen3.5:9b`, `gemma4:e4b` and `gemma4:e2b` on a 16 GB M4. Behavior on large hosted models is unmeasured — [model compatibility](docs/model-compatibility.md). |
 | Interfaces change without notice | No stability guarantee and no support promise while the project is experimental. |
 | Low user mileage | Failure modes that only long runs, unusual hardware, or an unfamiliar model turn up have not been hit yet. |
-| Config is operator-only | Nine cannot rewrite `nine.toml` at runtime. Changing a setting means editing the file and restarting the daemon. This is deliberate. |
+| Config is operator-only | Nine cannot rewrite `nine.toml` at runtime. Changing a setting means editing the file and restarting the daemon. This is deliberate. The one exception is not an exception to it: an approved capability grant is recorded in the store and installed on the running daemon, and nothing writes the file. |
 | No external pull requests | Deliberate — see [Contributing](#contributing). |
 
 ## AI Use / Methodology
@@ -715,11 +720,16 @@ cosign and carries an SBOM and build provenance —
 The API on port 8080 has no authentication. Bind it to localhost, as the quick start
 does, or put it behind a reverse proxy.
 
-Two settings deserve a deliberate decision rather than a default. Enabling
-`[tools.agent]` lets the agent write code that then runs — bounded by the ceiling you
-confer, which is worth narrowing if your workspace holds secrets. Enabling external npm
-dependencies for that tier is the riskiest switch in the system; leave it off unless you
-have a reason, and leave the `net.http` interlock in place if you turn it on.
+`[tools.agent]` is on by default, so the agent writes code that then runs — bounded by a
+ceiling that defaults to `[workspace].root`, read and write. That is the same directory the
+shipped file tools reach and `shell` runs in, so it is not new reach for the agent; what it
+adds is reach for a *generated tool's dependencies*. Narrow the ceiling with an explicit fs
+grant if your workspace holds secrets, or set `enabled = false` to keep the host without the
+tier.
+
+Enabling external npm dependencies for that tier is the riskiest switch in the system and is
+off by default; leave it off unless you have a reason, and leave the `net.http` interlock in
+place if you turn it on. `allow_long_running` and `allow_standing` are likewise off.
 
 ## License
 GPL-3.0-or-later. See [LICENSE](LICENSE).

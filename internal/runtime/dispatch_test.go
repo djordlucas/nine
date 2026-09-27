@@ -60,3 +60,52 @@ func TestEveryClientMsgTypeIsDispatched(t *testing.T) {
 		})
 	}
 }
+
+// TestEveryQueryKindIsAnswered closes the hole TestEveryClientMsgTypeIsDispatched
+// leaves open.
+//
+// The field-less verbs all decode to one QueryReq and are routed by a second,
+// inner switch on Kind. A verb missing a case there does not reach the outer
+// default branch and so never produces "unknown message type" — it produces
+// *nothing*, and the test above reads a silent connection as "routed" and skips.
+// A client calling that verb then blocks until its own deadline, which is how a
+// `grants_list` with no inner case reached a built binary.
+//
+// This asserts the stronger property the inner switch needs: every query kind
+// answers something.
+func TestEveryQueryKindIsAnswered(t *testing.T) {
+	provider := seqProvider([]llm.Response{finalResp("ok")})
+	_, sock := startDaemon(t, makeFactory(provider), nil, nil)
+
+	for _, mt := range protocol.ClientMsgTypes {
+		// A query kind is exactly a type that decodes to QueryReq.
+		req, err := protocol.DecodeRequest(protocol.Msg{Type: mt, AgentID: "no-such-agent", Text: "probe", RequestID: "probe"})
+		if err != nil {
+			continue
+		}
+		if _, isQuery := req.(protocol.QueryReq); !isQuery {
+			continue
+		}
+
+		t.Run(string(mt), func(t *testing.T) {
+			conn, err := net.Dial("unix", sock)
+			if err != nil {
+				t.Fatalf("dial: %v", err)
+			}
+			defer conn.Close() //nolint:errcheck
+
+			if err := conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+				t.Fatalf("deadline: %v", err)
+			}
+			if err := json.NewEncoder(conn).Encode(protocol.Msg{Type: mt}); err != nil {
+				t.Fatalf("encode: %v", err)
+			}
+
+			var reply protocol.Msg
+			if err := json.NewDecoder(conn).Decode(&reply); err != nil {
+				t.Fatalf("%q produced no reply (%v) — it has no case in the QueryReq "+
+					"switch in dispatch, so a client calling it blocks until its own deadline", mt, err)
+			}
+		})
+	}
+}
