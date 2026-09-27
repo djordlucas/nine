@@ -104,7 +104,7 @@ fits the budget by construction; the notice never blocks or compacts.
 3. Sorts: always-include tools first, then ranked tools descending by score.
 4. Greedily adds ranked tools up to `TopN` (default 20), skipping any that would exceed the remaining budget.
 
-Always-include tools are never skipped regardless of budget or score. Intercepted tools (e.g. `gap_report`, `run_agent`) are registered as always-include so they are always visible to the LLM.
+Always-include tools are never skipped regardless of budget or score. Intercepted tools such as `run_agent` and `capability_request` are registered as always-include, so they are visible to the LLM on every turn. Being *registered* is not the same as being advertised: the daemon builds the advertised list by name, so a registered tool absent from that list is callable but never offered — `gap_report` is the one such tool, which is why a refusal that told the model to use it was not a usable signal.
 
 ## Scratchpad → messages
 

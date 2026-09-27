@@ -641,8 +641,8 @@ The operator confers a single **ceiling** — `[tools.agent.capabilities]` — t
 - A tool receives a capability only if it **declares** it; a tool that declares nothing runs
   with nothing, whatever the ceiling permits. Least privilege is per tool, not per tier.
 - Declaring a capability the ceiling excludes is a **refusal**, returned to the model as a
-  message it can act on — it rewrites without the capability or calls `gap_report`. A tool
-  cannot request its way past the ceiling.
+  message it can act on — it rewrites without the capability or calls `capability_request`. A
+  tool cannot request its way past the ceiling; the *agent* can ask an operator to raise it.
 - The declaration is **re-resolved against the current ceiling on every load**, so narrowing
   the ceiling disables a tool that no longer fits rather than leaving it running with reach
   the operator has withdrawn.
@@ -653,7 +653,51 @@ The operator confers a single **ceiling** — `[tools.agent.capabilities]` — t
 > **The invariant this preserves.** R-PLUG.7's "**Nine cannot grant itself capabilities**"
 > is unchanged. `tool_write` writes *code*; it has no column and no path to write a *grant*.
 > The agent writes the code, the operator writes the ceiling, and they are never the same
-> actor — the one asymmetry the whole tier exists to enforce.
+> actor — the one asymmetry the whole tier exists to enforce. `capability_request` does not
+> weaken it: it inserts a `pending` row an operator decides on, and no tool reaches a method
+> that confers anything ([`memory-store.md`](memory-store.md) R-MEM.4).
+
+### Where the ceiling lives
+
+The ceiling is **stored**, and `nine.toml` is reconciled into it at every boot. The store is
+the source of truth for what is in force; the file declares the operator's baseline.
+
+Each grant row carries a `source`:
+
+| `source` | Written by | Lifetime |
+|---|---|---|
+| `default` | the daemon, from `[workspace].root` | deleted and re-derived on every boot |
+| `config` | `[tools.agent.capabilities]` | deleted and re-inserted on every boot |
+| `approved` | an operator answering a capability request | durable until revoked |
+
+A boot **MUST** delete every `default` and `config` row and rewrite them from the file and
+the workspace, and **MUST NOT** touch an `approved` row. The effective ceiling is the union.
+
+Delete-and-reinsert rather than a diff is what makes the file behave as both a first-boot
+seed and a change feed with no sentinel and no stored snapshot: a grant the file adds
+appears, one it edits changes, one it stops declaring **stops applying**, and one it never
+mentioned is untouched. The last two are the requirement — a ceiling an operator narrows in
+the file and that does not narrow is a security control that lies.
+
+A grant that did not come from the file **MUST** be validated against the same rules the
+file is held to (`config.ValidateCapabilityGrant`), so the store cannot hold a ceiling
+`nine.toml` could not express. Validation happens at **request** time, not approval time, so
+the refusal reaches the model rather than the operator.
+
+### Requesting a capability
+
+`capability_request` is the path out of a ceiling refusal, and unlike `gap_report` it is
+**advertised** — a refusal naming a tool the model cannot see is not a usable signal.
+
+- It records a `pending` row and surfaces it to the operator's notification feed. It confers
+  nothing and **MUST NOT** be able to.
+- An operator settles it through one path — `nine grants`, the TUI's `/grants`, or the API's
+  `/capabilities/{id}/decision` — all of which reach the same service in the daemon, because
+  only the process running the agents can install a ceiling on its live host.
+- An approval **MUST** take effect without a restart: the ceiling is recomputed from the
+  store, installed with `SetAgentConfig`, and the generated catalog re-projected against it,
+  so a tool that skipped for want of a capability registers and reaches the model on its next
+  turn. A revocation takes the same path in reverse.
 
 ### Lifecycle
 
