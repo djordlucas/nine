@@ -28,9 +28,20 @@ permissions:
 # have been remediated (PR #155). Re-enable CodeQL and the SARIF uploads once
 # the repository is public. Tracked in the README roadmap.
 
+# A pull request from a fork gets no scan. This repository accepts none
+# (CONTRIBUTING.md), and a scan of a fork's branch is not a read-only act: the
+# image job builds a Dockerfile that pull request may have rewritten, on the
+# runner.
+#
+# GitHub's own control for this — Actions > Fork pull request workflows >
+# require approval for all outside contributors — cannot be set while the
+# repository is private (the API refuses it with 422), and its default only
+# gates contributors it has not seen before. The condition below holds either
+# way, so it stays after that setting is turned on.
 jobs:
   trivy-fs:
     name: Trivy Filesystem Scan
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -60,6 +71,7 @@ jobs:
 
   trivy-docker:
     name: Trivy Docker Image Scan
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       contents: read
