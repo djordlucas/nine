@@ -22,7 +22,7 @@ implementation **MUST** honor this order.
 
 ```toml
 [llm]
-provider        = "ollama"      # ollama is the only chat backend (openai chat NOT implemented)
+provider        = "ollama"      # ollama (default) | mistral; anything else is refused at startup
 model           = "qwen3.5:4b"
 endpoint        = ""            # base URL; empty = http://localhost:11434
 context_budget  = 4096          # tokens per assembled turn
