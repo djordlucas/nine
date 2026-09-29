@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/djordlucas/nine/security/advisories/new
+    about: Report privately through a security advisory. Never in a public issue.
+  - name: Documentation
+    url: https://github.com/djordlucas/nine/tree/main/docs
+    about: The daemon, the tools, the config reference and the runbooks.
