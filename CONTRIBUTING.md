@@ -31,3 +31,7 @@ See [SECURITY.md](.github/SECURITY.md) for private reporting instructions.
 ## Self-Hosting / Usage Questions
 
 For usage questions, open a **Discussion** rather than an issue.
+
+## Code of Conduct
+
+Issues and discussions are covered by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
