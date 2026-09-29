@@ -1,0 +1,35 @@
+name: Feature request
+description: Ask for a capability Nine does not have.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repository accepts no external pull requests, and there is no guarantee
+        of implementation ([CONTRIBUTING.md](https://github.com/djordlucas/nine/blob/main/CONTRIBUTING.md)).
+        A use case that is described well is still the way a feature gets built.
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: What you are trying to do, and where Nine stops you.
+      placeholder: >
+        I point a standing agent at a private registry, but a generated tool cannot
+        reach it: the net.http capability only takes an allowlist of public hosts.
+    validations:
+      required: true
+
+  - type: textarea
+    id: today
+    attributes:
+      label: What you do today
+      description: The workaround, if you have one, and what it costs.
+
+  - type: textarea
+    id: shape
+    attributes:
+      label: Shape you have in mind
+      description: >
+        Optional. A config key, a command, a tool signature — whatever makes the
+        request concrete. Do not feel obliged to design it.
