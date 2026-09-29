@@ -100,6 +100,7 @@ Ordered outside in.
 | `/tools [filter]` | Every tool the session can call |
 | `/standing [id]` | Standing tools, or one with its recent activity |
 | `/goals`, `/workflows` | Goals, and active and recent workflows |
+| `/grants [approve\|deny\|revoke <id>]` | Capability requests waiting, and the ceiling in force |
 | `/plan-mode <mode>` | The session's reasoning mode: `off`, `plan-only`, `always` |
 | `/think <message>` | One message with reasoning forced on |
 | `/new`, `/clear` | A fresh conversation; a cleared screen |

@@ -90,6 +90,32 @@ which lists a disabled plugin as `off`. A name that matches no plugin disables
 nothing and is reported as a warning at boot — check for it, since a typo here
 fails open.
 
+**The sandboxed-tool host and the tier Nine writes itself are on by default.**
+`[tools] enabled` and `[tools.agent] enabled` both default to true when unset
+(`ToolsConfig.IsEnabled`, `ToolsAgentConfig.IsEnabled`). They previously had to be
+turned on.
+
+⚠️ **A config that never mentioned `[tools]` now runs both.** After upgrading, the
+daemon loads the wasm host, registers the shipped file tools on it, and advertises
+`tool_write`, `tool_delete` and `js_eval` — so the agent writes JavaScript that then
+runs. The ceiling is `[workspace].root`, read and write: the same directory the shipped
+file tools reach and `shell` runs in, so it is not new reach for the agent, but it is
+new reach for a generated tool's dependencies.
+
+Decline either tier explicitly:
+
+```toml
+[tools]
+enabled = false          # no host at all, and no file tools
+
+[tools.agent]
+enabled = false          # keep the host and its shipped tools, without tool_write
+```
+
+`[tools] enabled` is deliberately not environment-overridable, so this is a config-file
+decision in every deployment. Confirm with `nine tools`, which lists the roster the
+daemon actually loaded, and `nine grants`, which prints the ceiling in force.
+
 ## 2. Plugin protocol version
 
 Native plugins are separate processes (one is Node), so the daemon and a plugin
