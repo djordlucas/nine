@@ -12,12 +12,13 @@
 [![Status: experimental](https://img.shields.io/badge/status-experimental-orange.svg)](#project-status)
 [![GHCR](https://img.shields.io/badge/ghcr.io-djordlucas%2Fnine-blue?logo=github)](https://github.com/djordlucas/nine/pkgs/container/nine)
 
-Nine is an **AI agent runtime**.
+Nine is a **self-hosted AI agent runtime in a single Go binary**: local models through Ollama,
+persistent SQLite state, a TUI and an OpenAPI-specified REST API, and tools from plugins,
+MCP servers and sandboxed JS/Wasm.
 Use Nine to research subjects, work on codebases, automate processes, experiment.
-Anything that computing resources can reach is something Nine can be pointed at.
 Nine is developed against small models as a baseline.
 
-It ships as a single binary (Docker, Linux, Mac OS) that implements client, server and plugins roles at once.
+The binary ships for Docker, Linux and macOS, and implements client, server and plugin roles at once.
 Each Nine session runs a dedicated agent loop that can plan work, do tool calls, persist data and
 orchestrate sub-agent loops, interactively via the TUI or in the background through scheduled and
 periodic goals. Everything — conversations, goals, memories, session events — lives in one SQLite file.
