@@ -22,14 +22,19 @@ schema_version = 1
 ## Full reference: docs/configuration.md
 
 [llm]
-# Ollama is the only chat provider: Nine runs on local models. Leave it unset
-# for the default; any other value is refused at startup rather than quietly
-# served by a different backend.
+# Chat provider: "ollama" (the default) or "mistral". Ollama is what Nine is
+# developed against and is what keeps a deployment local; mistral is a hosted
+# API. Any other value is refused at startup rather than quietly served by a
+# different backend.
 provider       = "ollama"
 model          = "qwen3.5:4b"
-# Empty uses Ollama's local default (http://localhost:11434). Overridden in the
-# container with NINE_LLM_ENDPOINT.
+# Empty uses Ollama's local default (http://localhost:11434), or Mistral's
+# (https://api.mistral.ai/v1). Overridden in the container with
+# NINE_LLM_ENDPOINT.
 endpoint       = ""
+# Bearer token for a hosted provider. Ollama ignores it; mistral needs it.
+# Prefer NINE_LLM_API_KEY over writing a secret into this file.
+# api_key      = ""
 # HTTP timeout for a single model call. 0 uses the adapter default (300s);
 # a negative value removes the timeout, leaving only turn cancellation.
 # timeout_seconds = 0
