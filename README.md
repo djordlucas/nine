@@ -40,10 +40,12 @@ file.
 ## Quick start
 
 No clone needed — the image ships a working config. Published for `linux/amd64` and
-`linux/arm64`.
+`linux/arm64`. The package is private, so authenticate first with a GitHub token carrying
+`read:packages`.
 
 ```bash
-# 1. A model on the host
+# 1. Registry access and a model on the host
+echo "$CR_PAT" | docker login ghcr.io -u <your-github-username> --password-stdin
 ollama pull qwen3.5:4b
 
 # 2. Nine
@@ -110,12 +112,9 @@ configuration reference: [installation](docs/installation.md),
 | **Capability** | A conferred reach — `fs`, `env`, `net.http` — declared by a tool's manifest, granted by the operator in `nine.toml` or by approving a request |
 | **Skill** | Markdown how-to note, semantically retrieved into context |
 | **Goal** | An open-ended intention with no end condition, pursued in the background |
-| **Workflow** | A finite multi-step plan for sub-agent delegation |
-| **Session plan** | The stages and idle schedule that let a session wake and take its own next turn |
-| **Standing agent** | A goal declared in `nine.toml`; runs from boot on a cron schedule, no human turn needed |
-| **Supervisor** | Special agent that monitors others for stalls and capability gaps |
-| **Checkpoint** | Serialized agent state persisted to the database |
-| **Journal** | Append-only record of every step |
+
+Every other term — workflow, session plan, standing agent, supervisor, checkpoint, journal —
+is defined in the [glossary](docs/glossary.md).
 
 **Modular.** Built-in tools, custom plugins, MCP servers, and JS/Wasm tools all reach the agent
 through one dispatcher. Roles gate which of them a given worker may call.
@@ -147,55 +146,28 @@ Nine is a daemon/client pair. The CLI is thin — it opens a Unix socket, sends 
 the reply. Everything long-lived is in the daemon.
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  nine <message>  (CLI client)                       │
-│  Connects to Unix socket, sends message,            |
-|  prints reply                                       │
-└─────────────────┬───────────────────────────────────┘
-                  │ JSON over Unix socket
-┌─────────────────▼───────────────────────────────────┐
-│  Daemon                                             │
-│  ┌──────────────┐   ┌───────────────┐               │
-│  │ Conversation │   │  Supervisor   │               │
-│  │  Manager     │   │  Agent        │               │
-│  └──────┬───────┘   └───────┬───────┘               │
-│         │ spawns many       │ monitors              │
-│  ┌──────▼───────────────────▼───────┐               │
-│  │           Agent Loops            |               |
-|  |          Builds context          |               |
-|  |      Uses roles, skills, tools   │               │
-│  │  (ReAct: reason → act → observe) │               │
-│  └──────────────┬───────────────────┘               │
-│                 │                                   │
-│  ┌──────────────▼───────────────────┐               │
-│  │         LLM Queue                │               │
-│  │  priority: supervisor > active   │               │
-│  │           > background           │               │
-│  └──────────────┬───────────────────┘               │
-│                 │                                   │
-│  ┌──────────────▼───────────────────┐               │
-│  │         LLM Provider             │               │
-│  │  (Ollama)                        │               │
-│  └──────────────────────────────────┘               │
-│                                                     │
-│  ┌────────────────────────────────────────────────┐ │
-│  │  Tool Dispatcher                               │ │
-│  │  ┌──────────────────┐  ┌─────────────────────┐ │ │
-│  │  │ Plugin Manager   │  │ Sandboxed Tool Host │ │ │
-│  │  │ shell files http │  │ wasm, in-process    │ │ │
-│  │  │ time mcp:*       │  │ tools.d + generated │ │ │
-│  │  │ (subprocesses,   │  │ (capabilities are   │ │ │
-│  │  │  unix sockets)   │  │  conferred by cfg)  │ │ │
-│  │  └──────────────────┘  └─────────────────────┘ │ │
-│  └────────────────────────────────────────────────┘ │
-│                                                     │
-│  ┌────────────────────────────────────────────────┐ │
-│  │  memory.Store  →  SQLite (one file)            │ │
-│  │  (in-process; all durable state + the event    │ │
-│  │   journal; memory/file/skill tools are core,   │ │
-│  │   not plugins)                                 │ │
-│  └────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────┘
+  nine <message> / TUI  ──JSON over Unix socket──┐   (thin client: send, print)
+                                                 │
+┌────────────────────────────────────────────────▼──────────────────────────┐
+│ Daemon                                                                    │
+│                                                                           │
+│   Conversation Manager ──spawns──┐        Supervisor Agent ──monitors──┐  │
+│                                  ▼                                     ▼  │
+│                       ┌──────────────────────────────────────────────────┐│
+│                       │ Agent Loops   ReAct: reason → act → observe      ││
+│                       │ builds context from roles, skills, tools         ││
+│                       └───────┬──────────────────────────┬───────────────┘│
+│                               │                          │                │
+│            ┌──────────────────▼─────────┐   ┌────────────▼──────────────┐ │
+│            │ LLM Queue → Ollama         │   │ Tool Dispatcher           │ │
+│            │ supervisor > active        │   │  ├ core (in-process)      │ │
+│            │           > background     │   │  ├ plugins (subprocess)   │ │
+│            └────────────────────────────┘   │  └ wasm host (capability) │ │
+│                                             └────────────┬──────────────┘ │
+│   ┌──────────────────────────────────────────────────────▼──────────────┐ │
+│   │ memory.Store → SQLite, one file: all durable state + event journal  │ │
+│   └─────────────────────────────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 **The context builder** treats context as a budget rather than a buffer. Sources compete by
@@ -374,22 +346,7 @@ replays recorded sessions deterministically and runs a live-model matrix
 buy is user mileage — the failure modes that only long uninterrupted runs, unusual hardware or an
 unfamiliar model turn up are still ahead of it. Please open an issue when you hit one.
 
-## Roadmap
-
-Planned work, undated. Shipped items are removed from this table rather than marked done.
-
-| Item | Status | Detail |
-|------|--------|--------|
-| Hardening | Planned | Nine is not hardened. See [Limits](#limits). |
-| Remote access | Partial | The REST API ships with bearer-token auth and TLS ([docs/api.md](docs/api.md)), but is a translation layer over the local Unix socket: the server runs on the daemon's host, six endpoints are not yet backed by the wire protocol, and there is no multi-host story. |
-| Model routing | Planned | Route different work to different models in one deployment. Nine uses one at a time. |
-| More LLM backends | Partial | Mistral is supported. llama.cpp and vLLM both speak an OpenAI-compatible API, so one adapter covers them. |
-| Richer sandboxed tools | Planned | FS and env gaps, runtime wasm grants, binary data, missing JS globals, HTTP audit, secret sharing, structured tool errors. |
-| TUI improvements | Partial | Slash-command views are read-only; the journal, notifications and moving background sessions have no place in the TUI yet. |
-| More built-in plugins | Planned | — |
-| Codebase improvements | Planned | [`adr/codebase-improvement.md`](adr/codebase-improvement.md). |
-| Re-enable hosted CI | Blocked | Actions is disabled to avoid private-repo minutes; `make ci` and `make scan` are the gate meanwhile. CodeQL and SARIF upload additionally need a public repository or GitHub Advanced Security. |
-| Fix eval-runner daemon hang | Planned | `tests/evals/runner` intermittently deadlocks under CI load. Excluded from `make ci`; `make eval-replay` still runs. |
+What is still missing, and what is partially there: [docs/roadmap.md](docs/roadmap.md).
 
 ## Limits
 
