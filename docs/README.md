@@ -86,6 +86,7 @@ Ordered outside in.
 | [Versioning](versioning.md) | Release, plugin-protocol, tool-ABI, config, and schema versioning |
 | [Evals](evals.md) | Replay and live-model tracks, the case schema, the feature map |
 | [Model compatibility](model-compatibility.md) | Models Nine has run against, results, hardware |
+| [Roadmap](roadmap.md) | What is still missing or partial, undated |
 
 ## TUI slash commands
 
