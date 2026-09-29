@@ -110,4 +110,4 @@ in the loop when the connection is made, rather than each time it fires.
 | No cron names | `JAN`, `MON` and friends are not parsed. Numeric fields only. |
 | Local timezone only | Schedules evaluate in the daemon's local timezone. There is no per-agent timezone. |
 | Wakes are lossy by design | If the agent is mid-turn or a wake is already queued, a new one drops. A predicate firing twice while the agent reads the first finding should make it look, not run two turns. |
-| Conditions need the sandboxed-tool tier | A condition trigger is a standing tool, so it requires `[tools] enabled = true`. |
+| Conditions need the sandboxed-tool tier | A condition trigger is a standing tool, so it needs the sandboxed-tool host — on unless you set `[tools] enabled = false`. |

@@ -105,6 +105,24 @@ The answer is checked case-insensitively: a response starting with `"y"` proceed
 
 A refusal is **terminal** — the loop's tool-retry path (`dispatchWithRetry`, 3 attempts) must not re-dispatch it, or the same human gets asked the same question three times. Both refusal and failure-to-obtain-approval (timeout, cancellation) are wrapped in `agent.ApprovalError`, which the retry loop returns on immediately.
 
+### Asking out of band
+
+A gate needs a human on the other end of a live session. `capability_request` is the
+path for when there is not one: the agent records a request, the operator decides later
+from the CLI, and nothing about it is synchronous.
+
+The tool can insert a pending row and nothing else — it has no path to a grant, which is
+what lets it be advertised to the model at all — and each request lands on the operator's
+notification feed. Decide with `nine grants approve <id>` or `nine grants deny <id>`,
+`/grants` inside a session, or `nine grants revoke <grant-id>` to withdraw one an earlier
+approval conferred. An approval installs on the running daemon without a restart, and
+writes nothing to `nine.toml`.
+
+This is the one control a non-interactive deployment still has. The approval gates above
+need an owning interactive session, so without one the ceiling in
+`[tools.agent.capabilities]` is otherwise the whole story; a request outlives the turn
+that made it and waits for whenever an operator looks.
+
 ### Gates in sub-agents
 
 A gate is armed for any loop with an **owning interactive session** — the conversation's own loop, plus every sub-agent it spawns unless `gate_sub_agents = false`. A loop with no interactive owner (a goal/pursue session and its children, reflection, `nine query`) is never prompted even if its tool names appear in `require_approval`: there is no human attached, so blocking would hang on a question nobody can see.
