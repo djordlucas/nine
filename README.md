@@ -12,9 +12,9 @@
 [![Status: experimental](https://img.shields.io/badge/status-experimental-orange.svg)](#project-status)
 [![GHCR](https://img.shields.io/badge/ghcr.io-djordlucas%2Fnine-blue?logo=github)](https://github.com/djordlucas/nine/pkgs/container/nine)
 
-Nine is a **self-hosted AI agent runtime in a single Go binary**: local models through Ollama,
-persistent SQLite state, a TUI and an OpenAPI-specified REST API, and tools from plugins,
-MCP servers and sandboxed JS/Wasm.
+Nine is a **self-hosted AI agent runtime in a single Go binary**: local models through Ollama
+or the hosted Mistral API, persistent SQLite state, a TUI and an OpenAPI-specified REST API,
+and tools from plugins, MCP servers and sandboxed JS/Wasm.
 Use Nine to research subjects, work on codebases, automate processes, experiment.
 Nine is developed against small models as a baseline.
 
@@ -136,7 +136,8 @@ and `nine replay` read it back; `nine context` shows the session's current conte
 — bounded by a capability ceiling that defaults to the workspace. The agent writes the code, the
 operator writes the grants.
 
-**Local.** Built to run against a local model (currently through Ollama) with a SQLite database.
+**Local.** Built to run against a local model through Ollama, with a SQLite database; `mistral`
+is the hosted alternative when you want one ([configuration](docs/configuration.md#mistral)).
 Tested against `qwen3.5:4b`, `qwen3.5:9b`, `gemma4:e4b` and `gemma4:e2b` on a 16 GB M4
 ([model compatibility](docs/model-compatibility.md)).
 
@@ -159,7 +160,7 @@ the reply. Everything long-lived is in the daemon.
 │                       └───────┬──────────────────────────┬───────────────┘│
 │                               │                          │                │
 │            ┌──────────────────▼─────────┐   ┌────────────▼──────────────┐ │
-│            │ LLM Queue → Ollama         │   │ Tool Dispatcher           │ │
+│            │ LLM Queue → provider       │   │ Tool Dispatcher           │ │
 │            │ supervisor > active        │   │  ├ core (in-process)      │ │
 │            │           > background     │   │  ├ plugins (subprocess)   │ │
 │            └────────────────────────────┘   │  └ wasm host (capability) │ │
