@@ -89,9 +89,9 @@ Nine reads its config from `$NINE_CONFIG`, `./nine.toml`, `/nine.toml`, then
 image's baked config is narrower. Configuration belongs to the operator — Nine cannot rewrite
 `nine.toml` at runtime.
 
-**`make ci` is the gate.** GitHub Actions is disabled for this repository, so nothing runs on
-a push; run it locally before merging. `make scan` adds the Trivy passes. Both need only
-Docker.
+**`make ci` is the same gate CI runs.** GitHub Actions runs it on every push and pull
+request; running it locally first is how a red run gets caught before it is pushed.
+`make scan` adds the Trivy passes. Both need only Docker.
 
 Prerequisites, the full Makefile target list, the container's environment overrides and the
 configuration reference: [installation](docs/installation.md),

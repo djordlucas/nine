@@ -149,7 +149,6 @@ jobs:
       - name: Upload to Security tab
         uses: github/codeql-action/upload-sarif@3ea06614dafe36dec890db3446326e0d40ce53d4 # v3
         if: always()
-        continue-on-error: true # needs a public repo or GHAS
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image-${{ matrix.platform }}
@@ -295,26 +294,24 @@ jobs:
             cosign sign --yes "${DOCKERHUB_IMAGE}@${DIGEST}"
           fi
 
-      # GitHub's attestation API is only available to public repositories on
-      # Free/Pro/Team; a private repository needs GitHub Enterprise Cloud. This
-      # repository is private, so the step is expected to fail and must not take
-      # the release with it — by this point the image is already pushed, so a
-      # hard failure would leave a published image behind a red run.
+      # GitHub's attestation API is available to public repositories on
+      # Free/Pro/Team, which this repository now is, so the step is a real one:
+      # `gh attestation verify` works against a published image. It is not
+      # continue-on-error any more — an attestation that stops being produced
+      # should fail the release rather than leave a signed image whose
+      # provenance nobody notices is missing.
       #
       # The build's own `provenance: mode=max` and `sbom: true` above are
-      # registry-side attestations on the manifest and are unaffected. Drop the
-      # continue-on-error when the repository goes public.
+      # registry-side attestations on the manifest, and are separate from this.
       - name: Attest build provenance (GHCR)
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
-        continue-on-error: true
         with:
           subject-name: ${{ env.GHCR_IMAGE }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
       # A tag on its own is invisible: `gh release list` stays empty and there is
-      # nowhere to read what changed. This turns each tag into a release page,
-      # which works the same on a private repository.
+      # nowhere to read what changed. This turns each tag into a release page.
       #
       # continue-on-error for the reason the attestation step above carries it:
       # the image is already pushed by now, so a failure here must not paint an
