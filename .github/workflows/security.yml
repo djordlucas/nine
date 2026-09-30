@@ -17,28 +17,65 @@ concurrency:
 permissions:
   contents: read
 
-# Code scanning is unavailable while the repository is private: GitHub code
-# scanning (CodeQL analysis and SARIF upload to the Security tab) requires a
-# public repository or a GitHub Advanced Security license, and fails with
-# "Code scanning is not enabled for this repository" on private repos.
+# Code scanning is available: it needs a public repository or GitHub Advanced
+# Security, and this repository is public. So CodeQL analyses every push and
+# pull request, and the Trivy SARIF uploads are a hard failure rather than
+# continue-on-error — an upload that silently stops working leaves the Security
+# tab looking clean because nothing arrived, which is the failure mode worth
+# being loud about.
 #
-# Consequently the CodeQL job is removed and the Trivy upload-sarif steps are
-# continue-on-error. The Trivy scans themselves run as a failing gate
-# (exit-code: 1) again now that the base-image/dependency findings they surface
-# have been remediated (PR #155). Re-enable CodeQL and the SARIF uploads once
-# the repository is public. Tracked in the README roadmap.
+# The Trivy scans themselves are a gate on their own exit code (exit-code: 1),
+# independent of whether their findings reach the Security tab.
 
 # A pull request from a fork gets no scan. This repository accepts none
 # (CONTRIBUTING.md), and a scan of a fork's branch is not a read-only act: the
 # image job builds a Dockerfile that pull request may have rewritten, on the
 # runner.
 #
-# GitHub's own control for this — Actions > Fork pull request workflows >
-# require approval for all outside contributors — cannot be set while the
-# repository is private (the API refuses it with 422), and its default only
-# gates contributors it has not seen before. The condition below holds either
-# way, so it stays after that setting is turned on.
+# GitHub's own control for this — Actions > Fork pull request workflows > require
+# approval for all outside contributors — is now set as well. The condition below
+# is kept because it does not depend on that setting surviving a visibility
+# change or a settings edit.
 jobs:
+  codeql:
+    name: CodeQL
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read # CodeQL reads the workflow run to attribute results
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      # Pinned to the same SHA as the upload-sarif steps below, since all three
+      # are the same action repository. Dependabot moves them together.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@3ea06614dafe36dec890db3446326e0d40ce53d4 # v3
+        with:
+          languages: go
+          build-mode: manual
+
+      # Manual build mode, not autobuild: the tree is two Go modules and the
+      # build is vendored, so `make build` is the only command that gets this
+      # right. Autobuild would guess, and a wrong guess analyses nothing while
+      # still reporting success.
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.26"
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Build
+        run: make build
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@3ea06614dafe36dec890db3446326e0d40ce53d4 # v3
+        with:
+          category: codeql-go
+
   trivy-fs:
     name: Trivy Filesystem Scan
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
@@ -67,7 +104,6 @@ jobs:
         with:
           sarif_file: trivy-fs-results.sarif
         if: always()
-        continue-on-error: true  # SARIF upload needs a public repo or GHAS
 
   trivy-docker:
     name: Trivy Docker Image Scan
@@ -113,4 +149,3 @@ jobs:
         with:
           sarif_file: trivy-docker-results.sarif
         if: always()
-        continue-on-error: true  # SARIF upload needs a public repo or GHAS
