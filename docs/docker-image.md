@@ -23,16 +23,18 @@ run. It expects an Ollama on the host at port 11434; point it elsewhere with
 
 | Registry | Reference | Status |
 |----------|-----------|--------|
-| GitHub Container Registry | `ghcr.io/djordlucas/nine` | Published, private |
+| GitHub Container Registry | `ghcr.io/djordlucas/nine` | Published, public |
 | Docker Hub | `docker.io/djordlucas/nine` | Not published |
 
 GHCR is the only registry in use. The release workflow can also push to Docker
-Hub, but that stays off while GHCR is private: pushing to a Docker Hub
-repository that does not exist yet creates it public.
+Hub, and does so only when `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` are set —
+setting them is the opt-in, and it means creating the Docker Hub repository
+first, with the visibility you want, since a push to one that does not exist
+creates it public.
 
-Access to the GHCR package follows the repository. To let someone else pull,
-invite them under the package's *Manage access*; to let another repository's
-workflow pull, add it under *Manage Actions access*.
+The GHCR package is public, so anyone can pull it and no invitation is needed.
+Write access follows the repository; another repository's workflow is granted
+pull under the package's *Manage Actions access*.
 
 ## Tags
 
