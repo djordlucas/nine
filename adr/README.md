@@ -50,6 +50,7 @@ changed; the document stays as the record and is not rewritten.
 | `roles-design.md` | Worker kinds as data; migration off depth-based gating | yes |
 | `capability-grants.md` | Defaulting both tool tiers on, and moving the generated tier's ceiling into the store so an operator can grant a requested capability without a restart | 2026-09-27 |
 | `file-namespaces.md` | The workspace as the agent's only file namespace: external changes, editing large files, deletion to a trash. Retires `file_store`. Three divergences corrected in place; document extraction unbuilt. | phases 1–8, 2026-09-21 |
+| `standing-tools.md` | Running a resumable tool on its own cadence. A second run mode, not a second kind of tool. | yes — `R-TVM.20`, all five phases |
 
 ### Proposed
 
@@ -64,7 +65,7 @@ changed; the document stays as the record and is not rewritten.
 | `personality-pattern.md` | Packaging complete Nine instances as specialized agents; self-model bootstrapping |
 | `predefined-agents-design.md` | Standing agents as config-seeded goals: motivation, work breakdown, phasing |
 | `reactive-events.md` | Event subscriptions: reacting to the journal |
-| `standing-tools.md` | Running a resumable tool on its own cadence. A second run mode, not a second kind of tool. |
+| `tool-facilities.md` | Host-injected credentials, a wider HTTP method allowlist, streaming progress, and reactions as a third run mode delivered by `reactions_get`. Rejects tool→tool dispatch and MCP reach. |
 | `tui-boxed-messages.md` | Boxed message rendering in the TUI. `internal/tui` only. |
 
 ### Superseded in part
