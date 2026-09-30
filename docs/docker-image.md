@@ -3,14 +3,7 @@
 Nine publishes a runtime image to GHCR. Pulling it is the supported way to run
 Nine without a source checkout.
 
-The package is private, which means a pull needs credentials. Authenticate once
-with a GitHub personal access token carrying the `read:packages` scope:
-
-```bash
-echo "$CR_PAT" | docker login ghcr.io -u <your-github-username> --password-stdin
-```
-
-Then:
+The package is public, so a pull needs no credentials and no `docker login`:
 
 ```bash
 docker run -d --name nine \
@@ -30,16 +23,18 @@ run. It expects an Ollama on the host at port 11434; point it elsewhere with
 
 | Registry | Reference | Status |
 |----------|-----------|--------|
-| GitHub Container Registry | `ghcr.io/djordlucas/nine` | Published, private |
+| GitHub Container Registry | `ghcr.io/djordlucas/nine` | Published, public |
 | Docker Hub | `docker.io/djordlucas/nine` | Not published |
 
 GHCR is the only registry in use. The release workflow can also push to Docker
-Hub, but that stays off while GHCR is private: pushing to a Docker Hub
-repository that does not exist yet creates it public.
+Hub, and does so only when `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` are set —
+setting them is the opt-in, and it means creating the Docker Hub repository
+first, with the visibility you want, since a push to one that does not exist
+creates it public.
 
-Access to the GHCR package follows the repository. To let someone else pull,
-invite them under the package's *Manage access*; to let another repository's
-workflow pull, add it under *Manage Actions access*.
+The GHCR package is public, so anyone can pull it and no invitation is needed.
+Write access follows the repository; another repository's workflow is granted
+pull under the package's *Manage Actions access*.
 
 ## Tags
 
@@ -186,6 +181,5 @@ Supply-chain properties:
 | Contract tests run on amd64 only | Both architectures are scanned, but the container tests drive real containers, and running them under QEMU would add emulation flakiness to a release gate. |
 | `docker stop` exits 137 | s6-linux-init runs its shutdown in container mode and ends by SIGKILLing what remains, PID 1 included, so a clean stop still reports 137. Every service stops in dependency order first — check the logs, not the status. Orchestrators that read the exit code see a crash where there was none. |
 | `latest` is a moving target | It changes on every stable release. Pin a version or a digest for anything that matters. |
-| The package is private | Every pull needs `docker login ghcr.io` with a `read:packages` token, including on CI runners. |
 | No GitHub attestation | `gh attestation verify` needs a public repository or GitHub Enterprise Cloud. Verify with cosign and the buildx attestations instead. |
-| Signing is publicly logged | Keyless cosign records the repository name, workflow path and image digest in the public Rekor log, even though the image itself is private. |
+| Signing is publicly logged | Keyless cosign records the repository name, workflow path and image digest in the public Rekor log. |
