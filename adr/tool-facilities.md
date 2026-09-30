@@ -2,27 +2,31 @@
 
 - **Status:** Proposed (design note). Nothing here is built.
 - **Date:** 2026-09-29.
-- **Scope:** `[tool.<name>.capabilities.net.http.auth]`, a `nine:progress` stdlib
-  module and its host import, `[[reaction]]`, `[tools.agent] allow_reactions`,
-  `skills/tool-authoring.md` and a new `skills/tool-reactions.md`.
+- **Scope:** `[tool.<name>.capabilities.net.http.auth]` and its `methods`
+  allowlist, a `nine:progress` stdlib module and its host import, `[[reaction]]`
+  with `notify`, a `reactions_get` tool and its pending-count context line,
+  `[tools.agent] allow_reactions`, `skills/tool-authoring.md` and a new
+  `skills/tool-reactions.md`.
 - **Depends on:** the toolvm host, `net.http` and its audit, the session journal
   and its subscriptions, the standing-run driver.
 - **Follows:** `adr/rich-js-tools.md`, `adr/durable-and-long-running-tools.md`,
   `adr/standing-tools.md`.
-- **Rejects:** tool→tool dispatch, and with it MCP reach — §6.
+- **Rejects:** tool→tool dispatch, and with it MCP reach — §7.
 
-Three facilities, none of which widens what a sandboxed tool can reach. Credentials
+Four additions, none of which widens what a sandboxed tool can reach. Credentials
 give a tool less than the `env` capability would, because it authenticates without
-holding the secret. Progress gives a new destination for text the tool already
-produces. Reactions give a new trigger for a run mode that exists. No row is added
-to the R-TVM.5 capability table and the sandbox boundary is unchanged in all three
-cases.
+holding the secret. A wider method allowlist changes which verb a granted request
+carries, not which address it reaches. Progress gives a new destination for text the
+tool already produces. Reactions give a new trigger for a run mode that exists. No
+row is added to the R-TVM.5 capability table and the sandbox boundary is unchanged in
+every case.
 
 | | Gap today | Shape | New capability |
 |---|---|---|---|
 | **Credentials** (§3) | a granted tool reaches an API and cannot authenticate to it | a parameter on the existing `net.http` grant; the host injects, the guest never sees the value | no — a grant parameter |
-| **Progress** (§4) | a tool is silent for the whole of a call, however long | a host import writing to the rail `EmitProgress` already provides | no — unconditional, like `log` |
-| **Reactions** (§5) | reacting to the journal requires writing Go and rebuilding | a third run mode of a resumable tool, triggered by a journal event | no — a run mode |
+| **Methods** (§4) | no wildcard, and the WebDAV family is ungrantable | the WebDAV verbs added and `methods = ["*"]`, with CONNECT and TRACE always refused | no — a grant parameter |
+| **Progress** (§5) | a tool is silent for the whole of a call, however long | a host import writing to the rail `EmitProgress` already provides | no — unconditional, like `log` |
+| **Reactions** (§6) | reacting to the journal requires writing Go and rebuilding; a finding reaches no agent | a third run mode triggered by a journal event, delivered as a count plus `reactions_get` | no — a run mode |
 
 Credentials and progress both write tool-influenced text into the journal, so §2
 maps that leak surface once and both build on it.
@@ -151,7 +155,37 @@ days later.
 
 ---
 
-## 4. Progress
+## 4. HTTP methods
+
+`config.go:1498` validates a grant's `methods` against a closed set — GET, HEAD,
+POST, PUT, PATCH, DELETE, OPTIONS — and `methodAllowed` (`nethttp.go:242`) enforces
+it before the request is built, independently of the two address gates.
+
+The WebDAV family is absent: PROPFIND, PROPPATCH, MKCOL, COPY, MOVE, LOCK, UNLOCK,
+REPORT, MKCALENDAR, ACL, SEARCH. CalDAV and CardDAV sync and git-over-HTTP need
+them, and nothing in the transport objects — `http.NewRequestWithContext` accepts
+any token-valid method.
+
+There is no wildcard. `allow_hosts` may be a bare `*` under R-TVM.12's amendment
+and `methods` may not, so a tool needing broad verb coverage enumerates it.
+
+**`methods = ["*"]` means every token-valid verb except CONNECT and TRACE**, and the
+explicit list grows to include the WebDAV family.
+
+The wildcard follows the hosts wildcard exactly: it grants any **method**, not any
+**address**. Method checking happens before the request is built and both address
+gates are untouched, so `*` weakens no SSRF control.
+
+| Verb | Refused whatever the grant says |
+|---|---|
+| CONNECT | Defeats gate 1 by delegation. An allowlisted host running an open proxy tunnels to any host, so the hostname allowlist stops describing where the tool reaches. |
+| TRACE | Reflects request headers into the response body. With §3's injected credentials a hostile allowlisted host puts the credential in `tool_end.Output`. §2's redaction catches it, and refusing the verb costs less than relying on a backstop. |
+
+This section is independent of §2 and §3 and ships on its own.
+
+---
+
+## 5. Progress
 
 ### The progress rail
 
@@ -186,7 +220,7 @@ none. The continuation envelope is unchanged.
 | Ordinary call in a turn | the turn's progress stream (TUI, API), journaled under the tool span as `tool_http` is |
 | Job | the job row's live progress (`JobUpdateLive`, `jobs.go:329`), so `job_check` shows it — the one path by which streamed progress reaches the model, by polling rather than push |
 | Standing run | the run's bounded ring buffer, read by `nine tool logs`. Not the human feed, which stays cycle output only (R-TVM.20) |
-| Reaction (§5) | the same ring buffer |
+| Reaction (§6) | the same ring buffer |
 
 ### Why `progress` is separate from `log`
 
@@ -206,7 +240,7 @@ structure from tool-authored text entering a log record.
 
 ---
 
-## 5. Reactions
+## 6. Reactions
 
 ### The gap
 
@@ -277,10 +311,11 @@ runtime owns the run state.
 
 ```toml
 [[reaction]]
-name = "tag-large-diffs"
-tool = "diff-tagger"
-on   = ["tool_end"]        # journal event types
-args = { threshold = 500 }
+name   = "tag-large-diffs"
+tool   = "diff-tagger"
+on     = ["tool_end"]        # journal event types
+args   = { threshold = 500 }
+notify = "reviewer"          # optional; omitted, findings reach the human feed
 ```
 
 `on = []` is a config error rather than a subscription to every event type. A
@@ -292,9 +327,62 @@ the reason `allow_standing` exists: Nine writing itself a reaction to its own
 journal is a different decision from Nine writing itself a date formatter, and the
 capability ceiling cannot express it, since a trigger is not reach.
 
+### Delivering findings to an agent
+
+A finding reaches the human feed (R-TVM.20), which no agent can read, so a reaction
+informs a human and not an agent. Two mechanisms already carry pending work into a
+turn, and choosing between them is the design.
+
+| Mechanism | Site | Shape | Marked consumed by |
+|---|---|---|---|
+| `prependNotifications` | `agent_worker.go:699` | every message text prepended to the user's turn | `Fetch`, on delivery |
+| `QueuedMessagesCount` | `builder.go:215` | a count in the system prompt naming the tool that reads them | the `queued_messages_get` tool |
+
+The count shape is the one to copy. A reaction on `tool_end` fires as often as tools
+are called, so prepending every finding is unbounded context injection into a turn
+the human started; a count costs one line until the model decides to look. It is
+also the stricter reading of pull — prepending is a push into context that happens
+to be timed to a turn boundary.
+
+Three pieces, each an instance of something that exists:
+
+1. Findings accumulate in the agent-facing `notifications` table
+   (`memory/notifications.go`), already agent-scoped, already carrying a
+   `Delivered` flag, and already the destination for job completions
+   (`jobs.go:303`).
+2. `ninectx.BuildInput` gains a count field rendering `[System: 5 reaction findings
+   are pending. Use the reactions_get tool to read them.]` beside the queued-messages
+   line.
+3. `reactions_get` returns pending findings oldest-first and marks them delivered,
+   as `queued_messages_get` does.
+
+`reactions_get` puts the verb last, matching `queued_messages_get` and every other
+paired tool in the catalog. It does not follow `job_check`, which is keyed by a
+handle the model holds; a finding has no handle an agent knows.
+
+### This answers standing-tools open question 3
+
+R-TVM.20 says a cycle's output reaches the human feed and nowhere else, and
+`adr/standing-tools.md` §12.3 leaves open whether a run may name an agent as its
+note owner at all — observing that agent-owned notes are the path by which
+deterministic tool code changes an agent's behaviour with no human in between. A
+finding an agent can read crosses that line. Three properties keep it on the right
+side of R-SUB.3:
+
+1. **The owner is operator-declared.** `[[reaction]] notify = "<agent-id>"` is
+   written in configuration and requestable by neither the tool nor the agent — the
+   safeguard R-TVM.20's condition-trigger exception already relies on. The human is
+   in the loop when the link is made rather than each time it fires.
+2. **Delivery is a pull.** The context builder assembles the count at a turn
+   boundary the human started, and `reactions_get` runs only when the model calls
+   it. Nothing wakes.
+3. **`notify` redirects rather than duplicates**, and an undeliverable finding falls
+   back to the human feed rather than being dropped — the condition-trigger rule
+   R-TVM.20 already states, applied unchanged.
+
 ---
 
-## 6. Why tool→tool dispatch is rejected
+## 7. Why tool→tool dispatch is rejected
 
 An MCP server is already a plugin: one process per `[[mcp.server]]`, its own wire
 name (`mcp:github`), its own roster row (`internal/builtins/mcp.go:17-28`). Letting
@@ -332,13 +420,15 @@ endpoint than by opening dispatch.
 
 ---
 
-## 7. The authoring skill
+## 8. The authoring skill
 
 `skills/tool-authoring.md` is what an agent reads before calling `tool_write`, and
-all three facilities change the correct answer:
+each addition changes the correct answer:
 
 - a tool needing an authenticated API declares `net: ["http"]` and must not
   construct an `Authorization` header, because the operator's grant supplies it;
+- a tool declares the verbs it uses, and the WebDAV family is now declarable — the
+  skill lists it rather than leaving an agent to guess that PROPFIND is refused;
 - a tool doing slow work narrates with `nine:progress`, and progress is not how it
   returns data — the likely misuse, so the skill carries a worked example of the
   wrong version;
@@ -346,30 +436,41 @@ all three facilities change the correct answer:
   arriving with a constraint an agent will otherwise fight: it leaves a note and
   cannot wake anyone.
 
-The first two extend `tool-authoring.md`. Reactions become a separate
+The first three extend `tool-authoring.md`. Reactions become a separate
 `skills/tool-reactions.md`, because the audience differs — `tool-authoring` is read
 when an agent wants a helper for itself, while a reaction is a standing arrangement
 an operator enables through `allow_reactions`, and its body is mostly what a
 reaction must not attempt.
 
-Both are built-in skills seeded from `skills/` at boot (`docs/skills.md`), so the
+`reactions_get` belongs to neither, because reading a finding is not authoring
+anything. The pending-count line names the tool in the system prompt, which is how
+`queued_messages_get` is already found, so the catalog description carries the whole
+explanation: what a finding is, that draining it marks it delivered, and that a
+finding is a note from deterministic code rather than an instruction from a person.
+The last part is what stops an agent treating a finding as a user turn.
+
+All are built-in skills seeded from `skills/` at boot (`docs/skills.md`), so the
 `description` line is what the vector search matches. It needs the words an agent
 uses — `api key`, `authenticate`, `token`; `react`, `watch`, `when something
 happens` — not this note's vocabulary.
 
 ---
 
-## 8. Spec impact
+## 9. Spec impact
 
 | Rule | Change |
 |---|---|
 | R-TVM.12 | amended: `auth` as a grant parameter, host-injected, headers only; the guest never receives the value; `nine.caps` reports header names only |
 | R-TVM.12 | amended: the audit record, the `tool_http` payload, the `slog` line and the tool's returned envelope MUST have injected secret values removed by exact match before leaving the host |
-| R-TVM.21 (new) | progress: an unconditional host import; narration and not a result; the per-run-mode destinations of §4; per-call line and byte caps; `Continuation.Progress` as its call-boundary granularity |
+| R-TVM.12 | amended: the method allowlist gains the WebDAV family and a `*` wildcard; CONNECT and TRACE MUST be refused whatever the grant says |
+| R-TVM.21 (new) | progress: an unconditional host import; narration and not a result; the per-run-mode destinations of §5; per-call line and byte caps; `Continuation.Progress` as its call-boundary granularity |
 | R-TVM.22 (new) | reactions: a third run mode; journal-event trigger; `on = []` refused; the two cursors and the ordering rule between them; R-TVM.20's reporting rules unchanged |
+| R-TVM.20 | amended: `notify` names an operator-declared agent owner for a finding, redirecting rather than duplicating, with the human feed as the undeliverable fallback. Answers `adr/standing-tools.md` §12.3 |
+| R-TVM.23 (new) | `reactions_get` and the pending-findings count: findings accrue in the agent-facing `notifications` table; the count is rendered by the context builder; the tool marks them delivered |
+| R-SUB.5 | amended: a second pull-surfacing path that is unconditional rather than relevance-gated, since a pending count has no topic |
 | R-TVM.5 | unchanged — no new capability, asserted explicitly because each facility would plausibly have added one |
 | R-SUB.1 | amended: a subscriber handler MAY be a sandboxed tool; cursor semantics unchanged |
-| R-SUB.3 | unchanged, and satisfied structurally rather than by discipline (§5) |
+| R-SUB.3 | unchanged, and satisfied structurally rather than by discipline (§6) |
 | R-SUB.7 | unchanged: no generative reaction, no session injection |
 | I-TVM.9 (new) | an injected credential is never observable by a guest and never present in any record the host writes |
 | `docs/sandboxed-tools.md` | §6.2 gains the `auth` parameter; §11 loses the unauthenticated-tool limit; reactions get a section beside §6.6 |
@@ -378,23 +479,27 @@ happens` — not this note's vocabulary.
 
 ---
 
-## 9. Phasing
+## 10. Phasing
 
 | Phase | Work | Gate |
 |---|---|---|
 | M1 | The §2 redaction pass — exact-value removal across the audit record, the `tool_http` payload, the `slog` line, `nine.log` lines and the returned envelope. Built against a synthetic secret, with no injection path yet | a test asserting a planted value appears at none of §2's six sites |
 | M2 | `auth` on the `net.http` grant: config shape, validation, host-side injection after both gates, `nine.caps` header names | an authenticated request to a test server; the value absent from the journal; a retargeted host refused |
-| M3 | `nine:progress` and its host import, per-call caps, the turn and job destinations | a long call's lines reach the progress stream; `job_check` shows live progress; the cap drops rather than fails |
-| M4 | Reactions: `[[reaction]]` config, the subscriber adapter over the standing-run driver, the two-cursor ordering, the ring-buffer destination | a reaction fires on a real journal event; a restart mid-event redelivers; empty output is silent |
-| M5 | `allow_reactions` for the generated tier; `nine tools` and TUI surfacing | a generated reaction refused with the flag off |
-| M6 | `skills/tool-authoring.md` extended, `skills/tool-reactions.md` written, `docs/` and `spec/` per §8 | `make ci`; an eval writing an authenticated tool without inventing an `Authorization` header |
+| M3 | The §4 method allowlist: the WebDAV verbs, `methods = ["*"]`, CONNECT and TRACE refused. Independent of M1 and M2 | a PROPFIND against a test server; `*` accepted; CONNECT and TRACE refused under `*` |
+| M4 | `nine:progress` and its host import, per-call caps, the turn and job destinations | a long call's lines reach the progress stream; `job_check` shows live progress; the cap drops rather than fails |
+| M5 | Reactions: `[[reaction]]` config, the subscriber adapter over the standing-run driver, the two-cursor ordering, the ring-buffer destination | a reaction fires on a real journal event; a restart mid-event redelivers; empty output is silent |
+| M6 | Delivery to an agent: `notify`, findings into the `notifications` table, the pending count in `BuildInput`, the `reactions_get` tool | a finding reaches its named agent's next turn as a count; `reactions_get` drains it; an undeliverable finding lands on the human feed |
+| M7 | `allow_reactions` for the generated tier; `nine tools` and TUI surfacing | a generated reaction refused with the flag off |
+| M8 | `skills/tool-authoring.md` extended, `skills/tool-reactions.md` written, `docs/` and `spec/` per §9 | `make ci`; an eval writing an authenticated tool without inventing an `Authorization` header |
 
 M1 precedes M2 because building injection first ships a window in which the no-leak
-property is untested, and a journalled secret cannot be un-journalled.
+property is untested, and a journalled secret cannot be un-journalled. M5 precedes M6
+because a reaction with no delivery path is testable and a delivery path with no
+reaction is not.
 
 ---
 
-## 10. Open questions
+## 11. Open questions
 
 1. **Secret sources beyond `env`.** `{ env = "GH_TOKEN" }` is the only source here.
    A file source is trivially addable and probably wanted, since Docker and
@@ -416,6 +521,14 @@ property is untested, and a journalled secret cannot be un-journalled.
 5. **Reaction fan-out.** One event matching three reactions is three sandboxed
    calls. Whether that needs a per-reaction rate limit distinct from the health
    limits depends on how busy `tool_end` is in practice.
+6. **Whether the pending count is aggregate or per-reaction.** `[System: 5 reaction
+   findings are pending]` is one line; naming which reactions produced them is more
+   useful and grows with the number configured. Aggregate is the current leaning,
+   since `reactions_get` names them on read.
+7. **Whether `*` admits nonstandard verbs.** As written it allows any token-valid
+   method, so a typo reaches the upstream as `PSOT` and returns a 405 rather than a
+   config error. The alternative is `*` meaning a known list, which then needs
+   extending for each new verb — the cost the wildcard exists to remove.
 
 ---
 
@@ -423,10 +536,14 @@ property is untested, and a journalled secret cannot be un-journalled.
 
 | Limit | Detail |
 |-------|--------|
-| Nothing here is built | The note is a design record. No phase in §9 has started. |
+| Nothing here is built | The note is a design record. No phase in §10 has started. |
 | Secret derivatives leak | §2's redaction removes values the host injected. A tool that returns a signed URL, a minted cookie or a re-encoding of a token leaks it, and the host cannot detect that. Source review before conferring the grant is the only control. |
 | Query-parameter auth unsupported | Deliberate (§3). APIs that accept only `?api_key=` remain out of reach for the tier. |
 | Progress does not reach the model mid-call | The LLM tool protocol delivers one result per call. Only the job destination reaches a model, by polling `job_check` across turns. |
 | Reactions cannot wake anything | Deliberate, and the same line `adr/reactive-events.md` §1a draws. Work needing an immediate response to an event belongs to a condition trigger on a standing agent. |
-| Tool→tool dispatch and MCP reach rejected | Deliberate (§6). Revisit when a concrete need appears that `net.http` plus §3 cannot meet, and bring the closure-printing `Summary()` with it. |
+| Tool→tool dispatch and MCP reach rejected | Deliberate (§7). Revisit when a concrete need appears that `net.http` plus §3 cannot meet, and bring the closure-printing `Summary()` with it. |
 | Grants still read at boot | Unchanged by this note. `auth` inherits it, so rotation needs a restart until open question 2 is answered. |
+| CONNECT and TRACE are never grantable | Deliberate (§4). No grant, including `methods = ["*"]`, confers them. |
+| Agent-directed findings bypass the human feed | `notify` redirects rather than duplicates (§6), matching the condition-trigger rule. An operator watching only the feed does not see findings routed to an agent. |
+| A finding is delivered once, to one agent | `reactions_get` marks findings delivered, as `queued_messages_get` does. Two agents cannot both read one finding, because `notify` names a single owner. |
+| The pending count is not relevance-gated | Unlike the R-SUB.5 enrichment path it appears whenever findings are pending, costing a line of every turn's system prompt until the model drains them. |
