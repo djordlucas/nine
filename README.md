@@ -39,13 +39,11 @@ file.
 
 ## Quick start
 
-No clone needed — the image ships a working config. Published for `linux/amd64` and
-`linux/arm64`. The package is private, so authenticate first with a GitHub token carrying
-`read:packages`.
+No clone needed — the image ships a working config, and the package is public, so the pull
+needs no credentials. Published for `linux/amd64` and `linux/arm64`.
 
 ```bash
-# 1. Registry access and a model on the host
-echo "$CR_PAT" | docker login ghcr.io -u <your-github-username> --password-stdin
+# 1. A model on the host
 ollama pull qwen3.5:4b
 
 # 2. Nine
