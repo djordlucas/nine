@@ -281,15 +281,53 @@ substrate.
 | A returned result means | the job is done | one cycle is done | one event is handled |
 | Bounds | `job_max_calls`, `job_max_seconds` | health limits | health limits |
 
-The driver, capability resolution, the per-call deadline, the `continue` envelope,
-the ring buffer and the health state machine are shared with a standing run
-unchanged. So is the reporting rule: a reaction's output goes to the human feed and
-nowhere else, empty output is silent, and it cannot address an agent or wake
-anything of its own accord (R-TVM.20).
+Standing runs ship, so this reuses code rather than a design. `StandingRunner`
+(`internal/runtime/standing_tools.go`, wired at `cmd/nine/daemon.go:304`) already
+holds every part a reaction needs: `runDue`/`runOnce` for the cycle, `report` and
+`notifyHuman` for the human feed, `recordFailure`/`backoff` for the health state
+machine, `standingLog` for the activity ring, and `ReconcileStandingTools` for the
+configuration-owns-definition split. A reaction is that driver with the trigger
+replaced, which makes it the smallest of the four additions to build.
 
-That constraint is what keeps R-SUB.7 true. A reaction that could wake a turn is
-the autonomous session injection `adr/reactive-events.md` §1a defers, reached
-through a side door.
+The reporting rule carries over unchanged: a reaction's output goes to the human
+feed, empty output is silent, and it cannot wake anything of its own accord
+(R-TVM.20).
+
+### Why a reaction may not wake when a condition trigger may
+
+A standing run **can** wake an agent today: `ReconcileConditionTriggers`
+(`standing_tools.go:244`) turns a standing agent's `when = { … }` block into a
+standing run carrying `WakeAgent`, and `Daemon.WakeAgent` (`daemon.go:725`)
+delivers it. Reactions do not get that, and the asymmetry is the event rate rather
+than the destination.
+
+A condition trigger's cadence is `interval` xor `schedule` — operator-set, so wake
+frequency is bounded by the clock whatever the tool finds. A reaction's cadence is
+the journal's event rate, which is driven by the agent's own activity. A reaction
+that could wake would close the loop: the agent acts, the action journals an event,
+the reaction fires, the wake makes the agent act. That is the
+reaction→event→reaction feedback loop `adr/reactive-events.md` §1a states it
+eliminated at the source, and R-SUB.7 keeps deferred.
+
+So a finding reaches an agent by the count and `reactions_get` below — read at a
+turn boundary the human started — and never by a wake.
+
+### The trigger is the subscription wake, not the standing tick
+
+`RunStandingTools` (`cmd/nine/daemon.go:313`) drives due runs on a ticker whose
+period is `[plugins] job_poll_seconds`. A reaction driven off that ticker would
+have a latency floor of one tick, which defeats the point: a reaction exists to
+respond to an event, and a standing run already covers "check every N seconds".
+
+So a reaction takes its trigger from the subscription's in-process wake (R-SUB.2,
+"an in-process wake delivers promptly"), and only the health machinery —
+`recordFailure`, `backoff`, the `failing` transition, the activity ring — comes from
+`StandingRunner`. Catch-up after a restart is the subscription's, from its cursor,
+not a sweeper's scan for due rows.
+
+This is the one place a reaction is not simply a standing run with a different
+trigger, and the split matters for M5: reuse the health and reporting halves of the
+driver, not `runDue`.
 
 ### Two cursors
 
@@ -371,8 +409,13 @@ side of R-SUB.3:
 
 1. **The owner is operator-declared.** `[[reaction]] notify = "<agent-id>"` is
    written in configuration and requestable by neither the tool nor the agent — the
-   safeguard R-TVM.20's condition-trigger exception already relies on. The human is
-   in the loop when the link is made rather than each time it fires.
+   safeguard the shipped condition trigger already relies on, where
+   `memory.StandingTool.WakeAgent` is likewise set by reconciling an operator's
+   `when = { … }` block and never by a request.
+
+   `notify` is deliberately not `wake_agent`, and the store must keep them apart:
+   `WakeAgent` interrupts a running agent, `notify` names where a note is filed for
+   a later turn to collect.
 2. **Delivery is a pull.** The context builder assembles the count at a turn
    boundary the human started, and `reactions_get` runs only when the model calls
    it. Nothing wakes.
@@ -487,7 +530,7 @@ happens` — not this note's vocabulary.
 | M2 | `auth` on the `net.http` grant: config shape, validation, host-side injection after both gates, `nine.caps` header names | an authenticated request to a test server; the value absent from the journal; a retargeted host refused |
 | M3 | The §4 method allowlist: the WebDAV verbs, `methods = ["*"]`, CONNECT and TRACE refused. Independent of M1 and M2 | a PROPFIND against a test server; `*` accepted; CONNECT and TRACE refused under `*` |
 | M4 | `nine:progress` and its host import, per-call caps, the turn and job destinations | a long call's lines reach the progress stream; `job_check` shows live progress; the cap drops rather than fails |
-| M5 | Reactions: `[[reaction]]` config, the subscriber adapter over the standing-run driver, the two-cursor ordering, the ring-buffer destination | a reaction fires on a real journal event; a restart mid-event redelivers; empty output is silent |
+| M5 | Reactions: `[[reaction]]` config, a subscriber adapter reusing the shipped `StandingRunner`'s health and reporting halves but triggered by the subscription wake rather than `runDue`, the two-cursor ordering, the ring-buffer destination | a reaction fires on a real journal event within the wake latency, not a tick; a restart mid-event redelivers; empty output is silent |
 | M6 | Delivery to an agent: `notify`, findings into the `notifications` table, the pending count in `BuildInput`, the `reactions_get` tool | a finding reaches its named agent's next turn as a count; `reactions_get` drains it; an undeliverable finding lands on the human feed |
 | M7 | `allow_reactions` for the generated tier; `nine tools` and TUI surfacing | a generated reaction refused with the flag off |
 | M8 | `skills/tool-authoring.md` extended, `skills/tool-reactions.md` written, `docs/` and `spec/` per §9 | `make ci`; an eval writing an authenticated tool without inventing an `Authorization` header |
@@ -509,10 +552,14 @@ reaction is not.
    rotated token needs a restart. `adr/capability-grants.md` moved the generated
    tier's ceiling into the store to avoid exactly this; whether `auth` follows
    affects the config shape.
-3. **Reaction concurrency budget.** Its own, or the daemon-wide standing-run cap
-   `adr/standing-tools.md` §12.1 leaves open. One shared budget is the likely
-   answer, since a busy event stream and a tight interval are the same load — which
-   makes §12.1 blocking for this note.
+3. **Whether one shared worker budget survives a third claimant.** Not open in
+   principle — `adr/standing-tools.md` §12.1 is already settled in code: standing
+   runs take `cfg.Tools.JobWorkers`, the job sweeper's budget, because
+   `cmd/nine/daemon.go:297` records that what both bound is concurrent wasm
+   instantiations. Reactions take the same budget for the same reason. What is open
+   is whether one number still serves when an event-rate-driven claimant joins two
+   clock-driven ones, since a reaction storm would starve jobs before any health
+   limit noticed.
 4. **Whether `progress` is journaled or only streamed.** Journaling gives `nine
    trace` a narrative of a long call; not journaling keeps a chatty tool from
    dominating the journal, the concern `adr/standing-tools.md` §7.1 raises for
@@ -546,4 +593,7 @@ reaction is not.
 | CONNECT and TRACE are never grantable | Deliberate (§4). No grant, including `methods = ["*"]`, confers them. |
 | Agent-directed findings bypass the human feed | `notify` redirects rather than duplicates (§6), matching the condition-trigger rule. An operator watching only the feed does not see findings routed to an agent. |
 | A finding is delivered once, to one agent | `reactions_get` marks findings delivered, as `queued_messages_get` does. Two agents cannot both read one finding, because `notify` names a single owner. |
+| Reactions share the job worker budget | `cfg.Tools.JobWorkers` bounds concurrent wasm instantiations across jobs, standing runs and now reactions. An event-rate-driven claimant can starve two clock-driven ones before a health limit notices (open question 3). |
+| A reaction cannot wake, though a condition trigger can | Deliberate (§6). The difference is cadence: a condition trigger's is operator-set, a reaction's is the journal's event rate, so a waking reaction would close the reaction→event→reaction loop. |
+| Reactions inherit undocumented health behaviour | The thresholds a reaction would reuse — three consecutive failures to `failing`, ten to auto-disable a generated run, a 30-minute backoff cap — are in `internal/runtime/standing_tools.go` and in no `docs/` page. Reusing the machinery inherits that gap and widens it. |
 | The pending count is not relevance-gated | Unlike the R-SUB.5 enrichment path it appears whenever findings are pending, costing a line of every turn's system prompt until the model drains them. |

@@ -1,6 +1,8 @@
 # Design note — Standing tools
 
-**Status:** Proposed (design note) · **Depends on:** `adr/durable-and-long-running-tools.md`
+**Status:** **Implemented** — `R-TVM.20`, all five phases; driven by `runtime.StandingRunner`,
+wired at `cmd/nine/daemon.go:299-313`. Open questions §12.1 and §12.3 are answered; see
+`adr/tool-facilities.md`. · **Depends on:** `adr/durable-and-long-running-tools.md`
 (Parts A and B) · **Related:** standing agents, goal sessions, scheduling ·
 **Amends:** nothing — see §1
 
