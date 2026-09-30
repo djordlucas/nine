@@ -3,14 +3,7 @@
 Nine publishes a runtime image to GHCR. Pulling it is the supported way to run
 Nine without a source checkout.
 
-The package is private, which means a pull needs credentials. Authenticate once
-with a GitHub personal access token carrying the `read:packages` scope:
-
-```bash
-echo "$CR_PAT" | docker login ghcr.io -u <your-github-username> --password-stdin
-```
-
-Then:
+The package is public, so a pull needs no credentials and no `docker login`:
 
 ```bash
 docker run -d --name nine \
@@ -186,6 +179,5 @@ Supply-chain properties:
 | Contract tests run on amd64 only | Both architectures are scanned, but the container tests drive real containers, and running them under QEMU would add emulation flakiness to a release gate. |
 | `docker stop` exits 137 | s6-linux-init runs its shutdown in container mode and ends by SIGKILLing what remains, PID 1 included, so a clean stop still reports 137. Every service stops in dependency order first — check the logs, not the status. Orchestrators that read the exit code see a crash where there was none. |
 | `latest` is a moving target | It changes on every stable release. Pin a version or a digest for anything that matters. |
-| The package is private | Every pull needs `docker login ghcr.io` with a `read:packages` token, including on CI runners. |
 | No GitHub attestation | `gh attestation verify` needs a public repository or GitHub Enterprise Cloud. Verify with cosign and the buildx attestations instead. |
-| Signing is publicly logged | Keyless cosign records the repository name, workflow path and image digest in the public Rekor log, even though the image itself is private. |
+| Signing is publicly logged | Keyless cosign records the repository name, workflow path and image digest in the public Rekor log. |
