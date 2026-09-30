@@ -49,6 +49,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
+      # Go is installed BEFORE codeql-action/init, and the order is the whole
+      # trick. init puts a `go` wrapper on PATH to trace the build; setup-go
+      # running afterwards replaces PATH with the real toolchain, the build goes
+      # untraced, and finalize fails with "could not process any code written in
+      # Go" on a tree that compiled perfectly.
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.26"
+          cache: true
+          cache-dependency-path: go.sum
+
       # Pinned to the same SHA as the upload-sarif steps below, since all three
       # are the same action repository. Dependabot moves them together.
       - name: Initialize CodeQL
@@ -61,13 +73,6 @@ jobs:
       # build is vendored, so `make build` is the only command that gets this
       # right. Autobuild would guess, and a wrong guess analyses nothing while
       # still reporting success.
-      - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
-        with:
-          go-version: "1.26"
-          cache: true
-          cache-dependency-path: go.sum
-
       - name: Build
         run: make build
 
