@@ -65,6 +65,7 @@ changed; the document stays as the record and is not rewritten.
 | `predefined-agents-design.md` | Standing agents as config-seeded goals: motivation, work breakdown, phasing |
 | `reactive-events.md` | Event subscriptions: reacting to the journal |
 | `standing-tools.md` | Running a resumable tool on its own cadence. A second run mode, not a second kind of tool. |
+| `tool-facilities.md` | Host-injected credentials, streaming progress, and reactions as a third run mode. Rejects tool→tool dispatch and MCP reach. |
 | `tui-boxed-messages.md` | Boxed message rendering in the TUI. `internal/tui` only. |
 
 ### Superseded in part
