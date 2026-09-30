@@ -6,9 +6,10 @@
 ## Progress / resume here
 
 - ✅ **M1 — L0 capability detection.** `ThinkingAware` interface (`internal/llm/provider.go`);
-  Ollama `SupportsThinking` via `/api/show`, cached (`sync.Once`), conservative `false` on
+  Ollama `SupportsThinking` via `/api/show`, answers cached, conservative `false` on
   failure (`internal/llm/ollama/ollama.go`); `Complete` capability-gated, `/no_think` retired
-  for `think:false`. Tested.
+  for `think:false`. Tested. *(Amended — see Layer 0: the conservative `false` is not
+  cached. It was, under a `sync.Once`, which made one failed probe permanent.)*
 - ✅ **M2 — L1 primitive.** `Request.Think *bool` + `Response.ThinkingUsed bool`
   (`provider.go`); Ollama honors per-request override, gated by capability; effective decision
   surfaced. Tested (wire + surfaced).
@@ -102,8 +103,8 @@ non-Qwen models.
 
 **Mechanism:** probe Ollama `POST /api/show {"model": "..."}` → `capabilities` array
 (e.g. `["completion","tools","thinking","vision"]`). Presence of `"thinking"` is the
-signal. Model is fixed per `Provider`, so probe **once, lazily (first `Complete`),
-cache**. Lazy — not at construction — so a not-yet-running Ollama doesn't fail boot.
+signal. Model is fixed per `Provider`, so probe **lazily (first `Complete`) and cache
+the answer**. Lazy — not at construction — so a not-yet-running Ollama doesn't fail boot.
 
 **Optional capability interface** (keep core `Provider` untouched):
 
@@ -132,6 +133,13 @@ Runtime type-asserts it; a provider that doesn't implement it → treated as no-
 **Failure / unknown handling (decide now):**
 - Probe fails (Ollama down, model not pulled, old Ollama with no `capabilities`) →
   treat as **unsupported** (conservative: never risk the 400), log a warning.
+- **Amended:** that verdict is provisional and **is not cached** — only an answer
+  from Ollama is. Caching the failure defeated the reason the probe is lazy in the
+  first place: a Nine that started before Ollama or before the model was pulled told
+  every session for the rest of its life that a thinking model could not think,
+  while `/api/chat` worked fine. Retries are paced (`probeBackoff`), the probe is
+  detached from the caller's cancellation (a cancelled turn must not decide a model's
+  capability) and bounded by its own short timeout rather than the chat timeout.
 - Belt-and-suspenders: in `Complete`, catch a runtime `"does not support thinking"`
   error → cache unsupported, retry once without `think`.
 
