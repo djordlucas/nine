@@ -224,8 +224,8 @@ records which models have been run and how they did.
 
 **The gate**
 
-GitHub Actions is disabled for this repository, so nothing runs these on a
-push. `make ci` is what a merge should pass.
+GitHub Actions runs these on every push and pull request. `make ci` is the same
+gate, run locally, and is what a merge should pass either way.
 
 | Target | Description |
 |--------|-------------|

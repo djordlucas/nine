@@ -134,11 +134,16 @@ docker buildx imagetools inspect ghcr.io/djordlucas/nine:latest \
   --format '{{ json .Provenance.SLSA }}'
 ```
 
-`gh attestation verify` does not work here. GitHub's attestation API is limited
-to public repositories outside GitHub Enterprise Cloud, so the release
-workflow's attestation step is expected to fail and is marked
-`continue-on-error`. The buildx attestations above and the cosign signature are
-unaffected — they live on the image, not in GitHub.
+`gh attestation verify` works against a published image. GitHub's attestation API
+is limited to public repositories outside GitHub Enterprise Cloud, and this
+repository is public, so the release workflow attests the pushed digest:
+
+```bash
+gh attestation verify oci://ghcr.io/djordlucas/nine:latest --repo djordlucas/nine
+```
+
+That is a third, independent check alongside the cosign signature and the buildx
+attestations above — those two live on the image, this one lives in GitHub.
 
 `make image-verify` runs the cosign command above.
 
@@ -181,5 +186,4 @@ Supply-chain properties:
 | Contract tests run on amd64 only | Both architectures are scanned, but the container tests drive real containers, and running them under QEMU would add emulation flakiness to a release gate. |
 | `docker stop` exits 137 | s6-linux-init runs its shutdown in container mode and ends by SIGKILLing what remains, PID 1 included, so a clean stop still reports 137. Every service stops in dependency order first — check the logs, not the status. Orchestrators that read the exit code see a crash where there was none. |
 | `latest` is a moving target | It changes on every stable release. Pin a version or a digest for anything that matters. |
-| No GitHub attestation | `gh attestation verify` needs a public repository or GitHub Enterprise Cloud. Verify with cosign and the buildx attestations instead. |
 | Signing is publicly logged | Keyless cosign records the repository name, workflow path and image digest in the public Rekor log. |

@@ -22,11 +22,10 @@ permissions:
 # on the runner: the test suite starts a real daemon and the shell plugin, and
 # the Docker jobs build a Dockerfile the pull request may have rewritten.
 #
-# GitHub's own control for this — Actions > Fork pull request workflows >
-# require approval for all outside contributors — cannot be set while the
-# repository is private (the API refuses it with 422), and its default only
-# gates contributors it has not seen before. The condition below holds either
-# way, so it stays after that setting is turned on.
+# GitHub's own control for this — Actions > Fork pull request workflows > require
+# approval for all outside contributors — is now set as well. The condition below
+# is kept because it does not depend on that setting surviving a visibility
+# change or a settings edit.
 jobs:
   build:
     name: Build
