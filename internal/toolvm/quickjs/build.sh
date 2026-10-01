@@ -139,12 +139,18 @@ if [ "${harness_only}" = "1" ]; then
   exit 0
 fi
 
+# __FILE__ survives --strip-all: assert() bakes it into the data section as a
+# string. Without the prefix map, every blob carries the builder's absolute
+# checkout path (home directory and username included). Mapping ${here} away
+# leaves repo-relative paths, the same on every machine.
+
 echo "==> building qjs.wasm (quickjs-ng ${QUICKJS_TAG}, wasi-sdk-${WASI_SDK_VERSION})"
 "${CC}" \
   --target=wasm32-wasip1 \
   --sysroot="${SYSROOT}" \
   -mexec-model=reactor \
   -O2 -flto \
+  -ffile-prefix-map="${here}/"= \
   -DCONFIG_VERSION="\"${version}\"" \
   -DEMSCRIPTEN=0 \
   -D_WASI_EMULATED_PROCESS_CLOCKS \
