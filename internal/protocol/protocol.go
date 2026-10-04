@@ -89,6 +89,24 @@ const (
 	TypeNotice        MsgType = "notice"
 )
 
+// Status values that qualify a user_turn's outcome, carried in Msg.Status.
+//
+// A user_turn is answered three ways: the turn runs and ends with "response"
+// then "done"; it runs and fails, ending with "error"; or the session is busy
+// and the message is queued, answered by a "notice". Without a marker the last
+// two are ambiguous on the wire — a notice can also arrive mid-turn, and an
+// error can also reject a turn that never started — so a client that does not
+// stream the turn itself (a WebSocket submitting turns while it watches) could
+// not tell when its submission was settled.
+const (
+	// StatusQueued marks the notice answering a user_turn that was queued
+	// because the session was mid-turn. Nothing else follows on that connection.
+	StatusQueued = "queued"
+	// StatusTurnFailed marks an "error" that is a turn's outcome — the turn ran
+	// and failed — as opposed to one rejecting the request before any turn.
+	StatusTurnFailed = "turn_failed"
+)
+
 // ServerMsgTypes is every message type the daemon may send to a client.
 //
 // The mirror of ClientMsgTypes, and it exists for the mirror-image failure: a
@@ -258,7 +276,7 @@ type Msg struct {
 	ContextUsed     int             `json:"context_used,omitempty"`
 	ContextBudget   int             `json:"context_budget,omitempty"`
 	SubAgentID      string          `json:"sub_agent_id,omitempty"`
-	Status          string          `json:"status,omitempty"`     // sub_agent_end: "done" | "failed" | "timed_out"
+	Status          string          `json:"status,omitempty"`     // sub_agent_end: "done" | "failed" | "timed_out"; notice/error answering user_turn: StatusQueued | StatusTurnFailed
 	LLMCallN        int             `json:"llm_call_n,omitempty"` // thinking: 1-based LLM call count within the current turn
 	Think           bool            `json:"think,omitempty"`      // thinking: this call requests native thinking and will stream thinking chunks
 	// Limit bounds a listing reply — how many recent log lines standing_show

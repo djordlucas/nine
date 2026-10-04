@@ -212,6 +212,54 @@ func (c *Client) turnWithProgress(agentID, text string, forceThink bool, onProgr
 	}
 }
 
+// TurnOutcome is how a SubmitTurn settled.
+type TurnOutcome int
+
+const (
+	// TurnCompleted: the turn ran and replied.
+	TurnCompleted TurnOutcome = iota
+	// TurnFailed: the turn ran and failed; the error is the turn's.
+	TurnFailed
+	// TurnQueued: the session was mid-turn, so the message was queued for its
+	// next one.
+	TurnQueued
+)
+
+// SubmitTurn sends a user turn and waits for it to settle, discarding the
+// turn's progress events — for a client that follows the session through a
+// watch and needs only to know what became of its submission. text is the
+// reply for TurnCompleted, the error for TurnFailed, and the daemon's notice
+// for TurnQueued. err is set only when the daemon rejected the request outright
+// (no such session, a queue failure) or the connection failed.
+func (c *Client) SubmitTurn(agentID, text string, forceThink bool) (TurnOutcome, string, error) {
+	msg := NewUserTurnMsg(agentID, text)
+	msg.ForceThink = forceThink
+	if err := c.send(msg); err != nil {
+		return 0, "", err
+	}
+	for {
+		m, err := c.recv()
+		if err != nil {
+			return 0, "", err
+		}
+		switch {
+		case m.Type == TypeNotice && m.Status == StatusQueued:
+			return TurnQueued, m.Text, nil
+		case m.Type == TypeError && m.Status == StatusTurnFailed:
+			return TurnFailed, m.Text, nil
+		case m.Type == TypeError:
+			return 0, "", fmt.Errorf("daemon: %s", m.Text)
+		case m.Type == TypeResponse:
+			if done, err := c.recv(); err != nil {
+				return 0, "", err
+			} else if done.Type == TypeError {
+				return 0, "", fmt.Errorf("daemon: %s", done.Text)
+			}
+			return TurnCompleted, m.Text, nil
+		}
+	}
+}
+
 // AnswerHuman delivers a human's answer to a pending ask_human request. It is
 // sent on its own connection (the turn's connection is blocked reading the
 // in-flight stream), and returns once the daemon acknowledges.

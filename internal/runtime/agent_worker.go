@@ -194,7 +194,9 @@ func (w *AgentWorker) notifyWatchers(msg protocol.Msg) {
 // everyone else, including turns no client started (idle wakes, queued drains).
 func (w *AgentWorker) notifyTurnOutcome(result string, err error) {
 	if err != nil {
-		w.notifyWatchers(protocol.NewAgentErrorMsg(w.id, err.Error()))
+		failed := protocol.NewAgentErrorMsg(w.id, err.Error())
+		failed.Status = protocol.StatusTurnFailed
+		w.notifyWatchers(failed)
 	} else {
 		w.notifyWatchers(protocol.NewResponseMsg(w.id, result))
 	}

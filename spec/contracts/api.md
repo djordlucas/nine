@@ -991,8 +991,10 @@ Get specific specification.
 For endpoints that produce streaming output (turn execution, tool calls), the API supports both:
 
 1. **SSE (Server-Sent Events):** `/api/v1/conversations/{id}/messages/stream`
-2. **WebSocket:** `/ws/v1/conversations/{id}/messages` — designed (API-STREAM-3),
-   not implemented: the OpenAPI document declares no WebSocket route.
+2. **WebSocket:** `/ws/v1/conversations/{id}/messages` (API-STREAM-3). It is
+   outside the OpenAPI document, which cannot describe a WebSocket, and outside
+   `/api/v1`; authentication, rate limiting and logging apply to its upgrade
+   request as to any route.
 
 The SSE stream is backed by the daemon's `watch` message. It **MUST** forward
 every turn the session runs while the client is connected, whoever started it,
@@ -1040,15 +1042,44 @@ forwarded.
 
 ### API-STREAM-3: WebSocket messages
 
-All messages are JSON objects with a `type` field:
+The WebSocket carries the SSE stream's events and adds the client's direction.
+Every message, both ways, is one JSON text frame with a `type` field.
+
+**Server → client.** Each SSE event (API-STREAM-2) as its payload's fields plus
+`type`, with the same names, the same backing `watch`, and the same per-turn
+rule; plus three the WebSocket alone can act on:
 
 ```json
+{"type": "connected", "agent_id": "id", "message": "stream connected"}
 {"type": "tool_start", "tool_name": "name", "tool_input": {}, "timestamp": 1234567890}
 {"type": "tool_end", "tool_name": "name", "tool_output": "result", "timestamp": 1234567890}
 {"type": "response_chunk", "text": "chunk", "timestamp": 1234567890}
+{"type": "response", "agent_id": "id", "text": "the reply", "timestamp": 1234567890}
 {"type": "done", "agent_id": "id", "timestamp": 1234567890}
 {"type": "error", "error": {"code": "...", "message": "..."}}
+{"type": "human_input_required", "request_id": "r1", "question": "...", "options": ["yes", "no"], "timeout_seconds": 300, "origin": ""}
+{"type": "queued", "text": "Your message has been queued ..."}
+{"type": "human_input_answered", "request_id": "r1"}
 ```
+
+**Client → server:**
+
+```json
+{"type": "user_turn", "text": "...", "force_think": false}
+{"type": "human_input_answer", "request_id": "r1", "answer": "yes"}
+```
+
+| Rule | Detail |
+|------|--------|
+| Opening | The daemon accepts the watch before the upgrade; an unknown conversation **MUST** be a `404` response, never an opened socket |
+| A turn's events | A `user_turn` runs on its own daemon connection. Its events and outcome arrive through the watch like any turn's; the server **MUST NOT** also report them, or they would arrive twice |
+| Queued | A `user_turn` sent while the session is mid-turn is queued, answered by `queued` |
+| Refused | A `user_turn` with empty text, an unknown type, a non-text frame or malformed JSON is answered `error` with `invalid_request`; a turn the daemon refuses before running is `error` with its code. The connection stays open |
+| Answers | `human_input_answer` is delivered on the conversation's id (hitl.md R-HITL.6), answered by `human_input_answered` or `error` |
+| Origin | A browser `Origin` is checked against `cors_origins`; the `*` default skips the check. A request without `Origin` is not checked |
+| Liveness | The server pings every 30 seconds and closes a peer that does not answer; a write that cannot complete in 10 seconds closes the connection. The server's request timeouts do not apply |
+| Size | A client message is at most 1 MiB |
+| End | When the daemon ends the watch, the server sends `error` (`service_unavailable`) and closes with status 1001 |
 
 ---
 
@@ -1251,6 +1282,7 @@ All API configuration options **MUST** be available via CLI flags.
 | — | DELETE `/api/v1/goals/{id}` | Implemented |
 | — | GET `/api/v1/skills` | Implemented |
 | — | GET `/api/v1/conversations/{id}/messages/stream` | Implemented |
+| — | WS `/ws/v1/conversations/{id}/messages` | Implemented |
 
 ---
 
@@ -1462,3 +1494,4 @@ nine api serve --port 8080 --host 0.0.0.0 --auth-token secret --timeout 30
 |---------|------|--------|---------|
 | 1.0 | 2025-01-XX | - | Initial design |
 | 1.1 | 2026-10-04 | - | History, trace, replay, goal create/delete and skills served (no `501` remains); SSE stream forwards events (API-STREAM-1/2) |
+| 1.2 | 2026-10-04 | - | WebSocket transport served, with turns and `ask_human` answers from the client (API-STREAM-3) |

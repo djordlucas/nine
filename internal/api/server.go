@@ -411,6 +411,10 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	})
 
 	s.registerSpecRoutes(mux)
+
+	// The WebSocket transport is outside the document (OpenAPI cannot describe
+	// one) and outside /api/v1 (spec/contracts/api.md API-STREAM-1).
+	mux.HandleFunc("GET "+wsPath, s.handleWebSocket)
 }
 
 // getDaemonClient returns a connected client to the daemon.

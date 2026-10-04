@@ -381,6 +381,24 @@ a type apiece would be names differing in nothing.
 
 ---
 
+## R-PROTO.12a — a user_turn's outcome is marked
+
+A `user_turn` settles one of three ways, and the reply **MUST** say which, in `status`:
+
+| Outcome | Reply on the submitting connection |
+|---------|-------------------------------------|
+| The turn ran and replied | progress events, `response`, `done` |
+| The turn ran and failed | progress events, then `error` with `status` `turn_failed` |
+| The session was mid-turn, so the message was queued | one `notice` with `status` `queued`; nothing follows |
+
+Without the marker the last two are ambiguous: a `notice` also arrives mid-turn, and an
+`error` without `turn_failed` is a request refused before any turn ran (no such
+session, a queue failure). A watcher (R-PROTO.14) receives a failed turn's `error` with
+the same marker. The field is additive; a client that ignores it sees the messages it
+always did.
+
+---
+
 ## R-PROTO.13 — operator goal verbs
 
 `goal_create` and `goal_delete` are the operator's goal verbs, reached by the CLI and the

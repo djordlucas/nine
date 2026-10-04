@@ -1,8 +1,11 @@
 package runtime_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -220,5 +223,58 @@ func TestWatchFollowsAnotherConnectionsTurn(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("watcher never saw the turn finish")
+	}
+}
+
+// A turn submitted while another runs is queued, and says so; a turn that runs
+// and fails says that instead of looking like a refused request.
+func TestSubmitTurnReportsQueuedAndFailed(t *testing.T) {
+	release := make(chan struct{})
+	var calls atomic.Int32
+	provider := llm.ProviderFunc(func(ctx context.Context, _ llm.Request) (llm.Response, error) {
+		if calls.Add(1) == 1 {
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+			return llm.Response{}, errors.New("model unreachable")
+		}
+		return finalResp("ok"), nil
+	})
+	_, sock := operatorHarness(t, provider)
+	id, err := dial(t, sock).NewConversation()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first := make(chan protocol.TurnOutcome, 1)
+	firstDetail := make(chan string, 1)
+	go func() {
+		o, d, err := dial(t, sock).SubmitTurn(id, "first", false)
+		if err != nil {
+			d = err.Error()
+		}
+		first <- o
+		firstDetail <- d
+	}()
+
+	// Wait until the first turn holds the worker, then submit a second.
+	deadline := time.Now().Add(5 * time.Second)
+	for calls.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	outcome, detail, err := dial(t, sock).SubmitTurn(id, "second", false)
+	if err != nil || outcome != protocol.TurnQueued || !strings.Contains(detail, "queued") {
+		t.Errorf("second turn = (%v, %q, %v), want queued", outcome, detail, err)
+	}
+
+	close(release)
+	select {
+	case o := <-first:
+		if d := <-firstDetail; o != protocol.TurnFailed || !strings.Contains(d, "model unreachable") {
+			t.Errorf("first turn = (%v, %q), want failed with the model's error", o, d)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("first turn never settled")
 	}
 }

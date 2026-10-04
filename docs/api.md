@@ -149,6 +149,7 @@ POST   /api/v1/conversations/{id}/replay         — One turn reconstructed (nin
 DELETE /api/v1/conversations/{id}                — Delete a conversation
 POST   /api/v1/conversations/{id}/stop           — Stop a conversation
 GET    /api/v1/conversations/{id}/messages/stream — Live events (SSE)
+WS     /ws/v1/conversations/{id}/messages          — Live events + send turns (WebSocket)
 ```
 
 History, trace and replay read the session's event journal through the daemon,
@@ -312,6 +313,46 @@ server's request timeout.
 
 ---
 
+## WebSocket
+
+`/ws/v1/conversations/{id}/messages` carries the event stream's events and lets the
+client send on the same connection: turns, and answers to an interactive
+session's questions. Every message is a JSON text frame with a `type`.
+
+```bash
+websocat -H 'Authorization: Bearer secret' ws://localhost:8080/ws/v1/conversations/abc/messages
+{"type":"user_turn","text":"What changed in the repo today?"}
+```
+
+The server sends each [event stream](#event-stream) event as its fields plus
+`type` — `{"type":"tool_start","tool_name":"fetch",…}`, `{"type":"done",…}`,
+`{"type":"error","error":{…}}` — and three more:
+
+| Message | Meaning |
+|---------|---------|
+| `human_input_required` | An interactive session asks a question: `request_id`, `question`, `options`, `timeout_seconds` |
+| `queued` | A `user_turn` arrived while the session was mid-turn; it waits for the next turn |
+| `human_input_answered` | An answer was delivered |
+
+The client sends:
+
+| Message | Fields |
+|---------|--------|
+| `user_turn` | `text`, `force_think` |
+| `human_input_answer` | `request_id`, `answer` |
+
+A turn sent over the socket reports its events and reply like any other turn —
+the socket shows every turn the session runs — so nothing is reported twice.
+Bad input is answered with an `error` (`invalid_request`) and the connection
+stays open. An unknown conversation is `404` before the upgrade.
+
+Authentication, rate limiting and logging apply to the upgrade request. A
+browser's `Origin` must match `cors_origins`, which defaults to `*`. The server
+pings every 30 seconds and closes a peer that stops answering; the server's
+request timeouts do not apply.
+
+---
+
 ## Pagination
 
 List endpoints take `limit` and `offset` in the query string and return a
@@ -390,8 +431,8 @@ In the dev container, the API server is an s6 longrun service. When the hot-relo
 | Limit | Detail |
 |-------|--------|
 | Local transport underneath | The API server is a translation layer over the daemon's Unix socket, so it runs on the same host as the daemon. It is also the only way to reach Nine over a network: the socket itself carries no authentication, and `auth_token` is the API server's. |
-| Streaming is SSE only | There is no WebSocket, so a client cannot send over the stream's connection — a turn is still posted to `/messages`. |
-| A slow stream reader loses events | The daemon queues up to 1024 events per stream; a client that falls further behind loses the excess rather than stalling the session's turn. |
+| Browser WebSocket clients cannot send the token | A browser's WebSocket API sets no `Authorization` header, so with `auth_token` set a browser reaches the socket only through a proxy that adds it. Non-browser clients send the header. |
+| A slow stream reader loses events | The daemon queues up to 1024 events per stream or socket; a client that falls further behind loses the excess rather than stalling the session's turn. A WebSocket write that cannot complete in 10 seconds closes the socket. |
 | Stream omits reasoning detail | Reasoning tokens, stage labels and context-usage updates are not forwarded; the TUI renders them, and the API declares no schema for them. |
-| No answer endpoint for `ask_human` | A conversation created with `"interactive": true` can ask a question the API has no way to answer; the stream does not carry it, and the question waits out its `ask_human` timeout. Leave `interactive` unset over the API. |
+| `ask_human` is answerable over the WebSocket only | The SSE stream does not carry `human_input_required`, and no REST endpoint answers one. An interactive conversation driven without the WebSocket waits out each question's timeout. |
 | Startup races the daemon | The API server polls for the daemon socket on startup and refuses requests until the daemon is ready. |
