@@ -51,6 +51,9 @@ func (d *wsDaemon) reply(m protocol.Msg) []protocol.Msg {
 		}
 		return []protocol.Msg{protocol.NewResponseMsg("abc", "ok"), protocol.NewDoneMsg("abc")}
 	case protocol.TypeHumanInputAnswer:
+		if m.RequestID == "stale" {
+			return errReply("pending question stale not found: it was answered, timed out, or never asked")
+		}
 		return []protocol.Msg{{Type: protocol.TypeHumanInputAnswer, Text: "answered"}}
 	}
 	return errReply("unexpected " + string(m.Type))
@@ -183,8 +186,13 @@ func TestWebSocket_RelaysEventsAndAcceptsTurns(t *testing.T) {
 	if a := readUntil(t, ctx, c, "human_input_answered"); a[len(a)-1]["request_id"] != "req-1" {
 		t.Errorf("answered = %v", a[len(a)-1])
 	}
+	// An answer to a question that is no longer pending is the client's error.
+	writeJSON(t, ctx, c, map[string]any{"type": "human_input_answer", "request_id": "stale", "answer": "yes"})
+	if e := readUntil(t, ctx, c, "error"); e[len(e)-1]["error"].(map[string]any)["code"] != "not_found" {
+		t.Errorf("stale answer error = %v, want not_found", e[len(e)-1])
+	}
 	answers := d.received(protocol.TypeHumanInputAnswer)
-	if len(answers) != 1 || answers[0].AgentID != "abc" || answers[0].RequestID != "req-1" || answers[0].Answer != "yes" {
+	if len(answers) != 2 || answers[0].AgentID != "abc" || answers[0].RequestID != "req-1" || answers[0].Answer != "yes" {
 		t.Errorf("daemon received answers %+v", answers)
 	}
 

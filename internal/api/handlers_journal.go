@@ -209,10 +209,14 @@ func collectSubAgents(rootID string, events []protocol.JournalEvent, fetch func(
 	return out
 }
 
+// countTurns counts the turns the events belong to. Turn 0 is not one: it holds
+// events journaled outside any turn, such as the supervisor's.
 func countTurns(events []protocol.JournalEvent) int {
 	turns := map[int]bool{}
 	for _, e := range events {
-		turns[e.Turn] = true
+		if e.Turn > 0 {
+			turns[e.Turn] = true
+		}
 	}
 	return len(turns)
 }

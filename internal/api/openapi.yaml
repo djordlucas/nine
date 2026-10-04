@@ -2494,7 +2494,8 @@ components:
         agent_id:
           type: string
         turns:
-          description: How many distinct turns the events span.
+          description: How many distinct turns the events span. Turn 0 is not counted; it holds events journaled
+            outside any turn, such as supervisor events.
           type: integer
         events:
           type: array
@@ -2522,7 +2523,7 @@ components:
           type: integer
         type:
           description: turn_start, llm_request, llm_response, tool_start, tool_end, tool_http, context_update,
-            thinking, sub_agent_start, sub_agent_end or turn_end.
+            thinking, sub_agent_start, sub_agent_end, turn_end, or supervisor (turn 0, outside any turn).
           type: string
         span_id:
           type: string

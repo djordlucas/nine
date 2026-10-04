@@ -165,7 +165,9 @@ func (d *Daemon) handleHumanAnswer(enc *json.Encoder, req protocol.HumanAnswerRe
 		return
 	}
 	if !d.hitl.Answer(req.RequestID, req.Answer) {
-		enc.Encode(protocol.NewErrorMsg("no pending question for that request")) //nolint:errcheck
+		// "not found" lets a client tell a stale or mistyped id from a failure.
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf( //nolint:errcheck
+			"pending question %s not found: it was answered, timed out, or never asked", req.RequestID)))
 		return
 	}
 	enc.Encode(protocol.NewTextMsg(protocol.TypeHumanInputAnswer, "ok")) //nolint:errcheck

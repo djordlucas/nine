@@ -125,6 +125,8 @@ func journal() []protocol.JournalEvent {
 		ev(7, 2, "sub_agent_start", "sub-1", "t2", `{"sub_id":"sub-1","task":"summarise","role":"researcher"}`),
 		ev(8, 2, "sub_agent_end", "sub-1", "t2", `{"sub_id":"sub-1","status":"done"}`),
 		ev(9, 2, "turn_end", "t2", "", `{"result":"got hello","tool_count":1,"duration_ms":50}`),
+		// Journaled outside any turn; trace must not count turn 0 as a turn.
+		ev(10, 0, "supervisor", "", "", `{"kind":"agent_completes","agent_id":"abc"}`),
 	}
 }
 
