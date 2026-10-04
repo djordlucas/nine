@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"nine/internal/api/apigen"
+	"nine/internal/protocol"
 )
 
 // Server implements every operation the document declares. This assertion is
@@ -42,12 +43,11 @@ func errorBody(code, message string, details map[string]any) apigen.ErrorRespons
 	return body
 }
 
-// notImplementedBody reports an endpoint the daemon cannot serve. The detail is
-// what makes a 501 actionable rather than a shrug: it names what the wire
-// protocol would have to expose (spec/contracts/api.md API-HTTP-5).
-func notImplementedBody(detail string) apigen.ErrorResponse {
-	return errorBody("not_implemented", "endpoint not implemented",
-		map[string]any{"detail": detail})
+// errConflict classifies a daemon reply that refused a request because of the
+// target's state. Unlike errNotFound it matches a prefix the daemon sets on
+// purpose (protocol.ConflictPrefix), so a reworded message cannot move it.
+func errConflict(err error) bool {
+	return err != nil && strings.Contains(err.Error(), protocol.ConflictPrefix)
 }
 
 // page turns the generated optional limit/offset into validated bounds.

@@ -104,10 +104,39 @@ func (s *Server) ListNotifications(ctx context.Context, request apigen.ListNotif
 	}, nil
 }
 
-// ListSkills is not implemented: see the detail below.
 func (s *Server) ListSkills(ctx context.Context, request apigen.ListSkillsRequestObject) (apigen.ListSkillsResponseObject, error) {
-	return apigen.ListSkills501JSONResponse(notImplementedBody(
-		"skills live in the memory store and the wire protocol exposes no skills query")), nil
+	p, err := page(request.Params.Limit, request.Params.Offset)
+	if err != nil {
+		return apigen.ListSkills400JSONResponse(
+			errorBody("invalid_request", err.Error(), nil)), nil
+	}
+
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		return apigen.ListSkills503JSONResponse(
+			errorBody("service_unavailable", err.Error(), nil)), nil
+	}
+	defer cl.Close()
+
+	rows, err := cl.ListSkills()
+	if err != nil {
+		return apigen.ListSkills500JSONResponse(
+			errorBody("server_error", err.Error(), nil)), nil
+	}
+	skills := make([]apigen.SkillInfo, 0, len(rows))
+	for _, sk := range rows {
+		skills = append(skills, apigen.SkillInfo{
+			Name:        sk.Name,
+			Description: nonEmpty(sk.Description),
+			Tags:        ptr(nonNil(sk.Tags)),
+			Source:      apigen.SkillInfoSource(sk.Source),
+		})
+	}
+	data, pagination := paginate(skills, p)
+	return apigen.ListSkills200JSONResponse{
+		Data:       &data,
+		Pagination: &pagination,
+	}, nil
 }
 
 func (s *Server) AttachSession(ctx context.Context, request apigen.AttachSessionRequestObject) (apigen.AttachSessionResponseObject, error) {

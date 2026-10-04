@@ -15,7 +15,7 @@ import (
 // configGoalOrigin is the goals.parent_type sentinel marking a goal seeded from
 // a [[agent]] config block rather than a conversation. Reconciliation touches
 // only these, never a conversation-created goal (adr/predefined-agents-design.md §3.3).
-const configGoalOrigin = "config"
+const configGoalOrigin = runtime.ConfigGoalOrigin
 
 // defaultStandingRole is the role a [[agent]] runs when none is configured: the
 // read-only monitor (adr/predefined-agents-design.md §6).

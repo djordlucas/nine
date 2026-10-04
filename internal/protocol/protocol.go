@@ -34,6 +34,15 @@ const (
 	TypeWorkflowStop    MsgType = "workflow_stop"
 	TypeWorkflowFail    MsgType = "workflow_fail"
 	TypePluginCall      MsgType = "plugin_call"
+	TypeGoalCreate      MsgType = "goal_create"
+	TypeGoalDelete      MsgType = "goal_delete"
+	TypeSessionHistory  MsgType = "session_history"
+	TypeSessionEvents   MsgType = "session_events"
+
+	// Watch turns its connection into a one-way feed of a session's progress
+	// events. It is answered like a query (the type echoed back) and then the
+	// connection carries nothing else until either side closes it.
+	TypeWatch MsgType = "watch"
 
 	// Queries. Each is echoed back as the type of its own reply, with the
 	// payload in Text — so these appear in both directions.
@@ -43,6 +52,7 @@ const (
 	TypeListWorkflows     MsgType = "list_workflows"
 	TypeListNotifications MsgType = "list_notifications"
 	TypeListTools         MsgType = "list_tools"
+	TypeListSkills        MsgType = "list_skills"
 	TypePluginsList       MsgType = "plugins_list"
 	TypePluginsReload     MsgType = "plugins_reload"
 	TypeSessionsList      MsgType = "sessions_list"
@@ -77,6 +87,24 @@ const (
 	TypePlanStart     MsgType = "plan_start"
 	TypePlanEnd       MsgType = "plan_end"
 	TypeNotice        MsgType = "notice"
+)
+
+// Status values that qualify a user_turn's outcome, carried in Msg.Status.
+//
+// A user_turn is answered three ways: the turn runs and ends with "response"
+// then "done"; it runs and fails, ending with "error"; or the session is busy
+// and the message is queued, answered by a "notice". Without a marker the last
+// two are ambiguous on the wire — a notice can also arrive mid-turn, and an
+// error can also reject a turn that never started — so a client that does not
+// stream the turn itself (a WebSocket submitting turns while it watches) could
+// not tell when its submission was settled.
+const (
+	// StatusQueued marks the notice answering a user_turn that was queued
+	// because the session was mid-turn. Nothing else follows on that connection.
+	StatusQueued = "queued"
+	// StatusTurnFailed marks an "error" that is a turn's outcome — the turn ran
+	// and failed — as opposed to one rejecting the request before any turn.
+	StatusTurnFailed = "turn_failed"
 )
 
 // ServerMsgTypes is every message type the daemon may send to a client.
@@ -133,12 +161,18 @@ var ClientMsgTypes = []MsgType{
 	TypeWorkflowStop,
 	TypeWorkflowFail,
 	TypePluginCall,
+	TypeGoalCreate,
+	TypeGoalDelete,
+	TypeSessionHistory,
+	TypeSessionEvents,
+	TypeWatch,
 	TypeStatus,
 	TypeContext,
 	TypeListGoals,
 	TypeListWorkflows,
 	TypeListNotifications,
 	TypeListTools,
+	TypeListSkills,
 	TypePluginsList,
 	TypePluginsReload,
 	TypeSessionsList,
@@ -181,6 +215,14 @@ const (
 //	"grants_list"      — capability requests and grants; no extra fields
 //	"grants_decide"    — settle a capability request or revoke a grant;
 //	                     RequestID = the id, Text = approve|deny|revoke
+//	"list_skills"      — request the skill catalog; no extra fields
+//	"goal_create"      — create a goal as the operator; Text = description,
+//	                     ID = parent goal id (optional; empty for a top-level goal)
+//	"goal_delete"      — delete a goal, its sub-goals, and stop its session; Text = goal ID
+//	"session_history"  — a session's transcript from the journal; AgentID set
+//	"session_events"   — a session's raw journal; AgentID set, Turn = 0 for every
+//	                     turn, N for turn N, or -1 for the latest turn
+//	"watch"            — follow a session's progress events; AgentID set
 //
 // Daemon → client:
 //
@@ -208,6 +250,15 @@ const (
 //	"sub_agent_start"  — a sub-agent was spawned; SubAgentID + Text (task) + Role + Timestamp set
 //	"sub_agent_end"    — a sub-agent finished; SubAgentID + Text (task) + Status + Role + Timestamp set
 //	"stage"            — the turn entered a named waiting phase; Text carries the label
+//	"list_skills"      — skill catalog; Text carries JSON {"skills": [SkillInfo]}
+//	"goal_create"      — created goal; Text carries JSON-encoded GoalCreateResult
+//	"goal_delete"      — deletion result; Text carries JSON-encoded GoalDeleteResult
+//	"session_history"  — transcript; Text carries a JSON array of Msg (history_user,
+//	                     tool_start, tool_end, sub_agent_start, sub_agent_end, response)
+//	"session_events"   — journal; Text carries a JSON array of JournalEvent
+//	"watch"            — watch accepted; AgentID echoed. Then, for every turn the
+//	                     session runs whatever started it: its progress events,
+//	                     "response" (or "error" with AgentID), and "done"
 type Msg struct {
 	AgentID         string          `json:"agent_id,omitempty"`
 	Type            MsgType         `json:"type"`
@@ -221,17 +272,21 @@ type Msg struct {
 	ToolInput       json.RawMessage `json:"tool_input,omitempty"`
 	ToolOutput      string          `json:"tool_output,omitempty"`
 	Backend         string          `json:"backend,omitempty"` // tool_start/tool_end: which backend runs the tool
-	Timestamp       int64           `json:"ts,omitempty"` // unix millis
+	Timestamp       int64           `json:"ts,omitempty"`      // unix millis
 	ContextUsed     int             `json:"context_used,omitempty"`
 	ContextBudget   int             `json:"context_budget,omitempty"`
 	SubAgentID      string          `json:"sub_agent_id,omitempty"`
-	Status          string          `json:"status,omitempty"`     // sub_agent_end: "done" | "failed" | "timed_out"
+	Status          string          `json:"status,omitempty"`     // sub_agent_end: "done" | "failed" | "timed_out"; notice/error answering user_turn: StatusQueued | StatusTurnFailed
 	LLMCallN        int             `json:"llm_call_n,omitempty"` // thinking: 1-based LLM call count within the current turn
 	Think           bool            `json:"think,omitempty"`      // thinking: this call requests native thinking and will stream thinking chunks
 	// Limit bounds a listing reply — how many recent log lines standing_show
 	// returns. Additive and omitempty, so a client that never sets it produces
 	// exactly the bytes it produced before (R-PROTO.1).
 	Limit int `json:"limit,omitempty"`
+
+	// Turn selects a turn of a session's journal for session_events: 0 for every
+	// turn, N for turn N, -1 for the latest. Additive and omitempty, like Limit.
+	Turn int `json:"turn,omitempty"`
 
 	// attach ok: recent tool events and last completed response for replay on reattach.
 	ReplayEvents    []Msg  `json:"replay_events,omitempty"`
@@ -464,6 +519,48 @@ type StatusInfo struct {
 	LLMQueue  *QueueStat     `json:"llm_queue,omitempty"`
 }
 
+// SkillInfo describes one skill for the "list_skills" response. Source is
+// "builtin" (seeded from the binary), "user" (seeded from [skills].user_dir) or
+// "agent" (written by Nine itself).
+type SkillInfo struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Tags        []string `json:"tags"`
+	Source      string   `json:"source"`
+}
+
+// GoalCreateResult is the "goal_create" reply. Goal is the stored row, as a
+// raw object so the wire does not depend on the store's Go type. PursueSession
+// says what happened to the goal's background session: "spawned", or
+// "limit_reached" when the daemon is at its goal-session cap (the goal is
+// recorded either way), or "none" for a sub-goal, which gets no session.
+type GoalCreateResult struct {
+	Goal          json.RawMessage `json:"goal"`
+	PursueSession string          `json:"pursue_session"`
+}
+
+// GoalDeleteResult is the "goal_delete" reply. Deleted lists every goal id
+// removed — the goal itself and its sub-goals. SessionStopped reports whether a
+// running pursue session was stopped; its transcript and journal are kept.
+type GoalDeleteResult struct {
+	Deleted        []string `json:"deleted"`
+	SessionStopped bool     `json:"session_stopped"`
+}
+
+// JournalEvent is one row of a session's event journal for the
+// "session_events" response (spec/contracts/event-journal.md). Payload is the
+// type-specific body exactly as journaled.
+type JournalEvent struct {
+	Seq          int64           `json:"seq"`
+	AgentID      string          `json:"agent_id"`
+	Turn         int             `json:"turn"`
+	SpanID       string          `json:"span_id"`
+	ParentSpanID string          `json:"parent_span_id,omitempty"`
+	Type         string          `json:"type"`
+	TS           time.Time       `json:"ts"`
+	Payload      json.RawMessage `json:"payload,omitempty"`
+}
+
 // --- Client → daemon request constructors ---
 
 // NewQueryMsg builds a request consisting of only a Type field — used for
@@ -557,6 +654,32 @@ func NewToolCallMsg(tool string, args json.RawMessage, liveState bool) Msg {
 // core-intercepted tools (memory/file/skill/doc) first, then the plugin roster.
 func NewPluginCallMsg(tool string, args json.RawMessage) Msg {
 	return Msg{Type: TypePluginCall, ToolName: tool, ToolInput: args}
+}
+
+// NewGoalCreateMsg creates a goal on the operator's behalf. parentID names a
+// parent goal for a sub-goal and is empty for a top-level goal.
+func NewGoalCreateMsg(description, parentID string) Msg {
+	return Msg{Type: TypeGoalCreate, Text: description, ID: parentID}
+}
+
+// NewGoalDeleteMsg deletes a goal and its sub-goals and stops its session.
+func NewGoalDeleteMsg(id string) Msg {
+	return Msg{Type: TypeGoalDelete, Text: id}
+}
+
+// NewSessionHistoryMsg asks for a session's transcript.
+func NewSessionHistoryMsg(agentID string) Msg {
+	return Msg{Type: TypeSessionHistory, AgentID: agentID}
+}
+
+// NewSessionEventsMsg asks for a session's journal; see Msg.Turn for turn.
+func NewSessionEventsMsg(agentID string, turn int) Msg {
+	return Msg{Type: TypeSessionEvents, AgentID: agentID, Turn: turn}
+}
+
+// NewWatchMsg asks to follow a session's progress events.
+func NewWatchMsg(agentID string) Msg {
+	return Msg{Type: TypeWatch, AgentID: agentID}
 }
 
 // --- Daemon → client response constructors ---

@@ -31,7 +31,10 @@ Sub-goals do not get their own sessions. A goal spawned by another goal is
 worked on by the session already pursuing its parent, which is what keeps a
 branching goal from turning into a branching population of sessions.
 
-Only roles permitted to spawn goals create these sessions at all.
+Two things create a top-level goal: an agent whose role is permitted to spawn
+goals, and the operator — `POST /goals` on the [HTTP API](api.md), or an
+`[[agent]]` block in `nine.toml`. An operator-created goal is pursued exactly as an
+agent-created one is, and `DELETE /goals/{id}` stops its session and removes it.
 
 ## Status is owned by the agent
 
@@ -52,7 +55,7 @@ that its work is finished is the agent's call to make.
 | Sub-goals get no session | Only top-level goals are paired with a session. A goal spawned by another is worked on by the session already pursuing its parent. |
 | Five-minute wake interval | An idle goal session wakes on a fixed timer. The cycle supplies the occasion and the goal, not a plan — what counts as useful action is left to the model. |
 | Stall detection releases the slot | Five consecutive turns that call no tool count as a stall. The routine then pauses its goal, which frees the slot, so one wedged pursuit cannot hold capacity indefinitely. Progress on that goal stops until it is resumed. |
-| Only some roles create them | A role that may not spawn goals creates no goal sessions. |
+| Only some roles create them | A role that may not spawn goals creates no goal sessions. The operator is not role-gated. |
 
 ## Related
 

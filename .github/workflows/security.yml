@@ -133,6 +133,11 @@ jobs:
           load: true
           push: false
           provenance: false
+          # Rebuild the runtime stage every time: its apt-get dist-upgrade is what
+          # picks up Debian security fixes, and a layer restored from the cache
+          # carries the packages of whenever it was first built — the scan would
+          # then report fixes the image could have had.
+          no-cache-filters: runtime
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

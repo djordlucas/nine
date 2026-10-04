@@ -2,8 +2,12 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
 
 	"nine/internal/api/apigen"
+	"nine/internal/protocol"
 )
 
 // Goal and workflow endpoints.
@@ -83,20 +87,92 @@ func (s *Server) GetGoal(ctx context.Context, request apigen.GetGoalRequestObjec
 		errorBody("not_found", "goal not found", map[string]any{"id": request.Id})), nil
 }
 
-// CreateGoal is not implemented: see the detail below.
+// CreateGoal creates a goal as the operator. The daemon runs it with the same
+// standing as a [[agent]] block in nine.toml: the role gate on the agent tool
+// goal_create decides which agents may start background work, and an
+// authenticated API caller is not an agent.
 func (s *Server) CreateGoal(ctx context.Context, request apigen.CreateGoalRequestObject) (apigen.CreateGoalResponseObject, error) {
-	return apigen.CreateGoal501JSONResponse(notImplementedBody(
-		"goal creation exists only as the agent tool goal_create, which is " +
-			"gated behind a role's Delegates flag; routing the API through it " +
-			"would have to decide what role an HTTP caller has")), nil
+	if request.Body == nil || strings.TrimSpace(request.Body.Description) == "" {
+		return apigen.CreateGoal400JSONResponse(
+			errorBody("invalid_request", "description is required", nil)), nil
+	}
+	parentID := ""
+	if request.Body.ParentId != nil {
+		parentID = *request.Body.ParentId
+	}
+
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		return apigen.CreateGoal503JSONResponse(
+			errorBody("service_unavailable", err.Error(), nil)), nil
+	}
+	defer cl.Close()
+
+	res, err := cl.CreateGoal(request.Body.Description, parentID)
+	if err != nil {
+		if errNotFound(err) {
+			return apigen.CreateGoal404JSONResponse(
+				errorBody("not_found", "parent goal not found", map[string]any{"parent_id": parentID})), nil
+		}
+		return apigen.CreateGoal500JSONResponse(
+			errorBody("server_error", err.Error(), nil)), nil
+	}
+
+	var g wireGoal
+	if err := json.Unmarshal(res.Goal, &g); err != nil {
+		return apigen.CreateGoal500JSONResponse(
+			errorBody("server_error", fmt.Sprintf("decode created goal: %v", err), nil)), nil
+	}
+	out := apigen.CreateGoalResponse{
+		Goal:          toGoalInfo(g),
+		PursueSession: apigen.CreateGoalResponsePursueSession(res.PursueSession),
+	}
+	// A top-level goal's session is the goal's own id (docs/goal-sessions.md),
+	// whether or not the cap let it start; a sub-goal has none.
+	if parentID == "" {
+		out.SessionId = ptr(g.ID)
+	}
+	return apigen.CreateGoal201JSONResponse(out), nil
 }
 
-// DeleteGoal is not implemented: see the detail below.
 func (s *Server) DeleteGoal(ctx context.Context, request apigen.DeleteGoalRequestObject) (apigen.DeleteGoalResponseObject, error) {
-	return apigen.DeleteGoal501JSONResponse(notImplementedBody(
-		"no goal deletion exists to call: the tool surface has goal_create, " +
-			"goal_get, goal_list and goal_update_status, and the wire protocol " +
-			"has no goal mutation message")), nil
+	if request.Id == "" {
+		return apigen.DeleteGoal400JSONResponse(
+			errorBody("invalid_request", "missing goal id", nil)), nil
+	}
+
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		return apigen.DeleteGoal503JSONResponse(
+			errorBody("service_unavailable", err.Error(), nil)), nil
+	}
+	defer cl.Close()
+
+	res, err := cl.DeleteGoal(request.Id)
+	if err != nil {
+		switch {
+		case errConflict(err):
+			return apigen.DeleteGoal409JSONResponse(
+				errorBody("conflict", strings.TrimPrefix(strings.TrimPrefix(err.Error(), "daemon: "), protocol.ConflictPrefix),
+					map[string]any{"id": request.Id})), nil
+		case errNotFound(err):
+			return apigen.DeleteGoal404JSONResponse(
+				errorBody("not_found", "goal not found", map[string]any{"id": request.Id})), nil
+		}
+		return apigen.DeleteGoal500JSONResponse(
+			errorBody("server_error", err.Error(), nil)), nil
+	}
+
+	msg := fmt.Sprintf("deleted %d goal(s)", len(res.Deleted))
+	if res.SessionStopped {
+		msg += "; its session was stopped and its history kept"
+	}
+	return apigen.DeleteGoal200JSONResponse{
+		Id:             request.Id,
+		Message:        ptr(msg),
+		Deleted:        res.Deleted,
+		SessionStopped: res.SessionStopped,
+	}, nil
 }
 
 func (s *Server) ListWorkflows(ctx context.Context, request apigen.ListWorkflowsRequestObject) (apigen.ListWorkflowsResponseObject, error) {

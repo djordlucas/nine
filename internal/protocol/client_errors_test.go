@@ -296,3 +296,69 @@ func TestClientSendsWellFormedRequests(t *testing.T) {
 		}
 	})
 }
+
+// A reply longer than bufio.Scanner's 64 KiB default must still be read. A
+// session's journal or transcript passes that easily, and at the default the
+// client failed with "token too long" and the connection was dead.
+func TestClientReadsAReplyPast64KiB(t *testing.T) {
+	big := strings.Repeat("x", 512<<10)
+	f := newFakeDaemon(t, func(enc *json.Encoder, in protocol.Msg) {
+		enc.Encode(protocol.NewTextMsg(in.Type, `[{"type":"response","text":"`+big+`"}]`)) //nolint:errcheck
+	})
+	history, err := f.connect().SessionHistory("a1")
+	if err != nil {
+		t.Fatalf("SessionHistory over a 512 KiB reply: %v", err)
+	}
+	if len(history) != 1 || len(history[0].Text) != len(big) {
+		t.Fatalf("decoded %d entries, want one carrying the whole text", len(history))
+	}
+}
+
+// SubmitTurn must tell a queued submission, a failed turn and a refused request
+// apart, and must not mistake a mid-turn notice or progress event for an answer.
+func TestSubmitTurnOutcomes(t *testing.T) {
+	f := newFakeDaemon(t, func(enc *json.Encoder, in protocol.Msg) {
+		switch in.Text {
+		case "busy":
+			n := protocol.NewNoticeMsg("a1", "queued for later")
+			n.Status = protocol.StatusQueued
+			enc.Encode(n) //nolint:errcheck
+		case "fails":
+			enc.Encode(protocol.NewNoticeMsg("a1", "planning pass instead")) //nolint:errcheck
+			e := protocol.NewAgentErrorMsg("a1", "model unreachable")
+			e.Status = protocol.StatusTurnFailed
+			enc.Encode(e) //nolint:errcheck
+		case "refused":
+			enc.Encode(protocol.NewAgentErrorMsg("a1", "conversation a1 not found")) //nolint:errcheck
+		default:
+			enc.Encode(protocol.NewToolStartMsg("a1", "t", "", "", nil)) //nolint:errcheck
+			enc.Encode(protocol.NewNoticeMsg("a1", "a mid-turn notice")) //nolint:errcheck
+			enc.Encode(protocol.NewResponseMsg("a1", "the reply"))       //nolint:errcheck
+			enc.Encode(protocol.NewDoneMsg("a1"))                        //nolint:errcheck
+		}
+	})
+
+	cases := []struct {
+		text    string
+		outcome protocol.TurnOutcome
+		detail  string
+		wantErr bool
+	}{
+		{"busy", protocol.TurnQueued, "queued for later", false},
+		{"fails", protocol.TurnFailed, "model unreachable", false},
+		{"refused", 0, "", true},
+		{"hello", protocol.TurnCompleted, "the reply", false},
+	}
+	for _, tc := range cases {
+		outcome, detail, err := f.connect().SubmitTurn("a1", tc.text, false)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("%s: want an error, got outcome %v %q", tc.text, outcome, detail)
+			}
+			continue
+		}
+		if err != nil || outcome != tc.outcome || detail != tc.detail {
+			t.Errorf("%s: got (%v, %q, %v), want (%v, %q, nil)", tc.text, outcome, detail, err, tc.outcome, tc.detail)
+		}
+	}
+}

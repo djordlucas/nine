@@ -189,6 +189,11 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.ResponseWriter.WriteHeader(code)
 }
 
+// Unwrap exposes the underlying writer to http.ResponseController. Without it
+// the wrapper hides http.Flusher and the write deadline, and the event stream
+// can neither flush an event nor outlive the server's WriteTimeout.
+func (rw *responseWriter) Unwrap() http.ResponseWriter { return rw.ResponseWriter }
+
 // Config holds the API server configuration.
 type Config struct {
 	APIConfig  config.APIConfig
@@ -406,6 +411,10 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	})
 
 	s.registerSpecRoutes(mux)
+
+	// The WebSocket transport is outside the document (OpenAPI cannot describe
+	// one) and outside /api/v1 (spec/contracts/api.md API-STREAM-1).
+	mux.HandleFunc("GET "+wsPath, s.handleWebSocket)
 }
 
 // getDaemonClient returns a connected client to the daemon.

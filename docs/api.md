@@ -56,8 +56,8 @@ make openapi-lint   # lint the document, failing on warnings (runs in CI)
 ```
 
 `internal/api/.vacuum.yaml` holds the lint ruleset, including the rules this API
-contradicts on purpose — snake_case properties, operations that return only
-`501`, and the fields that are deliberately arbitrary JSON.
+contradicts on purpose — snake_case properties, action paths such as
+`/plugins/reload`, and the fields that are deliberately arbitrary JSON.
 
 The generator lives in `tools/`, its own Go module, so its dependencies stay
 out of nine's graph and out of `vendor/`.
@@ -143,13 +143,27 @@ GET    /api/v1/conversations                     — List all conversations
 GET    /api/v1/conversations/{id}                — Get conversation details
 POST   /api/v1/conversations/{id}/messages       — Send a message (execute a turn)
 GET    /api/v1/conversations/{id}/context         — Context breakdown
-GET    /api/v1/conversations/{id}/history        — Message history
-GET    /api/v1/conversations/{id}/trace          — Turn trace (LLM calls + tool I/O)
-POST   /api/v1/conversations/{id}/replay         — Replay a turn
+GET    /api/v1/conversations/{id}/history        — Transcript, every turn
+GET    /api/v1/conversations/{id}/trace          — Event journal (nine trace)
+POST   /api/v1/conversations/{id}/replay         — One turn reconstructed (nine replay)
 DELETE /api/v1/conversations/{id}                — Delete a conversation
 POST   /api/v1/conversations/{id}/stop           — Stop a conversation
-GET    /api/v1/conversations/{id}/messages/stream — SSE streaming
+GET    /api/v1/conversations/{id}/messages/stream — Live events (SSE)
+WS     /ws/v1/conversations/{id}/messages          — Live events + send turns (WebSocket)
 ```
+
+History, trace and replay read the session's event journal through the daemon,
+so they work for a stopped session and for one revived after a restart, and
+reading them does not attach to the session.
+
+| Endpoint | Returns |
+|----------|---------|
+| `GET …/history` | The transcript, oldest first: `user_turn`, `tool_start`, `tool_end`, `sub_agent_start`, `sub_agent_end` and `response` entries, each with its `turn_number`. Paged with `limit`/`offset`. |
+| `GET …/trace` | Every journal event — `seq`, `turn`, `type`, span ids, timestamp and the payload exactly as journaled. `turn=N` limits it to one turn; `sub_agents=true` adds a `sub_agents` list holding each spawned sub-agent's own trace, recursively, linked to the `seq` of the event that spawned it. |
+| `POST …/replay` | Turn `{"turn": N}` reconstructed: trigger and input, each LLM call (request size, token estimate and provider counts, stop reason, requested tools), each tool call with its input, output, timing and outbound HTTP, the sub-agents, and the result. Nothing is re-executed. |
+
+An unknown conversation is `404`; so is a replay of a turn the journal does not
+hold.
 
 ### Goals, workflows, tools, plugins
 
@@ -166,6 +180,21 @@ GET    /api/v1/plugins            POST /api/v1/plugins/reload
 
 GET    /api/v1/capabilities       POST /api/v1/capabilities/{id}/decision
 ```
+
+`POST /goals` takes `{"description": "…"}` and creates a top-level goal with its
+own pursue session ([goal sessions](goal-sessions.md)); the response's
+`pursue_session` is `spawned`, or `limit_reached` when the daemon is at its
+goal-session cap and the goal is recorded unattended. Adding `"parent_id"`
+creates a sub-goal instead, which gets no session (`none`); an unknown parent is
+`404`. The API caller creates the goal as the operator, so the role gate on the
+agent's `goal_create` tool does not apply — it decides which agents may start
+background work, and an authenticated API caller is not an agent.
+
+`DELETE /goals/{id}` deletes the goal and every sub-goal beneath it, and stops the
+goal's pursue session; the session's transcript and journal are kept. The
+response lists the deleted ids. A goal declared by an `[[agent]]` block in
+`nine.toml` is `409 conflict`, because the next boot would re-create it — remove
+the block instead.
 
 `GET /capabilities` returns the generated-tool ceiling in force — each grant with its
 `source`, one of `default`, `config` or `approved` — together with every request the
@@ -256,25 +285,71 @@ client.
 
 ---
 
-## Endpoints that return 501
+## Event stream
 
-Six endpoints are declared but not backed by the daemon. Each returns `501
-not_implemented` with a `details.detail` naming what is missing:
+`GET /conversations/{id}/messages/stream` follows a session for as long as the
+client stays connected. It forwards every turn the session runs — one this client
+posted, one another client posted, or a scheduled wake — not only the next one.
 
-| Endpoint | Missing |
-|----------|---------|
-| `GET /conversations/{id}/history` | no journal query on the wire protocol |
-| `GET /conversations/{id}/trace` | no per-turn trace on the wire protocol |
-| `POST /conversations/{id}/replay` | no replay message on the wire protocol |
-| `POST /goals` | `goal_create` is role-gated; an HTTP caller has no role |
-| `DELETE /goals/{id}` | no goal deletion exists to call |
-| `GET /skills` | no skills query on the wire protocol |
+```bash
+curl -N http://localhost:8080/api/v1/conversations/abc/messages/stream
+```
 
-They previously returned `200` with invented data — an empty list, an echo of
-the request, or a fabricated id for a goal that was never created. Use the CLI
-for these until the wire protocol carries them: `nine trace`, `nine replay` and
-`nine skills` read the memory store directly, which the API process must not do
-(spec API-A-1).
+| Event | When |
+|-------|------|
+| `connected` | Once, after the daemon accepts the watch |
+| `tool_start`, `tool_end` | A tool call begins and ends, with its input and output |
+| `sub_agent_start`, `sub_agent_end` | A sub-agent is spawned and finishes |
+| `response_chunk` | A fragment of the reply, when the model streams |
+| `notice` | A session-level notice, such as a capability downgrade |
+| `response` | The turn's final reply |
+| `error` | The turn failed, or the stream ended on the daemon's side |
+| `done` | The turn is over; the stream stays open for the next one |
+
+An unknown conversation is `404` before the stream opens. A session that exists
+but is not loaded is revived from its checkpoint. An idle stream carries a
+`: keepalive` comment every 15 seconds, and the stream is exempt from the
+server's request timeout.
+
+---
+
+## WebSocket
+
+`/ws/v1/conversations/{id}/messages` carries the event stream's events and lets the
+client send on the same connection: turns, and answers to an interactive
+session's questions. Every message is a JSON text frame with a `type`.
+
+```bash
+websocat -H 'Authorization: Bearer secret' ws://localhost:8080/ws/v1/conversations/abc/messages
+{"type":"user_turn","text":"What changed in the repo today?"}
+```
+
+The server sends each [event stream](#event-stream) event as its fields plus
+`type` — `{"type":"tool_start","tool_name":"fetch",…}`, `{"type":"done",…}`,
+`{"type":"error","error":{…}}` — and three more:
+
+| Message | Meaning |
+|---------|---------|
+| `human_input_required` | An interactive session asks a question: `request_id`, `question`, `options`, `timeout_seconds` |
+| `queued` | A `user_turn` arrived while the session was mid-turn; it waits for the next turn |
+| `human_input_answered` | An answer was delivered |
+
+The client sends:
+
+| Message | Fields |
+|---------|--------|
+| `user_turn` | `text`, `force_think` |
+| `human_input_answer` | `request_id`, `answer` |
+
+A turn sent over the socket reports its events and reply like any other turn —
+the socket shows every turn the session runs — so nothing is reported twice.
+Bad input is answered with an `error` (`invalid_request`) and the connection
+stays open. An unknown conversation is `404` before the upgrade.
+
+Authentication, rate limiting and logging apply to the upgrade request. A
+browser's `Origin` must match `cors_origins`, which defaults to `*`. The server
+pings every 30 seconds and closes a peer that stops answering; the server's
+request timeouts do not apply.
 
 ---
 
@@ -356,7 +431,8 @@ In the dev container, the API server is an s6 longrun service. When the hot-relo
 | Limit | Detail |
 |-------|--------|
 | Local transport underneath | The API server is a translation layer over the daemon's Unix socket, so it runs on the same host as the daemon. It is also the only way to reach Nine over a network: the socket itself carries no authentication, and `auth_token` is the API server's. |
-| Six endpoints return 501 | History, trace, replay, goal create, goal delete and skills are declared in the spec and not backed by the wire protocol. They report what is missing rather than inventing a response. |
-| Streaming is SSE only | `GET /conversations/{id}/messages/stream` attaches to a session's progress events as `text/event-stream`, flushed per event. There is no WebSocket, so a client cannot send over the same connection — a turn is still posted to `/messages`. |
-| Spec is generated, not hand-checked | The OpenAPI document is regenerated from annotations. An endpoint whose annotation drifts from its handler produces a spec that is wrong in the same way. |
+| Browser WebSocket clients cannot send the token | A browser's WebSocket API sets no `Authorization` header, so with `auth_token` set a browser reaches the socket only through a proxy that adds it. Non-browser clients send the header. |
+| A slow stream reader loses events | The daemon queues up to 1024 events per stream or socket; a client that falls further behind loses the excess rather than stalling the session's turn. A WebSocket write that cannot complete in 10 seconds closes the socket. |
+| Stream omits reasoning detail | Reasoning tokens, stage labels and context-usage updates are not forwarded; the TUI renders them, and the API declares no schema for them. |
+| `ask_human` is answerable over the WebSocket only | The SSE stream does not carry `human_input_required`, and no REST endpoint answers one. An interactive conversation driven without the WebSocket waits out each question's timeout. |
 | Startup races the daemon | The API server polls for the daemon socket on startup and refuses requests until the daemon is ready. |

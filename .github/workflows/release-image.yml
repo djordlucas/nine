@@ -116,6 +116,10 @@ jobs:
             VERSION=${{ needs.meta.outputs.version }}
             VCS_REF=${{ github.sha }}
             BUILD_DATE=${{ needs.meta.outputs.build_date }}
+          # Rebuild the runtime stage every time so its apt-get dist-upgrade
+          # fetches today's Debian security fixes rather than reusing a cached
+          # layer from an earlier release.
+          no-cache-filters: runtime
           cache-from: type=gha,scope=release-${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=release-${{ matrix.platform }}
 
@@ -268,6 +272,10 @@ jobs:
           # Both ride along as attestations on the manifest.
           sbom: true
           provenance: mode=max
+          # Rebuild the runtime stage every time so its apt-get dist-upgrade
+          # fetches today's Debian security fixes rather than reusing a cached
+          # layer from an earlier release.
+          no-cache-filters: runtime
           cache-from: type=gha,scope=release
           cache-to: type=gha,mode=max,scope=release
 

@@ -149,6 +149,11 @@ func TestEveryClientMsgTypeDecodes(t *testing.T) {
 		protocol.TypePluginCall:       {ToolName: "echo"},
 		protocol.TypeHumanInputAnswer: {AgentID: "a1", RequestID: "r1"},
 		protocol.TypeGrantsDecide:     {RequestID: "cr1", Text: "approve"},
+		protocol.TypeGoalCreate:       {Text: "watch the repo"},
+		protocol.TypeGoalDelete:       {Text: "g1"},
+		protocol.TypeSessionHistory:   {AgentID: "a1"},
+		protocol.TypeSessionEvents:    {AgentID: "a1", Turn: -1},
+		protocol.TypeWatch:            {AgentID: "a1"},
 	}
 	for _, mt := range protocol.ClientMsgTypes {
 		m := fill[mt]

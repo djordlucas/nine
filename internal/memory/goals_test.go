@@ -142,3 +142,47 @@ func TestGoalList(t *testing.T) {
 		t.Errorf("GoalList = %d, want 2", len(got))
 	}
 }
+
+func TestGoalDeleteTakesTheSubtree(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// root ─ child ─ grandchild, plus an unrelated goal that must survive.
+	for _, g := range []struct{ id, parent, ptype string }{
+		{"root", "conv1", "conversation"},
+		{"child", "root", "goal"},
+		{"grandchild", "child", "goal"},
+		{"other", "conv1", "conversation"},
+	} {
+		if err := store.GoalCreate(g.id, g.id, g.parent, g.ptype); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ids, err := store.GoalDelete("root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"root", "child", "grandchild"}
+	if len(ids) != len(want) {
+		t.Fatalf("deleted %v, want %v", ids, want)
+	}
+	for i := range want {
+		if ids[i] != want[i] {
+			t.Fatalf("deleted %v, want %v (goal first, then by depth)", ids, want)
+		}
+	}
+	goals, err := store.GoalList()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(goals) != 1 || goals[0].ID != "other" {
+		t.Errorf("remaining goals = %+v, want only \"other\"", goals)
+	}
+
+	// A missing id is not an error; the caller decides what it means.
+	if ids, err := store.GoalDelete("nope"); err != nil || len(ids) != 0 {
+		t.Errorf("GoalDelete(missing) = %v, %v; want empty, nil", ids, err)
+	}
+}

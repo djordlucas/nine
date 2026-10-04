@@ -165,7 +165,9 @@ func (d *Daemon) handleHumanAnswer(enc *json.Encoder, req protocol.HumanAnswerRe
 		return
 	}
 	if !d.hitl.Answer(req.RequestID, req.Answer) {
-		enc.Encode(protocol.NewErrorMsg("no pending question for that request")) //nolint:errcheck
+		// "not found" lets a client tell a stale or mistyped id from a failure.
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf( //nolint:errcheck
+			"pending question %s not found: it was answered, timed out, or never asked", req.RequestID)))
 		return
 	}
 	enc.Encode(protocol.NewTextMsg(protocol.TypeHumanInputAnswer, "ok")) //nolint:errcheck
@@ -308,7 +310,9 @@ func (d *Daemon) userTurn(ctx context.Context, enc *json.Encoder, agentID, text 
 			return
 		}
 		slog.Info("message queued", "agent_id", agentID)
-		enc.Encode(protocol.NewNoticeMsg(agentID, "Your message has been queued and will be available to the agent on its next turn."))
+		queued := protocol.NewNoticeMsg(agentID, "Your message has been queued and will be available to the agent on its next turn.")
+		queued.Status = protocol.StatusQueued
+		enc.Encode(queued) //nolint:errcheck
 		return
 	}
 
@@ -339,7 +343,9 @@ func (d *Daemon) userTurn(ctx context.Context, enc *json.Encoder, agentID, text 
 					enc.Encode(evt) //nolint:errcheck
 				default:
 					if res.err != nil {
-						enc.Encode(protocol.NewAgentErrorMsg(agentID, res.err.Error())) //nolint:errcheck
+						failed := protocol.NewAgentErrorMsg(agentID, res.err.Error())
+						failed.Status = protocol.StatusTurnFailed
+						enc.Encode(failed) //nolint:errcheck
 					} else {
 						enc.Encode(protocol.NewResponseMsg(agentID, res.text)) //nolint:errcheck
 						enc.Encode(protocol.NewDoneMsg(agentID))               //nolint:errcheck
