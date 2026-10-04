@@ -738,6 +738,12 @@ type LLMConfig struct {
 	MaxConcurrent  int    `toml:"max_concurrent"`
 	NumCtx         int    `toml:"num_ctx"`         // model context window size
 	TimeoutSeconds int    `toml:"timeout_seconds"` // HTTP timeout for LLM calls; 0 = the adapter default
+	// MaxTokens caps the tokens the model may generate in one reply of an agent
+	// loop's call. 0 keeps DefaultMaxReplyTokens. A reply that reaches the cap
+	// ends mid-text, so raise it for a provider and model that write long
+	// outputs (code, documents); it is not the context window (num_ctx,
+	// context_budget).
+	MaxTokens int `toml:"max_tokens"`
 
 	// Thinking surfaces the model's extended-thinking reasoning as a live trace in
 	// the TUI (sends think:true to Ollama and drops /no_think). A *bool

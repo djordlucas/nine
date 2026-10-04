@@ -54,6 +54,13 @@ max_concurrent = 1
 # (300s); a negative value removes the timeout, leaving only turn cancellation.
 timeout_seconds = 0
 
+# Most tokens the model may generate in one reply of an agent loop. Unset or 0
+# keeps 2048. A reply that reaches the cap ends mid-text, so raise it when the
+# model writes long outputs (code, documents) and the provider allows it.
+# NINE_LLM_MAX_TOKENS overrides it. This is the output cap, not the context
+# window (num_ctx, context_budget).
+max_tokens = 2048
+
 # API key for a remote provider (Mistral), sent as a bearer token. Ignored by
 # Ollama. NINE_LLM_API_KEY overrides it, which is how it stays out of the file.
 api_key = ""
@@ -816,6 +823,7 @@ provider = "mistral"
 model    = "mistral-small"       # whatever the endpoint serves
 endpoint = ""                      # empty uses https://api.mistral.ai/v1
 api_key  = ""                      # or NINE_LLM_API_KEY
+max_tokens = 8192                  # hosted models write long replies; the default is 2048
 ```
 
 `api_key` is sent as a bearer token. `num_ctx` and `thinking` are Ollama's and
@@ -874,6 +882,7 @@ Environment variables take priority over `nine.toml` values.
 | `NINE_LLM_MODEL` | Override `llm.model` |
 | `NINE_LLM_ENDPOINT` | Override `llm.endpoint` |
 | `NINE_LLM_API_KEY` | Override `llm.api_key` — the bearer token for a remote provider |
+| `NINE_LLM_MAX_TOKENS` | Override `llm.max_tokens` — the cap on one reply's generated tokens; ignored unless a positive integer |
 | `NINE_BOOTSTRAP_SELF_MODEL` | Override `bootstrap.self_model_path` — the self-model seeded on first boot |
 | `NINE_EMBED_PROVIDER` | Override `embeddings.provider` |
 | `NINE_DB_PATH` | Override `memory.path` |

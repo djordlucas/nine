@@ -38,6 +38,9 @@ endpoint       = ""
 # HTTP timeout for a single model call. 0 uses the adapter default (300s);
 # a negative value removes the timeout, leaving only turn cancellation.
 # timeout_seconds = 0
+# Most tokens one reply may generate; unset keeps 2048. Raise it for a model
+# that writes long code or documents. NINE_LLM_MAX_TOKENS overrides it.
+# max_tokens = 2048
 # Keep at 1 for local models to prevent contention.
 max_concurrent = 1
 # Requested context window; also sets the per-turn context budget.

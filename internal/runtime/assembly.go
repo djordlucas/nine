@@ -61,7 +61,10 @@ type AssemblyConfig struct {
 
 	// Loop / builder behavior.
 	ContextBudget int
-	SystemPrompt  string
+	// MaxTokens caps one reply of an agent loop's call ([llm] max_tokens);
+	// 0 keeps the builder's default.
+	MaxTokens    int
+	SystemPrompt string
 
 	// Runtime describes where the daemon is running (config.RuntimeLabel), shown
 	// to the model in the self-model's Environment block. Empty omits the line —
@@ -127,6 +130,7 @@ func Assemble(c AssemblyConfig) *Assembly {
 			Embedder:               c.Embedder,
 			Memory:                 c.Store,
 			ContextBudget:          c.ContextBudget,
+			MaxTokens:              c.MaxTokens,
 			SystemPrompt:           c.SystemPrompt,
 			Assembler:              assembler,
 			RelatedSessions:        c.RelatedSessions,

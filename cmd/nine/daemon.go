@@ -226,6 +226,7 @@ func runDaemon() {
 		GeneratedAllowStanding: cfg.Tools.Agent.AllowStanding,
 		Embedder:               embedder,
 		ContextBudget:          cfg.ContextBudget(),
+		MaxTokens:              cfg.MaxReplyTokens(),
 		SystemPrompt:           runtime.BuildSystemPrompt(),
 		Runtime:                cfg.RuntimeLabel(),
 		// Pull-surface related prior sessions only when the out-of-band indexer

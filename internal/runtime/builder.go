@@ -42,8 +42,11 @@ type LoopConfig struct {
 	Embedder      embed.Embedder
 	Memory        *memory.Store
 	ContextBudget int
-	SystemPrompt  string
-	Assembler     *selfmodel.Assembler
+	// MaxTokens caps one reply of each agent loop's call ([llm] max_tokens).
+	// 0 keeps defaultMaxReplyTokens.
+	MaxTokens    int
+	SystemPrompt string
+	Assembler    *selfmodel.Assembler
 	// RelatedSessions mirrors [daemon] related_sessions_index: when on (and an
 	// embedder is configured), each loop pull-surfaces a recorded related prior
 	// session relevant to the current turn (adr/reactive-events.md §5). On by
@@ -723,7 +726,7 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		SessionID:      agentID,
 		SystemCore:     systemCore,
 		Priority:       llm.PriorityConversation,
-		MaxTokens:      2048,
+		MaxTokens:      lc.maxReplyTokens(),
 		Tools:          tools,
 		ToolsForTurn:   toolsForTurn,
 		Embedder:       lc.Embedder,
@@ -1174,4 +1177,15 @@ func (f *AgentBuilder) trackSubAgent(id, description, role string) (remove func(
 		}
 		f.subAgentMu.Unlock()
 	}
+}
+
+// defaultMaxReplyTokens is the reply cap when LoopConfig.MaxTokens is unset;
+// it matches config.DefaultMaxReplyTokens.
+const defaultMaxReplyTokens = 2048
+
+func (lc LoopConfig) maxReplyTokens() int {
+	if lc.MaxTokens > 0 {
+		return lc.MaxTokens
+	}
+	return defaultMaxReplyTokens
 }
