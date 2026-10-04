@@ -6,7 +6,7 @@ from this table rather than marked done, so what is listed here is what is still
 | Item | Status | Detail |
 |------|--------|--------|
 | Hardening | Planned | Nine is not hardened. Only sandboxed tools run behind a real boundary; the `shell` plugin and native plugins run as the daemon's process user. See the README's Limits table for what that means today. |
-| Remote access | Partial | The REST API ships with bearer-token auth and TLS ([api.md](api.md)), but is a translation layer over the local Unix socket: the server runs on the daemon's host, six endpoints are not yet backed by the wire protocol, and there is no multi-host story. |
+| Remote access | Partial | The REST API serves every operation it declares, streams over SSE and WebSocket, and ships with bearer-token auth and TLS ([api.md](api.md)). It is a translation layer over the local Unix socket, so the server runs on the daemon's host; there is no multi-host story, and a browser cannot authenticate a WebSocket without a proxy that adds the header. |
 | Model routing | Planned | Route different work to different models in one deployment. Nine uses one model at a time. |
 | More LLM backends | Partial | Mistral is supported. llama.cpp and vLLM both speak an OpenAI-compatible API, so one adapter covers them. |
 | Richer sandboxed tools | Planned | FS and env gaps, runtime wasm grants, binary data, missing JS globals, HTTP audit, secret sharing, structured tool errors. |
