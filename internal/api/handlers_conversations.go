@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"nine/internal/api/apigen"
+	"nine/internal/protocol"
 )
 
 // Conversation endpoints. Each method implements one operation of
@@ -240,26 +242,6 @@ func (s *Server) GetConversationContext(ctx context.Context, request apigen.GetC
 	}, nil
 }
 
-// GetConversationHistory is not implemented: see the detail below.
-func (s *Server) GetConversationHistory(ctx context.Context, request apigen.GetConversationHistoryRequestObject) (apigen.GetConversationHistoryResponseObject, error) {
-	return apigen.GetConversationHistory501JSONResponse(notImplementedBody(
-		"the wire protocol exposes no journal query; attach carries a " +
-			"transcript but registers the caller as attached, which a read must not do")), nil
-}
-
-// GetConversationTrace is not implemented: see the detail below.
-func (s *Server) GetConversationTrace(ctx context.Context, request apigen.GetConversationTraceRequestObject) (apigen.GetConversationTraceResponseObject, error) {
-	return apigen.GetConversationTrace501JSONResponse(notImplementedBody(
-		"the wire protocol exposes no per-turn trace; `nine trace` reads the " +
-			"memory store directly, which the API process must not do (API-A-1)")), nil
-}
-
-// ReplayTurn is not implemented: see the detail below.
-func (s *Server) ReplayTurn(ctx context.Context, request apigen.ReplayTurnRequestObject) (apigen.ReplayTurnResponseObject, error) {
-	return apigen.ReplayTurn501JSONResponse(notImplementedBody(
-		"the wire protocol exposes no replay message")), nil
-}
-
 // StreamMessages opens the SSE stream.
 //
 // The generated response object for an event stream carries an io.Reader and a
@@ -268,6 +250,9 @@ func (s *Server) ReplayTurn(ctx context.Context, request apigen.ReplayTurnReques
 // interface is exported, so sseStream below implements it and writes to the
 // ResponseWriter directly, keeping this operation inside the generated routing
 // rather than bypassing it.
+//
+// The daemon accepts the watch before any status is written, so an unknown
+// conversation is a 404 rather than a 200 followed by silence.
 func (s *Server) StreamMessages(ctx context.Context, request apigen.StreamMessagesRequestObject) (apigen.StreamMessagesResponseObject, error) {
 	if request.Id == "" {
 		return apigen.StreamMessages400JSONResponse(
@@ -279,46 +264,167 @@ func (s *Server) StreamMessages(ctx context.Context, request apigen.StreamMessag
 		return apigen.StreamMessages503JSONResponse(
 			errorBody("service_unavailable", err.Error(), nil)), nil
 	}
+	if err := cl.Watch(request.Id); err != nil {
+		cl.Close() //nolint:errcheck
+		if errNotFound(err) {
+			return apigen.StreamMessages404JSONResponse(
+				errorBody("not_found", "conversation not found", map[string]any{"id": request.Id})), nil
+		}
+		return apigen.StreamMessages500JSONResponse(
+			errorBody("server_error", err.Error(), nil)), nil
+	}
 	// Closed by the stream once the client disconnects, not here: the
 	// connection has to outlive this function.
-	return sseStream{agentID: request.Id, closer: cl.Close, ctx: ctx}, nil
+	return sseStream{agentID: request.Id, events: cl, ctx: ctx, keepalive: sseKeepalive}, nil
+}
+
+// sseKeepalive is how often an idle stream writes an SSE comment. A session can
+// sit between turns for minutes, and proxies close a connection that has been
+// silent that long; a comment line keeps it open and is ignored by clients.
+const sseKeepalive = 15 * time.Second
+
+// watchFeed is the daemon side of a stream: a watched connection.
+type watchFeed interface {
+	NextEvent() (protocol.Msg, error)
+	Close() error
 }
 
 // sseStream writes the event stream for one attached client.
 type sseStream struct {
-	agentID string
-	closer  func() error
-	ctx     context.Context
+	agentID   string
+	events    watchFeed
+	ctx       context.Context
+	keepalive time.Duration
 }
 
 func (st sseStream) VisitStreamMessagesResponse(w http.ResponseWriter) error {
-	defer st.closer() //nolint:errcheck
+	defer st.events.Close() //nolint:errcheck
+
+	// The server's WriteTimeout bounds a whole response, which for a stream
+	// would end it after the timeout however live it is. Lift the deadline for
+	// this response only; the keepalive below is what detects a dead client.
+	rc := http.NewResponseController(w)
+	if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+		slog.Debug("event stream: cannot lift write deadline", "err", err)
+	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
+	flush := func() { rc.Flush() } //nolint:errcheck // a failed flush shows up as the next write's error
 
-	// Marshal the payload rather than interpolating the id, which arrives from
-	// the request path.
-	payload, err := json.Marshal(apigen.StreamConnected{
+	if err := writeSSE(w, "connected", apigen.StreamConnected{
 		Message: "stream connected",
 		AgentId: st.agentID,
-	})
+	}); err != nil {
+		return err
+	}
+	flush()
+
+	// NextEvent blocks on the socket, so it runs on its own goroutine; closing
+	// the feed (the deferred Close) is what unblocks it when the client leaves.
+	type next struct {
+		msg protocol.Msg
+		err error
+	}
+	feed := make(chan next)
+	go func() {
+		for {
+			m, err := st.events.NextEvent()
+			select {
+			case feed <- next{m, err}:
+			case <-st.ctx.Done():
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	tick := time.NewTicker(st.keepalive)
+	defer tick.Stop()
+	for {
+		select {
+		case <-st.ctx.Done():
+			return nil
+		case <-tick.C:
+			if _, err := io.WriteString(w, ": keepalive\n\n"); err != nil {
+				return nil
+			}
+			flush()
+		case n := <-feed:
+			if n.err != nil {
+				// The daemon ended the watch (it shut down, or the connection
+				// failed). Say so rather than leaving the client on a stream
+				// that will never speak again.
+				writeSSE(w, "error", errorBody("service_unavailable", //nolint:errcheck
+					"daemon closed the stream: "+n.err.Error(), nil))
+				flush()
+				return nil
+			}
+			name, payload, ok := toStreamEvent(n.msg)
+			if !ok {
+				continue
+			}
+			if err := writeSSE(w, name, payload); err != nil {
+				return nil
+			}
+			flush()
+		}
+	}
+}
+
+// writeSSE writes one event. The payload is marshalled rather than
+// interpolated: it carries text from the model and the request path.
+func writeSSE(w io.Writer, event string, payload any) error {
+	b, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("marshal connection event: %w", err)
+		return fmt.Errorf("marshal %s event: %w", event, err)
 	}
-	fmt.Fprintf(w, "event: connected\ndata: %s\n\n", payload)
+	_, err = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, b)
+	return err
+}
 
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
+// toStreamEvent maps one daemon message to an SSE event name and payload. The
+// daemon's other progress types — reasoning tokens, stage labels, context
+// usage — are TUI rendering detail the API does not declare, so they are
+// skipped rather than sent under names a client has no schema for.
+func toStreamEvent(m protocol.Msg) (string, any, bool) {
+	ts := m.Timestamp
+	if ts == 0 {
+		ts = time.Now().UnixMilli()
 	}
-
-	// TODO: forward the daemon's progress events. The socket carries them for
-	// an attached turn (protocol.TurnWithProgress), but nothing yet bridges
-	// them onto this stream, so a client sees the handshake and then silence.
-	<-st.ctx.Done()
-	return nil
+	switch m.Type {
+	case protocol.TypeToolStart:
+		e := apigen.StreamToolStart{ToolName: m.ToolName, Timestamp: ts}
+		if len(m.ToolInput) > 0 {
+			e.ToolInput = rawJSON(m.ToolInput)
+		}
+		return "tool_start", e, true
+	case protocol.TypeToolEnd:
+		return "tool_end", apigen.StreamToolEnd{ToolName: m.ToolName, ToolOutput: ptr(m.ToolOutput), Timestamp: ts}, true
+	case protocol.TypeResponseChunk:
+		return "response_chunk", apigen.StreamResponseChunk{Text: m.Text, Timestamp: ts}, true
+	case protocol.TypeResponse:
+		return "response", apigen.StreamResponse{AgentId: m.AgentID, Text: m.Text, Timestamp: ts}, true
+	case protocol.TypeSubAgentStart, protocol.TypeSubAgentEnd:
+		return string(m.Type), apigen.StreamSubAgent{
+			SubAgentId: m.SubAgentID,
+			Task:       nonEmpty(m.Text),
+			Role:       nonEmpty(m.Role),
+			Status:     nonEmpty(m.Status),
+			Timestamp:  ts,
+		}, true
+	case protocol.TypeNotice:
+		return "notice", apigen.StreamNotice{Text: m.Text, Timestamp: ts}, true
+	case protocol.TypeDone:
+		return "done", apigen.StreamDone{AgentId: m.AgentID, Timestamp: ts}, true
+	case protocol.TypeError:
+		return "error", errorBody("server_error", m.Text, nil), true
+	}
+	return "", nil, false
 }
 
 // decodeContext parses the daemon's context payload. A payload that will not

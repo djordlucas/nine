@@ -54,6 +54,10 @@ Msg {
   think             bool     // thinking: this call streams reasoning (thinking_chunk)
   replay_events     []Msg    // attach response only
   pending_response  string   // attach response only
+  history           []Msg    // attach response only: the transcript
+  limit             int      // standing_show: recent log lines to return
+  turn              int      // session_events: 0 every turn, N turn N, -1 the latest;
+                             // history entries (attach, session_history): the entry's turn
 }
 ```
 
@@ -84,6 +88,12 @@ Msg {
 | `tools_reload` | — | re-scan `[tools].user_dir` and reload sandboxed tools live |
 | `grants_list` | — | the generated tier's capability ceiling and the requests to widen it |
 | `grants_decide` | `request_id`, `text` | settle a capability request (`approve`/`deny`) or revoke a grant (`revoke`). Both fields are required: a decision with no id, or an id with no verb, **MUST NOT** resolve to a default |
+| `list_skills` | — | the skill catalog, without bodies |
+| `goal_create` | `text` = description (**required**), (`id` = parent goal) | create a goal as the operator; a top-level goal gets a pursue session (R-PROTO.13) |
+| `goal_delete` | `text` = goal ID (**required**) | delete a goal and its sub-goals and stop its pursue session (R-PROTO.13) |
+| `session_history` | `agent_id` (**required**) | a session's whole transcript from the journal, every turn; does **not** attach |
+| `session_events` | `agent_id` (**required**), (`turn`) | a session's raw journal: every turn (`turn` 0), turn N, or the latest (`-1`) |
+| `watch` | `agent_id` (**required**) | follow a session's events on this connection until it closes (R-PROTO.14) |
 
 `plugin_call` (R-PROTO.5) is the only way to reach a tool without an agent loop; the CLI
 uses it for `nine workflow fail` when the daemon is up and for diagnostics.
@@ -112,6 +122,12 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `session_delete` | `text` = what was removed, by count | erase result (or `error` when the id is unknown) |
 | `sessions_list` | `text` = JSON `[]SessionInfo` | roster: id, name, status, age, events, protected, attached |
 | `set_plan_mode` | `text` = `"plan mode: <mode>"` | mode change acknowledged (or `error` on an unknown mode) |
+| `list_skills` | `text` = JSON `{"skills": []SkillInfo}` | `SkillInfo { name, description, tags, source }`; `source` is `builtin`, `user` or `agent` |
+| `goal_create` | `text` = JSON `GoalCreateResult` | `{ goal, pursue_session }`: the stored goal and `spawned` \| `limit_reached` \| `none` (sub-goal) |
+| `goal_delete` | `text` = JSON `GoalDeleteResult` | `{ deleted []string, session_stopped bool }`: every goal id removed, goal first |
+| `session_history` | `text` = JSON `[]Msg` | `history_user`, `tool_start`, `tool_end`, `sub_agent_start`, `sub_agent_end`, `response`, in order, each with `ts` and `turn` |
+| `session_events` | `text` = JSON `[]JournalEvent` | `{ seq, agent_id, turn, span_id, parent_span_id, type, ts, payload }` ([`event-journal.md`](event-journal.md)) |
+| `watch` | `agent_id` | watch accepted; the session's events follow (R-PROTO.14) |
 
 **Streaming progress** (emitted during a turn, before `response`+`done`):
 
@@ -253,6 +269,12 @@ the daemon (G1).
 - Multiple clients **MAY** attach to the same session; each gets the live stream and, on
   attach, a replay snapshot (see [`agent-worker.md`](agent-worker.md) R-WORK.6).
 
+- A `watch` connection is one-way after its acknowledgement (R-PROTO.14).
+- A message, in either direction, is at most **64 MiB** on one line
+  (`protocol.MaxLineBytes`). Both ends **MUST** size their line readers for it: a
+  journal or transcript reply routinely exceeds a default 64 KiB scanner buffer, and
+  past it the connection fails with "token too long".
+
 ---
 
 ## Reference symbols
@@ -356,3 +378,38 @@ handing every handler the union.
 Requests that carry no fields of their own (the status and list/reload verbs) **MAY** share
 a single type distinguished by the message name; there is only one shape between them, and
 a type apiece would be names differing in nothing.
+
+---
+
+## R-PROTO.13 — operator goal verbs
+
+`goal_create` and `goal_delete` are the operator's goal verbs, reached by the CLI and the
+HTTP API through the socket. They are **not** the agent tool of the same name, and the
+role gate on that tool (a role's `Delegates` flag) **MUST NOT** apply: it decides which
+*agents* may start background work, and a socket client has the standing of an
+`[[agent]]` block in nine.toml.
+
+| Verb | Rule |
+|------|------|
+| `goal_create`, no parent | records the goal with `parent_type` `operator` and spawns its pursue session; at the goal-session cap the goal is recorded and the reply says `limit_reached`. If the session fails to start the goal **MUST** be removed and the reply is `error` |
+| `goal_create`, `id` = parent | the parent **MUST** exist (else `error` "… not found"); records the goal with `parent_type` `goal` and spawns no session |
+| `goal_delete` | stops the pursue session and archives its plan **before** removing rows, so no turn writes to a goal being deleted; removes the goal and every descendant in one transaction; keeps the session's transcript and journal |
+| `goal_delete` on a `config` goal | **MUST** be refused with an `error` whose text starts `conflict: ` (`protocol.ConflictPrefix`): nine.toml declares it, and the next boot would re-create it |
+
+---
+
+## R-PROTO.14 — `watch` streams a session's turns
+
+`watch` turns its connection into a one-way feed. The daemon replies `watch` (or `error`
+when no such session exists — never an acknowledged watch on nothing), then writes, for
+**every** turn the session runs while the connection is open — whoever started it, a
+client or the session's own idle schedule — the turn's progress events (R-PROTO.3), then
+`response` (or `error` with `agent_id`), then `done`.
+
+| Rule | Detail |
+|------|--------|
+| Revives | a session that exists but is not loaded is revived from its checkpoint, as a turn addressed to it would be |
+| Bounded | at most **1024** events queue per watcher; past that a slow watcher loses events rather than stalling the turn |
+| Ends | when the client closes, the daemon shuts down, or the session stops — the last sends `error` "session stopped" first. The daemon closes the connection; it reads nothing more from it |
+| Any number | each watcher is independent of the others and of the connection driving the turn, which still receives its own events per R-PROTO.8 |
+

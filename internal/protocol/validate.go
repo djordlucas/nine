@@ -83,6 +83,15 @@ var clientMsgSpecs = map[MsgType]clientMsgSpec{
 	// Both are required: a decision with no id, or an id with no verb, must not
 	// resolve to a default. Widening a capability ceiling is not a place for one.
 	TypeGrantsDecide: {required: []fieldRule{needRequestID, needText}},
+
+	TypeGoalCreate: {required: []fieldRule{needText}},
+	TypeGoalDelete: {required: []fieldRule{needText}},
+
+	// The same reason attach must name its target: a session read or watch with
+	// an empty id would resolve by prefix to an arbitrary session.
+	TypeSessionHistory: {required: []fieldRule{needAgentID}},
+	TypeSessionEvents:  {required: []fieldRule{needAgentID}},
+	TypeWatch:          {required: []fieldRule{needAgentID}},
 }
 
 // ValidateClient checks an inbound client message carries what its type needs.

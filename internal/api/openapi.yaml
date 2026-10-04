@@ -263,7 +263,9 @@ paths:
     get:
       operationId: getConversationHistory
       summary: Get conversation history
-      description: Returns the ordered message and tool-call history for a conversation.
+      description: Returns a conversation's whole transcript from the event journal, oldest first — user
+        prompts, tool and sub-agent activity, and responses — across every turn. Reading it does not attach
+        to the session.
       tags:
       - conversations
       parameters:
@@ -273,13 +275,43 @@ paths:
         required: true
         schema:
           type: string
+      - name: limit
+        in: query
+        description: Maximum items to return
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 50
+      - name: offset
+        in: query
+        description: Items to skip before the page
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
       responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationHistoryResponse'
+        '400':
+          description: missing id or invalid paging
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: conversation not found
+          content: *id001
         '429':
           $ref: '#/components/responses/TooManyRequests'
-        '501':
-          description: not implemented
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
           content: *id001
       security:
       - bearerAuth: []
@@ -333,8 +365,10 @@ paths:
     get:
       operationId: streamMessages
       summary: Stream conversation messages
-      description: Opens a Server-Sent Events stream for a conversation, forwarding tool events and response
-        chunks in real time.
+      description: Opens a Server-Sent Events stream that follows a conversation for as long as the client
+        stays connected. Every turn the session runs is forwarded — whether this client, another client,
+        or the session's own idle schedule started it — as tool, sub-agent, notice and response-chunk events,
+        then response (or error) and done.
       tags:
       - conversations
       parameters:
@@ -357,8 +391,14 @@ paths:
           content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: conversation not found
+          content: *id001
         '429':
           $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
         '503':
           description: daemon unavailable
           content: *id001
@@ -368,7 +408,9 @@ paths:
     post:
       operationId: replayTurn
       summary: Replay a turn
-      description: Replays a specific turn in a conversation, re-running the LLM call and tool invocations.
+      description: Reconstructs one turn from the event journal, as `nine replay` does — each LLM request
+        and response, each tool call with its I/O, sub-agents, and the result. Nothing is re-executed; the
+        model is not called and no tool runs.
       tags:
       - conversations
       parameters:
@@ -378,13 +420,35 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        description: which turn to reconstruct
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplayTurnRequest'
       responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReplayTurnResponse'
+        '400':
+          description: missing id or turn
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: conversation or turn not found
+          content: *id001
         '429':
           $ref: '#/components/responses/TooManyRequests'
-        '501':
-          description: not implemented
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
           content: *id001
       security:
       - bearerAuth: []
@@ -430,8 +494,10 @@ paths:
   /conversations/{id}/trace:
     get:
       operationId: getConversationTrace
-      summary: Trace a turn
-      description: Returns the detailed LLM call and tool I/O trace for a specific turn in a conversation.
+      summary: Trace a conversation
+      description: Returns a conversation's event journal as `nine trace` shows it — every event with its
+        turn, span and payload — for every turn, or for one. With sub_agents, the trace of every sub-agent
+        spawned in those events is included too, recursively, each linked to the event that spawned it.
       tags:
       - conversations
       parameters:
@@ -441,13 +507,41 @@ paths:
         required: true
         schema:
           type: string
+      - name: turn
+        in: query
+        description: the turn to trace; 0 traces every turn
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: sub_agents
+        in: query
+        description: nest each spawned sub-agent's trace under its spawn event
+        schema:
+          type: boolean
+          default: false
       responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TraceResponse'
+        '400':
+          description: missing id or invalid turn
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: conversation not found
+          content: *id001
         '429':
           $ref: '#/components/responses/TooManyRequests'
-        '501':
-          description: not implemented
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
           content: *id001
       security:
       - bearerAuth: []
@@ -555,16 +649,40 @@ paths:
     post:
       operationId: createGoal
       summary: Create a goal
-      description: Creates a new background goal that spawns a session waking periodically to make progress.
+      description: Creates a goal as the operator. A top-level goal gets a background session that wakes
+        periodically to pursue it, unless the daemon is at its goal-session cap; a sub-goal (parent_id set)
+        is worked on by the session pursuing its parent and gets none.
       tags:
       - goals
+      requestBody:
+        description: the goal to create
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGoalRequest'
       responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateGoalResponse'
+        '400':
+          description: missing description
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: parent goal not found
+          content: *id001
         '429':
           $ref: '#/components/responses/TooManyRequests'
-        '501':
-          description: not implemented
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
           content: *id001
       security:
       - bearerAuth: []
@@ -610,7 +728,9 @@ paths:
     delete:
       operationId: deleteGoal
       summary: Delete a goal
-      description: Deletes a goal and stops its background session.
+      description: Deletes a goal and its sub-goals and stops the goal's background session. The session's
+        transcript and journal are kept. A goal declared by an [[agent]] block in nine.toml is refused with
+        409, since the next boot would re-create it.
       tags:
       - goals
       parameters:
@@ -621,12 +741,30 @@ paths:
         schema:
           type: string
       responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteGoalResponse'
+        '400':
+          description: missing id
+          content: *id001
+        '409':
+          description: goal is declared in nine.toml
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: goal not found
+          content: *id001
         '429':
           $ref: '#/components/responses/TooManyRequests'
-        '501':
-          description: not implemented
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
           content: *id001
       security:
       - bearerAuth: []
@@ -810,17 +948,45 @@ paths:
     get:
       operationId: listSkills
       summary: List skills
-      description: Returns all available skills (builtin, user, and generated) with names, descriptions,
-        and tags.
+      description: Returns every skill in the daemon's catalog — builtin, user and agent-written — with its
+        name, description, tags and source. Skill bodies are not included.
       tags:
       - skills
+      parameters:
+      - name: limit
+        in: query
+        description: Maximum items to return
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 50
+      - name: offset
+        in: query
+        description: Items to skip before the page
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
       responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListSkillsResponse'
+        '400':
+          description: invalid paging
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
-        '501':
-          description: not implemented
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
           content: *id001
       security:
       - bearerAuth: []
@@ -1323,6 +1489,54 @@ components:
           type: boolean
         tool_name:
           type: string
+    ConversationHistoryResponse:
+      description: A page of a conversation's transcript.
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/HistoryEntry'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    HistoryEntry:
+      description: One transcript entry. Which fields are set depends on type.
+      type: object
+      required:
+      - type
+      - agent_id
+      properties:
+        type:
+          type: string
+          enum:
+          - user_turn
+          - response
+          - tool_start
+          - tool_end
+          - sub_agent_start
+          - sub_agent_end
+        agent_id:
+          type: string
+        text:
+          description: 'user_turn: the prompt. response: the reply. sub_agent_*: the sub-agent''s task.'
+          type: string
+        tool_name:
+          type: string
+        tool_input:
+          description: Tool arguments, shaped by that tool's own input schema.
+        tool_output:
+          type: string
+        sub_agent_id:
+          type: string
+        role:
+          type: string
+        status:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        turn_number:
+          type: integer
     ConversationInfo:
       description: 'One conversation in a listing. Role, plan mode and timestamps are absent: the daemon''s
         session roster does not carry them.'
@@ -1352,6 +1566,39 @@ components:
         updated_at:
           type: string
           format: date-time
+    CreateGoalRequest:
+      description: A goal to create.
+      type: object
+      properties:
+        description:
+          description: What the goal is.
+          type: string
+          minLength: 1
+        parent_id:
+          description: A goal to create this one under. Omit for a top-level goal, which gets its own session.
+          type: string
+      required:
+      - description
+    CreateGoalResponse:
+      description: The goal created, and what happened to its background session.
+      type: object
+      properties:
+        goal:
+          $ref: '#/components/schemas/GoalInfo'
+        pursue_session:
+          description: 'spawned: a session now pursues the goal. limit_reached: the daemon is at its goal-session
+            cap, so the goal is recorded but unattended. none: a sub-goal, which gets no session.'
+          type: string
+          enum:
+          - spawned
+          - limit_reached
+          - none
+        session_id:
+          description: The pursuing session's conversation id — the goal's own id. Absent for a sub-goal.
+          type: string
+      required:
+      - goal
+      - pursue_session
     CreateConversationRequest:
       description: Options for a new conversation.
       type: object
@@ -1383,6 +1630,25 @@ components:
           type: string
         message:
           type: string
+    DeleteGoalResponse:
+      description: Which goals were deleted, and whether a running session was stopped.
+      type: object
+      properties:
+        id:
+          type: string
+        message:
+          type: string
+        deleted:
+          description: Every goal id removed — the goal itself first, then its sub-goals.
+          type: array
+          items:
+            type: string
+        session_stopped:
+          type: boolean
+      required:
+      - id
+      - deleted
+      - session_stopped
     ErrorDetails:
       description: 'What went wrong: a stable code, a human-readable message, and any structured context.'
       type: object
@@ -1624,6 +1890,16 @@ components:
             $ref: '#/components/schemas/PluginInfo'
         pagination:
           $ref: '#/components/schemas/Pagination'
+    ListSkillsResponse:
+      description: A page of skills.
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SkillInfo'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
     ListSpecResponse:
       description: The specification topics this build embeds.
       type: object
@@ -1830,6 +2106,174 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ToolInfo'
+    ReplayTurnRequest:
+      description: The turn to reconstruct.
+      type: object
+      properties:
+        turn:
+          description: 1-based turn number, as trace reports it.
+          type: integer
+          minimum: 1
+      required:
+      - turn
+    ReplayTurnResponse:
+      description: One turn reconstructed from the journal, in the order it ran.
+      type: object
+      properties:
+        agent_id:
+          type: string
+        turn:
+          type: integer
+        trigger:
+          description: What started the turn — user, or idle for a scheduled wake.
+          type: string
+        input:
+          type: string
+        llm_calls:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReplayLLMCall'
+        tool_calls:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReplayToolCall'
+        sub_agents:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReplaySubAgent'
+        result:
+          $ref: '#/components/schemas/ReplayResult'
+      required:
+      - agent_id
+      - turn
+      - llm_calls
+      - tool_calls
+      - sub_agents
+    ReplayLLMCall:
+      description: One inner LLM call — the request as the context builder assembled it, and the model's reply.
+      type: object
+      properties:
+        n:
+          description: 1-based call number within the turn.
+          type: integer
+        system:
+          type: string
+        message_count:
+          type: integer
+        tool_names:
+          type: array
+          items:
+            type: string
+        tokens_used:
+          description: The context builder's estimate for the request.
+          type: integer
+        budget:
+          type: integer
+        input_tokens:
+          description: Provider-reported input tokens, when the provider reports them.
+          type: integer
+        output_tokens:
+          type: integer
+        stop_reason:
+          type: string
+        text:
+          type: string
+        tool_calls:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReplayRequestedTool'
+      required:
+      - n
+    ReplayRequestedTool:
+      description: A tool call the model asked for.
+      type: object
+      properties:
+        name:
+          type: string
+        input:
+          description: Tool arguments, shaped by that tool's own input schema.
+      required:
+      - name
+    ReplayToolCall:
+      description: A tool call as it ran, with its I/O and any outbound HTTP a sandboxed tool made.
+      type: object
+      properties:
+        name:
+          type: string
+        input:
+          description: Tool arguments, shaped by that tool's own input schema.
+        output:
+          type: string
+        error:
+          type: string
+        duration_ms:
+          type: integer
+          format: int64
+        attempts:
+          type: integer
+        truncated:
+          type: boolean
+        output_chars:
+          description: The full output's length, when it was over the cap.
+          type: integer
+        spill_path:
+          description: Where the full output was written, when it was over the cap.
+          type: string
+        http:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReplayHTTPRequest'
+      required:
+      - name
+    ReplayHTTPRequest:
+      description: One outbound request a sandboxed tool made. Error is the refusal reason for a blocked request.
+      type: object
+      properties:
+        method:
+          type: string
+        url:
+          type: string
+        host:
+          type: string
+        status:
+          type: integer
+        bytes:
+          type: integer
+        truncated:
+          type: boolean
+        duration_ms:
+          type: integer
+          format: int64
+        error:
+          type: string
+    ReplaySubAgent:
+      description: A sub-agent spawned during the turn.
+      type: object
+      properties:
+        id:
+          type: string
+        task:
+          type: string
+        role:
+          type: string
+        status:
+          description: done, failed or timed_out; empty if it had not finished when the turn ended.
+          type: string
+      required:
+      - id
+    ReplayResult:
+      description: How the turn ended.
+      type: object
+      properties:
+        text:
+          type: string
+        error:
+          type: string
+        tool_count:
+          type: integer
+        duration_ms:
+          type: integer
+          format: int64
     SendMessageRequest:
       description: A user message to run as a turn.
       type: object
@@ -1878,6 +2322,29 @@ components:
           type: string
         version:
           type: string
+    SkillInfo:
+      description: One skill in the catalog.
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        source:
+          description: 'builtin: seeded from the binary. user: seeded from [skills].user_dir. agent: written by
+            Nine itself.'
+          type: string
+          enum:
+          - builtin
+          - user
+          - agent
+      required:
+      - name
+      - source
     StopConversationResponse:
       description: Confirmation that a conversation was stopped, its history kept.
       type: object
@@ -1923,14 +2390,63 @@ components:
           format: int64
     StreamEvent:
       description: One server-sent event. The SSE event name (connected, tool_start, tool_end, response_chunk,
-        done, error) selects the member.
+        response, sub_agent_start, sub_agent_end, notice, done, error) selects the member.
       oneOf:
       - $ref: '#/components/schemas/StreamConnected'
       - $ref: '#/components/schemas/StreamToolStart'
       - $ref: '#/components/schemas/StreamToolEnd'
       - $ref: '#/components/schemas/StreamResponseChunk'
+      - $ref: '#/components/schemas/StreamResponse'
+      - $ref: '#/components/schemas/StreamSubAgent'
+      - $ref: '#/components/schemas/StreamNotice'
       - $ref: '#/components/schemas/StreamDone'
       - $ref: '#/components/schemas/ErrorResponse'
+    StreamResponse:
+      description: A turn's final reply. Sent whether or not the reply was also streamed as chunks.
+      type: object
+      required:
+      - agent_id
+      - text
+      - timestamp
+      properties:
+        agent_id:
+          type: string
+        text:
+          type: string
+        timestamp:
+          type: integer
+          format: int64
+    StreamSubAgent:
+      description: A sub-agent was spawned (sub_agent_start) or finished (sub_agent_end, with status).
+      type: object
+      required:
+      - sub_agent_id
+      - timestamp
+      properties:
+        sub_agent_id:
+          type: string
+        task:
+          type: string
+        role:
+          type: string
+        status:
+          description: 'sub_agent_end only: done, failed or timed_out.'
+          type: string
+        timestamp:
+          type: integer
+          format: int64
+    StreamNotice:
+      description: An informational, session-level notice, such as a capability downgrade.
+      type: object
+      required:
+      - text
+      - timestamp
+      properties:
+        text:
+          type: string
+        timestamp:
+          type: integer
+          format: int64
     StreamResponseChunk:
       description: A fragment of the agent's reply as it is produced.
       type: object
@@ -1971,6 +2487,79 @@ components:
         timestamp:
           type: integer
           format: int64
+    TraceResponse:
+      description: A session's journal, oldest first.
+      type: object
+      properties:
+        agent_id:
+          type: string
+        turns:
+          description: How many distinct turns the events span.
+          type: integer
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/TraceEvent'
+        sub_agents:
+          description: 'sub_agents=true only: every sub-agent spawned in events, and in their events in turn,
+            in the order they were spawned.'
+          type: array
+          items:
+            $ref: '#/components/schemas/TraceSubAgent'
+      required:
+      - agent_id
+      - turns
+      - events
+    TraceEvent:
+      description: One journal event (spec/contracts/event-journal.md). Payload is the type-specific body as
+        journaled.
+      type: object
+      properties:
+        seq:
+          type: integer
+          format: int64
+        turn:
+          type: integer
+        type:
+          description: turn_start, llm_request, llm_response, tool_start, tool_end, tool_http, context_update,
+            thinking, sub_agent_start, sub_agent_end or turn_end.
+          type: string
+        span_id:
+          type: string
+        parent_span_id:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        payload:
+          description: The event's body, whose shape depends on type.
+      required:
+      - seq
+      - turn
+      - type
+    TraceSubAgent:
+      description: A spawned sub-agent's own trace, or why it could not be read.
+      type: object
+      properties:
+        agent_id:
+          type: string
+        parent_agent_id:
+          description: The session or sub-agent whose journal recorded the spawn.
+          type: string
+        spawned_at_seq:
+          description: The seq of the sub_agent_start event, in the parent's events, that spawned it.
+          type: integer
+          format: int64
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/TraceEvent'
+        error:
+          type: string
+      required:
+      - agent_id
+      - parent_agent_id
+      - spawned_at_seq
     ToolInfo:
       description: One tool in a listing, with where it came from and whether it loaded.
       type: object

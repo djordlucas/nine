@@ -179,6 +179,9 @@ A caller cannot distinguish invented data from a real answer, so a stub that
 returns `200` is indistinguishable from a working endpoint until something
 downstream depends on it.
 
+No declared endpoint currently returns `501`; the rule governs any added
+before the daemon can serve it.
+
 ### API-HTTP-6: pagination
 
 Paging is offset based. The daemon materialises a full result set per call, so
@@ -374,7 +377,8 @@ Stop a conversation (end session but keep history).
 
 #### GET `/api/v1/conversations/{id}/history`
 
-Get conversation message history.
+Get a conversation's transcript, every turn, oldest first. Read from the event
+journal through the daemon's `session_history` message; it does not attach.
 
 **Request:** Supports pagination.
 
@@ -383,12 +387,15 @@ Get conversation message history.
 {
   "data": [
     {
-      "type": "user_turn" | "response" | "tool_start" | "tool_end",
+      "type": "user_turn" | "response" | "tool_start" | "tool_end" | "sub_agent_start" | "sub_agent_end",
       "agent_id": "agent-id",
-      "text": "message content",
+      "text": "prompt, reply, or sub-agent task",
       "tool_name": "tool-name",
       "tool_input": {},
       "tool_output": "tool result",
+      "sub_agent_id": "sub-agent-id",
+      "role": "sub-agent role",
+      "status": "sub-agent outcome",
       "timestamp": "2024-01-01T00:00:00Z",
       "turn_number": 1
     }
@@ -397,18 +404,41 @@ Get conversation message history.
 }
 ```
 
+`404` when the daemon knows no such session.
+
 #### GET `/api/v1/conversations/{id}/trace`
 
-Get detailed trace of a specific turn.
+Get the conversation's event journal, as `nine trace` shows it. Read through the
+daemon's `session_events` message.
 
-**Query parameters:** `turn` (int, default 0 — the latest turn), `sub_agents`
-(bool, default false)
+**Query parameters:** `turn` (int ≥ 0, default 0 — every turn, as `nine trace`
+with no `--turn`), `sub_agents` (bool, default false)
 
-**Response:** Same as CLI `nine trace` output, formatted as JSON.
+**Response:**
+```json
+{
+  "agent_id": "agent-id",
+  "turns": 1,
+  "events": [
+    {"seq": 1, "turn": 1, "type": "turn_start", "span_id": "t1", "parent_span_id": "",
+     "timestamp": "2024-01-01T00:00:00Z", "payload": {}}
+  ],
+  "sub_agents": [
+    {"agent_id": "sub-id", "parent_agent_id": "agent-id", "spawned_at_seq": 7,
+     "events": [ ... ], "error": "present only when the trace could not be read"}
+  ]
+}
+```
+
+`payload` is the event body exactly as journaled (spec/contracts/event-journal.md).
+`sub_agents` is present only with `sub_agents=true`: every sub-agent spawned in
+`events`, and in theirs in turn, flat and in spawn order. `404` when the daemon
+knows no such session.
 
 #### POST `/api/v1/conversations/{id}/replay`
 
-Replay a specific turn.
+Reconstruct one turn from the journal, as `nine replay` does. Nothing is
+re-executed: no model call, no tool run.
 
 **Request:**
 ```json
@@ -417,7 +447,33 @@ Replay a specific turn.
 }
 ```
 
-**Response:** Same as CLI `nine replay` output, formatted as JSON.
+**Response:**
+```json
+{
+  "agent_id": "agent-id",
+  "turn": 1,
+  "trigger": "user",
+  "input": "the turn's input",
+  "llm_calls": [
+    {"n": 1, "system": "...", "message_count": 4, "tool_names": [], "tokens_used": 1200,
+     "budget": 8000, "input_tokens": 1250, "output_tokens": 80, "stop_reason": "tool_use",
+     "text": "", "tool_calls": [{"name": "tool", "input": {}}]}
+  ],
+  "tool_calls": [
+    {"name": "tool", "input": {}, "output": "...", "error": "", "duration_ms": 12, "attempts": 1,
+     "truncated": false, "output_chars": 0, "spill_path": "",
+     "http": [{"method": "GET", "url": "...", "host": "...", "status": 200, "bytes": 512,
+               "truncated": false, "duration_ms": 30, "error": ""}]}
+  ],
+  "sub_agents": [{"id": "sub-id", "task": "...", "role": "...", "status": "done"}],
+  "result": {"text": "...", "error": "", "tool_count": 1, "duration_ms": 900}
+}
+```
+
+An LLM call's `llm_request` and `llm_response` share a span id and are joined on
+it, as are a tool call's `tool_start` and `tool_end`; a `tool_http` event joins the
+tool call named by its parent span. `400` for a missing or non-positive `turn`;
+`404` for an unknown session or a turn the journal does not hold.
 
 ---
 
@@ -448,25 +504,36 @@ List all goals.
 
 #### POST `/api/v1/goals`
 
-Create a new goal.
+Create a goal as the operator, through the daemon's `goal_create` message.
 
 **Request:**
 ```json
 {
-  "name": "goal-name",
   "description": "goal description",
-  "priority": 0
+  "parent_id": "optional parent goal id"
 }
 ```
 
-**Response:**
+**Response:** `201`
 ```json
 {
-  "id": "goal-id",
-  "status": "created",
-  "session_id": "agent-id"
+  "goal": { "id": "goal-id", "description": "...", "status": "active", "parent_type": "operator", ... },
+  "pursue_session": "spawned" | "limit_reached" | "none",
+  "session_id": "goal-id"
 }
 ```
+
+A top-level goal (no `parent_id`) gets `parent_type` `operator` and a pursue
+session whose id is the goal's (docs/goal-sessions.md): `spawned`, or
+`limit_reached` when the daemon is at `max_goal_sessions` and the goal is
+recorded unattended. A sub-goal gets `parent_type` `goal`, no session, `none`,
+and no `session_id`. `400` for an empty description; `404` for an unknown parent.
+
+The caller is the operator, not an agent, so the role gate on the agent tool
+`goal_create` (a role's `Delegates` flag) does not apply — the same standing an
+`[[agent]]` block in nine.toml has. If the pursue session fails to start, the
+goal is removed and the request fails rather than leaving an unattended goal
+that reads as a cap outcome.
 
 #### GET `/api/v1/goals/{id}`
 
@@ -490,15 +557,22 @@ Get goal details.
 
 #### DELETE `/api/v1/goals/{id}`
 
-Delete a goal.
+Delete a goal and every sub-goal beneath it, and stop the goal's pursue session,
+through the daemon's `goal_delete` message. The session's transcript and journal
+are kept; the session plan is archived so it is not resumed at the next boot.
 
 **Response:**
 ```json
 {
-  "message": "goal deleted",
-  "id": "goal-id"
+  "id": "goal-id",
+  "message": "deleted 2 goal(s); its session was stopped and its history kept",
+  "deleted": ["goal-id", "sub-goal-id"],
+  "session_stopped": true
 }
 ```
+
+`404` for an unknown goal. `409 conflict` for a goal with `parent_type` `config`:
+nine.toml declares it, and the next boot would re-create it.
 
 ---
 
@@ -703,8 +777,7 @@ List all skills.
       "name": "skill-name",
       "description": "skill description",
       "tags": ["tag1", "tag2"],
-      "source": "builtin" | "user" | "generated",
-      "created_at": "2024-01-01T00:00:00Z"
+      "source": "builtin" | "user" | "agent"
     }
   ],
   "pagination": { ... }
@@ -918,23 +991,52 @@ Get specific specification.
 For endpoints that produce streaming output (turn execution, tool calls), the API supports both:
 
 1. **SSE (Server-Sent Events):** `/api/v1/conversations/{id}/messages/stream`
-2. **WebSocket:** `/ws/v1/conversations/{id}/messages`
+2. **WebSocket:** `/ws/v1/conversations/{id}/messages` — designed (API-STREAM-3),
+   not implemented: the OpenAPI document declares no WebSocket route.
+
+The SSE stream is backed by the daemon's `watch` message. It **MUST** forward
+every turn the session runs while the client is connected, whoever started it,
+and **MUST** answer `404` before opening when the daemon knows no such session.
+It is exempt from the server's write timeout and carries a `: keepalive` comment
+every 15 seconds while idle.
 
 ### API-STREAM-2: SSE format
 
 ```
+event: connected
+data: {"agent_id": "id", "message": "stream connected"}
+
 event: tool_start
 data: {"tool_name": "name", "tool_input": {}, "timestamp": 1234567890}
 
 event: tool_end
 data: {"tool_name": "name", "tool_output": "result", "timestamp": 1234567890}
 
+event: sub_agent_start
+data: {"sub_agent_id": "id", "task": "...", "role": "...", "timestamp": 1234567890}
+
+event: sub_agent_end
+data: {"sub_agent_id": "id", "task": "...", "role": "...", "status": "done", "timestamp": 1234567890}
+
 event: response_chunk
 data: {"text": "chunk", "timestamp": 1234567890}
+
+event: notice
+data: {"text": "...", "timestamp": 1234567890}
+
+event: response
+data: {"agent_id": "id", "text": "the reply", "timestamp": 1234567890}
+
+event: error
+data: {"error": {"code": "server_error", "message": "..."}}
 
 event: done
 data: {"agent_id": "id", "timestamp": 1234567890}
 ```
+
+A turn ends with `response` or `error`, then `done`; the stream stays open for
+the next turn. Reasoning tokens, stage labels and context updates are not
+forwarded.
 
 ### API-STREAM-3: WebSocket messages
 
@@ -1132,8 +1234,8 @@ All API configuration options **MUST** be available via CLI flags.
 | `nine plugins` | GET `/api/v1/plugins` | Implemented |
 | `nine sessions` | GET `/api/v1/conversations` | Implemented |
 | `nine context` | GET `/api/v1/conversations/{id}/context` | Implemented |
-| `nine trace` | GET `/api/v1/conversations/{id}/trace` | 501 — no journal query on the wire protocol |
-| `nine replay` | POST `/api/v1/conversations/{id}/replay` | 501 — no replay message on the wire protocol |
+| `nine trace` | GET `/api/v1/conversations/{id}/trace` | Implemented |
+| `nine replay` | POST `/api/v1/conversations/{id}/replay` | Implemented |
 | `nine stop` | POST `/api/v1/conversations/{id}/stop` | Implemented |
 | `nine session delete` | DELETE `/api/v1/conversations/{id}` | Implemented |
 | `nine workflow stop` | POST `/api/v1/workflows/{id}/stop` | Implemented |
@@ -1144,15 +1246,11 @@ All API configuration options **MUST** be available via CLI flags.
 | `nine docs` | GET `/api/v1/docs` | Implemented |
 | `nine spec` | GET `/api/v1/spec` | Implemented |
 | `nine tool call` | POST `/api/v1/tools/{name}/call` | Implemented |
-| — | GET `/api/v1/conversations/{id}/history` | 501 — no journal query on the wire protocol |
-| — | POST `/api/v1/goals` | 501 — `goal_create` is role-gated; caller role undecided |
-| — | DELETE `/api/v1/goals/{id}` | 501 — no goal deletion exists to call |
-| — | GET `/api/v1/skills` | 501 — no skills query on the wire protocol |
-
-Closing the `501` rows needs daemon work, not API work: each names a query or
-mutation the wire protocol does not carry. `POST /goals` additionally needs a
-policy decision, since `goal_create` is gated behind a role's `Delegates` flag
-and an HTTP caller has no role.
+| — | GET `/api/v1/conversations/{id}/history` | Implemented |
+| — | POST `/api/v1/goals` | Implemented — as the operator; not role-gated |
+| — | DELETE `/api/v1/goals/{id}` | Implemented |
+| — | GET `/api/v1/skills` | Implemented |
+| — | GET `/api/v1/conversations/{id}/messages/stream` | Implemented |
 
 ---
 
@@ -1363,3 +1461,4 @@ nine api serve --port 8080 --host 0.0.0.0 --auth-token secret --timeout 30
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2025-01-XX | - | Initial design |
+| 1.1 | 2026-10-04 | - | History, trace, replay, goal create/delete and skills served (no `501` remains); SSE stream forwards events (API-STREAM-1/2) |

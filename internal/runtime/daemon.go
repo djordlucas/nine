@@ -5,7 +5,6 @@
 package runtime
 
 import (
-	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -71,6 +70,12 @@ type NotifStore interface {
 // between the Unix-socket clients and the shared backend.
 type queryBackend interface {
 	GoalList() ([]memory.Goal, error)
+	// Goal create and delete back the operator's goal verbs (goal_create,
+	// goal_delete) — the same rows the agent's goal tools write.
+	GoalGet(id string) (*memory.Goal, error)
+	GoalCreate(id, description, parentID, parentType string) error
+	GoalDelete(id string) ([]string, error)
+	SkillList() ([]memory.Skill, error)
 	WorkflowList(agentID string) ([]workflow.Workflow, error)
 	WorkflowCancel(id string) (int, error)
 	WorkflowFail(id string, all bool) (int, error)
@@ -250,18 +255,27 @@ func (d *Daemon) journalReplay(agentID string) ([]protocol.Msg, string) {
 // reattaching client, so a very long session doesn't flood the transcript.
 const historyMaxTurns = 100
 
-// journalHistory reconstructs the full multi-turn transcript for agentID from
+// journalHistory is the reattach transcript: journalHistoryTurns capped at
+// historyMaxTurns.
+func (d *Daemon) journalHistory(agentID string) []protocol.Msg {
+	return d.journalHistoryTurns(agentID, historyMaxTurns)
+}
+
+// journalHistoryTurns reconstructs the full multi-turn transcript for agentID from
 // the durable journal — user prompts, tool/sub-agent activity, and assistant
 // responses, in chronological order — as the ordered protocol messages a
 // reattaching client renders. This makes the reconnected conversation look as
 // it did before the client detached, rather than blank. Only the most recent
-// historyMaxTurns turns are included.
-func (d *Daemon) journalHistory(agentID string) []protocol.Msg {
+// maxTurns turns are included; maxTurns <= 0 includes every turn.
+func (d *Daemon) journalHistoryTurns(agentID string, maxTurns int) []protocol.Msg {
 	events, err := d.store.SessionEventsByAgent(agentID)
 	if err != nil || len(events) == 0 {
 		return nil
 	}
-	minTurn := events[len(events)-1].Turn - historyMaxTurns + 1
+	minTurn := 0
+	if maxTurns > 0 {
+		minTurn = events[len(events)-1].Turn - maxTurns + 1
+	}
 	var out []protocol.Msg
 	for _, e := range events {
 		if e.Turn < minTurn {
@@ -312,6 +326,7 @@ func (d *Daemon) journalHistory(agentID string) []protocol.Msg {
 			continue
 		}
 		m.Timestamp = ts
+		m.Turn = e.Turn
 		out = append(out, m)
 	}
 	return out
@@ -440,7 +455,7 @@ func (d *Daemon) Stop() {
 // handleConn processes all messages from one client connection.
 func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
-	scanner := bufio.NewScanner(conn)
+	scanner := protocol.NewScanner(conn)
 	enc := json.NewEncoder(conn)
 
 	for scanner.Scan() {
@@ -449,12 +464,12 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 			enc.Encode(protocol.NewErrorMsg("invalid JSON: " + err.Error())) //nolint:errcheck
 			continue
 		}
-		d.dispatch(ctx, enc, msg)
+		d.dispatch(ctx, conn, enc, msg)
 	}
 }
 
 // dispatch routes one client message to the appropriate handler.
-func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.Msg) {
+func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder, msg protocol.Msg) {
 	// Decode the flat wire union into the typed request it represents. This both
 	// validates presence (R-PROTO.11 — an attach naming no session, a user_turn
 	// with no text) and rejects an unroutable type, so every branch below reads
@@ -570,6 +585,22 @@ func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.M
 	case protocol.HumanAnswerReq:
 		d.handleHumanAnswer(enc, r)
 
+	case protocol.GoalCreateReq:
+		d.handleGoalCreate(ctx, enc, r)
+
+	case protocol.GoalDeleteReq:
+		d.handleGoalDelete(ctx, enc, r.ID)
+
+	case protocol.SessionHistoryReq:
+		d.handleSessionHistory(enc, r.AgentID)
+
+	case protocol.SessionEventsReq:
+		d.handleSessionEvents(enc, r.AgentID, r.Turn)
+
+	case protocol.WatchReq:
+		// Terminal: the watch owns the connection until it ends, then closes it.
+		d.watch(ctx, conn, enc, r.AgentID)
+
 	// The field-less verbs. They share one request type, so the inner switch is
 	// on which verb rather than on which shape — there is only one shape.
 	case protocol.QueryReq:
@@ -582,6 +613,8 @@ func (d *Daemon) dispatch(ctx context.Context, enc *json.Encoder, msg protocol.M
 			d.handleListWorkflows(enc)
 		case protocol.TypeListTools:
 			d.handleListTools(enc)
+		case protocol.TypeListSkills:
+			d.handleListSkills(enc)
 		case protocol.TypePluginsList:
 			d.handlePluginsList(enc)
 		case protocol.TypePluginsReload:

@@ -189,6 +189,11 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.ResponseWriter.WriteHeader(code)
 }
 
+// Unwrap exposes the underlying writer to http.ResponseController. Without it
+// the wrapper hides http.Flusher and the write deadline, and the event stream
+// can neither flush an event nor outlive the server's WriteTimeout.
+func (rw *responseWriter) Unwrap() http.ResponseWriter { return rw.ResponseWriter }
+
 // Config holds the API server configuration.
 type Config struct {
 	APIConfig  config.APIConfig

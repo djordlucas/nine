@@ -296,3 +296,20 @@ func TestClientSendsWellFormedRequests(t *testing.T) {
 		}
 	})
 }
+
+// A reply longer than bufio.Scanner's 64 KiB default must still be read. A
+// session's journal or transcript passes that easily, and at the default the
+// client failed with "token too long" and the connection was dead.
+func TestClientReadsAReplyPast64KiB(t *testing.T) {
+	big := strings.Repeat("x", 512<<10)
+	f := newFakeDaemon(t, func(enc *json.Encoder, in protocol.Msg) {
+		enc.Encode(protocol.NewTextMsg(in.Type, `[{"type":"response","text":"`+big+`"}]`)) //nolint:errcheck
+	})
+	history, err := f.connect().SessionHistory("a1")
+	if err != nil {
+		t.Fatalf("SessionHistory over a 512 KiB reply: %v", err)
+	}
+	if len(history) != 1 || len(history[0].Text) != len(big) {
+		t.Fatalf("decoded %d entries, want one carrying the whole text", len(history))
+	}
+}

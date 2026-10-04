@@ -121,7 +121,14 @@ type AgentWorker struct {
 
 	mu         sync.Mutex
 	progressFn func(protocol.Msg) // called from worker goroutine on each tool event
-	busy       bool               // true from turn start until its reply is sent; guarded by mu
+	// watchers follow every turn the session runs, whoever started it — the
+	// feed behind the "watch" message (and so the HTTP API's event stream).
+	// Unlike progressFn, which belongs to the one connection driving the
+	// current turn, there may be any number, and they also receive each turn's
+	// outcome. Guarded by mu.
+	watchers map[uint64]func(protocol.Msg)
+	watcherN uint64
+	busy     bool // true from turn start until its reply is sent; guarded by mu
 	// drainQueuedFn, when set, is called after each turn completes. If it
 	// returns a non-empty string, the worker immediately starts another turn
 	// with that text. Used to auto-process queued messages left unconsumed by
@@ -150,6 +157,52 @@ func (w *AgentWorker) setProgress(fn func(protocol.Msg)) {
 // to drain queued messages the model left unconsumed.
 func (w *AgentWorker) SetDrainQueued(fn func() (string, error)) { w.drainQueuedFn = fn }
 
+// addWatcher registers fn to receive every progress event and every turn's
+// outcome ("response" or "error", then "done") until the returned func is
+// called. fn runs on the emitting goroutine, so it must not block.
+func (w *AgentWorker) addWatcher(fn func(protocol.Msg)) (remove func()) {
+	w.mu.Lock()
+	if w.watchers == nil {
+		w.watchers = make(map[uint64]func(protocol.Msg))
+	}
+	w.watcherN++
+	key := w.watcherN
+	w.watchers[key] = fn
+	w.mu.Unlock()
+	return func() {
+		w.mu.Lock()
+		delete(w.watchers, key)
+		w.mu.Unlock()
+	}
+}
+
+// notifyWatchers delivers msg to every registered watcher.
+func (w *AgentWorker) notifyWatchers(msg protocol.Msg) {
+	w.mu.Lock()
+	fns := make([]func(protocol.Msg), 0, len(w.watchers))
+	for _, fn := range w.watchers {
+		fns = append(fns, fn)
+	}
+	w.mu.Unlock()
+	for _, fn := range fns {
+		fn(msg)
+	}
+}
+
+// notifyTurnOutcome tells watchers how a turn ended. The connection that drove
+// the turn gets its outcome from the daemon's turn handler instead; this is for
+// everyone else, including turns no client started (idle wakes, queued drains).
+func (w *AgentWorker) notifyTurnOutcome(result string, err error) {
+	if err != nil {
+		w.notifyWatchers(protocol.NewAgentErrorMsg(w.id, err.Error()))
+	} else {
+		w.notifyWatchers(protocol.NewResponseMsg(w.id, result))
+	}
+	done := protocol.NewDoneMsg(w.id)
+	done.Timestamp = time.Now().UnixMilli()
+	w.notifyWatchers(done)
+}
+
 func (w *AgentWorker) emitEvent(msg protocol.Msg) {
 	w.mu.Lock()
 	fn := w.progressFn
@@ -157,6 +210,7 @@ func (w *AgentWorker) emitEvent(msg protocol.Msg) {
 	if fn != nil {
 		fn(msg)
 	}
+	w.notifyWatchers(msg)
 	// Buffer tool and sub-agent events for replay on reattach.
 	switch msg.Type {
 	case "tool_start", "tool_end", "sub_agent_start", "sub_agent_end":
@@ -355,6 +409,7 @@ func (w *AgentWorker) processTurn(req turnReq) {
 	w.mu.Lock()
 	w.busy = false
 	w.mu.Unlock()
+	w.notifyTurnOutcome(result, err)
 	req.respCh <- turnResp{text: result, err: err}
 	if w.onComplete != nil {
 		w.onComplete(w.id)

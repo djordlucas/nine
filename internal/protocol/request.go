@@ -116,6 +116,30 @@ type GrantsDecideReq struct {
 	Action string
 }
 
+// GoalCreateReq creates a goal on the operator's behalf. ParentID names a parent
+// goal; empty makes a top-level goal, which gets a pursue session.
+type GoalCreateReq struct {
+	Description string
+	ParentID    string
+}
+
+// GoalDeleteReq deletes a goal, its sub-goals, and stops its pursue session.
+type GoalDeleteReq struct{ ID string }
+
+// SessionHistoryReq asks for a session's transcript.
+type SessionHistoryReq struct{ AgentID string }
+
+// SessionEventsReq asks for a session's raw journal. Turn is 0 for every turn,
+// N for turn N, -1 for the latest.
+type SessionEventsReq struct {
+	AgentID string
+	Turn    int
+}
+
+// WatchReq follows a session's progress events for as long as the connection
+// stays open.
+type WatchReq struct{ AgentID string }
+
 // QueryReq is every request that carries no fields of its own — status and the
 // list/reload verbs. They share a struct rather than each having an empty one:
 // an empty struct per type would be eleven names that differ in nothing, and a
@@ -138,6 +162,11 @@ func (ListNotificationsReq) Type() MsgType { return TypeListNotifications }
 func (PluginCallReq) Type() MsgType        { return TypePluginCall }
 func (HumanAnswerReq) Type() MsgType       { return TypeHumanInputAnswer }
 func (GrantsDecideReq) Type() MsgType      { return TypeGrantsDecide }
+func (GoalCreateReq) Type() MsgType        { return TypeGoalCreate }
+func (GoalDeleteReq) Type() MsgType        { return TypeGoalDelete }
+func (SessionHistoryReq) Type() MsgType    { return TypeSessionHistory }
+func (SessionEventsReq) Type() MsgType     { return TypeSessionEvents }
+func (WatchReq) Type() MsgType             { return TypeWatch }
 func (q QueryReq) Type() MsgType           { return q.Kind }
 
 // queryKinds are the field-less requests QueryReq stands for.
@@ -145,7 +174,7 @@ var queryKinds = map[MsgType]bool{
 	TypeStatus: true, TypeListGoals: true, TypeListWorkflows: true,
 	TypeListTools: true, TypePluginsList: true, TypePluginsReload: true,
 	TypeToolsList: true, TypeToolsReload: true, TypeSessionsList: true,
-	TypeStandingList: true, TypeGrantsList: true,
+	TypeStandingList: true, TypeGrantsList: true, TypeListSkills: true,
 }
 
 // DecodeRequest turns a wire message into the typed request it represents.
@@ -199,6 +228,16 @@ func DecodeRequest(m Msg) (Request, error) {
 		return HumanAnswerReq{AgentID: m.AgentID, RequestID: m.RequestID, Answer: m.Answer}, nil
 	case TypeGrantsDecide:
 		return GrantsDecideReq{ID: m.RequestID, Action: m.Text}, nil
+	case TypeGoalCreate:
+		return GoalCreateReq{Description: m.Text, ParentID: m.ID}, nil
+	case TypeGoalDelete:
+		return GoalDeleteReq{ID: m.Text}, nil
+	case TypeSessionHistory:
+		return SessionHistoryReq{AgentID: m.AgentID}, nil
+	case TypeSessionEvents:
+		return SessionEventsReq{AgentID: m.AgentID, Turn: m.Turn}, nil
+	case TypeWatch:
+		return WatchReq{AgentID: m.AgentID}, nil
 	}
 	return nil, fmt.Errorf("unknown message type: %s", m.Type)
 }

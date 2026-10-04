@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -60,6 +61,22 @@ func EnsureDaemon(sock, binary string) (*os.Process, error) {
 	return nil, fmt.Errorf("daemon did not start within 5s; check its log (see NINE_LOG_FILE in docs/configuration.md) or run %q in the foreground to see why", binary+" daemon")
 }
 
+// MaxLineBytes bounds one newline-delimited message, in either direction.
+//
+// bufio.Scanner's default is 64 KiB, and a reply routinely exceeds that: an
+// attach transcript, a journal carrying full LLM request windows, a large tool
+// output. Past the limit the scanner fails with "token too long" and the
+// connection is unusable, so the bound is set well above any legitimate message
+// while still refusing an unbounded one.
+const MaxLineBytes = 64 << 20
+
+// NewScanner returns a line scanner sized for the wire protocol (MaxLineBytes).
+func NewScanner(r io.Reader) *bufio.Scanner {
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64*1024), MaxLineBytes)
+	return sc
+}
+
 // Client is a connection to a running daemon.
 type Client struct {
 	conn    net.Conn
@@ -75,7 +92,7 @@ func Connect(socketPath string) (*Client, error) {
 	}
 	return &Client{
 		conn:    conn,
-		scanner: bufio.NewScanner(conn),
+		scanner: NewScanner(conn),
 		enc:     json.NewEncoder(conn),
 	}, nil
 }
@@ -436,6 +453,94 @@ func (c *Client) CallTool(tool string, args json.RawMessage, liveState bool) (st
 		return "", err
 	}
 	return reply.Text, nil
+}
+
+// ListSkills requests the skill catalog: every skill's name, description, tags
+// and source, without its body.
+func (c *Client) ListSkills() ([]SkillInfo, error) {
+	raw, err := c.queryList(TypeListSkills)
+	if err != nil {
+		return nil, err
+	}
+	var out struct {
+		Skills []SkillInfo `json:"skills"`
+	}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return nil, fmt.Errorf("decode skills: %w", err)
+	}
+	return out.Skills, nil
+}
+
+// CreateGoal creates a goal on the operator's behalf. parentID names a parent
+// goal for a sub-goal; empty creates a top-level goal with its own pursue
+// session.
+func (c *Client) CreateGoal(description, parentID string) (GoalCreateResult, error) {
+	var out GoalCreateResult
+	err := c.roundTrip(NewGoalCreateMsg(description, parentID), &out)
+	return out, err
+}
+
+// DeleteGoal deletes a goal and its sub-goals, and stops the goal's pursue
+// session.
+func (c *Client) DeleteGoal(id string) (GoalDeleteResult, error) {
+	var out GoalDeleteResult
+	err := c.roundTrip(NewGoalDeleteMsg(id), &out)
+	return out, err
+}
+
+// SessionHistory requests a session's transcript from the journal: user
+// prompts (history_user), tool and sub-agent activity, and responses, in order.
+func (c *Client) SessionHistory(agentID string) ([]Msg, error) {
+	var out []Msg
+	err := c.roundTrip(NewSessionHistoryMsg(agentID), &out)
+	return out, err
+}
+
+// SessionEvents requests a session's raw event journal. turn is 0 for every
+// turn, N for turn N, or -1 for the latest turn.
+func (c *Client) SessionEvents(agentID string, turn int) ([]JournalEvent, error) {
+	var out []JournalEvent
+	err := c.roundTrip(NewSessionEventsMsg(agentID, turn), &out)
+	return out, err
+}
+
+// Watch turns this connection into a feed of agentID's progress events. It
+// returns once the daemon accepts — an unknown session is an error here, not
+// a silent stream — and NextEvent then reads the feed. The connection carries
+// nothing else afterwards; Close ends the watch.
+func (c *Client) Watch(agentID string) error {
+	if err := c.send(NewWatchMsg(agentID)); err != nil {
+		return err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return err
+	}
+	return expectReply(reply, TypeWatch)
+}
+
+// NextEvent blocks for the next message on a watched connection: a progress
+// event, a "response" or "error" ending a turn, then "done". It returns an
+// error once the connection closes.
+func (c *Client) NextEvent() (Msg, error) { return c.recv() }
+
+// roundTrip sends m, expects its type echoed back, and decodes the JSON payload
+// in Text into out.
+func (c *Client) roundTrip(m Msg, out any) error {
+	if err := c.send(m); err != nil {
+		return err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return err
+	}
+	if err := expectReply(reply, m.Type); err != nil {
+		return err
+	}
+	if err := json.Unmarshal([]byte(reply.Text), out); err != nil {
+		return fmt.Errorf("decode %s: %w", m.Type, err)
+	}
+	return nil
 }
 
 func (c *Client) queryList(msgType MsgType) (string, error) {

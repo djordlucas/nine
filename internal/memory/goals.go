@@ -132,3 +132,56 @@ func (s *Store) GoalListChildren(id string) ([]string, error) {
 	}
 	return out, rows.Err()
 }
+
+// GoalDelete removes a goal and every goal beneath it, returning the ids
+// removed, the goal itself first. A missing id removes nothing and returns an
+// empty list rather than an error, so the caller decides whether that is a 404.
+//
+// Sub-goals go with their parent because nothing else would reach them: a
+// sub-goal has no session of its own and is worked on by the session pursuing
+// its top-level ancestor (docs/goal-sessions.md), so once that ancestor is gone
+// the subtree is orphaned rows. The walk and the delete share one transaction,
+// so a goal created under the subtree mid-delete is either seen or not parented
+// to anything deleted.
+func (s *Store) GoalDelete(id string) ([]string, error) {
+	tx, err := s.db.BeginWrite()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	rows, err := tx.Query(
+		`WITH RECURSIVE tree(id, depth) AS (
+		   SELECT id, 0 FROM goals WHERE id = ?
+		   UNION
+		   SELECT g.id, t.depth + 1 FROM goals g JOIN tree t ON g.parent_id = t.id
+		 )
+		 SELECT id FROM tree ORDER BY depth, id`, id)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for rows.Next() {
+		var gid string
+		if err := rows.Scan(&gid); err != nil {
+			rows.Close() //nolint:errcheck
+			return nil, err
+		}
+		ids = append(ids, gid)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for _, gid := range ids {
+		if _, err := tx.Exec(`DELETE FROM goals WHERE id = ?`, gid); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
