@@ -87,6 +87,14 @@ func ApplyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("NINE_LLM_API_KEY"); v != "" {
 		cfg.LLM.APIKey = v
 	}
+	if v := os.Getenv("NINE_LLM_MAX_TOKENS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.LLM.MaxTokens = n
+		} else {
+			// The value itself stays out of the log: it comes from the environment.
+			slog.Warn("ignoring NINE_LLM_MAX_TOKENS: not a positive integer")
+		}
+	}
 	if v := os.Getenv("NINE_EMBED_PROVIDER"); v != "" {
 		cfg.Embeddings.Provider = v
 	}
@@ -386,6 +394,18 @@ func (cfg *Config) HITLTimeout() time.Duration {
 		return time.Duration(cfg.HITL.TimeoutSeconds) * time.Second
 	}
 	return 5 * time.Minute
+}
+
+// DefaultMaxReplyTokens is the reply cap when [llm] max_tokens is unset.
+const DefaultMaxReplyTokens = 2048
+
+// MaxReplyTokens returns the effective cap on the tokens one reply may
+// generate: [llm] max_tokens, or DefaultMaxReplyTokens when unset.
+func (cfg *Config) MaxReplyTokens() int {
+	if cfg.LLM.MaxTokens > 0 {
+		return cfg.LLM.MaxTokens
+	}
+	return DefaultMaxReplyTokens
 }
 
 // ContextBudget returns the effective LLM context token budget.

@@ -29,6 +29,7 @@ context_budget  = 4096          # tokens per assembled turn
 max_concurrent  = 1             # in-flight LLM requests (1 for local models)
 num_ctx         = 0             # model context window
 timeout_seconds = 0             # HTTP timeout per call; 0 = adapter default (300s), <0 = none
+max_tokens      = 0             # tokens one agent-loop reply may generate; 0 = 2048
 
 [daemon]
 socket_path             = "/tmp/nine.sock"
@@ -126,6 +127,9 @@ Notes:
 
 - `context_budget` falls back to `num_ctx` when budget-oriented code needs a number and
   `context_budget` is unset (small-model deployments often set only `num_ctx`).
+- `max_tokens` caps the output of each agent-loop call (`agent.Config.MaxTokens`); unset
+  or 0 keeps 2048. `NINE_LLM_MAX_TOKENS` overrides it when it is a positive integer. It
+  bounds generation only, never the assembled context (`context_budget`).
 - `max_concurrent = 1` serializes **all** LLM calls (correct for a single local model);
   higher values allow provider-side parallelism (R-LLM.4).
 
