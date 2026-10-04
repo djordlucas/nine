@@ -91,7 +91,8 @@ func ApplyEnvOverrides(cfg *Config) {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			cfg.LLM.MaxTokens = n
 		} else {
-			slog.Warn("ignoring NINE_LLM_MAX_TOKENS: not a positive integer", "value", v)
+			// The value itself stays out of the log: it comes from the environment.
+			slog.Warn("ignoring NINE_LLM_MAX_TOKENS: not a positive integer")
 		}
 	}
 	if v := os.Getenv("NINE_EMBED_PROVIDER"); v != "" {
