@@ -57,6 +57,7 @@ changed; the document stays as the record and is not rewritten.
 | Document | What it records |
 |----------|-----------------|
 | `accurate-token-counting.md` | Real tokenizer behind a feature flag, replacing the character estimate |
+| `agent-boundary.md` | Splitting Nine into a runtime and an agent behind one interface; today's behavior becomes the internal agent, and a mode lets an external agent (an API client) drive the runtime instead |
 | `codebase-improvement.md` | Design note: prioritized improvements across the tree |
 | `critic.md` | Assessment of the feature set, the limits and the positioning: findings `C1`–`C11`, what is differentiated, and where Nine should be aimed |
 | `durable-and-long-running-tools.md` | Giving a sandboxed tool memory and letting work outlive a turn. Amends I-TVM.3. |
