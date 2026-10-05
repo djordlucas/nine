@@ -105,11 +105,9 @@ type apiFlags struct {
 //
 //nolint:gosec // G706: every os.Args value logged below goes through
 func parseAPIFlags(args []string) apiFlags {
+	// An unset flag stays zero, so mergeAPIConfig keeps the config file's value;
+	// APIConfig's getters supply the defaults when neither sets one.
 	var flags apiFlags
-	flags.port = config.DefaultAPIPort
-	flags.host = config.DefaultAPIHost
-	flags.timeout = config.DefaultAPITimeoutSeconds
-	flags.maxConn = config.DefaultAPIMaxConnections
 
 	// Start from index 1 to skip the command name ("serve")
 	for i := 1; i < len(args); i++ {
