@@ -63,7 +63,7 @@ func startDaemon(t *testing.T, factory runtime.LoopFactory, ckpt runtime.Checkpo
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	sockPath := dir + "/s.sock"
-	d := runtime.New(sockPath, factory, ckpt, notif)
+	d := runtime.New(sockPath, runtime.InternalAgent{Build: factory, Notifications: notif}, ckpt)
 	ctx, cancel := context.WithCancel(context.Background())
 	ready := make(chan struct{})
 

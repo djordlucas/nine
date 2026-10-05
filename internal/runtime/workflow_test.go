@@ -73,7 +73,7 @@ func makeSimpleDaemon(t *testing.T) (*runtime.Daemon, string, context.CancelFunc
 		}, ninectx.New(ninectx.Config{Budget: 100_000}), llm.NewQueue(provider, 1), agent.New())
 	}
 	sock := tmpSock(t)
-	d := runtime.New(sock, factory, nil, nil)
+	d := runtime.New(sock, runtime.InternalAgent{Build: factory}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	go d.Start(ctx) //nolint:errcheck
 	waitForSock(t, sock)

@@ -156,16 +156,21 @@ core state:
 ```
 Daemon
  ├─ socketPath   string
- ├─ factory      LoopFactory          // agentID → *agent.Loop  (AgentBuilder.Build)
+ ├─ agent        Agent                // builds each session (InternalAgent)
  ├─ ckpt         CheckpointStore      // save/load serialized loop state
- ├─ notif        NotifStore           // pending notifications per agent
  ├─ sessions     map[string]*AgentWorker   ← the live session registry (RWMutex)
  ├─ names        map[string]string         // agentID → display name
  ├─ mgr          *plugin.Manager      // tool listing / direct calls
  ├─ store        queryBackend         // goal/reflection/workflow read proxy
- ├─ plans        PlanStore            // session_plans persistence
- └─ sup          *Supervisor          // event sink for stalls / gaps
+ └─ plans        PlanStore            // session_plans persistence
 ```
+
+The daemon asks its `Agent` for each session it creates or resumes
+(adr/agent-boundary.md). `Agent.NewSession` returns the loop and the hooks its
+worker runs around turns: stall detection, the notifications prepended to a user
+turn, and a completion callback. `InternalAgent` is Nine's own agent: its loop
+comes from `AgentBuilder.BuildForRole`, its notifications from the
+`NotifStore`, and its stall and completion events go to the `Supervisor`.
 
 Every client connection is handled by one goroutine (`handleConn`), which reads
 newline-delimited JSON and routes each `protocol.Msg` through `dispatch`:

@@ -173,7 +173,11 @@ func Assemble(c AssemblyConfig) *Assembly {
 		factory = c.RoleFactory(builder.BuildForRole)
 	}
 
-	daemon := New(c.SocketPath, factory, ckpt, notif)
+	daemon := New(c.SocketPath, InternalAgent{
+		Build:         factory,
+		Notifications: notif,
+		Supervisor:    supervisor,
+	}, ckpt)
 
 	// Durable session-event journal (adr/event-log.md): every new session worker
 	// writes its full execution trajectory through this async batched sink.
@@ -197,7 +201,6 @@ func Assemble(c AssemblyConfig) *Assembly {
 	daemon.ConfigurePlugins(c.Plugins)
 	daemon.ConfigureSandboxedTools(c.Tools)
 	daemon.ConfigureCoreTools(builder.CoreDispatcher())
-	daemon.ConfigureSupervisor(supervisor)
 	daemon.ConfigurePlanStore(c.Store)
 	daemon.SetMaxGoalSessions(c.MaxGoalSessions)
 

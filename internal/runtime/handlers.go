@@ -224,12 +224,13 @@ func (d *Daemon) makeAgentWorker(id string, checkpointData []byte, interactive b
 		plan = nil
 	}
 
-	loop := d.factory(id, RoleParams{
+	session := d.agent.NewSession(id, RoleParams{
 		Role:        roleNameForPlan(plan),
 		Interactive: interactive,
 		OwnsGoal:    planOwnsGoal(plan),
 		Delegates:   planDelegates(plan),
 	})
+	loop := session.Loop
 	if checkpointData != nil {
 		loop.LoadState(checkpointData) //nolint:errcheck
 	}
@@ -240,19 +241,8 @@ func (d *Daemon) makeAgentWorker(id string, checkpointData []byte, interactive b
 		saveFn = func(id string, data []byte) error { return ckpt.Save(id, data) }
 	}
 
-	var notifFn func(string) ([]string, error)
-	if d.notif != nil {
-		notif := d.notif
-		notifFn = func(id string) ([]string, error) { return notif.Fetch(id) }
-	}
-
-	r := newAgentWorker(id, loop, saveFn, notifFn, d.stall, plan, d.sink)
-	if d.sup != nil {
-		sup := d.sup
-		r.onComplete = func(agentID string) {
-			sup.Post(Event{Kind: EventAgentCompletes, AgentID: agentID})
-		}
-	}
+	r := newAgentWorker(id, loop, saveFn, session.Notifications, session.Stall, plan, d.sink)
+	r.onComplete = session.OnComplete
 	if d.store != nil {
 		store := d.store
 		agentID := id

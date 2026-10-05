@@ -79,14 +79,16 @@ func TestStallDetection(t *testing.T) {
 	}
 
 	sock := tmpSock(t)
-	d := runtime.New(sock, factory, nil, nil)
-	d.SetStallConfig(runtime.StallConfig{
-		Limit: stallLimit,
-		OnStall: func(agentID string) {
-			sup.Post(runtime.Event{Kind: runtime.EventGoalStalls, AgentID: agentID})
-			stallCh <- agentID
+	d := runtime.New(sock, runtime.InternalAgent{
+		Build: factory,
+		Stall: runtime.StallConfig{
+			Limit: stallLimit,
+			OnStall: func(agentID string) {
+				sup.Post(runtime.Event{Kind: runtime.EventGoalStalls, AgentID: agentID})
+				stallCh <- agentID
+			},
 		},
-	})
+	}, nil)
 
 	dctx, dcancel := context.WithCancel(context.Background())
 	defer dcancel()
@@ -186,7 +188,7 @@ func TestGapReport(t *testing.T) {
 	}
 
 	sock := tmpSock(t)
-	dm := runtime.New(sock, factory, nil, nil)
+	dm := runtime.New(sock, runtime.InternalAgent{Build: factory}, nil)
 	dctx, dcancel := context.WithCancel(context.Background())
 	defer dcancel()
 	go dm.Start(dctx) //nolint:errcheck

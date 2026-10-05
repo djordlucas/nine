@@ -71,7 +71,7 @@ func (f *fakeKV) get(key string) string {
 
 func newDaemonForTest(t *testing.T) *runtime.Daemon {
 	t.Helper()
-	return runtime.New(t.TempDir()+"/s.sock", makeFactory(seqProvider(nil)), nil, nil)
+	return runtime.New(t.TempDir()+"/s.sock", runtime.InternalAgent{Build: makeFactory(seqProvider(nil))}, nil)
 }
 
 func TestResolveInstanceNameConfigWins(t *testing.T) {
