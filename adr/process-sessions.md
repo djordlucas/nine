@@ -1,252 +1,318 @@
 # Design note — Process sessions
 
-**Status:** **Proposed** · **Related:** `adr/standing-tools.md`, `adr/tool-facilities.md`,
-`adr/reactive-events.md`, `adr/durable-and-long-running-tools.md`, `adr/roles-design.md`,
-`adr/personality-pattern.md`, `adr/agent-boundary.md` · **Amends:** R-SUB.7, and the stance of
-`docs/self-modification.md` — see §8
+**Status:** **Proposed** (revised 2026-10-06: one concept for all background work) ·
+**Related:** `adr/standing-tools.md`, `adr/tool-facilities.md`, `adr/reactive-events.md`,
+`adr/predefined-agents-design.md`, `adr/roles-design.md`, `adr/personality-pattern.md`,
+`adr/agent-boundary.md` · **Amends:** R-SUB.7, the stance of `docs/self-modification.md`, and
+the configuration of standing agents and standing tools — see §12
 
-Nine gains **process sessions**: sessions driven by a **process** — a sandboxed tool Nine wrote
-for itself — instead of by a person. Events, a cadence or a message invoke the process; the
-process can call the model **in its own session**, under a role the operator configures, and can
-keep relational state in a private **SQL database**. The session is still Nine's: its identity,
-skills and memory, its journal, its roles. What changes is who decides when a turn happens and
-what it asks.
+Nine has **two kinds of session**. A **conversation** is driven by a person. A **process
+session** is driven by a **process**: a sandboxed tool that its triggers — a clock, a journal
+event, a message — invoke, and that can call the model in its own session. Everything Nine does
+between a person's turns becomes a process session: goal pursuit, standing agents,
+self-reflection, condition triggers, standing tools, and the processes Nine writes for itself.
 
-The design follows one principle: **a rigid core and a flexible runtime.** The core — the binary,
-the configuration, the operator's grants and budgets, the roles — does not change at runtime and
-is never written by Nine. The runtime — the processes, their declarations and source, the
-database's schema and rows — is Nine's to write, revise and replace, inside the bounds the core
-sets.
+| | Driven by | Started by |
+|---|---|---|
+| Conversation | a person, through the TUI or the API | a message |
+| Process session | a process | its triggers |
+
+Processes come from three places: **shipped** with the binary (`pursue`, `reflect`),
+**declared** by the operator in `nine.toml`, or **written** by Nine. One scheduler, one health
+machine, one budget system and one concurrency limit govern all of them.
+
+The design keeps a **rigid core and a flexible runtime.** The core — the binary, the
+configuration, the grants and budgets, the roles, the shipped processes — does not change at
+runtime and is never written by Nine. The runtime — the processes Nine writes and its private
+database — is Nine's to write, revise and replace, inside the bounds the core sets.
 
 This note comes out of nine-will, an experiment that ran "instances made of code they write"
-outside Nine, with Nine as its model runtime. The experiment worked, and the most capable parts
-of it were rebuilds of what Nine already has. It moves here; §9 records what carries over.
+outside Nine, with Nine as its model runtime. Its capable parts were rebuilds of what Nine
+already has; it moves here, and §13 records what carries over.
 
 ---
 
 ## 1. Problem
 
-Nine already writes code for itself: generated tools (`tool_write`), with durable `state`,
-resumable jobs and standing runs on a cadence. Every one of them is **driven by the model**: a
-turn calls a tool, the tool returns, the turn goes on. Code never drives the model, so three
-shapes of work have no home:
+Work between a person's turns runs through six mechanisms, each with its own configuration,
+trigger handling, limits and failure behavior:
 
-| Work | Today | Why it fails |
-|---|---|---|
-| "Every morning, read these feeds and write a digest" | A standing agent on a schedule | A full agent turn decides, every time, what a fixed program could: which feeds, which format, where to write. The judgment is one summary; the rest is a program run by a model |
-| "When a tool fails twice in a session, look into why" | Nothing | Reactions may not call a model (R-SUB.3), and may not wake anything (`tool-facilities.md` §6) |
-| "Keep a structured record of what I learned, and query it" | KV memory, skills | No relations, no queries, no schema Nine can evolve |
+| Mechanism | Declared by | Trigger | Runs | Limit |
+|---|---|---|---|---|
+| Goal session | an agent (`goal_create`) or `POST /goals` | every 5 min | a `pursue` routine's prompt | `max_goal_sessions` |
+| Standing agent | `[[agent]]` | `interval` / `schedule` | a goal session with a `monitor` role | `max_goal_sessions` |
+| Self-reflection session | `[daemon] self_reflection` | interval | an `idle-reflection` routine's prompt | none |
+| Condition trigger | `[[agent]] when = {…}` | interval | a standing run that may wake an agent | none of its own |
+| Standing tool | `[[standing_tool]]` | `interval` / `schedule` | a resumable tool, no model | `max_standing` |
+| Reaction | designed (`tool-facilities.md` §6), unbuilt | a journal event | a tool, no model | — |
 
-The common shape: a program that knows **when** and **what**, and needs the model only for the
-part that is language or judgment. Writing that program is exactly what Nine is good at, and
-running it is what the sandbox already does safely.
+A user learns six concepts to understand what runs in the background. A budget, a health rule
+or a loop limit has to be built six times, and most of them have none: a standing agent has no
+turn or token budget at all.
+
+Meanwhile a seventh shape has no home: **code that decides when and what, and asks the model
+only for language or judgment.** A digest that fetches feeds and needs one summary; a check that
+runs every ten seconds and needs the model once a week. Today that is either a standing agent,
+which spends a full turn deciding what a program could, or a standing tool, which cannot ask the
+model anything.
 
 ---
 
 ## 2. Decision
 
-| Part | What it is |
-|---|---|
-| **Process** | A generated tool with a `process` declaration: its triggers, its role, its budget. Source, schema and capabilities as for any generated tool |
-| **Process session** | One session per process, created when the process is, owned by it. Its history is the process's continuity with the model |
-| **Triggers** | `every` / `schedule` (as standing runs), `on` (journal event types, as reactions were designed), and messages sent to the session |
-| **`llm` capability** | A host function: run a turn in the process session, under the declared role, and return the reply |
-| **`sql` capability** | A private SQLite database for the instance, shared by its processes, behind an authorizer policy |
+**A process** is a sandboxed tool with a `process` declaration: its triggers, its role, its
+budget. Source, schema and capabilities are those of any sandboxed tool.
 
-A trigger invokes the process exactly as a standing run invokes a tool: a fresh instance, a
-deadline, the declared grants, nothing surviving the call except what it writes to `state`, the
-database or its session. A long piece of work is a resumable call, as a job is.
+**A process session** is the one session a process owns, created with it. Its history is the
+process's continuity with the model; its journal is the process's activity log, for every
+invocation, whether or not it called the model.
 
-```json
-{
-  "name": "digest",
-  "description": "Write the morning news digest.",
-  "capabilities": {
-    "net.http": { "hosts": ["feeds.bbci.co.uk", "feeds.npr.org"] },
-    "fs.write": ["digest/"],
-    "llm": { "role": "writer" },
-    "sql": {}
-  },
-  "process": {
-    "schedule": "0 7 * * *",
-    "budget": { "turns_per_day": 20, "tokens_per_day": 60000 }
-  },
-  "source": "export default async ({ trigger }, nine) => { … }"
-}
+**A trigger** invokes the process as a standing run invokes a tool today: a fresh instance, a
+deadline, the declared grants, nothing surviving the call except what it writes to its `state`,
+the database (§8) or its session. Long work is a resumable call.
+
+| Trigger | Declared as | Delivers |
+|---|---|---|
+| Clock | `every = "5m"` xor `schedule = "0 7 * * *"` | the time |
+| Event | `on = ["tool_end"]`, optionally filtered | the journal event (§7) |
+| Message | always on | a message sent to the session by the operator, a conversation or the API |
+
+**The `llm` capability** runs a turn in the process session under the declared role and returns
+the reply (§6). A process without it never calls the model.
+
+```toml
+[[process]]
+name     = "digest"
+tool     = "digest"                     # the sandboxed tool that drives it
+schedule = "0 7 * * *"
+role     = "writer"                     # the role of its llm turns
+budget   = { turns_per_day = 20, tokens_per_day = 60000 }
+args     = { feeds = ["https://feeds.bbci.co.uk/news/rss.xml"] }
 ```
-
-The process asks the model through its session:
 
 ```js
-const summary = await nine.llm.turn(`Summarize these stories in three sentences:\n${text}`);
+export default async ({ trigger, args }, nine) => {
+  const stories = await fetchAll(args.feeds);           // net.http
+  const summary = await nine.llm.turn(`Summarize in three sentences:\n${stories}`);
+  await writeFile("digest/today.md", summary);          // fs.write
+};
 ```
 
 ---
 
-## 3. The `llm` capability
+## 3. What each mechanism becomes
 
-**A turn in the process's own session, under a declared role.** The role decides everything
-that is not the process's text: the persona, the tools the model may call during that turn, the
-enrichment, the thinking policy. The role must be **operator-authored** — built in, or from
-`[skills] user_dir`. Nine can write roles (R-ROLE.7 keeps their structural flags at leaf
-defaults), but an agent-authored role's tool list is bounded only by the daemon's surface, so
-letting a process name one would let Nine choose its own process's reach. The declaration is
-checked against the ceiling like any other grant.
+| Today | As a process session |
+|---|---|
+| Goal session | The shipped `pursue` process, bound to its goal (§4), every 5 min |
+| Standing agent (`[[agent]]`) | `[[process]]` running `pursue` on a config-owned goal, with the declared role and trigger |
+| Self-reflection session | The shipped `reflect` process, at `[daemon] self_reflection` |
+| Condition trigger (`when = {…}`) | A process that runs the check and calls `llm` only when it finds something; the wake becomes a turn in its own session |
+| Standing tool | A process without `llm` |
+| Reaction | A process with an `on` trigger |
+| Processes Nine writes | `tool_write` with a `process` block (§9) |
 
-**The default role is lean.** `process` — Nine's identity, no tools, no enrichment, no planning
-pass: a turn that costs its prompt and the session's history. A process that needs the model to
-act (read a file, search memory) names a role that grants those tools.
+What stays as it is:
 
-**Reach is the closure, and the roster prints it.** `tool-facilities.md` §7 rejected tool→tool
-dispatch because a tool's effective reach would become the closure of what it can call, invisible
-in its grants. `llm` has the same property: a process's reach is its own grants plus its role's
-tools. So `Summary()` prints both — `llm: role writer (read_file, memory_query)` — and a role
-that includes `tool_write` or any `llm`-holding tool is refused as an `llm` role unless the
-operator sets `[processes] allow_revision = true` (§6).
-
-**Priority and budget.** Process turns queue at `PriorityBackground`, below every conversation a
-person is waiting on. Each process has a budget in its declaration, capped by the operator's
-`[processes]` limits: turns per day, tokens per day, turns per invocation. A process that
-exhausts its budget is paused, and the pause reaches the human feed.
+| | Why |
+|---|---|
+| Goals | A goal is data — an intention, a status, sub-goals. `pursue` acts on it; it is not a session |
+| Go subscribers (related-session indexer, supervisor) | Internal machinery with no configuration and no user-visible identity |
+| Conversations | A person is not a process |
+| Sub-agents (`run_agent`) | A delegation within a turn, owned by that turn |
 
 ---
 
-## 4. Triggers, and the feedback loop
+## 4. Shipped processes
 
-`reactive-events.md` §1a deferred generative reactions and named what revisiting them requires:
-a cheap programmatic gate before any model call, lowest-priority scheduling, hard per-subscriber
-budgets, and a lineage marker with loop detection. Process sessions are that revisit, and each
-condition has its answer:
+Session-plan routines become shipped processes, compiled into the binary like shipped tools.
+They are core: Nine cannot rewrite them, and a process it writes cannot take their names.
+
+| Process | Replaces | Does |
+|---|---|---|
+| `pursue` | the `pursue` routine | one `llm` turn under the session's role: assess the goal and its sub-goals, act, update the status |
+| `reflect` | the `idle-reflection` routine | one `llm` turn under the `reflection` role |
+
+**Goal binding.** A process session may be bound to a goal (`goal = "<id>"`). The binding carries
+over the rules goal sessions have today: one session per top-level goal, the goal's status
+decides whether the session runs (active runs, paused pauses, done or archived retires), and the
+agent owns that status — re-declaring a finished standing agent does not resurrect it.
+
+**Stall.** Five consecutive `llm` turns that call no tool pause a goal-bound session's goal, as
+today. It is a rule of goal binding, not of every process: a summarizer's turns call no tool by
+design.
+
+The prompts, roles and turn shapes of `pursue` and `reflect` are today's, moved, not rewritten.
+Phase 1 is accepted on that (§14).
+
+---
+
+## 5. One set of limits
+
+| Setting | Replaces | Meaning |
+|---|---|---|
+| `[processes] max_running` | `max_goal_sessions`, `max_standing` | process sessions active at once; at the cap a new one is recorded and not started, as goal sessions are today |
+| `[processes] budget` | — | the default budget of every process; a declaration may lower it, never raise it |
+| `[processes] max_depth` | — | the lineage limit (§7) |
+| `[processes] priority` | — | `background`, the queue priority of every process turn |
+
+A process that exhausts its budget, or fails its health checks (standing tools' backoff and
+`failing` state, generalized), is paused, and the pause reaches the human feed.
+
+---
+
+## 6. The `llm` capability
+
+**A turn in the process's own session, under its role.** The role decides everything that is not
+the process's text: persona, tools, enrichment, thinking. It must be **operator-authored** — built
+in, or from `[skills] user_dir`. Nine can write roles (R-ROLE.7 keeps their structural flags at
+leaf defaults), but an agent-authored role's tool list is bounded only by the daemon's surface,
+so letting a process name one would let Nine choose its process's reach.
+
+**The default role is lean.** `process`: Nine's identity, no tools, no enrichment, no planning
+pass.
+
+**Reach is the closure, and the roster prints it.** `tool-facilities.md` §7 rejected tool→tool
+dispatch because a tool's reach would become the closure of what it can call, invisible in its
+grants. A process with `llm` has that property, so its summary prints both: `llm: role writer
+(read_file, memory_query)`. A role that holds `tool_write` is refused for a process unless
+`[processes] allow_revision = true` (§9).
+
+---
+
+## 7. Events, and the feedback loop
+
+`reactive-events.md` §1a deferred model-calling reactions and named what revisiting them
+requires. Each condition has its answer:
 
 | Condition | Answer |
 |---|---|
-| Programmatic gate | The process is the gate: it runs on every trigger and calls the model only when its own code decides to |
-| Lowest priority | `PriorityBackground` (§3) |
-| Hard budgets | Per process, capped by `[processes]` (§3) |
-| Lineage and loop detection | Below |
+| A cheap programmatic gate before any model call | The process: it runs on every trigger and calls `llm` only when its code decides to |
+| Lowest-priority scheduling | `[processes] priority` (§5) |
+| Hard per-subscriber budgets | Every process has one (§5) |
+| A lineage marker with loop detection | Below |
 
-**Lineage.** Every event a process session journals carries the event that triggered it as its
-parent (`parent_span_id`, which exists for this). An event's **depth** is the number of process
-sessions in its ancestry. A process is not invoked for an event at depth `max_depth` or more
-(default 2); the skip is journaled. A process is never invoked for an event from its own session.
+**Lineage.** An event a process session journals carries its triggering event as parent
+(`parent_span_id`). An event's depth is the number of process sessions in its ancestry. No
+process is invoked for an event at depth `max_depth` or more (default 2), and the skip is
+journaled. A process is never invoked for an event from its own session. A message carries its
+sender's depth plus one.
 
-**Messages.** A message to a process session (from another session, the operator, or the API)
-invokes it with the message as input. A message carries its sender's depth plus one, so two
-processes messaging each other stop at `max_depth` like any other chain.
-
-**Waking.** A process session does not wake other sessions. Its findings reach a person through
-the human feed, and reach Nine's conversations by pull: they are in the database and the
-journal, and a conversation reads them when its model decides to.
+**No waking.** A process session runs turns only in itself. It reaches a person through the human
+feed, and a conversation through what it writes, which that conversation reads when its model
+decides to.
 
 ---
 
-## 5. The `sql` capability
+## 8. The `sql` capability
 
-One SQLite database per instance, in its own file beside the store, shared by every process the
-instance runs. It is Nine's structured memory: a schema Nine designs and migrates, rows its
-processes write, queries they run.
+One SQLite database per instance, in its own file beside the store, shared by the instance's
+processes: Nine's structured memory, with a schema Nine designs and migrates.
 
 | Rule | Why |
 |---|---|
-| A separate file, never the store | Nothing a process does can reach `kv`, `skills`, the journal or the grants |
-| An authorizer policy | No `ATTACH`, no `PRAGMA` beyond a read-only allowlist, no extension loading; DDL allowed, so the schema can evolve |
-| Quotas | Database size and statement time, per the operator's `[processes]` limits |
-| Every write journaled as a summary | Statement kind and table, not the values — the journal stays readable and bounded |
+| A separate file, never the store | Nothing a process does reaches `kv`, `skills`, the journal or the grants |
+| An authorizer policy | No `ATTACH`, no extension loading, a read-only `PRAGMA` allowlist; DDL allowed so the schema can evolve |
+| Quotas | Database size and statement time, from `[processes]` |
+| Writes journaled as summaries | Statement kind and table, not values |
 
-A conversation reads the database through one tool, `sql_query`, read-only and role-granted, so
-the operator decides which roles can look.
-
----
-
-## 6. Writing and revising processes
-
-**Writing.** `tool_write` with a `process` block, gated by `[tools.agent] allow_processes`, off by
-default — for the reason `allow_standing` exists: a trigger is not reach, and the ceiling cannot
-express it. A process's first version passes the existing write-time checks (parse, declaration
-against the ceiling), and the approval gate prompts for it in an interactive session.
-
-**Revising.** A process cannot write processes. Revision goes through the model: a process whose
-`llm` role includes `tool_write` (allowed only with `[processes] allow_revision`) asks its turn to
-rewrite a process. So every revision is a model turn in a journaled session, under a role the
-operator chose, subject to the same ceiling and gates as any other write.
-
-**Versions and rollback.** Each write keeps the previous version. A process whose new version
-fails its first `rollback_after` invocations (default 3) is restored to the previous version, and
-the restore reaches the human feed and the process session's history. nine-will's revisions
-showed why: an unverified rewrite regressed a working program, and nothing noticed.
+Conversations read it through `sql_query`, read-only and role-granted.
 
 ---
 
-## 7. Genesis
+## 9. Writing and revising processes
 
-A packaged instance (`personality-pattern.md`) already bootstraps its identity from a
-`self-model.toml`. Genesis adds the rest: `[bootstrap] genesis = "genesis.md"`, a document read
-once, on the first boot of an empty store. A `genesis` session, under a `genesis` role with
-`tool_write` and `sql_query`, turns the document into the instance's first processes and database
-schema. Its journal is the record of how the instance was born.
+**Writing.** `tool_write` with a `process` block, gated by `[tools.agent] allow_processes` (off by
+default; it replaces `allow_standing`). The write passes the existing checks — parse, declaration
+against the ceiling — and the approval gate in an interactive session.
+
+**Revising.** A process cannot write processes. Revision is a model turn: a process whose role
+holds `tool_write` (only with `allow_revision`) asks its turn to rewrite one. Every revision is a
+journaled turn under an operator-chosen role, subject to the ceiling and the gates.
+
+**Versions and rollback.** Each write keeps the previous version. A new version that fails its
+first `rollback_after` invocations (default 3) is restored to the previous one, and the restore
+reaches the human feed and the session's history.
 
 ---
 
-## 8. What this amends
+## 10. Genesis
+
+`[bootstrap] genesis = "genesis.md"`, read once on the first boot of an empty store, after the
+self-model bootstrap (`personality-pattern.md`). A `genesis` session, under a `genesis` role
+holding `tool_write` and `sql_query`, turns the document into the instance's first processes and
+database schema.
+
+---
+
+## 11. Configuration compatibility
+
+`[[agent]]` and `[[standing_tool]]` keep working for one minor release, translated at load into
+`[[process]]` blocks with a deprecation warning naming the replacement. `when = {…}` translates
+into a shipped `watch` process (run the tool; call `pursue`'s turn when it reports a finding),
+so existing condition triggers keep their behavior. `max_goal_sessions` and `max_standing` map to
+`max_running` (their sum) for the same release.
+
+---
+
+## 12. What this amends
 
 | | Today | With process sessions |
 |---|---|---|
-| R-SUB.7 | No generative-LLM reaction, no autonomous session injection | Process sessions call the model in their own session, under §3 and §4. Subscribers and reactions are unchanged: R-SUB.3 still binds them |
-| I11 | Reactions are out-of-band | Unchanged: a process session writes only its own session, its `state`, the database and the human feed; it never mutates another session |
-| `docs/self-modification.md` | Nine's executable shape is fixed; only its knowledge grows | The core is fixed; the runtime (processes and the database) is Nine's, inside the core's bounds |
-| Replay | Generative calls stay out of reactions | A process turn is an ordinary journaled turn, so Track R replays it from its recording |
-
-In `adr/agent-boundary.md` terms, process sessions belong to the internal agent: their policy is
-a role. The external mode loses its motivating client and is paused (§10).
+| R-SUB.7 | No generative-LLM reaction, no autonomous session injection | Process sessions call the model in their own session, under §6 and §7. Go subscribers are unchanged and R-SUB.3 still binds them |
+| I11 | Reactions are out-of-band | Unchanged: a process session writes its own session, `state`, the database and the human feed, and never mutates another session |
+| `docs/self-modification.md` | Nine's executable shape is fixed; only its knowledge grows | The core is fixed; the runtime is Nine's, inside the core's bounds |
+| Session plans and routines | The extension point for background work | Replaced by shipped processes; conversations keep their `active` plan |
+| R-TVM.20 (standing tools) | A second run mode | A process without `llm` |
+| `adr/agent-boundary.md` | External mode planned | Paused: process sessions belong to the internal agent, their policy is a role |
 
 ---
 
-## 9. What carries over from nine-will
+## 13. What carries over from nine-will
 
 | From nine-will | Here |
 |---|---|
 | Mind modules, residents, transients | Processes; a resident is a process with triggers, a transient a resumable call |
-| The being (private SQLite, authorizer policy) | The `sql` capability; the policy (`src/kernel/sql-policy.ts`) ports to Go |
+| The being (private SQLite, authorizer policy) | `sql`; `src/kernel/sql-policy.ts` ports to Go |
 | The record | The journal |
-| Genesis from a document | §7 |
-| The reviser | A process with a revision role (§6) |
+| Genesis from a document | §10 |
+| The reviser | A process with a revision role (§9) |
 | Lessons: cut replies, one module per reply, four-backtick fences | The genesis and revision roles' prompts |
-| Children, lineage, several instances on one host, the web UI | Not here: one daemon is one instance. A later note, if wanted |
+| Children, several instances per host, the web UI | Not here: one daemon is one instance |
 
 ---
 
-## 10. Phases
+## 14. Phases
 
 | # | Content | Acceptance |
 |---|---|---|
-| 1 | Process sessions with `every`/`schedule` and messages; `llm` with roles, priority, budgets; the `process` role | A digest process runs on a schedule and summarizes through its session; an exhausted budget pauses it |
-| 2 | Event triggers with lineage and `max_depth` | Two processes triggering each other stop at `max_depth`, with the skip journaled |
-| 3 | `sql` capability, the authorizer policy, `sql_query` | Denied statements (ATTACH, a store table) are refused with a reason |
-| 4 | Revision: `allow_revision`, versions, rollback | A failing revision is rolled back after `rollback_after` failures |
-| 5 | Genesis | An empty store and a genesis document boot into running processes |
-| 6 | Docs, spec (R-PROC), evals for each phase, the TUI and CLI process views | `make eval-live` cases for each phase pass on a local model |
-
-Before phase 1: merge the agent-boundary refactor (phases 1a and 1b), which this builds on, and
-pause its phases 2–3 (external mode).
+| 0 | Turn snapshots for `pursue` and `reflect`; journal snapshots for a standing tool and a condition trigger | Recorded on `main` before any change |
+| 1 | The unification: process sessions as the one background mechanism; `pursue`, `reflect`, `watch` shipped; goal binding; `[[process]]` with the aliases; `[processes]` limits; `llm` for shipped processes only | Snapshots unchanged; live evals match the baseline (`goal-create`, `delegate-subagent`, `workflow-plan`, the standing cases) |
+| 2 | Budgets and health for every process; the roster in the CLI and TUI | An exhausted budget pauses a process and reaches the human feed |
+| 3 | Processes Nine writes: `allow_processes`, `llm` under operator-authored roles, the `process` role | A Nine-written digest process runs on a schedule and summarizes through its session |
+| 4 | Event triggers, lineage, `max_depth` | Two processes triggering each other stop at `max_depth`, the skip journaled |
+| 5 | `sql`, its policy, `sql_query` | Denied statements are refused with a reason |
+| 6 | Revision: `allow_revision`, versions, rollback | A failing revision rolls back after `rollback_after` failures |
+| 7 | Genesis | An empty store and a genesis document boot into running processes |
+| 8 | Docs and spec (R-PROC), the aliases' removal scheduled | Each phase's eval cases pass on a local model |
 
 ---
 
-## 11. Open questions
+## 15. Open questions
 
 | Question | Leaning |
 |---|---|
-| The database's name | Open: "the database" in this note |
-| May a process call `ask_human`? | No: a process session has no person attending it; questions go to the human feed |
-| Should the operator's conversation see process sessions in the TUI? | Yes, read-only, like sub-agents |
-| `max_depth` default | 2: a process may react to another process's work, not to a reaction to it |
-| Several instances, children | Out of scope; one daemon per instance |
+| The database's name | Open: "the database" here |
+| Does a conversation's plan (`active`) stay a session plan, or become a property of the conversation? | Becomes a property; session plans then have no remaining use |
+| May a process call `ask_human`? | No: no person attends a process session; questions go to the human feed |
+| `max_depth` default | 2 |
+| `max_running` default | 14: today's 10 goal sessions and 4 standing tools |
 
 ---
 
 ## Limits
 
 - Nothing here is built.
-- One daemon is one instance: several instances, children and lineage are out of scope (§9).
-- `sql` gives no cross-instance sharing; two instances share nothing but what an operator wires.
-- Rollback (§6) catches a revision that fails, not one that runs and does worse; judging
-  "worse" is left to the revising process.
+- One daemon is one instance: several instances, children and lineage are out of scope.
+- Rollback (§9) catches a revision that fails, not one that runs and does worse.
+- The aliases (§11) keep old configuration working for one minor release only.
