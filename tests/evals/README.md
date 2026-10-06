@@ -57,6 +57,21 @@ reproducing production. Two guards keep it honest:
   workflow — diff the assembly change, classify each part (mirror / intentionally
   skip / already covered), update the harness, and re-run `make eval-replay`.
 
+## Turn snapshots
+
+`runner/snapshot_test.go` runs six kinds of session (orchestrator, interactive,
+delegating, executor, reflection, pursue) through the harness with a scripted
+provider, and compares what the model received and what the journal recorded
+with `runner/testdata/snapshots/`. It needs no model and runs with `make test`.
+
+A change that alters a prompt, a tool, enrichment or the journal fails it.
+When the change is intended, re-record and review the diff:
+
+```bash
+go test -mod=vendor ./tests/evals/runner/ -run TestTurnSnapshots -update
+git diff tests/evals/runner/testdata/snapshots
+```
+
 ## Adding a case
 
 Write a `cases/<id>.yaml` per the schema in docs/evals.md §2, forcing the target
