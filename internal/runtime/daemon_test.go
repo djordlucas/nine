@@ -684,3 +684,46 @@ func (m *mockGoalStore) GoalGet(string) (*memory.Goal, error)          { return 
 func (m *mockGoalStore) GoalCreate(_, _, _, _ string) error            { return nil }
 func (m *mockGoalStore) GoalDelete(string) ([]string, error)           { return nil, nil }
 func (m *mockGoalStore) SkillList() ([]memory.Skill, error)            { return nil, nil }
+
+// A condition trigger wakes a session with a turn nobody waits on. Its reply must
+// not block the worker: the session has to answer the next turn, and stop.
+func TestWokenSessionKeepsTakingTurns(t *testing.T) {
+	var calls atomic.Int32
+	provider := llm.ProviderFunc(func(_ context.Context, _ llm.Request) (llm.Response, error) {
+		if calls.Add(1) == 1 {
+			return finalResp("handled the finding"), nil
+		}
+		return finalResp("still here"), nil
+	})
+	d, sock := startDaemon(t, makeFactory(provider), nil, nil)
+	c := dial(t, sock)
+
+	id, err := c.NewConversation()
+	if err != nil {
+		t.Fatalf("NewConversation: %v", err)
+	}
+	if !d.WakeAgent(id, "the predicate found something") {
+		t.Fatal("WakeAgent declined an idle session")
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for calls.Load() < 1 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	reply := make(chan string, 1)
+	go func() {
+		resp, err := c.Turn(id, "anything new?")
+		if err != nil {
+			resp = "error: " + err.Error()
+		}
+		reply <- resp
+	}()
+	select {
+	case got := <-reply:
+		if got != "still here" {
+			t.Errorf("reply = %q, want %q", got, "still here")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the session never answered after a woken turn: its worker is blocked")
+	}
+}
