@@ -151,9 +151,9 @@ Phase 1 is accepted on that (§14).
 
 | Setting | Replaces | Meaning |
 |---|---|---|
-| `[processes] max_running` | `max_goal_sessions`, `max_standing` | process sessions active at once; at the cap a new one is recorded and not started, as goal sessions are today |
+| `[processes] max_running` | `max_goal_sessions`, `max_standing` | process sessions active at once, default 14 (today's 10 and 4); at the cap a new one is recorded and not started, as goal sessions are today |
 | `[processes] budget` | — | the default budget of every process; a declaration may lower it, never raise it |
-| `[processes] max_depth` | — | the lineage limit (§7) |
+| `[processes] max_depth` | — | the lineage limit (§7), default 2 |
 | `[processes] priority` | — | `background`, the queue priority of every process turn |
 
 A process that exhausts its budget, or fails its health checks (standing tools' backoff and
@@ -201,6 +201,10 @@ sender's depth plus one.
 **No waking.** A process session runs turns only in itself. It reaches a person through the human
 feed, and a conversation through what it writes, which that conversation reads when its model
 decides to.
+
+**No questions.** A process has no `ask_human`: no person attends its session, and a blocking
+question would hold a running slot. It posts a question to the human feed, and the operator
+answers by messaging the session, which is a trigger.
 
 ---
 
@@ -262,7 +266,7 @@ so existing condition triggers keep their behavior. `max_goal_sessions` and `max
 | R-SUB.7 | No generative-LLM reaction, no autonomous session injection | Process sessions call the model in their own session, under §6 and §7. Go subscribers are unchanged and R-SUB.3 still binds them |
 | I11 | Reactions are out-of-band | Unchanged: a process session writes its own session, `state`, the database and the human feed, and never mutates another session |
 | `docs/self-modification.md` | Nine's executable shape is fixed; only its knowledge grows | The core is fixed; the runtime is Nine's, inside the core's bounds |
-| Session plans and routines | The extension point for background work | Replaced by shipped processes; conversations keep their `active` plan |
+| Session plans and routines | The extension point for background work | Removed: routines become shipped processes, and a conversation's `active` plan becomes a property of the conversation. The `session_plans` table and `RoutineHandler` go in a migration |
 | R-TVM.20 (standing tools) | A second run mode | A process without `llm` |
 | `adr/agent-boundary.md` | External mode planned | Paused: process sessions belong to the internal agent, their policy is a role |
 
@@ -287,7 +291,7 @@ so existing condition triggers keep their behavior. `max_goal_sessions` and `max
 | # | Content | Acceptance |
 |---|---|---|
 | 0 | Turn snapshots for `pursue` and `reflect`; journal snapshots for a standing tool and a condition trigger | Recorded on `main` before any change |
-| 1 | The unification: process sessions as the one background mechanism; `pursue`, `reflect`, `watch` shipped; goal binding; `[[process]]` with the aliases; `[processes]` limits; `llm` for shipped processes only | Snapshots unchanged; live evals match the baseline (`goal-create`, `delegate-subagent`, `workflow-plan`, the standing cases) |
+| 1 | The unification: process sessions as the one background mechanism; `pursue`, `reflect`, `watch` shipped; goal binding; `[[process]]` with the aliases; `[processes]` limits; `llm` for shipped processes only; session plans removed | Snapshots unchanged; live evals match the baseline (`goal-create`, `delegate-subagent`, `workflow-plan`, the standing cases) |
 | 2 | Budgets and health for every process; the roster in the CLI and TUI | An exhausted budget pauses a process and reaches the human feed |
 | 3 | Processes Nine writes: `allow_processes`, `llm` under operator-authored roles, the `process` role | A Nine-written digest process runs on a schedule and summarizes through its session |
 | 4 | Event triggers, lineage, `max_depth` | Two processes triggering each other stop at `max_depth`, the skip journaled |
@@ -298,15 +302,16 @@ so existing condition triggers keep their behavior. `max_goal_sessions` and `max
 
 ---
 
-## 15. Open questions
+## 15. Decisions taken (2026-10-06)
 
-| Question | Leaning |
+| Question | Decision |
 |---|---|
-| The database's name | Open: "the database" here |
-| Does a conversation's plan (`active`) stay a session plan, or become a property of the conversation? | Becomes a property; session plans then have no remaining use |
-| May a process call `ask_human`? | No: no person attends a process session; questions go to the human feed |
-| `max_depth` default | 2 |
-| `max_running` default | 14: today's 10 goal sessions and 4 standing tools |
+| The private SQL database's name | **The database**: `[processes] database`, read by `sql_query` |
+| Session plans, once routines are processes | **Removed**: a conversation's `active` plan becomes a property of the conversation (§12) |
+| Which sessions stall detection applies to | **Goal-bound sessions only** (§4); budgets bound every other process |
+| `ask_human` from a process | **No**: questions go to the human feed, answers come back as messages (§7) |
+| `max_depth` default | **2**: a process may react to another process's work, not to a reaction to it |
+| `max_running` default | **14**: today's 10 goal sessions plus 4 standing tools |
 
 ---
 
