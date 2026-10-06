@@ -31,7 +31,7 @@ func TestJournalReplayReattach(t *testing.T) {
 		{Seq: 8, Turn: 2, Type: "turn_end", Payload: mustJSON(map[string]any{"result": "final answer"})},
 	}
 
-	d := runtime.New("/tmp/unused.sock", nil, nil, nil)
+	d := runtime.New("/tmp/unused.sock", nil, nil)
 	d.ConfigureMemory(&mockGoalStore{events: events})
 
 	msgs, response := d.JournalReplayForTest("agent-x")
@@ -88,7 +88,7 @@ func TestJournalHistoryReattach(t *testing.T) {
 		{Seq: 8, Turn: 3, Type: "turn_end", Payload: mustJSON(map[string]any{"result": "answer two"})},
 	}
 
-	d := runtime.New("/tmp/unused.sock", nil, nil, nil)
+	d := runtime.New("/tmp/unused.sock", nil, nil)
 	d.ConfigureMemory(&mockGoalStore{events: events})
 
 	msgs := d.JournalHistoryForTest("agent-x")
@@ -121,7 +121,7 @@ func TestJournalHistoryReattach(t *testing.T) {
 
 // TestJournalReplayEmpty returns an empty snapshot when the journal has nothing.
 func TestJournalReplayEmpty(t *testing.T) {
-	d := runtime.New("/tmp/unused.sock", nil, nil, nil)
+	d := runtime.New("/tmp/unused.sock", nil, nil)
 	d.ConfigureMemory(&mockGoalStore{})
 	msgs, response := d.JournalReplayForTest("ghost")
 	if len(msgs) != 0 || response != "" {

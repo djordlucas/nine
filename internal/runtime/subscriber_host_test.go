@@ -41,7 +41,7 @@ func TestDaemonHostsAndWakesSubscriber(t *testing.T) {
 	}
 
 	sock := tmpSock(t)
-	d := runtime.New(sock, func(string, runtime.RoleParams) *agent.Loop { return nil }, nil, nil)
+	d := runtime.New(sock, runtime.InternalAgent{Build: func(string, runtime.RoleParams) *agent.Loop { return nil }}, nil)
 	d.ConfigureMemory(store)
 
 	h := &countingHandler{}

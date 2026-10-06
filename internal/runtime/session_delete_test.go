@@ -20,7 +20,7 @@ func deleteHarness(t *testing.T) (*Daemon, *memory.Store, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := New("", nil, nil, nil)
+	d := New("", nil, nil)
 	d.ConfigureMemory(store)
 	return d, store, path
 }

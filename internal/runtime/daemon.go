@@ -130,10 +130,8 @@ type pluginRegistry interface {
 // per-conversation session workers.
 type Daemon struct {
 	socketPath string
-	factory    LoopFactory
+	agent      Agent
 	ckpt       CheckpointStore
-	notif      NotifStore
-	stall      StallConfig
 	startedAt  time.Time
 	names      map[string]string // agentID → display name (set on first turn)
 	instName   string            // instance display name shown in the TUI top bar (guarded by mu)
@@ -149,7 +147,6 @@ type Daemon struct {
 	core   *agent.Dispatcher // core-intercepted tools, for plugin_call (see ConfigureCoreTools)
 	store  queryBackend
 	plans  PlanStore
-	sup    *Supervisor
 	hitl   *HITL
 	sink   EventSink // durable session-event journal for new workers (nil = disabled)
 
@@ -165,23 +162,18 @@ type Daemon struct {
 	listener net.Listener
 }
 
-// New creates a Daemon. ckpt and notif may be nil (disables persistence and
-// notifications respectively).
-func New(socketPath string, factory LoopFactory, ckpt CheckpointStore, notif NotifStore) *Daemon {
+// New creates a Daemon whose sessions a builds. ckpt may be nil, which
+// disables persistence.
+func New(socketPath string, a Agent, ckpt CheckpointStore) *Daemon {
 	return &Daemon{
 		socketPath: socketPath,
-		factory:    factory,
+		agent:      a,
 		ckpt:       ckpt,
-		notif:      notif,
 		sessions:   make(map[string]*AgentWorker),
 		names:      make(map[string]string),
 		startedAt:  time.Now(),
 	}
 }
-
-// SetStallConfig configures stall detection applied to all new AgentWorkers.
-// Must be called before the first conversation is created.
-func (d *Daemon) SetStallConfig(cfg StallConfig) { d.stall = cfg }
 
 // SetEventSink registers the durable session-event journal handed to every new
 // AgentWorker (adr/event-log.md). Must be called before the first conversation
@@ -789,18 +781,6 @@ func (d *Daemon) Capabilities() *CapabilityService { return d.grants }
 // call them. Passing nil leaves plugin_call plugin-only.
 func (d *Daemon) ConfigureCoreTools(disp *agent.Dispatcher) {
 	d.core = disp
-}
-
-// ConfigureSupervisor stores the supervisor and wires stall detection and
-// turn-completion events. Stall fires after 5 consecutive turns with no tool calls.
-func (d *Daemon) ConfigureSupervisor(sup *Supervisor) {
-	d.sup = sup
-	d.stall = StallConfig{
-		Limit: 5,
-		OnStall: func(agentID string) {
-			sup.Post(Event{Kind: EventGoalStalls, AgentID: agentID})
-		},
-	}
 }
 
 // newUUID returns a random UUID v4.
