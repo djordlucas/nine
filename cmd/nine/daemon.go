@@ -17,7 +17,6 @@ import (
 	"nine/internal/memory"
 	"nine/internal/plugin"
 	"nine/internal/runtime"
-	"nine/internal/subscribers"
 )
 
 func runDaemon() {
@@ -125,19 +124,6 @@ func runDaemon() {
 
 	embedder := embed.Build(cfg.Embeddings.Provider, cfg.Embeddings.Model, cfg.Embeddings.Endpoint)
 
-	// Seed built-in skills from the binary into the store (immutable; refreshed
-	// every boot). Agent-authored skills persist across restarts untouched.
-	if err := runtime.SeedSkills(store, embedder); err != nil {
-		slog.Warn("seed skills", "err", err)
-	}
-
-	// Seed operator-authored skills and roles from [skills].user_dir, after the
-	// built-ins so a collision is caught against the full built-in set. Invalid
-	// files are skipped with a logged reason; the daemon still boots.
-	if err := runtime.SeedUserSkills(store, embedder, cfg.Skills.UserDir); err != nil {
-		slog.Warn("seed user skills", "dir", cfg.Skills.UserDir, "err", err)
-	}
-
 	// Index the docs and spec embedded in this binary so Nine can retrieve its
 	// own manual on demand (docs/self-documentation.md). Fingerprinted, so this
 	// is a no-op on every boot that does not change the binary or the embedder.
@@ -151,30 +137,10 @@ func runDaemon() {
 	// that runs it.
 	runtime.MigrateStoredFilesToWorkspace(store, cfg.Workspace.Root)
 
-	// A packaged self-model, if the operator configured one, runs first: it fills
-	// self/identity so the generic default below is never written over the
-	// identity this instance was shipped with (adr/personality-pattern.md §4).
-	// A malformed file stops the boot rather than silently producing generic Nine
-	// under a personality's name.
-	if _, err := runtime.BootstrapSelfModel(store, cfg.Bootstrap.SelfModelPath); err != nil {
-		slog.Error("self-model bootstrap failed", "err", err)
+	// Nine's own agent: skills, self-model, reflection (internal_agent.go).
+	if err := bootInternalAgent(cfg, store, embedder, pluginManager); err != nil {
+		slog.Error("internal agent boot failed", "err", err)
 		os.Exit(1)
-	}
-
-	// Bootstrap the self-model with the current plugin list, so it can answer questions about them.
-	if err := runtime.BootstrapSelfKV(store, pluginManager.ListRunning()); err != nil {
-		slog.Error("failed to bootstrap self KV", "err", err)
-	}
-
-	// Register the idle-reflection routine handler, then reconcile the dedicated
-	// self-reflection session against config — creating it, or deactivating it
-	// when the operator has turned reflection off. Later boots pick a live one up
-	// via daemon.ResumeSessions.
-	runtime.RoutineRegistry["idle-reflection"] = func() runtime.RoutineHandler {
-		return runtime.NewIdleReflectionRoutine()
-	}
-	if err := runtime.ReconcileSelfReflection(store, cfg.SelfReflectionInterval()); err != nil {
-		slog.Error("failed to reconcile self-reflection session", "err", err)
 	}
 
 	// Scrub old workflows on startup, to prevent unbounded growth of the workflow store.
@@ -253,18 +219,6 @@ func runDaemon() {
 	supervisor := asm.Supervisor
 	defer asm.EventSink.Close() //nolint:errcheck // best-effort drain on shutdown
 
-	// Out-of-band subscribers (adr/reactive-events.md): on by default, but a
-	// no-op without an embedder and never on the agent loop. Set
-	// related_sessions_index = false to disable. Intentionally omitted from the
-	// shared assembly and the eval harness — it needs an embedder to be useful.
-	if cfg.Daemon.RelatedSessionsIndexEnabled() {
-		if embedder == nil {
-			slog.Warn("related_sessions_index enabled but no embedder configured; skipping")
-		} else {
-			daemon.AddSubscriber(subscribers.NewRelatedIndexer(store, embedder))
-		}
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Graceful shutdown (docs/plugin-capabilities.md §5/§6). Without a handler a
@@ -283,25 +237,12 @@ func runDaemon() {
 		cancel()
 	}()
 
-	// Resolve this instance's display name (shown in the TUI top bar): the
-	// configured name if set, else a previously generated one from the store,
-	// else a placeholder that a background LLM call replaces with a random name
-	// and persists (docs/configuration.md). Non-blocking.
-	daemon.ResolveInstanceName(ctx, cfg.Daemon.InstanceName, store, cfg.BuildProvider())
-
-	// Start the agent builder's main loop in the background, so it can manage agents while the daemon is running.
-	go supervisor.Run(ctx)
-
 	// Standing tools: resumable tools the daemon runs indefinitely on their own
 	// cadence (adr/standing-tools.md). Config owns each definition; the runtime
 	// owns whether it is running, so reconciling does not restart one an operator
 	// stopped. They share the job sweeper's worker budget — what both bound is
 	// concurrent wasm instantiations.
 	runtime.ReconcileStandingTools(store, cfg.StandingTools)
-	// A standing agent's `when = { … }` block becomes a standing run whose
-	// findings wake that agent — the cheap deterministic tier deciding when the
-	// expensive one is needed (docs/scheduling.md).
-	runtime.ReconcileConditionTriggers(store, cfg.Agents)
 	standing := runtime.NewStandingRunner(store, toolHost, cfg.Tools.JobMinDelayMS, cfg.Tools.JobWorkers)
 	standing.SetWaker(daemon)
 	daemon.ConfigureStandingTools(standing)
@@ -358,11 +299,10 @@ func runDaemon() {
 		runtime.NewToolJobRunner(store, toolHost,
 			cfg.Tools.JobMaxCalls, cfg.Tools.JobMinDelayMS, cfg.Tools.JobWorkers))
 
-	// Reconcile pre-defined agents declared in nine.toml: seed a config-owned
-	// goal + pursue shell for each, and bring existing ones' definitions in line
-	// with the file (docs/predefined-agents.md). Must run after the daemon is
-	// fully wired and before ResumeSessions (which revives what this seeds).
-	reconcileStandingAgents(ctx, store, daemon, cfg.Agents, cfg.Daemon.StandingAgentsAuthoritative)
+	// Nine's own agent's background work and standing agents. Must run after the
+	// daemon is fully wired and before ResumeSessions, which revives the
+	// sessions it seeds (internal_agent.go).
+	startInternalAgent(ctx, cfg, store, embedder, daemon, supervisor)
 
 	// Resume any session (e.g. a goal's pursue session, once that lands) whose
 	// plan was active with an idle-capable routine when the daemon last stopped.
