@@ -107,4 +107,4 @@ intended interplay between the builder and the store; it is guidance, not a hard
 `internal/context/builder.go` (`Builder`, `BuildWithUsage`, `BuildReport`, `assemble`,
 `toolTopN`, `extrasBudget`, priority handling), `internal/context/report.go` (`Report`,
 `Section`), `internal/selfmodel/` (the P2.5 `SystemSelf` block — see
-[`session-plans.md`](session-plans.md)).
+[`processes.md`](processes.md) R-PROC.9).

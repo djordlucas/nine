@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -13,11 +12,11 @@ import (
 )
 
 // configGoalOrigin is the goals.parent_type sentinel marking a goal seeded from
-// a [[agent]] config block rather than a conversation. Reconciliation touches
+// a goal [[process]] block rather than a conversation. Reconciliation touches
 // only these, never a conversation-created goal (adr/predefined-agents-design.md §3.3).
 const configGoalOrigin = runtime.ConfigGoalOrigin
 
-// defaultStandingRole is the role a [[agent]] runs when none is configured: the
+// defaultStandingRole is the role a goal [[process]] runs when none is configured: the
 // read-only monitor (adr/predefined-agents-design.md §6).
 const defaultStandingRole = "monitor"
 
@@ -27,43 +26,29 @@ const defaultStandingRole = "monitor"
 // in place every boot); the agent owns its *run-state* (goal status) — a goal
 // the agent paused or finished is never resurrected. It runs after the daemon is
 // fully wired and before ResumeSessions, which revives anything already seeded.
-func reconcileStandingAgents(ctx context.Context, store *memory.Store, daemon *runtime.Daemon, agents []config.AgentConfig, authoritative bool) {
+func reconcileStandingAgents(ctx context.Context, store *memory.Store, daemon *runtime.Daemon, blocks []config.ProcessConfig, authoritative bool) {
+	agents := goalBlocks(blocks)
 	for _, a := range agents {
-		if a.ID == "" || a.Description == "" {
-			slog.Warn("skipping [[agent]]: id and description are required", "id", a.ID)
-			continue
-		}
-		if a.Interval != "" && a.Schedule != "" {
-			slog.Warn("skipping [[agent]]: set only one of interval or schedule", "id", a.ID)
+		if a.Name == "" || a.Goal == "" {
 			continue
 		}
 
 		// Resolve the wake trigger: a cron schedule, a fixed interval, or the
 		// default interval when neither is set.
 		var interval time.Duration
-		if a.Interval != "" {
-			d, err := time.ParseDuration(a.Interval)
+		if a.Every != "" {
+			d, err := time.ParseDuration(a.Every)
 			if err != nil || d <= 0 {
-				slog.Warn("skipping [[agent]]: invalid interval", "id", a.ID, "interval", a.Interval, "err", err)
+				slog.Warn("skipping goal [[process]]: invalid interval", "id", a.Name, "every", a.Every, "err", err)
 				continue
 			}
 			interval = d
 		}
 		if a.Schedule != "" {
 			if _, err := cron.Parse(a.Schedule); err != nil {
-				slog.Warn("skipping [[agent]]: invalid cron schedule", "id", a.ID, "schedule", a.Schedule, "err", err)
+				slog.Warn("skipping goal [[process]]: invalid cron schedule", "id", a.Name, "schedule", a.Schedule, "err", err)
 				continue
 			}
-		}
-
-		// Additional routines, each with its own cadence. A bad routine skips the
-		// whole agent rather than silently dropping one stage: an operator who
-		// asked for a reflecting monitor and got a plain monitor has no signal
-		// that half their config was ignored.
-		routines, err := resolveRoutines(a)
-		if err != nil {
-			slog.Warn("skipping [[agent]]: invalid routine", "id", a.ID, "err", err)
-			continue
 		}
 
 		role := a.Role
@@ -71,48 +56,48 @@ func reconcileStandingAgents(ctx context.Context, store *memory.Store, daemon *r
 			role = defaultStandingRole
 		}
 
-		goal, err := store.GoalGet(a.ID)
+		goal, err := store.GoalGet(a.Name)
 		if err != nil {
-			slog.Warn("standing agent reconcile: goal lookup failed", "id", a.ID, "err", err)
+			slog.Warn("standing agent reconcile: goal lookup failed", "id", a.Name, "err", err)
 			continue
 		}
 
 		if goal == nil {
 			// First sighting: seed the goal (config origin) and start its shell.
-			if err := store.GoalCreate(a.ID, a.Description, "", configGoalOrigin); err != nil {
-				slog.Warn("standing agent reconcile: goal create failed", "id", a.ID, "err", err)
+			if err := store.GoalCreate(a.Name, a.Goal, "", configGoalOrigin); err != nil {
+				slog.Warn("standing agent reconcile: goal create failed", "id", a.Name, "err", err)
 				continue
 			}
-			if _, err := daemon.SpawnStandingSession(ctx, a.ID, role, a.Delegates, interval, a.Schedule, routines); err != nil {
-				slog.Warn("standing agent reconcile: spawn failed", "id", a.ID, "err", err)
+			if _, err := daemon.SpawnStandingSession(ctx, a.Name, role, a.Delegates, interval, a.Schedule); err != nil {
+				slog.Warn("standing agent reconcile: spawn failed", "id", a.Name, "err", err)
 				continue
 			}
-			slog.Info("standing agent created", "id", a.ID, "role", role)
+			slog.Info("standing agent created", "id", a.Name, "role", role)
 			continue
 		}
 
 		// Never reconcile a goal Nine didn't seed from config — a conversation
 		// may have created a goal that happens to share this id.
 		if goal.ParentType != configGoalOrigin {
-			slog.Warn("standing agent reconcile: id collides with a non-config goal; skipping", "id", a.ID)
+			slog.Warn("standing agent reconcile: id collides with a non-config goal; skipping", "id", a.Name)
 			continue
 		}
 
 		// Config owns the definition: reconcile the description in place.
-		if goal.Description != a.Description {
-			if err := store.GoalUpdateDescription(a.ID, a.Description); err != nil {
-				slog.Warn("standing agent reconcile: description update failed", "id", a.ID, "err", err)
+		if goal.Description != a.Goal {
+			if err := store.GoalUpdateDescription(a.Name, a.Goal); err != nil {
+				slog.Warn("standing agent reconcile: description update failed", "id", a.Name, "err", err)
 			}
 		}
 
 		// The agent owns run-state: only an active goal is (re)spawned; a paused
 		// or finished agent keeps its status and is not resurrected (§4).
 		if goal.Status == "active" {
-			if _, err := daemon.SpawnStandingSession(ctx, a.ID, role, a.Delegates, interval, a.Schedule, routines); err != nil {
-				slog.Warn("standing agent reconcile: spawn failed", "id", a.ID, "err", err)
+			if _, err := daemon.SpawnStandingSession(ctx, a.Name, role, a.Delegates, interval, a.Schedule); err != nil {
+				slog.Warn("standing agent reconcile: spawn failed", "id", a.Name, "err", err)
 			}
 		} else {
-			slog.Info("standing agent not resurrected (agent-owned status)", "id", a.ID, "status", goal.Status)
+			slog.Info("standing agent not resurrected (agent-owned status)", "id", a.Name, "status", goal.Status)
 		}
 	}
 
@@ -129,7 +114,7 @@ func reconcileStandingAgents(ctx context.Context, store *memory.Store, daemon *r
 // whose id is no longer present in the config, leaving conversation-created
 // goals untouched. Only live (active/paused) agents are archived; already-
 // terminal ones are left as-is (their session is not running post-boot anyway).
-func subtractStandingAgents(ctx context.Context, store *memory.Store, daemon *runtime.Daemon, agents []config.AgentConfig) {
+func subtractStandingAgents(ctx context.Context, store *memory.Store, daemon *runtime.Daemon, agents []config.ProcessConfig) {
 	desired := desiredAgentIDs(agents)
 	goals, err := store.GoalList()
 	if err != nil {
@@ -152,11 +137,11 @@ func subtractStandingAgents(ctx context.Context, store *memory.Store, daemon *ru
 
 // desiredAgentIDs is the set of non-empty ids declared in the config — the
 // standing agents the operator still wants Nine to manage.
-func desiredAgentIDs(agents []config.AgentConfig) map[string]bool {
+func desiredAgentIDs(agents []config.ProcessConfig) map[string]bool {
 	set := make(map[string]bool, len(agents))
 	for _, a := range agents {
-		if a.ID != "" {
-			set[a.ID] = true
+		if a.Name != "" {
+			set[a.Name] = true
 		}
 	}
 	return set
@@ -180,33 +165,14 @@ func removedConfigGoals(goals []memory.Goal, desired map[string]bool) []memory.G
 	return out
 }
 
-// resolveRoutines converts an agent's [[agent.routine]] entries into StageRoutines,
-// parsing and validating each cadence. It returns the first error rather than
-// collecting them: the caller skips the agent either way, and one clear reason
-// beats a list.
-func resolveRoutines(a config.AgentConfig) ([]runtime.RoutineDecl, error) {
-	if len(a.Routines) == 0 {
-		return nil, nil
-	}
-	out := make([]runtime.RoutineDecl, 0, len(a.Routines))
-	for _, asp := range a.Routines {
-		sa := runtime.RoutineDecl{Kind: asp.Kind, Schedule: asp.Schedule}
-		if asp.Interval != "" {
-			d, err := time.ParseDuration(asp.Interval)
-			if err != nil || d <= 0 {
-				return nil, fmt.Errorf("routine %q: invalid interval %q", asp.Kind, asp.Interval)
-			}
-			sa.Interval = d
+// goalBlocks are the [[process]] blocks that declare a standing agent: a pursue
+// process bound to a goal this file owns.
+func goalBlocks(blocks []config.ProcessConfig) []config.ProcessConfig {
+	var out []config.ProcessConfig
+	for _, b := range blocks {
+		if b.Goal != "" {
+			out = append(out, b)
 		}
-		if asp.Schedule != "" {
-			if _, err := cron.Parse(asp.Schedule); err != nil {
-				return nil, fmt.Errorf("routine %q: invalid cron schedule %q: %w", asp.Kind, asp.Schedule, err)
-			}
-		}
-		out = append(out, sa)
 	}
-	if err := runtime.ValidateRoutineDecls(out); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return out
 }

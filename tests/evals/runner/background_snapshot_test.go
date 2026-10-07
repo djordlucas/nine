@@ -116,7 +116,7 @@ func spawnGoalBound(t *testing.T, lv *live, id, role, description string) {
 	if err := lv.Result.Store.GoalCreate(id, description, "", runtime.ConfigGoalOrigin); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := lv.Daemon.SpawnStandingSession(context.Background(), id, role, false, time.Second, "", nil); err != nil {
+	if _, err := lv.Daemon.SpawnStandingSession(context.Background(), id, role, false, time.Second, ""); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -138,15 +138,10 @@ func TestBackgroundSnapshots(t *testing.T) {
 
 	t.Run("self-reflection", func(t *testing.T) {
 		lv, p := startBackground(t)
-		runtime.RoutineRegistry["idle-reflection"] = func() runtime.RoutineHandler {
-			return runtime.NewIdleReflectionRoutine()
-		}
 		if err := runtime.ReconcileSelfReflection(lv.Result.Store, time.Second); err != nil {
 			t.Fatal(err)
 		}
-		if err := lv.Daemon.ResumeSessions(context.Background()); err != nil {
-			t.Fatal(err)
-		}
+		lv.Processes.Wake()
 		id := runtime.SelfReflectionAgentID
 		req := waitForCall(t, p, id, "")
 		snapshotOne(t, lv, "background-self-reflection", req, turnEvents(t, lv, id, ""))
@@ -158,9 +153,9 @@ func TestBackgroundSnapshots(t *testing.T) {
 		// The agent the trigger wakes; its own idle turns are told apart from the
 		// woken one by the finding in the woken turn's text.
 		spawnGoalBound(t, lv, "watcher", "monitor", "Act on what the predicate finds.")
-		runStanding(t, lv, memory.StandingTool{
-			ID: runtime.ConditionTriggerID("watcher"), Tool: "predicate",
-			Args: `{"found":"a stray api key in notes/"}`, IntervalSecs: 1, WakeAgent: "watcher",
+		runStanding(t, lv, memory.Process{
+			ID: "when-watcher", Tool: "predicate",
+			Args: `{"found":"a stray api key in notes/"}`, IntervalSecs: 1, ReportTo: "watcher",
 		})
 		marker := "a stray api key"
 		req := waitForCall(t, p, "watcher", marker)
@@ -170,7 +165,7 @@ func TestBackgroundSnapshots(t *testing.T) {
 	t.Run("standing-tool", func(t *testing.T) {
 		lv, _ := startBackground(t)
 		lv.Tools.Load(context.Background(), nil)
-		runStanding(t, lv, memory.StandingTool{
+		runStanding(t, lv, memory.Process{
 			ID: "scan", Tool: "predicate", Args: `{"found":"two new files"}`, IntervalSecs: 1,
 		})
 		// A standing tool calls no model; what it produces is the human feed.
@@ -198,20 +193,15 @@ func TestBackgroundSnapshots(t *testing.T) {
 	})
 }
 
-// runStanding records a running standing tool and drives the standing runner
-// with the daemon as its waker, as cmd/nine does.
-func runStanding(t *testing.T, lv *live, st memory.StandingTool) {
+// runStanding records a running standing tool, for the harness's process
+// runner to drive, as cmd/nine's does.
+func runStanding(t *testing.T, lv *live, st memory.Process) {
 	t.Helper()
 	store := lv.Result.Store
-	if err := store.StandingToolUpsertDefinition(st); err != nil {
+	if err := store.ProcessUpsertDefinition(st); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.StandingToolSetState(st.ID, memory.StandingRunning); err != nil {
+	if _, err := store.ProcessSetState(st.ID, memory.ProcessRunning); err != nil {
 		t.Fatal(err)
 	}
-	runner := runtime.NewStandingRunner(store, lv.Tools, 1, 2)
-	runner.SetWaker(lv.Daemon)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go runtime.RunStandingTools(ctx, runner, 200*time.Millisecond)
 }

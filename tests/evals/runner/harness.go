@@ -13,6 +13,7 @@ import (
 
 	"nine/internal/agent"
 	"nine/internal/builtins"
+	"nine/internal/config"
 	"nine/internal/embed"
 	"nine/internal/llm"
 	"nine/internal/memory"
@@ -104,18 +105,12 @@ func (h *Harness) Run(ctx context.Context, c *Case, provider llm.Provider) (res 
 		}
 	}()
 
-	// 7. Drive the prompts on one conversation.
-	client, err := protocol.Connect(live.Sock)
-	if err != nil {
-		return nil, err
+	// 6b. A background case's processes, reconciled as the daemon does at boot.
+	if len(c.Setup.Processes) > 0 {
+		if err := startProcesses(ctx, live, c.Setup.Processes); err != nil {
+			return nil, fmt.Errorf("setup processes: %w", err)
+		}
 	}
-	r.cleanups = append(r.cleanups, func() { client.Close() }) //nolint:errcheck
-
-	agentID, _, _, err := client.NewConversationInteractive(c.Session.Interactive)
-	if err != nil {
-		return nil, err
-	}
-	r.AgentID = agentID
 
 	// Snapshot goal count before the prompts, so grading can count goals the run
 	// itself created (setup may pre-seed some).
@@ -123,21 +118,108 @@ func (h *Harness) Run(ctx context.Context, c *Case, provider llm.Provider) (res 
 		r.PreGoals = len(goals)
 	}
 
-	answers, err := driveTurns(ctx, live.Sock, client, agentID, c)
-	if err != nil {
-		return nil, err
+	// 7. Drive the prompts on one conversation. A background case may have none.
+	if len(c.Prompts) > 0 {
+		client, err := protocol.Connect(live.Sock)
+		if err != nil {
+			return nil, err
+		}
+		r.cleanups = append(r.cleanups, func() { client.Close() }) //nolint:errcheck
+
+		agentID, _, _, err := client.NewConversationInteractive(c.Session.Interactive)
+		if err != nil {
+			return nil, err
+		}
+		r.AgentID = agentID
+
+		answers, err := driveTurns(ctx, live.Sock, client, agentID, c)
+		if err != nil {
+			return nil, err
+		}
+		r.Answers = answers
 	}
-	r.Answers = answers
+
+	// 7b. Give background work its time, then grade the session it names.
+	if c.Wait != nil {
+		waitFor(ctx, r, c.Wait)
+		if c.Wait.Session != "" {
+			r.AgentID = c.Wait.Session
+		}
+	}
 
 	// 8. Drain the journal, then read it back for grading.
 	live.CloseJournal()
-	events, err := r.Store.SessionEventsByAgent(agentID)
-	if err != nil {
-		return nil, fmt.Errorf("read journal: %w", err)
+	if r.AgentID != "" {
+		events, err := r.Store.SessionEventsByAgent(r.AgentID)
+		if err != nil {
+			return nil, fmt.Errorf("read journal: %w", err)
+		}
+		r.Events = events
 	}
-	r.Events = events
 
 	return r, nil
+}
+
+// startProcesses reconciles a case's [[process]] blocks the way cmd/nine does
+// at boot: validated by the configuration's own rules, goal blocks becoming a
+// config-owned goal and its pursue process, the rest written by
+// ReconcileProcesses; then the runner is asked for a pass.
+func startProcesses(ctx context.Context, lv *live, setup []ProcessSetup) error {
+	blocks := make([]config.ProcessConfig, 0, len(setup))
+	for _, p := range setup {
+		blocks = append(blocks, config.ProcessConfig{
+			Name: p.Name, Tool: p.Tool, Every: p.Every, Schedule: p.Schedule, Goal: p.Goal,
+			Role: p.Role, Delegates: p.Delegates, Session: p.Session, ReportTo: p.ReportTo, Args: p.Args,
+		})
+	}
+	if err := (&config.Config{Process: blocks}).Validate(); err != nil {
+		return err
+	}
+	// A case may supply its own tools under the workspace's .tools directory.
+	lv.Tools.Load(ctx, nil)
+
+	store := lv.Result.Store
+	runtime.ReconcileProcesses(store, lv.Tools, blocks)
+	for _, b := range blocks {
+		if b.Goal == "" {
+			continue
+		}
+		var every time.Duration
+		if b.Every != "" {
+			d, err := time.ParseDuration(b.Every)
+			if err != nil {
+				return err
+			}
+			every = d
+		}
+		role := b.Role
+		if role == "" {
+			role = "monitor"
+		}
+		if err := store.GoalCreate(b.Name, b.Goal, "", runtime.ConfigGoalOrigin); err != nil {
+			return err
+		}
+		if _, err := lv.Daemon.SpawnStandingSession(ctx, b.Name, role, b.Delegates, every, b.Schedule); err != nil {
+			return err
+		}
+	}
+	lv.Processes.Wake()
+	return nil
+}
+
+// waitFor returns once every side effect in w.Until holds, checked the way the
+// grader checks them, or once w.Seconds have passed.
+func waitFor(ctx context.Context, r *RunResult, w *WaitSpec) {
+	probe := &Case{Expect: Expect{SideEffects: w.Until}}
+	deadline := time.Now().Add(time.Duration(w.Seconds) * time.Second)
+	for time.Now().Before(deadline) && ctx.Err() == nil {
+		g := &grader{c: probe, res: r}
+		g.gradeSideEffects()
+		if len(g.failures) == 0 {
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 }
 
 // live is a started daemon for one case, before any conversation: the production
@@ -146,7 +228,9 @@ type live struct {
 	Result *RunResult
 	Daemon *runtime.Daemon
 	Tools  *toolvm.Host
-	Sock   string
+	// Processes is the process runner the harness started.
+	Processes *runtime.StandingRunner
+	Sock      string
 	// CloseJournal drains the event sink so the journal can be read; idempotent.
 	CloseJournal func()
 }
@@ -327,13 +411,17 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 	// 6. Start the daemon and wait for the socket.
 	dctx, dcancel := context.WithCancel(ctx)
 	go supervisor.Run(dctx)
+	// The process runner, as production starts it: goal sessions, standing
+	// agents and standing tools all run through it (adr/process-sessions.md).
+	// A short poll, since an eval case is over in seconds.
+	go runtime.RunStandingTools(dctx, asm.Processes, 200*time.Millisecond)
 	go daemon.Start(dctx) //nolint:errcheck
 	r.cleanups = append(r.cleanups, func() { dcancel(); daemon.Stop() })
 	if err := waitForSocket(sock, 5*time.Second); err != nil {
 		return nil, err
 	}
 
-	return &live{Result: r, Daemon: daemon, Tools: toolHost, Sock: sock, CloseJournal: closeSink}, nil
+	return &live{Result: r, Daemon: daemon, Tools: toolHost, Processes: asm.Processes, Sock: sock, CloseJournal: closeSink}, nil
 }
 
 // driveTurns sends each prompt in order and returns the final answers. When the

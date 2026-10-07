@@ -131,7 +131,7 @@ type StandingStatus struct {
 }
 
 // triggerText renders a standing tool's cadence for display.
-func triggerText(t memory.StandingTool) string {
+func triggerText(t memory.Process) string {
 	if t.Schedule != "" {
 		return "cron " + t.Schedule
 	}
@@ -141,7 +141,7 @@ func triggerText(t memory.StandingTool) string {
 	return "—"
 }
 
-func standingStatusOf(t memory.StandingTool, recent []StandingLogEntry) StandingStatus {
+func standingStatusOf(t memory.Process, recent []StandingLogEntry) StandingStatus {
 	return StandingStatus{
 		ID: t.ID, Tool: t.Tool, State: t.State, Trigger: triggerText(t),
 		Calls: t.Calls, Cycles: t.Cycles, Failures: t.Failures,

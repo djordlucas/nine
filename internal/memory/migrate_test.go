@@ -432,9 +432,10 @@ func TestMigrationDropGoalSubtreeIsSafeWhenAbsent(t *testing.T) {
 	store2.Close() //nolint:errcheck
 }
 
-// The rename moves only the column; the stored JSON array and its object keys
-// are untouched, so an existing plan must load unchanged afterwards.
-func TestMigrationRenamesStagesToRoutines(t *testing.T) {
+// A plan from version 4 — routines under the old `stages` column — survives
+// every later step: the renames keep its JSON, and the plan then becomes the
+// pursue process that replaces it.
+func TestMigrationCarriesAStagesPlanToItsProcess(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nine.db")
 	const stored = `[{"name":"pursue","kind":"pursue","status":"active"}]`
 
@@ -458,46 +459,38 @@ func TestMigrationRenamesStagesToRoutines(t *testing.T) {
 	}
 	defer store.Close() //nolint:errcheck
 
-	if hasColumn(t, path, "session_plans", "stages") {
-		t.Error("the stages column survived the rename")
-	}
-	if !hasColumn(t, path, "session_plans", "routines") {
-		t.Fatal("no routines column after the rename")
-	}
+	assertPursueProcess(t, store, "a1")
+}
 
-	plan, err := store.SessionPlanGet("a1")
-	if err != nil {
-		t.Fatalf("SessionPlanGet: %v", err)
+func assertPursueProcess(t *testing.T, store *Store, goalID string) {
+	t.Helper()
+	p, found, err := store.ProcessGet("goal:" + goalID)
+	if err != nil || !found {
+		t.Fatalf("ProcessGet = found %v, err %v; the plan did not become a process", found, err)
 	}
-	if plan == nil {
-		t.Fatal("plan vanished across the rename")
-	}
-	if len(plan.Routines) != 1 || plan.Routines[0].Kind != "pursue" || plan.Routines[0].Status != "active" {
-		t.Errorf("routines = %+v, want the stored pursue routine unchanged", plan.Routines)
+	if p.Tool != "pursue" || p.Mode != ProcessLive || p.SessionID != goalID || p.GoalID != goalID ||
+		!p.Owner || p.State != ProcessRunning {
+		t.Errorf("process = %+v, want a running live pursue owning session %s, bound to its goal", p, goalID)
 	}
 }
 
-// A fresh database has the new name and never the old one.
-func TestFreshDatabaseUsesRoutinesColumn(t *testing.T) {
+// A fresh database has no session plans: processes replaced them.
+func TestFreshDatabaseHasNoSessionPlans(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nine.db")
 	store, err := Open(path)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	store.Close() //nolint:errcheck
-
-	if hasColumn(t, path, "session_plans", "stages") {
-		t.Error("a fresh database created the old stages column")
-	}
-	if !hasColumn(t, path, "session_plans", "routines") {
-		t.Error("a fresh database is missing the routines column")
+	defer store.Close() //nolint:errcheck
+	if hasTableAt(t, path, "session_plans") {
+		t.Error("a fresh database created session_plans")
 	}
 }
 
 // A database migrated by the intervening build sits at version 5 with an
-// `aspects` column. It must reach `routines` without passing through the
+// `aspects` column. It reaches its process without passing through the
 // stages→aspects step, which no longer applies to it.
-func TestMigrationRenamesAspectsToRoutines(t *testing.T) {
+func TestMigrationCarriesAnAspectsPlanToItsProcess(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nine.db")
 	const stored = `[{"name":"pursue","kind":"pursue","status":"active"}]`
 
@@ -521,19 +514,7 @@ func TestMigrationRenamesAspectsToRoutines(t *testing.T) {
 	}
 	defer store.Close() //nolint:errcheck
 
-	if hasColumn(t, path, "session_plans", "aspects") {
-		t.Error("the aspects column survived")
-	}
-	if !hasColumn(t, path, "session_plans", "routines") {
-		t.Fatal("no routines column")
-	}
-	plan, err := store.SessionPlanGet("a1")
-	if err != nil || plan == nil {
-		t.Fatalf("SessionPlanGet = %v, %v", plan, err)
-	}
-	if len(plan.Routines) != 1 || plan.Routines[0].Kind != "pursue" {
-		t.Errorf("routines = %+v, want the stored pursue routine intact", plan.Routines)
-	}
+	assertPursueProcess(t, store, "a1")
 }
 
 // A database left by a binary that knew only plugin_jobs. Its rows must survive
@@ -641,5 +622,110 @@ func TestMigratesDatabaseMissingCapabilityTables(t *testing.T) {
 	}
 	if grants, err := store.CapabilityGrantList(); err != nil || len(grants) != 0 {
 		t.Errorf("grants = %v, err = %v; a migrated database confers nothing", grants, err)
+	}
+}
+
+// Standing tools become processes in place: a version-12 database's standing
+// runs keep their definition and run state, and a condition trigger's
+// wake_agent becomes report_to. initSchema creates an empty `processes` table
+// before migrating, which the step must replace rather than collide with.
+func TestMigratesStandingToolsIntoProcesses(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nine.db")
+
+	func() {
+		w := openRaw(t, path)
+		mustExec(t, w, `CREATE TABLE conversations (id TEXT PRIMARY KEY)`)
+		mustExec(t, w, `CREATE TABLE standing_tools (
+			id            TEXT PRIMARY KEY,
+			tool          TEXT NOT NULL,
+			args          TEXT NOT NULL DEFAULT '{}',
+			interval_secs INTEGER NOT NULL DEFAULT 0,
+			schedule      TEXT NOT NULL DEFAULT '',
+			state         TEXT NOT NULL DEFAULT 'running',
+			cursor        TEXT NOT NULL DEFAULT '',
+			calls         INTEGER NOT NULL DEFAULT 0,
+			cycles        INTEGER NOT NULL DEFAULT 0,
+			failures      INTEGER NOT NULL DEFAULT 0,
+			last_error    TEXT NOT NULL DEFAULT '',
+			last_call_at  TEXT NOT NULL DEFAULT '',
+			next_at       TEXT NOT NULL DEFAULT '',
+			generated     INTEGER NOT NULL DEFAULT 0,
+			wake_agent    TEXT NOT NULL DEFAULT '',
+			created_at    TEXT NOT NULL DEFAULT '',
+			updated_at    TEXT NOT NULL DEFAULT ''
+		)`)
+		mustExec(t, w, `INSERT INTO standing_tools (id, tool, interval_secs, state, cycles, wake_agent)
+			VALUES ('when:sec-watch', 'cve_scan', 10, 'stopped', 7, 'sec-watch')`)
+		mustExec(t, w, `PRAGMA user_version = 12`)
+	}()
+
+	store, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer store.Close() //nolint:errcheck
+
+	p, found, err := store.ProcessGet("when:sec-watch")
+	if err != nil || !found {
+		t.Fatalf("ProcessGet = found %v err %v; the standing run did not survive", found, err)
+	}
+	if p.Tool != "cve_scan" || p.IntervalSecs != 10 || p.State != ProcessStopped || p.Cycles != 7 {
+		t.Errorf("process = %+v, want the standing run's definition and state", p)
+	}
+	if p.ReportTo != "sec-watch" {
+		t.Errorf("report_to = %q, want the condition trigger's agent", p.ReportTo)
+	}
+}
+
+// A version-14 database's plans become processes: a standing agent's plan,
+// with a reflection routine riding along, becomes its pursue process — role,
+// delegation and cadence kept — and an attached reflect process; a paused
+// goal's process is stopped by its goal; the self-reflection plan is left to
+// be reconciled from configuration. Then session_plans is gone.
+func TestMigratesSessionPlansIntoProcesses(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nine.db")
+	func() {
+		w := openRaw(t, path)
+		mustExec(t, w, `CREATE TABLE conversations (id TEXT PRIMARY KEY)`)
+		mustExec(t, w, `CREATE TABLE session_plans (
+			id         TEXT PRIMARY KEY,
+			status     TEXT NOT NULL DEFAULT 'active',
+			routines   TEXT NOT NULL DEFAULT '[]',
+			created_at TEXT NOT NULL DEFAULT '',
+			updated_at TEXT NOT NULL DEFAULT ''
+		)`)
+		mustExec(t, w, `INSERT INTO session_plans (id, routines) VALUES ('sec-watch',
+			'[{"name":"pursue","kind":"pursue","status":"active","config":{"schedule":"0 9 * * 1-5","role":"monitor","delegates":true}},
+			  {"name":"idle-reflection","kind":"idle-reflection","status":"active","config":{"idle_interval_seconds":1800}}]')`)
+		mustExec(t, w, `INSERT INTO session_plans (id, routines) VALUES ('later',
+			'[{"name":"pursue","kind":"pursue","status":"paused","config":{"idle_interval_seconds":300}}]')`)
+		mustExec(t, w, `INSERT INTO session_plans (id, routines) VALUES ('self-reflection',
+			'[{"name":"idle-reflection","kind":"idle-reflection","status":"active","config":{"idle_interval_seconds":21600,"role":"reflection"}}]')`)
+		mustExec(t, w, `PRAGMA user_version = 14`)
+	}()
+
+	store, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer store.Close() //nolint:errcheck
+
+	owner, found, _ := store.ProcessGet("goal:sec-watch")
+	if !found || owner.Role != "monitor" || !owner.Delegates || owner.Schedule != "0 9 * * 1-5" || owner.State != ProcessRunning {
+		t.Errorf("standing agent process = %+v (found %v)", owner, found)
+	}
+	attached, found, _ := store.ProcessGet("reflect:sec-watch")
+	if !found || attached.Tool != "reflect" || attached.Owner || attached.SessionID != "sec-watch" || attached.IntervalSecs != 1800 {
+		t.Errorf("attached reflection = %+v (found %v)", attached, found)
+	}
+	paused, found, _ := store.ProcessGet("goal:later")
+	if !found || paused.State != ProcessStopped || paused.StoppedBy != "goal" {
+		t.Errorf("paused goal's process = %+v (found %v), want stopped by its goal", paused, found)
+	}
+	if _, found, _ := store.ProcessGet("goal:self-reflection"); found {
+		t.Error("the self-reflection plan became a pursue process")
+	}
+	if hasTableAt(t, path, "session_plans") {
+		t.Error("session_plans survived the migration")
 	}
 }

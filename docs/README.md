@@ -50,7 +50,7 @@ Ordered outside in.
 | [AgentWorker](runner.md) | Per-conversation loop wrapper, stall detection, checkpointing |
 | [Agent loop](agent-loop.md) | The ReAct implementation: reason, act, observe |
 | [Context builder](context-builder.md) | Token budgeting, message trimming, tool relevance ranking |
-| [Session plans and routines](session-plans.md) | Per-session routines, idle scheduling, self-reflection, goal pursuit |
+| [Processes](processes.md) | Everything between your turns: goal sessions, standing agents, self-reflection, condition triggers, standing tools; the `[[process]]` block |
 | [Roles](roles.md) | Worker kinds as data: persona and enforced tool allowlist |
 | [Event journal](event-journal.md) | Append-only record of every model exchange and tool call; subscribing to it |
 | [Tool selection](tool-selection.md) | Pre-turn ranking and mid-turn search over the tool catalog |

@@ -2,6 +2,7 @@ package memory
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 )
 
@@ -191,6 +192,12 @@ var migrations = []migrationStep{
 	// is correct: every standing tool that predates this reports to the human
 	// feed, which is what they were declared to do.
 	{name: "standing_wake_agent", fn: func(q sqlExec) error {
+		// A database that never had standing_tools gets it as `processes`, in
+		// its current shape, from initSchema (step 12 → 13 explains).
+		has, err := hasTableTx(q, "standing_tools")
+		if err != nil || !has {
+			return err
+		}
 		return addColumnIfMissing(q, "standing_tools", "wake_agent", "TEXT NOT NULL DEFAULT ''")
 	}},
 
@@ -270,6 +277,170 @@ var migrations = []migrationStep{
 		_, err := q.Exec(`CREATE INDEX IF NOT EXISTS capability_grants_source ON capability_grants(source)`)
 		return err
 	}},
+
+	// 12 → 13: standing tools become processes (adr/process-sessions.md). The
+	// table is renamed, not copied, so every standing run keeps its state; and
+	// wake_agent, the session a run's findings go to, becomes report_to, the
+	// name a pipe has. Safe against a database where either already happened.
+	//
+	// initSchema has already created `processes`, empty and in its current shape,
+	// before this step runs. With standing_tools present, that empty table is
+	// dropped so the rename can take its name.
+	{name: "standing_tools_to_processes", fn: func(q sqlExec) error {
+		has, err := hasTableTx(q, "standing_tools")
+		if err != nil {
+			return err
+		}
+		if has {
+			if _, err := q.Exec(`DROP TABLE IF EXISTS processes`); err != nil {
+				return err
+			}
+			if _, err := q.Exec(`ALTER TABLE standing_tools RENAME TO processes`); err != nil {
+				return err
+			}
+		}
+		if _, err := q.Exec(`DROP INDEX IF EXISTS standing_tools_state`); err != nil {
+			return err
+		}
+		if _, err := q.Exec(`CREATE INDEX IF NOT EXISTS processes_state ON processes (state)`); err != nil {
+			return err
+		}
+		renamed, err := hasColumnTx(q, "processes", "report_to")
+		if err != nil || renamed {
+			return err
+		}
+		_, err = q.Exec(`ALTER TABLE processes RENAME COLUMN wake_agent TO report_to`)
+		return err
+	}},
+
+	// 13 → 14: what a live process needs (adr/process-sessions.md): its mode,
+	// the session it drives and the role its turns run under, whether it owns
+	// that session, and the goal it is bound to. Every existing row is a slice
+	// process, which is what the defaults say.
+	{name: "process_live_columns", fn: func(q sqlExec) error {
+		for _, c := range []struct{ name, def string }{
+			{"mode", "TEXT NOT NULL DEFAULT 'slice'"},
+			{"session_id", "TEXT NOT NULL DEFAULT ''"},
+			{"owner", "INTEGER NOT NULL DEFAULT 1"},
+			{"role", "TEXT NOT NULL DEFAULT ''"},
+			{"delegates", "INTEGER NOT NULL DEFAULT 0"},
+			{"goal_id", "TEXT NOT NULL DEFAULT ''"},
+		} {
+			if err := addColumnIfMissing(q, "processes", c.name, c.def); err != nil {
+				return err
+			}
+		}
+		return nil
+	}},
+
+	// 14 → 15: session plans give way to processes (adr/process-sessions.md).
+	// A process records who stopped it, which decides who may start it again —
+	// a goal that pauses its process restarts it when reactivated; an operator's
+	// stop stays. Every goal session's plan becomes its pursue process, and each
+	// routine riding along it an attached reflect process, keeping its cadence.
+	// The self-reflection session's plan is not carried over: its process is
+	// reconciled from configuration at every boot. Then the table goes.
+	{name: "session_plans_to_processes", fn: func(q sqlExec) error {
+		for _, c := range []struct{ name, def string }{
+			{"stopped_by", "TEXT NOT NULL DEFAULT ''"},
+			{"stopped_at", "TEXT NOT NULL DEFAULT ''"},
+		} {
+			if err := addColumnIfMissing(q, "processes", c.name, c.def); err != nil {
+				return err
+			}
+		}
+		has, err := hasTableTx(q, "session_plans")
+		if err != nil || !has {
+			return err
+		}
+		if err := convertGoalPlans(q); err != nil {
+			return err
+		}
+		_, err = q.Exec(`DROP TABLE session_plans`)
+		return err
+	}},
+}
+
+// convertGoalPlans turns each session plan with a pursue routine into the
+// processes that replace it (migration 14 → 15).
+func convertGoalPlans(q sqlExec) error {
+	type routine struct {
+		Kind   string `json:"kind"`
+		Status string `json:"status"`
+		Config struct {
+			IdleIntervalSeconds int    `json:"idle_interval_seconds"`
+			Schedule            string `json:"schedule"`
+			Role                string `json:"role"`
+			Delegates           bool   `json:"delegates"`
+		} `json:"config"`
+	}
+	type plan struct {
+		id, status string
+		routines   []routine
+	}
+	rows, err := q.Query(`SELECT id, status, routines FROM session_plans`)
+	if err != nil {
+		return err
+	}
+	var plans []plan
+	for rows.Next() {
+		var p plan
+		var raw string
+		if err := rows.Scan(&p.id, &p.status, &raw); err != nil {
+			rows.Close() //nolint:errcheck
+			return err
+		}
+		if json.Unmarshal([]byte(raw), &p.routines) != nil {
+			continue // a plan this binary cannot read has nothing to carry over
+		}
+		plans = append(plans, p)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+
+	for _, p := range plans {
+		var pursue *routine
+		for i := range p.routines {
+			if p.routines[i].Kind == "pursue" {
+				pursue = &p.routines[i]
+			}
+		}
+		if pursue == nil || p.status == "archived" {
+			continue
+		}
+		// A paused goal's process is stopped by its goal, and restarts with it.
+		state, stoppedBy := "running", ""
+		if pursue.Status != "active" || p.status != "active" {
+			state, stoppedBy = "stopped", "goal"
+		}
+		role := pursue.Config.Role
+		if role == "" {
+			role = "pursue"
+		}
+		if _, err := q.Exec(
+			`INSERT OR IGNORE INTO processes(id, tool, mode, session_id, owner, role, delegates, goal_id,
+			                                 interval_secs, schedule, state, stopped_by)
+			 VALUES(?, 'pursue', 'live', ?, 1, ?, ?, ?, ?, ?, ?, ?)`,
+			"goal:"+p.id, p.id, role, pursue.Config.Delegates, p.id,
+			pursue.Config.IdleIntervalSeconds, pursue.Config.Schedule, state, stoppedBy); err != nil {
+			return err
+		}
+		for _, r := range p.routines {
+			if r.Kind != "idle-reflection" {
+				continue
+			}
+			if _, err := q.Exec(
+				`INSERT OR IGNORE INTO processes(id, tool, mode, session_id, owner, goal_id,
+				                                 interval_secs, schedule, state, stopped_by)
+				 VALUES(?, 'reflect', 'live', ?, 0, ?, ?, ?, ?, ?)`,
+				"reflect:"+p.id, p.id, p.id,
+				r.Config.IdleIntervalSeconds, r.Config.Schedule, state, stoppedBy); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // hasTableTx reports whether a table exists, using the passed handle so it

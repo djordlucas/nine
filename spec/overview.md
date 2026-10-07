@@ -67,7 +67,7 @@ becomes hard to trust.)
    │        │                                │                          │
    │        │  Daemon ── AgentWorker(s)      │                          │
    │        │     │          ├─ agent.Loop   │                          │
-   │        │     │          └─ SessionPlan  │                          │
+   │        │     │          └─ its process  │                          │
    │        │  LLM Queue ── Provider ────────┼──► LLM endpoint          │
    │        │  Supervisor                    │   (ollama)               │
    │        │  Plugin Manager   EventSink    │                          │
@@ -119,9 +119,9 @@ the session is durable:
 
 The distinction that decides behavior is **durable vs. transient**, not interactive vs. not.
 Conversations, goal-pursue, and self-reflection are durable sessions: each is an
-`AgentWorker` with a `SessionPlan`, lives in the daemon's session registry, and is
-checkpointed so it survives restart (I5, I7). A **sub-agent is a bare loop run
-synchronously inside its parent's tool call** — no session plan, not in the registry,
+`AgentWorker` in the daemon's session registry — the background ones driven by a
+process — checkpointed so it survives restart (I5, I7). A **sub-agent is a bare loop run
+synchronously inside its parent's tool call** — no process, not in the registry,
 not independently resumable. It is a *nested, transient* session.
 
 **Tool call** — the atomic action a session takes. Between session and tool call sits
@@ -230,7 +230,7 @@ checklist tests them. They are the rules that keep an implementation coherent.
   a writer pool of exactly one connection plus a concurrent read-only pool.
 - **I4 — Operational tables are daemon-private.** Agents get K/V, files, vectors, and
   skills as tools. They **never** get `conversations`, `goals`, `workflows`,
-  `notifications`, `user_notifications`, `session_plans`, the HITL tables
+  `notifications`, `user_notifications`, `processes`, the HITL tables
   (`human_requests`, `interactive_sessions`), or the journal tables (`session_events`,
   `event_cursors`, `related_sessions`) as tools. Those are reached only via
   daemon-internal methods. (Enforces N4.)
@@ -239,9 +239,8 @@ checklist tests them. They are the rules that keep an implementation coherent.
   plan. This is what makes attach and restart-survival work.
 - **I6 — Sub-agent recursion is depth-capped.** Delegation tools are unavailable at
   depth ≥ 2, so delegation cannot spiral.
-- **I7 — Background autonomy is resumable.** Idle-capable session plans are
-  eager-persisted and restarted at daemon boot; ordinary conversations are lazy and
-  attach-on-demand.
+- **I7 — Background autonomy is resumable.** Processes are persisted and started at
+  daemon boot; ordinary conversations are attach-on-demand.
 - **I8 — Display names never reach the LLM.** Human-friendly tool display names are for
   the client UI only; the model sees canonical tool names.
 - **I9 — Plugins are isolation boundaries.** A plugin crash is contained to its

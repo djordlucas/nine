@@ -214,22 +214,47 @@ func (d *Daemon) attach(agentID string) error {
 
 // makeAgentWorker creates a AgentWorker for agentID, optionally restoring from
 // checkpointData. interactive enables the loop's human-in-the-loop tools.
-// The session's plan is loaded first so its profile picks the worker's role
-// (active → orchestrator, idle-reflection → reflection, pursue → pursue;
-// adr/roles-design.md §6).
+//
+// A session a process drives takes its role from the process that owns it
+// (adr/process-sessions.md), so attaching to a goal session or resuming one
+// rebuilds the pursue role it runs under; any other session is a conversation,
+// under the orchestrator role.
 func (d *Daemon) makeAgentWorker(id string, checkpointData []byte, interactive bool) *AgentWorker {
-	plan, err := loadOrCreatePlan(context.Background(), d.plans, id, defaultProfile, false)
-	if err != nil {
-		slog.Warn("load session plan failed", "agent_id", id, "err", err)
-		plan = nil
+	if p, ok := d.processRole(id); ok {
+		return d.buildWorker(id, checkpointData, p)
 	}
+	return d.buildWorker(id, checkpointData, RoleParams{Role: OrchestratorRole, Interactive: interactive})
+}
 
-	session := d.agent.NewSession(id, RoleParams{
-		Role:        roleNameForPlan(plan),
-		Interactive: interactive,
-		OwnsGoal:    planOwnsGoal(plan),
-		Delegates:   planDelegates(plan),
-	})
+// processRole returns the role parameters of the process owning session id,
+// if one does.
+func (d *Daemon) processRole(id string) (RoleParams, bool) {
+	if d.procs == nil {
+		return RoleParams{}, false
+	}
+	procs, err := d.procs.ProcessesOfSession(id)
+	if err != nil {
+		slog.Warn("look up the process owning a session", "id", id, "err", err)
+		return RoleParams{}, false
+	}
+	for _, p := range procs {
+		if p.Owner {
+			return processRoleParams(p), true
+		}
+	}
+	return RoleParams{}, false
+}
+
+// processRoleParams is what a session driven by p runs under: p's role, goal
+// ownership when p is bound to a goal, and p's delegation opt-in.
+func processRoleParams(p memory.Process) RoleParams {
+	return RoleParams{Role: p.Role, OwnsGoal: p.GoalID != "", Delegates: p.Delegates}
+}
+
+// buildWorker creates a worker for id from explicit role parameters, restoring
+// checkpointData when given.
+func (d *Daemon) buildWorker(id string, checkpointData []byte, p RoleParams) *AgentWorker {
+	session := d.agent.NewSession(id, p)
 	loop := session.Loop
 	if checkpointData != nil {
 		loop.LoadState(checkpointData) //nolint:errcheck
@@ -241,7 +266,21 @@ func (d *Daemon) makeAgentWorker(id string, checkpointData []byte, interactive b
 		saveFn = func(id string, data []byte) error { return ckpt.Save(id, data) }
 	}
 
-	r := newAgentWorker(id, loop, saveFn, session.Notifications, session.Stall, plan, d.sink)
+	stall := session.Stall
+	// A session bound to a goal pauses that goal when it stalls, as the pursue
+	// routine did: five turns that call no tool is a pursuit going nowhere.
+	if p.OwnsGoal && d.procs != nil && stall.Limit > 0 {
+		next, procs := stall.OnStall, d.procs
+		stall.OnStall = func(agentID string) {
+			if err := procs.GoalUpdateStatus(agentID, "paused"); err != nil {
+				slog.Warn("pause a stalled session's goal", "goal_id", agentID, "err", err)
+			}
+			if next != nil {
+				next(agentID)
+			}
+		}
+	}
+	r := newAgentWorker(id, loop, saveFn, session.Notifications, stall, d.sink)
 	r.onComplete = session.OnComplete
 	if d.store != nil {
 		store := d.store
@@ -398,8 +437,8 @@ func (d *Daemon) handleSessionStop(enc *json.Encoder, agentID string, all bool) 
 }
 
 // forgetSession deletes a session's durable state: its checkpoint and, when a
-// plan store is configured, its session plan (archived so it is not resumed at
-// startup). It reports whether any persisted trace of the session existed.
+// process store is configured, the processes driving it (stopped by the
+// operator, so they do not recreate it). It reports whether any persisted trace of the session existed.
 // Best-effort — persistence errors are logged, not returned.
 func (d *Daemon) forgetSession(id string) bool {
 	existed := false
@@ -411,13 +450,22 @@ func (d *Daemon) forgetSession(id string) bool {
 			slog.Warn("delete checkpoint failed", "id", id, "err", err)
 		}
 	}
-	if d.plans != nil {
-		if p, err := d.plans.SessionPlanGet(id); err == nil && p != nil {
+	// A session processes drive would be recreated by their next turn: stop
+	// them, as the operator — an operator's stop stays until an operator undoes
+	// it.
+	if d.procs != nil {
+		procs, err := d.procs.ProcessesOfSession(id)
+		if err != nil {
+			slog.Warn("list the processes of a stopped session", "id", id, "err", err)
+		}
+		for _, p := range procs {
 			existed = true
-			p.Status = "archived"
-			if err := d.plans.SessionPlanSave(p); err != nil {
-				slog.Warn("archive session plan failed", "id", id, "err", err)
+			if _, err := d.procs.ProcessStop(p.ID, "operator"); err != nil {
+				slog.Warn("stop a stopped session's process", "id", id, "process", p.ID, "err", err)
 			}
+		}
+		if len(procs) > 0 && d.procWake != nil {
+			d.procWake()
 		}
 	}
 	return existed
@@ -641,7 +689,7 @@ func (d *Daemon) sandboxedToolStatuses() []protocol.SandboxedToolStatus {
 	}
 	descriptions := map[string]string{}
 	timeouts := map[string]string{}
-	for _, t := range d.tools.Tools() {
+	for _, t := range append(d.tools.Tools(), d.tools.Processes()...) {
 		descriptions[t.Name] = t.Description
 		if t.Timeout > 0 {
 			timeouts[t.Name] = t.Timeout.String()
@@ -844,9 +892,9 @@ func (d *Daemon) handleStandingControl(enc *json.Encoder, id, action string) {
 	var state string
 	switch action {
 	case "stop":
-		state = memory.StandingStopped
+		state = memory.ProcessStopped
 	case "start":
-		state = memory.StandingRunning
+		state = memory.ProcessRunning
 	default:
 		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("standing control action %q is not \"stop\" or \"start\"", action))) //nolint:errcheck
 		return

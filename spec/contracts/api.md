@@ -531,7 +531,7 @@ and no `session_id`. `400` for an empty description; `404` for an unknown parent
 
 The caller is the operator, not an agent, so the role gate on the agent tool
 `goal_create` (a role's `Delegates` flag) does not apply — the same standing an
-`[[agent]]` block in nine.toml has. If the pursue session fails to start, the
+`[[process]]` block in nine.toml has. If the pursue session fails to start, the
 goal is removed and the request fails rather than leaving an unattended goal
 that reads as a cap outcome.
 
@@ -559,7 +559,7 @@ Get goal details.
 
 Delete a goal and every sub-goal beneath it, and stop the goal's pursue session,
 through the daemon's `goal_delete` message. The session's transcript and journal
-are kept; the session plan is archived so it is not resumed at the next boot.
+are kept; the goal's processes are removed so nothing starts it again.
 
 **Response:**
 ```json

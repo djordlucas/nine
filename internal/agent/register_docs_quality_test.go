@@ -26,7 +26,7 @@ var docRetrievalCases = []struct{ query, want string }{
 	{"how does nine replay a session deterministically", "replay"},
 	{"what happens on daemon restart to active sessions", "daemon"},
 	{"how does the browser plugin take a screenshot", "browser"},
-	{"what is an idle reflection session", "session-plans"},
+	{"what is a process session", "processes"},
 	// Cases the default embedder gets wrong or nearly wrong, kept deliberately:
 	// a suite pruned to what already passes cannot show an improvement, and
 	// these are the failure mode worth watching — a vocabulary-dense reference

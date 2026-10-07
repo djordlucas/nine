@@ -304,39 +304,3 @@ func trustedRoleSource(source string) bool {
 // a built-in. An agent-authored one is written by Nine at runtime and stays
 // purely restrictive: defining a role must never become an escalation path.
 var trustedRoleSources = []string{memory.SkillSourceUser}
-
-// roleNameForPlan maps a session plan's routines to the role its worker runs
-// (adr/roles-design.md §6). The role is data: a stage that declares one in its config
-// supplies it, whatever its kind. Failing that, a pursue shell runs the pursue
-// role, and everything else — ordinary [active] conversations, nil plans — the
-// orchestrator.
-//
-// Resolving by config rather than by kind is what lets a routine kind mean
-// different things in different plans: a reflection routine is the session's whole
-// purpose when it stands alone (and declares the reflection role), and a
-// passenger when it rides beside a pursue shell (and declares none).
-//
-// A pursue routine may carry an explicit work-role name in its config (seeded by
-// SpawnStandingSession for pre-defined agents, adr/predefined-agents-design.md §5
-// piece 5); when present, that role's tools/persona run in place of the default
-// pursue role, while the pursue shell itself (persistence, goal ownership) is
-// unchanged.
-func roleNameForPlan(plan *sessionPlanState) string {
-	if plan == nil || plan.plan == nil {
-		return OrchestratorRole
-	}
-	// A role declared in routine config wins wherever it appears; validateRoutines
-	// guarantees at most one stage declares one.
-	for _, st := range plan.plan.Routines {
-		if role := routineRole(st.Config); role != "" {
-			return role
-		}
-	}
-	// Otherwise a pursue shell runs the default pursue role.
-	for _, st := range plan.plan.Routines {
-		if st.Kind == "pursue" {
-			return PursueRole
-		}
-	}
-	return OrchestratorRole
-}

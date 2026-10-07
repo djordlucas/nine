@@ -407,7 +407,7 @@ always did.
 HTTP API through the socket. They are **not** the agent tool of the same name, and the
 role gate on that tool (a role's `Delegates` flag) **MUST NOT** apply: it decides which
 *agents* may start background work, and a socket client has the standing of an
-`[[agent]]` block in nine.toml.
+`[[process]]` block in nine.toml.
 
 | Verb | Rule |
 |------|------|

@@ -43,6 +43,10 @@ var stdlibSpecifiers = map[string]string{
 	// `resumable` ends a call with "ask me again". Importing it grants nothing —
 	// a tool whose manifest does not say resumable has its envelope refused.
 	"nine:job": "stdlib/job.js",
+	// process is how a live process drives its session: wait for the next
+	// trigger, run a model turn, report to a pipe. Importing it grants nothing —
+	// the host refuses every call unless the tool was started as a live process.
+	"nine:process": "stdlib/process.js",
 }
 
 var (

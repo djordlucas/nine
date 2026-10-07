@@ -3,7 +3,7 @@
 **Status:** Built · **Depends on:** nothing · **Used by:** everything that persists
 
 One store object owns the only database handle. All persistence — agent memory,
-checkpoints, goals, workflows, session plans, vectors, skills, and the session event
+checkpoints, goals, workflows, processes, vectors, skills, and the session event
 journal — flows through it (invariant I3). The reference backend is **SQLite**, reached
 via the pure-Go `modernc.org/sqlite` driver over `database/sql`; nine therefore ships
 with no database server and nothing to provision. The store opens a file path
@@ -58,7 +58,7 @@ tables to be agent-visible (R-MEM.4).
 | `workflows` | multi-step plans; steps as a JSON array on the row | daemon-private |
 | `notifications` | pending push messages to the next active turn | daemon-private |
 | `user_notifications` | human-facing feed posted by background agents (`nine notifications`) | daemon-private |
-| `session_plans` | per-session stage state + idle config | daemon-private |
+| `processes` | what runs between turns: definition, run state, triggers, who stopped it ([`processes.md`](processes.md)) | daemon-private |
 | `human_requests` | HITL question/answer state (see [`hitl.md`](hitl.md)) | daemon-private |
 | `interactive_sessions` | which sessions are HITL-eligible | daemon-private |
 | `session_events` | append-only execution journal (see [`event-journal.md`](event-journal.md)) | daemon-private |
@@ -67,7 +67,7 @@ tables to be agent-visible (R-MEM.4).
 | `jobs` | long-running work tracked across turns and restarts, for both backends — a plugin's detached goroutine and a resumable sandboxed tool (see [`plugin.md`](plugin.md), [`toolvm.md`](toolvm.md) R-TVM.19). Was `plugin_jobs`; `backend` says which, and `cursor`/`calls` belong to the tool backend | daemon-private |
 | `capability_requests` | the agent asking an operator to widen the generated tier's capability ceiling ([`toolvm.md`](toolvm.md) R-TVM.14). A record of the asking with a `pending`/`approved`/`denied` outcome, never itself a grant | daemon-private |
 | `capability_grants` | what the generated tier's ceiling **is**. `source` distinguishes `default` (derived from `[workspace].root`), `config` (from `[tools.agent.capabilities]`) and `approved` (conferred by an operator answering a request). The first two are rewritten from `nine.toml` at every boot; only the third persists across one independently | daemon-private |
-| `standing_tools` | resumable tools the daemon runs indefinitely on their own cadence (see [`toolvm.md`](toolvm.md) R-TVM.20); `wake_agent` makes one a standing agent's condition trigger. Separate from `jobs`: a job is conversation-owned and terminates, a standing run is operator-owned, reconciled by a stable id, and has no terminal state | daemon-private |
+| `processes` | tools the daemon runs indefinitely on their triggers ([`adr/process-sessions.md`](../../adr/process-sessions.md); until the process runner, the standing tools) (see [`toolvm.md`](toolvm.md) R-TVM.20); `report_to` makes one a standing agent's condition trigger. Separate from `jobs`: a job is conversation-owned and terminates, a standing run is operator-owned, reconciled by a stable id, and has no terminal state | daemon-private |
 | `tool_state` | a sandboxed tool's durable state, keyed `(tool, scope_key, key)` — the store behind the `state` capability (see [`toolvm.md`](toolvm.md) R-TVM.18). Deliberately separate from `kv`, which is Nine's own namespace and must not become tool-writable | daemon-private |
 | `workspace_files` | the workspace index: one row per file under `[workspace].root`, with its size, mtime, whether its text is searchable and why not. Its companion `workspace_fts` is **contentless** — postings only, with snippets read back from the file — because the text's home is the operator's disk, not this database (R-MEM.12) | daemon-private |
 
@@ -104,7 +104,7 @@ empty result.
 
 The following are reachable only by the daemon/runtime, never advertised as agent tools.
 An agent **MUST NOT** be able to mutate its own conversation row, the goal/workflow
-tables, notifications, or session plans through a tool call.
+tables, notifications, or processes through a tool call.
 
 | Group | Methods (reference) |
 |-------|---------------------|
@@ -113,7 +113,7 @@ tables, notifications, or session plans through a tool call.
 | Workflows | `WorkflowCreate/Get/Update/List/Scrub/Fail/Cancel/ResetStep` (mediated via core-intercepted `workflow_*` tools and operator commands) |
 | Notifications | `NotificationCreate/ListPending/MarkDelivered`; human feed `UserNotificationCreate/List/MarkSeen` |
 | Reflections | `ReflectionCreate/List` |
-| Session plans | `SessionPlanGet/Save/ListActive` |
+| Processes | `ProcessUpsertDefinition/Get/List/SetState/Stop/Delete`, `ProcessesDue/Live/StoppedBy/OfSession` |
 | HITL | `human_requests` / `interactive_sessions` state (see [`hitl.md`](hitl.md)) |
 | Capabilities | `CapabilityRequestList/Get/Decide`, `CapabilityGrantList/Revoke`, `CapabilityGrantsReconcile`. `CapabilityRequestCreate` is the sole exception and the reason the split exists: it is reachable from the agent through the core-intercepted `capability_request` tool, it can insert a `pending` row and nothing else, and no method that *confers* a capability is reachable from a tool at all ([`toolvm.md`](toolvm.md) R-TVM.14) |
 | Event journal | `SessionEventsAppend`, `SessionEventsByAgent`, `SessionEventsAfter`, `SessionEventsScrub`, `LatestTurnResult` (see [`event-journal.md`](event-journal.md)) |
@@ -136,8 +136,8 @@ end of every turn:   SaveState() → JSON{history, scratchpad} → ConversationS
 attach / resume:     ConversationLoad(id) → LoadState(data) → worker rebuilt
 ```
 
-A session is fully reconstructable from its checkpoint blob plus its `session_plans` row
-(invariant I5). `ConversationLoad` returns `(data, found, err)` so a missing checkpoint
+A session is fully reconstructable from its checkpoint blob plus, for a process session,
+the process that owns it and supplies its role (invariant I5). `ConversationLoad` returns `(data, found, err)` so a missing checkpoint
 is distinguishable from an error.
 
 ---
@@ -226,7 +226,7 @@ it by design.
 timestamp format), `kv.go`, `files.go` (FTS5 search), `fts.go` (the MATCH-expression
 builder), `vectors.go` (blob encoding + cosine ranking), `skills.go`, `conversations.go`,
 `goals.go`, `workflows.go` (delegates to `internal/workflow.Service`), `notifications.go`,
-`user_notifications.go`, `session_plans.go`, `hitl.go`, `events.go`
+`user_notifications.go`, `processes.go`, `hitl.go`, `events.go`
 (journal), `cursors.go` (subscriber cursors), `related.go` (related sessions),
 `jobs.go` (the job registry, both backends). Driver: `modernc.org/sqlite` (pure Go, no cgo).
 Backend: one SQLite file, on the container's `/data` volume or at `~/.nine/nine.db`
@@ -237,7 +237,7 @@ natively.
 ## R-MEM.11 — session deletion
 
 A session may be **erased**: the `conversations` row and every row keyed to it —
-`session_events`, `notifications`, `user_notifications`, `session_plans`,
+`session_events`, `notifications`, `user_notifications`,
 `related_sessions`, `human_requests`, `interactive_sessions`, the session's
 `tool_state` scope, its `jobs`, and its display-name key in `kv`.
 
@@ -263,7 +263,7 @@ Two kinds of session **MUST NOT** be selected, whatever their age:
 
 - one whose id matches an **active goal** — a pursue session's id *is* its goal
   id, so this is an exact test rather than a heuristic;
-- one carrying an **active session plan**, which covers standing agents.
+- one a **process drives**, which covers standing agents and self-reflection.
 
 Both are idle by design. A standing agent that wakes weekly looks abandoned after
 ten days precisely because it is working correctly, and reaping either would

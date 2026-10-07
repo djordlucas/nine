@@ -1,6 +1,6 @@
 # Contract — orchestration: sub-agents, workflows, goals
 
-**Status:** Built · **Depends on:** agent loop, dispatcher, memory store, session plans · **Used by:** any delegating-role turn
+**Status:** Built · **Depends on:** agent loop, dispatcher, memory store, processes · **Used by:** any delegating-role turn
 
 Three related delegation mechanisms. All three are exposed as **core-intercepted tools**
 gated to **delegating roles** with `depthGuard` as the recursion backstop (invariant I6, [`roles.md`](roles.md)), and all three reach daemon-private
@@ -122,7 +122,7 @@ an agent loop.
 ### R-ORCH.12 — pursue session spawning (goal-spawning roles only)
 
 `goal_create` for a **top-level** goal (`parent_type: "conversation"`) spawns a `pursue`
-session via `SpawnGoalSession` (see [`session-plans.md`](session-plans.md) R-PLAN.9):
+session via `SpawnGoalSession` (see [`processes.md`](processes.md) R-PROC.9):
 
 - **Idempotent** — if a session for that goal ID already runs, it's a no-op.
 - **Capped** — `max_goal_sessions` (default **10**) bounds concurrently-running pursue

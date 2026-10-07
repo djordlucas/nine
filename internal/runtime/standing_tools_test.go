@@ -62,12 +62,12 @@ export default function (args, job) {
 
 func declare(t *testing.T, store *memory.Store, id, tool string, interval int) {
 	t.Helper()
-	if err := store.StandingToolUpsertDefinition(memory.StandingTool{
+	if err := store.ProcessUpsertDefinition(memory.Process{
 		ID: id, Tool: tool, Args: `{}`, IntervalSecs: interval,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.StandingToolSetState(id, memory.StandingRunning); err != nil {
+	if _, err := store.ProcessSetState(id, memory.ProcessRunning); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -85,7 +85,7 @@ func TestStandingToolCompletesACycleAndResets(t *testing.T) {
 
 	// Call 1: asks to continue.
 	r.runDue(context.Background())
-	got, _, _ := store.StandingToolGet("w1")
+	got, _, _ := store.ProcessGet("w1")
 	if got.Cursor != "half" {
 		t.Fatalf("after call 1 cursor = %q, want half", got.Cursor)
 	}
@@ -96,7 +96,7 @@ func TestStandingToolCompletesACycleAndResets(t *testing.T) {
 	// Call 2: completes the cycle.
 	time.Sleep(5 * time.Millisecond)
 	r.runDue(context.Background())
-	got, _, _ = store.StandingToolGet("w1")
+	got, _, _ = store.ProcessGet("w1")
 	if got.Cycles != 1 {
 		t.Fatalf("cycles = %d, want 1", got.Cycles)
 	}
@@ -129,12 +129,12 @@ func TestStandingToolReportsOnlyWhenItHasSomethingToSay(t *testing.T) {
 			}
 			host := standingHost(t, "watcher", watcherManifest, watcherSrc, nil)
 			r := NewStandingRunner(store, host, 1, 2)
-			if err := store.StandingToolUpsertDefinition(memory.StandingTool{
+			if err := store.ProcessUpsertDefinition(memory.Process{
 				ID: "w1", Tool: "watcher", Args: tc.args, IntervalSecs: 3600,
 			}); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := store.StandingToolSetState("w1", memory.StandingRunning); err != nil {
+			if _, err := store.ProcessSetState("w1", memory.ProcessRunning); err != nil {
 				t.Fatal(err)
 			}
 
@@ -174,13 +174,13 @@ resumable = true
 
 	for range StandingFailureThreshold + 3 {
 		// Force it due, so the backoff does not stall the test.
-		if _, err := store.StandingToolFail("b1", "", time.Now(), ""); err != nil {
+		if _, err := store.ProcessFail("b1", "", time.Now(), ""); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.StandingToolSetState("b1", memory.StandingRunning); err != nil {
+		if _, err := store.ProcessSetState("b1", memory.ProcessRunning); err != nil {
 			t.Fatal(err)
 		}
-		if err := store.StandingToolUpsertDefinition(memory.StandingTool{
+		if err := store.ProcessUpsertDefinition(memory.Process{
 			ID: "b1", Tool: "broken", Args: `{}`, IntervalSecs: 1,
 		}); err != nil {
 			t.Fatal(err)
@@ -188,7 +188,7 @@ resumable = true
 		r.runDue(context.Background())
 	}
 
-	got, _, _ := store.StandingToolGet("b1")
+	got, _, _ := store.ProcessGet("b1")
 	if !strings.Contains(got.LastError, "upstream is down") {
 		t.Fatalf("last_error = %q, want the tool's own message", got.LastError)
 	}
@@ -213,19 +213,19 @@ func TestStoppedStandingToolStaysStoppedAcrossReconcile(t *testing.T) {
 	r := NewStandingRunner(store, host, 1, 2)
 	declare(t, store, "w1", "watcher", 1)
 
-	if _, err := store.StandingToolSetState("w1", memory.StandingStopped); err != nil {
+	if _, err := store.ProcessSetState("w1", memory.ProcessStopped); err != nil {
 		t.Fatal(err)
 	}
 	r.runDue(context.Background())
-	if got, _, _ := store.StandingToolGet("w1"); got.Calls != 0 {
+	if got, _, _ := store.ProcessGet("w1"); got.Calls != 0 {
 		t.Fatalf("a stopped standing tool was called %d times", got.Calls)
 	}
 
 	// The operator's file still declares it, as it did before they stopped it.
-	ReconcileStandingTools(store, []config.StandingToolConfig{
-		{ID: "w1", Tool: "watcher", Interval: "1s"},
+	ReconcileProcesses(store, nil, []config.ProcessConfig{
+		{Name: "w1", Tool: "watcher", Every: "1s"},
 	})
-	if got, _, _ := store.StandingToolGet("w1"); got.State != memory.StandingStopped {
+	if got, _, _ := store.ProcessGet("w1"); got.State != memory.ProcessStopped {
 		t.Fatalf("state = %q after reconcile, want it left stopped", got.State)
 	}
 }
@@ -237,20 +237,20 @@ func TestArgsChangeRestartsTheCycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ReconcileStandingTools(store, []config.StandingToolConfig{
-		{ID: "w1", Tool: "watcher", Interval: "1s", Args: map[string]any{"path": "/a"}},
+	ReconcileProcesses(store, nil, []config.ProcessConfig{
+		{Name: "w1", Tool: "watcher", Every: "1s", Args: map[string]any{"path": "/a"}},
 	})
-	if _, err := store.StandingToolAdvance("w1", "mid-cycle", time.Now()); err != nil {
+	if _, err := store.ProcessAdvance("w1", "mid-cycle", time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if got, _, _ := store.StandingToolGet("w1"); got.Cursor != "mid-cycle" {
+	if got, _, _ := store.ProcessGet("w1"); got.Cursor != "mid-cycle" {
 		t.Fatal("precondition: the run should hold a cursor")
 	}
 
-	ReconcileStandingTools(store, []config.StandingToolConfig{
-		{ID: "w1", Tool: "watcher", Interval: "1s", Args: map[string]any{"path": "/b"}},
+	ReconcileProcesses(store, nil, []config.ProcessConfig{
+		{Name: "w1", Tool: "watcher", Every: "1s", Args: map[string]any{"path": "/b"}},
 	})
-	got, _, _ := store.StandingToolGet("w1")
+	got, _, _ := store.ProcessGet("w1")
 	if got.Cursor != "" {
 		t.Fatalf("cursor = %q after an args change, want the cycle restarted", got.Cursor)
 	}
@@ -263,14 +263,14 @@ func TestDisabledBlockIsDeclaredButNotStarted(t *testing.T) {
 		t.Fatal(err)
 	}
 	no := false
-	ReconcileStandingTools(store, []config.StandingToolConfig{
-		{ID: "w1", Tool: "watcher", Interval: "1s", Enabled: &no},
+	ReconcileProcesses(store, nil, []config.ProcessConfig{
+		{Name: "w1", Tool: "watcher", Every: "1s", Enabled: &no},
 	})
-	got, found, err := store.StandingToolGet("w1")
+	got, found, err := store.ProcessGet("w1")
 	if err != nil || !found {
 		t.Fatalf("the block was not declared: found=%v err=%v", found, err)
 	}
-	if got.State != memory.StandingStopped {
+	if got.State != memory.ProcessStopped {
 		t.Fatalf("state = %q, want stopped", got.State)
 	}
 }
@@ -295,12 +295,12 @@ func TestStandingHeartbeatIsNotJournalled(t *testing.T) {
 	host := standingHost(t, "watcher", watcherManifest, watcherSrc, nil)
 	r := NewStandingRunner(store, host, 1, 2)
 	// quiet: the cycle completes with no output, so nothing is worth reporting.
-	if err := store.StandingToolUpsertDefinition(memory.StandingTool{
+	if err := store.ProcessUpsertDefinition(memory.Process{
 		ID: "w1", Tool: "watcher", Args: `{"quiet":true}`, IntervalSecs: 3600,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.StandingToolSetState("w1", memory.StandingRunning); err != nil {
+	if _, err := store.ProcessSetState("w1", memory.ProcessRunning); err != nil {
 		t.Fatal(err)
 	}
 
@@ -308,7 +308,7 @@ func TestStandingHeartbeatIsNotJournalled(t *testing.T) {
 		r.runDue(context.Background())
 		time.Sleep(3 * time.Millisecond)
 	}
-	if got, _, _ := store.StandingToolGet("w1"); got.Cycles != 1 {
+	if got, _, _ := store.ProcessGet("w1"); got.Cycles != 1 {
 		t.Fatalf("precondition: expected one completed cycle, got %d", got.Cycles)
 	}
 
@@ -341,7 +341,7 @@ func TestStandingOutputAndTransitionsAreJournalled(t *testing.T) {
 		r.runDue(context.Background())
 		time.Sleep(3 * time.Millisecond)
 	}
-	if _, err := r.SetState("w1", memory.StandingStopped); err != nil {
+	if _, err := r.SetState("w1", memory.ProcessStopped); err != nil {
 		t.Fatal(err)
 	}
 
@@ -370,8 +370,8 @@ func TestGeneratedStandingToolAutoDisables(t *testing.T) {
 		generated bool
 		wantState string
 	}{
-		{"generated is disabled", true, memory.StandingStopped},
-		{"config-declared keeps retrying", false, memory.StandingFailing},
+		{"generated is disabled", true, memory.ProcessStopped},
+		{"config-declared keeps retrying", false, memory.ProcessFailing},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store, err := memtest.Open(t)
@@ -386,28 +386,28 @@ description = "Always throw."
 resumable = true
 `, `export default function () { throw new Error("nope"); }`, nil)
 			r := NewStandingRunner(store, host, 1, 2)
-			if err := store.StandingToolUpsertDefinition(memory.StandingTool{
+			if err := store.ProcessUpsertDefinition(memory.Process{
 				ID: "b1", Tool: "broken", Args: `{}`, IntervalSecs: 1, Generated: tc.generated,
 			}); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := store.StandingToolSetState("b1", memory.StandingRunning); err != nil {
+			if _, err := store.ProcessSetState("b1", memory.ProcessRunning); err != nil {
 				t.Fatal(err)
 			}
 
 			for range StandingGeneratedDisableAfter + 2 {
-				got, _, _ := store.StandingToolGet("b1")
-				if got.State == memory.StandingStopped {
+				got, _, _ := store.ProcessGet("b1")
+				if got.State == memory.ProcessStopped {
 					break
 				}
 				// Force it due so the backoff does not stall the test.
-				if _, err := store.StandingToolFail("b1", got.LastError, time.Now(), got.State); err != nil {
+				if _, err := store.ProcessFail("b1", got.LastError, time.Now(), got.State); err != nil {
 					t.Fatal(err)
 				}
 				r.runDue(context.Background())
 			}
 
-			got, _, _ := store.StandingToolGet("b1")
+			got, _, _ := store.ProcessGet("b1")
 			if got.State != tc.wantState {
 				t.Fatalf("state = %q, want %q", got.State, tc.wantState)
 			}
@@ -426,14 +426,14 @@ func TestStartClearsFailureHistory(t *testing.T) {
 	host := standingHost(t, "watcher", watcherManifest, watcherSrc, nil)
 	r := NewStandingRunner(store, host, 1, 2)
 	declare(t, store, "w1", "watcher", 3600)
-	if _, err := store.StandingToolFail("w1", "boom", time.Now().Add(time.Hour), memory.StandingFailing); err != nil {
+	if _, err := store.ProcessFail("w1", "boom", time.Now().Add(time.Hour), memory.ProcessFailing); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := r.SetState("w1", memory.StandingRunning); err != nil {
+	if _, err := r.SetState("w1", memory.ProcessRunning); err != nil {
 		t.Fatal(err)
 	}
-	got, _, _ := store.StandingToolGet("w1")
+	got, _, _ := store.ProcessGet("w1")
 	if got.Failures != 0 || got.LastError != "" {
 		t.Fatalf("failures=%d lastErr=%q, want both cleared", got.Failures, got.LastError)
 	}

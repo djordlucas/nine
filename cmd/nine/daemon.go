@@ -214,6 +214,8 @@ func runDaemon() {
 		DefaultLeafRole:        cfg.Roles.DefaultLeaf,
 		MaxDelegationDepth:     cfg.Roles.MaxDelegationDepth,
 		MaxGoalSessions:        cfg.Daemon.MaxGoalSessions,
+		JobMinDelayMS:          cfg.Tools.JobMinDelayMS,
+		JobWorkers:             cfg.Tools.JobWorkers,
 	})
 	daemon := asm.Daemon
 	supervisor := asm.Supervisor
@@ -242,10 +244,11 @@ func runDaemon() {
 	// owns whether it is running, so reconciling does not restart one an operator
 	// stopped. They share the job sweeper's worker budget — what both bound is
 	// concurrent wasm instantiations.
-	runtime.ReconcileStandingTools(store, cfg.StandingTools)
-	standing := runtime.NewStandingRunner(store, toolHost, cfg.Tools.JobMinDelayMS, cfg.Tools.JobWorkers)
-	standing.SetWaker(daemon)
-	daemon.ConfigureStandingTools(standing)
+	runtime.ReconcileProcesses(store, toolHost, cfg.Process)
+	// The process runner, built by Assemble: standing tools, goal sessions,
+	// standing agents and self-reflection all run through it
+	// (adr/process-sessions.md).
+	standing := asm.Processes
 	// The capability surface behind `nine grants`, the TUI's /grants view and the
 	// API's /capabilities endpoints — one decision path for all three, because an
 	// approval widens the live ceiling and that must not be three implementations.
@@ -256,7 +259,7 @@ func runDaemon() {
 		time.Duration(cfg.Plugins.JobPollSeconds)*time.Second)
 
 	// Delete sessions nobody has touched in a while, on boot and daily. Never
-	// one with an active goal or session plan — those are idle by design
+	// one with an active goal or a process driving it — those are idle by design
 	// (runtime.RunSessionReaper). 0 disables it.
 	go runtime.RunSessionReaper(ctx, daemon,
 		cfg.SessionRetention(runtime.DefaultSessionRetentionDays))
@@ -299,16 +302,9 @@ func runDaemon() {
 		runtime.NewToolJobRunner(store, toolHost,
 			cfg.Tools.JobMaxCalls, cfg.Tools.JobMinDelayMS, cfg.Tools.JobWorkers))
 
-	// Nine's own agent's background work and standing agents. Must run after the
-	// daemon is fully wired and before ResumeSessions, which revives the
-	// sessions it seeds (internal_agent.go).
+	// Nine's own agent's background work and standing agents
+	// (internal_agent.go). The processes it writes are started by the runner.
 	startInternalAgent(ctx, cfg, store, embedder, daemon, supervisor)
-
-	// Resume any session (e.g. a goal's pursue session, once that lands) whose
-	// plan was active with an idle-capable routine when the daemon last stopped.
-	if err := daemon.ResumeSessions(ctx); err != nil {
-		slog.Warn("resume sessions", "err", err)
-	}
 
 	// Start the daemon, and log any errors. The daemon will run until the process is killed.
 	slog.Info("starting the nine daemon", "socket", cfg.SocketPath())

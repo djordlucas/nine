@@ -72,6 +72,11 @@ type Manifest struct {
 	// [capabilities] alongside the timeout override. What it changes is the
 	// lifecycle, and R-TVM.10 makes the manifest authoritative for a tool's shape.
 	Resumable bool `toml:"resumable"`
+
+	// Live says this tool is a process program (adr/process-sessions.md): Nine
+	// starts it with a [[process]] block and it runs until stopped, driving its
+	// session through nine:process. A live tool is never called.
+	Live bool `toml:"live"`
 }
 
 // LoadManifest reads and validates one manifest file. Every required field is

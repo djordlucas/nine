@@ -61,7 +61,7 @@ func TestQuickJSBlobImportsAndExportsAreClosed(t *testing.T) {
 
 	// Adding to this list is a deliberate act: each entry is reach a guest gains
 	// that the capability table has to describe.
-	hostFunctions := []string{"log", "http", "caps", "state"}
+	hostFunctions := []string{"log", "http", "caps", "state", "process"}
 
 	sawWASI, sawNine := false, false
 	for _, fn := range mod.ImportedFunctions() {
@@ -88,6 +88,11 @@ func TestQuickJSBlobImportsAndExportsAreClosed(t *testing.T) {
 			// scoping is a primary key in Nine's own database rather than
 			// something an operating system enforces. So it is a host function,
 			// and Nine owns the bugs in it.
+			//
+			// `process` is the same kind of thing: next(), turn() and report()
+			// reach Nine's own process runner, which nothing in WASI describes. It
+			// is refused outright unless the instance was started as a live
+			// process (host.hostProcess), so a called tool gains nothing from it.
 			if !slices.Contains(hostFunctions, name) {
 				t.Errorf("blob imports %s.%s, which is not in the host module's surface %v",
 					module, name, hostFunctions)
@@ -108,8 +113,13 @@ func TestQuickJSBlobImportsAndExportsAreClosed(t *testing.T) {
 	// harness the host has written into linear memory, and confers nothing — it
 	// stores a pointer the host just chose, in an instance that is destroyed when
 	// the call returns.
+	//
+	// nine_budget_reset refills the work budget when a live process takes its
+	// next trigger. The host calls it from inside nine:process's next(); it can
+	// only restore the per-trigger budget the host itself set, never raise it.
 	allowed := map[string]bool{
 		exportAlloc: true, exportRun: true, exportHarness: true, "_initialize": true,
+		"nine_budget_reset": true,
 	}
 	for name := range mod.ExportedFunctions() {
 		if !allowed[name] {

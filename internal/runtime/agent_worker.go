@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -12,7 +11,6 @@ import (
 	"nine/internal/agent"
 	ninectx "nine/internal/context"
 	"nine/internal/llm"
-	"nine/internal/memory"
 	"nine/internal/protocol"
 	"nine/internal/toolvm"
 )
@@ -114,10 +112,6 @@ type AgentWorker struct {
 	// running tool-call count within the in-flight turn.
 	llmCallN int
 	toolN    int
-
-	plan      *sessionPlanState
-	idleTimer *time.Timer
-	idleSince map[string]time.Time // stage Name -> last idle-check time
 
 	mu         sync.Mutex
 	progressFn func(protocol.Msg) // called from worker goroutine on each tool event
@@ -254,65 +248,31 @@ func newAgentWorker(
 	saveCkpt func(string, []byte) error,
 	getNotif func(string) ([]string, error),
 	stall StallConfig,
-	plan *sessionPlanState,
 	sink EventSink,
 ) *AgentWorker {
-	if plan == nil {
-		plan = defaultPlanState()
-	}
-	now := time.Now()
-	idleSince := make(map[string]time.Time, len(plan.plan.Routines))
-	for _, st := range plan.plan.Routines {
-		idleSince[st.Name] = now
-	}
 	w := &AgentWorker{
-		id:        id,
-		loop:      loop,
-		inbox:     make(chan turnReq, 1),
-		inspect:   make(chan inspectReq),
-		wake:      make(chan string, 1),
-		saveCkpt:  saveCkpt,
-		getNotif:  getNotif,
-		stall:     stall,
-		quit:      make(chan struct{}),
-		stopped:   make(chan struct{}),
-		plan:      plan,
-		idleSince: idleSince,
-		sink:      sink,
+		id:       id,
+		loop:     loop,
+		inbox:    make(chan turnReq, 1),
+		inspect:  make(chan inspectReq),
+		wake:     make(chan string, 1),
+		saveCkpt: saveCkpt,
+		getNotif: getNotif,
+		stall:    stall,
+		quit:     make(chan struct{}),
+		stopped:  make(chan struct{}),
+		sink:     sink,
 	}
 	go w.run()
 	return w
 }
 
-// defaultPlanState returns an unpersisted [active]-profile plan, used when no
-// PlanStore is configured (e.g. in tests).
-func defaultPlanState() *sessionPlanState {
-	now := time.Now().UTC().Format(time.RFC3339)
-	plan := &memory.SessionPlan{
-		Status: "active",
-		Routines: []memory.SessionRoutine{
-			{Name: "active", Kind: "active", Status: "active", UpdatedAt: now},
-		},
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-	handlers, _ := initRoutines(context.Background(), "", plan.Routines) //nolint:errcheck // "active" is always registered
-	return &sessionPlanState{plan: plan, handlers: handlers, persisted: true}
-}
-
+// run serves the worker's turns until it is stopped. A worker never starts a
+// turn of its own: a person, a process (adr/process-sessions.md) or a wake
+// submits each one.
 func (w *AgentWorker) run() {
 	defer close(w.stopped)
-	defer func() {
-		if w.idleTimer != nil {
-			w.idleTimer.Stop()
-		}
-	}()
-	w.armIdleTimer()
 	for {
-		var timerC <-chan time.Time
-		if w.idleTimer != nil {
-			timerC = w.idleTimer.C
-		}
 		select {
 		case req := <-w.inbox:
 			w.processTurn(req)
@@ -324,8 +284,6 @@ func (w *AgentWorker) run() {
 			// buffered channel takes it so the worker is free for the next turn.
 			w.processTurn(turnReq{ctx: context.Background(), text: text, respCh: make(chan turnResp, 1), trigger: "condition"})
 			w.drainQueued()
-		case <-timerC:
-			w.handleIdle()
 		case <-w.quit:
 			return
 		}
@@ -355,8 +313,7 @@ func (w *AgentWorker) drainQueued() {
 }
 
 // processTurn runs one turn through the agent loop, then runs the
-// end-of-turn hooks: stall detection, stage OnTurnEnd, checkpointing, and
-// rearming the idle scheduler.
+// end-of-turn hooks: stall detection and checkpointing.
 func (w *AgentWorker) processTurn(req turnReq) {
 	w.mu.Lock()
 	w.turnN++
@@ -401,10 +358,8 @@ func (w *AgentWorker) processTurn(req turnReq) {
 			"duration_ms", time.Since(turnStart).Milliseconds(),
 		)
 	}
-	w.notifyRoutines(req.ctx, result, err)
 	w.checkStall(req.ctx)
 	w.checkpoint()
-	w.armIdleTimer()
 	// Clear busy before delivering the reply, not after: a client that sends its
 	// next message the moment this reply lands must get a turn of its own. Were
 	// busy still set, the daemon would queue that message and drainQueued would
@@ -496,7 +451,6 @@ func (w *AgentWorker) checkStall(ctx context.Context) {
 		if w.stallN >= w.stall.Limit {
 			slog.Warn("agent stalled", "agent_id", w.id, "consecutive_no_tool_turns", w.stallN)
 			w.stallN = 0
-			w.notifyRoutines(ctx, "", ErrStall)
 			if w.stall.OnStall != nil {
 				w.stall.OnStall(w.id)
 			}
@@ -504,158 +458,6 @@ func (w *AgentWorker) checkStall(ctx context.Context) {
 	} else {
 		w.stallN = 0
 	}
-}
-
-// notifyRoutines calls OnTurnEnd on every stage with Status == "active",
-// then persists/refreshes the plan. Stages that mutate their own
-// Status/Result do so by writing their session_plans row directly; the
-// refresh picks up those changes so the idle scheduler sees them.
-func (w *AgentWorker) notifyRoutines(ctx context.Context, result string, err error) {
-	if w.plan == nil {
-		return
-	}
-	for _, st := range w.plan.plan.Routines {
-		if st.Status != "active" {
-			continue
-		}
-		h, ok := w.plan.handlers[st.Name]
-		if !ok {
-			continue
-		}
-		if hErr := h.OnTurnEnd(ctx, w.id, result, err); hErr != nil {
-			slog.Warn("stage OnTurnEnd failed", "agent_id", w.id, "stage", st.Name, "err", hErr)
-		}
-	}
-	if perr := w.persistPlan(); perr != nil {
-		slog.Warn("session plan persist failed", "agent_id", w.id, "err", perr)
-	}
-}
-
-// persistPlan writes a freshly-created plan on first use, or refreshes the
-// cached plan from the store on subsequent calls (picking up any
-// stage-driven Status/Result/Config changes).
-func (w *AgentWorker) persistPlan() error {
-	if w.plan == nil || w.plan.save == nil {
-		return nil
-	}
-	if !w.plan.persisted {
-		if err := w.plan.save(w.plan.plan); err != nil {
-			return err
-		}
-		w.plan.persisted = true
-		return nil
-	}
-	if w.plan.load == nil {
-		return nil
-	}
-	refreshed, err := w.plan.load(w.id)
-	if err != nil {
-		return err
-	}
-	if refreshed != nil {
-		w.plan.plan = refreshed
-	}
-	return nil
-}
-
-// armIdleTimer (re)computes the worker's idle timer from the minimum
-// remaining idle_interval across this session's active, idle-capable routines.
-// It stops any existing timer first; if the plan is paused/archived or no
-// stage qualifies, no timer is armed.
-func (w *AgentWorker) armIdleTimer() {
-	if w.idleTimer != nil {
-		w.idleTimer.Stop()
-		w.idleTimer = nil
-	}
-	if w.plan == nil || w.plan.plan.Status != "active" {
-		return
-	}
-	now := time.Now()
-	var next time.Duration
-	have := false
-	for _, st := range w.plan.plan.Routines {
-		if st.Status != "active" {
-			continue
-		}
-		remaining, ok := routineNextWake(st.Config, w.idleSince[st.Name], now)
-		if !ok {
-			continue
-		}
-		if !have || remaining < next {
-			next = remaining
-			have = true
-		}
-	}
-	if have {
-		w.idleTimer = time.NewTimer(next)
-	}
-}
-
-// handleIdle is called when the idle timer fires. It runs at most one turn, from
-// the due stage that has been waiting longest, and rearms either way.
-//
-// Order is by overdueness, not by position in the Stages array. I1 allows only
-// one turn at a time, so when several stages are due one must be chosen, and
-// choosing by array order starves the others: a 60s routine listed before a 3600s
-// one comes due again long before the slow stage is ever reached, so the slow
-// stage can wait indefinitely. Whether a session makes progress on all its
-// routines would otherwise depend on the order its stages happened to be
-// serialized in.
-//
-// A stage that is due but has no work still yields to the next-most-overdue one,
-// which is why this is a sorted walk rather than a single pick.
-func (w *AgentWorker) handleIdle() {
-	if w.plan == nil {
-		return
-	}
-	ctx := context.Background()
-	now := time.Now()
-
-	type dueRoutine struct {
-		name    string
-		overdue time.Duration
-	}
-	var due []dueRoutine
-	for _, st := range w.plan.plan.Routines {
-		if st.Status != "active" {
-			continue
-		}
-		overdue, ok := routineOverdueBy(st.Config, w.idleSince[st.Name], now)
-		if !ok {
-			continue
-		}
-		due = append(due, dueRoutine{name: st.Name, overdue: overdue})
-	}
-	// Longest-waiting first. Equal overdueness keeps the array order, so a
-	// single-routine plan and simultaneous wakes behave exactly as before.
-	sort.SliceStable(due, func(i, j int) bool { return due[i].overdue > due[j].overdue })
-
-	for _, d := range due {
-		// Mark every stage considered as fired, not just the one that runs.
-		// Otherwise a stage whose OnIdle declines stays overdue and keeps
-		// winning the sort, and the stages behind it never run.
-		w.idleSince[d.name] = now
-		h, ok := w.plan.handlers[d.name]
-		if !ok {
-			continue
-		}
-		text, ok := h.OnIdle(ctx, w.id)
-		if !ok {
-			continue
-		}
-		w.processTurn(turnReq{ctx: ctx, text: text, respCh: make(chan turnResp, 1), trigger: "idle"})
-		return
-	}
-	// No stage produced idle work. Refresh the cached plan so any stage-status
-	// change an OnIdle handler wrote directly (e.g. the pursue routine retiring
-	// itself once its goal is no longer active) is reflected before we decide
-	// whether to re-arm — otherwise a since-retired stage keeps arming the timer
-	// and keeps counting against MaxGoalSessions (activeGoalSessionCount reads
-	// this cached plan).
-	if err := w.persistPlan(); err != nil {
-		slog.Warn("session plan refresh failed", "agent_id", w.id, "err", err)
-	}
-	w.armIdleTimer()
 }
 
 // stop signals shutdown and waits for the run goroutine to exit. It never
@@ -701,9 +503,15 @@ func (w *AgentWorker) turnAsync(ctx context.Context, text string, forceThink boo
 
 // turn submits a user message and blocks until the response is ready.
 func (w *AgentWorker) turn(ctx context.Context, text string) (string, error) {
+	return w.turnAs(ctx, text, "")
+}
+
+// turnAs is turn with the journal's trigger label: "" for a user's turn, or
+// what drove it ("idle", "condition") for a process's.
+func (w *AgentWorker) turnAs(ctx context.Context, text, trigger string) (string, error) {
 	ch := make(chan turnResp, 1)
 	select {
-	case w.inbox <- turnReq{ctx: ctx, text: text, respCh: ch}:
+	case w.inbox <- turnReq{ctx: ctx, text: text, respCh: ch, trigger: trigger}:
 	case <-ctx.Done():
 		return "", ctx.Err()
 	case <-w.quit:

@@ -69,7 +69,7 @@ func (d *Daemon) DeleteSession(ctx context.Context, agentID string) (memory.Sess
 	slog.Info("session deleted",
 		"id", id, "name", sum.Name, "age_seconds", sum.AgeSeconds,
 		"events", counts.Events, "notifications", counts.Notifications,
-		"user_notifications", counts.UserNotifications, "plans", counts.Plans,
+		"user_notifications", counts.UserNotifications,
 		"related", counts.Related, "human_requests", counts.HumanRequests,
 		"tool_state", counts.ToolState, "jobs", counts.Jobs,
 		"rows_total", counts.Total())

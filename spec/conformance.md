@@ -32,7 +32,7 @@ How to use this file:
 | I4 | Operational tables are daemon-private (not tools) | R-MEM.4; R-HITL.7 |
 | I5 | Every turn ends with a checkpoint | R-LOOP.7; R-WORK.2; R-MEM.5 |
 | I6 | Sub-agent recursion is depth-capped | R-DISP.6; R-ORCH.3; R-ROLE.6 |
-| I7 | Background autonomy is resumable | R-PLAN.3, R-PLAN.5 |
+| I7 | Background autonomy is resumable | R-PROC.1, R-PROC.5 |
 | I8 | Display names never reach the LLM | R-PROTO.6 |
 | I9 | Plugins are isolation boundaries | R-PLUG.4 |
 | I10 | Self-improvement is data, not code | R-SKILL.5; R-ROLE.7 |
@@ -64,7 +64,7 @@ How to use this file:
 | R-MEM.1 | Single gateway (I3) | One store object holds the only DB handle; no other component opens the DB. |
 | R-MEM.2 | Exact schema | Fresh DB creates exactly the specified tables; re-open is idempotent. |
 | R-MEM.3 | Agent-facing methods | K/V, file, and vector methods round-trip; these are the only store methods exposed as tools. |
-| R-MEM.4 | Daemon-private methods (I4, N4) | `conversations`/`goals`/`workflows`/`notifications`/`session_plans`/HITL tables are reachable only via internal methods, never as tools. |
+| R-MEM.4 | Daemon-private methods (I4, N4) | `conversations`/`goals`/`workflows`/`notifications`/`processes`/HITL tables are reachable only via internal methods, never as tools. |
 | R-MEM.5 | Checkpoints | `{history, scratchpad}` saves and reloads exactly; reload reconstructs session state. |
 | R-MEM.6 | Vectors and namespaces | Put/query under `tools:`/`skills:` namespaces returns ranked matches scoped to the namespace. |
 | R-MEM.7 | JSON convenience variants | JSON set/get variants marshal/unmarshal symmetrically. |
@@ -234,19 +234,20 @@ How to use this file:
 
 ## 5. Autonomy (phases 8–10)
 
-### Session plans — [`session-plans.md`](contracts/session-plans.md)
+### Processes — [`processes.md`](contracts/processes.md)
 
-| ID | Property | Observable check |
-|----|----------|------------------|
-| R-PLAN.1 | Data model | `session_plans` rows persist routine kind + state. |
-| R-PLAN.2 | RoutineHandler interface | `Init`/`OnTurnEnd`/`OnIdle` invoked at the right points. |
-| R-PLAN.3 | Lazy vs eager persistence (I7) | `[active]` plans are lazy; idle-capable plans are eager-persisted. |
-| R-PLAN.4 | Idle scheduling | `armIdleTimer` picks the soonest interval; on fire, `handleIdle` runs the due `OnIdle`, and any returned text runs as a turn. |
-| R-PLAN.5 | Resume on restart (I7) | Idle-capable plans restart at boot; ordinary conversations attach on demand. |
-| R-PLAN.6 | `active` routine | All-no-op routine behaves trivially. |
-| R-PLAN.7 | `idle-reflection` routine | Attachable to any session; updates self KV. The turn is recorded by the journal like any other — there is no dedicated reflections store. |
-| R-PLAN.8 | Self-model (`SystemSelf`) | `self/identity`+`self/capabilities`+`self/learned` injected as P2.5, capped ~600 tokens. |
-| R-PLAN.9 | `pursue` routine | 5-min interval; reads the goal and its derived children, acts, syncs status, pauses goal on stall. |
+| ID | Requirement | Verified by |
+|----|-------------|-------------|
+| R-PROC.1 | Data model | Config owns the definition, the runtime the run state; `stopped_by` decides who may restart. |
+| R-PROC.2 | Modes | Mode follows the tool; a live tool is in no tool list and cannot be called. |
+| R-PROC.3 | Live instances | No call deadline; own pool (`max_running`); work budget refilled per trigger; stop throws `E_STOPPED`. |
+| R-PROC.4 | `nine:process` | `next`/`turn`/`report` work in a live process and are refused (`E_NOT_LIVE`) anywhere else. |
+| R-PROC.5 | Triggers and the clock (I7) | First tick one cadence after start; ticks not queued twice; slice calls back off on failure. |
+| R-PROC.6 | Process sessions | Owner sets the role; attached processes run under it; turns labelled `idle`/`condition`. |
+| R-PROC.7 | Goal binding | Inactive goal stops its process, active restarts it; a stall pauses the goal. |
+| R-PROC.8 | Pipes | A report reaches a waiting receiver, otherwise the human feed. |
+| R-PROC.9 | Shipped processes, self-model | `pursue` and `reflect`; `SystemSelf` injected as P2.5, capped ~600 tokens. |
+| R-PROC.10 | Configuration | `[[process]]` mistakes fail the load; retired blocks fail with their replacement. |
 
 ### Goals — [`orchestration.md`](contracts/orchestration.md) (§ goals)
 
@@ -364,7 +365,7 @@ How to use this file:
 
 | Check | Observable |
 |-------|------------|
-| Boot order | A single `runDaemon` builds the graph in the specified order (config → SQLite store (fail-fast) → plugins → checkpoint/notif → embedder → supervisor+`Attach` → self-model → bootstrap self KV → reflection → pursue → workflow+journal scrub → HITL → builder → daemon → event sink → configure (+ subscribers) → inject spawn/progress fns → start supervisor → reconcile standing agents → `ResumeSessions` → accept loop). |
+| Boot order | A single `runDaemon` builds the graph in the specified order (config → SQLite store (fail-fast) → plugins → checkpoint/notif → embedder → supervisor+`Attach` → self-model → bootstrap self KV → reflection process → declared processes → workflow+journal scrub → HITL → builder → daemon → event sink → configure (+ subscribers) → inject spawn/progress fns → start supervisor → reconcile standing agents → process runner starts live processes → accept loop). |
 | Cold boot | Seeds self KV and the reflection session; scrubs stale workflows and journal events; seeds config-declared standing agents; resumes idle-capable sessions from a prior run. |
 | Restart survival | Killing and restarting the daemon brings back the reflection session and all active goal pursue sessions; ordinary conversations return on `attach`. |
 
@@ -385,7 +386,7 @@ How to use this file:
 | R-SUB.4 | Related-session indexer | On `turn_end` (with an embedder), topically-similar prior sessions are linked in `related_sessions` (threshold-gated, deduped); no generative call; a no-op without an embedder. |
 | R-SUB.5 | Pull surfacing | A later on-topic turn surfaces one recorded link as `SystemEnrichment` under relevance + budget; an off-topic turn surfaces nothing. |
 | R-SUB.6 | Supervisor as a subscriber | Supervisor lifecycle events are posted as journal `supervisor` events and consumed through a cursor-backed subscription that survives restart. |
-| R-SUB.7 | Deferred by decision | No generative-LLM reaction and no autonomous session injection exists; reactions stay programmatic and out-of-band. |
+| R-SUB.7 | Deferred by decision, amended | Subscribers make no generative-LLM call and inject no session; a process session's turns are its process's (R-PROC.6), never another session's. |
 
 ---
 

@@ -2,7 +2,6 @@ package runtime_test
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -11,188 +10,130 @@ import (
 	"nine/internal/runtime"
 )
 
-// registerPursueStage registers the real "pursue" RoutineHandler factory for
-// the duration of the test, mirroring cmd/nine/daemon.go's wiring. Required
-// for SpawnGoalSession's plan to load successfully.
-func registerPursueStage(t *testing.T, store *memory.Store) {
+// goalDaemon is a daemon with a process store and no socket: goal sessions
+// are written as processes, and these tests read the store.
+func goalDaemon(t *testing.T) (*runtime.Daemon, *memory.Store) {
 	t.Helper()
-	runtime.RoutineRegistry["pursue"] = func() runtime.RoutineHandler { return runtime.NewPursueRoutine(store) }
-	t.Cleanup(func() { delete(runtime.RoutineRegistry, "pursue") })
-}
-
-func TestSpawnGoalSessionRequiresPlanStore(t *testing.T) {
-	d, _ := startDaemon(t, makeFactory(seqProvider(nil)), nil, nil)
-
-	_, err := d.SpawnGoalSession(context.Background(), "goal-1")
-	if err == nil {
-		t.Fatal("SpawnGoalSession without a plan store: want error, got nil")
-	}
-}
-
-func TestSpawnGoalSessionCreatesAndIsIdempotent(t *testing.T) {
 	store, err := memtest.Open(t)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close() //nolint:errcheck
-	registerPursueStage(t, store)
+	d := runtime.New("", nil, nil)
+	d.ConfigureProcesses(store, nil)
+	return d, store
+}
 
-	d, _ := startDaemon(t, makeFactory(seqProvider(nil)), nil, nil)
-	d.ConfigurePlanStore(store)
-
-	spawned, err := d.SpawnGoalSession(context.Background(), "goal-1")
-	if err != nil {
-		t.Fatalf("SpawnGoalSession: %v", err)
-	}
-	if !spawned {
-		t.Fatal("SpawnGoalSession spawned = false, want true")
-	}
-
-	plan, err := store.SessionPlanGet("goal-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if plan == nil || len(plan.Routines) != 1 || plan.Routines[0].Kind != "pursue" || plan.Routines[0].Status != "active" {
-		t.Fatalf("SessionPlanGet(goal-1) = %+v, want one active pursue routine", plan)
-	}
-	if got := d.ActiveGoalSessionCountForTest(); got != 1 {
-		t.Errorf("ActiveGoalSessionCount = %d, want 1", got)
-	}
-
-	// Spawning again for the same goal is a no-op.
-	spawned, err = d.SpawnGoalSession(context.Background(), "goal-1")
-	if err != nil {
-		t.Fatalf("SpawnGoalSession (second call): %v", err)
-	}
-	if !spawned {
-		t.Error("SpawnGoalSession (second call) spawned = false, want true (idempotent)")
-	}
-	if got := d.ActiveGoalSessionCountForTest(); got != 1 {
-		t.Errorf("ActiveGoalSessionCount after second spawn = %d, want 1", got)
+func TestSpawnGoalSessionRequiresAProcessStore(t *testing.T) {
+	d := runtime.New("", nil, nil)
+	if _, err := d.SpawnGoalSession(context.Background(), "goal-1"); err == nil {
+		t.Fatal("SpawnGoalSession without a process store: want error, got nil")
 	}
 }
 
-func TestSpawnStandingSessionSeedsRoleAndInterval(t *testing.T) {
-	store, err := memtest.Open(t)
-	if err != nil {
-		t.Fatal(err)
+// A goal session is the goal's pursue process: live, owning the session whose
+// id is the goal's, bound to the goal, waking every PursueIdleInterval.
+// Spawning twice keeps one process.
+func TestSpawnGoalSessionWritesItsProcessOnce(t *testing.T) {
+	d, store := goalDaemon(t)
+	for i := 0; i < 2; i++ {
+		spawned, err := d.SpawnGoalSession(context.Background(), "goal-1")
+		if err != nil || !spawned {
+			t.Fatalf("SpawnGoalSession #%d = %v, %v", i+1, spawned, err)
+		}
 	}
-	defer store.Close() //nolint:errcheck
-	registerPursueStage(t, store)
-
-	d, _ := startDaemon(t, makeFactory(seqProvider(nil)), nil, nil)
-	d.ConfigurePlanStore(store)
-
-	spawned, err := d.SpawnStandingSession(context.Background(), "sec-watch", "monitor", false, time.Hour, "", nil)
-	if err != nil {
-		t.Fatalf("SpawnStandingSession: %v", err)
+	procs, err := store.ProcessesOfSession("goal-1")
+	if err != nil || len(procs) != 1 {
+		t.Fatalf("processes = %+v, %v; want exactly one", procs, err)
 	}
-	if !spawned {
-		t.Fatal("SpawnStandingSession spawned = false, want true")
-	}
-
-	plan, err := store.SessionPlanGet("sec-watch")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if plan == nil || len(plan.Routines) != 1 || plan.Routines[0].Kind != "pursue" {
-		t.Fatalf("SessionPlanGet(sec-watch) = %+v, want one pursue routine", plan)
-	}
-	// The seeded routine config carries the work role and the configured interval.
-	var cfg struct {
-		IdleIntervalSeconds int    `json:"idle_interval_seconds"`
-		Role                string `json:"role"`
-	}
-	if err := json.Unmarshal(plan.Routines[0].Config, &cfg); err != nil {
-		t.Fatalf("unmarshal routine config: %v", err)
-	}
-	if cfg.Role != "monitor" {
-		t.Errorf("stage role = %q, want %q", cfg.Role, "monitor")
-	}
-	if cfg.IdleIntervalSeconds != 3600 {
-		t.Errorf("idle interval = %d s, want 3600", cfg.IdleIntervalSeconds)
-	}
-
-	// Idempotent for an already-running standing session.
-	spawned, err = d.SpawnStandingSession(context.Background(), "sec-watch", "monitor", false, time.Hour, "", nil)
-	if err != nil || !spawned {
-		t.Errorf("SpawnStandingSession (second call) = (%v, %v), want (true, nil)", spawned, err)
-	}
-	if got := d.ActiveGoalSessionCountForTest(); got != 1 {
-		t.Errorf("ActiveGoalSessionCount = %d, want 1", got)
+	p := procs[0]
+	if p.Tool != "pursue" || p.Mode != memory.ProcessLive || !p.Owner || p.GoalID != "goal-1" ||
+		p.Role != runtime.PursueRole || p.IntervalSecs != int(runtime.PursueIdleInterval.Seconds()) {
+		t.Errorf("process = %+v", p)
 	}
 }
 
-func TestTeardownStandingSession(t *testing.T) {
-	store, err := memtest.Open(t)
-	if err != nil {
+// A standing agent's process carries its work role, delegation opt-in and
+// trigger; a cron schedule replaces the interval.
+func TestSpawnStandingSessionWritesRoleAndTrigger(t *testing.T) {
+	d, store := goalDaemon(t)
+	if _, err := d.SpawnStandingSession(context.Background(), "sec-watch", "monitor", true, 0, "0 9 * * 1-5"); err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close() //nolint:errcheck
-	registerPursueStage(t, store)
-
-	d, _ := startDaemon(t, makeFactory(seqProvider(nil)), nil, nil)
-	d.ConfigurePlanStore(store)
-
-	if _, err := d.SpawnStandingSession(context.Background(), "sec-watch", "monitor", false, time.Hour, "", nil); err != nil {
-		t.Fatalf("SpawnStandingSession: %v", err)
+	p, found, err := store.ProcessGet("goal:sec-watch")
+	if err != nil || !found {
+		t.Fatalf("ProcessGet = %v, %v", found, err)
 	}
-	if got := d.ActiveGoalSessionCountForTest(); got != 1 {
-		t.Fatalf("ActiveGoalSessionCount = %d, want 1 before teardown", got)
+	if p.Role != "monitor" || !p.Delegates || p.Schedule != "0 9 * * 1-5" || p.IntervalSecs != 0 {
+		t.Errorf("process = %+v", p)
 	}
+}
 
+// Teardown removes a standing agent's processes, so nothing starts it again.
+func TestTeardownStandingSessionRemovesItsProcesses(t *testing.T) {
+	d, store := goalDaemon(t)
+	if _, err := d.SpawnStandingSession(context.Background(), "sec-watch", "monitor", false, time.Hour, ""); err != nil {
+		t.Fatal(err)
+	}
 	if err := d.TeardownStandingSession(context.Background(), "sec-watch"); err != nil {
-		t.Fatalf("TeardownStandingSession: %v", err)
-	}
-
-	// Session is gone and no longer counts against the cap.
-	if got := d.ActiveGoalSessionCountForTest(); got != 0 {
-		t.Errorf("ActiveGoalSessionCount = %d, want 0 after teardown", got)
-	}
-	// The plan is deactivated, so a later boot never resumes it.
-	plan, err := store.SessionPlanGet("sec-watch")
-	if err != nil {
 		t.Fatal(err)
 	}
-	if plan == nil || plan.Status == "active" {
-		t.Errorf("session plan = %+v, want a non-active status after teardown", plan)
+	if procs, _ := store.ProcessesOfSession("sec-watch"); len(procs) != 0 {
+		t.Errorf("processes after teardown = %+v", procs)
 	}
-
-	// Idempotent: a second teardown (nothing running, plan already inactive) is a no-op.
+	// Idempotent.
 	if err := d.TeardownStandingSession(context.Background(), "sec-watch"); err != nil {
-		t.Errorf("second TeardownStandingSession returned error: %v", err)
+		t.Errorf("second teardown: %v", err)
 	}
 }
 
+// At the MaxGoalSessions cap a new goal gets no process; an existing one is
+// still spawnable.
 func TestSpawnGoalSessionRespectsMaxGoalSessions(t *testing.T) {
-	store, err := memtest.Open(t)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close() //nolint:errcheck
-	registerPursueStage(t, store)
-
-	d, _ := startDaemon(t, makeFactory(seqProvider(nil)), nil, nil)
-	d.ConfigurePlanStore(store)
+	d, _ := goalDaemon(t)
 	d.SetMaxGoalSessions(1)
 
-	spawned, err := d.SpawnGoalSession(context.Background(), "goal-1")
-	if err != nil || !spawned {
+	if spawned, err := d.SpawnGoalSession(context.Background(), "goal-1"); err != nil || !spawned {
 		t.Fatalf("SpawnGoalSession(goal-1) = (%v, %v), want (true, nil)", spawned, err)
 	}
+	if spawned, err := d.SpawnGoalSession(context.Background(), "goal-2"); err != nil || spawned {
+		t.Errorf("SpawnGoalSession(goal-2) = (%v, %v), want (false, nil) at the cap", spawned, err)
+	}
+	if spawned, err := d.SpawnGoalSession(context.Background(), "goal-1"); err != nil || !spawned {
+		t.Errorf("re-spawning goal-1 at the cap = (%v, %v), want (true, nil)", spawned, err)
+	}
+	if n := d.ActiveGoalSessionCountForTest(); n != 1 {
+		t.Errorf("active goal sessions = %d, want 1", n)
+	}
+}
 
-	spawned, err = d.SpawnGoalSession(context.Background(), "goal-2")
+// Self-reflection is a process reconciled from configuration, in both
+// directions: on writes it, off stops it, on again restarts it.
+func TestReconcileSelfReflection(t *testing.T) {
+	store, err := memtest.Open(t)
 	if err != nil {
-		t.Fatalf("SpawnGoalSession(goal-2): %v", err)
+		t.Fatal(err)
 	}
-	if spawned {
-		t.Error("SpawnGoalSession(goal-2) spawned = true, want false (at MaxGoalSessions cap)")
+	if err := runtime.ReconcileSelfReflection(store, 2*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	p, found, _ := store.ProcessGet(runtime.SelfReflectionAgentID)
+	if !found || p.Tool != "reflect" || p.Role != runtime.ReflectionRole || p.IntervalSecs != 120 ||
+		p.SessionID != runtime.SelfReflectionAgentID || p.State != memory.ProcessRunning {
+		t.Fatalf("process = %+v (found %v)", p, found)
 	}
 
-	if got := d.ActiveGoalSessionCountForTest(); got != 1 {
-		t.Errorf("ActiveGoalSessionCount = %d, want 1", got)
+	if err := runtime.ReconcileSelfReflection(store, 0); err != nil {
+		t.Fatal(err)
 	}
-	if plan, err := store.SessionPlanGet("goal-2"); err != nil || plan != nil {
-		t.Errorf("SessionPlanGet(goal-2) = (%+v, %v), want (nil, nil) when at cap", plan, err)
+	if p, _, _ := store.ProcessGet(runtime.SelfReflectionAgentID); p.State != memory.ProcessStopped {
+		t.Errorf("turned off: state = %q, want stopped", p.State)
+	}
+
+	if err := runtime.ReconcileSelfReflection(store, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	p, _, _ = store.ProcessGet(runtime.SelfReflectionAgentID)
+	if p.State != memory.ProcessRunning || p.IntervalSecs != 3600 {
+		t.Errorf("turned on again: %+v, want running at the new cadence", p)
 	}
 }

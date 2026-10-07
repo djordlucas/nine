@@ -60,13 +60,13 @@ func conditionSetup(t *testing.T, args string) (*StandingRunner, *memory.Store, 
 	w := &fakeWaker{accept: true}
 	r.SetWaker(w)
 
-	if err := store.StandingToolUpsertDefinition(memory.StandingTool{
-		ID: ConditionTriggerID("watcher-agent"), Tool: "predicate", Args: args,
-		IntervalSecs: 3600, WakeAgent: "watcher-agent",
+	if err := store.ProcessUpsertDefinition(memory.Process{
+		ID: "when-watcher-agent", Tool: "predicate", Args: args,
+		IntervalSecs: 3600, ReportTo: "watcher-agent",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.StandingToolSetState(ConditionTriggerID("watcher-agent"), memory.StandingRunning); err != nil {
+	if _, err := store.ProcessSetState("when-watcher-agent", memory.ProcessRunning); err != nil {
 		t.Fatal(err)
 	}
 	return r, store, w
@@ -132,12 +132,12 @@ func TestOrdinaryStandingToolStillReportsToHumans(t *testing.T) {
 	w := &fakeWaker{accept: true}
 	r.SetWaker(w)
 
-	if err := store.StandingToolUpsertDefinition(memory.StandingTool{
+	if err := store.ProcessUpsertDefinition(memory.Process{
 		ID: "plain", Tool: "predicate", Args: `{"found":"x"}`, IntervalSecs: 3600,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.StandingToolSetState("plain", memory.StandingRunning); err != nil {
+	if _, err := store.ProcessSetState("plain", memory.ProcessRunning); err != nil {
 		t.Fatal(err)
 	}
 	r.runDue(context.Background())
@@ -157,17 +157,14 @@ func TestConditionTriggerReconcileIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	agents := []config.AgentConfig{{
-		ID: "sec-watch",
-		When: &config.AgentCondition{
-			Tool: "predicate", Interval: "10s",
-			Args: map[string]any{"path": "/var/log/app.log"},
-		},
+	blocks := []config.ProcessConfig{{
+		Name: "when-sec-watch", Tool: "predicate", Every: "10s", ReportTo: "sec-watch",
+		Args: map[string]any{"path": "/var/log/app.log"},
 	}}
-	ReconcileConditionTriggers(store, agents)
-	ReconcileConditionTriggers(store, agents)
+	ReconcileProcesses(store, nil, blocks)
+	ReconcileProcesses(store, nil, blocks)
 
-	runs, err := store.StandingToolList()
+	runs, err := store.ProcessList()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,13 +172,13 @@ func TestConditionTriggerReconcileIsIdempotent(t *testing.T) {
 		t.Fatalf("%d runs after two reconciles, want 1", len(runs))
 	}
 	got := runs[0]
-	if got.WakeAgent != "sec-watch" {
-		t.Errorf("wake_agent = %q, want the agent it belongs to", got.WakeAgent)
+	if got.ReportTo != "sec-watch" {
+		t.Errorf("wake_agent = %q, want the agent it belongs to", got.ReportTo)
 	}
 	if got.IntervalSecs != 10 {
 		t.Errorf("interval = %ds, want 10", got.IntervalSecs)
 	}
-	if got.State != memory.StandingRunning {
+	if got.State != memory.ProcessRunning {
 		t.Errorf("state = %q, want running", got.State)
 	}
 }
@@ -194,19 +191,18 @@ func TestStoppedConditionTriggerStaysStopped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	agents := []config.AgentConfig{{
-		ID:   "sec-watch",
-		When: &config.AgentCondition{Tool: "predicate", Interval: "10s"},
+	blocks := []config.ProcessConfig{{
+		Name: "when-sec-watch", Tool: "predicate", Every: "10s", ReportTo: "sec-watch",
 	}}
-	ReconcileConditionTriggers(store, agents)
-	if _, err := store.StandingToolSetState(ConditionTriggerID("sec-watch"), memory.StandingStopped); err != nil {
+	ReconcileProcesses(store, nil, blocks)
+	if _, err := store.ProcessSetState("when-sec-watch", memory.ProcessStopped); err != nil {
 		t.Fatal(err)
 	}
 
-	ReconcileConditionTriggers(store, agents)
+	ReconcileProcesses(store, nil, blocks)
 
-	got, _, _ := store.StandingToolGet(ConditionTriggerID("sec-watch"))
-	if got.State != memory.StandingStopped {
+	got, _, _ := store.ProcessGet("when-sec-watch")
+	if got.State != memory.ProcessStopped {
 		t.Fatalf("state = %q after reconcile, want it left stopped", got.State)
 	}
 }

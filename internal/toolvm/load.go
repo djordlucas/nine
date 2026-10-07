@@ -152,6 +152,11 @@ func (h *Host) compile(ctx context.Context, d discovered, grant Grant) (*Tool, e
 	// to. Refuse a schema that declares the same name rather than silently
 	// overwriting the author's own argument — the key is only genuinely reserved
 	// if something enforces it.
+	// A live tool drives its session through nine:process, which only the js
+	// harness provides.
+	if d.Manifest.Live && d.Manifest.Kind != KindJS {
+		return nil, fmt.Errorf("live = true needs kind = \"js\": a live process uses nine:process")
+	}
 	if d.Manifest.Kind == KindWasm && d.Manifest.Resumable {
 		if declaresReservedJobKey(d.SchemaJSON) {
 			return nil, fmt.Errorf(
@@ -170,6 +175,7 @@ func (h *Host) compile(ctx context.Context, d discovered, grant Grant) (*Tool, e
 		Timeout:      h.cfg.Timeouts[d.Manifest.Name],
 		ManifestPath: d.ManifestPath,
 		Resumable:    d.Manifest.Resumable,
+		Live:         d.Manifest.Live,
 	}
 
 	h.setWorkBudget(t)

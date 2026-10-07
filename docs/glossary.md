@@ -118,32 +118,31 @@ terminal state. LLM tools: `workflow_create`, `workflow_update`,
 `run_agent`). Operator commands: `nine workflow stop|fail`. See
 [Workflows](workflows.md).
 
-**Session Plan** — Persistent state machine of **routines** attached to every
-`AgentWorker` (ordinary conversation, the self-reflection session, or a
-goal's pursue session). Stored as one row per agent ID in `session_plans`.
-Drives autonomous between-turn behavior via `OnTurnEnd` (every turn) and
-`OnIdle` (per-routine idle scheduler). See [Session Plans & Routines](session-plans.md).
+**Process** — A sandboxed tool that runs on its triggers — a clock, or a report
+piped to it — instead of being called by a model. A **live** process runs until
+stopped and drives its session through `nine:process` (`next`, `turn`,
+`report`); a **slice** process is called on each trigger, as standing tools
+were. Declared with `[[process]]`, shipped (`pursue`, `reflect`), and stored in
+`processes`. See [Processes](processes.md).
 
-**Routine / RoutineHandler** — The extension point for session plans. Each
-`kind` (`active`, `idle-reflection`, `pursue`) implements `Init`,
-`OnTurnEnd`, and `OnIdle`. `active` is a no-op trivial routine every
-conversation gets; `idle-reflection` and `pursue` are idle-capable and get
-their own resumable background sessions.
+**Process session** — A session driven by a process rather than a person. It has
+one owning process, which sets its role, and may have others attached, whose
+turns run there under that role. See [Processes](processes.md).
 
-**Self-reflection session (`idle-reflection` routine)** — A single fixed
-session (agent ID `self-reflection`) that wakes on the `[daemon] self_reflection`
-cadence (2 minutes by default, `"off"` to remove it) and asks the
-model to update `self/capabilities` and `self/learned` via `memory_set`. Each
-turn is recorded by the journal under its own `agent_id`, read back with
-`nine reflections [agent-id]` (or `/reflections`). It is a routine kind, not a
-session kind: any session can carry it as a routine. See [Session Plans § idle-reflection](session-plans.md#idle-reflection--self-reflection-session).
+**Self-reflection session (`reflect` process)** — A single fixed session (agent
+ID `self-reflection`) driven by the shipped `reflect` process on the
+`[daemon] self_reflection` cadence (2 minutes by default, `"off"` to stop it),
+asking the model to update `self/capabilities` and `self/learned` via
+`memory_set`. Each turn is recorded by the journal under its own `agent_id`,
+read back with `nine reflections [agent-id]` (or `/reflections`). `reflect` can
+also attach to a standing agent's session. See [Processes](processes.md).
 
-**Pursue session (`pursue` routine)** — Background session spawned 1:1 for
-every top-level goal (`agentID == goalID`), waking every 5 minutes to
-`goal_get`, act on the goal, record what it finds as sub-goals, and call
-`goal_update_status`. Capped by `daemon.max_goal_sessions` (default 10);
-`goal_create` reports `pursue_session: "spawned"` or `"limit_reached"`. See
-[Session Plans § pursue](session-plans.md#pursue--background-goal-pursuit).
+**Pursue session (`pursue` process)** — The session of a top-level goal
+(`agentID == goalID`), driven by the shipped `pursue` process bound to the goal:
+every 5 minutes it asks the session to `goal_get`, act on the goal, record what
+it finds as sub-goals, and call `goal_update_status`. Capped by
+`daemon.max_goal_sessions` (default 10); `goal_create` reports
+`pursue_session: "spawned"` or `"limit_reached"`. See [Goal sessions](goal-sessions.md).
 
 ---
 
@@ -190,7 +189,7 @@ namespace scan.
 `Assembler` from the `self/identity`, `self/capabilities`,
 and `self/learned` KV keys, injected into every turn at priority 2.5 (capped
 ~600 tokens). Seeded by `BootstrapSelfKV`; `self/learned` and
-`self/capabilities` are refreshed by the idle-reflection routine.
+`self/capabilities` are refreshed by the `reflect` process.
 
 **`Store`** — The single, in-process **SQLite** interface for all of
 Nine's persistent state — *not* a plugin subprocess. Opens a file
@@ -201,7 +200,7 @@ SQLite serializes writes). Agent-facing K/V (`memory_get/set/delete/list`), file
 (`file_search_text`, `list_files`), and (core-intercepted) vector ops
 (`memory_embed`/`memory_query`) are exposed as tools.
 Operational tables (`conversations`, `goals`, `notifications`,
-`user_notifications`, `workflows`, `session_plans`,
+`user_notifications`, `workflows`, `processes`,
 `human_requests`, `interactive_sessions`, `session_events`, `event_cursors`,
 `related_sessions`) are accessed only by the daemon, never exposed as agent tools.
 (There is no `tasks` or `plugin_registry` table.)
@@ -568,7 +567,7 @@ session by its agent ID (restores from checkpoint if not already running).
 plugins (and tool counts).
 
 **`nine goals` / `nine reflections` / `nine workflows`** —
-List goals (with their sub-goals), idle-reflection history,
+List goals (with their sub-goals), self-reflection history,
 and active/recent workflows respectively. TUI equivalents: `/goals`,
 `/reflections`, `/workflows`. (There is no `tasks` verb.)
 

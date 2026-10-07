@@ -38,8 +38,8 @@ max_goal_sessions       = 10    # concurrent pursue sessions; <=0 → default 10
 event_retention_turns   = 0     # journal scrub: keep last N turns/agent; 0 → default, <0 → keep all
 event_retention_days    = 0     # journal scrub: max event age in days; 0 → no age limit
 related_sessions_index  = true  # out-of-band related-session indexing + surfacing (default on; no-op without embedder)
-# standing_agents_authoritative = false   # treat [[agent]] as full desired state
-# [[agent]] … config-declared standing agents (see predefined-agents contract)
+# [[process]] … declared processes, standing agents among them (see processes contract)
+# [processes]  max_running, authoritative
 
 [plugins]
 bin = ""                        # dir of plugins shipping their own binary; Nine ships none —

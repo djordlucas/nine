@@ -64,6 +64,9 @@ type Case struct {
 
 	Expect Expect `yaml:"expect"`
 
+	// Wait gives a background case's processes time to act (WaitSpec).
+	Wait *WaitSpec `yaml:"wait"`
+
 	// Live-run controls (Track L).
 	// RequiresEnv names environment variables that must be set for this case to
 	// mean anything — infrastructure the suite cannot provide itself, like a
@@ -89,16 +92,47 @@ type Setup struct {
 	// stored path. Needed because no agent tool writes that table any more —
 	// file_store is retired (adr/file-namespaces.md) and the daemon is the only
 	// writer — so a case exercising spill reading has to be handed one.
-	StoredFiles map[string]string `yaml:"stored_files"`
-	KV     map[string]string     `yaml:"kv"`     // pre-seeded key/value memory
-	Skills map[string]SkillSetup `yaml:"skills"` // skill name -> skill
-	Goals  []string              `yaml:"goals"`  // pre-seeded goal descriptions
+	StoredFiles map[string]string     `yaml:"stored_files"`
+	KV          map[string]string     `yaml:"kv"`     // pre-seeded key/value memory
+	Skills      map[string]SkillSetup `yaml:"skills"` // skill name -> skill
+	Goals       []string              `yaml:"goals"`  // pre-seeded goal descriptions
 
 	// MCPServers are MCP servers to bring up for this case, mirroring
 	// [[mcp.server]] in nine.toml. They belong to setup rather than to session
 	// config because they are part of the world the case needs to exist —
 	// tools, not a knob.
 	MCPServers []MCPServerSetup `yaml:"mcp_servers"`
+
+	// Processes are declared as nine.toml's [[process]] blocks are, and
+	// reconciled the way the daemon reconciles them at boot: a goal block
+	// becomes a goal and its pursue process, any other block a process. They
+	// are what a background case exercises — work that happens with no prompt
+	// at all (adr/process-sessions.md).
+	Processes []ProcessSetup `yaml:"processes"`
+}
+
+// ProcessSetup is one [[process]] block, with the same fields.
+type ProcessSetup struct {
+	Name      string         `yaml:"name"`
+	Tool      string         `yaml:"tool"`
+	Every     string         `yaml:"every"`
+	Schedule  string         `yaml:"schedule"`
+	Goal      string         `yaml:"goal"`
+	Role      string         `yaml:"role"`
+	Delegates bool           `yaml:"delegates"`
+	Session   string         `yaml:"session"`
+	ReportTo  string         `yaml:"report_to"`
+	Args      map[string]any `yaml:"args"`
+}
+
+// WaitSpec gives background work time to happen. After the prompts, if any,
+// the harness waits until every side effect in Until holds, or Seconds pass;
+// grading then runs as usual. Session names the process session whose journal
+// the trajectory assertions read, instead of the conversation's.
+type WaitSpec struct {
+	Seconds int         `yaml:"seconds"`
+	Session string      `yaml:"session"`
+	Until   SideEffects `yaml:"until"`
 }
 
 // SkillSetup is one skill pre-seeded into a case's store.
@@ -348,8 +382,12 @@ func (c *Case) validate() error {
 	if !isKebab(c.ID) {
 		return fmt.Errorf("id %q must be kebab-case", c.ID)
 	}
-	if len(c.Prompts) == 0 {
-		return fmt.Errorf("at least one prompt is required")
+	// A background case may have no prompt: its processes do the work.
+	if len(c.Prompts) == 0 && (len(c.Setup.Processes) == 0 || c.Wait == nil) {
+		return fmt.Errorf("at least one prompt is required, unless setup.processes and wait are set")
+	}
+	if c.Wait != nil && c.Wait.Seconds <= 0 {
+		return fmt.Errorf("wait.seconds must be positive")
 	}
 	switch c.Track {
 	case TrackReplay, TrackLive, TrackBoth:

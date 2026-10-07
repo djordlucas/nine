@@ -155,6 +155,7 @@ echo "==> building qjs.wasm (quickjs-ng ${QUICKJS_TAG}, wasi-sdk-${WASI_SDK_VERS
   -Wl,--export=nine_alloc \
   -Wl,--export=nine_run \
   -Wl,--export=nine_harness \
+  -Wl,--export=nine_budget_reset \
   -Wl,--no-entry \
   -Wl,--strip-all \
   -Wl,--gc-sections

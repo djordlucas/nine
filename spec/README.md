@@ -66,7 +66,7 @@ If you only want to build one subsystem, jump to its contract and follow its
 | [`dispatcher.md`](contracts/dispatcher.md) | Tool routing, the plugin/core taxonomy, depth-capping, post-call hooks, output cap |
 | [`context-builder.md`](contracts/context-builder.md) | Per-turn context assembly: priority budget, tool relevance filtering, token model |
 | [`agent-worker.md`](contracts/agent-worker.md) | Per-session serial worker: turn pipeline, stall detection, notifications, the replay buffer |
-| [`session-plans.md`](contracts/session-plans.md) | The stage state machine, idle scheduler, `active`/`idle-reflection`/`pursue`, self-model |
+| [`processes.md`](contracts/processes.md) | Processes and process sessions: live and slice, `nine:process`, goal binding, pipes, `pursue`/`reflect`, self-model, `[[process]]` |
 | [`supervisor.md`](contracts/supervisor.md) | The oversight event loop, stall/gap handling, plugin-crash handling |
 | [`orchestration.md`](contracts/orchestration.md) | Sub-agents (`run_agent`/`run_agents`), workflows, and goals — tools and data models |
 | [`skills.md`](contracts/skills.md) | Skill file format, search/read/write tools, the self-improvement boundary |

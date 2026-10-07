@@ -91,6 +91,9 @@ type Config struct {
 	Timeout       time.Duration
 	MemoryMB      int
 	MaxConcurrent int
+	// MaxLive is how many live processes may run at once (process.go). Zero
+	// uses DefaultMaxLive.
+	MaxLive int
 
 	// MaxOps is the per-call work budget for a `js` tool, in operations, from
 	// `[tools] max_ops`. Zero uses DefaultMaxOps; negative disables the budget,
@@ -148,6 +151,11 @@ type Tool struct {
 	// sandbox, same bounds, same capability resolution — only where its source
 	// and its grant came from.
 	Shipped bool
+
+	// Live marks a process program: started with StartLive and run until
+	// stopped, never called. A live tool is in no loop's tool list, and Call
+	// refuses it.
+	Live bool
 
 	// Resumable means this tool may end a call with a `continue` envelope and be
 	// run as a long-running job. From the manifest; it confers no reach, so it is
@@ -226,6 +234,9 @@ type Host struct {
 	// resolved limit, so an operator raising it raises the worst-case memory with
 	// it, deliberately.
 	sem chan struct{}
+	// live is the live-process pool, apart from sem: a process waiting for its
+	// next trigger holds a slot here and never one an ordinary call needs.
+	live chan struct{}
 
 	// qjs is the compiled QuickJS blob, shared by every `js` tool. Compiling it
 	// is by far the most expensive thing this package does (~1 MB of wasm), so it
@@ -276,6 +287,10 @@ func Open(ctx context.Context, cfg Config) (*Host, error) {
 	if maxConc <= 0 {
 		maxConc = DefaultMaxConcurrent
 	}
+	maxLive := cfg.MaxLive
+	if maxLive <= 0 {
+		maxLive = DefaultMaxLive
+	}
 	// Negative is the operator turning the budget off, which is distinct from
 	// leaving it unset — so it cannot collapse into the default the way a
 	// non-positive memory or timeout does.
@@ -294,6 +309,7 @@ func Open(ctx context.Context, cfg Config) (*Host, error) {
 		maxOps:   maxOps,
 		tools:    map[string]*Tool{},
 		sem:      make(chan struct{}, maxConc),
+		live:     make(chan struct{}, maxLive),
 	}
 
 	if err := h.registerHostFunctions(ctx); err != nil {
@@ -311,8 +327,8 @@ func Open(ctx context.Context, cfg Config) (*Host, error) {
 	return h, nil
 }
 
-// registerHostFunctions exports the "nine" module: `log`, `caps`, `http`, and
-// `state`.
+// registerHostFunctions exports the "nine" module: `log`, `caps`, `http`,
+// `state` and `process`.
 //
 // Exporting a function is not conferring a capability. `log` and `caps` leak
 // nothing and are granted to every tool; `http` and `state` are exported to
@@ -348,6 +364,9 @@ func (h *Host) registerHostFunctions(ctx context.Context) error {
 		NewFunctionBuilder().
 		WithFunc(h.hostState).
 		Export("state").
+		NewFunctionBuilder().
+		WithFunc(h.hostProcess).
+		Export("process").
 		Instantiate(ctx)
 	if err != nil {
 		return fmt.Errorf("toolvm: export host functions: %w", err)
@@ -456,12 +475,21 @@ type httpGrantKey struct{}
 type toolNameKey struct{}
 
 // Tools returns the loaded tools, sorted by name.
-func (h *Host) Tools() []*Tool {
+func (h *Host) Tools() []*Tool { return h.list(false) }
+
+// Processes returns the loaded live tools — process programs, which Nine
+// starts rather than calls — by name. Tools leaves them out, so no loop
+// advertises or dispatches one.
+func (h *Host) Processes() []*Tool { return h.list(true) }
+
+func (h *Host) list(live bool) []*Tool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	out := make([]*Tool, 0, len(h.tools))
 	for _, t := range h.tools {
-		out = append(out, t)
+		if t.Live == live {
+			out = append(out, t)
+		}
 	}
 	sortToolsByName(out)
 	return out
@@ -588,6 +616,9 @@ func (h *Host) call(ctx context.Context, t *Tool, args json.RawMessage) (Output,
 
 func (h *Host) callWithJob(ctx context.Context, t *Tool, args json.RawMessage, job *JobContext) (Output, error) {
 	name := t.Name
+	if t.Live {
+		return Output{}, fmt.Errorf("tool %q is a process: Nine starts it and it runs until stopped; it cannot be called", name)
+	}
 	timeout := t.effectiveTimeout(h.timeout)
 
 	// A shipped fs tool accepts the workspace's host path as well as its guest
@@ -612,25 +643,7 @@ func (h *Host) callWithJob(ctx context.Context, t *Tool, args json.RawMessage, j
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	ctx = context.WithValue(ctx, toolNameKey{}, name)
-	// The net.http grant travels on the context so the shared host import
-	// resolves to this tool's permission and no other's.
-	if t.Grant.HTTP != nil {
-		ctx = context.WithValue(ctx, httpGrantKey{}, t.Grant.HTTP)
-	}
-	// The state grant travels the same way and for the same reason: one shared
-	// import, one permission per call.
-	if t.Grant.State != nil {
-		ctx = context.WithValue(ctx, stateGrantKey{}, t.Grant.State)
-	}
-	// The whole grant, for nine.caps. Read-only and descriptive: it is what the
-	// guest is told, never what it is allowed.
-	grant := t.Grant
-	ctx = context.WithValue(ctx, grantKey{}, &grant)
-	// One log buffer per call, so what a tool printed can be handed back if it
-	// fails. It lives exactly as long as the call does.
-	printed := &callLog{}
-	ctx = context.WithValue(ctx, callLogKey{}, printed)
+	ctx, printed := withCallContext(ctx, t)
 
 	input, err := t.inputForJob(args, job)
 	if err != nil {
@@ -657,6 +670,39 @@ func (h *Host) callWithJob(ctx context.Context, t *Tool, args json.RawMessage, j
 		return Output{}, withLogs(fmt.Errorf("tool %q: %w", name, err), printed)
 	}
 
+	return h.output(t, out, len(input), printed)
+}
+
+// withCallContext puts everything a call's host functions read on ctx: the
+// tool's name, its grants, and a fresh log buffer, which it also returns.
+func withCallContext(ctx context.Context, t *Tool) (context.Context, *callLog) {
+	ctx = context.WithValue(ctx, toolNameKey{}, t.Name)
+	// The net.http grant travels on the context so the shared host import
+	// resolves to this tool's permission and no other's.
+	if t.Grant.HTTP != nil {
+		ctx = context.WithValue(ctx, httpGrantKey{}, t.Grant.HTTP)
+	}
+	// The state grant travels the same way and for the same reason: one shared
+	// import, one permission per call.
+	if t.Grant.State != nil {
+		ctx = context.WithValue(ctx, stateGrantKey{}, t.Grant.State)
+	}
+	// The whole grant, for nine.caps. Read-only and descriptive: it is what the
+	// guest is told, never what it is allowed.
+	grant := t.Grant
+	ctx = context.WithValue(ctx, grantKey{}, &grant)
+	// One log buffer per call, so what a tool printed can be handed back if it
+	// fails. It lives exactly as long as the call does.
+	printed := &callLog{}
+	ctx = context.WithValue(ctx, callLogKey{}, printed)
+	return ctx, printed
+}
+
+// output reads the guest's result envelope into an Output, or the error the
+// envelope reports. inputLen is the size of what the call was given, for the
+// out-of-memory explanation.
+func (h *Host) output(t *Tool, out []byte, inputLen int, printed *callLog) (Output, error) {
+	name := t.Name
 	var res Result
 	if err := json.Unmarshal(out, &res); err != nil {
 		return Output{}, withLogs(fmt.Errorf("tool %q returned a malformed result: %w", name, err), printed)
@@ -665,7 +711,7 @@ func (h *Host) callWithJob(ctx context.Context, t *Tool, args json.RawMessage, j
 		// The tool's own failure, surfaced as an ordinary tool error: the model
 		// can read it and try different arguments, which is exactly what it
 		// should do with "date is not a valid ISO-8601 string".
-		msg := h.explainOOM(res.Error, len(input))
+		msg := h.explainOOM(res.Error, inputLen)
 		if res.ErrorDetail != nil && res.ErrorDetail.Code == CodeWorkBudget {
 			msg = t.explainWorkBudget()
 		}

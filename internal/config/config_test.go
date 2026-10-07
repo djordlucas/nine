@@ -227,7 +227,7 @@ func TestToolsMaxOutputTokens(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Remove(f.Name())
-	if _, err := f.WriteString("[tools]\nmax_output_tokens = 8192\n\n[[agent]]\nid = \"watcher\"\ndescription = \"watch things\"\n"); err != nil {
+	if _, err := f.WriteString("[tools]\nmax_output_tokens = 8192\n\n[[process]]\nname = \"watcher\"\ntool = \"pursue\"\ngoal = \"watch things\"\n"); err != nil {
 		t.Fatal(err)
 	}
 	f.Close()
@@ -239,9 +239,9 @@ func TestToolsMaxOutputTokens(t *testing.T) {
 	if cfg.Tools.MaxOutputTokens != 8192 {
 		t.Errorf("Tools.MaxOutputTokens = %d, want 8192", cfg.Tools.MaxOutputTokens)
 	}
-	// [tools] must not disturb the [[agent]] table array.
-	if len(cfg.Agents) != 1 || cfg.Agents[0].ID != "watcher" {
-		t.Errorf("Agents = %+v, want the one standing agent to survive alongside [tools]", cfg.Agents)
+	// [tools] must not disturb the [[process]] table array.
+	if len(cfg.Process) != 1 || cfg.Process[0].Name != "watcher" {
+		t.Errorf("Process = %+v, want the one goal process to survive alongside [tools]", cfg.Process)
 	}
 }
 
@@ -384,5 +384,97 @@ func TestBootstrapSelfModelPathFromEnv(t *testing.T) {
 	config.ApplyEnvOverrides(cfg)
 	if cfg.Bootstrap.SelfModelPath != "/from/file.toml" {
 		t.Errorf("self_model_path = %q, want the file's value", cfg.Bootstrap.SelfModelPath)
+	}
+}
+
+func loadString(t *testing.T, body string) (*config.Config, error) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "nine.toml")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return config.Load(path)
+}
+
+// A standing agent, a predicate piping into it, reflection attached to its
+// session and a plain standing tool, as [[process]] blocks.
+func TestProcessBlocksLoad(t *testing.T) {
+	cfg, err := loadString(t, `
+[processes]
+max_running = 6
+authoritative = true
+
+[[process]]
+name = "sec-watch"
+tool = "pursue"
+goal = "Watch the repo for security issues"
+role = "monitor"
+schedule = "0 9 * * 1-5"
+
+[[process]]
+name = "cve-scan"
+tool = "cve_scan"
+every = "10s"
+report_to = "sec-watch"
+
+[[process]]
+name = "sec-watch-reflect"
+tool = "reflect"
+every = "30m"
+session = "sec-watch"
+
+[[process]]
+name = "tidy"
+tool = "tidy_logs"
+schedule = "0 3 * * *"
+args = { keep = 7 }
+`)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Process) != 4 || cfg.Processes.MaxRunningOrDefault() != 6 || !cfg.Processes.Authoritative {
+		t.Errorf("processes = %+v, limits = %+v", cfg.Process, cfg.Processes)
+	}
+	if (config.ProcessesConfig{}).MaxRunningOrDefault() != config.DefaultMaxRunning {
+		t.Error("max_running does not default")
+	}
+}
+
+// Every mistake in a [[process]] block is refused at load, with its reason.
+func TestProcessBlockMistakesAreRefused(t *testing.T) {
+	cases := map[string]string{
+		"no name":            "[[process]]\ntool = \"x\"\n",
+		"no tool":            "[[process]]\nname = \"a\"\n",
+		"reserved colon":     "[[process]]\nname = \"goal:a\"\ntool = \"x\"\n",
+		"duplicate":          "[[process]]\nname = \"a\"\ntool = \"x\"\n[[process]]\nname = \"a\"\ntool = \"y\"\n",
+		"both clocks":        "[[process]]\nname = \"a\"\ntool = \"x\"\nevery = \"1m\"\nschedule = \"* * * * *\"\n",
+		"bad every":          "[[process]]\nname = \"a\"\ntool = \"x\"\nevery = \"soon\"\n",
+		"bad schedule":       "[[process]]\nname = \"a\"\ntool = \"x\"\nschedule = \"not cron\"\n",
+		"goal not pursue":    "[[process]]\nname = \"a\"\ntool = \"x\"\ngoal = \"g\"\n",
+		"unknown session":    "[[process]]\nname = \"a\"\ntool = \"x\"\nsession = \"nobody\"\n",
+		"unknown report_to":  "[[process]]\nname = \"a\"\ntool = \"x\"\nreport_to = \"nobody\"\n",
+		"attached with role": "[[process]]\nname = \"o\"\ntool = \"pursue\"\ngoal = \"g\"\n[[process]]\nname = \"a\"\ntool = \"reflect\"\nsession = \"o\"\nrole = \"x\"\n",
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := loadString(t, body); err == nil {
+				t.Errorf("Load accepted:\n%s", body)
+			}
+		})
+	}
+}
+
+// The blocks [[process]] replaced fail loudly, naming the replacement: an
+// ignored [[agent]] would make an agent vanish without a word.
+func TestRetiredBlocksAreRefused(t *testing.T) {
+	for _, body := range []string{
+		"[[agent]]\nid = \"w\"\ndescription = \"watch\"\n",
+		"[[standing_tool]]\nid = \"s\"\ntool = \"x\"\ninterval = \"1m\"\n",
+		"[daemon]\nstanding_agents_authoritative = true\n",
+	} {
+		_, err := loadString(t, body)
+		if err == nil || !strings.Contains(err.Error(), "replaced by") {
+			t.Errorf("Load(%q) = %v, want an error naming the replacement", body, err)
+		}
 	}
 }

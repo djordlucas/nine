@@ -1,0 +1,144 @@
+# Contract — processes, process sessions, self-model & reflection
+
+**Status:** Built (phase 1 of [`adr/process-sessions.md`](../../adr/process-sessions.md)) ·
+**Depends on:** toolvm, agent worker, memory store, roles · **Used by:** daemon, goal tools,
+configuration
+
+Everything Nine does between a person's turns is a **process**: a sandboxed tool the
+process runner drives on its triggers. A **conversation** is a session a person drives; a
+**process session** is one a process drives. Goal sessions, standing agents,
+self-reflection, condition triggers and standing tools are all processes.
+
+---
+
+## R-PROC.1 — data model
+
+A process is one row in `processes`, keyed by its id. **Configuration owns the
+definition** — tool, args, trigger, mode, session, role, delegation, goal, pipe — and **the
+runtime owns the run state**: `state` (`running` | `stopped` | `failing`), cursor, calls,
+cycles, failures, next tick, and `stopped_by`/`stopped_at`. Reconciling a definition never
+changes run state, except that a changed `args` restarts a slice process's cycle.
+
+`stopped_by` records who stopped a process — `operator`, `goal`, `self`, … — and decides
+who may start it again: a process its goal stopped runs again when the goal is active; an
+operator's stop stays until an operator undoes it.
+
+---
+
+## R-PROC.2 — modes
+
+A process's mode follows from its tool. A **live** tool (shipped `pursue`/`reflect`, or a
+`js` developer tool whose manifest says `live = true`) runs as a live process; any other
+runs as a **slice** process, called once per due trigger as standing tools were. A live
+tool **MUST NOT** appear in any loop's tool list, and calling one **MUST** be refused.
+
+---
+
+## R-PROC.3 — live instances
+
+`Host.StartLive` starts a live tool's instance and leaves it running until its program
+returns, fails, or it is stopped.
+
+- It has **no call deadline**. Every host call it makes carries its own bound.
+- Live instances run in their own pool, sized by `[processes] max_running` (default 14),
+  apart from the call slots; a full pool refuses another start.
+- The work budget bounds the work **per trigger**: the host refills it when `next()`
+  returns a trigger (`nine_budget_reset`), and only then.
+- A stop makes the pending `next()` or `turn()` fail with `E_STOPPED` and closes the
+  instance.
+
+---
+
+## R-PROC.4 — `nine:process`
+
+| Function | Does |
+|---|---|
+| `next()` | blocks until the next trigger and returns it |
+| `turn(text)` | runs one model turn in the process's session and returns the reply |
+| `report(text)` | delivers text through the process's pipe (R-PROC.8); empty text is ignored |
+
+Every function **MUST** be refused (`E_NOT_LIVE`) in an instance not started as a live
+process, so a tool a model calls can never block in `next()`.
+
+---
+
+## R-PROC.5 — triggers and the clock
+
+A trigger is a clock tick (`every` xor `schedule`) or a report piped to the process's
+session. A live process's **first tick comes one cadence after it starts**, at boot as at
+creation; a tick that comes due while one waits is not queued twice. A slice process is
+called when its tick is due, continues an unfinished cycle at the delay it asks for, and
+backs off on failure (three failures make it `failing`).
+
+---
+
+## R-PROC.6 — process sessions
+
+A live process drives one session. The **owning** process sets the session's role; other
+processes may be **attached**, and their turns run there under the owner's role.
+`Daemon.ProcessTurn` runs a process's turn, creating or resuming the session with that
+role; the turn's journal trigger is `idle` for a clock tick and `condition` for a piped
+report. A session a process drives, resumed or attached to, takes its role from the
+process that owns it. A worker never starts a turn of its own.
+
+---
+
+## R-PROC.7 — goal binding
+
+A process bound to a goal runs only while the goal is active: the runner stops it (stopped
+by `goal`) when the goal is paused, done or archived, and starts it again when the goal is
+active. A clock tick carries the goal's id and current description; a tick that finds the
+goal inactive does nothing. A stall in a goal-bound session — five turns calling no tool —
+pauses the goal.
+
+---
+
+## R-PROC.8 — pipes
+
+A process with `report_to` delivers each report — a live process's `report()`, a slice
+process's non-empty result — to the session of the process it names, as a message
+trigger. The receiver takes it only while waiting in `next()`; otherwise, and when no
+live process owns that session and its agent cannot be woken, the report goes to the human
+feed. A condition trigger is a pipe from a predicate to an agent.
+
+---
+
+## R-PROC.9 — shipped processes, self-model and reflection
+
+| Process | Session | Each clock tick |
+|---|---|---|
+| `pursue` | a top-level goal's (`id == goal id`), bound to it; every 5 min | `Check on goal <id> ("<description>") and its subtree …`; a piped report is put as it is |
+| `reflect` | `self-reflection`, under the `reflection` role, at `[daemon] self_reflection`; or attached to a standing agent's | asks the session to update `self/capabilities` and `self/learned` |
+
+A self-model assembler reads `self/identity`, `self/capabilities` and `self/learned` from
+K/V **every turn** and injects them as the P2.5 `SystemSelf` block (cap ~600 tokens; see
+[`context-builder.md`](context-builder.md)). `BootstrapSelfKV` seeds `self/identity` and
+`self/capabilities` on first start; `self/learned` is created by the first reflection.
+`ReconcileSelfReflection` writes the `reflect` process when reflection is on and stops it
+when it is off.
+
+---
+
+## R-PROC.10 — configuration
+
+`[[process]]` declares a process: `name`, `tool`, `every` | `schedule`, `args`, `goal`
+(a goal the file owns, named after the process; `tool` must be `pursue`), `role`,
+`delegates`, `session` (attach), `report_to` (pipe), `enabled`. `[processes]` holds
+`max_running` and `authoritative`. Every mistake in a block **MUST** fail the load.
+
+A goal process is reconciled with its goal: created when missing, its description kept in
+step, never resurrected once the agent finished it, and retired at boot when
+`authoritative` and no longer listed — never touching a goal a conversation created.
+
+`[[agent]]`, `[[standing_tool]]` and `[daemon] standing_agents_authoritative` are retired:
+a file that has one **MUST** fail to load with the `[[process]]` form to use instead.
+
+---
+
+## Reference symbols
+
+`internal/toolvm/process.go` (`StartLive`, `ProcessHandler`, `nine:process`),
+`internal/runtime/process_live.go` (live runner, goal binding, pipes),
+`internal/runtime/standing_tools.go` (slice runner, `ReconcileProcesses`),
+`internal/runtime/goal_session.go`, `internal/runtime/process_sessions.go`
+(`ProcessTurn`), `internal/memory/processes.go`, `cmd/nine/standing_agents.go`.

@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"log/slog"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -48,6 +49,12 @@ type sqlEventSink struct {
 	done    chan struct{}
 	dropped atomic.Int64
 	onFlush func() // called after each successful batch write; wakes subscribers
+
+	// mu orders Append against Close: an event appended after Close is dropped
+	// rather than sent on the closed channel. A process session's turn can still
+	// be finishing when the sink closes (adr/process-sessions.md).
+	mu     sync.RWMutex
+	closed bool
 }
 
 // NewSQLEventSink starts an async batched sink writing to store. onFlush (may be
@@ -70,6 +77,12 @@ func NewSQLEventSink(store sessionEventStore, onFlush func()) EventSink {
 // event is dropped and counted (observability tier — a monitoring gap, never a
 // turn stall).
 func (s *sqlEventSink) Append(ev memory.SessionEvent) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.closed {
+		s.dropped.Add(1)
+		return
+	}
 	select {
 	case s.ch <- ev:
 	default:
@@ -115,7 +128,14 @@ func (s *sqlEventSink) run() {
 // Close stops accepting events, drains and flushes what is buffered, and waits
 // for the writer to exit. After Close, Append must not be called.
 func (s *sqlEventSink) Close() error {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return nil
+	}
+	s.closed = true
 	close(s.ch)
+	s.mu.Unlock()
 	<-s.done
 	if d := s.dropped.Load(); d > 0 {
 		slog.Warn("session event sink dropped events under load", "dropped", d)

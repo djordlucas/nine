@@ -130,10 +130,25 @@ setup:
       command: "${NINE_EVAL_MCP_FIXTURE}"   # ${VAR} is expanded from the environment
       args: []
       env: {}                        # passed to the server process only
+  processes:                         # [[process]] blocks, reconciled as at boot (docs/processes.md)
+    - name: status-report            # a goal block becomes a goal and its pursue process
+      tool: pursue
+      goal: "Write READY to notes/status.md"
+      role: pursue
+      every: 2s                      # a short clock, so the case is over in seconds
 
 # ── Infrastructure this case needs but the suite cannot provide. Unset → the
 #    case is reported as skipped (never as a pass, never fatal). ──
 requires_env: [NINE_EVAL_BROWSER]
+
+# ── Background work: after the prompts, wait until these side effects hold or
+#    the time runs out. With processes and a wait, prompts may be empty. ──
+wait:
+  seconds: 240
+  session: status-report             # grade this process session's journal instead
+  until:                             # same shape as expect.side_effects
+    files:
+      notes/status.md: { contains: "READY" }
 
 # ── The request. Each string is one user turn on the same session. ──
 prompts:
@@ -417,6 +432,7 @@ strongest available assertion for that feature.
 | workflows | multi-step task auto-closes | side-effect `workflows.status=done` | multi_step |
 | sub-agents | `run_agents` fan-out | `sub_agents.count` ≥ 2 | delegation |
 | goals | open-ended request | side-effect goal + pursue session | multi_step |
+| processes | a goal process acts with no prompt; a pipe makes an agent act; reflect writes the self-model | `setup.processes` + `wait` + side-effect `files`/`kv` | basic/multi_step |
 | generated tools | `tool_write` a tool, call it in a later turn | `tools_all_of:[tool_write,<name>]` + answer | multi_step |
 | generated tools | one-off computation via `js_eval`, nothing persisted | `tools_all_of:[js_eval]`, `tools_none_of:[tool_write]` + answer | basic |
 | roles | report-writer denied `shell` | `llm_request.tool_advertised_none_of:[shell]` | basic |

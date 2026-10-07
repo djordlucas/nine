@@ -1,0 +1,30 @@
+id: process-reflection
+description: "The reflect process asks its session to reflect with no prompt, and the model updates its self-model (self/learned) with memory_set."
+track: live
+tier: basic
+tags: [processes, reflection]
+
+setup:
+  processes:
+    - name: introspect
+      tool: reflect
+      role: reflection
+      every: 2s
+
+wait:
+  seconds: 180
+  session: introspect
+  until:
+    kv:
+      self/learned: { matches: "\\S" }
+
+expect:
+  side_effects:
+    kv:
+      self/learned: { matches: "\\S" }
+
+runs: 3
+pass_threshold: "2/3"
+timeout_seconds: 240
+models:
+  expected_pass_min_class: small

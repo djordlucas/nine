@@ -5,51 +5,55 @@ the daemon boots, without a human opening a session first, and work on their
 brief indefinitely.
 
 A standing agent is not a new kind of thing. It is a **goal seeded from
-configuration**, run by the same [goal session](goal-sessions.md) machinery that
+configuration**, pursued by the same `pursue` [process](processes.md) that
 serves goals created in conversation, under a [role](roles.md) narrow enough to
 do its job and nothing more.
 
 ## Declaring one
 
 ```toml
-[[agent]]
-id          = "sec-watch"      # stable, operator-chosen — not a UUID
-description = "Monitor this repo for security issues; triage new CVEs affecting our deps."
-role        = "monitor"        # optional; default "monitor" (read-only)
-delegates   = false            # optional; default false — opt in to sub-agent fan-out
-schedule    = "0 9 * * 1-5"    # cron: weekdays at 9am
-#                              # …or…
-# interval  = "24h"            # a plain duration instead
+[[process]]
+name      = "sec-watch"      # stable, operator-chosen — not a UUID
+tool      = "pursue"
+goal      = "Monitor this repo for security issues; triage new CVEs affecting our deps."
+role      = "monitor"        # optional; default "monitor" (read-only)
+delegates = false            # optional; default false — opt in to sub-agent fan-out
+schedule  = "0 9 * * 1-5"    # cron: weekdays at 9am
+#                            # …or…
+# every   = "24h"            # a plain duration instead
 ```
 
-`id` is chosen by the operator and is what reconciliation keys on, so renaming
-it creates a second agent rather than renaming the first.
+`name` is chosen by the operator and is what reconciliation keys on, so renaming
+it creates a second agent rather than renaming the first. It is also the goal's
+id and the session's.
 
-`when` is a third alternative — a **condition**: a cheap sandboxed predicate
-evaluated on its own cadence, waking the agent only when it finds something. It
-composes with a clock rather than replacing it. See
-[scheduling](scheduling.md#condition-triggers).
-
-```toml
-when = { tool = "cve_scan", interval = "10s", args = { manifest = "/srv/app/go.sum" } }
-```
-
-`schedule` and `interval` are alternatives — a cron expression or a fixed
-cadence. Setting neither gets the default goal-session cadence. See
+`schedule` and `every` are alternatives — a cron expression or a fixed cadence.
+Setting neither gets the default goal-session cadence, five minutes. See
 [scheduling](scheduling.md).
 
-A session can also carry **extra routines** beside its pursue shell, each waking
-on its own cadence:
+**A condition** wakes the agent when a cheap predicate finds something, instead
+of on a clock: the predicate is a process of its own, piped to the agent's
+session.
 
 ```toml
-[[agent.routine]]
-kind     = "idle-reflection"
-interval = "30m"
+[[process]]
+name      = "cve-scan"
+tool      = "cve_scan"
+every     = "10s"
+args      = { manifest = "/srv/app/go.sum" }
+report_to = "sec-watch"
 ```
 
-A routine never sets a role: the pursue shell is the session's role-bearing
-routine, a session has exactly one role, and two claimants would make it depend
-on ordering.
+**Reflection** can run in the agent's own session, with its history and under
+its role:
+
+```toml
+[[process]]
+name    = "sec-watch-reflect"
+tool    = "reflect"
+every   = "30m"
+session = "sec-watch"
+```
 
 `role` defaults to `monitor`, which is read-only: web and HTTP reads, file
 reads, and memory. An agent that needs to change things opts into a wider role
@@ -64,7 +68,7 @@ the authority cleanly:
 
 | | Owner | On boot |
 |---|---|---|
-| description, role, delegates, trigger | **config** | Reconciled in place. Edit the file, restart, the agent picks it up. |
+| goal description, role, delegates, trigger | **config** | Reconciled in place. Edit the file, restart, the agent picks it up. |
 | goal status | **the agent** | Never overridden. |
 
 So **a finished agent stays finished** even while it is still listed in
@@ -73,15 +77,16 @@ definition of — not a command to force them all active. Deciding the work is
 done is the agent's call, and config does not overrule it.
 
 Removing an entry stops Nine reconciling that goal; it does not tear the goal
-down. Reactivating a finished agent is a deliberate act — set its goal status
+down, unless `[processes] authoritative = true`, which retires it at the next
+boot. Reactivating a finished agent is a deliberate act — set its goal status
 back to active.
 
 ## Related
 
+- [Processes](processes.md) — `pursue`, pipes, attachment, and the `[[process]]` block
 - [Goal sessions](goal-sessions.md) — the machinery a standing agent runs on
 - [Roles](roles.md) — what `monitor` and the other roles may do
 - [Scheduling](scheduling.md) — cron and interval triggers
-- [Configuration](configuration.md) — the `[[agent]]` block in context
 
 > The design, the phasing, and why this needed no new primitive —
 > [../adr/predefined-agents-design.md](../adr/predefined-agents-design.md).
@@ -90,8 +95,8 @@ back to active.
 
 | Limit | Detail |
 |-------|--------|
-| Configuration is read at boot | Re-activating a paused agent while the daemon runs does not re-spawn its session with the configured role and trigger until the next restart. |
-| Role, delegation and trigger are not on the goal | They are re-read from configuration each boot. The durable state is the goal — its description and status — and the session's plan. |
-| Renaming `id` creates a second agent | Reconciliation keys on `id`, so an edited id leaves the old goal in place and adds a new one. |
-| A standing agent counts against the goal cap | It runs on an ordinary goal session, so `daemon.max_goal_sessions` (default 10) bounds standing agents and conversational goals together. |
-| A condition trigger needs the tool host | `when` is a standing tool underneath, so it requires `[tools] enabled`. |
+| Configuration is read at boot | Editing a block takes effect at the next start. |
+| Renaming `name` creates a second agent | Reconciliation keys on `name`, so an edited name leaves the old goal in place and adds a new one. |
+| A standing agent counts against the goal cap | It runs as an ordinary goal session, so `daemon.max_goal_sessions` (default 10) bounds standing agents and conversational goals together. |
+| A goal process runs `pursue` | `goal` is only for `tool = "pursue"`; another tool cannot be bound to a goal yet. |
+| A condition needs the tool host | Its predicate is a sandboxed tool, so it requires `[tools] enabled`. |
