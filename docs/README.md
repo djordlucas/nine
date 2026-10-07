@@ -98,6 +98,7 @@ Ordered outside in.
 | `/status` | Daemon uptime, active agents, loaded plugins |
 | `/context [id]` | The assembled-context token breakdown, with no model call |
 | `/tools [filter]` | Every tool the session can call |
+| `/tools delete <name>` | Delete a tool Nine wrote |
 | `/standing [id]` | Standing tools, or one with its recent activity |
 | `/goals`, `/workflows` | Goals, and active and recent workflows |
 | `/grants [approve\|deny\|revoke <id>]` | Capability requests waiting, and the ceiling in force |

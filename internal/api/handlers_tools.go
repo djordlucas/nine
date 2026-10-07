@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"nine/internal/api/apigen"
 )
@@ -234,4 +235,38 @@ func toToolInfo(name, description, plugin string) apigen.ToolInfo {
 		info.Plugin = ptr(plugin)
 	}
 	return info
+}
+
+// DeleteTool deletes a tool Nine wrote. The daemon decides what may be deleted;
+// its refusal text says why, and is mapped to a status here.
+func (s *Server) DeleteTool(ctx context.Context, request apigen.DeleteToolRequestObject) (apigen.DeleteToolResponseObject, error) {
+	if request.Name == "" {
+		return apigen.DeleteTool400JSONResponse(
+			errorBody("invalid_request", "missing tool name", nil)), nil
+	}
+
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		return apigen.DeleteTool503JSONResponse(
+			errorBody("service_unavailable", err.Error(), nil)), nil
+	}
+	defer cl.Close()
+
+	msg, err := cl.DeleteTool(request.Name)
+	switch {
+	case err == nil:
+		return apigen.DeleteTool200JSONResponse{Name: request.Name, Message: msg}, nil
+	case errNotFound(err):
+		return apigen.DeleteTool404JSONResponse(
+			errorBody("not_found", err.Error(), map[string]any{"name": request.Name})), nil
+	case strings.Contains(err.Error(), "cannot be deleted"):
+		return apigen.DeleteTool403JSONResponse(
+			errorBody("forbidden", err.Error(), map[string]any{"name": request.Name})), nil
+	case strings.Contains(err.Error(), "tool writing is off"):
+		return apigen.DeleteTool400JSONResponse(
+			errorBody("invalid_request", err.Error(), nil)), nil
+	default:
+		return apigen.DeleteTool500JSONResponse(
+			errorBody("server_error", err.Error(), nil)), nil
+	}
 }

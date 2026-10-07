@@ -38,7 +38,7 @@ var slashCmds = []slashCmd{
 	{"plan-mode", "<mode>", "set reasoning mode: off | plan-only | always"},
 	{"goals", "", "list goals"},
 	{"workflows", "", "list active and recent workflows"},
-	{"tools", "[filter]", "list all tools (optional name filter)"},
+	{"tools", "[filter | delete <name>]", "list all tools (optional name filter), or delete one Nine wrote"},
 	{"standing", "[id]", "list standing tools, or show one with its recent activity"},
 	{"grants", "[approve|deny|revoke <id>]", "capability requests and the ceiling in force, or decide one"},
 	{"skills", "[name]", "list skills, or show a specific skill"},
@@ -476,6 +476,12 @@ func cmdGoals(client *protocol.Client) (string, error) {
 }
 
 func cmdTools(client *protocol.Client, filter string) (string, error) {
+	if fields := strings.Fields(filter); len(fields) > 0 && fields[0] == "delete" {
+		if len(fields) < 2 {
+			return "", fmt.Errorf("/tools delete needs a tool name")
+		}
+		return client.DeleteTool(fields[1])
+	}
 	tools, err := client.ListTools()
 	if err != nil {
 		return "", err

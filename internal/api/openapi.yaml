@@ -1270,6 +1270,47 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+    delete:
+      operationId: deleteTool
+      summary: Delete a tool Nine wrote
+      description: Deletes a generated tool, and its standing run if it has one. Shipped and operator-installed tools are refused with 403; a name that is no tool Nine wrote is 404.
+      tags:
+      - tools
+      parameters:
+      - name: name
+        in: path
+        description: tool name
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteToolResponse'
+        '400':
+          description: missing name, or tool writing is off
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: a shipped or operator-installed tool, which cannot be deleted
+          content: *id001
+        '404':
+          description: no tool Nine wrote by that name
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
   /tools/{name}/call:
     post:
       operationId: callTool
@@ -1774,6 +1815,19 @@ components:
       required:
       - topic
       - content
+    DeleteToolResponse:
+      type: object
+      description: The outcome of deleting a tool Nine wrote.
+      required:
+      - name
+      - message
+      properties:
+        name:
+          type: string
+          description: the deleted tool
+        message:
+          type: string
+          description: the daemon's outcome
     GetToolResponse:
       description: One tool's detail. Capabilities and the input schema are absent unless the daemon reports
         them.

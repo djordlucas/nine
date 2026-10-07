@@ -322,8 +322,14 @@ func lockNames(l deps.Lockfile) string {
 }
 
 // Delete removes a tool and re-projects the catalog, so it disappears from the
-// next-built loop.
+// next-built loop. Only a tool Nine wrote can be deleted: any other name is
+// refused with the reason, rather than reported deleted when nothing was.
 func (g *generatedTools) Delete(ctx context.Context, name string) error {
+	if _, ok, err := g.store.GeneratedToolGet(name); err != nil {
+		return err
+	} else if !ok {
+		return g.notDeletable(name)
+	}
 	if err := g.store.GeneratedToolDelete(name); err != nil {
 		return err
 	}
@@ -340,6 +346,22 @@ func (g *generatedTools) Delete(ctx context.Context, name string) error {
 	slog.Info("generated tool deleted", "tool", name)
 	g.reload(ctx)
 	return nil
+}
+
+// notDeletable explains why name, which is not a tool Nine wrote, cannot be
+// deleted. The API maps these phrases to status codes: "not found" to 404,
+// "cannot be deleted" to 403.
+func (g *generatedTools) notDeletable(name string) error {
+	if g.host == nil {
+		return fmt.Errorf("no tool named %q that Nine wrote: not found", name)
+	}
+	if t := g.host.Get(name); t != nil {
+		if t.Shipped {
+			return fmt.Errorf("tool %q is built into Nine and cannot be deleted", name)
+		}
+		return fmt.Errorf("tool %q was installed by the operator and cannot be deleted; remove its files instead", name)
+	}
+	return fmt.Errorf("no tool named %q that Nine wrote: not found", name)
 }
 
 // Eval runs one snippet under the generated-tool rules and persists nothing

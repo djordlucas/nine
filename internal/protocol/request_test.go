@@ -144,6 +144,7 @@ func TestEveryClientMsgTypeDecodes(t *testing.T) {
 		protocol.TypeStandingShow:     {AgentID: "s1"},
 		protocol.TypeStandingControl:  {AgentID: "s1", Text: "stop"},
 		protocol.TypeToolCall:         {ToolName: "echo"},
+		protocol.TypeToolDelete:       {ToolName: "echo"},
 		protocol.TypeWorkflowStop:     {Text: "wf-1"},
 		protocol.TypeWorkflowFail:     {Text: "wf-1"},
 		protocol.TypePluginCall:       {ToolName: "echo"},

@@ -821,6 +821,20 @@ func (d *Daemon) handleStandingShow(enc *json.Encoder, id string, limit int) {
 	enc.Encode(protocol.NewTextMsg(protocol.TypeStandingShow, string(payload))) //nolint:errcheck
 }
 
+// handleToolDelete deletes a tool Nine wrote: the operator's counterpart of the
+// model's tool_delete, through the same store, so both refuse the same tools.
+func (d *Daemon) handleToolDelete(enc *json.Encoder, name string) {
+	if d.generated == nil {
+		enc.Encode(protocol.NewErrorMsg("tool writing is off here ([tools.agent]), so there are no tools Nine wrote to delete")) //nolint:errcheck
+		return
+	}
+	if err := d.generated.Delete(context.Background(), name); err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	enc.Encode(protocol.NewTextMsg(protocol.TypeToolDelete, fmt.Sprintf("deleted tool %q", name))) //nolint:errcheck
+}
+
 // handleStandingControl stops or starts a standing run.
 func (d *Daemon) handleStandingControl(enc *json.Encoder, id, action string) {
 	if d.standing == nil {

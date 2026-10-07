@@ -173,7 +173,7 @@ GET    /api/v1/goals/{id}         DELETE /api/v1/goals/{id}
 
 GET    /api/v1/workflows          POST /api/v1/workflows/{id}/stop  POST /api/v1/workflows/{id}/fail
 
-GET    /api/v1/tools              GET /api/v1/tools/{name}
+GET    /api/v1/tools              GET /api/v1/tools/{name}       DELETE /api/v1/tools/{name}
 POST   /api/v1/tools/{name}/call  POST /api/v1/tools/reload
 
 GET    /api/v1/plugins            POST /api/v1/plugins/reload

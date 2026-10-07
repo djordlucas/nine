@@ -200,6 +200,7 @@ func Assemble(c AssemblyConfig) *Assembly {
 	daemon.ConfigureMemory(c.Store)
 	daemon.ConfigurePlugins(c.Plugins)
 	daemon.ConfigureSandboxedTools(c.Tools)
+	daemon.ConfigureGeneratedTools(c.GeneratedTools)
 	daemon.ConfigureCoreTools(builder.CoreDispatcher())
 	daemon.ConfigurePlanStore(c.Store)
 	daemon.SetMaxGoalSessions(c.MaxGoalSessions)

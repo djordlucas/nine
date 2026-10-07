@@ -138,6 +138,9 @@ type Daemon struct {
 
 	mgr   pluginRegistry
 	tools *toolvm.Host // sandboxed-tool host (see ConfigureSandboxedTools); nil = disabled
+	// generated is the store of tools Nine wrote, for the operator's delete (see
+	// ConfigureGeneratedTools); nil when tool writing is off.
+	generated agent.GeneratedToolStore
 	// standing drives standing tools (see ConfigureStandingTools); nil = none.
 	standing *StandingRunner
 
@@ -545,6 +548,8 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 
 	case protocol.ToolCallReq:
 		d.handleToolCall(enc, r.Tool, r.Args, r.LiveState)
+	case protocol.ToolDeleteReq:
+		d.handleToolDelete(enc, r.Tool)
 
 	case protocol.ListNotificationsReq:
 		d.handleListNotifications(enc, r.All)
@@ -773,6 +778,10 @@ func (d *Daemon) ConfigureCapabilities(s *CapabilityService) { d.grants = s }
 // Capabilities exposes the capability surface so the API server can serve the same
 // decision path the CLI and TUI use rather than reimplementing it.
 func (d *Daemon) Capabilities() *CapabilityService { return d.grants }
+
+// ConfigureGeneratedTools stores the generated-tool store, so the operator can
+// delete a tool Nine wrote. Nil leaves the operator's delete refusing.
+func (d *Daemon) ConfigureGeneratedTools(g agent.GeneratedToolStore) { d.generated = g }
 
 // ConfigureCoreTools stores the dispatcher carrying the core-intercepted tools
 // (memory/file/skill/doc — the ones handled in-process rather than by a

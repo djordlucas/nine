@@ -40,6 +40,23 @@ func (c *CLI) ToolsReload(cfg *config.Config) error {
 	return nil
 }
 
+// ToolsDelete deletes a tool Nine wrote. The daemon refuses a shipped,
+// operator-installed or unknown tool and says why.
+func (c *CLI) ToolsDelete(cfg *config.Config, name string) error {
+	cl, done, err := c.dialDaemon(cfg)
+	if err != nil || cl == nil {
+		return err
+	}
+	defer done()
+
+	msg, err := cl.DeleteTool(name)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(c.Out, msg)
+	return nil
+}
+
 // ToolsShow prints one tool in full: its provenance, its resolved grant, and its
 // source. "What code ran, with what reach, on whose authority" should have an
 // exact answer, and this is where it is read.

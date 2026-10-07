@@ -75,6 +75,11 @@ type StandingControlReq struct {
 	Action string // "stop" | "start"
 }
 
+// ToolDeleteReq deletes a tool Nine wrote; any other tool is refused.
+type ToolDeleteReq struct {
+	Tool string
+}
+
 // ToolCallReq invokes one tool once, for testing. LiveState opts out of the
 // scratch state namespace a test call gets by default.
 type ToolCallReq struct {
@@ -156,6 +161,7 @@ func (SessionDeleteReq) Type() MsgType     { return TypeSessionDelete }
 func (StandingShowReq) Type() MsgType      { return TypeStandingShow }
 func (StandingControlReq) Type() MsgType   { return TypeStandingControl }
 func (ToolCallReq) Type() MsgType          { return TypeToolCall }
+func (ToolDeleteReq) Type() MsgType        { return TypeToolDelete }
 func (WorkflowStopReq) Type() MsgType      { return TypeWorkflowStop }
 func (WorkflowFailReq) Type() MsgType      { return TypeWorkflowFail }
 func (ListNotificationsReq) Type() MsgType { return TypeListNotifications }
@@ -211,6 +217,8 @@ func DecodeRequest(m Msg) (Request, error) {
 		return StandingShowReq{ID: m.AgentID, Limit: m.Limit}, nil
 	case TypeStandingControl:
 		return StandingControlReq{ID: m.AgentID, Action: m.Text}, nil
+	case TypeToolDelete:
+		return ToolDeleteReq{Tool: m.ToolName}, nil
 	case TypeToolCall:
 		return ToolCallReq{Tool: m.ToolName, Args: m.ToolInput, LiveState: m.Text == "--live-state"}, nil
 	case TypeWorkflowStop:
