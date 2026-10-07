@@ -217,7 +217,7 @@ description = "probe"
 	want := map[string]bool{
 		"nine:csv": true, "nine:date": true, "nine:diff": true,
 		"nine:html": true, "nine:fs": true, "nine:env": true,
-		"nine:state": true, "nine:job": true,
+		"nine:state": true, "nine:job": true, "nine:process": true,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("Imports() = %v, want exactly the nine:* stdlib", got)

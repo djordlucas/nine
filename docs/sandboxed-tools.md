@@ -298,6 +298,7 @@ tool-writing agent reinvents badly inside a 5-second deadline:
 | `nine:env` | the granted environment keys | `env` |
 | `nine:state` | the host-owned store that outlives a call (§6.4) | `state` |
 | `nine:job` | ending a call with a cursor (§6.5) | `resumable` in the manifest |
+| `nine:process` | `next()`, `turn()` and `report()`, for a tool running as a live process | refused unless the tool was started as a live process |
 
 Importing one of the gated modules grants nothing: a tool with no grant gets a
 sentence saying so rather than reach.

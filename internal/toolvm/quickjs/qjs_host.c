@@ -52,6 +52,15 @@ nine_host_http(const uint8_t *ptr, int32_t len);
 __attribute__((import_module("nine"), import_name("state"))) extern uint64_t
 nine_host_state(const uint8_t *ptr, int32_t len);
 
+/* The `process` capability: what a live process uses to drive its session —
+ * wait for its next trigger, run a model turn, report to a pipe. Like state it
+ * takes a JSON op ({"op":"next"}) and returns (offset << 32) | length of a JSON
+ * response, or 0. The import exists unconditionally; the host refuses every op
+ * unless this instance was started as a live process, so an ordinary call — a
+ * tool the model invoked — can never block in it. */
+__attribute__((import_module("nine"), import_name("process"))) extern uint64_t
+nine_host_process(const uint8_t *ptr, int32_t len);
+
 /* The calling tool's resolved capability grant, as JSON. It confers nothing —
  * every capability is enforced elsewhere, by wazero's pre-opens or by the host's
  * per-call grant lookup — and exists so a guest can say "fs.read is not granted
@@ -227,6 +236,27 @@ static JSValue js_nine_state(JSContext *ctx, JSValueConst this_val, int argc,
     JS_FreeCString(ctx, req);
 
     if (packed == 0) return JS_ThrowInternalError(ctx, "state: no response from host");
+
+    const char *out = (const char *)(uintptr_t)(uint32_t)(packed >> 32);
+    uint32_t out_len = (uint32_t)(packed & 0xffffffff);
+    JSValue res = JS_NewStringLen(ctx, out, out_len);
+    free((void *)out);
+    return res;
+}
+
+static JSValue js_nine_process(JSContext *ctx, JSValueConst this_val, int argc,
+                               JSValueConst *argv) {
+    (void)this_val;
+    if (argc < 1) return JS_ThrowTypeError(ctx, "process requires a request object");
+
+    size_t len = 0;
+    const char *req = JS_ToCStringLen(ctx, &len, argv[0]);
+    if (!req) return JS_EXCEPTION;
+
+    uint64_t packed = nine_host_process((const uint8_t *)req, (int32_t)len);
+    JS_FreeCString(ctx, req);
+
+    if (packed == 0) return JS_ThrowInternalError(ctx, "process: no response from host");
 
     const char *out = (const char *)(uintptr_t)(uint32_t)(packed >> 32);
     uint32_t out_len = (uint32_t)(packed & 0xffffffff);
@@ -748,7 +778,16 @@ static JSValue js_nine_caps(JSContext *ctx, JSValueConst this_val, int argc,
  */
 static int g_budget_on = 0;
 static uint32_t g_checks_left = 0;
+static uint32_t g_checks_per_trigger = 0;
 static int g_budget_spent = 0;
+
+/* A live process runs until stopped, so its budget bounds the work done per
+ * trigger, not over its whole life. The host calls this when nine:process's
+ * next() hands the guest a new trigger — and only then: a loop around report()
+ * or a model turn does not refill it. An exhausted budget stays exhausted. */
+__attribute__((export_name("nine_budget_reset"))) void nine_budget_reset(void) {
+    if (g_budget_on && !g_budget_spent) g_checks_left = g_checks_per_trigger;
+}
 
 static int nine_interrupt(JSRuntime *rt, void *opaque) {
     (void)rt;
@@ -864,6 +903,7 @@ __attribute__((export_name("nine_run"))) uint64_t nine_run(uint32_t ptr, uint32_
         if (JS_ToUint32(ctx, &n, checks) == 0 && n > 0) {
             g_budget_on = 1;
             g_checks_left = n;
+            g_checks_per_trigger = n;
             JS_SetInterruptHandler(rt, nine_interrupt, NULL);
         }
     }
@@ -913,6 +953,8 @@ __attribute__((export_name("nine_run"))) uint64_t nine_run(uint32_t ptr, uint32_
                       JS_NewCFunction(ctx, js_nine_env, "__nine_env", 1));
     JS_SetPropertyStr(ctx, global, "__nine_random",
                       JS_NewCFunction(ctx, js_nine_random, "__nine_random", 1));
+    JS_SetPropertyStr(ctx, global, "__nine_process",
+                      JS_NewCFunction(ctx, js_nine_process, "__nine_process", 1));
     JS_FreeValue(ctx, global);
 
     if (!g_harness || g_harness_len == 0) {

@@ -215,6 +215,7 @@ $ nine tools
 | `env` | `import { get } from "nine:env"` | ❌ declare + grant |
 | `state` | `import { get, set } from "nine:state"` | ❌ declare + grant |
 | long-running | `import { again } from "nine:job"` | ❌ `resumable = true` in the manifest |
+| live process | `import { next, turn, report } from "nine:process"` | ❌ only in a tool started as a live process |
 
 ### The filesystem, from JavaScript
 

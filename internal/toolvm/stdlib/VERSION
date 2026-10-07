@@ -1,5 +1,4 @@
-nine stdlib rev 3 — csv, date, diff (hunks); fs gains readRange, appendFile,
-rename, remove and copyFile
+nine stdlib rev 4 — process (live processes: next, turn, report)
 
 Authored in-house rather than vendored, so every module is known to run under the
 trimmed QuickJS blob (no std/os; R-TVM.9) and carries no transitive surface. Bump
