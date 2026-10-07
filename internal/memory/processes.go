@@ -11,6 +11,14 @@ import (
 // process is stopped or it is going; `failing` is a going run that keeps
 // erroring, kept distinct so an operator can see the difference between "quiet"
 // and "broken" without reading a log.
+// Process modes (adr/process-sessions.md §2). A live process's instance runs
+// until it is stopped and drives its session; a slice process is called per
+// trigger, as standing tools always were.
+const (
+	ProcessLive  = "live"
+	ProcessSlice = "slice"
+)
+
 const (
 	ProcessRunning = "running"
 	ProcessStopped = "stopped"
@@ -54,7 +62,23 @@ type Process struct {
 	// feed. A condition trigger is such a pipe. It is the one way a process may
 	// reach an agent, and only because an operator wrote the link in their own
 	// config.
-	ReportTo  string `json:"report_to,omitempty"`
+	ReportTo string `json:"report_to,omitempty"`
+
+	// Mode is ProcessLive or ProcessSlice.
+	Mode string `json:"mode"`
+	// SessionID is the session a live process drives; empty for a slice one.
+	SessionID string `json:"session_id,omitempty"`
+	// Owner marks the process that owns its session and sets its role; an
+	// attached process's turns run under the owner's role.
+	Owner bool `json:"owner"`
+	// Role and Delegates are what the session runs under, when this process
+	// owns it.
+	Role      string `json:"role,omitempty"`
+	Delegates bool   `json:"delegates,omitempty"`
+	// GoalID binds the process to a goal: the goal's status decides whether it
+	// runs.
+	GoalID string `json:"goal_id,omitempty"`
+
 	CreatedAt string `json:"created_at,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
 }
@@ -71,14 +95,22 @@ func (s *Store) ProcessUpsertDefinition(t Process) error {
 	if args == "" {
 		args = "{}"
 	}
+	mode := t.Mode
+	if mode == "" {
+		mode = ProcessSlice
+	}
 	_, err := s.db.Exec(
-		`INSERT INTO processes(id, tool, args, interval_secs, schedule, generated, report_to, updated_at)
-		 VALUES(?,?,?,?,?,?,?,?)
+		`INSERT INTO processes(id, tool, args, interval_secs, schedule, generated, report_to,
+		                       mode, session_id, owner, role, delegates, goal_id, updated_at)
+		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		 ON CONFLICT(id) DO UPDATE SET
 		   tool=excluded.tool, args=excluded.args,
 		   interval_secs=excluded.interval_secs, schedule=excluded.schedule,
-		   report_to=excluded.report_to, updated_at=excluded.updated_at`,
-		t.ID, t.Tool, args, t.IntervalSecs, t.Schedule, t.Generated, t.ReportTo, nowText())
+		   report_to=excluded.report_to, mode=excluded.mode, session_id=excluded.session_id,
+		   owner=excluded.owner, role=excluded.role, delegates=excluded.delegates,
+		   goal_id=excluded.goal_id, updated_at=excluded.updated_at`,
+		t.ID, t.Tool, args, t.IntervalSecs, t.Schedule, t.Generated, t.ReportTo,
+		mode, t.SessionID, t.Owner, t.Role, t.Delegates, t.GoalID, nowText())
 	return err
 }
 
@@ -100,7 +132,8 @@ func (s *Store) ProcessList() ([]Process, error) {
 	return s.queryProcesses(`SELECT ` + processColumns + ` FROM processes ORDER BY id`)
 }
 
-// ProcessesDue returns the runs whose next call is due now.
+// ProcessesDue returns the slice processes whose next call is due now. Live
+// processes are not called per trigger, so they are never due here.
 //
 // Only `running` — a stopped run is not due, and a `failing` one is, because
 // failing means "still trying, on a backed-off cadence" rather than "given up".
@@ -108,9 +141,37 @@ func (s *Store) ProcessesDue() ([]Process, error) {
 	return s.queryProcesses(
 		`SELECT `+processColumns+`
 		 FROM processes
-		 WHERE state IN (?, ?) AND (next_at = '' OR next_at <= ?)
+		 WHERE mode = ? AND state IN (?, ?) AND (next_at = '' OR next_at <= ?)
 		 ORDER BY id`,
-		ProcessRunning, ProcessFailing, nowText())
+		ProcessSlice, ProcessRunning, ProcessFailing, nowText())
+}
+
+// ProcessesLive returns the live processes that should be running: running,
+// or failing and due a restart.
+func (s *Store) ProcessesLive() ([]Process, error) {
+	return s.queryProcesses(
+		`SELECT `+processColumns+`
+		 FROM processes
+		 WHERE mode = ? AND state IN (?, ?)
+		 ORDER BY id`,
+		ProcessLive, ProcessRunning, ProcessFailing)
+}
+
+// ProcessSetNextAt records when a live process's clock next fires.
+func (s *Store) ProcessSetNextAt(id string, nextAt time.Time) error {
+	_, err := s.db.Exec(`UPDATE processes SET next_at=?, updated_at=? WHERE id=?`,
+		writeTime(nextAt), nowText(), id)
+	return err
+}
+
+// ProcessRecovered clears a live process's failure history once it runs again,
+// returning a failing one to running.
+func (s *Store) ProcessRecovered(id string) error {
+	_, err := s.db.Exec(
+		`UPDATE processes SET state=?, failures=0, last_error='', updated_at=?
+		 WHERE id=? AND state IN (?, ?)`,
+		ProcessRunning, nowText(), id, ProcessRunning, ProcessFailing)
+	return err
 }
 
 // ProcessAdvance records a call that asked to continue: the cursor it
@@ -195,13 +256,14 @@ func (s *Store) ProcessDelete(id string) error {
 
 const processColumns = `id, tool, args, interval_secs, schedule, state, cursor,
 	        calls, cycles, failures, last_error, last_call_at, next_at, generated,
-	        report_to, created_at, updated_at`
+	        report_to, mode, session_id, owner, role, delegates, goal_id, created_at, updated_at`
 
 func scanProcess(row rowScanner) (Process, error) {
 	var t Process
 	err := row.Scan(&t.ID, &t.Tool, &t.Args, &t.IntervalSecs, &t.Schedule, &t.State,
 		&t.Cursor, &t.Calls, &t.Cycles, &t.Failures, &t.LastError, &t.LastCallAt,
-		&t.NextAt, &t.Generated, &t.ReportTo, &t.CreatedAt, &t.UpdatedAt)
+		&t.NextAt, &t.Generated, &t.ReportTo, &t.Mode, &t.SessionID, &t.Owner, &t.Role,
+		&t.Delegates, &t.GoalID, &t.CreatedAt, &t.UpdatedAt)
 	return t, err
 }
 

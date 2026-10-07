@@ -245,6 +245,9 @@ func runDaemon() {
 	runtime.ReconcileStandingTools(store, cfg.StandingTools)
 	standing := runtime.NewStandingRunner(store, toolHost, cfg.Tools.JobMinDelayMS, cfg.Tools.JobWorkers)
 	standing.SetWaker(daemon)
+	// Live processes run their model turns in their own sessions, through the
+	// daemon (adr/process-sessions.md).
+	standing.SetSessions(daemon)
 	daemon.ConfigureStandingTools(standing)
 	// The capability surface behind `nine grants`, the TUI's /grants view and the
 	// API's /capabilities endpoints — one decision path for all three, because an

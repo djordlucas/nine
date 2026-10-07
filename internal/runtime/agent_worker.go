@@ -701,9 +701,15 @@ func (w *AgentWorker) turnAsync(ctx context.Context, text string, forceThink boo
 
 // turn submits a user message and blocks until the response is ready.
 func (w *AgentWorker) turn(ctx context.Context, text string) (string, error) {
+	return w.turnAs(ctx, text, "")
+}
+
+// turnAs is turn with the journal's trigger label: "" for a user's turn, or
+// what drove it ("idle", "condition") for a process's.
+func (w *AgentWorker) turnAs(ctx context.Context, text, trigger string) (string, error) {
 	ch := make(chan turnResp, 1)
 	select {
-	case w.inbox <- turnReq{ctx: ctx, text: text, respCh: ch}:
+	case w.inbox <- turnReq{ctx: ctx, text: text, respCh: ch, trigger: trigger}:
 	case <-ctx.Done():
 		return "", ctx.Err()
 	case <-w.quit:

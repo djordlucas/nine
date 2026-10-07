@@ -224,12 +224,20 @@ func (d *Daemon) makeAgentWorker(id string, checkpointData []byte, interactive b
 		plan = nil
 	}
 
-	session := d.agent.NewSession(id, RoleParams{
+	return d.buildWorker(id, checkpointData, RoleParams{
 		Role:        roleNameForPlan(plan),
 		Interactive: interactive,
 		OwnsGoal:    planOwnsGoal(plan),
 		Delegates:   planDelegates(plan),
-	})
+	}, plan)
+}
+
+// buildWorker creates a worker for id from explicit role parameters, restoring
+// checkpointData when given. plan may be nil, which gives the worker an
+// unpersisted [active] plan — what a process session runs with, since its
+// process, not a routine, decides when it takes a turn.
+func (d *Daemon) buildWorker(id string, checkpointData []byte, p RoleParams, plan *sessionPlanState) *AgentWorker {
+	session := d.agent.NewSession(id, p)
 	loop := session.Loop
 	if checkpointData != nil {
 		loop.LoadState(checkpointData) //nolint:errcheck

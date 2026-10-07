@@ -587,6 +587,12 @@ func initSchema(d db) error {
 			next_at       TEXT NOT NULL DEFAULT '',
 			generated     INTEGER NOT NULL DEFAULT 0,
 			report_to     TEXT NOT NULL DEFAULT '',
+			mode          TEXT NOT NULL DEFAULT 'slice',
+			session_id    TEXT NOT NULL DEFAULT '',
+			owner         INTEGER NOT NULL DEFAULT 1,
+			role          TEXT NOT NULL DEFAULT '',
+			delegates     INTEGER NOT NULL DEFAULT 0,
+			goal_id       TEXT NOT NULL DEFAULT '',
 			created_at    TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			updated_at    TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,

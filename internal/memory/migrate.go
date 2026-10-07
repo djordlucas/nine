@@ -311,6 +311,26 @@ var migrations = []migrationStep{
 		_, err = q.Exec(`ALTER TABLE processes RENAME COLUMN wake_agent TO report_to`)
 		return err
 	}},
+
+	// 13 → 14: what a live process needs (adr/process-sessions.md): its mode,
+	// the session it drives and the role its turns run under, whether it owns
+	// that session, and the goal it is bound to. Every existing row is a slice
+	// process, which is what the defaults say.
+	{name: "process_live_columns", fn: func(q sqlExec) error {
+		for _, c := range []struct{ name, def string }{
+			{"mode", "TEXT NOT NULL DEFAULT 'slice'"},
+			{"session_id", "TEXT NOT NULL DEFAULT ''"},
+			{"owner", "INTEGER NOT NULL DEFAULT 1"},
+			{"role", "TEXT NOT NULL DEFAULT ''"},
+			{"delegates", "INTEGER NOT NULL DEFAULT 0"},
+			{"goal_id", "TEXT NOT NULL DEFAULT ''"},
+		} {
+			if err := addColumnIfMissing(q, "processes", c.name, c.def); err != nil {
+				return err
+			}
+		}
+		return nil
+	}},
 }
 
 // hasTableTx reports whether a table exists, using the passed handle so it

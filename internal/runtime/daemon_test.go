@@ -769,3 +769,36 @@ func TestOperatorToolDelete(t *testing.T) {
 		t.Errorf("deleting a built-in: err = %v, want a refusal", err)
 	}
 }
+
+// A process's turn runs in its own session, created on first use and reused
+// afterwards: the second turn's request carries the first exchange.
+func TestProcessTurnRunsInTheProcessSession(t *testing.T) {
+	var mu sync.Mutex
+	var requests []llm.Request
+	provider := llm.ProviderFunc(func(_ context.Context, req llm.Request) (llm.Response, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		requests = append(requests, req)
+		return finalResp(fmt.Sprintf("reply %d", len(requests))), nil
+	})
+	d, _ := startDaemon(t, makeFactory(provider), nil, nil)
+
+	for i, want := range []string{"reply 1", "reply 2"} {
+		got, err := d.ProcessTurn(context.Background(), "digest-session", runtime.RoleParams{}, "tick", "idle")
+		if err != nil || got != want {
+			t.Fatalf("ProcessTurn %d = %q, %v; want %q", i+1, got, err, want)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	last := requests[len(requests)-1]
+	var sawFirstReply bool
+	for _, m := range last.Messages {
+		if m.Role == "assistant" && m.Text == "reply 1" {
+			sawFirstReply = true
+		}
+	}
+	if !sawFirstReply {
+		t.Error("the second turn did not see the first: the session was not reused")
+	}
+}

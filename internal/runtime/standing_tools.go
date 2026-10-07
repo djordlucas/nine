@@ -68,6 +68,12 @@ type StandingRunner struct {
 	// calls are deliberately not journal events (journalTransition), so this is
 	// where "what has it been doing lately" lives.
 	log *standingLog
+
+	// sessions runs live processes' turns (process_live.go); nil leaves live
+	// processes unstarted.
+	sessions ProcessSessions
+	liveMu   sync.Mutex
+	lives    map[string]*liveProc
 }
 
 // SetWaker wires the condition-trigger delivery path.
@@ -95,6 +101,7 @@ func NewStandingRunner(store *memory.Store, host *toolvm.Host, minDelayMS, worke
 		minDelay: time.Duration(minDelayMS) * time.Millisecond,
 		workers:  workers,
 		log:      newStandingLog(),
+		lives:    map[string]*liveProc{},
 	}
 }
 
@@ -317,12 +324,17 @@ func RunStandingTools(ctx context.Context, r *StandingRunner, interval time.Dura
 	}
 	t := time.NewTicker(interval)
 	defer t.Stop()
+	defer r.StopLive()
+	// Live processes start at once rather than one interval after boot: the
+	// routines they replace woke as soon as their session started.
+	r.tickLive(ctx)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
 			r.runDue(ctx)
+			r.tickLive(ctx)
 		}
 	}
 }
@@ -426,25 +438,37 @@ func (r *StandingRunner) report(st memory.Process, out toolvm.Output) {
 		"tool": st.Tool, "output": clipDetail(text, 2000),
 	})
 
-	// A condition trigger delivers to its agent instead of the human feed: the
-	// operator wrote that link, and the whole point is that the agent looks *now*
-	// rather than on its next clock.
-	if st.ReportTo != "" && r.waker != nil {
-		if r.waker.WakeAgent(st.ReportTo, text) {
-			slog.Info("condition trigger woke an agent",
-				"id", st.ID, "agent", st.ReportTo, "tool", st.Tool)
-			return
-		}
-		// The agent is not running, or is already busy. Falling back to the human
-		// feed is deliberate: a finding that reached nobody is worse than one that
-		// reached the wrong inbox, and a silently-dropped condition is exactly the
-		// failure an operator would never discover.
-		slog.Info("condition trigger could not wake its agent; posting to the human feed",
-			"id", st.ID, "agent", st.ReportTo)
-		r.notifyHuman(fmt.Sprintf("[%s → %s, not running] %s", st.ID, st.ReportTo, text))
+	if st.ReportTo != "" {
+		r.pipe(st, text)
 		return
 	}
 	r.notifyHuman(fmt.Sprintf("[%s] %s", st.ID, text))
+}
+
+// pipe delivers a process's report to the session it pipes to (report_to): to
+// the live process driving that session, or by waking the agent that runs it.
+// A condition trigger is such a pipe: the operator wrote that link, and the
+// whole point is that the agent looks *now* rather than on its next clock.
+//
+// The receiver takes it only while idle. Otherwise it goes to the human feed,
+// deliberately: a finding that reached nobody is worse than one that reached
+// the wrong inbox, and a silently-dropped condition is exactly the failure an
+// operator would never discover.
+func (r *StandingRunner) pipe(st memory.Process, text string) bool {
+	delivered := false
+	if handled, ok := r.Deliver(st.ReportTo, text, st.ID); handled {
+		delivered = ok
+	} else if r.waker != nil {
+		delivered = r.waker.WakeAgent(st.ReportTo, text)
+	}
+	if delivered {
+		slog.Info("process report delivered", "id", st.ID, "to", st.ReportTo, "tool", st.Tool)
+		return true
+	}
+	slog.Info("process report could not be delivered; posting to the human feed",
+		"id", st.ID, "to", st.ReportTo)
+	r.notifyHuman(fmt.Sprintf("[%s → %s, not running] %s", st.ID, st.ReportTo, text))
+	return false
 }
 
 func (r *StandingRunner) notifyHuman(msg string) {
