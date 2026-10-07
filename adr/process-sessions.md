@@ -7,8 +7,8 @@
 the configuration of standing agents and standing tools — see §12
 
 Nine has **two kinds of session**. A **conversation** is driven by a person. A **process
-session** is driven by a **process**: a sandboxed tool that its triggers — a clock, a journal
-event, a message — invoke, and that can call the model in its own session. Everything Nine does
+session** is driven by a **process**: a sandboxed tool that runs until stopped, receives its
+triggers — a clock, a journal event, a message — and can call the model in its own session. Everything Nine does
 between a person's turns becomes a process session: goal pursuit, standing agents,
 self-reflection, condition triggers, standing tools, and the processes Nine writes for itself.
 
@@ -61,24 +61,32 @@ model anything.
 ## 2. Decision
 
 **A process** is a sandboxed tool with a `process` declaration: its triggers, its role, its
-budget. Source, schema and capabilities are those of any sandboxed tool.
+budget. Source, schema and capabilities are those of any sandboxed tool. It runs in one of two
+modes, fixed by its declaration:
 
-**A process session** is the one session a process owns, created with it. Its history is the
-process's continuity with the model; its journal is the process's activity log, for every
-invocation, whether or not it called the model.
+| | Live | Slice |
+|---|---|---|
+| Instance | started with the process, alive until it is stopped, paused or fails | created per trigger, destroyed after, as standing runs are today |
+| Receiving work | `nine.next()` blocks until the next trigger and returns it | the trigger is the call's input |
+| Calling the model | `nine.llm.turn(text)` blocks and returns the reply (§6) | not possible |
+| State across triggers | its own memory, plus `state` and the database; memory is lost on a restart | `state` and the database |
+| Output to a pipe | `nine.report(text)` (§7) | the call's non-empty result |
+| Used for | shipped and Nine-written processes | today's standing tools and condition-trigger predicates |
 
-**A trigger** invokes the process as a standing run invokes a tool today: a fresh instance, a
-deadline, the declared grants, nothing surviving the call except what it writes to its `state`,
-the database (§8) or its session. Long work is a resumable call.
+Live mode is how a process is written: a program that waits for work and drives its session.
+Slice mode keeps existing standing tools running unchanged; it has no model access, so nothing
+in it waits on a model. A live tool is never callable as an ordinary tool (§9).
+
+**A process session** is the session a process drives. Its history is the process's continuity
+with the model; its journal is the process's activity log. A session has one **owning** process,
+which sets its role; other processes may be **attached** to it (§4), and their turns run in it
+under that role, one at a time.
 
 | Trigger | Declared as | Delivers |
 |---|---|---|
 | Clock | `every = "5m"` xor `schedule = "0 7 * * *"` | the time |
 | Event | `on = ["tool_end"]`, optionally filtered | the journal event (§7) |
-| Message | always on | a message sent to the session by the operator, a conversation or the API |
-
-**The `llm` capability** runs a turn in the process session under the declared role and returns
-the reply (§6). A process without it never calls the model.
+| Message | always on | a message sent to the session by the operator, a conversation, the API, or a process piping into it (§7) |
 
 ```toml
 [[process]]
@@ -91,12 +99,36 @@ args     = { feeds = ["https://feeds.bbci.co.uk/news/rss.xml"] }
 ```
 
 ```js
-export default async ({ trigger, args }, nine) => {
-  const stories = await fetchAll(args.feeds);           // net.http
-  const summary = await nine.llm.turn(`Summarize in three sentences:\n${stories}`);
-  await writeFile("digest/today.md", summary);          // fs.write
+export default ({ args }, nine) => {
+  for (;;) {
+    const trigger = nine.next();                        // blocks until 07:00
+    const stories = fetchAll(args.feeds);               // net.http
+    const summary = nine.llm.turn(`Summarize in three sentences:\n${stories}`);
+    writeFile("digest/today.md", summary);              // fs.write
+  }
 };
 ```
+
+**Lifecycle.** The process runner starts a live process; nothing else runs one. Starting means
+creating a wasm instance in the live pool with the tool's grants, and calling its default export
+once with `{ args, process }`. The program runs from there, typically a loop around
+`nine.next()`, until it returns, throws or is stopped.
+
+| Occasion | What starts |
+|---|---|
+| Daemon boot | every process in the *running* state, up to `max_running` |
+| Creation | a process written with `tool_write`, at once; a `pursue` process for a goal `goal_create` makes |
+| Start | `process_start` from a model (§9), `nine process start` from the operator |
+| A goal back to *active* | the processes bound to it |
+| A failure | the same process, with the standing tools' backoff; repeated failures leave it *failing*, reported to the human feed |
+| A revision | the new version, after the old one stops (§9) |
+
+Stopping — by a model, the operator, its goal, a budget or the daemon's shutdown — makes the
+pending `nine.next()` or `nine.llm.turn()` throw a *stopped* error, then closes the instance. A
+restart loses only the instance's memory: the program starts again from the top, and its first
+`nine.next()` returns the triggers that came due while it was down, each once, so a scheduled run
+missed during a restart still happens. The runner records who stopped a process and when, which
+decides who may start it again (§9).
 
 ---
 
@@ -107,8 +139,8 @@ export default async ({ trigger, args }, nine) => {
 | Goal session | The shipped `pursue` process, bound to its goal (§4), every 5 min |
 | Standing agent (`[[agent]]`) | `[[process]]` running `pursue` on a config-owned goal, with the declared role and trigger |
 | Self-reflection session | The shipped `reflect` process, at `[daemon] self_reflection` |
-| Condition trigger (`when = {…}`) | A process that runs the check and calls `llm` only when it finds something; the wake becomes a turn in its own session |
-| Standing tool | A process without `llm` |
+| Condition trigger (`when = {…}`) | A pipe (§7): the predicate tool as a process, with `report_to` naming the standing agent's session |
+| Standing tool | A slice process |
 | Reaction | A process with an `on` trigger |
 | Processes Nine writes | `tool_write` with a `process` block (§9) |
 
@@ -125,8 +157,10 @@ What stays as it is:
 
 ## 4. Shipped processes
 
-Session-plan routines become shipped processes, compiled into the binary like shipped tools.
-They are core: Nine cannot rewrite them, and a process it writes cannot take their names.
+Session-plan routines become shipped processes: live JS tools compiled into the binary, as shipped
+tools are. They are core: Nine cannot rewrite them, and a process it writes cannot take their
+names. Being sandboxed, they hold to their grants and role structurally, and they are working
+examples Nine can read (`nine tools show pursue`) before writing its own.
 
 | Process | Replaces | Does |
 |---|---|---|
@@ -137,6 +171,12 @@ They are core: Nine cannot rewrite them, and a process it writes cannot take the
 over the rules goal sessions have today: one session per top-level goal, the goal's status
 decides whether the session runs (active runs, paused pauses, done or archived retires), and the
 agent owns that status — re-declaring a finished standing agent does not resurrect it.
+
+**Sharing a session.** A standing agent can run extra routines in its own session today
+(`[[agent.routine]]`, e.g. reflection beside pursuit, with the agent's history and role). That
+carries over as attachment: `reflect` attached to the agent's session, its turns running there
+under the owner's role, serialized with the owner's. When several attached processes are due at
+once, the one overdue longest runs first, as routines are chosen today.
 
 **Stall.** Five consecutive `llm` turns that call no tool pause a goal-bound session's goal, as
 today. It is a rule of goal binding, not of every process: a summarizer's turns call no tool by
@@ -155,6 +195,11 @@ Phase 1 is accepted on that (§14).
 | `[processes] budget` | — | the default budget of every process; a declaration may lower it, never raise it |
 | `[processes] max_depth` | — | the lineage limit (§7), default 2 |
 | `[processes] priority` | — | `background`, the queue priority of every process turn |
+| `[processes] memory_mb` | — | the memory cap of one live instance |
+
+Live instances run in their own pool, sized by `max_running`, apart from the sandbox's call slots:
+a process waiting in `nine.next()` or `nine.llm.turn()` holds its own instance and never a slot an
+ordinary tool call needs.
 
 A process that exhausts its budget, or fails its health checks (standing tools' backoff and
 `failing` state, generalized), is paused, and the pause reaches the human feed.
@@ -163,7 +208,19 @@ A process that exhausts its budget, or fails its health checks (standing tools' 
 
 ## 6. The `llm` capability
 
-**A turn in the process's own session, under its role.** The role decides everything that is not
+**A blocking turn in the process's own session.** Only a live process can call
+`nine.llm.turn(text)`; it returns the reply as a string, or throws when a bound below stops it.
+
+| Bound | Applies to | Set by |
+|---|---|---|
+| Reply length, inner model calls, turn duration | one turn | the turn's own limits: `max_tokens`, the loop's call cap, `task_timeout_seconds` |
+| Turns and tokens per day | one process | its budget, capped by `[processes] budget`; when exhausted, `nine.llm.turn` throws and the process is paused, reported to the human feed |
+| Priority and concurrency | all processes | `[processes] priority`, `max_running` |
+
+The instance has no deadline of its own: it runs until stopped. Every host call it makes carries
+its own bound, so nothing it waits on can wait forever.
+
+**Under its role.** The role decides everything that is not
 the process's text: persona, tools, enrichment, thinking. It must be **operator-authored** — built
 in, or from `[skills] user_dir`. Nine can write roles (R-ROLE.7 keeps their structural flags at
 leaf defaults), but an agent-authored role's tool list is bounded only by the daemon's surface,
@@ -197,6 +254,31 @@ requires. Each condition has its answer:
 process is invoked for an event at depth `max_depth` or more (default 2), and the skip is
 journaled. A process is never invoked for an event from its own session. A message carries its
 sender's depth plus one.
+
+**Pipes.** A process may declare `report_to = "<session>"`: what it reports is delivered to that
+process session as a message, which is a trigger. A live process reports with `nine.report(text)`;
+a slice process reports each non-empty result. Empty output sends nothing.
+
+| | A pipe |
+|---|---|
+| Timing | one output per run, delivered as a message; the receiver runs on that trigger |
+| Direction | one way: the sender never sees what the receiver does with it |
+| Reach | none shared: each side runs under its own grants and role |
+| Length | bounded by `max_depth`, since a message carries its sender's depth plus one |
+| Declared by | the operator for declared processes; Nine only between processes it wrote, within its instance |
+
+A pipe is not the tool→tool dispatch `tool-facilities.md` §7 rejects: the sender gains none of the
+receiver's reach and cannot read its result, so each process's roster entry still states what it
+can reach. What a pipe carries is data, and data reaching a model-driven receiver is in its
+prompt: a process that fetches web pages and pipes them on is an injection path into the
+receiver's session. The receiver's turn therefore labels delivered text with its sender, as
+`[From process <name>: …]`, so the model can tell an upstream report from a person's instruction.
+The label arrives in phase 2: phase 1 delivers the text verbatim, as condition triggers do today,
+so its snapshots stay unchanged.
+
+**Delivery** keeps today's condition-trigger semantics: a message is delivered if the receiver is
+idle, and otherwise goes to the human feed. Queued delivery — nothing lost, but a fast sender can
+pile up messages for a slow receiver — is a later decision, with a cap or coalescing per sender.
 
 **No waking.** A process session runs turns only in itself. It reaches a person through the human
 feed, and a conversation through what it writes, which that conversation reads when its model
@@ -234,6 +316,38 @@ against the ceiling — and the approval gate in an interactive session.
 holds `tool_write` (only with `allow_revision`) asks its turn to rewrite one. Every revision is a
 journaled turn under an operator-chosen role, subject to the ceiling and the gates.
 
+**Using processes from a conversation.** A live process is not request and response, so it is
+never in a conversation's callable tool list. A model works with processes through five tools,
+granted per role like any other:
+
+| Tool | Does |
+|---|---|
+| `process_list`, `process_show` | state, triggers, budget used, recent journal |
+| `process_send(session, text)` | a message to a process session, which is a trigger; the process receives it from `nine.next()` |
+| `process_start`, `process_stop` | control, under the rule below |
+
+A start grants nothing a process did not have — it runs under its own grants and role, and its
+budget, `max_running` and the memory cap bound what it costs — so a model may start any stopped
+process, shipped and declared ones included. What the rule protects is the decision behind the
+stop:
+
+| Stopped by | `process_start` from a model |
+|---|---|
+| The operator | Refused: an operator's stop is the operator's to undo |
+| A model | Allowed |
+| Its goal (paused, done, archived) | Refused: the model reactivates the goal instead, since the goal's status decides |
+| Itself (returned or threw) | Allowed, e.g. after a revision fixed it |
+| Health (*failing*) | Allowed: a model that fixed the cause may retry |
+| Its budget | Refused until the budget's period resets or the operator raises it |
+
+A refusal names its reason: *stopped by the operator on 2026-10-06; only the operator can start
+it.*
+
+The exchange is asynchronous: the model sends, and the answer comes back through what the process
+writes — files, the database, a pipe into a session the model reads. A turn never waits on a
+process, since a process may run forever. The `process` role, under which a process's own turns
+run, holds none of these tools, so a process cannot use its turns to steer processes.
+
 **Versions and rollback.** Each write keeps the previous version. A new version that fails its
 first `rollback_after` invocations (default 3) is restored to the previous one, and the restore
 reaches the human feed and the session's history.
@@ -252,9 +366,9 @@ database schema.
 ## 11. Configuration compatibility
 
 `[[agent]]` and `[[standing_tool]]` keep working for one minor release, translated at load into
-`[[process]]` blocks with a deprecation warning naming the replacement. `when = {…}` translates
-into a shipped `watch` process (run the tool; call `pursue`'s turn when it reports a finding),
-so existing condition triggers keep their behavior. `max_goal_sessions` and `max_standing` map to
+`[[process]]` blocks with a deprecation warning naming the replacement. `when = {…}` stays as
+shorthand: it translates into a process running the predicate tool with `report_to` naming the
+agent's session (§7), so existing condition triggers keep their behavior. `max_goal_sessions` and `max_standing` map to
 `max_running` (their sum) for the same release.
 
 ---
@@ -266,8 +380,9 @@ so existing condition triggers keep their behavior. `max_goal_sessions` and `max
 | R-SUB.7 | No generative-LLM reaction, no autonomous session injection | Process sessions call the model in their own session, under §6 and §7. Go subscribers are unchanged and R-SUB.3 still binds them |
 | I11 | Reactions are out-of-band | Unchanged: a process session writes its own session, `state`, the database and the human feed, and never mutates another session |
 | `docs/self-modification.md` | Nine's executable shape is fixed; only its knowledge grows | The core is fixed; the runtime is Nine's, inside the core's bounds |
+| `adr/durable-and-long-running-tools.md` §2, §4 | No instance outlives its call; keeping one alive was rejected | Live processes keep their instance until stopped, in their own pool with a memory cap; slice tools keep the per-call model unchanged |
 | Session plans and routines | The extension point for background work | Removed: routines become shipped processes, and a conversation's `active` plan becomes a property of the conversation. The `session_plans` table and `RoutineHandler` go in a migration |
-| R-TVM.20 (standing tools) | A second run mode | A process without `llm` |
+| R-TVM.20 (standing tools) | A second run mode | A slice process |
 | `adr/agent-boundary.md` | External mode planned | Paused: process sessions belong to the internal agent, their policy is a role |
 
 ---
@@ -276,7 +391,7 @@ so existing condition triggers keep their behavior. `max_goal_sessions` and `max
 
 | From nine-will | Here |
 |---|---|
-| Mind modules, residents, transients | Processes; a resident is a process with triggers, a transient a resumable call |
+| Mind modules, residents, transients | Processes; a resident is a live process, a transient a slice call |
 | The being (private SQLite, authorizer policy) | `sql`; `src/kernel/sql-policy.ts` ports to Go |
 | The record | The journal |
 | Genesis from a document | §10 |
@@ -291,8 +406,8 @@ so existing condition triggers keep their behavior. `max_goal_sessions` and `max
 | # | Content | Acceptance |
 |---|---|---|
 | 0 | Turn snapshots for `pursue` and `reflect`; journal snapshots for a standing tool and a condition trigger | Recorded on `main` before any change |
-| 1 | The unification: process sessions as the one background mechanism; `pursue`, `reflect`, `watch` shipped; goal binding; `[[process]]` with the aliases; `[processes]` limits; `llm` for shipped processes only; session plans removed | Snapshots unchanged; live evals match the baseline (`goal-create`, `delegate-subagent`, `workflow-plan`, the standing cases) |
-| 2 | Budgets and health for every process; the roster in the CLI and TUI | An exhausted budget pauses a process and reaches the human feed |
+| 1 | The unification: process sessions as the one background mechanism; `pursue`, `reflect` shipped; pipes with today's delivery (`report_to`); goal binding; `[[process]]` with the aliases; `[processes]` limits; live mode with `nine.next()`, `nine.llm.turn()` and `nine.report()`, for shipped processes only; `pursue` and `reflect` as live JS tools; attached processes; session plans removed | Snapshots unchanged; live evals match the baseline (`goal-create`, `delegate-subagent`, `workflow-plan`, the standing cases) |
+| 2 | Budgets and health for every process; the roster in the CLI and TUI; `process_list`, `process_show`, `process_send`, `process_start`, `process_stop`; the sender label on piped messages (§7), re-recording the condition-trigger snapshot | An exhausted budget pauses a process and reaches the human feed |
 | 3 | Processes Nine writes: `allow_processes`, `llm` under operator-authored roles, the `process` role | A Nine-written digest process runs on a schedule and summarizes through its session |
 | 4 | Event triggers, lineage, `max_depth` | Two processes triggering each other stop at `max_depth`, the skip journaled |
 | 5 | `sql`, its policy, `sql_query` | Denied statements are refused with a reason |
@@ -312,12 +427,21 @@ so existing condition triggers keep their behavior. `max_goal_sessions` and `max
 | `ask_human` from a process | **No**: questions go to the human feed, answers come back as messages (§7) |
 | `max_depth` default | **2**: a process may react to another process's work, not to a reaction to it |
 | `max_running` default | **14**: today's 10 goal sessions plus 4 standing tools |
+| Shipped processes | **Live JS tools** in the sandbox, not Go: one kind of process, limits held structurally, readable examples for Nine |
+| How processes run | **Live mode**: an instance alive until stopped, with blocking `nine.next()` and `nine.llm.turn()`. Slice mode stays for today's standing tools and predicates, without model access |
+| Several processes on one session | **Allowed**: one owner sets the role; attached processes' turns run in the session under it, serialized (§4) |
+| How a conversation uses processes | **Through process tools**, asynchronously (§9); a live tool is never callable as an ordinary tool |
+| Who may start a stopped process | **A model may start any stopped process**, shipped and declared included, unless the operator, its goal or its budget stopped it (§9) |
+| How a watcher reaches a thinker | **Pipes** (`report_to`, §7): one process's output becomes a message to another's session. Condition triggers become shorthand for a pipe; their delivery rules are kept |
 
 ---
 
 ## Limits
 
 - Nothing here is built.
+- A started live process holds its instance while it waits in `nine.next()`. Hibernating idle
+  processes (closing the instance, restarting it on the next trigger) would save memory at the
+  cost of losing in-memory state more often; it is left out until memory requires it.
 - One daemon is one instance: several instances, children and lineage are out of scope.
 - Rollback (§9) catches a revision that fails, not one that runs and does worse.
 - The aliases (§11) keep old configuration working for one minor release only.
