@@ -75,7 +75,7 @@ the database (§8) or its session. Long work is a resumable call.
 |---|---|---|
 | Clock | `every = "5m"` xor `schedule = "0 7 * * *"` | the time |
 | Event | `on = ["tool_end"]`, optionally filtered | the journal event (§7) |
-| Message | always on | a message sent to the session by the operator, a conversation or the API |
+| Message | always on | a message sent to the session by the operator, a conversation, the API, or a process piping into it (§7) |
 
 **The `llm` capability** runs a turn in the process session under the declared role and returns
 the reply (§6). A process without it never calls the model.
@@ -107,7 +107,7 @@ export default async ({ trigger, args }, nine) => {
 | Goal session | The shipped `pursue` process, bound to its goal (§4), every 5 min |
 | Standing agent (`[[agent]]`) | `[[process]]` running `pursue` on a config-owned goal, with the declared role and trigger |
 | Self-reflection session | The shipped `reflect` process, at `[daemon] self_reflection` |
-| Condition trigger (`when = {…}`) | A process that runs the check and calls `llm` only when it finds something; the wake becomes a turn in its own session |
+| Condition trigger (`when = {…}`) | A pipe (§7): the predicate tool as a process, with `report_to` naming the standing agent's session |
 | Standing tool | A process without `llm` |
 | Reaction | A process with an `on` trigger |
 | Processes Nine writes | `tool_write` with a `process` block (§9) |
@@ -198,6 +198,30 @@ process is invoked for an event at depth `max_depth` or more (default 2), and th
 journaled. A process is never invoked for an event from its own session. A message carries its
 sender's depth plus one.
 
+**Pipes.** A process may declare `report_to = "<session>"`: each non-empty output of a run is
+delivered to that process session as a message, which is a trigger. Empty output sends nothing.
+
+| | A pipe |
+|---|---|
+| Timing | one output per run, delivered as a message; the receiver runs on that trigger |
+| Direction | one way: the sender never sees what the receiver does with it |
+| Reach | none shared: each side runs under its own grants and role |
+| Length | bounded by `max_depth`, since a message carries its sender's depth plus one |
+| Declared by | the operator for declared processes; Nine only between processes it wrote, within its instance |
+
+A pipe is not the tool→tool dispatch `tool-facilities.md` §7 rejects: the sender gains none of the
+receiver's reach and cannot read its result, so each process's roster entry still states what it
+can reach. What a pipe carries is data, and data reaching a model-driven receiver is in its
+prompt: a process that fetches web pages and pipes them on is an injection path into the
+receiver's session. The receiver's turn therefore labels delivered text with its sender, as
+`[From process <name>: …]`, so the model can tell an upstream report from a person's instruction.
+The label arrives in phase 2: phase 1 delivers the text verbatim, as condition triggers do today,
+so its snapshots stay unchanged.
+
+**Delivery** keeps today's condition-trigger semantics: a message is delivered if the receiver is
+idle, and otherwise goes to the human feed. Queued delivery — nothing lost, but a fast sender can
+pile up messages for a slow receiver — is a later decision, with a cap or coalescing per sender.
+
 **No waking.** A process session runs turns only in itself. It reaches a person through the human
 feed, and a conversation through what it writes, which that conversation reads when its model
 decides to.
@@ -252,9 +276,9 @@ database schema.
 ## 11. Configuration compatibility
 
 `[[agent]]` and `[[standing_tool]]` keep working for one minor release, translated at load into
-`[[process]]` blocks with a deprecation warning naming the replacement. `when = {…}` translates
-into a shipped `watch` process (run the tool; call `pursue`'s turn when it reports a finding),
-so existing condition triggers keep their behavior. `max_goal_sessions` and `max_standing` map to
+`[[process]]` blocks with a deprecation warning naming the replacement. `when = {…}` stays as
+shorthand: it translates into a process running the predicate tool with `report_to` naming the
+agent's session (§7), so existing condition triggers keep their behavior. `max_goal_sessions` and `max_standing` map to
 `max_running` (their sum) for the same release.
 
 ---
@@ -291,8 +315,8 @@ so existing condition triggers keep their behavior. `max_goal_sessions` and `max
 | # | Content | Acceptance |
 |---|---|---|
 | 0 | Turn snapshots for `pursue` and `reflect`; journal snapshots for a standing tool and a condition trigger | Recorded on `main` before any change |
-| 1 | The unification: process sessions as the one background mechanism; `pursue`, `reflect`, `watch` shipped; goal binding; `[[process]]` with the aliases; `[processes]` limits; `llm` for shipped processes only; session plans removed | Snapshots unchanged; live evals match the baseline (`goal-create`, `delegate-subagent`, `workflow-plan`, the standing cases) |
-| 2 | Budgets and health for every process; the roster in the CLI and TUI | An exhausted budget pauses a process and reaches the human feed |
+| 1 | The unification: process sessions as the one background mechanism; `pursue`, `reflect` shipped; pipes with today's delivery (`report_to`); goal binding; `[[process]]` with the aliases; `[processes]` limits; `llm` for shipped processes only; session plans removed | Snapshots unchanged; live evals match the baseline (`goal-create`, `delegate-subagent`, `workflow-plan`, the standing cases) |
+| 2 | Budgets and health for every process; the roster in the CLI and TUI; the sender label on piped messages (§7), re-recording the condition-trigger snapshot | An exhausted budget pauses a process and reaches the human feed |
 | 3 | Processes Nine writes: `allow_processes`, `llm` under operator-authored roles, the `process` role | A Nine-written digest process runs on a schedule and summarizes through its session |
 | 4 | Event triggers, lineage, `max_depth` | Two processes triggering each other stop at `max_depth`, the skip journaled |
 | 5 | `sql`, its policy, `sql_query` | Denied statements are refused with a reason |
@@ -312,6 +336,7 @@ so existing condition triggers keep their behavior. `max_goal_sessions` and `max
 | `ask_human` from a process | **No**: questions go to the human feed, answers come back as messages (§7) |
 | `max_depth` default | **2**: a process may react to another process's work, not to a reaction to it |
 | `max_running` default | **14**: today's 10 goal sessions plus 4 standing tools |
+| How a watcher reaches a thinker | **Pipes** (`report_to`, §7): one process's output becomes a message to another's session. Condition triggers become shorthand for a pipe; their delivery rules are kept |
 
 ---
 

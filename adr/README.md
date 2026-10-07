@@ -64,7 +64,7 @@ changed; the document stays as the record and is not rewritten.
 | `generated-tool-authoring-loop.md` | Shortening the write→fail→rewrite loop for agent-authored tools: parse at write time, dry-run, logs on failure, stdlib gaps, catalog hygiene. |
 | `event-log.md` | Investigation behind the session journal. Written against PostgreSQL; the store is SQLite. |
 | `personality-pattern.md` | Packaging complete Nine instances as specialized agents; self-model bootstrapping |
-| `process-sessions.md` | Two kinds of session: conversations (a person drives) and process sessions (a process drives). Goal sessions, standing agents, self-reflection, condition triggers, standing tools and reactions become process sessions; adds processes Nine writes, an `llm` capability under operator-authored roles, a private `sql` database, revision with rollback, genesis. Amends R-SUB.7 |
+| `process-sessions.md` | Two kinds of session: conversations (a person drives) and process sessions (a process drives). Goal sessions, standing agents, self-reflection, condition triggers, standing tools and reactions become process sessions; adds processes Nine writes, an `llm` capability under operator-authored roles, a private `sql` database, pipes between processes (`report_to`), revision with rollback, genesis. Amends R-SUB.7 |
 | `predefined-agents-design.md` | Standing agents as config-seeded goals: motivation, work breakdown, phasing |
 | `reactive-events.md` | Event subscriptions: reacting to the journal |
 | `tool-facilities.md` | Host-injected credentials, a wider HTTP method allowlist, streaming progress, and reactions as a third run mode delivered by `reactions_get`. Rejects tool→tool dispatch and MCP reach. |
