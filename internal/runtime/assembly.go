@@ -29,6 +29,8 @@ type Assembly struct {
 	Supervisor *Supervisor
 	Assembler  *selfmodel.Assembler
 	EventSink  EventSink
+	// Processes runs every process; nil without a sandboxed tool host.
+	Processes *StandingRunner
 }
 
 // AssemblyConfig carries the inputs to Assemble. Values the production daemon and
@@ -96,6 +98,10 @@ type AssemblyConfig struct {
 	DefaultLeafRole    string
 	MaxDelegationDepth int
 	MaxGoalSessions    int
+	// JobMinDelayMS and JobWorkers bound the process runner's calls, as they do
+	// the job sweeper's ([tools] job_min_delay_ms, job_workers); 0 is the default.
+	JobMinDelayMS int
+	JobWorkers    int
 
 	// RoleFactory optionally decorates the builder's BuildForRole before it is
 	// handed to the daemon. Production passes nil (BuildForRole is used as-is);
@@ -202,15 +208,20 @@ func Assemble(c AssemblyConfig) *Assembly {
 	daemon.ConfigureSandboxedTools(c.Tools)
 	daemon.ConfigureGeneratedTools(c.GeneratedTools)
 	daemon.ConfigureCoreTools(builder.CoreDispatcher())
-	daemon.ConfigurePlanStore(c.Store)
 	daemon.SetMaxGoalSessions(c.MaxGoalSessions)
 
-	// goal_create spawns a background pursue session for each new top-level goal
-	// (docs/goal-sessions.md); the routine handler closes over c.Store, so callers
-	// that share process state (the eval runner) must serialize runs.
-	RoutineRegistry["pursue"] = func() RoutineHandler {
-		return NewPursueRoutine(c.Store)
-	}
+	// The process runner (adr/process-sessions.md): every process — goal
+	// sessions, standing agents, self-reflection, standing tools — runs through
+	// it, so production and the eval harness share it. Nil without a sandboxed
+	// tool host; the caller starts it with RunStandingTools.
+	runner := NewStandingRunner(c.Store, c.Tools, c.JobMinDelayMS, c.JobWorkers)
+	runner.SetWaker(daemon)
+	runner.SetSessions(daemon)
+	daemon.ConfigureStandingTools(runner)
+	daemon.ConfigureProcesses(c.Store, runner.Wake)
+
+	// goal_create spawns a background pursue process for each new top-level goal
+	// (docs/goal-sessions.md).
 	builder.SetGoalSessionSpawnFn(daemon.SpawnGoalSession)
 	builder.SetEmitProgressFn(daemon.EmitProgress)
 
@@ -220,5 +231,6 @@ func Assemble(c AssemblyConfig) *Assembly {
 		Supervisor: supervisor,
 		Assembler:  assembler,
 		EventSink:  sink,
+		Processes:  runner,
 	}
 }

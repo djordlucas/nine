@@ -53,6 +53,9 @@ type shippedTool struct {
 	AllowHosts []string
 	// Methods is the permitted HTTP method allowlist. Empty means GET only.
 	Methods []string
+	// Live marks a process program (process.go): started by Nine and run until
+	// stopped, never called.
+	Live bool
 }
 
 // shippedTools is the catalog. Adding one is this entry plus its .js file.
@@ -225,6 +228,27 @@ var shippedTools = []shippedTool{
 		AllowHosts:  []string{"html.duckduckgo.com", "api.search.brave.com", "serpapi.com"},
 		Methods:     []string{"GET"},
 	},
+	// The two shipped processes (adr/process-sessions.md §4). They reach nothing
+	// themselves: their model turns run under their session's role, which is
+	// where any reach is decided.
+	{
+		Name:        "pursue",
+		DisplayName: "Pursue",
+		Description: "The process behind goal sessions and standing agents: on each tick, work on the bound goal.",
+		Schema:      `{"type":"object","properties":{}}`,
+		File:        "shipped/pursue.js",
+		Declaration: Declaration{},
+		Live:        true,
+	},
+	{
+		Name:        "reflect",
+		DisplayName: "Reflect",
+		Description: "The process behind self-reflection: on each tick, reflect on recent sessions and update the self-model.",
+		Schema:      `{"type":"object","properties":{}}`,
+		File:        "shipped/reflect.js",
+		Declaration: Declaration{},
+		Live:        true,
+	},
 }
 
 // ShippedWorkspace is the host directory a shipped tool's fs grant points at.
@@ -295,6 +319,7 @@ func (h *Host) LoadShipped(ctx context.Context, collides Collides) {
 			Kind:        KindJS,
 			Grant:       grant,
 			Shipped:     true,
+			Live:        s.Live,
 			module:      h.qjs,
 			source:      string(src),
 			modules:     reachableStdlib(string(src)),

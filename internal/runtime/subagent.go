@@ -17,7 +17,7 @@ import (
 // sub-agent, so the parent can forward them to its own progress stream.
 func RunSubAgentSync(ctx context.Context, agentID, description string, loop *agent.Loop, sink EventSink, onProgress func(protocol.Msg)) (string, error) {
 	log.Debug("RunSubAgentSync", "agentID", agentID, "description", description)
-	r := newAgentWorker(agentID, loop, nil, nil, StallConfig{}, nil, sink)
+	r := newAgentWorker(agentID, loop, nil, nil, StallConfig{}, sink)
 	if onProgress != nil {
 		r.setProgress(onProgress)
 	}
@@ -50,7 +50,7 @@ func SpawnSubAgent(ctx context.Context, agentID string, description string, loop
 
 	sr := &SubAgentWorker{notif: notif, spawnerID: spawnerID}
 
-	r := newAgentWorker(agentID, loop, saveFn, notifFn, StallConfig{}, nil, nil)
+	r := newAgentWorker(agentID, loop, saveFn, notifFn, StallConfig{}, nil)
 	sr.worker = r
 
 	go func() {

@@ -149,11 +149,15 @@ type Daemon struct {
 	grants *CapabilityService
 	core   *agent.Dispatcher // core-intercepted tools, for plugin_call (see ConfigureCoreTools)
 	store  queryBackend
-	plans  PlanStore
 	hitl   *HITL
 	sink   EventSink // durable session-event journal for new workers (nil = disabled)
 
 	maxGoalSessions int // see SetMaxGoalSessions
+
+	// procs is the process store (see ConfigureProcesses); procWake asks the
+	// process runner for a pass now. Both nil on a daemon with no processes.
+	procs    ProcessBackend
+	procWake func()
 
 	listSubAgents func() []protocol.SubAgentInfo
 	queueDepth    func() (pending, inflight, maxConcurrent int)
@@ -656,49 +660,6 @@ func (d *Daemon) isInteractive(agentID string) bool {
 		return false
 	}
 	return ok
-}
-
-// ConfigurePlanStore stores the backend used to load, create, and resume
-// session_plans rows.
-func (d *Daemon) ConfigurePlanStore(plans PlanStore) {
-	d.plans = plans
-}
-
-// ResumeSessions starts session workers for every session_plans row with
-// status "active" and at least one active, idle-capable routine (Pilot 4's
-// general resume rule), so background sessions survive a daemon restart.
-// Ordinary [active] conversations have no idle-capable routine and stay
-// attach-on-demand. Safe to call once at startup, after ConfigurePlanStore.
-func (d *Daemon) ResumeSessions(ctx context.Context) error {
-	if d.plans == nil {
-		return nil
-	}
-	plans, err := d.plans.SessionPlanListActive()
-	if err != nil {
-		return fmt.Errorf("list active session plans: %w", err)
-	}
-	for _, p := range plans {
-		if !planNeedsResume(p) {
-			continue
-		}
-		d.mu.RLock()
-		_, running := d.sessions[p.ID]
-		d.mu.RUnlock()
-		if running {
-			continue
-		}
-
-		var data []byte
-		if d.ckpt != nil {
-			data, _, _ = d.ckpt.Load(p.ID) //nolint:errcheck // best-effort; makeAgentWorker handles a missing checkpoint
-		}
-		r := d.makeAgentWorker(p.ID, data, false)
-		d.mu.Lock()
-		d.sessions[p.ID] = r
-		d.mu.Unlock()
-		slog.Info("session resumed at startup", "id", p.ID)
-	}
-	return nil
 }
 
 // AddSubscriber registers an optional journal subscriber (adr/reactive-events.md).

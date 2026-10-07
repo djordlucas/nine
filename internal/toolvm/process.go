@@ -38,6 +38,14 @@ type Trigger struct {
 	Event json.RawMessage `json:"event,omitempty"`
 	// From names who sent a message: an operator, a session, or a process.
 	From string `json:"from,omitempty"`
+	// Goal is the goal a goal-bound process works on, as it stands now.
+	Goal *TriggerGoal `json:"goal,omitempty"`
+}
+
+// TriggerGoal is the goal a trigger carries to a goal-bound process.
+type TriggerGoal struct {
+	ID          string `json:"id"`
+	Description string `json:"description"`
 }
 
 // ProcessHandler is the host side of nine:process for one live process: the

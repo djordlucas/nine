@@ -78,6 +78,10 @@ type Process struct {
 	// GoalID binds the process to a goal: the goal's status decides whether it
 	// runs.
 	GoalID string `json:"goal_id,omitempty"`
+	// StoppedBy says who stopped a stopped process — "operator", "goal",
+	// "model", "self", "budget" — which decides who may start it again.
+	StoppedBy string `json:"stopped_by,omitempty"`
+	StoppedAt string `json:"stopped_at,omitempty"`
 
 	CreatedAt string `json:"created_at,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
@@ -233,7 +237,8 @@ func (s *Store) ProcessSetState(id, state string) (bool, error) {
 	if state == ProcessRunning {
 		res, err = s.db.Exec(
 			`UPDATE processes
-			 SET state=?, failures=0, last_error='', cursor='', next_at='', updated_at=?
+			 SET state=?, failures=0, last_error='', cursor='', next_at='',
+			     stopped_by='', stopped_at='', updated_at=?
 			 WHERE id=?`, state, nowText(), id)
 	} else {
 		res, err = s.db.Exec(
@@ -246,6 +251,34 @@ func (s *Store) ProcessSetState(id, state string) (bool, error) {
 	return n > 0, err
 }
 
+// ProcessStop stops a process and records who stopped it, which decides who
+// may start it again (adr/process-sessions.md §9).
+func (s *Store) ProcessStop(id, by string) (bool, error) {
+	res, err := s.db.Exec(
+		`UPDATE processes SET state=?, stopped_by=?, stopped_at=?, updated_at=? WHERE id=?`,
+		ProcessStopped, by, nowText(), nowText(), id)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+// ProcessesStoppedBy returns the stopped processes a given party stopped.
+func (s *Store) ProcessesStoppedBy(by string) ([]Process, error) {
+	return s.queryProcesses(
+		`SELECT `+processColumns+` FROM processes WHERE state = ? AND stopped_by = ? ORDER BY id`,
+		ProcessStopped, by)
+}
+
+// ProcessesOfSession returns the processes driving a session: its owner and
+// any attached to it.
+func (s *Store) ProcessesOfSession(sessionID string) ([]Process, error) {
+	return s.queryProcesses(
+		`SELECT `+processColumns+` FROM processes WHERE session_id = ? ORDER BY owner DESC, id`,
+		sessionID)
+}
+
 // ProcessDelete removes a process outright. Used when a generated one
 // is withdrawn; a config-declared one that leaves the file is *not* deleted, only
 // left unreconciled, matching how removing a standing agent behaves.
@@ -256,14 +289,15 @@ func (s *Store) ProcessDelete(id string) error {
 
 const processColumns = `id, tool, args, interval_secs, schedule, state, cursor,
 	        calls, cycles, failures, last_error, last_call_at, next_at, generated,
-	        report_to, mode, session_id, owner, role, delegates, goal_id, created_at, updated_at`
+	        report_to, mode, session_id, owner, role, delegates, goal_id, stopped_by, stopped_at,
+	        created_at, updated_at`
 
 func scanProcess(row rowScanner) (Process, error) {
 	var t Process
 	err := row.Scan(&t.ID, &t.Tool, &t.Args, &t.IntervalSecs, &t.Schedule, &t.State,
 		&t.Cursor, &t.Calls, &t.Cycles, &t.Failures, &t.LastError, &t.LastCallAt,
 		&t.NextAt, &t.Generated, &t.ReportTo, &t.Mode, &t.SessionID, &t.Owner, &t.Role,
-		&t.Delegates, &t.GoalID, &t.CreatedAt, &t.UpdatedAt)
+		&t.Delegates, &t.GoalID, &t.StoppedBy, &t.StoppedAt, &t.CreatedAt, &t.UpdatedAt)
 	return t, err
 }
 

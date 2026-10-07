@@ -16,7 +16,7 @@ import (
 	"nine/internal/runtime"
 )
 
-// operatorHarness is a daemon over a real store, with a plan store and a
+// operatorHarness is a daemon over a real store, with a process store and a
 // journal, so the operator verbs run end to end through the socket.
 func operatorHarness(t *testing.T, provider llm.Provider) (*memory.Store, string) {
 	t.Helper()
@@ -24,10 +24,9 @@ func operatorHarness(t *testing.T, provider llm.Provider) (*memory.Store, string
 	if err != nil {
 		t.Fatal(err)
 	}
-	registerPursueStage(t, store)
 	d, sock := startDaemon(t, makeFactory(provider), nil, nil)
 	d.ConfigureMemory(store)
-	d.ConfigurePlanStore(store)
+	d.ConfigureProcesses(store, nil)
 	d.SetEventSink(runtime.NewSQLEventSinkForTest(store))
 	return store, sock
 }
@@ -76,8 +75,8 @@ func TestGoalCreateAndDeleteOverTheWire(t *testing.T) {
 	if left, _ := store.GoalList(); len(left) != 0 {
 		t.Errorf("goals left after delete: %+v", left)
 	}
-	if plan, _ := store.SessionPlanGet(g.ID); plan != nil && plan.Status == "active" {
-		t.Error("the pursue plan is still active and would be resumed at the next boot")
+	if procs, _ := store.ProcessesOfSession(g.ID); len(procs) != 0 {
+		t.Errorf("the goal's processes outlived it: %+v", procs)
 	}
 
 	if _, err := dial(t, sock).DeleteGoal(g.ID); err == nil || !strings.Contains(err.Error(), "not found") {

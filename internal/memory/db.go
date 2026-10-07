@@ -420,13 +420,6 @@ func initSchema(d db) error {
 			created_at TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			updated_at TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,
-		`CREATE TABLE IF NOT EXISTS session_plans (
-			id         TEXT PRIMARY KEY,
-			status     TEXT NOT NULL DEFAULT 'active',
-			routines   TEXT NOT NULL DEFAULT '[]',
-			created_at TEXT NOT NULL DEFAULT ` + nowExpr + `,
-			updated_at TEXT NOT NULL DEFAULT ` + nowExpr + `
-		)`,
 		`CREATE TABLE IF NOT EXISTS human_requests (
 			id          TEXT PRIMARY KEY,
 			agent_id    TEXT NOT NULL,
@@ -593,6 +586,8 @@ func initSchema(d db) error {
 			role          TEXT NOT NULL DEFAULT '',
 			delegates     INTEGER NOT NULL DEFAULT 0,
 			goal_id       TEXT NOT NULL DEFAULT '',
+			stopped_by    TEXT NOT NULL DEFAULT '',
+			stopped_at    TEXT NOT NULL DEFAULT '',
 			created_at    TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			updated_at    TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,

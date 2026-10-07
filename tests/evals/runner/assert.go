@@ -202,19 +202,17 @@ func matchWorkflow(wfs []workflow.Workflow, w *WorkflowExpect) bool {
 	return false
 }
 
-// pursueSpawned reports whether an active session plan carries a pursue routine,
-// the durable marker that goal_create spawned a background pursue session
-// (docs/goal-sessions.md).
+// pursueSpawned reports whether a goal's pursue process exists and is not
+// stopped: the durable marker that goal_create spawned a background goal
+// session (docs/goal-sessions.md, adr/process-sessions.md).
 func pursueSpawned(store *memory.Store) bool {
-	plans, err := store.SessionPlanListActive()
+	procs, err := store.ProcessList()
 	if err != nil {
 		return false
 	}
-	for _, p := range plans {
-		for _, st := range p.Routines {
-			if st.Name == "pursue" || st.Kind == "pursue" {
-				return true
-			}
+	for _, p := range procs {
+		if p.Tool == "pursue" && p.GoalID != "" && p.State != memory.ProcessStopped {
+			return true
 		}
 	}
 	return false

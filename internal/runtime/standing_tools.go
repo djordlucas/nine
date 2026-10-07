@@ -74,6 +74,20 @@ type StandingRunner struct {
 	sessions ProcessSessions
 	liveMu   sync.Mutex
 	lives    map[string]*liveProc
+	// wake asks the run loop for a pass now (Wake).
+	wake chan struct{}
+}
+
+// Wake asks for a pass now rather than at the next tick: a process just written
+// — a goal session spawned — starts at once, as its session always did.
+func (r *StandingRunner) Wake() {
+	if r == nil {
+		return
+	}
+	select {
+	case r.wake <- struct{}{}:
+	default:
+	}
 }
 
 // SetWaker wires the condition-trigger delivery path.
@@ -102,6 +116,7 @@ func NewStandingRunner(store *memory.Store, host *toolvm.Host, minDelayMS, worke
 		workers:  workers,
 		log:      newStandingLog(),
 		lives:    map[string]*liveProc{},
+		wake:     make(chan struct{}, 1),
 	}
 }
 
@@ -334,6 +349,8 @@ func RunStandingTools(ctx context.Context, r *StandingRunner, interval time.Dura
 			return
 		case <-t.C:
 			r.runDue(ctx)
+			r.tickLive(ctx)
+		case <-r.wake:
 			r.tickLive(ctx)
 		}
 	}

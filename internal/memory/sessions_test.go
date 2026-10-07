@@ -126,8 +126,10 @@ func TestSessionsReapableProtectsLiveWork(t *testing.T) {
 	if err := store.GoalCreate("goal-session", "keep pursuing", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	// A standing agent carries an active session plan.
-	if err := store.SessionPlanSave(&memory.SessionPlan{ID: "standing", Status: "active"}); err != nil {
+	// A standing agent's session is driven by its process.
+	if err := store.ProcessUpsertDefinition(memory.Process{
+		ID: "goal:standing", Tool: "pursue", Mode: memory.ProcessLive, SessionID: "standing", Owner: true,
+	}); err != nil {
 		t.Fatal(err)
 	}
 

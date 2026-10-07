@@ -7,7 +7,6 @@ import (
 	ninectx "nine/internal/context"
 	"nine/internal/embed"
 	"nine/internal/llm"
-	"nine/internal/memory"
 	"nine/internal/protocol"
 )
 
@@ -44,46 +43,16 @@ func (d *Daemon) JournalHistoryForTest(agentID string) []protocol.Msg {
 	return d.journalHistory(agentID)
 }
 
-// PlanNeedsResumeForTest exposes planNeedsResume for testing.
-var PlanNeedsResumeForTest = planNeedsResume
-
-// LoadOrCreatePlanForTest exposes loadOrCreatePlan for testing, returning the
-// fields tests care about without exposing the unexported sessionPlanState type.
-func LoadOrCreatePlanForTest(store PlanStore, agentID string, profile []string, eager bool) (persisted bool, plan memory.SessionPlan, err error) {
-	state, err := loadOrCreatePlan(context.Background(), store, agentID, profile, eager)
-	if err != nil {
-		return false, memory.SessionPlan{}, err
-	}
-	return state.persisted, *state.plan, nil
-}
-
-// NewAgentWorkerWithPlanForTest creates a AgentWorker whose plan is
-// loaded/created via loadOrCreatePlan, for testing OnTurnEnd/idle-scheduler
-// wiring against custom StageHandlers registered in RoutineRegistry.
-func NewAgentWorkerWithPlanForTest(
-	id string,
-	loop *agent.Loop,
-	saveCkpt func(string, []byte) error,
-	getNotif func(string) ([]string, error),
-	stall StallConfig,
-	store PlanStore,
-	profile []string,
-	eager bool,
-) (*AgentWorkerForTest, error) {
-	plan, err := loadOrCreatePlan(context.Background(), store, id, profile, eager)
-	if err != nil {
-		return nil, err
-	}
-	return &AgentWorkerForTest{w: newAgentWorker(id, loop, saveCkpt, getNotif, stall, plan, nil)}, nil
-}
-
 // AgentWorkerForTest wraps an unexported AgentWorker to allow testing from package daemon_test.
 type AgentWorkerForTest struct {
 	w *AgentWorker
 }
 
 // ActiveGoalSessionCountForTest exposes activeGoalSessionCount for testing.
-func (d *Daemon) ActiveGoalSessionCountForTest() int { return d.activeGoalSessionCount() }
+func (d *Daemon) ActiveGoalSessionCountForTest() int {
+	n, _ := d.activeGoalSessionCount() //nolint:errcheck // a test reads the count
+	return n
+}
 
 // NewAgentWorkerForTest creates a AgentWorker and returns it wrapped for testing.
 func NewAgentWorkerForTest(
@@ -93,13 +62,13 @@ func NewAgentWorkerForTest(
 	getNotif func(string) ([]string, error),
 	stall StallConfig,
 ) *AgentWorkerForTest {
-	return &AgentWorkerForTest{w: newAgentWorker(id, loop, saveCkpt, getNotif, stall, nil, nil)}
+	return &AgentWorkerForTest{w: newAgentWorker(id, loop, saveCkpt, getNotif, stall, nil)}
 }
 
 // NewAgentWorkerWithSinkForTest creates a AgentWorker wired to sink, for
 // asserting on the durable session-event journal.
 func NewAgentWorkerWithSinkForTest(id string, loop *agent.Loop, sink EventSink) *AgentWorkerForTest {
-	return &AgentWorkerForTest{w: newAgentWorker(id, loop, nil, nil, StallConfig{}, nil, sink)}
+	return &AgentWorkerForTest{w: newAgentWorker(id, loop, nil, nil, StallConfig{}, sink)}
 }
 
 // NewSQLEventSinkForTest exposes the async batched SQL sink to tests.

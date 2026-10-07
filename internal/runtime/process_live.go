@@ -62,6 +62,7 @@ func (r *StandingRunner) tickLive(ctx context.Context) {
 	if r.sessions == nil {
 		return
 	}
+	r.bindGoals()
 	rows, err := r.store.ProcessesLive()
 	if err != nil {
 		slog.Warn("live processes: list", "err", err)
@@ -90,15 +91,13 @@ func (r *StandingRunner) tickLive(ctx context.Context) {
 		lp, ok := running[row.ID]
 		if !ok {
 			// A process that failed restarts once its backoff has passed. One
-			// that has not starts at once, even before its next clock tick: it
-			// waits for the tick in next(). A tick already due is delivered in
-			// this same pass, as a routine woke as soon as its session started.
+			// that has not starts at once, and waits for its first tick in
+			// next(); startLive schedules that tick one cadence away.
 			if row.Failures > 0 && !due(row.NextAt, now) {
 				continue
 			}
-			if lp = r.startLive(ctx, row); lp == nil {
-				continue
-			}
+			r.startLive(ctx, row)
+			continue
 		}
 		if hasClock(row) && due(row.NextAt, now) {
 			lp.enqueueClock(now)
@@ -109,16 +108,68 @@ func (r *StandingRunner) tickLive(ctx context.Context) {
 	}
 }
 
-// startLive starts one live process and watches it until it ends. It returns
-// nil when the process could not start, which is recorded as a failure.
-func (r *StandingRunner) startLive(ctx context.Context, row memory.Process) *liveProc {
+// bindGoals applies goal binding (adr/process-sessions.md §4): a process whose
+// goal is no longer active is stopped by its goal, and one its goal stopped
+// runs again once the goal is active. The goal's status decides; the agent owns
+// that status.
+func (r *StandingRunner) bindGoals() {
+	live, err := r.store.ProcessesLive()
+	if err != nil {
+		slog.Warn("live processes: list for goal binding", "err", err)
+		return
+	}
+	for _, p := range live {
+		if p.GoalID == "" || r.goalActive(p.GoalID) {
+			continue
+		}
+		if _, err := r.store.ProcessStop(p.ID, "goal"); err != nil {
+			slog.Warn("live process: stop for its goal", "id", p.ID, "err", err)
+			continue
+		}
+		r.log.add(p.ID, "stopped", "its goal is no longer active")
+	}
+	paused, err := r.store.ProcessesStoppedBy("goal")
+	if err != nil {
+		slog.Warn("live processes: list goal-stopped", "err", err)
+		return
+	}
+	for _, p := range paused {
+		if p.GoalID == "" || !r.goalActive(p.GoalID) {
+			continue
+		}
+		if _, err := r.store.ProcessSetState(p.ID, memory.ProcessRunning); err != nil {
+			slog.Warn("live process: restart for its goal", "id", p.ID, "err", err)
+		}
+	}
+}
+
+func (r *StandingRunner) goalActive(id string) bool {
+	g, err := r.store.GoalGet(id)
+	if err != nil {
+		slog.Warn("live process: read its goal", "goal_id", id, "err", err)
+		return true // a read failure must not stop a process
+	}
+	return g != nil && g.Status == "active"
+}
+
+// startLive starts one live process and watches it until it ends. A process
+// that cannot start is recorded as a failure.
+func (r *StandingRunner) startLive(ctx context.Context, row memory.Process) {
 	lp := &liveProc{row: row, triggers: make(chan toolvm.Trigger, liveTriggerQueue)}
 	live, err := r.host.StartLive(ctx, row.Tool, json.RawMessage(argsOrEmptyString(row.Args)), &liveHandler{r: r, lp: lp})
 	if err != nil {
 		r.recordFailure(row, err)
-		return nil
+		return
 	}
 	lp.live = live
+	// The first tick comes one cadence after the start, at boot as at spawn:
+	// the routines processes replace woke one idle interval after their session
+	// started, never at once.
+	if hasClock(row) {
+		if err := r.store.ProcessSetNextAt(row.ID, r.nextCycleAt(row, time.Now())); err != nil {
+			slog.Warn("live process: schedule its first tick", "id", row.ID, "err", err)
+		}
+	}
 	r.liveMu.Lock()
 	r.lives[row.ID] = lp
 	r.liveMu.Unlock()
@@ -151,7 +202,6 @@ func (r *StandingRunner) startLive(ctx context.Context, row memory.Process) *liv
 			r.log.add(row.ID, "returned", "")
 		}
 	}()
-	return lp
 }
 
 // StopLive stops every running live process, for the daemon's shutdown.
@@ -237,19 +287,31 @@ func (h *liveHandler) Next(ctx context.Context) (toolvm.Trigger, error) {
 		lp.waiting = false
 		lp.mu.Unlock()
 	}()
-	select {
-	case t := <-lp.triggers:
-		lp.mu.Lock()
-		if t.Kind == "clock" {
-			lp.clockQueued = false
-			lp.label = "idle"
-		} else {
-			lp.label = "condition"
+	for {
+		select {
+		case t := <-lp.triggers:
+			lp.mu.Lock()
+			if t.Kind == "clock" {
+				lp.clockQueued = false
+				lp.label = "idle"
+			} else {
+				lp.label = "condition"
+			}
+			lp.mu.Unlock()
+			// A goal-bound process works on its goal as it stands now; a tick
+			// that finds the goal gone or inactive does nothing, as the routine
+			// it replaces did, and the next pass stops the process.
+			if goalID := lp.row.GoalID; goalID != "" && t.Kind == "clock" {
+				g, err := h.r.store.GoalGet(goalID)
+				if err != nil || g == nil || g.Status != "active" {
+					continue
+				}
+				t.Goal = &toolvm.TriggerGoal{ID: g.ID, Description: g.Description}
+			}
+			return t, nil
+		case <-ctx.Done():
+			return toolvm.Trigger{}, toolvm.ErrStopped
 		}
-		lp.mu.Unlock()
-		return t, nil
-	case <-ctx.Done():
-		return toolvm.Trigger{}, toolvm.ErrStopped
 	}
 }
 
@@ -259,8 +321,7 @@ func (h *liveHandler) Turn(ctx context.Context, text string) (string, error) {
 	label := lp.label
 	lp.mu.Unlock()
 	row := lp.row
-	p := RoleParams{Role: row.Role, OwnsGoal: row.GoalID != "", Delegates: row.Delegates}
-	reply, err := h.r.sessions.ProcessTurn(ctx, row.SessionID, p, text, label)
+	reply, err := h.r.sessions.ProcessTurn(ctx, row.SessionID, h.r.sessionParams(row), text, label)
 	if err != nil && ctx.Err() != nil {
 		return "", toolvm.ErrStopped
 	}
@@ -288,4 +349,22 @@ func due(nextAt string, now time.Time) bool {
 		return true
 	}
 	return !t.After(now)
+}
+
+// sessionParams is the role a process's turns run under: its own when it owns
+// its session, the owner's when it is attached to one.
+func (r *StandingRunner) sessionParams(p memory.Process) RoleParams {
+	if p.Owner {
+		return processRoleParams(p)
+	}
+	procs, err := r.store.ProcessesOfSession(p.SessionID)
+	if err != nil {
+		slog.Warn("live process: find its session's owner", "id", p.ID, "err", err)
+	}
+	for _, o := range procs {
+		if o.Owner {
+			return processRoleParams(o)
+		}
+	}
+	return processRoleParams(p)
 }

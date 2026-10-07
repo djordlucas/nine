@@ -9,67 +9,160 @@ import (
 	"nine/internal/memory"
 )
 
-// PursueIdleInterval is how often a "pursue" session's idle scheduler wakes
-// to assess and act on its goal (docs/goal-sessions.md).
+// Goal sessions and standing agents are process sessions (adr/process-sessions.md
+// §3): the shipped `pursue` process, bound to the goal, owning a session whose id
+// is the goal's. Spawning one writes its process; the process runner starts it.
+
+// PursueIdleInterval is how often a goal session's pursue process wakes to
+// assess and act on its goal (docs/goal-sessions.md).
 const PursueIdleInterval = 5 * time.Minute
 
-// DefaultMaxGoalSessions is the concurrent "pursue" session cap used when
+// DefaultMaxGoalSessions is the concurrent goal-session cap used when
 // DaemonConfig.MaxGoalSessions is unset or non-positive (docs/goal-sessions.md
 // "Resource bounds").
 const DefaultMaxGoalSessions = 10
 
-// SetMaxGoalSessions configures the concurrent "pursue" session cap. A value
-// <= 0 falls back to DefaultMaxGoalSessions. Must be called before
-// SpawnGoalSession is reachable (i.e. before AgentBuilder.SetGoalSessionSpawnFn
-// is wired up).
+// ProcessBackend is what the daemon reads and writes about processes. The
+// concrete implementation is *memory.Store.
+type ProcessBackend interface {
+	ProcessUpsertDefinition(p memory.Process) error
+	ProcessGet(id string) (memory.Process, bool, error)
+	ProcessList() ([]memory.Process, error)
+	ProcessSetState(id, state string) (bool, error)
+	ProcessStop(id, by string) (bool, error)
+	ProcessDelete(id string) error
+	ProcessesOfSession(sessionID string) ([]memory.Process, error)
+	GoalUpdateStatus(id, status string) error
+}
+
+// ConfigureProcesses gives the daemon its process store, and wake, which asks
+// the process runner for a pass now rather than at its next tick.
+func (d *Daemon) ConfigureProcesses(store ProcessBackend, wake func()) {
+	d.procs = store
+	d.procWake = wake
+}
+
+// SetMaxGoalSessions configures the concurrent goal-session cap. A value <= 0
+// falls back to DefaultMaxGoalSessions.
 func (d *Daemon) SetMaxGoalSessions(n int) {
 	d.maxGoalSessions = n
 }
 
-// SpawnGoalSession starts a background "pursue" session for goalID (see
-// docs/goal-sessions.md). It is idempotent — if a session for goalID is
-// already running, it returns (true, nil) without creating another. If the
-// daemon is at its MaxGoalSessions cap, it returns (false, nil); the goal
-// itself is still recorded by the caller (goal_create) either way.
+// goalProcessID names the pursue process of a goal's session.
+func goalProcessID(goalID string) string { return "goal:" + goalID }
+
+// SpawnGoalSession starts the pursue process for goalID (docs/goal-sessions.md).
+// It is idempotent: a goal that already has its process returns (true, nil). At
+// the MaxGoalSessions cap it returns (false, nil); the goal itself is still
+// recorded by the caller (goal_create) either way.
 func (d *Daemon) SpawnGoalSession(_ context.Context, goalID string) (bool, error) {
-	// No explicit role: a plain pursue shell runs the default pursue role.
-	plan, err := newIdleCapablePlan(goalID, "pursue", "", PursueIdleInterval)
-	if err != nil {
-		return false, err
-	}
-	return d.spawnPursueSession(goalID, plan)
+	return d.spawnGoalProcess(memory.Process{
+		ID: goalProcessID(goalID), Tool: "pursue", Mode: memory.ProcessLive,
+		SessionID: goalID, Owner: true, Role: PursueRole, GoalID: goalID,
+		IntervalSecs: int(PursueIdleInterval.Seconds()),
+	}, nil)
 }
 
-// SpawnStandingSession starts (or ensures running) the pursue-shell session for
-// a pre-defined standing agent (docs/predefined-agents.md). It mirrors
-// SpawnGoalSession but seeds the plan with the configured work role, delegation
-// opt-in, and wake trigger so the session runs under a narrowed role while
-// keeping the pursue shell. routines are additional stages the session carries
-// alongside the pursue shell, each with its own wake cadence. The trigger is a
-// cron schedule when schedule is non-empty, otherwise the fixed interval (interval <= 0 with no schedule uses
-// PursueIdleInterval). Idempotent — a no-op if the session is already running;
-// otherwise it (re)writes the plan, so config edits to role/delegates/trigger
-// take effect on the next boot.
+// SpawnStandingSession writes the pursue process for a pre-defined standing
+// agent (docs/predefined-agents.md): the configured work role, delegation
+// opt-in and wake trigger, plus one process attached to its session for each
+// additional routine. The trigger is a cron schedule when schedule is
+// non-empty, otherwise the fixed interval (PursueIdleInterval when neither is
+// set). Configuration owns the definition, so a config edit takes effect on the
+// next pass; the run state is left alone.
 func (d *Daemon) SpawnStandingSession(_ context.Context, goalID, role string, delegates bool, interval time.Duration, schedule string, routines []RoutineDecl) (bool, error) {
 	if interval <= 0 && schedule == "" {
 		interval = PursueIdleInterval
 	}
-	plan, err := newStandingPursuePlan(goalID, role, delegates, interval, schedule, routines)
+	if err := ValidateRoutineDecls(routines); err != nil {
+		return false, err
+	}
+	if role == "" {
+		role = PursueRole
+	}
+	owner := memory.Process{
+		ID: goalProcessID(goalID), Tool: "pursue", Mode: memory.ProcessLive,
+		SessionID: goalID, Owner: true, Role: role, Delegates: delegates, GoalID: goalID,
+		Schedule: schedule,
+	}
+	if schedule == "" {
+		owner.IntervalSecs = int(interval.Seconds())
+	}
+	attached := make([]memory.Process, 0, len(routines))
+	for _, rd := range routines {
+		a := memory.Process{
+			ID: rd.Kind + ":" + goalID, Tool: routineTools[rd.Kind], Mode: memory.ProcessLive,
+			SessionID: goalID, Owner: false, GoalID: goalID, Schedule: rd.Schedule,
+		}
+		if rd.Schedule == "" {
+			a.IntervalSecs = int(rd.Interval.Seconds())
+		}
+		attached = append(attached, a)
+	}
+	return d.spawnGoalProcess(owner, attached)
+}
+
+// spawnGoalProcess writes a goal session's processes, bounded by the
+// MaxGoalSessions cap, and asks the runner to start them.
+func (d *Daemon) spawnGoalProcess(owner memory.Process, attached []memory.Process) (bool, error) {
+	if d.procs == nil {
+		return false, fmt.Errorf("goal sessions require a configured process store")
+	}
+	existing, found, err := d.procs.ProcessGet(owner.ID)
 	if err != nil {
 		return false, err
 	}
-	return d.spawnPursueSession(goalID, plan)
+	if !found {
+		limit := d.maxGoalSessions
+		if limit <= 0 {
+			limit = DefaultMaxGoalSessions
+		}
+		n, err := d.activeGoalSessionCount()
+		if err != nil {
+			return false, err
+		}
+		if n >= limit {
+			return false, nil
+		}
+	}
+	all := append([]memory.Process{owner}, attached...)
+	for _, p := range all {
+		if err := d.procs.ProcessUpsertDefinition(p); err != nil {
+			return false, fmt.Errorf("write process %s: %w", p.ID, err)
+		}
+	}
+	// Spawning is what makes the goal's session run, as it always was: a
+	// process its goal or an earlier spawn left stopped runs again.
+	if found && existing.State == memory.ProcessStopped {
+		for _, p := range all {
+			if _, err := d.procs.ProcessSetState(p.ID, memory.ProcessRunning); err != nil {
+				return false, err
+			}
+		}
+	}
+	slog.Info("goal session spawned", "goal_id", owner.GoalID, "role", owner.Role)
+	if d.procWake != nil {
+		d.procWake()
+	}
+	return true, nil
 }
 
-// TeardownStandingSession stops a standing agent's pursue session and
-// deactivates its session plan so it is never resumed again (subtractive
-// reconciliation — adr/predefined-agents-design.md §7 v3). It stops the running
-// worker if one exists and flips the plan (and its stages) out of "active",
-// which makes planNeedsResume return false on every later boot. Idempotent: a
-// no-op if the session isn't running and its plan is already inactive. The
-// caller is responsible for archiving the goal itself, and for only calling
-// this on config-origin goals.
+// TeardownStandingSession removes a standing agent's processes, so it never
+// runs again, and stops its session (subtractive reconciliation —
+// adr/predefined-agents-design.md §7 v3). Idempotent. The caller archives the
+// goal, and only calls this for config-origin goals.
 func (d *Daemon) TeardownStandingSession(_ context.Context, goalID string) error {
+	if d.procs != nil {
+		procs, err := d.procs.ProcessesOfSession(goalID)
+		if err != nil {
+			return fmt.Errorf("list processes of %s: %w", goalID, err)
+		}
+		for _, p := range procs {
+			if err := d.procs.ProcessDelete(p.ID); err != nil {
+				return fmt.Errorf("remove process %s: %w", p.ID, err)
+			}
+		}
+	}
 	d.mu.Lock()
 	w, running := d.sessions[goalID]
 	if running {
@@ -80,88 +173,24 @@ func (d *Daemon) TeardownStandingSession(_ context.Context, goalID string) error
 		w.stop()
 		slog.Info("standing session stopped", "goal_id", goalID)
 	}
-
-	if d.plans == nil {
-		return nil
-	}
-	plan, err := d.plans.SessionPlanGet(goalID)
-	if err != nil {
-		return fmt.Errorf("load session plan %s: %w", goalID, err)
-	}
-	if plan == nil || plan.Status != "active" {
-		return nil
-	}
-	now := time.Now().UTC().Format(time.RFC3339)
-	plan.Status = "archived"
-	for i := range plan.Routines {
-		plan.Routines[i].Status = "done"
-		plan.Routines[i].UpdatedAt = now
-	}
-	plan.UpdatedAt = now
-	if err := d.plans.SessionPlanSave(plan); err != nil {
-		return fmt.Errorf("deactivate session plan %s: %w", goalID, err)
+	if d.procWake != nil {
+		d.procWake()
 	}
 	return nil
 }
 
-// spawnPursueSession registers a background pursue-shell worker for goalID from
-// the given seeded plan. It is the shared core of SpawnGoalSession and
-// SpawnStandingSession: idempotent for an already-running session, bounded by
-// MaxGoalSessions, and it persists the plan so ResumeSessions revives it on a
-// later boot.
-func (d *Daemon) spawnPursueSession(goalID string, plan *memory.SessionPlan) (bool, error) {
-	d.mu.RLock()
-	_, running := d.sessions[goalID]
-	d.mu.RUnlock()
-	if running {
-		return true, nil
+// activeGoalSessionCount counts the goal sessions that are, or are trying to
+// be, running: owning processes bound to a goal and not stopped.
+func (d *Daemon) activeGoalSessionCount() (int, error) {
+	all, err := d.procs.ProcessList()
+	if err != nil {
+		return 0, err
 	}
-
-	if d.plans == nil {
-		return false, fmt.Errorf("pursue sessions require a configured plan store")
-	}
-
-	limit := d.maxGoalSessions
-	if limit <= 0 {
-		limit = DefaultMaxGoalSessions
-	}
-	if d.activeGoalSessionCount() >= limit {
-		return false, nil
-	}
-
-	if err := d.plans.SessionPlanSave(plan); err != nil {
-		return false, fmt.Errorf("create pursue session plan %s: %w", goalID, err)
-	}
-
-	var data []byte
-	if d.ckpt != nil {
-		data, _, _ = d.ckpt.Load(goalID) //nolint:errcheck // best-effort; makeAgentWorker handles a missing checkpoint
-	}
-	r := d.makeAgentWorker(goalID, data, false)
-	d.mu.Lock()
-	d.sessions[goalID] = r
-	d.mu.Unlock()
-	slog.Info("pursue session spawned", "goal_id", goalID)
-	return true, nil
-}
-
-// activeGoalSessionCount returns the number of currently-running sessions
-// whose plan has an active "pursue" stage (docs/session-plans.md
-// "MaxGoalSessions counting").
-func (d *Daemon) activeGoalSessionCount() int {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
 	n := 0
-	for _, w := range d.sessions {
-		if w.plan == nil {
-			continue
-		}
-		for _, st := range w.plan.plan.Routines {
-			if st.Kind == "pursue" && st.Status == "active" {
-				n++
-				break
-			}
+	for _, p := range all {
+		if p.Owner && p.GoalID != "" && p.State != memory.ProcessStopped {
+			n++
 		}
 	}
-	return n
+	return n, nil
 }

@@ -48,13 +48,9 @@ func bootInternalAgent(cfg *config.Config, store *memory.Store, embedder embed.E
 		slog.Error("failed to bootstrap self KV", "err", err)
 	}
 
-	// Register the idle-reflection routine handler, then reconcile the dedicated
-	// self-reflection session against config — creating it, or deactivating it
-	// when the operator has turned reflection off. Later boots pick a live one up
-	// via daemon.ResumeSessions.
-	runtime.RoutineRegistry["idle-reflection"] = func() runtime.RoutineHandler {
-		return runtime.NewIdleReflectionRoutine()
-	}
+	// Reconcile the self-reflection process against config — writing it, or
+	// stopping it when the operator has turned reflection off. The process
+	// runner starts it.
 	if err := runtime.ReconcileSelfReflection(store, cfg.SelfReflectionInterval()); err != nil {
 		slog.Error("failed to reconcile self-reflection session", "err", err)
 	}

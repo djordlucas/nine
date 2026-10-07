@@ -1,63 +1,55 @@
 package runtime
 
 import (
+	"context"
 	"testing"
 	"time"
 
-	"nine/internal/memory"
+	"nine/internal/memory/memtest"
 )
 
-// roleNameForPlan maps session-plan profiles to roles (adr/roles-design.md §6).
-func TestRoleNameForPlan(t *testing.T) {
-	planWith := func(kinds ...string) *sessionPlanState {
-		stages := make([]memory.SessionRoutine, len(kinds))
-		for i, k := range kinds {
-			stages[i] = memory.SessionRoutine{Name: k, Kind: k, Status: "active"}
-		}
-		return &sessionPlanState{plan: &memory.SessionPlan{ID: "x", Routines: stages}}
+// A session a process drives runs under that process's role
+// (adr/process-sessions.md): the pursue role for a goal session, a standing
+// agent's declared work role, the reflection role for self-reflection. Any
+// other session is a conversation.
+func TestSessionRoleComesFromItsOwningProcess(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
 	}
-	// standingPlan is a pursue routine whose config carries an explicit work role
-	// (as SpawnStandingSession seeds for a pre-defined agent).
-	standingPlan := func(role string) *sessionPlanState {
-		plan, err := newStandingPursuePlan("sec-watch", role, false, PursueIdleInterval, "", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return &sessionPlanState{plan: plan}
-	}
+	d := New("", nil, nil)
+	d.ConfigureProcesses(store, nil)
+	ctx := context.Background()
 
-	// reflectionPlan is the dedicated self-reflection session exactly as
-	// BootstrapSelfReflection seeds it.
-	reflectionPlan := func() *sessionPlanState {
-		plan, err := newIdleCapablePlan(SelfReflectionAgentID, "idle-reflection", ReflectionRole, time.Minute)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return &sessionPlanState{plan: plan}
+	if _, err := d.SpawnGoalSession(ctx, "tidy"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SpawnStandingSession(ctx, "sec-watch", "monitor", true, time.Hour, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SpawnStandingSession(ctx, "plain", "", false, time.Hour, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReconcileSelfReflection(store, time.Hour); err != nil {
+		t.Fatal(err)
 	}
 
 	cases := []struct {
-		name string
-		plan *sessionPlanState
-		want string
+		session string
+		want    RoleParams
 	}{
-		{"nil plan", nil, OrchestratorRole},
-		{"active conversation", planWith("active"), OrchestratorRole},
-		// A bare idle-reflection routine no longer implies the reflection role:
-		// the role is data now, so a stage that declares none gets the default.
-		// The dedicated reflection session declares it (BootstrapSelfReflection),
-		// which is what keeps it running as the reflection role while the same
-		// kind can ride role-free beside a pursue shell.
-		{"bare reflection routine, no declared role", planWith("idle-reflection"), OrchestratorRole},
-		{"reflection session as bootstrapped", reflectionPlan(), ReflectionRole},
-		{"pursue session", planWith("pursue"), PursueRole},
-		{"mixed active+pursue", planWith("active", "pursue"), PursueRole},
-		{"standing agent overrides role", standingPlan("monitor"), "monitor"},
-		{"standing agent empty role falls back", standingPlan(""), PursueRole},
+		{"tidy", RoleParams{Role: PursueRole, OwnsGoal: true}},
+		{"sec-watch", RoleParams{Role: "monitor", OwnsGoal: true, Delegates: true}},
+		{"plain", RoleParams{Role: PursueRole, OwnsGoal: true}},
+		{SelfReflectionAgentID, RoleParams{Role: ReflectionRole}},
 	}
 	for _, tc := range cases {
-		if got := roleNameForPlan(tc.plan); got != tc.want {
-			t.Errorf("%s: roleNameForPlan = %q, want %q", tc.name, got, tc.want)
+		got, ok := d.processRole(tc.session)
+		if !ok || got != tc.want {
+			t.Errorf("%s: processRole = %+v, %v; want %+v", tc.session, got, ok, tc.want)
 		}
+	}
+	if _, ok := d.processRole("a-conversation"); ok {
+		t.Error("a conversation resolved to a process role")
 	}
 }

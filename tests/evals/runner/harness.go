@@ -146,7 +146,9 @@ type live struct {
 	Result *RunResult
 	Daemon *runtime.Daemon
 	Tools  *toolvm.Host
-	Sock   string
+	// Processes is the process runner the harness started.
+	Processes *runtime.StandingRunner
+	Sock      string
 	// CloseJournal drains the event sink so the journal can be read; idempotent.
 	CloseJournal func()
 }
@@ -327,13 +329,17 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 	// 6. Start the daemon and wait for the socket.
 	dctx, dcancel := context.WithCancel(ctx)
 	go supervisor.Run(dctx)
+	// The process runner, as production starts it: goal sessions, standing
+	// agents and standing tools all run through it (adr/process-sessions.md).
+	// A short poll, since an eval case is over in seconds.
+	go runtime.RunStandingTools(dctx, asm.Processes, 200*time.Millisecond)
 	go daemon.Start(dctx) //nolint:errcheck
 	r.cleanups = append(r.cleanups, func() { dcancel(); daemon.Stop() })
 	if err := waitForSocket(sock, 5*time.Second); err != nil {
 		return nil, err
 	}
 
-	return &live{Result: r, Daemon: daemon, Tools: toolHost, Sock: sock, CloseJournal: closeSink}, nil
+	return &live{Result: r, Daemon: daemon, Tools: toolHost, Processes: asm.Processes, Sock: sock, CloseJournal: closeSink}, nil
 }
 
 // driveTurns sends each prompt in order and returns the final answers. When the

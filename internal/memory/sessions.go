@@ -34,7 +34,6 @@ type SessionDeleteCounts struct {
 	Events             int `json:"events"`
 	Notifications      int `json:"notifications"`
 	UserNotifications  int `json:"user_notifications"`
-	Plans              int `json:"plans"`
 	Related            int `json:"related"`
 	HumanRequests      int `json:"human_requests"`
 	InteractiveMarkers int `json:"interactive"`
@@ -45,7 +44,7 @@ type SessionDeleteCounts struct {
 // Total is every row the cascade removed.
 func (c SessionDeleteCounts) Total() int {
 	return c.Conversations + c.Events + c.Notifications + c.UserNotifications +
-		c.Plans + c.Related + c.HumanRequests + c.InteractiveMarkers +
+		c.Related + c.HumanRequests + c.InteractiveMarkers +
 		c.ToolState + c.Jobs
 }
 
@@ -56,8 +55,7 @@ func (s *Store) SessionList() ([]SessionSummary, error) {
 		        (SELECT count(*) FROM session_events e WHERE e.agent_id = c.id),
 		        (SELECT count(*) FROM goals g
 		           WHERE g.id = c.id AND g.status = 'active'),
-		        (SELECT count(*) FROM session_plans p
-		           WHERE p.id = c.id AND p.status = 'active')
+		        (SELECT count(*) FROM processes p WHERE p.session_id = c.id)
 		   FROM conversations c
 		  ORDER BY c.updated_at DESC, c.id`)
 	if err != nil {
@@ -71,14 +69,14 @@ func (s *Store) SessionList() ([]SessionSummary, error) {
 	var out []SessionSummary
 	for rows.Next() {
 		var (
-			sum              SessionSummary
-			activeGoal, plan int
+			sum                   SessionSummary
+			activeGoal, processes int
 		)
 		if err := rows.Scan(&sum.ID, &sum.Status, &sum.CreatedAt, &sum.UpdatedAt,
-			&sum.Events, &activeGoal, &plan); err != nil {
+			&sum.Events, &activeGoal, &processes); err != nil {
 			return nil, err
 		}
-		sum.Protected = activeGoal > 0 || plan > 0
+		sum.Protected = activeGoal > 0 || processes > 0
 		if t := parseStoredTime(sum.UpdatedAt); !t.IsZero() {
 			if age := int(now.Sub(t).Seconds()); age > 0 {
 				sum.AgeSeconds = age
@@ -115,10 +113,10 @@ func (s *Store) SessionGet(id string) (SessionSummary, bool, error) {
 // automatic deletion safe to switch on:
 //
 //   - one whose id matches an **active goal**. A pursue session's id *is* its
-//     goal id (runtime.spawnPursueSession), so this is an exact test, not a
-//     heuristic.
-//   - one carrying an **active session plan**. That covers standing agents
-//     declared in nine.toml and every other idle-capable session.
+//     goal id, so this is an exact test, not a heuristic.
+//   - one a **process drives** (adr/process-sessions.md). That covers standing
+//     agents declared in nine.toml, self-reflection, and every other process
+//     session, stopped ones included: a stopped process can be started again.
 //
 // Both are idle by design: a standing agent that wakes weekly looks stale after
 // ten days precisely because it is working correctly. Reaping either would
@@ -180,7 +178,6 @@ func (s *Store) SessionDelete(id string) (SessionDeleteCounts, error) {
 		{&c.Events, `DELETE FROM session_events WHERE agent_id = ?`, []any{id}},
 		{&c.Notifications, `DELETE FROM notifications WHERE conversation_id = ?`, []any{id}},
 		{&c.UserNotifications, `DELETE FROM user_notifications WHERE agent_id = ?`, []any{id}},
-		{&c.Plans, `DELETE FROM session_plans WHERE id = ?`, []any{id}},
 		// Both directions: a link is symmetric in meaning even though the primary
 		// key is ordered, so leaving the mirror row would dangle.
 		{&c.Related, `DELETE FROM related_sessions WHERE agent_id = ? OR related_agent_id = ?`, []any{id, id}},

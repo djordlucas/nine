@@ -152,6 +152,11 @@ type Tool struct {
 	// and its grant came from.
 	Shipped bool
 
+	// Live marks a process program: started with StartLive and run until
+	// stopped, never called. A live tool is in no loop's tool list, and Call
+	// refuses it.
+	Live bool
+
 	// Resumable means this tool may end a call with a `continue` envelope and be
 	// run as a long-running job. From the manifest; it confers no reach, so it is
 	// a shape property rather than a capability.
@@ -470,12 +475,21 @@ type httpGrantKey struct{}
 type toolNameKey struct{}
 
 // Tools returns the loaded tools, sorted by name.
-func (h *Host) Tools() []*Tool {
+func (h *Host) Tools() []*Tool { return h.list(false) }
+
+// Processes returns the loaded live tools — process programs, which Nine
+// starts rather than calls — by name. Tools leaves them out, so no loop
+// advertises or dispatches one.
+func (h *Host) Processes() []*Tool { return h.list(true) }
+
+func (h *Host) list(live bool) []*Tool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	out := make([]*Tool, 0, len(h.tools))
 	for _, t := range h.tools {
-		out = append(out, t)
+		if t.Live == live {
+			out = append(out, t)
+		}
 	}
 	sortToolsByName(out)
 	return out
@@ -602,6 +616,9 @@ func (h *Host) call(ctx context.Context, t *Tool, args json.RawMessage) (Output,
 
 func (h *Host) callWithJob(ctx context.Context, t *Tool, args json.RawMessage, job *JobContext) (Output, error) {
 	name := t.Name
+	if t.Live {
+		return Output{}, fmt.Errorf("tool %q is a process: Nine starts it and it runs until stopped; it cannot be called", name)
+	}
 	timeout := t.effectiveTimeout(h.timeout)
 
 	// A shipped fs tool accepts the workspace's host path as well as its guest

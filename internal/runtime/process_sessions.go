@@ -29,7 +29,7 @@ func (d *Daemon) processWorker(id string, p RoleParams) *AgentWorker {
 	if d.ckpt != nil {
 		data, _, _ = d.ckpt.Load(id) //nolint:errcheck // a missing checkpoint starts the session fresh
 	}
-	w = d.buildWorker(id, data, p, nil)
+	w = d.buildWorker(id, data, p)
 
 	d.mu.Lock()
 	if existing, ok := d.sessions[id]; ok {

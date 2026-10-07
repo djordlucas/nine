@@ -151,6 +151,13 @@ func (d *Daemon) handleGoalDelete(ctx context.Context, enc *json.Encoder, id str
 	d.mu.RLock()
 	_, running := d.sessions[id]
 	d.mu.RUnlock()
+	// A goal session is its processes as much as its worker: the worker only
+	// exists once the pursue process has taken a turn.
+	if !running && d.procs != nil {
+		if procs, err := d.procs.ProcessesOfSession(id); err == nil && len(procs) > 0 {
+			running = true
+		}
+	}
 	if err := d.TeardownStandingSession(ctx, id); err != nil {
 		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
 		return

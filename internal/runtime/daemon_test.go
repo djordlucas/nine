@@ -16,6 +16,7 @@ import (
 	ninectx "nine/internal/context"
 	"nine/internal/llm"
 	"nine/internal/memory"
+	"nine/internal/memory/memtest"
 	"nine/internal/protocol"
 	"nine/internal/runtime"
 	"nine/internal/workflow"
@@ -800,5 +801,33 @@ func TestProcessTurnRunsInTheProcessSession(t *testing.T) {
 	}
 	if !sawFirstReply {
 		t.Error("the second turn did not see the first: the session was not reused")
+	}
+}
+
+// A goal-bound process session that stalls — turns calling no tool — pauses its
+// goal, as the pursue routine did.
+func TestStalledGoalSessionPausesItsGoal(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.GoalCreate("g1", "keep notes tidy", "", "operator"); err != nil {
+		t.Fatal(err)
+	}
+	provider := seqProvider(nil) // every turn answers "done", calling no tool
+	d := runtime.New("", runtime.InternalAgent{
+		Build: makeFactory(provider),
+		Stall: runtime.StallConfig{Limit: 2},
+	}, nil)
+	d.ConfigureProcesses(store, nil)
+
+	for i := 0; i < 2; i++ {
+		if _, err := d.ProcessTurn(context.Background(), "g1", runtime.RoleParams{OwnsGoal: true}, "tick", "idle"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	g, err := store.GoalGet("g1")
+	if err != nil || g == nil || g.Status != "paused" {
+		t.Errorf("goal after a stall = %+v, %v; want paused", g, err)
 	}
 }

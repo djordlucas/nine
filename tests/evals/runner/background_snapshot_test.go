@@ -138,15 +138,10 @@ func TestBackgroundSnapshots(t *testing.T) {
 
 	t.Run("self-reflection", func(t *testing.T) {
 		lv, p := startBackground(t)
-		runtime.RoutineRegistry["idle-reflection"] = func() runtime.RoutineHandler {
-			return runtime.NewIdleReflectionRoutine()
-		}
 		if err := runtime.ReconcileSelfReflection(lv.Result.Store, time.Second); err != nil {
 			t.Fatal(err)
 		}
-		if err := lv.Daemon.ResumeSessions(context.Background()); err != nil {
-			t.Fatal(err)
-		}
+		lv.Processes.Wake()
 		id := runtime.SelfReflectionAgentID
 		req := waitForCall(t, p, id, "")
 		snapshotOne(t, lv, "background-self-reflection", req, turnEvents(t, lv, id, ""))
@@ -198,8 +193,8 @@ func TestBackgroundSnapshots(t *testing.T) {
 	})
 }
 
-// runStanding records a running standing tool and drives the standing runner
-// with the daemon as its waker, as cmd/nine does.
+// runStanding records a running standing tool, for the harness's process
+// runner to drive, as cmd/nine's does.
 func runStanding(t *testing.T, lv *live, st memory.Process) {
 	t.Helper()
 	store := lv.Result.Store
@@ -209,9 +204,4 @@ func runStanding(t *testing.T, lv *live, st memory.Process) {
 	if _, err := store.ProcessSetState(st.ID, memory.ProcessRunning); err != nil {
 		t.Fatal(err)
 	}
-	runner := runtime.NewStandingRunner(store, lv.Tools, 1, 2)
-	runner.SetWaker(lv.Daemon)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go runtime.RunStandingTools(ctx, runner, 200*time.Millisecond)
 }
