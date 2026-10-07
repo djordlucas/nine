@@ -918,7 +918,7 @@ provider/model/endpoint at launch without editing the file — convenient in Doc
 ## Schema version
 
 ```toml
-schema_version = 1
+schema_version = 2
 ```
 
 An optional top-level integer naming the **shape of the file**, not the version
@@ -933,6 +933,10 @@ field existed is a schema-1 file.
 
 Nine never rewrites `nine.toml`. Migration reads an older shape into the
 current one at load; the file on disk stays exactly as you wrote it.
+
+| Schema | Changed |
+|---|---|
+| 2 | `[[process]]` and `[processes]` replace `[[agent]]`, `[[agent.routine]]`, `when = { … }`, `[[standing_tool]]` and `[daemon] standing_agents_authoritative`. A schema-1 file that uses none of them loads unchanged; one that does is refused, naming the `[[process]]` form ([processes.md](processes.md)). |
 
 ### Keys nothing reads
 
@@ -953,7 +957,6 @@ says so instead of leaving you to wonder why a value did not apply.
 | Limit | Detail |
 |-------|--------|
 | No runtime reload | Nine cannot modify `nine.toml`, and nothing re-reads it while the daemon runs. Every change needs a restart — including a capability grant, since `nine tools reload` and `nine plugins reload` re-scan their directories against the config read at boot. |
-| No config schema version | `nine.toml` carries no `schema_version` and there is no migrate-on-load, so an incompatible config change would break older files. The **store** does have versioned migrations; config is the axis that does not. See [versioning](versioning.md#limits). |
 | Environment overrides are a fixed set | Only the documented `NINE_*` variables override the file. Whether the sandboxed-tool subsystem runs at all stays in `nine.toml` by design — `NINE_TOOLS_USER_DIR` is deliberately the only tool-related override. |
 | Ollama and Mistral only | An unrecognized `[llm].provider` is refused at startup rather than falling back. |
 | Unknown keys warn rather than fail | A key nothing reads is logged at load, naming the key. It does not stop the boot: a key from a newer Nine is worth reporting, not worth refusing an otherwise usable file over. |

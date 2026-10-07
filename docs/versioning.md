@@ -12,7 +12,7 @@ a real break happens.
 | **Plugin protocol** | daemon ↔ native plugin wire compat | single integer, bump on break | `plugin.ProtocolVersion` |
 | **Sandboxed tool ABI** | daemon ↔ wasm guest compat | single integer, bump on break | `toolvm.ABIVersion` |
 | **Memory DB schema** | SQLite schema | sequential forward migrations, applied on open | `PRAGMA user_version`, currently **12** |
-| **Config schema** | `nine.toml` shape | single integer, bump on break | `schema_version` in `nine.toml`, currently **1** |
+| **Config schema** | `nine.toml` shape | single integer, bump on break | `schema_version` in `nine.toml`, currently **2** |
 
 The release version also names the container image. A `v*` tag builds and
 publishes `ghcr.io/djordlucas/nine` — see [Container image](docker-image.md) for

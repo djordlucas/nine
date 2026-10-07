@@ -1112,7 +1112,7 @@ type EmbeddingsConfig struct {
 // CurrentConfigSchema is the config shape this binary understands. Bump it in
 // the same change that makes an incompatible alteration to the layout, and add
 // the matching step to configMigrations.
-const CurrentConfigSchema = 1
+const CurrentConfigSchema = 2
 
 // SchemaTooNewError is returned when a config declares a shape this binary does
 // not know. It is a distinct type because the caller must not treat it the way
@@ -1132,10 +1132,17 @@ func (e *SchemaTooNewError) Error() string {
 }
 
 // configMigrations[i] brings a config from schema i+1 to i+2, mirroring the
-// store's migration list (internal/memory/migrate.go). Empty today: the point
-// of landing the mechanism now is that the first incompatible change has a
-// place to go.
-var configMigrations []func(*Config) error
+// store's migration list (internal/memory/migrate.go).
+var configMigrations = []func(*Config) error{
+	// 1 → 2: [[process]] replaces [[agent]], [[agent.routine]], when = { … },
+	// [[standing_tool]] and [daemon] standing_agents_authoritative
+	// (adr/process-sessions.md §11). Nothing is translated: Load refuses a file
+	// that still has one of them, from the raw TOML, before any step runs, so
+	// a schema-1 file that reaches this step has nothing to change. Bumping the
+	// schema is what makes an older binary refuse a [[process]] file instead of
+	// silently ignoring every block in it.
+	func(*Config) error { return nil },
+}
 
 func Load(path string) (*Config, error) {
 	var cfg Config
