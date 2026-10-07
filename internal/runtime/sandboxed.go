@@ -57,6 +57,8 @@ func OpenSandboxedTools(ctx context.Context, cfg *config.Config, store *memory.S
 		Timeouts:      timeouts,
 		MemoryMB:      cfg.Tools.MemoryMB,
 		MaxConcurrent: cfg.Tools.MaxConcurrent,
+		// Live processes run in their own pool, sized by [processes] max_running.
+		MaxLive:       cfg.Processes.MaxRunningOrDefault(),
 		MaxOps:        cfg.Tools.MaxOps,
 		MaxOpsPerTool: toolMaxOps(cfg),
 		// Usage bookkeeping for LRU eviction (§9.2). Best-effort and after the

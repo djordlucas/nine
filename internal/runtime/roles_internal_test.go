@@ -24,10 +24,10 @@ func TestSessionRoleComesFromItsOwningProcess(t *testing.T) {
 	if _, err := d.SpawnGoalSession(ctx, "tidy"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.SpawnStandingSession(ctx, "sec-watch", "monitor", true, time.Hour, "", nil); err != nil {
+	if _, err := d.SpawnStandingSession(ctx, "sec-watch", "monitor", true, time.Hour, ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.SpawnStandingSession(ctx, "plain", "", false, time.Hour, "", nil); err != nil {
+	if _, err := d.SpawnStandingSession(ctx, "plain", "", false, time.Hour, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := ReconcileSelfReflection(store, time.Hour); err != nil {

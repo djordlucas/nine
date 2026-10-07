@@ -56,7 +56,7 @@ func TestSpawnGoalSessionWritesItsProcessOnce(t *testing.T) {
 // trigger; a cron schedule replaces the interval.
 func TestSpawnStandingSessionWritesRoleAndTrigger(t *testing.T) {
 	d, store := goalDaemon(t)
-	if _, err := d.SpawnStandingSession(context.Background(), "sec-watch", "monitor", true, 0, "0 9 * * 1-5", nil); err != nil {
+	if _, err := d.SpawnStandingSession(context.Background(), "sec-watch", "monitor", true, 0, "0 9 * * 1-5"); err != nil {
 		t.Fatal(err)
 	}
 	p, found, err := store.ProcessGet("goal:sec-watch")
@@ -71,8 +71,7 @@ func TestSpawnStandingSessionWritesRoleAndTrigger(t *testing.T) {
 // Teardown removes a standing agent's processes, so nothing starts it again.
 func TestTeardownStandingSessionRemovesItsProcesses(t *testing.T) {
 	d, store := goalDaemon(t)
-	if _, err := d.SpawnStandingSession(context.Background(), "sec-watch", "monitor", false, time.Hour, "",
-		[]runtime.RoutineDecl{{Kind: "idle-reflection", Interval: time.Hour}}); err != nil {
+	if _, err := d.SpawnStandingSession(context.Background(), "sec-watch", "monitor", false, time.Hour, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := d.TeardownStandingSession(context.Background(), "sec-watch"); err != nil {

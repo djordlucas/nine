@@ -222,8 +222,8 @@ func TestStoppedStandingToolStaysStoppedAcrossReconcile(t *testing.T) {
 	}
 
 	// The operator's file still declares it, as it did before they stopped it.
-	ReconcileStandingTools(store, []config.StandingToolConfig{
-		{ID: "w1", Tool: "watcher", Interval: "1s"},
+	ReconcileProcesses(store, nil, []config.ProcessConfig{
+		{Name: "w1", Tool: "watcher", Every: "1s"},
 	})
 	if got, _, _ := store.ProcessGet("w1"); got.State != memory.ProcessStopped {
 		t.Fatalf("state = %q after reconcile, want it left stopped", got.State)
@@ -237,8 +237,8 @@ func TestArgsChangeRestartsTheCycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ReconcileStandingTools(store, []config.StandingToolConfig{
-		{ID: "w1", Tool: "watcher", Interval: "1s", Args: map[string]any{"path": "/a"}},
+	ReconcileProcesses(store, nil, []config.ProcessConfig{
+		{Name: "w1", Tool: "watcher", Every: "1s", Args: map[string]any{"path": "/a"}},
 	})
 	if _, err := store.ProcessAdvance("w1", "mid-cycle", time.Now()); err != nil {
 		t.Fatal(err)
@@ -247,8 +247,8 @@ func TestArgsChangeRestartsTheCycle(t *testing.T) {
 		t.Fatal("precondition: the run should hold a cursor")
 	}
 
-	ReconcileStandingTools(store, []config.StandingToolConfig{
-		{ID: "w1", Tool: "watcher", Interval: "1s", Args: map[string]any{"path": "/b"}},
+	ReconcileProcesses(store, nil, []config.ProcessConfig{
+		{Name: "w1", Tool: "watcher", Every: "1s", Args: map[string]any{"path": "/b"}},
 	})
 	got, _, _ := store.ProcessGet("w1")
 	if got.Cursor != "" {
@@ -263,8 +263,8 @@ func TestDisabledBlockIsDeclaredButNotStarted(t *testing.T) {
 		t.Fatal(err)
 	}
 	no := false
-	ReconcileStandingTools(store, []config.StandingToolConfig{
-		{ID: "w1", Tool: "watcher", Interval: "1s", Enabled: &no},
+	ReconcileProcesses(store, nil, []config.ProcessConfig{
+		{Name: "w1", Tool: "watcher", Every: "1s", Enabled: &no},
 	})
 	got, found, err := store.ProcessGet("w1")
 	if err != nil || !found {

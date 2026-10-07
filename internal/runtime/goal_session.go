@@ -65,17 +65,13 @@ func (d *Daemon) SpawnGoalSession(_ context.Context, goalID string) (bool, error
 
 // SpawnStandingSession writes the pursue process for a pre-defined standing
 // agent (docs/predefined-agents.md): the configured work role, delegation
-// opt-in and wake trigger, plus one process attached to its session for each
-// additional routine. The trigger is a cron schedule when schedule is
+// opt-in and wake trigger. The trigger is a cron schedule when schedule is
 // non-empty, otherwise the fixed interval (PursueIdleInterval when neither is
 // set). Configuration owns the definition, so a config edit takes effect on the
 // next pass; the run state is left alone.
-func (d *Daemon) SpawnStandingSession(_ context.Context, goalID, role string, delegates bool, interval time.Duration, schedule string, routines []RoutineDecl) (bool, error) {
+func (d *Daemon) SpawnStandingSession(_ context.Context, goalID, role string, delegates bool, interval time.Duration, schedule string) (bool, error) {
 	if interval <= 0 && schedule == "" {
 		interval = PursueIdleInterval
-	}
-	if err := ValidateRoutineDecls(routines); err != nil {
-		return false, err
 	}
 	if role == "" {
 		role = PursueRole
@@ -88,18 +84,7 @@ func (d *Daemon) SpawnStandingSession(_ context.Context, goalID, role string, de
 	if schedule == "" {
 		owner.IntervalSecs = int(interval.Seconds())
 	}
-	attached := make([]memory.Process, 0, len(routines))
-	for _, rd := range routines {
-		a := memory.Process{
-			ID: rd.Kind + ":" + goalID, Tool: routineTools[rd.Kind], Mode: memory.ProcessLive,
-			SessionID: goalID, Owner: false, GoalID: goalID, Schedule: rd.Schedule,
-		}
-		if rd.Schedule == "" {
-			a.IntervalSecs = int(rd.Interval.Seconds())
-		}
-		attached = append(attached, a)
-	}
-	return d.spawnGoalProcess(owner, attached)
+	return d.spawnGoalProcess(owner, nil)
 }
 
 // spawnGoalProcess writes a goal session's processes, bounded by the

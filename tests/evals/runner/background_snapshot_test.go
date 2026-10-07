@@ -116,7 +116,7 @@ func spawnGoalBound(t *testing.T, lv *live, id, role, description string) {
 	if err := lv.Result.Store.GoalCreate(id, description, "", runtime.ConfigGoalOrigin); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := lv.Daemon.SpawnStandingSession(context.Background(), id, role, false, time.Second, "", nil); err != nil {
+	if _, err := lv.Daemon.SpawnStandingSession(context.Background(), id, role, false, time.Second, ""); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -154,7 +154,7 @@ func TestBackgroundSnapshots(t *testing.T) {
 		// woken one by the finding in the woken turn's text.
 		spawnGoalBound(t, lv, "watcher", "monitor", "Act on what the predicate finds.")
 		runStanding(t, lv, memory.Process{
-			ID: runtime.ConditionTriggerID("watcher"), Tool: "predicate",
+			ID: "when-watcher", Tool: "predicate",
 			Args: `{"found":"a stray api key in notes/"}`, IntervalSecs: 1, ReportTo: "watcher",
 		})
 		marker := "a stray api key"

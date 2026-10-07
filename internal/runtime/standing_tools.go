@@ -180,13 +180,14 @@ func (r *StandingRunner) SetState(id, state string) (bool, error) {
 	return true, nil
 }
 
-// ReconcileStandingTools brings the store's definitions in line with the file.
+// ReconcileProcesses brings the store's processes in line with the file's
+// [[process]] blocks — every block but goal processes, which the daemon's goal
+// reconciliation owns, since it creates and retires their goals too.
 //
 // Config owns the definition; the runtime owns the run state. So this writes
-// tool, args and trigger, and deliberately does not touch state, cursor, or
-// failures — editing nine.toml adjusts what a standing tool does without
-// restarting one an operator stopped, exactly as a standing agent's config edit
-// does not reactivate a finished goal (docs/predefined-agents.md).
+// tool, args, trigger, session and pipe, and deliberately does not touch state,
+// cursor, or failures — editing nine.toml adjusts what a process does without
+// restarting one that was stopped.
 //
 // A block whose `args` changed has its cycle restarted: the cursor it holds was
 // produced under the old arguments, and resuming with it would be incoherent.
@@ -194,37 +195,62 @@ func (r *StandingRunner) SetState(id, state string) (bool, error) {
 // Removing a block stops Nine reconciling it; it does not delete the row, so its
 // history stays readable and an operator who deleted a line by accident has not
 // lost anything.
-func ReconcileStandingTools(store *memory.Store, blocks []config.StandingToolConfig) {
+//
+// host decides each process's mode from its tool: a live tool makes a live
+// process, any other a slice one.
+func ReconcileProcesses(store *memory.Store, host *toolvm.Host, blocks []config.ProcessConfig) {
 	if store == nil {
 		return
 	}
+	byName := make(map[string]config.ProcessConfig, len(blocks))
 	for _, b := range blocks {
+		byName[b.Name] = b
+	}
+	for _, b := range blocks {
+		if b.Goal != "" {
+			continue
+		}
 		args, err := json.Marshal(orEmptyArgs(b.Args))
 		if err != nil {
-			slog.Error("standing tool: cannot encode args", "id", b.ID, "err", err)
+			slog.Error("process: cannot encode args", "name", b.Name, "err", err)
 			continue
 		}
 		interval := 0
-		if b.Interval != "" {
-			d, err := time.ParseDuration(b.Interval)
+		if b.Every != "" {
+			d, err := time.ParseDuration(b.Every)
 			if err != nil {
 				// Validate already refused this; reaching here means a caller skipped it.
-				slog.Error("standing tool: bad interval", "id", b.ID, "interval", b.Interval)
+				slog.Error("process: bad every", "name", b.Name, "every", b.Every)
 				continue
 			}
 			interval = int(d.Seconds())
 		}
 
-		prev, existed, err := store.ProcessGet(b.ID)
+		p := memory.Process{
+			ID: b.Name, Tool: b.Tool, Args: string(args),
+			IntervalSecs: interval, Schedule: b.Schedule,
+			ReportTo: b.ReportTo, Mode: memory.ProcessSlice, Owner: true,
+		}
+		if t := liveTool(host, b.Tool); t != nil {
+			p.Mode = memory.ProcessLive
+			p.SessionID, p.Role, p.Delegates = b.Name, b.Role, b.Delegates
+		}
+		// An attached process runs in its owner's session, under its role, and
+		// is bound to its goal when it has one.
+		if b.Session != "" {
+			p.SessionID, p.Owner = b.Session, false
+			if owner := byName[b.Session]; owner.Goal != "" {
+				p.GoalID = owner.Name
+			}
+		}
+
+		prev, existed, err := store.ProcessGet(p.ID)
 		if err != nil {
-			slog.Warn("standing tool: read", "id", b.ID, "err", err)
+			slog.Warn("process: read", "name", b.Name, "err", err)
 			continue
 		}
-		if err := store.ProcessUpsertDefinition(memory.Process{
-			ID: b.ID, Tool: b.Tool, Args: string(args),
-			IntervalSecs: interval, Schedule: b.Schedule,
-		}); err != nil {
-			slog.Warn("standing tool: reconcile", "id", b.ID, "err", err)
+		if err := store.ProcessUpsertDefinition(p); err != nil {
+			slog.Warn("process: reconcile", "name", b.Name, "err", err)
 			continue
 		}
 
@@ -235,88 +261,21 @@ func ReconcileStandingTools(store *memory.Store, blocks []config.StandingToolCon
 			if !b.IsEnabled() {
 				state = memory.ProcessStopped
 			}
-			if _, err := store.ProcessSetState(b.ID, state); err != nil {
-				slog.Warn("standing tool: initial state", "id", b.ID, "err", err)
+			if _, err := store.ProcessSetState(p.ID, state); err != nil {
+				slog.Warn("process: initial state", "name", b.Name, "err", err)
 			}
-			slog.Info("standing tool declared", "id", b.ID, "tool", b.Tool, "state", state)
+			slog.Info("process declared", "name", b.Name, "tool", b.Tool, "mode", p.Mode, "state", state)
 		case prev.Args != string(args):
 			// The cursor belongs to the old arguments; start the next cycle clean.
 			if prev.State != memory.ProcessStopped {
-				if _, err := store.ProcessSetState(b.ID, memory.ProcessRunning); err != nil {
-					slog.Warn("standing tool: restart after args change", "id", b.ID, "err", err)
+				if _, err := store.ProcessSetState(p.ID, memory.ProcessRunning); err != nil {
+					slog.Warn("process: restart after args change", "name", b.Name, "err", err)
 				}
 			}
-			slog.Info("standing tool arguments changed; its cycle restarts", "id", b.ID)
+			slog.Info("process arguments changed; its cycle restarts", "name", b.Name)
 		}
 	}
 }
-
-// ReconcileConditionTriggers turns each standing agent's `when = { … }` block
-// into a standing run whose findings wake that agent.
-//
-// A condition trigger is not a new mechanism: it is a standing tool with a
-// delivery target. That reuse is the point — the cheap deterministic tier
-// already knows how to run something on a cadence, back off when it breaks, and
-// report what it finds, and all a condition adds is *who* hears about it.
-//
-// The run's id is derived from the agent's, so re-reconciling replaces it rather
-// than accumulating one per boot, and removing the `when` block from the file
-// leaves the run behind stopped rather than silently deleting history — the same
-// rule the rest of standing-tool reconciliation follows.
-func ReconcileConditionTriggers(store *memory.Store, agents []config.AgentConfig) {
-	if store == nil {
-		return
-	}
-	for _, a := range agents {
-		if a.When == nil || a.When.Tool == "" {
-			continue
-		}
-		args, err := json.Marshal(orEmptyArgs(a.When.Args))
-		if err != nil {
-			slog.Error("condition trigger: cannot encode args", "agent", a.ID, "err", err)
-			continue
-		}
-		interval := 0
-		if a.When.Interval != "" {
-			d, err := time.ParseDuration(a.When.Interval)
-			if err != nil {
-				slog.Error("condition trigger: bad interval",
-					"agent", a.ID, "interval", a.When.Interval, "err", err)
-				continue
-			}
-			interval = int(d.Seconds())
-		}
-		if interval == 0 && a.When.Schedule == "" {
-			slog.Error("condition trigger needs interval or schedule; skipping", "agent", a.ID)
-			continue
-		}
-
-		id := ConditionTriggerID(a.ID)
-		_, existed, err := store.ProcessGet(id)
-		if err != nil {
-			slog.Warn("condition trigger: read", "agent", a.ID, "err", err)
-			continue
-		}
-		if err := store.ProcessUpsertDefinition(memory.Process{
-			ID: id, Tool: a.When.Tool, Args: string(args),
-			IntervalSecs: interval, Schedule: a.When.Schedule, ReportTo: a.ID,
-		}); err != nil {
-			slog.Warn("condition trigger: reconcile", "agent", a.ID, "err", err)
-			continue
-		}
-		if !existed {
-			if _, err := store.ProcessSetState(id, memory.ProcessRunning); err != nil {
-				slog.Warn("condition trigger: start", "agent", a.ID, "err", err)
-				continue
-			}
-			slog.Info("condition trigger declared",
-				"agent", a.ID, "tool", a.When.Tool, "interval_secs", interval, "schedule", a.When.Schedule)
-		}
-	}
-}
-
-// ConditionTriggerID names the standing run behind an agent's `when` block.
-func ConditionTriggerID(agentID string) string { return "when:" + agentID }
 
 func orEmptyArgs(m map[string]any) map[string]any {
 	if m == nil {
@@ -587,4 +546,15 @@ func argsOrEmptyString(args string) string {
 		return "{}"
 	}
 	return args
+}
+
+// liveTool returns name's tool when host has it loaded as a live tool, or nil.
+func liveTool(host *toolvm.Host, name string) *toolvm.Tool {
+	if host == nil {
+		return nil
+	}
+	if t := host.Get(name); t != nil && t.Live {
+		return t
+	}
+	return nil
 }

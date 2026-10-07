@@ -61,12 +61,12 @@ func conditionSetup(t *testing.T, args string) (*StandingRunner, *memory.Store, 
 	r.SetWaker(w)
 
 	if err := store.ProcessUpsertDefinition(memory.Process{
-		ID: ConditionTriggerID("watcher-agent"), Tool: "predicate", Args: args,
+		ID: "when-watcher-agent", Tool: "predicate", Args: args,
 		IntervalSecs: 3600, ReportTo: "watcher-agent",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ProcessSetState(ConditionTriggerID("watcher-agent"), memory.ProcessRunning); err != nil {
+	if _, err := store.ProcessSetState("when-watcher-agent", memory.ProcessRunning); err != nil {
 		t.Fatal(err)
 	}
 	return r, store, w
@@ -157,15 +157,12 @@ func TestConditionTriggerReconcileIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	agents := []config.AgentConfig{{
-		ID: "sec-watch",
-		When: &config.AgentCondition{
-			Tool: "predicate", Interval: "10s",
-			Args: map[string]any{"path": "/var/log/app.log"},
-		},
+	blocks := []config.ProcessConfig{{
+		Name: "when-sec-watch", Tool: "predicate", Every: "10s", ReportTo: "sec-watch",
+		Args: map[string]any{"path": "/var/log/app.log"},
 	}}
-	ReconcileConditionTriggers(store, agents)
-	ReconcileConditionTriggers(store, agents)
+	ReconcileProcesses(store, nil, blocks)
+	ReconcileProcesses(store, nil, blocks)
 
 	runs, err := store.ProcessList()
 	if err != nil {
@@ -194,18 +191,17 @@ func TestStoppedConditionTriggerStaysStopped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	agents := []config.AgentConfig{{
-		ID:   "sec-watch",
-		When: &config.AgentCondition{Tool: "predicate", Interval: "10s"},
+	blocks := []config.ProcessConfig{{
+		Name: "when-sec-watch", Tool: "predicate", Every: "10s", ReportTo: "sec-watch",
 	}}
-	ReconcileConditionTriggers(store, agents)
-	if _, err := store.ProcessSetState(ConditionTriggerID("sec-watch"), memory.ProcessStopped); err != nil {
+	ReconcileProcesses(store, nil, blocks)
+	if _, err := store.ProcessSetState("when-sec-watch", memory.ProcessStopped); err != nil {
 		t.Fatal(err)
 	}
 
-	ReconcileConditionTriggers(store, agents)
+	ReconcileProcesses(store, nil, blocks)
 
-	got, _, _ := store.ProcessGet(ConditionTriggerID("sec-watch"))
+	got, _, _ := store.ProcessGet("when-sec-watch")
 	if got.State != memory.ProcessStopped {
 		t.Fatalf("state = %q after reconcile, want it left stopped", got.State)
 	}

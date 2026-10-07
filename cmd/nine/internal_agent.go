@@ -83,15 +83,8 @@ func startInternalAgent(ctx context.Context, cfg *config.Config, store *memory.S
 	// Start the agent builder's main loop in the background, so it can manage agents while the daemon is running.
 	go supervisor.Run(ctx)
 
-	// A standing agent's `when = { … }` block becomes a standing run whose
-	// findings wake that agent — the cheap deterministic tier deciding when the
-	// expensive one is needed (docs/scheduling.md). The standing-tool runner
-	// first reads its runs a poll interval after it starts, so reconciling them
-	// here is in time.
-	runtime.ReconcileConditionTriggers(store, cfg.Agents)
-
 	// Reconcile pre-defined agents declared in nine.toml: seed a config-owned
 	// goal + pursue shell for each, and bring existing ones' definitions in line
 	// with the file (docs/predefined-agents.md).
-	reconcileStandingAgents(ctx, store, daemon, cfg.Agents, cfg.Daemon.StandingAgentsAuthoritative)
+	reconcileStandingAgents(ctx, store, daemon, cfg.Process, cfg.Processes.Authoritative)
 }

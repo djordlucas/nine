@@ -18,9 +18,9 @@ func TestRemovedConfigGoals(t *testing.T) {
 		{ID: "user-goal", ParentType: "conversation", Status: "active"}, // human's → never touch
 		{ID: "orphan", ParentType: "", Status: "active"},                // not config-origin → never touch
 	}
-	desired := desiredAgentIDs([]config.AgentConfig{
-		{ID: "sec-watch"},
-		{ID: ""}, // malformed entries contribute no id
+	desired := desiredAgentIDs([]config.ProcessConfig{
+		{Name: "sec-watch"},
+		{Name: ""}, // malformed entries contribute no id
 	})
 
 	removed := removedConfigGoals(goals, desired)

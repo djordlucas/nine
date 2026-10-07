@@ -244,7 +244,7 @@ func runDaemon() {
 	// owns whether it is running, so reconciling does not restart one an operator
 	// stopped. They share the job sweeper's worker budget — what both bound is
 	// concurrent wasm instantiations.
-	runtime.ReconcileStandingTools(store, cfg.StandingTools)
+	runtime.ReconcileProcesses(store, toolHost, cfg.Process)
 	// The process runner, built by Assemble: standing tools, goal sessions,
 	// standing agents and self-reflection all run through it
 	// (adr/process-sessions.md).

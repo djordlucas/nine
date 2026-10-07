@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"nine/internal/config"
 	"nine/internal/memory"
 	"nine/internal/memory/memtest"
 )
@@ -240,4 +241,38 @@ func TestGoalBindingStopsAndRestartsTheProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	tickUntil(t, r, "the process running again", running)
+}
+
+// ReconcileProcesses maps blocks to processes: a live tool makes a live process
+// owning its own session; an attached one runs in its owner's session, bound to
+// the owner's goal; a pipe names the receiving session; any other tool makes a
+// slice process. Goal blocks are left to the goal reconciliation.
+func TestReconcileProcessesMapsBlocks(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := standingHost(t, "relay", relayManifest+"live = true\n", relaySource, nil)
+	ReconcileProcesses(store, host, []config.ProcessConfig{
+		{Name: "sec-watch", Tool: "pursue", Goal: "watch the repo"},
+		{Name: "digest", Tool: "relay", Every: "1h", Role: "writer"},
+		{Name: "sec-watch-relay", Tool: "relay", Every: "30m", Session: "sec-watch"},
+		{Name: "scan", Tool: "scanner", Every: "10s", ReportTo: "sec-watch"},
+	})
+
+	if _, found, _ := store.ProcessGet("sec-watch"); found {
+		t.Error("the goal block was reconciled here; the goal reconciliation owns it")
+	}
+	live, _, _ := store.ProcessGet("digest")
+	if live.Mode != memory.ProcessLive || live.SessionID != "digest" || !live.Owner || live.Role != "writer" || live.IntervalSecs != 3600 {
+		t.Errorf("live process = %+v", live)
+	}
+	attached, _, _ := store.ProcessGet("sec-watch-relay")
+	if attached.Mode != memory.ProcessLive || attached.SessionID != "sec-watch" || attached.Owner || attached.GoalID != "sec-watch" {
+		t.Errorf("attached process = %+v", attached)
+	}
+	slice, _, _ := store.ProcessGet("scan")
+	if slice.Mode != memory.ProcessSlice || slice.ReportTo != "sec-watch" || slice.State != memory.ProcessRunning {
+		t.Errorf("slice process = %+v", slice)
+	}
 }

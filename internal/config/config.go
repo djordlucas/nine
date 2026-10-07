@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"nine/internal/cron"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -37,12 +38,12 @@ type Config struct {
 	HITL       HITLConfig       `toml:"hitl"`
 	Planning   PlanningConfig   `toml:"planning"`
 	Roles      RolesConfig      `toml:"roles"`
-	Agents     []AgentConfig    `toml:"agent"`
-	// StandingTools are the `[[standing_tool]]` blocks: resumable tools the daemon
-	// runs indefinitely on their own cadence (adr/standing-tools.md).
-	StandingTools []StandingToolConfig `toml:"standing_tool"`
-	Tools         ToolsConfig          `toml:"tools"`
-	MCP           MCPConfig            `toml:"mcp"`
+	// Process are the `[[process]]` blocks: the processes this file declares
+	// (adr/process-sessions.md), and Processes their shared limits.
+	Process   []ProcessConfig `toml:"process"`
+	Processes ProcessesConfig `toml:"processes"`
+	Tools     ToolsConfig     `toml:"tools"`
+	MCP       MCPConfig       `toml:"mcp"`
 	// API is the `[api]` table: HTTP API server configuration for remote access
 	// to Nine's functionality (spec/contracts/api.md). The API runs as a separate
 	// process that communicates with the daemon via Unix socket.
@@ -361,32 +362,69 @@ func (a ToolsAgentConfig) ApprovalMode() string {
 	}
 }
 
-// StandingToolConfig is one `[[standing_tool]]` block.
+// ProcessConfig is one `[[process]]` block: a process this file declares
+// (adr/process-sessions.md). This file owns its definition; the runtime owns
+// whether it is running, so an edit adjusts what a process does without
+// restarting one that was stopped.
 //
-// It follows `[[agent]]` deliberately — an operator who has declared a standing
-// agent should recognise this on sight, and the ownership split is the same:
-// this file owns the definition, the runtime owns whether it is running.
-type StandingToolConfig struct {
-	// ID is operator-chosen and stable; reconciliation keys on it, so renaming
-	// creates a second standing tool rather than renaming the first.
-	ID string `toml:"id"`
-	// Tool is the resumable tool to run.
+// Whether it is live or slice comes from its tool: a live tool (pursue,
+// reflect, or one whose manifest says live = true) runs until stopped and drives
+// a session; any other is called on each trigger, as standing tools were.
+type ProcessConfig struct {
+	// Name is operator-chosen and stable; reconciliation keys on it.
+	Name string `toml:"name"`
+	// Tool is the sandboxed tool that drives the process.
 	Tool string `toml:"tool"`
-	// Args is the tool's input at the start of each cycle, as a TOML table.
-	Args map[string]any `toml:"args"`
-	// Interval and Schedule are the cadence *between cycles*, and are mutually
-	// exclusive — a duration ("10s") or a 5-field cron expression. Setting both
-	// is a config error.
-	Interval string `toml:"interval"`
+	// Every and Schedule are its clock, mutually exclusive: a duration ("10s")
+	// or a 5-field cron expression. A process with neither wakes only on what
+	// is sent or piped to it.
+	Every    string `toml:"every"`
 	Schedule string `toml:"schedule"`
-	// Enabled defaults to true. Setting it false declares a standing tool without
-	// starting it, which is how you stage one before turning it on.
+	// Args is the tool's input, as a TOML table.
+	Args map[string]any `toml:"args"`
+	// Goal binds the process to a goal this file owns, created with this
+	// description and named after the process: the goal's status decides
+	// whether the process runs, and a goal the agent finished is never
+	// resurrected. This is how a standing agent is declared.
+	Goal string `toml:"goal"`
+	// Role is the role its session runs under; for a goal process it defaults
+	// to "monitor", read-only.
+	Role string `toml:"role"`
+	// Delegates lets its session spawn sub-agents.
+	Delegates bool `toml:"delegates"`
+	// Session attaches the process to another process's session instead of
+	// owning one: its turns run there, with that session's history and role.
+	Session string `toml:"session"`
+	// ReportTo pipes what the process reports to that process's session.
+	ReportTo string `toml:"report_to"`
+	// Enabled defaults to true; false declares a process without starting it.
 	Enabled *bool `toml:"enabled"`
 }
 
-// IsEnabled reports whether the block asks to run. Unset means yes: declaring a
-// standing tool and having to also enable it would be a papercut.
-func (c StandingToolConfig) IsEnabled() bool { return c.Enabled == nil || *c.Enabled }
+// IsEnabled reports whether the block asks to run. Unset means yes.
+func (c ProcessConfig) IsEnabled() bool { return c.Enabled == nil || *c.Enabled }
+
+// ProcessesConfig is the `[processes]` table: limits shared by every process.
+type ProcessesConfig struct {
+	// MaxRunning is how many live processes may run at once; 0 is the default,
+	// 14 (today's ten goal sessions and four standing tools).
+	MaxRunning int `toml:"max_running"`
+	// Authoritative treats the [[process]] list as the full desired state: a
+	// goal process no longer listed is removed and its goal archived at boot.
+	// Never touches a goal a conversation created.
+	Authoritative bool `toml:"authoritative"`
+}
+
+// DefaultMaxRunning is [processes] max_running when unset.
+const DefaultMaxRunning = 14
+
+// MaxRunningOrDefault returns [processes] max_running, defaulted.
+func (c ProcessesConfig) MaxRunningOrDefault() int {
+	if c.MaxRunning > 0 {
+		return c.MaxRunning
+	}
+	return DefaultMaxRunning
+}
 
 // ToolEntry is one `[tool.<name>]` table (singular), sibling to the plural
 // `[tools]` subsystem table above — the same split `[plugin.<name>]` and
@@ -540,71 +578,6 @@ func (p PlanningConfig) Mode() string {
 		return PlanModePlanOnly
 	}
 	return p.PlanMode
-}
-
-// AgentConfig declares a pre-defined long-running agent — a goal seeded at boot
-// and run under the pursue shell with a narrowed role (docs/predefined-agents.md).
-// Interval and Schedule are mutually exclusive; when neither is set the agent
-// runs on the default pursue idle interval.
-type AgentConfig struct {
-	ID          string `toml:"id"`          // stable goal ID; reconciliation keys on it
-	Description string `toml:"description"` // the standing intention the agent pursues
-	Role        string `toml:"role"`        // work-tool/persona role; default "monitor"
-	Delegates   bool   `toml:"delegates"`   // may spawn sub-agents; default false
-	Interval    string `toml:"interval"`    // idle cadence (Go duration) — XOR Schedule
-	Schedule    string `toml:"schedule"`    // cron expression — XOR Interval
-
-	// Routines are additional stages the session carries alongside its pursue
-	// shell, each waking on its own cadence. The scheduler has always supported
-	// several stages per session; until this existed nothing could ask for more
-	// than one (docs/session-plans.md).
-	//
-	// The pursue shell stays the session's role-bearing routine, so a routine
-	// never sets a role — a session has exactly one, and two claimants would
-	// make it depend on ordering.
-	Routines []AgentRoutine `toml:"routine"`
-
-	// When is a *condition* trigger: instead of waking on a clock, this agent
-	// wakes when a cheap deterministic predicate says there is something to do.
-	//
-	// It exists because the two cadences an agent could previously carry are both
-	// clocks, and a clock is the wrong shape for "tell me when X happens". At a
-	// useful polling rate most wakes find nothing, and each one costs a full LLM
-	// turn to be told so. A predicate is a sandboxed tool: it runs on the cheap
-	// cadence with no model in the loop, and the agent's turn happens only when
-	// it returns something.
-	//
-	// It composes with Interval/Schedule rather than replacing them: an agent may
-	// have both a periodic sweep and a condition that wakes it sooner.
-	When *AgentCondition `toml:"when"`
-}
-
-// AgentCondition is the `when = { … }` inline table on a standing agent: a
-// sandboxed tool evaluated on its own cadence, whose non-empty output wakes the
-// agent with that output as the turn's input.
-//
-// This is the one path by which a tool may reach an agent, and it is deliberate
-// that the link is written by an operator in their own configuration rather than
-// requested by either side. A standing tool still cannot choose to wake anything
-// (spec/contracts/toolvm.md R-TVM.20); what this adds is an operator saying "when
-// this predicate fires, that agent should look".
-type AgentCondition struct {
-	// Tool is the resumable sandboxed tool to evaluate.
-	Tool string `toml:"tool"`
-	// Interval and Schedule are how often the predicate is checked — mutually
-	// exclusive, same parsing as everywhere else.
-	Interval string `toml:"interval"`
-	Schedule string `toml:"schedule"`
-	// Args is the predicate's input at the start of each evaluation.
-	Args map[string]any `toml:"args"`
-}
-
-// AgentRoutine is one additional stage on a standing agent's session, declared
-// as a [[agent.routine]] table.
-type AgentRoutine struct {
-	Kind     string `toml:"kind"`     // registered routine kind (e.g. "idle-reflection")
-	Interval string `toml:"interval"` // wake cadence (Go duration) — XOR Schedule
-	Schedule string `toml:"schedule"` // cron expression — XOR Interval
 }
 
 // RolesConfig controls worker-role resolution for delegation (adr/roles-design.md §11).
@@ -784,14 +757,6 @@ type DaemonConfig struct {
 	// first boot with neither — shows a placeholder and asks the LLM to coin a
 	// random name asynchronously, then persists it (docs/configuration.md).
 	InstanceName string `toml:"instance_name"`
-
-	// StandingAgentsAuthoritative treats the [[agent]] list as the full desired
-	// state (adr/predefined-agents-design.md §7 v3). When true, a config-origin goal no
-	// longer listed in nine.toml is archived and its session stopped on boot.
-	// Default false: removing an entry just stops reconciling it, leaving the
-	// goal for the operator to archive manually. Never touches
-	// conversation-created goals.
-	StandingAgentsAuthoritative bool `toml:"standing_agents_authoritative"`
 
 	// SessionRetentionDays deletes an abandoned session — and everything keyed to
 	// it — after this many days without activity. 0 disables it entirely;
@@ -1194,6 +1159,14 @@ func Load(path string) (*Config, error) {
 	}
 	cfg.SchemaVersion = CurrentConfigSchema
 
+	for key, hint := range retiredBlocks {
+		if md.IsDefined(key) {
+			return nil, fmt.Errorf("%s: %s (docs/configuration.md)", path, hint)
+		}
+	}
+	if md.IsDefined("daemon", "standing_agents_authoritative") {
+		return nil, fmt.Errorf("%s: [daemon] standing_agents_authoritative is replaced by [processes] authoritative", path)
+	}
 	warnUndecoded(path, md)
 
 	if err := cfg.Validate(); err != nil {
@@ -1243,10 +1216,7 @@ func (cfg *Config) Validate() error {
 	if err := validateMCPServers(cfg.MCP.Servers); err != nil {
 		return err
 	}
-	if err := validateStandingTools(cfg.StandingTools); err != nil {
-		return err
-	}
-	if err := validateConditionTriggers(cfg.Agents); err != nil {
+	if err := validateProcesses(cfg.Process); err != nil {
 		return err
 	}
 	if err := validateToolEntry("tools.agent", ToolEntry{Capabilities: cfg.Tools.Agent.Capabilities}); err != nil {
@@ -1306,82 +1276,6 @@ func validateMCPServers(servers []MCPServer) error {
 			return fmt.Errorf("[[mcp.server]] %q: duplicate name", s.Name)
 		}
 		seen[s.Name] = true
-	}
-	return nil
-}
-
-// validateStandingTools checks the `[[standing_tool]]` blocks.
-//
-// Everything here is a config error rather than a skipped block. A standing tool
-// runs unattended and indefinitely; one an operator wrote and Nine silently
-// ignored is the worst outcome available, because nothing ever reports its
-// absence.
-func validateStandingTools(blocks []StandingToolConfig) error {
-	seen := make(map[string]bool, len(blocks))
-	for i, b := range blocks {
-		where := fmt.Sprintf("[[standing_tool]] #%d", i+1)
-		if b.ID != "" {
-			where = fmt.Sprintf("[[standing_tool]] %q", b.ID)
-		}
-		switch {
-		case b.ID == "":
-			return fmt.Errorf("%s: id is required — it is what reconciliation keys on", where)
-		case seen[b.ID]:
-			return fmt.Errorf("%s: duplicate id", where)
-		case b.Tool == "":
-			return fmt.Errorf("%s: tool is required", where)
-		}
-		seen[b.ID] = true
-
-		// One trigger, matching the standing-agent rule (docs/scheduling.md): both
-		// set is a config error rather than a silent precedence nobody remembers.
-		if b.Interval != "" && b.Schedule != "" {
-			return fmt.Errorf("%s: set interval or schedule, not both", where)
-		}
-		if b.Interval == "" && b.Schedule == "" {
-			return fmt.Errorf("%s: needs interval or schedule — a standing tool with no cadence would never run", where)
-		}
-		if b.Interval != "" {
-			d, err := time.ParseDuration(b.Interval)
-			if err != nil {
-				return fmt.Errorf("%s: interval %q: %w", where, b.Interval, err)
-			}
-			if d <= 0 {
-				return fmt.Errorf("%s: interval %q must be positive", where, b.Interval)
-			}
-		}
-	}
-	return nil
-}
-
-// validateConditionTriggers checks each standing agent's `when = { … }` block.
-//
-// A config error rather than a skipped block, for the reason a standing tool's
-// is: a condition an operator wrote and Nine silently ignored means an agent
-// that never wakes, and nothing ever reports the absence.
-func validateConditionTriggers(agents []AgentConfig) error {
-	for _, a := range agents {
-		if a.When == nil {
-			continue
-		}
-		where := fmt.Sprintf("[[agent]] %q when", a.ID)
-		switch {
-		case a.When.Tool == "":
-			return fmt.Errorf("%s: tool is required — the predicate to evaluate", where)
-		case a.When.Interval != "" && a.When.Schedule != "":
-			return fmt.Errorf("%s: set interval or schedule, not both", where)
-		case a.When.Interval == "" && a.When.Schedule == "":
-			return fmt.Errorf("%s: needs interval or schedule — a condition that is never checked never fires", where)
-		}
-		if a.When.Interval != "" {
-			d, err := time.ParseDuration(a.When.Interval)
-			if err != nil {
-				return fmt.Errorf("%s: interval %q: %w", where, a.When.Interval, err)
-			}
-			if d <= 0 {
-				return fmt.Errorf("%s: interval %q must be positive", where, a.When.Interval)
-			}
-		}
 	}
 	return nil
 }
@@ -1562,4 +1456,75 @@ func ValidateCapabilityGrant(capability string, p CapabilityGrantParams) error {
 		return fmt.Errorf("unknown capability %q", capability)
 	}
 	return validateToolEntry("tools.agent.capabilities", ToolEntry{Capabilities: caps})
+}
+
+// validateProcesses checks the `[[process]]` blocks.
+//
+// Everything here is a config error rather than a skipped block: a process
+// runs unattended and indefinitely, and one an operator wrote and Nine silently
+// ignored is the worst outcome available, because nothing ever reports its
+// absence.
+func validateProcesses(blocks []ProcessConfig) error {
+	names := make(map[string]bool, len(blocks))
+	for _, b := range blocks {
+		if b.Name != "" {
+			names[b.Name] = true
+		}
+	}
+	seen := make(map[string]bool, len(blocks))
+	for i, b := range blocks {
+		where := fmt.Sprintf("[[process]] #%d", i+1)
+		if b.Name != "" {
+			where = fmt.Sprintf("[[process]] %q", b.Name)
+		}
+		switch {
+		case b.Name == "":
+			return fmt.Errorf("%s: name is required — it is what reconciliation keys on", where)
+		case strings.Contains(b.Name, ":"):
+			return fmt.Errorf("%s: a name cannot contain \":\", which Nine uses for the processes it names itself", where)
+		case seen[b.Name]:
+			return fmt.Errorf("%s: duplicate name", where)
+		case b.Tool == "":
+			return fmt.Errorf("%s: tool is required", where)
+		case b.Every != "" && b.Schedule != "":
+			return fmt.Errorf("%s: set every or schedule, not both", where)
+		case b.Goal != "" && b.Tool != "pursue":
+			return fmt.Errorf("%s: a goal process runs tool = \"pursue\"", where)
+		case b.Goal != "" && b.Session != "":
+			return fmt.Errorf("%s: a goal process owns its session; it cannot also attach to %q", where, b.Session)
+		case b.Session != "" && !names[b.Session]:
+			return fmt.Errorf("%s: session %q names no [[process]]", where, b.Session)
+		case b.Session == b.Name && b.Session != "":
+			return fmt.Errorf("%s: a process cannot attach to its own session", where)
+		case b.ReportTo != "" && !names[b.ReportTo]:
+			return fmt.Errorf("%s: report_to %q names no [[process]]", where, b.ReportTo)
+		case b.Session != "" && (b.Role != "" || b.Delegates):
+			return fmt.Errorf("%s: an attached process runs under its session's role; role and delegates belong to %q", where, b.Session)
+		}
+		seen[b.Name] = true
+		if b.Every != "" {
+			d, err := time.ParseDuration(b.Every)
+			if err != nil {
+				return fmt.Errorf("%s: every %q: %w", where, b.Every, err)
+			}
+			if d <= 0 {
+				return fmt.Errorf("%s: every %q must be positive", where, b.Every)
+			}
+		}
+		if b.Schedule != "" {
+			if _, err := cron.Parse(b.Schedule); err != nil {
+				return fmt.Errorf("%s: schedule %q: %w", where, b.Schedule, err)
+			}
+		}
+	}
+	return nil
+}
+
+// retiredBlocks are the tables [[process]] replaced (adr/process-sessions.md
+// §11). Loading a file that still has one is an error naming its replacement:
+// silently ignoring it would make every agent and standing tool it declares
+// vanish without a word.
+var retiredBlocks = map[string]string{
+	"agent":         `[[agent]] is replaced by [[process]]: name = <id>, tool = "pursue", goal = <description>, with role, delegates, every or schedule as before`,
+	"standing_tool": `[[standing_tool]] is replaced by [[process]]: name = <id>, tool, args, every or schedule as before`,
 }
