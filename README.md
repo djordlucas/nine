@@ -111,7 +111,7 @@ configuration reference: [installation](docs/installation.md),
 | **Skill** | Markdown how-to note, semantically retrieved into context |
 | **Goal** | An open-ended intention with no end condition, pursued in the background |
 
-Every other term — workflow, session plan, standing agent, supervisor, checkpoint, journal —
+Every other term — workflow, process, standing agent, supervisor, checkpoint, journal —
 is defined in the [glossary](docs/glossary.md).
 
 **Modular.** Built-in tools, custom plugins, MCP servers, and JS/Wasm tools all reach the agent
@@ -180,7 +180,7 @@ above active conversations above background work, so a goal grinding away in the
 makes you wait.
 
 **Memory** is one SQLite file reached through a single store, covering conversations, goals,
-workflows, KV memory, full-text-searchable files, vectors, skills, generated tools, session plans,
+workflows, KV memory, full-text-searchable files, vectors, skills, generated tools, processes,
 human-in-the-loop state, and the event journal. Operational tables are daemon-private, so an agent
 cannot reach in and rewrite its own goal state.
 
@@ -329,7 +329,7 @@ invoked — `nine docs [topic]` and `nine spec [topic]`, each listing its topics
 [docs/README.md](docs/README.md) is the full guide, ordered for a first-time reader:
 [CLI usage](docs/usage.md), [agent loop](docs/agent-loop.md) and
 [context builder](docs/context-builder.md), [the event journal](docs/event-journal.md),
-[session plans & routines](docs/session-plans.md), [roles](docs/roles.md),
+[processes](docs/processes.md), [roles](docs/roles.md),
 [predefined agents](docs/predefined-agents.md), [scheduling](docs/scheduling.md),
 [human-in-the-loop](docs/hitl.md), and the [glossary](docs/glossary.md).
 

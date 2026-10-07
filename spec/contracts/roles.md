@@ -1,6 +1,6 @@
 # Contract — roles: worker kinds as data
 
-**Status:** Built · **Depends on:** skills, dispatcher, context builder, orchestration, session plans · **Used by:** loop builder, delegation tools
+**Status:** Built · **Depends on:** skills, dispatcher, context builder, orchestration, processes · **Used by:** loop builder, delegation tools
 
 A **role** makes worker-kind first-class data: a persona (skill body), an **enforced
 tool allowlist**, and structural wiring (persistence, delegation, goal-spawning, HITL
@@ -138,7 +138,7 @@ Seeded from `skills/roles/*.md` (embedded, immutable — R-SKILL.2 applies):
 | Role | Tools | Delegates | SpawnsGoals | Persists | Interactive | Profile |
 |------|:-----:|:---------:|:-----------:|:--------:|:-----------:|---------|
 | `orchestrator` | `*` | ✓ | ✓ | ✓ | ✓ (from caller) | `[active]` |
-| `reflection` | `memory_*`, `skill_read` | ✗ | ✗ | ✓ | ✗ | `[idle-reflection]` |
+| `reflection` | `memory_*`, `skill_read` | ✗ | ✗ | ✓ | ✗ | the `reflect` process |
 | `pursue` | `*` | ✓ | ✗ | ✓ | ✗ | `[pursue]` |
 | `executor` (default leaf) | `*` | ✓ (guard-capped) | ✗ | ✗ | ✗ | — |
 | `software-dev` | shell + file + memory allowlist | ✗ | ✗ | ✗ | ✗ | — |
@@ -148,8 +148,10 @@ Seeded from `skills/roles/*.md` (embedded, immutable — R-SKILL.2 applies):
 | `code-reviewer` | read-only file allowlist + memory (**no `shell`, no web**) | ✗ | ✗ | ✗ | ✗ | — |
 | `analyst` | none (`tools: ""`) | ✗ | ✗ | ✗ | ✗ | — |
 
-The daemon resolves a session's role from its plan profile: `active` → orchestrator,
-`idle-reflection` → reflection, `pursue` → pursue. `orchestrator` and `executor` carry
+The daemon resolves a session's role from the process that drives it
+([`processes.md`](processes.md) R-PROC.6): a conversation runs the orchestrator, a goal
+session its `pursue` process's role (pursue, or a standing agent's declared role), and the
+self-reflection session the reflection role. `orchestrator` and `executor` carry
 the full delegation surface; `reflection` and `pursue` are deliberately **narrowed** to
 their background purpose.
 

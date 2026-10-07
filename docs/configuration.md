@@ -131,13 +131,6 @@ max_goal_sessions = 10
 # the heuristic.
 # runtime = "Firecracker microVM"
 
-# Treat the [[agent]] list as the full desired state for pre-defined agents
-# (adr/predefined-agents-design.md §7 v3). When true, a config-origin goal no longer
-# listed in [[agent]] is archived and its session stopped on boot;
-# conversation-created goals are never touched. Defaults to false — removing an
-# entry just stops reconciling it, leaving the goal for manual archival.
-standing_agents_authoritative = false
-
 # Session event journal retention (event-journal.md), applied by a boot-time
 # scrub. Keep the last N turns per agent; 0 uses the built-in default, negative
 # keeps all turns. event_retention_days additionally drops events older than N
@@ -151,32 +144,59 @@ standing_agents_authoritative = false
 # related_sessions_index = false
 
 
-# Pre-defined, long-running agents (docs/predefined-agents.md). Each [[agent]]
-# is seeded at boot as a config-owned goal running under the pursue shell with a
-# narrowed role — no human turn needed to bring it to life. `id` is a stable,
-# operator-chosen key; edit the definition and restart to reconcile in place.
-# Findings surface via `nine notifications`.
+# Processes (docs/processes.md): everything Nine does between your turns.
+# Each [[process]] is reconciled at boot; this file owns its definition and the
+# runtime owns whether it is running, so a process you stopped stays stopped and
+# a goal the agent finished is never resurrected. Whether a process is live or
+# slice follows from its tool. Findings reach `nine notifications`.
 #
-# [[agent]]
-# id          = "sec-watch"
-# description = "Monitor this repo for security issues; triage new CVEs affecting our deps."
-# role        = "monitor"        # optional; default "monitor" (read-only). Narrows work tools only.
-# delegates   = false            # optional; default false. Opt into sub-agent fan-out.
-# schedule    = "0 9 * * 1-5"    # cron (5-field, docs/scheduling.md) …XOR… interval = "24h"
+# A standing agent (docs/predefined-agents.md): pursue, bound to a goal this
+# file owns, named after the process.
 #
-# Additional routines the session carries alongside its pursue shell, each waking
-# on its own cadence. A session runs one turn at a time, so when several routines
-# are due the one waiting longest goes first — fairness does not depend on the
-# order they are written here.
+# [[process]]
+# name      = "sec-watch"          # stable, operator-chosen; reconciliation keys on it
+# tool      = "pursue"
+# goal      = "Monitor this repo for security issues; triage new CVEs affecting our deps."
+# role      = "monitor"            # default "monitor" (read-only)
+# delegates = false                # opt into sub-agent fan-out
+# schedule  = "0 9 * * 1-5"        # cron (docs/scheduling.md) …XOR… every = "24h"
 #
-# The pursue shell stays the session's role-bearing routine: a routine never sets a
-# role, because a session has exactly one and two claimants would make it depend
-# on ordering. `kind` must be a registered routine kind, and exactly one of
-# interval/schedule must be set — a routine with neither would never wake.
+# A condition: a predicate on a fast clock, piped to the agent's session. It
+# runs with no model in the loop; the agent's turn happens only when it returns
+# something.
 #
-#   [[agent.routine]]
-#   kind     = "idle-reflection"
-#   interval = "1h"
+# [[process]]
+# name      = "cve-scan"
+# tool      = "cve_scan"
+# every     = "10s"
+# report_to = "sec-watch"
+#
+# Reflection in the agent's own session, with its history and under its role.
+#
+# [[process]]
+# name    = "sec-watch-reflect"
+# tool    = "reflect"
+# every   = "1h"
+# session = "sec-watch"
+#
+# A standing tool: a resumable tool on its own cadence, its output to the human
+# feed. A cycle runs until the tool returns a result instead of asking to
+# continue; changing `args` restarts it.
+#
+# [[process]]
+# name     = "corpus"
+# tool     = "corpus_index"         # a loaded tool whose manifest says resumable = true
+# every    = "10s"                  # …or schedule = "*/5 * * * *", never both
+# args     = { root = "/srv/corpus" }
+# enabled  = true                   # false declares it without starting it
+
+[processes]
+# Live processes running at once, in a pool apart from tool calls.
+max_running = 14
+# Treat the goal [[process]] list as the full desired state: a goal process no
+# longer listed is retired and its goal archived at boot. Conversation-created
+# goals are never touched.
+authoritative = false
 
 
 [plugins]
@@ -489,8 +509,6 @@ plan_approval = "on-risky"
 # necessary — do it only when models should routinely see more of a large result
 # inline. Default 2048 (~8192 characters).
 #
-# It is [tools] rather than [agent] because [[agent]] is already the
-# standing-agent table array.
 max_output_tokens = 2048
 
 # ── Sandboxed tools ──────────────────────────────────────────────────────────
@@ -557,44 +575,6 @@ job_min_delay_ms = 250       # 0 uses 250
 # to memory_mb above, so 4 workers at the default 16 MiB is 64 MiB in the worst
 # case.
 job_workers      = 4         # 0 uses 4
-
-# A standing agent can also wake on a CONDITION rather than a clock — see the
-# [[agent]] blocks below and docs/scheduling.md:
-#
-#   [[agent]]
-#   id   = "sec-watch"
-#   when = { tool = "cve_scan", interval = "10s" }
-#
-# The predicate is a sandboxed tool run on that cadence with no model in the
-# loop; the agent's turn happens only when it returns something. It is a standing
-# tool underneath, listed as when:<agent-id>, so it backs off when it breaks and
-# can be stopped like any other.
-
-# ── Standing tools: run one indefinitely ─────────────────────────────────────
-# A resumable tool can also be run STANDING: on its own cadence, started at boot
-# rather than by a turn. Same sandbox and same capability grants as any other
-# tool — this only changes when and how often it runs.
-#
-# A CYCLE is one pass. Calls run until the tool returns a result instead of
-# asking to continue; then the cursor resets and the trigger below decides when
-# the next cycle starts. So there are two cadences: the trigger between cycles,
-# and the tool's own afterMs within one.
-#
-# Ownership splits the way [[agent]] does: this file owns the definition (tool,
-# args, trigger) and the runtime owns whether it is running. So a standing tool
-# you stopped stays stopped across a restart, and editing this file does not
-# restart it. Changing `args` does restart its cycle — the cursor it was holding
-# was produced under the old arguments.
-#
-# A cycle's output goes to the human feed (`nine notifications`). Returning
-# nothing is silent, which is what keeps a ten-second watcher usable.
-#
-# [[standing_tool]]
-# id       = "corpus"          # operator-chosen and stable; reconciliation keys on it
-# tool     = "corpus_index"    # a loaded tool whose manifest says resumable = true
-# interval = "10s"             # …or schedule = "*/5 * * * *", never both
-# args     = { root = "/srv/corpus" }
-# enabled  = true              # false declares it without starting it
 
 # ── Capability grants, per named tool ────────────────────────────────────────
 # `[tool.<name>]` (singular) is the grant half of the capability model, sibling
@@ -776,9 +756,9 @@ allow = [                           # allowlist mode only: the packages an opera
 # and a ceiling bounds REACH. A capability-free tool that runs forever is inert
 # per call and unbounded in aggregate, which a ceiling cannot express.
 #
-# A generated standing tool that fails repeatedly is switched off. One you
-# declared in [[standing_tool]] is not — your declaration is a standing
-# instruction, and silently disabling it would be the greater surprise.
+# A generated standing tool that fails repeatedly is switched off. A process you
+# declared in [[process]] is not — your declaration is a standing instruction,
+# and silently disabling it would be the greater surprise.
 # [tools.agent] allow_standing = false
 # [tools.agent] max_standing = 4
 ```

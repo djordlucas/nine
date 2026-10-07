@@ -1,6 +1,6 @@
 # Design note — Process sessions
 
-**Status:** **Proposed** (revised 2026-10-06: one concept for all background work) ·
+**Status:** **Phase 1 implemented** (2026-10-07; revised 2026-10-06: one concept for all background work) ·
 **Related:** `adr/standing-tools.md`, `adr/tool-facilities.md`, `adr/reactive-events.md`,
 `adr/predefined-agents-design.md`, `adr/roles-design.md`, `adr/personality-pattern.md`,
 `adr/agent-boundary.md` · **Amends:** R-SUB.7, the stance of `docs/self-modification.md`, and
@@ -67,10 +67,10 @@ modes, fixed by its declaration:
 | | Live | Slice |
 |---|---|---|
 | Instance | started with the process, alive until it is stopped, paused or fails | created per trigger, destroyed after, as standing runs are today |
-| Receiving work | `nine.next()` blocks until the next trigger and returns it | the trigger is the call's input |
-| Calling the model | `nine.llm.turn(text)` blocks and returns the reply (§6) | not possible |
+| Receiving work | `next()` blocks until the next trigger and returns it | the trigger is the call's input |
+| Calling the model | `turn(text)` blocks and returns the reply (§6) | not possible |
 | State across triggers | its own memory, plus `state` and the database; memory is lost on a restart | `state` and the database |
-| Output to a pipe | `nine.report(text)` (§7) | the call's non-empty result |
+| Output to a pipe | `report(text)` (§7) | the call's non-empty result |
 | Used for | shipped and Nine-written processes | today's standing tools and condition-trigger predicates |
 
 Live mode is how a process is written: a program that waits for work and drives its session.
@@ -99,11 +99,13 @@ args     = { feeds = ["https://feeds.bbci.co.uk/news/rss.xml"] }
 ```
 
 ```js
-export default ({ args }, nine) => {
+import { next, turn } from "nine:process";
+
+export default ({ args }) => {
   for (;;) {
-    const trigger = nine.next();                        // blocks until 07:00
+    const trigger = next();                             // blocks until 07:00
     const stories = fetchAll(args.feeds);               // net.http
-    const summary = nine.llm.turn(`Summarize in three sentences:\n${stories}`);
+    const summary = turn(`Summarize in three sentences:\n${stories}`);
     writeFile("digest/today.md", summary);              // fs.write
   }
 };
@@ -112,7 +114,7 @@ export default ({ args }, nine) => {
 **Lifecycle.** The process runner starts a live process; nothing else runs one. Starting means
 creating a wasm instance in the live pool with the tool's grants, and calling its default export
 once with `{ args, process }`. The program runs from there, typically a loop around
-`nine.next()`, until it returns, throws or is stopped.
+`next()`, until it returns, throws or is stopped.
 
 | Occasion | What starts |
 |---|---|
@@ -124,9 +126,9 @@ once with `{ args, process }`. The program runs from there, typically a loop aro
 | A revision | the new version, after the old one stops (§9) |
 
 Stopping — by a model, the operator, its goal, a budget or the daemon's shutdown — makes the
-pending `nine.next()` or `nine.llm.turn()` throw a *stopped* error, then closes the instance. A
+pending `next()` or `turn()` throw a *stopped* error, then closes the instance. A
 restart loses only the instance's memory: the program starts again from the top, and its first
-`nine.next()` returns the triggers that came due while it was down, each once, so a scheduled run
+`next()` returns the triggers that came due while it was down, each once, so a scheduled run
 missed during a restart still happens. The runner records who stopped a process and when, which
 decides who may start it again (§9).
 
@@ -198,7 +200,7 @@ Phase 1 is accepted on that (§14).
 | `[processes] memory_mb` | — | the memory cap of one live instance |
 
 Live instances run in their own pool, sized by `max_running`, apart from the sandbox's call slots:
-a process waiting in `nine.next()` or `nine.llm.turn()` holds its own instance and never a slot an
+a process waiting in `next()` or `turn()` holds its own instance and never a slot an
 ordinary tool call needs.
 
 A process that exhausts its budget, or fails its health checks (standing tools' backoff and
@@ -209,12 +211,12 @@ A process that exhausts its budget, or fails its health checks (standing tools' 
 ## 6. The `llm` capability
 
 **A blocking turn in the process's own session.** Only a live process can call
-`nine.llm.turn(text)`; it returns the reply as a string, or throws when a bound below stops it.
+`turn(text)`; it returns the reply as a string, or throws when a bound below stops it.
 
 | Bound | Applies to | Set by |
 |---|---|---|
 | Reply length, inner model calls, turn duration | one turn | the turn's own limits: `max_tokens`, the loop's call cap, `task_timeout_seconds` |
-| Turns and tokens per day | one process | its budget, capped by `[processes] budget`; when exhausted, `nine.llm.turn` throws and the process is paused, reported to the human feed |
+| Turns and tokens per day | one process | its budget, capped by `[processes] budget`; when exhausted, `turn()` throws and the process is paused, reported to the human feed |
 | Priority and concurrency | all processes | `[processes] priority`, `max_running` |
 
 The instance has no deadline of its own: it runs until stopped. Every host call it makes carries
@@ -256,7 +258,7 @@ journaled. A process is never invoked for an event from its own session. A messa
 sender's depth plus one.
 
 **Pipes.** A process may declare `report_to = "<session>"`: what it reports is delivered to that
-process session as a message, which is a trigger. A live process reports with `nine.report(text)`;
+process session as a message, which is a trigger. A live process reports with `report(text)`;
 a slice process reports each non-empty result. Empty output sends nothing.
 
 | | A pipe |
@@ -323,7 +325,7 @@ granted per role like any other:
 | Tool | Does |
 |---|---|
 | `process_list`, `process_show` | state, triggers, budget used, recent journal |
-| `process_send(session, text)` | a message to a process session, which is a trigger; the process receives it from `nine.next()` |
+| `process_send(session, text)` | a message to a process session, which is a trigger; the process receives it from `next()` |
 | `process_start`, `process_stop` | control, under the rule below |
 
 A start grants nothing a process did not have — it runs under its own grants and role, and its
@@ -356,7 +358,7 @@ reaches the human feed and the session's history.
 
 | What | On deletion |
 |---|---|
-| Its running instance | Stopped first, as any stop: the pending `nine.next()` or `nine.llm.turn()` throws |
+| Its running instance | Stopped first, as any stop: the pending `next()` or `turn()` throws |
 | Its session | Kept as history, like a finished goal's, and removed by the session-retention sweep |
 | Its previous versions | Deleted with it; rollback applies only to a process that exists |
 | Pipes into it | The senders' reports go to the human feed, as undeliverable ones do, and the roster flags each sender |
@@ -387,12 +389,10 @@ database schema.
 
 ## 11. Configuration compatibility
 
-`[[agent]]` and `[[standing_tool]]` keep working for one minor release, translated at load into
-`[[process]]` blocks with a deprecation warning naming the replacement. `when = {…}` stays as
-shorthand: it translates into a process running the predicate tool with `report_to` naming the
-agent's session (§7), so existing condition triggers keep their behavior. `max_goal_sessions` and `max_standing` map to
-`max_running` (their sum) for the same release.
-
+`[[agent]]`, `[[agent.routine]]`, `when = { … }`, `[[standing_tool]]` and `[daemon]
+standing_agents_authoritative` are removed rather than aliased: Nine had no
+configurations in use to carry over. A file that still has one fails to load, naming the
+`[[process]]` form to use instead; the release notes list the mapping.
 ---
 
 ## 12. What this amends
@@ -428,7 +428,7 @@ agent's session (§7), so existing condition triggers keep their behavior. `max_
 | # | Content | Acceptance |
 |---|---|---|
 | 0 | Turn snapshots for `pursue` and `reflect`; journal snapshots for a standing tool and a condition trigger | Recorded on `main` before any change |
-| 1 | The unification: process sessions as the one background mechanism; `pursue`, `reflect` shipped; pipes with today's delivery (`report_to`); goal binding; `[[process]]` with the aliases; `[processes]` limits; live mode with `nine.next()`, `nine.llm.turn()` and `nine.report()`, for shipped processes only; `pursue` and `reflect` as live JS tools; attached processes; session plans removed | Snapshots unchanged; live evals match the baseline (`goal-create`, `delegate-subagent`, `workflow-plan`, the standing cases) |
+| 1 | The unification: process sessions as the one background mechanism; `pursue`, `reflect` shipped; pipes with today's delivery (`report_to`); goal binding; `[[process]]`, the old blocks removed; `[processes] max_running` and `authoritative`; live mode with `next()`, `turn()` and `report()`, for shipped processes only; `pursue` and `reflect` as live JS tools; attached processes; session plans removed | Snapshots unchanged; live evals match the baseline (`goal-create`, `delegate-subagent`, `workflow-plan`, the standing cases) |
 | 2 | Budgets and health for every process; the roster in the CLI and TUI; deletion (§9); `process_list`, `process_show`, `process_send`, `process_start`, `process_stop`; the sender label on piped messages (§7), re-recording the condition-trigger snapshot | An exhausted budget pauses a process and reaches the human feed |
 | 3 | Processes Nine writes: `allow_processes`, `llm` under operator-authored roles, the `process` role | A Nine-written digest process runs on a schedule and summarizes through its session |
 | 4 | Event triggers, lineage, `max_depth` | Two processes triggering each other stop at `max_depth`, the skip journaled |
@@ -450,7 +450,7 @@ agent's session (§7), so existing condition triggers keep their behavior. `max_
 | `max_depth` default | **2**: a process may react to another process's work, not to a reaction to it |
 | `max_running` default | **14**: today's 10 goal sessions plus 4 standing tools |
 | Shipped processes | **Live JS tools** in the sandbox, not Go: one kind of process, limits held structurally, readable examples for Nine |
-| How processes run | **Live mode**: an instance alive until stopped, with blocking `nine.next()` and `nine.llm.turn()`. Slice mode stays for today's standing tools and predicates, without model access |
+| How processes run | **Live mode**: an instance alive until stopped, with blocking `next()` and `turn()`. Slice mode stays for today's standing tools and predicates, without model access |
 | Several processes on one session | **Allowed**: one owner sets the role; attached processes' turns run in the session under it, serialized (§4) |
 | How a conversation uses processes | **Through process tools**, asynchronously (§9); a live tool is never callable as an ordinary tool |
 | Deleting processes and generated tools | **`tool_delete`** for a model, within the stop rule; **`nine tools delete`, `DELETE /tools/{name}` and the TUI** for the operator, for anything Nine wrote; shipped never. The operator's delete ships first, on its own (§9) |
@@ -462,9 +462,22 @@ agent's session (§7), so existing condition triggers keep their behavior. `max_
 ## Limits
 
 - Nothing here is built.
-- A started live process holds its instance while it waits in `nine.next()`. Hibernating idle
+- A started live process holds its instance while it waits in `next()`. Hibernating idle
   processes (closing the instance, restarting it on the next trigger) would save memory at the
   cost of losing in-memory state more often; it is left out until memory requires it.
 - One daemon is one instance: several instances, children and lineage are out of scope.
 - Rollback (§9) catches a revision that fails, not one that runs and does worse.
 - The aliases (§11) keep old configuration working for one minor release only.
+
+---
+
+## Phase 1 as built
+
+| Point | As built | Why it differs from the text above |
+|---|---|---|
+| First tick | one cadence after a process starts, at boot as at creation; nothing missed is replayed | the routines processes replaced woke one idle interval after their session started; replaying missed ticks would change behavior phase 1 must keep (§10, *Lifecycle*) |
+| `nine:process` | an ES module: `import { next, turn, report } from "nine:process"`, like `nine:state` | every other host facility reaches a tool as a `nine:*` module |
+| Limits | `[processes] max_running` sizes the live pool; `max_goal_sessions` and `[tools.agent] max_standing` keep their meaning | the three bound different things; unifying them waits for budgets (phase 2) |
+| Who may call `turn()` | any live process, under the role its owner process's block names | phase 1 has no Nine-written processes, so every live process is shipped or operator-declared |
+| Goal processes | `tool = "pursue"` only | goal binding is built for `pursue`; another bound tool waits for phase 3 |
+| Sender label on pipes | not yet | phase 2, as §7 plans |

@@ -231,8 +231,8 @@ default, or any agent id:
 
 It reads the **journal**, not a dedicated table, so it needs no running daemon (like
 `nine trace`) and works for every session that reflects. Reflection used to be a session
-*kind* writing to a `reflections` table with no agent id; now it is a routine kind any
-session can carry as a routine (`[[agent.routine]]`), so the history has to be per-agent.
+*kind* writing to a `reflections` table with no agent id; now it is the `reflect` process,
+which can also run in a standing agent's session, so the history has to be per-agent.
 
 For the full trace of a session — tool calls, LLM requests, timings — use
 `nine trace <agent-id>`; this is the digest view of the same events.
@@ -397,7 +397,7 @@ Sessions are also deleted automatically once they have gone
 switch it off. Two things are never taken, whatever their age:
 
 - a session whose id matches an **active goal** (a goal's pursue session), and
-- a session carrying an **active session plan** (a standing agent, for example).
+- a session a **process** drives (a standing agent, or self-reflection).
 
 Both are idle *by design*: a standing agent that wakes weekly looks abandoned
 after ten days precisely because it is working correctly. `nine sessions` marks

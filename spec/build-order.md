@@ -204,45 +204,39 @@ daemon restart, `attach` rebuilds the session from its checkpoint.
 
 ---
 
-## Phase 8 — session plans and the routine framework
+## Phase 8 — processes and live instances
 
-**Goal.** Sessions can run autonomous turns on an idle timer.
+**Goal.** Work runs between turns, driven by processes rather than by people.
 
-**Build.** → [`contracts/session-plans.md`](contracts/session-plans.md)
-- The `RoutineHandler` interface (`Init`, `OnTurnEnd`, `OnIdle`) and a `RoutineRegistry`
-  keyed by routine kind.
-- Plan persistence in `session_plans` (lazy for ordinary `[active]` conversations,
-  eager for idle-capable plans).
-- The worker's idle scheduler: `armIdleTimer` computes the soonest remaining interval;
-  on fire, `handleIdle` runs the due routine's `OnIdle`, and if it returns work, runs that
-  text as the next turn (same pipeline as a user turn).
-- The trivial `active` routine (all no-ops).
+**Build.** → [`contracts/processes.md`](contracts/processes.md)
+- `Host.StartLive` and `nine:process` (`next`, `turn`, `report`), in a live pool apart
+  from the call slots, with the work budget refilled per trigger.
+- The `processes` table: definition owned by configuration, run state by the runtime.
+- The process runner: slice processes called when due; live processes started, fed
+  clock ticks and piped reports, their turns run through `Daemon.ProcessTurn`.
 
-**Gate.** A test routine with a 1s idle interval that returns fixed text causes an
-autonomous turn to run ~1s after the last turn, going through the full turn pipeline
-(checkpointed, `OnTurnEnd` fired).
+**Gate.** A live test tool that loops on `next()` and `turn()` gets a clock tick one
+cadence after it starts, and its turn runs in its own session labelled `idle`.
 
 ---
 
-## Phase 9 — self-model and the reflection routine
+## Phase 9 — self-model and the reflection process
 
-**Goal.** Nine keeps a current self-description and reflects on a timer.
+**Goal.** Nine keeps a current self-description and reflects on a clock.
 
-**Build.** → [`contracts/session-plans.md`](contracts/session-plans.md) (§ self-model & reflection)
+**Build.** → [`contracts/processes.md`](contracts/processes.md) (R-PROC.9)
 - The self-model assembler reading `self/identity`, `self/capabilities`, `self/learned`
   from K/V and injecting them as P2.5 of the context (cap ~600 tokens).
 - `BootstrapSelfKV` to seed `self/identity` and `self/capabilities`.
-- The `idle-reflection` routine: a single fixed session (`agentID = "self-reflection"`),
-  idle interval **2 min**, whose `OnIdle` asks the model to update `self/capabilities`
-  and `self/learned`. The turn itself is recorded by the journal, like any other.
+- The shipped `reflect` process, driving a single fixed session
+  (`agentID = "self-reflection"`) under the reflection role, every **2 min**, asking the
+  model to update `self/capabilities` and `self/learned`.
 
-**Wire.** Register the routine; `ReconcileSelfReflection` creates the session once;
-`ResumeSessions` (Phase 17) restarts it on every boot.
+**Wire.** `ReconcileSelfReflection` writes the process; the runner starts it at every
+boot.
 
-**Gate.** With the reflection interval shortened, the session fires a reflection turn
-that writes `self/learned`; subsequent turns include the
-self-model block.
-
+**Gate.** With the reflection interval shortened, the session takes a reflection turn
+that writes `self/learned`; subsequent turns include the self-model block.
 ---
 
 ## Phase 10 — goals and pursue sessions
@@ -396,16 +390,17 @@ restores background autonomy.
 1. Load config (+ env overrides). 2. Open the SQLite store (fail-fast). 3. Start the
 plugin manager + default plugins. 4. Build checkpoint/notification stores. 5. Build the
 embedder. 6. Build the supervisor and `Attach(store)` (durable bus). 7. Build the
-self-model assembler. 8. `BootstrapSelfKV`. 9. Register `idle-reflection` +
-`ReconcileSelfReflection(2m)`. 10. Register `pursue`. 11. Startup scrubs: `WorkflowScrub`
+self-model assembler. 8. `BootstrapSelfKV`. 9. `ReconcileSelfReflection(2m)`.
+10. `ReconcileProcesses`. 11. Startup scrubs: `WorkflowScrub`
 + `SessionEventsScrub(retention)`. 12. Build HITL (`NewHITL` + `ExpireStale`). 13. Build
 the agent builder (loop factory) with task timeout + `RelatedSessions`. 14. Construct the
 daemon. 15. Build the `EventSink` and `SetEventSink`. 16. Configure it (HITL, store,
-plugins, supervisor, plan store, `max_goal_sessions`); if `related_sessions_index` (default
+plugins, process store and runner, `max_goal_sessions`); if `related_sessions_index` (default
 on) and an embedder is present, `AddSubscriber(RelatedIndexer)`. 17. Inject the
 goal-session spawn fn and the progress-emit fn — these close over the now-existing daemon.
-18. Start the supervisor loop. 19. `reconcileStandingAgents`. 20. `ResumeSessions` (restart
-every `active` plan with an idle-capable routine). 21. Start the accept loop.
+18. Start the supervisor loop and the process runner. 19. Reconcile goal processes
+(standing agents). 20. The runner starts every live process that should run. 21. Start the
+accept loop.
 
 **Gate.** Cold boot seeds self KV and the reflection session, scrubs stale workflows and
 journal events, seeds config-declared standing agents, and resumes any idle-capable

@@ -121,9 +121,10 @@ socket_path = "/tmp/nine.sock"
 max_goal_sessions = 5
 
 # The personality as a standing agent
-[[agent]]
-id = "alice"
-description = "Alice: autonomous code review assistant"
+[[process]]
+name = "alice"
+tool = "pursue"
+goal = "Alice: autonomous code review assistant"
 role = "code-reviewer"
 schedule = "0 * * * *"  # Wake hourly
 
@@ -199,7 +200,7 @@ flattened.
 
 After first boot the self-model is the agent's: reflection updates
 `self/capabilities` and `self/learned` on its own cadence
-([session-plans.md](session-plans.md)). The file is the starting point, not a
+([processes.md](processes.md)). The file is the starting point, not a
 description maintained from outside.
 
 ### Step 5: create skills
@@ -593,7 +594,7 @@ unconsumed message starts its own turn once the current one ends
 - [Roles](roles.md) – Worker kinds as data
 - [Skills](skills.md) – Procedural knowledge
 - [Sandboxed tools](sandboxed-tools.md) – Safe capability extensions
-- [Session plans](session-plans.md) – Autonomous behavior
+- [Processes](processes.md) – Autonomous behavior
 - [Configuration](configuration.md) – All configuration options
 - [CLI Usage](usage.md) – Command-line interface
 

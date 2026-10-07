@@ -409,15 +409,15 @@ The same `resumable` tool an operator can start as a job, they can also declare 
 — run on its own cadence, forever:
 
 ```toml
-[[standing_tool]]
-id       = "corpus"
-tool     = "corpus_index"
-interval = "10s"
-args     = { root = "/srv/corpus" }
+[[process]]
+name  = "corpus"
+tool  = "corpus_index"
+every = "10s"
+args  = { root = "/srv/corpus" }
 ```
 
 Nothing about your code changes. One difference in meaning: **returning a result ends a
-cycle, not the run.** Your cursor resets and the interval decides when the next pass
+cycle, not the run.** Your cursor resets and `every` decides when the next pass
 starts, so a standing tool is `again()` within a pass and a plain return between them.
 
 Two things to write for:

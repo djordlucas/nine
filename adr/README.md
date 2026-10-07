@@ -51,6 +51,7 @@ changed; the document stays as the record and is not rewritten.
 | `capability-grants.md` | Defaulting both tool tiers on, and moving the generated tier's ceiling into the store so an operator can grant a requested capability without a restart | 2026-09-27 |
 | `file-namespaces.md` | The workspace as the agent's only file namespace: external changes, editing large files, deletion to a trash. Retires `file_store`. Three divergences corrected in place; document extraction unbuilt. | phases 1–8, 2026-09-21 |
 | `standing-tools.md` | Running a resumable tool on its own cadence. A second run mode, not a second kind of tool. | yes — `R-TVM.20`, all five phases |
+| `process-sessions.md` | Two kinds of session: conversations (a person drives) and process sessions (a process drives). Goal sessions, standing agents, self-reflection, condition triggers, standing tools and reactions become process sessions; adds processes Nine writes, an `llm` capability under operator-authored roles, a private `sql` database, pipes between processes (`report_to`), revision with rollback, genesis. Amends R-SUB.7 | phase 1, 2026-10-07; phases 2–8 proposed |
 
 ### Proposed
 
@@ -64,7 +65,6 @@ changed; the document stays as the record and is not rewritten.
 | `generated-tool-authoring-loop.md` | Shortening the write→fail→rewrite loop for agent-authored tools: parse at write time, dry-run, logs on failure, stdlib gaps, catalog hygiene. |
 | `event-log.md` | Investigation behind the session journal. Written against PostgreSQL; the store is SQLite. |
 | `personality-pattern.md` | Packaging complete Nine instances as specialized agents; self-model bootstrapping |
-| `process-sessions.md` | Two kinds of session: conversations (a person drives) and process sessions (a process drives). Goal sessions, standing agents, self-reflection, condition triggers, standing tools and reactions become process sessions; adds processes Nine writes, an `llm` capability under operator-authored roles, a private `sql` database, pipes between processes (`report_to`), revision with rollback, genesis. Amends R-SUB.7 |
 | `predefined-agents-design.md` | Standing agents as config-seeded goals: motivation, work breakdown, phasing |
 | `reactive-events.md` | Event subscriptions: reacting to the journal |
 | `tool-facilities.md` | Host-injected credentials, a wider HTTP method allowlist, streaming progress, and reactions as a third run mode delivered by `reactions_get`. Rejects tool→tool dispatch and MCP reach. |

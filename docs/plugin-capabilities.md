@@ -88,7 +88,7 @@ interpreting.
 ### Config shape
 
 A singular `[plugin.<name>]` table per plugin, sibling to the plural `[plugins]`
-subsystem table (the same singular/plural split `[[agent]]` already uses):
+subsystem table (the same singular/plural split `[[process]]` and `[processes]` use):
 
 ```toml
 [plugin.weather]

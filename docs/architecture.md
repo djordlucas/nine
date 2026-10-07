@@ -10,7 +10,7 @@ when you need the mechanism.
 
 Cross-references: [glossary.md](glossary.md) for term definitions,
 [agent-loop.md](agent-loop.md), [daemon.md](daemon.md),
-[context-builder.md](context-builder.md), [session-plans.md](session-plans.md),
+[context-builder.md](context-builder.md), [processes.md](processes.md),
 [plugins.md](plugins.md), [sandboxed-tools.md](sandboxed-tools.md).
 
 ---
@@ -46,7 +46,7 @@ fetched (`npx`) or hosted elsewhere (§10).
    │           │   Daemon ─ AgentWorker(s)     │                            │
    │           │     │         │               │                            │
    │           │     │         ├─ agent.Loop   │                            │
-   │           │     │         └─ SessionPlan  │                            │
+   │           │     │         └─ its process  │                            │
    │           │     │                         │                            │
    │           │   LLM Queue ── Provider ──────┼──────►  LLM endpoint       │
    │           │   Supervisor                  │        (Ollama)            │
@@ -162,7 +162,7 @@ Daemon
  ├─ names        map[string]string         // agentID → display name
  ├─ mgr          *plugin.Manager      // tool listing / direct calls
  ├─ store        queryBackend         // goal/reflection/workflow read proxy
- └─ plans        PlanStore            // session_plans persistence
+ └─ procs        ProcessBackend       // processes: goal sessions, the roles of process sessions
 ```
 
 The daemon asks its `Agent` for each session it creates or resumes
@@ -302,11 +302,9 @@ AgentWorker
  unwire callbacks
         │
         ▼
- notifyRoutines(result, err)       ← RoutineHandler.OnTurnEnd for each active routine
-        │                            then persist/refresh session_plans row
-        ▼
  checkStall(ctx)                   ← if LastRunToolCount()==0, stallN++
-        │                            at Limit → OnTurnEnd(ErrStall) + OnStall
+        │                            at Limit → OnStall (a goal-bound session
+        │                            pauses its goal)
         ▼
  checkpoint()                      ← loop.SaveState() → ckpt.Save(id, data)
         │
@@ -817,7 +815,7 @@ fast if the file cannot be opened.
    ├─ user_notifications human-facing feed (nine notifications)
    ├─ workflows          multi-step plans (steps as JSON array on the row)
    ├─ skills             built-in (seeded) + agent-authored skills, by source
-   ├─ session_plans      per-session routine state + idle config
+   ├─ processes          what runs between turns: definition, run state, triggers
    ├─ human_requests     HITL question/answer state
    ├─ interactive_sessions  which sessions are HITL-eligible
    ├─ session_events     append-only execution journal (seq, span, JSONB payload)
@@ -830,7 +828,7 @@ Two access tiers:
 - **Agent-facing tools**: K/V, file storage, skills, and (core-intercepted)
   vector ops are exposed to the model as tools.
 - **Daemon-only `internal.*` methods**: `conversations`, `goals`,
-  `notifications`, `workflows`, `session_plans`, and the HITL
+  `notifications`, `workflows`, `processes`, and the HITL
   tables are touched only by the daemon — never advertised as tools. This stops
   an agent from directly rewriting its own conversation state. (There is no
   `tasks` table — finite work is a sub-agent or a workflow step.)
@@ -884,67 +882,47 @@ Three consumers sit on top of the journal:
 ```
 
 Checkpoints are what make `nine attach <id>` and Level-4 restart survival work:
-a session is fully reconstructable from its serialized loop state plus its
-`session_plans` row.
+a session is fully reconstructable from its serialized loop state, plus — for
+a process session — the process that owns it, which supplies its role.
 
 ---
 
-## 13. Session plans & routines — the autonomy substrate
+## 13. Processes — the autonomy substrate
 
-Every `AgentWorker` carries a **session plan**: a small state machine of
-**routines** persisted in `session_plans`. This is the single mechanism behind all
-between-turn autonomy.
-
-```
-   RoutineHandler interface
-     Init(ctx, agentID, cfg)
-     OnTurnEnd(ctx, agentID, result, err)   ← after every turn (and on stall)
-     OnIdle(ctx, agentID) (turnText, ok)    ← when this routine's idle interval elapses
-
-   StageRegistry (kind → factory):
-     "active"          → trivial no-op routine (every conversation)
-     "idle-reflection" → self-reflection session    (registered at boot)
-     "pursue"          → per-goal background session (registered at boot)
-```
-
-The idle scheduler lives in the worker's `select`:
+Everything Nine does between turns is a **process** ([processes.md](processes.md)):
+a sandboxed tool the process runner drives on its triggers. A worker never starts
+a turn of its own; a person, a process, or a pipe submits each one.
 
 ```
-   armIdleTimer():  next = min remaining idle_interval across active idle-capable routines
-                    (no idle-capable routine → no timer; plan paused → no timer)
+   process runner (RunStandingTools, every [plugins] job_poll_seconds, and on Wake)
+     ├─ slice processes   due → call the tool once → cursor / cycle / report
+     └─ live processes    start once (StartLive) → next() ← clock ticks, piped reports
+                                                   turn() → Daemon.ProcessTurn(session, role)
+                                                   report() → pipe → owner's next() or human feed
 
-   run() select:
-     case <-inbox:      processTurn        ← real turn
-     case <-idleTimer:  handleIdle         ← find the due routine, OnIdle(),
-                                             run returned text as a turn if ok
+   goal binding:  goal not active → process stopped (stopped_by "goal")
+                  goal active again → process running again
 ```
 
 ```
                  ┌──────── ordinary conversation ────────┐
-   profile:      │ [active]                               │  no idle work,
-                 │ lazy-persisted on first checkpoint     │  attach-on-demand
+   driven by:    │ a person                               │  attach-on-demand
                  └────────────────────────────────────────┘
 
                  ┌──────── self-reflection session ───────┐
-   agentID:      │ "self-reflection"  (fixed)             │  wakes every 2 min*,
-   profile:      │ [idle-reflection]                      │  updates self/* KV,
-                 │ eager-persisted, resumed at boot       │  records to the journal
+   session:      │ "self-reflection"  (fixed)             │  reflect, every
+   process:      │ reflect, role reflection               │  [daemon] self_reflection
                  └────────────────────────────────────────┘
 
-                 ┌──────── goal pursue session ───────────┐
-   agentID:      │ == goalID  (1:1 with a top-level goal) │  wakes every 5 min,
-   profile:      │ [pursue]                               │  acts on the goal,
-                 │ eager, capped by max_goal_sessions(10) │  syncs goals.status
+                 ┌──────── goal session ──────────────────┐
+   session:      │ == goalID  (1:1 with a top-level goal) │  pursue, every 5 min,
+   process:      │ "goal:<id>", pursue, bound to the goal │  capped by max_goal_sessions(10)
                  └────────────────────────────────────────┘
 ```
 
-\* The reflection cadence is `[daemon] self_reflection`; 2 minutes is the default,
-and `"off"` removes the session. The pursue interval is fixed.
-
-On daemon restart, `ResumeSessions` walks `session_plans` and restarts every
-`active` plan that has an idle-capable routine (`planNeedsResume`) — so background
-autonomy survives reboots. Ordinary `[active]` conversations are not auto-resumed;
-they come back on demand via `attach`.
+Processes live in the `processes` table, so background autonomy survives
+restarts: at boot the runner starts every live process that should run, and
+ordinary conversations come back on demand via `attach`.
 
 ---
 
@@ -1103,9 +1081,8 @@ Go toolchain, no git, and no source tree.
 6. **Sub-agent recursion is depth-capped (`< 2`).** Delegation cannot spiral.
 7. **Display names never reach the LLM.** `DisplayName` is JSON-`-` on `ToolDef`;
    it exists purely for the TUI.
-8. **Background autonomy is resumable.** Idle-capable session plans are
-   eager-persisted and restarted at boot; ordinary conversations are lazy and
-   attach-on-demand.
+8. **Background autonomy is resumable.** Processes are persisted and started at
+   boot; ordinary conversations are attach-on-demand.
 9. **The journal is append-only and reactions are out-of-band.** Every step is
    written to `session_events`; subscribers enrich derived stores off the turn
    path and never make a generative LLM call or mutate an active session (enrich,

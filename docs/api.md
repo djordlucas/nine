@@ -192,7 +192,7 @@ background work, and an authenticated API caller is not an agent.
 
 `DELETE /goals/{id}` deletes the goal and every sub-goal beneath it, and stops the
 goal's pursue session; the session's transcript and journal are kept. The
-response lists the deleted ids. A goal declared by an `[[agent]]` block in
+response lists the deleted ids. A goal declared by a `[[process]]` block in
 `nine.toml` is `409 conflict`, because the next boot would re-create it — remove
 the block instead.
 

@@ -1,6 +1,6 @@
 # Contract — agent worker (session lifecycle)
 
-**Status:** Built · **Depends on:** agent loop, checkpoint store, notification store, session plans · **Used by:** daemon, sub-agents
+**Status:** Built · **Depends on:** agent loop, checkpoint store, notification store, processes · **Used by:** daemon, sub-agents
 
 An `AgentWorker` wraps one `agent.Loop` and is the unit of session liveness. It owns a
 single **serial worker** that processes turns one at a time. It is used identically for
@@ -19,7 +19,6 @@ session.
 ```text
 worker loop — wait for whichever happens first:
     a turn arrives on the inbox  → processTurn(req)   // real or notification-prepended turn
-    the idle timer fires         → handleIdle()       // autonomous turn (session plans)
     stop is requested            → drain current turn & exit
 ```
 
@@ -35,7 +34,6 @@ turnReq on inbox
   → wire journal hooks  → EventSink.Append (turn_start/llm_request/llm_response/tool_*/turn_end) (R-WORK.8)
   → result, err = loop.Run(ctx, text) // streams progress as it goes
   → unwire callbacks + journal hooks
-  → notifyStages(result, err)          // RoutineHandler.OnTurnEnd for each active routine, then persist plan
   → checkStall(ctx)                    // if LastRunToolCount()==0 → stallN++
   → checkpoint()                       // loop.SaveState() → ckpt.Save(id, data)   (I5)
   → armIdleTimer()                     // recompute next idle wake-up

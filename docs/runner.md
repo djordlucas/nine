@@ -99,16 +99,14 @@ sequenceDiagram
 
 ## End-of-turn hooks
 
-After `agent.Loop.Run` returns, the worker runs four hooks in order, and the
-order matters: a stall has to be seen before the routines are notified, because
-`OnTurnEnd` is how a pursue routine learns to pause its goal.
+After `agent.Loop.Run` returns, the worker runs two hooks in order:
 
-1. **Stall detection** — see below.
-2. **Routine `OnTurnEnd`** — every active routine on the session plan, which is
-   where a goal's status is synced ([session-plans.md](session-plans.md)).
-3. **Checkpoint** — serialize loop state and persist it.
-4. **Re-arm the idle scheduler** — compute the next wake across the session's
-   idle-capable routines.
+1. **Stall detection** — see below. In a session bound to a goal, a stall pauses
+   the goal, which stops its `pursue` process ([processes.md](processes.md)).
+2. **Checkpoint** — serialize loop state and persist it.
+
+A worker never starts a turn of its own: a person, a process or a pipe submits
+each one.
 
 A turn also carries two things on its context rather than taking them from boot
 configuration, because the sandboxed-tool host is daemon-wide: the journal
