@@ -116,8 +116,29 @@ func ProviderFor(model string) (llm.Provider, error) {
 	if endpoint == "" {
 		endpoint = "http://localhost:11434"
 	}
-	return llmollama.New(model, endpoint, 8192, false, 0), nil
+	return llmollama.New(model, endpoint, EvalNumCtx(), false, 0), nil
 }
+
+// DefaultEvalNumCtx is the Ollama context window live evals run with. A nine
+// turn's prompt alone is ~7,000–8,000 tokens (system prompt, self-model and ~50
+// tool schemas), and the window holds the reply too, so 8192 left a model a few
+// hundred tokens to think and answer in, and Ollama cut the start of longer
+// prompts. 16384 leaves room for a reply on a machine that cannot hold
+// production's 32768; NINE_EVAL_NUM_CTX overrides it.
+const DefaultEvalNumCtx = 16384
+
+// EvalNumCtx returns the live context window: NINE_EVAL_NUM_CTX, else the default.
+func EvalNumCtx() int {
+	if v, err := strconv.Atoi(os.Getenv("NINE_EVAL_NUM_CTX")); err == nil && v > 0 {
+		return v
+	}
+	return DefaultEvalNumCtx
+}
+
+// EvalContextBudget is the context budget nine assembles a live turn within:
+// the window, less the default reply cap, so nine trims history itself instead
+// of Ollama silently truncating the prompt.
+func EvalContextBudget() int { return EvalNumCtx() - 2048 }
 
 // EvalEmbedder builds the embedder the live harness uses so semantic-memory and
 // related-session/tool-ranking features are exercised as in production (else those

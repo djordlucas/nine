@@ -103,12 +103,25 @@ type Setup struct {
 	// tools, not a knob.
 	MCPServers []MCPServerSetup `yaml:"mcp_servers"`
 
+	// GeneratedTools are tools Nine wrote in an earlier session, seeded through
+	// the same store tool_write uses — the starting point for a case about
+	// revising or deleting one. They need session.config tools.agent.enabled.
+	GeneratedTools map[string]GeneratedToolSetup `yaml:"generated_tools"`
+
 	// Processes are declared as nine.toml's [[process]] blocks are, and
 	// reconciled the way the daemon reconciles them at boot: a goal block
 	// becomes a goal and its pursue process, any other block a process. They
 	// are what a background case exercises — work that happens with no prompt
 	// at all (adr/process-sessions.md).
 	Processes []ProcessSetup `yaml:"processes"`
+}
+
+// GeneratedToolSetup is one seeded generated tool: tool_write's fields.
+type GeneratedToolSetup struct {
+	Description  string `yaml:"description"`
+	InputSchema  string `yaml:"input_schema"` // JSON
+	Source       string `yaml:"source"`
+	Capabilities string `yaml:"capabilities"` // JSON; empty declares nothing
 }
 
 // ProcessSetup is one [[process]] block, with the same fields.
@@ -196,6 +209,16 @@ type SideEffects struct {
 	Goals         *GoalExpect            `yaml:"goals"`
 	Notifications *CountExpect           `yaml:"notifications"`
 	Vectors       *VectorExpect          `yaml:"vectors"`
+	// GeneratedTools checks the tools Nine wrote, by name: whether one exists,
+	// and what its stored source says.
+	GeneratedTools map[string]GeneratedToolExpect `yaml:"generated_tools"`
+}
+
+// GeneratedToolExpect asserts one generated tool: absent, or present with a
+// source matching Source.
+type GeneratedToolExpect struct {
+	Absent bool        `yaml:"absent"`
+	Source StringMatch `yaml:"source"`
 }
 
 // StringMatch is a tolerant assertion over a file: at most one of Equals/Contains/

@@ -1,0 +1,60 @@
+id: tool-write-capability
+description: "Write a tool that declares the capability it needs — reading the workspace — and use it on a file. The tool must be written and called, and the line count of a seeded file comes from it."
+track: live
+tier: multi_step
+tags: [tools, generated, self-modification, capabilities]
+
+session:
+  config:
+    tools.agent.enabled: true
+
+setup:
+  files:
+    notes/inventory.txt: |-
+      item 1
+      item 2
+      item 3
+      item 4
+      item 5
+      item 6
+      item 7
+      item 8
+      item 9
+      item 10
+      item 11
+      item 12
+      item 13
+      item 14
+      item 15
+      item 16
+      item 17
+      item 18
+      item 19
+      item 20
+      item 21
+      item 22
+      item 23
+
+# Two prompts: a tool new to a turn is callable from the next turn on, since a
+# turn keeps the tool set it started with (tool_write's reply says so).
+prompts:
+  - "Write a reusable tool named count_lines that takes the path of a workspace file and returns how many lines it has. It has to read the workspace, so declare that capability when you write it with tool_write."
+  - "Use your count_lines tool on notes/inventory.txt and tell me the number."
+
+expect:
+  side_effects:
+    generated_tools:
+      count_lines: { source: { matches: "nine:fs" } }
+  trajectory:
+    tools_all_of: [tool_write, count_lines]
+    no_stall: true
+  answer:
+    # 23 lines with no trailing newline: a split counts 23, a newline count 22.
+    matches: "\\b2[23]\\b"
+    # A model that counts by hand says 24 and still mentions "items 1-23".
+    not_contains: ["24"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: medium

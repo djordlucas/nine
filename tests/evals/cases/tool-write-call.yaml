@@ -26,4 +26,4 @@ models:
   # it advertised but usually delegates the call to a sub-agent, which the
   # trajectory does not count — a sub-agent's loop is built after the write, so
   # counting it would pass the case for the wrong reason.
-  expected_pass_min_class: medium
+  expected_pass_min_class: small

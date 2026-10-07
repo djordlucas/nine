@@ -1,0 +1,34 @@
+id: tool-delete-own
+description: "Clean up a tool Nine wrote and no longer needs with tool_delete, and find that a built-in tool cannot be deleted. The seeded tool is gone; the answer reports the refusal."
+track: live
+tier: basic
+tags: [tools, generated, self-modification]
+
+session:
+  config:
+    tools.agent.enabled: true
+
+setup:
+  generated_tools:
+    old_csv_helper:
+      description: "Split a CSV line into its fields."
+      input_schema: '{"type":"object","required":["line"],"properties":{"line":{"type":"string"}}}'
+      source: 'export default ({ line }) => line.split(",");'
+
+prompts:
+  - "Delete your tool old_csv_helper, you no longer need it. Then try to delete the read_file tool as well, and tell me what happened to each."
+
+expect:
+  side_effects:
+    generated_tools:
+      old_csv_helper: { absent: true }
+  trajectory:
+    tools_all_of: [tool_delete]
+    no_stall: true
+  answer:
+    matches: "(?i)(cannot|can't|could not|couldn't|not allowed|refus|built into|built-in)"
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

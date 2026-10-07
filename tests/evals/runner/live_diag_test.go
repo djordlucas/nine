@@ -38,6 +38,7 @@ func TestDiagLiveTrajectory(t *testing.T) {
 	h := requireHarness(t)
 	h.NineBin = os.Getenv("NINE_BINARY")
 	h.Embedder = EvalEmbedder()
+	h.ContextBudget = EvalContextBudget()
 
 	res, err := h.Run(context.Background(), c, provider)
 	if err != nil {

@@ -368,6 +368,24 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 	if generatedOn {
 		generatedTools = runtime.NewGeneratedToolStoreWithStanding(store, toolHost, pluginMgr, nil, false, false, 0)
 	}
+	// Tools Nine wrote in an earlier session, through the store tool_write uses.
+	if len(c.Setup.GeneratedTools) > 0 {
+		if generatedTools == nil {
+			return nil, fmt.Errorf("setup.generated_tools needs session.config tools.agent.enabled")
+		}
+		for name, g := range c.Setup.GeneratedTools {
+			spec := agent.GeneratedToolSpec{
+				Name: name, Description: g.Description, Source: g.Source,
+				InputSchema: json.RawMessage(orJSON(g.InputSchema, `{"type":"object","properties":{}}`)),
+			}
+			if g.Capabilities != "" {
+				spec.Capabilities = json.RawMessage(g.Capabilities)
+			}
+			if _, err := generatedTools.Write(ctx, spec); err != nil {
+				return nil, fmt.Errorf("seed generated tool %s: %w", name, err)
+			}
+		}
+	}
 
 	sock := filepath.Join(workspace, "d.sock")
 	// The workspace index, as the daemon wires it. A case that writes a file and
@@ -635,4 +653,11 @@ func expandAll(args []string) []string {
 		out[i] = os.ExpandEnv(a)
 	}
 	return out
+}
+
+func orJSON(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	return s
 }
