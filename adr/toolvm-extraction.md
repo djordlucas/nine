@@ -1,192 +1,256 @@
-# Design note — Extracting the tool VM
+# Design note — Extracting the sandbox runtime
 
 **Status:** **Proposed** · **Depends on:** nothing · **Related:** `spec/contracts/toolvm.md`,
-`adr/agent-boundary.md`, `adr/rich-js-tools.md`, `adr/capability-grants.md` ·
-**Amends:** R-TVM.1 and R-TVM.15 (names only, with a compatibility window — see §5)
+`adr/agent-boundary.md`, `adr/rich-js-tools.md`, `adr/durable-and-long-running-tools.md`,
+`adr/capability-grants.md` · **Amends:** R-TVM.1, R-TVM.4, R-TVM.15 (see §6, §9)
 
-`internal/toolvm` is the in-process wasm host behind every sandboxed tool: wazero, the
-QuickJS blob, the guest ABI, capability grants and ceilings, the `net.http` gate and its
-SSRF guard, durable state, resumable jobs. It contains nothing agent-specific. This note
-proposes making it a library that can be embedded without Nine — a host for running
-untrusted, capability-scoped JavaScript or wasm tools.
+The execution engine inside `internal/toolvm` — wazero, the QuickJS blob, the guest ABI,
+capability grants, the `net.http` gate and SSRF guard, durable state — moves to its own
+repository as a general sandbox: **the embedder gives it code, a grant and an input, and it
+runs that code, with nothing beyond the grant, for as long as the embedder lets it.** It has
+no concept of a tool. Tools — manifests, tiers, the registry, shipped tools, jobs, the
+per-call deadline — stay in Nine, rebuilt on top of the library.
 
-**Recommendation:** remove its one Nine import, give the guest ABI neutral names with a
-compatibility window, rename the generated-tier API, and move it to `nine/pkg/toolvm`.
-Split it into its own module or repository only when a consumer other than Nine exists.
-Estimated at about a day of work, in five PRs that each leave Nine green (§7). §8 lists
+Getting there: remove the one Nine import, split the package inside Nine into an engine and a
+tool layer until the compiler enforces the boundary, take every tool concept and every
+default deadline out of the engine, give the ABI neutral names with aliases for existing
+guests, then move the engine to the new repository with its history. §10 has the steps, §11
 what is undecided.
 
 ---
 
-## 1. Current coupling
+## 1. Decisions
 
-The package already has a library-shaped boundary.
+Recorded 2026-10-07.
 
-- **One nine import.** `internal/toolvm` imports `nine/internal/llm` and nothing else from
-  Nine, and only for `Tool.ToLLMDef()` (`internal/toolvm/host.go:954`). `internal/toolvm/deps`
-  imports nothing from Nine.
-- **Small external surface.** wazero, BurntSushi/toml (the manifest), esbuild (`deps/bundle.go`).
-- **Seams already point outward.** `Config` takes callbacks and interfaces — `StateStore`,
-  `TouchGenerated` — and its comments say so: "the daemon wires it to the store; this
-  package has none." The zero `Config` is a disabled host. Grants arrive as a
-  `map[string]Grant`; `nine.toml` parsing lives in `internal/config`, not here.
-- **Self-contained assets.** `qjs.wasm`, `harness.bc`, `stdlib/*.js` and `shipped/*.js` are
-  `go:embed`ed from inside the package, with `quickjs/build.sh` to reproduce the blob.
+| Decision | Consequence |
+|----------|-------------|
+| **No tools in the library.** | No manifest, `Tool`, input schema, tier, registry, `Status` reporting or shipped tools. The library's unit is a compiled program and a run of it. Everything tool-shaped is Nine's (§4). |
+| **The embedder gives it any code.** | JavaScript source or a wasm module, plus the modules that code may import, all supplied by the caller. The library does no loading from disk and no dependency resolution; `deps/` and esbuild stay in Nine (§7). |
+| **Code runs as long as needed.** | The library imposes no default deadline and no default work budget. A run ends when the program returns or the caller's `context.Context` ends. Nine's 5 s default and per-tool timeouts become Nine policy, applied through that context (§5). |
+| **Its own repository.** | Separate repo, module and release cycle from the start; no `pkg/` or in-repo module stage. Nine depends on a tagged version (§8). |
 
-Size: about 10.9k lines of Go including tests, plus about 1.2 MB of embedded QuickJS.
+## 2. Current coupling
 
-Consumers inside Nine: `internal/runtime` (22 files), `internal/agent` (6),
-`internal/cli` (1), `tests/evals/runner` (1). The surface they use is `Host`, `Open`,
-`Config`, `Tool`, `Output`, `Grant`/`Declaration`/`Mount`/`Ceiling`, the `Cap*` constants,
-`Continuation`/`JobContext`, the state and HTTP audit context helpers, `Generated`/`AgentConfig`,
-and `LoadManifest`. That surface is the library's public API on day one.
+- **One Nine import.** `internal/toolvm` imports `nine/internal/llm`, for `Tool.ToLLMDef()`
+  only (`internal/toolvm/host.go:954`). `internal/toolvm/deps` imports nothing from Nine.
+- **External dependencies.** wazero; BurntSushi/toml (the manifest, which stays in Nine);
+  esbuild (`deps/bundle.go`, which stays in Nine). The engine needs only wazero.
+- **Outward-facing seams already exist.** `Config` takes `StateStore` and `TouchGenerated`
+  rather than reaching for the store; grants arrive as `map[string]Grant`, already parsed by
+  `internal/config`; cancellation already works — the runtime is built with
+  `WithCloseOnContextDone(true)` (`host.go:259`).
+- **Embedded assets.** `qjs.wasm`, `harness.bc` and `stdlib/*.js` are `go:embed`ed in the
+  package; `quickjs/build.sh` reproduces the blob.
+- **Consumers in Nine.** `internal/runtime` (22 files), `internal/agent` (6),
+  `internal/cli` (1), `tests/evals/runner` (1). They switch to Nine's tool layer, not to the
+  library directly, except where they configure the engine.
 
-## 2. Reasons for and against
+About 10.9k lines of Go including tests (4.3k without), plus 1.2 MB of QuickJS. The files that
+are tool layer only — `manifest.go`, `load.go`, `generated.go`, `shipped.go`, `calllog.go` — are
+1.2k of the 4.3k; `host.go` mixes both and is where most of the split's work is.
 
-- **A reusable piece on its own.** "Run an LLM-authored tool with no ambient authority and an
-  explicit, auditable grant" is useful to any Go agent framework, MCP server or workflow
-  engine, not only Nine.
-- **Forces the boundary to stay honest.** Today nothing stops a future change from reaching
-  into `internal/runtime` from `toolvm`. A separate module makes that a compile error.
-- **Pairs with `adr/agent-boundary.md`.** That note splits runtime from agent; this one
-  splits the tool sandbox from the runtime.
+## 3. The library
 
-Against: Nine is the only consumer today. Every cross-cutting change
-(a new capability, an ABI bump) becomes two changes and a tag. §6 is about not paying that
-before there is a reason to.
+A runtime compiles programs; a program runs against an input under a grant. Sketch, not a
+final API:
 
-## 3. Library and Nine responsibilities
+```go
+rt, err := sandbox.New(ctx, sandbox.Options{
+    MemoryMB:   64,          // per run; required finite, default below
+    StateStore: myStore,     // nil: the state capability is unavailable
+})
+defer rt.Close(ctx)
 
-| Part | Goes to the library | Stays in Nine |
+prog, err := rt.CompileJS(src, sandbox.Modules{"lib:util": utilSrc})
+// or: rt.CompileWasm(wasmBytes)
+
+res, err := prog.Run(ctx, input, sandbox.Grant{
+    FS:    []sandbox.Mount{{Host: dir, Guest: "/work", Write: true}},
+    HTTP:  &sandbox.HTTPGrant{Allow: []string{"api.example.com"}},
+    Env:   map[string]string{"TOKEN": tok},
+    State: &sandbox.StateGrant{Scope: "job-42", Quota: q},
+})
+// err: the host could not run it (cancelled, out of memory, trapped)
+// res.OK == false: the program failed on its own terms (threw, returned an error)
+```
+
+| Concept | What it is | From today's `toolvm` |
+|---------|-----------|----------------------|
+| `Runtime` | Owns the wazero runtime and the compiled QuickJS blob. One per process. | `Host`, minus the registry |
+| `Program` | Compiled code plus the module map it may import. Instantiated fresh per run. | `Tool.module`, `.source`, `.modules` |
+| `Grant` | The capability set for one run. Nothing outside it exists for the guest. | `Grant`, `Mount`, `HTTPGrant`, `StateGrant` |
+| `Result` | The guest's envelope: `ok`, `output`, `error`, `error_detail`, plus unrecognized fields (§6). | `Result` |
+| Audit hooks | Per-run callbacks for HTTP calls and log lines. | `WithHTTPAudit`, the `log` host function |
+
+The grant is passed per run, not per program, so the same code can run under different
+authority. Nine's resolution — operator grant, generated-tier ceiling, shipped declaration —
+happens before `Run` and is not the library's business.
+
+## 4. Library and Nine responsibilities
+
+The library owns *how code runs and what it can reach*. Nine owns *what the code is, where it
+came from, who approved it, how long it may run, and where its state lives*.
+
+| Part | Library | Nine |
 |------|:---:|:---:|
-| Host, ABI, loader, manifest (`host.go`, `abi.go`, `load.go`, `manifest.go`) | ✓ | |
-| Capabilities, grants, ceilings (`capability.go`) | ✓ | |
-| `net.http` gate, SSRF guard (`nethttp.go`, `ssrf.go`) | ✓ | |
-| Durable state interface and quotas (`state.go`) | ✓ | the SQLite `StateStore` |
-| Resumable-job envelope (`Continuation`, `JobContext`) | ✓ | the job driver, `StandingRunner` |
-| QuickJS blob, harness, `build.sh` | ✓ | |
-| `stdlib/` JS modules | ✓ | |
-| `deps/` (npm resolution and bundling) | ✓, as a subpackage | the `[tools.agent.deps]` policy config |
-| Generated-tier API (`Generated`, `AgentConfig`, `LoadGenerated`) | ✓, renamed — §4.3 | `tool_write`, the store rows, the approval gate |
-| Shipped tools (`shipped/*.js`, `shipped.go`) | open — §8.2 | |
-| `ToLLMDef()` | | ✓, as a helper beside its caller |
-| `nine.toml` → `Grant` translation | | ✓ (`internal/config`) |
+| wazero runtime, QuickJS blob, harness, `build.sh` | ✓ | |
+| Guest ABI and result envelope | ✓ | |
+| Capabilities: fs mounts, env, `net.http` gate, SSRF guard, state, log | ✓ | |
+| Memory cap; optional deadline and work budget per run | ✓ | |
+| Capability-binding JS modules (`fs`, `env`, `state`, `caps`) | ✓ | |
+| `StateStore` interface and quota enforcement | ✓ | the SQLite store |
+| Manifest format, `LoadManifest`, `UserDir` loading, `Collides` | | ✓ |
+| `Tool`, tiers (developer / generated / shipped), registry, `Status` | | ✓ |
+| Grant resolution: `nine.toml`, the generated ceiling, shipped declarations | | ✓ |
+| Default timeout, per-tool timeouts and work budgets, concurrency limit | | ✓ |
+| Resumable jobs: `Continuation`, `JobContext`, `nine:job`, the driver, standing tools | | ✓ |
+| Pure JS modules: `csv`, `date`, `diff`, `html` | open — §11.3 | |
+| Shipped tools (`shipped/*.js`) | | ✓ |
+| npm dependency bundling (`deps/`, esbuild) | | ✓ |
+| `ToLLMDef()` | | ✓ |
 
-The rule: the library owns *how a tool runs and what it may reach*. Nine owns *where tools
-come from, who approves them, and where their state lives*.
+## 5. Bounds
 
-## 4. Changes needed before the move
+| Bound | Library default | Nine |
+|-------|-----------------|------|
+| Wall clock | none — the caller's `context.Context` | `DefaultTimeout` (5 s) and `[tool.<name>] timeout`, as `context.WithTimeout` around `Run` |
+| Work budget (QuickJS ops) | off | `[tools] max_ops`, per-tool overrides, passed as a run option |
+| Linear memory | finite default (16 MiB, as today), set per runtime | `[tools] memory_mb` |
+| Concurrent runs | unbounded | `[tools] max_concurrent`, a semaphore in Nine's tool layer |
 
-### 4.1 Drop the `llm` import
+Memory keeps a finite default because wasm memory cannot be unbounded in practice and a
+guest growing without limit is a host OOM, not a long run.
 
-Remove `Tool.ToLLMDef()`. Add the equivalent function where it is called — it maps three
-fields (`Name`, `Description`, `InputSchema`) onto `llm.ToolDef`. After this, the package
-imports nothing from Nine.
+**Long runs and durability are separate.** With no deadline, one run can last hours inside
+one instance. It does not survive the host process exiting. Work that must survive a restart
+uses Nine's resumable-job pattern — return a cursor, persist it, run again — which needs
+nothing from the library beyond passing the `continue` field through (§6) and the `state`
+capability. A long run holds its memory and, if granted, its mounts for its whole duration;
+bounding that is the embedder's job.
 
-### 4.2 Neutral names in the ABI
+## 6. Guest ABI
 
-The guest-visible names carry the product name. This is the only change a guest can see:
+Every guest-visible name carries the product name today. In a library with no Nine in it they
+become neutral:
 
 | Where | Today | Proposed |
 |-------|-------|----------|
-| Host import module (`abi.go:74`) | `nine` | `toolvm` |
-| Guest exports (`abi.go:61-62`) | `nine_alloc`, `nine_run` | `toolvm_alloc`, `toolvm_run` |
-| Stdlib specifiers (`stdlib/`, `harness.js`) | `nine:fs`, `nine:csv`, … | `toolvm:fs`, `toolvm:csv`, … |
+| Host import module (`abi.go:74`) | `nine` | `sandbox` |
+| Guest exports (`abi.go:61-62`) | `nine_alloc`, `nine_run` | `sandbox_alloc`, `sandbox_run` |
+| Harness export (`abi.go:68`) | `nine_harness` | `sandbox_harness` |
+| Capability modules | `nine:fs`, `nine:env`, `nine:state`, `nine:caps` | `sandbox:fs`, … |
+| Entry module (`harness.js:796`) | `nine:tool` | `sandbox:main` |
 
-Final names are §8.1. Compatibility is §5.
+`sandbox` stands in for the final name (§11.1).
 
-### 4.3 Product vocabulary in the API
+**The result envelope** keeps its shape. The library types `ok`, `output`, `output_b64`,
+`media_type`, `error` and `error_detail`, and returns every other top-level field raw in
+`Result.Extra map[string]json.RawMessage`. Nine's `continue` moves there: the library never
+interprets it, Nine's job driver reads it from `Extra`, and existing guests produce exactly
+the bytes they produce today.
 
-`Generated`, `AgentConfig`, `LoadGenerated` and `Tool.Generated` model Nine's
-"the agent writes its own tools" tier (R-TVM.14). The mechanism is general — an untrusted
-tier capped by a ceiling rather than granted per tool — and the names should say that:
-for example `Untrusted` / `CeilingConfig` / `LoadUntrusted`. Same for comments that cite
-`nine tools show`, `NINE_WORKSPACE` and `[tool.<name>]`; they become statements about the
-`Config` field instead of the config file.
+**Existing guests.** Raw `wasm` developer tools import `nine` and export `nine_run`; JS tools
+and generated tools in the store import `nine:*`. The library takes an alias option —
 
-`Tool.Shipped` and `Tool.Generated` collapse naturally into one `Tool.Tier` enum with
-values the embedder defines or the library fixes (§8.3).
+```go
+sandbox.Options{ABIAliases: sandbox.Aliases{
+    HostModule: "nine", Prefix: "nine:", ExportPrefix: "nine_",
+}}
+```
 
-### 4.4 Spec and docs
+— under which it accepts the old names alongside the new. Nine sets it; nobody else needs it,
+and the library's own docs mention it only as "accept a second set of names". Nine reports a
+tool that resolved through an alias as deprecated in `nine tools`, and a store migration
+rewrites `nine:` specifiers in generated tools. Nine's own modules (`nine:job`, and whichever
+pure modules it keeps) stay `nine:`-prefixed: they are Nine's, supplied through the module
+map like any embedder's.
 
-The normative parts of `spec/contracts/toolvm.md` that describe the runtime — R-TVM.1 to .6,
-.8, .9, .12, .15, .18, .19 — move to the library as its contract. The parts that describe
-Nine — R-TVM.7 (grants in `nine.toml`), .10/.11 (loading and reporting), .14 (the generated
-tier's lifecycle and approval), .20 (standing tools) — stay, and cite the library's
-contract by version. `spec/conformance.md` gains one row: the pinned library version.
+## 7. Code and modules
 
-## 5. Compatibility
+The library takes code as given:
 
-Existing guests break under §4.2 if the old names simply disappear: every developer tool
-built as raw `wasm` imports from `nine` and exports `nine_run`, and every JS tool and
-generated tool in the store imports `nine:*`.
+- **JavaScript**: one ES module source, whose default export is called with the input. Plus a
+  `Modules` map, specifier → source, of everything it may import. Nothing outside the map
+  resolves. This is today's R-TVM.8 module map, with the embedder filling it.
+- **wasm**: a module implementing the two exports.
 
-Proposal:
+The library does not read files, fetch packages, bundle, or transpile. An embedder that wants
+npm packages bundles them first; Nine keeps `deps/` and esbuild for `tool_write` and hands
+the library the bundled source. The capability modules (`sandbox:fs` and so on) are always
+available to JS, because they are bindings to host functions rather than library code, and a
+binding without the matching grant reports the missing capability by name.
 
-- **Accept both for one major version.** The host registers the host module under both
-  names; the loader looks for `toolvm_run` then `nine_run`; the module resolver maps
-  `nine:x` to `toolvm:x`. All three are a few lines each.
-- **Report it.** A tool that resolves through an old name loads, with a `deprecated` note
-  in its `Status`, so `nine tools` shows what needs updating.
-- **Rewrite generated tools in place.** They are rows Nine owns; a migration can rewrite
-  their import specifiers rather than waiting for them to be regenerated.
-- **Bump `ABIVersion` to 2** when the old names are dropped, not when the new ones are added.
+## 8. Repository and release
 
-## 6. Packaging options
+| Item | Plan |
+|------|------|
+| Location | `github.com/djordlucas/<name>` (§11.1) |
+| History | Carried over: `git filter-repo --path internal/toolvm` on a clone, then delete the tool layer in the new repo's first commit. `blame` on the SSRF guard and ABI is worth keeping. |
+| Versioning | `v0.x` until Nine has run on it for a release; breaking changes allowed under `v0` with a changelog entry. |
+| Assets | `qjs.wasm` and `harness.bc` checked in with their `.sha256`, as today. A CI job rebuilds them with `build.sh` and fails on a mismatch. |
+| CI | The engine's own tests: sandbox denial, SSRF, memory, cancellation, work budget, concurrency, state quotas, the `ABIAliases` path. |
+| Nine | `require`s a tag and re-vendors. Cross-repo development through a local `go.work`, never a committed `replace`. |
+| Process | A change spanning both lands as a library PR and tag, then a Nine PR bumping it. `sync-nine` and `sync-evals` learn that the engine's spec lives in the library. |
 
-In order of commitment. Each is a superset of the one before.
+## 9. Spec split
 
-1. **Public package inside Nine** — `nine/pkg/toolvm`. Do §4 and move the directory. Anyone
-   can import it at once; they pull in Nine's whole `go.mod` to do it.
-2. **Separate module, same repo** — `nine/toolvm/go.mod`, tagged `toolvm/vX.Y.Z`. Its own
-   small dependency set; changes that touch both still land in one PR; Nine depends on it
-   through a `replace` during development and a tag at release.
-3. **Own repository** — `github.com/djordlucas/toolvm` (name open, §8.1). The clearest story
-   for an outside user, and the full two-repo cost: two PRs and a tag per cross-cutting
-   change, a re-vendor in Nine, and `sync-nine` / `sync-evals` taught about it.
+| Library contract | Stays in `spec/contracts/toolvm.md` |
+|------------------|------------------------------------|
+| R-TVM.1 guest ABI (renamed, with aliases) | R-TVM.7 grants in `nine.toml` |
+| R-TVM.2 two kinds | R-TVM.10, .11 loading, visibility, reporting |
+| R-TVM.3 one instance per run | R-TVM.14 generated tier |
+| R-TVM.4 bounds — mechanisms only; Nine's defaults stay with Nine | R-TVM.15 npm deps; Nine's own `nine:*` modules |
+| R-TVM.5, .6 capability set, conferred never claimed | R-TVM.16 workspace file tools |
+| R-TVM.8 imports are the module map | R-TVM.19 long-running tools |
+| R-TVM.9 trimmed interpreter — no `std`/`os`, a security requirement the library keeps | R-TVM.20 standing tools |
+| R-TVM.12 `net.http` | |
+| R-TVM.18 durable state — the interface and quotas | |
 
-**Recommendation:** do option 1 now — it is where the real work (§4, §5) happens — and move
-to 2 or 3 when a consumer other than Nine exists. Fix the ABI names (§4.2) before anything
-is published under a public path, because after that a rename is a migration for someone
-else.
+Nine's contract cites the library's by version. `spec/conformance.md` records the pinned tag.
 
-## 7. Plan
+## 10. Plan
 
-1. Drop `ToLLMDef` (§4.1). No behavior change.
-2. Neutral ABI names with both accepted (§4.2, §5). Shipped tools and the stdlib switch to
-   the new names; tests cover both.
-3. Rename the generated-tier API (§4.3). Mechanical; callers in `internal/runtime`.
-4. Decide shipped tools (§8.2) and move them if they are leaving.
-5. Move to `pkg/toolvm` and rewrite imports.
-6. Split the spec (§4.4).
-7. Later, on demand: option 2 or 3.
+Each step is one Nine PR that leaves Nine green; steps 1–5 happen before the new repository
+exists, so the boundary is proven by the compiler while a mistake is still cheap.
 
-Steps 1 to 5 are each one PR that leaves Nine green.
+1. Move `ToLLMDef` out of `toolvm`. No behavior change.
+2. Split `internal/toolvm` into `internal/toolvm/sandbox` (engine) and `internal/toolvm`
+   (tool layer). `sandbox` must not import its parent; a test asserts its import list is
+   wazero and the standard library.
+3. Move tool concepts out of `sandbox`: manifest, `Tool`, registry, tiers, `Status`,
+   `Continuation`/`JobContext` (via `Result.Extra`), shipped tools, `deps/`.
+4. Remove engine defaults for deadline, work budget and concurrency; the tool layer applies
+   Nine's through `context` and options. Existing timeout tests move to the tool layer.
+5. Neutral ABI names with `ABIAliases`; Nine sets the aliases. The module names are also
+   in `harness.js` and `qjs_host.c`, so this rebuilds `harness.bc` and `qjs.wasm` with
+   `build.sh`. Store migration for generated tools; deprecation note in `nine tools`.
+6. Create the repository from `internal/toolvm/sandbox` with history (§8), tag `v0.1.0`.
+7. Nine requires `v0.1.0`, deletes `internal/toolvm/sandbox`, re-vendors.
+8. Split the spec (§9) and move the engine's docs to the library's README.
 
-## 8. Open questions
+## 11. Open questions
 
-1. **The name.** `toolvm` is the package name, and generic. It is also what ends up in the
-   import module and the stdlib specifiers, so choosing it is choosing the ABI.
-2. **Shipped tools.** `read_file`, `edit_file`, `delete_file`, `trash_list` and the rest
-   encode Nine's workspace-and-trash model (`adr/file-namespaces.md`). In the library as an
-   optional `tools/fs` subpackage, or kept in Nine? The HTTP ones (`http_get`, `http_post`,
-   `web_page_read`) are more generic than the file ones.
-3. **Tiers.** Does the library know about tiers (developer, untrusted, first-party) as a
-   fixed enum, or does it expose one mechanism — a grant, optionally capped — and let the
-   embedder name its tiers?
-4. **The resumable-job envelope.** `Continuation` is in the library, the driver is not. Is a
-   minimal reference driver worth shipping so an embedder can run a resumable tool without
-   writing one?
-5. **`deps`.** npm resolution brings esbuild and network access at write time. A subpackage
-   keeps it out of a minimal embed — is that enough, or should it be its own module?
-6. **The QuickJS blob.** Built by `quickjs/build.sh` and checked in with a sha256. Does that
-   stay a checked-in artifact, or does the library publish it as a release asset?
+1. **The name.** It becomes the repository, the Go package, the host import module, the
+   export prefix and the module prefix. `sandbox` is a placeholder.
+2. **Output type.** `output` is a string because a model reads it. A general library might
+   want any JSON value. Changing it is an ABI change; keeping it costs embedders a
+   `JSON.stringify`.
+3. **Pure modules.** `csv`, `date`, `diff`, `html` are generic and tested under the trimmed
+   interpreter. Ship them as an optional module set (`sandbox.StdModules()`) the embedder adds
+   to its map, or leave them as Nine's?
+4. **Long runs and the work budget.** A run with no deadline and no budget that spins is
+   indistinguishable from one that is working. Should the library expose a progress or
+   heartbeat signal the embedder can watch, or is cancellation enough?
+5. **Concurrency.** A semaphore is a few lines in either place. In Nine (as proposed), or a
+   library option, since every embedder will want one?
 
 ## Limits
 
 | Limit | Detail |
 |-------|--------|
 | Nothing built | Proposed only; no code has moved. |
-| No outside consumer yet | The case for options 2 and 3 (§6) rests on a consumer that does not exist; this note recommends not paying for them until one does. |
-| API stability not designed | Moving to `pkg/` makes today's surface public as-is. No review of which exported names should stay exported has been done. |
-| Plugins out of scope | Native plugins (`spec/contracts/plugin.md`) are a separate backend and are not part of this extraction. |
+| API is a sketch | §3 shows shapes, not signatures. The real API comes out of step 2 of the plan. |
+| No outside consumer yet | The library's API is designed from Nine's use alone until another embedder exists. |
+| Aliases have no end date | `ABIAliases` stays as long as Nine has guests using old names; this note does not set a removal version. |
+| Native plugins out of scope | Plugins (`spec/contracts/plugin.md`) are a separate backend and unaffected. |
