@@ -109,6 +109,27 @@ export default ({ args }, nine) => {
 };
 ```
 
+**Lifecycle.** The process runner starts a live process; nothing else runs one. Starting means
+creating a wasm instance in the live pool with the tool's grants, and calling its default export
+once with `{ args, process }`. The program runs from there, typically a loop around
+`nine.next()`, until it returns, throws or is stopped.
+
+| Occasion | What starts |
+|---|---|
+| Daemon boot | every process in the *running* state, up to `max_running` |
+| Creation | a process written with `tool_write`, at once; a `pursue` process for a goal `goal_create` makes |
+| Start | `process_start` from a model (§9), `nine process start` from the operator |
+| A goal back to *active* | the processes bound to it |
+| A failure | the same process, with the standing tools' backoff; repeated failures leave it *failing*, reported to the human feed |
+| A revision | the new version, after the old one stops (§9) |
+
+Stopping — by a model, the operator, its goal, a budget or the daemon's shutdown — makes the
+pending `nine.next()` or `nine.llm.turn()` throw a *stopped* error, then closes the instance. A
+restart loses only the instance's memory: the program starts again from the top, and its first
+`nine.next()` returns the triggers that came due while it was down, each once, so a scheduled run
+missed during a restart still happens. The runner records who stopped a process and when, which
+decides who may start it again (§9).
+
 ---
 
 ## 3. What each mechanism becomes
@@ -303,7 +324,24 @@ granted per role like any other:
 |---|---|
 | `process_list`, `process_show` | state, triggers, budget used, recent journal |
 | `process_send(session, text)` | a message to a process session, which is a trigger; the process receives it from `nine.next()` |
-| `process_pause`, `process_resume`, `process_stop` | control, for processes Nine wrote; shipped and declared ones are the operator's |
+| `process_start`, `process_stop` | control, under the rule below |
+
+A start grants nothing a process did not have — it runs under its own grants and role, and its
+budget, `max_running` and the memory cap bound what it costs — so a model may start any stopped
+process, shipped and declared ones included. What the rule protects is the decision behind the
+stop:
+
+| Stopped by | `process_start` from a model |
+|---|---|
+| The operator | Refused: an operator's stop is the operator's to undo |
+| A model | Allowed |
+| Its goal (paused, done, archived) | Refused: the model reactivates the goal instead, since the goal's status decides |
+| Itself (returned or threw) | Allowed, e.g. after a revision fixed it |
+| Health (*failing*) | Allowed: a model that fixed the cause may retry |
+| Its budget | Refused until the budget's period resets or the operator raises it |
+
+A refusal names its reason: *stopped by the operator on 2026-10-06; only the operator can start
+it.*
 
 The exchange is asynchronous: the model sends, and the answer comes back through what the process
 writes — files, the database, a pipe into a session the model reads. A turn never waits on a
@@ -369,7 +407,7 @@ agent's session (§7), so existing condition triggers keep their behavior. `max_
 |---|---|---|
 | 0 | Turn snapshots for `pursue` and `reflect`; journal snapshots for a standing tool and a condition trigger | Recorded on `main` before any change |
 | 1 | The unification: process sessions as the one background mechanism; `pursue`, `reflect` shipped; pipes with today's delivery (`report_to`); goal binding; `[[process]]` with the aliases; `[processes]` limits; live mode with `nine.next()`, `nine.llm.turn()` and `nine.report()`, for shipped processes only; `pursue` and `reflect` as live JS tools; attached processes; session plans removed | Snapshots unchanged; live evals match the baseline (`goal-create`, `delegate-subagent`, `workflow-plan`, the standing cases) |
-| 2 | Budgets and health for every process; the roster in the CLI and TUI; `process_list`, `process_show`, `process_send`; the sender label on piped messages (§7), re-recording the condition-trigger snapshot | An exhausted budget pauses a process and reaches the human feed |
+| 2 | Budgets and health for every process; the roster in the CLI and TUI; `process_list`, `process_show`, `process_send`, `process_start`, `process_stop`; the sender label on piped messages (§7), re-recording the condition-trigger snapshot | An exhausted budget pauses a process and reaches the human feed |
 | 3 | Processes Nine writes: `allow_processes`, `llm` under operator-authored roles, the `process` role | A Nine-written digest process runs on a schedule and summarizes through its session |
 | 4 | Event triggers, lineage, `max_depth` | Two processes triggering each other stop at `max_depth`, the skip journaled |
 | 5 | `sql`, its policy, `sql_query` | Denied statements are refused with a reason |
@@ -393,6 +431,7 @@ agent's session (§7), so existing condition triggers keep their behavior. `max_
 | How processes run | **Live mode**: an instance alive until stopped, with blocking `nine.next()` and `nine.llm.turn()`. Slice mode stays for today's standing tools and predicates, without model access |
 | Several processes on one session | **Allowed**: one owner sets the role; attached processes' turns run in the session under it, serialized (§4) |
 | How a conversation uses processes | **Through process tools**, asynchronously (§9); a live tool is never callable as an ordinary tool |
+| Who may start a stopped process | **A model may start any stopped process**, shipped and declared included, unless the operator, its goal or its budget stopped it (§9) |
 | How a watcher reaches a thinker | **Pipes** (`report_to`, §7): one process's output becomes a message to another's session. Condition triggers become shorthand for a pipe; their delivery rules are kept |
 
 ---
@@ -400,6 +439,9 @@ agent's session (§7), so existing condition triggers keep their behavior. `max_
 ## Limits
 
 - Nothing here is built.
+- A started live process holds its instance while it waits in `nine.next()`. Hibernating idle
+  processes (closing the instance, restarting it on the next trigger) would save memory at the
+  cost of losing in-memory state more often; it is left out until memory requires it.
 - One daemon is one instance: several instances, children and lineage are out of scope.
 - Rollback (§9) catches a revision that fails, not one that runs and does worse.
 - The aliases (§11) keep old configuration working for one minor release only.
