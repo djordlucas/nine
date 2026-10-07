@@ -80,7 +80,7 @@ func snapshotCases() []snapshotCase {
 	return []snapshotCase{
 		{
 			name: "orchestrator",
-			c: Case{Setup: setup, Prompts: []string{"What is my favourite colour? Save the answer under user/answer."}},
+			c:    Case{Setup: setup, Prompts: []string{"What is my favourite colour? Save the answer under user/answer."}},
 			script: oneToolThenAnswer("memory_set",
 				map[string]any{"key": "user/answer", "value": "teal"}),
 		},
@@ -134,25 +134,31 @@ func TestTurnSnapshots(t *testing.T) {
 			}
 			defer res.Close()
 
-			got := renderSnapshot(t, p.calls, res)
-			path := filepath.Join("testdata", "snapshots", sc.name+".json")
-			if *updateSnapshots {
-				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(path, got, 0o644); err != nil {
-					t.Fatal(err)
-				}
-				return
-			}
-			want, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatalf("read snapshot (record with -update): %v", err)
-			}
-			if string(got) != string(want) {
-				t.Errorf("%s differs at line %s; review with -update and git diff", path, firstDiff(string(want), string(got)))
-			}
+			checkSnapshot(t, sc.name, renderSnapshot(t, p.calls, res))
 		})
+	}
+}
+
+// checkSnapshot compares got with testdata/snapshots/<name>.json, or rewrites
+// that file under -update.
+func checkSnapshot(t *testing.T, name string, got []byte) {
+	t.Helper()
+	path := filepath.Join("testdata", "snapshots", name+".json")
+	if *updateSnapshots {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, got, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read snapshot (record with -update): %v", err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("%s differs at line %s; review with -update and git diff", path, firstDiff(string(want), string(got)))
 	}
 }
 

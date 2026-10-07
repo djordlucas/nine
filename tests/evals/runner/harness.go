@@ -92,12 +92,74 @@ func (r *RunResult) Close() {
 // store/workspace remain live for grading until Close. Isolation is total: a
 // fresh schema, a fresh workspace, and a fresh daemon per call.
 func (h *Harness) Run(ctx context.Context, c *Case, provider llm.Provider) (res *RunResult, err error) {
+	live, err := h.start(ctx, c, provider)
+	if err != nil {
+		return nil, err
+	}
+	r := live.Result
+	defer func() {
+		if err != nil {
+			r.Close()
+			res = nil
+		}
+	}()
+
+	// 7. Drive the prompts on one conversation.
+	client, err := protocol.Connect(live.Sock)
+	if err != nil {
+		return nil, err
+	}
+	r.cleanups = append(r.cleanups, func() { client.Close() }) //nolint:errcheck
+
+	agentID, _, _, err := client.NewConversationInteractive(c.Session.Interactive)
+	if err != nil {
+		return nil, err
+	}
+	r.AgentID = agentID
+
+	// Snapshot goal count before the prompts, so grading can count goals the run
+	// itself created (setup may pre-seed some).
+	if goals, gerr := live.Result.Store.GoalList(); gerr == nil {
+		r.PreGoals = len(goals)
+	}
+
+	answers, err := driveTurns(ctx, live.Sock, client, agentID, c)
+	if err != nil {
+		return nil, err
+	}
+	r.Answers = answers
+
+	// 8. Drain the journal, then read it back for grading.
+	live.CloseJournal()
+	events, err := r.Store.SessionEventsByAgent(agentID)
+	if err != nil {
+		return nil, fmt.Errorf("read journal: %w", err)
+	}
+	r.Events = events
+
+	return r, nil
+}
+
+// live is a started daemon for one case, before any conversation: the production
+// assembly over the case's isolated store, workspace, plugins and tool host.
+type live struct {
+	Result *RunResult
+	Daemon *runtime.Daemon
+	Tools  *toolvm.Host
+	Sock   string
+	// CloseJournal drains the event sink so the journal can be read; idempotent.
+	CloseJournal func()
+}
+
+// start builds and starts the daemon for c (steps 1–6 of Run). The caller drives
+// it and closes live.Result when done; on error everything built is torn down.
+func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv *live, err error) {
 	r := &RunResult{}
 	// On any setup error, unwind whatever we already built.
 	defer func() {
 		if err != nil {
 			r.Close()
-			res = nil
+			lv = nil
 		}
 	}()
 
@@ -271,40 +333,7 @@ func (h *Harness) Run(ctx context.Context, c *Case, provider llm.Provider) (res 
 		return nil, err
 	}
 
-	// 7. Drive the prompts on one conversation.
-	client, err := protocol.Connect(sock)
-	if err != nil {
-		return nil, err
-	}
-	r.cleanups = append(r.cleanups, func() { client.Close() }) //nolint:errcheck
-
-	agentID, _, _, err := client.NewConversationInteractive(c.Session.Interactive)
-	if err != nil {
-		return nil, err
-	}
-	r.AgentID = agentID
-
-	// Snapshot goal count before the prompts, so grading can count goals the run
-	// itself created (setup may pre-seed some).
-	if goals, gerr := store.GoalList(); gerr == nil {
-		r.PreGoals = len(goals)
-	}
-
-	answers, err := driveTurns(ctx, sock, client, agentID, c)
-	if err != nil {
-		return nil, err
-	}
-	r.Answers = answers
-
-	// 8. Drain the journal, then read it back for grading.
-	closeSink()
-	events, err := store.SessionEventsByAgent(agentID)
-	if err != nil {
-		return nil, fmt.Errorf("read journal: %w", err)
-	}
-	r.Events = events
-
-	return r, nil
+	return &live{Result: r, Daemon: daemon, Tools: toolHost, Sock: sock, CloseJournal: closeSink}, nil
 }
 
 // driveTurns sends each prompt in order and returns the final answers. When the
