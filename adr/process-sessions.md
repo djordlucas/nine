@@ -352,6 +352,28 @@ run, holds none of these tools, so a process cannot use its turns to steer proce
 first `rollback_after` invocations (default 3) is restored to the previous one, and the restore
 reaches the human feed and the session's history.
 
+**Deleting.** `tool_delete` on a process removes it:
+
+| What | On deletion |
+|---|---|
+| Its running instance | Stopped first, as any stop: the pending `nine.next()` or `nine.llm.turn()` throws |
+| Its session | Kept as history, like a finished goal's, and removed by the session-retention sweep |
+| Its previous versions | Deleted with it; rollback applies only to a process that exists |
+| Pipes into it | The senders' reports go to the human feed, as undeliverable ones do, and the roster flags each sender |
+| Processes attached to its session | Stopped, with the reason reported |
+
+| Process | Who may delete it |
+|---|---|
+| Written by Nine | A model with `tool_delete`, unless the operator stopped it — deleting would undo that stop as starting would; the operator, always |
+| Declared (`[[process]]`) | The operator, by removing the block |
+| Shipped | Nobody |
+
+**The operator's delete.** Today only a model can delete a tool Nine wrote; the operator has no
+command, endpoint or TUI action for it, and removing a wrong or unwanted generated tool means
+asking the model or editing the store. `nine tools delete <name>`, `DELETE /tools/{name}` and a TUI
+action close that gap, for generated tools and processes alike, and refuse shipped and developer
+tools. It is independent of process sessions and ships before them.
+
 ---
 
 ## 10. Genesis
@@ -407,7 +429,7 @@ agent's session (§7), so existing condition triggers keep their behavior. `max_
 |---|---|---|
 | 0 | Turn snapshots for `pursue` and `reflect`; journal snapshots for a standing tool and a condition trigger | Recorded on `main` before any change |
 | 1 | The unification: process sessions as the one background mechanism; `pursue`, `reflect` shipped; pipes with today's delivery (`report_to`); goal binding; `[[process]]` with the aliases; `[processes]` limits; live mode with `nine.next()`, `nine.llm.turn()` and `nine.report()`, for shipped processes only; `pursue` and `reflect` as live JS tools; attached processes; session plans removed | Snapshots unchanged; live evals match the baseline (`goal-create`, `delegate-subagent`, `workflow-plan`, the standing cases) |
-| 2 | Budgets and health for every process; the roster in the CLI and TUI; `process_list`, `process_show`, `process_send`, `process_start`, `process_stop`; the sender label on piped messages (§7), re-recording the condition-trigger snapshot | An exhausted budget pauses a process and reaches the human feed |
+| 2 | Budgets and health for every process; the roster in the CLI and TUI; deletion (§9); `process_list`, `process_show`, `process_send`, `process_start`, `process_stop`; the sender label on piped messages (§7), re-recording the condition-trigger snapshot | An exhausted budget pauses a process and reaches the human feed |
 | 3 | Processes Nine writes: `allow_processes`, `llm` under operator-authored roles, the `process` role | A Nine-written digest process runs on a schedule and summarizes through its session |
 | 4 | Event triggers, lineage, `max_depth` | Two processes triggering each other stop at `max_depth`, the skip journaled |
 | 5 | `sql`, its policy, `sql_query` | Denied statements are refused with a reason |
@@ -431,6 +453,7 @@ agent's session (§7), so existing condition triggers keep their behavior. `max_
 | How processes run | **Live mode**: an instance alive until stopped, with blocking `nine.next()` and `nine.llm.turn()`. Slice mode stays for today's standing tools and predicates, without model access |
 | Several processes on one session | **Allowed**: one owner sets the role; attached processes' turns run in the session under it, serialized (§4) |
 | How a conversation uses processes | **Through process tools**, asynchronously (§9); a live tool is never callable as an ordinary tool |
+| Deleting processes and generated tools | **`tool_delete`** for a model, within the stop rule; **`nine tools delete`, `DELETE /tools/{name}` and the TUI** for the operator, for anything Nine wrote; shipped never. The operator's delete ships first, on its own (§9) |
 | Who may start a stopped process | **A model may start any stopped process**, shipped and declared included, unless the operator, its goal or its budget stopped it (§9) |
 | How a watcher reaches a thinker | **Pipes** (`report_to`, §7): one process's output becomes a message to another's session. Condition triggers become shorthand for a pipe; their delivery rules are kept |
 
