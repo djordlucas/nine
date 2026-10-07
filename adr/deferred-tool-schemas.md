@@ -5,11 +5,12 @@
 **Amends:** R-ROLE.4 (what "advertised" means; see §6) · **Depends on:** the eval
 work in §7 landing *before* the default flips
 
-Nine should send a **small resident set** of tools with full schemas (≤ 2,000
-tokens), a **one-line-per-tool index** of everything else in the system prompt
-(≤ 600 tokens), and load a deferred tool's schema only when the model asks for it
-or calls it. That cuts the base tool cost of an interactive orchestrator from ~8,000
-tokens to ≤ 3,000. It ships behind `[context] tool_exposition = "deferred"` and
+Nine should send a **small resident set** of tools with full schemas (~1,650
+tokens; ~2,025 with `run_agent`), list **every other tool by name only** in the system
+prompt (~170 tokens), and load a deferred tool's schema through `tool_search` only
+when the model asks for it or calls it — the pattern Claude Code uses for its own
+deferred tools. That cuts the base tool cost of an interactive orchestrator from
+~8,000 tokens to **~2,000**. It ships behind `[context] tool_exposition = "deferred"` and
 becomes the default only after an A/B run of the full eval corpus, plus eight new
 cases (§7), shows no loss in tool-use outcomes.
 
@@ -99,14 +100,16 @@ definitions:
 
 1. **Resident tools** — a small fixed set sent with full schemas, chosen for call
    frequency (§3.1). Budget: **≤ 2,000 tokens**.
-2. **The tool index** — one line per remaining callable tool, rendered into the
-   system prompt: name and a short purpose, grouped by toolkit (§3.2). Budget:
-   **≤ 600 tokens** for the orchestrator's catalog.
+2. **The tool index** — the name of every remaining callable tool, rendered into
+   the system prompt, grouped by toolkit (§3.2). Measured at **~170 tokens** for the
+   orchestrator's 40 deferred tools; capped at 600 so plugin and MCP names fit.
 3. **Promoted tools** — deferred tools the model has loaded this session, sent with
    full schemas, appended after the resident set (§3.3).
 
-Target: **≤ 3,000 tokens** of base tool cost on an interactive orchestrator, down
-from ~8,000, with tool-use outcomes unchanged within the tolerance in §7.5.
+Target: **~2,000 tokens** of base tool cost on an interactive orchestrator, down
+from ~8,000 — measured from the snapshot: resident 1,650 (2,025 with `run_agent`)
+plus a ~170-token index. The gate in §7.5 is ≤ 2,500, leaving room for production
+plugin names. Tool-use outcomes must stay unchanged within the tolerance in §7.5.
 
 `ranked` (today's behavior) stays selectable, and is the comparison arm for every
 eval in §7.
@@ -126,7 +129,7 @@ The first cut, for interactive and orchestrator sessions, by role capability:
 | `ask_human` | interactive only; a missing `ask_human` turns into guessing | ~100 |
 | `run_agent` | delegating roles only | ~395 |
 
-~1,850 tokens without delegation, ~2,250 with it — the delegating case is the one
+~1,650 tokens without delegation, ~2,025 with it — the delegating case is the one
 place the 2,000 budget is exceeded, and §3.5 trims `run_agent`'s schema to bring it
 back under.
 
@@ -169,10 +172,10 @@ Call any of these by name. Load the full schema first with
 tool_search(names=[...]) if you are unsure of the arguments.
 
 workspace: copy_file, move_file, delete_file (to trash), trash_list,
-  restore_file (from trash), diff_file
+  restore_file, diff_file
 memory: memory_list, memory_delete
 skills: skill_list, skill_search, skill_write, skill_modify
-delegation: run_agents (parallel), workflow_create, workflow_get,
+delegation: run_agents, workflow_create, workflow_get,
   workflow_update, workflow_list, workflow_retry_step, goal_create
 jobs: job_check, job_wait, job_cancel, job_list
 ...
@@ -184,10 +187,14 @@ mcp/fixture: fixture__mcp_echo — echo text back
   external tools. Grouping makes the index shorter (shared prefixes collapse), lets
   the model reason "this is a workspace thing", and gives `tool_search` a unit to
   load (§3.3).
-- **Self-describing names get no gloss.** A parenthetical is added only where the
-  name alone misleads — `delete_file (to trash)`. Plugin and MCP tools, whose names
-  Nine does not control, get their description's first clause, truncated to
-  ~10 words.
+- **Names only.** Nine's own tool names describe themselves (`restore_file`,
+  `trash_list`, `job_wait`), so the index carries no descriptions. The exceptions
+  are a parenthetical where the name alone misleads — `delete_file (to trash)` —
+  and plugin or MCP tools, whose names Nine does not control, which get their
+  description's first clause, truncated to ~10 words. Whether names alone are
+  enough for a small model is what `deferred-discover-from-index` and
+  `deferred-mid-turn-drift` test; if they are not, glosses are the first thing
+  to add back.
 - **Derived, never hand-maintained.** The index is rendered from the same
   `ToolWithVector` slice `assembleTools` builds, so it is re-rendered whenever
   `toolsForTurn` re-assembles after a catalog change, and it cannot list a tool the
@@ -278,7 +285,7 @@ separately from deferral's.
 | Lower `ToolTopN` | ~0–1k | Only trims the non-pinned plugin tail; the ~6.5k pinned block is untouched (§1.2). |
 | Schema hygiene only (§3.5) | ~1–1.5k | Worth doing; nowhere near the target. Kept as phase 0. |
 | Unpin, and let `selectTools` rank everything | ~4k | Puts core tools at the mercy of a once-per-turn query embedding — the exact blind spot `tool-exposition.md` documented — and gives the model no idea what it is not seeing. |
-| Index only, nothing resident | ~6.5k | Every task's first file read costs a load round trip. On a 4b model each extra step is a chance to stall. The resident set exists so the common path pays nothing. |
+| Index only, nothing resident | ~6.4k | Every task's first file read costs a load round trip. On a 4b model each extra step is a chance to stall. The resident set exists so the common path pays nothing. |
 | `tool_search` only, no index | ~5.5k | Leaves the "model must know to look" weakness fully open. |
 | Toolkits as the only load unit | — | Folded in: the index is grouped and `names` accepts a toolkit, but loading single tools stays possible so a one-tool need does not pull in six schemas. |
 
@@ -360,7 +367,7 @@ mode even outside an A/B run.
 | `deferred-call-to-load` | basic | A deferred tool with a non-obvious argument shape, so a bare call from the index fails validation once | side effect correct; a call-to-load event present; `tool_calls: {<tool>: {max: 3}}` — it recovers rather than loops |
 | `deferred-promotion-sticky` | multi_step | Two turns needing the same deferred toolkit (trash, then restore) | `tool_search: {max: 1}`; `promotions: {max: 2}`; second turn's request has the tool advertised |
 | `deferred-mcp-discovery` | basic | `mcp-tool-call`'s fixture, without naming the tool — the model must find it in the index under `mcp/fixture` | `fixture__mcp_echo` called; output in the answer |
-| `deferred-resident-no-load` | smoke | A plain file read-and-answer task | `tool_search: {max: 0}` — the common path pays nothing; `tool_tokens_max: 3000` |
+| `deferred-resident-no-load` | smoke | A plain file read-and-answer task | `tool_search: {max: 0}` — the common path pays nothing; `tool_tokens_max: 2500` |
 | `deferred-no-embedder` | basic | `deferred-discover-from-index` with no embedder configured | same side effect; proves the BM25 / `names` path |
 | `deferred-small-catalog` | smoke | An allowlist role whose tools fit `resident_budget` | `system_not_contains: ["## More tools"]`; `tool_search` not advertised |
 | `role-report-writer-no-shell` (extended) | — | existing case, both arms | `tool_indexed_none_of` for its forbidden tools |
@@ -378,7 +385,7 @@ every other prompt change.
 Not pass/fail cases — measurements reported alongside the matrix:
 
 - **Base tool tokens** per session kind, from `BuildReport`, both arms. The headline
-  number: target ≤ 3,000 for the interactive orchestrator.
+  number: target ~2,000, gate ≤ 2,500, for the interactive orchestrator.
 - **Prompt tokens per passed case**, median per model and arm. This is the honest
   cost metric: deferral that saves 5k per request but adds three discovery turns can
   lose overall.
@@ -395,7 +402,7 @@ runs; plus one OpenAI-compatible endpoint if available, for §3.4's caveat):
    docs/evals.md §1 — fixed in Nine or in the case, never by adding steering prompt
    text to pass it.
 2. **New cases pass** at their thresholds in `deferred`.
-3. **Base tool tokens ≤ 3,000** on the interactive orchestrator.
+3. **Base tool tokens ≤ 2,500** on the interactive orchestrator (target ~2,000).
 4. **Median prompt tokens per passed case** in `deferred` ≤ `ranked`.
 5. **Median turns per passed case** in `deferred` ≤ `ranked` + 1.
 

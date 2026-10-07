@@ -61,7 +61,7 @@ changed; the document stays as the record and is not rewritten.
 | `agent-boundary.md` | Splitting Nine into a runtime and an agent behind one interface; today's behavior becomes the internal agent, and a mode lets an external agent (an API client) drive the runtime instead |
 | `codebase-improvement.md` | Design note: prioritized improvements across the tree |
 | `critic.md` | Assessment of the feature set, the limits and the positioning: findings `C1`–`C11`, what is differentiated, and where Nine should be aimed |
-| `deferred-tool-schemas.md` | Cutting base tool-schema cost from ~8k to ≤ 3k tokens: a small resident set, a one-line index of the rest, load-on-demand with promotion. Adds an A/B exposition arm and new cases to the evals. Amends R-ROLE.4. |
+| `deferred-tool-schemas.md` | Cutting base tool-schema cost from ~8k to ~2k tokens: a small resident set, the rest listed by name, load-on-demand with promotion. Adds an A/B exposition arm and new cases to the evals. Amends R-ROLE.4. |
 | `durable-and-long-running-tools.md` | Giving a sandboxed tool memory and letting work outlive a turn. Amends I-TVM.3. |
 | `generated-tool-authoring-loop.md` | Shortening the write→fail→rewrite loop for agent-authored tools: parse at write time, dry-run, logs on failure, stdlib gaps, catalog hygiene. |
 | `event-log.md` | Investigation behind the session journal. Written against PostgreSQL; the store is SQLite. |
