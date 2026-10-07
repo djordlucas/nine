@@ -470,6 +470,22 @@ func (c *Client) ShowStanding(id string, n int) (StandingInfo, error) {
 	return out, nil
 }
 
+// DeleteTool deletes a tool Nine wrote and returns the daemon's outcome. A
+// shipped, operator-installed or unknown tool is refused with the reason.
+func (c *Client) DeleteTool(name string) (string, error) {
+	if err := c.send(NewToolDeleteMsg(name)); err != nil {
+		return "", err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return "", err
+	}
+	if err := expectReply(reply, TypeToolDelete); err != nil {
+		return "", err
+	}
+	return reply.Text, nil
+}
+
 // ControlStanding stops or starts a standing run; action is "stop" or "start".
 // Returns the daemon's human-readable outcome.
 func (c *Client) ControlStanding(id, action string) (string, error) {

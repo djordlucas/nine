@@ -172,12 +172,17 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 					return fmt.Errorf("usage: nine tools show <name>")
 				}
 				return c.ToolsShow(cfg, args[2])
+			case "delete":
+				if len(args) < 3 {
+					return fmt.Errorf("usage: nine tools delete <name>")
+				}
+				return c.ToolsDelete(cfg, args[2])
 			case "deps":
 				return c.ToolsDeps(cfg)
 			case "standing":
 				return c.Standing(cfg)
 			}
-			return fmt.Errorf("usage: nine tools [reload|show <name>|deps|standing]")
+			return fmt.Errorf("usage: nine tools [reload|show <name>|delete <name>|deps|standing]")
 		}
 		return c.Tools(cfg)
 	case "tool":

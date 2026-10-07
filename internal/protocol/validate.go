@@ -76,6 +76,7 @@ var clientMsgSpecs = map[MsgType]clientMsgSpec{
 	// silently mean one of them.
 	TypeStandingControl: {required: []fieldRule{needAgentID, needText}},
 	TypeToolCall:        {required: []fieldRule{needToolName}},
+	TypeToolDelete:      {required: []fieldRule{needToolName}},
 
 	TypePluginCall:       {required: []fieldRule{needToolName}},
 	TypeHumanInputAnswer: {required: []fieldRule{needRequestID}},

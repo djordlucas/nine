@@ -513,3 +513,44 @@ func TestStream_FlushesThroughMiddleware(t *testing.T) {
 		t.Fatalf("flush through the middleware wrapper: %v", err)
 	}
 }
+
+// DELETE /tools/{name} maps the daemon's outcome to a status: deleted, refused
+// (a tool Nine did not write), unknown, or tool writing off.
+func TestDeleteTool(t *testing.T) {
+	sock := scriptedDaemon(t, func(m protocol.Msg) []protocol.Msg {
+		if m.Type != protocol.TypeToolDelete {
+			return errReply("unexpected " + string(m.Type))
+		}
+		switch m.ToolName {
+		case "mine":
+			return []protocol.Msg{protocol.NewTextMsg(protocol.TypeToolDelete, `deleted tool "mine"`)}
+		case "read_file":
+			return errReply(`tool "read_file" is built into Nine and cannot be deleted`)
+		case "off":
+			return errReply("tool writing is off here ([tools.agent]), so there are no tools Nine wrote to delete")
+		default:
+			return errReply(`no tool named "` + m.ToolName + `" that Nine wrote: not found`)
+		}
+	})
+	for _, tc := range []struct {
+		name string
+		want int
+	}{
+		{"mine", http.StatusOK},
+		{"read_file", http.StatusForbidden},
+		{"nope", http.StatusNotFound},
+		{"off", http.StatusBadRequest},
+	} {
+		w := doAt(t, sock, http.MethodDelete, "/api/v1/tools/"+tc.name, "")
+		if w.Code != tc.want {
+			t.Errorf("DELETE %s = %d, want %d (body %s)", tc.name, w.Code, tc.want, w.Body.String())
+		}
+	}
+
+	w := doAt(t, sock, http.MethodDelete, "/api/v1/tools/mine", "")
+	var got struct{ Name, Message string }
+	decodeJSON(t, w, &got)
+	if got.Name != "mine" || !strings.Contains(got.Message, "deleted") {
+		t.Errorf("200 body = %+v", got)
+	}
+}

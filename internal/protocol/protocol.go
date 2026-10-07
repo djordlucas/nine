@@ -31,6 +31,7 @@ const (
 	TypeStandingShow    MsgType = "standing_show"
 	TypeStandingControl MsgType = "standing_control"
 	TypeToolCall        MsgType = "tool_call"
+	TypeToolDelete      MsgType = "tool_delete"
 	TypeWorkflowStop    MsgType = "workflow_stop"
 	TypeWorkflowFail    MsgType = "workflow_fail"
 	TypePluginCall      MsgType = "plugin_call"
@@ -158,6 +159,7 @@ var ClientMsgTypes = []MsgType{
 	TypeStandingShow,
 	TypeStandingControl,
 	TypeToolCall,
+	TypeToolDelete,
 	TypeWorkflowStop,
 	TypeWorkflowFail,
 	TypePluginCall,
@@ -624,6 +626,11 @@ func NewSessionsListMsg() Msg { return Msg{Type: TypeSessionsList} }
 // log lines.
 func NewStandingShowMsg(id string, n int) Msg {
 	return Msg{Type: TypeStandingShow, AgentID: id, Limit: n}
+}
+
+// NewToolDeleteMsg asks the daemon to delete a tool Nine wrote.
+func NewToolDeleteMsg(name string) Msg {
+	return Msg{Type: TypeToolDelete, ToolName: name}
 }
 
 // NewStandingControlMsg stops or starts a standing run. action is "stop" or

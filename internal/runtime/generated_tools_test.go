@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"nine/internal/agent"
@@ -104,6 +105,43 @@ func TestGeneratedToolDeleteUnloads(t *testing.T) {
 	}
 	if _, ok, _ := store.GeneratedToolGet("noop"); ok {
 		t.Error("deleted tool is still in the store")
+	}
+}
+
+// Delete refuses a name that is not a tool Nine wrote, with the reason, rather
+// than reporting a delete that did nothing.
+func TestGeneratedToolDeleteRefusesOtherTools(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	host := OpenSandboxedTools(context.Background(), enabledAgentCfg(), store, nil)
+	t.Cleanup(func() { _ = host.Close(context.Background()) })
+	gt := NewGeneratedToolStore(store, host, nil, nil, false)
+
+	var shipped string
+	for _, name := range []string{"read_file", "write_file", "current_time"} {
+		if tl := host.Get(name); tl != nil && tl.Shipped {
+			shipped = name
+			break
+		}
+	}
+	if shipped == "" {
+		t.Fatal("no shipped tool loaded to test against")
+	}
+	err = gt.Delete(context.Background(), shipped)
+	if err == nil || !strings.Contains(err.Error(), "cannot be deleted") {
+		t.Errorf("deleting shipped %q: err = %v, want a refusal", shipped, err)
+	}
+	if host.Get(shipped) == nil {
+		t.Errorf("shipped %q was unloaded", shipped)
+	}
+
+	err = gt.Delete(context.Background(), "no_such_tool")
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Errorf("deleting an unknown tool: err = %v, want not found", err)
 	}
 }
 

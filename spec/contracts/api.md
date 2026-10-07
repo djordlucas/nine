@@ -692,6 +692,17 @@ Get tool details.
 }
 ```
 
+#### DELETE `/api/v1/tools/{name}`
+
+Delete a tool Nine wrote, and its standing run if it has one.
+
+| Status | When |
+|---|---|
+| 200 | deleted: `{"name": "…", "message": "…"}` |
+| 400 | missing name, or tool writing (`[tools.agent]`) is off |
+| 403 | a shipped or operator-installed tool, which cannot be deleted |
+| 404 | no tool Nine wrote by that name |
+
 ---
 
 ### API-END-7: plugins
@@ -1273,6 +1284,7 @@ All API configuration options **MUST** be available via CLI flags.
 | `nine workflow fail` | POST `/api/v1/workflows/{id}/fail` | Implemented |
 | `nine plugins reload` | POST `/api/v1/plugins/reload` | Implemented |
 | `nine tools reload` | POST `/api/v1/tools/reload` | Implemented |
+| `nine tools delete` | DELETE `/api/v1/tools/{name}` | Implemented |
 | `nine notifications` | GET `/api/v1/notifications` | Implemented |
 | `nine docs` | GET `/api/v1/docs` | Implemented |
 | `nine spec` | GET `/api/v1/spec` | Implemented |

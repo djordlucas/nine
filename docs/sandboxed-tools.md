@@ -578,6 +578,12 @@ useful answer (§7):
   every turn of every session that loads it. A row stored before this check is
   skipped at load.
 
+**Deleting one.** Nine deletes its own tools with `tool_delete`; the operator
+deletes them with `nine tools delete <name>`, `DELETE /api/v1/tools/{name}` or
+`/tools delete <name>` in the TUI. Both go through the same store and refuse the
+same tools: a shipped or operator-installed tool cannot be deleted this way, and
+the refusal names which it is. Deleting a tool also deletes its standing run.
+
 The symmetry with skills is deliberate:
 
 | | Skill | Generated tool |

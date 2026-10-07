@@ -156,6 +156,9 @@ func TestDeletingAToolRemovesItsStandingRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	g := &generatedTools{store: store, allowStanding: true, maxStanding: 4}
+	if err := store.GeneratedToolUpsert(memory.GeneratedTool{Name: "g1", Source: "export default () => 1;"}); err != nil {
+		t.Fatal(err)
+	}
 	spec := agent.GeneratedToolSpec{
 		Name: "g1", Resumable: true,
 		Standing: &agent.StandingRequest{Interval: "10s"},

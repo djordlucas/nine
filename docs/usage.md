@@ -66,6 +66,8 @@ nine tools show <name>           Print one sandboxed tool in full: kind, status,
                                  resolved grant, manifest path
 nine tools reload                Re-scan [tools].user_dir and reload sandboxed
                                  tools live
+nine tools delete <name>         Delete a tool Nine wrote; shipped and
+                                 operator-installed tools are refused
 nine tools deps                  List the external npm packages generated tools
                                  resolved, with the tool that asked for each
 nine tool validate [path]        Check a sandboxed tool's manifest, entrypoint,
