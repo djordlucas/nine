@@ -320,7 +320,9 @@ func (w *AgentWorker) run() {
 		case ir := <-w.inspect:
 			ir.respCh <- w.loop.InspectContext(ir.ctx)
 		case text := <-w.wake:
-			w.processTurn(turnReq{ctx: context.Background(), text: text, trigger: "condition"})
+			// Nobody waits on a woken turn's reply, but processTurn delivers one; a
+			// buffered channel takes it so the worker is free for the next turn.
+			w.processTurn(turnReq{ctx: context.Background(), text: text, respCh: make(chan turnResp, 1), trigger: "condition"})
 			w.drainQueued()
 		case <-timerC:
 			w.handleIdle()
