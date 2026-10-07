@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"nine/internal/memory"
+	"nine/internal/memory/memtest"
 	"nine/internal/runtime"
 )
 
@@ -46,5 +47,23 @@ func TestEventSinkNotifiesOnFlush(t *testing.T) {
 	}
 	if flushes.Load() == 0 {
 		t.Error("onFlush was never called after a batch write")
+	}
+}
+
+// An event appended after Close is dropped, not sent on the closed channel: a
+// process session's turn can still be finishing when the sink closes. Close
+// is idempotent.
+func TestSQLEventSinkAppendAfterCloseIsDropped(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := runtime.NewSQLEventSinkForTest(store)
+	if err := sink.Close(); err != nil {
+		t.Fatal(err)
+	}
+	sink.Append(memory.SessionEvent{AgentID: "late", Type: "turn_end"})
+	if err := sink.Close(); err != nil {
+		t.Errorf("second Close: %v", err)
 	}
 }

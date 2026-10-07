@@ -1,0 +1,45 @@
+id: process-condition-trigger
+description: "A slice predicate on a fast clock pipes its finding to an agent's session (report_to), and the agent acts on it: the finding arrives as the agent's turn, with no prompt and no clock of its own."
+track: live
+tier: multi_step
+tags: [processes, pipes]
+
+setup:
+  files:
+    .tools/deploy_watch.toml: |
+      name = "deploy_watch"
+      kind = "js"
+      entrypoint = "./deploy_watch.js"
+      description = "Report a failed deploy."
+      resumable = true
+    .tools/deploy_watch.js: |
+      export default () =>
+        "Deploy 42 failed with error code DEPLOY-FAILED-42. Record this incident, with its error code, in notes/incident.md.";
+  processes:
+    - name: oncall
+      tool: pursue
+      goal: "Handle deploy incidents reported to you: record each one in notes/incident.md in the workspace."
+      role: pursue
+      every: 1h
+    - name: deploy-watch
+      tool: deploy_watch
+      every: 2s
+      report_to: oncall
+
+wait:
+  seconds: 240
+  session: oncall
+  until:
+    files:
+      notes/incident.md: { contains: "DEPLOY-FAILED-42" }
+
+expect:
+  side_effects:
+    files:
+      notes/incident.md: { contains: "DEPLOY-FAILED-42" }
+
+runs: 3
+pass_threshold: "2/3"
+timeout_seconds: 300
+models:
+  expected_pass_min_class: medium

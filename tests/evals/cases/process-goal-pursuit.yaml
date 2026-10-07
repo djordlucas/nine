@@ -1,0 +1,31 @@
+id: process-goal-pursuit
+description: "A goal declared as a [[process]] is pursued with no prompt at all: the pursue process's clock tick makes the model act on the goal, and the work shows in the workspace."
+track: live
+tier: multi_step
+tags: [processes, goals]
+
+setup:
+  processes:
+    - name: status-report
+      tool: pursue
+      goal: "Write the line READY-7F3 to the file notes/status.md in the workspace, then mark this goal done with goal_update_status."
+      role: pursue
+      every: 2s
+
+wait:
+  seconds: 240
+  session: status-report
+  until:
+    files:
+      notes/status.md: { contains: "READY-7F3" }
+
+expect:
+  side_effects:
+    files:
+      notes/status.md: { contains: "READY-7F3" }
+
+runs: 3
+pass_threshold: "2/3"
+timeout_seconds: 300
+models:
+  expected_pass_min_class: medium
