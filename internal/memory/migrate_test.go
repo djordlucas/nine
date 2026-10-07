@@ -643,3 +643,55 @@ func TestMigratesDatabaseMissingCapabilityTables(t *testing.T) {
 		t.Errorf("grants = %v, err = %v; a migrated database confers nothing", grants, err)
 	}
 }
+
+// Standing tools become processes in place: a version-12 database's standing
+// runs keep their definition and run state, and a condition trigger's
+// wake_agent becomes report_to. initSchema creates an empty `processes` table
+// before migrating, which the step must replace rather than collide with.
+func TestMigratesStandingToolsIntoProcesses(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nine.db")
+
+	func() {
+		w := openRaw(t, path)
+		mustExec(t, w, `CREATE TABLE conversations (id TEXT PRIMARY KEY)`)
+		mustExec(t, w, `CREATE TABLE standing_tools (
+			id            TEXT PRIMARY KEY,
+			tool          TEXT NOT NULL,
+			args          TEXT NOT NULL DEFAULT '{}',
+			interval_secs INTEGER NOT NULL DEFAULT 0,
+			schedule      TEXT NOT NULL DEFAULT '',
+			state         TEXT NOT NULL DEFAULT 'running',
+			cursor        TEXT NOT NULL DEFAULT '',
+			calls         INTEGER NOT NULL DEFAULT 0,
+			cycles        INTEGER NOT NULL DEFAULT 0,
+			failures      INTEGER NOT NULL DEFAULT 0,
+			last_error    TEXT NOT NULL DEFAULT '',
+			last_call_at  TEXT NOT NULL DEFAULT '',
+			next_at       TEXT NOT NULL DEFAULT '',
+			generated     INTEGER NOT NULL DEFAULT 0,
+			wake_agent    TEXT NOT NULL DEFAULT '',
+			created_at    TEXT NOT NULL DEFAULT '',
+			updated_at    TEXT NOT NULL DEFAULT ''
+		)`)
+		mustExec(t, w, `INSERT INTO standing_tools (id, tool, interval_secs, state, cycles, wake_agent)
+			VALUES ('when:sec-watch', 'cve_scan', 10, 'stopped', 7, 'sec-watch')`)
+		mustExec(t, w, `PRAGMA user_version = 12`)
+	}()
+
+	store, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer store.Close() //nolint:errcheck
+
+	p, found, err := store.ProcessGet("when:sec-watch")
+	if err != nil || !found {
+		t.Fatalf("ProcessGet = found %v err %v; the standing run did not survive", found, err)
+	}
+	if p.Tool != "cve_scan" || p.IntervalSecs != 10 || p.State != ProcessStopped || p.Cycles != 7 {
+		t.Errorf("process = %+v, want the standing run's definition and state", p)
+	}
+	if p.ReportTo != "sec-watch" {
+		t.Errorf("report_to = %q, want the condition trigger's agent", p.ReportTo)
+	}
+}

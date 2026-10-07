@@ -844,9 +844,9 @@ func (d *Daemon) handleStandingControl(enc *json.Encoder, id, action string) {
 	var state string
 	switch action {
 	case "stop":
-		state = memory.StandingStopped
+		state = memory.ProcessStopped
 	case "start":
-		state = memory.StandingRunning
+		state = memory.ProcessRunning
 	default:
 		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("standing control action %q is not \"stop\" or \"start\"", action))) //nolint:errcheck
 		return

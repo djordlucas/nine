@@ -112,7 +112,7 @@ func (r *StandingRunner) Status() ([]StandingStatus, error) {
 	if r == nil {
 		return nil, nil
 	}
-	tools, err := r.store.StandingToolList()
+	tools, err := r.store.ProcessList()
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +128,7 @@ func (r *StandingRunner) StatusOf(id string, n int) (StandingStatus, bool, error
 	if r == nil {
 		return StandingStatus{}, false, nil
 	}
-	t, found, err := r.store.StandingToolGet(id)
+	t, found, err := r.store.ProcessGet(id)
 	if err != nil || !found {
 		return StandingStatus{}, found, err
 	}
@@ -145,12 +145,12 @@ func (r *StandingRunner) SetState(id, state string) (bool, error) {
 	if r == nil {
 		return false, fmt.Errorf("standing tools are not enabled here")
 	}
-	ok, err := r.store.StandingToolSetState(id, state)
+	ok, err := r.store.ProcessSetState(id, state)
 	if err != nil || !ok {
 		return ok, err
 	}
 	evType := evStandingStopped
-	if state == memory.StandingRunning {
+	if state == memory.ProcessRunning {
 		evType = evStandingStarted
 	}
 	journalTransition(r.store, id, evType, map[string]any{"by": "operator"})
@@ -193,12 +193,12 @@ func ReconcileStandingTools(store *memory.Store, blocks []config.StandingToolCon
 			interval = int(d.Seconds())
 		}
 
-		prev, existed, err := store.StandingToolGet(b.ID)
+		prev, existed, err := store.ProcessGet(b.ID)
 		if err != nil {
 			slog.Warn("standing tool: read", "id", b.ID, "err", err)
 			continue
 		}
-		if err := store.StandingToolUpsertDefinition(memory.StandingTool{
+		if err := store.ProcessUpsertDefinition(memory.Process{
 			ID: b.ID, Tool: b.Tool, Args: string(args),
 			IntervalSecs: interval, Schedule: b.Schedule,
 		}); err != nil {
@@ -209,18 +209,18 @@ func ReconcileStandingTools(store *memory.Store, blocks []config.StandingToolCon
 		switch {
 		case !existed:
 			// New: honour the block's own enabled flag.
-			state := memory.StandingRunning
+			state := memory.ProcessRunning
 			if !b.IsEnabled() {
-				state = memory.StandingStopped
+				state = memory.ProcessStopped
 			}
-			if _, err := store.StandingToolSetState(b.ID, state); err != nil {
+			if _, err := store.ProcessSetState(b.ID, state); err != nil {
 				slog.Warn("standing tool: initial state", "id", b.ID, "err", err)
 			}
 			slog.Info("standing tool declared", "id", b.ID, "tool", b.Tool, "state", state)
 		case prev.Args != string(args):
 			// The cursor belongs to the old arguments; start the next cycle clean.
-			if prev.State != memory.StandingStopped {
-				if _, err := store.StandingToolSetState(b.ID, memory.StandingRunning); err != nil {
+			if prev.State != memory.ProcessStopped {
+				if _, err := store.ProcessSetState(b.ID, memory.ProcessRunning); err != nil {
 					slog.Warn("standing tool: restart after args change", "id", b.ID, "err", err)
 				}
 			}
@@ -270,20 +270,20 @@ func ReconcileConditionTriggers(store *memory.Store, agents []config.AgentConfig
 		}
 
 		id := ConditionTriggerID(a.ID)
-		_, existed, err := store.StandingToolGet(id)
+		_, existed, err := store.ProcessGet(id)
 		if err != nil {
 			slog.Warn("condition trigger: read", "agent", a.ID, "err", err)
 			continue
 		}
-		if err := store.StandingToolUpsertDefinition(memory.StandingTool{
+		if err := store.ProcessUpsertDefinition(memory.Process{
 			ID: id, Tool: a.When.Tool, Args: string(args),
-			IntervalSecs: interval, Schedule: a.When.Schedule, WakeAgent: a.ID,
+			IntervalSecs: interval, Schedule: a.When.Schedule, ReportTo: a.ID,
 		}); err != nil {
 			slog.Warn("condition trigger: reconcile", "agent", a.ID, "err", err)
 			continue
 		}
 		if !existed {
-			if _, err := store.StandingToolSetState(id, memory.StandingRunning); err != nil {
+			if _, err := store.ProcessSetState(id, memory.ProcessRunning); err != nil {
 				slog.Warn("condition trigger: start", "agent", a.ID, "err", err)
 				continue
 			}
@@ -333,7 +333,7 @@ func RunStandingTools(ctx context.Context, r *StandingRunner, interval time.Dura
 // ticks while a sweep runs, so waiting is what stops a second call of the same
 // standing tool starting against a cursor the first has not finished with.
 func (r *StandingRunner) runDue(ctx context.Context) {
-	due, err := r.store.StandingToolsDue()
+	due, err := r.store.ProcessesDue()
 	if err != nil {
 		slog.Warn("standing tools: list due", "err", err)
 		return
@@ -352,7 +352,7 @@ func (r *StandingRunner) runDue(ctx context.Context) {
 		case sem <- struct{}{}:
 		}
 		wg.Add(1)
-		go func(st memory.StandingTool) {
+		go func(st memory.Process) {
 			defer wg.Done()
 			defer func() { <-sem }()
 			r.runOnce(ctx, st)
@@ -362,7 +362,7 @@ func (r *StandingRunner) runDue(ctx context.Context) {
 }
 
 // runOnce makes a single call of one standing tool and writes back what happened.
-func (r *StandingRunner) runOnce(ctx context.Context, st memory.StandingTool) {
+func (r *StandingRunner) runOnce(ctx context.Context, st memory.Process) {
 	out, err := r.host.CallJob(ctx, st.Tool, json.RawMessage(argsOrEmptyString(st.Args)),
 		toolvm.JobContext{Cursor: st.Cursor, Call: st.Calls + 1})
 	if err != nil {
@@ -373,7 +373,7 @@ func (r *StandingRunner) runOnce(ctx context.Context, st memory.StandingTool) {
 	// Still working: schedule the next call at the delay it asked for.
 	if out.Continue != nil {
 		next := time.Now().Add(max(time.Duration(out.Continue.AfterMS)*time.Millisecond, r.minDelay))
-		if _, err := r.store.StandingToolAdvance(st.ID, out.Continue.Cursor, next); err != nil {
+		if _, err := r.store.ProcessAdvance(st.ID, out.Continue.Cursor, next); err != nil {
 			slog.Warn("standing tool: advance", "id", st.ID, "err", err)
 		}
 		r.log.add(st.ID, "continued", out.Continue.Progress)
@@ -382,14 +382,14 @@ func (r *StandingRunner) runOnce(ctx context.Context, st memory.StandingTool) {
 
 	// The cycle finished. The trigger decides when the next one starts.
 	next := r.nextCycleAt(st, time.Now())
-	if _, err := r.store.StandingToolCompleteCycle(st.ID, next); err != nil {
+	if _, err := r.store.ProcessCompleteCycle(st.ID, next); err != nil {
 		slog.Warn("standing tool: complete cycle", "id", st.ID, "err", err)
 		return
 	}
 	r.log.add(st.ID, "completed", clipDetail(out.Text, 120))
 	r.report(st, out)
 
-	if st.State == memory.StandingFailing {
+	if st.State == memory.ProcessFailing {
 		// Recovered: the edge, not every call.
 		slog.Info("standing tool recovered", "id", st.ID, "tool", st.Tool)
 		journalTransition(r.store, st.ID, evStandingRecovered, map[string]any{
@@ -410,7 +410,7 @@ func (r *StandingRunner) runOnce(ctx context.Context, st memory.StandingTool) {
 // agent, which keeps a deterministic tool from steering an autonomous one with
 // no human in between; and it cannot wake anything, which is R-SUB.3's
 // enrich-don't-interject applied unchanged.
-func (r *StandingRunner) report(st memory.StandingTool, out toolvm.Output) {
+func (r *StandingRunner) report(st memory.Process, out toolvm.Output) {
 	text := out.Text
 	if out.Bytes != nil {
 		slog.Warn("standing tool returned bytes, which the human feed cannot carry",
@@ -429,10 +429,10 @@ func (r *StandingRunner) report(st memory.StandingTool, out toolvm.Output) {
 	// A condition trigger delivers to its agent instead of the human feed: the
 	// operator wrote that link, and the whole point is that the agent looks *now*
 	// rather than on its next clock.
-	if st.WakeAgent != "" && r.waker != nil {
-		if r.waker.WakeAgent(st.WakeAgent, text) {
+	if st.ReportTo != "" && r.waker != nil {
+		if r.waker.WakeAgent(st.ReportTo, text) {
 			slog.Info("condition trigger woke an agent",
-				"id", st.ID, "agent", st.WakeAgent, "tool", st.Tool)
+				"id", st.ID, "agent", st.ReportTo, "tool", st.Tool)
 			return
 		}
 		// The agent is not running, or is already busy. Falling back to the human
@@ -440,8 +440,8 @@ func (r *StandingRunner) report(st memory.StandingTool, out toolvm.Output) {
 		// reached the wrong inbox, and a silently-dropped condition is exactly the
 		// failure an operator would never discover.
 		slog.Info("condition trigger could not wake its agent; posting to the human feed",
-			"id", st.ID, "agent", st.WakeAgent)
-		r.notifyHuman(fmt.Sprintf("[%s → %s, not running] %s", st.ID, st.WakeAgent, text))
+			"id", st.ID, "agent", st.ReportTo)
+		r.notifyHuman(fmt.Sprintf("[%s → %s, not running] %s", st.ID, st.ReportTo, text))
 		return
 	}
 	r.notifyHuman(fmt.Sprintf("[%s] %s", st.ID, text))
@@ -460,12 +460,12 @@ func (r *StandingRunner) notifyHuman(msg string) {
 // back off (a broken tool stops burning the cadence it asked for), the breaker
 // makes `failing` visible in the roster, and the transition — not every failure —
 // posts to the human feed, so a flapping tool cannot produce a storm.
-func (r *StandingRunner) recordFailure(st memory.StandingTool, cause error) {
+func (r *StandingRunner) recordFailure(st memory.Process, cause error) {
 	failures := st.Failures + 1
 	state := st.State
-	tripped := failures >= StandingFailureThreshold && st.State != memory.StandingFailing
+	tripped := failures >= StandingFailureThreshold && st.State != memory.ProcessFailing
 	if failures >= StandingFailureThreshold {
-		state = memory.StandingFailing
+		state = memory.ProcessFailing
 	}
 
 	// A generated standing tool that keeps failing is disabled rather than left
@@ -475,11 +475,11 @@ func (r *StandingRunner) recordFailure(st memory.StandingTool, cause error) {
 	// nobody has looked at since the approval has no such author to answer to.
 	disabled := st.Generated && failures >= StandingGeneratedDisableAfter
 	if disabled {
-		state = memory.StandingStopped
+		state = memory.ProcessStopped
 	}
 
 	next := time.Now().Add(r.backoff(st, failures))
-	if _, err := r.store.StandingToolFail(st.ID, cause.Error(), next, state); err != nil {
+	if _, err := r.store.ProcessFail(st.ID, cause.Error(), next, state); err != nil {
 		slog.Warn("standing tool: record failure", "id", st.ID, "err", err)
 		return
 	}
@@ -509,7 +509,7 @@ func (r *StandingRunner) recordFailure(st memory.StandingTool, cause error) {
 }
 
 // backoff doubles the tool's own cadence per consecutive failure, capped.
-func (r *StandingRunner) backoff(st memory.StandingTool, failures int) time.Duration {
+func (r *StandingRunner) backoff(st memory.Process, failures int) time.Duration {
 	base := time.Duration(st.IntervalSecs) * time.Second
 	if base <= 0 {
 		base = time.Minute // a cron-triggered tool has no interval to double
@@ -523,7 +523,7 @@ func (r *StandingRunner) backoff(st memory.StandingTool, failures int) time.Dura
 // nextCycleAt reduces the trigger to an instant, reusing the parsing standing
 // agents use (docs/scheduling.md) so the two cannot disagree about what a cron
 // expression means.
-func (r *StandingRunner) nextCycleAt(st memory.StandingTool, now time.Time) time.Time {
+func (r *StandingRunner) nextCycleAt(st memory.Process, now time.Time) time.Time {
 	if st.Schedule != "" {
 		sched, err := cron.Parse(st.Schedule)
 		if err != nil {

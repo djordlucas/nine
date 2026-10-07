@@ -191,6 +191,12 @@ var migrations = []migrationStep{
 	// is correct: every standing tool that predates this reports to the human
 	// feed, which is what they were declared to do.
 	{name: "standing_wake_agent", fn: func(q sqlExec) error {
+		// A database that never had standing_tools gets it as `processes`, in
+		// its current shape, from initSchema (step 12 → 13 explains).
+		has, err := hasTableTx(q, "standing_tools")
+		if err != nil || !has {
+			return err
+		}
 		return addColumnIfMissing(q, "standing_tools", "wake_agent", "TEXT NOT NULL DEFAULT ''")
 	}},
 
@@ -268,6 +274,41 @@ var migrations = []migrationStep{
 			return err
 		}
 		_, err := q.Exec(`CREATE INDEX IF NOT EXISTS capability_grants_source ON capability_grants(source)`)
+		return err
+	}},
+
+	// 12 → 13: standing tools become processes (adr/process-sessions.md). The
+	// table is renamed, not copied, so every standing run keeps its state; and
+	// wake_agent, the session a run's findings go to, becomes report_to, the
+	// name a pipe has. Safe against a database where either already happened.
+	//
+	// initSchema has already created `processes`, empty and in its current shape,
+	// before this step runs. With standing_tools present, that empty table is
+	// dropped so the rename can take its name.
+	{name: "standing_tools_to_processes", fn: func(q sqlExec) error {
+		has, err := hasTableTx(q, "standing_tools")
+		if err != nil {
+			return err
+		}
+		if has {
+			if _, err := q.Exec(`DROP TABLE IF EXISTS processes`); err != nil {
+				return err
+			}
+			if _, err := q.Exec(`ALTER TABLE standing_tools RENAME TO processes`); err != nil {
+				return err
+			}
+		}
+		if _, err := q.Exec(`DROP INDEX IF EXISTS standing_tools_state`); err != nil {
+			return err
+		}
+		if _, err := q.Exec(`CREATE INDEX IF NOT EXISTS processes_state ON processes (state)`); err != nil {
+			return err
+		}
+		renamed, err := hasColumnTx(q, "processes", "report_to")
+		if err != nil || renamed {
+			return err
+		}
+		_, err = q.Exec(`ALTER TABLE processes RENAME COLUMN wake_agent TO report_to`)
 		return err
 	}},
 }

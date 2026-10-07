@@ -86,7 +86,7 @@ func TestGeneratedStandingCapIgnoresOperatorBlocks(t *testing.T) {
 
 	// Three operator-declared runs must not consume the generated budget.
 	for _, id := range []string{"op-a", "op-b", "op-c"} {
-		if err := store.StandingToolUpsertDefinition(memory.StandingTool{
+		if err := store.ProcessUpsertDefinition(memory.Process{
 			ID: id, Tool: "x", IntervalSecs: 60,
 		}); err != nil {
 			t.Fatal(err)
@@ -102,7 +102,7 @@ func TestGeneratedStandingCapIgnoresOperatorBlocks(t *testing.T) {
 
 	// Two generated ones do.
 	for _, id := range []string{"gen:a", "gen:b"} {
-		if err := store.StandingToolUpsertDefinition(memory.StandingTool{
+		if err := store.ProcessUpsertDefinition(memory.Process{
 			ID: id, Tool: "x", IntervalSecs: 60, Generated: true,
 		}); err != nil {
 			t.Fatal(err)
@@ -137,7 +137,7 @@ func TestRewritingAStandingToolReplacesItsRun(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	runs, err := store.StandingToolList()
+	runs, err := store.ProcessList()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,14 +166,14 @@ func TestDeletingAToolRemovesItsStandingRun(t *testing.T) {
 	if err := g.promoteToStanding(spec); err != nil {
 		t.Fatal(err)
 	}
-	if _, found, _ := store.StandingToolGet(standingIDFor("g1")); !found {
+	if _, found, _ := store.ProcessGet(standingIDFor("g1")); !found {
 		t.Fatal("precondition: the standing run should exist")
 	}
 
 	if err := g.Delete(t.Context(), "g1"); err != nil {
 		t.Fatal(err)
 	}
-	if _, found, _ := store.StandingToolGet(standingIDFor("g1")); found {
+	if _, found, _ := store.ProcessGet(standingIDFor("g1")); found {
 		t.Fatal("the standing run outlived the tool it runs")
 	}
 }

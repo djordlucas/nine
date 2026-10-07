@@ -218,7 +218,7 @@ func (g *generatedTools) checkStandingRequest(spec agent.GeneratedToolSpec) erro
 
 	// The cap counts only generated runs: an operator's own [[standing_tool]]
 	// blocks are their business and are bounded by their file.
-	existing, err := g.store.StandingToolList()
+	existing, err := g.store.ProcessList()
 	if err != nil {
 		return err
 	}
@@ -250,13 +250,13 @@ func (g *generatedTools) promoteToStanding(spec agent.GeneratedToolSpec) error {
 		args = string(spec.Standing.Args)
 	}
 	id := standingIDFor(spec.Name)
-	if err := g.store.StandingToolUpsertDefinition(memory.StandingTool{
+	if err := g.store.ProcessUpsertDefinition(memory.Process{
 		ID: id, Tool: spec.Name, Args: args,
 		IntervalSecs: interval, Schedule: spec.Standing.Schedule, Generated: true,
 	}); err != nil {
 		return fmt.Errorf("record standing tool: %w", err)
 	}
-	if _, err := g.store.StandingToolSetState(id, memory.StandingRunning); err != nil {
+	if _, err := g.store.ProcessSetState(id, memory.ProcessRunning); err != nil {
 		return fmt.Errorf("start standing tool: %w", err)
 	}
 	slog.Info("generated standing tool started",
@@ -337,7 +337,7 @@ func (g *generatedTools) Delete(ctx context.Context, name string) error {
 	// up every tick and fails on, forever, with "unknown sandboxed tool" — and
 	// it would eventually trip the breaker and notify a human about a tool that
 	// no longer exists. Deleting the tool deletes its run.
-	if err := g.store.StandingToolDelete(standingIDFor(name)); err != nil {
+	if err := g.store.ProcessDelete(standingIDFor(name)); err != nil {
 		slog.Warn("could not remove the standing run of a deleted tool", "tool", name, "err", err)
 	}
 	if g.standingLog != nil {

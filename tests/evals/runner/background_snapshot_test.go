@@ -158,9 +158,9 @@ func TestBackgroundSnapshots(t *testing.T) {
 		// The agent the trigger wakes; its own idle turns are told apart from the
 		// woken one by the finding in the woken turn's text.
 		spawnGoalBound(t, lv, "watcher", "monitor", "Act on what the predicate finds.")
-		runStanding(t, lv, memory.StandingTool{
+		runStanding(t, lv, memory.Process{
 			ID: runtime.ConditionTriggerID("watcher"), Tool: "predicate",
-			Args: `{"found":"a stray api key in notes/"}`, IntervalSecs: 1, WakeAgent: "watcher",
+			Args: `{"found":"a stray api key in notes/"}`, IntervalSecs: 1, ReportTo: "watcher",
 		})
 		marker := "a stray api key"
 		req := waitForCall(t, p, "watcher", marker)
@@ -170,7 +170,7 @@ func TestBackgroundSnapshots(t *testing.T) {
 	t.Run("standing-tool", func(t *testing.T) {
 		lv, _ := startBackground(t)
 		lv.Tools.Load(context.Background(), nil)
-		runStanding(t, lv, memory.StandingTool{
+		runStanding(t, lv, memory.Process{
 			ID: "scan", Tool: "predicate", Args: `{"found":"two new files"}`, IntervalSecs: 1,
 		})
 		// A standing tool calls no model; what it produces is the human feed.
@@ -200,13 +200,13 @@ func TestBackgroundSnapshots(t *testing.T) {
 
 // runStanding records a running standing tool and drives the standing runner
 // with the daemon as its waker, as cmd/nine does.
-func runStanding(t *testing.T, lv *live, st memory.StandingTool) {
+func runStanding(t *testing.T, lv *live, st memory.Process) {
 	t.Helper()
 	store := lv.Result.Store
-	if err := store.StandingToolUpsertDefinition(st); err != nil {
+	if err := store.ProcessUpsertDefinition(st); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.StandingToolSetState(st.ID, memory.StandingRunning); err != nil {
+	if _, err := store.ProcessSetState(st.ID, memory.ProcessRunning); err != nil {
 		t.Fatal(err)
 	}
 	runner := runtime.NewStandingRunner(store, lv.Tools, 1, 2)

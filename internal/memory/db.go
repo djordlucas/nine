@@ -571,7 +571,7 @@ func initSchema(d db) error {
 		// asking to continue, at which point `cursor` resets and the trigger decides
 		// when the next cycle starts. So there are two cadences — the trigger between
 		// cycles, and after_ms within one.
-		`CREATE TABLE IF NOT EXISTS standing_tools (
+		`CREATE TABLE IF NOT EXISTS processes (
 			id            TEXT PRIMARY KEY,
 			tool          TEXT NOT NULL,
 			args          TEXT NOT NULL DEFAULT '{}',
@@ -586,11 +586,11 @@ func initSchema(d db) error {
 			last_call_at  TEXT NOT NULL DEFAULT '',
 			next_at       TEXT NOT NULL DEFAULT '',
 			generated     INTEGER NOT NULL DEFAULT 0,
-			wake_agent    TEXT NOT NULL DEFAULT '',
+			report_to     TEXT NOT NULL DEFAULT '',
 			created_at    TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			updated_at    TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,
-		`CREATE INDEX IF NOT EXISTS standing_tools_state ON standing_tools (state)`,
+		`CREATE INDEX IF NOT EXISTS processes_state ON processes (state)`,
 		`CREATE INDEX IF NOT EXISTS jobs_owner ON jobs (owner_id)`,
 		`CREATE INDEX IF NOT EXISTS jobs_state ON jobs (state)`,
 	}
