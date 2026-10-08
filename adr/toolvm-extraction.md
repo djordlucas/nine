@@ -21,7 +21,7 @@ what is undecided.
 
 ## 1. Decisions
 
-Recorded 2026-10-07; pure modules 2026-10-08.
+Recorded 2026-10-07; pure modules and cancellation 2026-10-08.
 
 | Decision | Consequence |
 |----------|-------------|
@@ -30,6 +30,7 @@ Recorded 2026-10-07; pure modules 2026-10-08.
 | **Code runs as long as needed.** | The library imposes no default deadline and no default work budget. A run ends when the program returns or the caller's `context.Context` ends. Nine's 5 s default and per-tool timeouts become Nine policy, applied through that context (§5). |
 | **Its own repository.** | Separate repo, module and release cycle from the start; no `pkg/` or in-repo module stage. Nine depends on a tagged version (§8). |
 | **Pure JS modules stay in Nine.** | `csv`, `date`, `diff`, `html` remain `nine:` modules, supplied through the module map like any embedder's. The library ships only the capability bindings (§7). |
+| **Cancellation is the only control over a long run.** | No progress, heartbeat or liveness signal. A spinning run and a working run look the same to the library; the embedder decides when to stop one by ending its context (§5). |
 
 ## 2. Current coupling
 
@@ -129,6 +130,11 @@ uses Nine's resumable-job pattern — return a cursor, persist it, run again —
 nothing from the library beyond passing the `continue` field through (§6) and the `state`
 capability. A long run holds its memory and, if granted, its mounts for its whole duration;
 bounding that is the embedder's job.
+
+The library offers no progress or heartbeat signal. A program that wants to report progress
+does it through a capability the embedder granted — a `state` key, an HTTP call, a `log`
+line the embedder's audit hook sees — and the embedder cancels on whatever evidence it
+chooses.
 
 ## 6. Guest ABI
 
@@ -243,10 +249,7 @@ exists, so the boundary is proven by the compiler while a mistake is still cheap
 2. **Output type.** `output` is a string because a model reads it. A general library might
    want any JSON value. Changing it is an ABI change; keeping it costs embedders a
    `JSON.stringify`.
-3. **Long runs and the work budget.** A run with no deadline and no budget that spins is
-   indistinguishable from one that is working. Should the library expose a progress or
-   heartbeat signal the embedder can watch, or is cancellation enough?
-4. **Concurrency.** A semaphore is a few lines in either place. In Nine (as proposed), or a
+3. **Concurrency.** A semaphore is a few lines in either place. In Nine (as proposed), or a
    library option, since every embedder will want one?
 
 ## Limits
