@@ -70,8 +70,15 @@ process, so a tool a model calls can never block in `next()`.
 A trigger is a clock tick (`every` xor `schedule`) or a report piped to the process's
 session. A live process's **first tick comes one cadence after it starts**, at boot as at
 creation; a tick that comes due while one waits is not queued twice. A slice process is
-called when its tick is due, continues an unfinished cycle at the delay it asks for, and
-backs off on failure (three failures make it `failing`).
+called when its tick is due and continues an unfinished cycle at the delay it asks for.
+
+**Health is the same for both modes.** A failure — a slice call that fails, a live program
+that throws or returns an error other than its stop — is retried after a backoff that
+doubles the process's cadence per consecutive failure, capped at 30 minutes. Three in a
+row make it `failing`, and that transition, not each failure, reaches the human feed. The
+failures clear on success: a slice cycle that completes, or a live program that handles a
+trigger and comes back to `next()` — a restart alone is not a recovery. Leaving `failing`
+reaches the human feed too.
 
 ---
 

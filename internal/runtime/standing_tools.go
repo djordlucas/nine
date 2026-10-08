@@ -387,7 +387,7 @@ func (r *StandingRunner) runOnce(ctx context.Context, st memory.Process) {
 		journalTransition(r.store, st.ID, evStandingRecovered, map[string]any{
 			"tool": st.Tool, "after_failures": st.Failures,
 		})
-		r.notifyHuman(fmt.Sprintf("Standing tool %s recovered and is running normally again.", st.ID))
+		r.notifyHuman(fmt.Sprintf("Process %s recovered and is running normally again.", st.ID))
 	}
 }
 
@@ -494,7 +494,7 @@ func (r *StandingRunner) recordFailure(st memory.Process, cause error) {
 			"tool": st.Tool, "by": "auto-disable", "consecutive": failures,
 		})
 		r.notifyHuman(fmt.Sprintf(
-			"Standing tool %s (written by Nine) has been switched off after %d consecutive failures. "+
+			"Process %s (written by Nine) has been switched off after %d consecutive failures. "+
 				"Last error: %s", st.ID, failures, oneLine(cause.Error())))
 		return
 	}
@@ -507,7 +507,7 @@ func (r *StandingRunner) recordFailure(st memory.Process, cause error) {
 			"tool": st.Tool, "consecutive": failures, "error": oneLine(cause.Error()),
 		})
 		r.notifyHuman(fmt.Sprintf(
-			"Standing tool %s has failed %d times in a row and is backing off. Last error: %s",
+			"Process %s has failed %d times in a row and is backing off. Last error: %s",
 			st.ID, failures, oneLine(cause.Error())))
 	}
 }

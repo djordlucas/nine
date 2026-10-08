@@ -64,6 +64,11 @@ They are read-only programs you can inspect with `nine tools show pursue`.
 A process's first tick comes one cadence after it starts, at boot as when it is
 created. A process with no clock wakes only on reports.
 
+A process that fails — a slice call that errors, a live program that throws —
+is retried after a backoff that doubles its cadence each time, up to 30
+minutes. Three failures in a row make it `failing`, which reaches
+`nine notifications`, as does its recovery.
+
 ## Budgets
 
 Every process has a budget over a rolling day: the model turns its program runs

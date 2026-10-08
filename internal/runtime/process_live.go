@@ -47,6 +47,10 @@ type liveProc struct {
 	// label is the journal trigger label of the turns the current trigger
 	// causes: "idle" for a clock tick, "condition" for a piped report.
 	label string
+	// recovering is true while a process restarted after failures has not yet
+	// handled a trigger; nexts counts its next() calls since the start.
+	recovering bool
+	nexts      int
 }
 
 // SetSessions wires the session side of live processes. Without it, live
@@ -157,7 +161,8 @@ func (r *StandingRunner) goalActive(id string) bool {
 // startLive starts one live process and watches it until it ends. A process
 // that cannot start is recorded as a failure.
 func (r *StandingRunner) startLive(ctx context.Context, row memory.Process) {
-	lp := &liveProc{row: row, triggers: make(chan toolvm.Trigger, liveTriggerQueue)}
+	lp := &liveProc{row: row, triggers: make(chan toolvm.Trigger, liveTriggerQueue),
+		recovering: row.Failures > 0}
 	live, err := r.host.StartLive(ctx, row.Tool, json.RawMessage(argsOrEmptyString(row.Args)), &liveHandler{r: r, lp: lp})
 	if err != nil {
 		r.recordFailure(row, err)
@@ -175,11 +180,9 @@ func (r *StandingRunner) startLive(ctx context.Context, row memory.Process) {
 	r.liveMu.Lock()
 	r.lives[row.ID] = lp
 	r.liveMu.Unlock()
-	if row.Failures > 0 {
-		if err := r.store.ProcessRecovered(row.ID); err != nil {
-			slog.Warn("live process: clear failures", "id", row.ID, "err", err)
-		}
-	}
+	// A restart after failures is not a recovery: the failures clear once the
+	// program has handled a trigger and come back for the next (Next), so a
+	// process that fails on every trigger reaches failing.
 	r.log.add(row.ID, "started", "")
 	slog.Info("live process started", "id", row.ID, "tool", row.Tool, "session", row.SessionID)
 
@@ -209,6 +212,24 @@ func (r *StandingRunner) startLive(ctx context.Context, row memory.Process) {
 			r.log.add(row.ID, "returned", "")
 		}
 	}()
+}
+
+// recoverLive records that a process restarted after failures has handled a
+// trigger: its failures clear, and one that was failing says so, as a slice
+// process does when a cycle completes.
+func (r *StandingRunner) recoverLive(row memory.Process) {
+	if err := r.store.ProcessRecovered(row.ID); err != nil {
+		slog.Warn("live process: clear failures", "id", row.ID, "err", err)
+		return
+	}
+	if row.State != memory.ProcessFailing {
+		return
+	}
+	slog.Info("process recovered", "id", row.ID, "tool", row.Tool)
+	journalTransition(r.store, row.ID, evStandingRecovered, map[string]any{
+		"tool": row.Tool, "after_failures": row.Failures,
+	})
+	r.notifyHuman(fmt.Sprintf("Process %s recovered and is running normally again.", row.ID))
 }
 
 // stoppedInStore reports whether process id is stopped in the store.
@@ -294,7 +315,15 @@ func (h *liveHandler) Next(ctx context.Context) (toolvm.Trigger, error) {
 	lp := h.lp
 	lp.mu.Lock()
 	lp.waiting = true
+	lp.nexts++
+	recovered := lp.recovering && lp.nexts > 1
+	if recovered {
+		lp.recovering = false
+	}
 	lp.mu.Unlock()
+	if recovered {
+		h.r.recoverLive(lp.row)
+	}
 	defer func() {
 		lp.mu.Lock()
 		lp.waiting = false

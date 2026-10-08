@@ -26,7 +26,7 @@ func processRow(t *testing.T, store *memory.Store, id string) memory.Process {
 // and the pause reaches the human feed with when it runs again.
 func TestBudgetPausesAProcessAndTellsTheFeed(t *testing.T) {
 	r, store, sessions := liveSetup(t, memory.Process{
-		ID: "digest", SessionID: "digest-session", IntervalSecs: 1, BudgetTurns: 2,
+		ID: "digest", SessionID: "digest-session", IntervalSecs: 1, BudgetTurns: 2, ReportTo: "nobody",
 	})
 	tickUntil(t, r, "the budget's pause", func() bool {
 		return processRow(t, store, "digest").StoppedBy == "budget"
@@ -58,7 +58,7 @@ func TestBudgetPausesAProcessAndTellsTheFeed(t *testing.T) {
 // budget is counted, and the next is refused.
 func TestBudgetCountsTokens(t *testing.T) {
 	r, store, sessions := liveSetup(t, memory.Process{
-		ID: "digest", SessionID: "digest-session", IntervalSecs: 1, BudgetTokens: 100,
+		ID: "digest", SessionID: "digest-session", IntervalSecs: 1, BudgetTokens: 100, ReportTo: "nobody",
 	})
 	sessions.tokens = 60
 	tickUntil(t, r, "the budget's pause", func() bool {
