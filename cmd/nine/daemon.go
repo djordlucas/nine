@@ -214,6 +214,7 @@ func runDaemon() {
 		DefaultLeafRole:        cfg.Roles.DefaultLeaf,
 		MaxDelegationDepth:     cfg.Roles.MaxDelegationDepth,
 		MaxRunning:             cfg.Processes.MaxRunningOrDefault(),
+		ProcessBudget:          cfg.Processes.Budget,
 		JobMinDelayMS:          cfg.Tools.JobMinDelayMS,
 		JobWorkers:             cfg.Tools.JobWorkers,
 	})

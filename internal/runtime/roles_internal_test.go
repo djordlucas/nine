@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"nine/internal/config"
 	"nine/internal/memory/memtest"
 )
 
@@ -24,10 +25,10 @@ func TestSessionRoleComesFromItsOwningProcess(t *testing.T) {
 	if _, err := d.SpawnGoalSession(ctx, "tidy"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.SpawnStandingSession(ctx, "sec-watch", "monitor", true, time.Hour, ""); err != nil {
+	if _, err := d.SpawnStandingSession(ctx, "sec-watch", "monitor", true, time.Hour, "", config.BudgetConfig{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.SpawnStandingSession(ctx, "plain", "", false, time.Hour, ""); err != nil {
+	if _, err := d.SpawnStandingSession(ctx, "plain", "", false, time.Hour, "", config.BudgetConfig{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := ReconcileSelfReflection(store, time.Hour); err != nil {

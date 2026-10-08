@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"nine/internal/config"
 	"nine/internal/memory"
 )
 
@@ -69,7 +70,9 @@ func (d *Daemon) SpawnGoalSession(_ context.Context, goalID string) (bool, error
 // non-empty, otherwise the fixed interval (PursueIdleInterval when neither is
 // set). Configuration owns the definition, so a config edit takes effect on the
 // next pass; the run state is left alone.
-func (d *Daemon) SpawnStandingSession(_ context.Context, goalID, role string, delegates bool, interval time.Duration, schedule string) (bool, error) {
+//
+// budget is the block's own budget; zero fields take [processes] budget.
+func (d *Daemon) SpawnStandingSession(_ context.Context, goalID, role string, delegates bool, interval time.Duration, schedule string, budget config.BudgetConfig) (bool, error) {
 	if interval <= 0 && schedule == "" {
 		interval = PursueIdleInterval
 	}
@@ -79,7 +82,7 @@ func (d *Daemon) SpawnStandingSession(_ context.Context, goalID, role string, de
 	owner := memory.Process{
 		ID: goalProcessID(goalID), Tool: "pursue", Mode: memory.ProcessLive,
 		SessionID: goalID, Owner: true, Role: role, Delegates: delegates, GoalID: goalID,
-		Schedule: schedule,
+		Schedule: schedule, BudgetTurns: budget.TurnsPerDay, BudgetTokens: budget.TokensPerDay,
 	}
 	if schedule == "" {
 		owner.IntervalSecs = int(interval.Seconds())

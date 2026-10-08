@@ -359,6 +359,25 @@ var migrations = []migrationStep{
 		_, err = q.Exec(`DROP TABLE session_plans`)
 		return err
 	}},
+
+	// 15 → 16: every process has a budget (adr/process-sessions.md §5). The
+	// limits are the definition's — 0 takes [processes] budget — and the usage
+	// counts the turns and tokens of a rolling day that starts at its first
+	// counted turn.
+	{name: "process_budgets", fn: func(q sqlExec) error {
+		for _, c := range []struct{ name, def string }{
+			{"budget_turns", "INTEGER NOT NULL DEFAULT 0"},
+			{"budget_tokens", "INTEGER NOT NULL DEFAULT 0"},
+			{"usage_turns", "INTEGER NOT NULL DEFAULT 0"},
+			{"usage_tokens", "INTEGER NOT NULL DEFAULT 0"},
+			{"usage_since", "TEXT NOT NULL DEFAULT ''"},
+		} {
+			if err := addColumnIfMissing(q, "processes", c.name, c.def); err != nil {
+				return err
+			}
+		}
+		return nil
+	}},
 }
 
 // convertGoalPlans turns each session plan with a pursue routine into the

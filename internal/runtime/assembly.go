@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	"nine/internal/agent"
+	"nine/internal/config"
 	"nine/internal/embed"
 	"nine/internal/llm"
 	"nine/internal/memory"
@@ -98,6 +99,8 @@ type AssemblyConfig struct {
 	DefaultLeafRole    string
 	MaxDelegationDepth int
 	MaxRunning         int // [processes] max_running
+	// ProcessBudget is [processes] budget; zero fields take the defaults.
+	ProcessBudget config.BudgetConfig
 	// JobMinDelayMS and JobWorkers bound the process runner's calls, as they do
 	// the job sweeper's ([tools] job_min_delay_ms, job_workers); 0 is the default.
 	JobMinDelayMS int
@@ -217,6 +220,7 @@ func Assemble(c AssemblyConfig) *Assembly {
 	runner := NewStandingRunner(c.Store, c.Tools, c.JobMinDelayMS, c.JobWorkers)
 	runner.SetWaker(daemon)
 	runner.SetSessions(daemon)
+	runner.SetBudget(c.ProcessBudget)
 	daemon.ConfigureStandingTools(runner)
 	daemon.ConfigureProcesses(c.Store, runner.Wake)
 

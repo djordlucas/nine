@@ -76,6 +76,9 @@ type StandingRunner struct {
 	lives    map[string]*liveProc
 	// wake asks the run loop for a pass now (Wake).
 	wake chan struct{}
+	// budget is [processes] budget, the ceiling of every process's own
+	// (process_budget.go).
+	budget config.BudgetConfig
 }
 
 // Wake asks for a pass now rather than at the next tick: a process just written
@@ -230,6 +233,7 @@ func ReconcileProcesses(store *memory.Store, host *toolvm.Host, blocks []config.
 			ID: b.Name, Tool: b.Tool, Args: string(args),
 			IntervalSecs: interval, Schedule: b.Schedule,
 			ReportTo: b.ReportTo, Mode: memory.ProcessSlice, Owner: true,
+			BudgetTurns: b.Budget.TurnsPerDay, BudgetTokens: b.Budget.TokensPerDay,
 		}
 		if t := liveTool(host, b.Tool); t != nil {
 			p.Mode = memory.ProcessLive

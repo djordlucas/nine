@@ -22,7 +22,8 @@ import (
 
 // ProcessSessions runs a process's model turns. The daemon implements it.
 type ProcessSessions interface {
-	ProcessTurn(ctx context.Context, id string, p RoleParams, text, trigger string) (string, error)
+	// ProcessTurn runs one turn and returns its reply and the tokens it spent.
+	ProcessTurn(ctx context.Context, id string, p RoleParams, text, trigger string) (reply string, tokens int, err error)
 }
 
 // liveTriggerQueue is how many triggers may wait for a busy process. A clock
@@ -62,6 +63,7 @@ func (r *StandingRunner) tickLive(ctx context.Context) {
 	if r.sessions == nil {
 		return
 	}
+	r.resumeBudgets(time.Now())
 	r.bindGoals()
 	rows, err := r.store.ProcessesLive()
 	if err != nil {
@@ -191,6 +193,11 @@ func (r *StandingRunner) startLive(ctx context.Context, row memory.Process) {
 		switch {
 		case errors.Is(err, toolvm.ErrStopped):
 			r.log.add(row.ID, "stopped", "")
+		case err != nil && r.stoppedInStore(row.ID):
+			// A program that throws because it was stopped — a budget refusing
+			// its turn, which pursue does not catch — ended with its stop, not
+			// with a failure.
+			r.log.add(row.ID, "stopped", "")
 		case err != nil:
 			r.recordFailure(row, err)
 		default:
@@ -202,6 +209,12 @@ func (r *StandingRunner) startLive(ctx context.Context, row memory.Process) {
 			r.log.add(row.ID, "returned", "")
 		}
 	}()
+}
+
+// stoppedInStore reports whether process id is stopped in the store.
+func (r *StandingRunner) stoppedInStore(id string) bool {
+	p, ok, err := r.store.ProcessGet(id)
+	return err == nil && ok && p.State == memory.ProcessStopped
 }
 
 // StopLive stops every running live process, for the daemon's shutdown.
@@ -321,7 +334,15 @@ func (h *liveHandler) Turn(ctx context.Context, text string) (string, error) {
 	label := lp.label
 	lp.mu.Unlock()
 	row := lp.row
-	reply, err := h.r.sessions.ProcessTurn(ctx, row.SessionID, h.r.sessionParams(row), text, label)
+	if err := h.r.spendTurn(row.ID, time.Now()); err != nil {
+		return "", err
+	}
+	reply, tokens, err := h.r.sessions.ProcessTurn(ctx, row.SessionID, h.r.sessionParams(row), text, label)
+	// A turn that ran is counted, failed or not; one stopped before it began
+	// spent nothing.
+	if err == nil || tokens > 0 {
+		h.r.chargeTurn(row.ID, tokens)
+	}
 	if err != nil && ctx.Err() != nil {
 		return "", toolvm.ErrStopped
 	}

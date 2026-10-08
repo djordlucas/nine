@@ -199,7 +199,7 @@ func startProcesses(ctx context.Context, lv *live, setup []ProcessSetup) error {
 		if err := store.GoalCreate(b.Name, b.Goal, "", runtime.ConfigGoalOrigin); err != nil {
 			return err
 		}
-		if _, err := lv.Daemon.SpawnStandingSession(ctx, b.Name, role, b.Delegates, every, b.Schedule); err != nil {
+		if _, err := lv.Daemon.SpawnStandingSession(ctx, b.Name, role, b.Delegates, every, b.Schedule, b.Budget); err != nil {
 			return err
 		}
 	}

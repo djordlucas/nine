@@ -75,6 +75,9 @@ func (b *replayBuffer) snapshot() (events []protocol.Msg, response string) {
 type turnResp struct {
 	text string
 	err  error
+	// tokens is what the turn's model calls spent, input and output: what a
+	// process's budget counts.
+	tokens int
 }
 
 // StallConfig controls when a AgentWorker posts a stall event.
@@ -112,6 +115,8 @@ type AgentWorker struct {
 	// running tool-call count within the in-flight turn.
 	llmCallN int
 	toolN    int
+	// turnTokens sums the in-flight turn's model usage, input and output.
+	turnTokens int
 
 	mu         sync.Mutex
 	progressFn func(protocol.Msg) // called from worker goroutine on each tool event
@@ -322,6 +327,7 @@ func (w *AgentWorker) processTurn(req turnReq) {
 	w.mu.Unlock()
 	w.llmCallN = 0
 	w.toolN = 0
+	w.turnTokens = 0
 	w.replay.clearResponse() // new turn supersedes any buffered response
 	turnStart := time.Now()
 	text := w.prependNotifications(req.ctx, req.text)
@@ -369,7 +375,7 @@ func (w *AgentWorker) processTurn(req turnReq) {
 	w.busy = false
 	w.mu.Unlock()
 	w.notifyTurnOutcome(result, err)
-	req.respCh <- turnResp{text: result, err: err}
+	req.respCh <- turnResp{text: result, err: err, tokens: w.turnTokens}
 	if w.onComplete != nil {
 		w.onComplete(w.id)
 	}
@@ -430,6 +436,7 @@ func (w *AgentWorker) turnHooks(turn int) agent.Hooks {
 			})
 		},
 		OnLLMResponse: func(resp *llm.Response, llmCallN int) {
+			w.turnTokens += resp.Usage.InputTokens + resp.Usage.OutputTokens
 			w.journal(turn, "llm_response", llmSpan(turn, llmCallN), root, llmResponsePayload{
 				Text:         resp.Text,
 				ToolCalls:    resp.ToolCalls,
@@ -509,27 +516,33 @@ func (w *AgentWorker) turn(ctx context.Context, text string) (string, error) {
 // turnAs is turn with the journal's trigger label: "" for a user's turn, or
 // what drove it ("idle", "condition") for a process's.
 func (w *AgentWorker) turnAs(ctx context.Context, text, trigger string) (string, error) {
+	res := w.turnCounted(ctx, text, trigger)
+	return res.text, res.err
+}
+
+// turnCounted is turnAs with the tokens the turn spent.
+func (w *AgentWorker) turnCounted(ctx context.Context, text, trigger string) turnResp {
 	ch := make(chan turnResp, 1)
 	select {
 	case w.inbox <- turnReq{ctx: ctx, text: text, respCh: ch, trigger: trigger}:
 	case <-ctx.Done():
-		return "", ctx.Err()
+		return turnResp{err: ctx.Err()}
 	case <-w.quit:
-		return "", context.Canceled
+		return turnResp{err: context.Canceled}
 	}
 	select {
 	case res := <-ch:
-		return res.text, res.err
+		return res
 	case <-ctx.Done():
-		return "", ctx.Err()
+		return turnResp{err: ctx.Err()}
 	case <-w.quit:
 		// Shutdown began before the enqueued turn was picked up; the worker
 		// won't deliver a response. Prefer a result that already landed.
 		select {
 		case res := <-ch:
-			return res.text, res.err
+			return res
 		default:
-			return "", context.Canceled
+			return turnResp{err: context.Canceled}
 		}
 	}
 }

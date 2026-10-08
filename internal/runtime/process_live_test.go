@@ -19,16 +19,18 @@ type fakeSessions struct {
 	mu    sync.Mutex
 	turns []string // "<session>|<trigger>|<text>"
 	fail  error
+	// tokens is what each turn reports spending.
+	tokens int
 }
 
-func (f *fakeSessions) ProcessTurn(_ context.Context, id string, _ RoleParams, text, trigger string) (string, error) {
+func (f *fakeSessions) ProcessTurn(_ context.Context, id string, _ RoleParams, text, trigger string) (string, int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.turns = append(f.turns, id+"|"+trigger+"|"+text)
 	if f.fail != nil {
-		return "", f.fail
+		return "", f.tokens, f.fail
 	}
-	return "reply:" + text, nil
+	return "reply:" + text, f.tokens, nil
 }
 
 func (f *fakeSessions) seen() []string {

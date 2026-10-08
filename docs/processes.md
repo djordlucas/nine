@@ -64,6 +64,23 @@ They are read-only programs you can inspect with `nine tools show pursue`.
 A process's first tick comes one cadence after it starts, at boot as when it is
 created. A process with no clock wakes only on reports.
 
+## Budgets
+
+Every process has a budget over a rolling day: the model turns its program runs
+through `turn()`, and the tokens those turns spend. The day starts at its first
+counted turn.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `[processes] budget` | `{ turns_per_day = 200, tokens_per_day = 2000000 }` | every process's budget |
+| `budget` in a `[[process]]` block | `[processes] budget` | lowers either field for that process, never raises it |
+
+A turn the budget no longer covers is refused: `turn()` throws `E_BUDGET`, the
+process is paused, and the pause reaches `nine notifications` with when it runs
+again. When its day is over the process runs again by itself, with its usage
+back at zero. The default is generous enough that pursuing a goal does not meet
+it; what it stops is a loop that runs away.
+
 ## Goals, sessions and pipes
 
 **Goal binding.** A process bound to a goal works on that goal, and the goal's
@@ -92,6 +109,7 @@ goal      = "Monitor this repo for security issues; triage new CVEs."
 role      = "monitor"           # default "monitor", read-only
 delegates = false
 schedule  = "0 9 * * 1-5"       # or: every = "24h"; neither is every 5 minutes
+budget    = { turns_per_day = 50 }   # lowers [processes] budget
 
 # A condition trigger: a predicate every ten seconds, piped to the agent.
 [[process]]
@@ -116,7 +134,8 @@ schedule = "0 3 * * *"
 enabled  = true                 # false declares it without starting it
 
 [processes]
-max_running   = 14              # live processes at once
+max_running   = 14              # processes running at once, live and slice
+budget        = { turns_per_day = 200, tokens_per_day = 2000000 }
 authoritative = false           # true: a goal process no longer listed is retired at boot
 ```
 
@@ -135,6 +154,7 @@ block — an unknown `session`, a `report_to` naming no process, both `every` an
 | `when = { tool, interval, args }` | `[[process]] tool, every, args, report_to = "<agent>"` |
 | `[[standing_tool]] id, interval` | `[[process]] name, every` |
 | `[daemon] standing_agents_authoritative` | `[processes] authoritative` |
+| `[daemon] max_goal_sessions`, `[tools.agent] max_standing` | `[processes] max_running` |
 
 A file that still has one of the old blocks fails to load, naming the form to
 use instead.
@@ -154,6 +174,5 @@ use instead.
 |-------|--------|
 | No backfill | A clock tick missed while the daemon or the process was down is not replayed: the first tick comes one cadence after the start. |
 | Only shipped and operator processes | Nine cannot write processes yet: a live process is shipped, or a developer tool an operator declares with `[[process]]`, whose turns run under the `role` its block names. |
-| No budgets yet | A process's model use is bounded per turn, not per day. |
 | No event triggers | Processes wake on clocks and reports, not on journal events. |
 | Configuration is read at boot | Editing a block takes effect at the next start. |
