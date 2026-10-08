@@ -31,4 +31,4 @@ expect:
 runs: 3
 pass_threshold: "2/3"
 models:
-  expected_pass_min_class: small
+  expected_pass_min_class: medium

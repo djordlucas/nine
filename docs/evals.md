@@ -189,7 +189,7 @@ expect:
     goals: { created: 1, pursue_spawned: true }
     notifications: { min: 1, contains: "spent its budget" }   # contains: some notice has it
     processes:                        # processes by id
-      goal:time-log: { state: stopped, stopped_by: budget }    # a goal block's process is goal:<name>; or { absent: true }
+      time-log: { state: stopped, stopped_by: budget }   # by process id (a goal block's is goal:<name>); or { absent: true }
     vectors: { namespace: skills, min: 1 }
     generated_tools:                  # the tools Nine wrote, by name
       slugify: { source: { matches: "toLowerCase" } }

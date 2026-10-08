@@ -1,17 +1,16 @@
 id: process-budget-pause
-description: "A process that spends its budget is paused and the pause reaches the human feed: a pursue process allowed two turns a day takes two ticks, and its third is refused with E_BUDGET. Every model passes it or nine is broken — what is measured is the runtime, not the model."
+description: "A process that spends its budget is paused and the pause reaches the human feed: a reflect process allowed two turns a day takes two ticks, and its third is refused with E_BUDGET. Every model passes it or nine is broken — what is measured is the runtime, not the model."
 track: live
 tier: basic
 tags: [processes, budgets]
 
 setup:
   processes:
+    # reflect: no goal binds it, so nothing the model does in its turns can
+    # stop it before its budget does — a goal the model pauses would.
     - name: time-log
-      tool: pursue
-      # Ongoing, so the model never finishes the goal: its goal's status would
-      # stop the process before its budget did.
-      goal: "Append the current time to notes/time.log in the workspace. This goal is ongoing: never mark it done, and do not pause it."
-      role: pursue
+      tool: reflect
+      role: reflection
       every: 2s
       budget: { turns_per_day: 2 }
 
@@ -23,9 +22,9 @@ wait:
 
 expect:
   side_effects:
-    notifications: { contains: "Process goal:time-log spent its budget for the day (2 of 2 turns" }
+    notifications: { contains: "Process time-log spent its budget for the day (2 of 2 turns" }
     processes:
-      goal:time-log: { state: stopped, stopped_by: budget }
+      time-log: { state: stopped, stopped_by: budget }
 
 runs: 3
 pass_threshold: "3/3"
