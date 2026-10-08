@@ -96,6 +96,25 @@ func (g *grader) gradeSideEffects() {
 		}
 	}
 
+	// generated_tools reads the tools table tool_write and tool_delete keep.
+	for name, m := range se.GeneratedTools {
+		tool, found, err := store.GeneratedToolGet(name)
+		switch {
+		case err != nil:
+			g.fail("side_effect generated_tool %s: %v", name, err)
+		case m.Absent:
+			if found {
+				g.fail("side_effect generated_tool %s: still exists", name)
+			}
+		case !found:
+			g.fail("side_effect generated_tool %s: not found", name)
+		case m.Source != (StringMatch{}):
+			if why, ok := m.Source.match(tool.Source); !ok {
+				g.fail("side_effect generated_tool %s source: %s", name, why)
+			}
+		}
+	}
+
 	// stored_files is keyed by a path prefix and passes when SOME file under it
 	// matches, because a spill path carries an unpredictable random suffix.
 	for prefix, m := range se.StoredFiles {

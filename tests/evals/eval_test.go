@@ -115,8 +115,19 @@ func TestLiveMatrix(t *testing.T) {
 		}
 	}
 
+	// NINE_EVAL_TAGS narrows to cases carrying any of the given tags — how
+	// `make eval-code` runs every case about code the model writes on models
+	// expected to pass them.
+	if only := os.Getenv("NINE_EVAL_TAGS"); only != "" {
+		cases = filterTags(cases, splitModels(only))
+		if len(cases) == 0 {
+			t.Fatalf("NINE_EVAL_TAGS=%q matched no cases", only)
+		}
+	}
+
 	suite := &runner.Suite{
-		Harness:     &runner.Harness{NineBin: os.Getenv("NINE_BINARY"), Embedder: runner.EvalEmbedder()},
+		Harness: &runner.Harness{NineBin: os.Getenv("NINE_BINARY"), Embedder: runner.EvalEmbedder(),
+			ContextBudget: runner.EvalContextBudget()},
 		Models:      models,
 		ProviderFor: runner.ProviderFor,
 		JudgeFn:     runner.NewJudge(runner.ProviderFor),
@@ -157,6 +168,23 @@ func filterIDs(cases []*runner.Case, ids []string) []*runner.Case {
 	for _, c := range cases {
 		if want[c.ID] {
 			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func filterTags(cases []*runner.Case, tags []string) []*runner.Case {
+	want := make(map[string]bool, len(tags))
+	for _, tag := range tags {
+		want[tag] = true
+	}
+	var out []*runner.Case
+	for _, c := range cases {
+		for _, tag := range c.Tags {
+			if want[tag] {
+				out = append(out, c)
+				break
+			}
 		}
 	}
 	return out

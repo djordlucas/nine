@@ -19,7 +19,7 @@ GOFLAGS  := -mod=vendor
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS  := -ldflags "-X main.Version=$(VERSION)"
 
-.PHONY: all dev build openapi openapi-check openapi-lint test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-generate quickjs-wasm quickjs-verify harness-bc image image-test image-scan image-verify ci ci-test scan scan-fs lint-host
+.PHONY: all dev build openapi openapi-check openapi-lint test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-code eval-generate quickjs-wasm quickjs-verify harness-bc image image-test image-scan image-verify ci ci-test scan scan-fs lint-host
 
 dev: build
 
@@ -363,6 +363,18 @@ eval-replay:
 NINE_EVAL_TIMEOUT ?= 7200s
 eval-live: build
 	NINE_EVALS_LIVE=1 \
+	NINE_BINARY=$(abspath $(DIST)/$(BINARY)) \
+	$(GO) test $(GOFLAGS) -v -count=1 -timeout $(NINE_EVAL_TIMEOUT) -run TestLiveMatrix ./tests/evals/
+
+# Code the model writes and runs — generated tools and js_eval, the cases tagged
+# `generated` — on qwen3.5:9b, which is capable enough for them to carry
+# signal, beside the 4b default for comparison.
+#   NINE_EVAL_CODE_MODELS=qwen3.5:9b make eval-code
+NINE_EVAL_CODE_MODELS ?= qwen3.5:9b,qwen3.5:4b
+eval-code: build
+	NINE_EVALS_LIVE=1 \
+	NINE_EVAL_MODELS=$(NINE_EVAL_CODE_MODELS) \
+	NINE_EVAL_TAGS=generated \
 	NINE_BINARY=$(abspath $(DIST)/$(BINARY)) \
 	$(GO) test $(GOFLAGS) -v -count=1 -timeout $(NINE_EVAL_TIMEOUT) -run TestLiveMatrix ./tests/evals/
 

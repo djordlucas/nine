@@ -1,0 +1,34 @@
+id: tool-write-revise
+description: "Fix a tool Nine wrote earlier. A seeded slugify keeps uppercase letters; the model must rewrite it with tool_write and call it. The stored source and the output for a fresh title prove the rewrite ran."
+track: live
+tier: multi_step
+tags: [tools, generated, self-modification]
+
+session:
+  config:
+    tools.agent.enabled: true
+
+setup:
+  generated_tools:
+    slugify:
+      description: "Turn a title into a URL slug: its words joined by hyphens."
+      input_schema: '{"type":"object","required":["text"],"properties":{"text":{"type":"string"}}}'
+      source: 'export default ({ text }) => text.trim().split(/\s+/).join("-");'
+
+prompts:
+  - "Your slugify tool is wrong: on 'Hello World' it returns Hello-World, but a slug must be all lowercase (hello-world). Fix the tool with tool_write, then use slugify on the text Process Sessions Rock and tell me its exact output."
+
+expect:
+  side_effects:
+    generated_tools:
+      slugify: { source: { matches: "toLowerCase|toLocaleLowerCase" } }
+  trajectory:
+    tools_all_of: [tool_write, slugify]
+    no_stall: true
+  answer:
+    contains: ["process-sessions-rock"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

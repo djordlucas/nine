@@ -5,7 +5,8 @@ infrastructure. The case schema below is deliberately precise enough that new
 cases can be generated from this document, by a person or by a model, to cover
 features and guard against regressions.
 
-Run them with `make eval-replay` and `make eval-live`.
+Run them with `make eval-replay` and `make eval-live`; `make eval-code` runs the
+cases about code the model writes on models expected to pass them.
 
 There are **two tracks**, and every case declares which it belongs to:
 
@@ -130,6 +131,12 @@ setup:
       command: "${NINE_EVAL_MCP_FIXTURE}"   # ${VAR} is expanded from the environment
       args: []
       env: {}                        # passed to the server process only
+  generated_tools:                   # tools Nine wrote earlier, seeded through tool_write's store;
+    slugify:                         # needs session.config tools.agent.enabled
+      description: "Turn a title into a URL slug"
+      input_schema: '{"type":"object","properties":{"text":{"type":"string"}}}'
+      source: 'export default ({ text }) => text.split(" ").join("-");'
+      capabilities: ""               # JSON declaration; empty declares nothing
   processes:                         # [[process]] blocks, reconciled as at boot (docs/processes.md)
     - name: status-report            # a goal block becomes a goal and its pursue process
       tool: pursue
@@ -181,6 +188,9 @@ expect:
     goals: { created: 1, pursue_spawned: true }
     notifications: { min: 1 }
     vectors: { namespace: skills, min: 1 }
+    generated_tools:                  # the tools Nine wrote, by name
+      slugify: { source: { matches: "toLowerCase" } }
+      old_helper: { absent: true }
   trajectory:
     tools_all_of: [memory_set]        # every one MUST appear
     tools_any_of: [memory_get]        # at least one MUST appear
@@ -289,8 +299,9 @@ Run the case against each applicable model, `runs` times, and mark it passing if
 pass fraction ≥ `pass_threshold`. Everything in §1–§3 applies. Requirements:
 
 - **Selecting what runs**: `NINE_EVAL_MODELS` (comma-separated, required) picks the
-  matrix; `NINE_EVAL_TIER` narrows to one tier; `NINE_EVAL_CASES` narrows to specific
-  case ids — the fast loop when iterating on a single case:
+  matrix; `NINE_EVAL_TIER` narrows to one tier; `NINE_EVAL_TAGS` to the cases carrying
+  one of its tags; `NINE_EVAL_CASES` narrows to specific case ids — the fast loop when
+  iterating on a single case:
 
   ```sh
   NINE_EVAL_MODELS=qwen3.5:4b NINE_EVAL_CASES=tool-output-spill make eval-live
@@ -324,6 +335,17 @@ pass fraction ≥ `pass_threshold`. Everything in §1–§3 applies. Requirement
 
   Size this generously. A matrix that overruns is killed by the test binary and the
   run is **lost**, not truncated — see below.
+- **Code the model writes** — the cases tagged `generated` (`tool_write`,
+  `tool_delete`, `js_eval`) — need a model above the small default's class to give
+  any signal: on it they fail on every build, so a regression would not show.
+  `make eval-code` runs only those cases (`NINE_EVAL_TAGS=generated`) on
+  `qwen3.5:9b` and `qwen3.5:4b`; `NINE_EVAL_CODE_MODELS` overrides the list.
+  `NINE_EVAL_TAGS` narrows any run to the cases carrying one of its tags.
+- **Context window**: live runs give Ollama a 16384-token window
+  (`NINE_EVAL_NUM_CTX` overrides it), and nine assembles each turn within that window
+  less the 2048-token reply cap. A turn's first prompt is ~7,000–8,000 tokens, almost
+  all of it the ~50 tool schemas, so a smaller window leaves the model no room to
+  reply and Ollama drops the start of longer prompts.
 - **Progress is reported per case**, as each verdict lands:
 
   ```text
@@ -435,6 +457,9 @@ strongest available assertion for that feature.
 | processes | a goal process acts with no prompt; a pipe makes an agent act; reflect writes the self-model | `setup.processes` + `wait` + side-effect `files`/`kv` | basic/multi_step |
 | generated tools | `tool_write` a tool, call it in a later turn | `tools_all_of:[tool_write,<name>]` + answer | multi_step |
 | generated tools | one-off computation via `js_eval`, nothing persisted | `tools_all_of:[js_eval]`, `tools_none_of:[tool_write]` + answer | basic |
+| generated tools | fix a seeded tool with `tool_write`, then call it | side-effect `generated_tools` source + `tools_all_of:[tool_write,<name>]` + answer | multi_step |
+| generated tools | delete its own tool; a built-in is refused | side-effect `generated_tools` absent + `tools_all_of:[tool_delete]` + answer | basic |
+| generated tools | write a tool declaring a capability, use it on a file | side-effect `generated_tools` source + `tools_all_of:[tool_write,<name>]` + answer | multi_step |
 | roles | report-writer denied `shell` | `llm_request.tool_advertised_none_of:[shell]` | basic |
 | HITL | needs clarification | `ask_human` fired; resumes on `human_answers` | hitl |
 | approval gate | gated `shell` needs approval | approval prompt; blocked on "no" | hitl |

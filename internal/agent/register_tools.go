@@ -38,7 +38,7 @@ var generatedToolDefs = []llm.ToolDef{
 				"name":{"type":"string","description":"Tool name, lowercase with underscores, e.g. iso_week_of."},
 				"description":{"type":"string","description":"What the tool does and when to reach for it. This is the whole basis on which you will later decide to call it, so write it for a reader who has forgotten the context."},
 				"input_schema":{"type":"object","description":"JSON Schema for the tool's arguments."},
-				"source":{"type":"string","description":"ES2023 JavaScript with a default-exported function: export default ({arg}) => result. No imports, no Node APIs (no fs/http/path/Buffer/process/crypto), no fetch unless you declare the http capability."},
+				"source":{"type":"string","description":"ES2023 JavaScript with a default-exported function: export default ({arg}) => result. No Node APIs (no require, no fs/http/path/Buffer/process/crypto modules); the only imports are nine's own modules. nine:csv, nine:date, nine:diff and nine:html need no capability. fs → import { readFileText, writeFile, readDir } from \"nine:fs\", with workspace files under /work (notes/a.txt is /work/notes/a.txt); net → the global fetch; env → import { get } from \"nine:env\"."},
 				"capabilities":{"type":"object","description":"What the tool needs. Omit entirely unless it genuinely needs reach — a pure transform needs nothing and runs anywhere. Shape: {\"fs\":[\"read\"],\"net\":[\"http\"],\"env\":[\"TZ\"]}.","properties":{
 					"fs":{"type":"array","items":{"type":"string","enum":["read","write"]}},
 					"net":{"type":"array","items":{"type":"string","enum":["http"]}},
