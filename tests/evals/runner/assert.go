@@ -189,10 +189,36 @@ func (g *grader) gradeSideEffects() {
 
 	if n := se.Notifications; n != nil {
 		notes, err := store.UserNotificationList(false)
-		if err != nil {
+		switch {
+		case err != nil:
 			g.fail("side_effect notifications: %v", err)
-		} else if len(notes) < n.Min {
+		case len(notes) < n.Min:
 			g.fail("side_effect notifications: %d, want >= %d", len(notes), n.Min)
+		case n.Contains != "":
+			found := false
+			for _, note := range notes {
+				found = found || strings.Contains(note.Message, n.Contains)
+			}
+			if !found {
+				g.fail("side_effect notifications: none contains %q", n.Contains)
+			}
+		}
+	}
+
+	for id, want := range se.Processes {
+		p, found, err := store.ProcessGet(id)
+		switch {
+		case err != nil:
+			g.fail("side_effect process %s: %v", id, err)
+		case want.Absent && found:
+			g.fail("side_effect process %s: still exists", id)
+		case want.Absent:
+		case !found:
+			g.fail("side_effect process %s: not found", id)
+		case want.State != "" && p.State != want.State:
+			g.fail("side_effect process %s: state %q, want %q", id, p.State, want.State)
+		case want.StoppedBy != "" && p.StoppedBy != want.StoppedBy:
+			g.fail("side_effect process %s: stopped by %q, want %q", id, p.StoppedBy, want.StoppedBy)
 		}
 	}
 

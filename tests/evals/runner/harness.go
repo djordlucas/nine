@@ -170,6 +170,7 @@ func startProcesses(ctx context.Context, lv *live, setup []ProcessSetup) error {
 		blocks = append(blocks, config.ProcessConfig{
 			Name: p.Name, Tool: p.Tool, Every: p.Every, Schedule: p.Schedule, Goal: p.Goal,
 			Role: p.Role, Delegates: p.Delegates, Session: p.Session, ReportTo: p.ReportTo, Args: p.Args,
+			Budget: config.BudgetConfig{TurnsPerDay: p.Budget.TurnsPerDay, TokensPerDay: p.Budget.TokensPerDay},
 		})
 	}
 	if err := (&config.Config{Process: blocks}).Validate(); err != nil {

@@ -143,6 +143,7 @@ setup:
       goal: "Write READY to notes/status.md"
       role: pursue
       every: 2s                      # a short clock, so the case is over in seconds
+      budget: { turns_per_day: 2 }   # lowers [processes] budget, as a block does
 
 # ── Infrastructure this case needs but the suite cannot provide. Unset → the
 #    case is reported as skipped (never as a pass, never fatal). ──
@@ -186,7 +187,9 @@ expect:
       self/prod_db: { equals: "db.prod.example.com" }   # or { matches: "..." }
     workflows: { status: done, min_steps: 3 }
     goals: { created: 1, pursue_spawned: true }
-    notifications: { min: 1 }
+    notifications: { min: 1, contains: "spent its budget" }   # contains: some notice has it
+    processes:                        # processes by id
+      goal:time-log: { state: stopped, stopped_by: budget }    # a goal block's process is goal:<name>; or { absent: true }
     vectors: { namespace: skills, min: 1 }
     generated_tools:                  # the tools Nine wrote, by name
       slugify: { source: { matches: "toLowerCase" } }
@@ -455,6 +458,8 @@ strongest available assertion for that feature.
 | sub-agents | `run_agents` fan-out | `sub_agents.count` ≥ 2 | delegation |
 | goals | open-ended request | side-effect goal + pursue session | multi_step |
 | processes | a goal process acts with no prompt; a pipe makes an agent act; reflect writes the self-model | `setup.processes` + `wait` + side-effect `files`/`kv` | basic/multi_step |
+| processes | a process that spends its budget is paused and the feed is told | `setup.processes` budget + `wait` + side-effect `processes` and `notifications.contains` | basic |
+| processes | a conversation finds a background process and stops it | side-effect `processes` `stopped_by: model` + `tools_all_of:[process_stop]` | basic |
 | generated tools | `tool_write` a tool, call it in a later turn | `tools_all_of:[tool_write,<name>]` + answer | multi_step |
 | generated tools | one-off computation via `js_eval`, nothing persisted | `tools_all_of:[js_eval]`, `tools_none_of:[tool_write]` + answer | basic |
 | generated tools | fix a seeded tool with `tool_write`, then call it | side-effect `generated_tools` source + `tools_all_of:[tool_write,<name>]` + answer | multi_step |

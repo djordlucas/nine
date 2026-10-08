@@ -1,0 +1,29 @@
+id: process-stop-by-model
+description: "From a conversation, the model finds a background process with process_list and stops it with process_stop; the stop is recorded as the model's, which lets a model start it again later."
+track: live
+tier: basic
+tags: [processes, tools]
+
+setup:
+  processes:
+    - name: notes-tidier
+      tool: pursue
+      goal: "Tidy the notes folder: merge duplicate notes."
+      role: pursue
+      every: 1h
+
+prompts:
+  - "Something is tidying my notes folder in the background and I want it to stop. Find that background process and stop it."
+
+expect:
+  side_effects:
+    processes:
+      goal:notes-tidier: { state: stopped, stopped_by: model }
+  trajectory:
+    tools_all_of: [process_stop]
+    tools_any_of: [process_list, process_show]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

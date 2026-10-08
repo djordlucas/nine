@@ -1,6 +1,6 @@
 # Design note — Process sessions
 
-**Status:** **Phase 1 implemented** (2026-10-07; revised 2026-10-06: one concept for all background work) ·
+**Status:** **Phases 1 and 2 implemented** (2026-10-07; revised 2026-10-06: one concept for all background work) ·
 **Related:** `adr/standing-tools.md`, `adr/tool-facilities.md`, `adr/reactive-events.md`,
 `adr/predefined-agents-design.md`, `adr/roles-design.md`, `adr/personality-pattern.md`,
 `adr/agent-boundary.md` · **Amends:** R-SUB.7, the stance of `docs/self-modification.md`, and
@@ -461,7 +461,8 @@ configurations in use to carry over. A file that still has one fails to load, na
 
 ## Limits
 
-- Nothing here is built.
+- Phases 3 to 8 are not built: Nine cannot write processes, and there are no event triggers,
+  `sql`, revision or genesis.
 - A started live process holds its instance while it waits in `next()`. Hibernating idle
   processes (closing the instance, restarting it on the next trigger) would save memory at the
   cost of losing in-memory state more often; it is left out until memory requires it.
@@ -481,3 +482,21 @@ configurations in use to carry over. A file that still has one fails to load, na
 | Who may call `turn()` | any live process, under the role its owner process's block names | phase 1 has no Nine-written processes, so every live process is shipped or operator-declared |
 | Goal processes | `tool = "pursue"` only | goal binding is built for `pursue`; another bound tool waits for phase 3 |
 | Sender label on pipes | not yet | phase 2, as §7 plans |
+
+---
+
+## Phase 2 as built
+
+| Point | As built | Why |
+|---|---|---|
+| Default budget | 200 turns and 2,000,000 tokens per process over a rolling day that starts at its first counted turn; a block may lower either, never raise it | generous enough that pursuing a goal never meets it, so what it stops is a runaway loop (decided 2026-10-07) |
+| After a budget pause | the process runs again by itself when its day is over | the pause was the budget's, not a decision anyone made (decided 2026-10-07) |
+| What a budget counts | every turn that runs, failed or not, with the input and output tokens of its model calls | a turn that failed still spent them |
+| Limits | `[processes] max_running` is the one cap on running processes, live and slice; `max_goal_sessions` and `max_standing` are refused | one concept, one cap (decided 2026-10-07) |
+| Health | both modes back off, reach `failing` after three failures, and report entering and leaving it; a live process's failures clear when it handles a trigger, not when it restarts | phase 1 cleared them at each restart, so a live process never reached `failing` |
+| Process tools | a conversation's, filtered by its role; the default role holds all five. Process sessions and sub-agents hold none | decided 2026-10-07. They add about 500 tokens to every conversation's prompt; `adr/deferred-tool-schemas.md` is what would remove that |
+| `process_send` | refused when the process cannot take the message now, rather than sent to the human feed | the sender is a model that can try again; a pipe's sender cannot |
+| Operator surface | `nine process`, `/processes` in the TUI (start and stop included, each naming its process), and `/api/v1/processes` | decided 2026-10-07 |
+| Deletion | removing a non-goal block deletes its process at the next boot and keeps its session; goal blocks keep `authoritative` | decided 2026-10-07; Nine-written processes, and `tool_delete` on them, arrive with phase 3 |
+| Pipe label | `[From process <id>: <text>]`; a send is `[From conversation <id>: …]` or `[From the operator: …]` | the label names what the sender is |
+
