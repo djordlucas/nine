@@ -1045,7 +1045,7 @@ func TestLoopRestrictNextTurn(t *testing.T) {
 		}
 	}})
 
-	loop.RestrictNextTurn([]string{"read_file"})
+	loop.RestrictNextTurn(agent.TurnRestriction{Tools: []string{"read_file"}})
 	if _, err := loop.Run(context.Background(), "a report"); err != nil {
 		t.Fatal(err)
 	}

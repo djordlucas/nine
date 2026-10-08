@@ -121,8 +121,10 @@ A turn a piped report starts — a live receiver's turn on that trigger, or a wo
 turn — **MUST** run restricted to `PipedTurnTools`: only those tools are offered, and a call
 to any other is refused, as not retryable, without running. The list holds reading,
 writing and editing files, memory, the session's own goal, and `notify_user`; it **MUST
-NOT** hold deleting or moving files, the shell, the network, sub-agents, workflows, or
-writing tools, skills or goals. A message a person sends (`process_send`, the operator)
+NOT** hold deleting, moving or restoring files, the shell, the network, sub-agents,
+workflows, or writing tools, skills or goals. `write_file` and `edit_file` **MUST** be
+refused for a file that existed before the turn; a file the turn created may be written
+again. A message a person sends (`process_send`, the operator)
 is not restricted. The
 human feed's copy is unlabelled, prefixed with the sender and receiver instead.
 

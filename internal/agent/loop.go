@@ -145,11 +145,11 @@ type Loop struct {
 	lastToolCount      int  // tool calls dispatched in the most recent Run()
 	forceThinkNextTurn bool // set by SetForceThinkNextTurn; consumed + reset each Run (/think)
 
-	// nextTurnAllow, when set, restricts the next Run to these tools: only
-	// they are offered, and a call to any other is refused. turnAllow is the
-	// restriction of the Run in progress (RestrictNextTurn).
-	nextTurnAllow      []string
+	// nextTurn, when set, restricts the next Run (RestrictNextTurn); turnAllow
+	// and turnGuard are the restriction of the Run in progress.
+	nextTurn           *TurnRestriction
 	turnAllow          map[string]bool
+	turnGuard          func(name string, args json.RawMessage) error
 	displayNames       map[string]string
 	onToolStart        func(name, displayName, backend string, input json.RawMessage)
 	onToolEnd          func(name, displayName, backend string, input json.RawMessage, out ToolOutcome)
@@ -191,10 +191,17 @@ type ToolOutcome struct {
 // turns; not safe during Run.
 func (l *Loop) SetForceThinkNextTurn(v bool) { l.forceThinkNextTurn = v }
 
-// RestrictNextTurn limits the next Run to the tools in names: only they are
-// offered to the model, and a call to any other is refused with the reason.
-// It applies to that one Run and is then cleared.
-func (l *Loop) RestrictNextTurn(names []string) { l.nextTurnAllow = names }
+// TurnRestriction limits one Run. Tools are the only tools offered, and a call
+// to any other is refused. Guard, when set, is asked before each allowed call
+// and refuses it by returning an error, which the model sees as not retryable.
+type TurnRestriction struct {
+	Tools []string
+	Guard func(name string, args json.RawMessage) error
+}
+
+// RestrictNextTurn limits the next Run by r. It applies to that one Run and is
+// then cleared.
+func (l *Loop) RestrictNextTurn(r TurnRestriction) { l.nextTurn = &r }
 
 // turnTools is the tool list the Run in progress offers.
 func (l *Loop) turnTools() []ninectx.ToolWithVector {
@@ -386,14 +393,15 @@ func (l *Loop) refreshTools() {
 // is the uncommon case in ReAct; single-tool responses are the norm.
 func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 	l.refreshTools()
-	if l.nextTurnAllow != nil {
-		l.turnAllow = make(map[string]bool, len(l.nextTurnAllow))
-		for _, n := range l.nextTurnAllow {
+	if r := l.nextTurn; r != nil {
+		l.turnAllow = make(map[string]bool, len(r.Tools))
+		for _, n := range r.Tools {
 			l.turnAllow[n] = true
 		}
-		l.nextTurnAllow = nil
+		l.turnGuard = r.Guard
+		l.nextTurn = nil
 	}
-	defer func() { l.turnAllow = nil }()
+	defer func() { l.turnAllow, l.turnGuard = nil, nil }()
 	l.history = append(l.history, llm.Message{Role: "user", Text: userText})
 	l.scratchpad = l.scratchpad[:0]
 	l.lastToolCount = 0
@@ -601,6 +609,8 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 			)
 			if l.turnAllow != nil && !l.turnAllow[tc.Name] {
 				dispErr = notInTurnError{tool: tc.Name}
+			} else if err := l.guardCall(tc.Name, tc.Input); err != nil {
+				dispErr = err
 			} else {
 				result, attempts, elapsed, dispErr = l.dispatchWithRetry(ctx, tc.Name, tc.Input)
 			}
@@ -740,6 +750,24 @@ func (e notInTurnError) Error() string {
 }
 
 func (notInTurnError) Retryable() (retryable, stated bool) { return false, true }
+
+// guardRefusal is a call the turn's guard refused.
+type guardRefusal struct{ err error }
+
+func (e guardRefusal) Error() string                     { return e.err.Error() }
+func (e guardRefusal) Unwrap() error                     { return e.err }
+func (guardRefusal) Retryable() (retryable, stated bool) { return false, true }
+
+// guardCall asks the turn's guard about a call, if it has one.
+func (l *Loop) guardCall(name string, args json.RawMessage) error {
+	if l.turnGuard == nil {
+		return nil
+	}
+	if err := l.turnGuard(name, args); err != nil {
+		return guardRefusal{err: err}
+	}
+	return nil
+}
 
 func statedRetryable(err error) (retryable, stated bool) {
 	var r interface{ Retryable() (bool, bool) }

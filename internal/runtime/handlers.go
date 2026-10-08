@@ -282,6 +282,7 @@ func (d *Daemon) buildWorker(id string, checkpointData []byte, p RoleParams) *Ag
 		}
 	}
 	r := newAgentWorker(id, loop, saveFn, session.Notifications, stall, d.sink)
+	r.workspaceRoot = d.workspaceRoot
 	r.onComplete = session.OnComplete
 	if d.store != nil {
 		store := d.store

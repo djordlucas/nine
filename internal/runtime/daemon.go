@@ -157,6 +157,8 @@ type Daemon struct {
 	sink   EventSink // durable session-event journal for new workers (nil = disabled)
 
 	maxRunning int // see SetMaxRunning
+	// workspaceRoot is [workspace].root (ConfigureWorkspace).
+	workspaceRoot string
 
 	// procs is the process store (see ConfigureProcesses); procWake asks the
 	// process runner for a pass now. Both nil on a daemon with no processes.
@@ -734,6 +736,10 @@ func (d *Daemon) WakeAgent(agentID, text string) bool {
 // (standing_list / standing_show / standing_control) can reach it. Nil leaves
 // those messages answering that no standing tools exist here.
 func (d *Daemon) ConfigureStandingTools(r *StandingRunner) { d.standing = r }
+
+// ConfigureWorkspace gives the daemon [workspace].root, which a piped turn's
+// write guard checks paths against (pipedTurn).
+func (d *Daemon) ConfigureWorkspace(root string) { d.workspaceRoot = root }
 
 func (d *Daemon) ConfigureSandboxedTools(h *toolvm.Host) {
 	d.tools = h

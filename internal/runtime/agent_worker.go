@@ -120,6 +120,8 @@ type AgentWorker struct {
 	toolN    int
 	// turnTokens sums the in-flight turn's model usage, input and output.
 	turnTokens int
+	// workspaceRoot is [workspace].root, for a piped turn's write guard.
+	workspaceRoot string
 
 	mu         sync.Mutex
 	progressFn func(protocol.Msg) // called from worker goroutine on each tool event
@@ -346,7 +348,7 @@ func (w *AgentWorker) processTurn(req turnReq) {
 	slog.Debug("turn_start", "agent_id", w.id, "turn_n", turn)
 	w.loop.SetForceThinkNextTurn(req.forceThink)
 	if req.allow != nil {
-		w.loop.RestrictNextTurn(req.allow)
+		w.loop.RestrictNextTurn(pipedTurn(req.allow, w.workspaceRoot))
 	}
 	// Both of these travel with the turn rather than being configured at boot,
 	// because the sandboxed-tool host is daemon-wide: the journal destination for

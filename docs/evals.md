@@ -200,6 +200,7 @@ expect:
   trajectory:
     tools_all_of: [memory_set]        # every one MUST appear
     tools_any_of: [memory_get]        # at least one MUST appear
+    min_turns_by_trigger: { condition: 1 }   # turns by what started them: user|idle|condition
     tools_none_of: [shell, run_agent] # none may appear
     max_turns: 2
     min_turns: 1
