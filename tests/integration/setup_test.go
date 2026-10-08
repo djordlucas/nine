@@ -99,7 +99,7 @@ func checkPrereqs() {
 	}
 	resp, err := http.Get(ollamaURL)
 	if err != nil || resp.StatusCode != 200 {
-		log.Fatalf("ollama not reachable at %s — start it before running integration tests", ollamaURL)
+		log.Fatalf("ollama not reachable at %q — start it before running integration tests", ollamaURL) //nolint:gosec // G706: the operator's own NINE_LLM_ENDPOINT, printed to their terminal
 	}
 	resp.Body.Close()
 }
