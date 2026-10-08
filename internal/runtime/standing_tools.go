@@ -434,12 +434,16 @@ func (r *StandingRunner) report(st memory.Process, out toolvm.Output) {
 // deliberately: a finding that reached nobody is worse than one that reached
 // the wrong inbox, and a silently-dropped condition is exactly the failure an
 // operator would never discover.
+//
+// What arrives carries its sender's label (pipeLabel), so the receiving model
+// can tell an upstream report from a person's instruction.
 func (r *StandingRunner) pipe(st memory.Process, text string) bool {
 	delivered := false
-	if handled, ok := r.Deliver(st.ReportTo, text, st.ID); handled {
+	labeled := pipeLabel(st.ID, text)
+	if handled, ok := r.Deliver(st.ReportTo, labeled, st.ID); handled {
 		delivered = ok
 	} else if r.waker != nil {
-		delivered = r.waker.WakeAgent(st.ReportTo, text)
+		delivered = r.waker.WakeAgent(st.ReportTo, labeled)
 	}
 	if delivered {
 		slog.Info("process report delivered", "id", st.ID, "to", st.ReportTo, "tool", st.Tool)
@@ -449,6 +453,15 @@ func (r *StandingRunner) pipe(st memory.Process, text string) bool {
 		"id", st.ID, "to", st.ReportTo)
 	r.notifyHuman(fmt.Sprintf("[%s → %s, not running] %s", st.ID, st.ReportTo, text))
 	return false
+}
+
+// pipeLabel marks text piped from process from (adr/process-sessions.md §7).
+// What a pipe carries is data, and data reaching a model-driven receiver is in
+// its prompt: a process that fetches web pages and pipes them on is an
+// injection path into the receiver's session. The label lets the model tell
+// an upstream report from a person's instruction.
+func pipeLabel(from, text string) string {
+	return fmt.Sprintf("[From process %s: %s]", from, text)
 }
 
 func (r *StandingRunner) notifyHuman(msg string) {

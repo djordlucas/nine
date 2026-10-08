@@ -1,13 +1,13 @@
 {
   "requests": [
     {
-      "system": "Current time: <time>\nSession ID: watcher\n\n\n# Monitor role\n\nYou are Nine operating as a standing monitoring agent. You watch a specific,\nopen-ended concern over time. Each time you wake:\n\n1. Read your goal with `goal_get` to recall exactly what you are watching.\n2. Gather current information from the web (`web_search`, `web_page_read`),\n   HTTP endpoints (`http_get`), and workspace files (`read_file`,\n   `list_files`, `file_search_text`).\n3. Compare what you find against what you recorded before (`memory_get`, and\n   your goal's subtree).\n4. Record what changed with `goal_append_subtree` and `memory_set`.\n5. If something genuinely warrants human attention, call `notify_user` with a\n   concise summary — you have no live conversation, so this is the only way a\n   human learns what you found. Do not notify for routine \"nothing changed\"\n   checks.\n\nYou cannot run shell commands or write to the host filesystem — you observe and\nresearch only. If you determine your concern is fully resolved or no longer\nwarrants watching, mark the goal `done` with `goal_update_status`; if you are\nblocked and cannot make progress, mark it `paused`. Be terse; never repeat a\nfinding you have already recorded or notified.\n\n\n## Environment\n\n## Relevant skills\n- delegation\n- software-dev\n- sysadmin\n",
+      "system": "Current time: <time>\nSession ID: watcher\n\n\n# Monitor role\n\nYou are Nine operating as a standing monitoring agent. You watch a specific,\nopen-ended concern over time. Each time you wake:\n\n1. Read your goal with `goal_get` to recall exactly what you are watching.\n2. Gather current information from the web (`web_search`, `web_page_read`),\n   HTTP endpoints (`http_get`), and workspace files (`read_file`,\n   `list_files`, `file_search_text`).\n3. Compare what you find against what you recorded before (`memory_get`, and\n   your goal's subtree).\n4. Record what changed with `goal_append_subtree` and `memory_set`.\n5. If something genuinely warrants human attention, call `notify_user` with a\n   concise summary — you have no live conversation, so this is the only way a\n   human learns what you found. Do not notify for routine \"nothing changed\"\n   checks.\n\nYou cannot run shell commands or write to the host filesystem — you observe and\nresearch only. If you determine your concern is fully resolved or no longer\nwarrants watching, mark the goal `done` with `goal_update_status`; if you are\nblocked and cannot make progress, mark it `paused`. Be terse; never repeat a\nfinding you have already recorded or notified.\n\n\n## Environment\n\n## Relevant skills\n- delegation\n- sysadmin\n- software-dev\n",
       "max_tokens": 2048,
       "think": true,
       "messages": [
         {
           "Role": "user",
-          "Text": "found: a stray api key in notes/",
+          "Text": "[From process when-watcher: found: a stray api key in notes/]",
           "ToolCalls": null,
           "ToolResults": null
         }
@@ -23,37 +23,6 @@
             ],
             "properties": {
               "key": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        {
-          "name": "memory_set",
-          "description": "Store a value in the key-value store.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "key",
-              "value"
-            ],
-            "properties": {
-              "key": {
-                "type": "string"
-              },
-              "value": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        {
-          "name": "memory_list",
-          "description": "List keys in the key-value store, optionally filtered by prefix.",
-          "input_schema": {
-            "type": "object",
-            "properties": {
-              "prefix": {
                 "type": "string"
               }
             }
@@ -80,17 +49,20 @@
           }
         },
         {
-          "name": "goal_get",
-          "description": "Get a goal by ID, including its status and sub-goal/task tree.",
+          "name": "memory_set",
+          "description": "Store a value in the key-value store.",
           "input_schema": {
             "type": "object",
             "required": [
-              "goal_id"
+              "key",
+              "value"
             ],
             "properties": {
-              "goal_id": {
-                "type": "string",
-                "description": "The goal to retrieve."
+              "key": {
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
               }
             }
           }
@@ -112,20 +84,13 @@
           }
         },
         {
-          "name": "skill_search",
-          "description": "Semantically search available skills by a natural-language query, returning the most relevant skill names and descriptions. Use this to find a skill when you do not know its exact name or when the task changes; then skill_read the one you want.",
+          "name": "memory_list",
+          "description": "List keys in the key-value store, optionally filtered by prefix.",
           "input_schema": {
             "type": "object",
-            "required": [
-              "query"
-            ],
             "properties": {
-              "query": {
+              "prefix": {
                 "type": "string"
-              },
-              "top_k": {
-                "type": "integer",
-                "description": "Number of results (default 5)"
               }
             }
           }
@@ -142,6 +107,57 @@
               "ref": {
                 "type": "string",
                 "description": "Section address, topic name, or bundle path"
+              }
+            }
+          }
+        },
+        {
+          "name": "goal_get",
+          "description": "Get a goal by ID, including its status and sub-goal/task tree.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "goal_id"
+            ],
+            "properties": {
+              "goal_id": {
+                "type": "string",
+                "description": "The goal to retrieve."
+              }
+            }
+          }
+        },
+        {
+          "name": "job_cancel",
+          "description": "Request cancellation of a background job. Best-effort; the job stops as soon as the plugin notices.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "handle"
+            ],
+            "properties": {
+              "handle": {
+                "type": "string",
+                "description": "The job handle, e.g. job_7f3a."
+              }
+            }
+          }
+        },
+        {
+          "name": "skill_search",
+          "description": "Semantically search available skills by a natural-language query, returning the most relevant skill names and descriptions. Use this to find a skill when you do not know its exact name or when the task changes; then skill_read the one you want.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "query"
+            ],
+            "properties": {
+              "query": {
+                "type": "string"
+              },
+              "top_k": {
+                "type": "integer",
+                "description": "Number of results (default 5)"
               }
             }
           }
@@ -347,22 +363,6 @@
           }
         },
         {
-          "name": "job_cancel",
-          "description": "Request cancellation of a background job. Best-effort; the job stops as soon as the plugin notices.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "handle"
-            ],
-            "properties": {
-              "handle": {
-                "type": "string",
-                "description": "The job handle, e.g. job_7f3a."
-              }
-            }
-          }
-        },
-        {
           "name": "web_search",
           "description": "Search the web and return result titles, URLs, and snippets. Uses DuckDuckGo by default; set SEARCH_PROVIDER=brave|serpapi and SEARCH_API_KEY for another backend.",
           "input_schema": {
@@ -453,7 +453,7 @@
       "turn": 1,
       "type": "turn_start",
       "payload": {
-        "input": "found: a stray api key in notes/",
+        "input": "[From process when-watcher: found: a stray api key in notes/]",
         "trigger": "condition"
       }
     },
@@ -468,7 +468,7 @@
       "turn": 1,
       "type": "context_update",
       "payload": {
-        "used": 3041,
+        "used": 3049,
         "budget": 100000
       }
     },
@@ -476,24 +476,25 @@
       "turn": 1,
       "type": "llm_request",
       "payload": {
-        "system": "Current time: <time>\nSession ID: watcher\n\n\n# Monitor role\n\nYou are Nine operating as a standing monitoring agent. You watch a specific,\nopen-ended concern over time. Each time you wake:\n\n1. Read your goal with `goal_get` to recall exactly what you are watching.\n2. Gather current information from the web (`web_search`, `web_page_read`),\n   HTTP endpoints (`http_get`), and workspace files (`read_file`,\n   `list_files`, `file_search_text`).\n3. Compare what you find against what you recorded before (`memory_get`, and\n   your goal's subtree).\n4. Record what changed with `goal_append_subtree` and `memory_set`.\n5. If something genuinely warrants human attention, call `notify_user` with a\n   concise summary — you have no live conversation, so this is the only way a\n   human learns what you found. Do not notify for routine \"nothing changed\"\n   checks.\n\nYou cannot run shell commands or write to the host filesystem — you observe and\nresearch only. If you determine your concern is fully resolved or no longer\nwarrants watching, mark the goal `done` with `goal_update_status`; if you are\nblocked and cannot make progress, mark it `paused`. Be terse; never repeat a\nfinding you have already recorded or notified.\n\n\n## Environment\n\n## Relevant skills\n- delegation\n- software-dev\n- sysadmin\n",
+        "system": "Current time: <time>\nSession ID: watcher\n\n\n# Monitor role\n\nYou are Nine operating as a standing monitoring agent. You watch a specific,\nopen-ended concern over time. Each time you wake:\n\n1. Read your goal with `goal_get` to recall exactly what you are watching.\n2. Gather current information from the web (`web_search`, `web_page_read`),\n   HTTP endpoints (`http_get`), and workspace files (`read_file`,\n   `list_files`, `file_search_text`).\n3. Compare what you find against what you recorded before (`memory_get`, and\n   your goal's subtree).\n4. Record what changed with `goal_append_subtree` and `memory_set`.\n5. If something genuinely warrants human attention, call `notify_user` with a\n   concise summary — you have no live conversation, so this is the only way a\n   human learns what you found. Do not notify for routine \"nothing changed\"\n   checks.\n\nYou cannot run shell commands or write to the host filesystem — you observe and\nresearch only. If you determine your concern is fully resolved or no longer\nwarrants watching, mark the goal `done` with `goal_update_status`; if you are\nblocked and cannot make progress, mark it `paused`. Be terse; never repeat a\nfinding you have already recorded or notified.\n\n\n## Environment\n\n## Relevant skills\n- delegation\n- sysadmin\n- software-dev\n",
         "messages": [
           {
             "Role": "user",
-            "Text": "found: a stray api key in notes/",
+            "Text": "[From process when-watcher: found: a stray api key in notes/]",
             "ToolCalls": null,
             "ToolResults": null
           }
         ],
         "tool_names": [
           "memory_get",
-          "memory_set",
-          "memory_list",
           "tool_search",
-          "goal_get",
+          "memory_set",
           "notify_user",
-          "skill_search",
+          "memory_list",
           "doc_read",
+          "goal_get",
+          "job_cancel",
+          "skill_search",
           "diff_file",
           "file_search_text",
           "skill_read",
@@ -505,14 +506,13 @@
           "job_wait",
           "job_check",
           "job_list",
-          "job_cancel",
           "web_search",
           "read_file",
           "http_get",
           "web_page_read"
         ],
         "max_tokens": 2048,
-        "tokens_used": 3041,
+        "tokens_used": 3049,
         "budget": 100000,
         "llm_call_n": 1
       }

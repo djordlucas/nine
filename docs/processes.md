@@ -103,6 +103,11 @@ waiting for work; a report that finds it busy goes to the human feed instead, so
 a finding is never silently dropped. A condition trigger is a pipe from a cheap
 predicate to an agent.
 
+A piped report arrives labelled with its sender, as
+`[From process cve-scan: found: CVE-2026-1234 in libfoo]`. What a pipe carries
+is data that lands in the receiver's prompt, so a process that fetches web pages
+and pipes them on could otherwise pass off a page's text as an instruction.
+
 ## Declaring processes
 
 ```toml

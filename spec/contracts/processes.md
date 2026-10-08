@@ -111,6 +111,11 @@ trigger. The receiver takes it only while waiting in `next()`; otherwise, and wh
 live process owns that session and its agent cannot be woken, the report goes to the human
 feed. A condition trigger is a pipe from a predicate to an agent.
 
+What a pipe delivers **MUST** carry its sender's label, `[From process <id>: <text>]`, in
+the trigger's text and in a woken turn's input alike, so the receiving model can tell an
+upstream report from a person's instruction; the trigger's `from` names the sender too. The
+human feed's copy is unlabelled, prefixed with the sender and receiver instead.
+
 ---
 
 ## R-PROC.9 — shipped processes, self-model and reflection
