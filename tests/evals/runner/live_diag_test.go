@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -49,6 +50,14 @@ func TestDiagLiveTrajectory(t *testing.T) {
 	t.Logf("=== case %s on %s ===", caseID, model)
 	for _, e := range res.Events {
 		switch e.Type {
+		case "llm_request":
+			// The tools the model was offered: a tool it never called may simply
+			// not have been in the list.
+			var p struct {
+				ToolNames []string `json:"tool_names"`
+			}
+			_ = json.Unmarshal(e.Payload, &p)
+			t.Logf("OFFERED %d tools: %s", len(p.ToolNames), strings.Join(p.ToolNames, " "))
 		case "tool_start":
 			var p struct {
 				Name  string          `json:"name"`
