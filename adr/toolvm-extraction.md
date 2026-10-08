@@ -21,7 +21,7 @@ what is undecided.
 
 ## 1. Decisions
 
-Recorded 2026-10-07; pure modules, cancellation and concurrency 2026-10-08.
+Recorded 2026-10-07; pure modules, cancellation, concurrency and output type 2026-10-08.
 
 | Decision | Consequence |
 |----------|-------------|
@@ -32,6 +32,7 @@ Recorded 2026-10-07; pure modules, cancellation and concurrency 2026-10-08.
 | **Pure JS modules stay in Nine.** | `csv`, `date`, `diff`, `html` remain `nine:` modules, supplied through the module map like any embedder's. The library ships only the capability bindings (§7). |
 | **Cancellation is the only control over a long run.** | No progress, heartbeat or liveness signal. A spinning run and a working run look the same to the library; the embedder decides when to stop one by ending its context (§5). |
 | **The concurrency cap is a library option.** | `Options.MaxConcurrent`, a hard cap per runtime, unbounded by default. Nine sets it and may add per-workload pools on top (§5). |
+| **`output` is any JSON value.** | String, number, boolean, object, array or null. Turning a value into text a model reads is Nine's tool layer's job (§6). |
 
 ## 2. Current coupling
 
@@ -84,7 +85,7 @@ res, err := prog.Run(ctx, input, sandbox.Grant{
 | `Runtime` | Owns the wazero runtime and the compiled QuickJS blob. One per process. | `Host`, minus the registry |
 | `Program` | Compiled code plus the module map it may import. Instantiated fresh per run. | `Tool.module`, `.source`, `.modules` |
 | `Grant` | The capability set for one run. Nothing outside it exists for the guest. | `Grant`, `Mount`, `HTTPGrant`, `StateGrant` |
-| `Result` | The guest's envelope: `ok`, `output`, `error`, `error_detail`, plus unrecognized fields (§6). | `Result` |
+| `Result` | The guest's envelope: `ok`, `output` (any JSON value, as `json.RawMessage`), `error`, `error_detail`, plus unrecognized fields (§6). | `Result` |
 | Audit hooks | Per-run callbacks for HTTP calls and log lines. | `WithHTTPAudit`, the `log` host function |
 
 The grant is passed per run, not per program, so the same code can run under different
@@ -160,11 +161,31 @@ become neutral:
 
 `sandbox` stands in for the final name (§11.1).
 
-**The result envelope** keeps its shape. The library types `ok`, `output`, `output_b64`,
+**The result envelope** keeps its fields. The library types `ok`, `output`, `output_b64`,
 `media_type`, `error` and `error_detail`, and returns every other top-level field raw in
-`Result.Extra map[string]json.RawMessage`. Nine's `continue` moves there: the library never
-interprets it, Nine's job driver reads it from `Extra`, and existing guests produce exactly
-the bytes they produce today.
+`Result.Extra map[string]json.RawMessage`.
+
+**`output` is any JSON value**, held as `json.RawMessage`. Every envelope valid today stays
+valid — a JSON string is a JSON value — so no existing guest changes and no `ABIVersion` bump
+is needed. What changes is who renders:
+
+| | Today | Proposed |
+|-|-------|----------|
+| JS harness | `render()` (`harness.js:696`): string as-is, `null`/`undefined` → `""`, anything else `safeStringify`ed into a string | emits the returned value itself; `undefined` → `null`; `safeStringify`'s handling of cycles and `BigInt` still applies when encoding the envelope |
+| Raw `wasm` guest | writes a string | writes any JSON value |
+| Nine's tool layer | receives a string | renders for the model with today's rule — string as-is, `null` → `""`, anything else compact JSON — so model-visible text is unchanged |
+
+Bytes stay `output_b64`, set instead of `output`: JSON has no byte type, and a base64 string in
+`output` would be indistinguishable from text.
+
+**Continuations.** Nine's `continue` moves to `Extra`: the library never interprets it, and
+Nine's job driver reads it from there. Raw `wasm` guests already write it at the top level. For
+JS, `again()` (`nine:job`) currently returns a value marked with `Symbol.for("nine.continue")`,
+which the harness recognizes (`harness.js:808`) — Nine knowledge inside the engine. It becomes
+a generic marker, `Symbol.for("sandbox.envelope")`: a returned object carrying it has its
+fields merged into the envelope's top level (`ok`, `output`, `error` excepted) instead of
+becoming `output`. `nine:job` sets that marker with a `continue` field, and the envelope bytes
+are what they are today.
 
 **Existing guests.** Raw `wasm` developer tools import `nine` and export `nine_run`; JS tools
 and generated tools in the store import `nine:*`. The library takes an alias option —
@@ -215,7 +236,7 @@ binding without the matching grant reports the missing capability by name.
 
 | Library contract | Stays in `spec/contracts/toolvm.md` |
 |------------------|------------------------------------|
-| R-TVM.1 guest ABI (renamed, with aliases) | R-TVM.7 grants in `nine.toml` |
+| R-TVM.1 guest ABI (renamed, with aliases; `output` any JSON value) | R-TVM.7 grants in `nine.toml` |
 | R-TVM.2 two kinds | R-TVM.10, .11 loading, visibility, reporting |
 | R-TVM.3 one instance per run | R-TVM.14 generated tier |
 | R-TVM.4 bounds — mechanisms only; Nine's defaults stay with Nine | R-TVM.15 npm deps; Nine's own `nine:*` modules |
@@ -246,7 +267,9 @@ exists, so the boundary is proven by the compiler while a mistake is still cheap
    Nine's through `context` and options, and sets `MaxConcurrent`. Existing timeout tests move to the tool layer.
 5. Neutral ABI names with `ABIAliases`; Nine sets the aliases. The module names are also
    in `harness.js` and `qjs_host.c`, so this rebuilds `harness.bc` and `qjs.wasm` with
-   `build.sh`. Store migration for generated tools; deprecation note in `nine tools`.
+   `build.sh`. Store migration for generated tools; deprecation note in `nine tools`. In the
+   same rebuild: the harness emits `output` as a JSON value and the tool layer renders it
+   (§6); the continuation marker becomes the generic envelope marker.
 6. Create the repository from `internal/toolvm/sandbox` with history (§8), tag `v0.1.0`.
 7. Nine requires `v0.1.0`, deletes `internal/toolvm/sandbox`, re-vendors.
 8. Split the spec (§9) and move the engine's docs to the library's README.
@@ -255,9 +278,6 @@ exists, so the boundary is proven by the compiler while a mistake is still cheap
 
 1. **The name.** It becomes the repository, the Go package, the host import module, the
    export prefix and the module prefix. `sandbox` is a placeholder.
-2. **Output type.** `output` is a string because a model reads it. A general library might
-   want any JSON value. Changing it is an ABI change; keeping it costs embedders a
-   `JSON.stringify`.
 
 ## Limits
 
