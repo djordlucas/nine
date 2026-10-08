@@ -295,10 +295,14 @@ type Trajectory struct {
 	ToolsAnyOf  []string `yaml:"tools_any_of"`
 	ToolsNoneOf []string `yaml:"tools_none_of"`
 
-	MaxTurns  *int  `yaml:"max_turns"`
-	MinTurns  *int  `yaml:"min_turns"`
-	NoStall   bool  `yaml:"no_stall"`
-	GapReport *bool `yaml:"gap_report"`
+	MaxTurns *int `yaml:"max_turns"`
+	MinTurns *int `yaml:"min_turns"`
+	// MinTurnsByTrigger counts the turns that started, by what started them —
+	// "user", "idle", "condition" — which min_turns, counting finished user
+	// turns only, cannot.
+	MinTurnsByTrigger map[string]int `yaml:"min_turns_by_trigger"`
+	NoStall           bool           `yaml:"no_stall"`
+	GapReport         *bool          `yaml:"gap_report"`
 
 	SubAgents  *SubAgentExpect   `yaml:"sub_agents"`
 	LLMRequest *LLMRequestExpect `yaml:"llm_request"`
@@ -539,7 +543,7 @@ func (e Expect) hasAny() bool {
 	}
 	t := e.Trajectory
 	if len(t.ToolsAllOf) > 0 || len(t.ToolsAnyOf) > 0 || len(t.ToolsNoneOf) > 0 ||
-		t.MaxTurns != nil || t.MinTurns != nil || t.NoStall || t.GapReport != nil ||
+		t.MaxTurns != nil || t.MinTurns != nil || len(t.MinTurnsByTrigger) > 0 || t.NoStall || t.GapReport != nil ||
 		t.SubAgents != nil || t.LLMRequest != nil || t.Spills != nil {
 		return true
 	}
