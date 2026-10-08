@@ -525,7 +525,7 @@ Create a goal as the operator, through the daemon's `goal_create` message.
 
 A top-level goal (no `parent_id`) gets `parent_type` `operator` and a pursue
 session whose id is the goal's (docs/goal-sessions.md): `spawned`, or
-`limit_reached` when the daemon is at `max_goal_sessions` and the goal is
+`limit_reached` when the daemon is at `[processes] max_running` and the goal is
 recorded unattended. A sub-goal gets `parent_type` `goal`, no session, `none`,
 and no `session_id`. `400` for an empty description; `404` for an unknown parent.
 

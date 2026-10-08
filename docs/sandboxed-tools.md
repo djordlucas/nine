@@ -841,7 +841,7 @@ max_tools = 64        # catalog pressure — §9
 
 allow_long_running = false   # may a generated tool run as a job? — §6.5
 allow_standing     = false   # may one be promoted to a standing run? — §6.6
-max_standing       = 4       # how many standing runs may exist at once
+# how many run at once is [processes] max_running, shared by every process
 allow_network_deps = false   # lift the deps + net.http interlock — §4.4
 
 # Gate on substance, not on every write (§9.4):

@@ -81,10 +81,6 @@ socket_path = "/tmp/nine.sock"
 # Defaults to 1800 (30 minutes) when unset or <= 0.
 task_timeout_seconds = 1800
 
-# Maximum number of concurrently-running background "pursue" sessions
-# (one per top-level goal). Defaults to 10 when unset or <= 0.
-max_goal_sessions = 10
-
 # Delete a session — and everything keyed to it — after this many days without
 # activity. Unset uses 10; 0 switches automatic deletion off entirely.
 #
@@ -160,6 +156,7 @@ max_goal_sessions = 10
 # role      = "monitor"            # default "monitor" (read-only)
 # delegates = false                # opt into sub-agent fan-out
 # schedule  = "0 9 * * 1-5"        # cron (docs/scheduling.md) …XOR… every = "24h"
+# budget    = { turns_per_day = 50 } # lowers [processes] budget; never raises it
 #
 # A condition: a predicate on a fast clock, piped to the agent's session. It
 # runs with no model in the loop; the agent's turn happens only when it returns
@@ -191,8 +188,15 @@ max_goal_sessions = 10
 # enabled  = true                   # false declares it without starting it
 
 [processes]
-# Live processes running at once, in a pool apart from tool calls.
+# Processes running at once, live and slice alike: the one cap on background
+# work. It sizes the live pool, apart from tool calls; a goal session or a
+# standing tool Nine creates at the cap is recorded and not started.
 max_running = 14
+# Every process's budget over a rolling day: the model turns its program runs
+# and the tokens they spend. A process that spends it is paused, the pause
+# reaches `nine notifications`, and it resumes when the day is up. A
+# [[process]] block may lower either field, never raise it.
+budget = { turns_per_day = 200, tokens_per_day = 2000000 }
 # Treat the goal [[process]] list as the full desired state: a goal process no
 # longer listed is retired and its goal archived at boot. Conversation-created
 # goals are never touched.
@@ -760,7 +764,7 @@ allow = [                           # allowlist mode only: the packages an opera
 # declared in [[process]] is not — your declaration is a standing instruction,
 # and silently disabling it would be the greater surprise.
 # [tools.agent] allow_standing = false
-# [tools.agent] max_standing = 4
+# How many may run is [processes] max_running, shared with every other process.
 ```
 
 ---
@@ -936,7 +940,7 @@ current one at load; the file on disk stays exactly as you wrote it.
 
 | Schema | Changed |
 |---|---|
-| 2 | `[[process]]` and `[processes]` replace `[[agent]]`, `[[agent.routine]]`, `when = { … }`, `[[standing_tool]]` and `[daemon] standing_agents_authoritative`. A schema-1 file that uses none of them loads unchanged; one that does is refused, naming the `[[process]]` form ([processes.md](processes.md)). |
+| 2 | `[[process]]` and `[processes]` replace `[[agent]]`, `[[agent.routine]]`, `when = { … }`, `[[standing_tool]]` and `[daemon] standing_agents_authoritative`; `[processes] max_running` replaces `[daemon] max_goal_sessions` and `[tools.agent] max_standing`. A schema-1 file that uses none of them loads unchanged; one that does is refused, naming the `[[process]]` form ([processes.md](processes.md)). |
 
 ### Keys nothing reads
 

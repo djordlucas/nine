@@ -97,7 +97,7 @@ type AssemblyConfig struct {
 	PlanMode           string
 	DefaultLeafRole    string
 	MaxDelegationDepth int
-	MaxGoalSessions    int
+	MaxRunning         int // [processes] max_running
 	// JobMinDelayMS and JobWorkers bound the process runner's calls, as they do
 	// the job sweeper's ([tools] job_min_delay_ms, job_workers); 0 is the default.
 	JobMinDelayMS int
@@ -208,7 +208,7 @@ func Assemble(c AssemblyConfig) *Assembly {
 	daemon.ConfigureSandboxedTools(c.Tools)
 	daemon.ConfigureGeneratedTools(c.GeneratedTools)
 	daemon.ConfigureCoreTools(builder.CoreDispatcher())
-	daemon.SetMaxGoalSessions(c.MaxGoalSessions)
+	daemon.SetMaxRunning(c.MaxRunning)
 
 	// The process runner (adr/process-sessions.md): every process — goal
 	// sessions, standing agents, self-reflection, standing tools — runs through

@@ -90,7 +90,7 @@ func TestTeardownStandingSessionRemovesItsProcesses(t *testing.T) {
 // still spawnable.
 func TestSpawnGoalSessionRespectsMaxGoalSessions(t *testing.T) {
 	d, _ := goalDaemon(t)
-	d.SetMaxGoalSessions(1)
+	d.SetMaxRunning(1)
 
 	if spawned, err := d.SpawnGoalSession(context.Background(), "goal-1"); err != nil || !spawned {
 		t.Fatalf("SpawnGoalSession(goal-1) = (%v, %v), want (true, nil)", spawned, err)
@@ -101,7 +101,7 @@ func TestSpawnGoalSessionRespectsMaxGoalSessions(t *testing.T) {
 	if spawned, err := d.SpawnGoalSession(context.Background(), "goal-1"); err != nil || !spawned {
 		t.Errorf("re-spawning goal-1 at the cap = (%v, %v), want (true, nil)", spawned, err)
 	}
-	if n := d.ActiveGoalSessionCountForTest(); n != 1 {
+	if n := d.RunningProcessCountForTest(); n != 1 {
 		t.Errorf("active goal sessions = %d, want 1", n)
 	}
 }

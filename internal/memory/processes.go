@@ -264,6 +264,15 @@ func (s *Store) ProcessStop(id, by string) (bool, error) {
 	return n > 0, err
 }
 
+// ProcessesRunning counts the processes that are running or failing — still
+// trying — which is what [processes] max_running bounds.
+func (s *Store) ProcessesRunning() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM processes WHERE state IN (?, ?)`,
+		ProcessRunning, ProcessFailing).Scan(&n)
+	return n, err
+}
+
 // ProcessesStoppedBy returns the stopped processes a given party stopped.
 func (s *Store) ProcessesStoppedBy(by string) ([]Process, error) {
 	return s.queryProcesses(

@@ -414,7 +414,7 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 		TaskTimeoutSeconds:  c.TimeoutSecs,
 		HITL:                hitl,
 		DefaultLeafRole:     "executor",
-		MaxGoalSessions:     8,
+		MaxRunning:          runtime.DefaultMaxRunning,
 		RoleFactory:         roleFactory,
 	})
 	daemon := asm.Daemon

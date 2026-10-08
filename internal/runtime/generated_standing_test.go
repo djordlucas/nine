@@ -63,7 +63,7 @@ func TestStandingRequestRefusals(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			g := &generatedTools{store: store, allowStanding: tc.allow, maxStanding: 4}
+			g := &generatedTools{store: store, allowStanding: tc.allow, maxRunning: 4}
 			err = g.checkStandingRequest(tc.spec)
 			if err == nil {
 				t.Fatal("the request was accepted")
@@ -75,42 +75,39 @@ func TestStandingRequestRefusals(t *testing.T) {
 	}
 }
 
-// The cap counts only generated runs — an operator's own [[standing_tool]]
-// blocks are their business and bounded by their file.
-func TestGeneratedStandingCapIgnoresOperatorBlocks(t *testing.T) {
+// The cap is max_running, the one cap on processes running at once: an
+// operator's declared processes count against it as Nine's own do, and a
+// stopped process does not.
+func TestGeneratedStandingCapCountsEveryRunningProcess(t *testing.T) {
 	store, err := memtest.Open(t)
 	if err != nil {
 		t.Fatal(err)
 	}
-	g := &generatedTools{store: store, allowStanding: true, maxStanding: 2}
-
-	// Three operator-declared runs must not consume the generated budget.
-	for _, id := range []string{"op-a", "op-b", "op-c"} {
-		if err := store.ProcessUpsertDefinition(memory.Process{
-			ID: id, Tool: "x", IntervalSecs: 60,
-		}); err != nil {
-			t.Fatal(err)
-		}
-	}
+	g := &generatedTools{store: store, allowStanding: true, maxRunning: 2}
 	spec := agent.GeneratedToolSpec{
 		Name: "g1", Resumable: true,
 		Standing: &agent.StandingRequest{Interval: "10s"},
 	}
+
+	if err := store.ProcessUpsertDefinition(memory.Process{ID: "op-a", Tool: "x", IntervalSecs: 60}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ProcessUpsertDefinition(memory.Process{ID: "gen:stopped", Tool: "x", IntervalSecs: 60, Generated: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ProcessStop("gen:stopped", "model"); err != nil {
+		t.Fatal(err)
+	}
 	if err := g.checkStandingRequest(spec); err != nil {
-		t.Fatalf("operator blocks consumed the generated cap: %v", err)
+		t.Fatalf("one running process of two allowed refused the request: %v", err)
 	}
 
-	// Two generated ones do.
-	for _, id := range []string{"gen:a", "gen:b"} {
-		if err := store.ProcessUpsertDefinition(memory.Process{
-			ID: id, Tool: "x", IntervalSecs: 60, Generated: true,
-		}); err != nil {
-			t.Fatal(err)
-		}
+	if err := store.ProcessUpsertDefinition(memory.Process{ID: "op-b", Tool: "x", IntervalSecs: 60}); err != nil {
+		t.Fatal(err)
 	}
 	err = g.checkStandingRequest(spec)
-	if err == nil || !strings.Contains(err.Error(), "maximum") {
-		t.Fatalf("err = %v, want the cap to refuse", err)
+	if err == nil || !strings.Contains(err.Error(), "max_running") {
+		t.Fatalf("err = %v, want max_running to refuse", err)
 	}
 }
 
@@ -121,7 +118,7 @@ func TestRewritingAStandingToolReplacesItsRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g := &generatedTools{store: store, allowStanding: true, maxStanding: 1}
+	g := &generatedTools{store: store, allowStanding: true, maxRunning: 1}
 	spec := agent.GeneratedToolSpec{
 		Name: "g1", Resumable: true,
 		Standing: &agent.StandingRequest{Interval: "10s"},
@@ -155,7 +152,7 @@ func TestDeletingAToolRemovesItsStandingRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g := &generatedTools{store: store, allowStanding: true, maxStanding: 4}
+	g := &generatedTools{store: store, allowStanding: true, maxRunning: 4}
 	if err := store.GeneratedToolUpsert(memory.GeneratedTool{Name: "g1", Source: "export default () => 1;"}); err != nil {
 		t.Fatal(err)
 	}

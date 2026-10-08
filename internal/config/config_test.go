@@ -443,17 +443,20 @@ args = { keep = 7 }
 // Every mistake in a [[process]] block is refused at load, with its reason.
 func TestProcessBlockMistakesAreRefused(t *testing.T) {
 	cases := map[string]string{
-		"no name":            "[[process]]\ntool = \"x\"\n",
-		"no tool":            "[[process]]\nname = \"a\"\n",
-		"reserved colon":     "[[process]]\nname = \"goal:a\"\ntool = \"x\"\n",
-		"duplicate":          "[[process]]\nname = \"a\"\ntool = \"x\"\n[[process]]\nname = \"a\"\ntool = \"y\"\n",
-		"both clocks":        "[[process]]\nname = \"a\"\ntool = \"x\"\nevery = \"1m\"\nschedule = \"* * * * *\"\n",
-		"bad every":          "[[process]]\nname = \"a\"\ntool = \"x\"\nevery = \"soon\"\n",
-		"bad schedule":       "[[process]]\nname = \"a\"\ntool = \"x\"\nschedule = \"not cron\"\n",
-		"goal not pursue":    "[[process]]\nname = \"a\"\ntool = \"x\"\ngoal = \"g\"\n",
-		"unknown session":    "[[process]]\nname = \"a\"\ntool = \"x\"\nsession = \"nobody\"\n",
-		"unknown report_to":  "[[process]]\nname = \"a\"\ntool = \"x\"\nreport_to = \"nobody\"\n",
-		"attached with role": "[[process]]\nname = \"o\"\ntool = \"pursue\"\ngoal = \"g\"\n[[process]]\nname = \"a\"\ntool = \"reflect\"\nsession = \"o\"\nrole = \"x\"\n",
+		"no name":              "[[process]]\ntool = \"x\"\n",
+		"no tool":              "[[process]]\nname = \"a\"\n",
+		"reserved colon":       "[[process]]\nname = \"goal:a\"\ntool = \"x\"\n",
+		"duplicate":            "[[process]]\nname = \"a\"\ntool = \"x\"\n[[process]]\nname = \"a\"\ntool = \"y\"\n",
+		"both clocks":          "[[process]]\nname = \"a\"\ntool = \"x\"\nevery = \"1m\"\nschedule = \"* * * * *\"\n",
+		"bad every":            "[[process]]\nname = \"a\"\ntool = \"x\"\nevery = \"soon\"\n",
+		"bad schedule":         "[[process]]\nname = \"a\"\ntool = \"x\"\nschedule = \"not cron\"\n",
+		"goal not pursue":      "[[process]]\nname = \"a\"\ntool = \"x\"\ngoal = \"g\"\n",
+		"unknown session":      "[[process]]\nname = \"a\"\ntool = \"x\"\nsession = \"nobody\"\n",
+		"unknown report_to":    "[[process]]\nname = \"a\"\ntool = \"x\"\nreport_to = \"nobody\"\n",
+		"attached with role":   "[[process]]\nname = \"o\"\ntool = \"pursue\"\ngoal = \"g\"\n[[process]]\nname = \"a\"\ntool = \"reflect\"\nsession = \"o\"\nrole = \"x\"\n",
+		"budget above default": "[[process]]\nname = \"a\"\ntool = \"x\"\nbudget = { turns_per_day = 500 }\n",
+		"budget above ceiling": "[processes]\nbudget = { tokens_per_day = 1000 }\n[[process]]\nname = \"a\"\ntool = \"x\"\nbudget = { tokens_per_day = 2000 }\n",
+		"negative budget":      "[processes]\nbudget = { turns_per_day = -1 }\n",
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -471,10 +474,32 @@ func TestRetiredBlocksAreRefused(t *testing.T) {
 		"[[agent]]\nid = \"w\"\ndescription = \"watch\"\n",
 		"[[standing_tool]]\nid = \"s\"\ntool = \"x\"\ninterval = \"1m\"\n",
 		"[daemon]\nstanding_agents_authoritative = true\n",
+		"[daemon]\nmax_goal_sessions = 5\n",
+		"[tools.agent]\nmax_standing = 2\n",
 	} {
 		_, err := loadString(t, body)
 		if err == nil || !strings.Contains(err.Error(), "replaced by") {
 			t.Errorf("Load(%q) = %v, want an error naming the replacement", body, err)
 		}
+	}
+}
+
+// A process's budget is [processes] budget, defaulted, with each field the
+// block sets taking its place: a block can only lower it, which Load enforces.
+func TestProcessBudget(t *testing.T) {
+	cfg, err := loadString(t, "[processes]\nbudget = { turns_per_day = 50 }\n"+
+		"[[process]]\nname = \"a\"\ntool = \"x\"\nbudget = { tokens_per_day = 1000 }\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ceiling := cfg.Processes.BudgetOrDefault()
+	if ceiling != (config.BudgetConfig{TurnsPerDay: 50, TokensPerDay: config.DefaultBudgetTokensPerDay}) {
+		t.Errorf("ceiling = %+v", ceiling)
+	}
+	if got := cfg.Process[0].Budget.Within(ceiling); got != (config.BudgetConfig{TurnsPerDay: 50, TokensPerDay: 1000}) {
+		t.Errorf("process budget = %+v, want 50 turns and 1000 tokens", got)
+	}
+	if got := (config.ProcessesConfig{}).BudgetOrDefault(); got != (config.BudgetConfig{TurnsPerDay: 200, TokensPerDay: 2_000_000}) {
+		t.Errorf("default budget = %+v", got)
 	}
 }

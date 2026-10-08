@@ -152,7 +152,7 @@ type Daemon struct {
 	hitl   *HITL
 	sink   EventSink // durable session-event journal for new workers (nil = disabled)
 
-	maxGoalSessions int // see SetMaxGoalSessions
+	maxRunning int // see SetMaxRunning
 
 	// procs is the process store (see ConfigureProcesses); procWake asks the
 	// process runner for a pass now. Both nil on a daemon with no processes.

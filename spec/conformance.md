@@ -255,7 +255,7 @@ How to use this file:
 |----|----------|------------------|
 | R-ORCH.10 | What a goal is | Goal data model + store methods as specified. |
 | R-ORCH.11 | Tools (depth < 2) | `goal_create`/`goal_get`/`goal_list`/`goal_update_status`, depth-capped. |
-| R-ORCH.12 | Pursue spawning (depth 0 only) | Top-level `goal_create` spawns one pursue session; duplicate is a no-op; at `max_goal_sessions` (10) it reports `limit_reached`. `nine goals` lists goals. |
+| R-ORCH.12 | Pursue spawning (depth 0 only) | Top-level `goal_create` spawns one pursue session; duplicate is a no-op; at `[processes] max_running` (14 running processes) it reports `limit_reached`. `nine goals` lists goals. |
 
 ---
 

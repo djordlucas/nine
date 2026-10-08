@@ -1086,8 +1086,8 @@ tool's real calls tests nothing. The isolation is of state alone.
 ### The generated flavour
 
 `[tools.agent] allow_standing` (default **false**) gates a generated tool asking
-to be run standing; `max_standing` (default 4) bounds how many may exist, counting
-generated runs only.
+to be run standing; `[processes] max_running` (default 14) bounds how many processes
+run at once, generated and declared alike.
 
 **A standing promotion MUST route through the HITL gate, including when
 `require_approval` is `never`.** That setting says the capability ceiling is the
