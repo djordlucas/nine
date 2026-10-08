@@ -548,11 +548,14 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 	case protocol.SessionDeleteReq:
 		d.handleSessionDelete(enc, r.AgentID)
 
-	case protocol.StandingShowReq:
-		d.handleStandingShow(enc, r.ID, r.Limit)
+	case protocol.ProcessShowReq:
+		d.handleProcessShow(enc, r.ID, r.Limit)
 
-	case protocol.StandingControlReq:
-		d.handleStandingControl(enc, r.ID, r.Action)
+	case protocol.ProcessControlReq:
+		d.handleProcessControl(enc, r.ID, r.Action)
+
+	case protocol.ProcessSendReq:
+		d.handleProcessSend(enc, r.ID, r.Text)
 
 	case protocol.ToolCallReq:
 		d.handleToolCall(enc, r.Tool, r.Args, r.LiveState)
@@ -626,8 +629,8 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 			d.handlePluginsReload(enc)
 		case protocol.TypeSessionsList:
 			d.handleSessionsList(enc)
-		case protocol.TypeStandingList:
-			d.handleStandingList(enc)
+		case protocol.TypeProcessList:
+			d.handleProcessList(enc)
 		case protocol.TypeToolsList:
 			d.handleToolsList(enc)
 		case protocol.TypeToolsReload:

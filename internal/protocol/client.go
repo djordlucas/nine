@@ -431,41 +431,41 @@ func (c *Client) DeleteSession(id string) (string, error) {
 	return reply.Text, nil
 }
 
-// ListStanding requests the standing-run roster.
-func (c *Client) ListStanding() ([]StandingInfo, error) {
-	if err := c.send(NewStandingListMsg()); err != nil {
+// ListProcesses requests the process roster.
+func (c *Client) ListProcesses() ([]ProcessInfo, error) {
+	if err := c.send(NewProcessListMsg()); err != nil {
 		return nil, err
 	}
 	reply, err := c.recv()
 	if err != nil {
 		return nil, err
 	}
-	if err := expectReply(reply, TypeStandingList); err != nil {
+	if err := expectReply(reply, TypeProcessList); err != nil {
 		return nil, err
 	}
-	var out []StandingInfo
+	var out []ProcessInfo
 	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
-		return nil, fmt.Errorf("decode standing tools: %w", err)
+		return nil, fmt.Errorf("decode processes: %w", err)
 	}
 	return out, nil
 }
 
-// ShowStanding requests one standing run in detail, with up to n recent log
+// ShowProcess requests one process in detail, with up to n recent activity
 // lines.
-func (c *Client) ShowStanding(id string, n int) (StandingInfo, error) {
-	if err := c.send(NewStandingShowMsg(id, n)); err != nil {
-		return StandingInfo{}, err
+func (c *Client) ShowProcess(id string, n int) (ProcessInfo, error) {
+	if err := c.send(NewProcessShowMsg(id, n)); err != nil {
+		return ProcessInfo{}, err
 	}
 	reply, err := c.recv()
 	if err != nil {
-		return StandingInfo{}, err
+		return ProcessInfo{}, err
 	}
-	if err := expectReply(reply, TypeStandingShow); err != nil {
-		return StandingInfo{}, err
+	if err := expectReply(reply, TypeProcessShow); err != nil {
+		return ProcessInfo{}, err
 	}
-	var out StandingInfo
+	var out ProcessInfo
 	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
-		return StandingInfo{}, fmt.Errorf("decode standing tool: %w", err)
+		return ProcessInfo{}, fmt.Errorf("decode process: %w", err)
 	}
 	return out, nil
 }
@@ -486,17 +486,28 @@ func (c *Client) DeleteTool(name string) (string, error) {
 	return reply.Text, nil
 }
 
-// ControlStanding stops or starts a standing run; action is "stop" or "start".
-// Returns the daemon's human-readable outcome.
-func (c *Client) ControlStanding(id, action string) (string, error) {
-	if err := c.send(NewStandingControlMsg(id, action)); err != nil {
+// ControlProcess starts or stops a process as the operator; action is "start"
+// or "stop". Returns the daemon's human-readable outcome.
+func (c *Client) ControlProcess(id, action string) (string, error) {
+	return c.textRequest(NewProcessControlMsg(id, action), TypeProcessControl)
+}
+
+// SendProcess gives a live process a message from the operator as its next
+// trigger. Returns the daemon's human-readable outcome.
+func (c *Client) SendProcess(id, text string) (string, error) {
+	return c.textRequest(NewProcessSendMsg(id, text), TypeProcessSend)
+}
+
+// textRequest sends m and returns the text of a reply of type want.
+func (c *Client) textRequest(m Msg, want MsgType) (string, error) {
+	if err := c.send(m); err != nil {
 		return "", err
 	}
 	reply, err := c.recv()
 	if err != nil {
 		return "", err
 	}
-	if err := expectReply(reply, TypeStandingControl); err != nil {
+	if err := expectReply(reply, want); err != nil {
 		return "", err
 	}
 	return reply.Text, nil

@@ -135,6 +135,17 @@ stopped process, except one stopped by:
 Every start counts against `[processes] max_running`. Each refusal names its
 reason.
 
+## Watching and controlling processes
+
+| Surface | List | One | Start, stop | Message |
+|---|---|---|---|---|
+| CLI | `nine process` | `nine process show <id>` | `nine process start\|stop <id>` | `nine process send <id> <text>` |
+| TUI | `/processes` | `/processes <id>` | `/processes start\|stop <id>` | — |
+| HTTP | `GET /api/v1/processes` | `GET /api/v1/processes/{id}` | `POST …/{id}/start\|stop` | `POST …/{id}/messages` |
+
+The operator may start any process; the start rule binds models only. A
+process the operator stops can be started again only by the operator.
+
 ## Declaring processes
 
 ```toml

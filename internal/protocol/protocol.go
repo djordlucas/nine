@@ -28,8 +28,9 @@ const (
 	TypeUserTurn        MsgType = "user_turn"
 	TypeSessionStop     MsgType = "session_stop"
 	TypeSessionDelete   MsgType = "session_delete"
-	TypeStandingShow    MsgType = "standing_show"
-	TypeStandingControl MsgType = "standing_control"
+	TypeProcessShow     MsgType = "process_show"
+	TypeProcessControl  MsgType = "process_control"
+	TypeProcessSend     MsgType = "process_send"
 	TypeToolCall        MsgType = "tool_call"
 	TypeToolDelete      MsgType = "tool_delete"
 	TypeWorkflowStop    MsgType = "workflow_stop"
@@ -57,7 +58,7 @@ const (
 	TypePluginsList       MsgType = "plugins_list"
 	TypePluginsReload     MsgType = "plugins_reload"
 	TypeSessionsList      MsgType = "sessions_list"
-	TypeStandingList      MsgType = "standing_list"
+	TypeProcessList       MsgType = "process_list"
 	TypeToolsList         MsgType = "tools_list"
 	TypeToolsReload       MsgType = "tools_reload"
 	TypeGrantsList        MsgType = "grants_list"
@@ -156,8 +157,9 @@ var ClientMsgTypes = []MsgType{
 	TypeUserTurn,
 	TypeSessionStop,
 	TypeSessionDelete,
-	TypeStandingShow,
-	TypeStandingControl,
+	TypeProcessShow,
+	TypeProcessControl,
+	TypeProcessSend,
 	TypeToolCall,
 	TypeToolDelete,
 	TypeWorkflowStop,
@@ -178,7 +180,7 @@ var ClientMsgTypes = []MsgType{
 	TypePluginsList,
 	TypePluginsReload,
 	TypeSessionsList,
-	TypeStandingList,
+	TypeProcessList,
 	TypeToolsList,
 	TypeToolsReload,
 	TypeGrantsList,
@@ -371,26 +373,41 @@ type SessionInfo struct {
 	Attached   bool   `json:"attached,omitempty"`
 }
 
-// StandingInfo describes one standing run for the "standing_list" and
-// "standing_show" responses. Recent is filled by show only — the roster stays
-// one line per run.
-type StandingInfo struct {
-	ID         string            `json:"id"`
-	Tool       string            `json:"tool"`
-	State      string            `json:"state"`
-	Trigger    string            `json:"trigger"`
-	Calls      int               `json:"calls"`
-	Cycles     int               `json:"cycles"`
-	Failures   int               `json:"failures,omitempty"`
-	LastError  string            `json:"last_error,omitempty"`
-	LastCallAt string            `json:"last_call_at,omitempty"`
-	NextAt     string            `json:"next_at,omitempty"`
-	Generated  bool              `json:"generated,omitempty"`
-	Recent     []StandingLogLine `json:"recent,omitempty"`
+// ProcessInfo describes one process for the "process_list" and "process_show"
+// responses (adr/process-sessions.md §9). Recent is filled by show only — the
+// roster stays one line per process.
+type ProcessInfo struct {
+	ID        string `json:"id"`
+	Tool      string `json:"tool"`
+	Mode      string `json:"mode"`
+	State     string `json:"state"`
+	StoppedBy string `json:"stopped_by,omitempty"`
+	StoppedAt string `json:"stopped_at,omitempty"`
+	Trigger   string `json:"trigger"`
+	Session   string `json:"session,omitempty"`
+	Attached  bool   `json:"attached,omitempty"`
+	Goal      string `json:"goal,omitempty"`
+	ReportTo  string `json:"report_to,omitempty"`
+	Role      string `json:"role,omitempty"`
+
+	BudgetTurns        int    `json:"budget_turns"`
+	BudgetTurnsPerDay  int    `json:"budget_turns_per_day"`
+	BudgetTokens       int    `json:"budget_tokens"`
+	BudgetTokensPerDay int    `json:"budget_tokens_per_day"`
+	BudgetResetsAt     string `json:"budget_resets_at,omitempty"`
+
+	Calls      int              `json:"calls,omitempty"`
+	Cycles     int              `json:"cycles,omitempty"`
+	Failures   int              `json:"failures,omitempty"`
+	LastError  string           `json:"last_error,omitempty"`
+	LastCallAt string           `json:"last_call_at,omitempty"`
+	NextAt     string           `json:"next_at,omitempty"`
+	Generated  bool             `json:"generated,omitempty"`
+	Recent     []ProcessLogLine `json:"recent,omitempty"`
 }
 
-// StandingLogLine is one line of a standing run's recent activity.
-type StandingLogLine struct {
+// ProcessLogLine is one line of a process's recent activity.
+type ProcessLogLine struct {
 	At      string `json:"at"`
 	Outcome string `json:"outcome"`
 	Detail  string `json:"detail,omitempty"`
@@ -622,10 +639,10 @@ func NewSessionDeleteMsg(agentID string) Msg {
 // NewSessionsListMsg asks for the session roster.
 func NewSessionsListMsg() Msg { return Msg{Type: TypeSessionsList} }
 
-// NewStandingShowMsg asks for one standing run in detail, with up to n recent
-// log lines.
-func NewStandingShowMsg(id string, n int) Msg {
-	return Msg{Type: TypeStandingShow, AgentID: id, Limit: n}
+// NewProcessShowMsg asks for one process in detail, with up to n recent
+// activity lines.
+func NewProcessShowMsg(id string, n int) Msg {
+	return Msg{Type: TypeProcessShow, AgentID: id, Limit: n}
 }
 
 // NewToolDeleteMsg asks the daemon to delete a tool Nine wrote.
@@ -633,14 +650,20 @@ func NewToolDeleteMsg(name string) Msg {
 	return Msg{Type: TypeToolDelete, ToolName: name}
 }
 
-// NewStandingControlMsg stops or starts a standing run. action is "stop" or
-// "start".
-func NewStandingControlMsg(id, action string) Msg {
-	return Msg{Type: TypeStandingControl, AgentID: id, Text: action}
+// NewProcessControlMsg starts or stops a process as the operator. action is
+// "start" or "stop".
+func NewProcessControlMsg(id, action string) Msg {
+	return Msg{Type: TypeProcessControl, AgentID: id, Text: action}
 }
 
-// NewStandingListMsg asks for the standing-run roster.
-func NewStandingListMsg() Msg { return Msg{Type: TypeStandingList} }
+// NewProcessSendMsg gives a live process a message from the operator as its
+// next trigger.
+func NewProcessSendMsg(id, text string) Msg {
+	return Msg{Type: TypeProcessSend, AgentID: id, Text: text}
+}
+
+// NewProcessListMsg asks for the process roster.
+func NewProcessListMsg() Msg { return Msg{Type: TypeProcessList} }
 
 // NewToolCallMsg invokes one tool once, for testing.
 //

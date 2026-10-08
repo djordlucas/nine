@@ -48,6 +48,8 @@ tags:
   description: Bundled documentation and specification.
 - name: capabilities
   description: The generated-tool capability ceiling, and the agent's requests to widen it.
+- name: processes
+  description: 'Everything Nine runs between turns: list, inspect, start, stop, message.'
 paths:
   /conversations:
     get:
@@ -894,6 +896,214 @@ paths:
                 $ref: '#/components/schemas/ReloadPluginsResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+  /processes:
+    get:
+      operationId: listProcesses
+      summary: List processes
+      description: Returns every process — goal sessions, standing agents, reflection, condition triggers, standing tools — with its state, who stopped it, its trigger and its budget use.
+      tags:
+      - processes
+      parameters:
+      - name: limit
+        in: query
+        description: Maximum items to return
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 50
+      - name: offset
+        in: query
+        description: Items to skip before the page
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListProcessesResponse'
+        '400':
+          description: invalid request
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+  /processes/{id}:
+    get:
+      operationId: getProcess
+      summary: Get a process
+      description: Returns one process with its recent activity, which is kept in memory and empties on restart.
+      tags:
+      - processes
+      parameters:
+      - name: id
+        in: path
+        description: process id, as the roster shows it
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: no process with that id
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+  /processes/{id}/start:
+    post:
+      operationId: startProcess
+      summary: Start a process
+      description: Starts a stopped or failing process as the operator, who may start any process. Refused with 409 when it is already running or [processes] max_running processes are.
+      tags:
+      - processes
+      parameters:
+      - name: id
+        in: path
+        description: process id, as the roster shows it
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessActionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: no process with that id
+          content: *id001
+        '409':
+          description: refused in the current state; the message says why
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+  /processes/{id}/stop:
+    post:
+      operationId: stopProcess
+      summary: Stop a process
+      description: Stops a process as the operator. Only the operator can start it again; a model's start is refused.
+      tags:
+      - processes
+      parameters:
+      - name: id
+        in: path
+        description: process id, as the roster shows it
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: stopped
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessActionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: no process with that id
+          content: *id001
+        '409':
+          description: refused in the current state; the message says why
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+  /processes/{id}/messages:
+    post:
+      operationId: sendProcessMessage
+      summary: Send a message to a process
+      description: Gives a running live process a message as its next trigger, labelled as the operator's. Refused with 409 when the process is stopped, busy, or a slice process with no session; nothing reaches the notification feed.
+      tags:
+      - processes
+      parameters:
+      - name: id
+        in: path
+        description: process id, as the roster shows it
+        required: true
+        schema:
+          type: string
+      requestBody:
+        description: the message
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendProcessMessageRequest'
+      responses:
+        '200':
+          description: delivered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessActionResponse'
+        '400':
+          description: invalid request
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: no process with that id
+          content: *id001
+        '409':
+          description: refused in the current state; the message says why
+          content: *id001
         '429':
           $ref: '#/components/responses/TooManyRequests'
         '500':
@@ -1984,6 +2194,146 @@ components:
             $ref: '#/components/schemas/WorkflowInfo'
         pagination:
           $ref: '#/components/schemas/Pagination'
+    ListProcessesResponse:
+      description: A page of processes.
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProcessInfo'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    ProcessInfo:
+      description: One process (docs/processes.md). recent is filled by getProcess only.
+      type: object
+      required:
+      - id
+      - tool
+      - mode
+      - state
+      - trigger
+      - budget
+      properties:
+        id:
+          type: string
+        tool:
+          type: string
+          description: the sandboxed tool that drives it
+        mode:
+          type: string
+          enum:
+          - live
+          - slice
+        state:
+          type: string
+          enum:
+          - running
+          - stopped
+          - failing
+        stopped_by:
+          type: string
+          description: who stopped it — operator, model, goal, budget, self — which decides who may start it again
+        stopped_at:
+          type: string
+          format: date-time
+        trigger:
+          type: string
+          description: its clock, e.g. "every 5m0s" or "cron 0 9 * * 1-5"; "—" for none
+        session:
+          type: string
+          description: the session a live process drives
+        attached:
+          type: boolean
+          description: true when it runs in another process's session
+        goal:
+          type: string
+          description: the goal it is bound to
+        report_to:
+          type: string
+          description: the process its reports are piped to
+        role:
+          type: string
+        budget:
+          $ref: '#/components/schemas/ProcessBudget'
+        calls:
+          type: integer
+        cycles:
+          type: integer
+        failures:
+          type: integer
+          description: consecutive failures
+        last_error:
+          type: string
+        last_call_at:
+          type: string
+          format: date-time
+        next_at:
+          type: string
+          format: date-time
+        generated:
+          type: boolean
+          description: written by Nine
+        recent:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProcessActivity'
+    ProcessBudget:
+      description: A process's budget over a rolling day and what the day has used.
+      type: object
+      required:
+      - turns
+      - turns_per_day
+      - tokens
+      - tokens_per_day
+      properties:
+        turns:
+          type: integer
+        turns_per_day:
+          type: integer
+        tokens:
+          type: integer
+        tokens_per_day:
+          type: integer
+        resets_at:
+          type: string
+          format: date-time
+          description: when the current day ends; absent when none is under way
+    ProcessActivity:
+      description: One line of a process's recent activity.
+      type: object
+      required:
+      - at
+      - outcome
+      properties:
+        at:
+          type: string
+          format: date-time
+        outcome:
+          type: string
+        detail:
+          type: string
+    ProcessActionResponse:
+      description: The outcome of starting, stopping or messaging a process.
+      type: object
+      required:
+      - id
+      - message
+      properties:
+        id:
+          type: string
+        message:
+          type: string
+          description: the daemon's outcome
+    SendProcessMessageRequest:
+      description: A message for a live process, which it receives as its next trigger.
+      type: object
+      required:
+      - text
+      properties:
+        text:
+          type: string
+          minLength: 1
     MemoryStats:
       description: Row counts from the daemon's store.
       type: object

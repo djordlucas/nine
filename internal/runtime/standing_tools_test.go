@@ -341,7 +341,7 @@ func TestStandingOutputAndTransitionsAreJournalled(t *testing.T) {
 		r.runDue(context.Background())
 		time.Sleep(3 * time.Millisecond)
 	}
-	if _, err := r.SetState("w1", memory.ProcessStopped); err != nil {
+	if err := r.StopProcess("w1", ByOperator); err != nil {
 		t.Fatal(err)
 	}
 
@@ -430,7 +430,7 @@ func TestStartClearsFailureHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := r.SetState("w1", memory.ProcessRunning); err != nil {
+	if err := r.StartProcess("w1", ByOperator); err != nil {
 		t.Fatal(err)
 	}
 	got, _, _ := store.ProcessGet("w1")

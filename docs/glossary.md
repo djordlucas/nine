@@ -588,7 +588,7 @@ workflows whose steps are now all terminal; workflows with remaining
 
 **TUI slash commands** — `/help`, `/sessions`, `/status`, `/config`,
 `/context [id]`, `/plan-mode <mode>`, `/goals`, `/workflows`,
-`/tools [filter]`, `/standing [id]`, `/skills [name]`, `/memory [key]`, `/new`,
+`/tools [filter]`, `/processes [id]`, `/skills [name]`, `/memory [key]`, `/new`,
 `/think <message>`, `/clear`. Handled locally — no LLM tokens consumed
 (`/think` is the exception: it sends a real turn). Typing `/` opens a picker
 that filters the list as you type. See

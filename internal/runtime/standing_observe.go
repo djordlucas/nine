@@ -114,22 +114,6 @@ func journalTransition(store *memory.Store, id, evType string, payload any) {
 	}
 }
 
-// StandingStatus is one standing run as the operator surface reports it.
-type StandingStatus struct {
-	ID         string             `json:"id"`
-	Tool       string             `json:"tool"`
-	State      string             `json:"state"`
-	Trigger    string             `json:"trigger"`
-	Calls      int                `json:"calls"`
-	Cycles     int                `json:"cycles"`
-	Failures   int                `json:"failures,omitempty"`
-	LastError  string             `json:"last_error,omitempty"`
-	LastCallAt string             `json:"last_call_at,omitempty"`
-	NextAt     string             `json:"next_at,omitempty"`
-	Generated  bool               `json:"generated,omitempty"`
-	Recent     []StandingLogEntry `json:"recent,omitempty"`
-}
-
 // triggerText renders a standing tool's cadence for display.
 func triggerText(t memory.Process) string {
 	if t.Schedule != "" {
@@ -139,15 +123,6 @@ func triggerText(t memory.Process) string {
 		return "every " + (time.Duration(t.IntervalSecs) * time.Second).String()
 	}
 	return "—"
-}
-
-func standingStatusOf(t memory.Process, recent []StandingLogEntry) StandingStatus {
-	return StandingStatus{
-		ID: t.ID, Tool: t.Tool, State: t.State, Trigger: triggerText(t),
-		Calls: t.Calls, Cycles: t.Cycles, Failures: t.Failures,
-		LastError: t.LastError, LastCallAt: t.LastCallAt, NextAt: t.NextAt,
-		Generated: t.Generated, Recent: recent,
-	}
 }
 
 func clipDetail(s string, n int) string {

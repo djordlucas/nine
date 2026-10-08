@@ -63,16 +63,22 @@ type SessionStopReq struct {
 // it. Distinct from SessionStopReq, which ends a session and keeps its history.
 type SessionDeleteReq struct{ AgentID string }
 
-// StandingShowReq asks for one standing run in detail.
-type StandingShowReq struct {
+// ProcessShowReq asks for one process in detail.
+type ProcessShowReq struct {
 	ID    string
 	Limit int
 }
 
-// StandingControlReq stops or starts a standing run.
-type StandingControlReq struct {
+// ProcessControlReq starts or stops a process as the operator.
+type ProcessControlReq struct {
 	ID     string
-	Action string // "stop" | "start"
+	Action string // "start" | "stop"
+}
+
+// ProcessSendReq gives a live process a message from the operator.
+type ProcessSendReq struct {
+	ID   string
+	Text string
 }
 
 // ToolDeleteReq deletes a tool Nine wrote; any other tool is refused.
@@ -158,8 +164,9 @@ func (SetPlanModeReq) Type() MsgType       { return TypeSetPlanMode }
 func (ContextReq) Type() MsgType           { return TypeContext }
 func (SessionStopReq) Type() MsgType       { return TypeSessionStop }
 func (SessionDeleteReq) Type() MsgType     { return TypeSessionDelete }
-func (StandingShowReq) Type() MsgType      { return TypeStandingShow }
-func (StandingControlReq) Type() MsgType   { return TypeStandingControl }
+func (ProcessShowReq) Type() MsgType       { return TypeProcessShow }
+func (ProcessControlReq) Type() MsgType    { return TypeProcessControl }
+func (ProcessSendReq) Type() MsgType       { return TypeProcessSend }
 func (ToolCallReq) Type() MsgType          { return TypeToolCall }
 func (ToolDeleteReq) Type() MsgType        { return TypeToolDelete }
 func (WorkflowStopReq) Type() MsgType      { return TypeWorkflowStop }
@@ -180,7 +187,7 @@ var queryKinds = map[MsgType]bool{
 	TypeStatus: true, TypeListGoals: true, TypeListWorkflows: true,
 	TypeListTools: true, TypePluginsList: true, TypePluginsReload: true,
 	TypeToolsList: true, TypeToolsReload: true, TypeSessionsList: true,
-	TypeStandingList: true, TypeGrantsList: true, TypeListSkills: true,
+	TypeProcessList: true, TypeGrantsList: true, TypeListSkills: true,
 }
 
 // DecodeRequest turns a wire message into the typed request it represents.
@@ -213,10 +220,12 @@ func DecodeRequest(m Msg) (Request, error) {
 		return SessionStopReq{AgentID: m.AgentID, All: m.Text == "--all"}, nil
 	case TypeSessionDelete:
 		return SessionDeleteReq{AgentID: m.AgentID}, nil
-	case TypeStandingShow:
-		return StandingShowReq{ID: m.AgentID, Limit: m.Limit}, nil
-	case TypeStandingControl:
-		return StandingControlReq{ID: m.AgentID, Action: m.Text}, nil
+	case TypeProcessShow:
+		return ProcessShowReq{ID: m.AgentID, Limit: m.Limit}, nil
+	case TypeProcessControl:
+		return ProcessControlReq{ID: m.AgentID, Action: m.Text}, nil
+	case TypeProcessSend:
+		return ProcessSendReq{ID: m.AgentID, Text: m.Text}, nil
 	case TypeToolDelete:
 		return ToolDeleteReq{Tool: m.ToolName}, nil
 	case TypeToolCall:

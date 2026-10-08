@@ -71,12 +71,13 @@ var clientMsgSpecs = map[MsgType]clientMsgSpec{
 	// is not an operation anyone should reach by a flag.
 	TypeSessionDelete: {required: []fieldRule{needAgentID}},
 
-	TypeStandingShow: {required: []fieldRule{needAgentID}},
+	TypeProcessShow: {required: []fieldRule{needAgentID}},
 	// The action is required too: a control message with no verb should not
 	// silently mean one of them.
-	TypeStandingControl: {required: []fieldRule{needAgentID, needText}},
-	TypeToolCall:        {required: []fieldRule{needToolName}},
-	TypeToolDelete:      {required: []fieldRule{needToolName}},
+	TypeProcessControl: {required: []fieldRule{needAgentID, needText}},
+	TypeProcessSend:    {required: []fieldRule{needAgentID, needText}},
+	TypeToolCall:       {required: []fieldRule{needToolName}},
+	TypeToolDelete:     {required: []fieldRule{needToolName}},
 
 	TypePluginCall:       {required: []fieldRule{needToolName}},
 	TypeHumanInputAnswer: {required: []fieldRule{needRequestID}},

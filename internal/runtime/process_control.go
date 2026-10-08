@@ -228,6 +228,8 @@ func (r *StandingRunner) StopProcess(id, by string) error {
 // with its sender. Unlike a pipe, a send the process cannot take now is
 // refused rather than sent to the human feed: the sender is a model that can
 // try again.
+//
+// from names the sender in the label: "conversation <id>", "the operator".
 func (r *StandingRunner) SendProcess(id, text, from string) error {
 	p, err := r.mustGet(id)
 	if err != nil {
@@ -239,7 +241,7 @@ func (r *StandingRunner) SendProcess(id, text, from string) error {
 	case p.State == memory.ProcessStopped:
 		return fmt.Errorf("process %s is stopped; start it first", id)
 	}
-	handled, delivered := r.Deliver(p.SessionID, fmt.Sprintf("[From conversation %s: %s]", from, text), from)
+	handled, delivered := r.Deliver(p.SessionID, fmt.Sprintf("[From %s: %s]", from, text), from)
 	switch {
 	case !handled:
 		return fmt.Errorf("process %s is not running yet; try again in a moment", id)
@@ -266,7 +268,7 @@ func (m modelProcesses) ProcessShow(id string) (any, error) {
 }
 
 func (m modelProcesses) ProcessSend(id, text, agentID string) error {
-	return m.r.SendProcess(id, text, agentID)
+	return m.r.SendProcess(id, text, "conversation "+agentID)
 }
 
 func (m modelProcesses) ProcessStart(id string) error { return m.r.StartProcess(id, ByModel) }

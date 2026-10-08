@@ -135,57 +135,6 @@ func (r *StandingRunner) Log() *standingLog {
 	return r.log
 }
 
-// Status returns every standing run with its recent activity, for the roster.
-func (r *StandingRunner) Status() ([]StandingStatus, error) {
-	if r == nil {
-		return nil, nil
-	}
-	tools, err := r.store.ProcessList()
-	if err != nil {
-		return nil, err
-	}
-	out := make([]StandingStatus, 0, len(tools))
-	for _, t := range tools {
-		out = append(out, standingStatusOf(t, nil))
-	}
-	return out, nil
-}
-
-// StatusOf returns one standing run with up to n recent log lines.
-func (r *StandingRunner) StatusOf(id string, n int) (StandingStatus, bool, error) {
-	if r == nil {
-		return StandingStatus{}, false, nil
-	}
-	t, found, err := r.store.ProcessGet(id)
-	if err != nil || !found {
-		return StandingStatus{}, found, err
-	}
-	return standingStatusOf(t, r.log.recent(id, n)), true, nil
-}
-
-// SetState stops or starts a standing run, journalling the transition.
-//
-// Stopping is exact for the same reason cancelling a tool job is: the daemon
-// owns when the next call happens, so not scheduling one *is* the stop. A call
-// already in flight runs out its own deadline and its result is discarded, since
-// the store's writes refuse a stopped row.
-func (r *StandingRunner) SetState(id, state string) (bool, error) {
-	if r == nil {
-		return false, fmt.Errorf("standing tools are not enabled here")
-	}
-	ok, err := r.store.ProcessSetState(id, state)
-	if err != nil || !ok {
-		return ok, err
-	}
-	evType := evStandingStopped
-	if state == memory.ProcessRunning {
-		evType = evStandingStarted
-	}
-	journalTransition(r.store, id, evType, map[string]any{"by": "operator"})
-	slog.Info("standing tool "+state, "id", id)
-	return true, nil
-}
-
 // ReconcileProcesses brings the store's processes in line with the file's
 // [[process]] blocks — every block but goal processes, which the daemon's goal
 // reconciliation owns, since it creates and retires their goals too.

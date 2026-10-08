@@ -99,7 +99,7 @@ Ordered outside in.
 | `/context [id]` | The assembled-context token breakdown, with no model call |
 | `/tools [filter]` | Every tool the session can call |
 | `/tools delete <name>` | Delete a tool Nine wrote |
-| `/standing [id]` | Standing tools, or one with its recent activity |
+| `/processes [id]` | Processes, or one with its recent activity; `start`/`stop <id>` as the operator |
 | `/goals`, `/workflows` | Goals, and active and recent workflows |
 | `/grants [approve\|deny\|revoke <id>]` | Capability requests waiting, and the ceiling in force |
 | `/plan-mode <mode>` | The session's reasoning mode: `off`, `plan-only`, `always` |

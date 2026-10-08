@@ -821,53 +821,53 @@ func (d *Daemon) handleSessionDelete(enc *json.Encoder, agentID string) {
 	enc.Encode(protocol.NewTextMsg(protocol.TypeSessionDelete, msg)) //nolint:errcheck
 }
 
-// handleStandingList returns the standing-run roster.
-func (d *Daemon) handleStandingList(enc *json.Encoder) {
+// handleProcessList returns the process roster.
+func (d *Daemon) handleProcessList(enc *json.Encoder) {
 	if d.standing == nil {
-		enc.Encode(protocol.NewTextMsg(protocol.TypeStandingList, "[]")) //nolint:errcheck
+		enc.Encode(protocol.NewTextMsg(protocol.TypeProcessList, "[]")) //nolint:errcheck
 		return
 	}
-	status, err := d.standing.Status()
+	status, err := d.standing.Processes()
 	if err != nil {
 		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
 		return
 	}
-	out := make([]protocol.StandingInfo, 0, len(status))
+	out := make([]protocol.ProcessInfo, 0, len(status))
 	for _, s := range status {
-		out = append(out, standingInfoOf(s))
+		out = append(out, processInfoOf(s))
 	}
 	payload, err := json.Marshal(out)
 	if err != nil {
 		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
 		return
 	}
-	enc.Encode(protocol.NewTextMsg(protocol.TypeStandingList, string(payload))) //nolint:errcheck
+	enc.Encode(protocol.NewTextMsg(protocol.TypeProcessList, string(payload))) //nolint:errcheck
 }
 
-// handleStandingShow returns one standing run with its recent activity.
-func (d *Daemon) handleStandingShow(enc *json.Encoder, id string, limit int) {
+// handleProcessShow returns one process with its recent activity.
+func (d *Daemon) handleProcessShow(enc *json.Encoder, id string, limit int) {
 	if d.standing == nil {
-		enc.Encode(protocol.NewErrorMsg("no standing tools are configured here")) //nolint:errcheck
+		enc.Encode(protocol.NewErrorMsg("processes are not enabled here")) //nolint:errcheck
 		return
 	}
 	if limit <= 0 {
 		limit = 20
 	}
-	s, found, err := d.standing.StatusOf(id, limit)
+	s, found, err := d.standing.ProcessOf(id, limit)
 	if err != nil {
 		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
 		return
 	}
 	if !found {
-		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("no standing tool %q", id))) //nolint:errcheck
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("%v: %q", ErrUnknownProcess, id))) //nolint:errcheck
 		return
 	}
-	payload, err := json.Marshal(standingInfoOf(s))
+	payload, err := json.Marshal(processInfoOf(s))
 	if err != nil {
 		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
 		return
 	}
-	enc.Encode(protocol.NewTextMsg(protocol.TypeStandingShow, string(payload))) //nolint:errcheck
+	enc.Encode(protocol.NewTextMsg(protocol.TypeProcessShow, string(payload))) //nolint:errcheck
 }
 
 // handleToolDelete deletes a tool Nine wrote: the operator's counterpart of the
@@ -884,47 +884,56 @@ func (d *Daemon) handleToolDelete(enc *json.Encoder, name string) {
 	enc.Encode(protocol.NewTextMsg(protocol.TypeToolDelete, fmt.Sprintf("deleted tool %q", name))) //nolint:errcheck
 }
 
-// handleStandingControl stops or starts a standing run.
-func (d *Daemon) handleStandingControl(enc *json.Encoder, id, action string) {
+// handleProcessControl starts or stops a process as the operator, who may
+// start any process: the start rule binds models, not the operator.
+func (d *Daemon) handleProcessControl(enc *json.Encoder, id, action string) {
 	if d.standing == nil {
-		enc.Encode(protocol.NewErrorMsg("no standing tools are configured here")) //nolint:errcheck
+		enc.Encode(protocol.NewErrorMsg("processes are not enabled here")) //nolint:errcheck
 		return
 	}
-	var state string
+	var err error
 	switch action {
-	case "stop":
-		state = memory.ProcessStopped
 	case "start":
-		state = memory.ProcessRunning
+		err = d.standing.StartProcess(id, ByOperator)
+	case "stop":
+		err = d.standing.StopProcess(id, ByOperator)
 	default:
-		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("standing control action %q is not \"stop\" or \"start\"", action))) //nolint:errcheck
-		return
+		err = fmt.Errorf("process control action %q is not \"start\" or \"stop\"", action)
 	}
-	ok, err := d.standing.SetState(id, state)
 	if err != nil {
 		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
 		return
 	}
-	if !ok {
-		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("no standing tool %q", id))) //nolint:errcheck
-		return
-	}
-	verb := "stopped"
-	if action == "start" {
-		verb = "started; its first call is scheduled now"
-	}
-	enc.Encode(protocol.NewTextMsg(protocol.TypeStandingControl, fmt.Sprintf("%s %s", id, verb))) //nolint:errcheck
+	done := map[string]string{"start": "started", "stop": "stopped"}[action]
+	enc.Encode(protocol.NewTextMsg(protocol.TypeProcessControl, id+" "+done)) //nolint:errcheck
 }
 
-func standingInfoOf(s StandingStatus) protocol.StandingInfo {
-	out := protocol.StandingInfo{
-		ID: s.ID, Tool: s.Tool, State: s.State, Trigger: s.Trigger,
-		Calls: s.Calls, Cycles: s.Cycles, Failures: s.Failures,
+// handleProcessSend gives a live process a message from the operator.
+func (d *Daemon) handleProcessSend(enc *json.Encoder, id, text string) {
+	if d.standing == nil {
+		enc.Encode(protocol.NewErrorMsg("processes are not enabled here")) //nolint:errcheck
+		return
+	}
+	if err := d.standing.SendProcess(id, text, "the operator"); err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	enc.Encode(protocol.NewTextMsg(protocol.TypeProcessSend, fmt.Sprintf("sent to %s; it takes the message as its next trigger", id))) //nolint:errcheck
+}
+
+func processInfoOf(s ProcessStatus) protocol.ProcessInfo {
+	out := protocol.ProcessInfo{
+		ID: s.ID, Tool: s.Tool, Mode: s.Mode, State: s.State,
+		StoppedBy: s.StoppedBy, StoppedAt: s.StoppedAt, Trigger: s.Trigger,
+		Session: s.Session, Attached: s.Attached, Goal: s.Goal, ReportTo: s.ReportTo, Role: s.Role,
+		BudgetTurns: s.Budget.Turns, BudgetTurnsPerDay: s.Budget.TurnsPerDay,
+		BudgetTokens: s.Budget.Tokens, BudgetTokensPerDay: s.Budget.TokensPerDay,
+		BudgetResetsAt: s.Budget.ResetsAt, Calls: s.Calls, Cycles: s.Cycles, Failures: s.Failures,
 		LastError: s.LastError, LastCallAt: s.LastCallAt, NextAt: s.NextAt,
 		Generated: s.Generated,
 	}
 	for _, e := range s.Recent {
-		out.Recent = append(out.Recent, protocol.StandingLogLine{
+		out.Recent = append(out.Recent, protocol.ProcessLogLine{
 			At: e.At.UTC().Format(time.RFC3339), Outcome: e.Outcome, Detail: e.Detail,
 		})
 	}

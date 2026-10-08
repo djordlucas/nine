@@ -78,7 +78,7 @@ Properties:
 - **It composes with a clock.** The agent keeps its own `every`/`schedule`,
   giving it a periodic sweep plus something that wakes it sooner.
 - **It is a process like any other**, so it backs off when it breaks, shows up as
-  `failing`, and can be stopped with `nine tool stop cve-scan`.
+  `failing`, and can be stopped with `nine process stop cve-scan`.
 - **A delivery is lossy on purpose.** If the agent is mid-turn, the finding does
   not queue a second turn: it goes to the human feed. A predicate firing twice
   while the agent is still reading the first finding wants the agent to *look*,

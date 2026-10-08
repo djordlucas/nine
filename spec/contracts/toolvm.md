@@ -1070,10 +1070,9 @@ buffer — deliberately lossy and deliberately not durable.
 
 | | |
 |---|---|
-| `nine tools standing` | the roster, with state, cycles and trigger |
-| `nine tool status <id>` | one run in full, with recent activity |
-| `nine tool logs <id> [-n N]` | the ring buffer |
-| `nine tool stop\|start <id>` | exact: stopping means no further call is scheduled |
+| `nine process` | the roster of every process, standing runs among them (processes R-PROC.12) |
+| `nine process show <id> [-n N]` | one in full, with the ring buffer |
+| `nine process stop\|start <id>` | exact: stopping means no further call is scheduled |
 | `nine tool call <name> ['<json>'] [--live-state]` | one call, for testing |
 
 `nine tool call` **MUST** run against a **scratch state namespace** unless

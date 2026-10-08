@@ -124,7 +124,7 @@ func TestStopRecordsWhoStopped(t *testing.T) {
 // one that cannot take it now is refused so the model can try again.
 func TestSendProcess(t *testing.T) {
 	r, store, sessions := liveSetup(t, memory.Process{ID: "agent", SessionID: "agent-session"})
-	if err := r.SendProcess("agent", "hello", "conv-1"); err == nil || !strings.Contains(err.Error(), "not running yet") {
+	if err := r.SendProcess("agent", "hello", "conversation conv-1"); err == nil || !strings.Contains(err.Error(), "not running yet") {
 		t.Errorf("send before the start = %v", err)
 	}
 	r.tickLive(context.Background())
@@ -139,7 +139,7 @@ func TestSendProcess(t *testing.T) {
 		defer lp.mu.Unlock()
 		return lp.waiting
 	})
-	if err := r.SendProcess("agent", "check the notes", "conv-1"); err != nil {
+	if err := r.SendProcess("agent", "check the notes", "conversation conv-1"); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "the turn", func() bool { return len(sessions.seen()) == 1 })
@@ -150,7 +150,7 @@ func TestSendProcess(t *testing.T) {
 	if err := store.ProcessUpsertDefinition(memory.Process{ID: "slice", Tool: "x", IntervalSecs: 60}); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.SendProcess("slice", "x", "conv-1"); err == nil || !strings.Contains(err.Error(), "slice process") {
+	if err := r.SendProcess("slice", "x", "conversation conv-1"); err == nil || !strings.Contains(err.Error(), "slice process") {
 		t.Errorf("send to a slice process = %v", err)
 	}
 }
