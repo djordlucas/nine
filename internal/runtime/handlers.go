@@ -246,9 +246,10 @@ func (d *Daemon) processRole(id string) (RoleParams, bool) {
 }
 
 // processRoleParams is what a session driven by p runs under: p's role, goal
-// ownership when p is bound to a goal, and p's delegation opt-in.
+// ownership when p is bound to a goal, and p's delegation opt-in. It is a
+// process session, so it holds no process tools.
 func processRoleParams(p memory.Process) RoleParams {
-	return RoleParams{Role: p.Role, OwnsGoal: p.GoalID != "", Delegates: p.Delegates}
+	return RoleParams{Role: p.Role, OwnsGoal: p.GoalID != "", Delegates: p.Delegates, Process: true}
 }
 
 // buildWorker creates a worker for id from explicit role parameters, restoring

@@ -249,6 +249,7 @@ How to use this file:
 | R-PROC.9 | Shipped processes, self-model | `pursue` and `reflect`; `SystemSelf` injected as P2.5, capped ~600 tokens. |
 | R-PROC.10 | Configuration | `[[process]]` mistakes fail the load; retired blocks and caps fail with their replacement. |
 | R-PROC.11 | Budgets | Turns and tokens per rolling day; at the limit `turn()` fails `E_BUDGET`, the process pauses and reaches the human feed, and runs again when its day is over. |
+| R-PROC.12 | Process tools | A conversation's only, by role; the start rule's refusals name their reason; every start counts against `max_running`. |
 
 ### Goals — [`orchestration.md`](contracts/orchestration.md) (§ goals)
 

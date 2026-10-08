@@ -171,11 +171,29 @@ budget`'s (default 200 and 2,000,000), never above it.
 
 ---
 
+## R-PROC.12 — process tools
+
+A conversation — a root session a person drives — holds `process_list`, `process_show`,
+`process_send`, `process_start` and `process_stop`, filtered by its role's allowlist. A
+process session and a sub-agent **MUST NOT** hold any of them.
+
+- `process_start` by a model **MUST** be refused, naming the reason, for a process stopped
+  by the operator, by its goal, or by its budget before its day is over; any other stopped
+  or failing process starts. The operator may start any process. Every start **MUST** be
+  refused at `[processes] max_running`.
+- `process_stop` records `stopped_by = model`.
+- `process_send` delivers to a running live process waiting for work, labelled
+  `[From conversation <id>: <text>]`; otherwise it is refused, and nothing reaches the
+  human feed.
+
+---
+
 ## Reference symbols
 
 `internal/toolvm/process.go` (`StartLive`, `ProcessHandler`, `nine:process`),
 `internal/runtime/process_live.go` (live runner, goal binding, pipes),
 `internal/runtime/process_budget.go` (budgets),
+`internal/runtime/process_control.go` (roster, start rule), `internal/agent/register_processes.go`,
 `internal/runtime/standing_tools.go` (slice runner, `ReconcileProcesses`),
 `internal/runtime/goal_session.go`, `internal/runtime/process_sessions.go`
 (`ProcessTurn`), `internal/memory/processes.go`, `cmd/nine/standing_agents.go`.

@@ -59,6 +59,12 @@ type Role struct {
 	// conferred by the shell (the daemon), not declared in a role skill, and is
 	// a root-only structural flag — ResolveLeaf strips it.
 	OwnsGoal bool
+
+	// Conversation marks a root session a person drives. It is what grants the
+	// process tools, filtered by the role's allowlist: a process session's
+	// turns are its process's, and a sub-agent's task is finite. Conferred by
+	// the shell like OwnsGoal, never declared by a role skill.
+	Conversation bool
 }
 
 // roleSkillStore is the slice of the memory store the registry needs to

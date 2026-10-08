@@ -108,6 +108,33 @@ A piped report arrives labelled with its sender, as
 is data that lands in the receiver's prompt, so a process that fetches web pages
 and pipes them on could otherwise pass off a page's text as an instruction.
 
+## From a conversation
+
+A live process is never a tool a conversation calls. A conversation works with
+processes through five tools, which its role grants like any other; a process
+session and a sub-agent hold none of them.
+
+| Tool | Does |
+|---|---|
+| `process_list`, `process_show` | state, who stopped it, trigger, session, goal, budget use and reset, last error, recent activity |
+| `process_send` | gives a running live process a message as its next trigger, labelled `[From conversation <id>: …]`; refused when it is stopped, busy, or a slice process |
+| `process_start`, `process_stop` | control, under the rule below |
+
+A send does not wait for an answer: the process answers through what it writes.
+
+A start grants nothing the process did not have, so a model may start any
+stopped process, except one stopped by:
+
+| Stopped by | A model's `process_start` |
+|---|---|
+| The operator | refused: only the operator can start it |
+| Its goal | refused: reactivate the goal instead |
+| Its budget | refused until its day is over, when it runs again by itself |
+| A model, itself, or failing | allowed |
+
+Every start counts against `[processes] max_running`. Each refusal names its
+reason.
+
 ## Declaring processes
 
 ```toml

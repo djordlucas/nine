@@ -221,6 +221,10 @@ func Assemble(c AssemblyConfig) *Assembly {
 	runner.SetWaker(daemon)
 	runner.SetSessions(daemon)
 	runner.SetBudget(c.ProcessBudget)
+	runner.SetMaxRunning(c.MaxRunning)
+	if runner != nil {
+		builder.SetProcessControl(modelProcesses{r: runner})
+	}
 	daemon.ConfigureStandingTools(runner)
 	daemon.ConfigureProcesses(c.Store, runner.Wake)
 

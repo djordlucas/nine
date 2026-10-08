@@ -79,6 +79,9 @@ type StandingRunner struct {
 	// budget is [processes] budget, the ceiling of every process's own
 	// (process_budget.go).
 	budget config.BudgetConfig
+	// maxRunning is [processes] max_running, which a start counts against
+	// (process_control.go).
+	maxRunning int
 }
 
 // Wake asks for a pass now rather than at the next tick: a process just written

@@ -44,6 +44,10 @@ type RoleParams struct {
 	// the goal self-management tools regardless of the role's allowlist
 	// (adr/predefined-agents-design.md §3.1).
 	OwnsGoal bool
+	// Process marks a process session. Its turns are its process's, so it holds
+	// none of the process tools: a process cannot steer processes
+	// (adr/process-sessions.md §9).
+	Process bool
 	// Delegates opts a standing agent into sub-agent fan-out; OR-ed with the
 	// resolved role's own Delegates flag (adr/predefined-agents-design.md §3.1).
 	Delegates bool

@@ -169,6 +169,7 @@ type AgentBuilder struct {
 	roles        *RoleRegistry
 	queuePtr     atomic.Pointer[llm.Queue]
 	goalSpawnFn  atomic.Pointer[agent.GoalSessionSpawnFn]
+	processes    atomic.Pointer[agent.ProcessControl]
 	emitProgress atomic.Pointer[func(agentID string, msg protocol.Msg)]
 
 	// sink journals each delegated sub-agent's own execution trajectory under its
@@ -250,6 +251,7 @@ func (f *AgentBuilder) BuildForRole(agentID string, p RoleParams) *agent.Loop {
 	role := f.roles.Resolve(p.Role)
 	role.Interactive = role.Interactive && p.Interactive
 	role.OwnsGoal = p.OwnsGoal
+	role.Conversation = !p.Process
 	role.Delegates = role.Delegates || p.Delegates
 	// A root session owns its own gates; sub-agents inherit this owner (subGate).
 	var gate gateCtx
@@ -298,6 +300,12 @@ func (f *AgentBuilder) QueueDepth() (pending, inflight, maxConcurrent int) {
 // daemon's session registry) and before any conversations are created.
 func (f *AgentBuilder) SetGoalSessionSpawnFn(fn agent.GoalSessionSpawnFn) {
 	f.goalSpawnFn.Store(&fn)
+}
+
+// SetProcessControl wires the process tools a conversation holds
+// (adr/process-sessions.md §9). Without it no loop advertises them.
+func (f *AgentBuilder) SetProcessControl(pc agent.ProcessControl) {
+	f.processes.Store(&pc)
 }
 
 // SetEmitProgressFn registers the function used to deliver sub-agent
@@ -518,6 +526,16 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 	// rank catalogs that live only in the store; the documentation is compiled
 	// into the binary, so doc_search still ranks it lexically (BM25) with no
 	// embedder configured, and simply gains a vector half when there is one.
+	// The process tools go to a conversation, filtered by its role like any
+	// other tool (adr/process-sessions.md §9). A process session's turns are its
+	// process's and a sub-agent's task is finite, so neither holds them. They
+	// are not always-included: they advertise as any ranked tool does.
+	var processTools []string
+	if pc := f.processes.Load(); pc != nil && *pc != nil && role.Conversation {
+		processTools = filterByRole(agent.ProcessToolNames, role)
+		agent.RegisterProcessTools(d, *pc, agentID, processTools)
+	}
+
 	shellTools = append(shellTools, "tool_list", "doc_read", "doc_search")
 	if lc.Embedder != nil {
 		shellTools = append(shellTools, "tool_search", "skill_search")
@@ -573,6 +591,7 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 
 	assembleTools := func() []ninectx.ToolWithVector {
 		tools := buildToolList(lc, role, shellTools, roleEnum)
+		tools = appendInterceptedTools(tools, processTools, roleEnum)
 		if role.Interactive && f.cfg.HITL != nil {
 			tools = append(tools, ninectx.ToolWithVector{Tool: agent.AskHumanDef})
 		}
