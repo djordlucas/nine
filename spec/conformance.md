@@ -247,7 +247,7 @@ How to use this file:
 | R-PROC.7 | Goal binding | Inactive goal stops its process, active restarts it; a stall pauses the goal. |
 | R-PROC.8 | Pipes | A report reaches a waiting receiver, labelled `[From process <id>: …]`, otherwise the human feed. |
 | R-PROC.9 | Shipped processes, self-model | `pursue` and `reflect`; `SystemSelf` injected as P2.5, capped ~600 tokens. |
-| R-PROC.10 | Configuration | `[[process]]` mistakes fail the load; retired blocks and caps fail with their replacement. |
+| R-PROC.10 | Configuration | `[[process]]` mistakes fail the load; retired blocks and caps fail with their replacement; a removed non-goal block deletes its process and keeps its session. |
 | R-PROC.11 | Budgets | Turns and tokens per rolling day; at the limit `turn()` fails `E_BUDGET`, the process pauses and reaches the human feed, and runs again when its day is over. |
 | R-PROC.12 | Process tools | A conversation's only, by role; the start rule's refusals name their reason; every start counts against `max_running`. |
 

@@ -147,9 +147,9 @@ func (r *StandingRunner) Log() *standingLog {
 // A block whose `args` changed has its cycle restarted: the cursor it holds was
 // produced under the old arguments, and resuming with it would be incoherent.
 //
-// Removing a block stops Nine reconciling it; it does not delete the row, so its
-// history stays readable and an operator who deleted a line by accident has not
-// lost anything.
+// Removing a block deletes the process it declared (deleteUndeclared); its
+// session is kept, so re-adding the block brings the process back with its
+// history.
 //
 // host decides each process's mode from its tool: a live tool makes a live
 // process, any other a slice one.
@@ -186,6 +186,7 @@ func ReconcileProcesses(store *memory.Store, host *toolvm.Host, blocks []config.
 			IntervalSecs: interval, Schedule: b.Schedule,
 			ReportTo: b.ReportTo, Mode: memory.ProcessSlice, Owner: true,
 			BudgetTurns: b.Budget.TurnsPerDay, BudgetTokens: b.Budget.TokensPerDay,
+			Declared: true,
 		}
 		if t := liveTool(host, b.Tool); t != nil {
 			p.Mode = memory.ProcessLive
@@ -230,6 +231,54 @@ func ReconcileProcesses(store *memory.Store, host *toolvm.Host, blocks []config.
 			}
 			slog.Info("process arguments changed; its cycle restarts", "name", b.Name)
 		}
+	}
+	deleteUndeclared(store, byName)
+}
+
+// deleteUndeclared deletes the processes a [[process]] block declared that the
+// file no longer has (adr/process-sessions.md §9). The session a deleted
+// process drove is kept as history. A process still piping to it has its
+// reports go to the human feed, as undeliverable ones do; one attached to its
+// session is stopped. The human feed is told what went.
+func deleteUndeclared(store *memory.Store, blocks map[string]config.ProcessConfig) {
+	all, err := store.ProcessList()
+	if err != nil {
+		slog.Warn("process: list for deletion", "err", err)
+		return
+	}
+	for _, p := range all {
+		if !p.Declared {
+			continue
+		}
+		if _, still := blocks[p.ID]; still {
+			continue
+		}
+		if err := store.ProcessDelete(p.ID); err != nil {
+			slog.Warn("process: delete", "id", p.ID, "err", err)
+			continue
+		}
+		journalTransition(store, p.ID, evProcessDeleted, map[string]any{"tool": p.Tool, "by": "config"})
+		msg := fmt.Sprintf("Process %s was removed from nine.toml and is deleted.", p.ID)
+		if p.SessionID != "" && p.Owner {
+			msg += fmt.Sprintf(" Its session %s is kept as history.", p.SessionID)
+		}
+		for _, o := range all {
+			switch {
+			case o.ID == p.ID:
+			case o.ReportTo == p.ID:
+				msg += fmt.Sprintf(" Process %s still pipes to it; its reports go to the human feed.", o.ID)
+			case p.Owner && o.SessionID == p.SessionID && !o.Owner && o.State != memory.ProcessStopped:
+				if _, err := store.ProcessStop(o.ID, ByOperator); err != nil {
+					slog.Warn("process: stop an attached process", "id", o.ID, "err", err)
+					continue
+				}
+				msg += fmt.Sprintf(" Process %s, attached to its session, is stopped.", o.ID)
+			}
+		}
+		if err := store.UserNotificationCreate(memory.NewID(), "", msg); err != nil {
+			slog.Warn("process: notify its deletion", "id", p.ID, "err", err)
+		}
+		slog.Info("process deleted: its block was removed", "id", p.ID)
 	}
 }
 

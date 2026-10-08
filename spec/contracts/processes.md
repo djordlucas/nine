@@ -146,6 +146,12 @@ A goal process is reconciled with its goal: created when missing, its descriptio
 step, never resurrected once the agent finished it, and retired at boot when
 `authoritative` and no longer listed — never touching a goal a conversation created.
 
+Any other process a block declares is marked declared. One whose block is gone at boot
+**MUST** be deleted: its session is kept, a process attached to its session is stopped, a
+process still piping to it has its reports go to the human feed, and the human feed is told.
+A process no block declared — a goal session, reflection, one Nine wrote — is never deleted
+this way.
+
 `[[agent]]`, `[[standing_tool]]`, `[daemon] standing_agents_authoritative`, `[daemon]
 max_goal_sessions` and `[tools.agent] max_standing` are retired: a file that has one **MUST**
 fail to load with what to use instead.

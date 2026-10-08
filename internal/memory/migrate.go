@@ -378,6 +378,13 @@ var migrations = []migrationStep{
 		}
 		return nil
 	}},
+
+	// 16 → 17: a process a [[process]] block declares is marked, so removing
+	// the block deletes it (adr/process-sessions.md §9). Rows written before
+	// are marked at the next boot's reconcile, if their block is still there.
+	{name: "declared_processes", fn: func(q sqlExec) error {
+		return addColumnIfMissing(q, "processes", "declared", "INTEGER NOT NULL DEFAULT 0")
+	}},
 }
 
 // convertGoalPlans turns each session plan with a pursue routine into the

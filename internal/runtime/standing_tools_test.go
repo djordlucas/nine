@@ -441,3 +441,70 @@ func TestStartClearsFailureHistory(t *testing.T) {
 		t.Fatalf("next_at = %q, want it cleared so the first call happens now", got.NextAt)
 	}
 }
+
+// Removing a [[process]] block deletes the process it declared at the next
+// reconcile, and the human feed says so; a block still in the file, and a
+// process no block declared — a goal session, reflection, one Nine wrote — are
+// untouched.
+func TestRemovingABlockDeletesItsProcess(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ReconcileProcesses(store, nil, []config.ProcessConfig{
+		{Name: "w1", Tool: "watcher", Every: "1s"},
+		{Name: "w2", Tool: "watcher", Every: "1s"},
+	})
+	if err := store.ProcessUpsertDefinition(memory.Process{ID: "goal:g1", Tool: "pursue", Mode: memory.ProcessLive}); err != nil {
+		t.Fatal(err)
+	}
+
+	ReconcileProcesses(store, nil, []config.ProcessConfig{{Name: "w2", Tool: "watcher", Every: "1s"}})
+
+	if _, found, _ := store.ProcessGet("w1"); found {
+		t.Error("the process whose block was removed still exists")
+	}
+	for _, id := range []string{"w2", "goal:g1"} {
+		if _, found, _ := store.ProcessGet(id); !found {
+			t.Errorf("%s was deleted", id)
+		}
+	}
+	all, err := store.UserNotificationList(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 1 || !strings.Contains(all[0].Message, "Process w1 was removed from nine.toml") {
+		t.Errorf("feed = %+v, want one notice of w1's deletion", all)
+	}
+}
+
+// A process attached to a deleted owner's session is stopped, since the
+// session it ran in has no owner left to give it a role.
+func TestRemovingAnOwnerStopsWhatIsAttachedToIt(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ReconcileProcesses(store, nil, []config.ProcessConfig{{Name: "agent", Tool: "watcher", Every: "1s"}})
+	// Live processes share sessions; mark these as such directly, as the
+	// reconcile of a live tool would.
+	for _, p := range []memory.Process{
+		{ID: "agent", Tool: "watcher", Mode: memory.ProcessLive, SessionID: "agent", Owner: true, Declared: true},
+		{ID: "beside", Tool: "watcher", Mode: memory.ProcessLive, SessionID: "agent", Owner: false},
+	} {
+		if err := store.ProcessUpsertDefinition(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ReconcileProcesses(store, nil, nil)
+
+	got, found, _ := store.ProcessGet("beside")
+	if !found || got.State != memory.ProcessStopped {
+		t.Errorf("attached process: found %v, state %q; want it kept and stopped", found, got.State)
+	}
+	all, _ := store.UserNotificationList(false)
+	if len(all) != 1 || !strings.Contains(all[0].Message, "session agent is kept") || !strings.Contains(all[0].Message, "beside, attached") {
+		t.Errorf("feed = %+v", all)
+	}
+}

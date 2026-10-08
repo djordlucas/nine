@@ -143,7 +143,8 @@ task_timeout_seconds = 1800
 # Processes (docs/processes.md): everything Nine does between your turns.
 # Each [[process]] is reconciled at boot; this file owns its definition and the
 # runtime owns whether it is running, so a process you stopped stays stopped and
-# a goal the agent finished is never resurrected. Whether a process is live or
+# a goal the agent finished is never resurrected. Removing a block deletes its
+# process at the next boot and keeps its session. Whether a process is live or
 # slice follows from its tool. Findings reach `nine notifications`.
 #
 # A standing agent (docs/predefined-agents.md): pursue, bound to a goal this

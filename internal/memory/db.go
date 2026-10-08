@@ -593,6 +593,7 @@ func initSchema(d db) error {
 			usage_turns   INTEGER NOT NULL DEFAULT 0,
 			usage_tokens  INTEGER NOT NULL DEFAULT 0,
 			usage_since   TEXT NOT NULL DEFAULT '',
+			declared      INTEGER NOT NULL DEFAULT 0,
 			created_at    TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			updated_at    TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,

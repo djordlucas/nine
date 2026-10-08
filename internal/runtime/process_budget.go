@@ -26,6 +26,7 @@ const budgetDay = 24 * time.Hour
 const (
 	evProcessPaused  = "process_paused"
 	evProcessResumed = "process_resumed"
+	evProcessDeleted = "process_deleted"
 )
 
 // SetBudget sets [processes] budget, the ceiling every process's own budget

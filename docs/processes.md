@@ -189,7 +189,11 @@ authoritative = false           # true: a goal process no longer listed is retir
 
 The file owns each process's definition; the runtime owns whether it is running.
 Editing a block adjusts what a process does without restarting one that was
-stopped, and a goal the agent finished is never resurrected. Every mistake in a
+stopped, and a goal the agent finished is never resurrected. Removing a block
+deletes its process at the next boot: its session is kept as history, so
+adding the block back brings it back with its history, and `nine notifications`
+says what went. A goal block is the exception: `authoritative` decides whether
+removing it retires its goal. Every mistake in a
 block — an unknown `session`, a `report_to` naming no process, both `every` and
 `schedule` — fails the load with its reason.
 

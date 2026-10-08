@@ -1010,7 +1010,8 @@ and it holds here for the same reason: a standing tool an operator stopped **MUS
 stopped across a restart and across a reconcile.
 
 Changing `args` **MUST** restart the cycle — the cursor was produced under the old
-arguments. Removing a block stops Nine reconciling it and **MUST NOT** delete its row.
+arguments. Removing a block deletes its process at the next boot and keeps its session
+([processes](processes.md) R-PROC.10).
 
 ### Reporting
 

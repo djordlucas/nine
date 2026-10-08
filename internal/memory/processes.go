@@ -93,6 +93,10 @@ type Process struct {
 	UsageTokens  int    `json:"usage_tokens,omitempty"`
 	UsageSince   string `json:"usage_since,omitempty"`
 
+	// Declared marks a process a [[process]] block declares: removing the
+	// block deletes it.
+	Declared bool `json:"declared,omitempty"`
+
 	CreatedAt string `json:"created_at,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
 }
@@ -116,18 +120,19 @@ func (s *Store) ProcessUpsertDefinition(t Process) error {
 	_, err := s.db.Exec(
 		`INSERT INTO processes(id, tool, args, interval_secs, schedule, generated, report_to,
 		                       mode, session_id, owner, role, delegates, goal_id,
-		                       budget_turns, budget_tokens, updated_at)
-		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		                       budget_turns, budget_tokens, declared, updated_at)
+		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		 ON CONFLICT(id) DO UPDATE SET
 		   tool=excluded.tool, args=excluded.args,
 		   interval_secs=excluded.interval_secs, schedule=excluded.schedule,
 		   report_to=excluded.report_to, mode=excluded.mode, session_id=excluded.session_id,
 		   owner=excluded.owner, role=excluded.role, delegates=excluded.delegates,
 		   goal_id=excluded.goal_id, budget_turns=excluded.budget_turns,
-		   budget_tokens=excluded.budget_tokens, updated_at=excluded.updated_at`,
+		   budget_tokens=excluded.budget_tokens, declared=excluded.declared,
+		   updated_at=excluded.updated_at`,
 		t.ID, t.Tool, args, t.IntervalSecs, t.Schedule, t.Generated, t.ReportTo,
 		mode, t.SessionID, t.Owner, t.Role, t.Delegates, t.GoalID,
-		t.BudgetTurns, t.BudgetTokens, nowText())
+		t.BudgetTurns, t.BudgetTokens, t.Declared, nowText())
 	return err
 }
 
@@ -322,9 +327,8 @@ func (s *Store) ProcessesOfSession(sessionID string) ([]Process, error) {
 		sessionID)
 }
 
-// ProcessDelete removes a process outright. Used when a generated one
-// is withdrawn; a config-declared one that leaves the file is *not* deleted, only
-// left unreconciled, matching how removing a standing agent behaves.
+// ProcessDelete removes a process outright: a generated one withdrawn, or a
+// declared one whose [[process]] block was removed. Its session is not touched.
 func (s *Store) ProcessDelete(id string) error {
 	_, err := s.db.Exec(`DELETE FROM processes WHERE id = ?`, id)
 	return err
@@ -333,7 +337,7 @@ func (s *Store) ProcessDelete(id string) error {
 const processColumns = `id, tool, args, interval_secs, schedule, state, cursor,
 	        calls, cycles, failures, last_error, last_call_at, next_at, generated,
 	        report_to, mode, session_id, owner, role, delegates, goal_id, stopped_by, stopped_at,
-	        budget_turns, budget_tokens, usage_turns, usage_tokens, usage_since,
+	        budget_turns, budget_tokens, usage_turns, usage_tokens, usage_since, declared,
 	        created_at, updated_at`
 
 func scanProcess(row rowScanner) (Process, error) {
@@ -343,7 +347,7 @@ func scanProcess(row rowScanner) (Process, error) {
 		&t.NextAt, &t.Generated, &t.ReportTo, &t.Mode, &t.SessionID, &t.Owner, &t.Role,
 		&t.Delegates, &t.GoalID, &t.StoppedBy, &t.StoppedAt,
 		&t.BudgetTurns, &t.BudgetTokens, &t.UsageTurns, &t.UsageTokens, &t.UsageSince,
-		&t.CreatedAt, &t.UpdatedAt)
+		&t.Declared, &t.CreatedAt, &t.UpdatedAt)
 	return t, err
 }
 
