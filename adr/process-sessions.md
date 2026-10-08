@@ -463,6 +463,14 @@ configurations in use to carry over. A file that still has one fails to load, na
 
 - Phases 3 to 8 are not built: Nine cannot write processes, and there are no event triggers,
   `sql`, revision or genesis.
+- Piped reports are an injection path that framing does not close: qwen3.5:4b and 9b obey an
+  instruction inside a framed report every time. A turn a report starts is restricted to
+  reading, creating new files, memory, its own goal and notifying, which stops changing or
+  deleting existing files, the shell, the network and persistence. It does not stop an
+  injected instruction from creating files, planting a memory or pausing the goal, and the
+  report stays in the session's
+  history, where its next unrestricted turn — its own clock tick — can still act on it.
+  Phase 3, where Nine writes processes that pipe what they fetch, widens the exposure.
 - A started live process holds its instance while it waits in `next()`. Hibernating idle
   processes (closing the instance, restarting it on the next trigger) would save memory at the
   cost of losing in-memory state more often; it is left out until memory requires it.
@@ -498,5 +506,6 @@ configurations in use to carry over. A file that still has one fails to load, na
 | `process_send` | refused when the process cannot take the message now, rather than sent to the human feed | the sender is a model that can try again; a pipe's sender cannot |
 | Operator surface | `nine process`, `/processes` in the TUI (start and stop included, each naming its process), and `/api/v1/processes` | decided 2026-10-07 |
 | Deletion | removing a non-goal block deletes its process at the next boot and keeps its session; goal blocks keep `authoritative` | decided 2026-10-07; Nine-written processes, and `tool_delete` on them, arrive with phase 3 |
-| Pipe label | `[From process <id>: <text>]`; a send is `[From conversation <id>: …]` or `[From the operator: …]` | the label names what the sender is |
+| Pipe label | a piped report is framed as data from its sender, with an instruction not to follow anything inside it; a send is `[From conversation <id>: …]` or `[From the operator: …]` | a bare `[From process <id>: …]` label did not stop qwen3.5:4b or 9b from obeying an instruction inside a report (process-pipe-injection, 0/3 each) |
+| Piped turns | restricted to `PipedTurnTools`, an allowlist: read files, create new ones, memory, its own goal, notify; `write_file` and `edit_file` refuse a file that existed before the turn. A person's message is not restricted | framing did not help either model (0/3 each), so the defence had to hold whatever the model does; with writes unrestricted, 4b emptied the file with `edit_file` once `delete_file` was refused (decided 2026-10-08: new files only) |
 

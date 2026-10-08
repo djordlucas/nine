@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -21,12 +22,15 @@ type fakeSessions struct {
 	fail  error
 	// tokens is what each turn reports spending.
 	tokens int
+	// allows records each turn's tool restriction, nil for none.
+	allows [][]string
 }
 
-func (f *fakeSessions) ProcessTurn(_ context.Context, id string, _ RoleParams, text, trigger string) (string, int, error) {
+func (f *fakeSessions) ProcessTurn(_ context.Context, id string, _ RoleParams, text, trigger string, allow []string) (string, int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.turns = append(f.turns, id+"|"+trigger+"|"+text)
+	f.allows = append(f.allows, allow)
 	if f.fail != nil {
 		return "", f.tokens, f.fail
 	}
@@ -153,7 +157,7 @@ func TestPipeDeliversToTheLiveProcessOwningTheSession(t *testing.T) {
 		return lp.waiting
 	})
 
-	handled, delivered := r.Deliver("agent-session", "found: a stray key", "when:agent")
+	handled, delivered := r.Deliver("agent-session", "found: a stray key", "when:agent", true)
 	if !handled || !delivered {
 		t.Fatalf("Deliver = handled %v, delivered %v; want both", handled, delivered)
 	}
@@ -162,7 +166,7 @@ func TestPipeDeliversToTheLiveProcessOwningTheSession(t *testing.T) {
 		t.Errorf("turn = %q", got)
 	}
 
-	if handled, _ := r.Deliver("someone-else", "x", "y"); handled {
+	if handled, _ := r.Deliver("someone-else", "x", "y", true); handled {
 		t.Error("a session no live process owns was handled")
 	}
 }
@@ -312,5 +316,55 @@ func TestLiveProcessFailingAndRecovery(t *testing.T) {
 	}
 	if feed := feedText(t, store); !strings.Contains(feed, "Process digest recovered") {
 		t.Errorf("feed lacks the recovery:\n%s", feed)
+	}
+}
+
+// A pipe's report runs its turn restricted to PipedTurnTools; a message a
+// person sent with process_send does not, since it carries their request.
+func TestPipedTurnIsRestrictedAndASendIsNot(t *testing.T) {
+	r, _, sessions := liveSetup(t, memory.Process{ID: "agent", SessionID: "agent-session", ReportTo: "nobody"})
+	r.tickLive(context.Background())
+	waiting := func() bool {
+		r.liveMu.Lock()
+		defer r.liveMu.Unlock()
+		lp := r.lives["agent"]
+		if lp == nil {
+			return false
+		}
+		lp.mu.Lock()
+		defer lp.mu.Unlock()
+		return lp.waiting
+	}
+	eventually(t, "the process waiting in next()", waiting)
+	if _, ok := r.Deliver("agent-session", "a finding", "watcher", true); !ok {
+		t.Fatal("the piped report was not taken")
+	}
+	eventually(t, "the piped turn", func() bool { return len(sessions.seen()) == 1 })
+
+	eventually(t, "the process waiting again", waiting)
+	if err := r.SendProcess("agent", "do this", "conversation c1"); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the sent turn", func() bool { return len(sessions.seen()) == 2 })
+
+	sessions.mu.Lock()
+	defer sessions.mu.Unlock()
+	if got := sessions.allows[0]; len(got) == 0 || !slices.Equal(got, PipedTurnTools) {
+		t.Errorf("piped turn allow = %v, want PipedTurnTools", got)
+	}
+	if got := sessions.allows[1]; got != nil {
+		t.Errorf("sent turn allow = %v, want no restriction", got)
+	}
+}
+
+// The allowlist keeps out what an injected instruction could do harm with.
+func TestPipedTurnToolsLeaveOutHarm(t *testing.T) {
+	for _, name := range []string{"delete_file", "move_file", "shell", "http_get", "http_post",
+		"web_page_read", "run_agent", "run_agents", "workflow_create", "tool_write", "tool_delete",
+		"js_eval", "skill_write", "skill_modify", "goal_create", "memory_delete", "process_start",
+		"process_send", "capability_request"} {
+		if slices.Contains(PipedTurnTools, name) {
+			t.Errorf("PipedTurnTools holds %s", name)
+		}
 	}
 }

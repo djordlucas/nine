@@ -582,7 +582,7 @@ func TestProcessEndpoints(t *testing.T) {
 			case "digest":
 				return []protocol.Msg{protocol.NewTextMsg(protocol.TypeProcessControl, "digest "+m.Text+"ed")}
 			case "busy":
-				return errReply("process busy not started: 14 processes are running, the maximum on this instance ([processes] max_running); stop one first")
+				return errReply("process busy not started: 14 processes are running, the maximum on this instance ([processes] max_running)")
 			}
 			return unknown(m.AgentID)
 		case protocol.TypeProcessSend:

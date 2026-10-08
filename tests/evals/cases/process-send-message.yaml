@@ -1,0 +1,35 @@
+id: process-send-message
+description: "A conversation hands a running live process a task with process_send; the process takes it as its next trigger, labelled as the conversation's, and its own turn carries it out."
+track: live
+tier: multi_step
+tags: [processes, tools, pipes]
+
+setup:
+  processes:
+    - name: oncall
+      tool: pursue
+      goal: "Handle incidents reported to you: record each one, with its id, in notes/incident.md in the workspace."
+      role: pursue
+      every: 1h
+
+prompts:
+  - "Pass this incident to the oncall process running in the background, so it records it: INC-7781, the payments queue is stuck."
+
+wait:
+  seconds: 240
+  until:
+    files:
+      notes/incident.md: { contains: "INC-7781" }
+
+expect:
+  side_effects:
+    files:
+      notes/incident.md: { contains: "INC-7781" }
+  trajectory:
+    tools_all_of: [process_send]
+
+runs: 3
+pass_threshold: "2/3"
+timeout_seconds: 360
+models:
+  expected_pass_min_class: medium

@@ -91,10 +91,15 @@ func checkPrereqs() {
 		log.Fatal("docker daemon not reachable")
 	}
 
+	// NINE_LLM_ENDPOINT lets the suite run from a container, where localhost
+	// is the container and Ollama is on the host.
 	ollamaURL := "http://localhost:11434"
+	if v := os.Getenv("NINE_LLM_ENDPOINT"); v != "" {
+		ollamaURL = v
+	}
 	resp, err := http.Get(ollamaURL)
 	if err != nil || resp.StatusCode != 200 {
-		log.Fatalf("ollama not reachable at %s — start it before running integration tests", ollamaURL)
+		log.Fatalf("ollama not reachable at %q — start it before running integration tests", ollamaURL) //nolint:gosec // G706: the operator's own NINE_LLM_ENDPOINT, printed to their terminal
 	}
 	resp.Body.Close()
 }

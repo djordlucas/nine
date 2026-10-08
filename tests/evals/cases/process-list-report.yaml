@@ -1,0 +1,34 @@
+id: process-list-report
+description: "Asked what runs in the background, the model reads the process roster (process_list or process_show) and names each process and whether it is running."
+track: live
+tier: basic
+tags: [processes, tools]
+
+setup:
+  processes:
+    - name: release-watch
+      tool: pursue
+      goal: "Watch for new releases of the payments service and summarize their changes."
+      role: pursue
+      every: 1h
+    - name: notes-tidier
+      tool: pursue
+      goal: "Tidy the notes folder: merge duplicate notes."
+      role: pursue
+      every: 1h
+      stopped_by: operator
+
+prompts:
+  - "What is running in the background here? List each background process by name and say whether it is running or stopped."
+
+expect:
+  trajectory:
+    tools_any_of: [process_list, process_show]
+  answer:
+    contains: ["release-watch", "notes-tidier"]
+    matches: "(?i)stopped"
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

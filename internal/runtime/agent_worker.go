@@ -21,6 +21,9 @@ type turnReq struct {
 	respCh     chan turnResp
 	trigger    string // journal trigger label; "" defaults to "user"
 	forceThink bool   // /think: force native thinking for this turn
+	// allow, when set, restricts the turn to these tools (PipedTurnTools for
+	// a turn a pipe caused).
+	allow []string
 }
 
 // replayBuffer is a bounded ring of progress events and the last completed
@@ -117,6 +120,8 @@ type AgentWorker struct {
 	toolN    int
 	// turnTokens sums the in-flight turn's model usage, input and output.
 	turnTokens int
+	// workspaceRoot is [workspace].root, for a piped turn's write guard.
+	workspaceRoot string
 
 	mu         sync.Mutex
 	progressFn func(protocol.Msg) // called from worker goroutine on each tool event
@@ -287,7 +292,10 @@ func (w *AgentWorker) run() {
 		case text := <-w.wake:
 			// Nobody waits on a woken turn's reply, but processTurn delivers one; a
 			// buffered channel takes it so the worker is free for the next turn.
-			w.processTurn(turnReq{ctx: context.Background(), text: text, respCh: make(chan turnResp, 1), trigger: "condition"})
+			// A woken turn is a pipe's report reaching this session, so it runs
+			// restricted (PipedTurnTools).
+			w.processTurn(turnReq{ctx: context.Background(), text: text, respCh: make(chan turnResp, 1),
+				trigger: "condition", allow: PipedTurnTools})
 			w.drainQueued()
 		case <-w.quit:
 			return
@@ -339,6 +347,9 @@ func (w *AgentWorker) processTurn(req turnReq) {
 	w.loop.SetHooks(w.turnHooks(turn))
 	slog.Debug("turn_start", "agent_id", w.id, "turn_n", turn)
 	w.loop.SetForceThinkNextTurn(req.forceThink)
+	if req.allow != nil {
+		w.loop.RestrictNextTurn(pipedTurn(req.allow, w.workspaceRoot))
+	}
 	// Both of these travel with the turn rather than being configured at boot,
 	// because the sandboxed-tool host is daemon-wide: the journal destination for
 	// a tool's outbound HTTP, and the conversation a conversation-scoped state
@@ -516,15 +527,16 @@ func (w *AgentWorker) turn(ctx context.Context, text string) (string, error) {
 // turnAs is turn with the journal's trigger label: "" for a user's turn, or
 // what drove it ("idle", "condition") for a process's.
 func (w *AgentWorker) turnAs(ctx context.Context, text, trigger string) (string, error) {
-	res := w.turnCounted(ctx, text, trigger)
+	res := w.turnCounted(ctx, text, trigger, nil)
 	return res.text, res.err
 }
 
-// turnCounted is turnAs with the tokens the turn spent.
-func (w *AgentWorker) turnCounted(ctx context.Context, text, trigger string) turnResp {
+// turnCounted is turnAs with the tokens the turn spent; allow, when set,
+// restricts the turn's tools.
+func (w *AgentWorker) turnCounted(ctx context.Context, text, trigger string, allow []string) turnResp {
 	ch := make(chan turnResp, 1)
 	select {
-	case w.inbox <- turnReq{ctx: ctx, text: text, respCh: ch, trigger: trigger}:
+	case w.inbox <- turnReq{ctx: ctx, text: text, respCh: ch, trigger: trigger, allow: allow}:
 	case <-ctx.Done():
 		return turnResp{err: ctx.Err()}
 	case <-w.quit:

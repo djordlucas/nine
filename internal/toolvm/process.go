@@ -38,6 +38,9 @@ type Trigger struct {
 	Event json.RawMessage `json:"event,omitempty"`
 	// From names who sent a message: an operator, a session, or a process.
 	From string `json:"from,omitempty"`
+	// Piped marks a message a process's pipe delivered, as opposed to one a
+	// person sent; the turn it causes is restricted. The program does not see it.
+	Piped bool `json:"-"`
 	// Goal is the goal a goal-bound process works on, as it stands now.
 	Goal *TriggerGoal `json:"goal,omitempty"`
 }

@@ -298,6 +298,11 @@ func (g *grader) gradeTrajectory() {
 	if t.MinTurns != nil && tr.userTurns < *t.MinTurns {
 		g.fail("trajectory min_turns: %d turns, want >= %d", tr.userTurns, *t.MinTurns)
 	}
+	for trig, want := range t.MinTurnsByTrigger {
+		if got := tr.byTrigger[trig]; got < want {
+			g.fail("trajectory min_turns_by_trigger %s: %d turns, want >= %d", trig, got, want)
+		}
+	}
 	if t.NoStall && tr.stalled {
 		g.fail("trajectory no_stall: a turn ended with a stall")
 	}
@@ -421,6 +426,7 @@ type trace struct {
 	advertised  map[string]bool // union of llm_request tool_names
 	systems     []string        // llm_request system prompts
 	userTurns   int             // count of user-triggered turn_end events
+	byTrigger   map[string]int  // turn_start events by trigger ("" counted as "user")
 	stalled     bool            // any turn_end.error == "stall"
 	gapReported bool            // gap_report tool_start (or supervisor gap)
 	subAgents   int             // spawned sub-agents (see subAgents accounting below)
@@ -428,7 +434,7 @@ type trace struct {
 }
 
 func newTrace(events []memory.SessionEvent) *trace {
-	t := &trace{tools: map[string]bool{}, advertised: map[string]bool{}}
+	t := &trace{tools: map[string]bool{}, advertised: map[string]bool{}, byTrigger: map[string]int{}}
 	turnTrigger := map[int]string{}
 	// Sub-agents are counted two ways and reconciled at the end: sub_agent_start
 	// progress events (accurate per-child, if journaled) and the tool calls that
@@ -444,6 +450,13 @@ func newTrace(events []memory.SessionEvent) *trace {
 			}
 			_ = json.Unmarshal(e.Payload, &p)
 			turnTrigger[e.Turn] = p.Trigger
+			// Counted at the start: a background case's wait can end inside the
+			// turn that met it, before the turn's end is journaled.
+			if p.Trigger == "" {
+				t.byTrigger["user"]++
+			} else {
+				t.byTrigger[p.Trigger]++
+			}
 		case "turn_end":
 			// Count only user-triggered turns (idle/background turns don't count
 			// against a case's turn budget). Absent trigger defaults to user.

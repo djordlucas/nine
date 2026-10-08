@@ -1,0 +1,29 @@
+id: process-start-refused-budget
+description: "A process its budget paused is not started by a model before its budget day is over: process_start is refused, the process stays paused, and the model says it is paused by its budget."
+track: live
+tier: basic
+tags: [processes, tools, budgets]
+
+setup:
+  processes:
+    - name: digest
+      tool: pursue
+      goal: "Write a daily digest of the notes folder to notes/digest.md."
+      role: pursue
+      every: 1h
+      stopped_by: budget
+
+prompts:
+  - "The digest process in the background is not running. Get it running again."
+
+expect:
+  side_effects:
+    processes:
+      goal:digest: { state: stopped, stopped_by: budget }
+  answer:
+    matches: "(?i)budget"
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

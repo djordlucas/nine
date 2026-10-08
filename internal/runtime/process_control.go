@@ -161,7 +161,10 @@ func (r *StandingRunner) StartProcess(id, by string) error {
 			return err
 		}
 		if n >= limit {
-			return fmt.Errorf("process %s not started: %d processes are running, the maximum on this instance ([processes] max_running); stop one first", id, n)
+			// "Stop one first" here led models to stop another process they had
+			// been told to leave running. Which process to give up is the
+			// person's call, so the message sends the model back to them.
+			return fmt.Errorf("process %s not started: %d processes are running, the maximum on this instance ([processes] max_running). Report this to the person rather than stopping another process unless they asked you to", id, n)
 		}
 	}
 	// Starting a failing process means "try again now": its failures clear and
@@ -241,7 +244,7 @@ func (r *StandingRunner) SendProcess(id, text, from string) error {
 	case p.State == memory.ProcessStopped:
 		return fmt.Errorf("process %s is stopped; start it first", id)
 	}
-	handled, delivered := r.Deliver(p.SessionID, fmt.Sprintf("[From %s: %s]", from, text), from)
+	handled, delivered := r.Deliver(p.SessionID, fmt.Sprintf("[From %s: %s]", from, text), from, false)
 	switch {
 	case !handled:
 		return fmt.Errorf("process %s is not running yet; try again in a moment", id)

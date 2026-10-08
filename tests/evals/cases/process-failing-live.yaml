@@ -1,0 +1,41 @@
+id: process-failing-live
+description: "A live process whose program throws on every trigger backs off, reaches failing after three failures in a row, and the feed is told once. No model is involved: it gates the runtime's health rules on a real daemon."
+track: live
+tier: basic
+tags: [processes, health]
+
+setup:
+  files:
+    .tools/flaky.toml: |
+      name = "flaky"
+      kind = "js"
+      entrypoint = "./flaky.js"
+      description = "A live process that fails on every trigger."
+      live = true
+    .tools/flaky.js: |
+      import { next } from "nine:process";
+      export default () => {
+        next();
+        throw new Error("upstream unreachable");
+      };
+  processes:
+    - name: flaky
+      tool: flaky
+      every: 1s
+
+wait:
+  seconds: 120
+  until:
+    notifications: { contains: "has failed 3 times in a row" }
+
+expect:
+  side_effects:
+    notifications: { contains: "Process flaky has failed 3 times in a row" }
+    processes:
+      flaky: { state: failing }
+
+runs: 3
+pass_threshold: "3/3"
+timeout_seconds: 180
+models:
+  expected_pass_min_class: nano
