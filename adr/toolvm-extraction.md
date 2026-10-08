@@ -21,7 +21,7 @@ what is undecided.
 
 ## 1. Decisions
 
-Recorded 2026-10-07; pure modules and cancellation 2026-10-08.
+Recorded 2026-10-07; pure modules, cancellation and concurrency 2026-10-08.
 
 | Decision | Consequence |
 |----------|-------------|
@@ -31,6 +31,7 @@ Recorded 2026-10-07; pure modules and cancellation 2026-10-08.
 | **Its own repository.** | Separate repo, module and release cycle from the start; no `pkg/` or in-repo module stage. Nine depends on a tagged version (§8). |
 | **Pure JS modules stay in Nine.** | `csv`, `date`, `diff`, `html` remain `nine:` modules, supplied through the module map like any embedder's. The library ships only the capability bindings (§7). |
 | **Cancellation is the only control over a long run.** | No progress, heartbeat or liveness signal. A spinning run and a working run look the same to the library; the embedder decides when to stop one by ending its context (§5). |
+| **The concurrency cap is a library option.** | `Options.MaxConcurrent`, a hard cap per runtime, unbounded by default. Nine sets it and may add per-workload pools on top (§5). |
 
 ## 2. Current coupling
 
@@ -60,6 +61,7 @@ final API:
 ```go
 rt, err := sandbox.New(ctx, sandbox.Options{
     MemoryMB:   64,          // per run; required finite, default below
+    MaxConcurrent: 8,        // runs at once; 0 = unbounded (§5)
     StateStore: myStore,     // nil: the state capability is unavailable
 })
 defer rt.Close(ctx)
@@ -99,13 +101,13 @@ came from, who approved it, how long it may run, and where its state lives*.
 | wazero runtime, QuickJS blob, harness, `build.sh` | ✓ | |
 | Guest ABI and result envelope | ✓ | |
 | Capabilities: fs mounts, env, `net.http` gate, SSRF guard, state, log | ✓ | |
-| Memory cap; optional deadline and work budget per run | ✓ | |
+| Memory cap; optional deadline and work budget per run; optional concurrency cap per runtime | ✓ | |
 | Capability-binding JS modules (`fs`, `env`, `state`, `caps`) | ✓ | |
 | `StateStore` interface and quota enforcement | ✓ | the SQLite store |
 | Manifest format, `LoadManifest`, `UserDir` loading, `Collides` | | ✓ |
 | `Tool`, tiers (developer / generated / shipped), registry, `Status` | | ✓ |
 | Grant resolution: `nine.toml`, the generated ceiling, shipped declarations | | ✓ |
-| Default timeout, per-tool timeouts and work budgets, concurrency limit | | ✓ |
+| Default timeout, per-tool timeouts and work budgets; the concurrency cap's value; per-workload pools | | ✓ |
 | Resumable jobs: `Continuation`, `JobContext`, `nine:job`, the driver, standing tools | | ✓ |
 | Pure JS modules: `csv`, `date`, `diff`, `html` | | ✓ |
 | Shipped tools (`shipped/*.js`) | | ✓ |
@@ -119,10 +121,17 @@ came from, who approved it, how long it may run, and where its state lives*.
 | Wall clock | none — the caller's `context.Context` | `DefaultTimeout` (5 s) and `[tool.<name>] timeout`, as `context.WithTimeout` around `Run` |
 | Work budget (QuickJS ops) | off | `[tools] max_ops`, per-tool overrides, passed as a run option |
 | Linear memory | finite default (16 MiB, as today), set per runtime | `[tools] memory_mb` |
-| Concurrent runs | unbounded | `[tools] max_concurrent`, a semaphore in Nine's tool layer |
+| Concurrent runs | unbounded; `Options.MaxConcurrent` caps it per runtime | `[tools] max_concurrent` (8) as the cap; optionally per-workload pools on top |
 
 Memory keeps a finite default because wasm memory cannot be unbounded in practice and a
 guest growing without limit is a host OOM, not a long run.
+
+**The concurrency cap lives in the library** because it is a memory bound: a slot is held
+from just before instantiation until just after the instance closes, so `MaxConcurrent ×
+MemoryMB` is the runtime's worst-case linear memory, and only the library sees those two
+points. A caller waiting for a slot gives up when its context ends. Unbounded by default,
+like the deadline. Splitting slots by workload — so that long-running jobs and standing
+tools cannot starve calls made during a turn — is scheduling, and stays with the embedder.
 
 **Long runs and durability are separate.** With no deadline, one run can last hours inside
 one instance. It does not survive the host process exiting. Work that must survive a restart
@@ -234,7 +243,7 @@ exists, so the boundary is proven by the compiler while a mistake is still cheap
    `env.js` and `state.js` are capability bindings and stay. The harness's `Date` error
    text names `nine:date` (`harness.js:515`) and becomes generic.
 4. Remove engine defaults for deadline, work budget and concurrency; the tool layer applies
-   Nine's through `context` and options. Existing timeout tests move to the tool layer.
+   Nine's through `context` and options, and sets `MaxConcurrent`. Existing timeout tests move to the tool layer.
 5. Neutral ABI names with `ABIAliases`; Nine sets the aliases. The module names are also
    in `harness.js` and `qjs_host.c`, so this rebuilds `harness.bc` and `qjs.wasm` with
    `build.sh`. Store migration for generated tools; deprecation note in `nine tools`.
@@ -249,8 +258,6 @@ exists, so the boundary is proven by the compiler while a mistake is still cheap
 2. **Output type.** `output` is a string because a model reads it. A general library might
    want any JSON value. Changing it is an ABI change; keeping it costs embedders a
    `JSON.stringify`.
-3. **Concurrency.** A semaphore is a few lines in either place. In Nine (as proposed), or a
-   library option, since every embedder will want one?
 
 ## Limits
 
