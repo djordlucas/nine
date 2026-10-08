@@ -23,7 +23,8 @@ import (
 // ProcessSessions runs a process's model turns. The daemon implements it.
 type ProcessSessions interface {
 	// ProcessTurn runs one turn and returns its reply and the tokens it spent.
-	ProcessTurn(ctx context.Context, id string, p RoleParams, text, trigger string) (reply string, tokens int, err error)
+	// allow, when set, restricts the turn to those tools.
+	ProcessTurn(ctx context.Context, id string, p RoleParams, text, trigger string, allow []string) (reply string, tokens int, err error)
 }
 
 // liveTriggerQueue is how many triggers may wait for a busy process. A clock
@@ -45,8 +46,11 @@ type liveProc struct {
 	// clockQueued is true while a clock tick waits in triggers.
 	clockQueued bool
 	// label is the journal trigger label of the turns the current trigger
-	// causes: "idle" for a clock tick, "condition" for a piped report.
+	// causes: "idle" for a clock tick, "condition" for a message.
 	label string
+	// piped is true while the current trigger is a pipe's report: the turns
+	// it causes run restricted (PipedTurnTools).
+	piped bool
 	// recovering is true while a process restarted after failures has not yet
 	// handled a trigger; nexts counts its next() calls since the start.
 	recovering bool
@@ -259,7 +263,10 @@ func (r *StandingRunner) StopLive() {
 // that session at all; delivered whether it took the message, which it does
 // only while it waits in next() — the rule a condition trigger's wake has
 // today, so a finding for a busy process goes to the human feed instead.
-func (r *StandingRunner) Deliver(sessionID, text, from string) (handled, delivered bool) {
+//
+// piped marks a pipe's report, whose turn runs restricted; a message a person
+// sent is not piped.
+func (r *StandingRunner) Deliver(sessionID, text, from string, piped bool) (handled, delivered bool) {
 	if r == nil {
 		return false, false
 	}
@@ -275,7 +282,7 @@ func (r *StandingRunner) Deliver(sessionID, text, from string) (handled, deliver
 	if owner == nil {
 		return false, false
 	}
-	return true, owner.offerMessage(toolvm.Trigger{Kind: "message", At: time.Now(), Text: text, From: from})
+	return true, owner.offerMessage(toolvm.Trigger{Kind: "message", At: time.Now(), Text: text, From: from, Piped: piped})
 }
 
 func (lp *liveProc) enqueueClock(now time.Time) {
@@ -339,6 +346,7 @@ func (h *liveHandler) Next(ctx context.Context) (toolvm.Trigger, error) {
 			} else {
 				lp.label = "condition"
 			}
+			lp.piped = t.Piped
 			lp.mu.Unlock()
 			// A goal-bound process works on its goal as it stands now; a tick
 			// that finds the goal gone or inactive does nothing, as the routine
@@ -360,13 +368,17 @@ func (h *liveHandler) Next(ctx context.Context) (toolvm.Trigger, error) {
 func (h *liveHandler) Turn(ctx context.Context, text string) (string, error) {
 	lp := h.lp
 	lp.mu.Lock()
-	label := lp.label
+	label, piped := lp.label, lp.piped
 	lp.mu.Unlock()
 	row := lp.row
+	var allow []string
+	if piped {
+		allow = PipedTurnTools
+	}
 	if err := h.r.spendTurn(row.ID, time.Now()); err != nil {
 		return "", err
 	}
-	reply, tokens, err := h.r.sessions.ProcessTurn(ctx, row.SessionID, h.r.sessionParams(row), text, label)
+	reply, tokens, err := h.r.sessions.ProcessTurn(ctx, row.SessionID, h.r.sessionParams(row), text, label, allow)
 	// A turn that ran is counted, failed or not; one stopped before it began
 	// spent nothing.
 	if err == nil || tokens > 0 {

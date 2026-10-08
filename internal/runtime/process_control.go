@@ -244,7 +244,7 @@ func (r *StandingRunner) SendProcess(id, text, from string) error {
 	case p.State == memory.ProcessStopped:
 		return fmt.Errorf("process %s is stopped; start it first", id)
 	}
-	handled, delivered := r.Deliver(p.SessionID, fmt.Sprintf("[From %s: %s]", from, text), from)
+	handled, delivered := r.Deliver(p.SessionID, fmt.Sprintf("[From %s: %s]", from, text), from, false)
 	switch {
 	case !handled:
 		return fmt.Errorf("process %s is not running yet; try again in a moment", id)

@@ -245,7 +245,7 @@ How to use this file:
 | R-PROC.5 | Triggers and the clock (I7) | First tick one cadence after start; ticks not queued twice; both modes back off on failure, reach `failing` after three, and report entering and leaving it. |
 | R-PROC.6 | Process sessions | Owner sets the role; attached processes run under it; turns labelled `idle`/`condition`. |
 | R-PROC.7 | Goal binding | Inactive goal stops its process, active restarts it; a stall pauses the goal. |
-| R-PROC.8 | Pipes | A report reaches a waiting receiver, labelled `[From process <id>: …]`, otherwise the human feed. |
+| R-PROC.8 | Pipes | A report reaches a waiting receiver framed as data from its sender, otherwise the human feed; the turn it starts is restricted to `PipedTurnTools`. |
 | R-PROC.9 | Shipped processes, self-model | `pursue` and `reflect`; `SystemSelf` injected as P2.5, capped ~600 tokens. |
 | R-PROC.10 | Configuration | `[[process]]` mistakes fail the load; retired blocks and caps fail with their replacement; a removed non-goal block deletes its process and keeps its session. |
 | R-PROC.11 | Budgets | Turns and tokens per rolling day; at the limit `turn()` fails `E_BUDGET`, the process pauses and reaches the human feed, and runs again when its day is over. |

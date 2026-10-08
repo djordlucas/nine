@@ -90,9 +90,9 @@ func TestConditionTriggerWakesOnlyOnAFinding(t *testing.T) {
 		if len(got) != 1 {
 			t.Fatalf("woke %d times, want 1: %v", len(got), got)
 		}
-		// The finding arrives labelled with its sender, so the agent can tell
-		// a process's report from a person's instruction.
-		if want := "watcher-agent: [From process when-watcher-agent: found: a new CVE]"; got[0] != want {
+		// The finding arrives framed as its sender's report, so the agent can
+		// tell a process's report from a person's instruction.
+		if want := "watcher-agent: " + pipeLabel("when-watcher-agent", "found: a new CVE"); got[0] != want {
 			t.Fatalf("delivered %q, want %q", got[0], want)
 		}
 	})

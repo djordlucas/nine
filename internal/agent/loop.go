@@ -144,6 +144,12 @@ type Loop struct {
 	scratchpad         []ninectx.ScratchpadEntry
 	lastToolCount      int  // tool calls dispatched in the most recent Run()
 	forceThinkNextTurn bool // set by SetForceThinkNextTurn; consumed + reset each Run (/think)
+
+	// nextTurnAllow, when set, restricts the next Run to these tools: only
+	// they are offered, and a call to any other is refused. turnAllow is the
+	// restriction of the Run in progress (RestrictNextTurn).
+	nextTurnAllow      []string
+	turnAllow          map[string]bool
 	displayNames       map[string]string
 	onToolStart        func(name, displayName, backend string, input json.RawMessage)
 	onToolEnd          func(name, displayName, backend string, input json.RawMessage, out ToolOutcome)
@@ -184,6 +190,25 @@ type ToolOutcome struct {
 // (the /think command), consumed and reset after that turn. Safe to call between
 // turns; not safe during Run.
 func (l *Loop) SetForceThinkNextTurn(v bool) { l.forceThinkNextTurn = v }
+
+// RestrictNextTurn limits the next Run to the tools in names: only they are
+// offered to the model, and a call to any other is refused with the reason.
+// It applies to that one Run and is then cleared.
+func (l *Loop) RestrictNextTurn(names []string) { l.nextTurnAllow = names }
+
+// turnTools is the tool list the Run in progress offers.
+func (l *Loop) turnTools() []ninectx.ToolWithVector {
+	if l.turnAllow == nil {
+		return l.cfg.Tools
+	}
+	out := make([]ninectx.ToolWithVector, 0, len(l.turnAllow))
+	for _, t := range l.cfg.Tools {
+		if l.turnAllow[t.Tool.Name] {
+			out = append(out, t)
+		}
+	}
+	return out
+}
 
 // SetQueue replaces the LLM queue used for subsequent Run calls.
 // Safe to call between turns; not safe during Run.
@@ -361,6 +386,14 @@ func (l *Loop) refreshTools() {
 // is the uncommon case in ReAct; single-tool responses are the norm.
 func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 	l.refreshTools()
+	if l.nextTurnAllow != nil {
+		l.turnAllow = make(map[string]bool, len(l.nextTurnAllow))
+		for _, n := range l.nextTurnAllow {
+			l.turnAllow[n] = true
+		}
+		l.nextTurnAllow = nil
+	}
+	defer func() { l.turnAllow = nil }()
 	l.history = append(l.history, llm.Message{Role: "user", Text: userText})
 	l.scratchpad = l.scratchpad[:0]
 	l.lastToolCount = 0
@@ -442,7 +475,7 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 			SystemExtras:        l.cfg.SystemExtras,
 			SystemSelf:          selfModel,
 			SystemEnrichment:    enrichment,
-			Tools:               l.cfg.Tools,
+			Tools:               l.turnTools(),
 			QueryVector:         queryVec,
 			History:             l.history,
 			Scratchpad:          l.scratchpad,
@@ -560,7 +593,17 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 			if l.onToolStart != nil {
 				l.onToolStart(tc.Name, dn, backend, tc.Input)
 			}
-			result, attempts, elapsed, dispErr := l.dispatchWithRetry(ctx, tc.Name, tc.Input)
+			var (
+				result   CallResult
+				attempts = 1
+				elapsed  time.Duration
+				dispErr  error
+			)
+			if l.turnAllow != nil && !l.turnAllow[tc.Name] {
+				dispErr = notInTurnError{tool: tc.Name}
+			} else {
+				result, attempts, elapsed, dispErr = l.dispatchWithRetry(ctx, tc.Name, tc.Input)
+			}
 			observation := result.Output
 			errStr := ""
 			if dispErr != nil {
@@ -686,6 +729,18 @@ const maxEmptyAnswerRetries = 2
 // without this package learning about either. The two return values are the
 // whole point — "did not say" must not collapse into "said no", because only one
 // of those is a claim the tool made.
+// notInTurnError refuses a tool the turn's restriction leaves out
+// (RestrictNextTurn). Retrying cannot help within the turn.
+type notInTurnError struct{ tool string }
+
+func (e notInTurnError) Error() string {
+	return fmt.Sprintf("tool %q is not available in this turn, which a report piped from a process started: "+
+		"such a turn can read, record and update its goal, nothing more. "+
+		"Do it on your own next turn if your goal calls for it", e.tool)
+}
+
+func (notInTurnError) Retryable() (retryable, stated bool) { return false, true }
+
 func statedRetryable(err error) (retryable, stated bool) {
 	var r interface{ Retryable() (bool, bool) }
 	if !errors.As(err, &r) {

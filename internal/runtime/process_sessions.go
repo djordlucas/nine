@@ -10,8 +10,10 @@ import (
 // not running. trigger labels the turn in the journal ("idle" for a clock,
 // "condition" for a pipe's report), so a process's turns read as the routine
 // turns they replace (adr/process-sessions.md §14, phase 1).
-func (d *Daemon) ProcessTurn(ctx context.Context, id string, p RoleParams, text, trigger string) (string, int, error) {
-	res := d.processWorker(id, p).turnCounted(ctx, text, trigger)
+//
+// allow, when set, restricts the turn to those tools (PipedTurnTools).
+func (d *Daemon) ProcessTurn(ctx context.Context, id string, p RoleParams, text, trigger string, allow []string) (string, int, error) {
+	res := d.processWorker(id, p).turnCounted(ctx, text, trigger, allow)
 	return res.text, res.tokens, res.err
 }
 

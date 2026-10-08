@@ -50,6 +50,13 @@ func TestDiagLiveTrajectory(t *testing.T) {
 	t.Logf("=== case %s on %s ===", caseID, model)
 	for _, e := range res.Events {
 		switch e.Type {
+		case "turn_start":
+			var p struct {
+				Input   string `json:"input"`
+				Trigger string `json:"trigger"`
+			}
+			_ = json.Unmarshal(e.Payload, &p)
+			t.Logf("TURN (%s): %s", p.Trigger, p.Input)
 		case "llm_request":
 			// The tools the model was offered: a tool it never called may simply
 			// not have been in the list.

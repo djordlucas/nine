@@ -1004,3 +1004,73 @@ func TestLoopOmitsEmptySessionID(t *testing.T) {
 		t.Errorf("system prompt = %q, want exactly one blank line before the core", system)
 	}
 }
+
+// A restricted turn (RestrictNextTurn) offers only the tools it allows, and a
+// call to any other is refused without running it, as not retryable. The
+// restriction lasts one Run.
+func TestLoopRestrictNextTurn(t *testing.T) {
+	var (
+		requests []llm.Request
+		deleted  atomic.Bool
+		n        atomic.Int32
+	)
+	provider := llm.ProviderFunc(func(_ context.Context, req llm.Request) (llm.Response, error) {
+		requests = append(requests, req)
+		switch n.Add(1) {
+		case 1:
+			return toolCallResp("tc1", "delete_file", json.RawMessage(`{"path":"keep.md"}`)), nil
+		default:
+			return finalResp("done"), nil
+		}
+	})
+	queue := llm.NewQueue(provider, 1)
+	dispatcher := agent.New()
+	dispatcher.InjectHandler("read_file", func(_ context.Context, _ json.RawMessage) (string, error) { return "x", nil })
+	dispatcher.InjectHandler("delete_file", func(_ context.Context, _ json.RawMessage) (string, error) {
+		deleted.Store(true)
+		return "deleted", nil
+	})
+	def := func(name string) ninectx.ToolWithVector {
+		return ninectx.ToolWithVector{Tool: llm.ToolDef{Name: name, Description: name, InputSchema: json.RawMessage(`{"type":"object"}`)}}
+	}
+	var refused string
+	loop := agent.NewLoop(agent.Config{
+		SystemCore: "You are a test agent.",
+		Priority:   llm.PriorityConversation,
+		Tools:      []ninectx.ToolWithVector{def("read_file"), def("delete_file")},
+	}, newTestBuilder(), queue, dispatcher)
+	loop.SetHooks(agent.Hooks{OnToolEnd: func(name, _, _ string, _ json.RawMessage, o agent.ToolOutcome) {
+		if name == "delete_file" {
+			refused = o.Output
+		}
+	}})
+
+	loop.RestrictNextTurn([]string{"read_file"})
+	if _, err := loop.Run(context.Background(), "a report"); err != nil {
+		t.Fatal(err)
+	}
+	for _, td := range requests[0].Tools {
+		if td.Name == "delete_file" {
+			t.Error("a restricted turn offered delete_file")
+		}
+	}
+	if deleted.Load() {
+		t.Error("a restricted turn ran delete_file")
+	}
+	if !strings.Contains(refused, "not available in this turn") || !strings.Contains(refused, "cannot succeed on retry") {
+		t.Errorf("refusal = %q", refused)
+	}
+
+	n.Store(1) // the next Run answers at once
+	requests = nil
+	if _, err := loop.Run(context.Background(), "a person's message"); err != nil {
+		t.Fatal(err)
+	}
+	offered := false
+	for _, td := range requests[0].Tools {
+		offered = offered || td.Name == "delete_file"
+	}
+	if !offered {
+		t.Error("the restriction outlasted its turn")
+	}
+}
