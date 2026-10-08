@@ -916,7 +916,7 @@ a turn of its own; a person, a process, or a pipe submits each one.
 
                  ┌──────── goal session ──────────────────┐
    session:      │ == goalID  (1:1 with a top-level goal) │  pursue, every 5 min,
-   process:      │ "goal:<id>", pursue, bound to the goal │  capped by max_goal_sessions(10)
+   process:      │ "goal:<id>", pursue, bound to the goal │  capped by max_running(14)
                  └────────────────────────────────────────┘
 ```
 

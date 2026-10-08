@@ -48,9 +48,9 @@ type AgentWorkerForTest struct {
 	w *AgentWorker
 }
 
-// ActiveGoalSessionCountForTest exposes activeGoalSessionCount for testing.
-func (d *Daemon) ActiveGoalSessionCountForTest() int {
-	n, _ := d.activeGoalSessionCount() //nolint:errcheck // a test reads the count
+// RunningProcessCountForTest counts the running processes the cap sees.
+func (d *Daemon) RunningProcessCountForTest() int {
+	n, _ := d.procs.ProcessesRunning() //nolint:errcheck // a test reads the count
 	return n
 }
 

@@ -170,6 +170,7 @@ func startProcesses(ctx context.Context, lv *live, setup []ProcessSetup) error {
 		blocks = append(blocks, config.ProcessConfig{
 			Name: p.Name, Tool: p.Tool, Every: p.Every, Schedule: p.Schedule, Goal: p.Goal,
 			Role: p.Role, Delegates: p.Delegates, Session: p.Session, ReportTo: p.ReportTo, Args: p.Args,
+			Budget: config.BudgetConfig{TurnsPerDay: p.Budget.TurnsPerDay, TokensPerDay: p.Budget.TokensPerDay},
 		})
 	}
 	if err := (&config.Config{Process: blocks}).Validate(); err != nil {
@@ -199,7 +200,7 @@ func startProcesses(ctx context.Context, lv *live, setup []ProcessSetup) error {
 		if err := store.GoalCreate(b.Name, b.Goal, "", runtime.ConfigGoalOrigin); err != nil {
 			return err
 		}
-		if _, err := lv.Daemon.SpawnStandingSession(ctx, b.Name, role, b.Delegates, every, b.Schedule); err != nil {
+		if _, err := lv.Daemon.SpawnStandingSession(ctx, b.Name, role, b.Delegates, every, b.Schedule, b.Budget); err != nil {
 			return err
 		}
 	}
@@ -414,7 +415,7 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 		TaskTimeoutSeconds:  c.TimeoutSecs,
 		HITL:                hitl,
 		DefaultLeafRole:     "executor",
-		MaxGoalSessions:     8,
+		MaxRunning:          runtime.DefaultMaxRunning,
 		RoleFactory:         roleFactory,
 	})
 	daemon := asm.Daemon

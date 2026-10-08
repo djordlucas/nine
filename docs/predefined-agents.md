@@ -97,6 +97,6 @@ back to active.
 |-------|--------|
 | Configuration is read at boot | Editing a block takes effect at the next start. |
 | Renaming `name` creates a second agent | Reconciliation keys on `name`, so an edited name leaves the old goal in place and adds a new one. |
-| A standing agent counts against the goal cap | It runs as an ordinary goal session, so `daemon.max_goal_sessions` (default 10) bounds standing agents and conversational goals together. |
+| A standing agent counts against the process cap | It runs as a process, so `[processes] max_running` (default 14) bounds standing agents, conversational goals and every other process together. |
 | A goal process runs `pursue` | `goal` is only for `tool = "pursue"`; another tool cannot be bound to a goal yet. |
 | A condition needs the tool host | Its predicate is a sandboxed tool, so it requires `[tools] enabled`. |

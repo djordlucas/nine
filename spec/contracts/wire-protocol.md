@@ -55,7 +55,7 @@ Msg {
   replay_events     []Msg    // attach response only
   pending_response  string   // attach response only
   history           []Msg    // attach response only: the transcript
-  limit             int      // standing_show: recent log lines to return
+  limit             int      // process_show: recent activity lines to return
   turn              int      // session_events: 0 every turn, N turn N, -1 the latest;
                              // history entries (attach, session_history): the entry's turn
 }
@@ -87,6 +87,10 @@ Msg {
 | `tools_list` | — | request the sandboxed-tool roster (with resolved capabilities and skip reasons) |
 | `tools_reload` | — | re-scan `[tools].user_dir` and reload sandboxed tools live |
 | `tool_delete` | `tool_name` (**required**) | delete a tool Nine wrote, and its standing run; a shipped, operator-installed or unknown tool is refused with the reason |
+| `process_list` | — | the process roster |
+| `process_show` | `agent_id` = process id (**required**), (`limit`) | one process with up to `limit` lines of recent activity (default 20) |
+| `process_control` | `agent_id` = process id, `text` = `start` \| `stop` (both **required**) | start or stop a process as the operator, who may start any; a start is refused at `[processes] max_running` |
+| `process_send` | `agent_id` = process id, `text` = message (both **required**) | give a running live process the operator's message as its next trigger, labelled `[From the operator: …]`; refused when it cannot take it now |
 | `grants_list` | — | the generated tier's capability ceiling and the requests to widen it |
 | `grants_decide` | `request_id`, `text` | settle a capability request (`approve`/`deny`) or revoke a grant (`revoke`). Both fields are required: a decision with no id, or an id with no verb, **MUST NOT** resolve to a default |
 | `list_skills` | — | the skill catalog, without bodies |
@@ -118,6 +122,8 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `grants_list` | `text` = JSON `CapabilityState` | grants in force, each with its `source`, plus every capability request and its status ([`toolvm.md`](toolvm.md) R-TVM.14) |
 | `grants_decide` | `text` = a sentence | what the decision did, including whether it took effect without a restart |
 | `tool_delete` | `text` = a sentence | the tool deleted |
+| `process_list` / `process_show` | `text` = JSON `[]ProcessInfo` / `ProcessInfo` | id, tool, mode, state, `stopped_by`, trigger, session, goal, pipe, budget use and reset, failures, recent activity (show only) |
+| `process_control` / `process_send` | `text` = a sentence | what was done (or `error` naming the reason: an unknown id says `no such process`) |
 | `context` | `text` = JSON `ninectx.Report` | per-section token breakdown + assembled prompt/messages |
 | `workflow_stop` / `workflow_fail` | `text` = `"stopped"` / `"failed"` | operator-command result |
 | `session_stop` | `text` = human-readable outcome (`stopped <id>`, `stopped N session(s)`) | terminate result (or `error` when the id is unknown) |

@@ -178,17 +178,29 @@ POST   /api/v1/tools/{name}/call  POST /api/v1/tools/reload
 
 GET    /api/v1/plugins            POST /api/v1/plugins/reload
 
+GET    /api/v1/processes          GET /api/v1/processes/{id}
+POST   /api/v1/processes/{id}/start   POST /api/v1/processes/{id}/stop
+POST   /api/v1/processes/{id}/messages
+
 GET    /api/v1/capabilities       POST /api/v1/capabilities/{id}/decision
 ```
 
 `POST /goals` takes `{"description": "…"}` and creates a top-level goal with its
 own pursue session ([goal sessions](goal-sessions.md)); the response's
-`pursue_session` is `spawned`, or `limit_reached` when the daemon is at its
-goal-session cap and the goal is recorded unattended. Adding `"parent_id"`
+`pursue_session` is `spawned`, or `limit_reached` when the daemon is at
+`[processes] max_running` and the goal is recorded unattended. Adding `"parent_id"`
 creates a sub-goal instead, which gets no session (`none`); an unknown parent is
 `404`. The API caller creates the goal as the operator, so the role gate on the
 agent's `goal_create` tool does not apply — it decides which agents may start
 background work, and an authenticated API caller is not an agent.
+
+The `/processes` endpoints are the operator's view of [processes](processes.md):
+the roster with each one's state, who stopped it, trigger and budget use; one
+process with its recent activity; a start or stop as the operator; and a
+message (`{"text": "…"}`) a running live process receives as its next trigger.
+An unknown id is `404`; any other refusal — already running, the
+`[processes] max_running` cap, a busy or stopped process — is `409 conflict`,
+with the reason in the message.
 
 `DELETE /goals/{id}` deletes the goal and every sub-goal beneath it, and stops the
 goal's pursue session; the session's transcript and journal are kept. The

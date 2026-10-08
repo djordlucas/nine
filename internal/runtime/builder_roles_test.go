@@ -635,3 +635,60 @@ func observationText(req llm.Request) string {
 	}
 	return b.String()
 }
+
+type fakeProcessControl struct{}
+
+func (fakeProcessControl) ProcessList() (any, error)        { return []string{}, nil }
+func (fakeProcessControl) ProcessShow(string) (any, error)  { return nil, nil }
+func (fakeProcessControl) ProcessSend(_, _, _ string) error { return nil }
+func (fakeProcessControl) ProcessStart(string) error        { return nil }
+func (fakeProcessControl) ProcessStop(string) error         { return nil }
+
+// The process tools go to a conversation, filtered by its role, and to nothing
+// else (adr/process-sessions.md §9): a process session's turns are its
+// process's, so a process cannot steer processes, and a sub-agent's task is
+// finite.
+func TestProcessToolsGoToConversationsOnly(t *testing.T) {
+	p := &scriptedProvider{}
+	p.script = func(n int, req llm.Request) llm.Response {
+		if n == 1 {
+			return runAgentCall("count things", "")
+		}
+		return llm.Response{Text: "done", StopReason: "end_turn"}
+	}
+	factory := rolesTestBuilder(t, p, nil)
+	factory.SetProcessControl(fakeProcessControl{})
+	all := []string{"process_list", "process_show", "process_send", "process_start", "process_stop"}
+
+	if _, err := factory.Build("conv-1", false).Run(context.Background(), "delegate"); err != nil {
+		t.Fatal(err)
+	}
+	root, sub := toolNames(p.call(1)), toolNames(p.call(2))
+	for _, name := range all {
+		if !root[name] {
+			t.Errorf("a conversation lacks %s", name)
+		}
+		if sub[name] {
+			t.Errorf("a sub-agent holds %s", name)
+		}
+	}
+
+	for _, tc := range []struct {
+		name string
+		p    runtime.RoleParams
+	}{
+		{"a process session", runtime.RoleParams{Role: runtime.PursueRole, OwnsGoal: true, Process: true}},
+		{"an allowlist role that names none", runtime.RoleParams{Role: "monitor"}},
+	} {
+		before := p.nCalls()
+		if _, err := factory.BuildForRole("s-"+tc.name, tc.p).Run(context.Background(), "hi"); err != nil {
+			t.Fatal(err)
+		}
+		got := toolNames(p.call(before + 1))
+		for _, name := range all {
+			if got[name] {
+				t.Errorf("%s holds %s", tc.name, name)
+			}
+		}
+	}
+}

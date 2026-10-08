@@ -20,10 +20,10 @@ nine attach <agent-id>           Reconnect to an existing conversation/session
 nine stop <agent-id>             Terminate a session (stops the worker and
                                  deletes its saved state)
 nine stop --all                  Terminate every active session
-nine tools standing              List standing tools (run indefinitely)
-nine tool status <id>            One standing tool, with recent activity
-nine tool logs <id> [-n N]       A standing tool's recent calls
-nine tool stop|start <id>        Stop or start a standing tool
+nine process [list]              List processes: state, budget, trigger
+nine process show <id> [-n N]    One process in full, with recent activity
+nine process stop|start <id>     Stop or start a process as the operator
+nine process send <id> <text>    Give a live process a message as its next trigger
 nine tool call <name> ['<json>'] Run one tool once, for testing
                                  (--live-state uses its real store)
 nine sessions                    List sessions: age, journal size, retention
@@ -126,7 +126,7 @@ The picker stays out of the way while Nine is waiting on an answer to an
 | `/memory [key]` | List all KV memory keys, or show the value at a specific key | `/memory self/identity` |
 | `/goals` | List active goals | `/goals` |
 | `/workflows` | List active and recent workflows | `/workflows` |
-| `/standing [id]` | List standing tools, or show one with its recent activity | `/standing corpus` |
+| `/processes [id \| start <id> \| stop <id>]` | List processes, show one with its recent activity, or start or stop one | `/processes digest` |
 | `/grants [approve\|deny\|revoke <id>]` | Capability requests and the ceiling in force, or decide one without leaving the session | `/grants approve 59488812` |
 | `/plan-mode <mode>` | Change the session's reasoning mode live: `off`, `plan-only`, or `always` | `/plan-mode always` |
 | `/think <message>` | Send a message with reasoning forced on for this one turn | `/think reconcile these two specs` |
@@ -340,27 +340,29 @@ mistyped command:
 `stop` acts on running state, so it needs the daemon up; with none running there
 is nothing to stop.
 
-### `nine tools standing` — watching what runs on its own
+### `nine process` — watching what runs on its own
 
-A **standing tool** is a sandboxed tool the daemon runs indefinitely on its own
-cadence, declared in `nine.toml`. These are the commands for seeing what they are
-doing and stopping them.
+A **process** is everything Nine runs between your turns: goal sessions,
+standing agents, self-reflection, condition triggers, standing tools
+([processes](processes.md)). These are the commands for seeing what they are
+doing, stopping and starting them, and sending one a message.
 
 ```bash
-./nine tools standing            # the roster: state, cycles, trigger
-./nine tool status corpus        # one of them in full
-./nine tool logs corpus -n 50    # its recent calls
-./nine tool stop corpus          # exact — no further call is scheduled
-./nine tool start corpus         # clears the failure history and calls now
+./nine process                   # the roster: mode, state, budget, trigger
+./nine process show digest       # one of them in full, with recent activity
+./nine process stop digest       # exact: a stopped process takes no trigger
+./nine process start digest      # clears its failures and runs it now
+./nine process send digest "check the feeds now"
 ```
 
-A failing tool says so in the roster, with its consecutive-failure count and last
-error, so an old quiet tool explains itself rather than needing a log dive.
+The roster says why a process is not running: failing with its consecutive
+failures and last error, paused by its budget until when, or stopped by whom.
+A process you stop stays stopped across restarts, and a model cannot start it
+again; only you can.
 
-`nine tool logs` reads an **in-memory** ring buffer, not the journal, and empties
-on restart. That is deliberate: a tool on a ten-second cadence makes thousands of
-calls a day and none of them are journal events. What *is* journaled is its
-transitions and its output — `nine trace <id>` reads those, and survives.
+The recent activity `show` prints is kept **in memory** and empties on restart.
+A process's transitions and reports are journaled — `nine trace <id>` reads
+those, and survives.
 
 ### `nine tool call` — running one tool once
 

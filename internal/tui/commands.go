@@ -39,7 +39,7 @@ var slashCmds = []slashCmd{
 	{"goals", "", "list goals"},
 	{"workflows", "", "list active and recent workflows"},
 	{"tools", "[filter | delete <name>]", "list all tools (optional name filter), or delete one Nine wrote"},
-	{"standing", "[id]", "list standing tools, or show one with its recent activity"},
+	{"processes", "[id | start <id> | stop <id>]", "list processes, show one, or start or stop one"},
 	{"grants", "[approve|deny|revoke <id>]", "capability requests and the ceiling in force, or decide one"},
 	{"skills", "[name]", "list skills, or show a specific skill"},
 	{"memory", "[key]", "list KV keys, or show a specific key's value"},
@@ -108,8 +108,8 @@ func runCmd(cmd, arg string, client *protocol.Client, cfg *config.Config, curAge
 		return cmdWorkflows(client)
 	case "sessions":
 		return cmdSessions(client)
-	case "standing":
-		return cmdStanding(client, arg)
+	case "processes":
+		return cmdProcesses(client, arg)
 	case "grants":
 		return cmdGrants(client, arg)
 	default:
@@ -138,11 +138,6 @@ func cmdHelp() string {
 	return sb.String()
 }
 
-// cmdStanding lists standing tools, or shows one with its recent activity.
-//
-// Read-only, like every other slash command here. Stopping and starting one is
-// deliberately CLI-only (`nine tool stop`): a keystroke away from halting
-// something that runs unattended is the wrong ergonomics.
 // cmdGrants lists the generated tier's capability ceiling and the requests to
 // widen it, and — unlike the other listing views — can decide one.
 //
@@ -240,34 +235,51 @@ func grantScope(params string) string {
 	return strings.Join(parts, "; ")
 }
 
-func cmdStanding(client *protocol.Client, arg string) (string, error) {
-	if arg != "" {
-		r, err := client.ShowStanding(arg, 10)
+// cmdProcesses lists processes, shows one with its recent activity, or starts
+// or stops one as the operator. A start or stop names its verb and the
+// process id in full, as /tools delete names its tool, so halting something
+// that runs unattended is never one keystroke away.
+func cmdProcesses(client *protocol.Client, arg string) (string, error) {
+	fields := strings.Fields(arg)
+	if len(fields) >= 2 && (fields[0] == "start" || fields[0] == "stop") {
+		return client.ControlProcess(fields[1], fields[0])
+	}
+	if len(fields) == 1 {
+		p, err := client.ShowProcess(fields[0], 10)
 		if err != nil {
 			return "", err
 		}
 		var b strings.Builder
-		fmt.Fprintf(&b, "%s (%s) — %s, %s\n", r.ID, r.Tool, r.State, r.Trigger)
-		fmt.Fprintf(&b, "  %d cycles, %d calls\n", r.Cycles, r.Calls)
-		if r.LastError != "" {
-			fmt.Fprintf(&b, "  last error: %s\n", r.LastError)
+		state := p.State
+		if p.StoppedBy != "" {
+			state += " by " + p.StoppedBy
 		}
-		for _, e := range r.Recent {
+		fmt.Fprintf(&b, "%s (%s, %s) — %s, %s\n", p.ID, p.Tool, p.Mode, state, p.Trigger)
+		fmt.Fprintf(&b, "  budget: %d of %d turns, %d of %d tokens today\n",
+			p.BudgetTurns, p.BudgetTurnsPerDay, p.BudgetTokens, p.BudgetTokensPerDay)
+		if p.LastError != "" {
+			fmt.Fprintf(&b, "  last error: %s\n", p.LastError)
+		}
+		for _, e := range p.Recent {
 			fmt.Fprintf(&b, "  %s  %-9s %s\n", e.At, e.Outcome, e.Detail)
 		}
 		return b.String(), nil
 	}
 
-	runs, err := client.ListStanding()
+	procs, err := client.ListProcesses()
 	if err != nil {
 		return "", err
 	}
-	if len(runs) == 0 {
-		return "No standing tools.", nil
+	if len(procs) == 0 {
+		return "No processes.", nil
 	}
 	var b strings.Builder
-	for _, r := range runs {
-		fmt.Fprintf(&b, "%-20s %-12s %-9s %s\n", r.ID, r.Tool, r.State, r.Trigger)
+	for _, p := range procs {
+		state := p.State
+		if p.StoppedBy != "" {
+			state += " (" + p.StoppedBy + ")"
+		}
+		fmt.Fprintf(&b, "%-24s %-12s %-18s %s\n", p.ID, p.Tool, state, p.Trigger)
 	}
 	return b.String(), nil
 }

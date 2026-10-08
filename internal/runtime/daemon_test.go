@@ -785,7 +785,7 @@ func TestProcessTurnRunsInTheProcessSession(t *testing.T) {
 	d, _ := startDaemon(t, makeFactory(provider), nil, nil)
 
 	for i, want := range []string{"reply 1", "reply 2"} {
-		got, err := d.ProcessTurn(context.Background(), "digest-session", runtime.RoleParams{}, "tick", "idle")
+		got, _, err := d.ProcessTurn(context.Background(), "digest-session", runtime.RoleParams{}, "tick", "idle")
 		if err != nil || got != want {
 			t.Fatalf("ProcessTurn %d = %q, %v; want %q", i+1, got, err, want)
 		}
@@ -822,7 +822,7 @@ func TestStalledGoalSessionPausesItsGoal(t *testing.T) {
 	d.ConfigureProcesses(store, nil)
 
 	for i := 0; i < 2; i++ {
-		if _, err := d.ProcessTurn(context.Background(), "g1", runtime.RoleParams{OwnsGoal: true}, "tick", "idle"); err != nil {
+		if _, _, err := d.ProcessTurn(context.Background(), "g1", runtime.RoleParams{OwnsGoal: true}, "tick", "idle"); err != nil {
 			t.Fatal(err)
 		}
 	}

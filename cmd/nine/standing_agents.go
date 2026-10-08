@@ -68,7 +68,7 @@ func reconcileStandingAgents(ctx context.Context, store *memory.Store, daemon *r
 				slog.Warn("standing agent reconcile: goal create failed", "id", a.Name, "err", err)
 				continue
 			}
-			if _, err := daemon.SpawnStandingSession(ctx, a.Name, role, a.Delegates, interval, a.Schedule); err != nil {
+			if _, err := daemon.SpawnStandingSession(ctx, a.Name, role, a.Delegates, interval, a.Schedule, a.Budget); err != nil {
 				slog.Warn("standing agent reconcile: spawn failed", "id", a.Name, "err", err)
 				continue
 			}
@@ -93,7 +93,7 @@ func reconcileStandingAgents(ctx context.Context, store *memory.Store, daemon *r
 		// The agent owns run-state: only an active goal is (re)spawned; a paused
 		// or finished agent keeps its status and is not resurrected (§4).
 		if goal.Status == "active" {
-			if _, err := daemon.SpawnStandingSession(ctx, a.Name, role, a.Delegates, interval, a.Schedule); err != nil {
+			if _, err := daemon.SpawnStandingSession(ctx, a.Name, role, a.Delegates, interval, a.Schedule, a.Budget); err != nil {
 				slog.Warn("standing agent reconcile: spawn failed", "id", a.Name, "err", err)
 			}
 		} else {

@@ -52,7 +52,7 @@ that its work is finished is the agent's call to make.
 
 | Limit | Detail |
 |-------|--------|
-| Ten concurrent goal sessions | `daemon.max_goal_sessions`, default 10. At the cap, creating a goal still records the goal but starts no session for it. The goal is real and unattended rather than queued, so how far behind pursuit has fallen stays visible. |
+| Fourteen running processes | `[processes] max_running`, default 14, counts goal sessions with every other running process. At the cap, creating a goal still records the goal but starts no session for it. The goal is real and unattended rather than queued, so how far behind pursuit has fallen stays visible. |
 | Sub-goals get no session | Only top-level goals are paired with a session. A goal spawned by another is worked on by the session already pursuing its parent. |
 | Five-minute wake interval | A goal session's `pursue` process ticks on a fixed clock. The cycle supplies the occasion and the goal, not a plan — what counts as useful action is left to the model. |
 | Stall detection releases the slot | Five consecutive turns that call no tool count as a stall, which pauses the goal and so stops its process and frees the slot: one wedged pursuit cannot hold capacity indefinitely. Progress on that goal stops until it is resumed. |

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"nine/internal/config"
 	"nine/internal/memory/memtest"
 )
 
@@ -24,10 +25,10 @@ func TestSessionRoleComesFromItsOwningProcess(t *testing.T) {
 	if _, err := d.SpawnGoalSession(ctx, "tidy"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.SpawnStandingSession(ctx, "sec-watch", "monitor", true, time.Hour, ""); err != nil {
+	if _, err := d.SpawnStandingSession(ctx, "sec-watch", "monitor", true, time.Hour, "", config.BudgetConfig{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.SpawnStandingSession(ctx, "plain", "", false, time.Hour, ""); err != nil {
+	if _, err := d.SpawnStandingSession(ctx, "plain", "", false, time.Hour, "", config.BudgetConfig{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := ReconcileSelfReflection(store, time.Hour); err != nil {
@@ -38,10 +39,10 @@ func TestSessionRoleComesFromItsOwningProcess(t *testing.T) {
 		session string
 		want    RoleParams
 	}{
-		{"tidy", RoleParams{Role: PursueRole, OwnsGoal: true}},
-		{"sec-watch", RoleParams{Role: "monitor", OwnsGoal: true, Delegates: true}},
-		{"plain", RoleParams{Role: PursueRole, OwnsGoal: true}},
-		{SelfReflectionAgentID, RoleParams{Role: ReflectionRole}},
+		{"tidy", RoleParams{Role: PursueRole, OwnsGoal: true, Process: true}},
+		{"sec-watch", RoleParams{Role: "monitor", OwnsGoal: true, Delegates: true, Process: true}},
+		{"plain", RoleParams{Role: PursueRole, OwnsGoal: true, Process: true}},
+		{SelfReflectionAgentID, RoleParams{Role: ReflectionRole, Process: true}},
 	}
 	for _, tc := range cases {
 		got, ok := d.processRole(tc.session)

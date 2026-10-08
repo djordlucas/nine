@@ -141,7 +141,7 @@ also attach to a standing agent's session. See [Processes](processes.md).
 (`agentID == goalID`), driven by the shipped `pursue` process bound to the goal:
 every 5 minutes it asks the session to `goal_get`, act on the goal, record what
 it finds as sub-goals, and call `goal_update_status`. Capped by
-`daemon.max_goal_sessions` (default 10); `goal_create` reports
+`[processes] max_running` (default 14), with every other process; `goal_create` reports
 `pursue_session: "spawned"` or `"limit_reached"`. See [Goal sessions](goal-sessions.md).
 
 ---
@@ -533,8 +533,9 @@ placeholder — OpenAI is available for *embeddings* only, via
 **`max_concurrent`** — Cap on in-flight LLM requests in the priority queue;
 set to `1` for local Ollama models to avoid contention.
 
-**`max_goal_sessions` (`daemon.max_goal_sessions`)** — Cap on concurrently
-running `pursue` sessions, default 10 (`DefaultMaxGoalSessions`).
+**`max_running` (`[processes] max_running`)** — Cap on processes running at
+once, live and slice alike, default 14 (`DefaultMaxRunning`). A goal session or
+standing tool Nine creates at the cap is recorded and not started.
 
 **Token counting** — Approximated as **3.45 bytes ≈ 1 token** throughout the
 context builder, with no tokenizer dependency; the divisor deliberately
@@ -587,7 +588,7 @@ workflows whose steps are now all terminal; workflows with remaining
 
 **TUI slash commands** — `/help`, `/sessions`, `/status`, `/config`,
 `/context [id]`, `/plan-mode <mode>`, `/goals`, `/workflows`,
-`/tools [filter]`, `/standing [id]`, `/skills [name]`, `/memory [key]`, `/new`,
+`/tools [filter]`, `/processes [id]`, `/skills [name]`, `/memory [key]`, `/new`,
 `/think <message>`, `/clear`. Handled locally — no LLM tokens consumed
 (`/think` is the exception: it sends a real turn). Typing `/` opens a picker
 that filters the list as you type. See

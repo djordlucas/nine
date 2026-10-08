@@ -64,6 +64,28 @@ They are read-only programs you can inspect with `nine tools show pursue`.
 A process's first tick comes one cadence after it starts, at boot as when it is
 created. A process with no clock wakes only on reports.
 
+A process that fails — a slice call that errors, a live program that throws —
+is retried after a backoff that doubles its cadence each time, up to 30
+minutes. Three failures in a row make it `failing`, which reaches
+`nine notifications`, as does its recovery.
+
+## Budgets
+
+Every process has a budget over a rolling day: the model turns its program runs
+through `turn()`, and the tokens those turns spend. The day starts at its first
+counted turn.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `[processes] budget` | `{ turns_per_day = 200, tokens_per_day = 2000000 }` | every process's budget |
+| `budget` in a `[[process]]` block | `[processes] budget` | lowers either field for that process, never raises it |
+
+A turn the budget no longer covers is refused: `turn()` throws `E_BUDGET`, the
+process is paused, and the pause reaches `nine notifications` with when it runs
+again. When its day is over the process runs again by itself, with its usage
+back at zero. The default is generous enough that pursuing a goal does not meet
+it; what it stops is a loop that runs away.
+
 ## Goals, sessions and pipes
 
 **Goal binding.** A process bound to a goal works on that goal, and the goal's
@@ -81,6 +103,49 @@ waiting for work; a report that finds it busy goes to the human feed instead, so
 a finding is never silently dropped. A condition trigger is a pipe from a cheap
 predicate to an agent.
 
+A piped report arrives labelled with its sender, as
+`[From process cve-scan: found: CVE-2026-1234 in libfoo]`. What a pipe carries
+is data that lands in the receiver's prompt, so a process that fetches web pages
+and pipes them on could otherwise pass off a page's text as an instruction.
+
+## From a conversation
+
+A live process is never a tool a conversation calls. A conversation works with
+processes through five tools, which its role grants like any other; a process
+session and a sub-agent hold none of them.
+
+| Tool | Does |
+|---|---|
+| `process_list`, `process_show` | state, who stopped it, trigger, session, goal, budget use and reset, last error, recent activity |
+| `process_send` | gives a running live process a message as its next trigger, labelled `[From conversation <id>: …]`; refused when it is stopped, busy, or a slice process |
+| `process_start`, `process_stop` | control, under the rule below |
+
+A send does not wait for an answer: the process answers through what it writes.
+
+A start grants nothing the process did not have, so a model may start any
+stopped process, except one stopped by:
+
+| Stopped by | A model's `process_start` |
+|---|---|
+| The operator | refused: only the operator can start it |
+| Its goal | refused: reactivate the goal instead |
+| Its budget | refused until its day is over, when it runs again by itself |
+| A model, itself, or failing | allowed |
+
+Every start counts against `[processes] max_running`. Each refusal names its
+reason.
+
+## Watching and controlling processes
+
+| Surface | List | One | Start, stop | Message |
+|---|---|---|---|---|
+| CLI | `nine process` | `nine process show <id>` | `nine process start\|stop <id>` | `nine process send <id> <text>` |
+| TUI | `/processes` | `/processes <id>` | `/processes start\|stop <id>` | — |
+| HTTP | `GET /api/v1/processes` | `GET /api/v1/processes/{id}` | `POST …/{id}/start\|stop` | `POST …/{id}/messages` |
+
+The operator may start any process; the start rule binds models only. A
+process the operator stops can be started again only by the operator.
+
 ## Declaring processes
 
 ```toml
@@ -92,6 +157,7 @@ goal      = "Monitor this repo for security issues; triage new CVEs."
 role      = "monitor"           # default "monitor", read-only
 delegates = false
 schedule  = "0 9 * * 1-5"       # or: every = "24h"; neither is every 5 minutes
+budget    = { turns_per_day = 50 }   # lowers [processes] budget
 
 # A condition trigger: a predicate every ten seconds, piped to the agent.
 [[process]]
@@ -116,13 +182,18 @@ schedule = "0 3 * * *"
 enabled  = true                 # false declares it without starting it
 
 [processes]
-max_running   = 14              # live processes at once
+max_running   = 14              # processes running at once, live and slice
+budget        = { turns_per_day = 200, tokens_per_day = 2000000 }
 authoritative = false           # true: a goal process no longer listed is retired at boot
 ```
 
 The file owns each process's definition; the runtime owns whether it is running.
 Editing a block adjusts what a process does without restarting one that was
-stopped, and a goal the agent finished is never resurrected. Every mistake in a
+stopped, and a goal the agent finished is never resurrected. Removing a block
+deletes its process at the next boot: its session is kept as history, so
+adding the block back brings it back with its history, and `nine notifications`
+says what went. A goal block is the exception: `authoritative` decides whether
+removing it retires its goal. Every mistake in a
 block — an unknown `session`, a `report_to` naming no process, both `every` and
 `schedule` — fails the load with its reason.
 
@@ -135,6 +206,7 @@ block — an unknown `session`, a `report_to` naming no process, both `every` an
 | `when = { tool, interval, args }` | `[[process]] tool, every, args, report_to = "<agent>"` |
 | `[[standing_tool]] id, interval` | `[[process]] name, every` |
 | `[daemon] standing_agents_authoritative` | `[processes] authoritative` |
+| `[daemon] max_goal_sessions`, `[tools.agent] max_standing` | `[processes] max_running` |
 
 A file that still has one of the old blocks fails to load, naming the form to
 use instead.
@@ -154,6 +226,5 @@ use instead.
 |-------|--------|
 | No backfill | A clock tick missed while the daemon or the process was down is not replayed: the first tick comes one cadence after the start. |
 | Only shipped and operator processes | Nine cannot write processes yet: a live process is shipped, or a developer tool an operator declares with `[[process]]`, whose turns run under the `role` its block names. |
-| No budgets yet | A process's model use is bounded per turn, not per day. |
 | No event triggers | Processes wake on clocks and reports, not on journal events. |
 | Configuration is read at boot | Editing a block takes effect at the next start. |

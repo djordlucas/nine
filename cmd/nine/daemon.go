@@ -120,7 +120,7 @@ func runDaemon() {
 	// write time (§4.4); nil when [tools.agent.deps] is off.
 	generatedTools := runtime.NewGeneratedToolStoreWithStanding(store, toolHost, pluginManager,
 		runtime.NewDepsBundler(cfg), cfg.Tools.Agent.AllowNetworkDeps,
-		cfg.Tools.Agent.AllowStanding, cfg.Tools.Agent.MaxStanding)
+		cfg.Tools.Agent.AllowStanding, cfg.Processes.MaxRunningOrDefault())
 
 	embedder := embed.Build(cfg.Embeddings.Provider, cfg.Embeddings.Model, cfg.Embeddings.Endpoint)
 
@@ -213,7 +213,8 @@ func runDaemon() {
 		PlanMode:               cfg.Planning.Mode(),
 		DefaultLeafRole:        cfg.Roles.DefaultLeaf,
 		MaxDelegationDepth:     cfg.Roles.MaxDelegationDepth,
-		MaxGoalSessions:        cfg.Daemon.MaxGoalSessions,
+		MaxRunning:             cfg.Processes.MaxRunningOrDefault(),
+		ProcessBudget:          cfg.Processes.Budget,
 		JobMinDelayMS:          cfg.Tools.JobMinDelayMS,
 		JobWorkers:             cfg.Tools.JobWorkers,
 	})

@@ -242,12 +242,14 @@ How to use this file:
 | R-PROC.2 | Modes | Mode follows the tool; a live tool is in no tool list and cannot be called. |
 | R-PROC.3 | Live instances | No call deadline; own pool (`max_running`); work budget refilled per trigger; stop throws `E_STOPPED`. |
 | R-PROC.4 | `nine:process` | `next`/`turn`/`report` work in a live process and are refused (`E_NOT_LIVE`) anywhere else. |
-| R-PROC.5 | Triggers and the clock (I7) | First tick one cadence after start; ticks not queued twice; slice calls back off on failure. |
+| R-PROC.5 | Triggers and the clock (I7) | First tick one cadence after start; ticks not queued twice; both modes back off on failure, reach `failing` after three, and report entering and leaving it. |
 | R-PROC.6 | Process sessions | Owner sets the role; attached processes run under it; turns labelled `idle`/`condition`. |
 | R-PROC.7 | Goal binding | Inactive goal stops its process, active restarts it; a stall pauses the goal. |
-| R-PROC.8 | Pipes | A report reaches a waiting receiver, otherwise the human feed. |
+| R-PROC.8 | Pipes | A report reaches a waiting receiver, labelled `[From process <id>: …]`, otherwise the human feed. |
 | R-PROC.9 | Shipped processes, self-model | `pursue` and `reflect`; `SystemSelf` injected as P2.5, capped ~600 tokens. |
-| R-PROC.10 | Configuration | `[[process]]` mistakes fail the load; retired blocks fail with their replacement. |
+| R-PROC.10 | Configuration | `[[process]]` mistakes fail the load; retired blocks and caps fail with their replacement; a removed non-goal block deletes its process and keeps its session. |
+| R-PROC.11 | Budgets | Turns and tokens per rolling day; at the limit `turn()` fails `E_BUDGET`, the process pauses and reaches the human feed, and runs again when its day is over. |
+| R-PROC.12 | Process tools | A conversation's only, by role; the start rule's refusals name their reason; every start counts against `max_running`. |
 
 ### Goals — [`orchestration.md`](contracts/orchestration.md) (§ goals)
 
@@ -255,7 +257,7 @@ How to use this file:
 |----|----------|------------------|
 | R-ORCH.10 | What a goal is | Goal data model + store methods as specified. |
 | R-ORCH.11 | Tools (depth < 2) | `goal_create`/`goal_get`/`goal_list`/`goal_update_status`, depth-capped. |
-| R-ORCH.12 | Pursue spawning (depth 0 only) | Top-level `goal_create` spawns one pursue session; duplicate is a no-op; at `max_goal_sessions` (10) it reports `limit_reached`. `nine goals` lists goals. |
+| R-ORCH.12 | Pursue spawning (depth 0 only) | Top-level `goal_create` spawns one pursue session; duplicate is a no-op; at `[processes] max_running` (14 running processes) it reports `limit_reached`. `nine goals` lists goals. |
 
 ---
 

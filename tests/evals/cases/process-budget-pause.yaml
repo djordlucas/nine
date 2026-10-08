@@ -1,0 +1,33 @@
+id: process-budget-pause
+description: "A process that spends its budget is paused and the pause reaches the human feed: a reflect process allowed two turns a day takes two ticks, and its third is refused with E_BUDGET. Every model passes it or nine is broken — what is measured is the runtime, not the model."
+track: live
+tier: basic
+tags: [processes, budgets]
+
+setup:
+  processes:
+    # reflect: no goal binds it, so nothing the model does in its turns can
+    # stop it before its budget does — a goal the model pauses would.
+    - name: time-log
+      tool: reflect
+      role: reflection
+      every: 2s
+      budget: { turns_per_day: 2 }
+
+wait:
+  seconds: 300
+  session: time-log
+  until:
+    notifications: { contains: "spent its budget" }
+
+expect:
+  side_effects:
+    notifications: { contains: "Process time-log spent its budget for the day (2 of 2 turns" }
+    processes:
+      time-log: { state: stopped, stopped_by: budget }
+
+runs: 3
+pass_threshold: "3/3"
+timeout_seconds: 360
+models:
+  expected_pass_min_class: nano

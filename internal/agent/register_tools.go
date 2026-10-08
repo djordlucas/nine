@@ -128,7 +128,7 @@ type GeneratedToolSpec struct {
 // StandingRequest is a generated tool asking to be run standing.
 //
 // It is a request and never a grant: the operator's allow_standing decides
-// whether it is possible at all, max_standing bounds how many may exist, and a
+// whether it is possible at all, [processes] max_running bounds how many run, and a
 // human approves each one. Nine can ask; it cannot confer.
 type StandingRequest struct {
 	Interval string          `json:"interval,omitempty"`

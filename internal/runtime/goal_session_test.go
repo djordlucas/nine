@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"nine/internal/config"
 	"nine/internal/memory"
 	"nine/internal/memory/memtest"
 	"nine/internal/runtime"
@@ -56,7 +57,7 @@ func TestSpawnGoalSessionWritesItsProcessOnce(t *testing.T) {
 // trigger; a cron schedule replaces the interval.
 func TestSpawnStandingSessionWritesRoleAndTrigger(t *testing.T) {
 	d, store := goalDaemon(t)
-	if _, err := d.SpawnStandingSession(context.Background(), "sec-watch", "monitor", true, 0, "0 9 * * 1-5"); err != nil {
+	if _, err := d.SpawnStandingSession(context.Background(), "sec-watch", "monitor", true, 0, "0 9 * * 1-5", config.BudgetConfig{}); err != nil {
 		t.Fatal(err)
 	}
 	p, found, err := store.ProcessGet("goal:sec-watch")
@@ -71,7 +72,7 @@ func TestSpawnStandingSessionWritesRoleAndTrigger(t *testing.T) {
 // Teardown removes a standing agent's processes, so nothing starts it again.
 func TestTeardownStandingSessionRemovesItsProcesses(t *testing.T) {
 	d, store := goalDaemon(t)
-	if _, err := d.SpawnStandingSession(context.Background(), "sec-watch", "monitor", false, time.Hour, ""); err != nil {
+	if _, err := d.SpawnStandingSession(context.Background(), "sec-watch", "monitor", false, time.Hour, "", config.BudgetConfig{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := d.TeardownStandingSession(context.Background(), "sec-watch"); err != nil {
@@ -90,7 +91,7 @@ func TestTeardownStandingSessionRemovesItsProcesses(t *testing.T) {
 // still spawnable.
 func TestSpawnGoalSessionRespectsMaxGoalSessions(t *testing.T) {
 	d, _ := goalDaemon(t)
-	d.SetMaxGoalSessions(1)
+	d.SetMaxRunning(1)
 
 	if spawned, err := d.SpawnGoalSession(context.Background(), "goal-1"); err != nil || !spawned {
 		t.Fatalf("SpawnGoalSession(goal-1) = (%v, %v), want (true, nil)", spawned, err)
@@ -101,7 +102,7 @@ func TestSpawnGoalSessionRespectsMaxGoalSessions(t *testing.T) {
 	if spawned, err := d.SpawnGoalSession(context.Background(), "goal-1"); err != nil || !spawned {
 		t.Errorf("re-spawning goal-1 at the cap = (%v, %v), want (true, nil)", spawned, err)
 	}
-	if n := d.ActiveGoalSessionCountForTest(); n != 1 {
+	if n := d.RunningProcessCountForTest(); n != 1 {
 		t.Errorf("active goal sessions = %d, want 1", n)
 	}
 }

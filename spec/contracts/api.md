@@ -525,7 +525,7 @@ Create a goal as the operator, through the daemon's `goal_create` message.
 
 A top-level goal (no `parent_id`) gets `parent_type` `operator` and a pursue
 session whose id is the goal's (docs/goal-sessions.md): `spawned`, or
-`limit_reached` when the daemon is at `max_goal_sessions` and the goal is
+`limit_reached` when the daemon is at `[processes] max_running` and the goal is
 recorded unattended. A sub-goal gets `parent_type` `goal`, no session, `none`,
 and no `session_id`. `400` for an empty description; `404` for an unknown parent.
 
@@ -702,6 +702,26 @@ Delete a tool Nine wrote, and its standing run if it has one.
 | 400 | missing name, or tool writing (`[tools.agent]`) is off |
 | 403 | a shipped or operator-installed tool, which cannot be deleted |
 | 404 | no tool Nine wrote by that name |
+
+---
+
+### API-END-6a: processes
+
+The operator's view and control of processes ([processes](processes.md) R-PROC.12). An
+unknown id is `404`; any other refusal is `409 conflict` with the daemon's reason.
+
+| Method | Path | Does | Statuses |
+|---|---|---|---|
+| GET | `/api/v1/processes` | the roster, paged (`limit`, `offset`) | 200, 400 |
+| GET | `/api/v1/processes/{id}` | one process with its recent activity | 200, 404 |
+| POST | `/api/v1/processes/{id}/start` | start it as the operator, who may start any process | 200, 404, 409 (running, or at `max_running`) |
+| POST | `/api/v1/processes/{id}/stop` | stop it as the operator; only the operator can start it again | 200, 404, 409 (already stopped) |
+| POST | `/api/v1/processes/{id}/messages` | `{"text": "…"}` as its next trigger, labelled as the operator's | 200, 400, 404, 409 (stopped, busy, slice) |
+
+A process is `{id, tool, mode, state, stopped_by?, stopped_at?, trigger, session?,
+attached?, goal?, report_to?, role?, budget: {turns, turns_per_day, tokens,
+tokens_per_day, resets_at?}, calls?, cycles?, failures?, last_error?, last_call_at?,
+next_at?, generated?, recent?}`; the actions answer `{id, message}`.
 
 ---
 

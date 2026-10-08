@@ -135,6 +135,7 @@ The `Dispatcher` is a registry of `handlers` (tool name → function). It routes
 | Sub-agents | `run_agent`, `run_agents` |
 | Workflows | `workflow_create`, `workflow_get`, `workflow_update`, `workflow_list`, `workflow_retry_step` |
 | Goals | `goal_create`, `goal_get`, `goal_list`, `goal_update_status` |
+| Processes | `process_list`, `process_show`, `process_send`, `process_start`, `process_stop` — a conversation's only, filtered by its role ([processes.md](processes.md)) |
 | Jobs | `job_check`, `job_wait`, `job_list`, `job_cancel` |
 | Queued messages | `queued_messages_get`, `queued_message_mark_consumed`, and the count/mark-all variants |
 | Human output | `notify_user` |

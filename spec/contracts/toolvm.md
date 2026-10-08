@@ -1010,7 +1010,8 @@ and it holds here for the same reason: a standing tool an operator stopped **MUS
 stopped across a restart and across a reconcile.
 
 Changing `args` **MUST** restart the cycle — the cursor was produced under the old
-arguments. Removing a block stops Nine reconciling it and **MUST NOT** delete its row.
+arguments. Removing a block deletes its process at the next boot and keeps its session
+([processes](processes.md) R-PROC.10).
 
 ### Reporting
 
@@ -1070,10 +1071,9 @@ buffer — deliberately lossy and deliberately not durable.
 
 | | |
 |---|---|
-| `nine tools standing` | the roster, with state, cycles and trigger |
-| `nine tool status <id>` | one run in full, with recent activity |
-| `nine tool logs <id> [-n N]` | the ring buffer |
-| `nine tool stop\|start <id>` | exact: stopping means no further call is scheduled |
+| `nine process` | the roster of every process, standing runs among them (processes R-PROC.12) |
+| `nine process show <id> [-n N]` | one in full, with the ring buffer |
+| `nine process stop\|start <id>` | exact: stopping means no further call is scheduled |
 | `nine tool call <name> ['<json>'] [--live-state]` | one call, for testing |
 
 `nine tool call` **MUST** run against a **scratch state namespace** unless
@@ -1086,8 +1086,8 @@ tool's real calls tests nothing. The isolation is of state alone.
 ### The generated flavour
 
 `[tools.agent] allow_standing` (default **false**) gates a generated tool asking
-to be run standing; `max_standing` (default 4) bounds how many may exist, counting
-generated runs only.
+to be run standing; `[processes] max_running` (default 14) bounds how many processes
+run at once, generated and declared alike.
 
 **A standing promotion MUST route through the HITL gate, including when
 `require_approval` is `never`.** That setting says the capability ceiling is the

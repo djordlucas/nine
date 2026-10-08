@@ -44,6 +44,10 @@ type RoleParams struct {
 	// the goal self-management tools regardless of the role's allowlist
 	// (adr/predefined-agents-design.md §3.1).
 	OwnsGoal bool
+	// Process marks a process session. Its turns are its process's, so it holds
+	// none of the process tools: a process cannot steer processes
+	// (adr/process-sessions.md §9).
+	Process bool
 	// Delegates opts a standing agent into sub-agent fan-out; OR-ed with the
 	// resolved role's own Delegates flag (adr/predefined-agents-design.md §3.1).
 	Delegates bool
@@ -152,7 +156,7 @@ type Daemon struct {
 	hitl   *HITL
 	sink   EventSink // durable session-event journal for new workers (nil = disabled)
 
-	maxGoalSessions int // see SetMaxGoalSessions
+	maxRunning int // see SetMaxRunning
 
 	// procs is the process store (see ConfigureProcesses); procWake asks the
 	// process runner for a pass now. Both nil on a daemon with no processes.
@@ -544,11 +548,14 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 	case protocol.SessionDeleteReq:
 		d.handleSessionDelete(enc, r.AgentID)
 
-	case protocol.StandingShowReq:
-		d.handleStandingShow(enc, r.ID, r.Limit)
+	case protocol.ProcessShowReq:
+		d.handleProcessShow(enc, r.ID, r.Limit)
 
-	case protocol.StandingControlReq:
-		d.handleStandingControl(enc, r.ID, r.Action)
+	case protocol.ProcessControlReq:
+		d.handleProcessControl(enc, r.ID, r.Action)
+
+	case protocol.ProcessSendReq:
+		d.handleProcessSend(enc, r.ID, r.Text)
 
 	case protocol.ToolCallReq:
 		d.handleToolCall(enc, r.Tool, r.Args, r.LiveState)
@@ -622,8 +629,8 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 			d.handlePluginsReload(enc)
 		case protocol.TypeSessionsList:
 			d.handleSessionsList(enc)
-		case protocol.TypeStandingList:
-			d.handleStandingList(enc)
+		case protocol.TypeProcessList:
+			d.handleProcessList(enc)
 		case protocol.TypeToolsList:
 			d.handleToolsList(enc)
 		case protocol.TypeToolsReload:

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"nine/internal/config"
 	"nine/internal/memory"
 )
 
@@ -17,10 +18,9 @@ import (
 // assess and act on its goal (docs/goal-sessions.md).
 const PursueIdleInterval = 5 * time.Minute
 
-// DefaultMaxGoalSessions is the concurrent goal-session cap used when
-// DaemonConfig.MaxGoalSessions is unset or non-positive (docs/goal-sessions.md
-// "Resource bounds").
-const DefaultMaxGoalSessions = 10
+// DefaultMaxRunning is the cap on running processes when the daemon is given
+// none: [processes] max_running's default.
+const DefaultMaxRunning = 14
 
 // ProcessBackend is what the daemon reads and writes about processes. The
 // concrete implementation is *memory.Store.
@@ -32,6 +32,7 @@ type ProcessBackend interface {
 	ProcessStop(id, by string) (bool, error)
 	ProcessDelete(id string) error
 	ProcessesOfSession(sessionID string) ([]memory.Process, error)
+	ProcessesRunning() (int, error)
 	GoalUpdateStatus(id, status string) error
 }
 
@@ -42,10 +43,10 @@ func (d *Daemon) ConfigureProcesses(store ProcessBackend, wake func()) {
 	d.procWake = wake
 }
 
-// SetMaxGoalSessions configures the concurrent goal-session cap. A value <= 0
-// falls back to DefaultMaxGoalSessions.
-func (d *Daemon) SetMaxGoalSessions(n int) {
-	d.maxGoalSessions = n
+// SetMaxRunning configures [processes] max_running, the cap a new goal
+// session counts against. A value <= 0 falls back to DefaultMaxRunning.
+func (d *Daemon) SetMaxRunning(n int) {
+	d.maxRunning = n
 }
 
 // goalProcessID names the pursue process of a goal's session.
@@ -53,7 +54,7 @@ func goalProcessID(goalID string) string { return "goal:" + goalID }
 
 // SpawnGoalSession starts the pursue process for goalID (docs/goal-sessions.md).
 // It is idempotent: a goal that already has its process returns (true, nil). At
-// the MaxGoalSessions cap it returns (false, nil); the goal itself is still
+// the max_running cap it returns (false, nil); the goal itself is still
 // recorded by the caller (goal_create) either way.
 func (d *Daemon) SpawnGoalSession(_ context.Context, goalID string) (bool, error) {
 	return d.spawnGoalProcess(memory.Process{
@@ -69,7 +70,9 @@ func (d *Daemon) SpawnGoalSession(_ context.Context, goalID string) (bool, error
 // non-empty, otherwise the fixed interval (PursueIdleInterval when neither is
 // set). Configuration owns the definition, so a config edit takes effect on the
 // next pass; the run state is left alone.
-func (d *Daemon) SpawnStandingSession(_ context.Context, goalID, role string, delegates bool, interval time.Duration, schedule string) (bool, error) {
+//
+// budget is the block's own budget; zero fields take [processes] budget.
+func (d *Daemon) SpawnStandingSession(_ context.Context, goalID, role string, delegates bool, interval time.Duration, schedule string, budget config.BudgetConfig) (bool, error) {
 	if interval <= 0 && schedule == "" {
 		interval = PursueIdleInterval
 	}
@@ -79,7 +82,7 @@ func (d *Daemon) SpawnStandingSession(_ context.Context, goalID, role string, de
 	owner := memory.Process{
 		ID: goalProcessID(goalID), Tool: "pursue", Mode: memory.ProcessLive,
 		SessionID: goalID, Owner: true, Role: role, Delegates: delegates, GoalID: goalID,
-		Schedule: schedule,
+		Schedule: schedule, BudgetTurns: budget.TurnsPerDay, BudgetTokens: budget.TokensPerDay,
 	}
 	if schedule == "" {
 		owner.IntervalSecs = int(interval.Seconds())
@@ -88,7 +91,7 @@ func (d *Daemon) SpawnStandingSession(_ context.Context, goalID, role string, de
 }
 
 // spawnGoalProcess writes a goal session's processes, bounded by the
-// MaxGoalSessions cap, and asks the runner to start them.
+// max_running cap, and asks the runner to start them.
 func (d *Daemon) spawnGoalProcess(owner memory.Process, attached []memory.Process) (bool, error) {
 	if d.procs == nil {
 		return false, fmt.Errorf("goal sessions require a configured process store")
@@ -98,11 +101,11 @@ func (d *Daemon) spawnGoalProcess(owner memory.Process, attached []memory.Proces
 		return false, err
 	}
 	if !found {
-		limit := d.maxGoalSessions
+		limit := d.maxRunning
 		if limit <= 0 {
-			limit = DefaultMaxGoalSessions
+			limit = DefaultMaxRunning
 		}
-		n, err := d.activeGoalSessionCount()
+		n, err := d.procs.ProcessesRunning()
 		if err != nil {
 			return false, err
 		}
@@ -162,20 +165,4 @@ func (d *Daemon) TeardownStandingSession(_ context.Context, goalID string) error
 		d.procWake()
 	}
 	return nil
-}
-
-// activeGoalSessionCount counts the goal sessions that are, or are trying to
-// be, running: owning processes bound to a goal and not stopped.
-func (d *Daemon) activeGoalSessionCount() (int, error) {
-	all, err := d.procs.ProcessList()
-	if err != nil {
-		return 0, err
-	}
-	n := 0
-	for _, p := range all {
-		if p.Owner && p.GoalID != "" && p.State != memory.ProcessStopped {
-			n++
-		}
-	}
-	return n, nil
 }

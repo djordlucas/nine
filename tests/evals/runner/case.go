@@ -136,6 +136,13 @@ type ProcessSetup struct {
 	Session   string         `yaml:"session"`
 	ReportTo  string         `yaml:"report_to"`
 	Args      map[string]any `yaml:"args"`
+	Budget    BudgetSetup    `yaml:"budget"`
+}
+
+// BudgetSetup is a [[process]] block's budget.
+type BudgetSetup struct {
+	TurnsPerDay  int `yaml:"turns_per_day"`
+	TokensPerDay int `yaml:"tokens_per_day"`
 }
 
 // WaitSpec gives background work time to happen. After the prompts, if any,
@@ -207,11 +214,29 @@ type SideEffects struct {
 	KV            map[string]StringMatch `yaml:"kv"`
 	Workflows     *WorkflowExpect        `yaml:"workflows"`
 	Goals         *GoalExpect            `yaml:"goals"`
-	Notifications *CountExpect           `yaml:"notifications"`
+	Notifications *NotificationExpect    `yaml:"notifications"`
 	Vectors       *VectorExpect          `yaml:"vectors"`
 	// GeneratedTools checks the tools Nine wrote, by name: whether one exists,
 	// and what its stored source says.
 	GeneratedTools map[string]GeneratedToolExpect `yaml:"generated_tools"`
+	// Processes checks processes by id: whether one exists, its state, and who
+	// stopped it.
+	Processes map[string]ProcessExpect `yaml:"processes"`
+}
+
+// NotificationExpect asserts the human feed: at least Min notices, and one
+// containing Contains when it is set.
+type NotificationExpect struct {
+	Min      int    `yaml:"min"`
+	Contains string `yaml:"contains"`
+}
+
+// ProcessExpect asserts one process: absent, or present with State and
+// StoppedBy when they are set.
+type ProcessExpect struct {
+	Absent    bool   `yaml:"absent"`
+	State     string `yaml:"state"`
+	StoppedBy string `yaml:"stopped_by"`
 }
 
 // GeneratedToolExpect asserts one generated tool: absent, or present with a
@@ -245,7 +270,7 @@ type GoalExpect struct {
 	PursueSpawned bool `yaml:"pursue_spawned"`
 }
 
-// CountExpect asserts a minimum count (notifications).
+// CountExpect asserts a minimum count.
 type CountExpect struct {
 	Min int `yaml:"min"`
 }
@@ -500,7 +525,8 @@ func (m StringMatch) validate() error {
 func (e Expect) hasAny() bool {
 	se := e.SideEffects
 	if len(se.Files) > 0 || len(se.StoredFiles) > 0 || len(se.KV) > 0 || se.Workflows != nil ||
-		se.Goals != nil || se.Notifications != nil || se.Vectors != nil {
+		se.Goals != nil || se.Notifications != nil || se.Vectors != nil ||
+		len(se.GeneratedTools) > 0 || len(se.Processes) > 0 {
 		return true
 	}
 	t := e.Trajectory

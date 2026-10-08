@@ -16,10 +16,11 @@ self-reflection, condition triggers and standing tools are all processes.
 A process is one row in `processes`, keyed by its id. **Configuration owns the
 definition** — tool, args, trigger, mode, session, role, delegation, goal, pipe — and **the
 runtime owns the run state**: `state` (`running` | `stopped` | `failing`), cursor, calls,
-cycles, failures, next tick, and `stopped_by`/`stopped_at`. Reconciling a definition never
+cycles, failures, next tick, `stopped_by`/`stopped_at`, and its budget's usage (R-PROC.11).
+The definition includes the process's own budget. Reconciling a definition never
 changes run state, except that a changed `args` restarts a slice process's cycle.
 
-`stopped_by` records who stopped a process — `operator`, `goal`, `self`, … — and decides
+`stopped_by` records who stopped a process — `operator`, `goal`, `budget`, `self`, … — and decides
 who may start it again: a process its goal stopped runs again when the goal is active; an
 operator's stop stays until an operator undoes it.
 
@@ -41,7 +42,9 @@ returns, fails, or it is stopped.
 
 - It has **no call deadline**. Every host call it makes carries its own bound.
 - Live instances run in their own pool, sized by `[processes] max_running` (default 14),
-  apart from the call slots; a full pool refuses another start.
+  apart from the call slots; a full pool refuses another start. `max_running` is also the
+  cap a goal session or standing tool Nine creates counts against, with every running
+  process: at the cap it is recorded and not started.
 - The work budget bounds the work **per trigger**: the host refills it when `next()`
   returns a trigger (`nine_budget_reset`), and only then.
 - A stop makes the pending `next()` or `turn()` fail with `E_STOPPED` and closes the
@@ -67,8 +70,15 @@ process, so a tool a model calls can never block in `next()`.
 A trigger is a clock tick (`every` xor `schedule`) or a report piped to the process's
 session. A live process's **first tick comes one cadence after it starts**, at boot as at
 creation; a tick that comes due while one waits is not queued twice. A slice process is
-called when its tick is due, continues an unfinished cycle at the delay it asks for, and
-backs off on failure (three failures make it `failing`).
+called when its tick is due and continues an unfinished cycle at the delay it asks for.
+
+**Health is the same for both modes.** A failure — a slice call that fails, a live program
+that throws or returns an error other than its stop — is retried after a backoff that
+doubles the process's cadence per consecutive failure, capped at 30 minutes. Three in a
+row make it `failing`, and that transition, not each failure, reaches the human feed. The
+failures clear on success: a slice cycle that completes, or a live program that handles a
+trigger and comes back to `next()` — a restart alone is not a recovery. Leaving `failing`
+reaches the human feed too.
 
 ---
 
@@ -101,6 +111,11 @@ trigger. The receiver takes it only while waiting in `next()`; otherwise, and wh
 live process owns that session and its agent cannot be woken, the report goes to the human
 feed. A condition trigger is a pipe from a predicate to an agent.
 
+What a pipe delivers **MUST** carry its sender's label, `[From process <id>: <text>]`, in
+the trigger's text and in a woken turn's input alike, so the receiving model can tell an
+upstream report from a person's instruction; the trigger's `from` names the sender too. The
+human feed's copy is unlabelled, prefixed with the sender and receiver instead.
+
 ---
 
 ## R-PROC.9 — shipped processes, self-model and reflection
@@ -123,15 +138,59 @@ when it is off.
 
 `[[process]]` declares a process: `name`, `tool`, `every` | `schedule`, `args`, `goal`
 (a goal the file owns, named after the process; `tool` must be `pursue`), `role`,
-`delegates`, `session` (attach), `report_to` (pipe), `enabled`. `[processes]` holds
-`max_running` and `authoritative`. Every mistake in a block **MUST** fail the load.
+`delegates`, `session` (attach), `report_to` (pipe), `budget`, `enabled`. `[processes]` holds
+`max_running`, `authoritative` and `budget`. Every mistake in a block — a budget above
+`[processes] budget` or negative among them — **MUST** fail the load.
 
 A goal process is reconciled with its goal: created when missing, its description kept in
 step, never resurrected once the agent finished it, and retired at boot when
 `authoritative` and no longer listed — never touching a goal a conversation created.
 
-`[[agent]]`, `[[standing_tool]]` and `[daemon] standing_agents_authoritative` are retired:
-a file that has one **MUST** fail to load with the `[[process]]` form to use instead.
+Any other process a block declares is marked declared. One whose block is gone at boot
+**MUST** be deleted: its session is kept, a process attached to its session is stopped, a
+process still piping to it has its reports go to the human feed, and the human feed is told.
+A process no block declared — a goal session, reflection, one Nine wrote — is never deleted
+this way.
+
+`[[agent]]`, `[[standing_tool]]`, `[daemon] standing_agents_authoritative`, `[daemon]
+max_goal_sessions` and `[tools.agent] max_standing` are retired: a file that has one **MUST**
+fail to load with what to use instead.
+
+---
+
+## R-PROC.11 — budgets
+
+Every process has a budget over a rolling day that starts at its first counted turn:
+`turns_per_day` and `tokens_per_day`, each its block's where set, else `[processes]
+budget`'s (default 200 and 2,000,000), never above it.
+
+- A turn that runs is counted, with the input and output tokens of its model calls,
+  whether it succeeds or fails.
+- Before a turn, a process whose day is over starts a new one at zero. One whose usage
+  has reached either limit **MUST NOT** run the turn: `turn()` fails with `E_BUDGET`, the
+  process is stopped with `stopped_by = budget`, its instance closes, and the human feed
+  is told when it runs again.
+- A process stopped by its budget **MUST** run again, with its usage at zero, once its
+  day is over, and the human feed is told.
+- An instance that ends by throwing after its process was stopped ended with the stop,
+  not with a failure.
+
+---
+
+## R-PROC.12 — process tools
+
+A conversation — a root session a person drives — holds `process_list`, `process_show`,
+`process_send`, `process_start` and `process_stop`, filtered by its role's allowlist. A
+process session and a sub-agent **MUST NOT** hold any of them.
+
+- `process_start` by a model **MUST** be refused, naming the reason, for a process stopped
+  by the operator, by its goal, or by its budget before its day is over; any other stopped
+  or failing process starts. The operator may start any process. Every start **MUST** be
+  refused at `[processes] max_running`.
+- `process_stop` records `stopped_by = model`.
+- `process_send` delivers to a running live process waiting for work, labelled
+  `[From conversation <id>: <text>]`; otherwise it is refused, and nothing reaches the
+  human feed.
 
 ---
 
@@ -139,6 +198,8 @@ a file that has one **MUST** fail to load with the `[[process]]` form to use ins
 
 `internal/toolvm/process.go` (`StartLive`, `ProcessHandler`, `nine:process`),
 `internal/runtime/process_live.go` (live runner, goal binding, pipes),
+`internal/runtime/process_budget.go` (budgets),
+`internal/runtime/process_control.go` (roster, start rule), `internal/agent/register_processes.go`,
 `internal/runtime/standing_tools.go` (slice runner, `ReconcileProcesses`),
 `internal/runtime/goal_session.go`, `internal/runtime/process_sessions.go`
 (`ProcessTurn`), `internal/memory/processes.go`, `cmd/nine/standing_agents.go`.

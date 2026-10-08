@@ -275,11 +275,6 @@ type ToolsAgentConfig struct {
 	// RequireApproval, which this deliberately overrides).
 	AllowStanding bool `toml:"allow_standing"`
 
-	// MaxStanding caps how many generated standing tools may exist at once.
-	// 0 uses runtime.DefaultMaxGeneratedStanding (4). Small on purpose: unlike a
-	// catalogued tool, each of these consumes cadence forever.
-	MaxStanding int `toml:"max_standing"`
-
 	// AllowNetworkDeps lifts the deps+net.http interlock. A package that can reach
 	// the network can exfiltrate whatever the tool sees, so a tool that both
 	// declares net.http AND resolves an external dependency is refused unless this
@@ -397,6 +392,8 @@ type ProcessConfig struct {
 	Session string `toml:"session"`
 	// ReportTo pipes what the process reports to that process's session.
 	ReportTo string `toml:"report_to"`
+	// Budget lowers [processes] budget for this process; it can never raise it.
+	Budget BudgetConfig `toml:"budget"`
 	// Enabled defaults to true; false declares a process without starting it.
 	Enabled *bool `toml:"enabled"`
 }
@@ -406,17 +403,61 @@ func (c ProcessConfig) IsEnabled() bool { return c.Enabled == nil || *c.Enabled 
 
 // ProcessesConfig is the `[processes]` table: limits shared by every process.
 type ProcessesConfig struct {
-	// MaxRunning is how many live processes may run at once; 0 is the default,
-	// 14 (today's ten goal sessions and four standing tools).
+	// MaxRunning is the one cap on processes running at once, live and slice
+	// alike: it sizes the live pool, and a process Nine creates at the cap is
+	// recorded and not started. 0 is the default, 14 (the ten goal sessions and
+	// four standing tools the two caps it replaced allowed).
 	MaxRunning int `toml:"max_running"`
 	// Authoritative treats the [[process]] list as the full desired state: a
 	// goal process no longer listed is removed and its goal archived at boot.
 	// Never touches a goal a conversation created.
 	Authoritative bool `toml:"authoritative"`
+	// Budget is every process's default budget; a block may lower it.
+	Budget BudgetConfig `toml:"budget"`
 }
 
 // DefaultMaxRunning is [processes] max_running when unset.
 const DefaultMaxRunning = 14
+
+// BudgetConfig bounds the model turns of one process over a rolling day
+// (adr/process-sessions.md §5): the turns its live program runs through
+// turn(), and the tokens those turns spend. Zero means "not set here".
+type BudgetConfig struct {
+	TurnsPerDay  int `toml:"turns_per_day"`
+	TokensPerDay int `toml:"tokens_per_day"`
+}
+
+// The default budget: generous enough that pursuing a goal never meets it, so
+// what it stops is a loop that runs away.
+const (
+	DefaultBudgetTurnsPerDay  = 200
+	DefaultBudgetTokensPerDay = 2_000_000
+)
+
+// BudgetOrDefault returns [processes] budget with each unset field defaulted.
+func (c ProcessesConfig) BudgetOrDefault() BudgetConfig {
+	b := c.Budget
+	if b.TurnsPerDay <= 0 {
+		b.TurnsPerDay = DefaultBudgetTurnsPerDay
+	}
+	if b.TokensPerDay <= 0 {
+		b.TokensPerDay = DefaultBudgetTokensPerDay
+	}
+	return b
+}
+
+// Within returns the budget a block's own budget gives under ceiling: each
+// field the block sets, else the ceiling's.
+func (b BudgetConfig) Within(ceiling BudgetConfig) BudgetConfig {
+	out := ceiling
+	if b.TurnsPerDay > 0 {
+		out.TurnsPerDay = min(b.TurnsPerDay, ceiling.TurnsPerDay)
+	}
+	if b.TokensPerDay > 0 {
+		out.TokensPerDay = min(b.TokensPerDay, ceiling.TokensPerDay)
+	}
+	return out
+}
 
 // MaxRunningOrDefault returns [processes] max_running, defaulted.
 func (c ProcessesConfig) MaxRunningOrDefault() int {
@@ -734,7 +775,6 @@ func (l LLMConfig) ThinkingEnabled() bool {
 type DaemonConfig struct {
 	SocketPath         string `toml:"socket_path"`
 	TaskTimeoutSeconds int    `toml:"task_timeout_seconds"` // default 1800 (30 min)
-	MaxGoalSessions    int    `toml:"max_goal_sessions"`    // default runtime.DefaultMaxGoalSessions when <= 0
 
 	// SelfReflection controls the dedicated self-reflection session: a Go
 	// duration for its cadence, or "off" to remove it. Empty uses the default.
@@ -1174,6 +1214,11 @@ func Load(path string) (*Config, error) {
 	if md.IsDefined("daemon", "standing_agents_authoritative") {
 		return nil, fmt.Errorf("%s: [daemon] standing_agents_authoritative is replaced by [processes] authoritative", path)
 	}
+	for _, k := range retiredLimits {
+		if md.IsDefined(k.key...) {
+			return nil, fmt.Errorf("%s: %s is replaced by [processes] max_running, the one cap on processes running at once (docs/configuration.md)", path, k.name)
+		}
+	}
 	warnUndecoded(path, md)
 
 	if err := cfg.Validate(); err != nil {
@@ -1223,7 +1268,10 @@ func (cfg *Config) Validate() error {
 	if err := validateMCPServers(cfg.MCP.Servers); err != nil {
 		return err
 	}
-	if err := validateProcesses(cfg.Process); err != nil {
+	if err := validateBudget("[processes] budget", cfg.Processes.Budget); err != nil {
+		return err
+	}
+	if err := validateProcesses(cfg.Process, cfg.Processes.BudgetOrDefault()); err != nil {
 		return err
 	}
 	if err := validateToolEntry("tools.agent", ToolEntry{Capabilities: cfg.Tools.Agent.Capabilities}); err != nil {
@@ -1471,7 +1519,7 @@ func ValidateCapabilityGrant(capability string, p CapabilityGrantParams) error {
 // runs unattended and indefinitely, and one an operator wrote and Nine silently
 // ignored is the worst outcome available, because nothing ever reports its
 // absence.
-func validateProcesses(blocks []ProcessConfig) error {
+func validateProcesses(blocks []ProcessConfig, ceiling BudgetConfig) error {
 	names := make(map[string]bool, len(blocks))
 	for _, b := range blocks {
 		if b.Name != "" {
@@ -1507,6 +1555,13 @@ func validateProcesses(blocks []ProcessConfig) error {
 			return fmt.Errorf("%s: report_to %q names no [[process]]", where, b.ReportTo)
 		case b.Session != "" && (b.Role != "" || b.Delegates):
 			return fmt.Errorf("%s: an attached process runs under its session's role; role and delegates belong to %q", where, b.Session)
+		case b.Budget.TurnsPerDay > ceiling.TurnsPerDay:
+			return fmt.Errorf("%s: budget turns_per_day %d is above [processes] budget's %d; a process may lower its budget, never raise it", where, b.Budget.TurnsPerDay, ceiling.TurnsPerDay)
+		case b.Budget.TokensPerDay > ceiling.TokensPerDay:
+			return fmt.Errorf("%s: budget tokens_per_day %d is above [processes] budget's %d; a process may lower its budget, never raise it", where, b.Budget.TokensPerDay, ceiling.TokensPerDay)
+		}
+		if err := validateBudget(where+" budget", b.Budget); err != nil {
+			return err
 		}
 		seen[b.Name] = true
 		if b.Every != "" {
@@ -1525,6 +1580,24 @@ func validateProcesses(blocks []ProcessConfig) error {
 		}
 	}
 	return nil
+}
+
+// validateBudget refuses a negative budget; zero means "not set here".
+func validateBudget(where string, b BudgetConfig) error {
+	if b.TurnsPerDay < 0 || b.TokensPerDay < 0 {
+		return fmt.Errorf("%s: turns_per_day and tokens_per_day cannot be negative", where)
+	}
+	return nil
+}
+
+// retiredLimits are the caps [processes] max_running replaced
+// (adr/process-sessions.md §5).
+var retiredLimits = []struct {
+	name string
+	key  []string
+}{
+	{"[daemon] max_goal_sessions", []string{"daemon", "max_goal_sessions"}},
+	{"[tools.agent] max_standing", []string{"tools", "agent", "max_standing"}},
 }
 
 // retiredBlocks are the tables [[process]] replaced (adr/process-sessions.md

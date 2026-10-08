@@ -180,11 +180,13 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 			case "deps":
 				return c.ToolsDeps(cfg)
 			case "standing":
-				return c.Standing(cfg)
+				return fmt.Errorf("`nine tools standing` is now `nine process list`, which lists every process")
 			}
-			return fmt.Errorf("usage: nine tools [reload|show <name>|delete <name>|deps|standing]")
+			return fmt.Errorf("usage: nine tools [reload|show <name>|delete <name>|deps]")
 		}
 		return c.Tools(cfg)
+	case "process", "processes":
+		return c.processCommand(cfg, args[1:])
 	case "tool":
 		if len(args) < 2 {
 			return fmt.Errorf("%s", toolUsage)
@@ -196,21 +198,10 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 				p = args[2]
 			}
 			return c.ToolValidate(cfg, p)
-		case "status":
-			if len(args) < 3 {
-				return fmt.Errorf("usage: nine tool status <standing-id>")
-			}
-			return c.StandingShow(cfg, args[2], 20)
-		case "logs":
-			if len(args) < 3 {
-				return fmt.Errorf("usage: nine tool logs <standing-id> [-n N]")
-			}
-			return c.StandingLogs(cfg, args[2], logLineCount(args[3:]))
+		case "status", "logs":
+			return fmt.Errorf("`nine tool %s` is now `nine process show <id> [-n N]`", args[1])
 		case "stop", "start":
-			if len(args) < 3 {
-				return fmt.Errorf("usage: nine tool %s <standing-id>", args[1])
-			}
-			return c.StandingControl(cfg, args[2], args[1])
+			return fmt.Errorf("`nine tool %s` is now `nine process %s <id>`", args[1], args[1])
 		case "call":
 			if len(args) < 3 {
 				return fmt.Errorf("usage: nine tool call <name> ['<json>'] [--live-state]")
@@ -386,7 +377,31 @@ func levenshtein(a, b string) int {
 	return prev[len(b)]
 }
 
-const toolUsage = "usage: nine tool <validate|status|logs|stop|start|call> …"
+const toolUsage = "usage: nine tool <validate|call> …"
+
+const processUsage = "usage: nine process [list | show <id> [-n N] | start <id> | stop <id> | send <id> <text>]"
+
+// processCommand runs `nine process …`; with no subcommand it lists.
+func (c *CLI) processCommand(cfg *config.Config, args []string) error {
+	if len(args) == 0 || args[0] == "list" {
+		return c.Processes(cfg)
+	}
+	if len(args) < 2 {
+		return fmt.Errorf("%s", processUsage)
+	}
+	switch args[0] {
+	case "show":
+		return c.ProcessShow(cfg, args[1], logLineCount(args[2:]))
+	case "start", "stop":
+		return c.ProcessControl(cfg, args[1], args[0])
+	case "send":
+		if len(args) < 3 {
+			return fmt.Errorf("usage: nine process send <id> <text>")
+		}
+		return c.ProcessSend(cfg, args[1], strings.Join(args[2:], " "))
+	}
+	return fmt.Errorf("%s", processUsage)
+}
 
 // logLineCount reads an optional `-n N` from the tail of an argument list.
 func logLineCount(rest []string) int {

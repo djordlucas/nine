@@ -125,8 +125,8 @@ an agent loop.
 session via `SpawnGoalSession` (see [`processes.md`](processes.md) R-PROC.9):
 
 - **Idempotent** — if a session for that goal ID already runs, it's a no-op.
-- **Capped** — `max_goal_sessions` (default **10**) bounds concurrently-running pursue
-  sessions. At the cap, the goal is still recorded but no session spawns.
+- **Capped** — `[processes] max_running` (default **14**) bounds running processes,
+  pursue sessions among them. At the cap, the goal is still recorded but no session spawns.
 - `goal_create`'s response includes `pursue_session: "spawned" | "limit_reached"`.
 - **Sub-goals** (`parent_type: "goal"`) do **not** get their own session — they are
   worked on inside the parent goal's pursue loop.

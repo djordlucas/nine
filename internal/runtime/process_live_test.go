@@ -19,16 +19,18 @@ type fakeSessions struct {
 	mu    sync.Mutex
 	turns []string // "<session>|<trigger>|<text>"
 	fail  error
+	// tokens is what each turn reports spending.
+	tokens int
 }
 
-func (f *fakeSessions) ProcessTurn(_ context.Context, id string, _ RoleParams, text, trigger string) (string, error) {
+func (f *fakeSessions) ProcessTurn(_ context.Context, id string, _ RoleParams, text, trigger string) (string, int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.turns = append(f.turns, id+"|"+trigger+"|"+text)
 	if f.fail != nil {
-		return "", f.fail
+		return "", f.tokens, f.fail
 	}
-	return "reply:" + text, nil
+	return "reply:" + text, f.tokens, nil
 }
 
 func (f *fakeSessions) seen() []string {
@@ -274,5 +276,41 @@ func TestReconcileProcessesMapsBlocks(t *testing.T) {
 	slice, _, _ := store.ProcessGet("scan")
 	if slice.Mode != memory.ProcessSlice || slice.ReportTo != "sec-watch" || slice.State != memory.ProcessRunning {
 		t.Errorf("slice process = %+v", slice)
+	}
+}
+
+// A live process that fails on every trigger reaches failing, and the feed is
+// told once; when its turns work again it recovers, and the feed is told that
+// too. A restart alone is not a recovery: were it one, the failures would
+// clear at each restart and the process would never reach failing.
+func TestLiveProcessFailingAndRecovery(t *testing.T) {
+	r, store, sessions := liveSetup(t, memory.Process{
+		ID: "digest", SessionID: "digest-session", IntervalSecs: 1, ReportTo: "nobody",
+	})
+	sessions.mu.Lock()
+	sessions.fail = errors.New("model unreachable")
+	sessions.mu.Unlock()
+
+	tickUntil(t, r, "the process failing", func() bool {
+		return processRow(t, store, "digest").State == memory.ProcessFailing
+	})
+	if p := processRow(t, store, "digest"); p.Failures < StandingFailureThreshold {
+		t.Errorf("failures = %d, want at least %d", p.Failures, StandingFailureThreshold)
+	}
+	if feed := feedText(t, store); strings.Count(feed, "has failed") != 1 {
+		t.Errorf("feed should report failing once:\n%s", feed)
+	}
+
+	sessions.mu.Lock()
+	sessions.fail = nil
+	sessions.mu.Unlock()
+	tickUntil(t, r, "the recovery", func() bool {
+		return processRow(t, store, "digest").State == memory.ProcessRunning
+	})
+	if p := processRow(t, store, "digest"); p.Failures != 0 {
+		t.Errorf("failures after recovery = %d, want 0", p.Failures)
+	}
+	if feed := feedText(t, store); !strings.Contains(feed, "Process digest recovered") {
+		t.Errorf("feed lacks the recovery:\n%s", feed)
 	}
 }

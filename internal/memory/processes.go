@@ -83,6 +83,20 @@ type Process struct {
 	StoppedBy string `json:"stopped_by,omitempty"`
 	StoppedAt string `json:"stopped_at,omitempty"`
 
+	// BudgetTurns and BudgetTokens are the definition's budget over a rolling
+	// day; 0 takes [processes] budget. UsageTurns and UsageTokens count the
+	// model turns its program ran and the tokens they spent since UsageSince,
+	// the first counted turn of the current day.
+	BudgetTurns  int    `json:"budget_turns,omitempty"`
+	BudgetTokens int    `json:"budget_tokens,omitempty"`
+	UsageTurns   int    `json:"usage_turns,omitempty"`
+	UsageTokens  int    `json:"usage_tokens,omitempty"`
+	UsageSince   string `json:"usage_since,omitempty"`
+
+	// Declared marks a process a [[process]] block declares: removing the
+	// block deletes it.
+	Declared bool `json:"declared,omitempty"`
+
 	CreatedAt string `json:"created_at,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
 }
@@ -105,16 +119,20 @@ func (s *Store) ProcessUpsertDefinition(t Process) error {
 	}
 	_, err := s.db.Exec(
 		`INSERT INTO processes(id, tool, args, interval_secs, schedule, generated, report_to,
-		                       mode, session_id, owner, role, delegates, goal_id, updated_at)
-		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		                       mode, session_id, owner, role, delegates, goal_id,
+		                       budget_turns, budget_tokens, declared, updated_at)
+		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		 ON CONFLICT(id) DO UPDATE SET
 		   tool=excluded.tool, args=excluded.args,
 		   interval_secs=excluded.interval_secs, schedule=excluded.schedule,
 		   report_to=excluded.report_to, mode=excluded.mode, session_id=excluded.session_id,
 		   owner=excluded.owner, role=excluded.role, delegates=excluded.delegates,
-		   goal_id=excluded.goal_id, updated_at=excluded.updated_at`,
+		   goal_id=excluded.goal_id, budget_turns=excluded.budget_turns,
+		   budget_tokens=excluded.budget_tokens, declared=excluded.declared,
+		   updated_at=excluded.updated_at`,
 		t.ID, t.Tool, args, t.IntervalSecs, t.Schedule, t.Generated, t.ReportTo,
-		mode, t.SessionID, t.Owner, t.Role, t.Delegates, t.GoalID, nowText())
+		mode, t.SessionID, t.Owner, t.Role, t.Delegates, t.GoalID,
+		t.BudgetTurns, t.BudgetTokens, t.Declared, nowText())
 	return err
 }
 
@@ -264,6 +282,36 @@ func (s *Store) ProcessStop(id, by string) (bool, error) {
 	return n > 0, err
 }
 
+// ProcessUsageAdd counts one model turn of a process and the tokens it spent,
+// starting the budget's day at this turn when none is under way.
+func (s *Store) ProcessUsageAdd(id string, tokens int) error {
+	_, err := s.db.Exec(
+		`UPDATE processes
+		 SET usage_turns = usage_turns + 1, usage_tokens = usage_tokens + ?,
+		     usage_since = CASE WHEN usage_since = '' THEN ? ELSE usage_since END,
+		     updated_at = ?
+		 WHERE id = ?`, tokens, nowText(), nowText(), id)
+	return err
+}
+
+// ProcessUsageReset ends a process's budget day: its usage starts again from
+// zero at the next counted turn.
+func (s *Store) ProcessUsageReset(id string) error {
+	_, err := s.db.Exec(
+		`UPDATE processes SET usage_turns = 0, usage_tokens = 0, usage_since = '', updated_at = ?
+		 WHERE id = ?`, nowText(), id)
+	return err
+}
+
+// ProcessesRunning counts the processes that are running or failing — still
+// trying — which is what [processes] max_running bounds.
+func (s *Store) ProcessesRunning() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM processes WHERE state IN (?, ?)`,
+		ProcessRunning, ProcessFailing).Scan(&n)
+	return n, err
+}
+
 // ProcessesStoppedBy returns the stopped processes a given party stopped.
 func (s *Store) ProcessesStoppedBy(by string) ([]Process, error) {
 	return s.queryProcesses(
@@ -279,9 +327,8 @@ func (s *Store) ProcessesOfSession(sessionID string) ([]Process, error) {
 		sessionID)
 }
 
-// ProcessDelete removes a process outright. Used when a generated one
-// is withdrawn; a config-declared one that leaves the file is *not* deleted, only
-// left unreconciled, matching how removing a standing agent behaves.
+// ProcessDelete removes a process outright: a generated one withdrawn, or a
+// declared one whose [[process]] block was removed. Its session is not touched.
 func (s *Store) ProcessDelete(id string) error {
 	_, err := s.db.Exec(`DELETE FROM processes WHERE id = ?`, id)
 	return err
@@ -290,6 +337,7 @@ func (s *Store) ProcessDelete(id string) error {
 const processColumns = `id, tool, args, interval_secs, schedule, state, cursor,
 	        calls, cycles, failures, last_error, last_call_at, next_at, generated,
 	        report_to, mode, session_id, owner, role, delegates, goal_id, stopped_by, stopped_at,
+	        budget_turns, budget_tokens, usage_turns, usage_tokens, usage_since, declared,
 	        created_at, updated_at`
 
 func scanProcess(row rowScanner) (Process, error) {
@@ -297,7 +345,9 @@ func scanProcess(row rowScanner) (Process, error) {
 	err := row.Scan(&t.ID, &t.Tool, &t.Args, &t.IntervalSecs, &t.Schedule, &t.State,
 		&t.Cursor, &t.Calls, &t.Cycles, &t.Failures, &t.LastError, &t.LastCallAt,
 		&t.NextAt, &t.Generated, &t.ReportTo, &t.Mode, &t.SessionID, &t.Owner, &t.Role,
-		&t.Delegates, &t.GoalID, &t.StoppedBy, &t.StoppedAt, &t.CreatedAt, &t.UpdatedAt)
+		&t.Delegates, &t.GoalID, &t.StoppedBy, &t.StoppedAt,
+		&t.BudgetTurns, &t.BudgetTokens, &t.UsageTurns, &t.UsageTokens, &t.UsageSince,
+		&t.Declared, &t.CreatedAt, &t.UpdatedAt)
 	return t, err
 }
 

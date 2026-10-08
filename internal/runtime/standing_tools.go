@@ -76,6 +76,12 @@ type StandingRunner struct {
 	lives    map[string]*liveProc
 	// wake asks the run loop for a pass now (Wake).
 	wake chan struct{}
+	// budget is [processes] budget, the ceiling of every process's own
+	// (process_budget.go).
+	budget config.BudgetConfig
+	// maxRunning is [processes] max_running, which a start counts against
+	// (process_control.go).
+	maxRunning int
 }
 
 // Wake asks for a pass now rather than at the next tick: a process just written
@@ -129,57 +135,6 @@ func (r *StandingRunner) Log() *standingLog {
 	return r.log
 }
 
-// Status returns every standing run with its recent activity, for the roster.
-func (r *StandingRunner) Status() ([]StandingStatus, error) {
-	if r == nil {
-		return nil, nil
-	}
-	tools, err := r.store.ProcessList()
-	if err != nil {
-		return nil, err
-	}
-	out := make([]StandingStatus, 0, len(tools))
-	for _, t := range tools {
-		out = append(out, standingStatusOf(t, nil))
-	}
-	return out, nil
-}
-
-// StatusOf returns one standing run with up to n recent log lines.
-func (r *StandingRunner) StatusOf(id string, n int) (StandingStatus, bool, error) {
-	if r == nil {
-		return StandingStatus{}, false, nil
-	}
-	t, found, err := r.store.ProcessGet(id)
-	if err != nil || !found {
-		return StandingStatus{}, found, err
-	}
-	return standingStatusOf(t, r.log.recent(id, n)), true, nil
-}
-
-// SetState stops or starts a standing run, journalling the transition.
-//
-// Stopping is exact for the same reason cancelling a tool job is: the daemon
-// owns when the next call happens, so not scheduling one *is* the stop. A call
-// already in flight runs out its own deadline and its result is discarded, since
-// the store's writes refuse a stopped row.
-func (r *StandingRunner) SetState(id, state string) (bool, error) {
-	if r == nil {
-		return false, fmt.Errorf("standing tools are not enabled here")
-	}
-	ok, err := r.store.ProcessSetState(id, state)
-	if err != nil || !ok {
-		return ok, err
-	}
-	evType := evStandingStopped
-	if state == memory.ProcessRunning {
-		evType = evStandingStarted
-	}
-	journalTransition(r.store, id, evType, map[string]any{"by": "operator"})
-	slog.Info("standing tool "+state, "id", id)
-	return true, nil
-}
-
 // ReconcileProcesses brings the store's processes in line with the file's
 // [[process]] blocks — every block but goal processes, which the daemon's goal
 // reconciliation owns, since it creates and retires their goals too.
@@ -192,9 +147,9 @@ func (r *StandingRunner) SetState(id, state string) (bool, error) {
 // A block whose `args` changed has its cycle restarted: the cursor it holds was
 // produced under the old arguments, and resuming with it would be incoherent.
 //
-// Removing a block stops Nine reconciling it; it does not delete the row, so its
-// history stays readable and an operator who deleted a line by accident has not
-// lost anything.
+// Removing a block deletes the process it declared (deleteUndeclared); its
+// session is kept, so re-adding the block brings the process back with its
+// history.
 //
 // host decides each process's mode from its tool: a live tool makes a live
 // process, any other a slice one.
@@ -230,6 +185,8 @@ func ReconcileProcesses(store *memory.Store, host *toolvm.Host, blocks []config.
 			ID: b.Name, Tool: b.Tool, Args: string(args),
 			IntervalSecs: interval, Schedule: b.Schedule,
 			ReportTo: b.ReportTo, Mode: memory.ProcessSlice, Owner: true,
+			BudgetTurns: b.Budget.TurnsPerDay, BudgetTokens: b.Budget.TokensPerDay,
+			Declared: true,
 		}
 		if t := liveTool(host, b.Tool); t != nil {
 			p.Mode = memory.ProcessLive
@@ -274,6 +231,54 @@ func ReconcileProcesses(store *memory.Store, host *toolvm.Host, blocks []config.
 			}
 			slog.Info("process arguments changed; its cycle restarts", "name", b.Name)
 		}
+	}
+	deleteUndeclared(store, byName)
+}
+
+// deleteUndeclared deletes the processes a [[process]] block declared that the
+// file no longer has (adr/process-sessions.md §9). The session a deleted
+// process drove is kept as history. A process still piping to it has its
+// reports go to the human feed, as undeliverable ones do; one attached to its
+// session is stopped. The human feed is told what went.
+func deleteUndeclared(store *memory.Store, blocks map[string]config.ProcessConfig) {
+	all, err := store.ProcessList()
+	if err != nil {
+		slog.Warn("process: list for deletion", "err", err)
+		return
+	}
+	for _, p := range all {
+		if !p.Declared {
+			continue
+		}
+		if _, still := blocks[p.ID]; still {
+			continue
+		}
+		if err := store.ProcessDelete(p.ID); err != nil {
+			slog.Warn("process: delete", "id", p.ID, "err", err)
+			continue
+		}
+		journalTransition(store, p.ID, evProcessDeleted, map[string]any{"tool": p.Tool, "by": "config"})
+		msg := fmt.Sprintf("Process %s was removed from nine.toml and is deleted.", p.ID)
+		if p.SessionID != "" && p.Owner {
+			msg += fmt.Sprintf(" Its session %s is kept as history.", p.SessionID)
+		}
+		for _, o := range all {
+			switch {
+			case o.ID == p.ID:
+			case o.ReportTo == p.ID:
+				msg += fmt.Sprintf(" Process %s still pipes to it; its reports go to the human feed.", o.ID)
+			case p.Owner && o.SessionID == p.SessionID && !o.Owner && o.State != memory.ProcessStopped:
+				if _, err := store.ProcessStop(o.ID, ByOperator); err != nil {
+					slog.Warn("process: stop an attached process", "id", o.ID, "err", err)
+					continue
+				}
+				msg += fmt.Sprintf(" Process %s, attached to its session, is stopped.", o.ID)
+			}
+		}
+		if err := store.UserNotificationCreate(memory.NewID(), "", msg); err != nil {
+			slog.Warn("process: notify its deletion", "id", p.ID, "err", err)
+		}
+		slog.Info("process deleted: its block was removed", "id", p.ID)
 	}
 }
 
@@ -383,7 +388,7 @@ func (r *StandingRunner) runOnce(ctx context.Context, st memory.Process) {
 		journalTransition(r.store, st.ID, evStandingRecovered, map[string]any{
 			"tool": st.Tool, "after_failures": st.Failures,
 		})
-		r.notifyHuman(fmt.Sprintf("Standing tool %s recovered and is running normally again.", st.ID))
+		r.notifyHuman(fmt.Sprintf("Process %s recovered and is running normally again.", st.ID))
 	}
 }
 
@@ -430,12 +435,16 @@ func (r *StandingRunner) report(st memory.Process, out toolvm.Output) {
 // deliberately: a finding that reached nobody is worse than one that reached
 // the wrong inbox, and a silently-dropped condition is exactly the failure an
 // operator would never discover.
+//
+// What arrives carries its sender's label (pipeLabel), so the receiving model
+// can tell an upstream report from a person's instruction.
 func (r *StandingRunner) pipe(st memory.Process, text string) bool {
 	delivered := false
-	if handled, ok := r.Deliver(st.ReportTo, text, st.ID); handled {
+	labeled := pipeLabel(st.ID, text)
+	if handled, ok := r.Deliver(st.ReportTo, labeled, st.ID); handled {
 		delivered = ok
 	} else if r.waker != nil {
-		delivered = r.waker.WakeAgent(st.ReportTo, text)
+		delivered = r.waker.WakeAgent(st.ReportTo, labeled)
 	}
 	if delivered {
 		slog.Info("process report delivered", "id", st.ID, "to", st.ReportTo, "tool", st.Tool)
@@ -445,6 +454,15 @@ func (r *StandingRunner) pipe(st memory.Process, text string) bool {
 		"id", st.ID, "to", st.ReportTo)
 	r.notifyHuman(fmt.Sprintf("[%s → %s, not running] %s", st.ID, st.ReportTo, text))
 	return false
+}
+
+// pipeLabel marks text piped from process from (adr/process-sessions.md §7).
+// What a pipe carries is data, and data reaching a model-driven receiver is in
+// its prompt: a process that fetches web pages and pipes them on is an
+// injection path into the receiver's session. The label lets the model tell
+// an upstream report from a person's instruction.
+func pipeLabel(from, text string) string {
+	return fmt.Sprintf("[From process %s: %s]", from, text)
 }
 
 func (r *StandingRunner) notifyHuman(msg string) {
@@ -490,7 +508,7 @@ func (r *StandingRunner) recordFailure(st memory.Process, cause error) {
 			"tool": st.Tool, "by": "auto-disable", "consecutive": failures,
 		})
 		r.notifyHuman(fmt.Sprintf(
-			"Standing tool %s (written by Nine) has been switched off after %d consecutive failures. "+
+			"Process %s (written by Nine) has been switched off after %d consecutive failures. "+
 				"Last error: %s", st.ID, failures, oneLine(cause.Error())))
 		return
 	}
@@ -503,7 +521,7 @@ func (r *StandingRunner) recordFailure(st memory.Process, cause error) {
 			"tool": st.Tool, "consecutive": failures, "error": oneLine(cause.Error()),
 		})
 		r.notifyHuman(fmt.Sprintf(
-			"Standing tool %s has failed %d times in a row and is backing off. Last error: %s",
+			"Process %s has failed %d times in a row and is backing off. Last error: %s",
 			st.ID, failures, oneLine(cause.Error())))
 	}
 }

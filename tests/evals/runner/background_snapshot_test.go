@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"nine/internal/config"
 	"nine/internal/embed/keyword"
 	"nine/internal/llm"
 	"nine/internal/memory"
@@ -116,7 +117,7 @@ func spawnGoalBound(t *testing.T, lv *live, id, role, description string) {
 	if err := lv.Result.Store.GoalCreate(id, description, "", runtime.ConfigGoalOrigin); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := lv.Daemon.SpawnStandingSession(context.Background(), id, role, false, time.Second, ""); err != nil {
+	if _, err := lv.Daemon.SpawnStandingSession(context.Background(), id, role, false, time.Second, "", config.BudgetConfig{}); err != nil {
 		t.Fatal(err)
 	}
 }

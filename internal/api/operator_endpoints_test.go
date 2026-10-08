@@ -554,3 +554,81 @@ func TestDeleteTool(t *testing.T) {
 		t.Errorf("200 body = %+v", got)
 	}
 }
+
+// The process endpoints map the daemon's replies: the roster and one process,
+// the operator's start and stop, and a message. An unknown id is 404; any
+// other refusal — already running, the running cap, a busy process — is 409.
+func TestProcessEndpoints(t *testing.T) {
+	digest := protocol.ProcessInfo{
+		ID: "digest", Tool: "pursue", Mode: "live", State: "stopped", StoppedBy: "budget",
+		Trigger: "every 5m0s", Session: "digest", BudgetTurns: 200, BudgetTurnsPerDay: 200,
+		BudgetTokens: 5000, BudgetTokensPerDay: 2000000, BudgetResetsAt: "2026-10-08T07:00:00Z",
+		Recent: []protocol.ProcessLogLine{{At: "2026-10-07T07:00:00Z", Outcome: "paused", Detail: "budget spent"}},
+	}
+	unknown := func(id string) []protocol.Msg {
+		return errReply(`no such process: "` + id + `" (process_list shows them)`)
+	}
+	sock := scriptedDaemon(t, func(m protocol.Msg) []protocol.Msg {
+		switch m.Type {
+		case protocol.TypeProcessList:
+			return textReply(t, protocol.TypeProcessList, []protocol.ProcessInfo{digest})
+		case protocol.TypeProcessShow:
+			if m.AgentID != "digest" {
+				return unknown(m.AgentID)
+			}
+			return textReply(t, protocol.TypeProcessShow, digest)
+		case protocol.TypeProcessControl:
+			switch m.AgentID {
+			case "digest":
+				return []protocol.Msg{protocol.NewTextMsg(protocol.TypeProcessControl, "digest "+m.Text+"ed")}
+			case "busy":
+				return errReply("process busy not started: 14 processes are running, the maximum on this instance ([processes] max_running); stop one first")
+			}
+			return unknown(m.AgentID)
+		case protocol.TypeProcessSend:
+			if m.AgentID == "busy" {
+				return errReply("process busy is busy with a trigger and did not take the message; send it again later")
+			}
+			if m.AgentID != "digest" || m.Text != "check the feeds" {
+				return unknown(m.AgentID)
+			}
+			return []protocol.Msg{protocol.NewTextMsg(protocol.TypeProcessSend, "sent to digest")}
+		}
+		return errReply("unexpected " + string(m.Type))
+	})
+
+	w := doAt(t, sock, http.MethodGet, "/api/v1/processes", "")
+	var list struct {
+		Data []struct {
+			ID     string `json:"id"`
+			State  string `json:"state"`
+			Budget struct {
+				Turns, TurnsPerDay int
+				ResetsAt           string `json:"resets_at"`
+			} `json:"budget"`
+		} `json:"data"`
+	}
+	decodeJSON(t, w, &list)
+	if w.Code != http.StatusOK || len(list.Data) != 1 || list.Data[0].ID != "digest" || list.Data[0].Budget.ResetsAt == "" {
+		t.Errorf("GET /processes = %d %+v", w.Code, list)
+	}
+
+	for _, tc := range []struct {
+		method, target, body string
+		want                 int
+	}{
+		{http.MethodGet, "/api/v1/processes/digest", "", http.StatusOK},
+		{http.MethodGet, "/api/v1/processes/nope", "", http.StatusNotFound},
+		{http.MethodPost, "/api/v1/processes/digest/start", "", http.StatusOK},
+		{http.MethodPost, "/api/v1/processes/busy/start", "", http.StatusConflict},
+		{http.MethodPost, "/api/v1/processes/nope/stop", "", http.StatusNotFound},
+		{http.MethodPost, "/api/v1/processes/digest/stop", "", http.StatusOK},
+		{http.MethodPost, "/api/v1/processes/digest/messages", `{"text":"check the feeds"}`, http.StatusOK},
+		{http.MethodPost, "/api/v1/processes/busy/messages", `{"text":"x"}`, http.StatusConflict},
+		{http.MethodPost, "/api/v1/processes/digest/messages", `{"text":" "}`, http.StatusBadRequest},
+	} {
+		if w := doAt(t, sock, tc.method, tc.target, tc.body); w.Code != tc.want {
+			t.Errorf("%s %s = %d, want %d (body %s)", tc.method, tc.target, w.Code, tc.want, w.Body.String())
+		}
+	}
+}

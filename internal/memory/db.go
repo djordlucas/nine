@@ -588,6 +588,12 @@ func initSchema(d db) error {
 			goal_id       TEXT NOT NULL DEFAULT '',
 			stopped_by    TEXT NOT NULL DEFAULT '',
 			stopped_at    TEXT NOT NULL DEFAULT '',
+			budget_turns  INTEGER NOT NULL DEFAULT 0,
+			budget_tokens INTEGER NOT NULL DEFAULT 0,
+			usage_turns   INTEGER NOT NULL DEFAULT 0,
+			usage_tokens  INTEGER NOT NULL DEFAULT 0,
+			usage_since   TEXT NOT NULL DEFAULT '',
+			declared      INTEGER NOT NULL DEFAULT 0,
 			created_at    TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			updated_at    TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,

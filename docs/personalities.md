@@ -118,7 +118,9 @@ max_concurrent = 1
 
 [daemon]
 socket_path = "/tmp/nine.sock"
-max_goal_sessions = 5
+
+[processes]
+max_running = 5
 
 # The personality as a standing agent
 [[process]]

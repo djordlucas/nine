@@ -32,10 +32,11 @@ type generatedTools struct {
 	bundler *deps.Bundler
 	// allowNetworkDeps lifts the deps+net.http interlock (§4.4).
 	allowNetworkDeps bool
-	// allowStanding and maxStanding bound the standing flavour: whether Nine may
-	// ask for one at all, and how many may exist.
+	// allowStanding and maxRunning bound the standing flavour: whether Nine may
+	// ask for one at all, and [processes] max_running, the cap on processes
+	// running at once that a new one counts against.
 	allowStanding bool
-	maxStanding   int
+	maxRunning    int
 	// standingLog is the driver's recent-activity ring, so deleting a tool also
 	// drops its buffer rather than leaking one entry set per deleted tool.
 	standingLog *standingLog
@@ -64,24 +65,21 @@ func NewGeneratedToolStore(store *memory.Store, host *toolvm.Host, mgr toolOwner
 	return NewGeneratedToolStoreWithStanding(store, host, mgr, bundler, allowNetworkDeps, false, 0)
 }
 
-// DefaultMaxGeneratedStanding caps how many standing tools Nine may have written
-// itself. Small on purpose: unlike a catalogued tool, which costs nothing until
-// called, each of these consumes cadence forever.
-const DefaultMaxGeneratedStanding = 4
-
 // NewGeneratedToolStoreWithStanding is NewGeneratedToolStore with the standing
-// flavour's operator policy.
-func NewGeneratedToolStoreWithStanding(store *memory.Store, host *toolvm.Host, mgr toolOwner, bundler *deps.Bundler, allowNetworkDeps, allowStanding bool, maxStanding int) agent.GeneratedToolStore {
+// flavour's operator policy: whether Nine may promote a tool to a process, and
+// [processes] max_running, the cap a new one counts against (<= 0 is the
+// default).
+func NewGeneratedToolStoreWithStanding(store *memory.Store, host *toolvm.Host, mgr toolOwner, bundler *deps.Bundler, allowNetworkDeps, allowStanding bool, maxRunning int) agent.GeneratedToolStore {
 	if store == nil || host == nil || !host.AgentEnabled() {
 		return nil
 	}
-	if maxStanding <= 0 {
-		maxStanding = DefaultMaxGeneratedStanding
+	if maxRunning <= 0 {
+		maxRunning = DefaultMaxRunning
 	}
 	return &generatedTools{
 		store: store, host: host, mgr: mgr, bundler: bundler,
 		allowNetworkDeps: allowNetworkDeps,
-		allowStanding:    allowStanding, maxStanding: maxStanding,
+		allowStanding:    allowStanding, maxRunning: maxRunning,
 	}
 }
 
@@ -216,22 +214,20 @@ func (g *generatedTools) checkStandingRequest(spec agent.GeneratedToolSpec) erro
 		}
 	}
 
-	// The cap counts only generated runs: an operator's own [[standing_tool]]
-	// blocks are their business and are bounded by their file.
-	existing, err := g.store.ProcessList()
+	// The cap is max_running, the one cap on processes running at once. A
+	// rewrite of a standing tool that is already running does not count twice.
+	n, err := g.store.ProcessesRunning()
 	if err != nil {
 		return err
 	}
-	n := 0
-	for _, st := range existing {
-		if st.Generated && st.ID != standingIDFor(spec.Name) {
-			n++
-		}
+	if p, ok, err := g.store.ProcessGet(standingIDFor(spec.Name)); err == nil && ok &&
+		p.State != memory.ProcessStopped {
+		n--
 	}
-	if n >= g.maxStanding {
+	if n >= g.maxRunning {
 		return fmt.Errorf(
-			"you already have %d standing tools, the maximum on this instance. "+
-				"Stop one you no longer need before adding another", g.maxStanding)
+			"%d processes are already running, the maximum on this instance ([processes] max_running). "+
+				"Stop one you no longer need before adding another", g.maxRunning)
 	}
 	return nil
 }

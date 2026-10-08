@@ -34,12 +34,12 @@ max_tokens      = 0             # tokens one agent-loop reply may generate; 0 = 
 [daemon]
 socket_path             = "/tmp/nine.sock"
 task_timeout_seconds    = 1800  # default sub-agent group timeout (30 min); <=0 → 1800
-max_goal_sessions       = 10    # concurrent pursue sessions; <=0 → default 10
 event_retention_turns   = 0     # journal scrub: keep last N turns/agent; 0 → default, <0 → keep all
 event_retention_days    = 0     # journal scrub: max event age in days; 0 → no age limit
 related_sessions_index  = true  # out-of-band related-session indexing + surfacing (default on; no-op without embedder)
 # [[process]] … declared processes, standing agents among them (see processes contract)
-# [processes]  max_running, authoritative
+# [processes]  max_running (the one cap on running processes), authoritative,
+#              budget = { turns_per_day, tokens_per_day } (200 and 2000000 a rolling day)
 
 [plugins]
 bin = ""                        # dir of plugins shipping their own binary; Nine ships none —

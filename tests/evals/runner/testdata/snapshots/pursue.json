@@ -702,6 +702,22 @@
           }
         },
         {
+          "name": "process_show",
+          "description": "Show one process in detail: its state and who stopped it, its trigger, session, goal and pipe, its budget use and when that resets, its last error, and its recent activity.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The process id, as process_list shows it."
+              }
+            }
+          }
+        },
+        {
           "name": "copy_file",
           "description": "Copy a file inside the WORKSPACE FILESYSTEM. The contents stream from one path to the other without passing through your context, so a large file costs nothing to duplicate. Refuses an existing destination unless overwrite is true.",
           "input_schema": {
@@ -984,6 +1000,67 @@
               }
             }
           }
+        },
+        {
+          "name": "process_list",
+          "description": "List the processes running in the background — goal sessions, standing agents, reflection, watchers, standing tools — with each one's state, trigger and budget use. Use it to see what runs between conversations.",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "name": "process_send",
+          "description": "Send a message to a running live process; it receives it as its next trigger. It does not wait for an answer: the process answers through what it writes — files, memory, the notification feed. Refused when the process is stopped, busy, or a slice process with no session.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "id",
+              "text"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The process id, as process_list shows it."
+              },
+              "text": {
+                "type": "string",
+                "description": "The message."
+              }
+            }
+          }
+        },
+        {
+          "name": "process_start",
+          "description": "Start a stopped process. It runs under its own grants, role and budget, so starting it grants nothing new. Refused for a process the operator stopped, one its goal stopped (reactivate the goal instead), one paused by its budget until the budget resets, and at the running-process cap.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The process id, as process_list shows it."
+              }
+            }
+          }
+        },
+        {
+          "name": "process_stop",
+          "description": "Stop a process. A model may start it again later; one the operator stops only the operator can.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The process id, as process_list shows it."
+              }
+            }
+          }
         }
       ]
     }
@@ -1016,7 +1093,7 @@
       "turn": 1,
       "type": "context_update",
       "payload": {
-        "used": 7476,
+        "used": 7978,
         "budget": 100000
       }
     },
@@ -1071,6 +1148,7 @@
           "job_check",
           "job_list",
           "job_cancel",
+          "process_show",
           "copy_file",
           "move_file",
           "delete_file",
@@ -1083,10 +1161,14 @@
           "time",
           "trash_list",
           "web_page_read",
-          "web_search"
+          "web_search",
+          "process_list",
+          "process_send",
+          "process_start",
+          "process_stop"
         ],
         "max_tokens": 2048,
-        "tokens_used": 7476,
+        "tokens_used": 7978,
         "budget": 100000,
         "llm_call_n": 1
       }
