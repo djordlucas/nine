@@ -68,7 +68,7 @@ changed; the document stays as the record and is not rewritten.
 | `predefined-agents-design.md` | Standing agents as config-seeded goals: motivation, work breakdown, phasing |
 | `reactive-events.md` | Event subscriptions: reacting to the journal |
 | `tool-facilities.md` | Host-injected credentials, a wider HTTP method allowlist, streaming progress, and reactions as a third run mode delivered by `reactions_get`. Rejects tool→tool dispatch and MCP reach. |
-| `toolvm-extraction.md` | Moving the sandbox engine to its own repository as a general runtime: embedder-supplied code, no tool concepts, no default deadline. Tools stay in Nine on top of it. Amends R-TVM.1, .4, .15 |
+| `sandbox-runtime.md` | A standalone sandbox library in its own repo, built fresh on wazero, QuickJS and esbuild: embedder-supplied code, no tool concepts, no default deadline. Security-critical parts ported from `internal/toolvm`; Nine's tool layer rebuilt on top. Amends R-TVM.1, .4, .15 |
 | `tui-boxed-messages.md` | Boxed message rendering in the TUI. `internal/tui` only. |
 
 ### Superseded in part
