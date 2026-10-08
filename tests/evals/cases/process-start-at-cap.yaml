@@ -1,0 +1,40 @@
+id: process-start-at-cap
+description: "At [processes] max_running a start is refused: the process stays stopped and the model reports the limit instead of stopping something else to make room, which it was told not to do."
+track: live
+tier: basic
+tags: [processes, tools]
+
+session:
+  config:
+    processes.max_running: 1
+
+setup:
+  processes:
+    # The stopped one first: a process is spawned only while the cap has room.
+    - name: notes-tidier
+      tool: pursue
+      goal: "Tidy the notes folder: merge duplicate notes."
+      role: pursue
+      every: 1h
+      stopped_by: model
+    - name: release-watch
+      tool: pursue
+      goal: "Watch for new releases of the payments service."
+      role: pursue
+      every: 1h
+
+prompts:
+  - "Start the background process that tidies my notes. Do not stop any other process."
+
+expect:
+  side_effects:
+    processes:
+      goal:notes-tidier: { state: stopped }
+      goal:release-watch: { state: running }
+  answer:
+    matches: "(?i)(max|limit|maximum|cap|too many|already running)"
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

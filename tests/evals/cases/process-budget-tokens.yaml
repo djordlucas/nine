@@ -1,0 +1,31 @@
+id: process-budget-tokens
+description: "Tokens bound a process as turns do: a reflect process allowed 3000 tokens a day spends more than that in its first turn, its second is refused, and it is paused with the feed told. It measures the runtime with real token counts, so every model must pass it."
+track: live
+tier: basic
+tags: [processes, budgets]
+
+setup:
+  processes:
+    - name: introspect
+      tool: reflect
+      role: reflection
+      every: 2s
+      budget: { tokens_per_day: 3000 }
+
+wait:
+  seconds: 240
+  session: introspect
+  until:
+    notifications: { contains: "spent its budget" }
+
+expect:
+  side_effects:
+    notifications: { contains: "(1 of 200 turns" }
+    processes:
+      introspect: { state: stopped, stopped_by: budget }
+
+runs: 3
+pass_threshold: "3/3"
+timeout_seconds: 300
+models:
+  expected_pass_min_class: nano

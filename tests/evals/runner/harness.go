@@ -181,7 +181,14 @@ func startProcesses(ctx context.Context, lv *live, setup []ProcessSetup) error {
 
 	store := lv.Result.Store
 	runtime.ReconcileProcesses(store, lv.Tools, blocks)
-	for _, b := range blocks {
+	for _, p := range setup {
+		if p.Goal == "" {
+			if err := applyStartState(store, p.Name, p); err != nil {
+				return err
+			}
+		}
+	}
+	for i, b := range blocks {
 		if b.Goal == "" {
 			continue
 		}
@@ -203,8 +210,39 @@ func startProcesses(ctx context.Context, lv *live, setup []ProcessSetup) error {
 		if _, err := lv.Daemon.SpawnStandingSession(ctx, b.Name, role, b.Delegates, every, b.Schedule, b.Budget); err != nil {
 			return err
 		}
+		// At once, so a process a case starts stopped does not count against
+		// max_running when the next block is spawned.
+		if err := applyStartState(store, "goal:"+b.Name, setup[i]); err != nil {
+			return err
+		}
 	}
 	lv.Processes.Wake()
+	return nil
+}
+
+// applyStartState puts process id in the state the case starts it in: its
+// goal paused, or stopped by a given party, before the runner's first pass.
+func applyStartState(store *memory.Store, id string, p ProcessSetup) error {
+	stoppedBy := p.StoppedBy
+	if p.GoalStatus != "" {
+		if err := store.GoalUpdateStatus(p.Name, p.GoalStatus); err != nil {
+			return fmt.Errorf("process %s: goal status: %w", p.Name, err)
+		}
+		if p.GoalStatus != "active" && stoppedBy == "" {
+			stoppedBy = "goal"
+		}
+	}
+	if stoppedBy == "" {
+		return nil
+	}
+	if stoppedBy == "budget" {
+		if err := store.ProcessUsageAdd(id, 0); err != nil {
+			return fmt.Errorf("process %s: start a budget day: %w", id, err)
+		}
+	}
+	if ok, err := store.ProcessStop(id, stoppedBy); err != nil || !ok {
+		return fmt.Errorf("process %s: stop by %s: ok=%v err=%v", id, stoppedBy, ok, err)
+	}
 	return nil
 }
 
@@ -415,7 +453,7 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 		TaskTimeoutSeconds:  c.TimeoutSecs,
 		HITL:                hitl,
 		DefaultLeafRole:     "executor",
-		MaxRunning:          runtime.DefaultMaxRunning,
+		MaxRunning:          caseInt(c, "processes.max_running", runtime.DefaultMaxRunning),
 		RoleFactory:         roleFactory,
 	})
 	daemon := asm.Daemon
@@ -599,6 +637,17 @@ func maxToolOutputTokens(harnessDefault int, c *Case) int {
 		return int(n)
 	}
 	return harnessDefault
+}
+
+// caseInt reads an integer session.config override, or def when it is absent.
+func caseInt(c *Case, key string, def int) int {
+	switch v := c.Session.Config[key].(type) {
+	case int:
+		return v
+	case float64:
+		return int(v)
+	}
+	return def
 }
 
 // caseBool reads a boolean session.config override; absent or non-bool is false.

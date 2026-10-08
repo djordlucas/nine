@@ -1,0 +1,29 @@
+id: process-start-by-model
+description: "A process a model stopped may be started again by a model: asked to resume it, the model starts it with process_start and it runs."
+track: live
+tier: basic
+tags: [processes, tools]
+
+setup:
+  processes:
+    - name: notes-tidier
+      tool: pursue
+      goal: "Tidy the notes folder: merge duplicate notes."
+      role: pursue
+      every: 1h
+      stopped_by: model
+
+prompts:
+  - "Earlier you stopped the background process that tidies my notes. Start it again."
+
+expect:
+  side_effects:
+    processes:
+      goal:notes-tidier: { state: running }
+  trajectory:
+    tools_all_of: [process_start]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

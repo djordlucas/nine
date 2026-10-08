@@ -1,0 +1,36 @@
+id: process-start-via-goal
+description: "A process stopped by its goal runs again when the goal does: process_start is refused and says to reactivate the goal, and the model does so with goal_update_status, after which the process runs."
+track: live
+tier: multi_step
+tags: [processes, tools, goals]
+
+setup:
+  processes:
+    - name: notes-tidier
+      tool: pursue
+      goal: "Tidy the notes folder: merge duplicate notes."
+      role: pursue
+      every: 1h
+      goal_status: paused
+
+prompts:
+  - "The background process that tidies my notes has stopped. Get it running again."
+
+wait:
+  seconds: 60
+  until:
+    processes:
+      goal:notes-tidier: { state: running }
+
+expect:
+  side_effects:
+    processes:
+      goal:notes-tidier: { state: running }
+  trajectory:
+    tools_all_of: [goal_update_status]
+
+runs: 3
+pass_threshold: "2/3"
+timeout_seconds: 300
+models:
+  expected_pass_min_class: medium

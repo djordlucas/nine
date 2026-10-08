@@ -137,6 +137,14 @@ type ProcessSetup struct {
 	ReportTo  string         `yaml:"report_to"`
 	Args      map[string]any `yaml:"args"`
 	Budget    BudgetSetup    `yaml:"budget"`
+	// StoppedBy starts the process stopped, as if that party had stopped it —
+	// operator, model, goal, budget, self — which is what the start rule reads.
+	// A budget stop starts a budget day now, so the process stays paused for
+	// the whole case.
+	StoppedBy string `yaml:"stopped_by"`
+	// GoalStatus sets a goal block's goal to this status after it is created,
+	// e.g. "paused"; a goal that is not active stops its process.
+	GoalStatus string `yaml:"goal_status"`
 }
 
 // BudgetSetup is a [[process]] block's budget.
