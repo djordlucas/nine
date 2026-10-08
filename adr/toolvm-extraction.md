@@ -21,7 +21,7 @@ what is undecided.
 
 ## 1. Decisions
 
-Recorded 2026-10-07.
+Recorded 2026-10-07; pure modules 2026-10-08.
 
 | Decision | Consequence |
 |----------|-------------|
@@ -29,6 +29,7 @@ Recorded 2026-10-07.
 | **The embedder gives it any code.** | JavaScript source or a wasm module, plus the modules that code may import, all supplied by the caller. The library does no loading from disk and no dependency resolution; `deps/` and esbuild stay in Nine (§7). |
 | **Code runs as long as needed.** | The library imposes no default deadline and no default work budget. A run ends when the program returns or the caller's `context.Context` ends. Nine's 5 s default and per-tool timeouts become Nine policy, applied through that context (§5). |
 | **Its own repository.** | Separate repo, module and release cycle from the start; no `pkg/` or in-repo module stage. Nine depends on a tagged version (§8). |
+| **Pure JS modules stay in Nine.** | `csv`, `date`, `diff`, `html` remain `nine:` modules, supplied through the module map like any embedder's. The library ships only the capability bindings (§7). |
 
 ## 2. Current coupling
 
@@ -105,7 +106,7 @@ came from, who approved it, how long it may run, and where its state lives*.
 | Grant resolution: `nine.toml`, the generated ceiling, shipped declarations | | ✓ |
 | Default timeout, per-tool timeouts and work budgets, concurrency limit | | ✓ |
 | Resumable jobs: `Continuation`, `JobContext`, `nine:job`, the driver, standing tools | | ✓ |
-| Pure JS modules: `csv`, `date`, `diff`, `html` | open — §11.3 | |
+| Pure JS modules: `csv`, `date`, `diff`, `html` | | ✓ |
 | Shipped tools (`shipped/*.js`) | | ✓ |
 | npm dependency bundling (`deps/`, esbuild) | | ✓ |
 | `ToLLMDef()` | | ✓ |
@@ -162,9 +163,11 @@ sandbox.Options{ABIAliases: sandbox.Aliases{
 — under which it accepts the old names alongside the new. Nine sets it; nobody else needs it,
 and the library's own docs mention it only as "accept a second set of names". Nine reports a
 tool that resolved through an alias as deprecated in `nine tools`, and a store migration
-rewrites `nine:` specifiers in generated tools. Nine's own modules (`nine:job`, and whichever
-pure modules it keeps) stay `nine:`-prefixed: they are Nine's, supplied through the module
-map like any embedder's.
+rewrites the capability-module specifiers (`nine:fs`, `nine:env`, `nine:state`,
+`nine:caps`) in generated tools. Nine's own modules (`nine:job`, `nine:csv`, `nine:date`,
+`nine:diff`, `nine:html`) keep their names: they are Nine's, supplied through the module map
+like any embedder's. The module map is resolved before aliases, so the `nine:` alias prefix
+never shadows them.
 
 ## 7. Code and modules
 
@@ -218,8 +221,12 @@ exists, so the boundary is proven by the compiler while a mistake is still cheap
 2. Split `internal/toolvm` into `internal/toolvm/sandbox` (engine) and `internal/toolvm`
    (tool layer). `sandbox` must not import its parent; a test asserts its import list is
    wazero and the standard library.
-3. Move tool concepts out of `sandbox`: manifest, `Tool`, registry, tiers, `Status`,
-   `Continuation`/`JobContext` (via `Result.Extra`), shipped tools, `deps/`.
+3. Move tool concepts and Nine's modules out of `sandbox`: manifest, `Tool`, registry,
+   tiers, `Status`, `Continuation`/`JobContext` (via `Result.Extra`), shipped tools,
+   `deps/`. From `stdlib/`, `csv.js`, `date.js`, `diff.js`, `html.js` and `job.js` move to
+   the tool layer, which embeds them and adds them to each program's module map; `fs.js`,
+   `env.js` and `state.js` are capability bindings and stay. The harness's `Date` error
+   text names `nine:date` (`harness.js:515`) and becomes generic.
 4. Remove engine defaults for deadline, work budget and concurrency; the tool layer applies
    Nine's through `context` and options. Existing timeout tests move to the tool layer.
 5. Neutral ABI names with `ABIAliases`; Nine sets the aliases. The module names are also
@@ -236,13 +243,10 @@ exists, so the boundary is proven by the compiler while a mistake is still cheap
 2. **Output type.** `output` is a string because a model reads it. A general library might
    want any JSON value. Changing it is an ABI change; keeping it costs embedders a
    `JSON.stringify`.
-3. **Pure modules.** `csv`, `date`, `diff`, `html` are generic and tested under the trimmed
-   interpreter. Ship them as an optional module set (`sandbox.StdModules()`) the embedder adds
-   to its map, or leave them as Nine's?
-4. **Long runs and the work budget.** A run with no deadline and no budget that spins is
+3. **Long runs and the work budget.** A run with no deadline and no budget that spins is
    indistinguishable from one that is working. Should the library expose a progress or
    heartbeat signal the embedder can watch, or is cancellation enough?
-5. **Concurrency.** A semaphore is a few lines in either place. In Nine (as proposed), or a
+4. **Concurrency.** A semaphore is a few lines in either place. In Nine (as proposed), or a
    library option, since every embedder will want one?
 
 ## Limits
