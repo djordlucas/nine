@@ -171,3 +171,15 @@ func TestDeletingAToolRemovesItsProcess(t *testing.T) {
 		t.Fatal("the process outlived the tool it runs")
 	}
 }
+
+// Source that does not parse is refused at write time, with where; source
+// that parses — imports of nine:* modules included — passes.
+func TestCheckSyntax(t *testing.T) {
+	if err := checkSyntax(liveSource); err != nil {
+		t.Errorf("a valid live program was refused: %v", err)
+	}
+	err := checkSyntax("import { next } from \"nine:process\";\nexport default () => { next(;; };")
+	if err == nil || !strings.Contains(err.Error(), "line 2") || !strings.Contains(err.Error(), "Nothing was written") {
+		t.Errorf("err = %v, want a refusal naming line 2", err)
+	}
+}

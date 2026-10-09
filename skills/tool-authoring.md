@@ -171,6 +171,12 @@ The rules that matter:
 
 - **Loop on `next()`.** It blocks until the next trigger — the `every`/`schedule` clock,
   or a message sent to the process — and returns it. A program that returns ends the process.
+- **`report(text)` tells the person**: it goes to the notification feed (or to the process
+  in `report_to`, if you gave one). Use it for what someone should see; write files for
+  the rest.
+- **A process cannot call tools**, including ones you wrote. Do the work in its own
+  program — read and write files with `nine:fs`, fetch with `fetch` — and ask the model
+  with `turn()`. Write the whole thing as one process, not a tool plus a process that calls it.
 - **`turn(text)` runs a model turn and returns the reply.** It runs under the process's
   `role`, by default `process`, which has **no tools**: put everything the model needs in
   the text, and do the reading and writing in the program. A role with tools is possible
@@ -185,8 +191,11 @@ The rules that matter:
   non-empty result goes to the human feed.
 
 Processes may be switched off entirely, in which case `tool_write` refuses with a message
-saying so. Write an ordinary tool instead, or `gap_report` it. Do not retry with different
-wording. Write a process only when the work genuinely never ends.
+saying so. **Tell the person processes are not enabled** — the operator turns them on with
+`[tools.agent] allow_processes` — and offer to do the work once, now. Do not build a
+substitute: a script, a cron entry or a loop you write does not run on its own, so it would
+only look like a process. Do not retry with different wording. Write a process only when
+the work genuinely never ends.
 
 ### What to expect
 

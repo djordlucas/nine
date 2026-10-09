@@ -779,6 +779,9 @@ can call the tool.
 
 The design, including the two shapes rejected and why, is `adr/standing-tools.md`.
 
+Every `tool_write` source is parsed when it is written: one that does not parse is
+refused with its line, column and reason, and nothing is stored.
+
 **Processes Nine writes.** With `[tools.agent] allow_processes`, `tool_write` takes a
 `process` block (`every` or `schedule`, `args`, `role`, `budget`, `report_to`) and the
 tool runs as a process from the moment it is written ([processes.md](processes.md)). A

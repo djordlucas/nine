@@ -52,6 +52,12 @@ trigger. It does not wait for an answer: the process answers through what it
 writes — a file, memory, the notification feed. It is refused when the process is
 stopped, busy, or a slice process; say so, or try again later if it was busy.
 
+### When processes are off
+
+If `tool_write` refuses a process because processes are not enabled, say so and stop
+there: the operator decides, with `[tools.agent] allow_processes`. Do not substitute a
+script or a scheduler of your own.
+
 ### Writing one
 
 Writing a process is `tool_write` with a `process` block; the `tool-authoring` skill

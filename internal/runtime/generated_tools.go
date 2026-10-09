@@ -16,6 +16,8 @@ import (
 	"nine/internal/memory"
 	"nine/internal/toolvm"
 	"nine/internal/toolvm/deps"
+
+	esbuild "github.com/evanw/esbuild/pkg/api"
 )
 
 // generatedTools bridges the agent-facing store (tool_write / tool_delete /
@@ -113,6 +115,9 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 	// Same discipline for the long-running lifecycle. It is checked here rather
 	// than only at load so the refusal reaches the model as a message it can act
 	// on, instead of a tool that persists and then silently never registers.
+	if err := checkSyntax(spec.Source); err != nil {
+		return agent.WriteResult{}, err
+	}
 	if spec.Process != nil {
 		if err := g.checkProcessRequest(spec); err != nil {
 			return agent.WriteResult{}, err
@@ -200,6 +205,30 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 	return res, nil
 }
 
+// checkSyntax refuses source that does not parse as an ES module, at write
+// time, with where and why. Without it a syntax error surfaced only when the
+// tool was called or its process started — for a process, in a log the model
+// never reads, so it kept failing while the model believed it ran. Parsed with
+// esbuild, already vendored for the dependency bundler (§4.4).
+func checkSyntax(source string) error {
+	res := esbuild.Transform(source, esbuild.TransformOptions{
+		Loader: esbuild.LoaderJS, Format: esbuild.FormatESModule, Target: esbuild.ES2023,
+	})
+	if len(res.Errors) == 0 {
+		return nil
+	}
+	e := res.Errors[0]
+	where := ""
+	if e.Location != nil {
+		where = fmt.Sprintf(" at line %d, column %d", e.Location.Line, e.Location.Column+1)
+		if e.Location.LineText != "" {
+			where += fmt.Sprintf(" (%s)", strings.TrimSpace(e.Location.LineText))
+		}
+	}
+	return fmt.Errorf("source does not parse%s: %s. Nothing was written; fix the source and write it again",
+		where, e.Text)
+}
+
 // isLiveProcess reports whether a write asks for a live process: a process
 // block on a tool that is not resumable. A resumable one runs as a slice
 // process, a cycle at a time, as standing tools did.
@@ -215,7 +244,8 @@ func (g *generatedTools) checkProcessRequest(spec agent.GeneratedToolSpec) error
 	if !pol.AllowProcesses {
 		return fmt.Errorf(
 			"processes Nine writes are not enabled on this instance ([tools.agent] allow_processes). " +
-				"Write it as an ordinary tool and call it when you need it, or call capability_request to ask an operator")
+				"Tell the person; the operator turns them on. Do not build a substitute — a script or schedule " +
+				"you write does not run on its own. You can still do the work once, now")
 	}
 	if p.Every != "" && p.Schedule != "" {
 		return fmt.Errorf("give every or schedule, not both")
@@ -240,8 +270,9 @@ func (g *generatedTools) checkProcessRequest(spec agent.GeneratedToolSpec) error
 		return fmt.Errorf("a resumable process needs every or schedule: it is called a cycle at a time on its clock")
 	case !spec.Resumable && !strings.Contains(spec.Source, "nine:process"):
 		return fmt.Errorf("a process's source is a live program: import { next, turn, report } from \"nine:process\" " +
-			"and loop on next(), which waits for each trigger. (A tool that does one bounded slice per call is " +
-			"resumable instead: set resumable = true.)")
+			"and loop on next(), which waits for each trigger. A process cannot call other tools, yours included: " +
+			"do the work in its own program — read and write files with \"nine:fs\", ask the model with turn(). " +
+			"(A tool that does one bounded slice per call is resumable instead: set resumable = true.)")
 	}
 	role := p.Role
 	if role == "" {
