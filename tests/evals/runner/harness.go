@@ -333,8 +333,11 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 		// subcommand — point the manager at the nine binary under test instead.
 		pluginMgr.SetBuiltinBinary(h.NineBin)
 		// shell is the only built-in plugin left; time, files and http are shipped
-		// sandboxed tools now, loaded by the toolvm host above.
-		pluginMgr.TryStartBuiltin("shell")
+		// sandboxed tools now, loaded by the toolvm host above. It runs in the
+		// case's workspace, as the daemon's shell runs in [workspace].root
+		// (NINE_WORKSPACE): started without it, a model's commands ran in the test
+		// process's directory — this repository's tests/evals.
+		pluginMgr.TryStartBuiltin("shell", "NINE_WORKSPACE="+workspace)
 		// 5b. MCP servers the case declares, mirroring startMCPServers in
 		//     cmd/nine/daemon.go. This is not an optional extra: a capability Nine
 		//     does not implement itself now arrives this way and no other, so a
