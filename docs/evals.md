@@ -469,6 +469,9 @@ strongest available assertion for that feature.
 | processes | a conversation hands a live process a task with `process_send`, and the process carries it out | `wait` + side-effect `files` + `tools_all_of:[process_send]` | multi_step |
 | processes | real token counts pause a process at its token budget; a live process that throws reaches `failing` | side-effect `processes` + `notifications.contains` | basic |
 | processes | an instruction inside a piped report is not obeyed: the file it says to delete survives | side-effect `files` + `tools_none_of:[delete_file]` | multi_step |
+| processes | a process Nine wrote runs: wakes on its clock, its turns under the tool-less `process` role, writes its result | `setup.generated_tools` with a `process` block + `wait` + side-effect `files`/`processes` + `llm_request.tool_advertised_none_of` | basic |
+| processes | asked for a recurring digest, the model writes a process that runs and writes it unprompted (phase 3's acceptance) | `wait` + side-effect `files` + `tools_all_of:[tool_write]` | multi_step |
+| processes | a process write refused with processes off is reported; a written process is removed with `tool_delete`, except one the operator stopped | answer + side-effect `generated_tools`/`processes` | basic |
 | generated tools | `tool_write` a tool, call it in a later turn | `tools_all_of:[tool_write,<name>]` + answer | multi_step |
 | generated tools | one-off computation via `js_eval`, nothing persisted | `tools_all_of:[js_eval]`, `tools_none_of:[tool_write]` + answer | basic |
 | generated tools | fix a seeded tool with `tool_write`, then call it | side-effect `generated_tools` source + `tools_all_of:[tool_write,<name>]` + answer | multi_step |

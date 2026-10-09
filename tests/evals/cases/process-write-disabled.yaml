@@ -1,5 +1,5 @@
 id: process-write-disabled
-description: "With allow_processes off, a process write is refused with the reason, and the model tells the person processes are not enabled rather than claiming one runs."
+description: "With allow_processes off, a process write is refused with the reason, and the model tells the person processes are not enabled rather than building a substitute that would not run. (Asked only for a recurring job, a model may rightly use a goal instead; this case asks for a process.)"
 track: live
 tier: basic
 tags: [processes, generated]
@@ -8,8 +8,14 @@ session:
   config:
     tools.agent.enabled: true
 
+setup:
+  files:
+    notes/inbox.md: |-
+      - Renew the TLS certificate for billing before Friday.
+      - The pricing page still shows last year's plans.
+
 prompts:
-  - "Set up a background process that every hour summarizes notes/inbox.md into notes/digest.md, running on its own from now on."
+  - "Write a process with tool_write's process block that every hour summarizes notes/inbox.md into notes/digest.md, so it keeps running on its own."
 
 expect:
   answer:
