@@ -1,0 +1,36 @@
+id: process-delete-written
+description: "A model removes a process it wrote with tool_delete: the tool and its process both go."
+track: live
+tier: basic
+tags: [processes, generated]
+
+session:
+  config:
+    tools.agent.enabled: true
+    tools.agent.allow_processes: true
+
+setup:
+  generated_tools:
+    inbox_watch:
+      description: "A process that watches notes/inbox.md."
+      source: |
+        import { next } from "nine:process";
+        export default () => { for (;;) next(); };
+      process: { every: 1h }
+
+prompts:
+  - "I no longer need the inbox_watch process you wrote. Remove it completely."
+
+expect:
+  side_effects:
+    generated_tools:
+      inbox_watch: { absent: true }
+    processes:
+      gen:inbox_watch: { absent: true }
+  trajectory:
+    tools_all_of: [tool_delete]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

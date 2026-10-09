@@ -1,0 +1,57 @@
+id: process-written-runs
+description: "A process Nine wrote runs end to end: a live program written through tool_write's process block wakes on its clock, asks the model through turn() under the lean process role — which offers no file, shell or network tool — and writes what the turn returned. It measures the runtime, so every model must pass it."
+track: live
+tier: basic
+tags: [processes, generated]
+
+session:
+  config:
+    tools.agent.enabled: true
+    tools.agent.allow_processes: true
+
+setup:
+  files:
+    notes/inbox.md: |-
+      - Renew the TLS certificate for billing before Friday.
+      - The pricing page still shows last year's plans.
+      - Ana starts on Monday; she needs a laptop.
+  generated_tools:
+    notes_digest:
+      description: "Every few seconds, summarize notes/inbox.md into notes/digest.md."
+      capabilities: '{"fs":["read","write"]}'
+      source: |
+        import { next, turn } from "nine:process";
+        import { readFileText, writeFile } from "nine:fs";
+        export default () => {
+          for (;;) {
+            next();
+            const inbox = readFileText("/work/notes/inbox.md");
+            const summary = turn(`Summarize these notes in one sentence:\n${inbox}`);
+            writeFile("/work/notes/digest.md", "# Digest\n" + summary);
+          }
+        };
+      process: { every: 2s }
+
+wait:
+  seconds: 180
+  session: gen:notes_digest
+  until:
+    files:
+      notes/digest.md: { contains: "# Digest" }
+
+expect:
+  side_effects:
+    files:
+      notes/digest.md: { matches: "# Digest\\n\\S" }
+    processes:
+      gen:notes_digest: { state: running }
+  trajectory:
+    min_turns_by_trigger: { idle: 1 }
+    llm_request:
+      tool_advertised_none_of: [write_file, edit_file, delete_file, shell, http_get, web_page_read, run_agent]
+
+runs: 3
+pass_threshold: "3/3"
+timeout_seconds: 240
+models:
+  expected_pass_min_class: nano
