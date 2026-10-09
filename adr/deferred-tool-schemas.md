@@ -436,6 +436,30 @@ in both arms before it counts against the criteria.
 - `spec/contracts/roles.md`, `dispatcher.md`, `embedder.md`; `spec/conformance.md`
   R-ROLE.4.
 
+## 10. Open idea: tools as skill-backed processes
+
+*Raised 2026-10-08; not decided.*
+
+Every tool is described by a skill — when to use it, its arguments, examples — and the
+model sees tools by name only. To use one, the model spawns it with its input in plain
+words; a process reads the tool's skill, turns the input into a valid call, runs it, and
+returns the result. The model never writes a tool's JSON.
+
+| | Gain | Cost |
+|---|---|---|
+| Prompt | no schemas in the request at all, below §3's ~2,000 tokens | — |
+| Small models | intent instead of JSON, where 4b and 9b most often fail (wrong or missing arguments) | — |
+| One surface | a tool is a skill plus a program; its usage is readable with `skill_read` and lives beside it | — |
+| Calls | — | a model turn per call to map intent to arguments: twice the calls, the latency and the budget |
+| Validation | — | the mapping can be wrong in ways a schema check catches today |
+| Process model | — | a process runs until stopped (`adr/process-sessions.md` §2); a per-call spawn is a job's shape, not a process's |
+
+A middle form keeps most of the gain without the extra turn: the **skill is the load unit**
+of §3.3 — `tool_search`, or calling a deferred tool, returns its skill (usage and schema)
+instead of a bare schema, so how to use a tool arrives with the means to call it. The full
+form is worth measuring only where models fail schemas, as one more exposition arm in
+§7.1, against the same corpus.
+
 ## Limits
 
 | Limit | Detail |
