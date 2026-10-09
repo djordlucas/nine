@@ -719,14 +719,6 @@
           }
         },
         {
-          "name": "process_list",
-          "description": "List the processes running in the background — goal sessions, standing agents, reflection, watchers, standing tools — with each one's state, trigger and budget use. Use it to see what runs between conversations.",
-          "input_schema": {
-            "type": "object",
-            "properties": {}
-          }
-        },
-        {
           "name": "restore_file",
           "description": "Restore a file from the trash to the workspace, by the entry name trash_list reports. Restores to its original path unless to names another. Never overwrites: if something already occupies the destination the call fails, since recovering one file by destroying another is not a recovery.",
           "input_schema": {
@@ -748,6 +740,14 @@
                 "description": "Destination path; defaults to where the file came from."
               }
             }
+          }
+        },
+        {
+          "name": "process_list",
+          "description": "List the processes running in the background — goal sessions, standing agents, reflection, watchers, standing tools — with each one's state, trigger and budget use. Use it to see what runs between conversations. The process-management skill (skill_read) explains stopping versus removing, and each refusal.",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
           }
         },
         {
@@ -847,6 +847,22 @@
               "overwrite": {
                 "type": "boolean",
                 "description": "Replace the destination if it exists (default false)."
+              }
+            }
+          }
+        },
+        {
+          "name": "process_stop",
+          "description": "Stop a process; it stays, stopped, and can be started again. A model may start it again later; one the operator stops only the operator can. To remove a process you wrote (id gen:\u003ctool\u003e) for good, delete its tool with tool_delete instead.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The process id, as process_list shows it."
               }
             }
           }
@@ -1033,22 +1049,6 @@
         {
           "name": "process_start",
           "description": "Start a stopped process. It runs under its own grants, role and budget, so starting it grants nothing new. Refused for a process the operator stopped, one its goal stopped (reactivate the goal instead), one paused by its budget until the budget resets, and at the running-process cap.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "id"
-            ],
-            "properties": {
-              "id": {
-                "type": "string",
-                "description": "The process id, as process_list shows it."
-              }
-            }
-          }
-        },
-        {
-          "name": "process_stop",
-          "description": "Stop a process. A model may start it again later; one the operator stops only the operator can.",
           "input_schema": {
             "type": "object",
             "required": [
@@ -1807,14 +1807,6 @@
           }
         },
         {
-          "name": "process_list",
-          "description": "List the processes running in the background — goal sessions, standing agents, reflection, watchers, standing tools — with each one's state, trigger and budget use. Use it to see what runs between conversations.",
-          "input_schema": {
-            "type": "object",
-            "properties": {}
-          }
-        },
-        {
           "name": "restore_file",
           "description": "Restore a file from the trash to the workspace, by the entry name trash_list reports. Restores to its original path unless to names another. Never overwrites: if something already occupies the destination the call fails, since recovering one file by destroying another is not a recovery.",
           "input_schema": {
@@ -1836,6 +1828,14 @@
                 "description": "Destination path; defaults to where the file came from."
               }
             }
+          }
+        },
+        {
+          "name": "process_list",
+          "description": "List the processes running in the background — goal sessions, standing agents, reflection, watchers, standing tools — with each one's state, trigger and budget use. Use it to see what runs between conversations. The process-management skill (skill_read) explains stopping versus removing, and each refusal.",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
           }
         },
         {
@@ -1935,6 +1935,22 @@
               "overwrite": {
                 "type": "boolean",
                 "description": "Replace the destination if it exists (default false)."
+              }
+            }
+          }
+        },
+        {
+          "name": "process_stop",
+          "description": "Stop a process; it stays, stopped, and can be started again. A model may start it again later; one the operator stops only the operator can. To remove a process you wrote (id gen:\u003ctool\u003e) for good, delete its tool with tool_delete instead.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The process id, as process_list shows it."
               }
             }
           }
@@ -2133,22 +2149,6 @@
               }
             }
           }
-        },
-        {
-          "name": "process_stop",
-          "description": "Stop a process. A model may start it again later; one the operator stops only the operator can.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "id"
-            ],
-            "properties": {
-              "id": {
-                "type": "string",
-                "description": "The process id, as process_list shows it."
-              }
-            }
-          }
         }
       ]
     }
@@ -2181,7 +2181,7 @@
       "turn": 1,
       "type": "context_update",
       "payload": {
-        "used": 7338,
+        "used": 7408,
         "budget": 100000
       }
     },
@@ -2237,12 +2237,13 @@
           "job_check",
           "job_cancel",
           "trash_list",
-          "process_list",
           "restore_file",
+          "process_list",
           "delete_file",
           "write_file",
           "copy_file",
           "move_file",
+          "process_stop",
           "process_send",
           "read_file",
           "edit_file",
@@ -2252,11 +2253,10 @@
           "web_page_read",
           "web_search",
           "process_show",
-          "process_start",
-          "process_stop"
+          "process_start"
         ],
         "max_tokens": 2048,
-        "tokens_used": 7338,
+        "tokens_used": 7408,
         "budget": 100000,
         "llm_call_n": 1
       }
@@ -2307,7 +2307,7 @@
       "turn": 1,
       "type": "context_update",
       "payload": {
-        "used": 7432,
+        "used": 7502,
         "budget": 100000
       }
     },
@@ -2387,12 +2387,13 @@
           "job_check",
           "job_cancel",
           "trash_list",
-          "process_list",
           "restore_file",
+          "process_list",
           "delete_file",
           "write_file",
           "copy_file",
           "move_file",
+          "process_stop",
           "process_send",
           "read_file",
           "edit_file",
@@ -2402,11 +2403,10 @@
           "web_page_read",
           "web_search",
           "process_show",
-          "process_start",
-          "process_stop"
+          "process_start"
         ],
         "max_tokens": 2048,
-        "tokens_used": 7432,
+        "tokens_used": 7502,
         "budget": 100000,
         "llm_call_n": 2
       }

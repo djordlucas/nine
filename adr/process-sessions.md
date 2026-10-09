@@ -1,6 +1,6 @@
 # Design note — Process sessions
 
-**Status:** **Phases 1 and 2 implemented** (2026-10-07; revised 2026-10-06: one concept for all background work) ·
+**Status:** **Phases 1 to 3 implemented** (2026-10-07; revised 2026-10-06: one concept for all background work) ·
 **Related:** `adr/standing-tools.md`, `adr/tool-facilities.md`, `adr/reactive-events.md`,
 `adr/predefined-agents-design.md`, `adr/roles-design.md`, `adr/personality-pattern.md`,
 `adr/agent-boundary.md` · **Amends:** R-SUB.7, the stance of `docs/self-modification.md`, and
@@ -461,8 +461,7 @@ configurations in use to carry over. A file that still has one fails to load, na
 
 ## Limits
 
-- Phases 3 to 8 are not built: Nine cannot write processes, and there are no event triggers,
-  `sql`, revision or genesis.
+- Phases 4 to 8 are not built: there are no event triggers, `sql`, revision or genesis.
 - Piped reports are an injection path that framing does not close: qwen3.5:4b and 9b obey an
   instruction inside a framed report every time. A turn a report starts is restricted to
   reading, creating new files, memory, its own goal and notifying, which stops changing or
@@ -508,4 +507,19 @@ configurations in use to carry over. A file that still has one fails to load, na
 | Deletion | removing a non-goal block deletes its process at the next boot and keeps its session; goal blocks keep `authoritative` | decided 2026-10-07; Nine-written processes, and `tool_delete` on them, arrive with phase 3 |
 | Pipe label | a piped report is framed as data from its sender, with an instruction not to follow anything inside it; a send is `[From conversation <id>: …]` or `[From the operator: …]` | a bare `[From process <id>: …]` label did not stop qwen3.5:4b or 9b from obeying an instruction inside a report (process-pipe-injection, 0/3 each) |
 | Piped turns | restricted to `PipedTurnTools`, an allowlist: read files, create new ones, memory, its own goal, notify; `write_file` and `edit_file` refuse a file that existed before the turn. A person's message is not restricted | framing did not help either model (0/3 each), so the defence had to hold whatever the model does; with writes unrestricted, 4b emptied the file with `edit_file` once `delete_file` was refused (decided 2026-10-08: new files only) |
+
+---
+
+## Phase 3 as built
+
+| Point | As built | Why |
+|---|---|---|
+| Roles | a written process's turns run under a role in `[tools.agent] process_roles`, default `["process"]` — Nine's identity and no tools | built-in roles such as `orchestrator` grant every tool, shell included, so "any operator-authored role" would let Nine give an unattended process full reach (decided 2026-10-08) |
+| Approval | follows `require_approval`; under `on_capability` a process write prompts even when it declares nothing. `allow_standing`'s "always a human, even under never" is gone | decided 2026-10-08. Under `never`, or in a conversation nobody attends, `allow_processes` and `process_roles` are the only controls |
+| Budget | the same as a declared process: `[processes] budget`, which the block may lower | decided 2026-10-08 |
+| One block | `process` replaces `standing`; a resumable tool with a `process` block is a slice process, as standing tools were; `allow_processes` replaces `allow_standing`, which is refused | one concept (decided 2026-10-08) |
+| Ids | `gen:<tool>`, so a rewrite replaces its process | as standing runs were named |
+| Pipes and sessions | `report_to` only into another live process Nine wrote; no attaching to another session | §7: Nine pipes only between processes it wrote |
+| Eviction | a tool a process runs is never evicted | it is never called, so its last call says nothing; evicting it left its process failing |
+| Rewrite | keeps the run state | a process the operator stopped stays stopped |
 

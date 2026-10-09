@@ -24,6 +24,9 @@ type Generated struct {
 	// Resumable asks for the long-running lifecycle. Gated separately from the
 	// capability ceiling, which bounds *reach* and cannot express *duration*.
 	Resumable bool
+	// Live makes it a process program: started by the process runner and never
+	// called as a tool (Host.Processes).
+	Live bool
 }
 
 // AgentConfig is the generated tier's operator policy.
@@ -122,6 +125,7 @@ func (h *Host) LoadGenerated(ctx context.Context, tools []Generated, collides Co
 			Grant:     grant,
 			Generated: true,
 			Resumable: g.Resumable,
+			Live:      g.Live,
 			module:    h.qjs,
 			source:    g.Source,
 			// The `nine:*` stdlib is the generated tier's import allowlist (§4.2):

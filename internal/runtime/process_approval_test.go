@@ -5,28 +5,27 @@ import (
 	"testing"
 )
 
-// A standing promotion must always reach a human — including under
-// require_approval = "never", which is the one place that setting does not mean
-// what it says. requestsStanding is what the gate keys on, so it has to be right
-// about the shapes tool_write actually sends.
-func TestRequestsStanding(t *testing.T) {
+// A process write is never inert under require_approval = "on_capability":
+// it runs until stopped, whatever it declares. requestsProcess is what the
+// gate keys on, so it has to be right about the shapes tool_write sends.
+func TestRequestsProcess(t *testing.T) {
 	cases := []struct {
 		name string
 		args string
 		want bool
 	}{
 		{"absent", `{"name":"x","source":"y"}`, false},
-		{"explicit null", `{"name":"x","standing":null}`, false},
-		{"empty object still asks", `{"name":"x","standing":{}}`, true},
-		{"with a cadence", `{"name":"x","standing":{"interval":"10s"}}`, true},
-		// Fail closed: arguments we cannot read are treated as a promotion, so a
-		// malformed write cannot slip past the one gate that always fires.
+		{"explicit null", `{"name":"x","process":null}`, false},
+		{"empty object still asks", `{"name":"x","process":{}}`, true},
+		{"with a clock", `{"name":"x","process":{"every":"30m"}}`, true},
+		// Fail closed: arguments we cannot read are treated as a process, so a
+		// malformed write cannot slip past the gate.
 		{"unparseable fails closed", `{not json`, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := requestsStanding(json.RawMessage(tc.args)); got != tc.want {
-				t.Fatalf("requestsStanding(%s) = %v, want %v", tc.args, got, tc.want)
+			if got := requestsProcess(json.RawMessage(tc.args)); got != tc.want {
+				t.Fatalf("requestsProcess(%s) = %v, want %v", tc.args, got, tc.want)
 			}
 		})
 	}

@@ -118,9 +118,13 @@ func runDaemon() {
 	// or nil when `[tools.agent]` is off — in which case the meta-tools are neither
 	// registered nor advertised. The deps bundler resolves external npm imports at
 	// write time (§4.4); nil when [tools.agent.deps] is off.
-	generatedTools := runtime.NewGeneratedToolStoreWithStanding(store, toolHost, pluginManager,
-		runtime.NewDepsBundler(cfg), cfg.Tools.Agent.AllowNetworkDeps,
-		cfg.Tools.Agent.AllowStanding, cfg.Processes.MaxRunningOrDefault())
+	generatedTools := runtime.NewGeneratedToolStoreWithPolicy(store, toolHost, pluginManager,
+		runtime.NewDepsBundler(cfg), cfg.Tools.Agent.AllowNetworkDeps, runtime.GeneratedPolicy{
+			AllowProcesses: cfg.Tools.Agent.AllowProcesses,
+			ProcessRoles:   cfg.Tools.Agent.ProcessRolesOrDefault(),
+			MaxRunning:     cfg.Processes.MaxRunningOrDefault(),
+			Budget:         cfg.Processes.Budget,
+		})
 
 	embedder := embed.Build(cfg.Embeddings.Provider, cfg.Embeddings.Model, cfg.Embeddings.Endpoint)
 
@@ -189,7 +193,6 @@ func runDaemon() {
 		GeneratedTools:         generatedTools,
 		GeneratedEval:          cfg.Tools.Agent.Eval,
 		GeneratedApproval:      cfg.Tools.Agent.ApprovalMode(),
-		GeneratedAllowStanding: cfg.Tools.Agent.AllowStanding,
 		Embedder:               embedder,
 		ContextBudget:          cfg.ContextBudget(),
 		MaxTokens:              cfg.MaxReplyTokens(),

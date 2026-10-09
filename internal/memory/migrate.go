@@ -385,6 +385,12 @@ var migrations = []migrationStep{
 	{name: "declared_processes", fn: func(q sqlExec) error {
 		return addColumnIfMissing(q, "processes", "declared", "INTEGER NOT NULL DEFAULT 0")
 	}},
+
+	// 17 → 18: a tool Nine writes may be a process program, which Nine starts
+	// rather than calls (adr/process-sessions.md §9).
+	{name: "live_generated_tools", fn: func(q sqlExec) error {
+		return addColumnIfMissing(q, "tools", "live", "INTEGER NOT NULL DEFAULT 0")
+	}},
 }
 
 // convertGoalPlans turns each session plan with a pursue routine into the

@@ -122,6 +122,20 @@ type GeneratedToolSetup struct {
 	InputSchema  string `yaml:"input_schema"` // JSON
 	Source       string `yaml:"source"`
 	Capabilities string `yaml:"capabilities"` // JSON; empty declares nothing
+	Resumable    bool   `yaml:"resumable"`
+	// Process writes the tool as a process Nine wrote, gen:<name>; it needs
+	// session.config tools.agent.allow_processes.
+	Process *GeneratedProcessSetup `yaml:"process"`
+}
+
+// GeneratedProcessSetup is a seeded tool's process block, as tool_write takes it.
+type GeneratedProcessSetup struct {
+	Every    string `yaml:"every"`
+	Schedule string `yaml:"schedule"`
+	Role     string `yaml:"role"`
+	ReportTo string `yaml:"report_to"`
+	// StoppedBy starts the process stopped by that party.
+	StoppedBy string `yaml:"stopped_by"`
 }
 
 // ProcessSetup is one [[process]] block, with the same fields.
@@ -442,9 +456,14 @@ func (c *Case) validate() error {
 	if !isKebab(c.ID) {
 		return fmt.Errorf("id %q must be kebab-case", c.ID)
 	}
-	// A background case may have no prompt: its processes do the work.
-	if len(c.Prompts) == 0 && (len(c.Setup.Processes) == 0 || c.Wait == nil) {
-		return fmt.Errorf("at least one prompt is required, unless setup.processes and wait are set")
+	// A background case may have no prompt: its processes do the work, declared
+	// or written by Nine (a seeded tool with a process block).
+	background := len(c.Setup.Processes) > 0
+	for _, g := range c.Setup.GeneratedTools {
+		background = background || g.Process != nil
+	}
+	if len(c.Prompts) == 0 && (!background || c.Wait == nil) {
+		return fmt.Errorf("at least one prompt is required, unless processes (setup.processes, or a generated tool's process) and wait are set")
 	}
 	if c.Wait != nil && c.Wait.Seconds <= 0 {
 		return fmt.Errorf("wait.seconds must be positive")

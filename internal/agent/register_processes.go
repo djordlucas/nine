@@ -38,7 +38,7 @@ var processToolDefs = []llm.ToolDef{
 	{
 		Name:        "process_list",
 		DisplayName: "List Processes",
-		Description: "List the processes running in the background — goal sessions, standing agents, reflection, watchers, standing tools — with each one's state, trigger and budget use. Use it to see what runs between conversations.",
+		Description: "List the processes running in the background — goal sessions, standing agents, reflection, watchers, standing tools — with each one's state, trigger and budget use. Use it to see what runs between conversations. The process-management skill (skill_read) explains stopping versus removing, and each refusal.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 	},
 	{
@@ -62,7 +62,7 @@ var processToolDefs = []llm.ToolDef{
 	{
 		Name:        "process_stop",
 		DisplayName: "Stop Process",
-		Description: "Stop a process. A model may start it again later; one the operator stops only the operator can.",
+		Description: "Stop a process; it stays, stopped, and can be started again. A model may start it again later; one the operator stops only the operator can. To remove a process you wrote (id gen:<tool>) for good, delete its tool with tool_delete instead.",
 		InputSchema: json.RawMessage(processIDSchema),
 	},
 }

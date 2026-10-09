@@ -136,10 +136,6 @@ type AgentBuilderConfig struct {
 	// ApprovalTools, it is enforced only for loops an interactive session owns.
 	GeneratedApproval string
 
-	// GeneratedAllowStanding mirrors [tools.agent].allow_standing. It arms the
-	// approval gate for tool_write even under require_approval = "never", since
-	// a standing promotion is the one thing that setting must not wave through.
-	GeneratedAllowStanding bool
 
 	// DefaultLeafRole names the role used when a delegation names none
 	// (roles.default_leaf; default "executor" — R-ROLE.9).
@@ -490,17 +486,6 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		if lc.GeneratedEval {
 			genGated = append(genGated, "js_eval")
 		}
-	}
-	// A standing promotion is armed even under "never", which is the one place
-	// that setting does not mean what it says. It is justified rather than
-	// convenient: "never" says the capability ceiling is the only control, and a
-	// ceiling bounds *reach* — a capability-free tool that runs forever is inert
-	// per call and unbounded in aggregate, which is exactly what a ceiling cannot
-	// express. The callback below only actually prompts for a write that asks to
-	// be standing.
-	if lc.GeneratedTools != nil && gate.gated() && f.cfg.HITL != nil &&
-		f.cfg.GeneratedAllowStanding && !slices.Contains(genGated, "tool_write") {
-		genGated = append(genGated, "tool_write")
 	}
 	if gate.gated() && f.cfg.HITL != nil && (len(f.cfg.ApprovalTools) > 0 || len(genGated) > 0) {
 		f.registerApprovalGates(d, agentID, gate, genGated)
@@ -973,17 +958,17 @@ func (f *AgentBuilder) registerApprovalGates(d *agent.Dispatcher, askerID string
 	approvalNever := f.cfg.GeneratedApproval == config.ToolApprovalNever
 
 	d.SetApproval(names, func(ctx context.Context, toolName string, args json.RawMessage) error {
-		standing := genSet[toolName] && requestsStanding(args)
-		// Under "never" the only thing armed is a standing promotion, so anything
-		// else reaching here passes: the operator said the ceiling is the control.
-		if genSet[toolName] && approvalNever && !standing {
+		// A write asking for a process follows require_approval like any other
+		// (decided 2026-10-08), except that under on_capability it is never inert:
+		// it runs until stopped, whatever it declares.
+		process := genSet[toolName] && requestsProcess(args)
+		if genSet[toolName] && approvalNever {
 			return nil
 		}
 		// A capability-free generated write under the default mode is inert — nothing
 		// for a human to usefully evaluate — so it is allowed to pass without a
 		// prompt. Gating it would train the reflex that defeats the gate that matters.
-		// A standing request is never inert, whatever it declares: it runs forever.
-		if genSet[toolName] && onCapability && !declaresCapability(args) && !standing {
+		if genSet[toolName] && onCapability && !declaresCapability(args) && !process {
 			return nil
 		}
 		// A path names the file; a diff names the change, which is what the
@@ -1003,17 +988,17 @@ func (f *AgentBuilder) registerApprovalGates(d *agent.Dispatcher, askerID string
 	})
 }
 
-// requestsStanding reports whether a tool_write asks to be run indefinitely.
+// requestsProcess reports whether a tool_write asks to run as a process.
 // Unparseable arguments count as yes, the fail-closed direction for an approval
 // decision.
-func requestsStanding(args json.RawMessage) bool {
+func requestsProcess(args json.RawMessage) bool {
 	var req struct {
-		Standing json.RawMessage `json:"standing,omitempty"`
+		Process json.RawMessage `json:"process,omitempty"`
 	}
 	if err := json.Unmarshal(args, &req); err != nil {
 		return true
 	}
-	return len(req.Standing) > 0 && string(req.Standing) != "null"
+	return len(req.Process) > 0 && string(req.Process) != "null"
 }
 
 // declaresCapability reports whether a tool_write/js_eval argument object asks

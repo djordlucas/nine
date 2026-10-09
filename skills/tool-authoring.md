@@ -137,33 +137,56 @@ different wording.
 
 ### Work that should keep running
 
-If the work does not finish — watching something, keeping a derived file current,
-processing a stream — a tool can be **standing**: run indefinitely on its own cadence,
-starting as soon as it is approved.
+If the work does not finish — a daily digest, watching something, keeping a derived file
+current — write the tool as a **process**: Nine starts it as soon as it is written (and
+approved, if the operator requires that) and it runs until stopped. It is never called as
+a tool. Give `tool_write` a `process` block:
 
 ```json
-{"name":"paper_watch", "resumable":true,
- "standing":{"interval":"5m","args":{"feed":"…"}}}
+{"name":"notes_digest",
+ "description":"Every 30 minutes, summarize notes/inbox.md into notes/digest.md.",
+ "capabilities":{"fs":["read","write"]},
+ "source":"…",
+ "process":{"every":"30m"}}
+```
+
+The source is a **live program**: it waits for each trigger with `next()` and asks the
+model with `turn()`:
+
+```js
+import { next, turn } from "nine:process";
+import { readFileText, writeFile } from "nine:fs";
+
+export default () => {
+  for (;;) {
+    next();                                        // waits for the next tick
+    const inbox = readFileText("/work/notes/inbox.md");
+    const summary = turn(`Summarize these notes in five bullet points:\n${inbox}`);
+    writeFile("/work/notes/digest.md", summary);
+  }
+};
 ```
 
 The rules that matter:
 
-- **A returned result ends a *cycle*, not the run.** Your cursor resets and the interval
-  decides when the next pass starts. `again()` within a pass, a plain return between them.
-- **Return nothing when there is nothing to report.** An empty result is silent; a
-  non-empty one goes to the human's notification feed. A tool that announces every pass
-  is noise nobody reads.
-- **You cannot notify an agent, only the human feed.** If something needs acting on, say
-  it clearly enough that a human can decide.
-- **Use `nine:state` for what must outlive a cycle.** "What have I already seen" is state;
-  "where am I in this pass" is the cursor.
+- **Loop on `next()`.** It blocks until the next trigger — the `every`/`schedule` clock,
+  or a message sent to the process — and returns it. A program that returns ends the process.
+- **`turn(text)` runs a model turn and returns the reply.** It runs under the process's
+  `role`, by default `process`, which has **no tools**: put everything the model needs in
+  the text, and do the reading and writing in the program. A role with tools is possible
+  only if the operator allows it (`[tools.agent] process_roles`).
+- **Declare the capabilities the program uses**, e.g. `fs` for files, as for any tool.
+- **The process has a daily budget.** When a turn would exceed it, `turn()` throws and the
+  process pauses until the next day. Ask for less with `"budget":{"turns_per_day":5}`.
+- **See it with `process_show gen:<name>`**; stop it with `process_stop`, remove it with
+  `tool_delete`.
+- **A tool that does one bounded slice per call** — no model, no waiting — can instead be
+  `resumable` with a `process` block: it is called a cycle at a time on its clock, and a
+  non-empty result goes to the human feed.
 
-**A human always approves this**, whatever the operator's other settings — and it may be
-switched off entirely, in which case `tool_write` refuses with a message saying so.
-Rewrite as an ordinary tool, or `gap_report` it. Do not retry with different wording.
-
-Ask for standing only when the work genuinely never ends. A tool that answers a question
-should answer it and stop.
+Processes may be switched off entirely, in which case `tool_write` refuses with a message
+saying so. Write an ordinary tool instead, or `gap_report` it. Do not retry with different
+wording. Write a process only when the work genuinely never ends.
 
 ### What to expect
 

@@ -751,21 +751,25 @@ allow = [                           # allowlist mode only: the packages an opera
 # aggregate, which is exactly what a ceiling cannot express.
 # [tools.agent] allow_long_running = false
 
-# May Nine ask to run a tool it wrote STANDING — indefinitely, on its own
-# cadence? Off by default, and separate from allow_long_running: a job the model
-# started still ends, where a standing run does not until somebody stops it.
+# May Nine write PROCESSES — tools that run until stopped, through tool_write's
+# process block (docs/processes.md)? Off by default, and separate from
+# allow_long_running: a job the model started still ends, where a process does
+# not until somebody stops it. A process write is approved as require_approval
+# says, and prompts under "on_capability" even when it declares nothing. Under
+# "never", and where nobody can be asked, this switch and process_roles are the
+# only controls.
+# [tools.agent] allow_processes = false
 #
-# Even with this on, a human approves every promotion — including when
-# require_approval is "never". That is the one place the setting is overridden,
-# and it is deliberate: "never" means the capability ceiling is the only control,
-# and a ceiling bounds REACH. A capability-free tool that runs forever is inert
-# per call and unbounded in aggregate, which a ceiling cannot express.
+# The roles the model turns of a process Nine writes may run under. Unset is
+# ["process"], the lean role with no tools: the program does the reading and
+# writing, and its turns only think. A role listed here sets what an unattended
+# process can reach.
+# [tools.agent] process_roles = ["process"]
 #
-# A generated standing tool that fails repeatedly is switched off. A process you
-# declared in [[process]] is not — your declaration is a standing instruction,
-# and silently disabling it would be the greater surprise.
-# [tools.agent] allow_standing = false
-# How many may run is [processes] max_running, shared with every other process.
+# A process Nine wrote that fails repeatedly is switched off. One you declared
+# in [[process]] is not — your declaration is a standing instruction, and
+# silently disabling it would be the greater surprise. How many run is
+# [processes] max_running, shared with every other process.
 ```
 
 ---
@@ -941,7 +945,7 @@ current one at load; the file on disk stays exactly as you wrote it.
 
 | Schema | Changed |
 |---|---|
-| 2 | `[[process]]` and `[processes]` replace `[[agent]]`, `[[agent.routine]]`, `when = { … }`, `[[standing_tool]]` and `[daemon] standing_agents_authoritative`; `[processes] max_running` replaces `[daemon] max_goal_sessions` and `[tools.agent] max_standing`. A schema-1 file that uses none of them loads unchanged; one that does is refused, naming the `[[process]]` form ([processes.md](processes.md)). |
+| 2 | `[[process]]` and `[processes]` replace `[[agent]]`, `[[agent.routine]]`, `when = { … }`, `[[standing_tool]]` and `[daemon] standing_agents_authoritative`; `[processes] max_running` replaces `[daemon] max_goal_sessions` and `[tools.agent] max_standing`; `[tools.agent] allow_processes` replaces `allow_standing`. A schema-1 file that uses none of them loads unchanged; one that does is refused, naming the `[[process]]` form ([processes.md](processes.md)). |
 
 ### Keys nothing reads
 

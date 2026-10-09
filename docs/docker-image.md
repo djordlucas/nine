@@ -99,7 +99,7 @@ generated tier is its capability ceiling rather than its switch.
 | `[tools] enabled` | `true` | The shipped sandboxed tools are the agent's filesystem — `read_file`, `write_file`, `edit_file` and the rest. Without them it cannot open a file. They are embedded in the binary, so nothing is mounted to get them. |
 | `[tools] user_dir` | unset | Only the shipped, reviewed tools load. A directory of tools is not read. |
 | `[tools.agent] enabled` | `true` | Nine writes its own tools, bounded by a ceiling that defaults to the workspace — the same directory the shipped tools reach and `shell` runs in. A generated tool is narrower than the `shell` this image also ships: wasm, one instance per call, no network, no environment. |
-| `[tools.agent.deps]`, `allow_network_deps`, `allow_long_running`, `allow_standing` | off | Every switch that widens a generated tool beyond the workspace stays an operator's decision. `net.http` is likewise ungranted in the ceiling; `web_search`, `web_page_read` and `http_get` are shipped tools, so the agent reaches the web without one. |
+| `[tools.agent.deps]`, `allow_network_deps`, `allow_long_running`, `allow_processes` | off | Every switch that widens a generated tool beyond the workspace stays an operator's decision. `net.http` is likewise ungranted in the ceiling; `web_search`, `web_page_read` and `http_get` are shipped tools, so the agent reaches the web without one. |
 | `[daemon] self_reflection` | `30m` | Every tick is an LLM call. At the 2m default an idle container bills a metered API around the clock. `off` removes it. |
 | `[memory] path` | `/data/nine.db` | The container's writable layer is discarded when the container is replaced. |
 | `[workspace] root` | `/data/workspace` | Scopes the workspace to the volume. |

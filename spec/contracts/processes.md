@@ -206,12 +206,32 @@ process session and a sub-agent **MUST NOT** hold any of them.
 
 ---
 
+## R-PROC.13 — processes Nine writes
+
+`tool_write` with a `process` block **MUST** be refused unless `[tools.agent] allow_processes`
+is on. A written process is `gen:<tool>`: live when the tool is not resumable — its source
+**MUST** use `nine:process` — and slice when it is, which needs `every` or `schedule`.
+
+- Its turns **MUST** run under a role in `[tools.agent] process_roles` (default
+  `["process"]`, the lean role with no tools); any other is refused, naming the allowed ones.
+- Its `budget` may lower `[processes] budget`, never raise it. It counts against
+  `max_running`. Its `report_to` **MUST** name another live process Nine wrote.
+- A rewrite replaces the program and keeps the run state. Its tool **MUST NOT** be evicted
+  while the process exists.
+- `tool_delete` deletes the tool and its process; a model's **MUST** be refused for a process
+  the operator stopped. The operator's delete always succeeds.
+- Approval follows `require_approval`, except that `on_capability` **MUST** prompt for a
+  process write even when it declares no capability.
+
+---
+
 ## Reference symbols
 
 `internal/toolvm/process.go` (`StartLive`, `ProcessHandler`, `nine:process`),
 `internal/runtime/process_live.go` (live runner, goal binding, pipes),
 `internal/runtime/process_budget.go` (budgets),
 `internal/runtime/process_control.go` (roster, start rule), `internal/agent/register_processes.go`,
+`internal/runtime/generated_tools.go` (processes Nine writes), `skills/roles/process.md`,
 `internal/runtime/standing_tools.go` (slice runner, `ReconcileProcesses`),
 `internal/runtime/goal_session.go`, `internal/runtime/process_sessions.go`
 (`ProcessTurn`), `internal/memory/processes.go`, `cmd/nine/standing_agents.go`.

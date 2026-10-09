@@ -382,6 +382,7 @@ func initSchema(d db) error {
 			capabilities   TEXT NOT NULL DEFAULT '{}',
 			lockfile       TEXT NOT NULL DEFAULT '{}',
 			resumable      INTEGER NOT NULL DEFAULT 0,
+			live           INTEGER NOT NULL DEFAULT 0,
 			created_at     TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			updated_at     TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			last_called_at TEXT NOT NULL DEFAULT '',

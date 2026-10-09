@@ -34,7 +34,10 @@ type GeneratedTool struct {
 	// Resumable asks for the long-running lifecycle: the tool may end a call with
 	// a `continue` envelope and be run as a job. Refused at load unless the
 	// operator set [tools.agent] allow_long_running.
-	Resumable bool   `json:"resumable,omitempty"`
+	Resumable bool `json:"resumable,omitempty"`
+	// Live marks a process program (adr/process-sessions.md §9): Nine starts
+	// it and it runs until stopped, never called as a tool.
+	Live      bool   `json:"live,omitempty"`
 	CreatedAt string `json:"created_at,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
 	// LastCalledAt drives LRU eviction (docs/sandboxed-tools.md §9.2). Empty
@@ -64,14 +67,14 @@ func (s *Store) GeneratedToolUpsert(t GeneratedTool) error {
 		lock = "{}"
 	}
 	_, err := s.db.Exec(
-		`INSERT INTO tools(name, description, input_schema, source, capabilities, lockfile, resumable, created_at, updated_at)
-		 VALUES(?,?,?,?,?,?,?,?,?)
+		`INSERT INTO tools(name, description, input_schema, source, capabilities, lockfile, resumable, live, created_at, updated_at)
+		 VALUES(?,?,?,?,?,?,?,?,?,?)
 		 ON CONFLICT(name) DO UPDATE SET
 		   description=excluded.description, input_schema=excluded.input_schema,
 		   source=excluded.source, capabilities=excluded.capabilities,
-		   lockfile=excluded.lockfile, resumable=excluded.resumable,
+		   lockfile=excluded.lockfile, resumable=excluded.resumable, live=excluded.live,
 		   updated_at=excluded.updated_at`,
-		t.Name, t.Description, schema, t.Source, caps, lock, t.Resumable, nowText(), nowText())
+		t.Name, t.Description, schema, t.Source, caps, lock, t.Resumable, t.Live, nowText(), nowText())
 	return err
 }
 
@@ -86,10 +89,10 @@ func (s *Store) GeneratedToolGet(name string) (GeneratedTool, bool, error) {
 	)
 	err := s.db.QueryRow(
 		`SELECT name, description, input_schema, source, capabilities, lockfile,
-		        resumable, created_at, updated_at, last_called_at, call_count
+		        resumable, live, created_at, updated_at, last_called_at, call_count
 		   FROM tools WHERE name = ?`, name).
 		Scan(&t.Name, &t.Description, &schema, &t.Source, &caps, &lock,
-			&t.Resumable, &t.CreatedAt, &t.UpdatedAt, &last, &t.CallCount)
+			&t.Resumable, &t.Live, &t.CreatedAt, &t.UpdatedAt, &last, &t.CallCount)
 	if err == sql.ErrNoRows {
 		return GeneratedTool{}, false, nil
 	}
@@ -108,7 +111,7 @@ func (s *Store) GeneratedToolGet(name string) (GeneratedTool, bool, error) {
 func (s *Store) GeneratedToolList() ([]GeneratedTool, error) {
 	rows, err := s.db.Query(
 		`SELECT name, description, input_schema, source, capabilities, lockfile,
-		        resumable, created_at, updated_at, last_called_at, call_count
+		        resumable, live, created_at, updated_at, last_called_at, call_count
 		   FROM tools
 		  ORDER BY COALESCE(NULLIF(last_called_at, ''), created_at) ASC, name ASC`)
 	if err != nil {
@@ -126,7 +129,7 @@ func (s *Store) GeneratedToolList() ([]GeneratedTool, error) {
 			last   sql.NullString
 		)
 		if err := rows.Scan(&t.Name, &t.Description, &schema, &t.Source, &caps, &lock,
-			&t.Resumable, &t.CreatedAt, &t.UpdatedAt, &last, &t.CallCount); err != nil {
+			&t.Resumable, &t.Live, &t.CreatedAt, &t.UpdatedAt, &last, &t.CallCount); err != nil {
 			return nil, err
 		}
 		t.InputSchema = json.RawMessage(schema)
@@ -169,13 +172,16 @@ func (s *Store) GeneratedToolCount() (int, error) {
 // half-redundant generated tools degrades the ranking for the *built-in* tools
 // too — the agent poisons its own tool selection and gets worse at everything
 // (docs/sandboxed-tools.md §9.2). Eviction is on last-called-at, so a tool that
-// earns its place keeps it.
+// earns its place keeps it. A tool a process runs is never evicted: a process
+// is never called as a tool, so its last call says nothing, and evicting its
+// program would leave the process failing on every trigger.
 func (s *Store) GeneratedToolEvictOldest(max int) ([]string, error) {
 	if max <= 0 {
 		return nil, nil
 	}
 	rows, err := s.db.Query(
 		`SELECT name FROM tools
+		  WHERE name NOT IN (SELECT tool FROM processes)
 		  ORDER BY COALESCE(NULLIF(last_called_at, ''), created_at) ASC, name ASC
 		  LIMIT MAX(0, (SELECT COUNT(*) FROM tools) - ?)`, max)
 	if err != nil {

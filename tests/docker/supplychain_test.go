@@ -302,7 +302,7 @@ func TestPublishedConfigIsConservative(t *testing.T) {
 		{cfg.Tools.Agent.DepsMode() != config.DepsModeOff, "[tools.agent.deps] mode is not off; external npm packages must be an operator's decision"},
 		{cfg.Tools.Agent.AllowNetworkDeps, "allow_network_deps is on; a networked dependency plus net.http is an exfiltration path"},
 		{cfg.Tools.Agent.AllowLongRunning, "allow_long_running is on; duration is conferred, not defaulted"},
-		{cfg.Tools.Agent.AllowStanding, "allow_standing is on; a self-scheduling generated tool is conferred, not defaulted"},
+		{cfg.Tools.Agent.AllowProcesses, "allow_processes is on; a process Nine writes runs unattended and is conferred, not defaulted"},
 		{cfg.Tools.Agent.Capabilities.Net.HTTP != nil, "the generated-tool ceiling grants net.http; the shipped web tools cover that need"},
 		{len(cfg.Tools.Agent.Capabilities.Env) > 0, "the generated-tool ceiling grants environment keys"},
 		{cfg.Tools.Agent.RequireApproval == config.ToolApprovalNever, `require_approval is "never"; the published default must keep the gate`},
