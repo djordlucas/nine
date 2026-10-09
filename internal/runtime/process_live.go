@@ -390,10 +390,17 @@ func (h *liveHandler) Turn(ctx context.Context, text string) (string, error) {
 	return reply, err
 }
 
+// Report sends text through the process's pipe, or, when it declares none, to
+// the human feed — as a slice process's non-empty result goes there (decided
+// 2026-10-09). A process can always report; report_to only decides where.
 func (h *liveHandler) Report(_ context.Context, text string) (bool, error) {
 	row := h.lp.row
 	if row.ReportTo == "" {
-		return false, fmt.Errorf("process %q pipes nowhere: it declares no report_to", row.ID)
+		journalTransition(h.r.store, row.ID, evStandingReported, map[string]any{
+			"tool": row.Tool, "output": clipDetail(text, 2000),
+		})
+		h.r.notifyHuman(fmt.Sprintf("[%s] %s", row.ID, text))
+		return true, nil
 	}
 	return h.r.pipe(row, text), nil
 }

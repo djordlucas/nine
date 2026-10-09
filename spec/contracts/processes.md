@@ -58,7 +58,7 @@ returns, fails, or it is stopped.
 |---|---|
 | `next()` | blocks until the next trigger and returns it |
 | `turn(text)` | runs one model turn in the process's session and returns the reply |
-| `report(text)` | delivers text through the process's pipe (R-PROC.8); empty text is ignored |
+| `report(text)` | delivers text through the process's pipe (R-PROC.8), or to the human feed when it declares none; empty text is ignored |
 
 Every function **MUST** be refused (`E_NOT_LIVE`) in an instance not started as a live
 process, so a tool a model calls can never block in `next()`.

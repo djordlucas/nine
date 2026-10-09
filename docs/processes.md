@@ -21,7 +21,7 @@ A process runs in one of two modes, decided by its tool:
 | Instance | started once, runs until stopped | created for each trigger, destroyed after |
 | Receiving work | `next()` from `nine:process` waits for the next trigger | the trigger is the call |
 | Asking the model | `turn(text)` runs a turn in its session and returns the reply | not possible |
-| Output | `report(text)` | the call's non-empty result |
+| Output | `report(text)`: to its pipe, or the human feed without one | the call's non-empty result, the same way |
 | Examples | `pursue`, `reflect`, a tool whose manifest says `live = true` | any resumable tool on a cadence — what standing tools were |
 
 A live process's instance has no call deadline. Its work budget bounds the work
