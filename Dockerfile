@@ -84,7 +84,7 @@ COPY --from=s6-fetch /out/ /
 # directive, so the toolchain comes from the go-build stage instead (its Go
 # binaries are statically linked and run fine on glibc, unrelated to that
 # stage's own Alpine base) — this also keeps the dev toolchain in lockstep with
-# whatever golang:1.26-alpine digest go-build uses, with nothing to track here.
+# whatever golang image go-build pins, with nothing to track here.
 # The nine binary itself is pure Go — the SQLite driver is a Go translation of
 # SQLite, not a cgo binding — so it likewise carries no libc dependency across
 # stages.
