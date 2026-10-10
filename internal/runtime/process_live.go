@@ -187,6 +187,11 @@ func (r *StandingRunner) startLive(ctx context.Context, row memory.Process) {
 	}
 	r.liveMu.Lock()
 	r.lives[row.ID] = lp
+	// Events that came while it was starting, in the order they came.
+	for _, t := range r.heldEvents[row.ID] {
+		lp.offerEvent(t)
+	}
+	delete(r.heldEvents, row.ID)
 	r.liveMu.Unlock()
 	// A restart after failures is not a recovery: the failures clear once the
 	// program has handled a trigger and come back for the next (Next), so a

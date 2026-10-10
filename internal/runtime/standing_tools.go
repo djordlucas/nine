@@ -86,6 +86,9 @@ type StandingRunner struct {
 	maxRunning int
 	// maxDepth is [processes] max_depth, the lineage bound (process_events.go).
 	maxDepth int
+	// heldEvents are event triggers for processes whose instance has not
+	// started yet, under liveMu (deliverEvent).
+	heldEvents map[string][]toolvm.Trigger
 }
 
 // Wake asks for a pass now rather than at the next tick: a process just written

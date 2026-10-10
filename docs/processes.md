@@ -86,7 +86,7 @@ on_filter = { sessions = "conversations" }   # or tool = "<name>", session = "<i
 | Scope | every session but the process's own; `on_filter` narrows it by tool, by `sessions` (`all`, `conversations`, `processes`) or to one `session` |
 | Restriction | a turn an event with content starts is restricted as a piped report's is: it can read, record and notify, nothing more |
 | From now on | events from before the daemon started are not delivered |
-| Busy | up to 8 triggers wait; an event beyond that is dropped and the drop journaled |
+| Busy | up to 8 triggers wait, for a busy process or one still starting; an event beyond that is dropped and the drop journaled |
 
 **Lineage.** A conversation's events have depth 0. A process's turn is one
 deeper than the trigger that started it, and so are its events and what it
@@ -298,7 +298,7 @@ use instead.
 | No backfill | A clock tick missed while the daemon or the process was down is not replayed: the first tick comes one cadence after the start. |
 | Approval follows `require_approval` | Under `never`, or in a conversation nobody attends (an API conversation), a process write is not put to anyone: `allow_processes` and `process_roles` are the only controls. |
 | Event content is visible to any process that asks | A process with `event_content = true`, Nine's own included, receives the content of every session it watches: what tools read and returned, what people asked. Turns it starts are restricted, but its program sees the text. |
-| Events are delivered from boot onward | A process down or not yet running misses the events of that time; nothing is replayed. |
+| Events are delivered from boot onward | A stopped or paused process misses the events of that time, and nothing from before boot is replayed. A process that is starting, or failing and retrying, receives them. |
 | A piped report can still steer what a restricted turn allows | An instruction inside a report can make the agent create files, plant memories, pause or finish its own goal, or post a misleading notification. |
 | A piped turn cannot append to an existing file | A watcher that reports repeatedly gets each finding recorded in a new file, or in its log on the session's own next turn. |
 | A piped report stays in the session's history | The session's next turn — its own clock tick, unrestricted — sees the report and can still act on an instruction inside it. The restriction narrows the turn the report causes, not every turn after it. |

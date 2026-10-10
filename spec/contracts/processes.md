@@ -223,7 +223,7 @@ journal event as a trigger `{kind: "event", event: {type, session, turn, at, dat
   **MUST NOT** be delivered, and the skip **MUST** be journaled (`process_skipped`); a skipped
   pipe's report goes to the human feed.
 - Events from before the daemon started are not delivered. Up to 8 triggers wait for a busy
-  process; a further event is dropped and the drop journaled.
+  or starting process (a failing one still receives events); a further event is dropped and the drop journaled.
 
 ---
 

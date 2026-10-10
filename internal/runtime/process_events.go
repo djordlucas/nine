@@ -115,16 +115,18 @@ func (e *EventRouter) Handle(_ context.Context, ev memory.SessionEvent) error {
 		depth = max(depth, 1)
 	}
 
+	// The processes that should be running, from the store rather than from
+	// the instances already up: one that is starting — at boot, just written,
+	// after a restart — receives the event when it starts (holdEvent).
 	r := e.r
-	r.liveMu.Lock()
-	lives := make([]*liveProc, 0, len(r.lives))
-	for _, lp := range r.lives {
-		lives = append(lives, lp)
+	rows, err := r.store.ProcessesLive()
+	if err != nil {
+		return err
 	}
-	r.liveMu.Unlock()
-
-	for _, lp := range lives {
-		row := lp.row
+	for _, row := range rows {
+		if row.OnEvents == "" || (row.State != memory.ProcessRunning && row.State != memory.ProcessFailing) {
+			continue
+		}
 		on, filter := decodeEventTrigger(row.OnEvents, row.EventFilter)
 		if !slices.Contains(on, ev.Type) || ev.AgentID == row.SessionID || ev.AgentID == row.ID {
 			continue
@@ -150,13 +152,32 @@ func (e *EventRouter) Handle(_ context.Context, ev memory.SessionEvent) error {
 			// piped report's is.
 			Piped: row.EventContent,
 		}
-		if !lp.offerEvent(t) {
+		if !r.deliverEvent(row.ID, t) {
 			journalTransition(r.store, row.ID, evProcessSkipped, map[string]any{
 				"event": ev.Type, "session": ev.AgentID, "turn": ev.Turn, "reason": "busy",
 			})
 		}
 	}
 	return nil
+}
+
+// deliverEvent gives a running process an event trigger, or holds it for one
+// whose instance has not started yet; startLive hands held events over. It
+// reports false when the process has no room, up to liveTriggerQueue either way.
+func (r *StandingRunner) deliverEvent(id string, t toolvm.Trigger) bool {
+	r.liveMu.Lock()
+	defer r.liveMu.Unlock()
+	if lp := r.lives[id]; lp != nil {
+		return lp.offerEvent(t)
+	}
+	if r.heldEvents == nil {
+		r.heldEvents = map[string][]toolvm.Trigger{}
+	}
+	if len(r.heldEvents[id]) >= liveTriggerQueue {
+		return false
+	}
+	r.heldEvents[id] = append(r.heldEvents[id], t)
+	return true
 }
 
 // matches applies a process's event filter.

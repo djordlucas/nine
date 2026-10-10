@@ -187,3 +187,40 @@ func TestPipeAtMaxDepthGoesToTheFeed(t *testing.T) {
 		t.Errorf("feed = %q", feed)
 	}
 }
+
+// An event for a process whose instance has not started yet is held and
+// handed over when it starts: a process starting at boot, just written or
+// restarting does not miss what happens meanwhile.
+func TestEventHeldUntilTheProcessStarts(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := standingHost(t, "eventrelay", eventRelayManifest, eventRelaySource, nil)
+	r := NewStandingRunner(store, host, 1, 2)
+	sessions := &fakeSessions{}
+	r.SetSessions(sessions)
+	t.Cleanup(r.StopLive)
+	on, f, c := trigger([]string{"turn_start"}, config.EventFilter{}, false)
+	row := memory.Process{ID: "watch", SessionID: "watch", Tool: "eventrelay", Mode: memory.ProcessLive,
+		Owner: true, OnEvents: on, EventFilter: f, EventContent: c}
+	if err := store.ProcessUpsertDefinition(row); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ProcessSetState("watch", memory.ProcessRunning); err != nil {
+		t.Fatal(err)
+	}
+	e := r.EventRouter()
+	e.started = time.Now().Add(-time.Minute)
+	if err := e.Handle(context.Background(), turnStart("conv-1", 1, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(sessions.seen()); n != 0 {
+		t.Fatalf("%d turns before the process started", n)
+	}
+	r.tickLive(context.Background())
+	eventually(t, "the held event's turn", func() bool { return len(sessions.seen()) == 1 })
+	if got := sessions.seen()[0]; !strings.Contains(got, `"type":"turn_start"`) {
+		t.Errorf("turn = %q", got)
+	}
+}
