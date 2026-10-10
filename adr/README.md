@@ -63,6 +63,7 @@ changed; the document stays as the record and is not rewritten.
 | `critic.md` | Assessment of the feature set, the limits and the positioning: findings `C1`–`C11`, what is differentiated, and where Nine should be aimed |
 | `deferred-tool-schemas.md` | Cutting base tool-schema cost from ~8k to ~2k tokens: a small resident set, the rest listed by name, load-on-demand with promotion. Adds an A/B exposition arm and new cases to the evals. Amends R-ROLE.4. |
 | `durable-and-long-running-tools.md` | Giving a sandboxed tool memory and letting work outlive a turn. Amends I-TVM.3. |
+| `node-compat.md` | Node compatibility for `js` tools as in-house `node:*` shims over existing capabilities, served from the module map and inlined by the deps bundler. No blob rebuild, no new reach. Six phases; a frozen npm corpus decides the later shims. Amends R-TVM.15. |
 | `generated-tool-authoring-loop.md` | Shortening the write→fail→rewrite loop for agent-authored tools: parse at write time, dry-run, logs on failure, stdlib gaps, catalog hygiene. |
 | `event-log.md` | Investigation behind the session journal. Written against PostgreSQL; the store is SQLite. |
 | `personality-pattern.md` | Packaging complete Nine instances as specialized agents; self-model bootstrapping |
