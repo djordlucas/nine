@@ -24,6 +24,22 @@ type turnReq struct {
 	// allow, when set, restricts the turn to these tools (PipedTurnTools for
 	// a turn a pipe caused).
 	allow []string
+	// depth is the turn's lineage depth, journaled on turn_start.
+	depth int
+}
+
+// TurnOptions are how a process's turn is run: the journal's trigger label,
+// the tools it may use (nil for all), and its lineage depth.
+type TurnOptions struct {
+	Trigger string
+	Allow   []string
+	Depth   int
+}
+
+// wakeReq is a woken turn: a pipe's report and its lineage depth.
+type wakeReq struct {
+	text  string
+	depth int
 }
 
 // replayBuffer is a bounded ring of progress events and the last completed
@@ -100,7 +116,7 @@ type AgentWorker struct {
 	// wake carries a condition trigger's finding: a predicate said there is
 	// something to look at, so run a turn now rather than at the next clock
 	// (docs/scheduling.md). Buffered at 1 and never blocked on — see Wake.
-	wake       chan string
+	wake       chan wakeReq
 	saveCkpt   func(id string, data []byte) error
 	getNotif   func(id string) ([]string, error)
 	stall      StallConfig
@@ -265,7 +281,7 @@ func newAgentWorker(
 		loop:     loop,
 		inbox:    make(chan turnReq, 1),
 		inspect:  make(chan inspectReq),
-		wake:     make(chan string, 1),
+		wake:     make(chan wakeReq, 1),
 		saveCkpt: saveCkpt,
 		getNotif: getNotif,
 		stall:    stall,
@@ -289,13 +305,13 @@ func (w *AgentWorker) run() {
 			w.drainQueued()
 		case ir := <-w.inspect:
 			ir.respCh <- w.loop.InspectContext(ir.ctx)
-		case text := <-w.wake:
+		case wr := <-w.wake:
 			// Nobody waits on a woken turn's reply, but processTurn delivers one; a
 			// buffered channel takes it so the worker is free for the next turn.
 			// A woken turn is a pipe's report reaching this session, so it runs
-			// restricted (PipedTurnTools).
-			w.processTurn(turnReq{ctx: context.Background(), text: text, respCh: make(chan turnResp, 1),
-				trigger: "condition", allow: PipedTurnTools})
+			// restricted (PipedTurnTools), one level deeper than the report.
+			w.processTurn(turnReq{ctx: context.Background(), text: wr.text, respCh: make(chan turnResp, 1),
+				trigger: "condition", allow: PipedTurnTools, depth: wr.depth + 1})
 			w.drainQueued()
 		case <-w.quit:
 			return
@@ -343,7 +359,7 @@ func (w *AgentWorker) processTurn(req turnReq) {
 	if trigger == "" {
 		trigger = "user"
 	}
-	w.journal(turn, "turn_start", turnSpan(turn), "", turnStartPayload{Input: text, Trigger: trigger})
+	w.journal(turn, "turn_start", turnSpan(turn), "", turnStartPayload{Input: text, Trigger: trigger, Depth: req.depth})
 	w.loop.SetHooks(w.turnHooks(turn))
 	slog.Debug("turn_start", "agent_id", w.id, "turn_n", turn)
 	w.loop.SetForceThinkNextTurn(req.forceThink)
@@ -490,9 +506,9 @@ func (w *AgentWorker) checkStall(ctx context.Context) {
 // first finding does not want two turns, it wants the agent to look, and the
 // second finding will still be there when it does. Blocking here would instead
 // let a chatty predicate stall the evaluator that produced it.
-func (w *AgentWorker) Wake(text string) bool {
+func (w *AgentWorker) Wake(text string, depth int) bool {
 	select {
-	case w.wake <- text:
+	case w.wake <- wakeReq{text: text, depth: depth}:
 		return true
 	default:
 		return false
@@ -527,16 +543,16 @@ func (w *AgentWorker) turn(ctx context.Context, text string) (string, error) {
 // turnAs is turn with the journal's trigger label: "" for a user's turn, or
 // what drove it ("idle", "condition") for a process's.
 func (w *AgentWorker) turnAs(ctx context.Context, text, trigger string) (string, error) {
-	res := w.turnCounted(ctx, text, trigger, nil)
+	res := w.turnCounted(ctx, text, TurnOptions{Trigger: trigger})
 	return res.text, res.err
 }
 
 // turnCounted is turnAs with the tokens the turn spent; allow, when set,
 // restricts the turn's tools.
-func (w *AgentWorker) turnCounted(ctx context.Context, text, trigger string, allow []string) turnResp {
+func (w *AgentWorker) turnCounted(ctx context.Context, text string, opt TurnOptions) turnResp {
 	ch := make(chan turnResp, 1)
 	select {
-	case w.inbox <- turnReq{ctx: ctx, text: text, respCh: ch, trigger: trigger, allow: allow}:
+	case w.inbox <- turnReq{ctx: ctx, text: text, respCh: ch, trigger: opt.Trigger, allow: opt.Allow, depth: opt.Depth}:
 	case <-ctx.Done():
 		return turnResp{err: ctx.Err()}
 	case <-w.quit:

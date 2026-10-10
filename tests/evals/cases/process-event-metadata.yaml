@@ -1,0 +1,48 @@
+id: process-event-metadata
+description: "An event trigger delivers metadata by default: a process on turn_start in conversations logs each event it receives, and the log has the turn's trigger but not what the person asked. It measures the runtime — every turn starts whatever the model does — so every model must pass it."
+track: live
+tier: basic
+tags: [processes, events, generated]
+
+session:
+  config:
+    tools.agent.enabled: true
+    tools.agent.allow_processes: true
+
+setup:
+  generated_tools:
+    turn_watch:
+      description: "Logs every turn a conversation starts."
+      capabilities: '{"fs":["read","write"]}'
+      source: |
+        import { next } from "nine:process";
+        import { appendFile } from "nine:fs";
+        export default () => {
+          for (;;) {
+            const t = next();
+            if (t.kind === "event") appendFile("/work/events.log", JSON.stringify(t.event.data) + "\n");
+          }
+        };
+      process:
+        on: [turn_start]
+        on_filter: { sessions: conversations }
+        event_content: false
+
+prompts:
+  - "Reply with the single word: ok. (Reference: CONTENT-MARK-71.)"
+
+wait:
+  seconds: 120
+  until:
+    files:
+      events.log: { contains: "trigger" }
+
+expect:
+  side_effects:
+    files:
+      events.log: { contains: "trigger", not_contains: "CONTENT-MARK-71" }
+
+runs: 3
+pass_threshold: "3/3"
+models:
+  expected_pass_min_class: nano

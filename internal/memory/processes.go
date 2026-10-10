@@ -97,6 +97,13 @@ type Process struct {
 	// block deletes it.
 	Declared bool `json:"declared,omitempty"`
 
+	// OnEvents lists the journal event types that trigger it, comma-separated;
+	// EventFilter is its filter as JSON; EventContent delivers the events'
+	// content as well as their metadata (adr/process-sessions.md §7).
+	OnEvents     string `json:"on_events,omitempty"`
+	EventFilter  string `json:"event_filter,omitempty"`
+	EventContent bool   `json:"event_content,omitempty"`
+
 	CreatedAt string `json:"created_at,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
 }
@@ -120,8 +127,9 @@ func (s *Store) ProcessUpsertDefinition(t Process) error {
 	_, err := s.db.Exec(
 		`INSERT INTO processes(id, tool, args, interval_secs, schedule, generated, report_to,
 		                       mode, session_id, owner, role, delegates, goal_id,
-		                       budget_turns, budget_tokens, declared, updated_at)
-		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		                       budget_turns, budget_tokens, declared, on_events, event_filter,
+		                       event_content, updated_at)
+		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		 ON CONFLICT(id) DO UPDATE SET
 		   tool=excluded.tool, args=excluded.args,
 		   interval_secs=excluded.interval_secs, schedule=excluded.schedule,
@@ -129,10 +137,11 @@ func (s *Store) ProcessUpsertDefinition(t Process) error {
 		   owner=excluded.owner, role=excluded.role, delegates=excluded.delegates,
 		   goal_id=excluded.goal_id, budget_turns=excluded.budget_turns,
 		   budget_tokens=excluded.budget_tokens, declared=excluded.declared,
-		   updated_at=excluded.updated_at`,
+		   on_events=excluded.on_events, event_filter=excluded.event_filter,
+		   event_content=excluded.event_content, updated_at=excluded.updated_at`,
 		t.ID, t.Tool, args, t.IntervalSecs, t.Schedule, t.Generated, t.ReportTo,
 		mode, t.SessionID, t.Owner, t.Role, t.Delegates, t.GoalID,
-		t.BudgetTurns, t.BudgetTokens, t.Declared, nowText())
+		t.BudgetTurns, t.BudgetTokens, t.Declared, t.OnEvents, t.EventFilter, t.EventContent, nowText())
 	return err
 }
 
@@ -338,7 +347,7 @@ const processColumns = `id, tool, args, interval_secs, schedule, state, cursor,
 	        calls, cycles, failures, last_error, last_call_at, next_at, generated,
 	        report_to, mode, session_id, owner, role, delegates, goal_id, stopped_by, stopped_at,
 	        budget_turns, budget_tokens, usage_turns, usage_tokens, usage_since, declared,
-	        created_at, updated_at`
+	        on_events, event_filter, event_content, created_at, updated_at`
 
 func scanProcess(row rowScanner) (Process, error) {
 	var t Process
@@ -347,7 +356,7 @@ func scanProcess(row rowScanner) (Process, error) {
 		&t.NextAt, &t.Generated, &t.ReportTo, &t.Mode, &t.SessionID, &t.Owner, &t.Role,
 		&t.Delegates, &t.GoalID, &t.StoppedBy, &t.StoppedAt,
 		&t.BudgetTurns, &t.BudgetTokens, &t.UsageTurns, &t.UsageTokens, &t.UsageSince,
-		&t.Declared, &t.CreatedAt, &t.UpdatedAt)
+		&t.Declared, &t.OnEvents, &t.EventFilter, &t.EventContent, &t.CreatedAt, &t.UpdatedAt)
 	return t, err
 }
 

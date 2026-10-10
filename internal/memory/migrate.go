@@ -391,6 +391,21 @@ var migrations = []migrationStep{
 	{name: "live_generated_tools", fn: func(q sqlExec) error {
 		return addColumnIfMissing(q, "tools", "live", "INTEGER NOT NULL DEFAULT 0")
 	}},
+
+	// 18 → 19: a process may be triggered by journal events
+	// (adr/process-sessions.md §7, phase 4).
+	{name: "process_event_triggers", fn: func(q sqlExec) error {
+		for _, c := range []struct{ name, def string }{
+			{"on_events", "TEXT NOT NULL DEFAULT ''"},
+			{"event_filter", "TEXT NOT NULL DEFAULT ''"},
+			{"event_content", "INTEGER NOT NULL DEFAULT 0"},
+		} {
+			if err := addColumnIfMissing(q, "processes", c.name, c.def); err != nil {
+				return err
+			}
+		}
+		return nil
+	}},
 }
 
 // convertGoalPlans turns each session plan with a pursue routine into the

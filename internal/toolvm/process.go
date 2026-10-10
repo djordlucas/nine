@@ -41,6 +41,9 @@ type Trigger struct {
 	// Piped marks a message a process's pipe delivered, as opposed to one a
 	// person sent; the turn it causes is restricted. The program does not see it.
 	Piped bool `json:"-"`
+	// Depth is the trigger's lineage depth (adr/process-sessions.md §7): the
+	// turns it causes journal one deeper. The program does not see it.
+	Depth int `json:"-"`
 	// Goal is the goal a goal-bound process works on, as it stands now.
 	Goal *TriggerGoal `json:"goal,omitempty"`
 }

@@ -60,9 +60,41 @@ They are read-only programs you can inspect with `nine tools show pursue`.
 |---|---|---|
 | Clock | `every = "5m"` or `schedule = "0 7 * * *"` | `{ kind: "clock" }`, with the bound goal for a goal process |
 | Report | another process's `report_to` naming this one | `{ kind: "message", text, from }` |
+| Event | `on = ["tool_end"]`, with an optional `on_filter` | `{ kind: "event", event: { type, session, turn, at, data }, from }` |
 
 A process's first tick comes one cadence after it starts, at boot as when it is
-created. A process with no clock wakes only on reports.
+created. A process with no clock wakes only on reports and events.
+
+## Event triggers
+
+A live process can be triggered by what happens in Nine's journal: a turn
+starting or ending, a tool finishing, a sub-agent, another process's
+transitions.
+
+```toml
+[[process]]
+name      = "error-watch"
+tool      = "error_watch"           # a live tool
+on        = ["tool_end"]
+on_filter = { sessions = "conversations" }   # or tool = "<name>", session = "<id>"
+```
+
+| Rule | Detail |
+|---|---|
+| Types | `turn_start`, `turn_end`, `tool_end`, `sub_agent_start`, `sub_agent_end`, and the process transitions (`standing_*`, `process_*`). Model requests and replies are never delivered |
+| Data | metadata by default — session, tool name, error, duration, sizes. `event_content = true` adds the content: tool input and output, a turn's input and result |
+| Scope | every session but the process's own; `on_filter` narrows it by tool, by `sessions` (`all`, `conversations`, `processes`) or to one `session` |
+| Restriction | a turn an event with content starts is restricted as a piped report's is: it can read, record and notify, nothing more |
+| From now on | events from before the daemon started are not delivered |
+| Busy | up to 8 triggers wait, for a busy process or one still starting; an event beyond that is dropped and the drop journaled |
+
+**Lineage.** A conversation's events have depth 0. A process's turn is one
+deeper than the trigger that started it, and so are its events and what it
+pipes. No process is triggered by an event, and no pipe is delivered, at
+`[processes] max_depth` (default 2) or deeper: the skip is journaled as
+`process_skipped`, and a skipped pipe's report goes to `nine notifications`.
+So a process may react to someone's work, and another to that reaction, and
+the chain stops there.
 
 A process that fails — a slice call that errors, a live program that throws —
 is retried after a backoff that doubles its cadence each time, up to 30
@@ -265,7 +297,8 @@ use instead.
 |-------|--------|
 | No backfill | A clock tick missed while the daemon or the process was down is not replayed: the first tick comes one cadence after the start. |
 | Approval follows `require_approval` | Under `never`, or in a conversation nobody attends (an API conversation), a process write is not put to anyone: `allow_processes` and `process_roles` are the only controls. |
-| No event triggers | Processes wake on clocks and reports, not on journal events. |
+| Event content is visible to any process that asks | A process with `event_content = true`, Nine's own included, receives the content of every session it watches: what tools read and returned, what people asked. Turns it starts are restricted, but its program sees the text. |
+| Events are delivered from boot onward | A stopped or paused process misses the events of that time, and nothing from before boot is replayed. A process that is starting, or failing and retrying, receives them. |
 | A piped report can still steer what a restricted turn allows | An instruction inside a report can make the agent create files, plant memories, pause or finish its own goal, or post a misleading notification. |
 | A piped turn cannot append to an existing file | A watcher that reports repeatedly gets each finding recorded in a new file, or in its log on the session's own next turn. |
 | A piped report stays in the session's history | The session's next turn — its own clock tick, unrestricted — sees the report and can still act on an instruction inside it. The restriction narrows the turn the report causes, not every turn after it. |

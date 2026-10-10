@@ -206,6 +206,27 @@ process session and a sub-agent **MUST NOT** hold any of them.
 
 ---
 
+## R-PROC.14 — event triggers and lineage
+
+A live process with `on` (types from `EventTypes`: `turn_start`, `turn_end`, `tool_end`,
+`sub_agent_start`, `sub_agent_end`, `standing_*`, `process_*`) **MUST** receive each matching
+journal event as a trigger `{kind: "event", event: {type, session, turn, at, data}, from}`.
+
+- `data` **MUST NOT** carry content — `input`, `output`, `result`, `task`, `text` — unless the
+  process sets `event_content`; a turn an event with content starts **MUST** be restricted as
+  a piped one is (R-PROC.8). `llm_request` and `llm_response` are never delivered.
+- An event from the process's own session **MUST NOT** reach it. `on_filter` narrows by
+  `tool`, `sessions` (`all`, `conversations`, `processes`) and `session`.
+- **Lineage:** a conversation's turn has depth 0; a process's turn has its trigger's depth
+  plus one, journaled on `turn_start`; an event has its turn's depth; a pipe's report has its
+  sender's turn depth. An event or pipe at `[processes] max_depth` (default 2) or more
+  **MUST NOT** be delivered, and the skip **MUST** be journaled (`process_skipped`); a skipped
+  pipe's report goes to the human feed.
+- Events from before the daemon started are not delivered. Up to 8 triggers wait for a busy
+  or starting process (a failing one still receives events); a further event is dropped and the drop journaled.
+
+---
+
 ## R-PROC.13 — processes Nine writes
 
 `tool_write` with a `process` block **MUST** be refused unless `[tools.agent] allow_processes`
@@ -231,6 +252,7 @@ is on. A written process is `gen:<tool>`: live when the tool is not resumable �
 `internal/runtime/process_live.go` (live runner, goal binding, pipes),
 `internal/runtime/process_budget.go` (budgets),
 `internal/runtime/process_control.go` (roster, start rule), `internal/agent/register_processes.go`,
+`internal/runtime/process_events.go` (event router, lineage),
 `internal/runtime/generated_tools.go` (processes Nine writes), `skills/roles/process.md`,
 `internal/runtime/standing_tools.go` (slice runner, `ReconcileProcesses`),
 `internal/runtime/goal_session.go`, `internal/runtime/process_sessions.go`

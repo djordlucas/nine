@@ -174,6 +174,11 @@ The rules that matter:
 - **`report(text)` tells the person**: it goes to the notification feed (or to the process
   in `report_to`, if you gave one). Use it for what someone should see; write files for
   the rest.
+- **A process can be woken by events** instead of, or as well as, a clock: add
+  `"on":["tool_end"]` (or `turn_end`, …) and `next()` returns
+  `{kind:"event", event:{type, session, turn, data}}`. `data` holds metadata — the tool's
+  name, error, timing — and its input and output only with `"event_content":true`.
+  `"on_filter":{"tool":"write_file","sessions":"conversations"}` narrows which events.
 - **A process cannot call tools**, including ones you wrote. Do the work in its own
   program — read and write files with `nine:fs`, fetch with `fetch` — and ask the model
   with `turn()`. Write the whole thing as one process, not a tool plus a process that calls it.

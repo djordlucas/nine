@@ -183,3 +183,34 @@ func TestCheckSyntax(t *testing.T) {
 		t.Errorf("err = %v, want a refusal naming line 2", err)
 	}
 }
+
+// A written process may be triggered by events: a live one only, of known
+// types; the trigger is recorded on its row.
+func TestProcessEventTriggers(t *testing.T) {
+	g, store := processStore(t, GeneratedPolicy{AllowProcesses: true})
+	for _, tc := range []struct {
+		spec agent.GeneratedToolSpec
+		want string
+	}{
+		{processSpec("p", agent.ProcessRequest{On: []string{"llm_request"}}), "not an event"},
+		{processSpec("p", agent.ProcessRequest{EventContent: true}), "need on"},
+		{agent.GeneratedToolSpec{Name: "p", Source: "x", Resumable: true,
+			Process: &agent.ProcessRequest{Every: "1h", On: []string{"tool_end"}}}, "live processes"},
+	} {
+		if err := g.checkProcessRequest(tc.spec); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("err = %v, want %q", err, tc.want)
+		}
+	}
+	spec := processSpec("watch", agent.ProcessRequest{On: []string{"tool_end"},
+		OnFilter: &agent.EventFilter{Tool: "web_page_read"}, EventContent: true})
+	if err := g.checkProcessRequest(spec); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.recordProcess(spec); err != nil {
+		t.Fatal(err)
+	}
+	p, _, _ := store.ProcessGet("gen:watch")
+	if p.OnEvents != "tool_end" || !strings.Contains(p.EventFilter, "web_page_read") || !p.EventContent {
+		t.Errorf("row = on %q filter %q content %v", p.OnEvents, p.EventFilter, p.EventContent)
+	}
+}

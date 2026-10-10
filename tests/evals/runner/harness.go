@@ -171,6 +171,8 @@ func startProcesses(ctx context.Context, lv *live, setup []ProcessSetup) error {
 			Name: p.Name, Tool: p.Tool, Every: p.Every, Schedule: p.Schedule, Goal: p.Goal,
 			Role: p.Role, Delegates: p.Delegates, Session: p.Session, ReportTo: p.ReportTo, Args: p.Args,
 			Budget: config.BudgetConfig{TurnsPerDay: p.Budget.TurnsPerDay, TokensPerDay: p.Budget.TokensPerDay},
+			On:     p.On, EventContent: p.EventContent,
+			OnFilter: config.EventFilter{Tool: p.OnFilter.Tool, Sessions: p.OnFilter.Sessions, Session: p.OnFilter.Session},
 		})
 	}
 	if err := (&config.Config{Process: blocks}).Validate(); err != nil {
@@ -431,7 +433,11 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 			}
 			spec.Resumable = g.Resumable
 			if p := g.Process; p != nil {
-				spec.Process = &agent.ProcessRequest{Every: p.Every, Schedule: p.Schedule, Role: p.Role, ReportTo: p.ReportTo}
+				spec.Process = &agent.ProcessRequest{Every: p.Every, Schedule: p.Schedule, Role: p.Role, ReportTo: p.ReportTo,
+					On: p.On, EventContent: p.EventContent}
+				if p.OnFilter != (EventFilterSetup{}) {
+					spec.Process.OnFilter = &agent.EventFilter{Tool: p.OnFilter.Tool, Sessions: p.OnFilter.Sessions, Session: p.OnFilter.Session}
+				}
 			}
 			if _, err := generatedTools.Write(ctx, spec); err != nil {
 				return nil, fmt.Errorf("seed generated tool %s: %w", name, err)

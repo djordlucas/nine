@@ -1,0 +1,48 @@
+id: process-event-content
+description: "With event_content, an event trigger delivers the content too: the log of a process on turn_start in conversations holds what the person asked. It measures the runtime, so every model must pass it."
+track: live
+tier: basic
+tags: [processes, events, generated]
+
+session:
+  config:
+    tools.agent.enabled: true
+    tools.agent.allow_processes: true
+
+setup:
+  generated_tools:
+    turn_watch:
+      description: "Logs every turn a conversation starts."
+      capabilities: '{"fs":["read","write"]}'
+      source: |
+        import { next } from "nine:process";
+        import { appendFile } from "nine:fs";
+        export default () => {
+          for (;;) {
+            const t = next();
+            if (t.kind === "event") appendFile("/work/events.log", JSON.stringify(t.event.data) + "\n");
+          }
+        };
+      process:
+        on: [turn_start]
+        on_filter: { sessions: conversations }
+        event_content: true
+
+prompts:
+  - "Reply with the single word: ok. (Reference: CONTENT-MARK-71.)"
+
+wait:
+  seconds: 120
+  until:
+    files:
+      events.log: { contains: "trigger" }
+
+expect:
+  side_effects:
+    files:
+      events.log: { contains: "CONTENT-MARK-71" }
+
+runs: 3
+pass_threshold: "3/3"
+models:
+  expected_pass_min_class: nano

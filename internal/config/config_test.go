@@ -457,6 +457,10 @@ func TestProcessBlockMistakesAreRefused(t *testing.T) {
 		"budget above default": "[[process]]\nname = \"a\"\ntool = \"x\"\nbudget = { turns_per_day = 500 }\n",
 		"budget above ceiling": "[processes]\nbudget = { tokens_per_day = 1000 }\n[[process]]\nname = \"a\"\ntool = \"x\"\nbudget = { tokens_per_day = 2000 }\n",
 		"negative budget":      "[processes]\nbudget = { turns_per_day = -1 }\n",
+		"unknown event":        "[[process]]\nname = \"a\"\ntool = \"x\"\non = [\"llm_request\"]\n",
+		"bad sessions scope":   "[[process]]\nname = \"a\"\ntool = \"x\"\non = [\"tool_end\"]\non_filter = { sessions = \"mine\" }\n",
+		"content without on":   "[[process]]\nname = \"a\"\ntool = \"x\"\nevent_content = true\n",
+		"goal with on":         "[[process]]\nname = \"a\"\ntool = \"pursue\"\ngoal = \"g\"\non = [\"tool_end\"]\n",
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
