@@ -1,0 +1,48 @@
+id: process-event-content
+description: "With event_content, an event trigger delivers the event's content too: the log of a process on tool_end holds what the conversation's write_file was given. It measures the runtime, so every model must pass it."
+track: live
+tier: basic
+tags: [processes, events, generated]
+
+session:
+  config:
+    tools.agent.enabled: true
+    tools.agent.allow_processes: true
+
+setup:
+  generated_tools:
+    write_watch:
+      description: "Logs every write_file a conversation makes."
+      capabilities: '{"fs":["read","write"]}'
+      source: |
+        import { next } from "nine:process";
+        import { appendFile } from "nine:fs";
+        export default () => {
+          for (;;) {
+            const t = next();
+            if (t.kind === "event") appendFile("/work/notes/events.log", JSON.stringify(t.event.data) + "\n");
+          }
+        };
+      process:
+        on: [tool_end]
+        on_filter: { tool: write_file, sessions: conversations }
+        event_content: true
+
+prompts:
+  - "Write the text CONTENT-MARK-71 to the file notes/a.txt."
+
+wait:
+  seconds: 120
+  until:
+    files:
+      notes/events.log: { contains: "write_file" }
+
+expect:
+  side_effects:
+    files:
+      notes/events.log: { contains: "CONTENT-MARK-71" }
+
+runs: 3
+pass_threshold: "3/3"
+models:
+  expected_pass_min_class: nano

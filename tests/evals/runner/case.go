@@ -136,6 +136,10 @@ type GeneratedProcessSetup struct {
 	ReportTo string `yaml:"report_to"`
 	// StoppedBy starts the process stopped by that party.
 	StoppedBy string `yaml:"stopped_by"`
+	// On, OnFilter and EventContent are its event trigger.
+	On           []string         `yaml:"on"`
+	OnFilter     EventFilterSetup `yaml:"on_filter"`
+	EventContent bool             `yaml:"event_content"`
 }
 
 // ProcessSetup is one [[process]] block, with the same fields.
@@ -159,6 +163,17 @@ type ProcessSetup struct {
 	// GoalStatus sets a goal block's goal to this status after it is created,
 	// e.g. "paused"; a goal that is not active stops its process.
 	GoalStatus string `yaml:"goal_status"`
+	// On, OnFilter and EventContent are the block's event trigger.
+	On           []string         `yaml:"on"`
+	OnFilter     EventFilterSetup `yaml:"on_filter"`
+	EventContent bool             `yaml:"event_content"`
+}
+
+// EventFilterSetup is a block's on_filter.
+type EventFilterSetup struct {
+	Tool     string `yaml:"tool"`
+	Sessions string `yaml:"sessions"`
+	Session  string `yaml:"session"`
 }
 
 // BudgetSetup is a [[process]] block's budget.
@@ -244,6 +259,17 @@ type SideEffects struct {
 	// Processes checks processes by id: whether one exists, its state, and who
 	// stopped it.
 	Processes map[string]ProcessExpect `yaml:"processes"`
+	// Journal checks events recorded under an id: at least Min of a type,
+	// whose payload contains a text when Contains is set.
+	Journal []JournalExpect `yaml:"journal"`
+}
+
+// JournalExpect asserts journal events recorded under Agent.
+type JournalExpect struct {
+	Agent    string `yaml:"agent"`
+	Type     string `yaml:"type"`
+	Contains string `yaml:"contains"`
+	Min      int    `yaml:"min"`
 }
 
 // NotificationExpect asserts the human feed: at least Min notices, and one
@@ -278,6 +304,9 @@ type StringMatch struct {
 	// else to assert on: the strong evidence that a file was removed is its
 	// absence, and every content matcher needs a file to read first.
 	Absent bool `yaml:"absent"`
+	// NotContains must not appear. It complements the one predicate above, or
+	// stands alone.
+	NotContains string `yaml:"not_contains"`
 }
 
 // WorkflowExpect asserts over the workflows table.
@@ -543,8 +572,8 @@ func (m StringMatch) validate() error {
 	if m.Absent {
 		n++
 	}
-	if n == 0 {
-		return fmt.Errorf("must set one of equals|contains|matches|absent")
+	if n == 0 && m.NotContains == "" {
+		return fmt.Errorf("must set one of equals|contains|matches|absent, or not_contains")
 	}
 	if n > 1 {
 		return fmt.Errorf("set only one of equals|contains|matches|absent")
@@ -557,7 +586,7 @@ func (e Expect) hasAny() bool {
 	se := e.SideEffects
 	if len(se.Files) > 0 || len(se.StoredFiles) > 0 || len(se.KV) > 0 || se.Workflows != nil ||
 		se.Goals != nil || se.Notifications != nil || se.Vectors != nil ||
-		len(se.GeneratedTools) > 0 || len(se.Processes) > 0 {
+		len(se.GeneratedTools) > 0 || len(se.Processes) > 0 || len(se.Journal) > 0 {
 		return true
 	}
 	t := e.Trajectory
