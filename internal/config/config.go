@@ -266,14 +266,19 @@ type ToolsAgentConfig struct {
 	// unbounded in aggregate.
 	AllowLongRunning bool `toml:"allow_long_running"`
 
-	// AllowStanding lets a generated tool ask to be run standing — indefinitely,
-	// on its own cadence. Off by default, and separate from AllowLongRunning: a
-	// job the model started still ends, where a standing run does not until
-	// somebody stops it.
-	//
-	// Even with this on, every promotion is approved by a human (see
-	// RequireApproval, which this deliberately overrides).
-	AllowStanding bool `toml:"allow_standing"`
+	// AllowProcesses lets Nine write processes: tool_write with a `process`
+	// block, run until stopped (adr/process-sessions.md §9). Off by default, and
+	// separate from AllowLongRunning: a job the model started still ends, where
+	// a process does not until somebody stops it. A process write is approved
+	// as RequireApproval says, and prompts under on_capability even when it
+	// declares nothing, since it runs indefinitely.
+	AllowProcesses bool `toml:"allow_processes"`
+
+	// ProcessRoles are the roles the model turns of a process Nine writes may
+	// run under. Unset is ["process"], the lean role with no tools. A role
+	// listed here bounds what Nine's processes can reach, so list one only if
+	// its tools are fine to run unattended.
+	ProcessRoles []string `toml:"process_roles"`
 
 	// AllowNetworkDeps lifts the deps+net.http interlock. A package that can reach
 	// the network can exfiltrate whatever the tool sees, so a tool that both
@@ -1214,6 +1219,10 @@ func Load(path string) (*Config, error) {
 	if md.IsDefined("daemon", "standing_agents_authoritative") {
 		return nil, fmt.Errorf("%s: [daemon] standing_agents_authoritative is replaced by [processes] authoritative", path)
 	}
+	if md.IsDefined("tools", "agent", "allow_standing") {
+		return nil, fmt.Errorf("%s: [tools.agent] allow_standing is replaced by [tools.agent] allow_processes: "+
+			"a tool Nine writes runs indefinitely through tool_write's process block (docs/configuration.md)", path)
+	}
 	for _, k := range retiredLimits {
 		if md.IsDefined(k.key...) {
 			return nil, fmt.Errorf("%s: %s is replaced by [processes] max_running, the one cap on processes running at once (docs/configuration.md)", path, k.name)
@@ -1598,6 +1607,14 @@ var retiredLimits = []struct {
 }{
 	{"[daemon] max_goal_sessions", []string{"daemon", "max_goal_sessions"}},
 	{"[tools.agent] max_standing", []string{"tools", "agent", "max_standing"}},
+}
+
+// ProcessRolesOrDefault returns [tools.agent] process_roles, defaulted.
+func (c ToolsAgentConfig) ProcessRolesOrDefault() []string {
+	if len(c.ProcessRoles) > 0 {
+		return c.ProcessRoles
+	}
+	return []string{"process"}
 }
 
 // retiredBlocks are the tables [[process]] replaced (adr/process-sessions.md

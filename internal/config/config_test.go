@@ -476,6 +476,7 @@ func TestRetiredBlocksAreRefused(t *testing.T) {
 		"[daemon]\nstanding_agents_authoritative = true\n",
 		"[daemon]\nmax_goal_sessions = 5\n",
 		"[tools.agent]\nmax_standing = 2\n",
+		"[tools.agent]\nallow_standing = true\n",
 	} {
 		_, err := loadString(t, body)
 		if err == nil || !strings.Contains(err.Error(), "replaced by") {
@@ -501,5 +502,19 @@ func TestProcessBudget(t *testing.T) {
 	}
 	if got := (config.ProcessesConfig{}).BudgetOrDefault(); got != (config.BudgetConfig{TurnsPerDay: 200, TokensPerDay: 2_000_000}) {
 		t.Errorf("default budget = %+v", got)
+	}
+}
+
+// process_roles defaults to the lean process role; a list replaces it.
+func TestProcessRolesDefault(t *testing.T) {
+	if got := (config.ToolsAgentConfig{}).ProcessRolesOrDefault(); len(got) != 1 || got[0] != "process" {
+		t.Errorf("default process_roles = %v, want [process]", got)
+	}
+	cfg, err := loadString(t, "[tools.agent]\nallow_processes = true\nprocess_roles = [\"process\", \"writer\"]\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Tools.Agent.AllowProcesses || len(cfg.Tools.Agent.ProcessRolesOrDefault()) != 2 {
+		t.Errorf("tools.agent = %+v", cfg.Tools.Agent)
 	}
 }

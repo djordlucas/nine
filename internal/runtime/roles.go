@@ -20,6 +20,8 @@ const (
 	DefaultLeafRoleName = "executor"
 	ReflectionRole      = "reflection"
 	PursueRole          = "pursue"
+	// ProcessRole is the lean role of a process Nine writes: no tools.
+	ProcessRole = "process"
 )
 
 // DefaultMaxDelegationDepth is the depthGuard seed: how many delegation hops

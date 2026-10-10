@@ -368,3 +368,15 @@ func TestPipedTurnToolsLeaveOutHarm(t *testing.T) {
 		}
 	}
 }
+
+// A live process with no report_to reports to the human feed, as a slice
+// process's result does; it does not fail.
+func TestReportWithoutAPipeGoesToTheFeed(t *testing.T) {
+	r, store, _ := liveSetup(t, memory.Process{ID: "digest", SessionID: "digest-session", IntervalSecs: 1})
+	tickUntil(t, r, "the report on the feed", func() bool {
+		return strings.Contains(feedText(t, store), "[digest] reply:tick")
+	})
+	if p := processRow(t, store, "digest"); p.Failures != 0 {
+		t.Errorf("reporting with no pipe failed the process: %d failures, %q", p.Failures, p.LastError)
+	}
+}

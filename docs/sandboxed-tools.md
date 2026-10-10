@@ -779,6 +779,18 @@ can call the tool.
 
 The design, including the two shapes rejected and why, is `adr/standing-tools.md`.
 
+Every `tool_write` source is parsed when it is written: one that does not parse is
+refused with its line, column and reason, and nothing is stored.
+
+**Processes Nine writes.** With `[tools.agent] allow_processes`, `tool_write` takes a
+`process` block (`every` or `schedule`, `args`, `role`, `budget`, `report_to`) and the
+tool runs as a process from the moment it is written ([processes.md](processes.md)). A
+tool that is not resumable is a **live** program that loops on `next()` and asks the model
+with `turn()`; a resumable one is a slice process, a cycle per tick, as above. Its turns
+run under a role from `process_roles` — by default only `process`, which has no tools. It
+pipes only into another process Nine wrote, and its tool is never evicted from the
+catalog while the process exists.
+
 ### 6.3 Conferred, never claimed
 
 **A manifest declares a need. Only config grants.** These are different documents
@@ -840,7 +852,8 @@ eval     = true       # allow js_eval (§5.3)
 max_tools = 64        # catalog pressure — §9
 
 allow_long_running = false   # may a generated tool run as a job? — §6.5
-allow_standing     = false   # may one be promoted to a standing run? — §6.6
+allow_processes    = false   # may Nine write processes (tool_write's process block)? — §6.6
+process_roles      = ["process"]   # the roles their turns may run under
 # how many run at once is [processes] max_running, shared by every process
 allow_network_deps = false   # lift the deps + net.http interlock — §4.4
 
@@ -1075,10 +1088,10 @@ The two triggers are exactly the two things §7.1 and §4.4 identify as
 consequential: **reach** and **third-party code**. A tool with neither is
 genuinely inert, and there is nothing for a human to usefully evaluate.
 
-**A standing promotion always reaches a human**, including under
-`require_approval = "never"`: a catalogued tool runs when a turn calls it, where a
-standing run continues until somebody stops it, and the write that starts one is
-the only moment to say no (§6.6).
+**A process write is never inert**: under `on_capability` it prompts even when it
+declares nothing, since a process runs until somebody stops it. Under `never` it
+does not prompt, like any other write; then `allow_processes` and `process_roles`
+are what bound the processes Nine writes (§6.6).
 
 In non-interactive deployments there is no gate at all, so the ceiling in
 `[tools.agent.capabilities]` and `deps.mode` are the only controls — which is why

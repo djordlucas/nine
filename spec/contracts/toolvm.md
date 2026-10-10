@@ -1085,16 +1085,16 @@ tool's real calls tests nothing. The isolation is of state alone.
 
 ### The generated flavour
 
-`[tools.agent] allow_standing` (default **false**) gates a generated tool asking
-to be run standing; `[processes] max_running` (default 14) bounds how many processes
-run at once, generated and declared alike.
+`[tools.agent] allow_processes` (default **false**) gates a generated tool asking to
+run as a process (`tool_write`'s `process` block; [processes](processes.md) R-PROC.13);
+`[processes] max_running` (default 14) bounds how many processes run at once, generated
+and declared alike.
 
-**A standing promotion MUST route through the HITL gate, including when
-`require_approval` is `never`.** That setting says the capability ceiling is the
-only control, and a ceiling bounds *reach* — a capability-free tool that runs
-forever is inert per call and unbounded in aggregate, which is precisely what a
-ceiling cannot express. Arguments that cannot be parsed **MUST** be treated as a
-promotion (fail closed).
+**A process write MUST route through the HITL gate under `require_approval =
+"on_capability"` even when it declares no capability**: a capability-free tool that runs
+until stopped is inert per call and unbounded in aggregate, which a ceiling cannot
+express. Under `never` it does not prompt. Arguments that cannot be parsed **MUST** be
+treated as a process write (fail closed).
 
 A **generated** standing tool that fails repeatedly **MUST** be disabled. A
 config-declared one **MUST NOT** be: an operator's declaration is a standing

@@ -21,7 +21,7 @@ A process runs in one of two modes, decided by its tool:
 | Instance | started once, runs until stopped | created for each trigger, destroyed after |
 | Receiving work | `next()` from `nine:process` waits for the next trigger | the trigger is the call |
 | Asking the model | `turn(text)` runs a turn in its session and returns the reply | not possible |
-| Output | `report(text)` | the call's non-empty result |
+| Output | `report(text)`: to its pipe, or the human feed without one | the call's non-empty result, the same way |
 | Examples | `pursue`, `reflect`, a tool whose manifest says `live = true` | any resumable tool on a cadence — what standing tools were |
 
 A live process's instance has no call deadline. Its work budget bounds the work
@@ -152,6 +152,28 @@ stopped process, except one stopped by:
 Every start counts against `[processes] max_running`. Each refusal names its
 reason.
 
+## Processes Nine writes
+
+With `[tools.agent] allow_processes`, Nine can write a process itself: `tool_write` with a
+`process` block starts the tool as a process, named `gen:<tool>`.
+
+```json
+{"name":"notes_digest", "capabilities":{"fs":["read","write"]}, "source":"…",
+ "process":{"every":"30m", "role":"process", "budget":{"turns_per_day":5}}}
+```
+
+| Rule | Detail |
+|---|---|
+| Live or slice | a live program (`next()`, `turn()`), or a slice process when the tool is resumable |
+| Role | its turns run under a role from `[tools.agent] process_roles`, default `["process"]`: Nine's identity and no tools, so the program reads and writes and its turns only think |
+| Approval | as `require_approval` says; under `on_capability` a process write prompts even when it declares nothing |
+| Budget | `[processes] budget`, which the block may lower |
+| Pipes | `report_to` only into another live process Nine wrote |
+| Rewriting | replaces the program and keeps the run state: a process you stopped stays stopped |
+| Deleting | `tool_delete` deletes the tool and its process, unless you stopped it; `nine tools delete` always does |
+
+Its tool is never evicted from Nine's catalog while the process exists.
+
 ## Watching and controlling processes
 
 | Surface | List | One | Start, stop | Message |
@@ -242,7 +264,7 @@ use instead.
 | Limit | Detail |
 |-------|--------|
 | No backfill | A clock tick missed while the daemon or the process was down is not replayed: the first tick comes one cadence after the start. |
-| Only shipped and operator processes | Nine cannot write processes yet: a live process is shipped, or a developer tool an operator declares with `[[process]]`, whose turns run under the `role` its block names. |
+| Approval follows `require_approval` | Under `never`, or in a conversation nobody attends (an API conversation), a process write is not put to anyone: `allow_processes` and `process_roles` are the only controls. |
 | No event triggers | Processes wake on clocks and reports, not on journal events. |
 | A piped report can still steer what a restricted turn allows | An instruction inside a report can make the agent create files, plant memories, pause or finish its own goal, or post a misleading notification. |
 | A piped turn cannot append to an existing file | A watcher that reports repeatedly gets each finding recorded in a new file, or in its log on the session's own next turn. |

@@ -1,0 +1,20 @@
+id: shell-runs-in-workspace
+description: "The shell runs in the workspace: a relative path a shell command writes lands in the case's workspace, as in production, where shell runs in [workspace].root. The harness once started shell without it, and commands ran in the test process's directory, this repository's tests/evals."
+track: live
+tier: smoke
+tags: [shell, workspace]
+
+prompts:
+  - "Use the shell tool to run exactly this command: echo ok > shell-marker.txt"
+
+expect:
+  side_effects:
+    files:
+      shell-marker.txt: { contains: "ok" }
+  trajectory:
+    tools_all_of: [shell]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: nano

@@ -333,8 +333,11 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 		// subcommand — point the manager at the nine binary under test instead.
 		pluginMgr.SetBuiltinBinary(h.NineBin)
 		// shell is the only built-in plugin left; time, files and http are shipped
-		// sandboxed tools now, loaded by the toolvm host above.
-		pluginMgr.TryStartBuiltin("shell")
+		// sandboxed tools now, loaded by the toolvm host above. It runs in the
+		// case's workspace, as the daemon's shell runs in [workspace].root
+		// (NINE_WORKSPACE): started without it, a model's commands ran in the test
+		// process's directory — this repository's tests/evals.
+		pluginMgr.TryStartBuiltin("shell", "NINE_WORKSPACE="+workspace)
 		// 5b. MCP servers the case declares, mirroring startMCPServers in
 		//     cmd/nine/daemon.go. This is not an optional extra: a capability Nine
 		//     does not implement itself now arrives this way and no other, so a
@@ -359,13 +362,15 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 		hitl = runtime.NewHITL(store, 2*time.Minute)
 	}
 
-	// Force the case's role by overriding the resolved params before delegating
-	// to the production factory. The daemon otherwise derives the role from the
-	// session's plan profile; a case declares the role it means to exercise.
+	// Force the case's role on the conversation the case drives, by overriding
+	// the resolved params before delegating to the production factory. A process
+	// session keeps the role its process names, as in production: forcing the
+	// case's role there ran every process under the case's (by default the
+	// all-tools executor) instead of pursue, reflection or process.
 	forcedRole := c.Session.Role
 	roleFactory := func(inner runtime.LoopFactory) runtime.LoopFactory {
 		return func(agentID string, p runtime.RoleParams) *agent.Loop {
-			if forcedRole != "" {
+			if forcedRole != "" && !p.Process {
 				p.Role = forcedRole
 			}
 			return inner(agentID, p)
@@ -405,7 +410,11 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 	r.cleanups = append(r.cleanups, func() { toolHost.Close(ctx) }) //nolint:errcheck
 	var generatedTools agent.GeneratedToolStore
 	if generatedOn {
-		generatedTools = runtime.NewGeneratedToolStoreWithStanding(store, toolHost, pluginMgr, nil, false, false, 0)
+		generatedTools = runtime.NewGeneratedToolStoreWithPolicy(store, toolHost, pluginMgr, nil, false, runtime.GeneratedPolicy{
+			AllowProcesses: caseBool(c, "tools.agent.allow_processes"),
+			ProcessRoles:   caseStrings(c, "tools.agent.process_roles"),
+			MaxRunning:     caseInt(c, "processes.max_running", runtime.DefaultMaxRunning),
+		})
 	}
 	// Tools Nine wrote in an earlier session, through the store tool_write uses.
 	if len(c.Setup.GeneratedTools) > 0 {
@@ -420,8 +429,17 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 			if g.Capabilities != "" {
 				spec.Capabilities = json.RawMessage(g.Capabilities)
 			}
+			spec.Resumable = g.Resumable
+			if p := g.Process; p != nil {
+				spec.Process = &agent.ProcessRequest{Every: p.Every, Schedule: p.Schedule, Role: p.Role, ReportTo: p.ReportTo}
+			}
 			if _, err := generatedTools.Write(ctx, spec); err != nil {
 				return nil, fmt.Errorf("seed generated tool %s: %w", name, err)
+			}
+			if p := g.Process; p != nil && p.StoppedBy != "" {
+				if ok, err := store.ProcessStop("gen:"+name, p.StoppedBy); err != nil || !ok {
+					return nil, fmt.Errorf("seed process gen:%s stopped by %s: ok=%v err=%v", name, p.StoppedBy, ok, err)
+				}
 			}
 		}
 	}
@@ -648,6 +666,18 @@ func caseInt(c *Case, key string, def int) int {
 		return int(v)
 	}
 	return def
+}
+
+// caseStrings reads a list-of-strings session.config override; absent is nil.
+func caseStrings(c *Case, key string) []string {
+	list, _ := c.Session.Config[key].([]any)
+	var out []string
+	for _, v := range list {
+		if s, ok := v.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // caseBool reads a boolean session.config override; absent or non-bool is false.

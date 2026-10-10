@@ -44,10 +44,13 @@ var generatedToolDefs = []llm.ToolDef{
 					"net":{"type":"array","items":{"type":"string","enum":["http"]}},
 					"env":{"type":"array","items":{"type":"string"}}
 				}},
-				"standing":{"type":"object","description":"Ask for this tool to run indefinitely on its own cadence, starting now — not just once. Requires resumable. A human is ALWAYS asked to approve this, whatever the operator's other settings, and it may be disabled entirely. Use it only for work that genuinely needs to keep running; a tool that answers a question should not be standing.","properties":{
-					"interval":{"type":"string","description":"How often a new cycle starts, e.g. \"10s\" or \"1h\". Give this or schedule, not both."},
-					"schedule":{"type":"string","description":"A 5-field cron expression, as an alternative to interval."},
-					"args":{"type":"object","description":"Arguments passed at the start of every cycle."}
+				"process":{"type":"object","description":"Run this tool as a process: Nine starts it now and it runs until stopped, never called as a tool. Its source is a live program — import { next, turn, report } from \"nine:process\"; loop forever: const t = next() waits for the next trigger (its clock, or a message); turn(text) asks the model and returns the reply; report(text) pipes text on. The tool-authoring skill (skill_read) has a complete example. May be disabled by the operator, and may need a human's approval.","properties":{
+					"every":{"type":"string","description":"How often it triggers, e.g. \"30m\". Give this or schedule, or neither for a process woken only by messages."},
+					"schedule":{"type":"string","description":"A 5-field cron expression, as an alternative to every."},
+					"args":{"type":"object","description":"Passed to the program once, as its default export's argument."},
+					"role":{"type":"string","description":"The role its turn() calls run under, from the roles the operator allows; default \"process\", which has no tools."},
+					"budget":{"type":"object","description":"Lower its daily budget: turns_per_day, tokens_per_day.","properties":{"turns_per_day":{"type":"integer"},"tokens_per_day":{"type":"integer"}}},
+					"report_to":{"type":"string","description":"Another process you wrote, which receives what report() sends."}
 				}},
 				"resumable":{"type":"boolean","description":"Set only for work too long for one call. A resumable tool does a bounded slice per call and returns again({cursor,progress,afterMs}) from \"nine:job\" to be called again with its cursor; returning a value finishes it. It runs as a background job, so its result reaches you on a later turn via job_check/job_wait. May be disabled by the operator."}
 			}}`),
@@ -107,6 +110,8 @@ type WriteResult struct {
 	// Unchanged reports a write byte-identical to the stored tool: same source,
 	// description and schema.
 	Unchanged bool
+	// Process is the id of the process the write runs, when it asked for one.
+	Process string
 }
 
 // GeneratedToolSpec is one proposed tool, as the model described it.
@@ -120,20 +125,31 @@ type GeneratedToolSpec struct {
 	// separately from the capability ceiling, which bounds reach rather than
 	// duration.
 	Resumable bool
-	// Standing asks for the tool to be run indefinitely, starting now. Nil is
-	// the ordinary case.
-	Standing *StandingRequest
+	// Process asks for the tool to run as a process, starting now. Nil is the
+	// ordinary case.
+	Process *ProcessRequest
 }
 
-// StandingRequest is a generated tool asking to be run standing.
+// ProcessRequest is a tool Nine writes asking to run as a process
+// (adr/process-sessions.md §9): live, or slice when the tool is resumable.
 //
-// It is a request and never a grant: the operator's allow_standing decides
-// whether it is possible at all, [processes] max_running bounds how many run, and a
-// human approves each one. Nine can ask; it cannot confer.
-type StandingRequest struct {
-	Interval string          `json:"interval,omitempty"`
+// It is a request and never a grant: [tools.agent] allow_processes decides
+// whether it is possible at all, process_roles which roles its turns may run
+// under, [processes] budget and max_running what it may cost, and
+// require_approval whether a person approves it. Nine can ask; it cannot confer.
+type ProcessRequest struct {
+	Every    string          `json:"every,omitempty"`
 	Schedule string          `json:"schedule,omitempty"`
 	Args     json.RawMessage `json:"args,omitempty"`
+	Role     string          `json:"role,omitempty"`
+	Budget   *ProcessBudget  `json:"budget,omitempty"`
+	ReportTo string          `json:"report_to,omitempty"`
+}
+
+// ProcessBudget lowers a written process's daily budget.
+type ProcessBudget struct {
+	TurnsPerDay  int `json:"turns_per_day"`
+	TokensPerDay int `json:"tokens_per_day"`
 }
 
 // RegisterGeneratedTools registers tool_write, tool_delete, and js_eval.
@@ -154,8 +170,9 @@ func RegisterGeneratedTools(d *Dispatcher, s GeneratedToolStore, evalEnabled boo
 			InputSchema  json.RawMessage  `json:"input_schema,omitempty"`
 			Source       string           `json:"source"`
 			Capabilities json.RawMessage  `json:"capabilities,omitempty"`
-			Resumable    bool             `json:"resumable"`
-			Standing     *StandingRequest `json:"standing"`
+			Resumable    bool            `json:"resumable"`
+			Process      *ProcessRequest `json:"process"`
+			Standing     json.RawMessage `json:"standing"`
 		}
 		if err := json.Unmarshal(args, &req); err != nil {
 			return "", fmt.Errorf("tool_write: %w", err)
@@ -170,6 +187,9 @@ func RegisterGeneratedTools(d *Dispatcher, s GeneratedToolStore, evalEnabled boo
 			return "", fmt.Errorf("tool_write: description is required — it is how you will find this tool later")
 		case req.Source == "":
 			return "", fmt.Errorf("tool_write: source is required")
+		case len(req.Standing) > 0 && string(req.Standing) != "null":
+			return "", fmt.Errorf("tool_write: standing is replaced by process: give the tool a process block " +
+				"(every or schedule, args) to run it indefinitely")
 		}
 		// A schema that is not a JSON object is refused here rather than stored:
 		// it becomes this tool's `parameters` in every later LLM request, and a
@@ -196,7 +216,7 @@ func RegisterGeneratedTools(d *Dispatcher, s GeneratedToolStore, evalEnabled boo
 			Source:       req.Source,
 			Capabilities: req.Capabilities,
 			Resumable:    req.Resumable,
-			Standing:     req.Standing,
+			Process:      req.Process,
 		})
 		if err != nil {
 			return "", err
@@ -212,6 +232,14 @@ func RegisterGeneratedTools(d *Dispatcher, s GeneratedToolStore, evalEnabled boo
 		// written. Reporting it as done is what lets a model rewrite the same
 		// source turn after turn, which is exactly the loop small models fall into
 		// once they have a tool they cannot decide to call.
+		if res.Process != "" {
+			if res.Unchanged {
+				return "", fmt.Errorf("process %q already runs this exact source; nothing was written. "+
+					"See it with process_show %s", res.Process, res.Process)
+			}
+			return fmt.Sprintf("Wrote process %s from tool %q: it starts now and runs until stopped, "+
+				"and it is never called as a tool. See it with process_show %s.", res.Process, req.Name, res.Process), nil
+		}
 		if res.Unchanged {
 			return "", fmt.Errorf(
 				"tool %q already exists with this exact source; nothing was written. "+

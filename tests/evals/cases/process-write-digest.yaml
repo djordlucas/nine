@@ -1,0 +1,39 @@
+id: process-write-digest
+description: "Phase 3's acceptance: asked for a recurring digest, the model writes a process with tool_write's process block — a live program that loops on next() and summarizes through turn() — and the process runs on its clock and writes the digest with no further prompt."
+track: live
+tier: multi_step
+tags: [processes, generated]
+
+session:
+  config:
+    tools.agent.enabled: true
+    tools.agent.allow_processes: true
+
+setup:
+  files:
+    notes/inbox.md: |-
+      - Renew the TLS certificate for billing before Friday.
+      - The pricing page still shows last year's plans.
+      - Ana starts on Monday; she needs a laptop.
+
+prompts:
+  - "Set up a background process that every 10 seconds reads notes/inbox.md, has you summarize it in a few bullet points, and writes the summary to notes/digest.md. Write it as a process that keeps running on its own."
+
+wait:
+  seconds: 240
+  until:
+    files:
+      notes/digest.md: { matches: "\\S" }
+
+expect:
+  side_effects:
+    files:
+      notes/digest.md: { matches: "\\S" }
+  trajectory:
+    tools_all_of: [tool_write]
+
+runs: 3
+pass_threshold: "2/3"
+timeout_seconds: 420
+models:
+  expected_pass_min_class: medium

@@ -849,6 +849,14 @@
           }
         },
         {
+          "name": "process_list",
+          "description": "List the processes running in the background — goal sessions, standing agents, reflection, watchers, standing tools — with each one's state, trigger and budget use. Use it to see what runs between conversations. The process-management skill (skill_read) explains stopping versus removing, and each refusal.",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
           "name": "delete_file",
           "description": "Delete one file, or one empty directory, from the WORKSPACE FILESYSTEM. The file is moved to Nine's trash rather than destroyed, so a mistake can be undone with trash_list and restore_file until the trash is swept. There is no recursive delete: delete a directory's contents first. Prefer this over `rm` in the shell, which destroys a file outright.",
           "input_schema": {
@@ -1008,14 +1016,6 @@
           }
         },
         {
-          "name": "process_list",
-          "description": "List the processes running in the background — goal sessions, standing agents, reflection, watchers, standing tools — with each one's state, trigger and budget use. Use it to see what runs between conversations.",
-          "input_schema": {
-            "type": "object",
-            "properties": {}
-          }
-        },
-        {
           "name": "process_show",
           "description": "Show one process in detail: its state and who stopped it, its trigger, session, goal and pipe, its budget use and when that resets, its last error, and its recent activity.",
           "input_schema": {
@@ -1070,7 +1070,7 @@
         },
         {
           "name": "process_stop",
-          "description": "Stop a process. A model may start it again later; one the operator stops only the operator can.",
+          "description": "Stop a process; it stays, stopped, and can be started again. A model may start it again later; one the operator stops only the operator can. To remove a process you wrote (id gen:\u003ctool\u003e) for good, delete its tool with tool_delete instead.",
           "input_schema": {
             "type": "object",
             "required": [
@@ -1961,6 +1961,14 @@
           }
         },
         {
+          "name": "process_list",
+          "description": "List the processes running in the background — goal sessions, standing agents, reflection, watchers, standing tools — with each one's state, trigger and budget use. Use it to see what runs between conversations. The process-management skill (skill_read) explains stopping versus removing, and each refusal.",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
           "name": "delete_file",
           "description": "Delete one file, or one empty directory, from the WORKSPACE FILESYSTEM. The file is moved to Nine's trash rather than destroyed, so a mistake can be undone with trash_list and restore_file until the trash is swept. There is no recursive delete: delete a directory's contents first. Prefer this over `rm` in the shell, which destroys a file outright.",
           "input_schema": {
@@ -2120,14 +2128,6 @@
           }
         },
         {
-          "name": "process_list",
-          "description": "List the processes running in the background — goal sessions, standing agents, reflection, watchers, standing tools — with each one's state, trigger and budget use. Use it to see what runs between conversations.",
-          "input_schema": {
-            "type": "object",
-            "properties": {}
-          }
-        },
-        {
           "name": "process_show",
           "description": "Show one process in detail: its state and who stopped it, its trigger, session, goal and pipe, its budget use and when that resets, its last error, and its recent activity.",
           "input_schema": {
@@ -2182,7 +2182,7 @@
         },
         {
           "name": "process_stop",
-          "description": "Stop a process. A model may start it again later; one the operator stops only the operator can.",
+          "description": "Stop a process; it stays, stopped, and can be started again. A model may start it again later; one the operator stops only the operator can. To remove a process you wrote (id gen:\u003ctool\u003e) for good, delete its tool with tool_delete instead.",
           "input_schema": {
             "type": "object",
             "required": [
@@ -2227,7 +2227,7 @@
       "turn": 1,
       "type": "context_update",
       "payload": {
-        "used": 8055,
+        "used": 8125,
         "budget": 100000
       }
     },
@@ -2288,6 +2288,7 @@
           "edit_file",
           "web_page_read",
           "copy_file",
+          "process_list",
           "delete_file",
           "write_file",
           "http_get",
@@ -2296,14 +2297,13 @@
           "time",
           "trash_list",
           "web_search",
-          "process_list",
           "process_show",
           "process_send",
           "process_start",
           "process_stop"
         ],
         "max_tokens": 2048,
-        "tokens_used": 8055,
+        "tokens_used": 8125,
         "budget": 100000,
         "llm_call_n": 1
       }
@@ -2360,7 +2360,7 @@
       "turn": 1,
       "type": "context_update",
       "payload": {
-        "used": 8074,
+        "used": 8144,
         "budget": 100000
       }
     },
@@ -2447,6 +2447,7 @@
           "edit_file",
           "web_page_read",
           "copy_file",
+          "process_list",
           "delete_file",
           "write_file",
           "http_get",
@@ -2455,14 +2456,13 @@
           "time",
           "trash_list",
           "web_search",
-          "process_list",
           "process_show",
           "process_send",
           "process_start",
           "process_stop"
         ],
         "max_tokens": 2048,
-        "tokens_used": 8074,
+        "tokens_used": 8144,
         "budget": 100000,
         "llm_call_n": 2
       }

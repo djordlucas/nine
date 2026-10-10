@@ -6,13 +6,18 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
 	"nine/internal/agent"
+	"nine/internal/config"
+	"nine/internal/cron"
 	"nine/internal/memory"
 	"nine/internal/toolvm"
 	"nine/internal/toolvm/deps"
+
+	esbuild "github.com/evanw/esbuild/pkg/api"
 )
 
 // generatedTools bridges the agent-facing store (tool_write / tool_delete /
@@ -32,11 +37,8 @@ type generatedTools struct {
 	bundler *deps.Bundler
 	// allowNetworkDeps lifts the deps+net.http interlock (§4.4).
 	allowNetworkDeps bool
-	// allowStanding and maxRunning bound the standing flavour: whether Nine may
-	// ask for one at all, and [processes] max_running, the cap on processes
-	// running at once that a new one counts against.
-	allowStanding bool
-	maxRunning    int
+	// policy bounds the processes Nine writes (GeneratedPolicy).
+	policy GeneratedPolicy
 	// standingLog is the driver's recent-activity ring, so deleting a tool also
 	// drops its buffer rather than leaking one entry set per deleted tool.
 	standingLog *standingLog
@@ -62,24 +64,38 @@ func LinkStandingTools(gts agent.GeneratedToolStore, r *StandingRunner) {
 // registers no handlers and advertises no defs, so a loop is identical to one
 // built before the tier existed.
 func NewGeneratedToolStore(store *memory.Store, host *toolvm.Host, mgr toolOwner, bundler *deps.Bundler, allowNetworkDeps bool) agent.GeneratedToolStore {
-	return NewGeneratedToolStoreWithStanding(store, host, mgr, bundler, allowNetworkDeps, false, 0)
+	return NewGeneratedToolStoreWithPolicy(store, host, mgr, bundler, allowNetworkDeps, GeneratedPolicy{})
 }
 
-// NewGeneratedToolStoreWithStanding is NewGeneratedToolStore with the standing
-// flavour's operator policy: whether Nine may promote a tool to a process, and
-// [processes] max_running, the cap a new one counts against (<= 0 is the
-// default).
-func NewGeneratedToolStoreWithStanding(store *memory.Store, host *toolvm.Host, mgr toolOwner, bundler *deps.Bundler, allowNetworkDeps, allowStanding bool, maxRunning int) agent.GeneratedToolStore {
+// GeneratedPolicy is the operator's policy for the processes Nine writes
+// (adr/process-sessions.md §9).
+type GeneratedPolicy struct {
+	// AllowProcesses is [tools.agent] allow_processes.
+	AllowProcesses bool
+	// ProcessRoles is [tools.agent] process_roles; empty is ["process"].
+	ProcessRoles []string
+	// MaxRunning is [processes] max_running; <= 0 is the default.
+	MaxRunning int
+	// Budget is [processes] budget, the most a written process may ask for.
+	Budget config.BudgetConfig
+}
+
+// NewGeneratedToolStoreWithPolicy is NewGeneratedToolStore with the operator's
+// policy for the processes Nine writes.
+func NewGeneratedToolStoreWithPolicy(store *memory.Store, host *toolvm.Host, mgr toolOwner, bundler *deps.Bundler, allowNetworkDeps bool, policy GeneratedPolicy) agent.GeneratedToolStore {
 	if store == nil || host == nil || !host.AgentEnabled() {
 		return nil
 	}
-	if maxRunning <= 0 {
-		maxRunning = DefaultMaxRunning
+	if policy.MaxRunning <= 0 {
+		policy.MaxRunning = DefaultMaxRunning
 	}
+	if len(policy.ProcessRoles) == 0 {
+		policy.ProcessRoles = []string{ProcessRole}
+	}
+	policy.Budget = config.ProcessesConfig{Budget: policy.Budget}.BudgetOrDefault()
 	return &generatedTools{
 		store: store, host: host, mgr: mgr, bundler: bundler,
-		allowNetworkDeps: allowNetworkDeps,
-		allowStanding:    allowStanding, maxRunning: maxRunning,
+		allowNetworkDeps: allowNetworkDeps, policy: policy,
 	}
 }
 
@@ -99,8 +115,11 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 	// Same discipline for the long-running lifecycle. It is checked here rather
 	// than only at load so the refusal reaches the model as a message it can act
 	// on, instead of a tool that persists and then silently never registers.
-	if spec.Standing != nil {
-		if err := g.checkStandingRequest(spec); err != nil {
+	if err := checkSyntax(spec.Source); err != nil {
+		return agent.WriteResult{}, err
+	}
+	if spec.Process != nil {
+		if err := g.checkProcessRequest(spec); err != nil {
 			return agent.WriteResult{}, err
 		}
 	}
@@ -139,7 +158,8 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 			prev.Description == spec.Description &&
 			string(prev.InputSchema) == string(spec.InputSchema) &&
 			reflect.DeepEqual(prevDecl, decl) &&
-			prev.Resumable == spec.Resumable
+			prev.Resumable == spec.Resumable &&
+			prev.Live == isLiveProcess(spec)
 	}
 
 	if err := g.store.GeneratedToolUpsert(memory.GeneratedTool{
@@ -153,6 +173,7 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 		Capabilities: spec.Capabilities,
 		Lockfile:     lockJSON,
 		Resumable:    spec.Resumable,
+		Live:         isLiveProcess(spec),
 	}); err != nil {
 		return agent.WriteResult{}, err
 	}
@@ -172,97 +193,188 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 		"tool", spec.Name, "fs", decl.FS, "net", decl.Net, "env", decl.Env,
 		"resumable", spec.Resumable, "deps", lockNames(lock), "evicted", evicted)
 
-	if spec.Standing != nil {
-		if err := g.promoteToStanding(spec); err != nil {
+	res := agent.WriteResult{Evicted: evicted, Unchanged: unchanged}
+	if spec.Process != nil {
+		if err := g.recordProcess(spec); err != nil {
 			return agent.WriteResult{}, err
 		}
+		res.Process = standingIDFor(spec.Name)
 	}
 
 	g.reload(ctx)
-	return agent.WriteResult{Evicted: evicted, Unchanged: unchanged}, nil
+	return res, nil
 }
 
-// checkStandingRequest refuses a standing promotion before anything is
-// persisted, so the model gets a message it can act on rather than a tool that
-// exists and never runs.
-func (g *generatedTools) checkStandingRequest(spec agent.GeneratedToolSpec) error {
-	if !g.allowStanding {
+// checkSyntax refuses source that does not parse as an ES module, at write
+// time, with where and why. Without it a syntax error surfaced only when the
+// tool was called or its process started — for a process, in a log the model
+// never reads, so it kept failing while the model believed it ran. Parsed with
+// esbuild, already vendored for the dependency bundler (§4.4).
+func checkSyntax(source string) error {
+	res := esbuild.Transform(source, esbuild.TransformOptions{
+		Loader: esbuild.LoaderJS, Format: esbuild.FormatESModule, Target: esbuild.ES2023,
+	})
+	if len(res.Errors) == 0 {
+		return nil
+	}
+	e := res.Errors[0]
+	where := ""
+	if e.Location != nil {
+		where = fmt.Sprintf(" at line %d, column %d", e.Location.Line, e.Location.Column+1)
+		if e.Location.LineText != "" {
+			where += fmt.Sprintf(" (%s)", strings.TrimSpace(e.Location.LineText))
+		}
+	}
+	return fmt.Errorf("source does not parse%s: %s. Nothing was written; fix the source and write it again",
+		where, e.Text)
+}
+
+// isLiveProcess reports whether a write asks for a live process: a process
+// block on a tool that is not resumable. A resumable one runs as a slice
+// process, a cycle at a time, as standing tools did.
+func isLiveProcess(spec agent.GeneratedToolSpec) bool {
+	return spec.Process != nil && !spec.Resumable
+}
+
+// checkProcessRequest refuses a process before anything is persisted, so the
+// model gets a message it can act on rather than a tool that exists and never
+// runs.
+func (g *generatedTools) checkProcessRequest(spec agent.GeneratedToolSpec) error {
+	p, pol := spec.Process, g.policy
+	if !pol.AllowProcesses {
 		return fmt.Errorf(
-			"standing tools are not enabled for generated tools on this instance " +
-				"([tools.agent] allow_standing). Write it as an ordinary tool and call it " +
-				"when you need it, or call capability_request to ask an operator")
+			"processes Nine writes are not enabled on this instance ([tools.agent] allow_processes). " +
+				"Tell the person; the operator turns them on. Do not build a substitute — a script or schedule " +
+				"you write does not run on its own. You can still do the work once, now")
 	}
-	if !spec.Resumable {
-		// A standing run is a sequence of cycles, and a tool that cannot end a
-		// call with `continue` has no way to express one.
-		return fmt.Errorf("a standing tool must also be resumable: set resumable = true, " +
-			"and return again() from \"nine:job\" when a cycle has more work to do")
+	if p.Every != "" && p.Schedule != "" {
+		return fmt.Errorf("give every or schedule, not both")
 	}
-	if spec.Standing.Interval == "" && spec.Standing.Schedule == "" {
-		return fmt.Errorf("a standing tool needs interval or schedule — one with no cadence would never run")
-	}
-	if spec.Standing.Interval != "" && spec.Standing.Schedule != "" {
-		return fmt.Errorf("give interval or schedule, not both")
-	}
-	if spec.Standing.Interval != "" {
-		d, err := time.ParseDuration(spec.Standing.Interval)
+	if p.Every != "" {
+		d, err := time.ParseDuration(p.Every)
 		if err != nil {
-			return fmt.Errorf("interval %q is not a duration like \"10s\": %w", spec.Standing.Interval, err)
+			return fmt.Errorf("every %q is not a duration like \"30m\": %w", p.Every, err)
 		}
 		if d <= 0 {
-			return fmt.Errorf("interval %q must be positive", spec.Standing.Interval)
+			return fmt.Errorf("every %q must be positive", p.Every)
+		}
+	}
+	if p.Schedule != "" {
+		if _, err := cron.Parse(p.Schedule); err != nil {
+			return fmt.Errorf("schedule %q: %w", p.Schedule, err)
+		}
+	}
+	switch {
+	case spec.Resumable && p.Every == "" && p.Schedule == "":
+		// A slice process is called on its clock; with none it would never run.
+		return fmt.Errorf("a resumable process needs every or schedule: it is called a cycle at a time on its clock")
+	case !spec.Resumable && !strings.Contains(spec.Source, "nine:process"):
+		return fmt.Errorf("a process's source is a live program: import { next, turn, report } from \"nine:process\" " +
+			"and loop on next(), which waits for each trigger. A process cannot call other tools, yours included: " +
+			"do the work in its own program — read and write files with \"nine:fs\", ask the model with turn(). " +
+			"(A tool that does one bounded slice per call is resumable instead: set resumable = true.)")
+	}
+	role := p.Role
+	if role == "" {
+		role = ProcessRole
+	}
+	if !slices.Contains(pol.ProcessRoles, role) {
+		return fmt.Errorf("role %q is not one the operator allows for processes Nine writes; allowed: %s "+
+			"([tools.agent] process_roles)", role, strings.Join(pol.ProcessRoles, ", "))
+	}
+	if b := p.Budget; b != nil {
+		switch {
+		case b.TurnsPerDay < 0 || b.TokensPerDay < 0:
+			return fmt.Errorf("budget turns_per_day and tokens_per_day cannot be negative")
+		case b.TurnsPerDay > pol.Budget.TurnsPerDay || b.TokensPerDay > pol.Budget.TokensPerDay:
+			return fmt.Errorf("budget may only lower [processes] budget (%d turns, %d tokens a day), never raise it",
+				pol.Budget.TurnsPerDay, pol.Budget.TokensPerDay)
+		}
+	}
+	if p.ReportTo != "" {
+		// A process Nine writes pipes only into another one it wrote: never into
+		// a goal session or a declared process, whose reach the operator chose.
+		target, ok, err := g.store.ProcessGet(standingIDFor(p.ReportTo))
+		if err != nil {
+			return err
+		}
+		if !ok || !target.Generated || target.Mode != memory.ProcessLive {
+			return fmt.Errorf("report_to %q names no live process you wrote; a process you write may pipe only "+
+				"into another one you wrote", p.ReportTo)
 		}
 	}
 
 	// The cap is max_running, the one cap on processes running at once. A
-	// rewrite of a standing tool that is already running does not count twice.
+	// rewrite of a process that is already running does not count twice.
 	n, err := g.store.ProcessesRunning()
 	if err != nil {
 		return err
 	}
-	if p, ok, err := g.store.ProcessGet(standingIDFor(spec.Name)); err == nil && ok &&
-		p.State != memory.ProcessStopped {
+	if prev, ok, err := g.store.ProcessGet(standingIDFor(spec.Name)); err == nil && ok &&
+		prev.State != memory.ProcessStopped {
 		n--
 	}
-	if n >= g.maxRunning {
-		return fmt.Errorf(
-			"%d processes are already running, the maximum on this instance ([processes] max_running). "+
-				"Stop one you no longer need before adding another", g.maxRunning)
+	if n >= pol.MaxRunning {
+		return fmt.Errorf("%d processes are already running, the maximum on this instance ([processes] max_running). "+
+			"Report this to the person rather than stopping another process unless they asked you to", n)
 	}
 	return nil
 }
 
-// promoteToStanding records the run. Called after the tool row is written, so a
-// refusal above never leaves a standing row pointing at a tool that does not
-// exist.
-func (g *generatedTools) promoteToStanding(spec agent.GeneratedToolSpec) error {
+// recordProcess records the process a write asked for. Called after the tool
+// row is written, so a refusal above never leaves a process pointing at a tool
+// that does not exist. A new process starts running; a rewrite keeps the run
+// state it had, so a process the operator stopped stays stopped.
+func (g *generatedTools) recordProcess(spec agent.GeneratedToolSpec) error {
+	p := spec.Process
 	interval := 0
-	if spec.Standing.Interval != "" {
-		d, _ := time.ParseDuration(spec.Standing.Interval) // validated above
+	if p.Every != "" {
+		d, _ := time.ParseDuration(p.Every) // validated above
 		interval = int(d.Seconds())
 	}
 	args := "{}"
-	if len(spec.Standing.Args) > 0 {
-		args = string(spec.Standing.Args)
+	if len(p.Args) > 0 {
+		args = string(p.Args)
+	}
+	role := p.Role
+	if role == "" {
+		role = ProcessRole
 	}
 	id := standingIDFor(spec.Name)
-	if err := g.store.ProcessUpsertDefinition(memory.Process{
+	row := memory.Process{
 		ID: id, Tool: spec.Name, Args: args,
-		IntervalSecs: interval, Schedule: spec.Standing.Schedule, Generated: true,
-	}); err != nil {
-		return fmt.Errorf("record standing tool: %w", err)
+		IntervalSecs: interval, Schedule: p.Schedule, Generated: true,
+		Mode: memory.ProcessSlice, Owner: true,
 	}
-	if _, err := g.store.ProcessSetState(id, memory.ProcessRunning); err != nil {
-		return fmt.Errorf("start standing tool: %w", err)
+	if isLiveProcess(spec) {
+		row.Mode, row.SessionID, row.Role = memory.ProcessLive, id, role
 	}
-	slog.Info("generated standing tool started",
-		"id", id, "tool", spec.Name, "interval_secs", interval, "schedule", spec.Standing.Schedule)
+	if b := p.Budget; b != nil {
+		row.BudgetTurns, row.BudgetTokens = b.TurnsPerDay, b.TokensPerDay
+	}
+	if p.ReportTo != "" {
+		row.ReportTo = standingIDFor(p.ReportTo)
+	}
+	_, existed, err := g.store.ProcessGet(id)
+	if err != nil {
+		return err
+	}
+	if err := g.store.ProcessUpsertDefinition(row); err != nil {
+		return fmt.Errorf("record process: %w", err)
+	}
+	if !existed {
+		if _, err := g.store.ProcessSetState(id, memory.ProcessRunning); err != nil {
+			return fmt.Errorf("start process: %w", err)
+		}
+	}
+	slog.Info("process written by Nine", "id", id, "tool", spec.Name, "mode", row.Mode,
+		"role", row.Role, "every_secs", interval, "schedule", p.Schedule)
 	return nil
 }
 
-// standingIDFor names a generated tool's standing run. Derived rather than
-// random so rewriting the tool replaces its run instead of accumulating one per
-// write.
+// standingIDFor names the process a tool Nine wrote runs. Derived rather than
+// random so rewriting the tool replaces its process instead of accumulating one
+// per write.
 func standingIDFor(tool string) string { return "gen:" + tool }
 
 // bundle resolves and inlines any external npm imports in source at write time,
@@ -321,20 +433,36 @@ func lockNames(l deps.Lockfile) string {
 // next-built loop. Only a tool Nine wrote can be deleted: any other name is
 // refused with the reason, rather than reported deleted when nothing was.
 func (g *generatedTools) Delete(ctx context.Context, name string) error {
+	return g.delete(ctx, name, false)
+}
+
+// DeleteByOperator is the operator's delete (nine tools delete): unlike a
+// model's, it also removes a process the operator stopped.
+func (g *generatedTools) DeleteByOperator(ctx context.Context, name string) error {
+	return g.delete(ctx, name, true)
+}
+
+func (g *generatedTools) delete(ctx context.Context, name string, byOperator bool) error {
 	if _, ok, err := g.store.GeneratedToolGet(name); err != nil {
 		return err
 	} else if !ok {
 		return g.notDeletable(name)
 	}
+	// A model deleting a process the operator stopped would undo that stop, as
+	// starting it would (adr/process-sessions.md §9).
+	if p, ok, err := g.store.ProcessGet(standingIDFor(name)); err == nil && ok && !byOperator &&
+		p.State == memory.ProcessStopped && p.StoppedBy == ByOperator {
+		return fmt.Errorf("tool %q runs process %s, which the operator stopped; only the operator can delete it",
+			name, p.ID)
+	}
 	if err := g.store.GeneratedToolDelete(name); err != nil {
 		return err
 	}
-	// A standing run outliving the tool it runs would be a row the driver picks
-	// up every tick and fails on, forever, with "unknown sandboxed tool" — and
-	// it would eventually trip the breaker and notify a human about a tool that
-	// no longer exists. Deleting the tool deletes its run.
+	// A process outliving the tool it runs would fail on every trigger with
+	// "unknown sandboxed tool". Deleting the tool deletes its process; the next
+	// runner pass closes a live one's instance, and its session is kept.
 	if err := g.store.ProcessDelete(standingIDFor(name)); err != nil {
-		slog.Warn("could not remove the standing run of a deleted tool", "tool", name, "err", err)
+		slog.Warn("could not remove the process of a deleted tool", "tool", name, "err", err)
 	}
 	if g.standingLog != nil {
 		g.standingLog.forget(standingIDFor(name))
@@ -425,6 +553,7 @@ func LoadGeneratedTools(ctx context.Context, store *memory.Store, host *toolvm.H
 			Source:      r.Source,
 			Declaration: decl,
 			Resumable:   r.Resumable,
+			Live:        r.Live,
 		})
 	}
 	host.LoadGenerated(ctx, gens, pluginCollides(mgr))

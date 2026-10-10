@@ -88,13 +88,14 @@ The generated tier (`sandboxed-tools.md` §9.4, `spec/contracts/toolvm.md` R-TVM
 |---|---|
 | `on_capability` *(default)* | a write/eval that **declares any capability**, or whose source **imports an external package** — a pure transform with neither passes without a prompt |
 | `always` | every write and every eval |
-| `never` | nothing except a standing promotion — otherwise the ceiling is the only control |
+| `never` | nothing — the ceiling, `allow_processes` and `process_roles` are the only controls |
 
 Two decisions sit underneath that table:
 
-- **A standing promotion always prompts**, including under `never`. A catalogued
-  tool runs when a turn calls it; a standing one runs on its own cadence until
-  somebody stops it, and the write that starts one is the only moment to refuse.
+- **A process write is never inert.** Under `on_capability` a `tool_write` with a
+  `process` block prompts even when it declares nothing: a catalogued tool runs when
+  a turn calls it, a process runs until somebody stops it, and the write that starts
+  one is the only moment to refuse. Under `never` it does not prompt.
 - **Unparseable arguments gate.** A `tool_write` whose JSON cannot be read counts
   as declaring everything, because fail-closed is the only safe direction for an
   approval decision.
