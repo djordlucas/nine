@@ -11,9 +11,9 @@ import (
 // "condition" for a pipe's report), so a process's turns read as the routine
 // turns they replace (adr/process-sessions.md §14, phase 1).
 //
-// allow, when set, restricts the turn to those tools (PipedTurnTools).
-func (d *Daemon) ProcessTurn(ctx context.Context, id string, p RoleParams, text, trigger string, allow []string) (string, int, error) {
-	res := d.processWorker(id, p).turnCounted(ctx, text, trigger, allow)
+// opt sets the trigger label, a tool restriction, and the turn's depth.
+func (d *Daemon) ProcessTurn(ctx context.Context, id string, p RoleParams, text string, opt TurnOptions) (string, int, error) {
+	res := d.processWorker(id, p).turnCounted(ctx, text, opt)
 	return res.text, res.tokens, res.err
 }
 

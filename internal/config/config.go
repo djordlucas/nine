@@ -6,6 +6,7 @@ import (
 	"nine/internal/cron"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -399,8 +400,53 @@ type ProcessConfig struct {
 	ReportTo string `toml:"report_to"`
 	// Budget lowers [processes] budget for this process; it can never raise it.
 	Budget BudgetConfig `toml:"budget"`
+	// On lists the journal event types that trigger it (EventTypes); a live
+	// process only (adr/process-sessions.md §7).
+	On []string `toml:"on"`
+	// OnFilter narrows which of those events reach it.
+	OnFilter EventFilter `toml:"on_filter"`
+	// EventContent delivers the events' content — tool input and output, a
+	// turn's input and result — as well as their metadata.
+	EventContent bool `toml:"event_content"`
 	// Enabled defaults to true; false declares a process without starting it.
 	Enabled *bool `toml:"enabled"`
+}
+
+// EventFilter narrows the journal events that trigger a process. Every field
+// set must match.
+type EventFilter struct {
+	// Tool is a tool name, for tool_end events.
+	Tool string `toml:"tool" json:"tool,omitempty"`
+	// Sessions is "all" (the default), "conversations" or "processes".
+	Sessions string `toml:"sessions" json:"sessions,omitempty"`
+	// Session is one session id.
+	Session string `toml:"session" json:"session,omitempty"`
+}
+
+// EventTypes are the journal event types a process may be triggered by. LLM
+// requests and replies are left out: they carry every prompt, and a process
+// reacts to what happened, not to how the model was asked.
+var EventTypes = []string{
+	"turn_start", "turn_end", "tool_end", "sub_agent_start", "sub_agent_end",
+	"standing_started", "standing_stopped", "standing_failing", "standing_recovered",
+	"standing_reported", "process_paused", "process_resumed", "process_deleted",
+}
+
+// ValidateEvents checks a process's event trigger: known types, a known
+// sessions scope, and a live tool to run it.
+func ValidateEvents(on []string, f EventFilter) error {
+	for _, t := range on {
+		if !slices.Contains(EventTypes, t) {
+			return fmt.Errorf("on: %q is not an event a process can be triggered by; one of: %s",
+				t, strings.Join(EventTypes, ", "))
+		}
+	}
+	switch f.Sessions {
+	case "", "all", "conversations", "processes":
+	default:
+		return fmt.Errorf("on_filter.sessions %q is not all, conversations or processes", f.Sessions)
+	}
+	return nil
 }
 
 // IsEnabled reports whether the block asks to run. Unset means yes.
@@ -419,6 +465,22 @@ type ProcessesConfig struct {
 	Authoritative bool `toml:"authoritative"`
 	// Budget is every process's default budget; a block may lower it.
 	Budget BudgetConfig `toml:"budget"`
+	// MaxDepth bounds lineage (adr/process-sessions.md §7): no process is
+	// triggered by an event, or sent a pipe's message, at this depth or more.
+	// 0 is the default, 2.
+	MaxDepth int `toml:"max_depth"`
+}
+
+// DefaultMaxDepth is [processes] max_depth when unset: a process may react to
+// another's work, not to a reaction to it.
+const DefaultMaxDepth = 2
+
+// MaxDepthOrDefault returns [processes] max_depth, defaulted.
+func (c ProcessesConfig) MaxDepthOrDefault() int {
+	if c.MaxDepth > 0 {
+		return c.MaxDepth
+	}
+	return DefaultMaxDepth
 }
 
 // DefaultMaxRunning is [processes] max_running when unset.
@@ -1571,6 +1633,15 @@ func validateProcesses(blocks []ProcessConfig, ceiling BudgetConfig) error {
 		}
 		if err := validateBudget(where+" budget", b.Budget); err != nil {
 			return err
+		}
+		if err := ValidateEvents(b.On, b.OnFilter); err != nil {
+			return fmt.Errorf("%s: %w", where, err)
+		}
+		if (b.EventContent || b.OnFilter != (EventFilter{})) && len(b.On) == 0 {
+			return fmt.Errorf("%s: event_content and on_filter need on", where)
+		}
+		if len(b.On) > 0 && b.Goal != "" {
+			return fmt.Errorf("%s: a goal process runs pursue, which acts on its clock and on messages, not on events", where)
 		}
 		seen[b.Name] = true
 		if b.Every != "" {

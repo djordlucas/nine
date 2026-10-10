@@ -1,6 +1,6 @@
 # Design note — Process sessions
 
-**Status:** **Phases 1 to 3 implemented** (2026-10-07; revised 2026-10-06: one concept for all background work) ·
+**Status:** **Phases 1 to 4 implemented** (2026-10-07; revised 2026-10-06: one concept for all background work) ·
 **Related:** `adr/standing-tools.md`, `adr/tool-facilities.md`, `adr/reactive-events.md`,
 `adr/predefined-agents-design.md`, `adr/roles-design.md`, `adr/personality-pattern.md`,
 `adr/agent-boundary.md` · **Amends:** R-SUB.7, the stance of `docs/self-modification.md`, and
@@ -461,7 +461,7 @@ configurations in use to carry over. A file that still has one fails to load, na
 
 ## Limits
 
-- Phases 4 to 8 are not built: there are no event triggers, `sql`, revision or genesis.
+- Phases 5 to 8 are not built: there is no `sql`, revision or genesis.
 - Piped reports are an injection path that framing does not close: qwen3.5:4b and 9b obey an
   instruction inside a framed report every time. A turn a report starts is restricted to
   reading, creating new files, memory, its own goal and notifying, which stops changing or
@@ -522,4 +522,20 @@ configurations in use to carry over. A file that still has one fails to load, na
 | Pipes and sessions | `report_to` only into another live process Nine wrote; no attaching to another session | §7: Nine pipes only between processes it wrote |
 | Eviction | a tool a process runs is never evicted | it is never called, so its last call says nothing; evicting it left its process failing |
 | Rewrite | keeps the run state | a process the operator stopped stays stopped |
+
+---
+
+## Phase 4 as built
+
+| Point | As built | Why |
+|---|---|---|
+| What an event delivers | an allowlist of types — turns, tool ends, sub-agents, process transitions — with metadata; `event_content = true` adds content. Model requests and replies are never delivered | decided 2026-10-09: full content possible, good defaults |
+| Who may ask for content | any process, Nine's own included | decided 2026-10-09; turns an event with content starts are restricted as piped ones are, and docs/processes.md lists what it exposes |
+| Scope | every session but the process's own, narrowed by `on_filter` | decided 2026-10-09 |
+| Depth | journaled on each turn's `turn_start`; a process's turn is its trigger's depth plus one; a transition outside a turn is one deep | the router reads it in journal order, without a new column |
+| Pipes | bounded by `max_depth` too; a skipped report goes to the human feed | §7: a message carries its sender's depth plus one |
+| Live only | `on` on a slice process is refused for a written one and ignored, with a warning, for a declared one | a slice process has no `next()` to receive an event with |
+| Goal blocks | refuse `on` | `pursue` acts on its clock and on messages |
+| Busy | up to 8 waiting triggers; a further event is dropped and journaled | events come in bursts, and each is worth handling, unlike a pipe's report, which is taken only while the process waits |
+| History | events from before the daemon started are not delivered | a new subscriber's cursor starts at the journal's beginning, and replaying it would trigger every process on all of it |
 

@@ -254,7 +254,8 @@
       "type": "turn_start",
       "payload": {
         "input": "You have been idle. Reflect on your recent sessions. Use memory_set to update:\n- `self/capabilities`: a concise description of what you can currently do\n- `self/learned`: append a short dated entry with key insights from recent activity\nBe brief and factual. Do not ask questions.",
-        "trigger": "idle"
+        "trigger": "idle",
+        "depth": 1
       }
     },
     {

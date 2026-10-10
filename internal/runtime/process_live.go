@@ -24,7 +24,7 @@ import (
 type ProcessSessions interface {
 	// ProcessTurn runs one turn and returns its reply and the tokens it spent.
 	// allow, when set, restricts the turn to those tools.
-	ProcessTurn(ctx context.Context, id string, p RoleParams, text, trigger string, allow []string) (reply string, tokens int, err error)
+	ProcessTurn(ctx context.Context, id string, p RoleParams, text string, opt TurnOptions) (reply string, tokens int, err error)
 }
 
 // liveTriggerQueue is how many triggers may wait for a busy process. A clock
@@ -46,11 +46,15 @@ type liveProc struct {
 	// clockQueued is true while a clock tick waits in triggers.
 	clockQueued bool
 	// label is the journal trigger label of the turns the current trigger
-	// causes: "idle" for a clock tick, "condition" for a message.
+	// causes: "idle" for a clock tick, "condition" for a message, "event" for a
+	// journal event.
 	label string
 	// piped is true while the current trigger is a pipe's report: the turns
 	// it causes run restricted (PipedTurnTools).
 	piped bool
+	// depth is the current trigger's lineage depth; the turns it causes are
+	// one deeper (process_events.go).
+	depth int
 	// recovering is true while a process restarted after failures has not yet
 	// handled a trigger; nexts counts its next() calls since the start.
 	recovering bool
@@ -266,7 +270,7 @@ func (r *StandingRunner) StopLive() {
 //
 // piped marks a pipe's report, whose turn runs restricted; a message a person
 // sent is not piped.
-func (r *StandingRunner) Deliver(sessionID, text, from string, piped bool) (handled, delivered bool) {
+func (r *StandingRunner) Deliver(sessionID, text, from string, piped bool, depth int) (handled, delivered bool) {
 	if r == nil {
 		return false, false
 	}
@@ -282,7 +286,7 @@ func (r *StandingRunner) Deliver(sessionID, text, from string, piped bool) (hand
 	if owner == nil {
 		return false, false
 	}
-	return true, owner.offerMessage(toolvm.Trigger{Kind: "message", At: time.Now(), Text: text, From: from, Piped: piped})
+	return true, owner.offerMessage(toolvm.Trigger{Kind: "message", At: time.Now(), Text: text, From: from, Piped: piped, Depth: depth})
 }
 
 func (lp *liveProc) enqueueClock(now time.Time) {
@@ -295,6 +299,18 @@ func (lp *liveProc) enqueueClock(now time.Time) {
 	case lp.triggers <- toolvm.Trigger{Kind: "clock", At: now}:
 		lp.clockQueued = true
 	default:
+	}
+}
+
+// offerEvent queues an event trigger for the process, unlike a message, which
+// is taken only while the process waits: events arrive in bursts and each is
+// worth handling. A full queue drops it, and the caller journals the drop.
+func (lp *liveProc) offerEvent(t toolvm.Trigger) bool {
+	select {
+	case lp.triggers <- t:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -340,13 +356,17 @@ func (h *liveHandler) Next(ctx context.Context) (toolvm.Trigger, error) {
 		select {
 		case t := <-lp.triggers:
 			lp.mu.Lock()
-			if t.Kind == "clock" {
+			switch t.Kind {
+			case "clock":
 				lp.clockQueued = false
 				lp.label = "idle"
-			} else {
+			case "event":
+				lp.label = "event"
+			default:
 				lp.label = "condition"
 			}
 			lp.piped = t.Piped
+			lp.depth = t.Depth
 			lp.mu.Unlock()
 			// A goal-bound process works on its goal as it stands now; a tick
 			// that finds the goal gone or inactive does nothing, as the routine
@@ -368,7 +388,7 @@ func (h *liveHandler) Next(ctx context.Context) (toolvm.Trigger, error) {
 func (h *liveHandler) Turn(ctx context.Context, text string) (string, error) {
 	lp := h.lp
 	lp.mu.Lock()
-	label, piped := lp.label, lp.piped
+	label, piped, depth := lp.label, lp.piped, lp.depth
 	lp.mu.Unlock()
 	row := lp.row
 	var allow []string
@@ -378,7 +398,8 @@ func (h *liveHandler) Turn(ctx context.Context, text string) (string, error) {
 	if err := h.r.spendTurn(row.ID, time.Now()); err != nil {
 		return "", err
 	}
-	reply, tokens, err := h.r.sessions.ProcessTurn(ctx, row.SessionID, h.r.sessionParams(row), text, label, allow)
+	reply, tokens, err := h.r.sessions.ProcessTurn(ctx, row.SessionID, h.r.sessionParams(row), text,
+		TurnOptions{Trigger: label, Allow: allow, Depth: depth + 1})
 	// A turn that ran is counted, failed or not; one stopped before it began
 	// spent nothing.
 	if err == nil || tokens > 0 {
@@ -402,7 +423,13 @@ func (h *liveHandler) Report(_ context.Context, text string) (bool, error) {
 		h.r.notifyHuman(fmt.Sprintf("[%s] %s", row.ID, text))
 		return true, nil
 	}
-	return h.r.pipe(row, text), nil
+	lp := h.lp
+	lp.mu.Lock()
+	depth := lp.depth
+	lp.mu.Unlock()
+	// What the process reports is one deeper than the trigger it is handling,
+	// as its turns are.
+	return h.r.pipe(row, text, depth+1), nil
 }
 
 // hasClock reports whether a process has a clock trigger.
