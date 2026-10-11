@@ -107,6 +107,9 @@ type Setup struct {
 	// the same store tool_write uses — the starting point for a case about
 	// revising or deleting one. They need session.config tools.agent.enabled.
 	GeneratedTools map[string]GeneratedToolSetup `yaml:"generated_tools"`
+	// Database is run in the database before the prompts, statement by
+	// statement; it needs session.config processes.database.
+	Database []string `yaml:"database"`
 
 	// Processes are declared as nine.toml's [[process]] blocks are, and
 	// reconciled the way the daemon reconciles them at boot: a goal block
@@ -262,6 +265,9 @@ type SideEffects struct {
 	// Journal checks events recorded under an id: at least Min of a type,
 	// whose payload contains a text when Contains is set.
 	Journal []JournalExpect `yaml:"journal"`
+	// Database runs each read-only query in the database and matches its
+	// result, as JSON {columns, rows}.
+	Database map[string]StringMatch `yaml:"database"`
 }
 
 // JournalExpect asserts journal events recorded under Agent.
@@ -586,7 +592,7 @@ func (e Expect) hasAny() bool {
 	se := e.SideEffects
 	if len(se.Files) > 0 || len(se.StoredFiles) > 0 || len(se.KV) > 0 || se.Workflows != nil ||
 		se.Goals != nil || se.Notifications != nil || se.Vectors != nil ||
-		len(se.GeneratedTools) > 0 || len(se.Processes) > 0 || len(se.Journal) > 0 {
+		len(se.GeneratedTools) > 0 || len(se.Processes) > 0 || len(se.Journal) > 0 || len(se.Database) > 0 {
 		return true
 	}
 	t := e.Trajectory

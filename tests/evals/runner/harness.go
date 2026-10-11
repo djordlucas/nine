@@ -20,6 +20,7 @@ import (
 	"nine/internal/plugin"
 	"nine/internal/protocol"
 	"nine/internal/runtime"
+	"nine/internal/sqldb"
 	"nine/internal/toolvm"
 )
 
@@ -68,6 +69,8 @@ type RunResult struct {
 	Events    []memory.SessionEvent
 	Store     *memory.Store
 	Workspace string
+	// Database is the database, when the case opts in (processes.database).
+	Database *sqldb.DB
 	// PreGoals is the goal count after setup but before the prompts ran, so
 	// grading can attribute newly-created goals to the run (docs/evals.md §3
 	// goals.created).
@@ -404,7 +407,30 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 	agentCfg := toolvm.AgentConfig{Enabled: generatedOn}
 	if generatedOn {
 		m := []toolvm.Mount{{Host: workspace, Guest: toolvm.ShippedWorkspaceGuest}}
-		agentCfg.Ceiling = toolvm.Ceiling{Grant: toolvm.Grant{FSRead: m, FSWrite: m}}
+		agentCfg.Ceiling = toolvm.Ceiling{Grant: toolvm.Grant{FSRead: m, FSWrite: m,
+			SQL: caseBool(c, "tools.agent.capabilities.sql")}}
+	}
+	// The database, outside the workspace as beside a store: the file tools
+	// must not see it.
+	var processDB *sqldb.DB
+	if caseBool(c, "processes.database") {
+		dir, err := os.MkdirTemp("", "nine-eval-db-")
+		if err != nil {
+			return nil, err
+		}
+		processDB, err = sqldb.Open(filepath.Join(dir, "database.sqlite"), sqldb.Options{})
+		if err != nil {
+			return nil, err
+		}
+		r.Database = processDB
+		r.cleanups = append(r.cleanups, func() { _ = processDB.Close(); _ = os.RemoveAll(dir) })
+		for _, q := range c.Setup.Database {
+			if _, err := processDB.Exec(ctx, q); err != nil {
+				return nil, fmt.Errorf("setup.database %q: %w", q, err)
+			}
+		}
+	} else if len(c.Setup.Database) > 0 {
+		return nil, fmt.Errorf("setup.database needs session.config processes.database")
 	}
 	toolHost.SetAgentConfig(agentCfg)
 	toolHost.SetShippedWorkspace(toolvm.ShippedWorkspace{Host: workspace})
@@ -479,6 +505,7 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 		DefaultLeafRole:     "executor",
 		MaxRunning:          caseInt(c, "processes.max_running", runtime.DefaultMaxRunning),
 		RoleFactory:         roleFactory,
+		Database:            processDB,
 	})
 	daemon := asm.Daemon
 	supervisor := asm.Supervisor

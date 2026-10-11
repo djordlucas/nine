@@ -19,7 +19,7 @@ func TestGrade_StoredFiles_ExactPath(t *testing.T) {
 	c := &Case{
 		ID:      "grade-stored-files-exact",
 		Prompts: []string{"store it"},
-		Setup:  Setup{StoredFiles: map[string]string{"archive/seq.txt": "1 2 3 9999 10000"}},
+		Setup:   Setup{StoredFiles: map[string]string{"archive/seq.txt": "1 2 3 9999 10000"}},
 		Expect: Expect{SideEffects: SideEffects{
 			StoredFiles: map[string]StringMatch{"archive/seq.txt": {Contains: "9999"}},
 		}},

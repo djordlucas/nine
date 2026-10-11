@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -202,6 +203,26 @@ func (g *grader) gradeSideEffects() {
 			if !found {
 				g.fail("side_effect notifications: none contains %q", n.Contains)
 			}
+		}
+	}
+
+	for q, m := range se.Database {
+		if g.res.Database == nil {
+			g.fail("side_effect database: the case has no database (session.config processes.database)")
+			break
+		}
+		res, err := g.res.Database.Query(context.Background(), q)
+		if err != nil {
+			g.fail("side_effect database %q: %v", q, err)
+			continue
+		}
+		b, _ := json.Marshal(res)
+		if why, ok := m.match(string(b)); !ok {
+			got := string(b)
+			if len(got) > 300 {
+				got = got[:300] + "…"
+			}
+			g.fail("side_effect database %q: %s (got %s)", q, why, got)
 		}
 	}
 
