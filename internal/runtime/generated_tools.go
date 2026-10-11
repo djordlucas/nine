@@ -164,6 +164,14 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 	// notice. Compared before the upsert, which would overwrite the evidence.
 	unchanged, existed := false, false
 	id := standingIDFor(spec.Name)
+	// A rewrite that leaves out the process block of a tool that runs a
+	// process still rewrites that process's program: the process keeps its
+	// definition and runs the new version.
+	runs, runsLive := false, false
+	if p, ok, err := g.store.ProcessGet(id); err == nil && ok {
+		runs, runsLive = true, p.Mode == memory.ProcessLive
+	}
+	live := isLiveProcess(spec) || (spec.Process == nil && runsLive)
 	// Rewriting a process the operator stopped would hand it a new program
 	// behind the operator's back; only the operator may change it, as only the
 	// operator may start or delete it (adr/process-sessions.md §9).
@@ -184,12 +192,12 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 			string(prev.InputSchema) == string(spec.InputSchema) &&
 			reflect.DeepEqual(prevDecl, decl) &&
 			prev.Resumable == spec.Resumable &&
-			prev.Live == isLiveProcess(spec)
+			prev.Live == live
 	}
 
 	// A rewrite of a process's program is on probation until it has run
 	// (process_revision.go). An unchanged write stores no version.
-	revised := existed && !unchanged && spec.Process != nil
+	revised := existed && !unchanged && (spec.Process != nil || runs)
 	version := 0
 	if !unchanged {
 		prevProcess := ""
@@ -208,7 +216,7 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 			Capabilities: spec.Capabilities,
 			Lockfile:     lockJSON,
 			Resumable:    spec.Resumable,
-			Live:         isLiveProcess(spec),
+			Live:         live,
 			Probation:    revised,
 			WrittenBy:    spec.WrittenBy,
 		}, prevProcess)
@@ -239,6 +247,8 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 			return agent.WriteResult{}, err
 		}
 		res.Process = id
+	} else if runs {
+		res.Process = id
 	}
 
 	g.reload(ctx)
@@ -246,6 +256,11 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 		journalTransition(g.store, id, evProcessRevised, map[string]any{
 			"tool": spec.Name, "version": version, "written_by": spec.WrittenBy,
 		})
+		// The old version's failures and backoff are not the new one's: it
+		// starts at once, with a clean count its probation is measured by.
+		if err := g.store.ProcessRecovered(id); err != nil {
+			slog.Warn("revised process: clear the old version's failures", "id", id, "err", err)
+		}
 		// The running instance still runs the old program: restart it on the new.
 		if g.runner != nil {
 			g.runner.restartLive(id)

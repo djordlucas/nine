@@ -111,7 +111,7 @@ func TestProvenVersionDoesNotRollBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	st, _, _ := store.ProcessGet("gen:digest")
-	r.proveVersion(st)
+	r.proveVersion(st, 2)
 	st.Failures = 5
 	r.recordFailure(st, errors.New("later trouble"))
 	if cur, _, _ := store.GeneratedToolGet("digest"); cur.Version != 2 {
@@ -176,5 +176,56 @@ func TestRevisionGates(t *testing.T) {
 	fromProcess.Source += "\n// v3"
 	if _, err := g.Write(ctx, fromProcess); err == nil || !strings.Contains(err.Error(), "operator stopped") {
 		t.Errorf("rewriting an operator-stopped process: %v", err)
+	}
+}
+
+// A rewrite of a failing process starts the new version with a clean count:
+// the old version's failures and backoff are not the new one's.
+func TestRevisionClearsTheOldFailures(t *testing.T) {
+	g, r, store := revisionSetup(t, GeneratedPolicy{})
+	ctx := context.Background()
+	spec := processSpec("digest", agent.ProcessRequest{Every: "1h"})
+	spec.Source = brokenSource
+	if _, err := g.Write(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	st, _, _ := store.ProcessGet("gen:digest")
+	r.recordFailure(st, errors.New("broken"))
+	st, _, _ = store.ProcessGet("gen:digest")
+	r.recordFailure(st, errors.New("broken"))
+	if st, _, _ = store.ProcessGet("gen:digest"); st.Failures != 2 {
+		t.Fatalf("failures = %d", st.Failures)
+	}
+	if _, err := g.Write(ctx, processSpec("digest", agent.ProcessRequest{Every: "1h"})); err != nil {
+		t.Fatal(err)
+	}
+	if st, _, _ = store.ProcessGet("gen:digest"); st.Failures != 0 || st.LastError != "" {
+		t.Errorf("after the fix: failures %d, last error %q", st.Failures, st.LastError)
+	}
+	r.tickLive(ctx)
+	eventually(t, "the fixed version running", func() bool { return running(r, "gen:digest") })
+}
+
+// A rewrite that leaves out the process block still revises the process the
+// tool runs: it stays live, goes on probation, and restarts.
+func TestRewriteWithoutTheProcessBlockRevises(t *testing.T) {
+	g, r, store := revisionSetup(t, GeneratedPolicy{})
+	ctx := context.Background()
+	if _, err := g.Write(ctx, processSpec("digest", agent.ProcessRequest{Every: "1h"})); err != nil {
+		t.Fatal(err)
+	}
+	r.tickLive(ctx)
+	eventually(t, "v1 running", func() bool { return running(r, "gen:digest") })
+	res, err := g.Write(ctx, agent.GeneratedToolSpec{Name: "digest", Description: "d", Source: liveSource + "\n// v2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cur, _, _ := store.GeneratedToolGet("digest")
+	p, _, _ := store.ProcessGet("gen:digest")
+	if !res.Revised || res.Process != "gen:digest" || !cur.Live || !cur.Probation || p.IntervalSecs != 3600 {
+		t.Errorf("result %+v; tool live %v probation %v; interval %d", res, cur.Live, cur.Probation, p.IntervalSecs)
+	}
+	if running(r, "gen:digest") {
+		t.Error("the old instance still runs")
 	}
 }

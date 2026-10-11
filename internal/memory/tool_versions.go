@@ -118,9 +118,12 @@ func (s *Store) GeneratedToolVersion(name string, version int) (ToolVersion, boo
 	return v, true, nil
 }
 
-// GeneratedToolProve ends a tool's probation: its version has run.
-func (s *Store) GeneratedToolProve(name string) error {
-	_, err := s.db.Exec(`UPDATE tools SET probation = 0 WHERE name = ? AND probation != 0`, name)
+// GeneratedToolProve ends a tool's probation: version has run. An instance
+// still running an older version proves nothing about the current one, so
+// version must be current; 0 matches any version.
+func (s *Store) GeneratedToolProve(name string, version int) error {
+	_, err := s.db.Exec(`UPDATE tools SET probation = 0
+	                      WHERE name = ? AND probation != 0 AND (? = 0 OR version = ?)`, name, version, version)
 	return err
 }
 

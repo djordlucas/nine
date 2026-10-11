@@ -66,12 +66,13 @@ func (r *StandingRunner) restartLive(id string) {
 
 // proveVersion ends a process's probation once its program has run: a live
 // one has handled a trigger and come back for the next, a slice one has
-// completed a call.
-func (r *StandingRunner) proveVersion(st memory.Process) {
+// completed a call. version is the version that ran; 0, for a slice call,
+// which always runs the current one.
+func (r *StandingRunner) proveVersion(st memory.Process, version int) {
 	if !st.Generated {
 		return
 	}
-	if err := r.store.GeneratedToolProve(st.Tool); err != nil {
+	if err := r.store.GeneratedToolProve(st.Tool, version); err != nil {
 		slog.Warn("process: end probation", "id", st.ID, "err", err)
 	}
 }

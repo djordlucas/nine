@@ -395,7 +395,7 @@ func (r *StandingRunner) runOnce(ctx context.Context, st memory.Process) {
 	// Still working: schedule the next call at the delay it asked for.
 	if out.Continue != nil {
 		next := time.Now().Add(max(time.Duration(out.Continue.AfterMS)*time.Millisecond, r.minDelay))
-		r.proveVersion(st)
+		r.proveVersion(st, 0)
 		if _, err := r.store.ProcessAdvance(st.ID, out.Continue.Cursor, next); err != nil {
 			slog.Warn("standing tool: advance", "id", st.ID, "err", err)
 		}
@@ -405,7 +405,7 @@ func (r *StandingRunner) runOnce(ctx context.Context, st memory.Process) {
 
 	// The cycle finished. The trigger decides when the next one starts.
 	next := r.nextCycleAt(st, time.Now())
-	r.proveVersion(st)
+	r.proveVersion(st, 0)
 	if _, err := r.store.ProcessCompleteCycle(st.ID, next); err != nil {
 		slog.Warn("standing tool: complete cycle", "id", st.ID, "err", err)
 		return

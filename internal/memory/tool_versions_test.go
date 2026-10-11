@@ -38,7 +38,14 @@ func TestToolVersions(t *testing.T) {
 	if err != nil || !ok || prev.Source != "v1" || prev.Process != `{"id":"gen:digest","every":"1h"}` {
 		t.Errorf("version 1 = %+v, %v, %v", prev, ok, err)
 	}
-	if err := s.GeneratedToolProve("digest"); err != nil {
+	// An instance of version 1 proves nothing about version 2.
+	if err := s.GeneratedToolProve("digest", 1); err != nil {
+		t.Fatal(err)
+	}
+	if cur, _, _ = s.GeneratedToolGet("digest"); !cur.Probation {
+		t.Error("an older version's run ended the current one's probation")
+	}
+	if err := s.GeneratedToolProve("digest", 2); err != nil {
 		t.Fatal(err)
 	}
 	if cur, _, _ = s.GeneratedToolGet("digest"); cur.Probation {
