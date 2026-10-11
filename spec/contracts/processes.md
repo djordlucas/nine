@@ -206,6 +206,25 @@ process session and a sub-agent **MUST NOT** hold any of them.
 
 ---
 
+## R-PROC.16 — versions and revision
+
+- Every write of a tool Nine wrote **MUST** keep the version it replaces, with the process
+  definition it ran under (the newest ten). A restore **MUST** be a new version.
+- A rewrite of a process's program **MUST** restart a running instance on the new version and
+  put it on probation. Probation **MUST** end when the version has run — a live program back in
+  `next()`, a slice call completed.
+- A version on probation that fails `[processes] rollback_after` (default 3) times **MUST** be
+  rolled back to the previous version, journaled as `process_rolled_back`, reported to the
+  human feed, and delivered to the process that wrote it.
+- In a process session, `tool_write` **MUST** come from the role only, never the shell grant.
+  From there, writing or rewriting a process **MUST** be refused unless
+  `[processes] allow_revision`.
+- Rewriting a process the operator stopped **MUST** be refused to any model.
+- `tool_read` **MUST** return a tool Nine wrote with its version and its process's state, and
+  only read.
+
+---
+
 ## R-PROC.15 — the database
 
 The database **MUST** be a SQLite file apart from the store (`[processes] database`, default
@@ -271,7 +290,7 @@ is on. A written process is `gen:<tool>`: live when the tool is not resumable �
 `internal/runtime/process_live.go` (live runner, goal binding, pipes),
 `internal/runtime/process_budget.go` (budgets),
 `internal/runtime/process_control.go` (roster, start rule), `internal/agent/register_processes.go`,
-`internal/runtime/process_events.go` (event router, lineage), `internal/sqldb/` (the database,
+`internal/runtime/process_events.go` (event router, lineage), `internal/runtime/process_revision.go` (versions, rollback, `tool_read`), `internal/sqldb/` (the database,
 its policy), `internal/agent/register_sql.go` (`sql_query`),
 `internal/runtime/generated_tools.go` (processes Nine writes), `skills/roles/process.md`,
 `internal/runtime/standing_tools.go` (slice runner, `ReconcileProcesses`),

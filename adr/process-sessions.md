@@ -1,6 +1,6 @@
 # Design note — Process sessions
 
-**Status:** **Phases 1 to 5 implemented** (2026-10-07; revised 2026-10-06: one concept for all background work) ·
+**Status:** **Phases 1 to 6 implemented** (2026-10-07; revised 2026-10-06: one concept for all background work) ·
 **Related:** `adr/standing-tools.md`, `adr/tool-facilities.md`, `adr/reactive-events.md`,
 `adr/predefined-agents-design.md`, `adr/roles-design.md`, `adr/personality-pattern.md`,
 `adr/agent-boundary.md` · **Amends:** R-SUB.7, the stance of `docs/self-modification.md`, and
@@ -461,7 +461,7 @@ configurations in use to carry over. A file that still has one fails to load, na
 
 ## Limits
 
-- Phases 6 to 8 are not built: there is no revision or genesis.
+- Phases 7 and 8 are not built: there is no genesis.
 - Piped reports are an injection path that framing does not close: qwen3.5:4b and 9b obey an
   instruction inside a framed report every time. A turn a report starts is restricted to
   reading, creating new files, memory, its own goal and notifying, which stops changing or
@@ -552,4 +552,20 @@ configurations in use to carry over. A file that still has one fails to load, na
 | Transactions | refused | statements run one at a time on a shared connection, with the authorizer installed per statement |
 | Quotas | size through `max_page_count`, set on the connection; statement time through the context | SQLite enforces both; the policy refuses the pragma that would raise the first |
 | `sql_query` in restricted turns | allowed | it only reads |
+
+---
+
+## Phase 6 as built
+
+| Point | As built | Why |
+|---|---|---|
+| What a reviser may rewrite | anything Nine wrote, itself included; not shipped or declared tools, nor a process the operator stopped | decided 2026-10-11, as nine-will's reviser could revise any module |
+| Versions | every rewrite of a tool Nine wrote keeps the previous version (the newest ten), with its process definition; rollback is automatic only for processes | decided 2026-10-11: an ordinary tool's failed call may be the model's arguments |
+| `tool_write` in a process session | from the role only, never the shell grant; writing a process from there needs `allow_revision` | decided 2026-10-11: pursue's `*` keeps writing tools, the `process` role's `[]` no longer gets `tool_write`, which it did through the shell grant |
+| A rewrite of a running process | stops the instance so the runner starts it on the new version | before, the old program ran on until something restarted it |
+| Probation's end | a live program back in `next()` after its first trigger, a slice call completed | the same signal that clears a process's failures |
+| Who is told of a rollback | the journal, the human feed, and the process that wrote the version, as a message | §9: "the restore reaches the human feed and the session's history" |
+| Reading | `tool_read`, a new model tool | no tool returned a generated tool's source; a reviser must read before it rewrites |
+| The operator | `nine tools versions`, `nine tools restore`, and their API endpoints | restoring by hand, decided with the versions |
+| The shipped reviser | `skills/roles/reviser.md` and the `process-revision` skill; the operator lists the role in `process_roles` | §13: nine-will's reviser becomes a process with a revision role |
 

@@ -201,10 +201,43 @@ With `[tools.agent] allow_processes`, Nine can write a process itself: `tool_wri
 | Approval | as `require_approval` says; under `on_capability` a process write prompts even when it declares nothing |
 | Budget | `[processes] budget`, which the block may lower |
 | Pipes | `report_to` only into another live process Nine wrote |
-| Rewriting | replaces the program and keeps the run state: a process you stopped stays stopped |
+| Rewriting | a new version, which the process restarts on; the run state is kept, so a process you stopped stays stopped. Refused for a process the operator stopped. See [Revision](#revision) |
 | Deleting | `tool_delete` deletes the tool and its process, unless you stopped it; `nine tools delete` always does |
 
 Its tool is never evicted from Nine's catalog while the process exists.
+
+## Revision
+
+Every tool Nine writes keeps its previous versions, and a rewritten process
+that fails before it has run is rolled back.
+
+| When | Then |
+|---|---|
+| A tool Nine wrote is rewritten | The version it replaces is kept, with the process definition it ran under; the newest ten are kept |
+| A process's program is rewritten | It restarts on the new version, **on probation**, journaled as `process_revised` |
+| The new version has run — a live program back in `next()`, a slice call completed | Probation ends |
+| It fails `[processes] rollback_after` times (3) while on probation | The previous version is restored as a new one, its failures cleared; journaled as `process_rolled_back`, reported to `nine notifications`, and sent to the process that wrote it |
+
+A process's turns can revise what Nine wrote when the operator allows it:
+
+```toml
+[processes]
+allow_revision = true            # a process's turn may write and rewrite processes
+
+[tools.agent]
+process_roles = ["process", "reviser"]
+```
+
+The shipped `reviser` role holds `tool_read`, `tool_write` and the read tools. A
+reviser process runs a turn under it — on a clock, say — and the turn reads what
+Nine wrote with `tool_read`, looks at what it produces, and rewrites one thing.
+Without `allow_revision`, a process's turn may write ordinary tools but not
+processes.
+
+| Who | Sees | Restores |
+|---|---|---|
+| A model | `tool_read`: a tool's source, version, probation, and its process's state and last error | by rewriting |
+| The operator | `nine tools versions <name>`, `GET /api/v1/tools/{name}/versions` | `nine tools restore <name> <version>`, `POST /api/v1/tools/{name}/versions/{version}/restore` |
 
 ## The database
 
@@ -334,6 +367,8 @@ use instead.
 | A piped turn cannot append to an existing file | A watcher that reports repeatedly gets each finding recorded in a new file, or in its log on the session's own next turn. |
 | A piped report stays in the session's history | The session's next turn — its own clock tick, unrestricted — sees the report and can still act on an instruction inside it. The restriction narrows the turn the report causes, not every turn after it. |
 | Configuration is read at boot | Editing a block takes effect at the next start. |
+| Rollback catches a version that fails, not one that does worse | A rewritten process that runs but produces worse results stays; noticing it is the next review's job, or the operator's. |
+| A version is only on probation until its first success | One that runs once and fails later is an ordinary failure: it is not rolled back. |
 | Only live processes write the database | `nine:sql` is served through `nine:process`'s bridge: a slice process or a tool a model calls cannot reach it. |
 | No transactions in the database | Each statement commits on its own, so a program cannot make several writes atomic. |
 | The authorizer depends on the SQLite driver's internals | nine reads the connection handle by reflection, since the driver has no API for it. A driver upgrade that moves it fails at boot, with the database unopened, and `TestAuthorizerShim` fails first. |
