@@ -1,0 +1,32 @@
+id: process-sql-write
+description: "Nine writes a process that keeps records in the database: asked for a live process that logs each tick to a table, it declares sql, creates the table through nine:sql, and inserts rows the run can count."
+track: live
+tier: basic
+tags: [processes, sql, generated]
+
+session:
+  config:
+    tools.agent.enabled: true
+    tools.agent.allow_processes: true
+    tools.agent.capabilities.sql: true
+    processes.database: true
+
+prompts:
+  - "Write a process (tool_write with a process block, every 5s) named tick_log that keeps a record in the database: on each tick it inserts a row into a table called ticks with the current time. Create the table in the program if it does not exist."
+
+wait:
+  seconds: 120
+  until:
+    database:
+      "SELECT count(*) FROM ticks": { matches: '"rows":\[\[[1-9]' }
+
+expect:
+  side_effects:
+    database:
+      "SELECT count(*) FROM ticks": { matches: '"rows":\[\[[1-9]' }
+
+runs: 3
+pass_threshold: "2/3"
+timeout_seconds: 360
+models:
+  expected_pass_min_class: medium

@@ -3,9 +3,11 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -118,6 +120,9 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 	if err := checkSyntax(spec.Source); err != nil {
 		return agent.WriteResult{}, err
 	}
+	if err := checkStdlibImports(spec.Source); err != nil {
+		return agent.WriteResult{}, err
+	}
 	if spec.Process != nil {
 		if err := g.checkProcessRequest(spec); err != nil {
 			return agent.WriteResult{}, err
@@ -227,6 +232,36 @@ func checkSyntax(source string) error {
 	}
 	return fmt.Errorf("source does not parse%s: %s. Nothing was written; fix the source and write it again",
 		where, e.Text)
+}
+
+var namedImportRE = regexp.MustCompile(`import\s*\{([^}]*)\}\s*from\s*["'](nine:[A-Za-z0-9_-]+)["']`)
+
+// checkStdlibImports refuses a named import a `nine:*` module does not export,
+// or a module that does not exist, naming what there is. Otherwise the program
+// fails when it first runs — for a process, over and over, restarted each time.
+func checkStdlibImports(source string) error {
+	for _, m := range namedImportRE.FindAllStringSubmatch(source, -1) {
+		spec := m[2]
+		exports, ok := toolvm.StdlibExports(spec)
+		if !ok {
+			return fmt.Errorf("%s is not a module; the modules are %s. Nothing was written",
+				spec, strings.Join(toolvm.StdlibSpecifiers(), ", "))
+		}
+		for _, name := range strings.Split(m[1], ",") {
+			name = strings.TrimSpace(name)
+			if i := strings.Index(name, " as "); i >= 0 {
+				name = strings.TrimSpace(name[:i])
+			}
+			if name == "" || name == "default" {
+				continue
+			}
+			if !slices.Contains(exports, name) {
+				return fmt.Errorf("%s has no export %q; it exports %s. Nothing was written; fix the import and write it again",
+					spec, name, strings.Join(exports, ", "))
+			}
+		}
+	}
+	return nil
 }
 
 // eventFilterOf is a process request's event filter, as config states it.
@@ -588,6 +623,12 @@ func parseDeclaration(raw json.RawMessage) (toolvm.Declaration, error) {
 	}
 	var d toolvm.Declaration
 	if err := json.Unmarshal(raw, &d); err != nil {
+		var te *json.UnmarshalTypeError
+		if errors.As(err, &te) && te.Field != "" {
+			return toolvm.Declaration{}, fmt.Errorf(
+				"capabilities.%s has the wrong shape: fs, net and env are lists, state and sql are true or false, "+
+					`e.g. {"fs":["read","write"],"sql":true}`, te.Field)
+		}
 		return toolvm.Declaration{}, fmt.Errorf("capabilities: %w", err)
 	}
 	return d, nil

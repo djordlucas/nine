@@ -1,6 +1,6 @@
 # Design note — Process sessions
 
-**Status:** **Phases 1 to 4 implemented** (2026-10-07; revised 2026-10-06: one concept for all background work) ·
+**Status:** **Phases 1 to 5 implemented** (2026-10-07; revised 2026-10-06: one concept for all background work) ·
 **Related:** `adr/standing-tools.md`, `adr/tool-facilities.md`, `adr/reactive-events.md`,
 `adr/predefined-agents-design.md`, `adr/roles-design.md`, `adr/personality-pattern.md`,
 `adr/agent-boundary.md` · **Amends:** R-SUB.7, the stance of `docs/self-modification.md`, and
@@ -461,7 +461,7 @@ configurations in use to carry over. A file that still has one fails to load, na
 
 ## Limits
 
-- Phases 5 to 8 are not built: there is no `sql`, revision or genesis.
+- Phases 6 to 8 are not built: there is no revision or genesis.
 - Piped reports are an injection path that framing does not close: qwen3.5:4b and 9b obey an
   instruction inside a framed report every time. A turn a report starts is restricted to
   reading, creating new files, memory, its own goal and notifying, which stops changing or
@@ -538,4 +538,18 @@ configurations in use to carry over. A file that still has one fails to load, na
 | Goal blocks | refuse `on` | `pursue` acts on its clock and on messages |
 | Busy | up to 8 waiting triggers; a further event is dropped and journaled | events come in bursts, and each is worth handling, unlike a pipe's report, which is taken only while the process waits |
 | History | events from before the daemon started are not delivered | a new subscriber's cursor starts at the journal's beginning, and replaying it would trigger every process on all of it |
+
+---
+
+## Phase 5 as built
+
+| Point | As built | Why |
+|---|---|---|
+| The authorizer | registered through a shim: the driver binds `sqlite3_set_authorizer` without a Go API, so nine reads the connection handle by reflection and passes a C-signature trampoline, as the driver does for its own hooks. `Open` checks the fields exist, and `TestAuthorizerShim` pins it | decided 2026-10-10, over forking the driver or no authorizer |
+| Who writes | a live process's program only; turns read through `sql_query` | decided 2026-10-10: writes stay in reviewed code, never in text a model produced from outside input |
+| `nine:sql` | served through `nine:process`'s bridge, with the `sql` grant checked | a new host import would mean rebuilding `qjs.wasm`; the bridge is live-only, which the previous row requires |
+| The policy | nine-will's `sql-policy.ts` ported; the `being_` prefix becomes "any table not SQLite's own", since the whole file is Nine's | §8 |
+| Transactions | refused | statements run one at a time on a shared connection, with the authorizer installed per statement |
+| Quotas | size through `max_page_count`, set on the connection; statement time through the context | SQLite enforces both; the policy refuses the pragma that would raise the first |
+| `sql_query` in restricted turns | allowed | it only reads |
 

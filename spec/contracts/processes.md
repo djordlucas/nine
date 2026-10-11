@@ -206,6 +206,25 @@ process session and a sub-agent **MUST NOT** hold any of them.
 
 ---
 
+## R-PROC.15 — the database
+
+The database **MUST** be a SQLite file apart from the store (`[processes] database`, default
+`database.sqlite` beside it, never the store's path).
+
+- A live process's program with the `sql` capability **MUST** reach it through `nine:sql`:
+  `exec()` under the program policy, `query()` read-only. Any other caller — a slice process, a
+  tool a model calls, a tool without the grant — **MUST** be refused.
+- `sql_query` **MUST** be read-only, and is held by a loop whose role grants it.
+- Every statement **MUST** run under an authorizer allowlist. Denied: `ATTACH`, transactions and
+  savepoints, temp objects, `load_extension`, pragmas other than table introspection, and
+  writes to SQLite's own tables. A denied statement **MUST** be refused with the action named.
+- The size quota (`database_max_mb`) and the statement time limit (`statement_timeout`) **MUST**
+  be enforced, each with its reason.
+- Each write **MUST** be journaled under the process as `sql_write`: statement kinds and tables,
+  never values.
+
+---
+
 ## R-PROC.14 — event triggers and lineage
 
 A live process with `on` (types from `EventTypes`: `turn_start`, `turn_end`, `tool_end`,
@@ -252,7 +271,8 @@ is on. A written process is `gen:<tool>`: live when the tool is not resumable �
 `internal/runtime/process_live.go` (live runner, goal binding, pipes),
 `internal/runtime/process_budget.go` (budgets),
 `internal/runtime/process_control.go` (roster, start rule), `internal/agent/register_processes.go`,
-`internal/runtime/process_events.go` (event router, lineage),
+`internal/runtime/process_events.go` (event router, lineage), `internal/sqldb/` (the database,
+its policy), `internal/agent/register_sql.go` (`sql_query`),
 `internal/runtime/generated_tools.go` (processes Nine writes), `skills/roles/process.md`,
 `internal/runtime/standing_tools.go` (slice runner, `ReconcileProcesses`),
 `internal/runtime/goal_session.go`, `internal/runtime/process_sessions.go`

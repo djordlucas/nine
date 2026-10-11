@@ -51,7 +51,7 @@ func SubAgentDefs(roleEnum string) []llm.ToolDef {
 			DisplayName: "Request Capability",
 			Description: "Ask the operator to grant a capability the generated-tool ceiling does not currently permit. Use this when writing a tool failed because a capability is not available on this instance: the request is queued for a human, who approves or denies it. Approval takes effect without a restart, so retry the write after one is granted. Requesting does not grant — you never confer a capability on yourself.",
 			InputSchema: json.RawMessage(`{"type":"object","required":["capability","reason"],"properties":{` +
-				`"capability":{"type":"string","enum":["fs.read","fs.write","net.http","env","state"],"description":"The capability to request, exactly as the refusal named it."},` +
+				`"capability":{"type":"string","enum":["fs.read","fs.write","net.http","env","state","sql"],"description":"The capability to request, exactly as the refusal named it."},` +
 				`"reason":{"type":"string","description":"Why the task cannot be done without it. A human reads this and nothing else about your intent, so be specific about what the tool does with the reach."},` +
 				`"tool_name":{"type":"string","description":"The tool that needs it, if you have already named one."},` +
 				`"params":{"type":"object","description":"What the capability should be scoped to, narrowest that works. For net.http: {\"allow_hosts\":[\"api.example.com\"],\"methods\":[\"GET\"]}. For env: {\"env\":[\"TZ\"]}. For fs: {\"mounts\":[{\"host\":\"/srv/data\",\"guest\":\"/data\"}]}. A broad request is likelier to be denied."}` +

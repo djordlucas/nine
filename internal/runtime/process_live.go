@@ -437,6 +437,57 @@ func (h *liveHandler) Report(_ context.Context, text string) (bool, error) {
 	return h.r.pipe(row, text, depth+1), nil
 }
 
+// SQL runs a statement in the database for the process (nine:sql). A write is
+// journaled under the process as a summary — statement kinds and tables, never
+// values.
+func (h *liveHandler) SQL(ctx context.Context, write bool, query string, args []any) (json.RawMessage, error) {
+	db := h.r.database
+	if db == nil {
+		return nil, errors.New("this instance has no database")
+	}
+	args = sqlArgs(args)
+	if !write {
+		res, err := db.Query(ctx, query, args...)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(res)
+	}
+	res, err := db.Exec(ctx, query, args...)
+	if len(res.Writes) > 0 {
+		journalTransition(h.r.store, h.lp.row.ID, evSQLWrite, map[string]any{
+			"writes": res.Writes, "changes": res.Changes, "error": errText(err),
+		})
+	}
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(res)
+}
+
+// sqlArgs binds JSON values as SQLite does values: objects and arrays as their
+// JSON text.
+func sqlArgs(args []any) []any {
+	out := make([]any, len(args))
+	for i, a := range args {
+		switch a.(type) {
+		case map[string]any, []any:
+			b, _ := json.Marshal(a)
+			out[i] = string(b)
+		default:
+			out[i] = a
+		}
+	}
+	return out
+}
+
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
 // hasClock reports whether a process has a clock trigger.
 func hasClock(p memory.Process) bool { return p.IntervalSecs > 0 || p.Schedule != "" }
 

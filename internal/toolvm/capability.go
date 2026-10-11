@@ -13,11 +13,15 @@ import (
 // clock, random, and log are granted unconditionally and so are not named here
 // (docs/sandboxed-tools.md §6.2).
 const (
-	CapFSRead   = "fs.read"
-	CapFSWrite  = "fs.write"
-	CapNetHTTP  = "net.http"
-	CapEnvRead  = "env"
-	CapState    = "state"
+	CapFSRead  = "fs.read"
+	CapFSWrite = "fs.write"
+	CapNetHTTP = "net.http"
+	CapEnvRead = "env"
+	CapState   = "state"
+	// CapSQL is the database (adr/process-sessions.md §8): one per instance,
+	// apart from the store. Only a live process's program reaches it, through
+	// nine:sql.
+	CapSQL      = "sql"
 	capFSVerbRd = "read"
 	capFSVerbWr = "write"
 )
@@ -40,6 +44,9 @@ type Declaration struct {
 	// grant (R-TVM.6). A manifest saying `state = true` says "this tool
 	// remembers"; it does not get to say what it may remember or for how long.
 	State bool `toml:"state" json:"state"`
+	// SQL declares the database: `sql = true`. Like state it carries no
+	// parameters; the policy and quotas are the operator's.
+	SQL bool `toml:"sql" json:"sql"`
 	// Env lists the environment keys the tool reads, by name. Keys rather than a
 	// verb, because for env the key *is* the parameter — and naming them in the
 	// manifest is what lets an operator diff a declaration against a grant.
@@ -74,6 +81,9 @@ type Grant struct {
 	// the isolation between two tools' namespaces is a primary key, not a
 	// sandbox boundary.
 	State *StateGrant
+	// SQL is the database grant. Its policy and quotas are instance-wide, from
+	// [processes], so the grant is only whether the tool may reach it.
+	SQL bool
 }
 
 // State scope values. Which one an operator writes is the whole security
@@ -152,6 +162,9 @@ func (g Grant) capabilities() []string {
 	if g.State != nil {
 		out = append(out, CapState)
 	}
+	if g.SQL {
+		out = append(out, CapSQL)
+	}
 	sort.Strings(out)
 	return out
 }
@@ -184,6 +197,9 @@ func (d Declaration) capabilities() ([]string, error) {
 	}
 	if d.State {
 		out = append(out, CapState)
+	}
+	if d.SQL {
+		out = append(out, CapSQL)
 	}
 	sort.Strings(out)
 	return out, nil
@@ -371,6 +387,8 @@ func resolveCeiling(decl Declaration, ceiling Ceiling) (Grant, error) {
 			g.HTTP = ceiling.HTTP
 		case CapState:
 			g.State = ceiling.State
+		case CapSQL:
+			g.SQL = true
 		}
 	}
 	return g, nil
@@ -403,10 +421,12 @@ type grantDescription struct {
 		MaxValueKB int    `json:"max_value_kb"`
 		MaxTotalKB int    `json:"max_total_kb"`
 	} `json:"state,omitempty"`
+	// SQL says the tool may reach the database.
+	SQL bool `json:"sql,omitempty"`
 }
 
 func (g Grant) describe() grantDescription {
-	d := grantDescription{Env: g.Env}
+	d := grantDescription{Env: g.Env, SQL: g.SQL}
 	for _, m := range g.FSRead {
 		d.FSRead = append(d.FSRead, m.Guest)
 	}

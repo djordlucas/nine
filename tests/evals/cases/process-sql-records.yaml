@@ -1,0 +1,61 @@
+id: process-sql-records
+description: "Phase 5's acceptance: a live process granted sql keeps records in the database through nine:sql — creates a table, inserts a row each tick — and a denied statement (ATTACH) is refused with a reason it can record. Each write is journaled as kinds and tables, never values. It measures the runtime, so every model must pass it."
+track: live
+tier: basic
+tags: [processes, sql, generated]
+
+session:
+  config:
+    tools.agent.enabled: true
+    tools.agent.allow_processes: true
+    tools.agent.capabilities.sql: true
+    processes.database: true
+
+setup:
+  generated_tools:
+    ticker:
+      description: "Records each tick in the database."
+      capabilities: '{"sql":true}'
+      source: |
+        import { next } from "nine:process";
+        import { exec, query } from "nine:sql";
+        export default () => {
+          exec("CREATE TABLE IF NOT EXISTS ticks (n INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, note TEXT)");
+          exec("CREATE TABLE IF NOT EXISTS refusals (msg TEXT)");
+          try {
+            exec("ATTACH DATABASE '/tmp/other.db' AS other");
+          } catch (e) {
+            exec("INSERT INTO refusals VALUES (?)", [String(e.message)]);
+          }
+          for (;;) {
+            const t = next();
+            exec("INSERT INTO ticks (kind, note) VALUES (?, ?)", [t.kind, "PRIVATE-VALUE-93"]);
+            query("SELECT count(*) FROM ticks");
+          }
+        };
+      process:
+        every: 5s
+
+prompts:
+  - "Reply with the single word: ok"
+
+wait:
+  seconds: 90
+  until:
+    database:
+      "SELECT count(*) FROM ticks": { matches: '"rows":\[\[[2-9]' }
+
+expect:
+  side_effects:
+    database:
+      "SELECT count(*) FROM ticks": { matches: '"rows":\[\[[2-9]' }
+      "SELECT msg FROM refusals": { contains: "denied: attach" }
+    journal:
+      - { agent: "gen:ticker", type: sql_write, contains: '"create table"' }
+      - { agent: "gen:ticker", type: sql_write, contains: '"insert into"', min: 2 }
+
+runs: 3
+pass_threshold: "3/3"
+timeout_seconds: 240
+models:
+  expected_pass_min_class: nano

@@ -44,6 +44,10 @@ func (f *fakeProcess) Report(_ context.Context, text string) (bool, error) {
 	return true, nil
 }
 
+func (f *fakeProcess) SQL(_ context.Context, write bool, q string, _ []any) (json.RawMessage, error) {
+	return json.Marshal(map[string]any{"write": write, "sql": q})
+}
+
 func (f *fakeProcess) reported() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -225,5 +229,54 @@ export default () => { for (let i = 0; i < 6; i++) burn(); return "ok"; };`})
 	}
 	if _, err := waitLive(t, l); err != nil {
 		t.Errorf("six burns across six triggers: %v, want each trigger to refill the budget", err)
+	}
+}
+
+// nine:sql rides on the process bridge: a live process granted sql reaches the
+// database through its handler; one without the grant is refused, and so is
+// an ordinary call.
+func TestNineSQL(t *testing.T) {
+	src := `
+import { query, exec } from "nine:sql";
+export default () => {
+  const w = exec("INSERT INTO t VALUES (?)", [1]);
+  const r = query("SELECT * FROM t");
+  return JSON.stringify([w, r]);
+};`
+	cfg := Config{}
+	h, err := Open(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { h.Close(context.Background()) }) //nolint:errcheck
+	h.SetAgentConfig(AgentConfig{Enabled: true, Ceiling: Ceiling{Grant{SQL: true}}})
+	h.LoadGenerated(context.Background(), []Generated{
+		{Name: "granted", Source: src, Declaration: Declaration{SQL: true}},
+		{Name: "ungranted", Source: src},
+	}, nil)
+
+	l, err := h.StartLive(context.Background(), "granted", json.RawMessage(`{}`), newFakeProcess())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := waitLive(t, l)
+	if err != nil {
+		t.Fatalf("granted: %v", err)
+	}
+	if !strings.Contains(out.Text, `"write":true`) || !strings.Contains(out.Text, `"write":false`) {
+		t.Errorf("granted: result = %s, want an exec and a query", out.Text)
+	}
+
+	l, err = h.StartLive(context.Background(), "ungranted", json.RawMessage(`{}`), newFakeProcess())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := waitLive(t, l); err == nil || !strings.Contains(err.Error(), "not granted the sql capability") {
+		t.Errorf("ungranted: err = %v, want the sql refusal", err)
+	}
+
+	if _, err := h.Call(context.Background(), "granted", json.RawMessage(`{}`)); err == nil ||
+		!strings.Contains(err.Error(), "live processes") {
+		t.Errorf("a call: err = %v, want the live-only refusal", err)
 	}
 }

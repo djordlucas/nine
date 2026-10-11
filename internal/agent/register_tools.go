@@ -42,9 +42,11 @@ var generatedToolDefs = []llm.ToolDef{
 				"capabilities":{"type":"object","description":"What the tool needs. Omit entirely unless it genuinely needs reach — a pure transform needs nothing and runs anywhere. Shape: {\"fs\":[\"read\"],\"net\":[\"http\"],\"env\":[\"TZ\"]}.","properties":{
 					"fs":{"type":"array","items":{"type":"string","enum":["read","write"]}},
 					"net":{"type":"array","items":{"type":"string","enum":["http"]}},
-					"env":{"type":"array","items":{"type":"string"}}
+					"env":{"type":"array","items":{"type":"string"}},
+					"state":{"type":"boolean","description":"true to remember values between calls (nine:state)."},
+					"sql":{"type":"boolean","description":"true for a process that keeps records in the database (nine:sql): {\"sql\":true}."}
 				}},
-				"process":{"type":"object","description":"Run this tool as a process: Nine starts it now and it runs until stopped, never called as a tool. Its source is a live program — import { next, turn, report } from \"nine:process\"; loop forever: const t = next() waits for the next trigger (its clock, or a message); turn(text) asks the model and returns the reply; report(text) pipes text on. The tool-authoring skill (skill_read) has a complete example. May be disabled by the operator, and may need a human's approval.","properties":{
+				"process":{"type":"object","description":"Run this tool as a process: Nine starts it now and it runs until stopped, never called as a tool. Its source is a live program — import { next, turn, report } from \"nine:process\"; loop forever: const t = next() waits for the next trigger (its clock, or a message); turn(text) asks the model and returns the reply; report(text) pipes text on. To keep records, declare {\"sql\":true} and import { exec, query } from \"nine:sql\": exec(\"CREATE TABLE IF NOT EXISTS …\"), exec(\"INSERT … VALUES (?)\", [value]), query(\"SELECT …\") returns {columns, rows}. The tool-authoring skill (skill_read) has a complete example. May be disabled by the operator, and may need a human's approval.","properties":{
 					"every":{"type":"string","description":"How often it triggers, e.g. \"30m\". Give this or schedule, or neither for a process woken only by messages."},
 					"schedule":{"type":"string","description":"A 5-field cron expression, as an alternative to every."},
 					"args":{"type":"object","description":"Passed to the program once, as its default export's argument."},

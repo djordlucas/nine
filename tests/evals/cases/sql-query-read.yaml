@@ -1,0 +1,28 @@
+id: sql-query-read
+description: "A conversation answers from the database: readings a process recorded are seeded, and asked about them, the model reads them with sql_query and names the right city and value. It needs no tool write — only finding and using the read tool."
+track: live
+tier: basic
+tags: [sql]
+
+session:
+  config:
+    processes.database: true
+
+setup:
+  database:
+    - "CREATE TABLE readings (city TEXT, temp_c REAL, at TEXT)"
+    - "INSERT INTO readings VALUES ('Oslo', 12.5, '2026-10-01'), ('Lisbon', 31.2, '2026-10-01'), ('Quito', 18.0, '2026-10-01'), ('Lisbon', 27.9, '2026-10-02'), ('Oslo', 9.1, '2026-10-02')"
+
+prompts:
+  - "My weather process records temperature readings in the database, in a table called readings. Which city had the highest reading, and what was it?"
+
+expect:
+  answer:
+    contains: ["Lisbon", "31.2"]
+  trajectory:
+    tools_all_of: [sql_query]
+
+runs: 3
+pass_threshold: "3/3"
+models:
+  expected_pass_min_class: small

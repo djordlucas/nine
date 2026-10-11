@@ -17,6 +17,7 @@ import (
 	"nine/internal/memory"
 	"nine/internal/plugin"
 	"nine/internal/runtime"
+	"nine/internal/sqldb"
 )
 
 func runDaemon() {
@@ -52,6 +53,15 @@ func runDaemon() {
 	// Closing checkpoints the write-ahead log, so the database file is left
 	// self-contained rather than depending on its -wal sidecar to be complete.
 	defer store.Close() //nolint:errcheck
+
+	// The database: processes' structured memory, a file apart from the store
+	// (adr/process-sessions.md §8).
+	processDB, err := openProcessDatabase(cfg)
+	if err != nil {
+		slog.Error("failed to open the database", "err", err)
+		os.Exit(1)
+	}
+	defer processDB.Close() //nolint:errcheck
 
 	// Shared between the job sweeper and every worker's job_wait, so a completing
 	// job wakes its waiters at once instead of each polling (§5).
@@ -184,20 +194,20 @@ func runDaemon() {
 		cfg.Workspace.ScanIntervalOrDefault())
 
 	asm := runtime.Assemble(runtime.AssemblyConfig{
-		Workspace:              runtime.NewWorkspaceBackend(store, workspaceScanner, cfg.Workspace.Root),
-		WorkspaceRoot:          cfg.Workspace.Root,
-		SocketPath:             cfg.SocketPath(),
-		Store:                  store,
-		Plugins:                pluginManager,
-		Tools:                  toolHost,
-		GeneratedTools:         generatedTools,
-		GeneratedEval:          cfg.Tools.Agent.Eval,
-		GeneratedApproval:      cfg.Tools.Agent.ApprovalMode(),
-		Embedder:               embedder,
-		ContextBudget:          cfg.ContextBudget(),
-		MaxTokens:              cfg.MaxReplyTokens(),
-		SystemPrompt:           runtime.BuildSystemPrompt(),
-		Runtime:                cfg.RuntimeLabel(),
+		Workspace:         runtime.NewWorkspaceBackend(store, workspaceScanner, cfg.Workspace.Root),
+		WorkspaceRoot:     cfg.Workspace.Root,
+		SocketPath:        cfg.SocketPath(),
+		Store:             store,
+		Plugins:           pluginManager,
+		Tools:             toolHost,
+		GeneratedTools:    generatedTools,
+		GeneratedEval:     cfg.Tools.Agent.Eval,
+		GeneratedApproval: cfg.Tools.Agent.ApprovalMode(),
+		Embedder:          embedder,
+		ContextBudget:     cfg.ContextBudget(),
+		MaxTokens:         cfg.MaxReplyTokens(),
+		SystemPrompt:      runtime.BuildSystemPrompt(),
+		Runtime:           cfg.RuntimeLabel(),
 		// Pull-surface related prior sessions only when the out-of-band indexer
 		// that populates the store is enabled.
 		RelatedSessions: cfg.Daemon.RelatedSessionsIndexEnabled(),
@@ -219,6 +229,7 @@ func runDaemon() {
 		MaxRunning:             cfg.Processes.MaxRunningOrDefault(),
 		ProcessBudget:          cfg.Processes.Budget,
 		MaxDepth:               cfg.Processes.MaxDepthOrDefault(),
+		Database:               processDB,
 		JobMinDelayMS:          cfg.Tools.JobMinDelayMS,
 		JobWorkers:             cfg.Tools.JobWorkers,
 	})
@@ -381,4 +392,18 @@ func startMCPServers(mgr *plugin.Manager, cfg *config.Config) {
 	// before the first turn, or a conversation can start without tools that were
 	// configured.
 	wg.Wait()
+}
+
+// openProcessDatabase opens the database at [processes] database, with its
+// quotas.
+func openProcessDatabase(cfg *config.Config) (*sqldb.DB, error) {
+	path, err := cfg.ProcessDatabasePath()
+	if err != nil {
+		return nil, err
+	}
+	timeout, err := cfg.Processes.StatementTimeoutOrDefault()
+	if err != nil {
+		return nil, err
+	}
+	return sqldb.Open(path, sqldb.Options{MaxMB: cfg.Processes.DatabaseMaxMB, Timeout: timeout})
 }

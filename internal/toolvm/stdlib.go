@@ -2,6 +2,8 @@ package toolvm
 
 import (
 	"embed"
+	"regexp"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -47,6 +49,9 @@ var stdlibSpecifiers = map[string]string{
 	// trigger, run a model turn, report to a pipe. Importing it grants nothing —
 	// the host refuses every call unless the tool was started as a live process.
 	"nine:process": "stdlib/process.js",
+	// sql is the database. It rides on nine:process's bridge: only a live
+	// process's program, granted sql, reaches it.
+	"nine:sql": "stdlib/sql.js",
 }
 
 var (
@@ -174,4 +179,33 @@ func closingQuote(s string, quote byte) int {
 		}
 	}
 	return -1
+}
+
+var stdlibExportRE = regexp.MustCompile(`(?m)^export (?:async )?(?:function\*?|const|let|class) ([A-Za-z_$][A-Za-z0-9_$]*)`)
+
+// StdlibExports returns the names a `nine:*` module exports, and whether the
+// module exists. A tool's named imports are checked against it at write time,
+// so `import { sql } from "nine:sql"` is refused with the real names rather
+// than failing when the program first runs.
+func StdlibExports(spec string) ([]string, bool) {
+	src, ok := stdlibModules()[spec]
+	if !ok {
+		return nil, false
+	}
+	var names []string
+	for _, m := range stdlibExportRE.FindAllStringSubmatch(src, -1) {
+		names = append(names, m[1])
+	}
+	sort.Strings(names)
+	return names, true
+}
+
+// StdlibSpecifiers returns the `nine:*` modules, sorted.
+func StdlibSpecifiers() []string {
+	out := make([]string, 0, len(stdlibSpecifiers))
+	for s := range stdlibSpecifiers {
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
 }

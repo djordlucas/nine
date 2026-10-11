@@ -34,6 +34,7 @@ to rewrite without it or call `gap_report`, not to try a different phrasing.
 | an environment variable | `env: ["TZ"]` | `import { get } from "nine:env"` |
 | fetch a URL | `net: ["http"]` | `fetch()` |
 | remember between calls | `state: true` | `import { get, set } from "nine:state"` |
+| keep records a process collects | `sql: true` | `import { query, exec } from "nine:sql"` — live processes only |
 
 A tool that declares nothing gets nothing, whatever the ceiling permits. That is the
 common case and the right one.
@@ -179,6 +180,11 @@ The rules that matter:
   `{kind:"event", event:{type, session, turn, data}}`. `data` holds metadata — the tool's
   name, error, timing — and its input and output only with `"event_content":true`.
   `"on_filter":{"tool":"write_file","sessions":"conversations"}` narrows which events.
+- **A process can keep records in the database** with `"sql":true`:
+  `exec("CREATE TABLE IF NOT EXISTS …")` once, then `exec("INSERT …", [values])` and
+  `query("SELECT …")`, which returns `{columns, rows}`. Design the tables you need; use `?`
+  parameters, never values pasted into the SQL. No transactions or `ATTACH`. Conversations
+  read what you stored with `sql_query`.
 - **A process cannot call tools**, including ones you wrote. Do the work in its own
   program — read and write files with `nine:fs`, fetch with `fetch` — and ask the model
   with `turn()`. Write the whole thing as one process, not a tool plus a process that calls it.

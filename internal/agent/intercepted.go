@@ -22,6 +22,7 @@ var InterceptedDefs = concatToolDefs(
 	queuedToolDefs,
 	workspaceToolDefs,
 	processToolDefs,
+	sqlToolDefs,
 )
 
 func concatToolDefs(groups ...[]llm.ToolDef) []llm.ToolDef {

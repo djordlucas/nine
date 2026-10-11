@@ -361,7 +361,8 @@
                   "fs.write",
                   "net.http",
                   "env",
-                  "state"
+                  "state",
+                  "sql"
                 ],
                 "description": "The capability to request, exactly as the refusal named it."
               },
@@ -1449,7 +1450,8 @@
                   "fs.write",
                   "net.http",
                   "env",
-                  "state"
+                  "state",
+                  "sql"
                 ],
                 "description": "The capability to request, exactly as the refusal named it."
               },
@@ -2181,7 +2183,7 @@
       "turn": 1,
       "type": "context_update",
       "payload": {
-        "used": 7408,
+        "used": 7410,
         "budget": 100000
       }
     },
@@ -2256,7 +2258,7 @@
           "process_start"
         ],
         "max_tokens": 2048,
-        "tokens_used": 7408,
+        "tokens_used": 7410,
         "budget": 100000,
         "llm_call_n": 1
       }
@@ -2307,7 +2309,7 @@
       "turn": 1,
       "type": "context_update",
       "payload": {
-        "used": 7502,
+        "used": 7504,
         "budget": 100000
       }
     },
@@ -2406,7 +2408,7 @@
           "process_start"
         ],
         "max_tokens": 2048,
-        "tokens_used": 7502,
+        "tokens_used": 7504,
         "budget": 100000,
         "llm_call_n": 2
       }

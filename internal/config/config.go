@@ -469,11 +469,31 @@ type ProcessesConfig struct {
 	// triggered by an event, or sent a pipe's message, at this depth or more.
 	// 0 is the default, 2.
 	MaxDepth int `toml:"max_depth"`
+	// Database is the database's file (adr/process-sessions.md §8): processes
+	// write it through nine:sql, conversations read it through sql_query.
+	// Empty puts database.sqlite beside the store.
+	Database string `toml:"database"`
+	// DatabaseMaxMB bounds its size; 0 is 100.
+	DatabaseMaxMB int `toml:"database_max_mb"`
+	// StatementTimeout bounds one statement ("5s"); empty is 5s.
+	StatementTimeout string `toml:"statement_timeout"`
 }
 
 // DefaultMaxDepth is [processes] max_depth when unset: a process may react to
 // another's work, not to a reaction to it.
 const DefaultMaxDepth = 2
+
+// StatementTimeoutOrDefault parses [processes] statement_timeout; empty is 5s.
+func (c ProcessesConfig) StatementTimeoutOrDefault() (time.Duration, error) {
+	if c.StatementTimeout == "" {
+		return 5 * time.Second, nil
+	}
+	d, err := time.ParseDuration(c.StatementTimeout)
+	if err != nil || d <= 0 {
+		return 0, fmt.Errorf("[processes] statement_timeout %q: want a positive duration such as \"5s\"", c.StatementTimeout)
+	}
+	return d, nil
+}
 
 // MaxDepthOrDefault returns [processes] max_depth, defaulted.
 func (c ProcessesConfig) MaxDepthOrDefault() int {
@@ -588,6 +608,10 @@ type ToolCapabilities struct {
 	// Absent (nil) is the default and means the tool remembers nothing between
 	// calls, which is how every tool behaved before this existed.
 	State *ToolStateGrant `toml:"state"`
+
+	// SQL grants the database ([processes] database): `sql = true`. Only a live
+	// process's program reaches it, under the database's policy and quotas.
+	SQL bool `toml:"sql"`
 }
 
 // ToolStateGrant is the `state` grant: what a tool may remember between calls.
@@ -1345,6 +1369,12 @@ func (cfg *Config) Validate() error {
 	if err := validateProcesses(cfg.Process, cfg.Processes.BudgetOrDefault()); err != nil {
 		return err
 	}
+	if cfg.Processes.DatabaseMaxMB < 0 {
+		return fmt.Errorf("[processes] database_max_mb must not be negative")
+	}
+	if _, err := cfg.Processes.StatementTimeoutOrDefault(); err != nil {
+		return err
+	}
 	if err := validateToolEntry("tools.agent", ToolEntry{Capabilities: cfg.Tools.Agent.Capabilities}); err != nil {
 		return err
 	}
@@ -1578,6 +1608,8 @@ func ValidateCapabilityGrant(capability string, p CapabilityGrantParams) error {
 			Scope: p.Scope, MaxKeys: p.MaxKeys,
 			MaxValueKB: p.MaxValueKB, MaxTotalKB: p.MaxTotalKB, TTL: p.TTL,
 		}
+	case "sql":
+		caps.SQL = true
 	default:
 		return fmt.Errorf("unknown capability %q", capability)
 	}
