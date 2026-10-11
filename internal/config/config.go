@@ -1006,6 +1006,30 @@ type BootstrapConfig struct {
 	// NINE_BOOTSTRAP_SELF_MODEL overrides it, which is how a personality image
 	// points at a file it mounts without rewriting the config it inherited.
 	SelfModelPath string `toml:"self_model_path"`
+
+	// Genesis names a document turned into the instance's first processes on
+	// the first boot of its store (adr/process-sessions.md §10). It needs
+	// [tools.agent] enabled and allow_processes. NINE_BOOTSTRAP_GENESIS
+	// overrides it.
+	Genesis string `toml:"genesis"`
+	// GenesisTurns bounds the genesis session; 0 is 8.
+	GenesisTurns int `toml:"genesis_turns"`
+}
+
+// GenesisReady reports why genesis cannot run with this config, or nil: it
+// writes processes, so it needs what writing them needs.
+func (c *Config) GenesisReady() error {
+	if strings.TrimSpace(c.Bootstrap.Genesis) == "" {
+		return nil
+	}
+	if !c.Tools.GeneratedEnabled() || !c.Tools.Agent.AllowProcesses {
+		return fmt.Errorf("[bootstrap] genesis needs [tools.agent] enabled and allow_processes = true: " +
+			"genesis writes the instance's processes")
+	}
+	if c.Bootstrap.GenesisTurns < 0 {
+		return fmt.Errorf("[bootstrap] genesis_turns must not be negative")
+	}
+	return nil
 }
 
 // APIConfig holds the HTTP API server configuration for remote access to
@@ -1373,6 +1397,9 @@ func (cfg *Config) Validate() error {
 		return err
 	}
 	if err := validateProcesses(cfg.Process, cfg.Processes.BudgetOrDefault()); err != nil {
+		return err
+	}
+	if err := cfg.GenesisReady(); err != nil {
 		return err
 	}
 	if cfg.Processes.RollbackAfter < 0 {

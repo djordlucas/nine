@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"slices"
 	"sync"
 	"syscall"
 	"time"
@@ -273,6 +274,27 @@ func runDaemon() {
 	daemon.ConfigureCapabilities(runtime.NewCapabilityService(store, cfg, toolHost, pluginManager))
 	go runtime.RunStandingTools(ctx, standing,
 		time.Duration(cfg.Plugins.JobPollSeconds)*time.Second)
+
+	// Genesis: on the first boot of this store, the operator's document becomes
+	// the instance's first processes (adr/process-sessions.md §10). It runs
+	// beside the daemon, which serves meanwhile.
+	if cfg.Bootstrap.Genesis != "" {
+		if err := cfg.GenesisReady(); err != nil {
+			slog.Error("genesis not run", "err", err)
+		} else {
+			roles := cfg.Tools.Agent.ProcessRolesOrDefault()
+			go func() {
+				if _, err := runtime.RunGenesis(ctx, daemon, store, cfg.Bootstrap.Genesis, runtime.GenesisOptions{
+					Turns:        cfg.Bootstrap.GenesisTurns,
+					Revision:     cfg.Processes.AllowRevision && slices.Contains(roles, "reviser"),
+					ProcessRoles: roles,
+					Database:     processDB != nil,
+				}); err != nil {
+					slog.Error("genesis", "err", err)
+				}
+			}()
+		}
+	}
 
 	// Delete sessions nobody has touched in a while, on boot and daily. Never
 	// one with an active goal or a process driving it — those are idle by design
