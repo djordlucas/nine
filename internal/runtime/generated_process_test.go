@@ -246,3 +246,28 @@ func TestStdlibImportsAreChecked(t *testing.T) {
 		}
 	}
 }
+
+// A program that calls a nine:* function it never imported is refused at
+// write time with the import to add; one that imports or defines it is not.
+func TestStdlibCallsAreChecked(t *testing.T) {
+	for src, want := range map[string]string{
+		`import { next } from "nine:process"; export default () => { for (;;) { next(); readFileText("/work/a"); } };`:                                     `add import { readFileText } from "nine:fs"`,
+		`import { next } from "nine:process"; import { readFileText as rf } from "nine:fs"; export default () => { for (;;) { next(); rf("/work/a"); } };`: "",
+		`import { next } from "nine:process"; function exec(x) { return x; } export default () => { for (;;) { next(); exec(1); } };`:                      "",
+		`import { next } from "nine:process"; export default () => { const o = { query: 1 }; for (;;) { next(); o.query(); } };`:                           "",
+		`export default ({ query }) => query("x");`:                            "",
+		`export default (args) => [1].map((get) => get + 1);`:                  "",
+		`export default (args) => { const { exec } = args; return exec(1); };`: "",
+	} {
+		err := checkStdlibCalls(src)
+		if want == "" {
+			if err != nil {
+				t.Errorf("%s: %v", src, err)
+			}
+			continue
+		}
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: err = %v, want %q", src, err, want)
+		}
+	}
+}

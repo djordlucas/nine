@@ -130,6 +130,9 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 	if err := checkStdlibImports(spec.Source); err != nil {
 		return agent.WriteResult{}, err
 	}
+	if err := checkStdlibCalls(spec.Source); err != nil {
+		return agent.WriteResult{}, err
+	}
 	if spec.Process != nil {
 		if err := g.checkProcessRequest(spec); err != nil {
 			return agent.WriteResult{}, err
@@ -195,9 +198,12 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 			prev.Live == live
 	}
 
-	// A rewrite of a process's program is on probation until it has run
-	// (process_revision.go). An unchanged write stores no version.
+	// A process's program, new or rewritten, is on probation until it has run
+	// (process_revision.go): a rewrite that fails first is rolled back, and
+	// genesis waits for what it wrote to have run. An unchanged write stores
+	// no version.
 	revised := existed && !unchanged && (spec.Process != nil || runs)
+	probation := !unchanged && (spec.Process != nil || runs)
 	version := 0
 	if !unchanged {
 		prevProcess := ""
@@ -217,7 +223,7 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 			Lockfile:     lockJSON,
 			Resumable:    spec.Resumable,
 			Live:         live,
-			Probation:    revised,
+			Probation:    probation,
 			WrittenBy:    spec.WrittenBy,
 		}, prevProcess)
 		if err != nil {
@@ -322,6 +328,45 @@ func checkStdlibImports(source string) error {
 	}
 	return nil
 }
+
+// checkStdlibCalls refuses a program that calls a `nine:*` function it never
+// imported or defined — readFileText(…) with no import from "nine:fs" — which
+// otherwise fails as "is not defined" when it first runs.
+func checkStdlibCalls(source string) error {
+	declared := map[string]bool{}
+	for _, m := range namedImportRE.FindAllStringSubmatch(source, -1) {
+		for _, name := range strings.Split(m[1], ",") {
+			name = strings.TrimSpace(name)
+			if i := strings.Index(name, " as "); i >= 0 {
+				name = strings.TrimSpace(name[i+4:])
+			}
+			declared[name] = true
+		}
+	}
+	for _, m := range localDeclRE.FindAllStringSubmatch(source, -1) {
+		declared[m[1]] = true
+	}
+	for _, spec := range toolvm.StdlibSpecifiers() {
+		exports, _ := toolvm.StdlibExports(spec)
+		for _, name := range exports {
+			// A name the program binds itself — a parameter, a destructured
+			// value — is its own. When unsure, the check lets the program
+			// through: it exists to name a forgotten import, not to parse.
+			if declared[name] || regexp.MustCompile(`[({,]\s*`+regexp.QuoteMeta(name)+`\s*[,)}=:]`).MatchString(source) {
+				continue
+			}
+			if regexp.MustCompile(`(^|[^.\w$])` + regexp.QuoteMeta(name) + `\s*\(`).MatchString(source) {
+				return fmt.Errorf("the program calls %s but never imports it: add import { %s } from %q. "+
+					"Nothing was written; fix the import and write it again", name, name, spec)
+			}
+		}
+	}
+	return nil
+}
+
+// localDeclRE finds names a program declares itself, which may shadow a
+// stdlib export.
+var localDeclRE = regexp.MustCompile(`(?:function\*?|const|let|var|class)\s+([A-Za-z_$][\w$]*)`)
 
 // eventFilterOf is a process request's event filter, as config states it.
 func eventFilterOf(p *agent.ProcessRequest) config.EventFilter {

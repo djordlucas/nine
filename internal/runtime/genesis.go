@@ -9,6 +9,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"nine/internal/memory"
 )
@@ -47,6 +48,11 @@ type GenesisOptions struct {
 	ProcessRoles []string
 	// Database says nine:sql and sql_query are available.
 	Database bool
+	// Verify bounds how long genesis watches what it wrote run before it
+	// accepts GENESIS DONE; 0 derives it from the processes' cadence.
+	Verify time.Duration
+	// Poll is how often it looks; 0 is 2s.
+	Poll time.Duration
 }
 
 // GenesisTurns runs genesis's turns; the daemon implements it.
@@ -99,6 +105,20 @@ func RunGenesis(ctx context.Context, turns GenesisTurns, store *memory.Store, pa
 		if err != nil {
 			return false, err
 		}
+		if strings.Contains(reply, genesisDone) && len(running) > 0 {
+			// Written is not working: watch what it wrote run, and hand back
+			// what fails, as nine-will fed every error back for another try.
+			failing, err := verifyGenesis(ctx, store, running, opt)
+			if err != nil {
+				return false, err
+			}
+			if len(failing) > 0 {
+				text = "Not done yet: these processes fail when they run:\n" + strings.Join(failing, "\n") +
+					"\nRead each with tool_read, fix the program, and write it again under the same name. " +
+					"Then say " + genesisDone + "."
+				continue
+			}
+		}
 		switch {
 		case strings.Contains(reply, genesisDone) && len(running) > 0:
 			sum := sha256.Sum256(data)
@@ -121,6 +141,54 @@ func RunGenesis(ctx context.Context, turns GenesisTurns, store *memory.Store, pa
 		"See the genesis session's history for why.", path, max)
 	notify(store, msg)
 	return false, fmt.Errorf("%s", msg)
+}
+
+// verifyGenesis watches the processes genesis wrote until each has run once,
+// one fails, or the window ends, and returns each failing one with its error.
+// A process not yet triggered when the window ends — an hourly one — is
+// accepted: nothing it did has failed.
+func verifyGenesis(ctx context.Context, store *memory.Store, ids []string, opt GenesisOptions) ([]string, error) {
+	window, poll := opt.Verify, opt.Poll
+	if poll <= 0 {
+		poll = 2 * time.Second
+	}
+	if window <= 0 {
+		window = 3 * time.Minute
+		for _, id := range ids {
+			if p, ok, err := store.ProcessGet(id); err == nil && ok && p.IntervalSecs > 0 {
+				window = min(window, max(2*time.Duration(p.IntervalSecs)*time.Second, 30*time.Second))
+			}
+		}
+	}
+	deadline := time.Now().Add(window)
+	for {
+		var failing []string
+		proven := 0
+		for _, id := range ids {
+			p, ok, err := store.ProcessGet(id)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				continue
+			}
+			if p.Failures > 0 {
+				failing = append(failing, fmt.Sprintf("- %s: %s", id, clipDetail(p.LastError, 600)))
+				continue
+			}
+			if t, ok, err := store.GeneratedToolGet(p.Tool); err == nil && ok && !t.Probation {
+				proven++
+			}
+		}
+		if len(failing) > 0 || proven == len(ids) || !time.Now().Before(deadline) {
+			return failing, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(poll):
+		}
+	}
 }
 
 // genesisProcesses lists the running processes Nine wrote.
@@ -146,8 +214,10 @@ func genesisPrompt(doc string, opt GenesisOptions) string {
 	b.WriteString("This is your genesis. The document below describes the instance you are to become: what it " +
 		"does, for whom, and how. Turn it into running processes now.\n\n")
 	b.WriteString("How:\n")
-	b.WriteString("- Each process is one tool_write with a process block (a live program: import { next, turn, report } " +
-		"from \"nine:process\"). Write them one at a time; a refusal tells you what to fix, so fix it and write again.\n")
+	b.WriteString("- Each process is one tool_write with a process block. Start from a program in the process-patterns " +
+		"skill (skill_read) and change only what differs. The simplest, complete:\n\n" + genesisExample + "\n")
+	b.WriteString("- Write them one at a time. A refusal, or a process that fails when it runs, tells you what to fix: " +
+		"fix that one thing and write the whole program again under the same name.\n")
 	fmt.Fprintf(&b, "- Processes run under one of these roles: %s.\n", strings.Join(opt.ProcessRoles, ", "))
 	if opt.Database {
 		b.WriteString("- For records that outlast a run, declare {\"sql\":true} and keep them in the database through " +
@@ -165,6 +235,20 @@ func genesisPrompt(doc string, opt GenesisOptions) string {
 	b.WriteString(doc)
 	return b.String()
 }
+
+// genesisExample is the process-patterns skill's first pattern, given inline
+// so the first write needs no lookup.
+const genesisExample = `import { next } from "nine:process";
+import { appendFile } from "nine:fs";
+
+export default () => {
+  for (;;) {
+    const t = next();
+    appendFile("/work/heartbeat.log", t.at + "\n");
+  }
+};
+
+with tool_write {"name":"heartbeat","capabilities":{"fs":["write"]},"process":{"every":"10s"},"source":"<the program>"}`
 
 // notify puts a message in the human feed.
 func notify(store *memory.Store, msg string) {

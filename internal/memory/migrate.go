@@ -422,6 +422,12 @@ var migrations = []migrationStep{
 		_, err := q.Exec(toolVersionsSchema)
 		return err
 	}},
+
+	// 20 → 21: a kept version records whether it ever ran, so a rollback
+	// restores only one that did (adr/process-sessions.md §9).
+	{name: "tool_versions_unproven", fn: func(q sqlExec) error {
+		return addColumnIfMissing(q, "tool_versions", "unproven", "INTEGER NOT NULL DEFAULT 0")
+	}},
 }
 
 // convertGoalPlans turns each session plan with a pursue routine into the

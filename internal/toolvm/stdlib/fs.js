@@ -14,6 +14,16 @@
 const I = globalThis[Symbol.for("nine.internal")];
 const caps = I.caps();
 
+// A relative path is read against the workspace, /work, when the tool holds a
+// mount there: "notes/a.md" is "/work/notes/a.md", as every other file tool in
+// Nine reads it. Without that mount a relative path has nowhere to resolve and
+// is passed on, to fail as before.
+const workMounted = [...(caps.fs_read ?? []), ...(caps.fs_write ?? [])].includes("/work");
+function at(path) {
+  const p = String(path);
+  return workMounted && !p.startsWith("/") ? "/work/" + p.replace(/^\.\//, "") : p;
+}
+
 function need(cap, what) {
   if (!cap || cap.length === 0) {
     throw new Error(
@@ -29,7 +39,7 @@ export function readFile(path) {
   if (!caps.fs_read?.length && !caps.fs_write?.length) {
     need(null, "fs.read");
   }
-  return I.fsRead(String(path));
+  return I.fsRead(at(path));
 }
 
 /** Read a file and decode it as UTF-8. */
@@ -40,7 +50,7 @@ export function readFileText(path) {
 /** Write bytes or a string. Requires fs.write. */
 export function writeFile(path, data) {
   need(caps.fs_write, "fs.write");
-  return I.fsWrite(String(path), data);
+  return I.fsWrite(at(path), data);
 }
 
 /** Create a directory and any missing parents. Requires fs.write.
@@ -52,7 +62,7 @@ export function writeFile(path, data) {
  */
 export function mkdir(path) {
   need(caps.fs_write, "fs.write");
-  return I.fsMkdir(String(path));
+  return I.fsMkdir(at(path));
 }
 
 /** List a directory: names only, no recursion. */
@@ -60,7 +70,7 @@ export function readDir(path) {
   if (!caps.fs_read?.length && !caps.fs_write?.length) {
     need(null, "fs.read");
   }
-  return I.fsReadDir(String(path));
+  return I.fsReadDir(at(path));
 }
 
 /** { size, isFile, isDirectory, mtimeMs }, or null when the path does not exist. */
@@ -68,7 +78,7 @@ export function stat(path) {
   if (!caps.fs_read?.length && !caps.fs_write?.length) {
     need(null, "fs.read");
   }
-  return I.fsStat(String(path));
+  return I.fsStat(at(path));
 }
 
 /** True when the path exists. */
@@ -87,7 +97,7 @@ export function readRange(path, offset, length) {
   if (!caps.fs_read?.length && !caps.fs_write?.length) {
     need(null, "fs.read");
   }
-  return I.fsReadRange(String(path), Number(offset) | 0, Number(length) | 0);
+  return I.fsReadRange(at(path), Number(offset) | 0, Number(length) | 0);
 }
 
 /** readRange, decoded as UTF-8. A window may split a multi-byte character at
@@ -104,7 +114,7 @@ export function readRangeText(path, offset, length) {
  */
 export function appendFile(path, data) {
   need(caps.fs_write, "fs.write");
-  return I.fsAppend(String(path), data);
+  return I.fsAppend(at(path), data);
 }
 
 /** Rename, within the mount. Requires fs.write.
@@ -116,7 +126,7 @@ export function appendFile(path, data) {
  */
 export function rename(from, to) {
   need(caps.fs_write, "fs.write");
-  return I.fsRename(String(from), String(to));
+  return I.fsRename(at(from), at(to));
 }
 
 /** Remove one file, or one empty directory. Requires fs.write.
@@ -126,7 +136,7 @@ export function rename(from, to) {
  */
 export function remove(path) {
   need(caps.fs_write, "fs.write");
-  return I.fsUnlink(String(path));
+  return I.fsUnlink(at(path));
 }
 
 /** Copy a file, streaming through a fixed buffer. Requires fs.write.
@@ -136,8 +146,8 @@ export function remove(path) {
  */
 export function copyFile(from, to, chunkBytes = 1 << 20) {
   need(caps.fs_write, "fs.write");
-  const src = String(from);
-  const dst = String(to);
+  const src = at(from);
+  const dst = at(to);
   const info = stat(src);
   if (info === null) throw new Error(`cannot copy ${src}: no such file`);
 

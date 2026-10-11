@@ -52,6 +52,9 @@ func TestFailingRevisionRollsBack(t *testing.T) {
 	}
 	r.tickLive(ctx)
 	eventually(t, "v1 running", func() bool { return running(r, "gen:digest") })
+	// v1 has run: it is the version a rollback restores.
+	st, _, _ := store.ProcessGet("gen:digest")
+	r.proveVersion(st, 1)
 
 	spec := processSpec("digest", agent.ProcessRequest{Every: "1h"})
 	spec.Source, spec.WrittenBy = brokenSource, "conv-1"
@@ -70,7 +73,7 @@ func TestFailingRevisionRollsBack(t *testing.T) {
 		t.Fatal("the new version is not on probation")
 	}
 
-	st, _, _ := store.ProcessGet("gen:digest")
+	st, _, _ = store.ProcessGet("gen:digest")
 	st.Failures = r.rollbackAfterOrDefault() - 1
 	r.recordFailure(st, errors.New("broken v2"))
 
@@ -227,5 +230,43 @@ func TestRewriteWithoutTheProcessBlockRevises(t *testing.T) {
 	}
 	if running(r, "gen:digest") {
 		t.Error("the old instance still runs")
+	}
+}
+
+// A rollback restores the newest version that ran, skipping versions replaced
+// while still on probation; with none that ran, there is no rollback.
+func TestRollbackSkipsVersionsThatNeverRan(t *testing.T) {
+	g, r, store := revisionSetup(t, GeneratedPolicy{})
+	ctx := context.Background()
+	write := func(src string) {
+		t.Helper()
+		spec := processSpec("digest", agent.ProcessRequest{Every: "1h"})
+		spec.Source = src
+		if _, err := g.Write(ctx, spec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fail := func() {
+		t.Helper()
+		st, _, _ := store.ProcessGet("gen:digest")
+		st.Failures = r.rollbackAfterOrDefault() - 1
+		r.recordFailure(st, errors.New("broken"))
+	}
+
+	write(brokenSource)          // v1, never runs
+	write(brokenSource + "\n//") // v2, never runs
+	fail()
+	if cur, _, _ := store.GeneratedToolGet("digest"); cur.Version != 2 {
+		t.Fatalf("rolled back to an unproven version: now at %d", cur.Version)
+	}
+
+	write(liveSource) // v3, runs
+	st, _, _ := store.ProcessGet("gen:digest")
+	r.proveVersion(st, 3)
+	write(brokenSource + "\n// v4") // v4, fails
+	fail()
+	cur, _, _ := store.GeneratedToolGet("digest")
+	if cur.Version != 5 || cur.Source != liveSource {
+		t.Errorf("after rollback: version %d, the v3 source %v", cur.Version, cur.Source == liveSource)
 	}
 }

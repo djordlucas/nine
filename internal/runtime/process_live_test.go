@@ -383,3 +383,37 @@ func TestReportWithoutAPipeGoesToTheFeed(t *testing.T) {
 		t.Errorf("reporting with no pipe failed the process: %d failures, %q", p.Failures, p.LastError)
 	}
 }
+
+// A program that returns before it ever calls next() — a generator, a
+// function never called — fails, with what a process program looks like,
+// rather than ending as if it had finished.
+func TestProgramThatNeverWaitsFails(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := standingHost(t, "gen", `
+name = "gen"
+kind = "js"
+entrypoint = "./gen.js"
+description = "an async generator, never run"
+live = true
+`, `export default async function* main() { for (;;) { yield 1; } };`, nil)
+	r := NewStandingRunner(store, host, 1, 2)
+	r.SetSessions(&fakeSessions{})
+	t.Cleanup(r.StopLive)
+	if err := store.ProcessUpsertDefinition(memory.Process{ID: "gen", Tool: "gen", Mode: memory.ProcessLive, SessionID: "gen", Owner: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ProcessSetState("gen", memory.ProcessRunning); err != nil {
+		t.Fatal(err)
+	}
+	r.tickLive(context.Background())
+	eventually(t, "the failure recorded", func() bool {
+		p, _, _ := store.ProcessGet("gen")
+		return p.Failures > 0
+	})
+	if p, _, _ := store.ProcessGet("gen"); !strings.Contains(p.LastError, "without calling next()") {
+		t.Errorf("last error = %q", p.LastError)
+	}
+}

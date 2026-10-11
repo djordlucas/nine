@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"nine/internal/memory"
 	"nine/internal/memory/memtest"
@@ -19,7 +20,10 @@ type fakeGenesis struct {
 	replies []string
 	errs    map[int]error
 	writeOn int
-	texts   []string
+	// failOn makes the written process fail, as a broken program would;
+	// fixOn makes it run, as a fixed one would.
+	failOn, fixOn int
+	texts         []string
 }
 
 func (f *fakeGenesis) ProcessTurn(_ context.Context, id string, p RoleParams, text string, _ TurnOptions) (string, int, error) {
@@ -32,11 +36,27 @@ func (f *fakeGenesis) ProcessTurn(_ context.Context, id string, p RoleParams, te
 		return "", 0, err
 	}
 	if n == f.writeOn {
+		if _, err := f.store.GeneratedToolWrite(memory.GeneratedTool{Name: "digest", Source: "x", Live: true, Probation: true}, ""); err != nil {
+			return "", 0, err
+		}
 		if err := f.store.ProcessUpsertDefinition(memory.Process{ID: "gen:digest", Tool: "digest",
 			Mode: memory.ProcessLive, SessionID: "gen:digest", Generated: true, Owner: true}); err != nil {
 			return "", 0, err
 		}
 		if _, err := f.store.ProcessSetState("gen:digest", memory.ProcessRunning); err != nil {
+			return "", 0, err
+		}
+	}
+	switch n {
+	case f.failOn:
+		if _, err := f.store.ProcessFail("gen:digest", "cannot read /work/notes (TypeError)", time.Now(), memory.ProcessRunning); err != nil {
+			return "", 0, err
+		}
+	case f.fixOn:
+		if err := f.store.ProcessRecovered("gen:digest"); err != nil {
+			return "", 0, err
+		}
+		if err := f.store.GeneratedToolProve("digest", 0); err != nil {
 			return "", 0, err
 		}
 	}
@@ -60,11 +80,11 @@ func TestGenesisRunsUntilDone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &fakeGenesis{store: store, writeOn: 3,
+	f := &fakeGenesis{store: store, writeOn: 3, fixOn: 4,
 		replies: []string{"Writing the digest process.", "", "Written.", "All written. GENESIS DONE"},
 		errs:    map[int]error{2: errors.New("llm: stream cut")}}
 	doc := genesisDoc(t)
-	ok, err := RunGenesis(context.Background(), f, store, doc, GenesisOptions{ProcessRoles: []string{"process"}})
+	ok, err := RunGenesis(context.Background(), f, store, doc, GenesisOptions{ProcessRoles: []string{"process"}, Verify: time.Second, Poll: 10 * time.Millisecond})
 	if err != nil || !ok {
 		t.Fatalf("genesis = %v, %v", ok, err)
 	}
@@ -96,7 +116,7 @@ func TestGenesisThatDoesNotFinish(t *testing.T) {
 	}
 	f := &fakeGenesis{store: store, replies: []string{"GENESIS DONE"}}
 	doc := genesisDoc(t)
-	ok, err := RunGenesis(context.Background(), f, store, doc, GenesisOptions{Turns: 3})
+	ok, err := RunGenesis(context.Background(), f, store, doc, GenesisOptions{Turns: 3, Verify: 50 * time.Millisecond, Poll: 10 * time.Millisecond})
 	if ok || err == nil {
 		t.Fatalf("genesis = %v, %v; want a failure", ok, err)
 	}
@@ -108,5 +128,24 @@ func TestGenesisThatDoesNotFinish(t *testing.T) {
 	}
 	if _, done, _ := store.Get(genesisSentinel); done {
 		t.Error("an unfinished genesis was marked done")
+	}
+}
+
+// GENESIS DONE is not accepted while a process genesis wrote fails when it
+// runs: its error comes back as the next turn, and genesis ends once the fix
+// has run.
+func TestGenesisHandsBackWhatFails(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := &fakeGenesis{store: store, writeOn: 1, failOn: 1, fixOn: 2,
+		replies: []string{"Written. GENESIS DONE", "Fixed the path. GENESIS DONE"}}
+	ok, err := RunGenesis(context.Background(), f, store, genesisDoc(t), GenesisOptions{Verify: time.Second, Poll: 10 * time.Millisecond})
+	if err != nil || !ok {
+		t.Fatalf("genesis = %v, %v", ok, err)
+	}
+	if len(f.texts) != 2 || !strings.Contains(f.texts[1], "gen:digest: cannot read /work/notes") {
+		t.Errorf("turns = %d; second = %q", len(f.texts), f.texts[len(f.texts)-1])
 	}
 }
