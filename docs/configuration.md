@@ -169,6 +169,17 @@ task_timeout_seconds = 1800
 # every     = "10s"
 # report_to = "sec-watch"
 #
+# An event trigger: a live tool woken by what happens in the journal — here every
+# tool that finishes in a conversation. Metadata only unless event_content = true,
+# which also delivers tool input and output (docs/processes.md).
+#
+# [[process]]
+# name          = "error-watch"
+# tool          = "error_watch"
+# on            = ["tool_end"]
+# on_filter     = { sessions = "conversations" }   # tool = "<name>", session = "<id>"
+# event_content = false
+#
 # Reflection in the agent's own session, with its history and under its role.
 #
 # [[process]]
@@ -198,6 +209,10 @@ max_running = 14
 # reaches `nine notifications`, and it resumes when the day is up. A
 # [[process]] block may lower either field, never raise it.
 budget = { turns_per_day = 200, tokens_per_day = 2000000 }
+# Lineage: no process is triggered by an event, or sent a pipe's report, this
+# many processes deep or more; the skip is journaled. 2 lets a process react to
+# someone's work and another react to that, and no further.
+max_depth = 2
 # Treat the goal [[process]] list as the full desired state: a goal process no
 # longer listed is retired and its goal archived at boot. Conversation-created
 # goals are never touched.

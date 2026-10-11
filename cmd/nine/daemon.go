@@ -218,6 +218,7 @@ func runDaemon() {
 		MaxDelegationDepth:     cfg.Roles.MaxDelegationDepth,
 		MaxRunning:             cfg.Processes.MaxRunningOrDefault(),
 		ProcessBudget:          cfg.Processes.Budget,
+		MaxDepth:               cfg.Processes.MaxDepthOrDefault(),
 		JobMinDelayMS:          cfg.Tools.JobMinDelayMS,
 		JobWorkers:             cfg.Tools.JobWorkers,
 	})

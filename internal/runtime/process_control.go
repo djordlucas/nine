@@ -40,6 +40,11 @@ type ProcessStatus struct {
 
 	Budget ProcessBudgetStatus `json:"budget"`
 
+	// On lists the journal events that trigger it; EventContent says whether
+	// it receives their content.
+	On           []string `json:"on,omitempty"`
+	EventContent bool     `json:"event_content,omitempty"`
+
 	Calls      int    `json:"calls,omitempty"`
 	Cycles     int    `json:"cycles,omitempty"`
 	Failures   int    `json:"failures,omitempty"`
@@ -77,7 +82,9 @@ func (r *StandingRunner) statusOf(p memory.Process, recent []StandingLogEntry) P
 	if at, ok := budgetResetAt(p); ok {
 		b.ResetsAt = at.UTC().Format(time.RFC3339)
 	}
+	on, _ := decodeEventTrigger(p.OnEvents, p.EventFilter)
 	return ProcessStatus{
+		On: on, EventContent: p.EventContent,
 		ID: p.ID, Tool: p.Tool, Mode: p.Mode, State: p.State,
 		StoppedBy: p.StoppedBy, StoppedAt: p.StoppedAt, Trigger: triggerText(p),
 		Session: p.SessionID, Attached: p.SessionID != "" && !p.Owner,
@@ -244,7 +251,8 @@ func (r *StandingRunner) SendProcess(id, text, from string) error {
 	case p.State == memory.ProcessStopped:
 		return fmt.Errorf("process %s is stopped; start it first", id)
 	}
-	handled, delivered := r.Deliver(p.SessionID, fmt.Sprintf("[From %s: %s]", from, text), from, false)
+	// A person's message starts a new lineage: depth 0, like their own turn.
+	handled, delivered := r.Deliver(p.SessionID, fmt.Sprintf("[From %s: %s]", from, text), from, false, 0)
 	switch {
 	case !handled:
 		return fmt.Errorf("process %s is not running yet; try again in a moment", id)

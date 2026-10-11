@@ -251,6 +251,7 @@ How to use this file:
 | R-PROC.11 | Budgets | Turns and tokens per rolling day; at the limit `turn()` fails `E_BUDGET`, the process pauses and reaches the human feed, and runs again when its day is over. |
 | R-PROC.12 | Process tools | A conversation's only, by role; the start rule's refusals name their reason; every start counts against `max_running`. |
 | R-PROC.13 | Processes Nine writes | `tool_write`'s `process` block behind `allow_processes`; roles from `process_roles`; budget may only lower; pipes only to Nine's own; a model cannot delete one the operator stopped. |
+| R-PROC.14 | Event triggers and lineage | Allowlisted journal events reach live processes, metadata unless `event_content`; never from their own session; nothing at `max_depth`, and the skip journaled. |
 
 ### Goals — [`orchestration.md`](contracts/orchestration.md) (§ goals)
 

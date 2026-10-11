@@ -722,14 +722,14 @@ func (d *Daemon) ConfigurePlugins(mgr *plugin.Manager) {
 // answer is "not now" rather than a queue, since a predicate's finding is about
 // the world rather than about a request that must not be lost. The caller falls
 // back to the human feed, so a refusal is never a dropped finding.
-func (d *Daemon) WakeAgent(agentID, text string) bool {
+func (d *Daemon) WakeAgent(agentID, text string, depth int) bool {
 	d.mu.RLock()
 	w := d.sessions[agentID]
 	d.mu.RUnlock()
 	if w == nil {
 		return false
 	}
-	return w.Wake(text)
+	return w.Wake(text, depth)
 }
 
 // ConfigureStandingTools stores the standing-run driver so the operator surface

@@ -1,0 +1,53 @@
+id: process-event-max-depth
+description: "Phase 4's acceptance: two processes triggered by each other's turns stop at max_depth. A conversation's turn (depth 0) triggers both; each one's turn (depth 1) triggers the other; their turns at depth 2 trigger nothing, and each skip is journaled. It measures the runtime, so every model must pass it."
+track: live
+tier: basic
+tags: [processes, events]
+
+setup:
+  files:
+    .tools/eventecho.toml: |
+      name = "eventecho"
+      kind = "js"
+      entrypoint = "./eventecho.js"
+      description = "A live process that answers every event it is given."
+      live = true
+    .tools/eventecho.js: |
+      import { next, turn } from "nine:process";
+      export default () => {
+        for (;;) {
+          const t = next();
+          if (t.kind === "event") turn("Reply with the single word: noted");
+        }
+      };
+  processes:
+    - name: echo-a
+      tool: eventecho
+      role: process
+      on: [turn_end]
+    - name: echo-b
+      tool: eventecho
+      role: process
+      on: [turn_end]
+
+prompts:
+  - "Reply with the single word: hello"
+
+wait:
+  seconds: 240
+  until:
+    journal:
+      - { agent: echo-a, type: process_skipped, contains: '"max_depth"' }
+      - { agent: echo-b, type: process_skipped, contains: '"max_depth"' }
+
+expect:
+  side_effects:
+    journal:
+      - { agent: echo-a, type: process_skipped, contains: '"max_depth"' }
+      - { agent: echo-b, type: process_skipped, contains: '"max_depth"' }
+
+runs: 3
+pass_threshold: "3/3"
+timeout_seconds: 360
+models:
+  expected_pass_min_class: nano

@@ -20,6 +20,10 @@ import (
 type turnStartPayload struct {
 	Input   string `json:"input"`
 	Trigger string `json:"trigger"` // "user" | "idle"
+	// Depth is the turn's place in lineage (adr/process-sessions.md §7): the
+	// number of process sessions in its ancestry. 0, and omitted, for a turn a
+	// person started; the events the turn journals have this depth.
+	Depth int `json:"depth,omitempty"`
 }
 
 type turnEndPayload struct {

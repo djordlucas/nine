@@ -50,7 +50,10 @@ var generatedToolDefs = []llm.ToolDef{
 					"args":{"type":"object","description":"Passed to the program once, as its default export's argument."},
 					"role":{"type":"string","description":"The role its turn() calls run under, from the roles the operator allows; default \"process\", which has no tools."},
 					"budget":{"type":"object","description":"Lower its daily budget: turns_per_day, tokens_per_day.","properties":{"turns_per_day":{"type":"integer"},"tokens_per_day":{"type":"integer"}}},
-					"report_to":{"type":"string","description":"Another process you wrote, which receives what report() sends."}
+					"report_to":{"type":"string","description":"Another process you wrote, which receives what report() sends."},
+					"on":{"type":"array","items":{"type":"string"},"description":"Journal events that trigger it, e.g. [\"tool_end\"], [\"turn_end\"]: next() returns {kind:\"event\", event:{type, session, turn, at, data}}. Metadata only unless event_content."},
+					"on_filter":{"type":"object","description":"Narrow the events: tool (a tool name, for tool_end), sessions (\"all\", \"conversations\", \"processes\"), session (one session id).","properties":{"tool":{"type":"string"},"sessions":{"type":"string"},"session":{"type":"string"}}},
+					"event_content":{"type":"boolean","description":"Also deliver the events' content: tool input and output, a turn's input and result. Turns it starts are then restricted to reading, recording and notifying."}
 				}},
 				"resumable":{"type":"boolean","description":"Set only for work too long for one call. A resumable tool does a bounded slice per call and returns again({cursor,progress,afterMs}) from \"nine:job\" to be called again with its cursor; returning a value finishes it. It runs as a background job, so its result reaches you on a later turn via job_check/job_wait. May be disabled by the operator."}
 			}}`),
@@ -144,6 +147,17 @@ type ProcessRequest struct {
 	Role     string          `json:"role,omitempty"`
 	Budget   *ProcessBudget  `json:"budget,omitempty"`
 	ReportTo string          `json:"report_to,omitempty"`
+	// On, OnFilter and EventContent trigger it on journal events.
+	On           []string     `json:"on,omitempty"`
+	OnFilter     *EventFilter `json:"on_filter,omitempty"`
+	EventContent bool         `json:"event_content,omitempty"`
+}
+
+// EventFilter narrows the events that trigger a written process.
+type EventFilter struct {
+	Tool     string `json:"tool,omitempty"`
+	Sessions string `json:"sessions,omitempty"`
+	Session  string `json:"session,omitempty"`
 }
 
 // ProcessBudget lowers a written process's daily budget.
@@ -165,11 +179,11 @@ func RegisterGeneratedTools(d *Dispatcher, s GeneratedToolStore, evalEnabled boo
 
 	d.handlers["tool_write"] = func(ctx context.Context, args json.RawMessage) (string, error) {
 		var req struct {
-			Name         string           `json:"name"`
-			Description  string           `json:"description"`
-			InputSchema  json.RawMessage  `json:"input_schema,omitempty"`
-			Source       string           `json:"source"`
-			Capabilities json.RawMessage  `json:"capabilities,omitempty"`
+			Name         string          `json:"name"`
+			Description  string          `json:"description"`
+			InputSchema  json.RawMessage `json:"input_schema,omitempty"`
+			Source       string          `json:"source"`
+			Capabilities json.RawMessage `json:"capabilities,omitempty"`
 			Resumable    bool            `json:"resumable"`
 			Process      *ProcessRequest `json:"process"`
 			Standing     json.RawMessage `json:"standing"`

@@ -136,7 +136,6 @@ type AgentBuilderConfig struct {
 	// ApprovalTools, it is enforced only for loops an interactive session owns.
 	GeneratedApproval string
 
-
 	// DefaultLeafRole names the role used when a delegation names none
 	// (roles.default_leaf; default "executor" — R-ROLE.9).
 	DefaultLeafRole string

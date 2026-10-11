@@ -205,6 +205,24 @@ func (g *grader) gradeSideEffects() {
 		}
 	}
 
+	for _, j := range se.Journal {
+		evs, err := store.SessionEventsByAgent(j.Agent)
+		if err != nil {
+			g.fail("side_effect journal %s: %v", j.Agent, err)
+			continue
+		}
+		n := 0
+		for _, ev := range evs {
+			if ev.Type == j.Type && (j.Contains == "" || strings.Contains(string(ev.Payload), j.Contains)) {
+				n++
+			}
+		}
+		want := max(j.Min, 1)
+		if n < want {
+			g.fail("side_effect journal %s: %d %s events containing %q, want >= %d", j.Agent, n, j.Type, j.Contains, want)
+		}
+	}
+
 	for id, want := range se.Processes {
 		p, found, err := store.ProcessGet(id)
 		switch {
@@ -390,9 +408,16 @@ func (g *grader) gradeAnswer(judgeFn JudgeFunc) {
 
 // ── string matching ─────────────────────────────────────────────────────────
 
-// match applies the StringMatch predicate to s, returning ("", true) on a match
-// or a reason on failure. Assumes validate() already enforced exactly one field.
+// match applies the StringMatch predicate to s, and not_contains with it,
+// returning ("", true) on a match or a reason on failure. Assumes validate()
+// already enforced at most one predicate.
 func (m StringMatch) match(s string) (why string, ok bool) {
+	if m.NotContains != "" && strings.Contains(s, m.NotContains) {
+		return fmt.Sprintf("contains %q", m.NotContains), false
+	}
+	if m.Equals == nil && m.Contains == "" && m.Matches == "" {
+		return "", m.NotContains != ""
+	}
 	switch {
 	case m.Equals != nil:
 		if s == *m.Equals {

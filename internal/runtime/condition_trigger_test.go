@@ -20,7 +20,7 @@ type fakeWaker struct {
 	accept bool
 }
 
-func (f *fakeWaker) WakeAgent(agentID, text string) bool {
+func (f *fakeWaker) WakeAgent(agentID, text string, _ int) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if !f.accept {
@@ -212,17 +212,17 @@ func TestStoppedConditionTriggerStaysStopped(t *testing.T) {
 // Wake is lossy on purpose: a predicate firing again while the agent is still
 // reading the first finding wants the agent to look, not two turns.
 func TestWakeIsNonBlockingAndCoalesces(t *testing.T) {
-	w := &AgentWorker{wake: make(chan string, 1)}
-	if !w.Wake("first") {
+	w := &AgentWorker{wake: make(chan wakeReq, 1)}
+	if !w.Wake("first", 1) {
 		t.Fatal("the first wake was dropped")
 	}
-	if w.Wake("second") {
+	if w.Wake("second", 1) {
 		t.Fatal("a second wake queued behind the first; it should coalesce")
 	}
 	select {
 	case got := <-w.wake:
-		if got != "first" {
-			t.Fatalf("delivered %q, want the first finding", got)
+		if got.text != "first" {
+			t.Fatalf("delivered %q, want the first finding", got.text)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("nothing was queued")

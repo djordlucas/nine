@@ -99,6 +99,8 @@ type AssemblyConfig struct {
 	MaxRunning         int // [processes] max_running
 	// ProcessBudget is [processes] budget; zero fields take the defaults.
 	ProcessBudget config.BudgetConfig
+	// MaxDepth is [processes] max_depth; <= 0 is the default.
+	MaxDepth int
 	// JobMinDelayMS and JobWorkers bound the process runner's calls, as they do
 	// the job sweeper's ([tools] job_min_delay_ms, job_workers); 0 is the default.
 	JobMinDelayMS int
@@ -158,17 +160,17 @@ func Assemble(c AssemblyConfig) *Assembly {
 		// The path out of a ceiling refusal (capability_grants.go). Wired from the
 		// same store and the same notification feed, so a request an agent makes
 		// while nobody is watching still reaches `nine notifications`.
-		RequestCapability:      NewCapabilityRequester(c.Store, notifyUser),
-		Sup:                    supervisor,
-		TaskTimeoutSeconds:     c.TaskTimeoutSeconds,
-		HITL:                   c.HITL,
-		ApprovalTools:          c.ApprovalTools,
-		GateSubAgents:          c.GateSubAgents,
-		GeneratedApproval:      c.GeneratedApproval,
-		PlanApproval:           c.PlanApproval,
-		PlanMode:               c.PlanMode,
-		DefaultLeafRole:        c.DefaultLeafRole,
-		MaxDelegationDepth:     c.MaxDelegationDepth,
+		RequestCapability:  NewCapabilityRequester(c.Store, notifyUser),
+		Sup:                supervisor,
+		TaskTimeoutSeconds: c.TaskTimeoutSeconds,
+		HITL:               c.HITL,
+		ApprovalTools:      c.ApprovalTools,
+		GateSubAgents:      c.GateSubAgents,
+		GeneratedApproval:  c.GeneratedApproval,
+		PlanApproval:       c.PlanApproval,
+		PlanMode:           c.PlanMode,
+		DefaultLeafRole:    c.DefaultLeafRole,
+		MaxDelegationDepth: c.MaxDelegationDepth,
 	})
 
 	// The daemon resolves each session's role from its plan profile and passes it
@@ -220,8 +222,12 @@ func Assemble(c AssemblyConfig) *Assembly {
 	runner.SetSessions(daemon)
 	runner.SetBudget(c.ProcessBudget)
 	runner.SetMaxRunning(c.MaxRunning)
+	runner.SetMaxDepth(c.MaxDepth)
 	if runner != nil {
 		builder.SetProcessControl(modelProcesses{r: runner})
+		// Event triggers: a journal subscriber that delivers events to the live
+		// processes they trigger (process_events.go).
+		daemon.AddSubscriber(runner.EventRouter())
 	}
 	daemon.ConfigureStandingTools(runner)
 	daemon.ConfigureProcesses(c.Store, runner.Wake)

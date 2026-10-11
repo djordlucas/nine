@@ -229,6 +229,14 @@ func checkSyntax(source string) error {
 		where, e.Text)
 }
 
+// eventFilterOf is a process request's event filter, as config states it.
+func eventFilterOf(p *agent.ProcessRequest) config.EventFilter {
+	if p.OnFilter == nil {
+		return config.EventFilter{}
+	}
+	return config.EventFilter{Tool: p.OnFilter.Tool, Sessions: p.OnFilter.Sessions, Session: p.OnFilter.Session}
+}
+
 // isLiveProcess reports whether a write asks for a live process: a process
 // block on a tool that is not resumable. A resumable one runs as a slice
 // process, a cycle at a time, as standing tools did.
@@ -273,6 +281,17 @@ func (g *generatedTools) checkProcessRequest(spec agent.GeneratedToolSpec) error
 			"and loop on next(), which waits for each trigger. A process cannot call other tools, yours included: " +
 			"do the work in its own program — read and write files with \"nine:fs\", ask the model with turn(). " +
 			"(A tool that does one bounded slice per call is resumable instead: set resumable = true.)")
+	}
+	if len(p.On) > 0 || p.OnFilter != nil || p.EventContent {
+		if spec.Resumable {
+			return fmt.Errorf("on is for live processes: a resumable (slice) process has no next() to receive an event with")
+		}
+		if len(p.On) == 0 {
+			return fmt.Errorf("on_filter and event_content need on")
+		}
+		if err := config.ValidateEvents(p.On, eventFilterOf(p)); err != nil {
+			return err
+		}
 	}
 	role := p.Role
 	if role == "" {
@@ -355,6 +374,7 @@ func (g *generatedTools) recordProcess(spec agent.GeneratedToolSpec) error {
 	if p.ReportTo != "" {
 		row.ReportTo = standingIDFor(p.ReportTo)
 	}
+	row.OnEvents, row.EventFilter, row.EventContent = encodeEventTrigger(p.On, eventFilterOf(p), p.EventContent)
 	_, existed, err := g.store.ProcessGet(id)
 	if err != nil {
 		return err

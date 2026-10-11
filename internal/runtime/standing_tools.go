@@ -53,7 +53,9 @@ const (
 // implements it; the runner holds the interface so the standing driver does not
 // depend on the daemon's whole surface.
 type AgentWaker interface {
-	WakeAgent(agentID, text string) bool
+	// WakeAgent runs a turn on agentID with text; depth is the report's
+	// lineage depth.
+	WakeAgent(agentID, text string, depth int) bool
 }
 
 type StandingRunner struct {
@@ -82,6 +84,11 @@ type StandingRunner struct {
 	// maxRunning is [processes] max_running, which a start counts against
 	// (process_control.go).
 	maxRunning int
+	// maxDepth is [processes] max_depth, the lineage bound (process_events.go).
+	maxDepth int
+	// heldEvents are event triggers for processes whose instance has not
+	// started yet, under liveMu (deliverEvent).
+	heldEvents map[string][]toolvm.Trigger
 }
 
 // Wake asks for a pass now rather than at the next tick: a process just written
@@ -188,9 +195,15 @@ func ReconcileProcesses(store *memory.Store, host *toolvm.Host, blocks []config.
 			BudgetTurns: b.Budget.TurnsPerDay, BudgetTokens: b.Budget.TokensPerDay,
 			Declared: true,
 		}
+		p.OnEvents, p.EventFilter, p.EventContent = encodeEventTrigger(b.On, b.OnFilter, b.EventContent)
 		if t := liveTool(host, b.Tool); t != nil {
 			p.Mode = memory.ProcessLive
 			p.SessionID, p.Role, p.Delegates = b.Name, b.Role, b.Delegates
+		} else if len(b.On) > 0 {
+			// Events reach a live program through next(); a slice process is
+			// called on its clock and has no next() to receive one with.
+			slog.Warn("process: on is for live processes; its events are not delivered", "name", b.Name, "tool", b.Tool)
+			p.OnEvents, p.EventFilter, p.EventContent = "", "", false
 		}
 		// An attached process runs in its owner's session, under its role, and
 		// is bound to its goal when it has one.
@@ -420,7 +433,8 @@ func (r *StandingRunner) report(st memory.Process, out toolvm.Output) {
 	})
 
 	if st.ReportTo != "" {
-		r.pipe(st, text)
+		// A slice process has no turns; what it reports is one process deep.
+		r.pipe(st, text, 1)
 		return
 	}
 	r.notifyHuman(fmt.Sprintf("[%s] %s", st.ID, text))
@@ -438,13 +452,25 @@ func (r *StandingRunner) report(st memory.Process, out toolvm.Output) {
 //
 // What arrives carries its sender's label (pipeLabel), so the receiving model
 // can tell an upstream report from a person's instruction.
-func (r *StandingRunner) pipe(st memory.Process, text string) bool {
+//
+// depth is the report's lineage depth: one more than the turn that made it. A
+// report at max_depth or more is not delivered (adr/process-sessions.md §7):
+// the skip is journaled, and the report goes to the human feed so nothing is
+// lost.
+func (r *StandingRunner) pipe(st memory.Process, text string, depth int) bool {
+	if max := r.maxDepthOrDefault(); depth >= max {
+		journalTransition(r.store, st.ID, evProcessSkipped, map[string]any{
+			"to": st.ReportTo, "depth": depth, "max_depth": max, "reason": "max_depth",
+		})
+		r.notifyHuman(fmt.Sprintf("[%s → %s, at max_depth %d] %s", st.ID, st.ReportTo, max, text))
+		return false
+	}
 	delivered := false
 	labeled := pipeLabel(st.ID, text)
-	if handled, ok := r.Deliver(st.ReportTo, labeled, st.ID, true); handled {
+	if handled, ok := r.Deliver(st.ReportTo, labeled, st.ID, true, depth); handled {
 		delivered = ok
 	} else if r.waker != nil {
-		delivered = r.waker.WakeAgent(st.ReportTo, labeled)
+		delivered = r.waker.WakeAgent(st.ReportTo, labeled, depth)
 	}
 	if delivered {
 		slog.Info("process report delivered", "id", st.ID, "to", st.ReportTo, "tool", st.Tool)

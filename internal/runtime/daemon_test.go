@@ -703,7 +703,7 @@ func TestWokenSessionKeepsTakingTurns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewConversation: %v", err)
 	}
-	if !d.WakeAgent(id, "the predicate found something") {
+	if !d.WakeAgent(id, "the predicate found something", 1) {
 		t.Fatal("WakeAgent declined an idle session")
 	}
 	deadline := time.Now().Add(5 * time.Second)
@@ -785,7 +785,7 @@ func TestProcessTurnRunsInTheProcessSession(t *testing.T) {
 	d, _ := startDaemon(t, makeFactory(provider), nil, nil)
 
 	for i, want := range []string{"reply 1", "reply 2"} {
-		got, _, err := d.ProcessTurn(context.Background(), "digest-session", runtime.RoleParams{}, "tick", "idle", nil)
+		got, _, err := d.ProcessTurn(context.Background(), "digest-session", runtime.RoleParams{}, "tick", runtime.TurnOptions{Trigger: "idle"})
 		if err != nil || got != want {
 			t.Fatalf("ProcessTurn %d = %q, %v; want %q", i+1, got, err, want)
 		}
@@ -822,7 +822,7 @@ func TestStalledGoalSessionPausesItsGoal(t *testing.T) {
 	d.ConfigureProcesses(store, nil)
 
 	for i := 0; i < 2; i++ {
-		if _, _, err := d.ProcessTurn(context.Background(), "g1", runtime.RoleParams{OwnsGoal: true}, "tick", "idle", nil); err != nil {
+		if _, _, err := d.ProcessTurn(context.Background(), "g1", runtime.RoleParams{OwnsGoal: true}, "tick", runtime.TurnOptions{Trigger: "idle"}); err != nil {
 			t.Fatal(err)
 		}
 	}

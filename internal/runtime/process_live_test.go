@@ -24,13 +24,16 @@ type fakeSessions struct {
 	tokens int
 	// allows records each turn's tool restriction, nil for none.
 	allows [][]string
+	// depths records each turn's lineage depth.
+	depths []int
 }
 
-func (f *fakeSessions) ProcessTurn(_ context.Context, id string, _ RoleParams, text, trigger string, allow []string) (string, int, error) {
+func (f *fakeSessions) ProcessTurn(_ context.Context, id string, _ RoleParams, text string, opt TurnOptions) (string, int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.turns = append(f.turns, id+"|"+trigger+"|"+text)
-	f.allows = append(f.allows, allow)
+	f.turns = append(f.turns, id+"|"+opt.Trigger+"|"+text)
+	f.allows = append(f.allows, opt.Allow)
+	f.depths = append(f.depths, opt.Depth)
 	if f.fail != nil {
 		return "", f.tokens, f.fail
 	}
@@ -157,7 +160,7 @@ func TestPipeDeliversToTheLiveProcessOwningTheSession(t *testing.T) {
 		return lp.waiting
 	})
 
-	handled, delivered := r.Deliver("agent-session", "found: a stray key", "when:agent", true)
+	handled, delivered := r.Deliver("agent-session", "found: a stray key", "when:agent", true, 1)
 	if !handled || !delivered {
 		t.Fatalf("Deliver = handled %v, delivered %v; want both", handled, delivered)
 	}
@@ -166,7 +169,7 @@ func TestPipeDeliversToTheLiveProcessOwningTheSession(t *testing.T) {
 		t.Errorf("turn = %q", got)
 	}
 
-	if handled, _ := r.Deliver("someone-else", "x", "y", true); handled {
+	if handled, _ := r.Deliver("someone-else", "x", "y", true, 1); handled {
 		t.Error("a session no live process owns was handled")
 	}
 }
@@ -336,7 +339,7 @@ func TestPipedTurnIsRestrictedAndASendIsNot(t *testing.T) {
 		return lp.waiting
 	}
 	eventually(t, "the process waiting in next()", waiting)
-	if _, ok := r.Deliver("agent-session", "a finding", "watcher", true); !ok {
+	if _, ok := r.Deliver("agent-session", "a finding", "watcher", true, 1); !ok {
 		t.Fatal("the piped report was not taken")
 	}
 	eventually(t, "the piped turn", func() bool { return len(sessions.seen()) == 1 })

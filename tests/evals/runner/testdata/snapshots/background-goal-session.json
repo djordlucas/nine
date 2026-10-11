@@ -1010,7 +1010,8 @@
       "type": "turn_start",
       "payload": {
         "input": "Check on goal tidy-notes (\"Keep notes/plan.md tidy.\") and its subtree (goal_get). Take any useful action toward it, including spawning sub-goals or sub-agents. If its status should change (e.g. done once attained, or paused if you're stuck), call goal_update_status.",
-        "trigger": "idle"
+        "trigger": "idle",
+        "depth": 1
       }
     },
     {
