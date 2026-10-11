@@ -93,6 +93,11 @@ type StandingRunner struct {
 	// database is the database processes write through nine:sql; nil when the
 	// instance has none.
 	database *sqldb.DB
+	// rollbackAfter is [processes] rollback_after (process_revision.go).
+	rollbackAfter int
+	// restore makes a previous version of a tool current; the generated-tool
+	// store provides it (LinkStandingTools). Nil disables rollback.
+	restore func(ctx context.Context, name string, version int, by string) error
 }
 
 // SetDatabase gives live processes the database.
@@ -390,6 +395,7 @@ func (r *StandingRunner) runOnce(ctx context.Context, st memory.Process) {
 	// Still working: schedule the next call at the delay it asked for.
 	if out.Continue != nil {
 		next := time.Now().Add(max(time.Duration(out.Continue.AfterMS)*time.Millisecond, r.minDelay))
+		r.proveVersion(st, 0)
 		if _, err := r.store.ProcessAdvance(st.ID, out.Continue.Cursor, next); err != nil {
 			slog.Warn("standing tool: advance", "id", st.ID, "err", err)
 		}
@@ -399,6 +405,7 @@ func (r *StandingRunner) runOnce(ctx context.Context, st memory.Process) {
 
 	// The cycle finished. The trigger decides when the next one starts.
 	next := r.nextCycleAt(st, time.Now())
+	r.proveVersion(st, 0)
 	if _, err := r.store.ProcessCompleteCycle(st.ID, next); err != nil {
 		slog.Warn("standing tool: complete cycle", "id", st.ID, "err", err)
 		return
@@ -521,6 +528,11 @@ func (r *StandingRunner) notifyHuman(msg string) {
 // posts to the human feed, so a flapping tool cannot produce a storm.
 func (r *StandingRunner) recordFailure(st memory.Process, cause error) {
 	failures := st.Failures + 1
+	// A rewritten program that keeps failing before it ever ran is rolled back
+	// rather than counted towards failing or switched off.
+	if r.rollback(st, failures, cause) {
+		return
+	}
 	state := st.State
 	tripped := failures >= StandingFailureThreshold && st.State != memory.ProcessFailing
 	if failures >= StandingFailureThreshold {

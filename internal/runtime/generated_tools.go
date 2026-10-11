@@ -44,6 +44,8 @@ type generatedTools struct {
 	// standingLog is the driver's recent-activity ring, so deleting a tool also
 	// drops its buffer rather than leaking one entry set per deleted tool.
 	standingLog *standingLog
+	// runner restarts a process whose program was rewritten.
+	runner *StandingRunner
 }
 
 // LinkStandingTools connects the generated-tool store to the standing driver, so
@@ -59,6 +61,8 @@ func LinkStandingTools(gts agent.GeneratedToolStore, r *StandingRunner) {
 		return
 	}
 	g.standingLog = r.Log()
+	g.runner = r
+	r.restore = g.Restore
 }
 
 // NewGeneratedToolStore wires the generated tier, or returns nil when it is off.
@@ -80,6 +84,9 @@ type GeneratedPolicy struct {
 	MaxRunning int
 	// Budget is [processes] budget, the most a written process may ask for.
 	Budget config.BudgetConfig
+	// AllowRevision is [processes] allow_revision: whether a process's turn
+	// may write or rewrite a process.
+	AllowRevision bool
 }
 
 // NewGeneratedToolStoreWithPolicy is NewGeneratedToolStore with the operator's
@@ -128,6 +135,9 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 			return agent.WriteResult{}, err
 		}
 	}
+	if err := g.checkRevision(spec); err != nil {
+		return agent.WriteResult{}, err
+	}
 	if spec.Resumable && !g.host.AllowLongRunningGenerated() {
 		return agent.WriteResult{}, fmt.Errorf(
 			"long-running generated tools are not enabled on this instance " +
@@ -152,8 +162,26 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 	// A rewrite that changes nothing is reported as such: it is the shape a
 	// looping model produces, and saying "wrote it" again gives it no way to
 	// notice. Compared before the upsert, which would overwrite the evidence.
-	unchanged := false
+	unchanged, existed := false, false
+	id := standingIDFor(spec.Name)
+	// A rewrite that leaves out the process block of a tool that runs a
+	// process still rewrites that process's program: the process keeps its
+	// definition and runs the new version.
+	runs, runsLive := false, false
+	if p, ok, err := g.store.ProcessGet(id); err == nil && ok {
+		runs, runsLive = true, p.Mode == memory.ProcessLive
+	}
+	live := isLiveProcess(spec) || (spec.Process == nil && runsLive)
+	// Rewriting a process the operator stopped would hand it a new program
+	// behind the operator's back; only the operator may change it, as only the
+	// operator may start or delete it (adr/process-sessions.md §9).
+	if p, ok, err := g.store.ProcessGet(id); err == nil && ok &&
+		p.State == memory.ProcessStopped && p.StoppedBy == ByOperator {
+		return agent.WriteResult{}, fmt.Errorf(
+			"tool %q runs process %s, which the operator stopped; only the operator can change it", spec.Name, id)
+	}
 	if prev, ok, perr := g.store.GeneratedToolGet(spec.Name); perr == nil && ok {
+		existed = true
 		// Capabilities are compared as parsed declarations, not as bytes: the store
 		// normalises an omitted object to "{}", so the raw forms of two identical
 		// writes differ.
@@ -164,23 +192,38 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 			string(prev.InputSchema) == string(spec.InputSchema) &&
 			reflect.DeepEqual(prevDecl, decl) &&
 			prev.Resumable == spec.Resumable &&
-			prev.Live == isLiveProcess(spec)
+			prev.Live == live
 	}
 
-	if err := g.store.GeneratedToolUpsert(memory.GeneratedTool{
-		Name:        spec.Name,
-		Description: spec.Description,
-		InputSchema: spec.InputSchema,
-		// Source is the BUNDLED JavaScript the host compiles and runs; Lockfile is
-		// the exact third-party code it carries. Every tools row is agent-authored,
-		// so there is no separate provenance to store.
-		Source:       source,
-		Capabilities: spec.Capabilities,
-		Lockfile:     lockJSON,
-		Resumable:    spec.Resumable,
-		Live:         isLiveProcess(spec),
-	}); err != nil {
-		return agent.WriteResult{}, err
+	// A rewrite of a process's program is on probation until it has run
+	// (process_revision.go). An unchanged write stores no version.
+	revised := existed && !unchanged && (spec.Process != nil || runs)
+	version := 0
+	if !unchanged {
+		prevProcess := ""
+		if p, ok, err := g.store.ProcessGet(id); err == nil && ok {
+			b, _ := json.Marshal(p)
+			prevProcess = string(b)
+		}
+		v, err := g.store.GeneratedToolWrite(memory.GeneratedTool{
+			Name:        spec.Name,
+			Description: spec.Description,
+			InputSchema: spec.InputSchema,
+			// Source is the BUNDLED JavaScript the host compiles and runs; Lockfile is
+			// the exact third-party code it carries. Every tools row is agent-authored,
+			// so there is no separate provenance to store.
+			Source:       source,
+			Capabilities: spec.Capabilities,
+			Lockfile:     lockJSON,
+			Resumable:    spec.Resumable,
+			Live:         live,
+			Probation:    revised,
+			WrittenBy:    spec.WrittenBy,
+		}, prevProcess)
+		if err != nil {
+			return agent.WriteResult{}, err
+		}
+		version = v
 	}
 
 	evicted, err := g.store.GeneratedToolEvictOldest(g.host.MaxGeneratedTools())
@@ -198,15 +241,31 @@ func (g *generatedTools) Write(ctx context.Context, spec agent.GeneratedToolSpec
 		"tool", spec.Name, "fs", decl.FS, "net", decl.Net, "env", decl.Env,
 		"resumable", spec.Resumable, "deps", lockNames(lock), "evicted", evicted)
 
-	res := agent.WriteResult{Evicted: evicted, Unchanged: unchanged}
+	res := agent.WriteResult{Evicted: evicted, Unchanged: unchanged, Version: version, Revised: revised}
 	if spec.Process != nil {
 		if err := g.recordProcess(spec); err != nil {
 			return agent.WriteResult{}, err
 		}
-		res.Process = standingIDFor(spec.Name)
+		res.Process = id
+	} else if runs {
+		res.Process = id
 	}
 
 	g.reload(ctx)
+	if revised {
+		journalTransition(g.store, id, evProcessRevised, map[string]any{
+			"tool": spec.Name, "version": version, "written_by": spec.WrittenBy,
+		})
+		// The old version's failures and backoff are not the new one's: it
+		// starts at once, with a clean count its probation is measured by.
+		if err := g.store.ProcessRecovered(id); err != nil {
+			slog.Warn("revised process: clear the old version's failures", "id", id, "err", err)
+		}
+		// The running instance still runs the old program: restart it on the new.
+		if g.runner != nil {
+			g.runner.restartLive(id)
+		}
+	}
 	return res, nil
 }
 
@@ -282,6 +341,24 @@ func isLiveProcess(spec agent.GeneratedToolSpec) bool {
 // checkProcessRequest refuses a process before anything is persisted, so the
 // model gets a message it can act on rather than a tool that exists and never
 // runs.
+// checkRevision refuses a process's turn writing a process — a new one, or a
+// rewrite of the program an existing one runs — unless the operator allowed
+// revision. Ordinary tools a process's turn may write as any turn may.
+func (g *generatedTools) checkRevision(spec agent.GeneratedToolSpec) error {
+	if !spec.FromProcess || g.policy.AllowRevision {
+		return nil
+	}
+	_, runs, err := g.store.ProcessGet(standingIDFor(spec.Name))
+	if err != nil {
+		return err
+	}
+	if spec.Process == nil && !runs {
+		return nil
+	}
+	return fmt.Errorf("a process's turn cannot write or rewrite a process on this instance " +
+		"([processes] allow_revision is off). Report what should change instead; a person or a conversation can make the change")
+}
+
 func (g *generatedTools) checkProcessRequest(spec agent.GeneratedToolSpec) error {
 	p, pol := spec.Process, g.policy
 	if !pol.AllowProcesses {

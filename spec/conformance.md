@@ -253,6 +253,7 @@ How to use this file:
 | R-PROC.13 | Processes Nine writes | `tool_write`'s `process` block behind `allow_processes`; roles from `process_roles`; budget may only lower; pipes only to Nine's own; a model cannot delete one the operator stopped. |
 | R-PROC.14 | Event triggers and lineage | Allowlisted journal events reach live processes, metadata unless `event_content`; never from their own session; nothing at `max_depth`, and the skip journaled. |
 | R-PROC.15 | The database | A file apart from the store; live processes with `sql` write it through `nine:sql`, turns read it through `sql_query`; denied statements refused with a reason; quotas enforced; writes journaled as kinds and tables. |
+| R-PROC.16 | Versions and revision | Every rewrite keeps a version; a rewritten process restarts on probation and rolls back after `rollback_after` failures; process sessions write processes only with `allow_revision`; `tool_read` reads. |
 
 ### Goals — [`orchestration.md`](contracts/orchestration.md) (§ goals)
 

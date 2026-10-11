@@ -248,6 +248,7 @@ func (f *AgentBuilder) BuildForRole(agentID string, p RoleParams) *agent.Loop {
 	role.Interactive = role.Interactive && p.Interactive
 	role.OwnsGoal = p.OwnsGoal
 	role.Conversation = !p.Process
+	role.ProcessSession = p.Process
 	role.Delegates = role.Delegates || p.Delegates
 	// A root session owns its own gates; sub-agents inherit this owner (subGate).
 	var gate gateCtx
@@ -544,9 +545,14 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 	// the whole instance in via [tools.agent], so they survive an allowlist role's
 	// pruning rather than needing to be named in every role. The tools they
 	// *produce* are ordinary host tools and reach the loop through lc.Tools.
+	//
+	// A process session is the exception: its turns are its process's, so it
+	// holds them only when its role grants tool_write (pursue's "*" does,
+	// process's [] does not), and writing a process from there needs
+	// [processes] allow_revision (adr/process-sessions.md §9).
 	var generatedDefs []llm.ToolDef
-	if lc.GeneratedTools != nil {
-		agent.RegisterGeneratedTools(d, lc.GeneratedTools, lc.GeneratedEval)
+	if lc.GeneratedTools != nil && (!role.ProcessSession || isRevisingRole(role.Tools, role.AllTools)) {
+		agent.RegisterGeneratedTools(d, lc.GeneratedTools, lc.GeneratedEval, agentID, role.ProcessSession)
 		generatedDefs = agent.GeneratedToolDefs(lc.GeneratedEval)
 		for _, def := range generatedDefs {
 			shellTools = append(shellTools, def.Name)

@@ -78,6 +78,8 @@ var clientMsgSpecs = map[MsgType]clientMsgSpec{
 	TypeProcessSend:    {required: []fieldRule{needAgentID, needText}},
 	TypeToolCall:       {required: []fieldRule{needToolName}},
 	TypeToolDelete:     {required: []fieldRule{needToolName}},
+	TypeToolVersions:   {required: []fieldRule{needToolName}},
+	TypeToolRestore:    {required: []fieldRule{needToolName, needText}},
 
 	TypePluginCall:       {required: []fieldRule{needToolName}},
 	TypeHumanInputAnswer: {required: []fieldRule{needRequestID}},

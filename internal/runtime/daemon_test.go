@@ -739,6 +739,8 @@ func (f *fakeGenerated) Write(context.Context, agent.GeneratedToolSpec) (agent.W
 func (f *fakeGenerated) Eval(context.Context, string, json.RawMessage, json.RawMessage) (string, error) {
 	return "", nil
 }
+func (f *fakeGenerated) Read(string) (any, error) { return nil, nil }
+
 func (f *fakeGenerated) Delete(_ context.Context, name string) error {
 	if name == "built_in" {
 		return fmt.Errorf("tool %q is built into Nine and cannot be deleted", name)

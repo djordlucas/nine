@@ -586,6 +586,12 @@ deletes them with `nine tools delete <name>`, `DELETE /api/v1/tools/{name}` or
 same tools: a shipped or operator-installed tool cannot be deleted this way, and
 the refusal names which it is. Deleting a tool also deletes its standing run.
 
+**Reading and revising one.** `tool_read` returns a tool Nine wrote — its
+source, declaration and version, and its process's state and last error — or,
+with no name, the list of them. A rewrite keeps the version it replaces; the
+operator lists them with `nine tools versions <name>` and makes one current
+with `nine tools restore <name> <version>` (docs/processes.md, Revision).
+
 The symmetry with skills is deliberate:
 
 | | Skill | Generated tool |

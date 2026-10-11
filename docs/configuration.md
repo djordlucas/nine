@@ -218,6 +218,13 @@ max_depth = 2
 # database        = "/data/database.sqlite"   # default: database.sqlite beside the store
 database_max_mb   = 100      # refused beyond this size
 statement_timeout = "5s"     # one statement's longest run
+# Revision (docs/processes.md): a process's turn, under a role that holds
+# tool_write such as the shipped `reviser`, may write and rewrite processes.
+# Off, a process's turn may still write ordinary tools.
+allow_revision = false
+# A rewritten process that fails this many times before it has run is rolled
+# back to its previous version.
+rollback_after = 3
 # Treat the goal [[process]] list as the full desired state: a goal process no
 # longer listed is retired and its goal archived at boot. Conversation-created
 # goals are never touched.

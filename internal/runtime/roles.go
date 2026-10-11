@@ -67,6 +67,9 @@ type Role struct {
 	// turns are its process's, and a sub-agent's task is finite. Conferred by
 	// the shell like OwnsGoal, never declared by a role skill.
 	Conversation bool
+	// ProcessSession marks a process's session. It holds tool_write only when
+	// its role grants it, never by the shell (process_revision.go).
+	ProcessSession bool
 }
 
 // roleSkillStore is the slice of the memory store the registry needs to

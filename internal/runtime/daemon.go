@@ -563,6 +563,10 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 		d.handleToolCall(enc, r.Tool, r.Args, r.LiveState)
 	case protocol.ToolDeleteReq:
 		d.handleToolDelete(enc, r.Tool)
+	case protocol.ToolVersionsReq:
+		d.handleToolVersions(enc, r.Tool)
+	case protocol.ToolRestoreReq:
+		d.handleToolRestore(enc, r.Tool, r.Version)
 
 	case protocol.ListNotificationsReq:
 		d.handleListNotifications(enc, r.All)

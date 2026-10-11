@@ -1,0 +1,68 @@
+id: process-reviser-fixes
+description: "Revision by a process: a reviser process, under the shipped reviser role with allow_revision on, reviews the processes Nine wrote on its clock, finds the failing one through tool_read, and rewrites it — and the fixed version runs."
+track: live
+tier: basic
+tags: [processes, revision, generated]
+
+session:
+  config:
+    tools.agent.enabled: true
+    tools.agent.allow_processes: true
+    tools.agent.process_roles: [process, reviser]
+    processes.allow_revision: true
+
+setup:
+  generated_tools:
+    counter:
+      description: "Counts ticks into counter.log."
+      capabilities: '{"fs":["read","write"]}'
+      source: |
+        import { next } from "nine:process";
+        import { appendFile } from "nine:fs";
+        export default () => {
+          let count = 0;
+          for (;;) {
+            next();
+            count = cuont + 1;
+            appendFile("/work/counter.log", "tick " + count + "\n");
+          }
+        };
+      process:
+        every: 3s
+    reviewer:
+      description: "Reviews the processes Nine wrote and fixes a failing one."
+      source: |
+        import { next, turn } from "nine:process";
+        export default () => {
+          for (;;) {
+            next();
+            turn("Review the processes you wrote: tool_read with no name lists them with their state and last error. " +
+                 "If one is failing, read it with tool_read, fix the bug, and rewrite it with tool_write under the same name, " +
+                 "with its whole source and the same process block. If none is failing, answer NO CHANGE.");
+          }
+        };
+      process:
+        every: 20s
+        role: reviser
+
+prompts:
+  - "Reply with the single word: ok"
+
+wait:
+  seconds: 200
+  until:
+    files:
+      counter.log: { contains: "tick" }
+
+expect:
+  side_effects:
+    journal:
+      - { agent: "gen:counter", type: process_revised, contains: "gen:reviewer" }
+    files:
+      counter.log: { contains: "tick" }
+
+runs: 3
+pass_threshold: "2/3"
+timeout_seconds: 400
+models:
+  expected_pass_min_class: medium

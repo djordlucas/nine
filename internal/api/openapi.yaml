@@ -1521,6 +1521,91 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+  /tools/{name}/versions:
+    get:
+      operationId: getToolVersions
+      summary: List a tool's versions
+      description: A tool Nine wrote — its current version, whether that version is on probation (rolled back if it fails before it has run), and the previous versions it keeps, newest first.
+      tags:
+      - tools
+      parameters:
+      - name: name
+        in: path
+        description: tool name
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolVersionsResponse'
+        '400':
+          description: missing name, or tool writing is off
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: no tool Nine wrote by that name
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+  /tools/{name}/versions/{version}/restore:
+    post:
+      operationId: restoreToolVersion
+      summary: Restore a version of a tool
+      description: Makes a kept version of a tool Nine wrote current again, as a new version, with the process definition it ran under. A process it runs restarts on it.
+      tags:
+      - tools
+      parameters:
+      - name: name
+        in: path
+        description: tool name
+        required: true
+        schema:
+          type: string
+      - name: version
+        in: path
+        description: the version to restore
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+      responses:
+        '200':
+          description: restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestoreToolResponse'
+        '400':
+          description: missing name, or tool writing is off
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: no tool Nine wrote by that name, or no such version
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
   /tools/{name}/call:
     post:
       operationId: callTool
@@ -2035,6 +2120,66 @@ components:
         name:
           type: string
           description: the deleted tool
+        message:
+          type: string
+          description: the daemon's outcome
+    ToolVersionsResponse:
+      type: object
+      description: A tool Nine wrote and the versions it keeps.
+      required:
+      - name
+      - version
+      - previous
+      properties:
+        name:
+          type: string
+          description: the tool
+        version:
+          type: integer
+          description: its current version
+        probation:
+          type: boolean
+          description: the current version has not yet run, and is rolled back if it fails first
+        written_by:
+          type: string
+          description: the session that wrote the current version, "operator" or "rollback"
+        updated_at:
+          type: string
+          description: when the current version was written
+        previous:
+          type: array
+          description: the kept previous versions, newest first
+          items:
+            $ref: '#/components/schemas/ToolVersion'
+    ToolVersion:
+      type: object
+      description: One kept version of a tool.
+      required:
+      - version
+      - written_at
+      properties:
+        version:
+          type: integer
+          description: its number
+        written_by:
+          type: string
+          description: who wrote it
+        written_at:
+          type: string
+          description: when it was written
+        lines:
+          type: integer
+          description: the size of its source, in lines
+    RestoreToolResponse:
+      type: object
+      description: The outcome of restoring a version.
+      required:
+      - name
+      - message
+      properties:
+        name:
+          type: string
+          description: the tool
         message:
           type: string
           description: the daemon's outcome

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -885,6 +886,55 @@ func (d *Daemon) handleToolDelete(enc *json.Encoder, name string) {
 	enc.Encode(protocol.NewTextMsg(protocol.TypeToolDelete, fmt.Sprintf("deleted tool %q", name))) //nolint:errcheck
 }
 
+// toolVersioner is the generated-tool store's version history.
+type toolVersioner interface {
+	Versions(name string) (protocol.ToolVersionsInfo, error)
+	Restore(ctx context.Context, name string, version int, by string) error
+}
+
+func (d *Daemon) versioner(enc *json.Encoder) toolVersioner {
+	v, ok := d.generated.(toolVersioner)
+	if d.generated == nil || !ok {
+		enc.Encode(protocol.NewErrorMsg("tool writing is off here ([tools.agent]), so there are no tools Nine wrote")) //nolint:errcheck
+		return nil
+	}
+	return v
+}
+
+// handleToolVersions answers with a tool Nine wrote and its kept versions.
+func (d *Daemon) handleToolVersions(enc *json.Encoder, name string) {
+	v := d.versioner(enc)
+	if v == nil {
+		return
+	}
+	info, err := v.Versions(name)
+	if err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	b, _ := json.Marshal(info)
+	enc.Encode(protocol.NewTextMsg(protocol.TypeToolVersions, string(b))) //nolint:errcheck
+}
+
+// handleToolRestore makes a kept version current again, as the operator.
+func (d *Daemon) handleToolRestore(enc *json.Encoder, name, version string) {
+	v := d.versioner(enc)
+	if v == nil {
+		return
+	}
+	n, err := strconv.Atoi(version)
+	if err != nil || n < 1 {
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("version %q is not a version number", version))) //nolint:errcheck
+		return
+	}
+	if err := v.Restore(context.Background(), name, n, ByOperator); err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	enc.Encode(protocol.NewTextMsg(protocol.TypeToolRestore, //nolint:errcheck
+		fmt.Sprintf("restored version %d of tool %q as its current version; a process it runs restarts on it", n, name)))
+}
+
 // handleProcessControl starts or stops a process as the operator, who may
 // start any process: the start rule binds models, not the operator.
 func (d *Daemon) handleProcessControl(enc *json.Encoder, id, action string) {
@@ -931,7 +981,7 @@ func processInfoOf(s ProcessStatus) protocol.ProcessInfo {
 		BudgetTokens: s.Budget.Tokens, BudgetTokensPerDay: s.Budget.TokensPerDay,
 		BudgetResetsAt: s.Budget.ResetsAt, Calls: s.Calls, Cycles: s.Cycles, Failures: s.Failures,
 		LastError: s.LastError, LastCallAt: s.LastCallAt, NextAt: s.NextAt,
-		Generated: s.Generated,
+		Generated: s.Generated, Version: s.Version, Probation: s.Probation,
 	}
 	for _, e := range s.Recent {
 		out.Recent = append(out.Recent, protocol.ProcessLogLine{

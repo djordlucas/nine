@@ -59,6 +59,9 @@ type liveProc struct {
 	// handled a trigger; nexts counts its next() calls since the start.
 	recovering bool
 	nexts      int
+	// version is the tool version this instance runs, for a process Nine
+	// wrote (process_revision.go).
+	version int
 }
 
 // SetSessions wires the session side of live processes. Without it, live
@@ -171,6 +174,12 @@ func (r *StandingRunner) goalActive(id string) bool {
 func (r *StandingRunner) startLive(ctx context.Context, row memory.Process) {
 	lp := &liveProc{row: row, triggers: make(chan toolvm.Trigger, liveTriggerQueue),
 		recovering: row.Failures > 0}
+	// The version this instance runs, so its run proves that version only.
+	if row.Generated {
+		if t, ok, err := r.store.GeneratedToolGet(row.Tool); err == nil && ok {
+			lp.version = t.Version
+		}
+	}
 	live, err := r.host.StartLive(ctx, row.Tool, json.RawMessage(argsOrEmptyString(row.Args)), &liveHandler{r: r, lp: lp})
 	if err != nil {
 		r.recordFailure(row, err)
@@ -348,9 +357,14 @@ func (h *liveHandler) Next(ctx context.Context) (toolvm.Trigger, error) {
 	if recovered {
 		lp.recovering = false
 	}
+	ran := lp.nexts == 2
 	lp.mu.Unlock()
 	if recovered {
 		h.r.recoverLive(lp.row)
+	}
+	// The program handled its first trigger and came back: its version ran.
+	if ran {
+		h.r.proveVersion(lp.row, lp.version)
 	}
 	defer func() {
 		lp.mu.Lock()

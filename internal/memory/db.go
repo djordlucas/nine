@@ -386,8 +386,12 @@ func initSchema(d db) error {
 			created_at     TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			updated_at     TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			last_called_at TEXT NOT NULL DEFAULT '',
-			call_count     INTEGER NOT NULL DEFAULT 0
+			call_count     INTEGER NOT NULL DEFAULT 0,
+			version        INTEGER NOT NULL DEFAULT 1,
+			probation      INTEGER NOT NULL DEFAULT 0,
+			written_by     TEXT NOT NULL DEFAULT ''
 		)`,
+		toolVersionsSchema,
 		// tool_state is a sandboxed tool's durable state (spec/contracts/toolvm.md
 		// R-TVM.18): the host-owned store that lets a tool remember across calls
 		// without anything surviving the wasm instance. Deliberately NOT the `kv`

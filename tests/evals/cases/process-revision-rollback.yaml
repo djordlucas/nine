@@ -1,0 +1,66 @@
+id: process-revision-rollback
+description: "Phase 6's acceptance: a running process rewritten to a version that fails before it has run is rolled back after rollback_after failures — the previous version restored and running again, the rollback journaled and reported. It measures the runtime, so every model must pass it."
+track: live
+tier: basic
+tags: [processes, revision, generated]
+
+session:
+  config:
+    tools.agent.enabled: true
+    tools.agent.allow_processes: true
+    processes.rollback_after: 2
+
+setup:
+  generated_tools:
+    heartbeat:
+      description: "Appends a heartbeat on each tick."
+      capabilities: '{"fs":["read","write"]}'
+      source: |
+        import { next } from "nine:process";
+        import { appendFile } from "nine:fs";
+        export default () => {
+          for (;;) {
+            next();
+            appendFile("/work/heartbeat.log", "v1 tick\n");
+          }
+        };
+      process:
+        every: 2s
+  revisions:
+    - name: heartbeat
+      description: "Appends a heartbeat on each tick."
+      capabilities: '{"fs":["read","write"]}'
+      source: |
+        import { next } from "nine:process";
+        export default () => {
+          throw new Error("broken v2");
+        };
+      process:
+        every: 2s
+
+prompts:
+  - "Reply with the single word: ok"
+
+wait:
+  seconds: 120
+  until:
+    journal:
+      - { agent: "gen:heartbeat", type: process_rolled_back }
+    files:
+      heartbeat.log: { contains: "v1 tick" }
+
+expect:
+  side_effects:
+    journal:
+      - { agent: "gen:heartbeat", type: process_revised, contains: '"version":2' }
+      - { agent: "gen:heartbeat", type: process_rolled_back, contains: '"to":1' }
+    notifications:
+      contains: "rolled back to version 1"
+    files:
+      heartbeat.log: { contains: "v1 tick" }
+
+runs: 3
+pass_threshold: "3/3"
+timeout_seconds: 240
+models:
+  expected_pass_min_class: nano

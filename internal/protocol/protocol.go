@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/json"
+	"strconv"
 	"time"
 )
 
@@ -33,6 +34,8 @@ const (
 	TypeProcessSend     MsgType = "process_send"
 	TypeToolCall        MsgType = "tool_call"
 	TypeToolDelete      MsgType = "tool_delete"
+	TypeToolVersions    MsgType = "tool_versions"
+	TypeToolRestore     MsgType = "tool_restore"
 	TypeWorkflowStop    MsgType = "workflow_stop"
 	TypeWorkflowFail    MsgType = "workflow_fail"
 	TypePluginCall      MsgType = "plugin_call"
@@ -162,6 +165,8 @@ var ClientMsgTypes = []MsgType{
 	TypeProcessSend,
 	TypeToolCall,
 	TypeToolDelete,
+	TypeToolVersions,
+	TypeToolRestore,
 	TypeWorkflowStop,
 	TypeWorkflowFail,
 	TypePluginCall,
@@ -373,10 +378,34 @@ type SessionInfo struct {
 	Attached   bool   `json:"attached,omitempty"`
 }
 
+// ToolVersionsInfo is a tool Nine wrote and the versions it keeps, for
+// "tool_versions".
+type ToolVersionsInfo struct {
+	Name      string `json:"name"`
+	Version   int    `json:"version"`
+	Probation bool   `json:"probation,omitempty"`
+	WrittenBy string `json:"written_by,omitempty"`
+	UpdatedAt string `json:"updated_at"`
+	// Previous are the kept versions, newest first.
+	Previous []ToolVersionInfo `json:"previous"`
+}
+
+// ToolVersionInfo is one kept version.
+type ToolVersionInfo struct {
+	Version   int    `json:"version"`
+	WrittenBy string `json:"written_by,omitempty"`
+	WrittenAt string `json:"written_at"`
+	// Lines is the size of its source, a hint of what changed.
+	Lines int `json:"lines"`
+}
+
 // ProcessInfo describes one process for the "process_list" and "process_show"
 // responses (adr/process-sessions.md §9). Recent is filled by show only — the
 // roster stays one line per process.
 type ProcessInfo struct {
+	// Version and Probation describe a written process's program.
+	Version   int    `json:"version,omitempty"`
+	Probation bool   `json:"probation,omitempty"`
 	ID        string `json:"id"`
 	Tool      string `json:"tool"`
 	Mode      string `json:"mode"`
@@ -643,6 +672,18 @@ func NewSessionsListMsg() Msg { return Msg{Type: TypeSessionsList} }
 // activity lines.
 func NewProcessShowMsg(id string, n int) Msg {
 	return Msg{Type: TypeProcessShow, AgentID: id, Limit: n}
+}
+
+// NewToolVersionsMsg asks for a tool Nine wrote: its current version and the
+// previous versions it keeps.
+func NewToolVersionsMsg(name string) Msg {
+	return Msg{Type: TypeToolVersions, ToolName: name}
+}
+
+// NewToolRestoreMsg asks the daemon to make version of a tool Nine wrote
+// current again.
+func NewToolRestoreMsg(name string, version int) Msg {
+	return Msg{Type: TypeToolRestore, ToolName: name, Text: strconv.Itoa(version)}
 }
 
 // NewToolDeleteMsg asks the daemon to delete a tool Nine wrote.

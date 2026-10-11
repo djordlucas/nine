@@ -477,6 +477,12 @@ type ProcessesConfig struct {
 	DatabaseMaxMB int `toml:"database_max_mb"`
 	// StatementTimeout bounds one statement ("5s"); empty is 5s.
 	StatementTimeout string `toml:"statement_timeout"`
+	// AllowRevision lets a process's turn write and rewrite processes, under a
+	// role that holds tool_write (adr/process-sessions.md §9). Off by default.
+	AllowRevision bool `toml:"allow_revision"`
+	// RollbackAfter is how many failures a rewritten process's new version may
+	// have before it first runs, after which it is rolled back; 0 is 3.
+	RollbackAfter int `toml:"rollback_after"`
 }
 
 // DefaultMaxDepth is [processes] max_depth when unset: a process may react to
@@ -1368,6 +1374,9 @@ func (cfg *Config) Validate() error {
 	}
 	if err := validateProcesses(cfg.Process, cfg.Processes.BudgetOrDefault()); err != nil {
 		return err
+	}
+	if cfg.Processes.RollbackAfter < 0 {
+		return fmt.Errorf("[processes] rollback_after must not be negative")
 	}
 	if cfg.Processes.DatabaseMaxMB < 0 {
 		return fmt.Errorf("[processes] database_max_mb must not be negative")

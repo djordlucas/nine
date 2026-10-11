@@ -406,6 +406,22 @@ var migrations = []migrationStep{
 		}
 		return nil
 	}},
+
+	// 19 → 20: tools keep their versions, and a rewritten process's program is
+	// on probation until it runs (adr/process-sessions.md §9, phase 6).
+	{name: "tool_versions", fn: func(q sqlExec) error {
+		for _, c := range []struct{ name, def string }{
+			{"version", "INTEGER NOT NULL DEFAULT 1"},
+			{"probation", "INTEGER NOT NULL DEFAULT 0"},
+			{"written_by", "TEXT NOT NULL DEFAULT ''"},
+		} {
+			if err := addColumnIfMissing(q, "tools", c.name, c.def); err != nil {
+				return err
+			}
+		}
+		_, err := q.Exec(toolVersionsSchema)
+		return err
+	}},
 }
 
 // convertGoalPlans turns each session plan with a pursue routine into the

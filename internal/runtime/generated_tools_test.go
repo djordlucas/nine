@@ -350,7 +350,7 @@ func TestGeneratedToolWriteRefusesNonObjectSchema(t *testing.T) {
 	host := OpenSandboxedTools(context.Background(), enabledAgentCfg(), store, nil)
 	t.Cleanup(func() { _ = host.Close(context.Background()) })
 	d := agent.New()
-	agent.RegisterGeneratedTools(d, NewGeneratedToolStore(store, host, nil, nil, false), false)
+	agent.RegisterGeneratedTools(d, NewGeneratedToolStore(store, host, nil, nil, false), false, "", false)
 
 	args := []byte(`{"name":"bad","description":"d","source":"export default () => 1;",` +
 		`"input_schema":"{\"type\":\"object\"}"}`)

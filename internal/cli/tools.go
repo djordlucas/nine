@@ -57,6 +57,50 @@ func (c *CLI) ToolsDelete(cfg *config.Config, name string) error {
 	return nil
 }
 
+// ToolsVersions prints a tool Nine wrote: its current version, whether it is
+// on probation, and the previous versions it keeps.
+func (c *CLI) ToolsVersions(cfg *config.Config, name string) error {
+	cl, done, err := c.dialDaemon(cfg)
+	if err != nil || cl == nil {
+		return err
+	}
+	defer done()
+	info, err := cl.ToolVersions(name)
+	if err != nil {
+		return err
+	}
+	state := ""
+	if info.Probation {
+		state = "  (on probation: rolled back if it fails before it has run)"
+	}
+	fmt.Fprintf(c.Out, "%s  version %d, written %s by %s%s\n", info.Name, info.Version, info.UpdatedAt, orNone(info.WrittenBy), state)
+	if len(info.Previous) == 0 {
+		fmt.Fprintln(c.Out, "  no previous versions")
+		return nil
+	}
+	fmt.Fprintln(c.Out, "  VERSION  WRITTEN               BY                                     LINES")
+	for _, v := range info.Previous {
+		fmt.Fprintf(c.Out, "  %-7d  %-20s  %-37s  %d\n", v.Version, v.WrittenAt, orNone(v.WrittenBy), v.Lines)
+	}
+	fmt.Fprintf(c.Out, "Restore one with: nine tools restore %s <version>\n", info.Name)
+	return nil
+}
+
+// ToolsRestore makes a kept version of a tool Nine wrote current again.
+func (c *CLI) ToolsRestore(cfg *config.Config, name string, version int) error {
+	cl, done, err := c.dialDaemon(cfg)
+	if err != nil || cl == nil {
+		return err
+	}
+	defer done()
+	msg, err := cl.RestoreTool(name, version)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(c.Out, msg)
+	return nil
+}
+
 // ToolsShow prints one tool in full: its provenance, its resolved grant, and its
 // source. "What code ran, with what reach, on whose authority" should have an
 // exact answer, and this is where it is read.

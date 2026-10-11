@@ -442,14 +442,16 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 			AllowProcesses: caseBool(c, "tools.agent.allow_processes"),
 			ProcessRoles:   caseStrings(c, "tools.agent.process_roles"),
 			MaxRunning:     caseInt(c, "processes.max_running", runtime.DefaultMaxRunning),
+			AllowRevision:  caseBool(c, "processes.allow_revision"),
 		})
 	}
 	// Tools Nine wrote in an earlier session, through the store tool_write uses.
+	var pendingRevisions func() error
 	if len(c.Setup.GeneratedTools) > 0 {
 		if generatedTools == nil {
 			return nil, fmt.Errorf("setup.generated_tools needs session.config tools.agent.enabled")
 		}
-		for name, g := range c.Setup.GeneratedTools {
+		write := func(name string, g GeneratedToolSetup) error {
 			spec := agent.GeneratedToolSpec{
 				Name: name, Description: g.Description, Source: g.Source,
 				InputSchema: json.RawMessage(orJSON(g.InputSchema, `{"type":"object","properties":{}}`)),
@@ -465,7 +467,11 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 					spec.Process.OnFilter = &agent.EventFilter{Tool: p.OnFilter.Tool, Sessions: p.OnFilter.Sessions, Session: p.OnFilter.Session}
 				}
 			}
-			if _, err := generatedTools.Write(ctx, spec); err != nil {
+			_, err := generatedTools.Write(ctx, spec)
+			return err
+		}
+		for name, g := range c.Setup.GeneratedTools {
+			if err := write(name, g); err != nil {
 				return nil, fmt.Errorf("seed generated tool %s: %w", name, err)
 			}
 			if p := g.Process; p != nil && p.StoppedBy != "" {
@@ -473,6 +479,14 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 					return nil, fmt.Errorf("seed process gen:%s stopped by %s: ok=%v err=%v", name, p.StoppedBy, ok, err)
 				}
 			}
+		}
+		pendingRevisions = func() error {
+			for _, rv := range c.Setup.Revisions {
+				if err := write(rv.Name, rv.GeneratedToolSetup); err != nil {
+					return fmt.Errorf("setup revision of %s: %w", rv.Name, err)
+				}
+			}
+			return nil
 		}
 	}
 
@@ -506,6 +520,7 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 		MaxRunning:          caseInt(c, "processes.max_running", runtime.DefaultMaxRunning),
 		RoleFactory:         roleFactory,
 		Database:            processDB,
+		RollbackAfter:       caseInt(c, "processes.rollback_after", 0),
 	})
 	daemon := asm.Daemon
 	supervisor := asm.Supervisor
@@ -523,6 +538,14 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 	// agents and standing tools all run through it (adr/process-sessions.md).
 	// A short poll, since an eval case is over in seconds.
 	go runtime.RunStandingTools(dctx, asm.Processes, 200*time.Millisecond)
+	// Revisions rewrite seeded processes once they run, as a later turn would.
+	if pendingRevisions != nil && len(c.Setup.Revisions) > 0 {
+		time.Sleep(2 * time.Second)
+		if err := pendingRevisions(); err != nil {
+			dcancel()
+			return nil, err
+		}
+	}
 	go daemon.Start(dctx) //nolint:errcheck
 	r.cleanups = append(r.cleanups, func() { dcancel(); daemon.Stop() })
 	if err := waitForSocket(sock, 5*time.Second); err != nil {

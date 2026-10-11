@@ -1,0 +1,33 @@
+id: tool-read-source
+description: "A model reads a tool it wrote earlier: asked about a detail only its source holds, it calls tool_read and answers from the source."
+track: live
+tier: basic
+tags: [revision, generated]
+
+session:
+  config:
+    tools.agent.enabled: true
+
+setup:
+  generated_tools:
+    slugify:
+      description: "Turns a title into a URL slug."
+      source: |
+        const MAX_SLUG_LENGTH = 37;
+        export default ({ title }) =>
+          String(title).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, MAX_SLUG_LENGTH);
+      input_schema: '{"type":"object","required":["title"],"properties":{"title":{"type":"string"}}}'
+
+prompts:
+  - "Earlier you wrote a tool called slugify. Read its source and tell me the longest slug it will produce, in characters."
+
+expect:
+  answer:
+    contains: ["37"]
+  trajectory:
+    tools_all_of: [tool_read]
+
+runs: 3
+pass_threshold: "3/3"
+models:
+  expected_pass_min_class: small

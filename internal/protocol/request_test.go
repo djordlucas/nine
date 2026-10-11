@@ -146,6 +146,8 @@ func TestEveryClientMsgTypeDecodes(t *testing.T) {
 		protocol.TypeProcessSend:      {AgentID: "s1", Text: "hello"},
 		protocol.TypeToolCall:         {ToolName: "echo"},
 		protocol.TypeToolDelete:       {ToolName: "echo"},
+		protocol.TypeToolVersions:     {ToolName: "echo"},
+		protocol.TypeToolRestore:      {ToolName: "echo", Text: "2"},
 		protocol.TypeWorkflowStop:     {Text: "wf-1"},
 		protocol.TypeWorkflowFail:     {Text: "wf-1"},
 		protocol.TypePluginCall:       {ToolName: "echo"},
