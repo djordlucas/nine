@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -212,5 +213,36 @@ func TestProcessEventTriggers(t *testing.T) {
 	p, _, _ := store.ProcessGet("gen:watch")
 	if p.OnEvents != "tool_end" || !strings.Contains(p.EventFilter, "web_page_read") || !p.EventContent {
 		t.Errorf("row = on %q filter %q content %v", p.OnEvents, p.EventFilter, p.EventContent)
+	}
+}
+
+// A capabilities field of the wrong shape is refused with the shapes spelled
+// out, not with a JSON decoder's message.
+func TestDeclarationShapeError(t *testing.T) {
+	_, err := parseDeclaration(json.RawMessage(`{"sql":["read","write"]}`))
+	if err == nil || !strings.Contains(err.Error(), "capabilities.sql has the wrong shape") ||
+		!strings.Contains(err.Error(), `"sql":true`) {
+		t.Errorf("err = %v", err)
+	}
+}
+
+// A named import a nine:* module does not have, or a module that does not
+// exist, is refused at write time with what there is.
+func TestStdlibImportsAreChecked(t *testing.T) {
+	for src, want := range map[string]string{
+		`import { sql } from "nine:sql"; export default () => sql("x");`:            `nine:sql has no export "sql"; it exports exec, query`,
+		`import { exec } from "nine:database"; export default () => 1;`:             "nine:database is not a module",
+		`import { next as n, turn } from "nine:process"; export default () => n();`: "",
+	} {
+		err := checkStdlibImports(src)
+		if want == "" {
+			if err != nil {
+				t.Errorf("%s: %v", src, err)
+			}
+			continue
+		}
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: err = %v, want %q", src, err, want)
+		}
 	}
 }
