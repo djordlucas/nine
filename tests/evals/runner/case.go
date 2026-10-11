@@ -107,6 +107,9 @@ type Setup struct {
 	// the same store tool_write uses — the starting point for a case about
 	// revising or deleting one. They need session.config tools.agent.enabled.
 	GeneratedTools map[string]GeneratedToolSetup `yaml:"generated_tools"`
+	// Genesis is a genesis document: the harness runs genesis on it once the
+	// daemon is up, before the prompts, as a first boot would.
+	Genesis string `yaml:"genesis"`
 	// Revisions rewrite seeded tools, in order, after GeneratedTools: each is
 	// a tool_write of an existing name, as a revision would be.
 	Revisions []RevisionSetup `yaml:"revisions"`

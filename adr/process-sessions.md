@@ -1,6 +1,6 @@
 # Design note — Process sessions
 
-**Status:** **Phases 1 to 6 implemented** (2026-10-07; revised 2026-10-06: one concept for all background work) ·
+**Status:** **Phases 1 to 7 implemented** (2026-10-07; revised 2026-10-06: one concept for all background work) ·
 **Related:** `adr/standing-tools.md`, `adr/tool-facilities.md`, `adr/reactive-events.md`,
 `adr/predefined-agents-design.md`, `adr/roles-design.md`, `adr/personality-pattern.md`,
 `adr/agent-boundary.md` · **Amends:** R-SUB.7, the stance of `docs/self-modification.md`, and
@@ -461,7 +461,7 @@ configurations in use to carry over. A file that still has one fails to load, na
 
 ## Limits
 
-- Phases 7 and 8 are not built: there is no genesis.
+- Phase 8 is not built: the aliases' removal is not scheduled.
 - Piped reports are an injection path that framing does not close: qwen3.5:4b and 9b obey an
   instruction inside a framed report every time. A turn a report starts is restricted to
   reading, creating new files, memory, its own goal and notifying, which stops changing or
@@ -573,4 +573,21 @@ configurations in use to carry over. A file that still has one fails to load, na
 with `qjs.wasm` rebuilt (decided with phase 5, before genesis). The live-only bridge
 is gone: a process program — a live process, or a slice process's call the runner
 marks — reaches the database; a tool a model calls still does not.
+
+---
+
+## Phase 7 as built
+
+| Point | As built | Why |
+|---|---|---|
+| How genesis runs | a `genesis` session given the document, then continuation turns until it says `GENESIS DONE` with a process it wrote running, up to `[bootstrap] genesis_turns` (8) | decided 2026-10-11; `tool_write` refusals return inside the turn, which replaces nine-will's attempt loop |
+| Gates | `[bootstrap] genesis` needs `[tools.agent]` enabled and `allow_processes`, refused at load and checked again at boot for the environment override | decided 2026-10-11: a document never grants what the config does not state |
+| The reviser | written only when `allow_revision` is on and `reviser` is in `process_roles`; otherwise genesis is told revision is off | decided 2026-10-11, unlike nine-will, which required one |
+| Not a process session | genesis is a named session, not a process's, so it writes processes without `allow_revision` | it is the operator's boot step, not a process revising another |
+| Once | a store marker, set on success with the document's hash; a genesis that does not finish runs again at the next boot | nine-will retried a stillborn genesis |
+| The schema | each process creates its tables (`CREATE TABLE IF NOT EXISTS`) through `nine:sql`; genesis reads the database with `sql_query` | writes stay in programs (phase 5) |
+| nine-will's lessons | cut replies, fences and one module per reply do not apply: a process is a `tool_write` call, not text to parse | the genesis role keeps the rest: one write at a time, fix a refusal and write again, check with `tool_read` |
+| Checking what it wrote | on `GENESIS DONE`, genesis watches each process until it has run once; a failure is handed back as the next turn | live evals: models said done over programs that failed on their first trigger. nine-will fed every error back |
+| Guidance | the `process-patterns` skill — five complete programs, each run by a test, and a table of the common mistakes — with the simplest inline in the first turn | live evals: 9b passed `genesis-boots` 1/3 without it, 3/3 with it, each genesis in one turn |
+| Probation for new processes | a new process is on probation until it runs, which is genesis's signal; a rollback restores only a kept version that ran | a rollback to a version that never worked traded one failure for another, and genesis never converged |
 

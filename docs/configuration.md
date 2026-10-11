@@ -423,6 +423,13 @@ show_context = true
 # boot, because an instance whose identity is quietly wrong is worse than one
 # that does not start.
 # self_model_path = "/etc/nine/self-model.toml"
+#
+# Genesis (docs/processes.md): on the first boot of the store, this document
+# becomes the instance's first processes. Needs [tools.agent] enabled and
+# allow_processes = true. A genesis that does not finish runs again at the next
+# boot; one that does never runs again.
+# genesis       = "/etc/nine/genesis.md"
+# genesis_turns = 8
 
 
 [roles]
@@ -902,6 +909,7 @@ Environment variables take priority over `nine.toml` values.
 | `NINE_LLM_API_KEY` | Override `llm.api_key` — the bearer token for a remote provider |
 | `NINE_LLM_MAX_TOKENS` | Override `llm.max_tokens` — the cap on one reply's generated tokens; ignored unless a positive integer |
 | `NINE_BOOTSTRAP_SELF_MODEL` | Override `bootstrap.self_model_path` — the self-model seeded on first boot |
+| `NINE_BOOTSTRAP_GENESIS` | Override `bootstrap.genesis` — the document genesis turns into processes on first boot |
 | `NINE_EMBED_PROVIDER` | Override `embeddings.provider` |
 | `NINE_DB_PATH` | Override `memory.path` |
 | `NINE_PLUGINS_BIN` | Override `plugins.bin` |

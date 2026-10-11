@@ -90,10 +90,23 @@ func (r *StandingRunner) rollback(st memory.Process, failures int, cause error) 
 		return false
 	}
 	versions, err := r.store.GeneratedToolVersions(st.Tool)
-	if err != nil || len(versions) == 0 {
+	if err != nil {
 		return false
 	}
-	prev := versions[0]
+	// The newest version that ran. One replaced while still on probation
+	// never worked, and restoring it only trades one failure for another; with
+	// none that ran, the failure takes the ordinary path, and whoever is
+	// fixing it fixes forward.
+	var prev memory.ToolVersion
+	for _, v := range versions {
+		if !v.Unproven {
+			prev = v
+			break
+		}
+	}
+	if prev.Version == 0 {
+		return false
+	}
 	if err := r.restore(context.Background(), st.Tool, prev.Version, ByRollback); err != nil {
 		slog.Warn("process: rollback failed", "id", st.ID, "tool", st.Tool, "err", err)
 		return false

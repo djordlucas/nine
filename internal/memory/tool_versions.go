@@ -31,6 +31,9 @@ type ToolVersion struct {
 	Process   string `json:"process,omitempty"`
 	WrittenBy string `json:"written_by,omitempty"`
 	WrittenAt string `json:"written_at"`
+	// Unproven says the version was replaced while still on probation: it
+	// never ran, so a rollback does not restore it.
+	Unproven bool `json:"unproven,omitempty"`
 }
 
 // GeneratedToolWrite writes t, keeping the version it replaces with prevProcess,
@@ -62,9 +65,9 @@ func (s *Store) GeneratedToolWrite(t GeneratedTool, prevProcess string) (int, er
 	default:
 		if _, err := tx.Exec(
 			`INSERT OR REPLACE INTO tool_versions(name, version, description, input_schema, source, capabilities,
-			                                      lockfile, resumable, live, process, written_by, written_at)
+			                                      lockfile, resumable, live, process, written_by, written_at, unproven)
 			 SELECT name, version, description, input_schema, source, capabilities,
-			        lockfile, resumable, live, ?, written_by, updated_at
+			        lockfile, resumable, live, ?, written_by, updated_at, probation
 			   FROM tools WHERE name = ?`, prevProcess, t.Name); err != nil {
 			return 0, err
 		}
@@ -128,13 +131,13 @@ func (s *Store) GeneratedToolProve(name string, version int) error {
 }
 
 const toolVersionColumns = `name, version, description, input_schema, source, capabilities,
-	lockfile, resumable, live, process, written_by, written_at`
+	lockfile, resumable, live, process, written_by, written_at, unproven`
 
 func scanToolVersion(row interface{ Scan(...any) error }) (ToolVersion, error) {
 	var v ToolVersion
 	var schema, caps, lock string
 	if err := row.Scan(&v.Name, &v.Version, &v.Description, &schema, &v.Source, &caps,
-		&lock, &v.Resumable, &v.Live, &v.Process, &v.WrittenBy, &v.WrittenAt); err != nil {
+		&lock, &v.Resumable, &v.Live, &v.Process, &v.WrittenBy, &v.WrittenAt, &v.Unproven); err != nil {
 		return ToolVersion{}, err
 	}
 	v.InputSchema, v.Capabilities, v.Lockfile = json.RawMessage(schema), json.RawMessage(caps), json.RawMessage(lock)
@@ -162,5 +165,6 @@ var toolVersionsSchema = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS tool_versions (
 	process      TEXT NOT NULL DEFAULT '',
 	written_by   TEXT NOT NULL DEFAULT '',
 	written_at   TEXT NOT NULL DEFAULT %s,
+	unproven     INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (name, version)
 )`, nowExpr)

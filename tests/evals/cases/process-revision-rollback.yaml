@@ -25,7 +25,7 @@ setup:
           }
         };
       process:
-        every: 2s
+        every: 1s
   revisions:
     - name: heartbeat
       description: "Appends a heartbeat on each tick."
@@ -36,7 +36,7 @@ setup:
           throw new Error("broken v2");
         };
       process:
-        every: 2s
+        every: 1s
 
 prompts:
   - "Reply with the single word: ok"

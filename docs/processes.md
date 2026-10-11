@@ -206,6 +206,34 @@ With `[tools.agent] allow_processes`, Nine can write a process itself: `tool_wri
 
 Its tool is never evicted from Nine's catalog while the process exists.
 
+## Genesis
+
+An instance can be born from a document. On the first boot of its store, the
+operator's genesis document becomes the instance's first processes:
+
+```toml
+[bootstrap]
+genesis = "/etc/nine/genesis.md"   # needs [tools.agent] enabled and allow_processes
+
+[tools.agent]
+enabled         = true
+allow_processes = true
+```
+
+| Step | What happens |
+|---|---|
+| Start | a `genesis` session, under the shipped `genesis` role (`tool_write`, `tool_read`, `sql_query`, the read tools), is given the document and what this instance allows |
+| Writing | each process is one `tool_write`; a refusal comes back in the turn and is fixed there |
+| Turns | the session gets further turns until it says `GENESIS DONE` with a process it wrote running, up to `genesis_turns` (8) |
+| Checking | on `GENESIS DONE`, genesis watches what it wrote until each process has run once (up to twice the shortest cadence, 30 s to 3 min); a process that fails is handed back as the next turn, with its error |
+| Guidance | the first turn carries a complete program, and the `process-patterns` skill has more to copy |
+| Done | marked in the store and reported to `nine notifications`; genesis never runs again here |
+| Not done | reported; genesis runs again at the next boot |
+| Revision | with `allow_revision` and `reviser` in `process_roles`, genesis also writes a reviser; without, it is told revision is off |
+
+The daemon serves while genesis runs. The genesis session's history shows what
+it did and why.
+
 ## Revision
 
 Every tool Nine writes keeps its previous versions, and a rewritten process
@@ -214,9 +242,10 @@ that fails before it has run is rolled back.
 | When | Then |
 |---|---|
 | A tool Nine wrote is rewritten | The version it replaces is kept, with the process definition it ran under; the newest ten are kept |
-| A process's program is rewritten | It restarts on the new version, **on probation**, journaled as `process_revised` |
+| A process's program is written | It is **on probation** until it has run |
+| A process's program is rewritten | It restarts on the new version, on probation, journaled as `process_revised` |
 | The new version has run — a live program back in `next()`, a slice call completed | Probation ends |
-| It fails `[processes] rollback_after` times (3) while on probation | The previous version is restored as a new one, its failures cleared; journaled as `process_rolled_back`, reported to `nine notifications`, and sent to the process that wrote it |
+| It fails `[processes] rollback_after` times (3) while on probation | The newest kept version that ran is restored as a new one, its failures cleared — with none that ran, nothing is restored; journaled as `process_rolled_back`, reported to `nine notifications`, and sent to the process that wrote it |
 
 A process's turns can revise what Nine wrote when the operator allows it:
 
@@ -367,6 +396,7 @@ use instead.
 | A piped turn cannot append to an existing file | A watcher that reports repeatedly gets each finding recorded in a new file, or in its log on the session's own next turn. |
 | A piped report stays in the session's history | The session's next turn — its own clock tick, unrestricted — sees the report and can still act on an instruction inside it. The restriction narrows the turn the report causes, not every turn after it. |
 | Configuration is read at boot | Editing a block takes effect at the next start. |
+| Genesis judges itself done | It ends when the session says so and a process it wrote runs; whether the processes do what the document meant is the reviser's, or the operator's, to judge. |
 | Rollback catches a version that fails, not one that does worse | A rewritten process that runs but produces worse results stays; noticing it is the next review's job, or the operator's. |
 | A version is only on probation until its first success | One that runs once and fails later is an ordinary failure: it is not rolled back. |
 | Only process programs reach the database | A tool a model calls cannot use `nine:sql`, even with the grant: it reads through `sql_query` instead. |

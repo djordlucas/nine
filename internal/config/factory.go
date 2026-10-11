@@ -143,6 +143,9 @@ func ApplyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("NINE_BOOTSTRAP_SELF_MODEL"); v != "" {
 		cfg.Bootstrap.SelfModelPath = v
 	}
+	if v := os.Getenv("NINE_BOOTSTRAP_GENESIS"); v != "" {
+		cfg.Bootstrap.Genesis = v
+	}
 	// Sandboxed tools (spec/contracts/toolvm.md). Only the path is overridable,
 	// matching the plugin and skill dirs: whether the subsystem is on at all is a
 	// deliberate operator decision that belongs in nine.toml, not something a

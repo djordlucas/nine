@@ -225,6 +225,14 @@ func (r *StandingRunner) startLive(ctx context.Context, row memory.Process) {
 			r.log.add(row.ID, "stopped", "")
 		case err != nil:
 			r.recordFailure(row, err)
+		case lp.nextCount() == 0:
+			// A program that returns before it ever waits for a trigger is not
+			// a process program — a function that was never called, an async
+			// generator — and ending quietly would hide that. It is a failure,
+			// with what a process program looks like.
+			r.recordFailure(row, errors.New("the program returned without calling next(): a process "+
+				"program's default export loops — for (;;) { const t = next(); … } — and is a plain function, "+
+				"not async or a generator"))
 		default:
 			// The program returned: the process is over until something starts
 			// it again.
@@ -234,6 +242,13 @@ func (r *StandingRunner) startLive(ctx context.Context, row memory.Process) {
 			r.log.add(row.ID, "returned", "")
 		}
 	}()
+}
+
+// nextCount is how many times the program has called next().
+func (lp *liveProc) nextCount() int {
+	lp.mu.Lock()
+	defer lp.mu.Unlock()
+	return lp.nexts
 }
 
 // recoverLive records that a process restarted after failures has handled a
