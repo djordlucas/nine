@@ -61,6 +61,12 @@ var generatedToolDefs = []llm.ToolDef{
 			}}`),
 	},
 	{
+		Name:        "tool_read",
+		DisplayName: "Read Tool",
+		Description: "Read one of your own tools before you change it: its source, description, declared capabilities, and — for a process — its trigger, state, version, whether that version is on probation, and its last error. Without a name, list the tools you wrote with their version and process state. To change one, tool_write it again with the same name: the previous version is kept, and a rewritten process that fails before it has run is rolled back.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"name":{"type":"string","description":"The tool to read; omit to list them."}}}`),
+	},
+	{
 		Name:        "tool_delete",
 		DisplayName: "Delete Tool",
 		Description: "Delete one of your own tools. Use it to clean up a tool that turned out to be wrong or redundant — keeping the catalog small keeps every tool easier to find, including the built-in ones. Built-in, plugin, and operator-installed tools cannot be deleted.",
@@ -102,6 +108,8 @@ func GeneratedToolDefs(evalEnabled bool) []llm.ToolDef {
 type GeneratedToolStore interface {
 	Write(ctx context.Context, t GeneratedToolSpec) (WriteResult, error)
 	Delete(ctx context.Context, name string) error
+	// Read returns one tool Nine wrote, or with an empty name the list of them.
+	Read(name string) (any, error)
 	Eval(ctx context.Context, source string, caps json.RawMessage, args json.RawMessage) (string, error)
 }
 
@@ -294,6 +302,26 @@ func RegisterGeneratedTools(d *Dispatcher, s GeneratedToolStore, evalEnabled boo
 				len(res.Evicted), res.Evicted)
 		}
 		return msg, nil
+	}
+
+	d.handlers["tool_read"] = func(_ context.Context, args json.RawMessage) (string, error) {
+		var req struct {
+			Name string `json:"name"`
+		}
+		if len(args) > 0 {
+			if err := json.Unmarshal(args, &req); err != nil {
+				return "", fmt.Errorf("tool_read: %w", err)
+			}
+		}
+		out, err := s.Read(strings.TrimSpace(req.Name))
+		if err != nil {
+			return "", err
+		}
+		b, err := json.Marshal(out)
+		if err != nil {
+			return "", err
+		}
+		return string(b), nil
 	}
 
 	d.handlers["tool_delete"] = func(ctx context.Context, args json.RawMessage) (string, error) {

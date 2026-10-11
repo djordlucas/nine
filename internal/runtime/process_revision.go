@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"nine/internal/memory"
 	"nine/internal/protocol"
@@ -192,6 +193,80 @@ func (g *generatedTools) Versions(name string) (protocol.ToolVersionsInfo, error
 	for _, v := range vs {
 		out.Previous = append(out.Previous, protocol.ToolVersionInfo{Version: v.Version, WrittenBy: v.WrittenBy,
 			WrittenAt: v.WrittenAt, Lines: strings.Count(v.Source, "\n") + 1})
+	}
+	return out, nil
+}
+
+// toolReadout is what tool_read returns for one tool Nine wrote.
+type toolReadout struct {
+	Name         string          `json:"name"`
+	Description  string          `json:"description"`
+	Source       string          `json:"source"`
+	Capabilities json.RawMessage `json:"capabilities,omitempty"`
+	Version      int             `json:"version"`
+	Probation    bool            `json:"probation,omitempty"`
+	Process      *processReadout `json:"process,omitempty"`
+}
+
+// processReadout is the process a tool runs, as tool_read shows it.
+type processReadout struct {
+	ID        string `json:"id"`
+	State     string `json:"state"`
+	StoppedBy string `json:"stopped_by,omitempty"`
+	Every     string `json:"every,omitempty"`
+	Schedule  string `json:"schedule,omitempty"`
+	Role      string `json:"role,omitempty"`
+	ReportTo  string `json:"report_to,omitempty"`
+	On        string `json:"on,omitempty"`
+	Failures  int    `json:"failures,omitempty"`
+	LastError string `json:"last_error,omitempty"`
+}
+
+// toolListing is one line of tool_read's list.
+type toolListing struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Version     int    `json:"version"`
+	Probation   bool   `json:"probation,omitempty"`
+	Process     string `json:"process,omitempty"`
+	State       string `json:"state,omitempty"`
+	LastError   string `json:"last_error,omitempty"`
+}
+
+// Read is tool_read: one tool Nine wrote with its process, or with an empty
+// name the list of them.
+func (g *generatedTools) Read(name string) (any, error) {
+	if name == "" {
+		rows, err := g.store.GeneratedToolList()
+		if err != nil {
+			return nil, err
+		}
+		out := []toolListing{}
+		for _, t := range rows {
+			l := toolListing{Name: t.Name, Description: t.Description, Version: t.Version, Probation: t.Probation}
+			if p, ok, err := g.store.ProcessGet(standingIDFor(t.Name)); err == nil && ok {
+				l.Process, l.State, l.LastError = p.ID, p.State, clipDetail(p.LastError, 300)
+			}
+			out = append(out, l)
+		}
+		return out, nil
+	}
+	t, ok, err := g.store.GeneratedToolGet(name)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("no tool %q written by Nine; tool_read with no name lists them", name)
+	}
+	out := toolReadout{Name: t.Name, Description: t.Description, Source: t.Source,
+		Capabilities: t.Capabilities, Version: t.Version, Probation: t.Probation}
+	if p, ok, err := g.store.ProcessGet(standingIDFor(name)); err == nil && ok {
+		pr := &processReadout{ID: p.ID, State: p.State, StoppedBy: p.StoppedBy, Schedule: p.Schedule,
+			Role: p.Role, ReportTo: p.ReportTo, On: p.OnEvents, Failures: p.Failures, LastError: clipDetail(p.LastError, 1000)}
+		if p.IntervalSecs > 0 {
+			pr.Every = (time.Duration(p.IntervalSecs) * time.Second).String()
+		}
+		out.Process = pr
 	}
 	return out, nil
 }
