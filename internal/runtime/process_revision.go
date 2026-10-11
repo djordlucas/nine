@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"nine/internal/memory"
+	"nine/internal/protocol"
 )
 
 // Revision (adr/process-sessions.md §9, phase 6). Every write of a tool Nine
@@ -123,7 +124,7 @@ func (g *generatedTools) Restore(ctx context.Context, name string, version int, 
 		return err
 	}
 	if !ok {
-		return fmt.Errorf("no tool %q written by Nine", name)
+		return fmt.Errorf("no tool %q written by Nine: not found", name)
 	}
 	v, ok, err := g.store.GeneratedToolVersion(name, version)
 	if err != nil {
@@ -171,6 +172,28 @@ func (g *generatedTools) Restore(ctx context.Context, name string, version int, 
 	}
 	slog.Info("generated tool restored", "tool", name, "version", version, "by", by)
 	return nil
+}
+
+// Versions returns a tool Nine wrote and the versions it keeps.
+func (g *generatedTools) Versions(name string) (protocol.ToolVersionsInfo, error) {
+	cur, ok, err := g.store.GeneratedToolGet(name)
+	if err != nil {
+		return protocol.ToolVersionsInfo{}, err
+	}
+	if !ok {
+		return protocol.ToolVersionsInfo{}, fmt.Errorf("no tool %q written by Nine: not found", name)
+	}
+	vs, err := g.store.GeneratedToolVersions(name)
+	if err != nil {
+		return protocol.ToolVersionsInfo{}, err
+	}
+	out := protocol.ToolVersionsInfo{Name: name, Version: cur.Version, Probation: cur.Probation,
+		WrittenBy: cur.WrittenBy, UpdatedAt: cur.UpdatedAt, Previous: []protocol.ToolVersionInfo{}}
+	for _, v := range vs {
+		out.Previous = append(out.Previous, protocol.ToolVersionInfo{Version: v.Version, WrittenBy: v.WrittenBy,
+			WrittenAt: v.WrittenAt, Lines: strings.Count(v.Source, "\n") + 1})
+	}
+	return out, nil
 }
 
 // isRevisingRole reports whether a role can rewrite tools: it holds tool_write.

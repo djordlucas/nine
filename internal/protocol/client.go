@@ -486,6 +486,25 @@ func (c *Client) DeleteTool(name string) (string, error) {
 	return reply.Text, nil
 }
 
+// ToolVersions returns a tool Nine wrote with its kept versions.
+func (c *Client) ToolVersions(name string) (ToolVersionsInfo, error) {
+	text, err := c.textRequest(NewToolVersionsMsg(name), TypeToolVersions)
+	if err != nil {
+		return ToolVersionsInfo{}, err
+	}
+	var out ToolVersionsInfo
+	if err := json.Unmarshal([]byte(text), &out); err != nil {
+		return ToolVersionsInfo{}, fmt.Errorf("decode versions: %w", err)
+	}
+	return out, nil
+}
+
+// RestoreTool makes version of a tool Nine wrote current again, and returns
+// the daemon's outcome.
+func (c *Client) RestoreTool(name string, version int) (string, error) {
+	return c.textRequest(NewToolRestoreMsg(name, version), TypeToolRestore)
+}
+
 // ControlProcess starts or stops a process as the operator; action is "start"
 // or "stop". Returns the daemon's human-readable outcome.
 func (c *Client) ControlProcess(id, action string) (string, error) {

@@ -632,3 +632,47 @@ func TestProcessEndpoints(t *testing.T) {
 		}
 	}
 }
+
+// The version endpoints map the daemon's replies: a tool's versions, and a
+// restore. An unknown tool or version is 404.
+func TestToolVersionEndpoints(t *testing.T) {
+	info := protocol.ToolVersionsInfo{Name: "digest", Version: 3, Probation: true, WrittenBy: "conv-1",
+		UpdatedAt: "2026-10-11T09:00:00Z",
+		Previous:  []protocol.ToolVersionInfo{{Version: 2, WrittenBy: "conv-1", WrittenAt: "2026-10-10T09:00:00Z", Lines: 12}}}
+	sock := scriptedDaemon(t, func(m protocol.Msg) []protocol.Msg {
+		switch {
+		case m.Type == protocol.TypeToolVersions && m.ToolName == "digest":
+			return textReply(t, protocol.TypeToolVersions, info)
+		case m.Type == protocol.TypeToolRestore && m.ToolName == "digest" && m.Text == "2":
+			return []protocol.Msg{protocol.NewTextMsg(protocol.TypeToolRestore, `restored version 2 of tool "digest"`)}
+		case m.Type == protocol.TypeToolRestore && m.ToolName == "digest":
+			return errReply(`tool "digest" has no version ` + m.Text)
+		}
+		return errReply(`no tool "` + m.ToolName + `" written by Nine: not found`)
+	})
+
+	w := doAt(t, sock, http.MethodGet, "/api/v1/tools/digest/versions", "")
+	var got struct {
+		Version   int
+		Probation bool
+		Previous  []struct{ Version, Lines int }
+	}
+	decodeJSON(t, w, &got)
+	if w.Code != http.StatusOK || got.Version != 3 || !got.Probation || len(got.Previous) != 1 || got.Previous[0].Lines != 12 {
+		t.Errorf("versions = %d %+v", w.Code, got)
+	}
+	for path, want := range map[string]int{
+		"/api/v1/tools/nope/versions":             http.StatusNotFound,
+		"/api/v1/tools/digest/versions/2/restore": http.StatusOK,
+		"/api/v1/tools/digest/versions/9/restore": http.StatusNotFound,
+		"/api/v1/tools/nope/versions/1/restore":   http.StatusNotFound,
+	} {
+		method := http.MethodPost
+		if strings.HasSuffix(path, "/versions") {
+			method = http.MethodGet
+		}
+		if w := doAt(t, sock, method, path, ""); w.Code != want {
+			t.Errorf("%s %s = %d, want %d (body %s)", method, path, w.Code, want, w.Body.String())
+		}
+	}
+}

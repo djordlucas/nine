@@ -86,6 +86,17 @@ type ToolDeleteReq struct {
 	Tool string
 }
 
+// ToolVersionsReq asks for a tool's versions.
+type ToolVersionsReq struct {
+	Tool string
+}
+
+// ToolRestoreReq restores a version of a tool.
+type ToolRestoreReq struct {
+	Tool    string
+	Version string
+}
+
 // ToolCallReq invokes one tool once, for testing. LiveState opts out of the
 // scratch state namespace a test call gets by default.
 type ToolCallReq struct {
@@ -169,6 +180,8 @@ func (ProcessControlReq) Type() MsgType    { return TypeProcessControl }
 func (ProcessSendReq) Type() MsgType       { return TypeProcessSend }
 func (ToolCallReq) Type() MsgType          { return TypeToolCall }
 func (ToolDeleteReq) Type() MsgType        { return TypeToolDelete }
+func (ToolVersionsReq) Type() MsgType      { return TypeToolVersions }
+func (ToolRestoreReq) Type() MsgType       { return TypeToolRestore }
 func (WorkflowStopReq) Type() MsgType      { return TypeWorkflowStop }
 func (WorkflowFailReq) Type() MsgType      { return TypeWorkflowFail }
 func (ListNotificationsReq) Type() MsgType { return TypeListNotifications }
@@ -228,6 +241,10 @@ func DecodeRequest(m Msg) (Request, error) {
 		return ProcessSendReq{ID: m.AgentID, Text: m.Text}, nil
 	case TypeToolDelete:
 		return ToolDeleteReq{Tool: m.ToolName}, nil
+	case TypeToolVersions:
+		return ToolVersionsReq{Tool: m.ToolName}, nil
+	case TypeToolRestore:
+		return ToolRestoreReq{Tool: m.ToolName, Version: m.Text}, nil
 	case TypeToolCall:
 		return ToolCallReq{Tool: m.ToolName, Args: m.ToolInput, LiveState: m.Text == "--live-state"}, nil
 	case TypeWorkflowStop:

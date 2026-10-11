@@ -270,3 +270,62 @@ func (s *Server) DeleteTool(ctx context.Context, request apigen.DeleteToolReques
 			errorBody("server_error", err.Error(), nil)), nil
 	}
 }
+
+// GetToolVersions lists a tool Nine wrote and the versions it keeps.
+func (s *Server) GetToolVersions(ctx context.Context, request apigen.GetToolVersionsRequestObject) (apigen.GetToolVersionsResponseObject, error) {
+	if request.Name == "" {
+		return apigen.GetToolVersions400JSONResponse(errorBody("invalid_request", "missing tool name", nil)), nil
+	}
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		return apigen.GetToolVersions503JSONResponse(errorBody("service_unavailable", err.Error(), nil)), nil
+	}
+	defer cl.Close()
+
+	info, err := cl.ToolVersions(request.Name)
+	switch {
+	case err == nil:
+	case errNotFound(err):
+		return apigen.GetToolVersions404JSONResponse(
+			errorBody("not_found", err.Error(), map[string]any{"name": request.Name})), nil
+	case strings.Contains(err.Error(), "tool writing is off"):
+		return apigen.GetToolVersions400JSONResponse(errorBody("invalid_request", err.Error(), nil)), nil
+	default:
+		return apigen.GetToolVersions500JSONResponse(errorBody("server_error", err.Error(), nil)), nil
+	}
+	out := apigen.GetToolVersions200JSONResponse{
+		Name: info.Name, Version: info.Version, Previous: []apigen.ToolVersion{},
+		Probation: ptr(info.Probation), WrittenBy: ptr(info.WrittenBy), UpdatedAt: ptr(info.UpdatedAt),
+	}
+	for _, v := range info.Previous {
+		out.Previous = append(out.Previous, apigen.ToolVersion{
+			Version: v.Version, WrittenAt: v.WrittenAt, WrittenBy: ptr(v.WrittenBy), Lines: ptr(v.Lines),
+		})
+	}
+	return out, nil
+}
+
+// RestoreToolVersion makes a kept version of a tool Nine wrote current again.
+func (s *Server) RestoreToolVersion(ctx context.Context, request apigen.RestoreToolVersionRequestObject) (apigen.RestoreToolVersionResponseObject, error) {
+	if request.Name == "" {
+		return apigen.RestoreToolVersion400JSONResponse(errorBody("invalid_request", "missing tool name", nil)), nil
+	}
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		return apigen.RestoreToolVersion503JSONResponse(errorBody("service_unavailable", err.Error(), nil)), nil
+	}
+	defer cl.Close()
+
+	msg, err := cl.RestoreTool(request.Name, request.Version)
+	switch {
+	case err == nil:
+		return apigen.RestoreToolVersion200JSONResponse{Name: request.Name, Message: msg}, nil
+	case errNotFound(err) || strings.Contains(err.Error(), "has no version"):
+		return apigen.RestoreToolVersion404JSONResponse(
+			errorBody("not_found", err.Error(), map[string]any{"name": request.Name, "version": request.Version})), nil
+	case strings.Contains(err.Error(), "tool writing is off"):
+		return apigen.RestoreToolVersion400JSONResponse(errorBody("invalid_request", err.Error(), nil)), nil
+	default:
+		return apigen.RestoreToolVersion500JSONResponse(errorBody("server_error", err.Error(), nil)), nil
+	}
+}

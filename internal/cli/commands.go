@@ -177,12 +177,26 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 					return fmt.Errorf("usage: nine tools delete <name>")
 				}
 				return c.ToolsDelete(cfg, args[2])
+			case "versions":
+				if len(args) < 3 {
+					return fmt.Errorf("usage: nine tools versions <name>")
+				}
+				return c.ToolsVersions(cfg, args[2])
+			case "restore":
+				if len(args) < 4 {
+					return fmt.Errorf("usage: nine tools restore <name> <version>")
+				}
+				v, err := strconv.Atoi(args[3])
+				if err != nil || v < 1 {
+					return fmt.Errorf("usage: nine tools restore <name> <version>: %q is not a version number", args[3])
+				}
+				return c.ToolsRestore(cfg, args[2], v)
 			case "deps":
 				return c.ToolsDeps(cfg)
 			case "standing":
 				return fmt.Errorf("`nine tools standing` is now `nine process list`, which lists every process")
 			}
-			return fmt.Errorf("usage: nine tools [reload|show <name>|delete <name>|deps]")
+			return fmt.Errorf("usage: nine tools [reload|show <name>|delete <name>|versions <name>|restore <name> <version>|deps]")
 		}
 		return c.Tools(cfg)
 	case "process", "processes":

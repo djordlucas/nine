@@ -45,6 +45,11 @@ type ProcessStatus struct {
 	On           []string `json:"on,omitempty"`
 	EventContent bool     `json:"event_content,omitempty"`
 
+	// Version is the program's version, for a process Nine wrote; Probation
+	// says it has not yet run and is rolled back if it fails first.
+	Version   int  `json:"version,omitempty"`
+	Probation bool `json:"probation,omitempty"`
+
 	Calls      int    `json:"calls,omitempty"`
 	Cycles     int    `json:"cycles,omitempty"`
 	Failures   int    `json:"failures,omitempty"`
@@ -83,8 +88,15 @@ func (r *StandingRunner) statusOf(p memory.Process, recent []StandingLogEntry) P
 		b.ResetsAt = at.UTC().Format(time.RFC3339)
 	}
 	on, _ := decodeEventTrigger(p.OnEvents, p.EventFilter)
+	var version int
+	var probation bool
+	if p.Generated {
+		if t, ok, err := r.store.GeneratedToolGet(p.Tool); err == nil && ok {
+			version, probation = t.Version, t.Probation
+		}
+	}
 	return ProcessStatus{
-		On: on, EventContent: p.EventContent,
+		On: on, EventContent: p.EventContent, Version: version, Probation: probation,
 		ID: p.ID, Tool: p.Tool, Mode: p.Mode, State: p.State,
 		StoppedBy: p.StoppedBy, StoppedAt: p.StoppedAt, Trigger: triggerText(p),
 		Session: p.SessionID, Attached: p.SessionID != "" && !p.Owner,
