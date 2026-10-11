@@ -587,4 +587,7 @@ marks — reaches the database; a tool a model calls still does not.
 | Once | a store marker, set on success with the document's hash; a genesis that does not finish runs again at the next boot | nine-will retried a stillborn genesis |
 | The schema | each process creates its tables (`CREATE TABLE IF NOT EXISTS`) through `nine:sql`; genesis reads the database with `sql_query` | writes stay in programs (phase 5) |
 | nine-will's lessons | cut replies, fences and one module per reply do not apply: a process is a `tool_write` call, not text to parse | the genesis role keeps the rest: one write at a time, fix a refusal and write again, check with `tool_read` |
+| Checking what it wrote | on `GENESIS DONE`, genesis watches each process until it has run once; a failure is handed back as the next turn | live evals: models said done over programs that failed on their first trigger. nine-will fed every error back |
+| Guidance | the `process-patterns` skill — five complete programs, each run by a test, and a table of the common mistakes — with the simplest inline in the first turn | live evals: 9b passed `genesis-boots` 1/3 without it, 3/3 with it, each genesis in one turn |
+| Probation for new processes | a new process is on probation until it runs, which is genesis's signal; a rollback restores only a kept version that ran | a rollback to a version that never worked traded one failure for another, and genesis never converged |
 

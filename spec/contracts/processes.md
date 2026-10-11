@@ -211,6 +211,9 @@ process session and a sub-agent **MUST NOT** hold any of them.
 - With `[bootstrap] genesis`, the first boot of a store **MUST** run a `genesis` session under the
   `genesis` role on the document, and give it further turns until it says `GENESIS DONE` with a
   process Nine wrote running, up to `genesis_turns` (default 8).
+- `GENESIS DONE` **MUST NOT** be accepted until each process genesis wrote has run once, or the
+  watch window has passed without a failure; a process that fails **MUST** be handed back to the
+  session as the next turn, with its last error.
 - `[bootstrap] genesis` **MUST** be refused unless `[tools.agent]` is enabled with
   `allow_processes`.
 - A genesis that finishes **MUST** be marked in the store and reported to the human feed, and
@@ -223,12 +226,13 @@ process session and a sub-agent **MUST NOT** hold any of them.
 
 - Every write of a tool Nine wrote **MUST** keep the version it replaces, with the process
   definition it ran under (the newest ten). A restore **MUST** be a new version.
-- A rewrite of a process's program **MUST** restart a running instance on the new version and
-  put it on probation. Probation **MUST** end when the version has run — a live program back in
-  `next()`, a slice call completed.
+- A process's program, new or rewritten, **MUST** be on probation until it has run — a live
+  program back in `next()`, a slice call completed; a rewrite **MUST** restart a running instance
+  on the new version.
 - A version on probation that fails `[processes] rollback_after` (default 3) times **MUST** be
-  rolled back to the previous version, journaled as `process_rolled_back`, reported to the
-  human feed, and delivered to the process that wrote it.
+  rolled back to the newest kept version that ran, journaled as `process_rolled_back`, reported
+  to the human feed, and delivered to the process that wrote it. With no kept version that ran,
+  there is no rollback.
 - In a process session, `tool_write` **MUST** come from the role only, never the shell grant.
   From there, writing or rewriting a process **MUST** be refused unless
   `[processes] allow_revision`.

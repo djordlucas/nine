@@ -225,6 +225,8 @@ allow_processes = true
 | Start | a `genesis` session, under the shipped `genesis` role (`tool_write`, `tool_read`, `sql_query`, the read tools), is given the document and what this instance allows |
 | Writing | each process is one `tool_write`; a refusal comes back in the turn and is fixed there |
 | Turns | the session gets further turns until it says `GENESIS DONE` with a process it wrote running, up to `genesis_turns` (8) |
+| Checking | on `GENESIS DONE`, genesis watches what it wrote until each process has run once (up to twice the shortest cadence, 30 s to 3 min); a process that fails is handed back as the next turn, with its error |
+| Guidance | the first turn carries a complete program, and the `process-patterns` skill has more to copy |
 | Done | marked in the store and reported to `nine notifications`; genesis never runs again here |
 | Not done | reported; genesis runs again at the next boot |
 | Revision | with `allow_revision` and `reviser` in `process_roles`, genesis also writes a reviser; without, it is told revision is off |
@@ -240,9 +242,10 @@ that fails before it has run is rolled back.
 | When | Then |
 |---|---|
 | A tool Nine wrote is rewritten | The version it replaces is kept, with the process definition it ran under; the newest ten are kept |
-| A process's program is rewritten | It restarts on the new version, **on probation**, journaled as `process_revised` |
+| A process's program is written | It is **on probation** until it has run |
+| A process's program is rewritten | It restarts on the new version, on probation, journaled as `process_revised` |
 | The new version has run — a live program back in `next()`, a slice call completed | Probation ends |
-| It fails `[processes] rollback_after` times (3) while on probation | The previous version is restored as a new one, its failures cleared; journaled as `process_rolled_back`, reported to `nine notifications`, and sent to the process that wrote it |
+| It fails `[processes] rollback_after` times (3) while on probation | The newest kept version that ran is restored as a new one, its failures cleared — with none that ran, nothing is restored; journaled as `process_rolled_back`, reported to `nine notifications`, and sent to the process that wrote it |
 
 A process's turns can revise what Nine wrote when the operator allows it:
 
