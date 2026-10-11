@@ -232,9 +232,9 @@ export default () => { for (let i = 0; i < 6; i++) burn(); return "ok"; };`})
 	}
 }
 
-// nine:sql rides on the process bridge: a live process granted sql reaches the
-// database through its handler; one without the grant is refused, and so is
-// an ordinary call.
+// nine:sql serves process programs: a live process granted sql reaches the
+// database through its handler, and so does a slice process's call the runner
+// marked; one without the grant is refused, and so is an ordinary call.
 func TestNineSQL(t *testing.T) {
 	src := `
 import { query, exec } from "nine:sql";
@@ -249,9 +249,10 @@ export default () => {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { h.Close(context.Background()) }) //nolint:errcheck
-	h.SetAgentConfig(AgentConfig{Enabled: true, Ceiling: Ceiling{Grant{SQL: true}}})
+	h.SetAgentConfig(AgentConfig{Enabled: true, AllowLongRunning: true, Ceiling: Ceiling{Grant{SQL: true}}})
 	h.LoadGenerated(context.Background(), []Generated{
 		{Name: "granted", Source: src, Declaration: Declaration{SQL: true}},
+		{Name: "sliced", Source: src, Declaration: Declaration{SQL: true}, Resumable: true},
 		{Name: "ungranted", Source: src},
 	}, nil)
 
@@ -275,8 +276,14 @@ export default () => {
 		t.Errorf("ungranted: err = %v, want the sql refusal", err)
 	}
 
+	out2, err := h.CallJob(WithSQLHandler(context.Background(), newFakeProcess()), "sliced",
+		json.RawMessage(`{}`), JobContext{Call: 1})
+	if err != nil || !strings.Contains(out2.Text, `"write":true`) {
+		t.Errorf("a slice process's call: %v, %s", err, out2.Text)
+	}
+
 	if _, err := h.Call(context.Background(), "granted", json.RawMessage(`{}`)); err == nil ||
-		!strings.Contains(err.Error(), "live processes") {
-		t.Errorf("a call: err = %v, want the live-only refusal", err)
+		!strings.Contains(err.Error(), "for process programs") {
+		t.Errorf("a call: err = %v, want the process-only refusal", err)
 	}
 }

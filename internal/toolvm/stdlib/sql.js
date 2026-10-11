@@ -1,8 +1,9 @@
 // nine:sql — the database: one SQLite database per instance, shared by its
 // processes, with a schema you design and change.
 //
-// Only a live process's program reaches it, and only with `sql = true` among
-// its capabilities. Conversations read it through the sql_query tool.
+// Only a process's program reaches it — a live process, or a slice process's
+// call — and only with `sql = true` among its capabilities. Conversations read
+// it through the sql_query tool.
 //
 //   import { exec, query } from "nine:sql";
 //
@@ -18,8 +19,8 @@
 const I = globalThis[Symbol.for("nine.internal")];
 
 function call(op, sql, args) {
-  if (typeof sql !== "string") throw new TypeError(`${op === "sql_exec" ? "exec" : "query"}: sql must be a string`);
-  const res = JSON.parse(I.process(JSON.stringify({ op, sql, args: args ?? [] })));
+  if (typeof sql !== "string") throw new TypeError(`${op}: sql must be a string`);
+  const res = JSON.parse(I.sql(JSON.stringify({ op, sql, args: args ?? [] })));
   if (res.error) {
     const err = new Error(res.error);
     err.code = res.code || "E_SQL";
@@ -33,7 +34,7 @@ function call(op, sql, args) {
  * arrays in column order. At most 1000 rows.
  */
 export function query(sql, args) {
-  return call("sql_query", sql, args);
+  return call("query", sql, args);
 }
 
 /**
@@ -41,5 +42,5 @@ export function query(sql, args) {
  * Several statements separated by semicolons run in order.
  */
 export function exec(sql, args) {
-  return call("sql_exec", sql, args);
+  return call("exec", sql, args);
 }

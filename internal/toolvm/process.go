@@ -64,10 +64,25 @@ type ProcessHandler interface {
 	// Report delivers text to the session the process pipes to, reporting
 	// whether it was delivered.
 	Report(ctx context.Context, text string) (bool, error)
-	// SQL runs a statement in the database for the process: a read-only query,
-	// or, with write, a write under the program's policy. It returns the result
-	// as JSON.
+	SQLHandler
+}
+
+// SQLHandler runs a process program's database statements: a read-only query,
+// or, with write, a write under the program's policy, returning the result as
+// JSON. A live process's handler is one; the runner gives a slice process's
+// call one with WithSQLHandler. A call with none — a tool the model invoked —
+// cannot reach the database.
+type SQLHandler interface {
 	SQL(ctx context.Context, write bool, query string, args []any) (json.RawMessage, error)
+}
+
+// sqlKey carries a process program's SQLHandler into the sql host function.
+type sqlKey struct{}
+
+// WithSQLHandler marks a call as a process program's, whose database
+// statements h runs.
+func WithSQLHandler(ctx context.Context, h SQLHandler) context.Context {
+	return context.WithValue(ctx, sqlKey{}, h)
 }
 
 // ErrStopped is what a ProcessHandler returns when the process has been
@@ -85,19 +100,14 @@ type processKey struct{}
 type processRequest struct {
 	Op   string `json:"op"`
 	Text string `json:"text,omitempty"`
-	// SQL and Args are a database statement and its parameters (nine:sql).
-	SQL  string `json:"sql,omitempty"`
-	Args []any  `json:"args,omitempty"`
 }
 
 type processResponse struct {
 	Trigger   *Trigger `json:"trigger,omitempty"`
 	Reply     string   `json:"reply,omitempty"`
 	Delivered bool     `json:"delivered,omitempty"`
-	// Result is a database statement's result (nine:sql).
-	Result json.RawMessage `json:"result,omitempty"`
-	Error  string          `json:"error,omitempty"`
-	Code   string          `json:"code,omitempty"`
+	Error     string   `json:"error,omitempty"`
+	Code      string   `json:"code,omitempty"`
 }
 
 // hostProcess is the guest's `nine:process`. Every op is refused unless this
@@ -145,22 +155,6 @@ func (h *Host) hostProcess(ctx context.Context, mod api.Module, ptr, size uint32
 			return writeProcess(ctx, mod, processFailure(ctx, err))
 		}
 		return writeProcess(ctx, mod, processResponse{Delivered: delivered})
-	case "sql_query", "sql_exec":
-		// nine:sql rides on this bridge, so only a live process's program reaches
-		// the database; the tool must also hold the sql grant.
-		if g, _ := ctx.Value(grantKey{}).(*Grant); g == nil || !g.SQL {
-			return writeProcess(ctx, mod, processResponse{
-				Error: "blocked: this tool was not granted the sql capability (declare sql = true)",
-				Code:  "E_SQL"})
-		}
-		res, err := handler.SQL(ctx, req.Op == "sql_exec", req.SQL, req.Args)
-		if err != nil {
-			if ctx.Err() != nil {
-				return writeProcess(ctx, mod, processFailure(ctx, err))
-			}
-			return writeProcess(ctx, mod, processResponse{Error: err.Error(), Code: "E_SQL"})
-		}
-		return writeProcess(ctx, mod, processResponse{Result: res})
 	default:
 		return writeProcess(ctx, mod, processResponse{Error: fmt.Sprintf("unknown process op %q", req.Op)})
 	}
@@ -237,6 +231,7 @@ func (h *Host) StartLive(ctx context.Context, name string, args json.RawMessage,
 	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	ctx, printed := withCallContext(ctx, t)
 	ctx = context.WithValue(ctx, processKey{}, handler)
+	ctx = WithSQLHandler(ctx, handler)
 
 	input, err := t.inputForJob(args, nil)
 	if err != nil {

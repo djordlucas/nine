@@ -61,6 +61,15 @@ nine_host_state(const uint8_t *ptr, int32_t len);
 __attribute__((import_module("nine"), import_name("process"))) extern uint64_t
 nine_host_process(const uint8_t *ptr, int32_t len);
 
+/* The `sql` capability: the instance's database (adr/process-sessions.md §8).
+ * Takes a JSON op ({"op":"query","sql":"…","args":[…]}) and returns
+ * (offset << 32) | length of a JSON response, or 0. The import exists
+ * unconditionally; the host refuses every op unless the tool holds the sql
+ * grant and runs as a process program — a tool the model invoked cannot reach
+ * the database. */
+__attribute__((import_module("nine"), import_name("sql"))) extern uint64_t
+nine_host_sql(const uint8_t *ptr, int32_t len);
+
 /* The calling tool's resolved capability grant, as JSON. It confers nothing —
  * every capability is enforced elsewhere, by wazero's pre-opens or by the host's
  * per-call grant lookup — and exists so a guest can say "fs.read is not granted
@@ -236,6 +245,27 @@ static JSValue js_nine_state(JSContext *ctx, JSValueConst this_val, int argc,
     JS_FreeCString(ctx, req);
 
     if (packed == 0) return JS_ThrowInternalError(ctx, "state: no response from host");
+
+    const char *out = (const char *)(uintptr_t)(uint32_t)(packed >> 32);
+    uint32_t out_len = (uint32_t)(packed & 0xffffffff);
+    JSValue res = JS_NewStringLen(ctx, out, out_len);
+    free((void *)out);
+    return res;
+}
+
+static JSValue js_nine_sql(JSContext *ctx, JSValueConst this_val, int argc,
+                           JSValueConst *argv) {
+    (void)this_val;
+    if (argc < 1) return JS_ThrowTypeError(ctx, "sql requires a request object");
+
+    size_t len = 0;
+    const char *req = JS_ToCStringLen(ctx, &len, argv[0]);
+    if (!req) return JS_EXCEPTION;
+
+    uint64_t packed = nine_host_sql((const uint8_t *)req, (int32_t)len);
+    JS_FreeCString(ctx, req);
+
+    if (packed == 0) return JS_ThrowInternalError(ctx, "sql: no response from host");
 
     const char *out = (const char *)(uintptr_t)(uint32_t)(packed >> 32);
     uint32_t out_len = (uint32_t)(packed & 0xffffffff);
@@ -955,6 +985,8 @@ __attribute__((export_name("nine_run"))) uint64_t nine_run(uint32_t ptr, uint32_
                       JS_NewCFunction(ctx, js_nine_random, "__nine_random", 1));
     JS_SetPropertyStr(ctx, global, "__nine_process",
                       JS_NewCFunction(ctx, js_nine_process, "__nine_process", 1));
+    JS_SetPropertyStr(ctx, global, "__nine_sql",
+                      JS_NewCFunction(ctx, js_nine_sql, "__nine_sql", 1));
     JS_FreeValue(ctx, global);
 
     if (!g_harness || g_harness_len == 0) {

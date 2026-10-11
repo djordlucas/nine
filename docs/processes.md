@@ -247,7 +247,7 @@ changes.
 
 | Who | How | What |
 |---|---|---|
-| A live process's program, with `sql = true` | `import { query, exec } from "nine:sql"` | `exec()` writes: rows, and the schema of its own tables. `query()` reads |
+| A process's program, live or slice, with `sql = true` | `import { query, exec } from "nine:sql"` | `exec()` writes: rows, and the schema of its own tables. `query()` reads |
 | A turn whose role grants `sql_query` | `sql_query` | one read-only statement: `SELECT`, or `PRAGMA table_list` and `table_info` |
 
 ```js
@@ -369,6 +369,6 @@ use instead.
 | Configuration is read at boot | Editing a block takes effect at the next start. |
 | Rollback catches a version that fails, not one that does worse | A rewritten process that runs but produces worse results stays; noticing it is the next review's job, or the operator's. |
 | A version is only on probation until its first success | One that runs once and fails later is an ordinary failure: it is not rolled back. |
-| Only live processes write the database | `nine:sql` is served through `nine:process`'s bridge: a slice process or a tool a model calls cannot reach it. |
+| Only process programs reach the database | A tool a model calls cannot use `nine:sql`, even with the grant: it reads through `sql_query` instead. |
 | No transactions in the database | Each statement commits on its own, so a program cannot make several writes atomic. |
 | The authorizer depends on the SQLite driver's internals | nine reads the connection handle by reflection, since the driver has no API for it. A driver upgrade that moves it fails at boot, with the database unopened, and `TestAuthorizerShim` fails first. |

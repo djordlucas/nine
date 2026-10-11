@@ -367,6 +367,9 @@ func (h *Host) registerHostFunctions(ctx context.Context) error {
 		NewFunctionBuilder().
 		WithFunc(h.hostProcess).
 		Export("process").
+		NewFunctionBuilder().
+		WithFunc(h.hostSQL).
+		Export("sql").
 		Instantiate(ctx)
 	if err != nil {
 		return fmt.Errorf("toolvm: export host functions: %w", err)

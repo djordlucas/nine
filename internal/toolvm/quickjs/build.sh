@@ -117,7 +117,10 @@ sources=(
 qjsc="${work}/qjsc"
 if [ ! -x "${qjsc}" ] || [ "${src}/quickjs.c" -nt "${qjsc}" ]; then
   echo "==> building qjsc (quickjs-ng ${QUICKJS_TAG})"
-  cc -O1 -I"${src}" -o "${qjsc}" \
+  # _GNU_SOURCE: on Linux, glibc declares environ and sighandler_t, which
+  # quickjs-libc.c uses, only with it; macOS needs nothing. qjsc runs on the
+  # build host only — it is not part of qjs.wasm.
+  cc -O1 -D_GNU_SOURCE -I"${src}" -o "${qjsc}" \
     "${src}/qjsc.c" "${src}/quickjs.c" "${src}/dtoa.c" \
     "${src}/libregexp.c" "${src}/libunicode.c" "${src}/quickjs-libc.c" \
     -DCONFIG_VERSION="\"${version}\"" -lm -lpthread
