@@ -254,6 +254,7 @@ How to use this file:
 | R-PROC.14 | Event triggers and lineage | Allowlisted journal events reach live processes, metadata unless `event_content`; never from their own session; nothing at `max_depth`, and the skip journaled. |
 | R-PROC.15 | The database | A file apart from the store; process programs (live or slice) with `sql` write it through `nine:sql`, turns read it through `sql_query`; denied statements refused with a reason; quotas enforced; writes journaled as kinds and tables. |
 | R-PROC.16 | Versions and revision | Every rewrite keeps a version; a rewritten process restarts on probation and rolls back after `rollback_after` failures; process sessions write processes only with `allow_revision`; `tool_read` reads. |
+| R-PROC.17 | Genesis | A genesis document becomes running processes on the first boot of a store, once; an unfinished genesis runs again at the next boot. |
 
 ### Goals — [`orchestration.md`](contracts/orchestration.md) (§ goals)
 

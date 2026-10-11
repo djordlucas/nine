@@ -206,6 +206,19 @@ process session and a sub-agent **MUST NOT** hold any of them.
 
 ---
 
+## R-PROC.17 — genesis
+
+- With `[bootstrap] genesis`, the first boot of a store **MUST** run a `genesis` session under the
+  `genesis` role on the document, and give it further turns until it says `GENESIS DONE` with a
+  process Nine wrote running, up to `genesis_turns` (default 8).
+- `[bootstrap] genesis` **MUST** be refused unless `[tools.agent]` is enabled with
+  `allow_processes`.
+- A genesis that finishes **MUST** be marked in the store and reported to the human feed, and
+  **MUST NOT** run again in that store; one that does not **MUST** be reported and run again at
+  the next boot.
+
+---
+
 ## R-PROC.16 — versions and revision
 
 - Every write of a tool Nine wrote **MUST** keep the version it replaces, with the process
