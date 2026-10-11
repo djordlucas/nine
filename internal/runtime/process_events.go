@@ -16,6 +16,9 @@ import (
 // Journal event type of a delivery skipped for its depth or its source.
 const evProcessSkipped = "process_skipped"
 
+// evSQLWrite journals a process's writes to the database: kinds and tables.
+const evSQLWrite = "sql_write"
+
 // SetMaxDepth sets [processes] max_depth; <= 0 is the default.
 func (r *StandingRunner) SetMaxDepth(n int) {
 	if r != nil {

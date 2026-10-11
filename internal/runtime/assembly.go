@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"log/slog"
 
 	"nine/internal/agent"
@@ -10,6 +11,7 @@ import (
 	"nine/internal/memory"
 	"nine/internal/plugin"
 	"nine/internal/selfmodel"
+	"nine/internal/sqldb"
 	"nine/internal/toolvm"
 )
 
@@ -101,6 +103,9 @@ type AssemblyConfig struct {
 	ProcessBudget config.BudgetConfig
 	// MaxDepth is [processes] max_depth; <= 0 is the default.
 	MaxDepth int
+	// Database is the database: written by live processes through nine:sql,
+	// read through sql_query. Nil leaves both out.
+	Database *sqldb.DB
 	// JobMinDelayMS and JobWorkers bound the process runner's calls, as they do
 	// the job sweeper's ([tools] job_min_delay_ms, job_workers); 0 is the default.
 	JobMinDelayMS int
@@ -223,6 +228,10 @@ func Assemble(c AssemblyConfig) *Assembly {
 	runner.SetBudget(c.ProcessBudget)
 	runner.SetMaxRunning(c.MaxRunning)
 	runner.SetMaxDepth(c.MaxDepth)
+	runner.SetDatabase(c.Database)
+	if c.Database != nil {
+		builder.SetSQLReader(sqlReader{c.Database})
+	}
 	if runner != nil {
 		builder.SetProcessControl(modelProcesses{r: runner})
 		// Event triggers: a journal subscriber that delivers events to the live
@@ -245,4 +254,11 @@ func Assemble(c AssemblyConfig) *Assembly {
 		EventSink:  sink,
 		Processes:  runner,
 	}
+}
+
+// sqlReader is sql_query's view of the database.
+type sqlReader struct{ db *sqldb.DB }
+
+func (r sqlReader) Query(ctx context.Context, q string, args ...any) (any, error) {
+	return r.db.Query(ctx, q, args...)
 }

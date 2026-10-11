@@ -34,7 +34,7 @@ var PipedTurnTools = []string{
 	"write_file", "edit_file", "trash_list",
 	"memory_get", "memory_set", "memory_list", "memory_query",
 	"skill_list", "skill_read", "skill_search",
-	"doc_read", "doc_search", "tool_list", "tool_search",
+	"doc_read", "doc_search", "tool_list", "tool_search", "sql_query",
 	"goal_get", "goal_list", "goal_update_status",
 	"notify_user", "time",
 	"job_check", "job_list",

@@ -166,6 +166,7 @@ func agentConfig(cfg *config.Config) toolvm.AgentConfig {
 			Env:     caps.Env,
 			HTTP:    httpGrant(caps.Net.HTTP),
 			State:   stateGrant(caps.State),
+			SQL:     caps.SQL,
 		}},
 	}
 }
@@ -290,6 +291,7 @@ func toolGrants(cfg *config.Config) map[string]toolvm.Grant {
 			Env:     caps.Env,
 			HTTP:    httpGrant(caps.Net.HTTP),
 			State:   stateGrant(caps.State),
+			SQL:     caps.SQL,
 		}
 	}
 	return out

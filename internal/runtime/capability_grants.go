@@ -108,6 +108,9 @@ func DerivedCapabilityGrants(cfg *config.Config) []memory.CapabilityGrant {
 		}
 		add(memory.GrantSourceConfig, toolvm.CapState, p)
 	}
+	if caps.SQL {
+		add(memory.GrantSourceConfig, toolvm.CapSQL, grantParams{})
+	}
 
 	return out
 }
@@ -160,6 +163,8 @@ func CeilingFromGrants(grants []memory.CapabilityGrant) toolvm.Ceiling {
 					}
 				}
 			}
+		case toolvm.CapSQL:
+			g.SQL = true
 		default:
 			slog.Warn("capability grant names an unknown capability",
 				"id", row.ID, "capability", row.Capability)
@@ -258,7 +263,7 @@ func NewCapabilityRequester(store *memory.Store, notify func(agentID, text strin
 // toolvm resolves against a ceiling. `clock`, `random` and `log` are absent
 // because they are granted unconditionally and have no knob to widen.
 var grantableCapabilities = []string{
-	toolvm.CapFSRead, toolvm.CapFSWrite, toolvm.CapNetHTTP, toolvm.CapEnvRead, toolvm.CapState,
+	toolvm.CapFSRead, toolvm.CapFSWrite, toolvm.CapNetHTTP, toolvm.CapEnvRead, toolvm.CapState, toolvm.CapSQL,
 }
 
 // validateGrantParams holds a requested scope to the same rules nine.toml is held

@@ -2415,7 +2415,7 @@ components:
       type: object
       properties:
         capability:
-          description: 'One of: fs.read, fs.write, net.http, env, state.'
+          description: 'One of: fs.read, fs.write, net.http, env, state, sql.'
           type: string
         created_at:
           type: string

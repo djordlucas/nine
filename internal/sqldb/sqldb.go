@@ -93,16 +93,6 @@ func (d *DB) Query(ctx context.Context, q string, args ...any) (Result, error) {
 	return d.query(ctx, readPolicy, q, args)
 }
 
-// QueryWrite runs a statement that returns rows under a program's policy, so a
-// program may read with RETURNING or introspect as it writes.
-func (d *DB) QueryWrite(ctx context.Context, q string, args ...any) (Result, []Write, error) {
-	var writes []Write
-	res, err := d.run(ctx, writePolicy, &writes, func(ctx context.Context, c *sql.Conn) (Result, error) {
-		return scan(ctx, c, q, args, d.maxRows)
-	})
-	return res, writes, err
-}
-
 // Exec runs statements under a program's policy: reads, writes and DDL on
 // Nine's tables.
 func (d *DB) Exec(ctx context.Context, q string, args ...any) (ExecResult, error) {
@@ -139,7 +129,7 @@ func (d *DB) run(ctx context.Context, policy authorizer, writes *[]Write,
 	if err != nil {
 		return Result{}, d.reason(ctx, nil, err)
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck // returning the connection to the pool
 	st := &authState{policy: policy}
 	var raw rawConn
 	if err := c.Raw(func(dc any) error {
@@ -222,7 +212,7 @@ func withRaw(ctx context.Context, db *sql.DB, fn func(rawConn) error) error {
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer c.Close() //nolint:errcheck // returning the connection to the pool
 	return c.Raw(func(dc any) error {
 		raw, err := rawOf(dc.(driver.Conn))
 		if err != nil {

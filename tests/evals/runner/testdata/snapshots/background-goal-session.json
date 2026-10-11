@@ -539,7 +539,8 @@
                   "fs.write",
                   "net.http",
                   "env",
-                  "state"
+                  "state",
+                  "sql"
                 ],
                 "description": "The capability to request, exactly as the refusal named it."
               },
@@ -1025,7 +1026,7 @@
       "turn": 1,
       "type": "context_update",
       "payload": {
-        "used": 7669,
+        "used": 7671,
         "budget": 100000
       }
     },
@@ -1096,7 +1097,7 @@
           "trash_list"
         ],
         "max_tokens": 2048,
-        "tokens_used": 7669,
+        "tokens_used": 7671,
         "budget": 100000,
         "llm_call_n": 1
       }

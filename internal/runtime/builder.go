@@ -165,6 +165,7 @@ type AgentBuilder struct {
 	queuePtr     atomic.Pointer[llm.Queue]
 	goalSpawnFn  atomic.Pointer[agent.GoalSessionSpawnFn]
 	processes    atomic.Pointer[agent.ProcessControl]
+	sqlReader    atomic.Pointer[agent.SQLReader]
 	emitProgress atomic.Pointer[func(agentID string, msg protocol.Msg)]
 
 	// sink journals each delegated sub-agent's own execution trajectory under its
@@ -295,6 +296,12 @@ func (f *AgentBuilder) QueueDepth() (pending, inflight, maxConcurrent int) {
 // daemon's session registry) and before any conversations are created.
 func (f *AgentBuilder) SetGoalSessionSpawnFn(fn agent.GoalSessionSpawnFn) {
 	f.goalSpawnFn.Store(&fn)
+}
+
+// SetSQLReader wires sql_query, the database's read tool
+// (adr/process-sessions.md §8). Without it no loop advertises it.
+func (f *AgentBuilder) SetSQLReader(r agent.SQLReader) {
+	f.sqlReader.Store(&r)
 }
 
 // SetProcessControl wires the process tools a conversation holds
@@ -518,6 +525,12 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 	if pc := f.processes.Load(); pc != nil && *pc != nil && role.Conversation {
 		processTools = filterByRole(agent.ProcessToolNames, role)
 		agent.RegisterProcessTools(d, *pc, agentID, processTools)
+	}
+	// sql_query reads the database. Any loop whose role grants it holds it, a
+	// process session's included: it only reads.
+	if r := f.sqlReader.Load(); r != nil && *r != nil && len(filterByRole([]string{agent.SQLToolName}, role)) > 0 {
+		agent.RegisterSQLTool(d, *r)
+		processTools = append(processTools, agent.SQLToolName)
 	}
 
 	shellTools = append(shellTools, "tool_list", "doc_read", "doc_search")

@@ -12,6 +12,7 @@ import (
 	"nine/internal/config"
 	"nine/internal/cron"
 	"nine/internal/memory"
+	"nine/internal/sqldb"
 	"nine/internal/toolvm"
 )
 
@@ -89,6 +90,16 @@ type StandingRunner struct {
 	// heldEvents are event triggers for processes whose instance has not
 	// started yet, under liveMu (deliverEvent).
 	heldEvents map[string][]toolvm.Trigger
+	// database is the database processes write through nine:sql; nil when the
+	// instance has none.
+	database *sqldb.DB
+}
+
+// SetDatabase gives live processes the database.
+func (r *StandingRunner) SetDatabase(db *sqldb.DB) {
+	if r != nil {
+		r.database = db
+	}
 }
 
 // Wake asks for a pass now rather than at the next tick: a process just written

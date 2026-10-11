@@ -192,6 +192,23 @@ func (cfg *Config) DatabasePath() (string, error) {
 	return filepath.Join(home, ".nine", "nine.db"), nil
 }
 
+// ProcessDatabasePath returns the database's file: [processes] database, or
+// database.sqlite beside the store. It is never the store itself.
+func (cfg *Config) ProcessDatabasePath() (string, error) {
+	store, err := cfg.DatabasePath()
+	if err != nil {
+		return "", err
+	}
+	p := cfg.Processes.Database
+	if p == "" {
+		p = filepath.Join(filepath.Dir(store), "database.sqlite")
+	}
+	if a, b := filepath.Clean(p), filepath.Clean(store); a == b {
+		return "", fmt.Errorf("[processes] database must not be the store (%s)", store)
+	}
+	return p, nil
+}
+
 // WorkspaceRoot returns the directory the workspace file tools are scoped to and
 // `shell` runs in, honoring NINE_WORKSPACE_ROOT, then nine.toml's
 // [workspace].root, then a platform default.

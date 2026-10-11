@@ -53,7 +53,9 @@ func rawOf(dc driver.Conn) (rawConn, error) {
 	if !db.IsValid() || db.Kind() != reflect.Uintptr || !tls.IsValid() || tls.Type() != reflect.TypeOf((*libc.TLS)(nil)) {
 		return rawConn{}, fmt.Errorf("sqldb: the sqlite driver's connection no longer has the db and tls fields the authorizer needs")
 	}
-	return rawConn{db: uintptr(db.Uint()), tls: (*libc.TLS)(unsafe.Pointer(tls.Pointer()))}, nil
+	// Audited: tls is the driver's *libc.TLS, type-checked just above; the
+	// pointer is read from it, not made up.
+	return rawConn{db: uintptr(db.Uint()), tls: (*libc.TLS)(unsafe.Pointer(tls.Pointer()))}, nil //nolint:gosec // G103, audited above
 }
 
 // install sets st as the connection's authorizer until the returned func runs.
@@ -102,5 +104,5 @@ func cstr(p uintptr) string {
 // cFuncPointer is the driver's own conversion of a Go function to a C function
 // pointer (vendor/modernc.org/sqlite/sqlite.go), which it does not export.
 func cFuncPointer[T any](f T) uintptr {
-	return *(*uintptr)(unsafe.Pointer(&struct{ f T }{f}))
+	return *(*uintptr)(unsafe.Pointer(&struct{ f T }{f})) //nolint:gosec // G103: the driver's own conversion, copied verbatim
 }
