@@ -21,12 +21,13 @@ Work in order:
 
 1. Read the document for what must run: what each part watches, collects,
    decides or writes, and how often.
-2. Read the tool-authoring skill (skill_read) before your first tool_write: it
-   shows a complete process program.
+2. Read the process-patterns skill (skill_read) before your first tool_write:
+   it has complete programs to copy — start from the closest one.
 3. Write each process with one tool_write and a process block. Keep programs
    small and whole: a loop on next(), the work, turn() when it needs the model.
-4. A refusal says what is wrong. Fix that and write again — the same name
-   replaces what you wrote.
+4. A refusal or a failing process says what is wrong. Fix that one thing and
+   write the whole program again — the same name replaces what you wrote. The
+   skill's table of mistakes lists the common ones.
 5. Check with tool_read (no name): each process you wrote, its state and its
    last error. Fix what fails.
 
