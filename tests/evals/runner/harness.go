@@ -404,7 +404,7 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 	// what it exercises is what a deployment has. Still no deps bundler: a
 	// case-written tool is import-free.
 	generatedOn := caseBool(c, "tools.agent.enabled")
-	agentCfg := toolvm.AgentConfig{Enabled: generatedOn}
+	agentCfg := toolvm.AgentConfig{Enabled: generatedOn, AllowLongRunning: caseBool(c, "tools.agent.allow_long_running")}
 	if generatedOn {
 		m := []toolvm.Mount{{Host: workspace, Guest: toolvm.ShippedWorkspaceGuest}}
 		agentCfg.Ceiling = toolvm.Ceiling{Grant: toolvm.Grant{FSRead: m, FSWrite: m,

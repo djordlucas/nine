@@ -385,7 +385,9 @@ func (r *StandingRunner) runDue(ctx context.Context) {
 
 // runOnce makes a single call of one standing tool and writes back what happened.
 func (r *StandingRunner) runOnce(ctx context.Context, st memory.Process) {
-	out, err := r.host.CallJob(ctx, st.Tool, json.RawMessage(argsOrEmptyString(st.Args)),
+	// A process's call, unlike a tool the model invoked, reaches the database.
+	callCtx := toolvm.WithSQLHandler(ctx, sliceSQL{r: r, row: st})
+	out, err := r.host.CallJob(callCtx, st.Tool, json.RawMessage(argsOrEmptyString(st.Args)),
 		toolvm.JobContext{Cursor: st.Cursor, Call: st.Calls + 1})
 	if err != nil {
 		r.recordFailure(st, err)

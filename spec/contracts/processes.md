@@ -230,9 +230,10 @@ process session and a sub-agent **MUST NOT** hold any of them.
 The database **MUST** be a SQLite file apart from the store (`[processes] database`, default
 `database.sqlite` beside it, never the store's path).
 
-- A live process's program with the `sql` capability **MUST** reach it through `nine:sql`:
-  `exec()` under the program policy, `query()` read-only. Any other caller — a slice process, a
-  tool a model calls, a tool without the grant — **MUST** be refused.
+- A process's program — live, or a slice process's call — with the `sql` capability **MUST**
+  reach it through `nine:sql`:
+  `exec()` under the program policy, `query()` read-only. Any other caller — a tool a model
+  calls, a tool without the grant — **MUST** be refused.
 - `sql_query` **MUST** be read-only, and is held by a loop whose role grants it.
 - Every statement **MUST** run under an authorizer allowlist. Denied: `ATTACH`, transactions and
   savepoints, temp objects, `load_extension`, pragmas other than table introspection, and

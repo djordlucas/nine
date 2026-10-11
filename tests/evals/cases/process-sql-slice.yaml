@@ -1,0 +1,51 @@
+id: process-sql-slice
+description: "A slice process keeps records in the database too: a resumable tool run as a process, granted sql, inserts a row on each call through nine:sql, and each write is journaled. It measures the runtime, so every model must pass it."
+track: live
+tier: basic
+tags: [processes, sql, generated]
+
+session:
+  config:
+    tools.agent.enabled: true
+    tools.agent.allow_processes: true
+    tools.agent.allow_long_running: true
+    tools.agent.capabilities.sql: true
+    processes.database: true
+
+setup:
+  generated_tools:
+    slicer:
+      description: "Records each call in the database."
+      capabilities: '{"sql":true}'
+      resumable: true
+      source: |
+        import { exec } from "nine:sql";
+        export default () => {
+          exec("CREATE TABLE IF NOT EXISTS calls (n INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT)");
+          exec("INSERT INTO calls (at) VALUES (?)", [new Date().toISOString()]);
+          return "";
+        };
+      process:
+        every: 2s
+
+prompts:
+  - "Reply with the single word: ok"
+
+wait:
+  seconds: 90
+  until:
+    database:
+      "SELECT count(*) FROM calls": { matches: '"rows":\[\[[2-9]' }
+
+expect:
+  side_effects:
+    database:
+      "SELECT count(*) FROM calls": { matches: '"rows":\[\[[2-9]' }
+    journal:
+      - { agent: "gen:slicer", type: sql_write, contains: '"insert into"', min: 2 }
+
+runs: 3
+pass_threshold: "3/3"
+timeout_seconds: 240
+models:
+  expected_pass_min_class: nano

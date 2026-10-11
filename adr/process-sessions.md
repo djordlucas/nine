@@ -569,3 +569,8 @@ configurations in use to carry over. A file that still has one fails to load, na
 | The operator | `nine tools versions`, `nine tools restore`, and their API endpoints | restoring by hand, decided with the versions |
 | The shipped reviser | `skills/roles/reviser.md` and the `process-revision` skill; the operator lists the role in `process_roles` | §13: nine-will's reviser becomes a process with a revision role |
 
+**Follow-up (2026-10-11).** `nine:sql` now has a host import of its own, `nine.sql`,
+with `qjs.wasm` rebuilt (decided with phase 5, before genesis). The live-only bridge
+is gone: a process program — a live process, or a slice process's call the runner
+marks — reaches the database; a tool a model calls still does not.
+

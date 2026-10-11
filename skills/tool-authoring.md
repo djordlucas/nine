@@ -34,7 +34,7 @@ to rewrite without it or call `gap_report`, not to try a different phrasing.
 | an environment variable | `env: ["TZ"]` | `import { get } from "nine:env"` |
 | fetch a URL | `net: ["http"]` | `fetch()` |
 | remember between calls | `state: true` | `import { get, set } from "nine:state"` |
-| keep records a process collects | `sql: true` | `import { query, exec } from "nine:sql"` — live processes only |
+| keep records a process collects | `sql: true` | `import { query, exec } from "nine:sql"` — processes only |
 
 A tool that declares nothing gets nothing, whatever the ceiling permits. That is the
 common case and the right one.

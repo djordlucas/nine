@@ -49,8 +49,8 @@ var stdlibSpecifiers = map[string]string{
 	// trigger, run a model turn, report to a pipe. Importing it grants nothing —
 	// the host refuses every call unless the tool was started as a live process.
 	"nine:process": "stdlib/process.js",
-	// sql is the database. It rides on nine:process's bridge: only a live
-	// process's program, granted sql, reaches it.
+	// sql is the database: capability-gated, and served only to a process's
+	// program — a live process, or a slice process's call.
 	"nine:sql": "stdlib/sql.js",
 }
 

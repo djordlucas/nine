@@ -451,11 +451,27 @@ func (h *liveHandler) Report(_ context.Context, text string) (bool, error) {
 	return h.r.pipe(row, text, depth+1), nil
 }
 
-// SQL runs a statement in the database for the process (nine:sql). A write is
-// journaled under the process as a summary — statement kinds and tables, never
-// values.
+// SQL runs a statement in the database for the process (nine:sql).
 func (h *liveHandler) SQL(ctx context.Context, write bool, query string, args []any) (json.RawMessage, error) {
-	db := h.r.database
+	return h.r.processSQL(ctx, h.lp.row, write, query, args)
+}
+
+// sliceSQL runs a slice process's database statements: the runner marks the
+// process's calls with it, so nine:sql serves them and no other call.
+type sliceSQL struct {
+	r   *StandingRunner
+	row memory.Process
+}
+
+func (s sliceSQL) SQL(ctx context.Context, write bool, query string, args []any) (json.RawMessage, error) {
+	return s.r.processSQL(ctx, s.row, write, query, args)
+}
+
+// processSQL runs a statement in the database for a process program. A write
+// is journaled under the process as a summary — kinds and tables, never
+// values.
+func (r *StandingRunner) processSQL(ctx context.Context, row memory.Process, write bool, query string, args []any) (json.RawMessage, error) {
+	db := r.database
 	if db == nil {
 		return nil, errors.New("this instance has no database")
 	}
@@ -469,7 +485,7 @@ func (h *liveHandler) SQL(ctx context.Context, write bool, query string, args []
 	}
 	res, err := db.Exec(ctx, query, args...)
 	if len(res.Writes) > 0 {
-		journalTransition(h.r.store, h.lp.row.ID, evSQLWrite, map[string]any{
+		journalTransition(r.store, row.ID, evSQLWrite, map[string]any{
 			"writes": res.Writes, "changes": res.Changes, "error": errText(err),
 		})
 	}

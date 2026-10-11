@@ -61,7 +61,7 @@ func TestQuickJSBlobImportsAndExportsAreClosed(t *testing.T) {
 
 	// Adding to this list is a deliberate act: each entry is reach a guest gains
 	// that the capability table has to describe.
-	hostFunctions := []string{"log", "http", "caps", "state", "process"}
+	hostFunctions := []string{"log", "http", "caps", "state", "process", "sql"}
 
 	sawWASI, sawNine := false, false
 	for _, fn := range mod.ImportedFunctions() {
