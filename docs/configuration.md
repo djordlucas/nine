@@ -213,6 +213,11 @@ budget = { turns_per_day = 200, tokens_per_day = 2000000 }
 # many processes deep or more; the skip is journaled. 2 lets a process react to
 # someone's work and another react to that, and no further.
 max_depth = 2
+# The database: the SQLite file processes write through nine:sql (with sql = true)
+# and turns read through sql_query. A file of its own, never the store.
+# database        = "/data/database.sqlite"   # default: database.sqlite beside the store
+database_max_mb   = 100      # refused beyond this size
+statement_timeout = "5s"     # one statement's longest run
 # Treat the goal [[process]] list as the full desired state: a goal process no
 # longer listed is retired and its goal archived at boot. Conversation-created
 # goals are never touched.
@@ -637,6 +642,7 @@ read  = [{ host = "/srv/data", guest = "/data" }]
 # the LLM provider API keys. Keys matching NINE_* or *_API_KEY are refused
 # outright as a config error.
 env = ["TZ"]
+# sql = true    # the database, for a tool run as a live process (docs/processes.md)
 
 # Outbound HTTP. The guest never touches a socket: it asks the daemon, which
 # makes the request. Two independent gates both have to pass — the hostname must
@@ -720,7 +726,8 @@ require_approval = "on_capability"
 # ceiling defaults to [workspace].root, read and write, mounted at /work — the same directory
 # and the same guest path the shipped file tools use, so one file has one name whichever tier
 # reaches it. An fs grant here REPLACES that default rather than adding to it, which is how you
-# narrow it. Every other capability — net.http, env, state — has no default grant at all.
+# narrow it. Every other capability — net.http, env, state, sql — has no default grant at all.
+# `sql = true` here lets processes Nine writes keep records in the database.
 #
 # Note there is no variable expansion in this file: a host path is a literal absolute path, and
 # a relative one is refused at load. That is why the workspace default is derived in code.

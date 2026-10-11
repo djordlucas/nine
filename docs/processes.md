@@ -206,6 +206,37 @@ With `[tools.agent] allow_processes`, Nine can write a process itself: `tool_wri
 
 Its tool is never evicted from Nine's catalog while the process exists.
 
+## The database
+
+Processes keep structured records in the database: one SQLite file per
+instance, beside the store and never inside it, with tables Nine designs and
+changes.
+
+| Who | How | What |
+|---|---|---|
+| A live process's program, with `sql = true` | `import { query, exec } from "nine:sql"` | `exec()` writes: rows, and the schema of its own tables. `query()` reads |
+| A turn whose role grants `sql_query` | `sql_query` | one read-only statement: `SELECT`, or `PRAGMA table_list` and `table_info` |
+
+```js
+import { next } from "nine:process";
+import { exec, query } from "nine:sql";
+
+export default () => {
+  exec("CREATE TABLE IF NOT EXISTS seen (url TEXT PRIMARY KEY, at TEXT)");
+  for (;;) {
+    const t = next();
+    exec("INSERT OR IGNORE INTO seen VALUES (?, ?)", [t.text, t.at]);
+  }
+};
+```
+
+| Rule | Detail |
+|---|---|
+| Policy | reads, writes and schema changes on Nine's own tables. Refused, with the reason: `ATTACH`, transactions and savepoints, temp objects, `load_extension`, pragmas beyond table introspection |
+| Quotas | `[processes] database_max_mb` (100) for the file, `statement_timeout` (5s) for one statement; each refused with the reason |
+| Journal | each write as `sql_write` under the process: statement kinds and tables, never values |
+| Results | at most 1000 rows; objects and arrays bound as parameters are stored as JSON text |
+
 ## Watching and controlling processes
 
 | Surface | List | One | Start, stop | Message |
@@ -303,3 +334,6 @@ use instead.
 | A piped turn cannot append to an existing file | A watcher that reports repeatedly gets each finding recorded in a new file, or in its log on the session's own next turn. |
 | A piped report stays in the session's history | The session's next turn — its own clock tick, unrestricted — sees the report and can still act on an instruction inside it. The restriction narrows the turn the report causes, not every turn after it. |
 | Configuration is read at boot | Editing a block takes effect at the next start. |
+| Only live processes write the database | `nine:sql` is served through `nine:process`'s bridge: a slice process or a tool a model calls cannot reach it. |
+| No transactions in the database | Each statement commits on its own, so a program cannot make several writes atomic. |
+| The authorizer depends on the SQLite driver's internals | nine reads the connection handle by reflection, since the driver has no API for it. A driver upgrade that moves it fails at boot, with the database unopened, and `TestAuthorizerShim` fails first. |

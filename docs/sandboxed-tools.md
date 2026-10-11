@@ -299,6 +299,7 @@ tool-writing agent reinvents badly inside a 5-second deadline:
 | `nine:state` | the host-owned store that outlives a call (§6.4) | `state` |
 | `nine:job` | ending a call with a cursor (§6.5) | `resumable` in the manifest |
 | `nine:process` | `next()`, `turn()` and `report()`, for a tool running as a live process | refused unless the tool was started as a live process |
+| `nine:sql` | `query()` and `exec()` on the database (docs/processes.md) | `sql`, and refused unless the tool was started as a live process |
 
 Importing one of the gated modules grants nothing: a tool with no grant gets a
 sentence saying so rather than reach.
@@ -690,6 +691,7 @@ module and none are exported to it.
 | `random` | — | **granted** | `WithRandSource` |
 | `log` | — | **granted** | host fn → `slog` + journal |
 | `state` | scope (required), quotas, ttl | **none** | host fn → the `tool_state` store (§6.4) |
+| `sql` | — (policy and quotas are `[processes]`') | **none** | `nine:process`'s host fn → the database, under an authorizer policy |
 
 `clock`, `random`, and `log` are on by default because they leak nothing and
 every non-trivial tool needs them. Everything with reach — the filesystem, the
