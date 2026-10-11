@@ -130,7 +130,7 @@ func (d *DB) run(ctx context.Context, policy authorizer, writes *[]Write,
 		return Result{}, d.reason(ctx, nil, err)
 	}
 	defer c.Close() //nolint:errcheck // returning the connection to the pool
-	st := &authState{policy: policy}
+	st := &authState{policy: policy, readOnly: writes == nil}
 	var raw rawConn
 	if err := c.Raw(func(dc any) error {
 		var err error
@@ -155,6 +155,9 @@ func (d *DB) run(ctx context.Context, policy authorizer, writes *[]Write,
 func (d *DB) reason(ctx context.Context, st *authState, err error) error {
 	msg := err.Error()
 	switch {
+	case st != nil && st.writable:
+		return fmt.Errorf("denied: %s — this is a read: query() and sql_query only read. "+
+			"Write with exec() from nine:sql, in a process's program", st.denied)
 	case st != nil && st.denied != "":
 		return fmt.Errorf("denied: %s is not allowed in the database (only reads, writes and schema changes "+
 			"on your own tables; no ATTACH, transactions, temp objects or pragmas beyond table introspection)", st.denied)

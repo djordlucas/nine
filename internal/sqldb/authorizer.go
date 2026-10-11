@@ -28,6 +28,9 @@ type authState struct {
 	policy authorizer
 	// denied names the first action refused, for the error.
 	denied string
+	// readOnly marks the read policy; writable says the refused action is one
+	// a program's exec() may take, so the error can point there.
+	readOnly, writable bool
 	// writes are the writes the statement makes, for the journal summary.
 	writes []Write
 }
@@ -85,6 +88,7 @@ func authTrampoline(tls *libc.TLS, pArg uintptr, action int32, z1, z2, z3, z4 ui
 	if !st.policy(action, a1, a2, db, trig) {
 		if st.denied == "" {
 			st.denied = describe(action, a1, a2, db)
+			st.writable = st.readOnly && writePolicy(action, a1, a2, db, trig)
 		}
 		return sqlite3.SQLITE_DENY
 	}

@@ -94,11 +94,18 @@ func TestDeniedStatementsAreRefusedWithAReason(t *testing.T) {
 			t.Errorf("%s: err = %v, want %q", sql, err, want)
 		}
 	}
-	// sql_query's policy is read-only.
+	// sql_query's policy is read-only, and a write refused there points to
+	// exec() rather than claiming writes are allowed.
 	for _, sql := range []string{"INSERT INTO notes VALUES ('x')", "CREATE TABLE t2 (x)", "DROP TABLE notes"} {
-		if _, err := d.Query(ctx, sql); err == nil || !strings.Contains(err.Error(), "denied") {
-			t.Errorf("read-only %s: err = %v, want a denial", sql, err)
+		_, err := d.Query(ctx, sql)
+		if err == nil || !strings.Contains(err.Error(), "only read") || !strings.Contains(err.Error(), "exec()") {
+			t.Errorf("read-only %s: err = %v, want the read-only refusal pointing to exec()", sql, err)
 		}
+	}
+	// What no policy allows keeps the general reason, through query() too.
+	if _, err := d.Query(ctx, "ATTACH DATABASE ':memory:' AS x"); err == nil ||
+		!strings.Contains(err.Error(), "denied: attach is not allowed") || strings.Contains(err.Error(), "exec()") {
+		t.Errorf("ATTACH through query: err = %v", err)
 	}
 }
 
