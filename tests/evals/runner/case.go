@@ -107,6 +107,9 @@ type Setup struct {
 	// the same store tool_write uses — the starting point for a case about
 	// revising or deleting one. They need session.config tools.agent.enabled.
 	GeneratedTools map[string]GeneratedToolSetup `yaml:"generated_tools"`
+	// Revisions rewrite seeded tools, in order, after GeneratedTools: each is
+	// a tool_write of an existing name, as a revision would be.
+	Revisions []RevisionSetup `yaml:"revisions"`
 	// Database is run in the database before the prompts, statement by
 	// statement; it needs session.config processes.database.
 	Database []string `yaml:"database"`
@@ -129,6 +132,12 @@ type GeneratedToolSetup struct {
 	// Process writes the tool as a process Nine wrote, gen:<name>; it needs
 	// session.config tools.agent.allow_processes.
 	Process *GeneratedProcessSetup `yaml:"process"`
+}
+
+// RevisionSetup is a rewrite of a seeded tool.
+type RevisionSetup struct {
+	Name               string `yaml:"name"`
+	GeneratedToolSetup `yaml:",inline"`
 }
 
 // GeneratedProcessSetup is a seeded tool's process block, as tool_write takes it.

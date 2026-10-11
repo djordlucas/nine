@@ -1,0 +1,53 @@
+id: process-revise-broken
+description: "A conversation fixes a failing process Nine wrote: it reads the process and its last error with tool_read, rewrites it, and the fixed version runs and writes its log."
+track: live
+tier: basic
+tags: [processes, revision, generated]
+
+session:
+  config:
+    tools.agent.enabled: true
+    tools.agent.allow_processes: true
+
+setup:
+  generated_tools:
+    counter:
+      description: "Counts ticks into counter.log."
+      capabilities: '{"fs":["read","write"]}'
+      source: |
+        import { next } from "nine:process";
+        import { appendFile } from "nine:fs";
+        export default () => {
+          let count = 0;
+          for (;;) {
+            next();
+            count = cuont + 1;
+            appendFile("/work/counter.log", "tick " + count + "\n");
+          }
+        };
+      process:
+        every: 3s
+
+prompts:
+  - "My background process gen:counter keeps failing. Read it with tool_read, find the bug from its last error, and fix it."
+
+wait:
+  seconds: 120
+  until:
+    files:
+      counter.log: { contains: "tick" }
+
+expect:
+  side_effects:
+    journal:
+      - { agent: "gen:counter", type: process_revised }
+    files:
+      counter.log: { contains: "tick" }
+  trajectory:
+    tools_all_of: [tool_read, tool_write]
+
+runs: 3
+pass_threshold: "2/3"
+timeout_seconds: 300
+models:
+  expected_pass_min_class: medium
