@@ -67,8 +67,8 @@ process, so a tool a model calls can never block in `next()`.
 
 ## R-PROC.5 — triggers and the clock
 
-A trigger is a clock tick (`every` xor `schedule`) or a report piped to the process's
-session. A live process's **first tick comes one cadence after it starts**, at boot as at
+A trigger is a clock tick (`every` xor `schedule`), a report piped to the process's
+session (R-PROC.8), or a journal event (R-PROC.14). A live process's **first tick comes one cadence after it starts**, at boot as at
 creation; a tick that comes due while one waits is not queued twice. A slice process is
 called when its tick is due and continues an unfinished cycle at the delay it asks for.
 
@@ -120,7 +120,8 @@ alike, so the receiving model treats it as data and not as an instruction; the t
 A turn a piped report starts — a live receiver's turn on that trigger, or a woken agent's
 turn — **MUST** run restricted to `PipedTurnTools`: only those tools are offered, and a call
 to any other is refused, as not retryable, without running. The list holds reading,
-writing and editing files, memory, the session's own goal, and `notify_user`; it **MUST
+writing and editing files, memory, the session's own goal, `notify_user`, and reading the
+database (`sql_query`) and Nine's own tools (`tool_read`); it **MUST
 NOT** hold deleting, moving or restoring files, the shell, the network, sub-agents,
 workflows, or writing tools, skills or goals. `write_file` and `edit_file` **MUST** be
 refused for a file that existed before the turn; a file the turn created may be written

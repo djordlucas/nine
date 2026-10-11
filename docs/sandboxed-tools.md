@@ -294,7 +294,7 @@ tool-writing agent reinvents badly inside a 5-second deadline:
 | `nine:date` | date arithmetic and ISO-8601 formatting | no |
 | `nine:diff` | a textual diff | no |
 | `nine:html` | text extraction from a page — a tokenizer, not a DOM | no |
-| `nine:fs` | ranged read, write, append, rename, remove, mkdir | `fs.read` / `fs.write` |
+| `nine:fs` | ranged read, write, append, rename, remove, mkdir; a relative path is read against `/work` when the tool has the workspace mounted | `fs.read` / `fs.write` |
 | `nine:env` | the granted environment keys | `env` |
 | `nine:state` | the host-owned store that outlives a call (§6.4) | `state` |
 | `nine:job` | ending a call with a cursor (§6.5) | `resumable` in the manifest |

@@ -2,10 +2,11 @@
 
 Nine has two kinds of session. A **conversation** is driven by a person. A
 **process session** is driven by a **process**: a sandboxed tool that runs on
-its triggers — a clock, or a report piped to it — and can ask the model for a
-turn in its own session. Everything Nine does between your turns is a process:
-goal pursuit, standing agents, self-reflection, condition triggers, and standing
-tools.
+its triggers — a clock, a report piped to it, or a journal event — and can ask
+the model for a turn in its own session. Everything Nine does between your
+turns is a process: goal pursuit, standing agents, self-reflection, condition
+triggers, standing tools, and the processes Nine writes itself — at its
+genesis, from a conversation, or when it revises what it wrote.
 
 | | Driven by | Started by |
 |---|---|---|
@@ -36,7 +37,7 @@ import { next, turn, report } from "nine:process";
 
 export default () => {
   for (;;) {
-    const trigger = next();                       // a clock tick or a piped report
+    const trigger = next();                       // a clock tick, a piped report, an event
     report(turn(`Summarize: ${trigger.text ?? ""}`));
   }
 };
@@ -96,10 +97,14 @@ pipes. No process is triggered by an event, and no pipe is delivered, at
 So a process may react to someone's work, and another to that reaction, and
 the chain stops there.
 
-A process that fails — a slice call that errors, a live program that throws —
-is retried after a backoff that doubles its cadence each time, up to 30
-minutes. Three failures in a row make it `failing`, which reaches
-`nine notifications`, as does its recovery.
+## Failures
+
+A process that fails — a slice call that errors, a live program that throws, or
+one that returns without ever calling `next()` — is retried after a backoff that
+doubles its cadence each time, up to 30 minutes. Three failures in a row make it
+`failing`, which reaches `nine notifications`, as does its recovery. A process
+Nine wrote that fails ten times in a row is switched off. The last error is in
+`process_show`, `nine process show` and `tool_read`.
 
 ## Budgets
 
@@ -203,6 +208,8 @@ With `[tools.agent] allow_processes`, Nine can write a process itself: `tool_wri
 | Pipes | `report_to` only into another live process Nine wrote |
 | Rewriting | a new version, which the process restarts on; the run state is kept, so a process you stopped stays stopped. Refused for a process the operator stopped. See [Revision](#revision) |
 | Deleting | `tool_delete` deletes the tool and its process, unless you stopped it; `nine tools delete` always does |
+| Checks at write | refused, with the reason, before anything is stored: source that does not parse, a `nine:*` import or name the module does not have, a `nine:*` function called but not imported, capabilities of the wrong shape or beyond the ceiling |
+| Examples | the `process-patterns` skill: complete programs to copy, each run by a test |
 
 Its tool is never evicted from Nine's catalog while the process exists.
 
@@ -350,6 +357,10 @@ max_running   = 14              # processes running at once, live and slice
 budget        = { turns_per_day = 200, tokens_per_day = 2000000 }
 authoritative = false           # true: a goal process no longer listed is retired at boot
 ```
+
+The rest of `[processes]` — `max_depth`, `allow_revision`, `rollback_after`,
+`database`, `database_max_mb`, `statement_timeout` — is in
+[Configuration](configuration.md).
 
 The file owns each process's definition; the runtime owns whether it is running.
 Editing a block adjusts what a process does without restarting one that was
