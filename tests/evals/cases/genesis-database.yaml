@@ -1,0 +1,42 @@
+id: genesis-database
+description: "Genesis designs a schema: a document whose records belong in the database becomes a process that creates its table through nine:sql and fills it."
+track: live
+tier: basic
+tags: [genesis, processes, sql, generated]
+
+session:
+  config:
+    tools.agent.enabled: true
+    tools.agent.allow_processes: true
+    tools.agent.capabilities.sql: true
+    processes.database: true
+
+setup:
+  genesis: |
+    # Ledger
+
+    Ledger keeps a record of time passing. Every 10 seconds it records a
+    reading — the current time — as a new row in a table called readings in
+    the database, so the history can be queried later.
+
+prompts:
+  - "Reply with the single word: ok"
+
+wait:
+  seconds: 90
+  until:
+    database:
+      "SELECT count(*) FROM readings": { matches: '"rows":\[\[[1-9]' }
+
+expect:
+  side_effects:
+    notifications:
+      contains: "Genesis done"
+    database:
+      "SELECT count(*) FROM readings": { matches: '"rows":\[\[[1-9]' }
+
+runs: 3
+pass_threshold: "2/3"
+timeout_seconds: 900
+models:
+  expected_pass_min_class: small

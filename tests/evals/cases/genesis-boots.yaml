@@ -1,0 +1,40 @@
+id: genesis-boots
+description: "Phase 7's acceptance: an empty store and a genesis document boot into running processes. Genesis turns a short document into a live process that writes its heartbeat, and says it is done."
+track: live
+tier: basic
+tags: [genesis, processes, generated]
+
+session:
+  config:
+    tools.agent.enabled: true
+    tools.agent.allow_processes: true
+
+setup:
+  genesis: |
+    # Wren
+
+    Wren is a small instance that proves it is alive. It keeps a heartbeat:
+    every 10 seconds, it appends one line with the current time to the file
+    heartbeat.log in the workspace.
+
+prompts:
+  - "Reply with the single word: ok"
+
+wait:
+  seconds: 90
+  until:
+    files:
+      heartbeat.log: { matches: '20[0-9][0-9]' }
+
+expect:
+  side_effects:
+    notifications:
+      contains: "Genesis done"
+    files:
+      heartbeat.log: { matches: '20[0-9][0-9]' }
+
+runs: 3
+pass_threshold: "2/3"
+timeout_seconds: 900
+models:
+  expected_pass_min_class: small

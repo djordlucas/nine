@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -375,7 +377,7 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 	forcedRole := c.Session.Role
 	roleFactory := func(inner runtime.LoopFactory) runtime.LoopFactory {
 		return func(agentID string, p runtime.RoleParams) *agent.Loop {
-			if forcedRole != "" && !p.Process {
+			if forcedRole != "" && !p.Process && agentID != runtime.GenesisSession {
 				p.Role = forcedRole
 			}
 			return inner(agentID, p)
@@ -538,6 +540,34 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 	// agents and standing tools all run through it (adr/process-sessions.md).
 	// A short poll, since an eval case is over in seconds.
 	go runtime.RunStandingTools(dctx, asm.Processes, 200*time.Millisecond)
+	// Genesis, as a first boot runs it: the document becomes processes.
+	if c.Setup.Genesis != "" {
+		// Outside the workspace, where an operator's file would be: the file
+		// tools must not see it.
+		dir, err := os.MkdirTemp("", "nine-eval-genesis-")
+		if err != nil {
+			dcancel()
+			return nil, err
+		}
+		r.cleanups = append(r.cleanups, func() { _ = os.RemoveAll(dir) })
+		doc := filepath.Join(dir, "genesis.md")
+		if err := os.WriteFile(doc, []byte(c.Setup.Genesis), 0o600); err != nil {
+			dcancel()
+			return nil, err
+		}
+		roles := caseStrings(c, "tools.agent.process_roles")
+		if len(roles) == 0 {
+			roles = []string{runtime.ProcessRole}
+		}
+		if _, err := runtime.RunGenesis(ctx, daemon, store, doc, runtime.GenesisOptions{
+			Turns:        caseInt(c, "bootstrap.genesis_turns", 0),
+			Revision:     caseBool(c, "processes.allow_revision") && slices.Contains(roles, "reviser"),
+			ProcessRoles: roles,
+			Database:     processDB != nil,
+		}); err != nil {
+			slog.Warn("eval genesis", "case", c.ID, "err", err)
+		}
+	}
 	// Revisions rewrite seeded processes once they run, as a later turn would.
 	if pendingRevisions != nil && len(c.Setup.Revisions) > 0 {
 		time.Sleep(2 * time.Second)
