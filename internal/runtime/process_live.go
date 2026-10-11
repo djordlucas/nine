@@ -348,9 +348,14 @@ func (h *liveHandler) Next(ctx context.Context) (toolvm.Trigger, error) {
 	if recovered {
 		lp.recovering = false
 	}
+	ran := lp.nexts == 2
 	lp.mu.Unlock()
 	if recovered {
 		h.r.recoverLive(lp.row)
+	}
+	// The program handled its first trigger and came back: its version ran.
+	if ran {
+		h.r.proveVersion(lp.row)
 	}
 	defer func() {
 		lp.mu.Lock()

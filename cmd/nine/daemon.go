@@ -134,6 +134,7 @@ func runDaemon() {
 			ProcessRoles:   cfg.Tools.Agent.ProcessRolesOrDefault(),
 			MaxRunning:     cfg.Processes.MaxRunningOrDefault(),
 			Budget:         cfg.Processes.Budget,
+			AllowRevision:  cfg.Processes.AllowRevision,
 		})
 
 	embedder := embed.Build(cfg.Embeddings.Provider, cfg.Embeddings.Model, cfg.Embeddings.Endpoint)
@@ -230,6 +231,7 @@ func runDaemon() {
 		ProcessBudget:          cfg.Processes.Budget,
 		MaxDepth:               cfg.Processes.MaxDepthOrDefault(),
 		Database:               processDB,
+		RollbackAfter:          cfg.Processes.RollbackAfter,
 		JobMinDelayMS:          cfg.Tools.JobMinDelayMS,
 		JobWorkers:             cfg.Tools.JobWorkers,
 	})
@@ -269,8 +271,6 @@ func runDaemon() {
 	// API's /capabilities endpoints — one decision path for all three, because an
 	// approval widens the live ceiling and that must not be three implementations.
 	daemon.ConfigureCapabilities(runtime.NewCapabilityService(store, cfg, toolHost, pluginManager))
-	// So `tool_delete` on a generated standing tool also drops its activity ring.
-	runtime.LinkStandingTools(generatedTools, standing)
 	go runtime.RunStandingTools(ctx, standing,
 		time.Duration(cfg.Plugins.JobPollSeconds)*time.Second)
 

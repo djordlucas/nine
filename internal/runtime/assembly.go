@@ -103,6 +103,8 @@ type AssemblyConfig struct {
 	ProcessBudget config.BudgetConfig
 	// MaxDepth is [processes] max_depth; <= 0 is the default.
 	MaxDepth int
+	// RollbackAfter is [processes] rollback_after; <= 0 is the default.
+	RollbackAfter int
 	// Database is the database: written by live processes through nine:sql,
 	// read through sql_query. Nil leaves both out.
 	Database *sqldb.DB
@@ -229,6 +231,10 @@ func Assemble(c AssemblyConfig) *Assembly {
 	runner.SetMaxRunning(c.MaxRunning)
 	runner.SetMaxDepth(c.MaxDepth)
 	runner.SetDatabase(c.Database)
+	runner.SetRollbackAfter(c.RollbackAfter)
+	// The generated-tool store and the runner: deleting a tool drops its
+	// activity ring, a rewritten process restarts, a failing one rolls back.
+	LinkStandingTools(c.GeneratedTools, runner)
 	if c.Database != nil {
 		builder.SetSQLReader(sqlReader{c.Database})
 	}

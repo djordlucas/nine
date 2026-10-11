@@ -117,6 +117,11 @@ type WriteResult struct {
 	Unchanged bool
 	// Process is the id of the process the write runs, when it asked for one.
 	Process string
+	// Version is the tool's version after the write.
+	Version int
+	// Revised reports a rewrite of a process's program: it restarts on the new
+	// version, on probation (adr/process-sessions.md §9).
+	Revised bool
 }
 
 // GeneratedToolSpec is one proposed tool, as the model described it.
@@ -133,6 +138,11 @@ type GeneratedToolSpec struct {
 	// Process asks for the tool to run as a process, starting now. Nil is the
 	// ordinary case.
 	Process *ProcessRequest
+	// WrittenBy is the session whose turn wrote it.
+	WrittenBy string
+	// FromProcess marks a write from a process's turn: writing a process from
+	// there is revision, which needs [processes] allow_revision.
+	FromProcess bool
 }
 
 // ProcessRequest is a tool Nine writes asking to run as a process
@@ -174,7 +184,7 @@ type ProcessBudget struct {
 // writes a grant, and the store it talks to has no way to. That asymmetry is the
 // whole design (docs/sandboxed-tools.md §2) — the agent writes the code, the
 // operator writes the grants, and they are never the same actor.
-func RegisterGeneratedTools(d *Dispatcher, s GeneratedToolStore, evalEnabled bool) {
+func RegisterGeneratedTools(d *Dispatcher, s GeneratedToolStore, evalEnabled bool, agentID string, fromProcess bool) {
 	if s == nil {
 		return
 	}
@@ -233,6 +243,8 @@ func RegisterGeneratedTools(d *Dispatcher, s GeneratedToolStore, evalEnabled boo
 			Capabilities: req.Capabilities,
 			Resumable:    req.Resumable,
 			Process:      req.Process,
+			WrittenBy:    agentID,
+			FromProcess:  fromProcess,
 		})
 		if err != nil {
 			return "", err
@@ -252,6 +264,11 @@ func RegisterGeneratedTools(d *Dispatcher, s GeneratedToolStore, evalEnabled boo
 			if res.Unchanged {
 				return "", fmt.Errorf("process %q already runs this exact source; nothing was written. "+
 					"See it with process_show %s", res.Process, res.Process)
+			}
+			if res.Revised {
+				return fmt.Sprintf("Wrote version %d of process %s: it restarts now on the new version. "+
+					"If the new version fails before it has run once, it is rolled back to version %d and you are told why. "+
+					"See it with process_show %s.", res.Version, res.Process, res.Version-1, res.Process), nil
 			}
 			return fmt.Sprintf("Wrote process %s from tool %q: it starts now and runs until stopped, "+
 				"and it is never called as a tool. See it with process_show %s.", res.Process, req.Name, res.Process), nil

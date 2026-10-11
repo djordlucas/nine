@@ -44,9 +44,17 @@ type GeneratedTool struct {
 	// until the tool is first called.
 	LastCalledAt string `json:"last_called_at,omitempty"`
 	CallCount    int    `json:"call_count"`
+	// Version counts the writes: 1 for the first, one more for each rewrite.
+	Version int `json:"version"`
+	// Probation is set when a process's program was rewritten and has not yet
+	// run: failing now rolls it back (adr/process-sessions.md §9).
+	Probation bool `json:"probation,omitempty"`
+	// WrittenBy is the session whose turn wrote this version.
+	WrittenBy string `json:"written_by,omitempty"`
 }
 
-// GeneratedToolUpsert inserts or replaces a tool by name.
+// GeneratedToolUpsert inserts or replaces a tool by name, keeping the version
+// it replaces (GeneratedToolWrite).
 //
 // Replacing rather than duplicating is what keeps the catalog from filling with
 // near-identical variants as the agent iterates (§9.2). The usage counters are
@@ -54,27 +62,7 @@ type GeneratedTool struct {
 // tool as far as eviction is concerned, and resetting its history would make the
 // most actively maintained tools the most likely to be evicted.
 func (s *Store) GeneratedToolUpsert(t GeneratedTool) error {
-	schema := string(t.InputSchema)
-	if schema == "" {
-		schema = `{"type":"object","properties":{}}`
-	}
-	caps := string(t.Capabilities)
-	if caps == "" {
-		caps = "{}"
-	}
-	lock := string(t.Lockfile)
-	if lock == "" {
-		lock = "{}"
-	}
-	_, err := s.db.Exec(
-		`INSERT INTO tools(name, description, input_schema, source, capabilities, lockfile, resumable, live, created_at, updated_at)
-		 VALUES(?,?,?,?,?,?,?,?,?,?)
-		 ON CONFLICT(name) DO UPDATE SET
-		   description=excluded.description, input_schema=excluded.input_schema,
-		   source=excluded.source, capabilities=excluded.capabilities,
-		   lockfile=excluded.lockfile, resumable=excluded.resumable, live=excluded.live,
-		   updated_at=excluded.updated_at`,
-		t.Name, t.Description, schema, t.Source, caps, lock, t.Resumable, t.Live, nowText(), nowText())
+	_, err := s.GeneratedToolWrite(t, "")
 	return err
 }
 
@@ -89,10 +77,12 @@ func (s *Store) GeneratedToolGet(name string) (GeneratedTool, bool, error) {
 	)
 	err := s.db.QueryRow(
 		`SELECT name, description, input_schema, source, capabilities, lockfile,
-		        resumable, live, created_at, updated_at, last_called_at, call_count
+		        resumable, live, created_at, updated_at, last_called_at, call_count,
+		        version, probation, written_by
 		   FROM tools WHERE name = ?`, name).
 		Scan(&t.Name, &t.Description, &schema, &t.Source, &caps, &lock,
-			&t.Resumable, &t.Live, &t.CreatedAt, &t.UpdatedAt, &last, &t.CallCount)
+			&t.Resumable, &t.Live, &t.CreatedAt, &t.UpdatedAt, &last, &t.CallCount,
+			&t.Version, &t.Probation, &t.WrittenBy)
 	if err == sql.ErrNoRows {
 		return GeneratedTool{}, false, nil
 	}
@@ -111,7 +101,8 @@ func (s *Store) GeneratedToolGet(name string) (GeneratedTool, bool, error) {
 func (s *Store) GeneratedToolList() ([]GeneratedTool, error) {
 	rows, err := s.db.Query(
 		`SELECT name, description, input_schema, source, capabilities, lockfile,
-		        resumable, live, created_at, updated_at, last_called_at, call_count
+		        resumable, live, created_at, updated_at, last_called_at, call_count,
+		        version, probation, written_by
 		   FROM tools
 		  ORDER BY COALESCE(NULLIF(last_called_at, ''), created_at) ASC, name ASC`)
 	if err != nil {
@@ -129,7 +120,8 @@ func (s *Store) GeneratedToolList() ([]GeneratedTool, error) {
 			last   sql.NullString
 		)
 		if err := rows.Scan(&t.Name, &t.Description, &schema, &t.Source, &caps, &lock,
-			&t.Resumable, &t.Live, &t.CreatedAt, &t.UpdatedAt, &last, &t.CallCount); err != nil {
+			&t.Resumable, &t.Live, &t.CreatedAt, &t.UpdatedAt, &last, &t.CallCount,
+			&t.Version, &t.Probation, &t.WrittenBy); err != nil {
 			return nil, err
 		}
 		t.InputSchema = json.RawMessage(schema)
@@ -153,6 +145,9 @@ func (s *Store) GeneratedToolTouch(name string) error {
 
 // GeneratedToolDelete removes a tool by name.
 func (s *Store) GeneratedToolDelete(name string) error {
+	if _, err := s.db.Exec(`DELETE FROM tool_versions WHERE name = ?`, name); err != nil {
+		return err
+	}
 	_, err := s.db.Exec(`DELETE FROM tools WHERE name = ?`, name)
 	return err
 }
