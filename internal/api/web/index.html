@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nine</title>
+<style>
+:root {
+  --bg: #0f1115; --bg2: #161922; --bg3: #1d2130;
+  --fg: #e6e9f0; --fg-dim: #8b91a5; --accent: #7aa2f7;
+  --border: #262b3d; --ok: #9ece6a; --warn: #e0af68; --err: #f7768e;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px; background: var(--bg2); border-bottom: 1px solid var(--border); }
+header h1 { font-size: 16px; margin: 0; letter-spacing: 2px; }
+header h1 a { color: var(--fg); text-decoration: none; }
+nav { display: flex; gap: 4px; flex-wrap: wrap; }
+nav a { padding: 5px 10px; border-radius: 6px; color: var(--fg-dim);
+  text-decoration: none; font-weight: 500; }
+nav a:hover { background: var(--bg3); color: var(--fg); }
+nav a.active { background: var(--bg3); color: var(--accent); }
+#conn { margin-left: auto; font-size: 12px; color: var(--fg-dim); }
+#conn .dot { display: inline-block; width: 8px; height: 8px;
+  border-radius: 50%; background: var(--err); margin-right: 5px; }
+#conn.up .dot { background: var(--ok); }
+main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
+h2 { font-size: 18px; margin: 0 0 14px; }
+h3 { font-size: 14px; margin: 18px 0 8px; color: var(--fg-dim); }
+button { background: var(--bg3); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: #0f1115; border-color: var(--accent); font-weight: 600; }
+button.small { padding: 2px 8px; font-size: 12px; }
+button:disabled { opacity: .5; cursor: default; }
+input, textarea, select { background: var(--bg2); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font: inherit; }
+textarea { resize: vertical; }
+table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+th { text-align: left; color: var(--fg-dim); font-weight: 500; font-size: 12px;
+  text-transform: uppercase; letter-spacing: .5px; padding: 8px 10px;
+  border-bottom: 1px solid var(--border); }
+td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+code { font-family: var(--mono); font-size: 12px; background: var(--bg3);
+  padding: 1px 5px; border-radius: 4px; }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 10px;
+  font-size: 11px; font-weight: 600; background: var(--bg3); color: var(--fg-dim); }
+.badge.ok { color: var(--ok); } .badge.warn { color: var(--warn); } .badge.err { color: var(--err); }
+.card { background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.grow { flex: 1; }
+.dim { color: var(--fg-dim); }
+.small { font-size: 12px; }
+pre { font-family: var(--mono); font-size: 12px; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 6px; padding: 10px;
+  overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.stat { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.stat .v { font-size: 20px; font-weight: 600; }
+.stat .k { font-size: 11px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: .5px; }
+
+/* Chat layout */
+.chatwrap { display: grid; grid-template-columns: 260px 1fr; gap: 16px; min-height: 70vh; }
+@media (max-width: 800px) { .chatwrap { grid-template-columns: 1fr; } }
+#convlist { display: flex; flex-direction: column; gap: 4px; }
+.conv { padding: 8px 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
+.conv:hover { background: var(--bg2); }
+.conv.active { background: var(--bg2); border-color: var(--accent); }
+.conv .nm { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv .meta { font-size: 11px; color: var(--fg-dim); }
+#chat { display: flex; flex-direction: column; background: var(--bg2);
+  border: 1px solid var(--border); border-radius: 10px; min-height: 60vh; }
+#chathead { display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+  border-bottom: 1px solid var(--border); }
+#chatlog { flex: 1; overflow-y: auto; padding: 14px; display: flex;
+  flex-direction: column; gap: 10px; max-height: 65vh; }
+.msg { max-width: 85%; padding: 8px 12px; border-radius: 10px; white-space: pre-wrap; word-break: break-word; }
+.msg.user { align-self: flex-end; background: var(--bg3); }
+.msg.assistant { align-self: flex-start; background: var(--bg2);
+  border: 1px solid var(--border); }
+.msg.notice { align-self: center; color: var(--warn); font-size: 12px; background: none; }
+.msg.tool { align-self: flex-start; font-size: 12px; color: var(--fg-dim);
+  font-family: var(--mono); background: none; padding: 2px 12px; }
+.msg.tool details { margin-top: 4px; }
+.msg.tool summary { cursor: pointer; color: var(--accent); }
+#chatform { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--border); }
+#chatinput { flex: 1; min-height: 44px; }
+.empty { color: var(--fg-dim); text-align: center; padding: 40px 0; }
+#error { display: none; background: #3b1d27; border: 1px solid var(--err);
+  color: var(--err); border-radius: 8px; padding: 8px 14px; margin-bottom: 12px; }
+#loginbox { max-width: 400px; margin: 60px auto; }
+#loginbox input { width: 100%; margin: 8px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1><a href="#/">NINE</a></h1>
+  <nav id="nav"></nav>
+  <span id="conn"><span class="dot"></span><span id="conntext">offline</span></span>
+</header>
+<div id="error"></div>
+<main id="main"></main>
+
+<script>
+"use strict";
+const API = "/api/v1";
+const $ = (s, el) => (el || document).querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+const state = {
+  token: localStorage.getItem("nine_token") || "",
+  route: location.hash.slice(1) || "/",
+  conv: null,
+  conversations: [],
+  sse: null,
+  streaming: false,
+};
+
+function showError(msg) {
+  const el = $("#error");
+  if (!msg) { el.style.display = "none"; return; }
+  el.style.display = "block";
+  el.textContent = msg;
+  setTimeout(() => { el.style.display = "none"; }, 8000);
+}
+
+async function api(path, opts) {
+  opts = opts || {};
+  opts.headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
+  if (state.token) opts.headers["Authorization"] = "Bearer " + state.token;
+  const res = await fetch(API + path, opts);
+  if (res.status === 401) { loginView(); throw new Error("unauthorized"); }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error?.message || body.message || res.status + " " + res.statusText);
+  return body;
+}
+
+async function healthPoll() {
+  try {
+    const h = await api("/health");
+    const up = h.daemon_connected;
+    $("#conn").classList.toggle("up", up);
+    $("#conntext").textContent = up ? "daemon" : "api only";
+  } catch {
+    $("#conn").classList.remove("up");
+    $("#conntext").textContent = "offline";
+  }
+}
+setInterval(healthPoll, 15000);
+
+/* ---------- views ---------- */
+const routes = [
+  ["/", "Chat"], ["/goals", "Goals"], ["/processes", "Processes"],
+  ["/plugins", "Plugins"], ["/tools", "Tools"], ["/skills", "Skills"],
+  ["/notifications", "Notifications"], ["/status", "Status"], ["/docs", "Docs"],
+];
+function renderNav() {
+  $("#nav").innerHTML = routes.map(([p, label]) =>
+    `<a href="#${p}" class="${state.route === p ? "active" : ""}">${label}</a>`).join("");
+}
+function nav(p) { location.hash = p; }
+
+function loginView() {
+  $("#main").innerHTML = `
+    <div class="card" id="loginbox">
+      <h2>Connect to Nine</h2>
+      <p class="dim small">Enter the API bearer token (<code>[api] auth_token</code>), or leave blank if the API runs without one.</p>
+      <input id="tok" type="password" placeholder="bearer token" value="${esc(state.token)}">
+      <button class="primary" id="tokgo">Connect</button>
+    </div>`;
+  const go = async () => {
+    state.token = $("#tok").value.trim();
+    localStorage.setItem("nine_token", state.token);
+    try { await api("/health"); render(); }
+    catch (e) { showError("Cannot reach the API server."); }
+  };
+  $("#tokgo").onclick = go;
+  $("#tok").addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+}
+
+/* ---------- chat ---------- */
+function chatView() {
+  $("#main").innerHTML = `
+    <div class="row" style="margin-bottom:12px">
+      <h2 class="grow">Conversations</h2>
+      <button class="primary" id="newconv">New conversation</button>
+    </div>
+    <div class="chatwrap">
+      <div id="convlist"><div class="empty small">loading…</div></div>
+      <div id="chat">
+        <div id="chathead"></div>
+        <div id="chatlog"></div>
+        <form id="chatform">
+          <textarea id="chatinput" placeholder="Send a message…" rows="2"></textarea>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <button class="primary" type="submit" id="sendbtn">Send</button>
+            <button type="button" id="stopbtn" class="small" style="display:none">Stop</button>
+          </div>
+        </form>
+      </div>
+    </div>`;
+  $("#newconv").onclick = async () => {
+    try {
+      const c = await api("/conversations", { method: "POST", body: JSON.stringify({ interactive: true }) });
+      await loadConversations();
+      openConversation(c.id);
+    } catch (e) { showError(e.message); }
+  };
+  $("#chatform").onsubmit = e => { e.preventDefault(); sendTurn(); };
+  $("#stopbtn").onclick = async () => {
+    if (!state.conv) return;
+    try { await api(`/conversations/${state.conv}/stop`, { method: "POST" }); }
+    catch (e) { showError(e.message); }
+  };
+  loadConversations().then(() => {
+    if (!state.conv && state.conversations.length) openConversation(state.conversations[0].id);
+    else if (state.conv) openConversation(state.conv);
+  });
+}
+
+async function loadConversations() {
+  try {
+    const r = await api("/conversations?limit=200");
+    state.conversations = r.conversations || [];
+  } catch (e) { state.conversations = []; }
+  const list = $("#convlist");
+  if (!list) return;
+  if (!state.conversations.length) {
+    list.innerHTML = `<div class="empty small">No conversations yet.<br>Create one to start.</div>`;
+    return;
+  }
+  list.innerHTML = state.conversations.map(c => `
+    <div class="conv ${c.id === state.conv ? "active" : ""}" data-id="${esc(c.id)}">
+      <div class="nm">${esc(c.name || c.id)}</div>
+      <div class="meta">${esc(c.status || "")} · ${c.events_count ?? 0} events · ${ageStr(c.age_seconds)}</div>
+    </div>`).join("");
+  list.querySelectorAll(".conv").forEach(el =>
+    el.onclick = () => openConversation(el.dataset.id));
+}
+function ageStr(s) {
+  if (s == null) return "";
+  if (s < 60) return s + "s";
+  if (s < 3600) return Math.floor(s / 60) + "m";
+  if (s < 86400) return Math.floor(s / 3600) + "h";
+  return Math.floor(s / 86400) + "d";
+}
+
+async function openConversation(id) {
+  state.conv = id;
+  document.querySelectorAll(".conv").forEach(el =>
+    el.classList.toggle("active", el.dataset.id === id));
+  const c = state.conversations.find(x => x.id === id);
+  $("#chathead").innerHTML = `
+    <strong>${esc(c?.name || id)}</strong>
+    <span class="badge ${c?.status === "active" ? "ok" : ""}">${esc(c?.status || "")}</span>
+    <span class="grow"></span>
+    <span class="dim small">${esc(c?.role || "")}${c?.plan_mode ? " · " + esc(c.plan_mode) : ""}</span>
+    <button class="small" id="ctxbtn">Context</button>
+    <button class="small" id="delconv">Delete</button>`;
+  $("#delconv").onclick = async () => {
+    if (!confirm("Delete this conversation and its journal?")) return;
+    try {
+      await api(`/conversations/${id}?force=true`, { method: "DELETE" });
+      state.conv = null;
+      await loadConversations();
+      const next = state.conversations[0];
+      if (next) openConversation(next.id);
+      else { $("#chatlog").innerHTML = ""; $("#chathead").innerHTML = ""; }
+    } catch (e) { showError(e.message); }
+  };
+  $("#ctxbtn").onclick = () => showContext(id);
+  await loadHistory(id);
+  attachStream(id);
+}
+
+async function loadHistory(id) {
+  const log = $("#chatlog");
+  log.innerHTML = `<div class="empty small">loading…</div>`;
+  try {
+    const r = await api(`/conversations/${id}/history?limit=1000`);
+    const entries = r.history || r.entries || [];
+    if (!entries.length) {
+      log.innerHTML = `<div class="empty">No messages yet. Say something.</div>`;
+      return;
+    }
+    log.innerHTML = "";
+    let lastType = "";
+    for (const e of entries) {
+      appendHistoryEntry(log, e);
+      lastType = e.type;
+    }
+    log.scrollTop = log.scrollHeight;
+  } catch (e) {
+    log.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+  }
+}
+
+function appendHistoryEntry(log, e) {
+  if (e.type === "user_turn") {
+    log.insertAdjacentHTML("beforeend", `<div class="msg user">${esc(e.text)}</div>`);
+  } else if (e.type === "response") {
+    log.insertAdjacentHTML("beforeend", `<div class="msg assistant">${esc(e.text)}</div>`);
+  } else if (e.type === "tool_start" || e.type === "tool_end") {
+    const open = e.type === "tool_start" ? "start" : "end";
+    log.insertAdjacentHTML("beforeend", `<div class="msg tool">
+      <details><summary>🛠 ${esc(e.tool_name)} (${open})</summary>
+      ${e.tool_input ? "<pre>in: " + esc(fmtJSON(e.tool_input)) + "</pre>" : ""}
+      ${e.tool_output ? "<pre>out: " + esc(e.tool_output) + "</pre>" : ""}
+      </details></div>`);
+  } else if (e.type === "sub_agent_start" || e.type === "sub_agent_end") {
+    log.insertAdjacentHTML("beforeend", `<div class="msg tool">
+      🤖 sub-agent ${esc(e.sub_agent_id || "")} ${e.type === "sub_agent_start" ? "started" : "finished"}: ${esc(e.text || "")}${e.status ? " (" + esc(e.status) + ")" : ""}</div>`);
+  }
+}
+function fmtJSON(v) {
+  if (typeof v === "string") { try { return JSON.stringify(JSON.parse(v), null, 1); } catch { return v; } }
+  return JSON.stringify(v, null, 1);
+}
+
+function setStreaming(on) {
+  state.streaming = on;
+  const send = $("#sendbtn"), stop = $("#stopbtn");
+  if (send) send.disabled = on;
+  if (stop) stop.style.display = on ? "" : "none";
+}
+
+function attachStream(id) {
+  if (state.sse) { state.sse.abort(); state.sse = null; }
+  if (id !== state.conv) return;
+  const ctl = new AbortController();
+  state.sse = ctl;
+  (async () => {
+    try {
+      const res = await fetch(`${API}/conversations/${id}/messages/stream`, {
+        headers: state.token ? { "Authorization": "Bearer " + state.token } : {},
+        signal: ctl.signal,
+      });
+      if (!res.ok || !res.body) return;
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf("\n\n")) >= 0) {
+          const block = buf.slice(0, idx); buf = buf.slice(idx + 2);
+          handleSSEBlock(block);
+        }
+      }
+    } catch {}
+  })();
+}
+
+function handleSSEBlock(block) {
+  const lines = block.split("\n");
+  const evName = (lines.find(l => l.startsWith("event:")) || "").slice(6).trim();
+  const dataLine = (lines.find(l => l.startsWith("data:")) || "").slice(5).trim();
+  if (!dataLine) return;
+  let d; try { d = JSON.parse(dataLine); } catch { return; }
+  const log = $("#chatlog");
+  if (!log) return;
+  switch (evName) {
+    case "connected":
+      break;
+    case "response_chunk": {
+      let last = log.querySelector(".msg.assistant.tmp");
+      if (!last) {
+        log.insertAdjacentHTML("beforeend", `<div class="msg assistant tmp"></div>`);
+        last = log.querySelector(".msg.assistant.tmp");
+      }
+      last.textContent += d.text || "";
+      log.scrollTop = log.scrollHeight;
+      break;
+    }
+    case "response": {
+      const tmp = log.querySelector(".msg.assistant.tmp");
+      if (tmp) tmp.remove();
+      log.insertAdjacentHTML("beforeend", `<div class="msg assistant">${esc(d.text)}</div>`);
+      log.scrollTop = log.scrollHeight;
+      break;
+    }
+    case "tool_start":
+      log.insertAdjacentHTML("beforeend", `<div class="msg tool"><details><summary>🛠 ${esc(d.tool_name)} (start)</summary><pre>in: ${esc(fmtJSON(d.tool_input))}</pre></details></div>`);
+      log.scrollTop = log.scrollHeight;
+      break;
+    case "tool_end":
+      log.insertAdjacentHTML("beforeend", `<div class="msg tool"><details><summary>🛠 ${esc(d.tool_name)} (end)</summary><pre>out: ${esc(d.tool_output)}</pre></details></div>`);
+      log.scrollTop = log.scrollHeight;
+      break;
+    case "sub_agent_start":
+      log.insertAdjacentHTML("beforeend", `<div class="msg tool">🤖 sub-agent started: ${esc(d.task || d.sub_agent_id || "")}</div>`);
+      log.scrollTop = log.scrollHeight;
+      break;
+    case "sub_agent_end":
+      log.insertAdjacentHTML("beforeend", `<div class="msg tool">🤖 sub-agent finished${d.status ? " (" + esc(d.status) + ")" : ""}</div>`);
+      log.scrollTop = log.scrollHeight;
+      break;
+    case "notice":
+      log.insertAdjacentHTML("beforeend", `<div class="msg notice">${esc(d.text)}</div>`);
+      log.scrollTop = log.scrollHeight;
+      break;
+    case "done":
+      setStreaming(false);
+      loadConversations();
+      break;
+    case "error":
+      log.insertAdjacentHTML("beforeend", `<div class="msg notice">error: ${esc(d.error?.message || d.message || "turn failed")}</div>`);
+      setStreaming(false);
+      log.scrollTop = log.scrollHeight;
+      break;
+  }
+}
+
+async function sendTurn() {
+  const input = $("#chatinput");
+  const text = input.value.trim();
+  if (!text || !state.conv) return;
+  input.value = "";
+  const log = $("#chatlog");
+  const empty = log.querySelector(".empty"); if (empty) empty.remove();
+  log.insertAdjacentHTML("beforeend", `<div class="msg user">${esc(text)}</div>`);
+  log.scrollTop = log.scrollHeight;
+  setStreaming(true);
+  try {
+    await api(`/conversations/${state.conv}/messages`, {
+      method: "POST", body: JSON.stringify({ text }),
+    });
+  } catch (e) {
+    if (e.message !== "unauthorized") showError(e.message);
+    setStreaming(false);
+  }
+}
+
+async function showContext(id) {
+  let html = "<em>no context data</em>";
+  try {
+    const c = await api(`/conversations/${id}/context`);
+    html = `<table>
+      <tr><th>Field</th><th>Value</th></tr>
+      ${Object.entries(c).map(([k, v]) =>
+        `<tr><td>${esc(k)}</td><td><pre>${esc(fmtJSON(v))}</pre></td></tr>`).join("")}
+    </table>`;
+  } catch (e) { html = esc(e.message); }
+  const w = window.open("", "_blank");
+  w.document.write(`<title>Context</title><body style="background:#0f1115;color:#e6e9f0;font:13px ui-monospace,monospace">${html}</body>`);
+  w.document.close();
+}
+
+/* ---------- generic list views ---------- */
+async function goalsView() {
+  $("#main").innerHTML = `<div class="row" style="margin-bottom:12px">
+      <h2 class="grow">Goals</h2>
+      <input id="goaldesc" class="grow" placeholder="Describe a new goal…" style="max-width:400px">
+      <button class="primary" id="goaladd">Create</button>
+    </div><div id="goallist"><div class="empty">loading…</div></div>`;
+  $("#goaladd").onclick = async () => {
+    const d = $("#goaldesc").value.trim();
+    if (!d) return;
+    try {
+      await api("/goals", { method: "POST", body: JSON.stringify({ description: d }) });
+      $("#goaldesc").value = "";
+      loadGoals();
+    } catch (e) { showError(e.message); }
+  };
+  async function loadGoals() {
+    try {
+      const r = await api("/goals?limit=200");
+      const goals = r.goals || [];
+      $("#goallist").innerHTML = goals.length ? `
+        <table><tr><th>Description</th><th>Status</th><th>Parent</th><th>Updated</th><th></th></tr>
+        ${goals.map(g => `<tr>
+          <td>${esc(g.description)}</td>
+          <td><span class="badge ${g.status === "active" ? "ok" : ""}">${esc(g.status || "")}</span></td>
+          <td>${g.parent_id ? `<code>${esc(g.parent_id)}</code>` : "—"}</td>
+          <td class="dim small">${esc((g.updated_at || "").replace("T", " ").slice(0, 19))}</td>
+          <td><button class="small delgoal" data-id="${esc(g.id)}">Delete</button></td>
+        </tr>`).join("")}</table>`
+        : `<div class="empty">No goals.</div>`;
+      document.querySelectorAll(".delgoal").forEach(b => b.onclick = async () => {
+        if (!confirm("Delete this goal?")) return;
+        try { await api("/goals/" + b.dataset.id, { method: "DELETE" }); loadGoals(); }
+        catch (e) { showError(e.message); }
+      });
+    } catch (e) { $("#goallist").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+  }
+  loadGoals();
+}
+
+async function processesView() {
+  $("#main").innerHTML = `<h2>Processes</h2><div id="plist"><div class="empty">loading…</div></div>`;
+  try {
+    const r = await api("/processes");
+    const ps = r.processes || [];
+    $("#plist").innerHTML = ps.length ? `
+      <table><tr><th>ID</th><th>Tool</th><th>Mode</th><th>State</th><th>Trigger</th><th>Session</th><th></th></tr>
+      ${ps.map(p => `<tr>
+        <td><code>${esc(p.id)}</code></td>
+        <td>${esc(p.tool)}</td>
+        <td>${esc(p.mode)}</td>
+        <td><span class="badge ${p.state === "running" ? "ok" : p.state === "failing" ? "err" : "warn"}">${esc(p.state)}</span></td>
+        <td class="small">${esc(p.trigger)}</td>
+        <td class="small dim">${esc(p.session || "—")}</td>
+        <td>
+          ${p.state === "running"
+            ? `<button class="small pstop" data-id="${esc(p.id)}">Stop</button>`
+            : `<button class="small pstart" data-id="${esc(p.id)}">Start</button>`}
+        </td>
+      </tr>`).join("")}</table>`
+      : `<div class="empty">No processes configured. Processes are sandboxed tools the daemon runs between turns — see <code>docs/processes.md</code>.</div>`;
+    document.querySelectorAll(".pstop").forEach(b => b.onclick = async () => {
+      try { await api(`/processes/${b.dataset.id}/stop`, { method: "POST" }); processesView(); }
+      catch (e) { showError(e.message); }
+    });
+    document.querySelectorAll(".pstart").forEach(b => b.onclick = async () => {
+      try { await api(`/processes/${b.dataset.id}/start`, { method: "POST" }); processesView(); }
+      catch (e) { showError(e.message); }
+    });
+  } catch (e) { $("#plist").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+
+async function pluginsView() {
+  $("#main").innerHTML = `<div class="row" style="margin-bottom:12px">
+    <h2 class="grow">Plugins</h2><button id="reloadplugs">Reload plugins</button></div>
+    <div id="plist"><div class="empty">loading…</div></div>`;
+  $("#reloadplugs").onclick = async () => {
+    try { await api("/plugins/reload", { method: "POST" }); pluginsView(); }
+    catch (e) { showError(e.message); }
+  };
+  try {
+    const r = await api("/plugins");
+    const ps = r.plugins || [];
+    $("#plist").innerHTML = ps.length ? `
+      <table><tr><th>Name</th><th>Source</th><th>Status</th><th>Tools</th><th>Error</th></tr>
+      ${ps.map(p => `<tr>
+        <td>${esc(p.name)}</td>
+        <td class="dim">${esc(p.source || "")}</td>
+        <td><span class="badge ${p.loaded ? "ok" : p.disabled ? "" : "err"}">${p.disabled ? "disabled" : p.loaded ? "loaded" : "failed"}</span></td>
+        <td class="small">${(p.tools || []).map(t => `<code>${esc(t)}</code>`).join(" ")}</td>
+        <td class="small dim">${esc(p.error || "")}</td>
+      </tr>`).join("")}</table>`
+      : `<div class="empty">No plugins.</div>`;
+  } catch (e) { $("#plist").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+
+async function toolsView() {
+  $("#main").innerHTML = `<h2>Tools</h2><div id="tlist"><div class="empty">loading…</div></div>`;
+  try {
+    const r = await api("/tools");
+    const ts = r.tools || [];
+    $("#tlist").innerHTML = ts.length ? ts.map(t => `
+      <div class="card">
+        <div class="row"><strong>${esc(t.name)}</strong>
+          <span class="badge">${esc(t.kind || "")}</span>
+          ${t.plugin ? `<span class="dim small">${esc(t.plugin)}</span>` : ""}
+          ${t.loaded ? `<span class="badge ok">loaded</span>` : `<span class="badge err">not loaded</span>`}
+        </div>
+        <div class="small dim">${esc(t.description || "")}</div>
+        ${t.error ? `<div class="small" style="color:var(--err)">${esc(t.error)}</div>` : ""}
+        ${t.input_schema ? `<details><summary class="small dim" style="cursor:pointer">input schema</summary>
+          <pre>${esc(fmtJSON(t.input_schema))}</pre></details>` : ""}
+      </div>`).join("")
+      : `<div class="empty">No tools.</div>`;
+  } catch (e) { $("#tlist").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+
+async function skillsView() {
+  $("#main").innerHTML = `<h2>Skills</h2><div id="slist"><div class="empty">loading…</div></div>`;
+  try {
+    const r = await api("/skills");
+    const ss = r.skills || [];
+    $("#slist").innerHTML = ss.length ? `
+      <table><tr><th>Name</th><th>Description</th><th>Source</th><th>Tags</th></tr>
+      ${ss.map(s => `<tr>
+        <td>${esc(s.name)}</td>
+        <td class="small dim">${esc(s.description || "")}</td>
+        <td><span class="badge">${esc(s.source)}</span></td>
+        <td class="small">${(s.tags || []).join(", ")}</td>
+      </tr>`).join("")}</table>`
+      : `<div class="empty">No skills.</div>`;
+  } catch (e) { $("#slist").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+
+async function notificationsView() {
+  $("#main").innerHTML = `<h2>Notifications</h2><div id="nlist"><div class="empty">loading…</div></div>`;
+  try {
+    const r = await api("/notifications?limit=100");
+    const ns = r.notifications || [];
+    $("#nlist").innerHTML = ns.length ? ns.map(n => `
+      <div class="card row">
+        <span class="badge ${n.seen ? "" : "ok"}">${n.seen ? "seen" : "new"}</span>
+        <span class="grow">${esc(n.message)}</span>
+        <span class="dim small">${esc((n.created_at || "").replace("T", " ").slice(0, 19))}</span>
+        ${n.agent_id ? `<code class="small">${esc(n.agent_id)}</code>` : ""}
+      </div>`).join("")
+      : `<div class="empty">No notifications.</div>`;
+  } catch (e) { $("#nlist").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+
+async function statusView() {
+  $("#main").innerHTML = `<h2>Status</h2><div id="stat"><div class="empty">loading…</div></div>`;
+  let h, s;
+  try { h = await api("/health"); } catch (e) {}
+  try { s = await api("/status"); } catch (e) {}
+  const cards = [];
+  if (h) cards.push(["status", h.status], ["daemon", h.daemon_connected ? "connected" : "unreachable"],
+    ["version", h.version], ["api uptime", h.uptime_seconds ? Math.floor(h.uptime_seconds / 60) + "m" : "—"]);
+  if (s) {
+    cards.push(["uptime", s.uptime || "—"], ["active sessions", s.active_sessions ?? "—"],
+      ["plugins", (s.plugins || []).length], ["tools", (s.tools || []).length]);
+  }
+  $("#stat").innerHTML = `
+    <div class="grid2">${cards.map(([k, v]) =>
+      `<div class="stat"><div class="v">${esc(v)}</div><div class="k">${esc(k)}</div></div>`).join("")}</div>
+    ${s?.memory ? `<h3>Memory store</h3><table>
+      ${Object.entries(s.memory).map(([k, v]) => `<tr><td>${esc(k)}</td><td><code>${esc(v)}</code></td></tr>`).join("")}
+    </table>` : ""}`;
+}
+
+async function docsView() {
+  $("#main").innerHTML = `<div class="row" style="margin-bottom:12px">
+    <h2 class="grow">Docs</h2><select id="docsel"></select></div>
+    <div id="docbody"><div class="empty">Pick a topic.</div></div>`;
+  try {
+    const r = await api("/docs");
+    const topics = r.topics || r.docs || [];
+    const sel = $("#docsel");
+    sel.innerHTML = topics.map(t => {
+      const name = typeof t === "string" ? t : (t.topic || t.name);
+      return `<option value="${esc(name)}">${esc(name)}</option>`;
+    }).join("");
+    const load = async () => {
+      try {
+        const d = await api("/docs/" + encodeURIComponent(sel.value));
+        const content = d.content || d.doc || d.text || fmtJSON(d);
+        $("#docbody").innerHTML = `<pre>${esc(content)}</pre>`;
+      } catch (e) { $("#docbody").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+    };
+    sel.onchange = load;
+    if (topics.length) load();
+  } catch (e) { $("#docsel").innerHTML = ""; $("#docbody").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+
+/* ---------- router ---------- */
+const views = {
+  "/": chatView, "/goals": goalsView, "/processes": processesView,
+  "/plugins": pluginsView, "/tools": toolsView, "/skills": skillsView,
+  "/notifications": notificationsView, "/status": statusView, "/docs": docsView,
+};
+function render() {
+  state.route = location.hash.slice(1) || "/";
+  renderNav();
+  healthPoll();
+  (views[state.route] || views["/"])();
+}
+window.addEventListener("hashchange", render);
+
+(async function init() {
+  try { await api("/health"); render(); }
+  catch (e) {
+    if (e.message === "unauthorized") loginView();
+    else { render(); showError("Cannot reach the API server — is the daemon's API running?"); }
+  }
+})();
+</script>
+</body>
+</html>

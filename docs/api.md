@@ -120,6 +120,18 @@ docker run -p 127.0.0.1:8080:8080 …                  # local only
 
 ---
 
+## Web console
+
+The API server also serves a web console at `http://localhost:8080/ui` — a
+single embedded page, no build step, covering conversations (with streamed
+turns), goals, processes, plugins, tools, skills, notifications, status and the
+bundled docs. It is a client of this API like any other: it adds no routes of
+its own.
+
+When `auth_token` is configured, the page loads as a static shell and prompts
+for the token, which it then sends as the bearer on every API request it makes.
+The token is kept in the browser's `localStorage`.
+
 ## Base URL and versioning
 
 All endpoints are under `/api/v1`. Content type is `application/json` for both requests and responses.

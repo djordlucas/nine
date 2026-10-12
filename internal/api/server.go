@@ -411,6 +411,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	})
 
 	s.registerSpecRoutes(mux)
+	s.registerWebUIRoutes(mux)
 
 	// The WebSocket transport is outside the document (OpenAPI cannot describe
 	// one) and outside /api/v1 (spec/contracts/api.md API-STREAM-1).
