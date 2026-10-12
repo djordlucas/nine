@@ -1,6 +1,6 @@
 # Design note — Process sessions
 
-**Status:** **Phases 1 to 7 implemented** (2026-10-07; revised 2026-10-06: one concept for all background work) ·
+**Status:** **Phases 1 to 8 implemented** (2026-10-07; revised 2026-10-06: one concept for all background work) ·
 **Related:** `adr/standing-tools.md`, `adr/tool-facilities.md`, `adr/reactive-events.md`,
 `adr/predefined-agents-design.md`, `adr/roles-design.md`, `adr/personality-pattern.md`,
 `adr/agent-boundary.md` · **Amends:** R-SUB.7, the stance of `docs/self-modification.md`, and
@@ -461,7 +461,6 @@ configurations in use to carry over. A file that still has one fails to load, na
 
 ## Limits
 
-- Phase 8 is not built: the aliases' removal is not scheduled.
 - Piped reports are an injection path that framing does not close: qwen3.5:4b and 9b obey an
   instruction inside a framed report every time. A turn a report starts is restricted to
   reading, creating new files, memory, its own goal and notifying, which stops changing or
@@ -590,4 +589,55 @@ marks — reaches the database; a tool a model calls still does not.
 | Checking what it wrote | on `GENESIS DONE`, genesis watches each process until it has run once; a failure is handed back as the next turn | live evals: models said done over programs that failed on their first trigger. nine-will fed every error back |
 | Guidance | the `process-patterns` skill — five complete programs, each run by a test, and a table of the common mistakes — with the simplest inline in the first turn | live evals: 9b passed `genesis-boots` 1/3 without it, 3/3 with it, each genesis in one turn |
 | Probation for new processes | a new process is on probation until it runs, which is genesis's signal; a rollback restores only a kept version that ran | a rollback to a version that never worked traded one failure for another, and genesis never converged |
+
+---
+
+## Phase 8 as built
+
+| Point | As built | Why |
+|---|---|---|
+| Aliases | none to remove: §11 removed the old blocks outright, and a file that still has one fails to load, naming the `[[process]]` form | the phase-8 row assumed aliases that were never added |
+| Docs and spec | docs/processes.md, the glossary and R-PROC read whole and brought up to phase 7 | seven phases had edited them piece by piece |
+| Acceptance | every process-related live case, 3 runs each, on two local models (2026-10-12) | each phase's cases, run together as one baseline |
+
+| Case | qwen3.5:9b | qwen3.5:4b |
+|---|---|---|
+| `genesis-boots` | 3/3 | 3/3 |
+| `genesis-database` | 3/3 | 3/3 |
+| `process-budget-pause` | 3/3 | 3/3 |
+| `process-budget-tokens` | 3/3 | 3/3 |
+| `process-condition-trigger` | 3/3 | 3/3 |
+| `process-delete-refused-operator` | 3/3 | 3/3 |
+| `process-delete-written` | 3/3 | 2/3 |
+| `process-event-content` | 3/3 | 3/3 |
+| `process-event-max-depth` | 3/3 | 3/3 |
+| `process-event-metadata` | 3/3 | 3/3 |
+| `process-failing-live` | 3/3 | 3/3 |
+| `process-goal-pursuit` | 3/3 | 3/3 |
+| `process-list-report` | 3/3 | 3/3 |
+| `process-pipe-injection` | 3/3 | 3/3 |
+| `process-reflection` | 3/3 | 3/3 |
+| `process-revise-broken` | 2/3 | 1/3 |
+| `process-reviser-fixes` | 3/3 | 3/3 |
+| `process-revision-rollback` | 3/3 | 3/3 |
+| `process-send-message` | 1/3 | 1/3 |
+| `process-sql-records` | 3/3 | 3/3 |
+| `process-sql-slice` | 3/3 | 3/3 |
+| `process-sql-write` | 1/3 | 1/3 |
+| `process-start-at-cap` | 3/3 | 3/3 |
+| `process-start-by-model` | 3/3 | 3/3 |
+| `process-start-refused-budget` | 3/3 | 3/3 |
+| `process-start-refused-operator` | 3/3 | 3/3 |
+| `process-start-via-goal` | 3/3 | 3/3 |
+| `process-stop-by-model` | 3/3 | 3/3 |
+| `process-write-digest` | 1/3 | 1/3 |
+| `process-write-disabled` | 2/3 | 2/3 |
+| `process-written-runs` | 3/3 | 3/3 |
+| `sql-query-read` | 3/3 | 3/3 |
+| `tool-read-source` | 3/3 | 3/3 |
+
+Every case that gates on a small model passes on both. The shortfalls — `process-send-message`,
+`process-sql-write` and `process-write-digest` on both, `process-revise-broken` on 4b — are
+gated at medium: a small model writing or messaging a process from a conversation varies
+from run to run, as their history shows (`process-sql-write` was 3/3 on 9b in phase 7).
 
