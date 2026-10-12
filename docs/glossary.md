@@ -118,12 +118,25 @@ terminal state. LLM tools: `workflow_create`, `workflow_update`,
 `run_agent`). Operator commands: `nine workflow stop|fail`. See
 [Workflows](workflows.md).
 
-**Process** — A sandboxed tool that runs on its triggers — a clock, or a report
-piped to it — instead of being called by a model. A **live** process runs until
-stopped and drives its session through `nine:process` (`next`, `turn`,
-`report`); a **slice** process is called on each trigger, as standing tools
-were. Declared with `[[process]]`, shipped (`pursue`, `reflect`), and stored in
-`processes`. See [Processes](processes.md).
+**Process** — A sandboxed tool that runs on its triggers — a clock, a report
+piped to it, or a journal event — instead of being called by a model. A **live**
+process runs until stopped and drives its session through `nine:process`
+(`next`, `turn`, `report`); a **slice** process is called on each trigger, as
+standing tools were. Declared with `[[process]]`, shipped (`pursue`,
+`reflect`), written by Nine with `tool_write`, and stored in `processes`. See
+[Processes](processes.md).
+
+**Probation** — The state of a process's program from when it is written until
+it first runs. A rewritten one that fails `rollback_after` times on probation is
+rolled back to the newest version that ran. See [Processes](processes.md).
+
+**Genesis** — The first boot of a store with `[bootstrap] genesis`: a `genesis`
+session turns the operator's document into the instance's first processes,
+once. See [Processes](processes.md).
+
+**The database** — One SQLite file per instance, apart from the store, that
+process programs write through `nine:sql` and turns read through `sql_query`.
+See [Processes](processes.md).
 
 **Process session** — A session driven by a process rather than a person. It has
 one owning process, which sets its role, and may have others attached, whose
