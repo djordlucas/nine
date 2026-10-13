@@ -53,7 +53,7 @@ docker run -d --name nine \
   -v nine-data:/data \
   ghcr.io/djordlucas/nine:latest
 
-# 3. A session
+# 3. A session in the terminal, or the web UI at http://localhost:8080
 docker exec -it -u nine nine nine
 ```
 
@@ -374,8 +374,8 @@ anything you don't trust.
 In the published image the daemon runs as an unprivileged uid 1000, so that reach stops at the
 container: the agent cannot write outside `/data` or install packages. The image is signed with
 cosign and carries an SBOM and build provenance ([docs/docker-image.md](docs/docker-image.md)).
-The API on port 8080 has no authentication until you configure one — bind it to localhost, as the
-quick start does, or put it behind a reverse proxy.
+The API and the [web UI](docs/web-ui.md) on port 8080 have no authentication until you configure
+`NINE_API_AUTH_TOKEN` — bind the port to localhost, as the quick start does, or set a token.
 
 `[tools.agent]` is on by default, so the agent writes code that then runs — bounded by a ceiling
 that defaults to `[workspace].root`. That is the same directory the shipped file tools reach and
