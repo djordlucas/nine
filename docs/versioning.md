@@ -11,7 +11,7 @@ a real break happens.
 | **Release version** | "which Nine is this" (user-facing) | SemVer, git-tag driven | git tag `vX.Y.Z` → injected at build |
 | **Plugin protocol** | daemon ↔ native plugin wire compat | single integer, bump on break | `plugin.ProtocolVersion` |
 | **Sandboxed tool ABI** | daemon ↔ wasm guest compat | single integer, bump on break | `toolvm.ABIVersion` |
-| **Memory DB schema** | SQLite schema | sequential forward migrations, applied on open | `PRAGMA user_version`, currently **12** |
+| **Memory DB schema** | SQLite schema | sequential forward migrations, applied on open | `PRAGMA user_version`, currently **22** |
 | **Config schema** | `nine.toml` shape | single integer, bump on break | `schema_version` in `nine.toml`, currently **2** |
 
 The release version also names the container image. A `v*` tag builds and
@@ -65,6 +65,22 @@ compatibility within the `1.x` line — breaking any of them now requires a majo
 bump.
 
 ### Upgrade notes
+
+**v5.0.0: processes replace agents, standing tools and session plans.** Every
+change below fails loudly; none changes behavior silently except the last.
+
+| Before | Now |
+|---|---|
+| `[[agent]]`, `[[agent.routine]]`, `when = { … }`, `[[standing_tool]]` | `[[process]]`; a file that still has one fails to load, naming the form to use ([processes.md](processes.md)) |
+| `[daemon] max_goal_sessions`, `[tools.agent] max_standing` | `[processes] max_running`; the old keys are refused |
+| `[tools.agent] allow_standing`, `tool_write`'s `standing` block | `allow_processes`, the `process` block; the old ones are refused |
+| `nine tools standing`, `nine tool status\|logs\|stop\|start`, `/standing` | `nine process`, `/processes`; the old commands name their replacement |
+| `standing_*` wire messages | `process_*` |
+| A block removed from `nine.toml` left what it declared running | Removing a non-goal `[[process]]` block deletes its process at the next boot; its session is kept |
+
+⚠️ **The memory database migrates from schema 12 to 22 on first open, and a v4
+binary against it is neither supported nor detected.** Copy `nine.db` before
+upgrading if you may roll back.
 
 **The Go built-in plugins moved into the `nine` binary.** `shell`, `files`,
 `http`, and `time` are no longer separate executables under `[plugins].bin`; the
@@ -179,7 +195,7 @@ How it works:
 ## 3. Memory DB schema version
 
 The store carries its version in `PRAGMA user_version`, and a migration runner
-brings an older database forward on `Open`. The current version is **11**.
+brings an older database forward on `Open`. The current version is **22**.
 
 The version is **derived from the step list**, not declared beside it: step *i*
 moves a database from version *i* to *i+1*, so the version is how many steps
@@ -206,11 +222,13 @@ Four rules hold for a step:
   connection and the running transaction owns it, so reaching for the enclosing
   database instead deadlocks.
 
-What the eleven steps have done: added a column `CREATE TABLE IF NOT EXISTS` could
+What the twenty-two steps have done: added a column `CREATE TABLE IF NOT EXISTS` could
 not add to an existing table, dropped two tables whose shape was wrong
 (`reflections` had no agent id), renamed `stages` to `aspects` and then to
-`routines`, renamed `plugin_jobs` to `jobs`, and added the standing-tool, queued-
-message and workspace-index columns.
+`routines`, renamed `plugin_jobs` to `jobs`, added the standing-tool, queued-
+message, workspace-index and capability-grant columns, moved standing tools and
+session plans into the `processes` table, and added process budgets, event
+triggers, live generated tools, tool versions and the `tainted` table.
 
 ## 4. Config schema version
 
