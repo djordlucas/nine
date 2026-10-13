@@ -125,7 +125,12 @@ database (`sql_query`) and Nine's own tools (`tool_read`); it **MUST
 NOT** hold deleting, moving or restoring files, the shell, the network, sub-agents,
 workflows, or writing tools, skills or goals. `write_file` and `edit_file` **MUST** be
 refused for a file that existed before the turn; a file the turn created may be written
-again. A message a person sends (`process_send`, the operator)
+again. When a restricted turn ends, its input **MUST** be replaced in the session's history by
+`RestrictedInputStub`, so later, unrestricted turns never read it; the journal keeps it.
+A file or memory a restricted turn writes **MUST** be marked tainted, and a turn that reads
+one through a tool **MUST** be restricted as a piped turn is from that read on, with what it
+writes after it tainted in turn; a clean whole rewrite or a delete clears the mark. A
+message a person sends (`process_send`, the operator)
 is not restricted. The
 human feed's copy is unlabelled, prefixed with the sender and receiver instead.
 

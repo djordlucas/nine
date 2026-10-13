@@ -392,6 +392,7 @@ func initSchema(d db) error {
 			written_by     TEXT NOT NULL DEFAULT ''
 		)`,
 		toolVersionsSchema,
+		taintedSchema,
 		// tool_state is a sandboxed tool's durable state (spec/contracts/toolvm.md
 		// R-TVM.18): the host-owned store that lets a tool remember across calls
 		// without anything surviving the wasm instance. Deliberately NOT the `kv`

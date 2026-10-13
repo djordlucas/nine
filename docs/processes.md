@@ -158,7 +158,17 @@ and notify a person. It cannot change or replace a file that existed before the
 turn, delete or move files, restore old versions, run the shell, reach the
 network, start sub-agents or workflows, or write tools, skills or goals.
 Anything more waits for the session's own next turn, which its goal drives —
-including appending a finding to an existing log. A message a conversation or the operator sends is labelled
+including appending a finding to an existing log. When the restricted turn
+ends, the report's text is replaced in the session's history by a note that it
+was removed, so those later turns never read it: they see the restricted turn's
+reply and what it recorded. The journal keeps the report.
+
+What the restricted turn records is marked too. A file it writes and a memory it
+sets are **tainted**: a later turn that reads one — `read_file`, `diff_file`, a
+search hit in it, `memory_get`, a listing that names it — is restricted from
+that read on, as the first turn was, and the tool's output says so. What that
+turn writes after the read is tainted in turn. A clean turn that rewrites a
+file whole, or deletes it, clears its mark; a copy or a move carries it. A message a conversation or the operator sends is labelled
 `[From conversation <id>: …]` or `[From the operator: …]` instead: it carries a
 person's request.
 
@@ -405,7 +415,8 @@ use instead.
 | Events are delivered from boot onward | A stopped or paused process misses the events of that time, and nothing from before boot is replayed. A process that is starting, or failing and retrying, receives them. |
 | A piped report can still steer what a restricted turn allows | An instruction inside a report can make the agent create files, plant memories, pause or finish its own goal, or post a misleading notification. |
 | A piped turn cannot append to an existing file | A watcher that reports repeatedly gets each finding recorded in a new file, or in its log on the session's own next turn. |
-| A piped report stays in the session's history | The session's next turn — its own clock tick, unrestricted — sees the report and can still act on an instruction inside it. The restriction narrows the turn the report causes, not every turn after it. |
+| Taint is not tracked through the shell or process programs | A turn that reads a tainted file with `shell`, or a process program that reads one through `nine:fs` and hands it to `turn()`, is not restricted. |
+| The restricted turn's reply stays in the history | The report's text is removed when its turn ends, but the model's reply to it stays; a reply that restates an instruction from the report can still steer a later turn, in the model's words rather than the report's. |
 | Configuration is read at boot | Editing a block takes effect at the next start. |
 | Genesis judges itself done | It ends when the session says so and a process it wrote runs; whether the processes do what the document meant is the reviser's, or the operator's, to judge. |
 | Rollback catches a version that fails, not one that does worse | A rewritten process that runs but produces worse results stays; noticing it is the next review's job, or the operator's. |

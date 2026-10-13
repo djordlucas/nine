@@ -465,10 +465,11 @@ configurations in use to carry over. A file that still has one fails to load, na
   instruction inside a framed report every time. A turn a report starts is restricted to
   reading, creating new files, memory, its own goal and notifying, which stops changing or
   deleting existing files, the shell, the network and persistence. It does not stop an
-  injected instruction from creating files, planting a memory or pausing the goal, and the
-  report stays in the session's
-  history, where its next unrestricted turn — its own clock tick — can still act on it.
-  Phase 3, where Nine writes processes that pipe what they fetch, widens the exposure.
+  injected instruction from creating files, planting a memory or pausing the goal. When the
+  restricted turn ends its input is replaced in the history, and what it wrote is tainted:
+  a later turn that reads it is restricted from that read on (2026-10-13). Untracked: reads
+  through the shell or a process program's `nine:fs`, and the model's own reply, which may
+  restate the instruction.
 - A started live process holds its instance while it waits in `next()`. Hibernating idle
   processes (closing the instance, restarting it on the next trigger) would save memory at the
   cost of losing in-memory state more often; it is left out until memory requires it.
