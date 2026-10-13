@@ -1,0 +1,5 @@
+# The web UI's build is committed in internal/webui/dist; its toolchain is not
+# part of any image.
+web/node_modules
+web/test-results
+web/playwright-report

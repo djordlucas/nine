@@ -1,0 +1,40 @@
+.page {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  padding: var(--space-4);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 380px;
+  padding: var(--space-5);
+}
+
+.form h1 {
+  font-size: var(--text-xl);
+}
+
+.form p {
+  margin: 0;
+}
+
+.brand {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius);
+  background: var(--text);
+  color: var(--bg);
+  font-weight: 700;
+  font-size: var(--text-xl);
+}
+
+.label {
+  font-weight: 600;
+  font-size: var(--text-sm);
+}

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"crypto/subtle"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -14,33 +13,41 @@ import (
 // HTTP middleware: authentication, CORS, logging, panic recovery and rate
 // limiting. These wrap the generated router rather than being part of it.
 
-// authMiddleware handles authentication.
+// authMiddleware handles authentication: the bearer token, or a browser
+// session's cookie (auth_session.go). The session operations themselves are
+// open, since signing in is how a browser gets a cookie.
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Skip auth if no token is configured
-		if s.config.AuthToken == "" {
+		if s.config.AuthToken == "" || r.URL.Path == authSessionPath {
 			next.ServeHTTP(w, r)
 			return
 		}
 
-		// Extract token from Authorization header
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			writeError(w, http.StatusUnauthorized, "unauthorized", "missing authorization header", nil)
+		if r.Header.Get("Authorization") == "" {
+			sess, ok := s.sessionFromRequest(r)
+			if !ok {
+				writeError(w, http.StatusUnauthorized, "unauthorized", "missing authorization header", nil)
+				return
+			}
+			if reason := checkCookieRequest(r, sess); reason != "" {
+				writeError(w, http.StatusForbidden, "forbidden", reason, nil)
+				return
+			}
+			next.ServeHTTP(w, r)
 			return
 		}
 
 		// Check for Bearer token
+		authHeader := r.Header.Get("Authorization")
 		const bearerPrefix = "Bearer "
 		if len(authHeader) < len(bearerPrefix) || !strings.EqualFold(authHeader[:len(bearerPrefix)], bearerPrefix) {
 			writeError(w, http.StatusUnauthorized, "unauthorized", "invalid authorization header format", nil)
 			return
 		}
 
-		token := authHeader[len(bearerPrefix):]
-
 		// Constant-time comparison to prevent timing attacks
-		if subtle.ConstantTimeCompare([]byte(token), []byte(s.config.AuthToken)) != 1 {
+		if !s.validBearer(r) {
 			writeError(w, http.StatusUnauthorized, "unauthorized", "invalid token", nil)
 			return
 		}

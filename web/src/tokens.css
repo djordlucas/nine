@@ -1,0 +1,166 @@
+/* Design tokens (adr/web-ui.md §7). Components use these, never raw values.
+   Dark mode follows the system unless data-theme on <html> overrides it. */
+:root {
+  --bg: #f7f7f8;
+  --surface: #ffffff;
+  --surface-2: #f0f1f3;
+  --border: #dcdee3;
+  --text: #16181d;
+  --text-2: #5b6170;
+  --accent: #2f5bd3;
+  --accent-text: #ffffff;
+  --ok: #1d7a46;
+  --warn: #9a6200;
+  --danger: #b42318;
+  --focus: #2f5bd3;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --radius: 8px;
+  --radius-lg: 12px;
+  --touch: 44px;
+
+  --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --text-sm: 13px;
+  --text-md: 15px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+
+  --rail: 220px;
+  --tabbar: 60px;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #0f1115;
+    --surface: #171a20;
+    --surface-2: #1f232b;
+    --border: #2c313b;
+    --text: #e8eaee;
+    --text-2: #9aa1af;
+    --accent: #7c9cff;
+    --accent-text: #0f1115;
+    --ok: #4cc38a;
+    --warn: #e0a83a;
+    --danger: #ff7b72;
+    --focus: #7c9cff;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --bg: #0f1115;
+  --surface: #171a20;
+  --surface-2: #1f232b;
+  --border: #2c313b;
+  --text: #e8eaee;
+  --text-2: #9aa1af;
+  --accent: #7c9cff;
+  --accent-text: #0f1115;
+  --ok: #4cc38a;
+  --warn: #e0a83a;
+  --danger: #ff7b72;
+  --focus: #7c9cff;
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--text-md);
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+}
+
+#app {
+  height: 100%;
+}
+
+a {
+  color: var(--accent);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.25;
+  margin: 0;
+}
+
+/* Shared building blocks. */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+
+.button {
+  min-height: var(--touch);
+  padding: 0 var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.input {
+  min-height: var(--touch);
+  width: 100%;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.muted {
+  color: var(--text-2);
+}
+
+.error {
+  color: var(--danger);
+}
+
+.standalone {
+  margin: var(--space-4);
+}

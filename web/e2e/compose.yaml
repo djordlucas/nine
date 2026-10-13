@@ -1,0 +1,19 @@
+# End-to-end tests for the web UI (adr/web-ui.md §8): Playwright drives the
+# runtime image, the one a release publishes. `make webui-e2e` runs it.
+services:
+  nine:
+    image: ${NINE_E2E_IMAGE:-nine:e2e}
+    environment:
+      NINE_API_AUTH_TOKEN: e2e-token
+
+  playwright:
+    image: mcr.microsoft.com/playwright:v1.64.0-noble
+    depends_on: [nine]
+    working_dir: /web
+    volumes:
+      - ..:/web
+    environment:
+      NINE_E2E_URL: http://nine:8080
+      NINE_E2E_TOKEN: e2e-token
+      CI: ${CI:-}
+    command: ["sh", "-c", "npm ci --no-fund --no-audit && npx playwright test"]

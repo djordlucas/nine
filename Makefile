@@ -19,7 +19,7 @@ GOFLAGS  := -mod=vendor
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS  := -ldflags "-X main.Version=$(VERSION)"
 
-.PHONY: all dev build openapi openapi-check openapi-lint test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-code eval-generate quickjs-wasm quickjs-verify harness-bc image image-test image-scan image-verify ci ci-test scan scan-fs lint-host
+.PHONY: all dev build openapi openapi-check openapi-lint test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-code eval-generate quickjs-wasm quickjs-verify harness-bc image image-test image-scan image-verify ci ci-test scan scan-fs lint-host webui webui-check webui-test webui-e2e
 
 dev: build
 
@@ -49,6 +49,38 @@ openapi:
 openapi-lint:
 	go -C tools run github.com/daveshanley/vacuum lint \
 		--fail-severity warn -r ../internal/api/.vacuum.yaml ../internal/api/openapi.yaml
+
+# ── Web UI (adr/web-ui.md) ───────────────────────────────────────────────────
+# web/ builds into internal/webui/dist, which the binary embeds and the
+# repository commits, so `go build` needs no Node. Node runs in a container,
+# pinned, because the drift check compares bytes.
+NODE_IMAGE := node:24.21.0-bookworm-slim
+WEB_RUN    := docker run --rm -v $(PWD):/src -w /src/web -e npm_config_update_notifier=false $(NODE_IMAGE)
+
+# Regenerates web/src/api/schema.d.ts from the OpenAPI document, typechecks and
+# builds.
+webui:
+	$(WEB_RUN) sh -c 'npm ci --no-fund --no-audit && npm run -s build'
+
+webui-test:
+	$(WEB_RUN) sh -c 'npm ci --no-fund --no-audit && npm test'
+
+# Fail if the committed build or the generated types differ from a fresh build.
+webui-check: webui
+	@test -z "$$(git status --porcelain -- internal/webui/dist web/src/api/schema.d.ts)" || { \
+		git status --short -- internal/webui/dist web/src/api/schema.d.ts; \
+		echo ""; \
+		echo "internal/webui/dist is stale — run 'make webui' and commit the result."; \
+		exit 1; \
+	}
+
+# Playwright against the runtime image, at a phone and a desktop viewport.
+# NINE_E2E_IMAGE names an image already built (CI passes nine:test); otherwise
+# the runtime stage is built as nine:e2e.
+webui-e2e:
+	@if [ -z "$(NINE_E2E_IMAGE)" ]; then docker build --target runtime -t nine:e2e .; fi
+	NINE_E2E_IMAGE=$(or $(NINE_E2E_IMAGE),nine:e2e) docker compose -f web/e2e/compose.yaml run --rm playwright; \
+	status=$$?; docker compose -f web/e2e/compose.yaml down -v; exit $$status
 
 # Fail if the committed generated code does not match the document. Run in CI:
 # without it the two drift apart silently, which is the failure the spec-first
@@ -295,12 +327,15 @@ ci:
 	@$(MAKE) build
 	@$(MAKE) openapi-check
 	@$(MAKE) openapi-lint
+	@$(MAKE) webui-check
+	@$(MAKE) webui-test
 	@$(MAKE) ci-test
 	@$(MAKE) eval-replay
 	@$(MAKE) lint
 	@$(MAKE) image-test
+	@$(MAKE) webui-e2e NINE_E2E_IMAGE=$(IMAGE_REF)
 	@echo ""
-	@echo "ci: passed — build, openapi drift + lint, tests, eval gate, lint, image tests"
+	@echo "ci: passed — build, openapi drift + lint, web UI drift + tests, tests, eval gate, lint, image and web UI end-to-end tests"
 	@echo "     run 'make scan' for the vulnerability scans"
 
 # scan-fs is the filesystem half of the Security Scan workflow. Trivy runs in a

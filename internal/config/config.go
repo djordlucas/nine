@@ -1080,6 +1080,16 @@ type APIConfig struct {
 
 	// TLS configures HTTPS/TLS support.
 	TLS APITLSConfig `toml:"tls"`
+
+	// UI serves the web UI at / (docs/web-ui.md). On when unset; false serves
+	// the API alone. A *bool so an unset value can default to on.
+	UI *bool `toml:"ui"`
+}
+
+// UIEnabled reports whether the API server serves the web UI, defaulting to
+// true when the key is unset.
+func (a APIConfig) UIEnabled() bool {
+	return a.UI == nil || *a.UI
 }
 
 // APIRateLimitConfig configures rate limiting.
