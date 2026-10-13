@@ -746,6 +746,7 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		// via the spawn path — each with its own id, so a sub-agent reports the
 		// session it actually is rather than its parent's.
 		SessionID:      agentID,
+		Taint:          newTaint(lc.Memory, agentID, lc.WorkspaceRoot),
 		SystemCore:     systemCore,
 		Priority:       llm.PriorityConversation,
 		MaxTokens:      lc.maxReplyTokens(),

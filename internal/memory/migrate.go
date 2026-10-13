@@ -428,6 +428,13 @@ var migrations = []migrationStep{
 	{name: "tool_versions_unproven", fn: func(q sqlExec) error {
 		return addColumnIfMissing(q, "tool_versions", "unproven", "INTEGER NOT NULL DEFAULT 0")
 	}},
+
+	// 21 → 22: files and memories written from an untrusted source are
+	// marked, so a turn that reads one is restricted (adr/process-sessions.md §7).
+	{name: "tainted", fn: func(q sqlExec) error {
+		_, err := q.Exec(taintedSchema)
+		return err
+	}},
 }
 
 // convertGoalPlans turns each session plan with a pursue routine into the
