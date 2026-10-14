@@ -155,6 +155,12 @@ Two new message types in `protocol.Msg`:
 
 `human_input_answer` is a top-level protocol message (not a turn). The daemon dispatches it directly to the `hitlStore` channel for the given `RequestID` and updates the DB row.
 
+`list_human_requests` reads every question still waiting, across sessions; the API
+serves it as `GET /api/v1/questions`, and the web UI's dashboard lists them. Each
+question, answer and timeout is also written to the [event journal](event-journal.md)
+(`human_input_requested`, `_answered`, `_timed_out`), so a client following the
+journal sees a question arrive.
+
 ---
 
 ## What is persisted

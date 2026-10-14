@@ -197,6 +197,9 @@ func Assemble(c AssemblyConfig) *Assembly {
 	// Durable session-event journal (adr/event-log.md): every new session worker
 	// writes its full execution trajectory through this async batched sink.
 	sink := NewSQLEventSink(c.Store, daemon.NotifySubscribers)
+	// Every journal write, the sink's and the store's own state changes, wakes
+	// the daemon's journal followers.
+	c.Store.OnJournal(daemon.JournalWritten)
 	daemon.SetEventSink(sink)
 	// Sub-agents journal through the same sink under their own IDs, so a
 	// delegated sub-agent's trajectory is persisted and `nine trace --sub-agents`

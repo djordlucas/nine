@@ -674,17 +674,19 @@ func (m *mockGoalStore) JobsRunning() ([]memory.Job, error) { return nil, nil }
 func (m *mockGoalStore) SessionEventsAfter(_ int64, _ int) ([]memory.SessionEvent, error) {
 	return nil, nil
 }
-func (m *mockGoalStore) EventCursorGet(_ string) (int64, error) { return 0, nil }
-func (m *mockGoalStore) EventCursorSet(_ string, _ int64) error { return nil }
-func (m *mockGoalStore) QueueMessage(_, _ string) error           { return nil }
-func (m *mockGoalStore) UnconsumedMessagesCount(_ string) (int, error) { return 0, nil }
-func (m *mockGoalStore) DrainQueuedMessage(_ string) (string, error) { return "", nil }
+func (m *mockGoalStore) EventCursorGet(_ string) (int64, error)                  { return 0, nil }
+func (m *mockGoalStore) EventCursorSet(_ string, _ int64) error                  { return nil }
+func (m *mockGoalStore) SessionEventsBounds() (int64, int64, error)              { return 0, 0, nil }
+func (m *mockGoalStore) HumanRequestListPending() ([]memory.HumanRequest, error) { return nil, nil }
+func (m *mockGoalStore) QueueMessage(_, _ string) error                          { return nil }
+func (m *mockGoalStore) UnconsumedMessagesCount(_ string) (int, error)           { return 0, nil }
+func (m *mockGoalStore) DrainQueuedMessage(_ string) (string, error)             { return "", nil }
 
 // Goal and skill verbs: inert, so these mocks still satisfy queryBackend.
-func (m *mockGoalStore) GoalGet(string) (*memory.Goal, error)          { return nil, nil }
-func (m *mockGoalStore) GoalCreate(_, _, _, _ string) error            { return nil }
-func (m *mockGoalStore) GoalDelete(string) ([]string, error)           { return nil, nil }
-func (m *mockGoalStore) SkillList() ([]memory.Skill, error)            { return nil, nil }
+func (m *mockGoalStore) GoalGet(string) (*memory.Goal, error) { return nil, nil }
+func (m *mockGoalStore) GoalCreate(_, _, _, _ string) error   { return nil }
+func (m *mockGoalStore) GoalDelete(string) ([]string, error)  { return nil, nil }
+func (m *mockGoalStore) SkillList() ([]memory.Skill, error)   { return nil, nil }
 
 // A condition trigger wakes a session with a turn nobody waits on. Its reply must
 // not block the worker: the session has to answer the next turn, and stop.

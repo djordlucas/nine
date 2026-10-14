@@ -1,0 +1,195 @@
+.page {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-3);
+}
+
+.field {
+  display: grid;
+  gap: var(--space-1);
+  flex: 1 1 200px;
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.field .input {
+  color: var(--text);
+}
+
+.pause {
+  flex: none;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-2);
+}
+
+.live {
+  background: var(--ok);
+}
+
+.connecting {
+  background: var(--warn);
+}
+
+.offline {
+  background: var(--danger);
+}
+
+.notice {
+  margin: 0;
+  color: var(--warn);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.row + .row {
+  border-top: 1px solid var(--border);
+}
+
+.rowHead {
+  display: grid;
+  grid-template-columns: auto auto auto 1fr;
+  align-items: baseline;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--touch);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rowHead:hover {
+  background: var(--surface-2);
+}
+
+.time,
+.who {
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.who {
+  font-family: var(--mono);
+}
+
+.type {
+  font-family: var(--mono);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Kinds, as on the dashboard. */
+.attention {
+  color: var(--danger);
+}
+
+.state,
+.process {
+  color: var(--ok);
+}
+
+.turn,
+.agent {
+  color: var(--accent);
+}
+
+.detail {
+  padding: 0 var(--space-3) var(--space-3);
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.facts dt {
+  color: var(--text-2);
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-family: var(--mono);
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.payload {
+  margin: 0;
+  padding: var(--space-3);
+  max-height: 360px;
+  overflow: auto;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.moreButton {
+  justify-self: center;
+}
+
+/* On a phone the summary takes its own line under time, type and agent. */
+@media (max-width: 767px) {
+  .rowHead {
+    grid-template-columns: auto auto 1fr;
+    row-gap: 0;
+  }
+
+  .summary {
+    grid-column: 1 / -1;
+  }
+}

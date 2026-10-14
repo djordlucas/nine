@@ -15,12 +15,18 @@ type UserNotification struct {
 // UserNotificationCreate posts a message to the human-facing feed, attributed
 // to agentID. Silently ignores duplicate ids.
 func (s *Store) UserNotificationCreate(id, agentID, message string) error {
-	_, err := s.db.Exec(
+	res, err := s.db.Exec(
 		`INSERT INTO user_notifications(id, agent_id, message)
 		 VALUES(?,?,?)
 		 ON CONFLICT (id) DO NOTHING`,
 		id, agentID, message)
-	return err
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		s.journalState(agentID, EvNotification, map[string]any{"id": id, "message": message})
+	}
+	return nil
 }
 
 // UserNotificationList returns feed entries oldest-first. When unseenOnly is

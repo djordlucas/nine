@@ -53,11 +53,13 @@ func (m *mockStore) SessionEventsByAgent(_ string) ([]memory.SessionEvent, error
 func (m *mockStore) SessionEventsAfter(_ int64, _ int) ([]memory.SessionEvent, error) {
 	return nil, nil
 }
-func (m *mockStore) EventCursorGet(_ string) (int64, error) { return 0, nil }
-func (m *mockStore) EventCursorSet(_ string, _ int64) error { return nil }
-func (m *mockStore) QueueMessage(_, _ string) error                { return nil }
-func (m *mockStore) UnconsumedMessagesCount(_ string) (int, error) { return 0, nil }
-func (m *mockStore) DrainQueuedMessage(_ string) (string, error)    { return "", nil }
+func (m *mockStore) EventCursorGet(_ string) (int64, error)                  { return 0, nil }
+func (m *mockStore) EventCursorSet(_ string, _ int64) error                  { return nil }
+func (m *mockStore) SessionEventsBounds() (int64, int64, error)              { return 0, 0, nil }
+func (m *mockStore) HumanRequestListPending() ([]memory.HumanRequest, error) { return nil, nil }
+func (m *mockStore) QueueMessage(_, _ string) error                          { return nil }
+func (m *mockStore) UnconsumedMessagesCount(_ string) (int, error)           { return 0, nil }
+func (m *mockStore) DrainQueuedMessage(_ string) (string, error)             { return "", nil }
 
 // makeSimpleDaemon returns a running daemon backed by an always-answer provider.
 // Callers must call d.Stop() and cancel() when done.
@@ -363,7 +365,7 @@ func (m *mockStore) SessionDelete(string) (memory.SessionDeleteCounts, error) {
 func (m *mockStore) JobsRunning() ([]memory.Job, error) { return nil, nil }
 
 // Goal and skill verbs: inert, so these mocks still satisfy queryBackend.
-func (m *mockStore) GoalGet(string) (*memory.Goal, error)          { return nil, nil }
-func (m *mockStore) GoalCreate(_, _, _, _ string) error            { return nil }
-func (m *mockStore) GoalDelete(string) ([]string, error)           { return nil, nil }
-func (m *mockStore) SkillList() ([]memory.Skill, error)            { return nil, nil }
+func (m *mockStore) GoalGet(string) (*memory.Goal, error) { return nil, nil }
+func (m *mockStore) GoalCreate(_, _, _, _ string) error   { return nil }
+func (m *mockStore) GoalDelete(string) ([]string, error)  { return nil, nil }
+func (m *mockStore) SkillList() ([]memory.Skill, error)   { return nil, nil }

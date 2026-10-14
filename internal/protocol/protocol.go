@@ -49,6 +49,12 @@ const (
 	// connection carries nothing else until either side closes it.
 	TypeWatch MsgType = "watch"
 
+	// JournalFollow turns its connection into a feed of the whole journal, every
+	// session's events and the state changes the store records. The reply echoes
+	// the type with After set to where the feed starts; each later message, of
+	// the same type, carries a batch of events in Text.
+	TypeJournalFollow MsgType = "journal_follow"
+
 	// Queries. Each is echoed back as the type of its own reply, with the
 	// payload in Text — so these appear in both directions.
 	TypeStatus            MsgType = "status"
@@ -65,6 +71,7 @@ const (
 	TypeToolsList         MsgType = "tools_list"
 	TypeToolsReload       MsgType = "tools_reload"
 	TypeGrantsList        MsgType = "grants_list"
+	TypeListHumanRequests MsgType = "list_human_requests"
 	TypeGrantsDecide      MsgType = "grants_decide"
 )
 
@@ -175,6 +182,7 @@ var ClientMsgTypes = []MsgType{
 	TypeSessionHistory,
 	TypeSessionEvents,
 	TypeWatch,
+	TypeJournalFollow,
 	TypeStatus,
 	TypeContext,
 	TypeListGoals,
@@ -189,6 +197,7 @@ var ClientMsgTypes = []MsgType{
 	TypeToolsList,
 	TypeToolsReload,
 	TypeGrantsList,
+	TypeListHumanRequests,
 	TypeGrantsDecide,
 	TypeHumanInputAnswer,
 }
@@ -296,6 +305,11 @@ type Msg struct {
 	// Turn selects a turn of a session's journal for session_events: 0 for every
 	// turn, N for turn N, -1 for the latest. Additive and omitempty, like Limit.
 	Turn int `json:"turn,omitempty"`
+
+	// After is a journal seq. On journal_follow from the client it is the last
+	// event the client has: the feed resumes after it, and 0 starts from now
+	// (less Limit events of backlog). On the reply it is where the feed starts.
+	After int64 `json:"after,omitempty"`
 
 	// attach ok: recent tool events and last completed response for replay on reattach.
 	ReplayEvents    []Msg  `json:"replay_events,omitempty"`
@@ -609,6 +623,23 @@ type JournalEvent struct {
 	Payload      json.RawMessage `json:"payload,omitempty"`
 }
 
+// StatusJournalReset marks a journal_follow reply whose requested position
+// could not be honoured: the events after it were scrubbed, or are more than a
+// follower may replay. The feed starts from now instead, and the client
+// reloads what it shows rather than trusting it to be complete.
+const StatusJournalReset = "reset"
+
+// PendingQuestion is one ask_human question still waiting for an answer, for
+// the "list_human_requests" response.
+type PendingQuestion struct {
+	ID        string    `json:"id"`
+	AgentID   string    `json:"agent_id"`
+	Question  string    `json:"question"`
+	Options   []string  `json:"options,omitempty"`
+	CreatedAt string    `json:"created_at"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
 // --- Client → daemon request constructors ---
 
 // NewQueryMsg builds a request consisting of only a Type field — used for
@@ -751,6 +782,12 @@ func NewSessionEventsMsg(agentID string, turn int) Msg {
 // NewWatchMsg asks to follow a session's progress events.
 func NewWatchMsg(agentID string) Msg {
 	return Msg{Type: TypeWatch, AgentID: agentID}
+}
+
+// NewJournalFollowMsg asks to follow the journal after seq after; 0 starts from
+// now, with up to tail earlier events first.
+func NewJournalFollowMsg(after int64, tail int) Msg {
+	return Msg{Type: TypeJournalFollow, After: after, Limit: tail}
 }
 
 // --- Daemon → client response constructors ---

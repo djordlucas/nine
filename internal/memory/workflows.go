@@ -129,7 +129,13 @@ func (r *sqlWorkflowRepo) Notify(conversationID, message string) error {
 
 // WorkflowCreate creates a new workflow and returns its id and initial steps.
 func (s *Store) WorkflowCreate(agentID, name string, stepLabels []string) (*workflow.CreateResult, error) {
-	return s.workflows.Create(agentID, name, stepLabels)
+	res, err := s.workflows.Create(agentID, name, stepLabels)
+	if err == nil && res != nil {
+		s.journalState(agentID, EvWorkflowCreated, map[string]any{
+			"id": res.ID, "name": name, "steps": len(res.Steps),
+		})
+	}
+	return res, err
 }
 
 // WorkflowGet returns a workflow by id.
@@ -140,7 +146,24 @@ func (s *Store) WorkflowGet(id string) (*workflow.Workflow, error) {
 // WorkflowUpdate updates a step's status and auto-closes the workflow when all
 // steps reach a terminal state.
 func (s *Store) WorkflowUpdate(workflowID, stepID, status, result, failureReason string) (*workflow.UpdateResult, error) {
-	return s.workflows.Update(workflowID, stepID, status, result, failureReason)
+	res, err := s.workflows.Update(workflowID, stepID, status, result, failureReason)
+	if err == nil && res != nil && res.OK {
+		s.journalState(s.workflowAgent(workflowID), EvWorkflowStep, map[string]any{
+			"id": workflowID, "step_id": stepID, "status": status,
+			"workflow_status": res.WorkflowStatus,
+		})
+	}
+	return res, err
+}
+
+// workflowAgent returns the session a workflow belongs to, for attributing its
+// journal events; "" (the daemon) when it cannot be read.
+func (s *Store) workflowAgent(id string) string {
+	wf, err := s.workflows.Get(id)
+	if err != nil || wf == nil {
+		return ""
+	}
+	return wf.AgentID
 }
 
 // WorkflowList returns active workflows and the 10 most recently completed.
@@ -158,12 +181,24 @@ func (s *Store) WorkflowScrub() (int, error) {
 // WorkflowFail marks all pending/running steps as failed and closes the workflow.
 // Pass id="" with all=true to fail all active workflows.
 func (s *Store) WorkflowFail(id string, all bool) (int, error) {
-	return s.workflows.Fail(id, all)
+	n, err := s.workflows.Fail(id, all)
+	if err == nil && n > 0 {
+		agent := ""
+		if id != "" {
+			agent = s.workflowAgent(id)
+		}
+		s.journalState(agent, EvWorkflowFailed, map[string]any{"id": id, "all": all, "count": n})
+	}
+	return n, err
 }
 
 // WorkflowCancel cancels a workflow: pending steps are skipped, running steps fail.
 func (s *Store) WorkflowCancel(id string) (int, error) {
-	return s.workflows.Cancel(id)
+	n, err := s.workflows.Cancel(id)
+	if err == nil && n > 0 {
+		s.journalState(s.workflowAgent(id), EvWorkflowCancelled, map[string]any{"id": id})
+	}
+	return n, err
 }
 
 // WorkflowResetStep resets a step back to pending and re-opens the workflow if it was closed.

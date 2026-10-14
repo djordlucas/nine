@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -144,6 +145,8 @@ type Store struct {
 	// message on its own connection) race and the last writer wins,
 	// silently dropping earlier messages.
 	queueMu sync.Mutex
+	// journalHook is called after each journal write (OnJournal).
+	journalHook atomic.Pointer[journalHook]
 }
 
 // Open opens the SQLite database at path, creating the file and its parent

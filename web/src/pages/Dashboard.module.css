@@ -1,12 +1,115 @@
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
   gap: var(--space-4);
+  align-items: start;
+}
+
+.tile {
+  min-width: 0;
+}
+
+.tileHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
 }
 
 .tileTitle {
   font-size: var(--text-md);
-  margin-bottom: var(--space-3);
+}
+
+.count {
+  min-width: 22px;
+  padding: 0 var(--space-2);
+  border-radius: 11px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-align: center;
+}
+
+.more {
+  margin-left: auto;
+  font-size: var(--text-sm);
+  /* A comfortable target without growing the header. */
+  padding: var(--space-2) 0 var(--space-2) var(--space-3);
+  margin-top: calc(-1 * var(--space-2));
+  margin-bottom: calc(-1 * var(--space-2));
+}
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.warnText {
+  color: var(--warn);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.list li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  flex: none;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.badge {
+  flex: none;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12px;
+  font-family: var(--mono);
+  line-height: 20px;
+}
+
+.attention,
+.failing {
+  color: var(--danger);
+}
+
+.paused {
+  color: var(--warn);
+}
+
+.running,
+.state {
+  color: var(--ok);
+}
+
+.turn,
+.agent {
+  color: var(--accent);
 }
 
 .facts {

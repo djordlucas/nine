@@ -22,8 +22,23 @@ docker run -e NINE_API_AUTH_TOKEN=… -p 8080:8080 ghcr.io/djordlucas/nine
 
 | Section | Shows |
 |---|---|
-| Dashboard | the daemon: status, version, uptime, active sessions, plugin and tool counts |
-| Conversations, Processes, Goals & workflows, Tools, Inbox, Journal, System | not built yet (see Limits) |
+| Dashboard | what needs you (capability requests and `ask_human` questions), processes by state, the latest activity, recent conversations, active goals and workflows, notifications, and the daemon's status. Every tile updates as things happen. |
+| Journal | every event the daemon records, live: turns, model and tool calls, process transitions, and changes to approvals, questions, notifications, goals and workflows. Filter by kind or by session, pause, and open any event for its payload. |
+| Conversations, Processes, Goals & workflows, Tools, Inbox, System | not built yet (see Limits) |
+
+## Staying live
+
+Each browser tab holds one connection to `GET /api/v1/events`, the journal as a
+stream ([HTTP API](api.md#journal-stream)), and every live view uses it. The
+header says whether it is up: Live, Connecting, or Offline.
+
+| Behavior | Detail |
+|---|---|
+| Opening | the stream starts with the 200 most recent events, so the Activity tile and the Journal are not empty on arrival |
+| Updating | a dashboard tile loads again when an event it shows arrives; a burst causes one reload |
+| Dropping | the browser reconnects and resumes after the last event it had, missing nothing still in the journal. A stream the server refused is retried every 2 to 30 seconds. |
+| Missing events | when the journal can no longer resume a tab (scrubbed, or the tab was more than 10,000 events behind), the tiles reload and the Journal says it restarted |
+| Keeping | the tab keeps the latest 2000 events. A reload starts again from the latest 200. |
 
 ## Signing in
 
@@ -76,7 +91,9 @@ in `internal/webui/dist`, so `go build` needs no Node.
 
 | Limit | Detail |
 |---|---|
-| Most sections are not built | Only the dashboard's daemon status works. The rest arrive in order: conversations; processes, goals and workflows; tools, plugins, skills and the inbox; then the journal and the system section (`adr/web-ui.md` §9). |
+| Most sections are not built | The dashboard and the Journal work. The rest arrive in order: conversations; processes, goals and workflows; tools, plugins, skills and the inbox; then the system section (`adr/web-ui.md` §9). Until then a tile's Open link leads to a placeholder. |
+| Large payloads stay out of the stream | A payload over 16 KB, usually a model call's whole context, reaches the Journal as its size only. The turn's trace (`GET /api/v1/conversations/{id}/trace`) has it, and the Journal links to it. |
+| The Journal holds what the tab has seen | It shows the events kept since the tab opened, up to 2000, starting with the 200 before. Older history is in each conversation's trace. |
 | One identity | The API token is the only credential, so every signed-in browser has the same rights. |
 | Sessions are in memory | Restarting the API server signs every browser out. |
 | Some operations stay in the CLI | `nine restore`, `nine daemon`, `nine api serve`, and the `validate` commands, which check a path on the operator's machine. |
