@@ -444,3 +444,28 @@ func decodeContext(raw string) map[string]any {
 
 // ptr returns a pointer to v, for the optional fields the generator emits.
 func ptr[T any](v T) *T { return &v }
+
+// CancelTurn cancels the turn a conversation is running, keeping the session.
+func (s *Server) CancelTurn(ctx context.Context, request apigen.CancelTurnRequestObject) (apigen.CancelTurnResponseObject, error) {
+	if request.Id == "" {
+		return apigen.CancelTurn400JSONResponse(
+			errorBody("invalid_request", "missing conversation id", nil)), nil
+	}
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		return apigen.CancelTurn503JSONResponse(
+			errorBody("service_unavailable", err.Error(), nil)), nil
+	}
+	defer cl.Close()
+
+	cancelled, err := cl.CancelTurn(request.Id)
+	if err != nil {
+		if errNotFound(err) {
+			return apigen.CancelTurn404JSONResponse(
+				errorBody("not_found", "conversation not found", map[string]any{"id": request.Id})), nil
+		}
+		return apigen.CancelTurn500JSONResponse(
+			errorBody("server_error", err.Error(), nil)), nil
+	}
+	return apigen.CancelTurn200JSONResponse{Id: request.Id, Cancelled: cancelled}, nil
+}

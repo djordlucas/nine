@@ -55,6 +55,8 @@ func (d *wsDaemon) reply(m protocol.Msg) []protocol.Msg {
 			return errReply("pending question stale not found: it was answered, timed out, or never asked")
 		}
 		return []protocol.Msg{{Type: protocol.TypeHumanInputAnswer, Text: "answered"}}
+	case protocol.TypeTurnCancel:
+		return []protocol.Msg{protocol.NewTextMsg(protocol.TypeTurnCancel, "cancelled")}
 	}
 	return errReply("unexpected " + string(m.Type))
 }
@@ -194,6 +196,15 @@ func TestWebSocket_RelaysEventsAndAcceptsTurns(t *testing.T) {
 	answers := d.received(protocol.TypeHumanInputAnswer)
 	if len(answers) != 2 || answers[0].AgentID != "abc" || answers[0].RequestID != "req-1" || answers[0].Answer != "yes" {
 		t.Errorf("daemon received answers %+v", answers)
+	}
+
+	// cancel cancels the conversation's running turn and says whether there was one.
+	writeJSON(t, ctx, c, map[string]any{"type": "cancel"})
+	if r := readUntil(t, ctx, c, "cancel"); r[len(r)-1]["cancelled"] != true {
+		t.Errorf("cancel = %v", r[len(r)-1])
+	}
+	if got := d.received(protocol.TypeTurnCancel); len(got) != 1 || got[0].AgentID != "abc" {
+		t.Errorf("daemon received cancels %+v", got)
 	}
 
 	// Malformed input is answered, not fatal.

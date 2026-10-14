@@ -1,6 +1,6 @@
 # Design note — The embedded web UI
 
-**Status:** Phases 1–2 implemented (2026-10-13); phases 3–6 proposed · **Related:** `docs/api.md`, `docs/hitl.md`,
+**Status:** Phases 1–3 implemented (2026-10-14); phases 4–6 proposed · **Related:** `docs/api.md`, `docs/hitl.md`,
 `docs/processes.md`, `adr/agent-boundary.md`
 
 Nine gets a web UI that is part of the binary: a Preact app, built once and embedded,
@@ -241,6 +241,19 @@ The daemon's side is `journal_follow`, a socket message like `watch`, which read
 the store forward from a `seq` and is woken by a hook on every journal write. The
 new event types are not process triggers: adding them to `config.EventTypes` is a
 behavior change for `on` that wants its own evals. The bundle is 20 KB gzipped.
+
+## Phase 3 as built
+
+| Planned | Built | Why |
+|---|---|---|
+| Conversations: stop | Stop cancels the running turn, through a new daemon `turn_cancel`, `POST /conversations/{id}/cancel` and a WebSocket `cancel`. Ending the session (`POST …/stop`) is a separate, confirmed action. | The only stop the daemon had was `session_stop`, which deletes the checkpoint: there was no way to interrupt a runaway turn and keep the session. |
+| A stub model server in the Playwright container | `web/e2e/stub-model.mjs`, its own `model` service in `e2e/compose.yaml`, speaking the streaming chat API the `mistral` provider calls | The daemon reaches it as it would a provider, by `NINE_LLM_ENDPOINT`, with no change to nine. It answers from the last message: an echo with Markdown, a tool call, an `ask_human` question, or a slow reply to cancel. |
+| History, context, trace and replay per turn | The chat shows the transcript; "Inspect turn N" shows replay and the raw trace; Context is a panel | One place per question: the chat for what was said, the inspector for how. |
+| `marked` with HTML disabled | `marked`'s lexer only; its tokens become Preact elements | No HTML string is built, so no `innerHTML`: raw HTML in a reply is text, links are http(s) or mailto, images are links. |
+| — | The chat reloads the transcript when a turn ends, and keeps its live view until the transcript has the turn | The journal is written off the turn's path; a transcript read the moment a turn ends can lack its reply. |
+| Windowed rendering of long histories | The last 1000 transcript entries | The transcript endpoint pages at 1000; a turn's full record is one click away. |
+
+The bundle is 41 KB gzipped, `marked` included.
 
 ---
 

@@ -648,6 +648,22 @@ func (c *Client) NextJournal() ([]JournalEvent, error) {
 	return evs, nil
 }
 
+// CancelTurn cancels the turn agentID is running and reports whether one was:
+// false means the session exists and was idle. An unknown session is an error.
+func (c *Client) CancelTurn(agentID string) (bool, error) {
+	if err := c.send(NewTurnCancelMsg(agentID)); err != nil {
+		return false, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return false, err
+	}
+	if err := expectReply(reply, TypeTurnCancel); err != nil {
+		return false, err
+	}
+	return reply.Text == "cancelled", nil
+}
+
 // ListHumanRequests returns the ask_human questions waiting for an answer.
 func (c *Client) ListHumanRequests() ([]PendingQuestion, error) {
 	var out []PendingQuestion

@@ -14,9 +14,10 @@ export interface Live<T> {
  * depends on: an event whose type matches one of types (exact, or a prefix
  * ending in *), or a reset. A burst of events causes one reload.
  *
- * load returns the data, or throws an Error whose message is shown.
+ * load returns the data, or throws an Error whose message is shown. A change
+ * of reloadKey loads again too.
  */
-export function useLive<T>(load: () => Promise<T>, types: readonly string[]): Live<T> {
+export function useLive<T>(load: () => Promise<T>, types: readonly string[], reloadKey?: unknown): Live<T> {
   const [state, setState] = useState<Live<T>>({ data: null, error: null });
   const loadRef = useRef(load);
   loadRef.current = load;
@@ -49,7 +50,7 @@ export function useLive<T>(load: () => Promise<T>, types: readonly string[]): Li
       off();
     };
     // types is compared by value through key.
-  }, [key]);
+  }, [key, reloadKey]);
 
   return state;
 }

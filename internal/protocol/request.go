@@ -162,6 +162,9 @@ type SessionEventsReq struct {
 // stays open.
 type WatchReq struct{ AgentID string }
 
+// TurnCancelReq cancels the turn a session is running, keeping the session.
+type TurnCancelReq struct{ AgentID string }
+
 // JournalFollowReq follows the whole journal for as long as the connection
 // stays open. After is the last seq the client has, 0 for none; Tail is how
 // many earlier events a client with none wants first.
@@ -202,6 +205,7 @@ func (SessionHistoryReq) Type() MsgType    { return TypeSessionHistory }
 func (SessionEventsReq) Type() MsgType     { return TypeSessionEvents }
 func (WatchReq) Type() MsgType             { return TypeWatch }
 func (JournalFollowReq) Type() MsgType     { return TypeJournalFollow }
+func (TurnCancelReq) Type() MsgType        { return TypeTurnCancel }
 func (q QueryReq) Type() MsgType           { return q.Kind }
 
 // queryKinds are the field-less requests QueryReq stands for.
@@ -284,6 +288,8 @@ func DecodeRequest(m Msg) (Request, error) {
 		return WatchReq{AgentID: m.AgentID}, nil
 	case TypeJournalFollow:
 		return JournalFollowReq{After: m.After, Tail: m.Limit}, nil
+	case TypeTurnCancel:
+		return TurnCancelReq{AgentID: m.AgentID}, nil
 	}
 	return nil, fmt.Errorf("unknown message type: %s", m.Type)
 }

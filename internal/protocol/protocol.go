@@ -43,6 +43,7 @@ const (
 	TypeGoalDelete      MsgType = "goal_delete"
 	TypeSessionHistory  MsgType = "session_history"
 	TypeSessionEvents   MsgType = "session_events"
+	TypeTurnCancel      MsgType = "turn_cancel"
 
 	// Watch turns its connection into a one-way feed of a session's progress
 	// events. It is answered like a query (the type echoed back) and then the
@@ -183,6 +184,7 @@ var ClientMsgTypes = []MsgType{
 	TypeSessionEvents,
 	TypeWatch,
 	TypeJournalFollow,
+	TypeTurnCancel,
 	TypeStatus,
 	TypeContext,
 	TypeListGoals,
@@ -782,6 +784,11 @@ func NewSessionEventsMsg(agentID string, turn int) Msg {
 // NewWatchMsg asks to follow a session's progress events.
 func NewWatchMsg(agentID string) Msg {
 	return Msg{Type: TypeWatch, AgentID: agentID}
+}
+
+// NewTurnCancelMsg asks to cancel the turn agentID is running.
+func NewTurnCancelMsg(agentID string) Msg {
+	return Msg{Type: TypeTurnCancel, AgentID: agentID}
 }
 
 // NewJournalFollowMsg asks to follow the journal after seq after; 0 starts from

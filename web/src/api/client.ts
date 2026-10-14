@@ -51,6 +51,13 @@ export function errorMessage(error: unknown, fallback = 'Request failed'): strin
   return e?.error?.message ?? fallback;
 }
 
+/** Unwraps an openapi-fetch result, throwing its error message. */
+export async function get<T>(p: Promise<{ data?: T; error?: unknown }>, what: string): Promise<T> {
+  const { data, error } = await p;
+  if (data === undefined) throw new Error(errorMessage(error, `Could not load ${what}.`));
+  return data;
+}
+
 function apply(s: Schemas['AuthSessionResponse']) {
   csrf = s.csrf_token;
   authRequired.value = s.auth_required;

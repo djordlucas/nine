@@ -542,11 +542,55 @@ paths:
       security:
       - bearerAuth: []
       - cookieAuth: []
+  /conversations/{id}/cancel:
+    post:
+      operationId: cancelTurn
+      summary: Cancel the running turn
+      description: Cancels the turn a conversation is running. The turn ends with the error "turn cancelled",
+        which every stream following the conversation receives; the session, its history and its checkpoint
+        stay, and a queued message still runs. cancelled is false when no turn was running.
+      tags:
+      - conversations
+      parameters:
+      - name: id
+        in: path
+        description: conversation id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelTurnResponse'
+        '400':
+          description: missing id
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: conversation not found
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
   /conversations/{id}/stop:
     post:
       operationId: stopConversation
       summary: Stop a conversation
-      description: Stops a conversation's session, ending the agent worker but preserving the event journal.
+      description: Ends a conversation's session. Its worker stops, its checkpoint is deleted and the processes
+        it drives are stopped; the journal and transcript stay. To interrupt only the turn in progress, use
+        cancel.
       tags:
       - conversations
       parameters:
@@ -3215,6 +3259,18 @@ components:
       required:
       - name
       - source
+    CancelTurnResponse:
+      description: Whether a running turn was cancelled.
+      type: object
+      required:
+      - id
+      - cancelled
+      properties:
+        id:
+          type: string
+        cancelled:
+          description: false when the conversation was not running a turn.
+          type: boolean
     StopConversationResponse:
       description: Confirmation that a conversation was stopped, its history kept.
       type: object
