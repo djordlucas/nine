@@ -419,6 +419,7 @@
           "tool_list",
           "read_file"
         ],
+        "tool_tokens": 2236,
         "max_tokens": 2048,
         "tokens_used": 2691,
         "budget": 100000,

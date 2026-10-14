@@ -383,6 +383,10 @@ func countTokens(s string) int {
 	return (len(s)*bytesPerTokenNum + bytesPerTokenDen - 1) / bytesPerTokenDen
 }
 
+// ToolTokens estimates the tokens one tool definition costs in a request, the
+// figure the tool budget is spent in.
+func ToolTokens(t llm.ToolDef) int { return toolTokens(t) }
+
 func toolTokens(t llm.ToolDef) int {
 	return countTokens(t.Name + " " + t.Description + " " + string(t.InputSchema))
 }

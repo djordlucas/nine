@@ -209,10 +209,16 @@ expect:
     sub_agents: { count: 0 }          # spawned sub-agent count (exact or {min,max})
     spills: { min: 1 }                # tool results that exceeded the output cap and
                                       # were spilled to the file store
+    tool_calls:                       # calls per tool over the whole run, {min, max}
+      tool_search: { max: 1 }
+    promotions: { max: 2 }            # tool_promoted events (deferred tool mode), {min, max}
     llm_request:                      # assert over the assembled prompt sent to the model
       system_contains: []             # substrings that MUST be present
       system_not_contains: []
-      tool_advertised_none_of: [shell]  # tool never appears in tool_names (role gating)
+      tool_advertised_none_of: [shell]  # never reaches the model by any surface (role gating)
+      tool_advertised_all_of: [restore_file]  # advertised with a schema in some request
+      tool_indexed_none_of: [shell]   # never listed in the deferred mode's tool index
+      tool_tokens_max: 2500           # no request's tool block exceeded this estimate
   answer:
     contains: ["db.prod.example.com"] # all substrings present (case-insensitive)
     matches: "db\\.prod\\.example\\.com"
@@ -247,7 +253,7 @@ returns events in `seq` order with these payloads (see `journal`):
 | Event | Key payload fields | Used to assert |
 |-------|--------------------|----------------|
 | `turn_start` | `input`, `trigger` (`user`/`idle`) | turn boundaries |
-| `llm_request` | `system`, `messages`, `tool_names`, `tokens_used`, `budget` | prompt/role gating, context budget |
+| `llm_request` | `system`, `messages`, `tool_names`, `tool_tokens`, `tokens_used`, `budget` | prompt/role gating, tool and context budget |
 | `llm_response` | `text`, `tool_calls`, `stop_reason` | model intent |
 | `tool_start` | `name`, `input` | which tool, with what args |
 | `tool_end` | `name`, `input`, `output`, `truncated`, `duration_ms`, `attempts`, `err` | tool result / failure |
@@ -272,7 +278,19 @@ Mappings:
   *any* file under the prefix matches. A prefix rather than an exact path because a
   spill path carries a random suffix (`spill/<agent>/<tool>-<rand>.txt`) a case cannot
   predict.
-- **`llm_request.tool_advertised_none_of`** → the tool name never appears in any `llm_request.tool_names` (proves role gating at the advertised boundary, R-ROLE.4).
+- **`llm_request.tool_advertised_none_of`** → the tool name never appears in any
+  `llm_request.tool_names` or `tool_index`, nor in a `tool_search` result's names
+  (proves role gating at the advertised boundary, R-ROLE.4).
+- **`llm_request.tool_advertised_all_of`** → each name appears in some `llm_request.tool_names`.
+- **`llm_request.tool_indexed_none_of`** → the name never appears in any
+  `llm_request.tool_index`, the names the deferred tool mode lists without a schema
+  ([adr/deferred-tool-schemas.md](../adr/deferred-tool-schemas.md) §3.2). Until that
+  mode ships, no request carries an index and this always holds.
+- **`llm_request.tool_tokens_max`** → the largest `llm_request.tool_tokens`, the
+  estimated size of the request's tool definitions.
+- **`tool_calls`** → `tool_start` events per name, bounded by `{min, max}`; an unset
+  end is open.
+- **`promotions`** → `tool_promoted` events, bounded by `{min, max}`.
 - **`side_effects.*`** → read the isolated store/workspace *after* the run: `kv` via
   `store.Get`, files via the workspace dir or `read_file`, `workflows` via
   `store.WorkflowList`, `goals` via `store.GoalList` + a pursue session in `nine status`,
@@ -313,6 +331,18 @@ pass fraction ≥ `pass_threshold`. Everything in §1–§3 applies. Requirement
   ```sh
   NINE_EVAL_MODELS=qwen3.5:4b NINE_EVAL_CASES=tool-output-spill make eval-live
   ```
+
+  `NINE_EVAL_RUNS` overrides every case's `runs`, with thresholds scaled to it: `1`
+  for a sweep that measures cost or tool use rather than pass rates.
+- **Arms**: `NINE_EVAL_ARMS` (comma-separated) runs every case once per tool-exposition
+  mode, set as the `context.tool_exposition` override, and the grid gets a column per
+  model and arm. A case that passes in one arm and fails in another is a regression
+  the mode caused. Unset runs the configured default once. A case that sets
+  `context.tool_exposition` in its own `session.config` runs only in that arm. The
+  only arm so far is `ranked`; `deferred` joins with the mode
+  ([adr/deferred-tool-schemas.md](../adr/deferred-tool-schemas.md) §7.1).
+- **No embedder for one case**: `session.config` `embeddings.provider: none` runs the
+  case with no embedder, as a deployment configured that way does.
 - **Isolation per run**: a fresh session id, a database file per run (reuse the
   `internal/memory/memtest` pattern), and an ephemeral workspace dir. Cases must not
   see each other's memory/goals/files.
@@ -440,6 +470,18 @@ tests/evals/
   the regression signal regardless of cause (model swap, prompt edit, code change).
 - The harness in `runner/` builds an in-process daemon per case, so a run needs no
   container; the Docker + Ollama bring-up in `tests/integration` is a separate path.
+- **Cost.** Each run records its turns, LLM calls, `tool_search` calls, promotions,
+  prompt tokens (the provider's count where it reports one, else the builder's
+  estimate) and the largest tool block any request carried. The report adds two
+  tables after the grid:
+  - per model and arm, the medians of prompt tokens, turns and LLM calls over the
+    runs that **passed**, and the largest tool block. A failed run's cost says
+    nothing about what the work costs.
+  - tool use: per tool, how many graded runs called it and how many calls they
+    made. This is the data the deferred tool mode's resident set is derived from
+    ([adr/deferred-tool-schemas.md](../adr/deferred-tool-schemas.md) §3.1).
+
+  The report JSON carries the same as `summary`, `tool_use` and each run's `metrics`.
 
 ---
 

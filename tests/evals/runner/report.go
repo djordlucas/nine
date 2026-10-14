@@ -20,6 +20,7 @@ import (
 type Suite struct {
 	Harness     *Harness
 	Models      []string                                 // requested matrix (Track L)
+	Arms        []string                                 // requested arms (NINE_EVAL_ARMS); none runs the default once
 	ProviderFor func(model string) (llm.Provider, error) // builds a provider per model
 	JudgeFn     JudgeFunc                                // may be nil
 	ReplayRoot  string                                   // tests/evals/replay
@@ -31,8 +32,14 @@ type Report struct {
 	StartedAt  time.Time          `json:"started_at"`
 	FinishedAt time.Time          `json:"finished_at"`
 	Models     []string           `json:"models"`
+	Arms       []string           `json:"arms,omitempty"`
 	Live       []CaseModelResult  `json:"live"`
 	Replay     []ReplayCaseResult `json:"replay"`
+	// Summary is the live runs' cost per model and arm.
+	Summary []ArmSummary `json:"summary,omitempty"`
+	// ToolUse is how often each tool was called across GradedRuns runs.
+	ToolUse    []ToolUse `json:"tool_use,omitempty"`
+	GradedRuns int       `json:"graded_runs,omitempty"`
 }
 
 // ReplayCaseResult is one Track-R case's verdict.
@@ -106,19 +113,19 @@ func logLiveProgress(i, total int, r CaseModelResult, elapsed time.Duration) {
 	switch {
 	case r.Skipped != "":
 		slog.Info("eval case skipped",
-			"n", fmt.Sprintf("%d/%d", i, total), "case", r.CaseID, "model", r.Model,
+			"n", fmt.Sprintf("%d/%d", i, total), "case", r.CaseID, "model", r.Model, "arm", r.Arm,
 			"reason", r.Skipped)
 	case r.Fatal:
 		slog.Error("eval case FAILED",
-			"n", fmt.Sprintf("%d/%d", i, total), "case", r.CaseID, "model", r.Model,
+			"n", fmt.Sprintf("%d/%d", i, total), "case", r.CaseID, "model", r.Model, "arm", r.Arm,
 			"passes", r.PassFraction(), "threshold", r.Threshold, "took", elapsed.Round(time.Second))
 	case !r.ThresholdOK:
 		slog.Warn("eval case below threshold (tolerated: under expected class)",
-			"n", fmt.Sprintf("%d/%d", i, total), "case", r.CaseID, "model", r.Model,
+			"n", fmt.Sprintf("%d/%d", i, total), "case", r.CaseID, "model", r.Model, "arm", r.Arm,
 			"passes", r.PassFraction(), "threshold", r.Threshold, "took", elapsed.Round(time.Second))
 	default:
 		slog.Info("eval case ok",
-			"n", fmt.Sprintf("%d/%d", i, total), "case", r.CaseID, "model", r.Model,
+			"n", fmt.Sprintf("%d/%d", i, total), "case", r.CaseID, "model", r.Model, "arm", r.Arm,
 			"passes", r.PassFraction(), "threshold", r.Threshold, "took", elapsed.Round(time.Second))
 	}
 }
@@ -134,7 +141,7 @@ func (s *Suite) RunLive(ctx context.Context, cases []*Case) []CaseModelResult {
 	total := 0
 	for _, c := range cases {
 		if c.Track == TrackLive || c.Track == TrackBoth {
-			total += len(c.ApplicableModels(s.Models))
+			total += len(c.ApplicableModels(s.Models)) * len(c.ApplicableArms(s.Arms))
 		}
 	}
 	done := 0
@@ -142,39 +149,47 @@ func (s *Suite) RunLive(ctx context.Context, cases []*Case) []CaseModelResult {
 		if c.Track != TrackLive && c.Track != TrackBoth {
 			continue
 		}
+		arms := c.ApplicableArms(s.Arms)
 		// Recorded, not dropped: a case that never ran must not read as a pass.
 		if missing := c.MissingEnv(); len(missing) > 0 {
 			for _, model := range c.ApplicableModels(s.Models) {
-				r := CaseModelResult{
-					CaseID: c.ID, Model: model, Class: ClassOf(model).String(),
-					Tier: string(c.Tier), Threshold: c.PassThreshold,
-					Skipped: "requires " + strings.Join(missing, ", "),
+				for _, arm := range arms {
+					r := CaseModelResult{
+						CaseID: c.ID, Model: model, Arm: arm, Class: ClassOf(model).String(),
+						Tier: string(c.Tier), Threshold: c.PassThreshold,
+						Skipped: "requires " + strings.Join(missing, ", "),
+					}
+					out = append(out, r)
+					done++
+					logLiveProgress(done, total, r, 0)
 				}
-				out = append(out, r)
-				done++
-				logLiveProgress(done, total, r, 0)
 			}
 			continue
 		}
 		for _, model := range c.ApplicableModels(s.Models) {
 			provider, err := s.ProviderFor(model)
 			if err != nil {
-				r := CaseModelResult{
-					CaseID: c.ID, Model: model, Class: ClassOf(model).String(),
-					Tier: string(c.Tier), Threshold: c.PassThreshold,
-					Runs: []RunOutcome{{Err: err.Error()}},
+				for _, arm := range arms {
+					r := CaseModelResult{
+						CaseID: c.ID, Model: model, Arm: arm, Class: ClassOf(model).String(),
+						Tier: string(c.Tier), Threshold: c.PassThreshold,
+						Runs: []RunOutcome{{Err: err.Error()}},
+					}
+					out = append(out, r)
+					done++
+					slog.Error("eval case has no provider",
+						"n", fmt.Sprintf("%d/%d", done, total), "case", c.ID, "model", model, "err", err)
 				}
-				out = append(out, r)
-				done++
-				slog.Error("eval case has no provider",
-					"n", fmt.Sprintf("%d/%d", done, total), "case", c.ID, "model", model, "err", err)
 				continue
 			}
-			started := time.Now()
-			r := RunCaseModel(ctx, s.Harness, c, model, provider, s.JudgeFn)
-			out = append(out, r)
-			done++
-			logLiveProgress(done, total, r, time.Since(started))
+			for _, arm := range arms {
+				started := time.Now()
+				r := RunCaseModel(ctx, s.Harness, c.withArm(arm), model, provider, s.JudgeFn)
+				r.Arm = arm
+				out = append(out, r)
+				done++
+				logLiveProgress(done, total, r, time.Since(started))
+			}
 		}
 	}
 	return out
@@ -182,9 +197,11 @@ func (s *Suite) RunLive(ctx context.Context, cases []*Case) []CaseModelResult {
 
 // Run executes both tracks and returns a Report.
 func (s *Suite) Run(ctx context.Context, cases []*Case) *Report {
-	r := &Report{StartedAt: time.Now(), Models: s.Models}
+	r := &Report{StartedAt: time.Now(), Models: s.Models, Arms: s.Arms}
 	r.Replay = s.RunReplay(ctx, cases)
 	r.Live = s.RunLive(ctx, cases)
+	r.Summary = summarize(r.Live)
+	r.ToolUse, r.GradedRuns = toolUse(r.Live)
 	r.FinishedAt = time.Now()
 	return r
 }
@@ -202,8 +219,9 @@ func (r *Report) WriteJSON(path string) error {
 }
 
 // RenderGrid renders the live results as a cases × models table, with a leading
-// Track-R column. A cell shows the pass fraction; a trailing "!" marks a fatal
-// (at-or-above-class) miss, "~" a tolerated below-class miss.
+// Track-R column; with arms, each model has a column per arm. A cell shows the
+// pass fraction; a trailing "!" marks a fatal (at-or-above-class) miss, "~" a
+// tolerated below-class miss.
 func (r *Report) RenderGrid() string {
 	// Collect the case order and the model columns actually present.
 	var caseIDs []string
@@ -215,7 +233,7 @@ func (r *Report) RenderGrid() string {
 			seenCase[lc.CaseID] = true
 			caseIDs = append(caseIDs, lc.CaseID)
 		}
-		byCaseModel[lc.CaseID+"\x00"+lc.Model] = lc
+		byCaseModel[lc.CaseID+"\x00"+lc.Model+"\x00"+lc.Arm] = lc
 		modelSet[lc.Model] = true
 	}
 	replayByCase := map[string]ReplayCaseResult{}
@@ -234,11 +252,30 @@ func (r *Report) RenderGrid() string {
 		sort.Strings(models)
 	}
 
+	arms := r.Arms
+	width := 14
+	if len(arms) == 0 {
+		arms = []string{""}
+	} else {
+		width = 22
+	}
+	type column struct{ model, arm string }
+	var cols []column
+	for _, m := range models {
+		for _, a := range arms {
+			cols = append(cols, column{m, a})
+		}
+	}
+
 	var b strings.Builder
 	// Header.
 	fmt.Fprintf(&b, "%-32s %-8s", "case", "replay")
-	for _, m := range models {
-		fmt.Fprintf(&b, " %-14s", truncate(m, 14))
+	for _, col := range cols {
+		name := col.model
+		if col.arm != "" {
+			name += " " + col.arm
+		}
+		fmt.Fprintf(&b, " %-*s", width, truncate(name, width))
 	}
 	b.WriteByte('\n')
 	// Rows.
@@ -253,14 +290,14 @@ func (r *Report) RenderGrid() string {
 		default:
 			fmt.Fprintf(&b, "%-8s", "FAIL")
 		}
-		for _, m := range models {
-			lc, ok := byCaseModel[id+"\x00"+m]
+		for _, col := range cols {
+			lc, ok := byCaseModel[id+"\x00"+col.model+"\x00"+col.arm]
 			if !ok {
-				fmt.Fprintf(&b, " %-14s", "-")
+				fmt.Fprintf(&b, " %-*s", width, "-")
 				continue
 			}
 			if lc.Skipped != "" {
-				fmt.Fprintf(&b, " %-14s", "skip")
+				fmt.Fprintf(&b, " %-*s", width, "skip")
 				continue
 			}
 			cell := lc.PassFraction()
@@ -272,7 +309,7 @@ func (r *Report) RenderGrid() string {
 			default:
 				cell += " ~"
 			}
-			fmt.Fprintf(&b, " %-14s", cell)
+			fmt.Fprintf(&b, " %-*s", width, cell)
 		}
 		b.WriteByte('\n')
 	}

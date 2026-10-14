@@ -465,13 +465,16 @@ func (w *AgentWorker) turnHooks(turn int) agent.Hooks {
 		OnLLMRequest: func(req *llm.Request, tokensUsed, budget, llmCallN int) {
 			w.llmCallN = llmCallN
 			names := make([]string, len(req.Tools))
+			toolTokens := 0
 			for i, t := range req.Tools {
 				names[i] = t.Name
+				toolTokens += ninectx.ToolTokens(t)
 			}
 			w.journal(turn, "llm_request", llmSpan(turn, llmCallN), root, llmRequestPayload{
 				System:     req.System,
 				Messages:   req.Messages,
 				ToolNames:  names,
+				ToolTokens: toolTokens,
 				MaxTokens:  req.MaxTokens,
 				TokensUsed: tokensUsed,
 				Budget:     budget,

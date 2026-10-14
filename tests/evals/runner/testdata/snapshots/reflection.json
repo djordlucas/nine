@@ -309,6 +309,7 @@
           "job_check",
           "job_cancel"
         ],
+        "tool_tokens": 1335,
         "max_tokens": 2048,
         "tokens_used": 2110,
         "budget": 100000,

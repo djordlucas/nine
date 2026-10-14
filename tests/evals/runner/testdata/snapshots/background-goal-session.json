@@ -1089,6 +1089,7 @@
           "time",
           "trash_list"
         ],
+        "tool_tokens": 6165,
         "max_tokens": 2048,
         "tokens_used": 7079,
         "budget": 100000,

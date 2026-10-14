@@ -20,12 +20,16 @@ type RunOutcome struct {
 	Pass     bool     `json:"pass"`
 	Failures []string `json:"failures,omitempty"`
 	Err      string   `json:"error,omitempty"`
+	// Metrics is the run's cost, zero when it aborted with Err.
+	Metrics RunMetrics `json:"metrics"`
 }
 
 // CaseModelResult is a case's aggregate verdict on one model across all runs.
 type CaseModelResult struct {
-	CaseID      string       `json:"case_id"`
-	Model       string       `json:"model"`
+	CaseID string `json:"case_id"`
+	Model  string `json:"model"`
+	// Arm is the tool-exposition mode the case ran in, "" for the default.
+	Arm         string       `json:"arm,omitempty"`
 	Class       string       `json:"class"`
 	Tier        string       `json:"tier"`
 	Runs        []RunOutcome `json:"runs"`
@@ -129,7 +133,7 @@ func runOnce(ctx context.Context, h *Harness, c *Case, provider llm.Provider, ju
 	}
 	defer run.Close()
 	g := Grade(c, run, judgeFn)
-	return RunOutcome{Pass: g.Pass, Failures: g.Failures}
+	return RunOutcome{Pass: g.Pass, Failures: g.Failures, Metrics: metricsOf(newTrace(run.Events))}
 }
 
 // thresholdMet reports whether passes/total satisfies a "k/n" threshold. The

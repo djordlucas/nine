@@ -373,6 +373,30 @@ type Trajectory struct {
 	// (adr/tool-output-spill.md §4). Use it to prove a case really exercised
 	// the large-output path instead of getting a conveniently small result.
 	Spills *CountExpect `yaml:"spills"`
+
+	// ToolCalls bounds how often each named tool was called over the whole
+	// run, e.g. `tool_search: {max: 1}` across a multi-turn case.
+	ToolCalls map[string]Bounds `yaml:"tool_calls"`
+	// Promotions bounds the `tool_promoted` journal events: deferred tools
+	// loaded into the advertised set (adr/deferred-tool-schemas.md §3.3).
+	Promotions *Bounds `yaml:"promotions"`
+}
+
+// Bounds is an inclusive range; an unset end is open.
+type Bounds struct {
+	Min *int `yaml:"min"`
+	Max *int `yaml:"max"`
+}
+
+// check returns why n is outside the bounds, or "" when it is inside.
+func (b Bounds) check(n int) string {
+	if b.Min != nil && n < *b.Min {
+		return fmt.Sprintf("%d, want >= %d", n, *b.Min)
+	}
+	if b.Max != nil && n > *b.Max {
+		return fmt.Sprintf("%d, want <= %d", n, *b.Max)
+	}
+	return ""
 }
 
 // SubAgentExpect asserts spawned sub-agent count, either exact (Count) or a range.
@@ -384,9 +408,18 @@ type SubAgentExpect struct {
 
 // LLMRequestExpect asserts over the assembled prompts sent to the model.
 type LLMRequestExpect struct {
-	SystemContains       []string `yaml:"system_contains"`
-	SystemNotContains    []string `yaml:"system_not_contains"`
+	SystemContains    []string `yaml:"system_contains"`
+	SystemNotContains []string `yaml:"system_not_contains"`
+	// ToolAdvertisedNoneOf names tools that must never reach the model: not
+	// advertised, not in the tool index, and not in a tool_search result.
 	ToolAdvertisedNoneOf []string `yaml:"tool_advertised_none_of"`
+	// ToolAdvertisedAllOf names tools each advertised with a full schema in
+	// at least one request, which is how a case proves a promotion.
+	ToolAdvertisedAllOf []string `yaml:"tool_advertised_all_of"`
+	// ToolIndexedNoneOf names tools that must never appear in the tool index.
+	ToolIndexedNoneOf []string `yaml:"tool_indexed_none_of"`
+	// ToolTokensMax bounds every request's estimated tool block.
+	ToolTokensMax *int `yaml:"tool_tokens_max"`
 }
 
 // Answer asserts on the final free text (tolerant only — docs/evals.md §1(3)).
@@ -531,6 +564,11 @@ func (c *Case) validate() error {
 	if _, _, err := parseThreshold(c.PassThreshold); err != nil {
 		return err
 	}
+	if v, set := c.Session.Config[ArmKey]; set {
+		if arm, ok := v.(string); !ok || !knownArms[arm] {
+			return fmt.Errorf("session.config %s: %v is not a known arm (%s)", ArmKey, v, strings.Join(KnownArms(), ", "))
+		}
+	}
 	if c.Session.Interactive && len(c.HumanAnswers) == 0 {
 		return fmt.Errorf("interactive session requires human_answers")
 	}
@@ -610,7 +648,7 @@ func (e Expect) hasAny() bool {
 	t := e.Trajectory
 	if len(t.ToolsAllOf) > 0 || len(t.ToolsAnyOf) > 0 || len(t.ToolsNoneOf) > 0 ||
 		t.MaxTurns != nil || t.MinTurns != nil || len(t.MinTurnsByTrigger) > 0 || t.NoStall || t.GapReport != nil ||
-		t.SubAgents != nil || t.LLMRequest != nil || t.Spills != nil {
+		t.SubAgents != nil || t.LLMRequest != nil || t.Spills != nil || len(t.ToolCalls) > 0 || t.Promotions != nil {
 		return true
 	}
 	a := e.Answer

@@ -1,0 +1,35 @@
+id: deferred-mid-turn-drift
+description: >
+  The task arrives in a file, not the prompt: "read instructions.txt and do what it
+  says", where the file asks for a move. The opening request says nothing about
+  moving files, so ranking on it cannot surface move_file; the drift case
+  adr/tool-exposition.md identified. Under the deferred mode the model finds
+  move_file in the tool index (adr/deferred-tool-schemas.md §7.3).
+track: live
+tier: multi_step
+tags: [deferred-tools, files, workspace, move]
+
+setup:
+  files:
+    /work/instructions.txt: |
+      Move /work/drafts/q3-report.md into the /work/archive/ directory, keeping its
+      file name. Do not change its contents. Then reply with the word "archived".
+    /work/drafts/q3-report.md: "Q3 report. Revenue up 12%. Codeword larch-90.\n"
+
+prompts:
+  - "Read /work/instructions.txt and do what it says."
+
+expect:
+  side_effects:
+    files:
+      /work/archive/q3-report.md: { contains: "larch-90" }
+      /work/drafts/q3-report.md: { absent: true }
+  trajectory:
+    tools_all_of: [read_file, move_file]
+    max_turns: 1
+    no_stall: true
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

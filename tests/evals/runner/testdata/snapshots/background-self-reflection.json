@@ -302,6 +302,7 @@
           "skill_read",
           "job_cancel"
         ],
+        "tool_tokens": 1335,
         "max_tokens": 2048,
         "tokens_used": 2180,
         "budget": 100000,

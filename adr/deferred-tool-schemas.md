@@ -1,6 +1,6 @@
 # Deferred tool schemas
 
-**Status:** Phase 0 implemented (2026-10-14); phases 1–4 proposed — 2026-10-07 · **Builds on:** `adr/tool-exposition.md`
+**Status:** Phases 0–1 implemented (2026-10-14); phases 2–4 proposed — 2026-10-07 · **Builds on:** `adr/tool-exposition.md`
 (the hybrid it shipped: passive top-K plus `tool_search` / `tool_list`) ·
 **Amends:** R-ROLE.4 (what "advertised" means; see §6) · **Depends on:** the eval
 work in §7 landing *before* the default flips
@@ -485,12 +485,69 @@ below the 1–1.5k estimated in §4:
 | Other large definitions | Unchanged: `write_file`, `read_file`, `edit_file`, `list_files`, `doc_search` | Their prose steers tool use (read by line range before editing, append without reading, search the docs before answering), which the evals measure. Trimming it is a behavior change, not hygiene. |
 | `BuildReport` tool-token figure surfaced | Already surfaced: the `tools` section of `nine context`, `GET /conversations/{id}/context` and the web UI's Context panel | — |
 
+## Phase 1 as built
+
+| Planned (§7) | Built | Left for phase 2 |
+|---|---|---|
+| `NINE_EVAL_ARMS` | `tests/evals/runner/arms.go`. Only `ranked` is an arm; asking for `deferred` is refused until the mode exists, so a run cannot silently compare `ranked` with itself. A case that pins `context.tool_exposition` runs in that arm only. `NINE_EVAL_RUNS` overrides every case's run count. | `deferred` joins the known arms |
+| Report columns | Per run: turns, LLM calls, `tool_search` calls, promotions, prompt tokens (the provider's `input_tokens`, else the builder's estimate), the largest tool block, calls per tool. The report adds medians over passed runs per model and arm, and a tool-use table. `llm_request` carries `tool_tokens`, the request's estimated tool block. | Call-to-load events, which need the mode |
+| §7.2 assertions | All five, and `tool_advertised_none_of` also fails on an index entry or a `tool_search` hit | — |
+| §7.3 cases | `deferred-discover-from-index`, `deferred-no-embedder`, `deferred-mid-turn-drift`, `deferred-mcp-discovery`, `deferred-resident-no-load`; `role-report-writer-no-shell` gains `tool_indexed_none_of: [shell]`. They pin no arm, so they run in every arm. | `deferred-call-to-load`, `deferred-promotion-sticky` and `deferred-small-catalog` test behavior only `deferred` has; `deferred-resident-no-load`'s `tool_tokens_max: 2500`, which `ranked` cannot meet; deferred snapshots and Track-R fixtures |
+
+The new cases pass in `ranked` at 3/3 on `qwen3.5:9b` and `qwen3.5:4b`, so they
+are mode-agnostic.
+
+### Baseline: the whole corpus in `ranked`
+
+One run per case, `qwen3.5:9b` and `qwen3.5:4b`, 2026-10-14:
+
+| Model | Passed | Prompt tokens / passed run | Turns | LLM calls | Largest tool block |
+|---|---|---|---|---|---|
+| `qwen3.5:9b` | 60/68 | 18,151 | 1 | 3 | 8,693 |
+| `qwen3.5:4b` | 61/69 | 22,323 | 1 | 3 | 8,693 |
+
+These are the figures §7.5's criteria 4 and 5 compare `deferred` against. The
+largest tool block is above phase 0's 6.6k because cases that enable optional
+tools (`js_eval`, `tool_write`, `sql_query`) advertise those too.
+
+### Resident set from call frequency
+
+Calls per tool over the 127 graded runs, leaving out the `deferred-*` cases, which
+exist to call deferred tools. Tokens are `countTokens` estimates from the
+orchestrator-interactive snapshot:
+
+| Tool | Runs that called it | ~Tokens |
+|---|---|---|
+| `process_list` | 22 | 102 |
+| `read_file` | 19 | 304 |
+| `write_file` | 14 | 358 |
+| `memory_get` | 13 | 39 |
+| `list_files` | 10 | 217 |
+| `memory_set` | 10 | 46 |
+| `file_search_text` | 9 | 122 |
+| `goal_list` | 9 | 55 |
+| `process_start` | 9 | 125 |
+| `delete_file` | 7 | 127 |
+
+The rule: a tool in the default catalog called in more than 5% of runs.
+`tool_write` (11 runs) and `shell` (7) pass the threshold but are gated by config,
+so an operator who enables them lists them in `resident_tools`. The ten tools
+total ~1,495 tokens. With §3.1's structural entries, `tool_search` (155),
+`skill_read` (38) and, for interactive sessions, `ask_human` (80), the set is
+~1,770 tokens; `run_agent` (367) takes delegating roles to ~2,135, above the
+2,000 budget.
+
+Against §3.1's hand-picked list, frequency adds the process and goal tools and
+`delete_file`, and drops `edit_file` (5 runs, 292 tokens). Phase 3's A/B settles
+both: `edit_file`'s prose steers how edits are made, and deferring it is a
+behavior change the corpus measures.
+
 ## Limits
 
 | Limit | Detail |
 |-------|--------|
-| Only phase 0 is built | §3's `deferred` mode, §7's eval work and the default flip are proposed. Token figures are estimates from `countTokens` (3.45 bytes/token), not a real tokenizer — see `adr/accurate-token-counting.md`. |
-| Resident set is provisional | §3.1's list is hand-picked; phase 1 replaces it with one derived from call frequency. |
+| Only phases 0–1 are built | §3's `deferred` mode, its deferred-only cases and the default flip are proposed. Token figures are estimates from `countTokens` (3.45 bytes/token), not a real tokenizer — see `adr/accurate-token-counting.md`. |
+| Resident set is derived from the corpus | The frequencies come from eval cases, which are written to exercise each tool, not from real use. The opt-in `session_events` query on a real store has not been run. |
 | Stickiness scope is open | Promotions are session-sticky. A long-lived process session could churn the LRU; whether to reset promotions per wake is undecided. |
 | Sub-agent inheritance is open | Proposed: a delegated leaf does not inherit its parent's promoted set — its role defines its resident set. |
 | Large MCP catalogs | One operator MCP server with ~100 tools exceeds the 600-token index budget alone. Collapsing an over-budget server to a single index line is proposed but undesigned. |

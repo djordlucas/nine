@@ -1,0 +1,33 @@
+id: deferred-resident-no-load
+description: >
+  A plain read-and-answer task, which the deferred mode's resident set covers
+  without a load (adr/deferred-tool-schemas.md §3.1): the common path must cost no
+  tool_search round trip. Mode-agnostic as written; the deferred mode's tool-token
+  cap joins it with that mode.
+track: live
+tier: smoke
+tags: [deferred-tools, files, workspace]
+
+setup:
+  files:
+    /work/config/service.toml: |
+      [server]
+      host = "0.0.0.0"
+      port = 8743
+
+prompts:
+  - "Which port does /work/config/service.toml set?"
+
+expect:
+  trajectory:
+    tools_all_of: [read_file]
+    tool_calls:
+      tool_search: { max: 0 }
+    no_stall: true
+  answer:
+    contains: ["8743"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -125,10 +126,30 @@ func TestLiveMatrix(t *testing.T) {
 		}
 	}
 
+	// NINE_EVAL_RUNS overrides every case's repetitions: 1 for a sweep that
+	// measures cost or tool use rather than pass rates. Thresholds scale with it.
+	if v := os.Getenv("NINE_EVAL_RUNS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			t.Fatalf("NINE_EVAL_RUNS=%q: want a positive integer", v)
+		}
+		for _, c := range cases {
+			c.Runs = n
+		}
+	}
+
+	// NINE_EVAL_ARMS runs every case once per tool-exposition arm
+	// (adr/deferred-tool-schemas.md §7.1); unset runs the default once.
+	arms, err := runner.ParseArms(os.Getenv("NINE_EVAL_ARMS"))
+	if err != nil {
+		t.Fatalf("NINE_EVAL_ARMS: %v", err)
+	}
+
 	suite := &runner.Suite{
 		Harness: &runner.Harness{NineBin: os.Getenv("NINE_BINARY"), Embedder: runner.EvalEmbedder(),
 			ContextBudget: runner.EvalContextBudget()},
 		Models:      models,
+		Arms:        arms,
 		ProviderFor: runner.ProviderFor,
 		JudgeFn:     runner.NewJudge(runner.ProviderFor),
 		ReplayRoot:  replayRoot,
@@ -141,7 +162,7 @@ func TestLiveMatrix(t *testing.T) {
 	if err := report.WriteJSON(reportPath); err != nil {
 		t.Errorf("write report: %v", err)
 	}
-	t.Logf("report: %s\n\n%s", reportPath, report.RenderGrid())
+	t.Logf("report: %s\n\n%s\n%s", reportPath, report.RenderGrid(), report.RenderCost())
 
 	if report.Fatal() {
 		t.Fatal("eval suite failed: an at-or-above-class case missed its threshold, or a replay diverged")
