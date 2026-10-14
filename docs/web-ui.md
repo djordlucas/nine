@@ -24,7 +24,31 @@ docker run -e NINE_API_AUTH_TOKEN=… -p 8080:8080 ghcr.io/djordlucas/nine
 |---|---|
 | Dashboard | what needs you (capability requests and `ask_human` questions), processes by state, the latest activity, recent conversations, active goals and workflows, notifications, and the daemon's status. Every tile updates as things happen. |
 | Journal | every event the daemon records, live: turns, model and tool calls, process transitions, and changes to approvals, questions, notifications, goals and workflows. Filter by kind or by session, pause, and open any event for its payload. |
-| Conversations, Processes, Goals & workflows, Tools, Inbox, System | not built yet (see Limits) |
+| Conversations | the conversations, newest first, beside the open one; on a phone, the list, then the conversation in its place. Chat live, answer the session's questions, stop a turn, and inspect any turn. |
+| Processes, Goals & workflows, Tools, Inbox, System | not built yet (see Limits) |
+
+## Conversations
+
+A conversation shows its transcript, then every turn it runs as it happens,
+whoever started it: this browser, another client, or the session's own schedule.
+Replies render as Markdown.
+
+| Control | Does |
+|---|---|
+| New conversation | starts an interactive session, which may ask you questions |
+| Send | sends a turn; Enter sends on a keyboard, Shift+Enter is a new line. A message sent mid-turn waits for the turn to end. |
+| Think | asks for the model's reasoning on the next turn (`force_think`) |
+| Stop | cancels the running turn; the session and its history stay |
+| A question's options, or your own words | answers the session's `ask_human` question |
+| Tool calls | open to show their input and output |
+| Inspect turn N | the turn as the journal recorded it: its input, each model call and tool call with what went in and came out, its sub-agents, its result, and the raw events. Nothing runs again. |
+| Context | what the next model call would be shown, by section, with the system prompt |
+| End session | stops the session's worker and deletes its checkpoint, so its next turn starts without the earlier context; the transcript stays |
+| Delete | removes the conversation and everything recorded for it |
+
+The conversation follows its turns over a WebSocket
+(`/ws/v1/conversations/{id}/messages`). It reconnects by itself and reloads the
+transcript when it does.
 
 ## Staying live
 
@@ -84,14 +108,16 @@ in `internal/webui/dist`, so `go build` needs no Node.
 | `make webui` | regenerates the API types from `internal/api/openapi.yaml` and builds, in a pinned Node container |
 | `make webui-check` | fails if the committed build or types differ from a fresh build |
 | `make webui-test` | unit tests (Vitest) |
-| `make webui-e2e` | Playwright against the runtime image, at 390×844 and 1440×900 |
+| `make webui-e2e` | Playwright against the runtime image, at 390×844 and 1440×900. The daemon's model is `web/e2e/stub-model.mjs`, which answers from a script, so no model runs. |
 | `npm run dev` in `web/` | a dev server that proxies `/api` and `/ws` to a daemon on `:8080` |
 
 ## Limits
 
 | Limit | Detail |
 |---|---|
-| Most sections are not built | The dashboard and the Journal work. The rest arrive in order: conversations; processes, goals and workflows; tools, plugins, skills and the inbox; then the system section (`adr/web-ui.md` §9). Until then a tile's Open link leads to a placeholder. |
+| Most sections are not built | The dashboard, Conversations and the Journal work. The rest arrive in order: processes, goals and workflows; tools, plugins, skills and the inbox; then the system section (`adr/web-ui.md` §9). Until then a tile's Open link leads to a placeholder. |
+| A long transcript shows its last 1000 entries | A conversation loads at most 1000 transcript entries, the most recent. Each turn's full record is under Inspect. |
+| A failed turn is not in the transcript | The transcript keeps replies, not errors, so a cancelled or failed turn shows its outcome only while the page that saw it stays open. The turn's trace (`GET /api/v1/conversations/{id}/trace?turn=N`) keeps it. |
 | Large payloads stay out of the stream | A payload over 16 KB, usually a model call's whole context, reaches the Journal as its size only. The turn's trace (`GET /api/v1/conversations/{id}/trace`) has it, and the Journal links to it. |
 | The Journal holds what the tab has seen | It shows the events kept since the tab opened, up to 2000, starting with the 200 before. Older history is in each conversation's trace. |
 | One identity | The API token is the only credential, so every signed-in browser has the same rights. |

@@ -99,6 +99,7 @@ Msg {
 | `session_history` | `agent_id` (**required**) | a session's whole transcript from the journal, every turn; does **not** attach |
 | `session_events` | `agent_id` (**required**), (`turn`) | a session's raw journal: every turn (`turn` 0), turn N, or the latest (`-1`) |
 | `watch` | `agent_id` (**required**) | follow a session's events on this connection until it closes (R-PROTO.14) |
+| `turn_cancel` | `agent_id` (**required**) | cancel the turn the session is running; the session stays (R-PROTO.16) |
 | `journal_follow` | (`after`), (`limit`) | follow the whole journal on this connection until it closes, after `seq` `after`; with none, from now with up to `limit` earlier events (R-PROTO.15) |
 | `list_human_requests` | — | the `ask_human` questions still waiting for an answer |
 
@@ -138,6 +139,7 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `session_history` | `text` = JSON `[]Msg` | `history_user`, `tool_start`, `tool_end`, `sub_agent_start`, `sub_agent_end`, `response`, in order, each with `ts` and `turn` |
 | `session_events` | `text` = JSON `[]JournalEvent` | `{ seq, agent_id, turn, span_id, parent_span_id, type, ts, payload }` ([`event-journal.md`](event-journal.md)) |
 | `watch` | `agent_id` | watch accepted; the session's events follow (R-PROTO.14) |
+| `turn_cancel` | `text` = `cancelled` \| `idle` | a running turn was cancelled, or the session was idle (or `error` when the session is unknown) |
 | `journal_follow` | `after`, (`status` = `reset`) | follow accepted, starting after `after`; then one per batch with `text` = JSON `[]JournalEvent` (R-PROTO.15) |
 | `list_human_requests` | `text` = JSON `[]PendingQuestion` | `{ id, agent_id, question, options, created_at, expires_at }`, oldest first; one past its deadline is left out |
 
@@ -459,3 +461,18 @@ starts, then writes a `journal_follow` message per batch, `text` carrying the ev
 | Batches | in `seq` order, each event once, at most 256 per message |
 | Ends | when the client closes or the daemon shuts down. The daemon closes the connection; it reads nothing more from it |
 | Any number | each follower is independent; none slows the journal's writer |
+
+---
+
+## R-PROTO.16 — `turn_cancel` cancels a turn, not a session
+
+`turn_cancel` cancels the context of the turn the session is running. Unlike
+`session_stop`, it **MUST** leave the session as it was: loaded, with its history and
+checkpoint.
+
+| Rule | Detail |
+|------|--------|
+| Outcome | the turn ends with the error `turn cancelled` (`runtime.ErrTurnCancelled`), whatever the loop was doing when it noticed; its connection and every watcher receive it, and it is journaled as the turn's `turn_end` error |
+| When | at the loop's next model or tool call boundary at the latest; a model call or tool in flight is cancelled through its context |
+| Reply | `cancelled` when a turn was running, `idle` when the session exists and was not; an unknown session is an `error` |
+| Queue | a message queued behind the cancelled turn still runs |

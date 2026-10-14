@@ -397,7 +397,8 @@ Delete a conversation and all its data.
 
 #### POST `/api/v1/conversations/{id}/stop`
 
-Stop a conversation (end session but keep history).
+End a conversation's session: its worker stops, its checkpoint is deleted and
+the processes it drives are stopped. The journal and transcript stay.
 
 **Response:**
 ```json
@@ -406,6 +407,16 @@ Stop a conversation (end session but keep history).
   "status": "stopped"
 }
 ```
+
+#### POST `/api/v1/conversations/{id}/cancel`
+
+Cancel the turn the conversation is running, through the daemon's `turn_cancel`
+([`wire-protocol.md`](wire-protocol.md) R-PROTO.16). The session, its history and
+its checkpoint **MUST** stay. The turn ends with the error `turn cancelled`, which
+every stream following the conversation receives; a queued message still runs.
+
+**Response:** `{"id": "conversation-id", "cancelled": true}`; `cancelled` is false
+when no turn was running. An unknown conversation is `404`.
 
 ---
 
@@ -1171,7 +1182,12 @@ rule; plus three the WebSocket alone can act on:
 ```json
 {"type": "user_turn", "text": "...", "force_think": false}
 {"type": "human_input_answer", "request_id": "r1", "answer": "yes"}
+{"type": "cancel"}
 ```
+
+`cancel` cancels the running turn, as `POST …/cancel` does, and is answered
+`{"type": "cancel", "cancelled": true|false}`. The turn's end arrives through the
+watch, as `error` with the message `turn cancelled`.
 
 | Rule | Detail |
 |------|--------|
@@ -1388,6 +1404,7 @@ All API configuration options **MUST** be available via CLI flags.
 | — | GET `/api/v1/skills` | Implemented |
 | — | GET `/api/v1/conversations/{id}/messages/stream` | Implemented |
 | — | WS `/ws/v1/conversations/{id}/messages` | Implemented |
+| — | POST `/api/v1/conversations/{id}/cancel` | Implemented |
 | — | GET `/api/v1/events` | Implemented |
 | — | GET `/api/v1/questions` | Implemented |
 

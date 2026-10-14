@@ -171,7 +171,8 @@ GET    /api/v1/conversations/{id}/history        — Transcript, every turn
 GET    /api/v1/conversations/{id}/trace          — Event journal (nine trace)
 POST   /api/v1/conversations/{id}/replay         — One turn reconstructed (nine replay)
 DELETE /api/v1/conversations/{id}                — Delete a conversation
-POST   /api/v1/conversations/{id}/stop           — Stop a conversation
+POST   /api/v1/conversations/{id}/cancel         — Cancel the running turn
+POST   /api/v1/conversations/{id}/stop           — End the session
 GET    /api/v1/conversations/{id}/messages/stream — Live events (SSE)
 WS     /ws/v1/conversations/{id}/messages          — Live events + send turns (WebSocket)
 ```
@@ -188,6 +189,13 @@ reading them does not attach to the session.
 
 An unknown conversation is `404`; so is a replay of a turn the journal does not
 hold.
+
+`POST …/cancel` interrupts the turn in progress and keeps the session: it answers
+`{"cancelled": true}`, or `false` when no turn was running, and the turn ends with
+the error `turn cancelled` (a `POST …/messages` waiting on it gets a `500` saying
+so). `POST …/stop` ends the session instead: its worker stops, its checkpoint is
+deleted, so the next turn starts without the earlier context, and the processes it
+drives stop. Its transcript and journal stay.
 
 ### Goals, workflows, tools, plugins
 
@@ -395,8 +403,8 @@ prompts and tool output included, so it needs the same token as the rest of the 
 ## WebSocket
 
 `/ws/v1/conversations/{id}/messages` carries the event stream's events and lets the
-client send on the same connection: turns, and answers to an interactive
-session's questions. Every message is a JSON text frame with a `type`.
+client send on the same connection: turns, answers to an interactive session's
+questions, and a cancel. Every message is a JSON text frame with a `type`.
 
 ```bash
 websocat -H 'Authorization: Bearer secret' ws://localhost:8080/ws/v1/conversations/abc/messages
@@ -412,6 +420,7 @@ The server sends each [event stream](#event-stream) event as its fields plus
 | `human_input_required` | An interactive session asks a question: `request_id`, `question`, `options`, `timeout_seconds` |
 | `queued` | A `user_turn` arrived while the session was mid-turn; it waits for the next turn |
 | `human_input_answered` | An answer was delivered |
+| `cancel` | Answers a `cancel`: `cancelled`, true when a turn was running |
 
 The client sends:
 
@@ -419,6 +428,7 @@ The client sends:
 |---------|--------|
 | `user_turn` | `text`, `force_think` |
 | `human_input_answer` | `request_id`, `answer` |
+| `cancel` | — : cancels the running turn, which then ends with `error` `turn cancelled` |
 
 A turn sent over the socket reports its events and reply like any other turn —
 the socket shows every turn the session runs — so nothing is reported twice.

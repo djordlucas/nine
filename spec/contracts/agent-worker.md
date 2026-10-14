@@ -45,6 +45,11 @@ The order is normative: routines are notified, **then** stall is checked, **then
 checkpoint is written, **then** the idle timer is re-armed, **then** the response is
 returned.
 
+`loop.Run` runs on a context the worker can cancel (`turn_cancel`,
+[`wire-protocol.md`](wire-protocol.md) R-PROTO.16). A cancelled turn still runs the
+rest of the pipeline: its `turn_end` is journaled with the error `turn cancelled`,
+and the checkpoint is written.
+
 ---
 
 ## R-WORK.3 — notifications (push delivery)
