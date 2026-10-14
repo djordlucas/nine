@@ -1,0 +1,95 @@
+.page {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 900px;
+}
+
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.steps {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.title {
+  font-size: var(--text-lg);
+}
+
+.h {
+  font-size: var(--text-md);
+  margin-bottom: var(--space-2);
+}
+
+.input {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.cards li {
+  min-width: 0;
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.facts span {
+  color: var(--text-2);
+}
+
+.md {
+  overflow-wrap: anywhere;
+}
+
+.md pre,
+.pre {
+  margin: var(--space-2) 0;
+  padding: var(--space-3);
+  max-height: 420px;
+  overflow: auto;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.http {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-4);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.raw {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+}
+
+.raw summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}

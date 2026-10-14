@@ -1,10 +1,23 @@
 # End-to-end tests for the web UI (adr/web-ui.md §8): Playwright drives the
-# runtime image, the one a release publishes. `make webui-e2e` runs it.
+# runtime image, the one a release publishes, whose model is a scripted stub
+# (stub-model.mjs). `make webui-e2e` runs it.
 services:
+  model:
+    image: node:24.21.0-bookworm-slim
+    working_dir: /web
+    volumes:
+      - ..:/web:ro
+    command: ["node", "e2e/stub-model.mjs"]
+
   nine:
     image: ${NINE_E2E_IMAGE:-nine:e2e}
+    depends_on: [model]
     environment:
       NINE_API_AUTH_TOKEN: e2e-token
+      NINE_LLM_PROVIDER: mistral
+      NINE_LLM_ENDPOINT: http://model:9000/v1
+      NINE_LLM_MODEL: stub
+      NINE_LLM_API_KEY: stub
 
   playwright:
     image: mcr.microsoft.com/playwright:v1.64.0-noble

@@ -1,5 +1,6 @@
 import type { ComponentChildren } from 'preact';
-import { api, errorMessage, type Schemas } from '../api/client';
+import { api, get, type Schemas } from '../api/client';
+import { ago } from '../format';
 import { recentEvents } from '../api/events';
 import { eventKind, shortId, summarize, timeOf } from '../journal';
 import { useLive, useRecent } from '../live';
@@ -22,13 +23,6 @@ export function Dashboard() {
       <Daemon />
     </div>
   );
-}
-
-/** Unwraps an openapi-fetch result, throwing its error message. */
-async function get<T>(p: Promise<{ data?: T; error?: unknown }>, what: string): Promise<T> {
-  const { data, error } = await p;
-  if (data === undefined) throw new Error(errorMessage(error, `Could not load ${what}.`));
-  return data;
 }
 
 function Tile(props: {
@@ -64,17 +58,6 @@ function Empty({ children }: { children: ComponentChildren }) {
   return <p class="muted">{children}</p>;
 }
 
-function ago(iso: string | undefined): string {
-  if (!iso) return '';
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return '';
-  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
-  if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
-  return `${Math.floor(s / 86400)} d ago`;
-}
-
 /** Pending approvals and unanswered ask_human questions. */
 function Attention() {
   const { data, error } = useLive(
@@ -108,7 +91,9 @@ function Attention() {
           {data.questions.map((q) => (
             <li key={q.id}>
               <span class={`${styles.badge} ${styles.attention}`}>question</span>
-              <span class={styles.text}>{q.question}</span>
+              <a class={styles.text} href={`/conversations/${q.agent_id}`}>
+                {q.question}
+              </a>
             </li>
           ))}
         </ul>
@@ -212,7 +197,9 @@ function Conversations() {
         <ul class={styles.list}>
           {data.map((c) => (
             <li key={c.id}>
-              <span class={styles.text}>{c.name || shortId(c.id ?? '')}</span>
+              <a class={styles.text} href={`/conversations/${c.id}`}>
+                {c.name || shortId(c.id ?? '')}
+              </a>
               <span class={styles.meta}>{ago(c.updated_at)}</span>
             </li>
           ))}

@@ -180,6 +180,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/conversations/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel the running turn
+         * @description Cancels the turn a conversation is running. The turn ends with the error "turn cancelled", which every stream following the conversation receives; the session, its history and its checkpoint stay, and a queued message still runs. cancelled is false when no turn was running.
+         */
+        post: operations["cancelTurn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/conversations/{id}/stop": {
         parameters: {
             query?: never;
@@ -191,7 +211,7 @@ export interface paths {
         put?: never;
         /**
          * Stop a conversation
-         * @description Stops a conversation's session, ending the agent worker but preserving the event journal.
+         * @description Ends a conversation's session. Its worker stops, its checkpoint is deleted and the processes it drives are stopped; the journal and transcript stay. To interrupt only the turn in progress, use cancel.
          */
         post: operations["stopConversation"];
         delete?: never;
@@ -1496,6 +1516,12 @@ export interface components {
              */
             source: "builtin" | "user" | "agent";
         };
+        /** @description Whether a running turn was cancelled. */
+        CancelTurnResponse: {
+            id: string;
+            /** @description false when the conversation was not running a turn. */
+            cancelled: boolean;
+        };
         /** @description Confirmation that a conversation was stopped, its history kept. */
         StopConversationResponse: {
             id?: string;
@@ -2281,6 +2307,67 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             /** @description conversation or turn not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    cancelTurn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description conversation id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CancelTurnResponse"];
+                };
+            };
+            /** @description missing id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description conversation not found */
             404: {
                 headers: {
                     [name: string]: unknown;

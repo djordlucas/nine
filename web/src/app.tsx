@@ -4,9 +4,11 @@ import { auth, checkSession } from './api/client';
 import { connect, disconnect } from './api/events';
 import { Shell } from './components/Shell';
 import { Dashboard } from './pages/Dashboard';
+import { Conversations } from './pages/Conversations';
 import { Journal } from './pages/Journal';
 import { Login } from './pages/Login';
 import { NotFound, Pending } from './pages/Pending';
+import { Turn } from './pages/Turn';
 
 export function App() {
   useEffect(() => {
@@ -42,7 +44,9 @@ export function App() {
       <Shell>
         <Router>
           <Route path="/" component={Dashboard} />
-          <Route path="/conversations/*" component={Pending} />
+          <Route path="/conversations/:id/turns/:n" component={Turn} />
+          <Route path="/conversations/:id" component={Conversations} />
+          <Route path="/conversations" component={Conversations} />
           <Route path="/processes/*" component={Pending} />
           <Route path="/goals/*" component={Pending} />
           <Route path="/tools/*" component={Pending} />
