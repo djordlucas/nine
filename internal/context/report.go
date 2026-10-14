@@ -12,6 +12,11 @@ type Report struct {
 	Sections []Section     `json:"sections"`
 	System   string        `json:"system"`   // fully-assembled system prompt
 	Messages []llm.Message `json:"messages"` // fully-assembled message list
+	// Indexed names the tools a deferred loop listed in its index instead of
+	// advertising. Empty when ranked or when the whole catalog is advertised.
+	Indexed []string `json:"indexed,omitempty"`
+	// IndexTokens is the index's estimated size, part of the tools section.
+	IndexTokens int `json:"index_tokens,omitempty"`
 }
 
 // Section is one priority band's contribution to the assembled context.

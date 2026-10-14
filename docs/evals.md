@@ -253,7 +253,8 @@ returns events in `seq` order with these payloads (see `journal`):
 | Event | Key payload fields | Used to assert |
 |-------|--------------------|----------------|
 | `turn_start` | `input`, `trigger` (`user`/`idle`) | turn boundaries |
-| `llm_request` | `system`, `messages`, `tool_names`, `tool_tokens`, `tokens_used`, `budget` | prompt/role gating, tool and context budget |
+| `llm_request` | `system`, `messages`, `tool_names`, `tool_index`, `tool_tokens`, `tokens_used`, `budget` | prompt/role gating, tool and context budget |
+| `tool_promoted` / `tool_demoted` | `name`, `reason` (`search`/`call`) | the deferred mode's loads |
 | `llm_response` | `text`, `tool_calls`, `stop_reason` | model intent |
 | `tool_start` | `name`, `input` | which tool, with what args |
 | `tool_end` | `name`, `input`, `output`, `truncated`, `duration_ms`, `attempts`, `err` | tool result / failure |
@@ -284,10 +285,10 @@ Mappings:
 - **`llm_request.tool_advertised_all_of`** → each name appears in some `llm_request.tool_names`.
 - **`llm_request.tool_indexed_none_of`** → the name never appears in any
   `llm_request.tool_index`, the names the deferred tool mode lists without a schema
-  ([adr/deferred-tool-schemas.md](../adr/deferred-tool-schemas.md) §3.2). Until that
-  mode ships, no request carries an index and this always holds.
+  ([adr/deferred-tool-schemas.md](../adr/deferred-tool-schemas.md) §3.2). A ranked
+  request carries no index, so there it always holds.
 - **`llm_request.tool_tokens_max`** → the largest `llm_request.tool_tokens`, the
-  estimated size of the request's tool definitions.
+  estimated size of the request's tool definitions and, when deferred, its index.
 - **`tool_calls`** → `tool_start` events per name, bounded by `{min, max}`; an unset
   end is open.
 - **`promotions`** → `tool_promoted` events, bounded by `{min, max}`.
@@ -339,7 +340,7 @@ pass fraction ≥ `pass_threshold`. Everything in §1–§3 applies. Requirement
   model and arm. A case that passes in one arm and fails in another is a regression
   the mode caused. Unset runs the configured default once. A case that sets
   `context.tool_exposition` in its own `session.config` runs only in that arm. The
-  only arm so far is `ranked`; `deferred` joins with the mode
+  arms are `ranked` and `deferred`
   ([adr/deferred-tool-schemas.md](../adr/deferred-tool-schemas.md) §7.1).
 - **No embedder for one case**: `session.config` `embeddings.provider: none` runs the
   case with no embedder, as a deployment configured that way does.

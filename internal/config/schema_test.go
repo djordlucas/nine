@@ -136,3 +136,20 @@ func TestShippedConfigsProduceNoUnknownKeyWarning(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateContextExposition(t *testing.T) {
+	for body, ok := range map[string]bool{
+		"[context]\ntool_exposition = \"deferred\"\npromoted_budget = 800\n": true,
+		"[context]\ntool_exposition = \"ranked\"\n":                          true,
+		"[context]\ntool_exposition = \"eager\"\n":                           false,
+		"[context]\npromoted_budget = -1\n":                                  false,
+	} {
+		cfg, err := config.Load(writeConfig(t, "[llm]\nprovider = \"ollama\"\n"+body))
+		if err == nil {
+			err = cfg.Validate()
+		}
+		if (err == nil) != ok {
+			t.Errorf("%q: err = %v, want ok=%v", body, err, ok)
+		}
+	}
+}

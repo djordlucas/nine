@@ -45,6 +45,9 @@ type Config struct {
 	Processes ProcessesConfig `toml:"processes"`
 	Tools     ToolsConfig     `toml:"tools"`
 	MCP       MCPConfig       `toml:"mcp"`
+	// Context is the `[context]` table: how tools reach the model's context
+	// (adr/deferred-tool-schemas.md).
+	Context ContextConfig `toml:"context"`
 	// API is the `[api]` table: HTTP API server configuration for remote access
 	// to Nine's functionality (spec/contracts/api.md). The API runs as a separate
 	// process that communicates with the daemon via Unix socket.
@@ -85,6 +88,27 @@ type PluginEntry struct {
 	// values win on a duplicate key). Reserved keys and Nine's own spawn vars
 	// cannot be set here.
 	Settings map[string]any `toml:"settings"`
+}
+
+// Tool exposition modes for [context] tool_exposition.
+const (
+	ToolExpositionRanked   = "ranked"
+	ToolExpositionDeferred = "deferred"
+)
+
+// ContextConfig is `[context]`.
+type ContextConfig struct {
+	// ToolExposition is "ranked" (the default): every pinned tool and the
+	// best-ranked rest are advertised with their schemas. "deferred" advertises
+	// a small resident set and lists the other tools by name, for the model to
+	// load with tool_search or call directly.
+	ToolExposition string `toml:"tool_exposition"`
+	// ResidentTools are tools a deferred loop keeps resident besides the
+	// built-in set, by name; plugin and MCP tool names are allowed.
+	ResidentTools []string `toml:"resident_tools"`
+	// PromotedBudget bounds, in estimated tokens, the schemas a deferred loop
+	// has loaded. 0 is 1500.
+	PromotedBudget int `toml:"promoted_budget"`
 }
 
 // ToolsConfig tunes the tool-dispatch boundary. It is `[tools]` rather than
@@ -1411,6 +1435,15 @@ func (cfg *Config) Validate() error {
 	}
 	if err := cfg.GenesisReady(); err != nil {
 		return err
+	}
+	switch cfg.Context.ToolExposition {
+	case "", ToolExpositionRanked, ToolExpositionDeferred:
+	default:
+		return fmt.Errorf("[context] tool_exposition %q must be %q or %q",
+			cfg.Context.ToolExposition, ToolExpositionRanked, ToolExpositionDeferred)
+	}
+	if cfg.Context.PromotedBudget < 0 {
+		return fmt.Errorf("[context] promoted_budget must not be negative")
 	}
 	if cfg.Processes.RollbackAfter < 0 {
 		return fmt.Errorf("[processes] rollback_after must not be negative")

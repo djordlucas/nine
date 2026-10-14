@@ -199,6 +199,18 @@ See [`../../adr/tool-output-spill.md`](../../adr/tool-output-spill.md) §5.
 
 ---
 
+## R-DISP.8 — call-to-load
+
+Under deferred exposition (`[context] tool_exposition = "deferred"`) a tool listed in the
+request's tool index is dispatched like any other. When such a call fails, the agent loop
+**MUST** append the tool's description and input schema to the failure observation and
+promote the tool, so the next request advertises it. A call that succeeds promotes
+nothing. Ranked exposition has no index, so this never applies there.
+
+See [`../../adr/deferred-tool-schemas.md`](../../adr/deferred-tool-schemas.md) §3.4.
+
+---
+
 ## Reference symbols
 
 `internal/agent/dispatcher.go` (`Dispatcher`, `Dispatch`, `DefaultMaxOutputTokens`,

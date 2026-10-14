@@ -9,6 +9,10 @@ track: live
 tier: basic
 tags: [deferred-tools, mcp, plugin]
 
+session:
+  config:
+    context.tool_exposition: deferred
+
 setup:
   mcp_servers:
     - name: fixture

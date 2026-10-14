@@ -119,8 +119,43 @@ func snapshotCases() []snapshotCase {
 	}
 }
 
-func TestTurnSnapshots(t *testing.T) {
+// deferredSnapshotCases are snapshotCases in the deferred arm, plus a turn
+// that loads a tool, so the resident set, the index and a promoted tool's
+// schema are reviewed in diffs like every other prompt change.
+func deferredSnapshotCases() []snapshotCase {
+	var out []snapshotCase
 	for _, sc := range snapshotCases() {
+		sc.name += "-deferred"
+		sc.c.Session.Config = map[string]any{ArmKey: ArmDeferred}
+		out = append(out, sc)
+	}
+	// An allowlist role whose whole catalog fits: advertised whole, no index.
+	out = append(out, snapshotCase{
+		name: "code-reviewer-deferred",
+		c: Case{Session: Session{Role: "code-reviewer", Config: map[string]any{ArmKey: ArmDeferred}},
+			Prompts: []string{"Review notes/plan.md."}},
+		script: func(int, llm.Request) llm.Response { return answer("reviewed") },
+	})
+	trash := Setup{Files: map[string]string{".nine/trash/20261014T090000Z-0a1b2c3d/notes/plan.md": "# Plan\n"}}
+	out = append(out, snapshotCase{
+		name: "orchestrator-deferred-load",
+		c: Case{Setup: trash, Session: Session{Config: map[string]any{ArmKey: ArmDeferred}},
+			Prompts: []string{"Restore notes/plan.md from the trash."}},
+		script: func(n int, _ llm.Request) llm.Response {
+			switch n {
+			case 1:
+				return snapshotToolCall("tool_search", map[string]any{"names": []string{"restore_file"}})
+			case 2:
+				return snapshotToolCall("restore_file", map[string]any{"entry": "20261014T090000Z-0a1b2c3d"})
+			}
+			return answer("done")
+		},
+	})
+	return out
+}
+
+func TestTurnSnapshots(t *testing.T) {
+	for _, sc := range append(snapshotCases(), deferredSnapshotCases()...) {
 		t.Run(sc.name, func(t *testing.T) {
 			p := &snapshotProvider{script: sc.script}
 			h := &Harness{Embedder: keyword.New(), BaseDir: t.TempDir()}

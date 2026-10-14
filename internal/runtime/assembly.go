@@ -78,6 +78,10 @@ type AssemblyConfig struct {
 	SurfaceMemories bool
 	// MaxToolOutputTokens mirrors [tools] max_output_tokens; 0 keeps the default.
 	MaxToolOutputTokens int
+	// ToolExposition, ResidentTools and PromotedBudget mirror [context].
+	ToolExposition string
+	ResidentTools  []string
+	PromotedBudget int
 	// MaxJobsPerConversation mirrors [plugins] max_jobs_per_conversation; 0 default.
 	MaxJobsPerConversation int
 	// MaxJobsTotal mirrors [plugins] max_jobs_total; 0 default.
@@ -160,6 +164,9 @@ func Assemble(c AssemblyConfig) *Assembly {
 			WorkspaceRoot:          c.WorkspaceRoot,
 			GeneratedTools:         c.GeneratedTools,
 			GeneratedEval:          c.GeneratedEval,
+			ToolExposition:         c.ToolExposition,
+			ResidentTools:          c.ResidentTools,
+			PromotedBudget:         c.PromotedBudget,
 		},
 		InitialQueue: c.Queue,
 		NotifAdd:     notifAdd,

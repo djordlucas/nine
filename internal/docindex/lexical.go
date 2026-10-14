@@ -59,6 +59,11 @@ func LexicalIndex() (*Lexical, error) {
 	return lexicalIdx, lexicalErr
 }
 
+// NewLexical builds a BM25 index over secs, for a corpus other than the
+// bundled docs: tool_search ranks a loop's tool catalog with it. Only Addr,
+// Title, Heading and Body are indexed.
+func NewLexical(secs []Section) *Lexical { return newLexical(secs) }
+
 func newLexical(secs []Section) *Lexical {
 	l := &Lexical{df: map[string]int{}, n: len(secs)}
 	var total float64

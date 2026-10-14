@@ -19,12 +19,25 @@ type Config struct {
 	ToolTopN     int      // max non-always-include tools to add (0 → 20)
 	ExtrasBudget int      // min remaining tokens required to include extras (0 → 200)
 	AlwaysTools  []string // tool names always included regardless of relevance
+
+	// Exposition is ExpositionRanked (the default, also for "") or
+	// ExpositionDeferred. Deferred advertises Resident and the input's Promoted
+	// tools and lists the rest in an index (adr/deferred-tool-schemas.md).
+	Exposition string
+	// Resident names the tools a deferred loop always advertises.
+	Resident []string
 }
 
 // ToolWithVector is a tool definition paired with its embedding for ranking.
 type ToolWithVector struct {
 	Tool   llm.ToolDef
 	Vector []float32 // nil → score 0 (no embedding available)
+	// Toolkit groups the tool in the deferred index and names it for a
+	// tool_search load: "workspace", "memory", "mcp/<server>", …
+	Toolkit string
+	// Gloss follows the tool's name in the index when the name alone does not
+	// say what the tool does.
+	Gloss string
 }
 
 // ScratchpadEntry is one iteration of the ReAct loop.
@@ -57,6 +70,9 @@ type BuildInput struct {
 	// QueuedMessagesCount is the number of queued messages for this session.
 	// When > 0, a system message is added to inform the model about queued messages.
 	QueuedMessagesCount int
+	// Promoted are the tools a deferred loop has loaded, in promotion order.
+	// They are advertised after the resident set. Ignored when ranked.
+	Promoted []string
 }
 
 // Builder assembles llm.Request values within a token budget.
@@ -75,6 +91,19 @@ func (b *Builder) Build(input BuildInput) llm.Request {
 func (b *Builder) BuildWithUsage(input BuildInput) (llm.Request, int) {
 	req, used, _ := b.assemble(input, false)
 	return req, used
+}
+
+// Exposure is what a deferred request listed in its tool index rather than
+// advertised: the tools' names and the index's estimated size. Zero when ranked.
+type Exposure struct {
+	Indexed     []string
+	IndexTokens int
+}
+
+// BuildForCall is like BuildWithUsage but also returns the request's Exposure.
+func (b *Builder) BuildForCall(input BuildInput) (llm.Request, int, Exposure) {
+	req, used, rep := b.assemble(input, false)
+	return req, used, Exposure{Indexed: rep.Indexed, IndexTokens: rep.IndexTokens}
 }
 
 // BuildReport assembles the context exactly as BuildWithUsage does, but records a
@@ -106,15 +135,30 @@ func (b *Builder) assemble(input BuildInput, report bool) (llm.Request, int, Rep
 	remaining -= coreTokens
 	add("system-core", "1", coreTokens, true, "always included")
 
-	// Priority 2 — tool definitions: relevance-filtered.
-	tools := b.selectTools(input.Tools, input.QueryVector, remaining)
-	toolTok := 0
+	// Priority 2 — tool definitions: relevance-filtered, or, deferred, the
+	// resident and promoted tools plus an index naming the rest.
+	var (
+		tools   []llm.ToolDef
+		indexed []string
+		index   string
+	)
+	if b.cfg.Exposition == ExpositionDeferred {
+		tools, indexed, index = deferTools(input.Tools, b.cfg.Resident, input.Promoted)
+	} else {
+		tools = b.selectTools(input.Tools, input.QueryVector, remaining)
+	}
+	rep.IndexTokens = countTokens(index)
+	toolTok := rep.IndexTokens
 	for _, t := range tools {
 		toolTok += toolTokens(t)
 	}
 	remaining -= toolTok
-	add("tools", "2", toolTok, len(tools) > 0,
-		fmt.Sprintf("%d of %d selected", len(tools), len(input.Tools)))
+	detail := fmt.Sprintf("%d of %d selected", len(tools), len(input.Tools))
+	if b.cfg.Exposition == ExpositionDeferred {
+		detail = fmt.Sprintf("%d advertised (%d promoted), %d in the index", len(tools), len(input.Promoted), len(indexed))
+	}
+	add("tools", "2", toolTok, len(tools) > 0, detail)
+	rep.Indexed = indexed
 
 	// Priority 2.5 — self model: capped at 600 tokens, omitted if budget is tight.
 	selfModel := ""
@@ -187,6 +231,11 @@ func (b *Builder) assemble(input BuildInput, report bool) (llm.Request, int, Rep
 
 	// Priority 5 — system extras: include only when budget allows.
 	system := input.SystemCore
+	// The index follows the role body so it stays in the reusable prefix: it
+	// changes only when the catalog or the promoted set does.
+	if index != "" {
+		system += "\n\n" + index
+	}
 	if selfModel != "" {
 		system += "\n\n" + selfModel
 	}

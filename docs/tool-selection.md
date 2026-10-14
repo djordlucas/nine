@@ -1,9 +1,11 @@
 # Tool selection
 
 Nine exposes more tools, skills and documentation than fit in one model's
-context, so each turn shows the model a subset. The subset is chosen twice: the
-context builder ranks the catalog before the turn, and the model searches the
-full catalog during it.
+context, so each turn shows the model a subset. `[context] tool_exposition`
+picks how: **ranked** (the default) chooses the subset per turn by relevance,
+with full schemas; **deferred** keeps a fixed resident set with schemas and
+lists every other tool by name, for the model to load. Either way the model can
+search the full catalog during the turn.
 
 Visibility and callability are separate. A tool that is not shown this turn is
 still callable — visibility is a context-budget decision, callability is a
@@ -33,6 +35,41 @@ Ranking handles the common case and fails on the specific one. A request phrased
 in vocabulary the catalog does not share ranks the right tool below several
 plausible wrong ones, and the chance of the needed tool falling outside the cut
 rises with catalog size.
+
+## Deferred exposition
+
+A deferred session sends about a third of the tool tokens a ranked one does: on
+the interactive orchestrator ~2,400 instead of ~6,700, measured from the turn
+snapshots.
+
+| Part | What the model gets |
+|------|---------------------|
+| Resident set | Full schemas of the most-called tools: `process_list`, `read_file`, `write_file`, `memory_get`, `memory_set`, `list_files`, `file_search_text`, `goal_list`, `process_start`, `delete_file`, plus `tool_search`, `skill_read`, `ask_human` (interactive) and `run_agent` (delegating), where the role has them. `[context] resident_tools` adds more. |
+| Tool index | A `## More tools` section of the system prompt: every other tool by name, one line per toolkit (`workspace`, `memory`, `jobs`, `mcp/<server>` …). A tool Nine did not name carries the first clause of its description. |
+| Promoted tools | Tools the session loaded, with full schemas, after the resident set. |
+
+**Loading.** `tool_search(names=[...])` loads tools by name, or every tool of a
+toolkit; `tool_search(query=...)` loads the three best matches. Loaded tools are
+promoted: advertised from the next request on, for the rest of the session,
+across a process session's wakes. A query ranks by keyword (BM25), fused with
+the embedder's ranking when there is one, so `tool_search` needs no embedder in
+this mode.
+
+**Calling from the index.** An indexed tool is callable by name without a load.
+If such a call fails, its result carries the tool's schema and the tool is
+promoted, so the model's next attempt is against a declared tool.
+
+**Bounds.** Promoted schemas are capped by `[context] promoted_budget` (1,500
+tokens by default). Before a turn's first request, the tool called least
+recently returns to the index until the rest fit; nothing is demoted mid-turn.
+Each change is journaled as `tool_promoted` or `tool_demoted`.
+
+**Small catalogs.** A session whose whole catalog is 2,500 tokens or less, such
+as a narrow allowlist role or reflection, is advertised whole, with no index and
+neither `tool_search` nor `tool_list`.
+
+A sub-agent starts from its own role's resident set, not its parent's promoted
+tools.
 
 ## Search, during the turn
 
@@ -75,6 +112,8 @@ descriptions alone.
 | Ranking quality depends on the embedder | With `[embeddings].provider = "keyword"` the built-in feature-hashing embedder is used; it matches shared vocabulary, not meaning. |
 | `provider = "none"` does not mean "show everything" | With no embedder every tool scores zero, so the always-included set is joined by the first 20 tools in catalog order. The cut still applies; only the ranking is gone. `tool_search` is also unavailable, leaving `tool_list` as the only route to the rest. |
 | The ranked count is not configurable | 20 ranked tools per turn is fixed in the daemon. The context budget bounds it from below — a turn with little room includes fewer — but nothing raises it. |
+| Deferred promotions do not survive a restart | The promoted set lives on the session's loop. A daemon restart starts every session from its resident set again. |
+| Deferred resident set is fixed per deployment | It was derived from the eval corpus's call counts, not from a deployment's own use. `resident_tools` adds to it; nothing removes a tool from it. |
 | No feedback loop | A tool that ranked badly and was then found by search does not rank better next time. Rankings are computed per turn from the conversation alone. |
 | Search costs a round-trip | A mid-turn lookup spends a tool call before the real work starts. |
 | Descriptions are not validated | Nothing checks that two similar tools distinguish themselves, or that a description describes a situation rather than parameters. |

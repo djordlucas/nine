@@ -1,0 +1,38 @@
+id: deferred-promotion-sticky
+description: >
+  A loaded tool stays loaded (adr/deferred-tool-schemas.md §3.3). Two turns each
+  restore a different file from the trash; the second must not search for the
+  tools the first loaded, and loads stay bounded: one query search promotes at
+  most three tools.
+track: live
+tier: multi_step
+tags: [deferred-tools, files, workspace, trash]
+
+session:
+  config:
+    context.tool_exposition: deferred
+
+setup:
+  files:
+    /work/.nine/trash/20261014T080000Z-1a2b3c4d/plan.md: "Launch plan. Codeword heron-34.\n"
+    /work/.nine/trash/20261014T081500Z-5e6f7a8b/notes.md: "Meeting notes. Codeword wren-71.\n"
+
+prompts:
+  - "I deleted plan.md by mistake earlier. Get it back."
+  - "I deleted notes.md too. Get that one back as well."
+
+expect:
+  side_effects:
+    files:
+      /work/plan.md: { contains: "heron-34" }
+      /work/notes.md: { contains: "wren-71" }
+  trajectory:
+    tool_calls:
+      tool_search: { max: 1 }
+    promotions: { max: 3 }
+    no_stall: true
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

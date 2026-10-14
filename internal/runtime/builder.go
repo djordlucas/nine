@@ -93,6 +93,16 @@ type LoopConfig struct {
 	GeneratedTools agent.GeneratedToolStore
 	// GeneratedEval enables js_eval alongside tool_write (`[tools.agent] eval`).
 	GeneratedEval bool
+
+	// ToolExposition mirrors [context] tool_exposition: "deferred" advertises a
+	// resident set and indexes the rest (adr/deferred-tool-schemas.md); anything
+	// else is ranked.
+	ToolExposition string
+	// ResidentTools mirrors [context] resident_tools: tools a deferred loop keeps
+	// resident besides defaultResidentTools.
+	ResidentTools []string
+	// PromotedBudget mirrors [context] promoted_budget; 0 is the default.
+	PromotedBudget int
 }
 
 // AgentBuilderConfig holds the behavioral dependencies layered on top of the
@@ -534,9 +544,15 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		processTools = append(processTools, agent.SQLToolName)
 	}
 
+	// A deferred loop's tool_search is the load path for its indexed tools, so
+	// it needs no embedder: it loads by name and ranks lexically.
+	deferred := lc.ToolExposition == ninectx.ExpositionDeferred
 	shellTools = append(shellTools, "tool_list", "doc_read", "doc_search")
+	if lc.Embedder != nil || deferred {
+		shellTools = append(shellTools, "tool_search")
+	}
 	if lc.Embedder != nil {
-		shellTools = append(shellTools, "tool_search", "skill_search")
+		shellTools = append(shellTools, "skill_search")
 	}
 
 	// The generated tier's meta-tools (tool_write/tool_delete/js_eval) are the
@@ -607,6 +623,17 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 			tools = append(tools, ninectx.ToolWithVector{Tool: def})
 		}
 
+		// Every tool without a toolkit yet is one Nine names. A deferred loop
+		// advertises the tool_search that loads by name.
+		for i := range tools {
+			if tools[i].Toolkit == "" {
+				annotateBuiltin(&tools[i])
+			}
+			if deferred && tools[i].Tool.Name == agent.ToolSearchDeferredDef.Name {
+				tools[i].Tool = agent.ToolSearchDeferredDef
+			}
+		}
+
 		// Populate each tool's description embedding (cached) so the context builder
 		// ranks non-always tools by relevance to the query rather than insertion order.
 		for i := range tools {
@@ -644,7 +671,15 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 	// The closure reads this loop's current slice, which toolsForTurn replaces when
 	// the catalog changes, so results only ever include tools it can actually call.
 	getTools := func() []ninectx.ToolWithVector { return tools }
-	agent.RegisterToolSearch(d, lc.Embedder, getTools)
+	var promotions *agent.Promotions
+	if deferred {
+		// A sub-agent's loop is built here too, with its own set: it starts from
+		// its role's resident set, not its parent's promotions.
+		promotions = agent.NewPromotions()
+		agent.RegisterDeferredToolSearch(d, lc.Embedder, getTools, promotions)
+	} else {
+		agent.RegisterToolSearch(d, lc.Embedder, getTools)
+	}
 	agent.RegisterToolList(d, getTools)
 
 	alwaysTools := filterByRole(append([]string{}, coreToolNames...), role)
@@ -657,6 +692,8 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		Budget:      lc.ContextBudget,
 		ToolTopN:    20,
 		AlwaysTools: alwaysTools,
+		Exposition:  lc.ToolExposition,
+		Resident:    append(slices.Clone(defaultResidentTools), lc.ResidentTools...),
 	})
 
 	var selfModelFn func(ctx context.Context, queryVec []float32) string
@@ -759,6 +796,8 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		AnalysisPrompt: analystPrompt,
 		PlanMode:       f.cfg.PlanMode,
 		PlanReviewFn:   planReviewFn,
+		Promotions:     promotions,
+		PromotedBudget: lc.PromotedBudget,
 		QueuedMessagesFn: func() int {
 			if lc.Memory == nil {
 				return 0
@@ -1161,9 +1200,9 @@ func buildToolList(lc LoopConfig, role Role, shellTools []string, roleEnum strin
 			if !role.AllTools && !slices.Contains(role.Tools, td.Name) {
 				continue
 			}
-			tools = append(tools, ninectx.ToolWithVector{
-				Tool: td.ToLLMDef(),
-			})
+			tw := ninectx.ToolWithVector{Tool: td.ToLLMDef()}
+			annotateExternal(&tw, pluginToolkit(p.Name))
+			tools = append(tools, tw)
 		}
 	}
 	// Sandboxed tools are advertised on the same footing as plugin tools, and
@@ -1174,7 +1213,13 @@ func buildToolList(lc LoopConfig, role Role, shellTools []string, roleEnum strin
 			if !role.AllTools && !slices.Contains(role.Tools, st.Name) {
 				continue
 			}
-			tools = append(tools, ninectx.ToolWithVector{Tool: st.ToLLMDef()})
+			tw := ninectx.ToolWithVector{Tool: st.ToLLMDef()}
+			if st.Shipped {
+				annotateBuiltin(&tw)
+			} else {
+				annotateExternal(&tw, "tools")
+			}
+			tools = append(tools, tw)
 		}
 	}
 

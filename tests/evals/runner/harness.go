@@ -520,6 +520,9 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 		Embedder:            embedder,
 		ContextBudget:       budget,
 		MaxToolOutputTokens: maxToolOutputTokens(h.MaxToolOutputTokens, c),
+		ToolExposition:      caseString(c, ArmKey),
+		ResidentTools:       caseStrings(c, "context.resident_tools"),
+		PromotedBudget:      caseInt(c, "context.promoted_budget", 0),
 		SystemPrompt:        runtime.BuildSystemPrompt(),
 		RelatedSessions:     embedder != nil,
 		SurfaceMemories:     embedder != nil,
@@ -760,6 +763,12 @@ func caseInt(c *Case, key string, def int) int {
 		return int(v)
 	}
 	return def
+}
+
+// caseString reads a string session.config override; absent is "".
+func caseString(c *Case, key string) string {
+	v, _ := c.Session.Config[key].(string)
+	return v
 }
 
 // caseStrings reads a list-of-strings session.config override; absent is nil.

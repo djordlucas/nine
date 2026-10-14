@@ -54,7 +54,9 @@ There are exactly two ways embeddings get produced, and they **MUST** be kept di
    `skill_search` and `tool_search` are tools the agent calls;
    the **dispatcher** intercepts them, calls the embedder, and routes to the store (or,
    for `tool_search`, ranks the in-memory tool-description vectors). Each is embedder-gated
-   — absent an embedder it is neither registered nor advertised. The agent never holds the
+   — absent an embedder it is neither registered nor advertised — except `tool_search`
+   under deferred exposition, where it is the load path: it loads by name and ranks by
+   BM25, fused with the vectors when an embedder exists. The agent never holds the
    embedder. The
    `memory_set` handler also embeds — as a best-effort side effect — to mirror the value
    into the `memories` pool (R-MEM.8); the agent still never holds the embedder.
