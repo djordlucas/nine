@@ -260,6 +260,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Follow the journal
+         * @description Opens a Server-Sent Events stream of the daemon's journal: every session's events and the state changes the store records (approvals, questions, notifications, goals, workflows). Each journal event is sent as an event named journal whose SSE id is its seq, so a client that reconnects with Last-Event-ID (or after) misses nothing still in the journal. A position the journal can no longer honour (scrubbed, more than 10000 events behind, or from another journal) is answered with a reset event, and the stream continues from now. A payload over 16 KB is replaced by {"omitted": true, "bytes": N}; the conversation's trace has it in full.
+         */
+        get: operations["streamEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/goals": {
         parameters: {
             query?: never;
@@ -482,6 +502,26 @@ export interface paths {
          * @description Gives a running live process a message as its next trigger, labelled as the operator's. Refused with 409 when the process is stopped, busy, or a slice process with no session; nothing reaches the notification feed.
          */
         post: operations["sendProcessMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List pending questions
+         * @description Returns the ask_human questions still waiting for an answer, oldest first. A question is answered over its conversation's WebSocket.
+         */
+        get: operations["listQuestions"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -967,6 +1007,18 @@ export interface components {
             };
             message: string;
         };
+        /** @description The stream handshake. seq is the position the stream starts after. */
+        EventsConnected: {
+            /** Format: int64 */
+            seq: number;
+        };
+        /** @description The requested position could not be honoured; the stream continues from seq. A client reloads what it shows. */
+        EventsReset: {
+            /** Format: int64 */
+            seq: number;
+        };
+        /** @description One server-sent event on /events. The SSE event name (connected, journal, reset, error) selects the member. */
+        EventsStreamEvent: components["schemas"]["EventsConnected"] | components["schemas"]["JournalEvent"] | components["schemas"]["EventsReset"] | components["schemas"]["ErrorResponse"];
         /** @description The error shape every failing request returns. */
         ErrorResponse: {
             error: components["schemas"]["ErrorDetails"];
@@ -1110,6 +1162,23 @@ export interface components {
             data?: components["schemas"]["GoalInfo"][];
             pagination?: components["schemas"]["Pagination"];
         };
+        /** @description One journal event (spec/contracts/event-journal.md), from any session or process. */
+        JournalEvent: {
+            /** Format: int64 */
+            seq: number;
+            /** @description The session, process or goal the event belongs to; daemon for a change no session made. */
+            agent_id: string;
+            /** @description The turn it belongs to; 0 for an event outside any turn. */
+            turn: number;
+            /** @description A session event (turn_start, tool_end, ...), a process transition (process_*, standing_*), or a state change (human_input_*, capability_*, notification, goal_*, workflow_*). */
+            type: string;
+            span_id?: string;
+            parent_span_id?: string;
+            /** Format: date-time */
+            timestamp: string;
+            /** @description The event's body, whose shape depends on type, or {"omitted": true, "bytes": N} for one over 16 KB. */
+            payload?: unknown;
+        };
         /** @description A page of notifications. */
         ListNotificationsResponse: {
             data?: components["schemas"]["Notification"][];
@@ -1119,6 +1188,10 @@ export interface components {
         ListPluginsResponse: {
             data?: components["schemas"]["PluginInfo"][];
             pagination?: components["schemas"]["Pagination"];
+        };
+        /** @description The pending questions. */
+        ListQuestionsResponse: {
+            data: components["schemas"]["Question"][];
         };
         /** @description A page of skills. */
         ListSkillsResponse: {
@@ -1445,6 +1518,17 @@ export interface components {
             agent_id: string;
             /** Format: int64 */
             timestamp: number;
+        };
+        /** @description An ask_human question waiting for an answer. */
+        Question: {
+            id: string;
+            /** @description The conversation that asked. */
+            agent_id: string;
+            question: string;
+            options?: string[];
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
         };
         /** @description One server-sent event. The SSE event name (connected, tool_start, tool_end, response_chunk, response, sub_agent_start, sub_agent_end, notice, done, error) selects the member. */
         StreamEvent: components["schemas"]["StreamConnected"] | components["schemas"]["StreamToolStart"] | components["schemas"]["StreamToolEnd"] | components["schemas"]["StreamResponseChunk"] | components["schemas"]["StreamResponse"] | components["schemas"]["StreamSubAgent"] | components["schemas"]["StreamNotice"] | components["schemas"]["StreamDone"] | components["schemas"]["ErrorResponse"];
@@ -2427,6 +2511,67 @@ export interface operations {
             429: components["responses"]["TooManyRequests"];
         };
     };
+    streamEvents: {
+        parameters: {
+            query?: {
+                /** @description Only these event types. A value ending in * matches every type with that prefix (process_*). Repeatable. */
+                type?: string[];
+                /** @description Only events of these sessions or processes (the journal's agent_id). Repeatable. */
+                agent?: string[];
+                /** @description Resume after this seq. Last-Event-ID takes precedence. Without either, the stream starts from now. */
+                after?: number;
+                /** @description For a stream starting from now, how many earlier journal events to send first (before the type and agent filters). */
+                tail?: number;
+            };
+            header?: {
+                /** @description The id of the last event received, which a browser's EventSource sends on reconnect. */
+                "Last-Event-ID"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description An event stream. The event name (connected, journal, reset, error) selects the member of EventsStreamEvent. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["EventsStreamEvent"];
+                };
+            };
+            /** @description invalid parameters */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listGoals: {
         parameters: {
             query?: {
@@ -3127,6 +3272,46 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listQuestions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListQuestionsResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
             429: components["responses"]["TooManyRequests"];
             /** @description internal error */
             500: {

@@ -3,6 +3,7 @@ import { useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import { sections, sectionFor } from '../sections';
 import { authRequired, signOut } from '../api/client';
+import { streamState } from '../api/events';
 import { cycleTheme, theme } from '../theme';
 import { Icon } from './Icon';
 import styles from './Shell.module.css';
@@ -46,6 +47,7 @@ export function Shell({ children }: { children: ComponentChildren }) {
       <div class={styles.main}>
         <header class={styles.header}>
           <h1>{current.label}</h1>
+          <LiveState />
         </header>
         <main class={styles.content}>{children}</main>
       </div>
@@ -98,6 +100,17 @@ export function Shell({ children }: { children: ComponentChildren }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Whether the event stream is up: what the live views show depends on it. */
+function LiveState() {
+  const state = streamState.value;
+  const label = { live: 'Live', connecting: 'Connecting…', offline: 'Offline' }[state];
+  return (
+    <span class={styles.live} data-state={state} role="status" title="The event stream that keeps this page current">
+      {label}
+    </span>
   );
 }
 
