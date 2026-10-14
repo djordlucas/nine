@@ -13,14 +13,14 @@ var goalToolDefs = []llm.ToolDef{
 	{
 		Name:        "goal_create",
 		DisplayName: "Create Goal",
-		Description: "Create a persistent, open-ended goal (no defined end condition, e.g. 'monitor this repo for security issues'). Defaults to the current conversation as parent if parent_id is omitted. Returns the created goal; top-level goals (parent_type 'conversation') also get a background 'pursue' session that works on the goal between your turns — the response's pursue_session field is 'spawned' if that session started, or 'limit_reached' if the daemon is already at its concurrent goal-session cap (the goal is still recorded either way).",
-		InputSchema: json.RawMessage(`{"type":"object","required":["description"],"properties":{"description":{"type":"string","description":"What the goal is."},"parent_id":{"type":"string","description":"ID of the conversation or goal that spawned this one. Defaults to the current conversation."},"parent_type":{"type":"string","enum":["conversation","goal"],"description":"Type of the parent referenced by parent_id."}}}`),
+		Description: "Create a persistent, open-ended goal (no defined end condition, e.g. 'monitor this repo for security issues'). A top-level goal gets a background session that works on it between your turns.",
+		InputSchema: json.RawMessage(`{"type":"object","required":["description"],"properties":{"description":{"type":"string"},"parent_id":{"type":"string","description":"The conversation or goal this one comes from. Defaults to the current conversation."},"parent_type":{"type":"string","enum":["conversation","goal"]}}}`),
 	},
 	{
 		Name:        "goal_get",
 		DisplayName: "Get Goal",
 		Description: "Get a goal by ID, including its status and sub-goal/task tree.",
-		InputSchema: json.RawMessage(`{"type":"object","required":["goal_id"],"properties":{"goal_id":{"type":"string","description":"The goal to retrieve."}}}`),
+		InputSchema: json.RawMessage(`{"type":"object","required":["goal_id"],"properties":{"goal_id":{"type":"string"}}}`),
 	},
 	{
 		Name:        "goal_list",

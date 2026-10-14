@@ -188,8 +188,43 @@
             ],
             "properties": {
               "goal_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "name": "capability_request",
+          "description": "Ask the operator for a capability the generated-tool ceiling refused when you wrote a tool. A human approves or denies it; after an approval, retry the write.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "capability",
+              "reason"
+            ],
+            "properties": {
+              "capability": {
                 "type": "string",
-                "description": "The goal to retrieve."
+                "enum": [
+                  "fs.read",
+                  "fs.write",
+                  "net.http",
+                  "env",
+                  "state",
+                  "sql"
+                ],
+                "description": "As the refusal named it."
+              },
+              "reason": {
+                "type": "string",
+                "description": "What the tool does with it; the operator decides on this alone."
+              },
+              "tool_name": {
+                "type": "string"
+              },
+              "params": {
+                "type": "object",
+                "description": "The narrowest scope that works, e.g. {\"allow_hosts\":[\"api.example.com\"],\"methods\":[\"GET\"]} for net.http, {\"env\":[\"TZ\"]} for env."
               }
             }
           }
@@ -224,7 +259,6 @@
             "properties": {
               "tasks": {
                 "type": "array",
-                "description": "Tasks to run in parallel.",
                 "items": {
                   "type": "object",
                   "required": [
@@ -233,22 +267,21 @@
                   "properties": {
                     "task": {
                       "type": "string",
-                      "description": "Self-contained task description."
+                      "description": "Self-contained."
                     },
                     "context": {
-                      "type": "string",
-                      "description": "Optional background context."
+                      "type": "string"
                     },
                     "role": {
                       "type": "string",
-                      "description": "Optional worker role for the sub-agent. One of: code-reviewer: Review code without changing it — file reads, text search, and diffs. No shell, no writes | executor (default): Default leaf worker for delegated tasks — full toolset, may sub-delegate within the depth cap | monitor: Read-only standing-agent worker — web, HTTP GET, file reads, and memory; no shell, no writes | report-writer: Research and write — web search, page reading, and workspace files; no shell | software-dev: Implement and modify code — edit files, run builds and tests via shell | sysadmin: Inspect and operate the system — shell, file edits, and HTTP calls for ops tasks. Pick the narrowest role that fits the task; omit for executor. Unknown roles fall back to executor."
+                      "description": "Optional worker role: one of run_agent's roles; omit for executor."
                     }
                   }
                 }
               },
               "timeout_seconds": {
                 "type": "integer",
-                "description": "Maximum seconds to wait for the whole group. Defaults to the daemon's configured task timeout (typically 30 minutes); only lower this if the tasks are known to be quick. Agents still running when the timeout fires are cancelled and marked timed_out."
+                "description": "For the whole group; defaults to the daemon's task timeout. Agents still running then are cancelled."
               }
             }
           }
@@ -444,43 +477,6 @@
           }
         },
         {
-          "name": "capability_request",
-          "description": "Ask the operator to grant a capability the generated-tool ceiling does not currently permit. Use this when writing a tool failed because a capability is not available on this instance: the request is queued for a human, who approves or denies it. Approval takes effect without a restart, so retry the write after one is granted. Requesting does not grant — you never confer a capability on yourself.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "capability",
-              "reason"
-            ],
-            "properties": {
-              "capability": {
-                "type": "string",
-                "enum": [
-                  "fs.read",
-                  "fs.write",
-                  "net.http",
-                  "env",
-                  "state",
-                  "sql"
-                ],
-                "description": "The capability to request, exactly as the refusal named it."
-              },
-              "reason": {
-                "type": "string",
-                "description": "Why the task cannot be done without it. A human reads this and nothing else about your intent, so be specific about what the tool does with the reach."
-              },
-              "tool_name": {
-                "type": "string",
-                "description": "The tool that needs it, if you have already named one."
-              },
-              "params": {
-                "type": "object",
-                "description": "What the capability should be scoped to, narrowest that works. For net.http: {\"allow_hosts\":[\"api.example.com\"],\"methods\":[\"GET\"]}. For env: {\"env\":[\"TZ\"]}. For fs: {\"mounts\":[{\"host\":\"/srv/data\",\"guest\":\"/data\"}]}. A broad request is likelier to be denied."
-              }
-            }
-          }
-        },
-        {
           "name": "queued_messages_get",
           "description": "Read all messages currently queued for this session. Returns messages with their consumption status. Queued messages are user replies that were added while the session was busy, and are NOT automatically included in the model's context. Each message has a 'consumed' field indicating whether it has been processed. Use queued_message_mark_consumed to mark individual messages as consumed after processing them.",
           "input_schema": {
@@ -553,8 +549,7 @@
             ],
             "properties": {
               "workflow_id": {
-                "type": "string",
-                "description": "The workflow to retrieve."
+                "type": "string"
               }
             }
           }
@@ -598,7 +593,7 @@
         },
         {
           "name": "goal_create",
-          "description": "Create a persistent, open-ended goal (no defined end condition, e.g. 'monitor this repo for security issues'). Defaults to the current conversation as parent if parent_id is omitted. Returns the created goal; top-level goals (parent_type 'conversation') also get a background 'pursue' session that works on the goal between your turns — the response's pursue_session field is 'spawned' if that session started, or 'limit_reached' if the daemon is already at its concurrent goal-session cap (the goal is still recorded either way).",
+          "description": "Create a persistent, open-ended goal (no defined end condition, e.g. 'monitor this repo for security issues'). A top-level goal gets a background session that works on it between your turns.",
           "input_schema": {
             "type": "object",
             "required": [
@@ -606,20 +601,18 @@
             ],
             "properties": {
               "description": {
-                "type": "string",
-                "description": "What the goal is."
+                "type": "string"
               },
               "parent_id": {
                 "type": "string",
-                "description": "ID of the conversation or goal that spawned this one. Defaults to the current conversation."
+                "description": "The conversation or goal this one comes from. Defaults to the current conversation."
               },
               "parent_type": {
                 "type": "string",
                 "enum": [
                   "conversation",
                   "goal"
-                ],
-                "description": "Type of the parent referenced by parent_id."
+                ]
               }
             }
           }
@@ -883,8 +876,7 @@
                 "description": "The process id, as process_list shows it."
               },
               "text": {
-                "type": "string",
-                "description": "The message."
+                "type": "string"
               }
             }
           }
@@ -1161,6 +1153,42 @@
           }
         },
         {
+          "name": "capability_request",
+          "description": "Ask the operator for a capability the generated-tool ceiling refused when you wrote a tool. A human approves or denies it; after an approval, retry the write.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "capability",
+              "reason"
+            ],
+            "properties": {
+              "capability": {
+                "type": "string",
+                "enum": [
+                  "fs.read",
+                  "fs.write",
+                  "net.http",
+                  "env",
+                  "state",
+                  "sql"
+                ],
+                "description": "As the refusal named it."
+              },
+              "reason": {
+                "type": "string",
+                "description": "What the tool does with it; the operator decides on this alone."
+              },
+              "tool_name": {
+                "type": "string"
+              },
+              "params": {
+                "type": "object",
+                "description": "The narrowest scope that works, e.g. {\"allow_hosts\":[\"api.example.com\"],\"methods\":[\"GET\"]} for net.http, {\"env\":[\"TZ\"]} for env."
+              }
+            }
+          }
+        },
+        {
           "name": "diff_file",
           "description": "Show what changed in a workspace file, as a unified diff against the version before the most recent change. Use it to report an edit back to the person you are working for, rather than describing the change in prose. Only a file that write_file, edit_file or delete_file has changed has a previous version; pass against with a trash entry name from trash_list to compare with an older one.",
           "input_schema": {
@@ -1410,43 +1438,6 @@
           }
         },
         {
-          "name": "capability_request",
-          "description": "Ask the operator to grant a capability the generated-tool ceiling does not currently permit. Use this when writing a tool failed because a capability is not available on this instance: the request is queued for a human, who approves or denies it. Approval takes effect without a restart, so retry the write after one is granted. Requesting does not grant — you never confer a capability on yourself.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "capability",
-              "reason"
-            ],
-            "properties": {
-              "capability": {
-                "type": "string",
-                "enum": [
-                  "fs.read",
-                  "fs.write",
-                  "net.http",
-                  "env",
-                  "state",
-                  "sql"
-                ],
-                "description": "The capability to request, exactly as the refusal named it."
-              },
-              "reason": {
-                "type": "string",
-                "description": "Why the task cannot be done without it. A human reads this and nothing else about your intent, so be specific about what the tool does with the reach."
-              },
-              "tool_name": {
-                "type": "string",
-                "description": "The tool that needs it, if you have already named one."
-              },
-              "params": {
-                "type": "object",
-                "description": "What the capability should be scoped to, narrowest that works. For net.http: {\"allow_hosts\":[\"api.example.com\"],\"methods\":[\"GET\"]}. For env: {\"env\":[\"TZ\"]}. For fs: {\"mounts\":[{\"host\":\"/srv/data\",\"guest\":\"/data\"}]}. A broad request is likelier to be denied."
-              }
-            }
-          }
-        },
-        {
           "name": "queued_messages_get",
           "description": "Read all messages currently queued for this session. Returns messages with their consumption status. Queued messages are user replies that were added while the session was busy, and are NOT automatically included in the model's context. Each message has a 'consumed' field indicating whether it has been processed. Use queued_message_mark_consumed to mark individual messages as consumed after processing them.",
           "input_schema": {
@@ -1544,7 +1535,6 @@
             "properties": {
               "tasks": {
                 "type": "array",
-                "description": "Tasks to run in parallel.",
                 "items": {
                   "type": "object",
                   "required": [
@@ -1553,22 +1543,21 @@
                   "properties": {
                     "task": {
                       "type": "string",
-                      "description": "Self-contained task description."
+                      "description": "Self-contained."
                     },
                     "context": {
-                      "type": "string",
-                      "description": "Optional background context."
+                      "type": "string"
                     },
                     "role": {
                       "type": "string",
-                      "description": "Optional worker role for the sub-agent. One of: code-reviewer: Review code without changing it — file reads, text search, and diffs. No shell, no writes | executor (default): Default leaf worker for delegated tasks — full toolset, may sub-delegate within the depth cap | monitor: Read-only standing-agent worker — web, HTTP GET, file reads, and memory; no shell, no writes | report-writer: Research and write — web search, page reading, and workspace files; no shell | software-dev: Implement and modify code — edit files, run builds and tests via shell | sysadmin: Inspect and operate the system — shell, file edits, and HTTP calls for ops tasks. Pick the narrowest role that fits the task; omit for executor. Unknown roles fall back to executor."
+                      "description": "Optional worker role: one of run_agent's roles; omit for executor."
                     }
                   }
                 }
               },
               "timeout_seconds": {
                 "type": "integer",
-                "description": "Maximum seconds to wait for the whole group. Defaults to the daemon's configured task timeout (typically 30 minutes); only lower this if the tasks are known to be quick. Agents still running when the timeout fires are cancelled and marked timed_out."
+                "description": "For the whole group; defaults to the daemon's task timeout. Agents still running then are cancelled."
               }
             }
           }
@@ -1583,8 +1572,7 @@
             ],
             "properties": {
               "workflow_id": {
-                "type": "string",
-                "description": "The workflow to retrieve."
+                "type": "string"
               }
             }
           }
@@ -1647,7 +1635,7 @@
         },
         {
           "name": "goal_create",
-          "description": "Create a persistent, open-ended goal (no defined end condition, e.g. 'monitor this repo for security issues'). Defaults to the current conversation as parent if parent_id is omitted. Returns the created goal; top-level goals (parent_type 'conversation') also get a background 'pursue' session that works on the goal between your turns — the response's pursue_session field is 'spawned' if that session started, or 'limit_reached' if the daemon is already at its concurrent goal-session cap (the goal is still recorded either way).",
+          "description": "Create a persistent, open-ended goal (no defined end condition, e.g. 'monitor this repo for security issues'). A top-level goal gets a background session that works on it between your turns.",
           "input_schema": {
             "type": "object",
             "required": [
@@ -1655,20 +1643,18 @@
             ],
             "properties": {
               "description": {
-                "type": "string",
-                "description": "What the goal is."
+                "type": "string"
               },
               "parent_id": {
                 "type": "string",
-                "description": "ID of the conversation or goal that spawned this one. Defaults to the current conversation."
+                "description": "The conversation or goal this one comes from. Defaults to the current conversation."
               },
               "parent_type": {
                 "type": "string",
                 "enum": [
                   "conversation",
                   "goal"
-                ],
-                "description": "Type of the parent referenced by parent_id."
+                ]
               }
             }
           }
@@ -1683,8 +1669,7 @@
             ],
             "properties": {
               "goal_id": {
-                "type": "string",
-                "description": "The goal to retrieve."
+                "type": "string"
               }
             }
           }
@@ -2268,8 +2253,43 @@
             ],
             "properties": {
               "goal_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "name": "capability_request",
+          "description": "Ask the operator for a capability the generated-tool ceiling refused when you wrote a tool. A human approves or denies it; after an approval, retry the write.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "capability",
+              "reason"
+            ],
+            "properties": {
+              "capability": {
                 "type": "string",
-                "description": "The goal to retrieve."
+                "enum": [
+                  "fs.read",
+                  "fs.write",
+                  "net.http",
+                  "env",
+                  "state",
+                  "sql"
+                ],
+                "description": "As the refusal named it."
+              },
+              "reason": {
+                "type": "string",
+                "description": "What the tool does with it; the operator decides on this alone."
+              },
+              "tool_name": {
+                "type": "string"
+              },
+              "params": {
+                "type": "object",
+                "description": "The narrowest scope that works, e.g. {\"allow_hosts\":[\"api.example.com\"],\"methods\":[\"GET\"]} for net.http, {\"env\":[\"TZ\"]} for env."
               }
             }
           }
@@ -2304,7 +2324,6 @@
             "properties": {
               "tasks": {
                 "type": "array",
-                "description": "Tasks to run in parallel.",
                 "items": {
                   "type": "object",
                   "required": [
@@ -2313,22 +2332,21 @@
                   "properties": {
                     "task": {
                       "type": "string",
-                      "description": "Self-contained task description."
+                      "description": "Self-contained."
                     },
                     "context": {
-                      "type": "string",
-                      "description": "Optional background context."
+                      "type": "string"
                     },
                     "role": {
                       "type": "string",
-                      "description": "Optional worker role for the sub-agent. One of: code-reviewer: Review code without changing it — file reads, text search, and diffs. No shell, no writes | executor (default): Default leaf worker for delegated tasks — full toolset, may sub-delegate within the depth cap | monitor: Read-only standing-agent worker — web, HTTP GET, file reads, and memory; no shell, no writes | report-writer: Research and write — web search, page reading, and workspace files; no shell | software-dev: Implement and modify code — edit files, run builds and tests via shell | sysadmin: Inspect and operate the system — shell, file edits, and HTTP calls for ops tasks. Pick the narrowest role that fits the task; omit for executor. Unknown roles fall back to executor."
+                      "description": "Optional worker role: one of run_agent's roles; omit for executor."
                     }
                   }
                 }
               },
               "timeout_seconds": {
                 "type": "integer",
-                "description": "Maximum seconds to wait for the whole group. Defaults to the daemon's configured task timeout (typically 30 minutes); only lower this if the tasks are known to be quick. Agents still running when the timeout fires are cancelled and marked timed_out."
+                "description": "For the whole group; defaults to the daemon's task timeout. Agents still running then are cancelled."
               }
             }
           }
@@ -2524,43 +2542,6 @@
           }
         },
         {
-          "name": "capability_request",
-          "description": "Ask the operator to grant a capability the generated-tool ceiling does not currently permit. Use this when writing a tool failed because a capability is not available on this instance: the request is queued for a human, who approves or denies it. Approval takes effect without a restart, so retry the write after one is granted. Requesting does not grant — you never confer a capability on yourself.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "capability",
-              "reason"
-            ],
-            "properties": {
-              "capability": {
-                "type": "string",
-                "enum": [
-                  "fs.read",
-                  "fs.write",
-                  "net.http",
-                  "env",
-                  "state",
-                  "sql"
-                ],
-                "description": "The capability to request, exactly as the refusal named it."
-              },
-              "reason": {
-                "type": "string",
-                "description": "Why the task cannot be done without it. A human reads this and nothing else about your intent, so be specific about what the tool does with the reach."
-              },
-              "tool_name": {
-                "type": "string",
-                "description": "The tool that needs it, if you have already named one."
-              },
-              "params": {
-                "type": "object",
-                "description": "What the capability should be scoped to, narrowest that works. For net.http: {\"allow_hosts\":[\"api.example.com\"],\"methods\":[\"GET\"]}. For env: {\"env\":[\"TZ\"]}. For fs: {\"mounts\":[{\"host\":\"/srv/data\",\"guest\":\"/data\"}]}. A broad request is likelier to be denied."
-              }
-            }
-          }
-        },
-        {
           "name": "queued_messages_get",
           "description": "Read all messages currently queued for this session. Returns messages with their consumption status. Queued messages are user replies that were added while the session was busy, and are NOT automatically included in the model's context. Each message has a 'consumed' field indicating whether it has been processed. Use queued_message_mark_consumed to mark individual messages as consumed after processing them.",
           "input_schema": {
@@ -2633,8 +2614,7 @@
             ],
             "properties": {
               "workflow_id": {
-                "type": "string",
-                "description": "The workflow to retrieve."
+                "type": "string"
               }
             }
           }
@@ -2678,7 +2658,7 @@
         },
         {
           "name": "goal_create",
-          "description": "Create a persistent, open-ended goal (no defined end condition, e.g. 'monitor this repo for security issues'). Defaults to the current conversation as parent if parent_id is omitted. Returns the created goal; top-level goals (parent_type 'conversation') also get a background 'pursue' session that works on the goal between your turns — the response's pursue_session field is 'spawned' if that session started, or 'limit_reached' if the daemon is already at its concurrent goal-session cap (the goal is still recorded either way).",
+          "description": "Create a persistent, open-ended goal (no defined end condition, e.g. 'monitor this repo for security issues'). A top-level goal gets a background session that works on it between your turns.",
           "input_schema": {
             "type": "object",
             "required": [
@@ -2686,20 +2666,18 @@
             ],
             "properties": {
               "description": {
-                "type": "string",
-                "description": "What the goal is."
+                "type": "string"
               },
               "parent_id": {
                 "type": "string",
-                "description": "ID of the conversation or goal that spawned this one. Defaults to the current conversation."
+                "description": "The conversation or goal this one comes from. Defaults to the current conversation."
               },
               "parent_type": {
                 "type": "string",
                 "enum": [
                   "conversation",
                   "goal"
-                ],
-                "description": "Type of the parent referenced by parent_id."
+                ]
               }
             }
           }
@@ -2963,8 +2941,7 @@
                 "description": "The process id, as process_list shows it."
               },
               "text": {
-                "type": "string",
-                "description": "The message."
+                "type": "string"
               }
             }
           }
@@ -3174,7 +3151,7 @@
       "turn": 1,
       "type": "context_update",
       "payload": {
-        "used": 8057,
+        "used": 7457,
         "budget": 100000
       }
     },
@@ -3204,6 +3181,7 @@
           "doc_read",
           "tool_list",
           "goal_get",
+          "capability_request",
           "diff_file",
           "run_agents",
           "job_wait",
@@ -3215,7 +3193,6 @@
           "skill_read",
           "skill_write",
           "skill_modify",
-          "capability_request",
           "queued_messages_get",
           "queued_message_mark_consumed",
           "queued_messages_mark_all_consumed",
@@ -3249,7 +3226,7 @@
           "process_start"
         ],
         "max_tokens": 2048,
-        "tokens_used": 8057,
+        "tokens_used": 7457,
         "budget": 100000,
         "llm_call_n": 1
       }
@@ -3328,7 +3305,7 @@
       "turn": 1,
       "type": "context_update",
       "payload": {
-        "used": 8078,
+        "used": 7478,
         "budget": 100000
       }
     },
@@ -3385,6 +3362,7 @@
           "doc_read",
           "tool_list",
           "goal_get",
+          "capability_request",
           "diff_file",
           "run_agents",
           "job_wait",
@@ -3396,7 +3374,6 @@
           "skill_read",
           "skill_write",
           "skill_modify",
-          "capability_request",
           "queued_messages_get",
           "queued_message_mark_consumed",
           "queued_messages_mark_all_consumed",
@@ -3430,7 +3407,7 @@
           "process_start"
         ],
         "max_tokens": 2048,
-        "tokens_used": 8078,
+        "tokens_used": 7478,
         "budget": 100000,
         "llm_call_n": 2
       }

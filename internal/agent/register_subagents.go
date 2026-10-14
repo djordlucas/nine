@@ -28,8 +28,9 @@ func roleFieldDescription(roleEnum string) string {
 }
 
 // SubAgentDefs returns the sub-agent tool definitions with roleEnum rendered
-// into the `role` field of run_agent and run_agents. The role property is
-// built once and spliced into both schemas, so the two can never drift.
+// into the `role` field of run_agent. run_agents' tasks take the same roles and
+// say so rather than repeat the list: the two are advertised together, and the
+// list is the largest part of either schema (adr/deferred-tool-schemas.md §3.5).
 func SubAgentDefs(roleEnum string) []llm.ToolDef {
 	// Marshal through encoding/json so any punctuation in a role description
 	// (quotes, backslashes) cannot corrupt the surrounding schema.
@@ -38,6 +39,7 @@ func SubAgentDefs(roleEnum string) []llm.ToolDef {
 		desc = []byte(`"Optional worker role for the sub-agent."`)
 	}
 	roleProp := `"role":{"type":"string","description":` + string(desc) + `}`
+	sharedRoleProp := `"role":{"type":"string","description":"Optional worker role: one of run_agent's roles; omit for executor."}`
 
 	return []llm.ToolDef{
 		{
@@ -49,12 +51,12 @@ func SubAgentDefs(roleEnum string) []llm.ToolDef {
 		{
 			Name:        "capability_request",
 			DisplayName: "Request Capability",
-			Description: "Ask the operator to grant a capability the generated-tool ceiling does not currently permit. Use this when writing a tool failed because a capability is not available on this instance: the request is queued for a human, who approves or denies it. Approval takes effect without a restart, so retry the write after one is granted. Requesting does not grant — you never confer a capability on yourself.",
+			Description: "Ask the operator for a capability the generated-tool ceiling refused when you wrote a tool. A human approves or denies it; after an approval, retry the write.",
 			InputSchema: json.RawMessage(`{"type":"object","required":["capability","reason"],"properties":{` +
-				`"capability":{"type":"string","enum":["fs.read","fs.write","net.http","env","state","sql"],"description":"The capability to request, exactly as the refusal named it."},` +
-				`"reason":{"type":"string","description":"Why the task cannot be done without it. A human reads this and nothing else about your intent, so be specific about what the tool does with the reach."},` +
-				`"tool_name":{"type":"string","description":"The tool that needs it, if you have already named one."},` +
-				`"params":{"type":"object","description":"What the capability should be scoped to, narrowest that works. For net.http: {\"allow_hosts\":[\"api.example.com\"],\"methods\":[\"GET\"]}. For env: {\"env\":[\"TZ\"]}. For fs: {\"mounts\":[{\"host\":\"/srv/data\",\"guest\":\"/data\"}]}. A broad request is likelier to be denied."}` +
+				`"capability":{"type":"string","enum":["fs.read","fs.write","net.http","env","state","sql"],"description":"As the refusal named it."},` +
+				`"reason":{"type":"string","description":"What the tool does with it; the operator decides on this alone."},` +
+				`"tool_name":{"type":"string"},` +
+				`"params":{"type":"object","description":"The narrowest scope that works, e.g. {\"allow_hosts\":[\"api.example.com\"],\"methods\":[\"GET\"]} for net.http, {\"env\":[\"TZ\"]} for env."}` +
 				`}}`),
 		},
 		{
@@ -67,7 +69,7 @@ func SubAgentDefs(roleEnum string) []llm.ToolDef {
 			Name:        "run_agents",
 			DisplayName: "Run Agents",
 			Description: "Spawn multiple sub-agents in parallel and wait for all results. Use this when tasks are independent and can run concurrently. Returns when all agents finish or the timeout expires.",
-			InputSchema: json.RawMessage(`{"type":"object","required":["tasks"],"properties":{"tasks":{"type":"array","description":"Tasks to run in parallel.","items":{"type":"object","required":["task"],"properties":{"task":{"type":"string","description":"Self-contained task description."},"context":{"type":"string","description":"Optional background context."},` + roleProp + `}}},"timeout_seconds":{"type":"integer","description":"Maximum seconds to wait for the whole group. Defaults to the daemon's configured task timeout (typically 30 minutes); only lower this if the tasks are known to be quick. Agents still running when the timeout fires are cancelled and marked timed_out."}}}`),
+			InputSchema: json.RawMessage(`{"type":"object","required":["tasks"],"properties":{"tasks":{"type":"array","items":{"type":"object","required":["task"],"properties":{"task":{"type":"string","description":"Self-contained."},"context":{"type":"string"},` + sharedRoleProp + `}}},"timeout_seconds":{"type":"integer","description":"For the whole group; defaults to the daemon's task timeout. Agents still running then are cancelled."}}}`),
 		},
 	}
 }

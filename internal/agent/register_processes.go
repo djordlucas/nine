@@ -51,7 +51,7 @@ var processToolDefs = []llm.ToolDef{
 		Name:        "process_send",
 		DisplayName: "Send to Process",
 		Description: "Send a message to a running live process; it receives it as its next trigger. It does not wait for an answer: the process answers through what it writes — files, memory, the notification feed. Refused when the process is stopped, busy, or a slice process with no session.",
-		InputSchema: json.RawMessage(`{"type":"object","required":["id","text"],"properties":{"id":{"type":"string","description":"The process id, as process_list shows it."},"text":{"type":"string","description":"The message."}}}`),
+		InputSchema: json.RawMessage(`{"type":"object","required":["id","text"],"properties":{"id":{"type":"string","description":"The process id, as process_list shows it."},"text":{"type":"string"}}}`),
 	},
 	{
 		Name:        "process_start",
