@@ -60,7 +60,13 @@ func (s *Store) CapabilityRequestCreate(id, agentID, toolName, capability, param
 		id, agentID, toolName, capability, nullIfEmpty(params), reason,
 		time.Now().UTC().Format(time.RFC3339),
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	s.journalState(agentID, EvCapabilityRequested, map[string]any{
+		"id": id, "tool": toolName, "capability": capability, "reason": reason,
+	})
+	return nil
 }
 
 // CapabilityRequestList returns requests newest first. pendingOnly narrows to
@@ -129,18 +135,16 @@ func (s *Store) CapabilityRequestDecide(id, status, grantID string) (ok bool, er
 	defer tx.Rollback() //nolint:errcheck
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	res, err := tx.Exec(
+	var agentID string
+	err = tx.QueryRow(
 		`UPDATE capability_requests SET status = ?, decided_at = ?
-		 WHERE id = ? AND status = 'pending'`, status, now, id)
-	if err != nil {
-		return false, err
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return false, err
-	}
-	if n == 0 {
+		 WHERE id = ? AND status = 'pending'
+		 RETURNING agent_id`, status, now, id).Scan(&agentID)
+	if err == sql.ErrNoRows {
 		return false, nil
+	}
+	if err != nil {
+		return false, err
 	}
 
 	if status == CapabilityRequestApproved {
@@ -161,7 +165,15 @@ func (s *Store) CapabilityRequestDecide(id, status, grantID string) (ok bool, er
 		}
 	}
 
-	return true, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	ev := map[string]any{"id": id, "status": status}
+	if status == CapabilityRequestApproved {
+		ev["grant_id"] = grantID
+	}
+	s.journalState(agentID, EvCapabilityDecided, ev)
+	return true, nil
 }
 
 // CapabilityGrantList returns every grant in force, approved ones first so an
@@ -202,7 +214,11 @@ func (s *Store) CapabilityGrantRevoke(id string) (ok bool, err error) {
 		return false, err
 	}
 	n, err := res.RowsAffected()
-	return n > 0, err
+	if err != nil || n == 0 {
+		return false, err
+	}
+	s.journalState("", EvCapabilityRevoked, map[string]any{"grant_id": id})
+	return true, nil
 }
 
 // CapabilityGrantsReconcile replaces every derived grant with the ones passed,

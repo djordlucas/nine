@@ -43,12 +43,20 @@ func scanGoal(row interface{ Scan(...any) error }) (Goal, error) {
 
 // GoalCreate creates a new goal. Silently ignores duplicates.
 func (s *Store) GoalCreate(id, description, parentID, parentType string) error {
-	_, err := s.db.Exec(
+	res, err := s.db.Exec(
 		`INSERT INTO goals(id, description, parent_id, parent_type)
 		 VALUES(?,?,nullif(?,?),nullif(?,?))
 		 ON CONFLICT (id) DO NOTHING`,
 		id, description, parentID, "", parentType, "")
-	return err
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		s.journalState(id, EvGoalCreated, map[string]any{
+			"id": id, "description": description, "parent_id": parentID,
+		})
+	}
+	return nil
 }
 
 // GoalGet returns a goal by id. Returns (nil, nil) if not found.
@@ -95,9 +103,15 @@ func (s *Store) GoalList() ([]Goal, error) {
 
 // GoalUpdateStatus updates the status of a goal.
 func (s *Store) GoalUpdateStatus(id, status string) error {
-	_, err := s.db.Exec(
+	res, err := s.db.Exec(
 		`UPDATE goals SET status=?, updated_at=? WHERE id=?`, status, nowText(), id)
-	return err
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		s.journalState(id, EvGoalStatus, map[string]any{"id": id, "status": status})
+	}
+	return nil
 }
 
 // GoalUpdateDescription updates the description of a goal. Used by standing-agent
@@ -182,6 +196,9 @@ func (s *Store) GoalDelete(id string) ([]string, error) {
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
+	}
+	if len(ids) > 0 {
+		s.journalState(id, EvGoalDeleted, map[string]any{"id": id, "ids": ids})
 	}
 	return ids, nil
 }

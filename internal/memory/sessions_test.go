@@ -69,8 +69,13 @@ func TestSessionDeleteCascades(t *testing.T) {
 		{"tool_state", counts.ToolState},
 		{"jobs", counts.Jobs},
 	} {
-		if c.got != 1 {
-			t.Errorf("%s removed %d rows, want 1", c.name, c.got)
+		want := 1
+		if c.name == "events" {
+			// The turn, and the notification's own journal event.
+			want = 2
+		}
+		if c.got != want {
+			t.Errorf("%s removed %d rows, want %d", c.name, c.got, want)
 		}
 	}
 

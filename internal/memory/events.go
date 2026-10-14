@@ -50,8 +50,11 @@ func (s *Store) SessionEventsAppend(evs []SessionEvent) error {
 		}
 		args = append(args, e.AgentID, e.Turn, e.SpanID, parent, e.Type, string(payload), ts)
 	}
-	_, err := s.db.Exec(b.String(), args...)
-	return err
+	if _, err := s.db.Exec(b.String(), args...); err != nil {
+		return err
+	}
+	s.journalWritten()
+	return nil
 }
 
 // SessionEventsScrub bounds journal growth (adr/event-log.md §9, v4). It prunes,
