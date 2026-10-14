@@ -1,6 +1,6 @@
 # Design note — The embedded web UI
 
-**Status:** Phase 1 implemented (2026-10-13); phases 2–6 proposed · **Related:** `docs/api.md`, `docs/hitl.md`,
+**Status:** Phases 1–2 implemented (2026-10-13); phases 3–6 proposed · **Related:** `docs/api.md`, `docs/hitl.md`,
 `docs/processes.md`, `adr/agent-boundary.md`
 
 Nine gets a web UI that is part of the binary: a Preact app, built once and embedded,
@@ -223,6 +223,24 @@ burst, a page load and its first API calls would otherwise spend the budget.
 The bundle is 15 KB gzipped. Two fresh builds in the pinned container produce
 identical bytes, which the drift check relies on. The Playwright tests run
 against the runtime image a release publishes, not a dev build.
+
+## Phase 2 as built
+
+| Planned | Built | Why |
+|---|---|---|
+| `GET /api/v1/events`: the journal | The journal now also records approvals, questions, notifications, goals and workflows (`human_input_*`, `capability_*`, `notification`, `goal_*`, `workflow_*`), written by the store beside each change | None of them reached the journal, so no stream of it could keep the dashboard's attention, notification and goal tiles live. The store is the one place every path that changes them passes. |
+| Filters `type`, `agent`, `session` | `type` (exact or `prefix*`) and `agent` | A session's id is the journal's `agent_id`; two names for one filter. |
+| Payloads as journaled | A payload over 16 KB is sent as `{"omitted": true, "bytes": N}` | An `llm_request` carries the whole context window. The trace has it whole, and the Journal links there. |
+| A retention window | Reset when the position was scrubbed, never assigned, or more than 10,000 events behind | The journal is bounded by turns, not time, so "window" is the events still kept; the backlog cap bounds a replay nobody would read. |
+| — | `?tail=N` (up to 1000) | A tab opening with an empty Activity tile and Journal says nothing happened; the stream starts with the last 200. |
+| — | `GET /api/v1/questions` and the daemon's `list_human_requests` | The dashboard lists unanswered `ask_human` questions (§5), and nothing listed them. Answering stays on the WebSocket (phase 3). |
+| Dashboard: processes against `max_running` | Processes by state, failing and paused first | The API does not expose `max_running`; it joins with the Processes section (phase 4). |
+| Windowed rendering of the journal | 200 rows at a time, "Show more", 2000 kept | Enough for the volume a tab sees; real windowing can come with long histories in phase 3. |
+
+The daemon's side is `journal_follow`, a socket message like `watch`, which reads
+the store forward from a `seq` and is woken by a hook on every journal write. The
+new event types are not process triggers: adding them to `config.EventTypes` is a
+behavior change for `on` that wants its own evals. The bundle is 20 KB gzipped.
 
 ---
 
