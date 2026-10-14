@@ -1,6 +1,6 @@
 # Deferred tool schemas
 
-**Status:** **Proposed** — 2026-10-07 · **Builds on:** `adr/tool-exposition.md`
+**Status:** Phase 0 implemented (2026-10-14); phases 1–4 proposed — 2026-10-07 · **Builds on:** `adr/tool-exposition.md`
 (the hybrid it shipped: passive top-K plus `tool_search` / `tool_list`) ·
 **Amends:** R-ROLE.4 (what "advertised" means; see §6) · **Depends on:** the eval
 work in §7 landing *before* the default flips
@@ -460,11 +460,36 @@ instead of a bare schema, so how to use a tool arrives with the means to call it
 form is worth measuring only where models fail schemas, as one more exposition arm in
 §7.1, against the same corpus.
 
+## Phase 0 as built
+
+Base tool tokens per session kind, measured from the turn snapshots with
+`countTokens`, before and after the trims:
+
+| Session kind | Tools | Before | After |
+|---|---|---|---|
+| orchestrator-interactive | 56 | 7,249 | 6,644 |
+| orchestrator / orchestrator-delegates / pursue / executor | 55 | 7,169 | 6,564 |
+| background goal session | 51 | 6,728 | 6,131 |
+| standing agent | 24 | 2,641 | 2,630 |
+| condition trigger | 19 | 2,237 | 2,226 |
+| reflection, self-reflection | 14 | 1,335 | 1,335 |
+
+The catalog grew by five tools since §1.1 was measured. The trims save ~600 tokens,
+below the 1–1.5k estimated in §4:
+
+| Planned | Built | Why |
+|---|---|---|
+| `run_agents` references `run_agent`'s shape | Each task's `role` points to `run_agent`'s roles instead of repeating the list; the other descriptions shrink to what is not obvious (476 → 197) | The role list is the largest part of either schema, and the two are advertised together. R-ROLE.8 now says `run_agent` lists the roles. |
+| `capability_request` prose to the docs | The description keeps when to call it and what follows an approval; the property descriptions keep what the model cannot infer (370 → 203) | The rest explained the operator's side, which the model does not act on. |
+| Property descriptions that restate the name | Dropped on `goal_get`, `workflow_get`, `process_send`, and `goal_create`, whose description no longer explains its response fields (270 → 142) | — |
+| Other large definitions | Unchanged: `write_file`, `read_file`, `edit_file`, `list_files`, `doc_search` | Their prose steers tool use (read by line range before editing, append without reading, search the docs before answering), which the evals measure. Trimming it is a behavior change, not hygiene. |
+| `BuildReport` tool-token figure surfaced | Already surfaced: the `tools` section of `nine context`, `GET /conversations/{id}/context` and the web UI's Context panel | — |
+
 ## Limits
 
 | Limit | Detail |
 |-------|--------|
-| Nothing is built | Every section above is proposed. Baseline token figures are estimates from `countTokens` (3.45 bytes/token), not a real tokenizer — see `adr/accurate-token-counting.md`. |
+| Only phase 0 is built | §3's `deferred` mode, §7's eval work and the default flip are proposed. Token figures are estimates from `countTokens` (3.45 bytes/token), not a real tokenizer — see `adr/accurate-token-counting.md`. |
 | Resident set is provisional | §3.1's list is hand-picked; phase 1 replaces it with one derived from call frequency. |
 | Stickiness scope is open | Promotions are session-sticky. A long-lived process session could churn the LRU; whether to reset promotions per wake is undecided. |
 | Sub-agent inheritance is open | Proposed: a delegated leaf does not inherit its parent's promoted set — its role defines its resident set. |
