@@ -613,6 +613,48 @@ func (c *Client) Watch(agentID string) error {
 	return expectReply(reply, TypeWatch)
 }
 
+// FollowJournal turns this connection into a feed of the journal after seq
+// after (0: from now, with up to tail earlier events first). It returns where
+// the feed starts, and reset when after could not be honoured; NextJournal then
+// reads the feed.
+func (c *Client) FollowJournal(after int64, tail int) (start int64, reset bool, err error) {
+	if err := c.send(NewJournalFollowMsg(after, tail)); err != nil {
+		return 0, false, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return 0, false, err
+	}
+	if err := expectReply(reply, TypeJournalFollow); err != nil {
+		return 0, false, err
+	}
+	return reply.After, reply.Status == StatusJournalReset, nil
+}
+
+// NextJournal blocks for the next batch of events on a followed journal, in seq
+// order. It returns an error once the connection closes.
+func (c *Client) NextJournal() ([]JournalEvent, error) {
+	reply, err := c.recv()
+	if err != nil {
+		return nil, err
+	}
+	if err := expectReply(reply, TypeJournalFollow); err != nil {
+		return nil, err
+	}
+	var evs []JournalEvent
+	if err := json.Unmarshal([]byte(reply.Text), &evs); err != nil {
+		return nil, fmt.Errorf("decode journal batch: %w", err)
+	}
+	return evs, nil
+}
+
+// ListHumanRequests returns the ask_human questions waiting for an answer.
+func (c *Client) ListHumanRequests() ([]PendingQuestion, error) {
+	var out []PendingQuestion
+	err := c.roundTrip(NewQueryMsg(TypeListHumanRequests), &out)
+	return out, err
+}
+
 // NextEvent blocks for the next message on a watched connection: a progress
 // event, a "response" or "error" ending a turn, then "done". It returns an
 // error once the connection closes.

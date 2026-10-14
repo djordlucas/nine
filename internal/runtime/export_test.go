@@ -93,3 +93,6 @@ func (st *AgentWorkerForTest) IsBusyForTest() bool { return st.w.IsBusy() }
 // SetOnCompleteForTest installs the worker's post-turn onComplete callback.
 // Call it before the first turn.
 func (st *AgentWorkerForTest) SetOnCompleteForTest(fn func(agentID string)) { st.w.onComplete = fn }
+
+// FollowStart exposes where a journal follower's feed starts.
+var FollowStart = followStart

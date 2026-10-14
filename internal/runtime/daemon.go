@@ -103,6 +103,10 @@ type queryBackend interface {
 	// Journal subscription read surface (satisfies subscribe.Store) so the
 	// daemon can host cursor-backed subscribers (adr/reactive-events.md).
 	SessionEventsAfter(afterSeq int64, limit int) ([]memory.SessionEvent, error)
+	// SessionEventsBounds places a journal follower's resume point.
+	SessionEventsBounds() (oldest, latest int64, err error)
+	// HumanRequestListPending backs list_human_requests.
+	HumanRequestListPending() ([]memory.HumanRequest, error)
 	EventCursorGet(subscriberID string) (int64, error)
 	EventCursorSet(subscriberID string, seq int64) error
 	// Queued message support: the daemon queues a user message when the
@@ -134,11 +138,13 @@ type pluginRegistry interface {
 // per-conversation session workers.
 type Daemon struct {
 	socketPath string
-	agent      Agent
-	ckpt       CheckpointStore
-	startedAt  time.Time
-	names      map[string]string // agentID → display name (set on first turn)
-	instName   string            // instance display name shown in the TUI top bar (guarded by mu)
+	// journalBell wakes journal followers after each journal write.
+	journalBell bell
+	agent       Agent
+	ckpt        CheckpointStore
+	startedAt   time.Time
+	names       map[string]string // agentID → display name (set on first turn)
+	instName    string            // instance display name shown in the TUI top bar (guarded by mu)
 
 	mgr   pluginRegistry
 	tools *toolvm.Host // sandboxed-tool host (see ConfigureSandboxedTools); nil = disabled
@@ -615,6 +621,10 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 		// Terminal: the watch owns the connection until it ends, then closes it.
 		d.watch(ctx, conn, enc, r.AgentID)
 
+	case protocol.JournalFollowReq:
+		// Terminal, like watch.
+		d.followJournal(ctx, conn, enc, r.After, r.Tail)
+
 	// The field-less verbs. They share one request type, so the inner switch is
 	// on which verb rather than on which shape — there is only one shape.
 	case protocol.QueryReq:
@@ -643,6 +653,8 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 			d.handleToolsReload(enc)
 		case protocol.TypeGrantsList:
 			d.handleGrantsList(enc)
+		case protocol.TypeListHumanRequests:
+			d.handleListHumanRequests(enc)
 		}
 
 	case protocol.GrantsDecideReq:

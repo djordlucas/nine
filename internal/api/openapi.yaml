@@ -52,6 +52,11 @@ tags:
   description: The generated-tool capability ceiling, and the agent's requests to widen it.
 - name: processes
   description: 'Everything Nine runs between turns: list, inspect, start, stop, message.'
+- name: events
+  description: 'The daemon-wide journal, live: every session''s events and the state changes the store
+    records.'
+- name: questions
+  description: ask_human questions waiting for an answer.
 paths:
   /auth/session:
     get:
@@ -690,6 +695,83 @@ paths:
       security:
       - bearerAuth: []
       - cookieAuth: []
+  /events:
+    get:
+      operationId: streamEvents
+      summary: Follow the journal
+      description: 'Opens a Server-Sent Events stream of the daemon''s journal: every session''s events and
+        the state changes the store records (approvals, questions, notifications, goals, workflows). Each
+        journal event is sent as an event named journal whose SSE id is its seq, so a client that reconnects
+        with Last-Event-ID (or after) misses nothing still in the journal. A position the journal can no
+        longer honour (scrubbed, more than 10000 events behind, or from another journal) is answered with
+        a reset event, and the stream continues from now. A payload over 16 KB is replaced by {"omitted":
+        true, "bytes": N}; the conversation''s trace has it in full.'
+      tags:
+      - events
+      parameters:
+      - name: type
+        in: query
+        description: Only these event types. A value ending in * matches every type with that prefix (process_*).
+          Repeatable.
+        schema:
+          type: array
+          items:
+            type: string
+        explode: true
+      - name: agent
+        in: query
+        description: Only events of these sessions or processes (the journal's agent_id). Repeatable.
+        schema:
+          type: array
+          items:
+            type: string
+        explode: true
+      - name: after
+        in: query
+        description: Resume after this seq. Last-Event-ID takes precedence. Without either, the stream starts
+          from now.
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
+      - name: tail
+        in: query
+        description: For a stream starting from now, how many earlier journal events to send first (before
+          the type and agent filters).
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 1000
+          default: 0
+      - name: Last-Event-ID
+        in: header
+        description: The id of the last event received, which a browser's EventSource sends on reconnect.
+        schema:
+          type: string
+      responses:
+        '200':
+          description: An event stream. The event name (connected, journal, reset, error) selects the member
+            of EventsStreamEvent.
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/EventsStreamEvent'
+        '400':
+          description: invalid parameters
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
   /goals:
     get:
       operationId: listGoals
@@ -1202,6 +1284,34 @@ paths:
         '409':
           description: refused in the current state; the message says why
           content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /questions:
+    get:
+      operationId: listQuestions
+      summary: List pending questions
+      description: Returns the ask_human questions still waiting for an answer, oldest first. A question
+        is answered over its conversation's WebSocket.
+      tags:
+      - questions
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListQuestionsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
         '500':
@@ -2151,6 +2261,33 @@ components:
       required:
       - code
       - message
+    EventsConnected:
+      description: The stream handshake. seq is the position the stream starts after.
+      type: object
+      required:
+      - seq
+      properties:
+        seq:
+          type: integer
+          format: int64
+    EventsReset:
+      description: The requested position could not be honoured; the stream continues from seq. A client
+        reloads what it shows.
+      type: object
+      required:
+      - seq
+      properties:
+        seq:
+          type: integer
+          format: int64
+    EventsStreamEvent:
+      description: One server-sent event on /events. The SSE event name (connected, journal, reset, error)
+        selects the member.
+      oneOf:
+      - $ref: '#/components/schemas/EventsConnected'
+      - $ref: '#/components/schemas/JournalEvent'
+      - $ref: '#/components/schemas/EventsReset'
+      - $ref: '#/components/schemas/ErrorResponse'
     ErrorResponse:
       description: The error shape every failing request returns.
       type: object
@@ -2419,6 +2556,40 @@ components:
             $ref: '#/components/schemas/GoalInfo'
         pagination:
           $ref: '#/components/schemas/Pagination'
+    JournalEvent:
+      description: One journal event (spec/contracts/event-journal.md), from any session or process.
+      type: object
+      required:
+      - seq
+      - agent_id
+      - turn
+      - type
+      - timestamp
+      properties:
+        seq:
+          type: integer
+          format: int64
+        agent_id:
+          description: The session, process or goal the event belongs to; daemon for a change no session
+            made.
+          type: string
+        turn:
+          description: The turn it belongs to; 0 for an event outside any turn.
+          type: integer
+        type:
+          description: A session event (turn_start, tool_end, ...), a process transition (process_*, standing_*),
+            or a state change (human_input_*, capability_*, notification, goal_*, workflow_*).
+          type: string
+        span_id:
+          type: string
+        parent_span_id:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        payload:
+          description: 'The event''s body, whose shape depends on type, or {"omitted": true, "bytes": N}
+            for one over 16 KB.'
     ListNotificationsResponse:
       description: A page of notifications.
       type: object
@@ -2439,6 +2610,16 @@ components:
             $ref: '#/components/schemas/PluginInfo'
         pagination:
           $ref: '#/components/schemas/Pagination'
+    ListQuestionsResponse:
+      description: The pending questions.
+      type: object
+      required:
+      - data
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Question'
     ListSkillsResponse:
       description: A page of skills.
       type: object
@@ -3077,6 +3258,32 @@ components:
         timestamp:
           type: integer
           format: int64
+    Question:
+      description: An ask_human question waiting for an answer.
+      type: object
+      required:
+      - id
+      - agent_id
+      - question
+      - created_at
+      - expires_at
+      properties:
+        id:
+          type: string
+        agent_id:
+          description: The conversation that asked.
+          type: string
+        question:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
     StreamEvent:
       description: One server-sent event. The SSE event name (connected, tool_start, tool_end, response_chunk,
         response, sub_agent_start, sub_agent_end, notice, done, error) selects the member.
