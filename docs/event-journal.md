@@ -25,6 +25,21 @@ it decided to call it.
 | `tool_http` | one outbound request a sandboxed tool made: host, URL, status, bytes, duration — **including a refused one, with its reason** |
 | `context_update` | a change to what the next model call will be shown |
 
+Entries outside any turn record what changed in the daemon's state. Process
+transitions (`process_*`, `standing_*`) are written by the process runtime. The
+store writes the rest itself, beside the change:
+
+| Entry | Records |
+|-------|---------|
+| `human_input_requested` / `_answered` / `_timed_out` | an `ask_human` question and its outcome |
+| `capability_requested` / `_decided` / `_revoked` | a request to widen the capability ceiling, the operator's decision, a revoked grant |
+| `notification` | a message posted to the human-facing feed |
+| `goal_created` / `goal_status` / `goal_deleted` | a goal's lifecycle |
+| `workflow_created` / `workflow_step` / `workflow_failed` / `workflow_cancelled` | a workflow's lifecycle |
+
+Each is attributed to its session (a goal's to the goal), at turn 0. A change no
+session made, such as a revoked grant, is attributed to `daemon`.
+
 Entries carry a span and a parent span, so the record is a tree rather than a
 flat list: an HTTP request nests under the tool call that made it, which nests
 under the model call that chose it, which nests under the turn. `nine trace`
@@ -45,6 +60,12 @@ Recording every model call whole is affordable because the window is bounded, no
 because the entries are small. What falls outside it is gone: the journal is the
 history of how a session got here, and a session resumes from its checkpoint
 rather than from the record.
+
+## Following the journal
+
+`GET /api/v1/events` serves the journal as a live stream, resumable by `seq`
+([HTTP API](api.md#journal-stream)). The web UI's dashboard and Journal run on
+it. On the daemon's socket the same feed is `journal_follow`.
 
 ## Subscribing to journal events
 
@@ -84,4 +105,5 @@ without writing anything new.
 | One subscriber ships | Session linking is the only subscriber built. The subscription mechanism is general; nothing else uses it yet. |
 | No generative subscribers, by design | Subscribers may compute embeddings but may not make generative model calls. This bounds cost, keeps replay deterministic, and prevents a reaction from triggering another reaction. It is a deliberate constraint, not a gap. |
 | Pull only, by design | A reaction never blocks a turn, writes to conversation history, or interrupts. Derived material reaches you only when a later turn you initiated pulls it. |
+| Processes cannot trigger on state changes yet | A process's `on` lists the session and process events it may react to; the state-change entries are not among them. |
 | Written off the critical path | An async batched sink writes the journal, so entries for an in-flight turn may not be readable the instant the turn ends. |

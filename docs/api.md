@@ -252,7 +252,12 @@ boot. A bad action, an already-settled request and an unrevocable grant are all
 GET /api/v1/notifications   GET /api/v1/skills   POST /api/v1/sessions/attach
 GET /api/v1/docs             GET /api/v1/docs/{topic}
 GET /api/v1/spec             GET /api/v1/spec/{topic}
+GET /api/v1/events           GET /api/v1/questions
 ```
+
+`GET /questions` lists the `ask_human` questions still waiting for an answer, oldest
+first, with the conversation that asked. A question is answered over that
+conversation's [WebSocket](#websocket). `GET /events` is the [journal stream](#journal-stream).
 
 ---
 
@@ -348,6 +353,42 @@ An unknown conversation is `404` before the stream opens. A session that exists
 but is not loaded is revived from its checkpoint. An idle stream carries a
 `: keepalive` comment every 15 seconds, and the stream is exempt from the
 server's request timeout.
+
+---
+
+## Journal stream
+
+`GET /events` follows the whole [event journal](event-journal.md) for as long as
+the client stays connected: every session's turns, model and tool calls, process
+transitions, and the state changes the store records (approvals, questions,
+notifications, goals, workflows). The web UI's live views run on it.
+
+```bash
+curl -N -H "Authorization: Bearer $TOKEN" 'http://localhost:8080/api/v1/events?type=goal_*&tail=20'
+```
+
+| Event | When |
+|-------|------|
+| `connected` | Once, with `seq`: the position the stream starts after |
+| `journal` | One journal event: `seq`, `agent_id`, `turn`, `type`, `timestamp`, `payload` |
+| `reset` | The requested position could not be honoured; the stream continues from `seq`, and a client reloads what it shows |
+| `error` | The daemon ended the stream |
+
+| Parameter | Effect |
+|-----------|--------|
+| `type` | Only these types; `goal_*` matches a prefix. Repeatable. |
+| `agent` | Only these sessions or processes. Repeatable. |
+| `after` | Resume after this `seq` |
+| `Last-Event-ID` header | The same, as a browser sends it on reconnect; it takes precedence over `after` |
+| `tail` | With neither, how many earlier events to send first (at most 1000). Without it the stream starts from now. |
+
+Every SSE event's `id` is its journal `seq`. A reconnect with `Last-Event-ID` misses
+nothing still in the journal, and the filters do not change that: a batch whose last
+events were filtered out still sends their `id`. A position that was scrubbed, is more
+than 10,000 events behind, or was never assigned is answered with `reset`. A payload
+over 16 KB is sent as `{"omitted": true, "bytes": N}`; the conversation's
+[trace](#conversations) has it whole. The stream carries what the journal stores,
+prompts and tool output included, so it needs the same token as the rest of the API.
 
 ---
 
@@ -473,4 +514,5 @@ In the dev container, the API server is an s6 longrun service. When the hot-relo
 | A slow stream reader loses events | The daemon queues up to 1024 events per stream or socket; a client that falls further behind loses the excess rather than stalling the session's turn. A WebSocket write that cannot complete in 10 seconds closes the socket. |
 | Stream omits reasoning detail | Reasoning tokens, stage labels and context-usage updates are not forwarded; the TUI renders them, and the API declares no schema for them. |
 | `ask_human` is answerable over the WebSocket only | The SSE stream does not carry `human_input_required`, and no REST endpoint answers one. An interactive conversation driven without the WebSocket waits out each question's timeout. |
+| The journal stream resumes within bounds | A client more than 10,000 events behind, or whose next events were scrubbed, gets `reset` and starts from now. |
 | Startup races the daemon | The API server polls for the daemon socket on startup and refuses requests until the daemon is ready. |

@@ -99,6 +99,8 @@ Msg {
 | `session_history` | `agent_id` (**required**) | a session's whole transcript from the journal, every turn; does **not** attach |
 | `session_events` | `agent_id` (**required**), (`turn`) | a session's raw journal: every turn (`turn` 0), turn N, or the latest (`-1`) |
 | `watch` | `agent_id` (**required**) | follow a session's events on this connection until it closes (R-PROTO.14) |
+| `journal_follow` | (`after`), (`limit`) | follow the whole journal on this connection until it closes, after `seq` `after`; with none, from now with up to `limit` earlier events (R-PROTO.15) |
+| `list_human_requests` | — | the `ask_human` questions still waiting for an answer |
 
 `plugin_call` (R-PROTO.5) is the only way to reach a tool without an agent loop; the CLI
 uses it for `nine workflow fail` when the daemon is up and for diagnostics.
@@ -136,6 +138,8 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `session_history` | `text` = JSON `[]Msg` | `history_user`, `tool_start`, `tool_end`, `sub_agent_start`, `sub_agent_end`, `response`, in order, each with `ts` and `turn` |
 | `session_events` | `text` = JSON `[]JournalEvent` | `{ seq, agent_id, turn, span_id, parent_span_id, type, ts, payload }` ([`event-journal.md`](event-journal.md)) |
 | `watch` | `agent_id` | watch accepted; the session's events follow (R-PROTO.14) |
+| `journal_follow` | `after`, (`status` = `reset`) | follow accepted, starting after `after`; then one per batch with `text` = JSON `[]JournalEvent` (R-PROTO.15) |
+| `list_human_requests` | `text` = JSON `[]PendingQuestion` | `{ id, agent_id, question, options, created_at, expires_at }`, oldest first; one past its deadline is left out |
 
 **Streaming progress** (emitted during a turn, before `response`+`done`):
 
@@ -439,3 +443,19 @@ client or the session's own idle schedule — the turn's progress events (R-PROT
 | Ends | when the client closes, the daemon shuts down, or the session stops — the last sends `error` "session stopped" first. The daemon closes the connection; it reads nothing more from it |
 | Any number | each watcher is independent of the others and of the connection driving the turn, which still receives its own events per R-PROTO.8 |
 
+---
+
+## R-PROTO.15 — `journal_follow` streams the journal
+
+`journal_follow` turns its connection into a one-way feed of the whole journal, every
+session's events and the store's state changes ([`event-journal.md`](event-journal.md)
+R-EVT.6, R-EVT.7). The daemon replies `journal_follow` with `after` set to where the feed
+starts, then writes a `journal_follow` message per batch, `text` carrying the events.
+
+| Rule | Detail |
+|------|--------|
+| Resume | `after` > 0 resumes after that `seq`; 0 starts from the latest, less up to `limit` (at most 1000) events |
+| Reset | a position that cannot be honoured (R-EVT.7) is answered with `status` = `reset` and `after` = the latest. A client **MUST** treat what it built from earlier events as possibly incomplete |
+| Batches | in `seq` order, each event once, at most 256 per message |
+| Ends | when the client closes or the daemon shuts down. The daemon closes the connection; it reads nothing more from it |
+| Any number | each follower is independent; none slows the journal's writer |

@@ -828,6 +828,14 @@ Get user notifications.
 }
 ```
 
+#### GET `/api/v1/questions`
+
+The `ask_human` questions still waiting for an answer, oldest first, read through
+the daemon's `list_human_requests`. One past its deadline is left out. A question is
+answered over its conversation's WebSocket (API-STREAM-3).
+
+**Response:** `{"data": [{"id", "agent_id", "question", "options"?, "created_at", "expires_at"}]}`
+
 ---
 
 ### API-END-9: skills
@@ -1107,6 +1115,35 @@ A turn ends with `response` or `error`, then `done`; the stream stays open for
 the next turn. Reasoning tokens, stage labels and context updates are not
 forwarded.
 
+### API-STREAM-4: the journal stream
+
+`GET /api/v1/events` serves the journal ([`event-journal.md`](event-journal.md)) as SSE,
+backed by the daemon's `journal_follow` (R-EVT.7).
+
+```
+id: 41
+event: connected
+data: {"seq": 41}
+
+id: 42
+event: journal
+data: {"seq": 42, "agent_id": "g1", "turn": 0, "type": "goal_created", "span_id": "state", "timestamp": "...", "payload": {...}}
+
+id: 900
+event: reset
+data: {"seq": 900}
+```
+
+| Rule | Detail |
+|------|--------|
+| Ids | every event **MUST** carry `id`, the journal `seq` it follows or is, the handshake included |
+| Resume | `Last-Event-ID` resumes after that `seq` and takes precedence over `after`; with neither, the stream starts from now, after `tail` (0 to 1000) earlier events |
+| Reset | a position the daemon cannot honour **MUST** be answered with `reset` after `connected`; the stream continues from its `seq` |
+| Filters | `type` (exact, or a prefix ending in `*`) and `agent`, each repeatable. When a batch's last events are filtered out, the server **MUST** send their `seq` as a bare `id:` line, so a reconnect does not replay them |
+| Payload cap | a payload over 16 KiB **MUST** be replaced by `{"omitted": true, "bytes": N}` |
+| Validation | a `Last-Event-ID` that is not a non-negative integer, or a `tail` out of range, is `400` before the stream opens |
+| Liveness | as API-STREAM-1: exempt from the write timeout, a `: keepalive` comment every 15 seconds; `error` when the daemon ends the feed |
+
 ### API-STREAM-3: WebSocket messages
 
 The WebSocket carries the SSE stream's events and adds the client's direction.
@@ -1351,6 +1388,8 @@ All API configuration options **MUST** be available via CLI flags.
 | — | GET `/api/v1/skills` | Implemented |
 | — | GET `/api/v1/conversations/{id}/messages/stream` | Implemented |
 | — | WS `/ws/v1/conversations/{id}/messages` | Implemented |
+| — | GET `/api/v1/events` | Implemented |
+| — | GET `/api/v1/questions` | Implemented |
 
 ---
 

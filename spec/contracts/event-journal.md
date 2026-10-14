@@ -99,13 +99,61 @@ valid, replayable prefix per agent.
 | `SessionEventsAfter(afterSeq, limit)` | forward scan for subscribers (see [`subscriptions.md`](subscriptions.md)) |
 | `SessionEventsScrub(keepTurns, maxAge)` | retention |
 | `LatestTurnResult(agentID)` | the most recent `turn_end` answer (used by enrichment surfacing) |
+| `SessionEventsBounds()` | the oldest `seq` kept and the highest ever assigned (the `AUTOINCREMENT` mark, not `max(seq)`), for placing a follower (R-EVT.7) |
+| `OnJournal(func())` | a hook called after every successful journal write, from the writer; it **MUST NOT** block |
+
+---
+
+## R-EVT.6 — state-change events
+
+The store **MUST** journal each of these changes beside the write that makes it, so every
+path that changes one (the daemon, a tool in a turn, the CLI) is recorded:
+
+| Type | Written by | Payload |
+|------|------------|---------|
+| `human_input_requested` | `HumanRequestCreate` | `{id, question, options, expires_at}` |
+| `human_input_answered` | `HumanRequestAnswer` | `{id, answer}` |
+| `human_input_timed_out` | `HumanRequestMarkTimedOut`, `HumanRequestExpireStale` | `{id}` |
+| `capability_requested` | `CapabilityRequestCreate` | `{id, tool, capability, reason}` |
+| `capability_decided` | `CapabilityRequestDecide` | `{id, status, grant_id?}` |
+| `capability_revoked` | `CapabilityGrantRevoke` | `{grant_id}` |
+| `notification` | `UserNotificationCreate` | `{id, message}` |
+| `goal_created` / `goal_status` / `goal_deleted` | `GoalCreate` / `GoalUpdateStatus` / `GoalDelete` | `{id, description, parent_id}` / `{id, status}` / `{id, ids}` |
+| `workflow_created` / `workflow_step` / `workflow_failed` / `workflow_cancelled` | `WorkflowCreate` / `WorkflowUpdate` / `WorkflowFail` / `WorkflowCancel` | `{id, name, steps}` / `{id, step_id, status, workflow_status}` / `{id, all, count}` / `{id}` |
+
+| Rule | Detail |
+|------|--------|
+| Only real changes | a write that changes nothing (a duplicate id, an already-settled request, a missing row) **MUST NOT** be journaled |
+| Attribution | `agent_id` is the session the change belongs to; a goal's events are its own id's (a top-level goal's session id is the goal's). A change with no session is attributed to `daemon` (`memory.DaemonAgentID`) |
+| Outside turns | `turn` is 0 and `span_id` is `state` |
+| Never fails the change | the change has happened when its event is written; a failed journal write is logged and the change stands |
+| Not a trigger | these types are not in `config.EventTypes`, so a process's `on` cannot name them |
+
+---
+
+## R-EVT.7 — following the journal
+
+`journal_follow` on the daemon socket ([`wire-protocol.md`](wire-protocol.md) R-PROTO.15),
+and `GET /api/v1/events` over it ([`api.md`](api.md) API-STREAM-4), read the journal
+forward from a `seq` for as long as the client stays connected. A follower reads the
+table, not the sink's queue: what it sends is what trace and replay read later.
+
+| Rule | Detail |
+|------|--------|
+| Start | after the client's `seq`; with none, from the latest, less up to 1000 events of backlog the client asks for |
+| Reset | a `seq` beyond the latest, one whose following events were scrubbed, or one more than **10,000** behind **MUST** be answered as a reset: the feed starts from the latest, and the client is told so |
+| Order | events are sent in `seq` order, each once per connection, in batches of at most 256 |
+| Wake | every journal write rings the followers (`OnJournal`); a follower also polls every second |
+| Ends | when the client closes or the daemon shuts down |
 
 ---
 
 ## Reference symbols
 
 `internal/memory/events.go` (`SessionEvent`, append/read/scrub, `LatestTurnResult`),
-`internal/memory/cursors.go` (`SessionEventsAfter`), `internal/runtime/eventsink.go`
+`internal/memory/cursors.go` (`SessionEventsAfter`), `internal/memory/journal_state.go`
+(state changes, `SessionEventsBounds`, `OnJournal`), `internal/runtime/journal_follow.go`
+(`journal_follow`), `internal/runtime/eventsink.go`
 (`NewSQLEventSink`), `internal/runtime/journal.go` (hooks + payloads),
 `internal/replay/replay.go` (`FromEvents`, `Recorded`, `Session`),
 `internal/cli/` (`trace`, `replay`). Design: `adr/event-log.md`.

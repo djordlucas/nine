@@ -848,9 +848,12 @@ messages), `tool_start`/`tool_end`, `context_update`, and `turn_end`.
                                         │  batch flush
                                         ▼
                                    session_events  ──► onFlush → daemon.NotifySubscribers
+                                        ▲          └─► OnJournal → daemon.JournalWritten → followers
+   store state changes (approvals,      │
+   questions, goals, workflows, …) ─────┘
 ```
 
-Three consumers sit on top of the journal:
+Four consumers sit on top of the journal:
 
 - **Read / replay.** `nine trace <agent-id>` renders a session's trajectory
   straight from the table (works with the daemon down). `replay`
@@ -870,6 +873,9 @@ Three consumers sit on top of the journal:
   pull, not push; on by default when an embedder is configured), and the
   Supervisor itself (its control-plane bus folded onto the journal). Design:
   [reactive events](event-journal.md).
+- **Followers.** `journal_follow` streams the journal to a client from a `seq`,
+  woken by the store's `OnJournal` hook on every write. The API serves it as
+  `GET /api/v1/events`, which the web UI's live views run on.
 
 ### Checkpoints
 
