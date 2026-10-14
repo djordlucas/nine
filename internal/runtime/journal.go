@@ -34,13 +34,16 @@ type turnEndPayload struct {
 }
 
 type llmRequestPayload struct {
-	System     string        `json:"system"`
-	Messages   []llm.Message `json:"messages"`
-	ToolNames  []string      `json:"tool_names"`
-	MaxTokens  int           `json:"max_tokens"`
-	TokensUsed int           `json:"tokens_used"`
-	Budget     int           `json:"budget"`
-	LLMCallN   int           `json:"llm_call_n"`
+	System    string        `json:"system"`
+	Messages  []llm.Message `json:"messages"`
+	ToolNames []string      `json:"tool_names"`
+	// ToolTokens is the estimated size of the request's tool definitions,
+	// which the evals bound per request (adr/deferred-tool-schemas.md §7.2).
+	ToolTokens int `json:"tool_tokens"`
+	MaxTokens  int `json:"max_tokens"`
+	TokensUsed int `json:"tokens_used"`
+	Budget     int `json:"budget"`
+	LLMCallN   int `json:"llm_call_n"`
 }
 
 type llmResponsePayload struct {

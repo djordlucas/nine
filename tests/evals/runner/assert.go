@@ -345,6 +345,16 @@ func (g *grader) gradeTrajectory() {
 	if t.NoStall && tr.stalled {
 		g.fail("trajectory no_stall: a turn ended with a stall")
 	}
+	for name, b := range t.ToolCalls {
+		if why := b.check(tr.toolCalls[name]); why != "" {
+			g.fail("trajectory tool_calls %s: %s", name, why)
+		}
+	}
+	if t.Promotions != nil {
+		if why := t.Promotions.check(tr.promotions); why != "" {
+			g.fail("trajectory promotions: %s", why)
+		}
+	}
 	if t.Spills != nil && tr.spills < t.Spills.Min {
 		g.fail("trajectory spills: %d tool result(s) spilled, want >= %d",
 			tr.spills, t.Spills.Min)
@@ -381,9 +391,28 @@ func (g *grader) gradeTrajectory() {
 			}
 		}
 		for _, name := range lr.ToolAdvertisedNoneOf {
-			if tr.toolAdvertised(name) {
+			switch {
+			case tr.toolAdvertised(name):
 				g.fail("trajectory llm_request.tool_advertised_none_of: %q was advertised", name)
+			case tr.indexed[name]:
+				g.fail("trajectory llm_request.tool_advertised_none_of: %q was in the tool index", name)
+			case tr.searched[name]:
+				g.fail("trajectory llm_request.tool_advertised_none_of: %q was in a tool_search result", name)
 			}
+		}
+		for _, name := range lr.ToolAdvertisedAllOf {
+			if !tr.toolAdvertised(name) {
+				g.fail("trajectory llm_request.tool_advertised_all_of: %q never advertised", name)
+			}
+		}
+		for _, name := range lr.ToolIndexedNoneOf {
+			if tr.indexed[name] {
+				g.fail("trajectory llm_request.tool_indexed_none_of: %q was in the tool index", name)
+			}
+		}
+		if lr.ToolTokensMax != nil && tr.toolTokensMax > *lr.ToolTokensMax {
+			g.fail("trajectory llm_request.tool_tokens_max: a request carried %d tool tokens, want <= %d",
+				tr.toolTokensMax, *lr.ToolTokensMax)
 		}
 	}
 }
@@ -468,19 +497,48 @@ func (m StringMatch) match(s string) (why string, ok bool) {
 // trace is a digest of a run's journal in the shapes the trajectory assertions
 // need, computed once from the flat event list (docs/evals.md §3 mappings).
 type trace struct {
-	tools       map[string]bool // tool_start names seen
-	advertised  map[string]bool // union of llm_request tool_names
-	systems     []string        // llm_request system prompts
-	userTurns   int             // count of user-triggered turn_end events
-	byTrigger   map[string]int  // turn_start events by trigger ("" counted as "user")
-	stalled     bool            // any turn_end.error == "stall"
-	gapReported bool            // gap_report tool_start (or supervisor gap)
-	subAgents   int             // spawned sub-agents (see subAgents accounting below)
-	spills      int             // tool_end events whose output was spilled to the file store
+	tools      map[string]bool // tool_start names seen
+	toolCalls  map[string]int  // tool_start count per name
+	advertised map[string]bool // union of llm_request tool_names
+	// indexed is the union of llm_request tool_index: the names the deferred
+	// mode lists without a schema (adr/deferred-tool-schemas.md §3.2).
+	indexed map[string]bool
+	// searched is every name a tool_search result returned.
+	searched      map[string]bool
+	llmCalls      int // llm_request events
+	toolTokensMax int // largest llm_request tool_tokens
+	promotions    int // tool_promoted events
+	// prompts holds each LLM call's input tokens by span: the provider's
+	// count, else the builder's estimate.
+	prompts     map[string]promptTokens
+	systems     []string       // llm_request system prompts
+	userTurns   int            // count of user-triggered turn_end events
+	byTrigger   map[string]int // turn_start events by trigger ("" counted as "user")
+	stalled     bool           // any turn_end.error == "stall"
+	gapReported bool           // gap_report tool_start (or supervisor gap)
+	subAgents   int            // spawned sub-agents (see subAgents accounting below)
+	spills      int            // tool_end events whose output was spilled to the file store
+}
+
+type promptTokens struct{ estimate, reported int }
+
+// promptTokens sums every LLM call's input tokens.
+func (t *trace) promptTokens() int {
+	n := 0
+	for _, p := range t.prompts {
+		if p.reported > 0 {
+			n += p.reported
+		} else {
+			n += p.estimate
+		}
+	}
+	return n
 }
 
 func newTrace(events []memory.SessionEvent) *trace {
-	t := &trace{tools: map[string]bool{}, advertised: map[string]bool{}, byTrigger: map[string]int{}}
+	t := &trace{tools: map[string]bool{}, toolCalls: map[string]int{}, advertised: map[string]bool{},
+		indexed: map[string]bool{}, searched: map[string]bool{}, prompts: map[string]promptTokens{},
+		byTrigger: map[string]int{}}
 	turnTrigger := map[int]string{}
 	// Sub-agents are counted two ways and reconciled at the end: sub_agent_start
 	// progress events (accurate per-child, if journaled) and the tool calls that
@@ -526,6 +584,7 @@ func newTrace(events []memory.SessionEvent) *trace {
 				continue
 			}
 			t.tools[p.Name] = true
+			t.toolCalls[p.Name]++
 			switch p.Name {
 			case "gap_report":
 				t.gapReported = true
@@ -536,22 +595,56 @@ func newTrace(events []memory.SessionEvent) *trace {
 			}
 		case "tool_end":
 			var p struct {
+				Name      string `json:"name"`
+				Output    string `json:"output"`
 				SpillPath string `json:"spill_path"`
 			}
 			_ = json.Unmarshal(e.Payload, &p)
 			if p.SpillPath != "" {
 				t.spills++
 			}
+			if p.Name == "tool_search" {
+				var out struct {
+					Results []struct {
+						Name string `json:"name"`
+					} `json:"results"`
+				}
+				_ = json.Unmarshal([]byte(p.Output), &out)
+				for _, r := range out.Results {
+					t.searched[r.Name] = true
+				}
+			}
 		case "llm_request":
 			var p struct {
-				System    string   `json:"system"`
-				ToolNames []string `json:"tool_names"`
+				System     string   `json:"system"`
+				ToolNames  []string `json:"tool_names"`
+				ToolIndex  []string `json:"tool_index"`
+				ToolTokens int      `json:"tool_tokens"`
+				TokensUsed int      `json:"tokens_used"`
 			}
 			_ = json.Unmarshal(e.Payload, &p)
+			t.llmCalls++
 			t.systems = append(t.systems, p.System)
 			for _, n := range p.ToolNames {
 				t.advertised[n] = true
 			}
+			for _, n := range p.ToolIndex {
+				t.indexed[n] = true
+			}
+			t.toolTokensMax = max(t.toolTokensMax, p.ToolTokens)
+			pt := t.prompts[e.SpanID]
+			pt.estimate = p.TokensUsed
+			t.prompts[e.SpanID] = pt
+		case "llm_response":
+			var p struct {
+				InputTokens int `json:"input_tokens"`
+			}
+			_ = json.Unmarshal(e.Payload, &p)
+			pt := t.prompts[e.SpanID]
+			pt.reported = p.InputTokens
+			t.prompts[e.SpanID] = pt
+		case "tool_promoted":
+			t.promotions++
 		case "sub_agent_start":
 			starts++
 		}

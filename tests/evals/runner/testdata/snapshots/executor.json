@@ -2241,6 +2241,7 @@
           "process_show",
           "process_start"
         ],
+        "tool_tokens": 6598,
         "max_tokens": 2048,
         "tokens_used": 6810,
         "budget": 100000,
@@ -2391,6 +2392,7 @@
           "process_show",
           "process_start"
         ],
+        "tool_tokens": 6598,
         "max_tokens": 2048,
         "tokens_used": 6904,
         "budget": 100000,

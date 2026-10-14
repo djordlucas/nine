@@ -1,0 +1,30 @@
+id: deferred-discover-from-index
+description: >
+  Recover a trashed file when the prompt names no tool. Guards discovery under the
+  deferred tool mode (adr/deferred-tool-schemas.md §7.3): restore_file is not
+  resident there, so the model has to find it in the tool index. Mode-agnostic: in
+  ranked the tool is simply advertised, and the case must pass in both arms.
+track: live
+tier: basic
+tags: [deferred-tools, files, workspace, trash]
+
+setup:
+  files:
+    # A trash entry as delete_file leaves one: .nine/trash/<UTC>-<random>/<path>.
+    /work/.nine/trash/20261014T090000Z-0a1b2c3d/plan.md: "Launch plan. Codeword heron-34.\n"
+
+prompts:
+  - "I deleted plan.md by mistake earlier. Get it back."
+
+expect:
+  side_effects:
+    files:
+      /work/plan.md: { contains: "heron-34" }
+  trajectory:
+    tools_all_of: [restore_file]
+    no_stall: true
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

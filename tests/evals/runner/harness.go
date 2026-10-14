@@ -293,6 +293,14 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 		}
 	}()
 
+	// A case can run with no embedder, as a deployment with
+	// [embeddings] provider = "none" does, to exercise the paths that work
+	// without one.
+	embedder := h.Embedder
+	if v, _ := c.Session.Config["embeddings.provider"].(string); v == "none" {
+		embedder = nil
+	}
+
 	// 1. Isolated store (schema-per-run).
 	store, dropStore, err := openIsolatedStore(h.BaseDir)
 	if err != nil {
@@ -322,12 +330,12 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 	//    knowledge those skills exist to carry. It also left the `skills` vector
 	//    namespace empty, so skill_search had nothing to rank unless the case's
 	//    own model wrote something first.
-	if err := runtime.SeedSkills(store, h.Embedder); err != nil {
+	if err := runtime.SeedSkills(store, embedder); err != nil {
 		return nil, fmt.Errorf("seed built-in skills: %w", err)
 	}
 
 	// 4. Apply setup fixtures to the fresh store + workspace.
-	if err := applySetup(store, h.Embedder, workspace, c.Setup); err != nil {
+	if err := applySetup(store, embedder, workspace, c.Setup); err != nil {
 		return nil, fmt.Errorf("apply setup: %w", err)
 	}
 
@@ -509,12 +517,12 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 		SocketPath:          sock,
 		Store:               store,
 		Plugins:             pluginMgr,
-		Embedder:            h.Embedder,
+		Embedder:            embedder,
 		ContextBudget:       budget,
 		MaxToolOutputTokens: maxToolOutputTokens(h.MaxToolOutputTokens, c),
 		SystemPrompt:        runtime.BuildSystemPrompt(),
-		RelatedSessions:     h.Embedder != nil,
-		SurfaceMemories:     h.Embedder != nil,
+		RelatedSessions:     embedder != nil,
+		SurfaceMemories:     embedder != nil,
 		Queue:               llm.NewQueue(provider, 4),
 		TaskTimeoutSeconds:  c.TimeoutSecs,
 		HITL:                hitl,

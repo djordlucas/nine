@@ -511,6 +511,7 @@
           "web_search",
           "read_file"
         ],
+        "tool_tokens": 2640,
         "max_tokens": 2048,
         "tokens_used": 3108,
         "budget": 100000,

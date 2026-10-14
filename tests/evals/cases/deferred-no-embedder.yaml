@@ -1,0 +1,33 @@
+id: deferred-no-embedder
+description: >
+  deferred-discover-from-index with no embedder configured. tool_search is
+  embedder-gated today; in the deferred mode it is the load path and must work
+  without one (adr/deferred-tool-schemas.md §3.3), through its names argument or
+  keyword ranking.
+track: live
+tier: basic
+tags: [deferred-tools, files, workspace, trash]
+
+session:
+  config:
+    embeddings.provider: none
+
+setup:
+  files:
+    /work/.nine/trash/20261014T090000Z-0a1b2c3d/plan.md: "Launch plan. Codeword heron-34.\n"
+
+prompts:
+  - "I deleted plan.md by mistake earlier. Get it back."
+
+expect:
+  side_effects:
+    files:
+      /work/plan.md: { contains: "heron-34" }
+  trajectory:
+    tools_all_of: [restore_file]
+    no_stall: true
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

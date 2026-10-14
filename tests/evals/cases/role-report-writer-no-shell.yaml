@@ -13,7 +13,10 @@ expect:
   trajectory:
     no_stall: true
     llm_request:
+      # Not advertised, not in a tool_search result, and not in the deferred
+      # mode's tool index: every surface a tool can reach the model by.
       tool_advertised_none_of: [shell]
+      tool_indexed_none_of: [shell]
 
 runs: 2
 pass_threshold: "2/2"

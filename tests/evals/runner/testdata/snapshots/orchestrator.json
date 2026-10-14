@@ -2244,6 +2244,7 @@
           "web_page_read",
           "process_show"
         ],
+        "tool_tokens": 6598,
         "max_tokens": 2048,
         "tokens_used": 7463,
         "budget": 100000,
@@ -2406,6 +2407,7 @@
           "web_page_read",
           "process_show"
         ],
+        "tool_tokens": 6598,
         "max_tokens": 2048,
         "tokens_used": 7478,
         "budget": 100000,

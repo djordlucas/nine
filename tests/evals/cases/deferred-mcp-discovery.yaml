@@ -1,0 +1,30 @@
+id: deferred-mcp-discovery
+description: >
+  Find and call an MCP tool the prompt does not name. mcp-tool-call names
+  fixture__mcp_echo in full, to test the call path alone; this case tests
+  discovery: the model is told only that a server called fixture can echo text,
+  and finds its tool, under mcp/fixture in the deferred mode's tool index
+  (adr/deferred-tool-schemas.md §7.3).
+track: live
+tier: basic
+tags: [deferred-tools, mcp, plugin]
+
+setup:
+  mcp_servers:
+    - name: fixture
+      command: "${NINE_EVAL_MCP_FIXTURE}"
+
+prompts:
+  - "The MCP server called fixture can echo text back. Have it echo `nine-mcp-eval-marker`, then tell me exactly what it returned."
+
+expect:
+  trajectory:
+    tools_all_of: [fixture__mcp_echo]
+    no_stall: true
+  answer:
+    contains: ["nine-mcp-eval-marker"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

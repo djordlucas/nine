@@ -1160,6 +1160,7 @@
           "process_start",
           "process_stop"
         ],
+        "tool_tokens": 6598,
         "max_tokens": 2048,
         "tokens_used": 7450,
         "budget": 100000,

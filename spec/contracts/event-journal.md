@@ -32,7 +32,7 @@ journal write must not stall a user turn). Per-turn loop hooks
 
 ```text
 turn_start      {input}
-llm_request     {system, messages, tool_names, max_tokens, tokens_used, budget, llm_call_n}
+llm_request     {system, messages, tool_names, tool_tokens, max_tokens, tokens_used, budget, llm_call_n}
 llm_response    {text, tool_calls, stop_reason, llm_call_n, input_tokens?, output_tokens?}
 tool_start      {name, input}
 tool_end        {name, input, output, truncated, duration_ms, attempts, err}
