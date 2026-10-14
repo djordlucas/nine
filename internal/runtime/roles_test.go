@@ -220,8 +220,13 @@ func TestRenderedRoleEnumCoversStoreRoles(t *testing.T) {
 		}
 		checked++
 		schema := string(def.InputSchema)
-		if !strings.Contains(schema, "data-wrangler") {
+		// run_agent lists the roles; run_agents' tasks point to that list
+		// rather than repeat it.
+		if def.Name == "run_agent" && !strings.Contains(schema, "data-wrangler") {
 			t.Errorf("%s schema omits store-backed role (R-ROLE.8)", def.Name)
+		}
+		if def.Name == "run_agents" && !strings.Contains(schema, "run_agent's roles") {
+			t.Errorf("%s schema does not point to run_agent's roles", def.Name)
 		}
 		// The description above carries embedded quotes on purpose: the role
 		// property is spliced into raw JSON, so it must be escaped, not concatenated.

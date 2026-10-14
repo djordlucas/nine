@@ -23,8 +23,7 @@
             ],
             "properties": {
               "goal_id": {
-                "type": "string",
-                "description": "The goal to retrieve."
+                "type": "string"
               }
             }
           }
@@ -382,7 +381,7 @@
       "turn": 1,
       "type": "context_update",
       "payload": {
-        "used": 2702,
+        "used": 2691,
         "budget": 100000
       }
     },
@@ -421,7 +420,7 @@
           "read_file"
         ],
         "max_tokens": 2048,
-        "tokens_used": 2702,
+        "tokens_used": 2691,
         "budget": 100000,
         "llm_call_n": 1
       }

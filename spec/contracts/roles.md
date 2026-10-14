@@ -90,9 +90,10 @@ daemon's surface. Trust governs structure, never the allowlist.
 ## R-ROLE.8 — role selection at delegation time
 
 `run_agent` input and each `run_agents` task gain an optional `role` field (string).
-The tool schema **SHOULD** enumerate the available leaf roles with one-line descriptions
-so the model chooses well; the system prompt **SHOULD** steer toward the narrowest
-fitting role.
+`run_agent`'s schema **SHOULD** enumerate the available leaf roles with one-line
+descriptions so the model chooses well, and `run_agents` refers to that list rather
+than repeating it: the two are advertised together. The system prompt **SHOULD** steer
+toward the narrowest fitting role.
 
 That enumeration **MUST** be rendered from the live role registry at agent-build time,
 not fixed at compile time, and **MUST** cover store-backed role skills (operator- and

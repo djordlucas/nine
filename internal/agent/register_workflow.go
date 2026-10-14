@@ -20,7 +20,7 @@ var workflowToolDefs = []llm.ToolDef{
 		Name:        "workflow_get",
 		DisplayName: "Get Workflow",
 		Description: "Get the full plan and current step statuses for a workflow by ID.",
-		InputSchema: json.RawMessage(`{"type":"object","required":["workflow_id"],"properties":{"workflow_id":{"type":"string","description":"The workflow to retrieve."}}}`),
+		InputSchema: json.RawMessage(`{"type":"object","required":["workflow_id"],"properties":{"workflow_id":{"type":"string"}}}`),
 	},
 	{
 		Name:        "workflow_update",
