@@ -461,11 +461,20 @@ func (w *AgentWorker) turnHooks(turn int) agent.Hooks {
 		OnPlanStart: func() { w.emitEvent(protocol.NewPlanStartMsg(w.id)) },
 		OnPlanEnd:   func() { w.emitEvent(protocol.NewPlanEndMsg(w.id)) },
 		OnNotice:    func(text string) { w.emitEvent(protocol.NewNoticeMsg(w.id, text)) },
+		// A deferred loop's promoted set changes after the tool call that caused
+		// it, or, for a demotion, before the turn's first request.
+		OnToolPromoted: func(name, reason string) {
+			w.journal(turn, "tool_promoted", root, "", toolExpositionPayload{Name: name, Reason: reason})
+		},
+		OnToolDemoted: func(name string) {
+			w.journal(turn, "tool_demoted", root, "", toolExpositionPayload{Name: name})
+		},
 
 		OnLLMRequest: func(req *llm.Request, tokensUsed, budget, llmCallN int) {
 			w.llmCallN = llmCallN
 			names := make([]string, len(req.Tools))
-			toolTokens := 0
+			// A deferred request's tool block is its schemas and its index.
+			toolTokens := w.loop.LastIndexTokens()
 			for i, t := range req.Tools {
 				names[i] = t.Name
 				toolTokens += ninectx.ToolTokens(t)
@@ -474,6 +483,7 @@ func (w *AgentWorker) turnHooks(turn int) agent.Hooks {
 				System:     req.System,
 				Messages:   req.Messages,
 				ToolNames:  names,
+				ToolIndex:  w.loop.LastToolIndex(),
 				ToolTokens: toolTokens,
 				MaxTokens:  req.MaxTokens,
 				TokensUsed: tokensUsed,

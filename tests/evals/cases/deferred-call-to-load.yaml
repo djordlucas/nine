@@ -1,0 +1,36 @@
+id: deferred-call-to-load
+description: >
+  Call-to-load (adr/deferred-tool-schemas.md §3.4). restore_file is in the deferred
+  mode's index by name only, and its required argument is a trash entry name, not
+  the path a model would guess. A call from the index with guessed arguments fails,
+  returns the schema and promotes the tool; loading it first with tool_search
+  promotes it too. Either way the model must recover rather than loop.
+track: live
+tier: basic
+tags: [deferred-tools, files, workspace, trash]
+
+session:
+  config:
+    context.tool_exposition: deferred
+
+setup:
+  files:
+    /work/.nine/trash/20261014T101500Z-7c6b5a49/notes/budget.md: "Q4 budget. Ceiling 41,200.\n"
+
+prompts:
+  - "notes/budget.md went to the trash this morning. Put it back where it was."
+
+expect:
+  side_effects:
+    files:
+      /work/notes/budget.md: { contains: "41,200" }
+  trajectory:
+    tool_calls:
+      restore_file: { min: 1, max: 3 }
+    promotions: { min: 1 }
+    no_stall: true
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

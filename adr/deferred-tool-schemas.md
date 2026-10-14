@@ -1,6 +1,6 @@
 # Deferred tool schemas
 
-**Status:** Phases 0–1 implemented (2026-10-14); phases 2–4 proposed — 2026-10-07 · **Builds on:** `adr/tool-exposition.md`
+**Status:** Phases 0–2 implemented (2026-10-14); phases 3–4 proposed — 2026-10-07 · **Builds on:** `adr/tool-exposition.md`
 (the hybrid it shipped: passive top-K plus `tool_search` / `tool_list`) ·
 **Amends:** R-ROLE.4 (what "advertised" means; see §6) · **Depends on:** the eval
 work in §7 landing *before* the default flips
@@ -542,14 +542,65 @@ Against §3.1's hand-picked list, frequency adds the process and goal tools and
 both: `edit_file`'s prose steers how edits are made, and deferring it is a
 behavior change the corpus measures.
 
+## Phase 2 as built
+
+`[context] tool_exposition = "deferred"` is built; `ranked` stays the default and
+its prompts are byte-identical to before (every ranked snapshot is unchanged).
+
+| Planned (§3) | Built |
+|---|---|
+| Resident set ≤ 2,000 tokens | Phase 1's frequency set plus `tool_search`, `skill_read`, `ask_human` (interactive) and `run_agent` (delegating). `[context] resident_tools` adds to it. A role skill's `resident:` frontmatter is not built. |
+| One `resident_budget` for resident and promoted | Split: the resident set is fixed, and promoted schemas have their own `[context] promoted_budget`, default 1,500, because the resident set alone exceeds 2,000 on the delegating orchestrators. |
+| Small catalogs advertised whole | A catalog of ≤ 2,500 tokens, the §7.5 gate, is advertised whole, without `tool_search` and `tool_list`. Covers reflection, standing agents, condition triggers and narrow roles such as `code-reviewer`. |
+| Index grouped by toolkit | One line per toolkit, toolkits in catalog order. Built-in tools are grouped by a table in `internal/runtime/exposition.go`; a plugin's tools under its name, an MCP server's under `mcp/<server>`, operator and generated tools under `tools`, each with the first clause of its description as a gloss. |
+| `tool_search(names)`, BM25 fallback | `names` takes tool or toolkit names; `query` ranks by BM25 (`docindex.NewLexical`), fused with the vectors when an embedder exists, and returns 3 results, not 5, because every result is promoted. The deferred `tool_search` has its own definition, so the ranked prompt is untouched. |
+| Promotion, sticky, LRU demotion between turns | `agent.Promotions`, one per loop. Sticky for the loop's life, which a process session's wakes share; a sub-agent's loop has its own. Not persisted: a daemon restart starts from the resident set. |
+| Call-to-load | In the loop, not the dispatcher: a failed call to a tool the request indexed gets the tool's description and schema appended and promotes it (R-DISP.8). |
+| Journal events | `tool_promoted {name, reason}` (`search` or `call`), `tool_demoted {name}`; `llm_request` gains `tool_index`, and its `tool_tokens` includes the index. |
+| Snapshots | A deferred variant of each turn snapshot, three background ones, `code-reviewer-deferred` (small catalog) and `orchestrator-deferred-load` (a `tool_search` load and the promoted request). |
+| Track-R fixtures | Not recorded. Replay runs a bare loop with no tools or exposition mode, so a fixture would guard nothing deferred-specific; the turn snapshots guard the index and promotion deterministically on every PR. |
+
+Tool tokens per request, from the turn snapshots, index included:
+
+| Session kind | Ranked | Deferred |
+|---|---|---|
+| orchestrator-interactive | 6,678 | 2,389 |
+| orchestrator / orchestrator-delegates / pursue / executor | 6,598 | 2,309 |
+| background goal session | 6,165 | 2,069 |
+| standing agent | 2,640 | 2,354 (whole catalog) |
+| condition trigger | 2,236 | 1,950 (whole catalog) |
+| reflection | 1,335 | 1,049 (whole catalog) |
+
+### Live results
+
+The eight `deferred-*` cases, pinned to `deferred`, 3 runs each on `qwen3.5:9b` and
+`qwen3.5:4b`, 2026-10-14: every case met its threshold; 47 of 48 runs passed. Median
+prompt tokens per run against the same cases in `ranked` (phase 1's run):
+
+| Case | Ranked | Deferred | LLM calls |
+|---|---|---|---|
+| `deferred-resident-no-load` | 14,811 | 5,394 | 2 → 2 |
+| `deferred-discover-from-index` | 22,421 | 11,991 | 3 → 4 |
+| `deferred-mid-turn-drift` | 22,386 | 11,676 | 3 → 4 |
+| `deferred-no-embedder` | 21,554 | 11,891 | 3 → 4 |
+| `deferred-mcp-discovery` | 14,965 | 12,031 | 2 → 4 |
+
+`deferred-call-to-load`, `deferred-promotion-sticky` and `deferred-small-catalog`
+passed 3/3 on both models; they have no ranked baseline.
+
+Both models reached the trash tools by calling them from the index, not by
+searching: call-to-load is the path they take, and `tool_search` appeared only for
+the MCP tool. A discovery costs one extra LLM call and still halves the prompt
+tokens; on local Ollama that call's generation time made those cases slower in
+wall-clock time, while the no-load case was faster.
+
 ## Limits
 
 | Limit | Detail |
 |-------|--------|
-| Only phases 0–1 are built | §3's `deferred` mode, its deferred-only cases and the default flip are proposed. Token figures are estimates from `countTokens` (3.45 bytes/token), not a real tokenizer — see `adr/accurate-token-counting.md`. |
+| Only phases 0–2 are built | The A/B over the whole corpus (phase 3) and the default flip (phase 4) are proposed; `deferred` is opt-in. Token figures are estimates from `countTokens` (3.45 bytes/token), not a real tokenizer — see `adr/accurate-token-counting.md`. |
 | Resident set is derived from the corpus | The frequencies come from eval cases, which are written to exercise each tool, not from real use. The opt-in `session_events` query on a real store has not been run. |
-| Stickiness scope is open | Promotions are session-sticky. A long-lived process session could churn the LRU; whether to reset promotions per wake is undecided. |
-| Sub-agent inheritance is open | Proposed: a delegated leaf does not inherit its parent's promoted set — its role defines its resident set. |
+| Promotions do not survive a restart | They live on the loop; a restarted daemon starts every session from its resident set. |
 | Large MCP catalogs | One operator MCP server with ~100 tools exceeds the 600-token index budget alone. Collapsing an over-budget server to a single index line is proposed but undesigned. |
 | Call-to-load is provider-dependent | A provider that constrains calls to declared functions never triggers it (§3.4); `tool_search` carries those providers. |
 | Learned resident sets out of scope | Deriving the resident set per deployment from its own store would make the prompt drift under the operator. Deliberately excluded. |

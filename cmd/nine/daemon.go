@@ -216,6 +216,9 @@ func runDaemon() {
 		// Index and pull-surface stored key-value memories relevant to the turn.
 		SurfaceMemories:        cfg.Memory.SurfaceMemoriesEnabled(),
 		MaxToolOutputTokens:    cfg.Tools.MaxOutputTokens,
+		ToolExposition:         cfg.Context.ToolExposition,
+		ResidentTools:          cfg.Context.ResidentTools,
+		PromotedBudget:         cfg.Context.PromotedBudget,
 		MaxJobsPerConversation: cfg.Plugins.MaxJobsPerConversation,
 		MaxJobsTotal:           cfg.Plugins.MaxJobsTotal,
 		JobWaiters:             jobWaiters,

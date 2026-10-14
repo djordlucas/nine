@@ -11,17 +11,18 @@ import (
 // (adr/deferred-tool-schemas.md §7.1). Each case runs once per requested arm,
 // with the arm set as a session.config override, so a case that passes in one
 // arm and fails in another is a regression the mode caused.
-//
-// Only ranked exists so far; deferred joins knownArms with the mode itself, so
-// a run cannot ask for an arm that would silently run as ranked.
 
 // ArmKey is the session.config key an arm sets, as [context] tool_exposition.
 const ArmKey = "context.tool_exposition"
 
-// ArmRanked advertises every tool with its full schema: the current behavior.
+// ArmRanked advertises the pinned tools and the best-ranked rest with their
+// schemas: the default.
 const ArmRanked = "ranked"
 
-var knownArms = map[string]bool{ArmRanked: true}
+// ArmDeferred advertises a resident set and lists the other tools by name.
+const ArmDeferred = "deferred"
+
+var knownArms = map[string]bool{ArmRanked: true, ArmDeferred: true}
 
 // KnownArms returns the arms a run can request, sorted.
 func KnownArms() []string { return slices.Sorted(maps.Keys(knownArms)) }

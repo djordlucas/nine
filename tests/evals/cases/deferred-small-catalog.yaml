@@ -1,0 +1,40 @@
+id: deferred-small-catalog
+description: >
+  An allowlist role whose whole catalog fits under the deferred mode's threshold is
+  advertised whole (adr/deferred-tool-schemas.md §3.1): no tool index, and no
+  tool_search, since nothing is deferred to find. code-reviewer reads, searches
+  and diffs; the task needs only a read.
+track: live
+tier: smoke
+tags: [deferred-tools, roles, files]
+
+session:
+  role: code-reviewer
+  config:
+    context.tool_exposition: deferred
+
+setup:
+  files:
+    /work/src/limits.go: |
+      package limits
+
+      // MaxRetries bounds how often a failed upload is retried.
+      const MaxRetries = 7
+
+prompts:
+  - "In /work/src/limits.go, how many times is a failed upload retried?"
+
+expect:
+  trajectory:
+    tools_all_of: [read_file]
+    no_stall: true
+    llm_request:
+      system_not_contains: ["## More tools"]
+      tool_advertised_none_of: [tool_search, tool_list]
+  answer:
+    contains: ["7"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

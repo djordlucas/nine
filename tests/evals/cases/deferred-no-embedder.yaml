@@ -1,7 +1,7 @@
 id: deferred-no-embedder
 description: >
-  deferred-discover-from-index with no embedder configured. tool_search is
-  embedder-gated today; in the deferred mode it is the load path and must work
+  deferred-discover-from-index with no embedder configured. A ranked loop has no
+  tool_search without one; in the deferred mode it is the load path and must work
   without one (adr/deferred-tool-schemas.md §3.3), through its names argument or
   keyword ranking.
 track: live
@@ -10,6 +10,7 @@ tags: [deferred-tools, files, workspace, trash]
 
 session:
   config:
+    context.tool_exposition: deferred
     embeddings.provider: none
 
 setup:

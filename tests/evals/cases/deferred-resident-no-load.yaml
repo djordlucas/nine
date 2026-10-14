@@ -2,11 +2,14 @@ id: deferred-resident-no-load
 description: >
   A plain read-and-answer task, which the deferred mode's resident set covers
   without a load (adr/deferred-tool-schemas.md §3.1): the common path must cost no
-  tool_search round trip. Mode-agnostic as written; the deferred mode's tool-token
-  cap joins it with that mode.
+  tool_search round trip, and no request's tool block may exceed the §7.5 gate.
 track: live
 tier: smoke
 tags: [deferred-tools, files, workspace]
+
+session:
+  config:
+    context.tool_exposition: deferred
 
 setup:
   files:
@@ -23,6 +26,8 @@ expect:
     tools_all_of: [read_file]
     tool_calls:
       tool_search: { max: 0 }
+    llm_request:
+      tool_tokens_max: 2500
     no_stall: true
   answer:
     contains: ["8743"]

@@ -1,0 +1,412 @@
+{
+  "requests": [
+    {
+      "system": "Current time: <time>\nSession ID: <uuid>\n\nYou are Nine, a persistent AI agent running as a daemon. You can write and refine skills (markdown how-to notes) to capture what you learn, and you update your understanding of yourself over time. Your self-model lives in the `self/` key-value namespace — read it to understand your current capabilities and what you have learned. You are direct and action-oriented. When a tool fails, try a different approach.\n\nSkills are also there to be read. When a task has an established procedure — web research, git work, file management — call skill_search once with a short description of the task before you start — or skill_list if you have no skill_search — and read any relevant hit. One cheap call, and it is where knowledge lives that your tool descriptions do not carry: which tools this particular deployment has for a job, and what to do when it lacks them. Skip it for something trivial or already worked out this session.\n\nBefore searching for anything time-sensitive (news, current events, recent releases, prices, status), call the time tool first so your queries and reasoning use the correct date. Never read the date from memory or assume it — always call the time tool directly.\n\nWhen a request requires multiple independent steps or sub-agents, start by calling workflow_create with a name and step list. Assign sub-agents to steps using run_agent or run_agents, then call workflow_update after each result. At the start of any turn, call workflow_list first — if an active workflow exists, call workflow_get to re-read the current plan before deciding what to do next. This also handles recovery after a restart: interrupted steps will appear as failed and can be retried with workflow_retry_step.\n\nA workflow is finite — use it for a bounded plan with a clear end. A goal is different: it is a persistent, open-ended intention with no defined end condition (e.g. \"monitor this repo for security issues\" or \"keep dependencies up to date\"). When a request implies ongoing or recurring work rather than a one-off task, call goal_create to record it. Decompose goals into sub-goals and tasks autonomously — no user approval needed — using goal_create (with parent_id/parent_type set to the parent goal) and run_agent/run_agents. Call goal_list at the start of any turn involving open-ended work to check on active goals, goal_get to re-read one before acting on it, and goal_update_status to mark a goal paused, done, or archived as its situation changes.\n\nWhen delegating with run_agent or run_agents, pick the narrowest role that fits the task (code-reviewer, monitor, report-writer, software-dev, sysadmin); use executor only when no narrower role matches. Each role's description is in the run_agent tool schema.\n\n## More tools\nCall any of these by name. Load the full schema first with\ntool_search(names=[...]) if you are unsure of the arguments.\n\nworkspace: copy_file, diff_file, edit_file, move_file, restore_file, trash_list\nweb: http_get, http_post, web_page_read, web_search\ntime: time\nmemory: memory_delete, memory_list\nskills: skill_list, skill_write, skill_modify, skill_search\ncatalog: capability_request, doc_search, doc_read, tool_list\nmessages: queued_messages_get, queued_message_mark_consumed, queued_messages_mark_all_consumed, queued_messages_count, queued_messages_unconsumed_count\ndelegation: run_agents, workflow_create, workflow_get, workflow_update, workflow_list, workflow_retry_step\ngoals: goal_create, goal_get, goal_update_status\njobs: job_wait, job_check, job_list, job_cancel\nprocesses: process_show, process_send, process_stop\n\n## Environment\n\n## Relevant skills\n- delegation\n- software-dev\n- file-management\n",
+      "max_tokens": 2048,
+      "think": true,
+      "messages": [
+        {
+          "Role": "user",
+          "Text": "Pursue: tidy the notes.",
+          "ToolCalls": null,
+          "ToolResults": null
+        }
+      ],
+      "tools": [
+        {
+          "name": "delete_file",
+          "description": "Delete one file, or one empty directory, from the WORKSPACE FILESYSTEM. The file is moved to Nine's trash rather than destroyed, so a mistake can be undone with trash_list and restore_file until the trash is swept. There is no recursive delete: delete a directory's contents first. Prefer this over `rm` in the shell, which destroys a file outright.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "path"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "name": "read_file",
+          "description": "Read a file from the WORKSPACE FILESYSTEM. Paths resolve under /work; a relative path is taken as relative to it. Read part of a large file with lines (\"120-180\") or with offset and limit, rather than pulling the whole thing into context. Pass line_numbers when you intend to edit, so you can name the exact text for edit_file. A windowed read also returns a version token for write_file's if_unchanged. A spill/... path from a truncated tool result is read with this same tool.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "path"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Path under the workspace, e.g. notes.txt or /work/notes.txt"
+              },
+              "lines": {
+                "type": "string",
+                "description": "1-based inclusive line range, e.g. \"120-180\" or \"120\". Preferred over offset/limit for text."
+              },
+              "offset": {
+                "type": "integer",
+                "description": "Byte offset to start at (default 0)."
+              },
+              "limit": {
+                "type": "integer",
+                "description": "Maximum bytes to return; omit or 0 for the rest of the file."
+              },
+              "line_numbers": {
+                "type": "boolean",
+                "description": "Prefix each line with its number."
+              }
+            }
+          }
+        },
+        {
+          "name": "write_file",
+          "description": "Write content to a file on the WORKSPACE FILESYSTEM, creating parent directories as needed. To copy a large payload — a spilled tool result, typically — pass content_ref with its path instead of content, and the bytes never enter your context. Paths resolve under /work. Replaces the file whole: to change part of an existing file use edit_file, and to add to the end pass mode=append. A file written here is full-text searchable with file_search_text once the workspace scan sees it.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "path",
+              "content"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "replace",
+                  "append"
+                ],
+                "description": "replace (default) rewrites the file; append adds to the end without reading it."
+              },
+              "if_unchanged": {
+                "type": "string",
+                "description": "A version token from read_file. The write fails if the file changed since then."
+              },
+              "preview": {
+                "type": "boolean",
+                "description": "Return the diff this write would make and write nothing."
+              },
+              "content_ref": {
+                "type": "string",
+                "x-nine-ref": true,
+                "description": "A path whose content to write here — a spill/... path from a truncated tool result, or another workspace file. Used instead of content; the data never passes through your context."
+              }
+            }
+          }
+        },
+        {
+          "name": "memory_get",
+          "description": "Retrieve a value from the key-value store by key.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "key"
+            ],
+            "properties": {
+              "key": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "name": "memory_set",
+          "description": "Store a value in the key-value store.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "key",
+              "value"
+            ],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "name": "file_search_text",
+          "description": "Full-text search over stored file content. Pass path to search inside one file (or one directory prefix) — the way to find the relevant region of a large spilled tool output.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "query"
+            ],
+            "properties": {
+              "query": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string",
+                "description": "Restrict the search to paths starting with this prefix; omit to search all files."
+              },
+              "limit": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        {
+          "name": "skill_read",
+          "description": "Read the full content of a skill by name.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "name": "list_files",
+          "description": "List files in the workspace. Filter by prefix (a directory), by pattern (a glob such as *_test.go, matched against the whole path), or by changed_since (an ISO-8601 timestamp) to see what appeared or changed — including files created outside Nine, by a git pull or dropped in by a person. Each entry reports its size and whether its text is searchable.",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "prefix": {
+                "type": "string",
+                "description": "Only paths under this directory."
+              },
+              "pattern": {
+                "type": "string",
+                "description": "Glob over the whole path, e.g. *_test.go or src/*.md."
+              },
+              "changed_since": {
+                "type": "string",
+                "description": "ISO-8601 timestamp; only files changed at or after it."
+              },
+              "limit": {
+                "type": "integer",
+                "description": "Maximum entries (default 200)."
+              }
+            }
+          }
+        },
+        {
+          "name": "run_agent",
+          "description": "Spawn a sub-agent to execute a single self-contained task and return its final answer. Use this to isolate a focused piece of work or delegate a subtask. For multiple independent tasks at once, use run_agents.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "task"
+            ],
+            "properties": {
+              "task": {
+                "type": "string",
+                "description": "A clear, self-contained description of the task for the sub-agent."
+              },
+              "context": {
+                "type": "string",
+                "description": "Optional background the sub-agent needs. Keep concise."
+              },
+              "role": {
+                "type": "string",
+                "description": "Optional worker role for the sub-agent. One of: code-reviewer: Review code without changing it — file reads, text search, and diffs. No shell, no writes | executor (default): Default leaf worker for delegated tasks — full toolset, may sub-delegate within the depth cap | monitor: Read-only standing-agent worker — web, HTTP GET, file reads, and memory; no shell, no writes | report-writer: Research and write — web search, page reading, and workspace files; no shell | software-dev: Implement and modify code — edit files, run builds and tests via shell | sysadmin: Inspect and operate the system — shell, file edits, and HTTP calls for ops tasks. Pick the narrowest role that fits the task; omit for executor. Unknown roles fall back to executor."
+              }
+            }
+          }
+        },
+        {
+          "name": "goal_list",
+          "description": "List all goals. Call this at the start of any turn that involves open-ended, persistent work to check for active goals and recover after a restart.",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "name": "tool_search",
+          "description": "Load the full schema of tools listed under More tools, by name or toolkit, or find tools by what they do. Loaded tools stay available for the rest of the session.",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "names": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Tool or toolkit names to load"
+              },
+              "query": {
+                "type": "string",
+                "description": "What capability you are looking for"
+              },
+              "top_k": {
+                "type": "integer",
+                "description": "Number of query results (default 3)"
+              }
+            }
+          }
+        },
+        {
+          "name": "process_list",
+          "description": "List the processes running in the background — goal sessions, standing agents, reflection, watchers, standing tools — with each one's state, trigger and budget use. Use it to see what runs between conversations. The process-management skill (skill_read) explains stopping versus removing, and each refusal.",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "name": "process_start",
+          "description": "Start a stopped process. It runs under its own grants, role and budget, so starting it grants nothing new. Refused for a process the operator stopped, one its goal stopped (reactivate the goal instead), one paused by its budget until the budget resets, and at the running-process cap.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The process id, as process_list shows it."
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "journal": [
+    {
+      "turn": 0,
+      "type": "supervisor",
+      "payload": {
+        "kind": "agent_completes",
+        "agent_id": "<uuid>"
+      }
+    },
+    {
+      "turn": 1,
+      "type": "turn_start",
+      "payload": {
+        "input": "Pursue: tidy the notes.",
+        "trigger": "user"
+      }
+    },
+    {
+      "turn": 1,
+      "type": "thinking",
+      "payload": {
+        "llm_call_n": 1
+      }
+    },
+    {
+      "turn": 1,
+      "type": "context_update",
+      "payload": {
+        "used": 3161,
+        "budget": 100000
+      }
+    },
+    {
+      "turn": 1,
+      "type": "llm_request",
+      "payload": {
+        "system": "Current time: <time>\nSession ID: <uuid>\n\nYou are Nine, a persistent AI agent running as a daemon. You can write and refine skills (markdown how-to notes) to capture what you learn, and you update your understanding of yourself over time. Your self-model lives in the `self/` key-value namespace — read it to understand your current capabilities and what you have learned. You are direct and action-oriented. When a tool fails, try a different approach.\n\nSkills are also there to be read. When a task has an established procedure — web research, git work, file management — call skill_search once with a short description of the task before you start — or skill_list if you have no skill_search — and read any relevant hit. One cheap call, and it is where knowledge lives that your tool descriptions do not carry: which tools this particular deployment has for a job, and what to do when it lacks them. Skip it for something trivial or already worked out this session.\n\nBefore searching for anything time-sensitive (news, current events, recent releases, prices, status), call the time tool first so your queries and reasoning use the correct date. Never read the date from memory or assume it — always call the time tool directly.\n\nWhen a request requires multiple independent steps or sub-agents, start by calling workflow_create with a name and step list. Assign sub-agents to steps using run_agent or run_agents, then call workflow_update after each result. At the start of any turn, call workflow_list first — if an active workflow exists, call workflow_get to re-read the current plan before deciding what to do next. This also handles recovery after a restart: interrupted steps will appear as failed and can be retried with workflow_retry_step.\n\nA workflow is finite — use it for a bounded plan with a clear end. A goal is different: it is a persistent, open-ended intention with no defined end condition (e.g. \"monitor this repo for security issues\" or \"keep dependencies up to date\"). When a request implies ongoing or recurring work rather than a one-off task, call goal_create to record it. Decompose goals into sub-goals and tasks autonomously — no user approval needed — using goal_create (with parent_id/parent_type set to the parent goal) and run_agent/run_agents. Call goal_list at the start of any turn involving open-ended work to check on active goals, goal_get to re-read one before acting on it, and goal_update_status to mark a goal paused, done, or archived as its situation changes.\n\nWhen delegating with run_agent or run_agents, pick the narrowest role that fits the task (code-reviewer, monitor, report-writer, software-dev, sysadmin); use executor only when no narrower role matches. Each role's description is in the run_agent tool schema.\n\n## More tools\nCall any of these by name. Load the full schema first with\ntool_search(names=[...]) if you are unsure of the arguments.\n\nworkspace: copy_file, diff_file, edit_file, move_file, restore_file, trash_list\nweb: http_get, http_post, web_page_read, web_search\ntime: time\nmemory: memory_delete, memory_list\nskills: skill_list, skill_write, skill_modify, skill_search\ncatalog: capability_request, doc_search, doc_read, tool_list\nmessages: queued_messages_get, queued_message_mark_consumed, queued_messages_mark_all_consumed, queued_messages_count, queued_messages_unconsumed_count\ndelegation: run_agents, workflow_create, workflow_get, workflow_update, workflow_list, workflow_retry_step\ngoals: goal_create, goal_get, goal_update_status\njobs: job_wait, job_check, job_list, job_cancel\nprocesses: process_show, process_send, process_stop\n\n## Environment\n\n## Relevant skills\n- delegation\n- software-dev\n- file-management\n",
+        "messages": [
+          {
+            "Role": "user",
+            "Text": "Pursue: tidy the notes.",
+            "ToolCalls": null,
+            "ToolResults": null
+          }
+        ],
+        "tool_names": [
+          "delete_file",
+          "read_file",
+          "write_file",
+          "memory_get",
+          "memory_set",
+          "file_search_text",
+          "skill_read",
+          "list_files",
+          "run_agent",
+          "goal_list",
+          "tool_search",
+          "process_list",
+          "process_start"
+        ],
+        "tool_index": [
+          "copy_file",
+          "diff_file",
+          "edit_file",
+          "http_get",
+          "http_post",
+          "move_file",
+          "restore_file",
+          "time",
+          "trash_list",
+          "web_page_read",
+          "web_search",
+          "memory_delete",
+          "memory_list",
+          "skill_list",
+          "skill_write",
+          "skill_modify",
+          "capability_request",
+          "queued_messages_get",
+          "queued_message_mark_consumed",
+          "queued_messages_mark_all_consumed",
+          "queued_messages_count",
+          "queued_messages_unconsumed_count",
+          "skill_search",
+          "doc_search",
+          "doc_read",
+          "run_agents",
+          "workflow_create",
+          "workflow_get",
+          "workflow_update",
+          "workflow_list",
+          "workflow_retry_step",
+          "goal_create",
+          "goal_get",
+          "goal_update_status",
+          "tool_list",
+          "job_wait",
+          "job_check",
+          "job_list",
+          "job_cancel",
+          "process_show",
+          "process_send",
+          "process_stop"
+        ],
+        "tool_tokens": 2309,
+        "max_tokens": 2048,
+        "tokens_used": 3161,
+        "budget": 100000,
+        "llm_call_n": 1
+      }
+    },
+    {
+      "turn": 1,
+      "type": "llm_response",
+      "payload": {
+        "text": "pursued",
+        "stop_reason": "end_turn",
+        "llm_call_n": 1
+      }
+    },
+    {
+      "turn": 1,
+      "type": "turn_end",
+      "payload": {
+        "result": "pursued",
+        "tool_count": 0,
+        "duration_ms": 0
+      }
+    }
+  ]
+}

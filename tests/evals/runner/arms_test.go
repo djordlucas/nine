@@ -16,9 +16,10 @@ func TestParseArms(t *testing.T) {
 	if arms, err := ParseArms(" ranked "); err != nil || len(arms) != 1 || arms[0] != ArmRanked {
 		t.Errorf("ParseArms(ranked) = %v, %v", arms, err)
 	}
-	// deferred is not an arm until the mode exists, so a run cannot ask for it
-	// and silently get ranked.
-	if _, err := ParseArms("ranked,deferred"); err == nil {
+	if arms, err := ParseArms("ranked,deferred"); err != nil || len(arms) != 2 {
+		t.Errorf("ParseArms(ranked,deferred) = %v, %v", arms, err)
+	}
+	if _, err := ParseArms("ranked,eager"); err == nil {
 		t.Error("an unknown arm must be refused")
 	}
 	if _, err := ParseArms("ranked,ranked"); err == nil {
@@ -66,7 +67,7 @@ func TestWithArm(t *testing.T) {
 
 func TestCaseValidate_Arm(t *testing.T) {
 	c := &Case{ID: "arm", Prompts: []string{"x"}, Expect: Expect{Answer: Answer{Contains: []string{"x"}}},
-		Session: Session{Config: map[string]any{ArmKey: "deferred"}}}
+		Session: Session{Config: map[string]any{ArmKey: "eager"}}}
 	c.defaults()
 	if err := c.validate(); err == nil {
 		t.Error("a case pinned to an unknown arm must not load")

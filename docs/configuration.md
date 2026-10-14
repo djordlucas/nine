@@ -544,6 +544,24 @@ plan_mode = "plan-only"
 #              [hitl].require_approval — one source of truth, no second list
 plan_approval = "on-risky"
 
+[context]
+# tool_exposition — how tools reach the model (docs/tool-selection.md):
+#   ranked    (default) the always-included tools and up to 20 ranked others,
+#             each with its full schema
+#   deferred  a resident set of the most-used tools with schemas; every other
+#             tool listed by name in a "More tools" section of the system
+#             prompt, loaded with tool_search or called directly
+tool_exposition = "ranked"
+#
+# resident_tools — tools a deferred session keeps resident besides the built-in
+# set, by name. Plugin and MCP tool names are allowed.
+resident_tools = []
+#
+# promoted_budget — estimated tokens of tool schemas a deferred session keeps
+# loaded. Past it, the tool called least recently returns to the index before
+# the next turn. Default 1500.
+promoted_budget = 1500
+
 [tools]
 # max_output_tokens — the per-result tool output cap (docs/tool-output.md).
 # A result larger than this is written whole to the memory file store under

@@ -35,7 +35,9 @@ export default function (args) { return args.found ? "found: " + args.found : ""
 `
 )
 
-func startBackground(t *testing.T) (*live, *snapshotProvider) {
+// startBackground starts a harness for background sessions, in the given tool
+// exposition arm ("" is the default).
+func startBackground(t *testing.T, arm string) (*live, *snapshotProvider) {
 	t.Helper()
 	p := &snapshotProvider{script: func(int, llm.Request) llm.Response { return answer("done") }}
 	h := &Harness{Embedder: keyword.New(), BaseDir: t.TempDir()}
@@ -47,6 +49,9 @@ func startBackground(t *testing.T) (*live, *snapshotProvider) {
 			".tools/predicate.toml": predicateManifest,
 			".tools/predicate.js":   predicateSource,
 		}},
+	}
+	if arm != "" {
+		c.Session.Config = map[string]any{ArmKey: arm}
 	}
 	lv, err := h.start(context.Background(), &c, p)
 	if err != nil {
@@ -124,21 +129,21 @@ func spawnGoalBound(t *testing.T, lv *live, id, role, description string) {
 
 func TestBackgroundSnapshots(t *testing.T) {
 	t.Run("goal-session", func(t *testing.T) {
-		lv, p := startBackground(t)
+		lv, p := startBackground(t, "")
 		spawnGoalBound(t, lv, "tidy-notes", runtime.PursueRole, "Keep notes/plan.md tidy.")
 		req := waitForCall(t, p, "tidy-notes", "")
 		snapshotOne(t, lv, "background-goal-session", req, turnEvents(t, lv, "tidy-notes", ""))
 	})
 
 	t.Run("standing-agent", func(t *testing.T) {
-		lv, p := startBackground(t)
+		lv, p := startBackground(t, "")
 		spawnGoalBound(t, lv, "sec-watch", "monitor", "Watch the workspace for files that look like secrets.")
 		req := waitForCall(t, p, "sec-watch", "")
 		snapshotOne(t, lv, "background-standing-agent", req, turnEvents(t, lv, "sec-watch", ""))
 	})
 
 	t.Run("self-reflection", func(t *testing.T) {
-		lv, p := startBackground(t)
+		lv, p := startBackground(t, "")
 		if err := runtime.ReconcileSelfReflection(lv.Result.Store, time.Second); err != nil {
 			t.Fatal(err)
 		}
@@ -149,7 +154,7 @@ func TestBackgroundSnapshots(t *testing.T) {
 	})
 
 	t.Run("condition-trigger", func(t *testing.T) {
-		lv, p := startBackground(t)
+		lv, p := startBackground(t, "")
 		lv.Tools.Load(context.Background(), nil)
 		// The agent the trigger wakes; its own idle turns are told apart from the
 		// woken one by the finding in the woken turn's text.
@@ -163,8 +168,37 @@ func TestBackgroundSnapshots(t *testing.T) {
 		snapshotOne(t, lv, "background-condition-trigger", req, turnEvents(t, lv, "watcher", marker))
 	})
 
+	// The deferred arm: the goal session's catalog is indexed, the standing
+	// agent's and the condition trigger's are small enough to advertise whole.
+	t.Run("goal-session-deferred", func(t *testing.T) {
+		lv, p := startBackground(t, ArmDeferred)
+		spawnGoalBound(t, lv, "tidy-notes", runtime.PursueRole, "Keep notes/plan.md tidy.")
+		req := waitForCall(t, p, "tidy-notes", "")
+		snapshotOne(t, lv, "background-goal-session-deferred", req, turnEvents(t, lv, "tidy-notes", ""))
+	})
+
+	t.Run("standing-agent-deferred", func(t *testing.T) {
+		lv, p := startBackground(t, ArmDeferred)
+		spawnGoalBound(t, lv, "sec-watch", "monitor", "Watch the workspace for files that look like secrets.")
+		req := waitForCall(t, p, "sec-watch", "")
+		snapshotOne(t, lv, "background-standing-agent-deferred", req, turnEvents(t, lv, "sec-watch", ""))
+	})
+
+	t.Run("condition-trigger-deferred", func(t *testing.T) {
+		lv, p := startBackground(t, ArmDeferred)
+		lv.Tools.Load(context.Background(), nil)
+		spawnGoalBound(t, lv, "watcher", "monitor", "Act on what the predicate finds.")
+		runStanding(t, lv, memory.Process{
+			ID: "when-watcher", Tool: "predicate",
+			Args: `{"found":"a stray api key in notes/"}`, IntervalSecs: 1, ReportTo: "watcher",
+		})
+		marker := "a stray api key"
+		req := waitForCall(t, p, "watcher", marker)
+		snapshotOne(t, lv, "background-condition-trigger-deferred", req, turnEvents(t, lv, "watcher", marker))
+	})
+
 	t.Run("standing-tool", func(t *testing.T) {
-		lv, _ := startBackground(t)
+		lv, _ := startBackground(t, "")
 		lv.Tools.Load(context.Background(), nil)
 		runStanding(t, lv, memory.Process{
 			ID: "scan", Tool: "predicate", Args: `{"found":"two new files"}`, IntervalSecs: 1,

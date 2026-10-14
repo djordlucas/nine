@@ -9,6 +9,10 @@ track: live
 tier: multi_step
 tags: [deferred-tools, files, workspace, move]
 
+session:
+  config:
+    context.tool_exposition: deferred
+
 setup:
   files:
     /work/instructions.txt: |

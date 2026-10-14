@@ -37,13 +37,25 @@ type llmRequestPayload struct {
 	System    string        `json:"system"`
 	Messages  []llm.Message `json:"messages"`
 	ToolNames []string      `json:"tool_names"`
-	// ToolTokens is the estimated size of the request's tool definitions,
-	// which the evals bound per request (adr/deferred-tool-schemas.md §7.2).
+	// ToolIndex names the tools a deferred loop listed in its index instead of
+	// advertising (adr/deferred-tool-schemas.md §3.2). Absent when ranked.
+	ToolIndex []string `json:"tool_index,omitempty"`
+	// ToolTokens is the estimated size of the request's tool definitions and,
+	// when deferred, its tool index, which the evals bound per request
+	// (adr/deferred-tool-schemas.md §7.2).
 	ToolTokens int `json:"tool_tokens"`
 	MaxTokens  int `json:"max_tokens"`
 	TokensUsed int `json:"tokens_used"`
 	Budget     int `json:"budget"`
 	LLMCallN   int `json:"llm_call_n"`
+}
+
+// toolExpositionPayload is a tool_promoted or tool_demoted event: a change to a
+// deferred loop's promoted set. Reason is why a tool was promoted: "search"
+// (tool_search returned it) or "call" (a failed call from the index).
+type toolExpositionPayload struct {
+	Name   string `json:"name"`
+	Reason string `json:"reason,omitempty"`
 }
 
 type llmResponsePayload struct {

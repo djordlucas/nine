@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -86,6 +87,16 @@ type Config struct {
 	// messages for this session. The context builder surfaces this count to the
 	// model so it knows to call queued_messages_get. nil = no queued messages.
 	QueuedMessagesFn func() int
+
+	// Promotions, when set, makes this a deferred loop
+	// (adr/deferred-tool-schemas.md): the builder advertises its promoted tools
+	// after the resident set, and a failed call to a tool the request only
+	// listed in the index returns that tool's schema and promotes it. Nil for a
+	// ranked loop.
+	Promotions *Promotions
+	// PromotedBudget bounds Promotions in estimated schema tokens; 0 is
+	// DefaultPromotedBudget.
+	PromotedBudget int
 }
 
 // PlanDecision is the outcome of a PlanReviewFn checkpoint.
@@ -167,6 +178,12 @@ type Loop struct {
 	onLLMRequest       func(req *llm.Request, tokensUsed, budget, llmCallN int)
 	onLLMResponse      func(resp *llm.Response, llmCallN int)
 	onStage            func(string) // guarded by stageMu
+	onToolPromoted     func(name, reason string)
+	onToolDemoted      func(name string)
+
+	// lastExposure is what the latest request listed in its tool index rather
+	// than advertised; zero for a ranked loop.
+	lastExposure ninectx.Exposure
 }
 
 // ToolOutcome carries the full result of a dispatched tool call for observers
@@ -275,6 +292,12 @@ type Hooks struct {
 	// context pressure.
 	OnNotice func(text string)
 
+	// OnToolPromoted and OnToolDemoted report changes to a deferred loop's
+	// promoted set: a tool loaded by tool_search or by a failed call from the
+	// index, and one dropped to fit the budget.
+	OnToolPromoted func(name, reason string)
+	OnToolDemoted  func(name string)
+
 	// OnStage reports entry into a named waiting phase (the Stage* constants).
 	// Unlike the others it may fire from the LLM queue's goroutine, so the Loop
 	// guards it with a mutex; see SetHooks.
@@ -300,6 +323,8 @@ func (l *Loop) SetHooks(h Hooks) {
 	l.onPlanStart = h.OnPlanStart
 	l.onPlanEnd = h.OnPlanEnd
 	l.onNotice = h.OnNotice
+	l.onToolPromoted = h.OnToolPromoted
+	l.onToolDemoted = h.OnToolDemoted
 
 	// onStage alone is read from the LLM queue's goroutine, so it may be written
 	// here while a just-finished turn's queue wait is still reporting.
@@ -375,6 +400,79 @@ func displayNames(tools []ninectx.ToolWithVector) map[string]string {
 	return dn
 }
 
+// LastToolIndex names the tools the latest request listed in its tool index
+// instead of advertising; nil for a ranked loop. OnLLMRequest reads it for the
+// request it is reporting.
+func (l *Loop) LastToolIndex() []string { return l.lastExposure.Indexed }
+
+// LastIndexTokens is the estimated size of the latest request's tool index.
+func (l *Loop) LastIndexTokens() int { return l.lastExposure.IndexTokens }
+
+// fitPromotions drops promoted tools the catalog no longer has and demotes the
+// least recently used past the budget. Run calls it before a turn's first
+// request, so a demotion never removes a tool mid-turn.
+func (l *Loop) fitPromotions() {
+	p := l.cfg.Promotions
+	if p == nil {
+		return
+	}
+	budget := l.cfg.PromotedBudget
+	if budget <= 0 {
+		budget = DefaultPromotedBudget
+	}
+	p.Fit(budget, func(name string) (int, bool) {
+		for _, t := range l.cfg.Tools {
+			if t.Tool.Name == name {
+				return ninectx.ToolTokens(t.Tool), true
+			}
+		}
+		return 0, false
+	})
+	l.reportPromotions()
+}
+
+// reportPromotions passes the promoted set's changes to the hooks.
+func (l *Loop) reportPromotions() {
+	if l.cfg.Promotions == nil {
+		return
+	}
+	for _, e := range l.cfg.Promotions.Drain() {
+		switch {
+		case e.Promoted && l.onToolPromoted != nil:
+			l.onToolPromoted(e.Name, e.Reason)
+		case !e.Promoted && l.onToolDemoted != nil:
+			l.onToolDemoted(e.Name)
+		}
+	}
+}
+
+// promotedNames is the input's Promoted list: nil for a ranked loop.
+func (l *Loop) promotedNames() []string {
+	if l.cfg.Promotions == nil {
+		return nil
+	}
+	return l.cfg.Promotions.Names()
+}
+
+// loadOnFailedCall is call-to-load (adr/deferred-tool-schemas.md §3.4): a call
+// to a tool the request only listed in its index went to the dispatcher like
+// any other, and failed. The model guessed the arguments, so the observation
+// gains the tool's schema and the tool is promoted, making the next attempt a
+// call against a declared definition.
+func (l *Loop) loadOnFailedCall(name, observation string) string {
+	if l.cfg.Promotions == nil || !slices.Contains(l.lastExposure.Indexed, name) {
+		return observation
+	}
+	for _, t := range l.turnTools() {
+		if t.Tool.Name == name {
+			l.cfg.Promotions.Promote([]string{name}, PromoteCall)
+			return observation + fmt.Sprintf("\n\n%s is now loaded. Its description: %s\nIts input schema: %s",
+				name, t.Tool.Description, t.Tool.InputSchema)
+		}
+	}
+	return observation
+}
+
 // refreshTools applies ToolsForTurn at the start of a turn.
 func (l *Loop) refreshTools() {
 	if l.cfg.ToolsForTurn == nil {
@@ -395,6 +493,7 @@ func (l *Loop) refreshTools() {
 // is the uncommon case in ReAct; single-tool responses are the norm.
 func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 	l.refreshTools()
+	l.fitPromotions()
 	if r := l.nextTurn; r != nil {
 		l.turnAllow = make(map[string]bool, len(r.Tools))
 		for _, n := range r.Tools {
@@ -492,7 +591,7 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 
 		l.stage(StageContext)
 
-		req, tokensUsed := l.builder.BuildWithUsage(ninectx.BuildInput{
+		req, tokensUsed, exposure := l.builder.BuildForCall(ninectx.BuildInput{
 			SystemCore:          l.ambientCore(),
 			SystemExtras:        l.cfg.SystemExtras,
 			SystemSelf:          selfModel,
@@ -503,7 +602,9 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 			Scratchpad:          l.scratchpad,
 			SystemPlan:          plan,
 			QueuedMessagesCount: l.queuedMessagesCount(),
+			Promoted:            l.promotedNames(),
 		})
+		l.lastExposure = exposure
 		req.MaxTokens = l.maxTokens()
 		req.OnChunk = l.onChunk
 		req.OnThinkingChunk = l.onThinkingChunk
@@ -664,6 +765,7 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 				)
 				errStr = dispErr.Error()
 				toolErrs = append(toolErrs, fmt.Sprintf("%s: %v", tc.Name, dispErr))
+				observation = l.loadOnFailedCall(tc.Name, observation)
 			}
 			if l.onToolEnd != nil {
 				l.onToolEnd(tc.Name, dn, backend, tc.Input, ToolOutcome{
@@ -675,6 +777,11 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 					Attempts:    attempts,
 					Err:         errStr,
 				})
+			}
+			// After tool_end, so the journal shows the search before what it loaded.
+			if l.cfg.Promotions != nil {
+				l.cfg.Promotions.Called(tc.Name)
+				l.reportPromotions()
 			}
 
 			thought := ""
@@ -721,6 +828,7 @@ func (l *Loop) InspectContext(ctx context.Context) ninectx.Report {
 		QueryVector:      queryVec,
 		History:          l.history,
 		Scratchpad:       l.scratchpad,
+		Promoted:         l.promotedNames(),
 	})
 }
 

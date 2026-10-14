@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 
 	ninectx "nine/internal/context"
+	"nine/internal/docindex"
 	"nine/internal/embed"
 	"nine/internal/llm"
 )
@@ -28,6 +30,16 @@ var toolSearchDef = llm.ToolDef{
 	DisplayName: "Search Tools",
 	Description: "Semantically search the tools available to you by a natural-language query, returning the most relevant tool names, descriptions, and input schemas. Use this when the tools you can currently see do not fit the task — a relevant tool may exist that was not surfaced up front. Call the returned tool directly by its name.",
 	InputSchema: json.RawMessage(`{"type":"object","required":["query"],"properties":{"query":{"type":"string","description":"What capability you are looking for"},"top_k":{"type":"integer","description":"Number of results (default 5)"}}}`),
+}
+
+// ToolSearchDeferredDef is tool_search as a deferred loop advertises it: the
+// load path for the tools its index lists (adr/deferred-tool-schemas.md §3.3).
+// A ranked loop keeps toolSearchDef, so the ranked arm's prompt is unchanged.
+var ToolSearchDeferredDef = llm.ToolDef{
+	Name:        "tool_search",
+	DisplayName: "Search Tools",
+	Description: "Load the full schema of tools listed under More tools, by name or toolkit, or find tools by what they do. Loaded tools stay available for the rest of the session.",
+	InputSchema: json.RawMessage(`{"type":"object","properties":{"names":{"type":"array","items":{"type":"string"},"description":"Tool or toolkit names to load"},"query":{"type":"string","description":"What capability you are looking for"},"top_k":{"type":"integer","description":"Number of query results (default 3)"}}}`),
 }
 
 var toolListDef = llm.ToolDef{
@@ -168,4 +180,141 @@ func cosineSim(a, b []float32) float32 {
 		return 0
 	}
 	return float32(dot / (math.Sqrt(na) * math.Sqrt(nb)))
+}
+
+// RegisterDeferredToolSearch registers tool_search for a deferred loop. names
+// loads tools, or every tool of a toolkit, by exact name; query ranks the
+// catalog lexically (BM25), fused with the embedder's ranking when there is one,
+// so the load path never depends on an embedder. Every tool returned is
+// promoted, so from the loop's next request on the model calls it as a declared
+// tool. Results, like the ranked handler's, come only from getTools: the tools
+// this loop may call.
+func RegisterDeferredToolSearch(d *Dispatcher, embedder embed.Embedder, getTools func() []ninectx.ToolWithVector, promotions *Promotions) {
+	if getTools == nil || promotions == nil {
+		return
+	}
+	d.handlers["tool_search"] = func(ctx context.Context, args json.RawMessage) (string, error) {
+		var req struct {
+			Names []string `json:"names"`
+			Query string   `json:"query"`
+			TopK  int      `json:"top_k"`
+		}
+		if len(args) > 0 {
+			if err := json.Unmarshal(args, &req); err != nil {
+				return "", fmt.Errorf("tool_search: %w", err)
+			}
+		}
+		if len(req.Names) == 0 && req.Query == "" {
+			return "", fmt.Errorf("tool_search: give names to load or a query")
+		}
+		tools := getTools()
+		var (
+			found    []ninectx.ToolWithVector
+			notFound []string
+		)
+		if len(req.Names) > 0 {
+			found, notFound = toolsByName(tools, req.Names)
+		} else {
+			// Fewer than the ranked handler's 5: every result is promoted, and
+			// each costs its schema on every request until demoted.
+			if req.TopK <= 0 {
+				req.TopK = 3
+			}
+			found = rankTools(ctx, embedder, tools, req.Query, req.TopK)
+		}
+		out := make([]toolSearchResult, 0, len(found))
+		names := make([]string, 0, len(found))
+		for _, tw := range found {
+			out = append(out, toolSearchResult{Name: tw.Tool.Name, Description: tw.Tool.Description, InputSchema: tw.Tool.InputSchema})
+			names = append(names, tw.Tool.Name)
+		}
+		promotions.Promote(names, PromoteSearch)
+		res := map[string]any{"results": out}
+		if len(notFound) > 0 {
+			res["not_found"] = notFound
+		}
+		data, err := json.Marshal(res)
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
+	}
+}
+
+// toolsByName resolves names against tools: a tool's own name, or a toolkit's,
+// which stands for each of its tools. The catalog meta-tools are never results.
+func toolsByName(tools []ninectx.ToolWithVector, names []string) (found []ninectx.ToolWithVector, notFound []string) {
+	seen := map[string]bool{}
+	for _, n := range names {
+		matched := false
+		for _, tw := range tools {
+			if tw.Tool.Name != n && tw.Toolkit != n {
+				continue
+			}
+			matched = true
+			if !seen[tw.Tool.Name] && !isSearchMeta(tw.Tool.Name) {
+				seen[tw.Tool.Name] = true
+				found = append(found, tw)
+			}
+		}
+		if !matched {
+			notFound = append(notFound, n)
+		}
+	}
+	return found, notFound
+}
+
+// rankTools returns the topK tools best matching query: BM25 over each tool's
+// name, toolkit and description, fused by reciprocal rank with cosine
+// similarity when an embedder is configured.
+func rankTools(ctx context.Context, embedder embed.Embedder, tools []ninectx.ToolWithVector, query string, topK int) []ninectx.ToolWithVector {
+	byName := make(map[string]ninectx.ToolWithVector, len(tools))
+	secs := make([]docindex.Section, 0, len(tools))
+	for _, tw := range tools {
+		if isSearchMeta(tw.Tool.Name) {
+			continue
+		}
+		byName[tw.Tool.Name] = tw
+		secs = append(secs, docindex.Section{Addr: tw.Tool.Name, Title: tw.Toolkit, Body: tw.Tool.Description})
+	}
+	lists := [][]string{docindex.NewLexical(secs).Rank(query)}
+	if embedder != nil {
+		if qvec, err := embedder.Embed(ctx, query); err == nil && len(qvec) > 0 {
+			type scored struct {
+				name  string
+				score float32
+			}
+			var vs []scored
+			for name, tw := range byName {
+				if len(tw.Vector) > 0 {
+					vs = append(vs, scored{name, cosineSim(qvec, tw.Vector)})
+				}
+			}
+			sort.Slice(vs, func(i, j int) bool {
+				if vs[i].score != vs[j].score {
+					return vs[i].score > vs[j].score
+				}
+				return vs[i].name < vs[j].name
+			})
+			vec := make([]string, len(vs))
+			for i, v := range vs {
+				vec[i] = v.name
+			}
+			lists = append(lists, vec)
+		}
+	}
+	ranked := docindex.FuseRRF(docindex.RRFK, lists...)
+	if len(ranked) > topK {
+		ranked = ranked[:topK]
+	}
+	out := make([]ninectx.ToolWithVector, 0, len(ranked))
+	for _, n := range ranked {
+		out = append(out, byName[n])
+	}
+	return out
+}
+
+// isSearchMeta reports the catalog search tools, which the model already has.
+func isSearchMeta(name string) bool {
+	return slices.Contains([]string{"tool_search", "skill_search"}, name)
 }
