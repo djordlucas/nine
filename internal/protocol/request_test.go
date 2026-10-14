@@ -159,6 +159,7 @@ func TestEveryClientMsgTypeDecodes(t *testing.T) {
 		protocol.TypeSessionEvents:    {AgentID: "a1", Turn: -1},
 		protocol.TypeWatch:            {AgentID: "a1"},
 		protocol.TypeJournalFollow:    {After: 7, Limit: 10},
+		protocol.TypeTurnCancel:       {AgentID: "a1"},
 	}
 	for _, mt := range protocol.ClientMsgTypes {
 		m := fill[mt]

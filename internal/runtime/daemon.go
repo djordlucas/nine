@@ -621,6 +621,9 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 		// Terminal: the watch owns the connection until it ends, then closes it.
 		d.watch(ctx, conn, enc, r.AgentID)
 
+	case protocol.TurnCancelReq:
+		d.handleTurnCancel(enc, r.AgentID)
+
 	case protocol.JournalFollowReq:
 		// Terminal, like watch.
 		d.followJournal(ctx, conn, enc, r.After, r.Tail)

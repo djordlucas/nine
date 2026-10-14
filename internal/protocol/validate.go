@@ -96,6 +96,7 @@ var clientMsgSpecs = map[MsgType]clientMsgSpec{
 	TypeSessionHistory: {required: []fieldRule{needAgentID}},
 	TypeSessionEvents:  {required: []fieldRule{needAgentID}},
 	TypeWatch:          {required: []fieldRule{needAgentID}},
+	TypeTurnCancel:     {required: []fieldRule{needAgentID}},
 }
 
 // ValidateClient checks an inbound client message carries what its type needs.

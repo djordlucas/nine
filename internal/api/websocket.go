@@ -55,6 +55,7 @@ type wsClientMessage struct {
 	// human_input_answer
 	RequestID string `json:"request_id"`
 	Answer    string `json:"answer"`
+	// cancel carries no fields: it cancels the conversation's running turn.
 }
 
 // handleWebSocket upgrades a request to a WebSocket that follows one
@@ -244,9 +245,29 @@ func (ws *wsSession) handle(ctx context.Context, msg wsClientMessage) {
 		}
 		ws.send(ctx, "human_input_answered", map[string]string{"request_id": msg.RequestID})
 
+	case "cancel":
+		cl, err := ws.server.getDaemonClient()
+		if err != nil {
+			ws.sendError(ctx, "service_unavailable", err.Error())
+			return
+		}
+		defer cl.Close()
+		cancelled, err := cl.CancelTurn(ws.agentID)
+		if err != nil {
+			code := "server_error"
+			if errNotFound(err) {
+				code = "not_found"
+			}
+			ws.sendError(ctx, code, err.Error())
+			return
+		}
+		// The turn's end reaches the client through the watch, as an error
+		// "turn cancelled"; this only says whether there was one to cancel.
+		ws.send(ctx, "cancel", map[string]bool{"cancelled": cancelled})
+
 	default:
 		ws.sendError(ctx, "invalid_request", "unknown message type "+strconvQuote(msg.Type)+
-			"; expected user_turn or human_input_answer")
+			"; expected user_turn, human_input_answer or cancel")
 	}
 }
 

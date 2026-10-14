@@ -676,3 +676,48 @@ func TestToolVersionEndpoints(t *testing.T) {
 		}
 	}
 }
+
+// POST /conversations/{id}/cancel reports whether a turn was cancelled; an
+// unknown conversation is a 404.
+func TestCancelTurn(t *testing.T) {
+	sock := scriptedDaemon(t, func(m protocol.Msg) []protocol.Msg {
+		if m.Type != protocol.TypeTurnCancel {
+			return errReply("unexpected")
+		}
+		switch m.AgentID {
+		case "busy":
+			return []protocol.Msg{protocol.NewTextMsg(protocol.TypeTurnCancel, "cancelled")}
+		case "idle":
+			return []protocol.Msg{protocol.NewTextMsg(protocol.TypeTurnCancel, "idle")}
+		}
+		return errReply("session " + m.AgentID + " not found")
+	})
+	h := apiServerAt(sock)
+	for _, c := range []struct {
+		id        string
+		status    int
+		cancelled bool
+	}{
+		{"busy", http.StatusOK, true},
+		{"idle", http.StatusOK, false},
+		{"nope", http.StatusNotFound, false},
+	} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("POST", "/api/v1/conversations/"+c.id+"/cancel", nil))
+		if w.Code != c.status {
+			t.Errorf("%s: status %d, want %d (%s)", c.id, w.Code, c.status, w.Body.String())
+			continue
+		}
+		if c.status != http.StatusOK {
+			continue
+		}
+		var got struct {
+			ID        string `json:"id"`
+			Cancelled bool   `json:"cancelled"`
+		}
+		decodeJSON(t, w, &got)
+		if got.ID != c.id || got.Cancelled != c.cancelled {
+			t.Errorf("%s: %+v", c.id, got)
+		}
+	}
+}

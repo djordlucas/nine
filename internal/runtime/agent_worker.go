@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
@@ -148,7 +149,9 @@ type AgentWorker struct {
 	// outcome. Guarded by mu.
 	watchers map[uint64]func(protocol.Msg)
 	watcherN uint64
-	busy     bool // true from turn start until its reply is sent; guarded by mu
+	// cancelTurn cancels the turn in flight; nil between turns. Guarded by mu.
+	cancelTurn context.CancelCauseFunc
+	busy       bool // true from turn start until its reply is sent; guarded by mu
 	// drainQueuedFn, when set, is called after each turn completes. If it
 	// returns a non-empty string, the worker immediately starts another turn
 	// with that text. Used to auto-process queued messages left unconsumed by
@@ -370,9 +373,22 @@ func (w *AgentWorker) processTurn(req turnReq) {
 	// because the sandboxed-tool host is daemon-wide: the journal destination for
 	// a tool's outbound HTTP, and the conversation a conversation-scoped state
 	// grant resolves against.
-	toolCtx := toolvm.WithHTTPAudit(req.ctx, w.httpAuditor(turn))
+	turnCtx, cancel := context.WithCancelCause(req.ctx)
+	w.mu.Lock()
+	w.cancelTurn = cancel
+	w.mu.Unlock()
+	toolCtx := toolvm.WithHTTPAudit(turnCtx, w.httpAuditor(turn))
 	toolCtx = toolvm.WithStateScope(toolCtx, w.id)
 	result, err := w.loop.Run(toolCtx, text)
+	w.mu.Lock()
+	w.cancelTurn = nil
+	w.mu.Unlock()
+	if err != nil && errors.Is(context.Cause(turnCtx), ErrTurnCancelled) {
+		// However the loop reported it (a cancelled HTTP call, a tool's
+		// context error), the turn ended because someone cancelled it.
+		err = ErrTurnCancelled
+	}
+	cancel(nil)
 	w.loop.ClearHooks()
 	w.journal(turn, "turn_end", turnSpan(turn), "", turnEndPayload{
 		Result:     result,
@@ -518,6 +534,24 @@ func (w *AgentWorker) Wake(text string, depth int) bool {
 func (w *AgentWorker) stop() {
 	w.stopOnce.Do(func() { close(w.quit) })
 	<-w.stopped
+}
+
+// ErrTurnCancelled is the outcome of a turn cancelled while it ran
+// (turn_cancel). The session, its history and its checkpoint stay.
+var ErrTurnCancelled = errors.New("turn cancelled")
+
+// cancel cancels the turn in flight, if there is one, and reports whether there
+// was. The turn ends with ErrTurnCancelled once the loop notices, at its next
+// model or tool call boundary at the latest; a queued message still runs
+// after it.
+func (w *AgentWorker) cancel() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.cancelTurn == nil {
+		return false
+	}
+	w.cancelTurn(ErrTurnCancelled)
+	return true
 }
 
 // turnAsync submits a user message and returns a channel that receives the
