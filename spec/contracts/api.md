@@ -106,6 +106,7 @@ timeout_seconds = 30       # Request timeout (default: 30)
 max_connections = 100      # Maximum concurrent connections (default: 100)
 cors_origins = ["*"]        # CORS allowed origins
 trusted_proxies = []        # Proxies whose forwarding headers are believed (default: none)
+ui = true                   # Serve the web UI at / (default: true)
 ```
 
 Command-line overrides:
@@ -127,9 +128,44 @@ nine api serve --port 3000 --host 0.0.0.0 --auth-token secret
 
 When `auth_token` is configured:
 
-- **MUST** include `Authorization: Bearer <token>` header
+- **MUST** include `Authorization: Bearer <token>` header, or a browser session cookie (API-HTTP-2a)
 - **MUST** return `401 Unauthorized` for missing or invalid token
 - **MUST** return `403 Forbidden` for valid but insufficient token
+
+### API-HTTP-2a: browser sessions
+
+`/api/v1/auth/session` exchanges the token for a cookie, for clients that cannot
+send a header (a browser's WebSocket). When `auth_token` is configured:
+
+1. `POST` with the token **MUST** compare it in constant time, and on a match
+   **MUST** set a cookie that is HttpOnly, `SameSite=Strict`, `Path=/`, and
+   `Secure` when the request arrived over HTTPS directly or through a trusted
+   proxy. The cookie **MUST** hold a random session id, **MUST NOT** hold the
+   token, and the response **MUST** carry the session's CSRF token.
+2. The auth middleware **MUST** accept a live session's cookie wherever it
+   accepts the bearer header. A request with an `Authorization` header is judged
+   by that header alone.
+3. A cookie-authenticated `POST`, `PUT` or `DELETE` **MUST** carry an `Origin`
+   whose host equals the request's `Host` and an `X-Nine-CSRF` header equal to
+   the session's CSRF token; a cookie-authenticated WebSocket handshake **MUST**
+   carry such an `Origin`. Otherwise the response **MUST** be `403`.
+4. A session **MUST** expire after 7 days unused, and `DELETE` **MUST** end it
+   and expire the cookie.
+5. `GET`, `POST` and `DELETE` on `/api/v1/auth/session` **MUST** be reachable
+   without credentials. `GET` **MUST NOT** return a CSRF token to a request
+   without a live session cookie.
+
+With no `auth_token`, `GET` reports `authenticated: true` and `POST` sets no
+cookie.
+
+### API-HTTP-2b: the web UI
+
+When `[api] ui` is true or unset, the server **MUST** serve the embedded web UI
+for every `GET` or `HEAD` path outside `/api` and `/ws`, outside authentication
+and rate limiting. A path naming no file under `assets/` **MUST** be `404`; any
+other path naming no file **MUST** get `index.html`. Every UI response **MUST**
+carry a Content-Security-Policy that allows `'self'` only, with no
+`'unsafe-inline'` and `frame-ancestors 'none'`.
 
 ### API-HTTP-3: error format
 

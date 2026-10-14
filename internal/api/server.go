@@ -21,6 +21,7 @@ import (
 	"nine/internal/api/apigen"
 	"nine/internal/config"
 	"nine/internal/protocol"
+	"nine/internal/webui"
 )
 
 // Server is the main API server that handles HTTP requests and communicates with the daemon.
@@ -38,6 +39,9 @@ type Server struct {
 	// trustedProxies is config.APIConfig.TrustedProxies parsed once at
 	// construction. Empty means forwarding headers are never believed.
 	trustedProxies []netip.Prefix
+
+	// sessions holds the browser sessions signed in with the API token.
+	sessions *sessionStore
 
 	httpServer *http.Server
 	version    string
@@ -224,6 +228,7 @@ func NewServer(cfg Config) *Server {
 		httpServer: server,
 		rateLimiters: make(map[string]*rateLimiter),
 		trustedProxies: trusted,
+		sessions:       newSessionStore(),
 		version:    cfg.Version,
 		startTime:  cfg.StartTime,
 	}
@@ -282,7 +287,7 @@ func warnIfExposed(host string, authToken string) {
 	if authToken != "" || isLoopbackHost(host) {
 		return
 	}
-	slog.Warn("API is listening on a non-loopback address with NO authentication — "+
+	slog.Warn("API and web UI are listening on a non-loopback address with NO authentication — "+
 		"anyone who can reach this port can start conversations, which can run shell commands. "+
 		"Set [api] auth_token (or --auth-token / NINE_API_AUTH_TOKEN), "+
 		"or publish the port to loopback only (-p 127.0.0.1:8080:8080)",
@@ -385,7 +390,27 @@ func (s *Server) createHandler() http.Handler {
 	handler = s.loggingMiddleware(handler)
 	handler = s.recoveryMiddleware(handler)
 
-	return handler
+	if !s.config.UIEnabled() {
+		return handler
+	}
+
+	// The web UI is static and holds no secret, so its files are served
+	// outside auth and the rate limiter: a page load fetches several files,
+	// and counting them would spend the budget its API calls need. Everything
+	// it does goes through the API paths, which keep the full chain.
+	ui := s.loggingMiddleware(s.recoveryMiddleware(webui.Handler()))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isAPIPath(r.URL.Path) {
+			handler.ServeHTTP(w, r)
+			return
+		}
+		ui.ServeHTTP(w, r)
+	})
+}
+
+// isAPIPath reports a path the API owns rather than the web UI.
+func isAPIPath(p string) bool {
+	return p == "/api" || p == "/ws" || strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/ws/")
 }
 
 // apiBasePath prefixes every operation the document declares. The generated
@@ -399,7 +424,7 @@ const apiBasePath = "/api/v1"
 // from it by hand. Only the OpenAPI document itself is registered separately,
 // since it is not an operation the document describes.
 func (s *Server) registerRoutes(mux *http.ServeMux) {
-	apigen.HandlerWithOptions(apigen.NewStrictHandler(s, nil), apigen.StdHTTPServerOptions{
+	apigen.HandlerWithOptions(apigen.NewStrictHandler(s, []apigen.StrictMiddlewareFunc{withHTTPRequest}), apigen.StdHTTPServerOptions{
 		BaseURL:    apiBasePath,
 		BaseRouter: mux,
 		// Validation is scoped to the generated routes, so the routes that

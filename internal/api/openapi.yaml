@@ -26,6 +26,8 @@ servers:
     port:
       default: '8080'
 tags:
+- name: auth
+  description: 'Browser sign-in: exchange the API token for a session cookie.'
 - name: health
   description: Server health and daemon status.
 - name: conversations
@@ -51,6 +53,78 @@ tags:
 - name: processes
   description: 'Everything Nine runs between turns: list, inspect, start, stop, message.'
 paths:
+  /auth/session:
+    get:
+      operationId: getAuthSession
+      summary: Get the browser session
+      description: Reports whether the server requires a token and whether this request is signed in. A
+        request signed in with the session cookie also gets the CSRF token its writes must carry.
+      tags:
+      - auth
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSessionResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security: []
+    post:
+      operationId: createAuthSession
+      summary: Sign in
+      description: Exchanges the API token for a session cookie (HttpOnly, SameSite=Strict). The response
+        carries the CSRF token that cookie-authenticated writes send as X-Nine-CSRF.
+      tags:
+      - auth
+      requestBody:
+        description: the API token
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAuthSessionRequest'
+      responses:
+        '200':
+          description: Signed in
+          headers:
+            Set-Cookie:
+              description: the session cookie
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSessionResponse'
+        '400':
+          description: invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security: []
+    delete:
+      operationId: deleteAuthSession
+      summary: Sign out
+      description: Ends this browser session and clears its cookie. Succeeds with no session too.
+      tags:
+      - auth
+      responses:
+        '204':
+          description: Signed out
+          headers:
+            Set-Cookie:
+              description: the expired session cookie
+              schema:
+                type: string
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      security: []
   /conversations:
     get:
       operationId: listConversations
@@ -99,6 +173,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
     post:
       operationId: createConversation
       summary: Create a conversation
@@ -134,6 +209,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /conversations/{id}:
     get:
       operationId: getConversation
@@ -173,6 +249,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
     delete:
       operationId: deleteConversation
       summary: Delete a conversation
@@ -216,6 +293,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /conversations/{id}/context:
     get:
       operationId: getConversationContext
@@ -261,6 +339,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /conversations/{id}/history:
     get:
       operationId: getConversationHistory
@@ -317,6 +396,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /conversations/{id}/messages:
     post:
       operationId: sendMessage
@@ -363,6 +443,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /conversations/{id}/messages/stream:
     get:
       operationId: streamMessages
@@ -406,6 +487,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /conversations/{id}/replay:
     post:
       operationId: replayTurn
@@ -454,6 +536,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /conversations/{id}/stop:
     post:
       operationId: stopConversation
@@ -493,6 +576,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /conversations/{id}/trace:
     get:
       operationId: getConversationTrace
@@ -547,6 +631,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /docs:
     get:
       operationId: listDocs
@@ -570,6 +655,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /docs/{topic}:
     get:
       operationId: getDocs
@@ -603,6 +689,7 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /goals:
     get:
       operationId: listGoals
@@ -648,6 +735,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
     post:
       operationId: createGoal
       summary: Create a goal
@@ -688,6 +776,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /goals/{id}:
     get:
       operationId: getGoal
@@ -727,6 +816,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
     delete:
       operationId: deleteGoal
       summary: Delete a goal
@@ -770,6 +860,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /health:
     get:
       operationId: getHealth
@@ -835,6 +926,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /plugins:
     get:
       operationId: listPlugins
@@ -880,6 +972,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /plugins/reload:
     post:
       operationId: reloadPlugins
@@ -906,6 +999,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /processes:
     get:
       operationId: listProcesses
@@ -951,6 +1045,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /processes/{id}:
     get:
       operationId: getProcess
@@ -987,6 +1082,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /processes/{id}/start:
     post:
       operationId: startProcess
@@ -1026,6 +1122,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /processes/{id}/stop:
     post:
       operationId: stopProcess
@@ -1065,6 +1162,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /processes/{id}/messages:
     post:
       operationId: sendProcessMessage
@@ -1114,6 +1212,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /sessions/attach:
     post:
       operationId: attachSession
@@ -1154,6 +1253,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /skills:
     get:
       operationId: listSkills
@@ -1200,6 +1300,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /spec:
     get:
       operationId: listSpec
@@ -1223,6 +1324,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /spec/{topic}:
     get:
       operationId: getSpec
@@ -1256,6 +1358,7 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /status:
     get:
       operationId: getStatus
@@ -1283,6 +1386,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /tools:
     get:
       operationId: listTools
@@ -1328,6 +1432,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /capabilities:
     get:
       operationId: listCapabilities
@@ -1361,6 +1466,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /capabilities/{id}/decision:
     post:
       operationId: decideCapability
@@ -1415,6 +1521,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /tools/reload:
     post:
       operationId: reloadTools
@@ -1441,6 +1548,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /tools/{name}:
     get:
       operationId: getTool
@@ -1480,6 +1588,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
     delete:
       operationId: deleteTool
       summary: Delete a tool Nine wrote
@@ -1521,6 +1630,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /tools/{name}/versions:
     get:
       operationId: getToolVersions
@@ -1560,6 +1670,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /tools/{name}/versions/{version}/restore:
     post:
       operationId: restoreToolVersion
@@ -1606,6 +1717,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /tools/{name}/call:
     post:
       operationId: callTool
@@ -1652,6 +1764,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /workflows:
     get:
       operationId: listWorkflows
@@ -1697,6 +1810,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /workflows/{id}/fail:
     post:
       operationId: failWorkflow
@@ -1736,6 +1850,7 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
   /workflows/{id}/stop:
     post:
       operationId: stopWorkflow
@@ -1775,8 +1890,25 @@ paths:
           content: *id001
       security:
       - bearerAuth: []
+      - cookieAuth: []
 components:
   schemas:
+    AuthSessionResponse:
+      description: The browser session as this request sees it.
+      type: object
+      properties:
+        auth_required:
+          description: the server has an auth_token; without one every request is accepted
+          type: boolean
+        authenticated:
+          description: this request carries a valid session cookie or bearer token
+          type: boolean
+        csrf_token:
+          description: sent as X-Nine-CSRF on cookie-authenticated writes; present only for a cookie session
+          type: string
+      required:
+      - auth_required
+      - authenticated
     AttachSessionRequest:
       description: Which session to attach to.
       type: object
@@ -1805,6 +1937,14 @@ components:
           items: {}
         role:
           type: string
+    CreateAuthSessionRequest:
+      description: The API token, as configured in auth_token.
+      type: object
+      properties:
+        token:
+          type: string
+      required:
+      - token
     CallToolRequest:
       description: Arguments for a direct tool invocation, bypassing the model.
       type: object
@@ -3186,6 +3326,12 @@ components:
             type: integer
       content: *id002
   securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: nine_session
+      description: The session cookie POST /auth/session sets. A write authenticated by it must also send
+        X-Nine-CSRF and come from the server's own origin.
     bearerAuth:
       type: http
       scheme: bearer
@@ -3193,3 +3339,4 @@ components:
         the API is open otherwise.
 security:
 - bearerAuth: []
+- cookieAuth: []

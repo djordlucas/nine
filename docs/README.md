@@ -47,6 +47,7 @@ Ordered outside in.
 | [Architecture](architecture.md) | Topology, concurrency, turn lifecycle, boot sequence, invariants |
 | [Daemon](daemon.md) | Unix socket server, message dispatch, conversation lifecycle |
 | [HTTP API](api.md) | REST endpoints, OpenAPI spec, authentication, `nine api` |
+| [Web UI](web-ui.md) | The browser UI `nine api serve` serves at `/`: signing in, sections, security headers |
 | [AgentWorker](runner.md) | Per-conversation loop wrapper, stall detection, checkpointing |
 | [Agent loop](agent-loop.md) | The ReAct implementation: reason, act, observe |
 | [Context builder](context-builder.md) | Token budgeting, message trimming, tool relevance ranking |

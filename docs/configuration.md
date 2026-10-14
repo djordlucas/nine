@@ -504,6 +504,11 @@ cors_origins = ["*"]
 # so trusting them unconditionally lets a client mint a fresh rate-limit bucket
 # per request. Set this only for proxies actually in front of the API.
 trusted_proxies = []
+#
+# ui — serve the web UI at / beside the API (docs/web-ui.md). Unset serves it;
+# false serves the API alone. Also settable via NINE_API_UI. The UI signs in
+# with auth_token and is exactly as open as the API.
+ui = true
 
 [api.rate_limit]
 # Rate limiting is applied before authentication, so an unauthenticated flood is

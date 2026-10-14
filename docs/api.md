@@ -118,6 +118,30 @@ docker run -e NINE_API_AUTH_TOKEN=… -p 8080:8080 …   # authenticated
 docker run -p 127.0.0.1:8080:8080 …                  # local only
 ```
 
+### Browser sessions
+
+A browser cannot put an `Authorization` header on a WebSocket, so the
+[web UI](web-ui.md) exchanges the token once for a session cookie, which the API
+accepts wherever it accepts the bearer header.
+
+| Operation | Does |
+|---|---|
+| `GET /api/v1/auth/session` | `{auth_required, authenticated, csrf_token?}`; open, so a page can learn whether to ask for the token |
+| `POST /api/v1/auth/session` `{"token": "…"}` | Sets `nine_session` (HttpOnly, `SameSite=Strict`, `Secure` over HTTPS) and returns the CSRF token; `401` for a wrong token. With no token configured it sets no cookie. |
+| `DELETE /api/v1/auth/session` | Ends the session and expires the cookie |
+
+A request authenticated by the cookie, rather than the bearer header, meets two
+more rules:
+
+| Request | Must |
+|---|---|
+| `POST`, `PUT`, `DELETE` | come from this server's origin (`Origin` matches `Host`) and carry `X-Nine-CSRF: <csrf_token>` |
+| WebSocket handshake | come from this server's origin |
+
+A refusal is `403 forbidden`. Sessions are held in the API server's memory: they
+expire after 7 days unused and end when it restarts. Bearer callers are
+unaffected.
+
 ---
 
 ## Base URL and versioning
@@ -268,9 +292,10 @@ timeout_seconds = 30
 max_connections = 100
 cors_origins = ["*"]
 trusted_proxies = []        # proxies whose X-Forwarded-For the API believes
+ui = true                   # serve the web UI at /
 ```
 
-Environment variable overrides: `NINE_API_PORT`, `NINE_API_HOST`, `NINE_API_AUTH_TOKEN`, `NINE_API_TRUSTED_PROXIES`, etc.
+Environment variable overrides: `NINE_API_PORT`, `NINE_API_HOST`, `NINE_API_AUTH_TOKEN`, `NINE_API_TRUSTED_PROXIES`, `NINE_API_UI`, etc.
 
 ### Running behind a reverse proxy
 

@@ -93,6 +93,7 @@ type apiFlags struct {
 	tlsCert        string
 	tlsKey         string
 	trustedProxies []string
+	ui             *bool // NINE_API_UI; nil leaves the config file's value
 }
 
 // parseAPIFlags parses API-specific command-line flags.
@@ -242,6 +243,13 @@ func parseAPIFlags(args []string) apiFlags {
 	if v := os.Getenv("NINE_API_TRUSTED_PROXIES"); v != "" {
 		flags.trustedProxies = strings.Split(v, ",")
 	}
+	if v := os.Getenv("NINE_API_UI"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			flags.ui = &b
+		} else {
+			slog.Warn("invalid NINE_API_UI value, using the config file's", "value", logsafe.Value(v))
+		}
+	}
 
 	return flags
 }
@@ -272,6 +280,9 @@ func mergeAPIConfig(fileCfg config.APIConfig, flags apiFlags) config.APIConfig {
 	}
 	if len(flags.trustedProxies) > 0 {
 		merged.TrustedProxies = flags.trustedProxies
+	}
+	if flags.ui != nil {
+		merged.UI = flags.ui
 	}
 	if flags.tlsEnabled {
 		merged.TLS.Enabled = true

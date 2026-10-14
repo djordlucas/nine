@@ -1,6 +1,6 @@
 # Design note — The embedded web UI
 
-**Status:** Proposed (2026-10-13) · **Related:** `docs/api.md`, `docs/hitl.md`,
+**Status:** Phase 1 implemented (2026-10-13); phases 2–6 proposed · **Related:** `docs/api.md`, `docs/hitl.md`,
 `docs/processes.md`, `adr/agent-boundary.md`
 
 Nine gets a web UI that is part of the binary: a Preact app, built once and embedded,
@@ -206,6 +206,23 @@ does this for a real daemon yet, so phase 1 builds the stub.
 
 Each phase ships with its docs, contract changes and tests, and the API changes land in
 `openapi.yaml` in the same PR.
+
+---
+
+## Phase 1 as built
+
+| Planned | Built | Why |
+|---|---|---|
+| `POST`, `DELETE /api/v1/session` | `GET`, `POST`, `DELETE /api/v1/auth/session` | `/sessions` is the session roster (§4); one letter apart was a trap. `GET` tells a page whether to ask for the token, and hands a reloaded page its CSRF token. |
+| `X-Nine-CSRF` on a cookie WebSocket upgrade | Same-origin `Origin` only | A browser cannot set headers on a WebSocket handshake, and always sends `Origin` on one. |
+| Stub model server in phase 1 | Deferred to phase 3 | Nothing in phase 1 sends a turn; the first chat test needs it. |
+| `make webui` and friends | Plus `.dockerignore` for `web/node_modules`, and the `cookieAuth` scheme on every operation in `openapi.yaml` | The build context was copying the Node toolchain into the image build. |
+
+The UI's files are served before the rate limiter: with the default 10-request
+burst, a page load and its first API calls would otherwise spend the budget.
+The bundle is 15 KB gzipped. Two fresh builds in the pinned container produce
+identical bytes, which the drift check relies on. The Playwright tests run
+against the runtime image a release publishes, not a dev build.
 
 ---
 

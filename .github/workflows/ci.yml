@@ -59,6 +59,15 @@ jobs:
       - name: OpenAPI lint
         run: make openapi-lint
 
+      # The web UI's build is committed (internal/webui/dist) so `go build`
+      # needs no Node; this fails when it, or the types generated from
+      # openapi.yaml, differ from a fresh build. Node runs in a pinned container.
+      - name: Web UI drift
+        run: make webui-check
+
+      - name: Web UI unit tests
+        run: make webui-test
+
       # tests/evals/runner spins up a real in-process daemon per test and
       # deadlocks intermittently under CI load (the agent worker hangs on a
       # turn whose reply never arrives; see "Fix eval-runner daemon hang" in
@@ -123,3 +132,9 @@ jobs:
           NINE_TEST_IMAGE: nine:test
           NINE_TEST_VERSION: ci-${{ github.sha }}
         run: go test -mod=vendor -v -timeout 15m ./tests/docker/...
+
+      # Playwright drives the same image at a phone and a desktop viewport.
+      - name: Web UI end-to-end tests
+        env:
+          NINE_E2E_IMAGE: nine:test
+        run: make webui-e2e
