@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -28,11 +29,27 @@ const ArmHybrid = "hybrid"
 
 var knownArms = map[string]bool{ArmRanked: true, ArmDeferred: true, ArmHybrid: true}
 
+// sizeKeys are the session.config keys an arm's size sets: "ranked:10" runs
+// ranked with tool_top_n 10, "hybrid:5" hybrid with hybrid_picks 5. Deferred
+// has no size.
+var sizeKeys = map[string]string{ArmRanked: "context.tool_top_n", ArmHybrid: "context.hybrid_picks"}
+
+// splitArm splits an arm into its mode and its size, 0 when it has none.
+func splitArm(arm string) (mode string, size int) {
+	mode, n, ok := strings.Cut(arm, ":")
+	if !ok {
+		return arm, 0
+	}
+	size, _ = strconv.Atoi(n)
+	return mode, size
+}
+
 // KnownArms returns the arms a run can request, sorted.
 func KnownArms() []string { return slices.Sorted(maps.Keys(knownArms)) }
 
-// ParseArms parses NINE_EVAL_ARMS: comma-separated arm names. Empty means one
-// unnamed arm, the configured default, so a plain run costs what it did.
+// ParseArms parses NINE_EVAL_ARMS: comma-separated arm names, each a mode with
+// an optional size ("ranked:10"). Empty means one unnamed arm, the configured
+// default, so a plain run costs what it did.
 func ParseArms(s string) ([]string, error) {
 	var arms []string
 	for _, a := range strings.Split(s, ",") {
@@ -40,8 +57,17 @@ func ParseArms(s string) ([]string, error) {
 		if a == "" {
 			continue
 		}
-		if !knownArms[a] {
+		mode, n, sized := strings.Cut(a, ":")
+		if !knownArms[mode] {
 			return nil, fmt.Errorf("unknown arm %q (known: %s)", a, strings.Join(KnownArms(), ", "))
+		}
+		if sized {
+			if sizeKeys[mode] == "" {
+				return nil, fmt.Errorf("arm %q: %s takes no size", a, mode)
+			}
+			if size, err := strconv.Atoi(n); err != nil || size <= 0 {
+				return nil, fmt.Errorf("arm %q: the size must be a positive integer", a)
+			}
 		}
 		if slices.Contains(arms, a) {
 			return nil, fmt.Errorf("arm %q listed twice", a)
@@ -83,7 +109,7 @@ func (c *Case) PinnedArm() string {
 }
 
 // ApplicableArms returns the arms the case runs in: every requested arm, or
-// only the requested ones it pins. No requested arms is a single unnamed run,
+// only the requested ones whose mode it pins. No requested arms is a single unnamed run,
 // in the case's first pinned arm if it has one.
 func (c *Case) ApplicableArms(requested []string) []string {
 	pinned := c.PinnedArms()
@@ -95,20 +121,21 @@ func (c *Case) ApplicableArms(requested []string) []string {
 	}
 	var arms []string
 	for _, a := range requested {
-		if slices.Contains(pinned, a) {
+		if mode, _ := splitArm(a); slices.Contains(pinned, mode) {
 			arms = append(arms, a)
 		}
 	}
 	return arms
 }
 
-// withArm returns a copy of c that runs in arm; "" runs it in its first
-// pinned arm, or leaves it as it is.
+// withArm returns a copy of c that runs in arm, its size set when it has one;
+// "" runs it in its first pinned arm, or leaves it as it is.
 func (c *Case) withArm(arm string) *Case {
 	if arm == "" {
 		arm = c.PinnedArm()
 	}
-	if arm == "" || c.Session.Config[ArmKey] == arm {
+	mode, size := splitArm(arm)
+	if mode == "" || (c.Session.Config[ArmKey] == mode && size == 0) {
 		return c
 	}
 	cp := *c
@@ -116,6 +143,9 @@ func (c *Case) withArm(arm string) *Case {
 	if cp.Session.Config == nil {
 		cp.Session.Config = map[string]any{}
 	}
-	cp.Session.Config[ArmKey] = arm
+	cp.Session.Config[ArmKey] = mode
+	if size > 0 {
+		cp.Session.Config[sizeKeys[mode]] = size
+	}
 	return &cp
 }

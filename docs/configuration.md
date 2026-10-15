@@ -568,6 +568,11 @@ promoted_budget = 1500
 # their schemas, ranked best against the turn's request. Needs an embedder;
 # ignored unless tool_exposition is "hybrid". Default 3.
 hybrid_picks = 3
+#
+# tool_top_n — how many tools a ranked session advertises with their schemas
+# besides the pinned ones, ranked best against the turn's request. Ignored
+# unless tool_exposition is "ranked". Default 20.
+tool_top_n = 20
 
 [tools]
 # max_output_tokens — the per-result tool output cap (docs/tool-output.md).

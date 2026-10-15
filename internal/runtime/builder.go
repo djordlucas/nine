@@ -105,6 +105,8 @@ type LoopConfig struct {
 	PromotedBudget int
 	// HybridPicks mirrors [context] hybrid_picks; 0 is the default.
 	HybridPicks int
+	// ToolTopN mirrors [context] tool_top_n; 0 is the default.
+	ToolTopN int
 }
 
 // AgentBuilderConfig holds the behavioral dependencies layered on top of the
@@ -692,7 +694,7 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 
 	perLoopBuilder := ninectx.New(ninectx.Config{
 		Budget:      lc.ContextBudget,
-		ToolTopN:    20,
+		ToolTopN:    lc.ToolTopN,
 		AlwaysTools: alwaysTools,
 		Exposition:  lc.ToolExposition,
 		Resident:    append(slices.Clone(defaultResidentTools), lc.ResidentTools...),
