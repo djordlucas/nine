@@ -35,6 +35,32 @@ const ConfigGoalOrigin = "config"
 // this far behind loses events rather than stalling the session's turn.
 const watchBuffer = 1024
 
+// handleSkillGet returns one skill with its body, for an operator reading it.
+func (d *Daemon) handleSkillGet(enc *json.Encoder, name string) {
+	if d.store == nil {
+		enc.Encode(protocol.NewErrorMsg("skills not available")) //nolint:errcheck
+		return
+	}
+	sk, found, err := d.store.SkillGet(name)
+	if err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	if !found {
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("skill %s not found", name))) //nolint:errcheck
+		return
+	}
+	tags := sk.Tags
+	if tags == nil {
+		tags = []string{}
+	}
+	data, _ := json.Marshal(protocol.SkillDetail{
+		SkillInfo: protocol.SkillInfo{Name: sk.Name, Description: sk.Description, Tags: tags, Source: sk.Source},
+		Content:   sk.Content,
+	})
+	enc.Encode(protocol.NewTextMsg(protocol.TypeSkillGet, string(data))) //nolint:errcheck
+}
+
 func (d *Daemon) handleListSkills(enc *json.Encoder) {
 	if d.store == nil {
 		enc.Encode(protocol.NewTextMsg(protocol.TypeListSkills, `{"skills":[]}`)) //nolint:errcheck

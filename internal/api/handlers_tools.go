@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"nine/internal/api/apigen"
+	"nine/internal/protocol"
 )
 
 // Tool and plugin endpoints.
@@ -24,15 +25,10 @@ func (s *Server) ListTools(ctx context.Context, request apigen.ListToolsRequestO
 	}
 	defer cl.Close()
 
-	tools, err := cl.ListTools()
+	infos, err := toolRoster(cl)
 	if err != nil {
 		return apigen.ListTools500JSONResponse(
 			errorBody("server_error", err.Error(), nil)), nil
-	}
-
-	infos := make([]apigen.ToolInfo, 0, len(tools))
-	for _, tool := range tools {
-		infos = append(infos, toToolInfo(tool.Name, tool.Description, tool.Plugin))
 	}
 
 	data, pagination := paginate(infos, p)
@@ -55,24 +51,28 @@ func (s *Server) GetTool(ctx context.Context, request apigen.GetToolRequestObjec
 	}
 	defer cl.Close()
 
-	tools, err := cl.ListTools()
+	infos, err := toolRoster(cl)
 	if err != nil {
 		return apigen.GetTool500JSONResponse(
 			errorBody("server_error", err.Error(), nil)), nil
 	}
 
-	for _, tool := range tools {
-		if tool.Name != request.Name {
+	for _, t := range infos {
+		if t.Name == nil || *t.Name != request.Name {
 			continue
 		}
-		// ToolSummary carries no input schema or capabilities, so those stay
-		// absent rather than being invented.
 		return apigen.GetTool200JSONResponse{
-			Name:        ptr(tool.Name),
-			Description: ptr(tool.Description),
-			Plugin:      ptr(tool.Plugin),
-			Kind:        ptr("plugin"),
-			Loaded:      ptr(true),
+			Name:         t.Name,
+			Description:  t.Description,
+			Plugin:       t.Plugin,
+			Kind:         t.Kind,
+			Loaded:       t.Loaded,
+			Generated:    t.Generated,
+			Capabilities: t.Capabilities,
+			InputSchema:  t.InputSchema,
+			ManifestPath: t.ManifestPath,
+			Deps:         t.Deps,
+			Timeout:      t.Timeout,
 		}, nil
 	}
 
@@ -142,12 +142,8 @@ func (s *Server) ReloadTools(ctx context.Context, request apigen.ReloadToolsRequ
 
 	infos := make([]apigen.ToolInfo, 0, len(tools))
 	for _, tool := range tools {
-		info := toToolInfo(tool.Name, tool.Description, "")
-		info.Kind = ptr("sandboxed")
-		info.Loaded = ptr(tool.Loaded)
-		if tool.Error != "" {
-			info.Error = ptr(tool.Error)
-		}
+		info := toToolInfo(tool.Name, tool.Description, "sandboxed")
+		applySandboxed(&info, tool)
 		infos = append(infos, info)
 	}
 
@@ -234,7 +230,100 @@ func toToolInfo(name, description, plugin string) apigen.ToolInfo {
 	if plugin != "" {
 		info.Plugin = ptr(plugin)
 	}
+	if plugin == "core" {
+		info.Kind = ptr("core")
+	}
 	return info
+}
+
+// toolRoster is every tool the daemon has, as `nine tools` and the agent see
+// them: the core and plugin tools with their schemas, and the sandboxed tools
+// with where they came from, their capabilities and dependencies. A sandboxed
+// tool that failed to load is listed too, with its error, though no agent can
+// call it.
+func toolRoster(cl *protocol.Client) ([]apigen.ToolInfo, error) {
+	tools, err := cl.ListTools()
+	if err != nil {
+		return nil, err
+	}
+	boxed, err := cl.ListSandboxedTools()
+	if err != nil {
+		return nil, err
+	}
+	byName := make(map[string]protocol.SandboxedToolStatus, len(boxed))
+	for _, b := range boxed {
+		byName[b.Name] = b
+	}
+	seen := make(map[string]bool, len(tools))
+	infos := make([]apigen.ToolInfo, 0, len(tools)+len(boxed))
+	for _, t := range tools {
+		info := toToolInfo(t.Name, t.Description, t.Plugin)
+		if len(t.InputSchema) > 0 {
+			var schema any
+			if json.Unmarshal(t.InputSchema, &schema) == nil {
+				info.InputSchema = schema
+			}
+		}
+		if b, ok := byName[t.Name]; ok && t.Plugin == "sandboxed" {
+			applySandboxed(&info, b)
+		}
+		seen[t.Name] = true
+		infos = append(infos, info)
+	}
+	for _, b := range boxed {
+		if seen[b.Name] {
+			continue
+		}
+		info := toToolInfo(b.Name, b.Description, "sandboxed")
+		applySandboxed(&info, b)
+		infos = append(infos, info)
+	}
+	return infos, nil
+}
+
+// applySandboxed fills what the sandboxed roster knows of a tool.
+func applySandboxed(info *apigen.ToolInfo, b protocol.SandboxedToolStatus) {
+	kind := "sandboxed"
+	if b.Generated {
+		kind = "generated"
+	}
+	info.Kind = ptr(kind)
+	info.Loaded = ptr(b.Loaded)
+	info.Generated = ptr(b.Generated)
+	if b.Description != "" {
+		info.Description = ptr(b.Description)
+	}
+	if caps := splitCapabilities(b.Capabilities); len(caps) > 0 {
+		info.Capabilities = &caps
+	}
+	if b.ManifestPath != "" {
+		info.ManifestPath = ptr(b.ManifestPath)
+	}
+	if b.Error != "" {
+		info.Error = ptr(b.Error)
+	}
+	if b.Timeout != "" {
+		info.Timeout = ptr(b.Timeout)
+	}
+	if len(b.Deps) > 0 {
+		deps := b.Deps
+		info.Deps = &deps
+	}
+}
+
+// splitCapabilities turns the roster's capability summary, "fs.read /work;
+// net.http GET api.example.com", into one entry per capability. "none" is none.
+func splitCapabilities(s string) []string {
+	if s == "" || s == "none" {
+		return nil
+	}
+	var out []string
+	for _, c := range strings.Split(s, "; ") {
+		if c = strings.TrimSpace(c); c != "" {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // DeleteTool deletes a tool Nine wrote. The daemon decides what may be deleted;

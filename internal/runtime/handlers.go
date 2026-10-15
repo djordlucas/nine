@@ -481,11 +481,11 @@ func (d *Daemon) handleListTools(enc *json.Encoder) {
 	var tools []protocol.ToolSummary
 	if d.mgr != nil {
 		for _, def := range agent.InterceptedDefs {
-			tools = append(tools, protocol.ToolSummary{Plugin: "core", Name: def.Name, Description: def.Description})
+			tools = append(tools, protocol.ToolSummary{Plugin: "core", Name: def.Name, Description: def.Description, InputSchema: def.InputSchema})
 		}
 		for _, p := range d.mgr.Running() {
 			for _, t := range p.Tools {
-				tools = append(tools, protocol.ToolSummary{Plugin: p.Name, Name: t.Name, Description: t.Description})
+				tools = append(tools, protocol.ToolSummary{Plugin: p.Name, Name: t.Name, Description: t.Description, InputSchema: t.InputSchema})
 			}
 		}
 	}
@@ -494,7 +494,7 @@ func (d *Daemon) handleListTools(enc *json.Encoder) {
 	// glance which tools run in the wasm sandbox rather than a subprocess.
 	if d.tools != nil {
 		for _, t := range d.tools.Tools() {
-			tools = append(tools, protocol.ToolSummary{Plugin: "sandboxed", Name: t.Name, Description: t.Description})
+			tools = append(tools, protocol.ToolSummary{Plugin: "sandboxed", Name: t.Name, Description: t.Description, InputSchema: t.InputSchema})
 		}
 	}
 	if tools == nil {

@@ -703,15 +703,24 @@ List all available tools (plugins + sandboxed).
       "name": "tool-name",
       "description": "tool description",
       "plugin": "plugin-name",
-      "kind": "plugin" | "sandboxed" | "generated",
+      "kind": "core" | "plugin" | "sandboxed" | "generated",
       "loaded": true,
-      "capabilities": ["fs.read", "net.http"],
+      "capabilities": ["fs.read /work", "net.http GET api.example.com"],
+      "input_schema": { },
+      "deps": ["left-pad@1.3.0"],
+      "timeout": "30s",
       "error": ""
     }
   ],
   "pagination": { ... }
 }
 ```
+
+The roster joins the daemon's `list_tools` and `tools_list` replies: every tool an
+agent can call, with its input schema, and every sandboxed tool with its
+provenance, capabilities, dependencies and timeout. A sandboxed tool that failed to
+load is listed with `loaded: false` and its `error`, though no agent can call it.
+`GET /api/v1/tools/{name}` returns one entry of the same roster.
 
 #### POST `/api/v1/tools/{name}/call`
 
@@ -884,6 +893,11 @@ List all skills.
   "pagination": { ... }
 }
 ```
+
+#### GET `/api/v1/skills/{name}`
+
+One skill with its Markdown body (`content`), through the daemon's `skill_get`
+message. `404` for an unknown skill.
 
 ---
 
@@ -1397,6 +1411,7 @@ All API configuration options **MUST** be available via CLI flags.
 | `nine goals` | GET `/api/v1/goals` | Implemented |
 | `nine workflows` | GET `/api/v1/workflows` | Implemented |
 | `nine tools` | GET `/api/v1/tools` | Implemented |
+| — | GET `/api/v1/skills/{name}` | Implemented |
 | `nine plugins` | GET `/api/v1/plugins` | Implemented |
 | `nine sessions` | GET `/api/v1/conversations` | Implemented |
 | `nine context` | GET `/api/v1/conversations/{id}/context` | Implemented |

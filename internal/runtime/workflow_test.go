@@ -365,8 +365,9 @@ func (m *mockStore) SessionDelete(string) (memory.SessionDeleteCounts, error) {
 func (m *mockStore) JobsRunning() ([]memory.Job, error) { return nil, nil }
 
 // Goal and skill verbs: inert, so these mocks still satisfy queryBackend.
-func (m *mockStore) GoalGet(string) (*memory.Goal, error)  { return nil, nil }
-func (m *mockStore) GoalCreate(_, _, _, _ string) error    { return nil }
-func (m *mockStore) GoalDelete(string) ([]string, error)   { return nil, nil }
-func (m *mockStore) GoalUpdateStatus(string, string) error { return nil }
-func (m *mockStore) SkillList() ([]memory.Skill, error)    { return nil, nil }
+func (m *mockStore) GoalGet(string) (*memory.Goal, error)        { return nil, nil }
+func (m *mockStore) GoalCreate(_, _, _, _ string) error          { return nil }
+func (m *mockStore) GoalDelete(string) ([]string, error)         { return nil, nil }
+func (m *mockStore) GoalUpdateStatus(string, string) error       { return nil }
+func (m *mockStore) SkillGet(string) (memory.Skill, bool, error) { return memory.Skill{}, false, nil }
+func (m *mockStore) SkillList() ([]memory.Skill, error)          { return nil, nil }

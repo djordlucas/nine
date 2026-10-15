@@ -66,6 +66,7 @@ const (
 	TypeListNotifications MsgType = "list_notifications"
 	TypeListTools         MsgType = "list_tools"
 	TypeListSkills        MsgType = "list_skills"
+	TypeSkillGet          MsgType = "skill_get"
 	TypePluginsList       MsgType = "plugins_list"
 	TypePluginsReload     MsgType = "plugins_reload"
 	TypeSessionsList      MsgType = "sessions_list"
@@ -194,6 +195,7 @@ var ClientMsgTypes = []MsgType{
 	TypeListNotifications,
 	TypeListTools,
 	TypeListSkills,
+	TypeSkillGet,
 	TypePluginsList,
 	TypePluginsReload,
 	TypeSessionsList,
@@ -238,6 +240,7 @@ const (
 //	"grants_decide"    — settle a capability request or revoke a grant;
 //	                     RequestID = the id, Text = approve|deny|revoke
 //	"list_skills"      — request the skill catalog; no extra fields
+//	"skill_get"        — request one skill with its body; Text = skill name
 //	"goal_create"      — create a goal as the operator; Text = description,
 //	                     ID = parent goal id (optional; empty for a top-level goal)
 //	"goal_delete"      — delete a goal, its sub-goals, and stop its session; Text = goal ID
@@ -275,6 +278,7 @@ const (
 //	"sub_agent_end"    — a sub-agent finished; SubAgentID + Text (task) + Status + Role + Timestamp set
 //	"stage"            — the turn entered a named waiting phase; Text carries the label
 //	"list_skills"      — skill catalog; Text carries JSON {"skills": [SkillInfo]}
+//	"skill_get"        — one skill; Text carries JSON SkillDetail
 //	"goal_create"      — created goal; Text carries JSON-encoded GoalCreateResult
 //	"goal_delete"      — deletion result; Text carries JSON-encoded GoalDeleteResult
 //	"goal_set_status"  — the updated goal; Text carries it as JSON
@@ -468,6 +472,9 @@ type ToolSummary struct {
 	Plugin      string `json:"plugin"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	// InputSchema is the tool's JSON Schema for its arguments, as the tool
+	// declares it. Additive/optional field.
+	InputSchema json.RawMessage `json:"input_schema,omitempty"`
 }
 
 // PluginStatus describes one plugin for the "plugins_list" / "plugins_reload"
@@ -598,6 +605,17 @@ type SkillInfo struct {
 	Description string   `json:"description"`
 	Tags        []string `json:"tags"`
 	Source      string   `json:"source"`
+}
+
+// SkillDetail is the "skill_get" reply: a skill with its Markdown body.
+type SkillDetail struct {
+	SkillInfo
+	Content string `json:"content"`
+}
+
+// NewSkillGetMsg asks for one skill with its body.
+func NewSkillGetMsg(name string) Msg {
+	return Msg{Type: TypeSkillGet, Text: name}
 }
 
 // GoalCreateResult is the "goal_create" reply. Goal is the stored row, as a

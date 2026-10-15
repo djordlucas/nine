@@ -5,6 +5,8 @@ import { sections, sectionFor } from '../sections';
 import { authRequired, signOut } from '../api/client';
 import { streamState } from '../api/events';
 import { cycleTheme, theme } from '../theme';
+import { attentionEvents, loadAttention } from '../inbox';
+import { useLive } from '../live';
 import { Icon } from './Icon';
 import styles from './Shell.module.css';
 
@@ -20,6 +22,7 @@ export function Shell({ children }: { children: ComponentChildren }) {
   const tabs = sections.filter((s) => s.tab);
   const rest = sections.filter((s) => !s.tab);
   const inMore = !current.tab;
+  const waiting = useWaiting();
 
   return (
     <div class={styles.shell}>
@@ -37,6 +40,7 @@ export function Shell({ children }: { children: ComponentChildren }) {
           >
             <Icon name={s.icon} />
             <span>{s.label}</span>
+            {s.path === '/inbox' && <Badge n={waiting} />}
           </a>
         ))}
         <div class={styles.railFoot}>
@@ -63,6 +67,7 @@ export function Shell({ children }: { children: ComponentChildren }) {
           >
             <Icon name={s.icon} />
             <span>{s.label}</span>
+            {s.path === '/inbox' && <Badge n={waiting} />}
           </a>
         ))}
         <button
@@ -100,6 +105,22 @@ export function Shell({ children }: { children: ComponentChildren }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** How many approvals and questions wait for the operator; 0 until known. */
+function useWaiting(): number {
+  const { data } = useLive(loadAttention, attentionEvents);
+  return data ? data.requests.length + data.questions.length : 0;
+}
+
+/** The count of what waits in the Inbox, on its link (adr/web-ui.md §5). */
+function Badge({ n }: { n: number }) {
+  if (n <= 0) return null;
+  return (
+    <span class={styles.badge} aria-label={`${n} waiting`}>
+      {n}
+    </span>
   );
 }
 

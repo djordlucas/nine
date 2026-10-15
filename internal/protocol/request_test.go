@@ -156,6 +156,7 @@ func TestEveryClientMsgTypeDecodes(t *testing.T) {
 		protocol.TypeGoalCreate:       {Text: "watch the repo"},
 		protocol.TypeGoalDelete:       {Text: "g1"},
 		protocol.TypeGoalSetStatus:    {ID: "g1", Text: "paused"},
+		protocol.TypeSkillGet:         {Text: "triage"},
 		protocol.TypeSessionHistory:   {AgentID: "a1"},
 		protocol.TypeSessionEvents:    {AgentID: "a1", Turn: -1},
 		protocol.TypeWatch:            {AgentID: "a1"},

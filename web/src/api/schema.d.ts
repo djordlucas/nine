@@ -668,6 +668,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/skills/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a skill
+         * @description Returns one skill with its Markdown body, as skill_read gives it to the model.
+         */
+        get: operations["getSkill"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tools": {
         parameters: {
             query?: never;
@@ -1162,9 +1182,14 @@ export interface components {
             generated?: boolean;
             /** @description The tool's JSON Schema for its arguments, passed through as the tool declares it. */
             input_schema?: unknown;
+            /** @description core: built into Nine. plugin: served by a plugin. sandboxed: an installed sandboxed tool. generated: one Nine wrote. */
             kind?: string;
             loaded?: boolean;
             manifest_path?: string;
+            /** @description the npm packages a generated tool's bundle carries, as name@version */
+            deps?: string[];
+            /** @description this tool's per-call deadline when [tool.<name>] timeout overrides [tools] timeout */
+            timeout?: string;
             name?: string;
             plugin?: string;
         };
@@ -1546,6 +1571,19 @@ export interface components {
              */
             source: "builtin" | "user" | "agent";
         };
+        /** @description One skill with its body. */
+        SkillDetail: {
+            name: string;
+            description?: string;
+            tags?: string[];
+            /**
+             * @description builtin: seeded from the binary. user: seeded from [skills].user_dir. agent: written by Nine itself.
+             * @enum {string}
+             */
+            source: "builtin" | "user" | "agent";
+            /** @description the skill's body, in Markdown */
+            content: string;
+        };
         /** @description Whether a running turn was cancelled. */
         CancelTurnResponse: {
             id: string;
@@ -1676,10 +1714,14 @@ export interface components {
             generated?: boolean;
             /** @description The tool's JSON Schema for its arguments, passed through as the tool declares it. */
             input_schema?: unknown;
-            /** @description plugin, sandboxed, generated */
+            /** @description core: built into Nine. plugin: served by a plugin. sandboxed: an installed sandboxed tool. generated: one Nine wrote. */
             kind?: string;
             loaded?: boolean;
             manifest_path?: string;
+            /** @description the npm packages a generated tool's bundle carries, as name@version */
+            deps?: string[];
+            /** @description this tool's per-call deadline when [tool.<name>] timeout overrides [tools] timeout */
+            timeout?: string;
             name?: string;
             plugin?: string;
         };
@@ -3726,6 +3768,58 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description skill name */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             429: components["responses"]["TooManyRequests"];
             /** @description internal error */
             500: {

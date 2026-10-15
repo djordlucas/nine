@@ -140,6 +140,33 @@ func (s *Server) ListSkills(ctx context.Context, request apigen.ListSkillsReques
 	}, nil
 }
 
+func (s *Server) GetSkill(ctx context.Context, request apigen.GetSkillRequestObject) (apigen.GetSkillResponseObject, error) {
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		return apigen.GetSkill503JSONResponse(
+			errorBody("service_unavailable", err.Error(), nil)), nil
+	}
+	defer cl.Close()
+
+	sk, err := cl.GetSkill(request.Name)
+	if err != nil {
+		if errNotFound(err) {
+			return apigen.GetSkill404JSONResponse(
+				errorBody("not_found", "skill not found", map[string]any{"name": request.Name})), nil
+		}
+		return apigen.GetSkill500JSONResponse(
+			errorBody("server_error", err.Error(), nil)), nil
+	}
+	tags := sk.Tags
+	return apigen.GetSkill200JSONResponse{
+		Name:        sk.Name,
+		Description: ptr(sk.Description),
+		Tags:        &tags,
+		Source:      apigen.SkillDetailSource(sk.Source),
+		Content:     sk.Content,
+	}, nil
+}
+
 func (s *Server) AttachSession(ctx context.Context, request apigen.AttachSessionRequestObject) (apigen.AttachSessionResponseObject, error) {
 	if request.Body == nil || request.Body.AgentId == "" {
 		return apigen.AttachSession400JSONResponse(

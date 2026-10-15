@@ -1,0 +1,148 @@
+.section {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.views {
+  display: flex;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--border);
+}
+
+.view {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch);
+  padding: 0 var(--space-3);
+  color: var(--text-2);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.view[aria-current='page'] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.listHead {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2);
+}
+
+.group {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.plain {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.code {
+  font-family: var(--mono);
+  font-size: var(--text-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  max-height: 360px;
+  overflow: auto;
+}
+
+textarea.code {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  resize: vertical;
+}
+
+.call {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.callRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--touch);
+  font-size: var(--text-sm);
+}
+
+.result {
+  margin-top: var(--space-2);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.result p {
+  margin: 0;
+}
+
+.versions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.versions li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.plugins {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.plugins li + li {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+}
+
+.pluginHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.pluginTools {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.skill {
+  overflow-wrap: anywhere;
+}
+
+/* A roster row with no badge: the name takes the badge's column too. */
+.wide {
+  grid-column: 1 / -1;
+}
+
+.wide + span {
+  grid-column: 1 / -1;
+}

@@ -1,6 +1,6 @@
 # Design note — The embedded web UI
 
-**Status:** Phases 1–3 implemented (2026-10-14), phase 4 (2026-10-15); phases 5–6 proposed · **Related:** `docs/api.md`, `docs/hitl.md`,
+**Status:** Phases 1–3 implemented (2026-10-14), phases 4–5 (2026-10-15); phase 6 proposed · **Related:** `docs/api.md`, `docs/hitl.md`,
 `docs/processes.md`, `adr/agent-boundary.md`
 
 Nine gets a web UI that is part of the binary: a Preact app, built once and embedded,
@@ -268,6 +268,23 @@ The bundle is 41 KB gzipped, `marked` included.
 The goals list is a tree: top-level goals, active first, each followed by its
 sub-goals. Processes and Goals share a list-beside-detail layout
 (`components/Split.module.css`, `Detail.module.css`). The bundle is 45 KB
+gzipped.
+
+
+## Phase 5 as built
+
+| Planned | Built | Why |
+|---|---|---|
+| Tools: the roster, provenance and deps | `GET /tools` joins the agent's tool list with the sandboxed roster: `kind` `core`, `plugin`, `sandboxed` or `generated`, capabilities, `deps`, `timeout`, the input schema, and sandboxed tools that failed to load | It returned every tool as `kind: plugin, loaded: true` with no capabilities, schema or dependencies, so it could not say where a tool came from. `list_tools` now carries each tool's input schema, which the call form starts from. |
+| Tools: show, call, versions, restore, delete, reload | All of them; a call's arguments start from the schema's required properties, and a sandboxed tool's call uses throwaway state unless the operator ticks the box | A test call against a tool's real state could overwrite a running process's cursor (`docs/usage.md`). |
+| Skills | A list and each skill's body, through a new `GET /skills/{name}` and daemon `skill_get`, rendered as Markdown like a chat reply | The API listed skills but could not return one. |
+| Plugins and skills under System (§5) | Under Tools, as two more views: `/tools/plugins`, `/tools/skills` | Phase 5 delivers them, and they are what serves and guides the tools. A tool named `plugins` or `skills` is shadowed by those paths. |
+| Pending approvals badge the Inbox | A count of pending capability requests and unanswered questions on the Inbox link, in the rail and the tab bar | — |
+| Inbox: notifications | Newest first, the new ones highlighted; opening the Inbox marks them seen | `GET /notifications` without `all` is the API's only way to mark them. |
+| Inbox: capability requests | Approve (confirmed) and deny; the grants in force, each with its source, and revoke for the approved ones | Only an approved grant can be revoked; the others come from the workspace root or nine.toml. |
+
+No journal event marks a tool written, restored or deleted, so the Tools views
+reload after the operator's own actions rather than live. The bundle is 50 KB
 gzipped.
 
 ---

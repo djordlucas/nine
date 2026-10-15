@@ -687,7 +687,10 @@ func (m *mockGoalStore) GoalGet(string) (*memory.Goal, error)  { return nil, nil
 func (m *mockGoalStore) GoalCreate(_, _, _, _ string) error    { return nil }
 func (m *mockGoalStore) GoalDelete(string) ([]string, error)   { return nil, nil }
 func (m *mockGoalStore) GoalUpdateStatus(string, string) error { return nil }
-func (m *mockGoalStore) SkillList() ([]memory.Skill, error)    { return nil, nil }
+func (m *mockGoalStore) SkillGet(string) (memory.Skill, bool, error) {
+	return memory.Skill{}, false, nil
+}
+func (m *mockGoalStore) SkillList() ([]memory.Skill, error) { return nil, nil }
 
 // A condition trigger wakes a session with a turn nobody waits on. Its reply must
 // not block the worker: the session has to answer the next turn, and stop.

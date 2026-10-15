@@ -93,6 +93,7 @@ var clientMsgSpecs = map[MsgType]clientMsgSpec{
 	TypeGoalDelete: {required: []fieldRule{needText}},
 	// An empty status must not reach the store, which accepts any string.
 	TypeGoalSetStatus: {required: []fieldRule{needID, needText}},
+	TypeSkillGet:      {required: []fieldRule{needText}},
 
 	// The same reason attach must name its target: a session read or watch with
 	// an empty id would resolve by prefix to an arbitrary session.
