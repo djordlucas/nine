@@ -76,7 +76,8 @@ var generatedToolDefs = []llm.ToolDef{
 		Name:        "js_eval",
 		DisplayName: "Evaluate JavaScript",
 		Description: "Run a JavaScript snippet once in the sandbox and return its result. Nothing is saved. " +
-			"This is the right tool for a one-off computation, for checking that an approach works before committing it with tool_write, and for anything you would otherwise be tempted to create a single-use tool for. " +
+			"Use it to compute or calculate anything: arithmetic, sums, counts, dates, sorting or reshaping data. " +
+			"It is also the right tool for checking that an approach works before committing it with tool_write, and for anything you would otherwise be tempted to create a single-use tool for. " +
 			"Same rules as tool_write: ES2023 only, default-export a function, no Node APIs.",
 		InputSchema: json.RawMessage(`{
 			"type":"object",

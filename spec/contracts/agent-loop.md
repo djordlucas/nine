@@ -41,6 +41,9 @@ Run(ctx, userText):
 ```
 
 The query vector and self-model are computed **once per turn**, not per inner iteration.
+In `hybrid` tool exposition only, the loop also embeds each round's tool calls
+and results (at most 2,000 characters) as the result vector, which the builder's
+picks rank against alongside the query vector.
 
 The host stamps the facts a model cannot derive for itself into the system core
 on every assembly: the current time, and — when the session has one — its

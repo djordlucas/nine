@@ -630,8 +630,9 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 	}
 
 	llmCallN := 0
-	var toolErrs []string // tool failures seen this turn, surfaced if the answer is empty
-	emptyAnswers := 0     // no-text, no-tool-call responses so far (see maxEmptyAnswerRetries)
+	var resultVec []float32 // the latest tool results, for hybrid picks
+	var toolErrs []string   // tool failures seen this turn, surfaced if the answer is empty
+	emptyAnswers := 0       // no-text, no-tool-call responses so far (see maxEmptyAnswerRetries)
 	for {
 		llmCallN++
 		think := l.thinkFor(mode, llmCallN, forced)
@@ -651,6 +652,7 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 			SystemEnrichment:    enrichment,
 			Tools:               l.turnTools(),
 			QueryVector:         queryVec,
+			ResultVector:        resultVec,
 			History:             l.history,
 			Scratchpad:          l.scratchpad,
 			SystemPlan:          plan,
@@ -850,7 +852,29 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 				Observation: observation,
 			})
 		}
+		if l.builder.Picks() {
+			resultVec = embedText(ctx, l.cfg.Embedder, latestResults(l.scratchpad[len(l.scratchpad)-len(resp.ToolCalls):]))
+		}
 	}
+}
+
+// resultsEmbedChars bounds the tool results embedded for hybrid picks: enough
+// for a file or a listing to say what the task is, short of an embedder's
+// input limit.
+const resultsEmbedChars = 2000
+
+// latestResults joins a batch's tool calls and observations, cut to
+// resultsEmbedChars, as the text hybrid picks rank against.
+func latestResults(entries []ninectx.ScratchpadEntry) string {
+	var b strings.Builder
+	for _, e := range entries {
+		b.WriteString(e.ToolName + ": " + e.Observation + "\n")
+	}
+	s := b.String()
+	if len(s) > resultsEmbedChars {
+		s = strings.ToValidUTF8(s[:resultsEmbedChars], "")
+	}
+	return s
 }
 
 // InspectContext assembles the context for the session's current state and

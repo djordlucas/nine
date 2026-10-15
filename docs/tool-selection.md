@@ -47,7 +47,7 @@ snapshots.
 | Resident set | Full schemas of the most-called tools: `process_list`, `read_file`, `write_file`, `memory_get`, `memory_set`, `list_files`, `file_search_text`, `goal_list`, `process_start`, `delete_file`, plus `tool_search`, `skill_read`, `ask_human` (interactive) and `run_agent` (delegating), where the role has them. `[context] resident_tools` adds more. |
 | Tool index | A `## More tools` section of the system prompt: every other tool by name, one line per toolkit (`workspace`, `memory`, `jobs`, `mcp/<server>` …). A tool Nine did not name carries the first clause of its description. |
 | Promoted tools | Tools the session loaded, with full schemas, after the resident set. |
-| Picks | Hybrid only: the tools of the index ranked best against the turn's request, with full schemas, after the promoted tools. |
+| Picks | Hybrid only: the tools of the index ranked best against the turn's request or its latest tool results, with full schemas, after the promoted tools. |
 
 **Loading.** `tool_search(names=[...])` loads tools by name, or every tool of a
 toolkit; `tool_search(query=...)` loads the three best matches. Loaded tools are
@@ -74,9 +74,11 @@ neither `tool_search` nor `tool_list`.
 
 **Hybrid.** `tool_exposition = "hybrid"` is deferred plus picks: the
 `[context] hybrid_picks` tools of the index (3 by default) that rank best
-against the turn's request, by the same embedding similarity ranked mode uses.
-The picks are made once per turn, so they stay put across the turn's requests,
-and they are not promoted: the next turn picks again. A tool whose name hides
+against the turn's request or its latest tool results, by the same embedding
+similarity ranked mode uses. After each round of tool calls the results are
+embedded and the picks made again, so a task the model learns from a file gets
+its tools within the turn. Picks are not promoted: a pick the results no longer
+match leaves for the index. A tool whose name hides
 what it does reaches the model with its description this way, without a load.
 With no embedder there are no picks, and hybrid behaves as deferred.
 `llm_request` records the picks as `tool_picked`.
