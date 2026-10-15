@@ -220,6 +220,7 @@ func runDaemon() {
 		ResidentTools:          cfg.Context.ResidentTools,
 		PromotedBudget:         cfg.Context.PromotedBudget,
 		HybridPicks:            cfg.Context.HybridPicks,
+		ToolTopN:               cfg.Context.ToolTopN,
 		MaxJobsPerConversation: cfg.Plugins.MaxJobsPerConversation,
 		MaxJobsTotal:           cfg.Plugins.MaxJobsTotal,
 		JobWaiters:             jobWaiters,

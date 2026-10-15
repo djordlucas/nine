@@ -25,6 +25,14 @@ func TestParseArms(t *testing.T) {
 	if _, err := ParseArms("ranked,ranked"); err == nil {
 		t.Error("a repeated arm must be refused")
 	}
+	if arms, err := ParseArms("ranked,ranked:10,hybrid:5"); err != nil || len(arms) != 3 {
+		t.Errorf("ParseArms(sized) = %v, %v", arms, err)
+	}
+	for _, bad := range []string{"deferred:5", "ranked:0", "ranked:x"} {
+		if _, err := ParseArms(bad); err == nil {
+			t.Errorf("ParseArms(%q) must be refused", bad)
+		}
+	}
 }
 
 func TestApplicableArms(t *testing.T) {
@@ -43,6 +51,7 @@ func TestApplicableArms(t *testing.T) {
 		{"a pinned case outside the request is not run", pinned, []string{"other"}, "<none>"},
 		{"a case pinning a list runs in each requested", both, []string{ArmRanked, ArmDeferred, ArmHybrid}, "deferred,hybrid"},
 		{"a case pinning a list, no arms requested, runs once", both, nil, ""},
+		{"a sized arm matches its mode's pin", pinned, []string{"ranked:10", "hybrid:5"}, "ranked:10"},
 	} {
 		got := strings.Join(tc.c.ApplicableArms(tc.requested), ",")
 		if got == "" && len(tc.c.ApplicableArms(tc.requested)) == 0 {
@@ -72,6 +81,13 @@ func TestWithArm(t *testing.T) {
 	}
 	if got := both.withArm(ArmHybrid); got.Session.Config[ArmKey] != ArmHybrid {
 		t.Errorf("withArm(hybrid) = %v", got.Session.Config[ArmKey])
+	}
+	sized := c.withArm("ranked:10")
+	if sized.Session.Config[ArmKey] != ArmRanked || caseInt(sized, "context.tool_top_n", 0) != 10 {
+		t.Errorf("withArm(ranked:10) = %v", sized.Session.Config)
+	}
+	if got := both.withArm("hybrid:5"); caseInt(got, "context.hybrid_picks", 0) != 5 {
+		t.Errorf("withArm(hybrid:5) = %v", got.Session.Config)
 	}
 }
 

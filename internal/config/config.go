@@ -114,6 +114,10 @@ type ContextConfig struct {
 	// also advertises with their schemas, best-ranked against the turn's
 	// request. 0 is 3. Needs an embedder; ignored unless hybrid.
 	HybridPicks int `toml:"hybrid_picks"`
+	// ToolTopN is how many tools a ranked loop advertises with their schemas
+	// besides the pinned ones, best-ranked against the turn's request. 0 is 20.
+	// Ignored unless ranked.
+	ToolTopN int `toml:"tool_top_n"`
 }
 
 // ToolsConfig tunes the tool-dispatch boundary. It is `[tools]` rather than
@@ -1452,6 +1456,9 @@ func (cfg *Config) Validate() error {
 	}
 	if cfg.Context.HybridPicks < 0 {
 		return fmt.Errorf("[context] hybrid_picks must not be negative")
+	}
+	if cfg.Context.ToolTopN < 0 {
+		return fmt.Errorf("[context] tool_top_n must not be negative")
 	}
 	if cfg.Processes.RollbackAfter < 0 {
 		return fmt.Errorf("[processes] rollback_after must not be negative")
