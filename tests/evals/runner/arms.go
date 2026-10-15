@@ -22,7 +22,29 @@ const ArmRanked = "ranked"
 // ArmDeferred advertises a resident set and lists the other tools by name.
 const ArmDeferred = "deferred"
 
-var knownArms = map[string]bool{ArmRanked: true, ArmDeferred: true}
+// ArmHybrid is deferred plus the HybridPicks tools best-ranked against the
+// turn's request ([context] deferred_picks), advertised with their schemas.
+// It is an eval arm, not a tool_exposition value: the harness runs it as
+// deferred with the picks set, unless the case sets its own.
+const ArmHybrid = "hybrid"
+
+// HybridPicks is the hybrid arm's deferred_picks.
+const HybridPicks = 3
+
+var knownArms = map[string]bool{ArmRanked: true, ArmDeferred: true, ArmHybrid: true}
+
+// exposition returns the tool_exposition and deferred_picks a case runs with,
+// resolving the hybrid arm to deferred with picks.
+func (c *Case) exposition() (mode string, picks int) {
+	mode, picks = caseString(c, ArmKey), caseInt(c, "context.deferred_picks", 0)
+	if mode == ArmHybrid {
+		mode = ArmDeferred
+		if picks == 0 {
+			picks = HybridPicks
+		}
+	}
+	return mode, picks
+}
 
 // KnownArms returns the arms a run can request, sorted.
 func KnownArms() []string { return slices.Sorted(maps.Keys(knownArms)) }
@@ -56,8 +78,9 @@ func (c *Case) PinnedArm() string {
 }
 
 // ApplicableArms returns the arms the case runs in: every requested arm, or
-// only its pinned one. No requested arms is a single unnamed run, in the
-// case's pinned arm if it has one.
+// only its pinned one — and, for a case pinned to deferred, the hybrid arm,
+// which is deferred with picks. No requested arms is a single unnamed run, in
+// the case's pinned arm if it has one.
 func (c *Case) ApplicableArms(requested []string) []string {
 	pinned := c.PinnedArm()
 	switch {
@@ -65,10 +88,14 @@ func (c *Case) ApplicableArms(requested []string) []string {
 		return []string{""}
 	case pinned == "":
 		return requested
-	case slices.Contains(requested, pinned):
-		return []string{pinned}
 	}
-	return nil
+	var arms []string
+	for _, a := range requested {
+		if a == pinned || (pinned == ArmDeferred && a == ArmHybrid) {
+			arms = append(arms, a)
+		}
+	}
+	return arms
 }
 
 // withArm returns a copy of c that runs in arm; "" leaves c as it is.

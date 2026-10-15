@@ -40,6 +40,10 @@ type llmRequestPayload struct {
 	// ToolIndex names the tools a deferred loop listed in its index instead of
 	// advertising (adr/deferred-tool-schemas.md §3.2). Absent when ranked.
 	ToolIndex []string `json:"tool_index,omitempty"`
+	// ToolPicked names the tools of ToolNames a deferred loop advertised
+	// because they ranked best against the turn's query ([context]
+	// deferred_picks). Absent when it picked none.
+	ToolPicked []string `json:"tool_picked,omitempty"`
 	// ToolTokens is the estimated size of the request's tool definitions and,
 	// when deferred, its tool index, which the evals bound per request
 	// (adr/deferred-tool-schemas.md §7.2).

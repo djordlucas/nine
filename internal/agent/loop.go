@@ -408,6 +408,10 @@ func (l *Loop) LastToolIndex() []string { return l.lastExposure.Indexed }
 // LastIndexTokens is the estimated size of the latest request's tool index.
 func (l *Loop) LastIndexTokens() int { return l.lastExposure.IndexTokens }
 
+// LastToolPicks names the tools the latest request advertised because they
+// ranked best against the turn's query; nil when it picked none.
+func (l *Loop) LastToolPicks() []string { return l.lastExposure.Picked }
+
 // fitPromotions drops promoted tools the catalog no longer has and demotes the
 // least recently used past the budget. Run calls it before a turn's first
 // request, so a demotion never removes a tool mid-turn.

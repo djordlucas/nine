@@ -561,6 +561,11 @@ resident_tools = []
 # loaded. Past it, the tool called least recently returns to the index before
 # the next turn. Default 1500.
 promoted_budget = 1500
+#
+# deferred_picks — how many tools a deferred session also advertises with
+# their schemas, ranked best against the turn's request out of those it would
+# otherwise only index. Needs an embedder. Default 0, none; experimental.
+deferred_picks = 0
 
 [tools]
 # max_output_tokens — the per-result tool output cap (docs/tool-output.md).

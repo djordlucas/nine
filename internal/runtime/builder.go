@@ -103,6 +103,8 @@ type LoopConfig struct {
 	ResidentTools []string
 	// PromotedBudget mirrors [context] promoted_budget; 0 is the default.
 	PromotedBudget int
+	// DeferredPicks mirrors [context] deferred_picks; 0 picks none.
+	DeferredPicks int
 }
 
 // AgentBuilderConfig holds the behavioral dependencies layered on top of the
@@ -694,6 +696,7 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		AlwaysTools: alwaysTools,
 		Exposition:  lc.ToolExposition,
 		Resident:    append(slices.Clone(defaultResidentTools), lc.ResidentTools...),
+		Picks:       lc.DeferredPicks,
 	})
 
 	var selfModelFn func(ctx context.Context, queryVec []float32) string

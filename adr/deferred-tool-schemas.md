@@ -594,6 +594,21 @@ the MCP tool. A discovery costs one extra LLM call and still halves the prompt
 tokens; on local Ollama that call's generation time made those cases slower in
 wall-clock time, while the no-load case was faster.
 
+## Experiment: picks
+
+The first phase 3 sweep (one run per case) failed deferred where a tool's name
+hides what it does: asked to remove a process it wrote, the model stopped it with
+`process_stop`, a successful call, and never found `tool_delete`; asked to
+compute a sum, it reached for `shell` instead of `js_eval`. Call-to-load cannot
+see a plausible wrong tool that succeeds.
+
+`[context] deferred_picks = N` adds the N indexed tools ranked best against the
+turn's request, by ranked mode's embedding similarity, with their schemas. Off
+by default, so deferred is unchanged; the eval arm `hybrid` runs it at N = 3.
+Picks are per turn, not promoted, so a turn's requests share one prefix. It is
+measured against `deferred` and `ranked` and removed if it does not pay for its
+~600–900 tokens.
+
 ## Limits
 
 | Limit | Detail |

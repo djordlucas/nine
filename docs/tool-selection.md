@@ -47,6 +47,7 @@ snapshots.
 | Resident set | Full schemas of the most-called tools: `process_list`, `read_file`, `write_file`, `memory_get`, `memory_set`, `list_files`, `file_search_text`, `goal_list`, `process_start`, `delete_file`, plus `tool_search`, `skill_read`, `ask_human` (interactive) and `run_agent` (delegating), where the role has them. `[context] resident_tools` adds more. |
 | Tool index | A `## More tools` section of the system prompt: every other tool by name, one line per toolkit (`workspace`, `memory`, `jobs`, `mcp/<server>` …). A tool Nine did not name carries the first clause of its description. |
 | Promoted tools | Tools the session loaded, with full schemas, after the resident set. |
+| Picks | With `[context] deferred_picks` set, the tools of the index ranked best against the turn's request, with full schemas, after the promoted tools. Off by default. |
 
 **Loading.** `tool_search(names=[...])` loads tools by name, or every tool of a
 toolkit; `tool_search(query=...)` loads the three best matches. Loaded tools are
@@ -67,6 +68,14 @@ Each change is journaled as `tool_promoted` or `tool_demoted`.
 **Small catalogs.** A session whose whole catalog is 2,500 tokens or less, such
 as a narrow allowlist role or reflection, is advertised whole, with no index and
 neither `tool_search` nor `tool_list`.
+
+**Picks.** `[context] deferred_picks = N` advertises the N tools of the index
+that rank best against the turn's request, by the same embedding similarity
+ranked mode uses. The picks are made once per turn, so they stay put across the
+turn's requests, and they are not promoted: the next turn picks again. A tool
+whose name hides what it does reaches the model with its description this way,
+without a load. With no embedder there are no picks. `llm_request` records them
+as `tool_picked`. This is an experiment, measured as the eval arm `hybrid`.
 
 A sub-agent starts from its own role's resident set, not its parent's promoted
 tools.

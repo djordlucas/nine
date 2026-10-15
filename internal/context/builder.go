@@ -26,6 +26,10 @@ type Config struct {
 	Exposition string
 	// Resident names the tools a deferred loop always advertises.
 	Resident []string
+	// Picks is how many of the tools a deferred loop would only index it also
+	// advertises, best-ranked against the turn's query. 0, the default, picks
+	// none.
+	Picks int
 }
 
 // ToolWithVector is a tool definition paired with its embedding for ranking.
@@ -98,12 +102,15 @@ func (b *Builder) BuildWithUsage(input BuildInput) (llm.Request, int) {
 type Exposure struct {
 	Indexed     []string
 	IndexTokens int
+	// Picked names the tools advertised because they ranked best against the
+	// query (Config.Picks), in rank order.
+	Picked []string
 }
 
 // BuildForCall is like BuildWithUsage but also returns the request's Exposure.
 func (b *Builder) BuildForCall(input BuildInput) (llm.Request, int, Exposure) {
 	req, used, rep := b.assemble(input, false)
-	return req, used, Exposure{Indexed: rep.Indexed, IndexTokens: rep.IndexTokens}
+	return req, used, Exposure{Indexed: rep.Indexed, IndexTokens: rep.IndexTokens, Picked: rep.Picked}
 }
 
 // BuildReport assembles the context exactly as BuildWithUsage does, but records a
@@ -143,7 +150,7 @@ func (b *Builder) assemble(input BuildInput, report bool) (llm.Request, int, Rep
 		index   string
 	)
 	if b.cfg.Exposition == ExpositionDeferred {
-		tools, indexed, index = deferTools(input.Tools, b.cfg.Resident, input.Promoted)
+		tools, indexed, rep.Picked, index = deferTools(input.Tools, b.cfg.Resident, input.Promoted, input.QueryVector, b.cfg.Picks)
 	} else {
 		tools = b.selectTools(input.Tools, input.QueryVector, remaining)
 	}
@@ -156,6 +163,9 @@ func (b *Builder) assemble(input BuildInput, report bool) (llm.Request, int, Rep
 	detail := fmt.Sprintf("%d of %d selected", len(tools), len(input.Tools))
 	if b.cfg.Exposition == ExpositionDeferred {
 		detail = fmt.Sprintf("%d advertised (%d promoted), %d in the index", len(tools), len(input.Promoted), len(indexed))
+		if len(rep.Picked) > 0 {
+			detail = fmt.Sprintf("%d advertised (%d promoted, %d picked), %d in the index", len(tools), len(input.Promoted), len(rep.Picked), len(indexed))
+		}
 	}
 	add("tools", "2", toolTok, len(tools) > 0, detail)
 	rep.Indexed = indexed

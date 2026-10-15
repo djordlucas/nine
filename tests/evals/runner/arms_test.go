@@ -30,6 +30,7 @@ func TestParseArms(t *testing.T) {
 func TestApplicableArms(t *testing.T) {
 	free := &Case{}
 	pinned := &Case{Session: Session{Config: map[string]any{ArmKey: ArmRanked}}}
+	deferred := &Case{Session: Session{Config: map[string]any{ArmKey: ArmDeferred}}}
 	for _, tc := range []struct {
 		name      string
 		c         *Case
@@ -40,6 +41,8 @@ func TestApplicableArms(t *testing.T) {
 		{"every requested arm", free, []string{ArmRanked}, ArmRanked},
 		{"a pinned case runs in its arm", pinned, []string{ArmRanked}, ArmRanked},
 		{"a pinned case outside the request is not run", pinned, []string{"other"}, "<none>"},
+		{"a deferred case also runs in hybrid", deferred, []string{ArmRanked, ArmDeferred, ArmHybrid}, "deferred,hybrid"},
+		{"a ranked case does not run in hybrid", pinned, []string{ArmHybrid}, "<none>"},
 	} {
 		got := strings.Join(tc.c.ApplicableArms(tc.requested), ",")
 		if got == "" && len(tc.c.ApplicableArms(tc.requested)) == 0 {
@@ -62,6 +65,25 @@ func TestWithArm(t *testing.T) {
 	}
 	if c.withArm("") != c {
 		t.Error(`withArm("") must return the case itself`)
+	}
+}
+
+func TestExposition_HybridIsDeferredWithPicks(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		config    map[string]any
+		wantMode  string
+		wantPicks int
+	}{
+		{"unset", nil, "", 0},
+		{"deferred picks none", map[string]any{ArmKey: ArmDeferred}, ArmDeferred, 0},
+		{"hybrid", map[string]any{ArmKey: ArmHybrid}, ArmDeferred, HybridPicks},
+		{"hybrid keeps a case's own picks", map[string]any{ArmKey: ArmHybrid, "context.deferred_picks": 5}, ArmDeferred, 5},
+	} {
+		c := &Case{Session: Session{Config: tc.config}}
+		if mode, picks := c.exposition(); mode != tc.wantMode || picks != tc.wantPicks {
+			t.Errorf("%s: exposition = %q, %d; want %q, %d", tc.name, mode, picks, tc.wantMode, tc.wantPicks)
+		}
 	}
 }
 
