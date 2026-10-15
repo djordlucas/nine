@@ -727,6 +727,24 @@ it passes 61 of 72 against `ranked`'s 66, at about 2,900 tool tokens to
 below `ranked`. `process-start-via-goal` on 4b recovered although neither
 change aimed at it. The other cases of the 9-run table are not re-run yet.
 
+### Ranked with ten tools
+
+`[context] tool_top_n` sets how many best-ranked tools `ranked` adds to the
+pinned ones (default 20). The whole corpus ran once per case at 10, against the
+sweep's `ranked` at 20, over the 65 cases both ran per model:
+
+| | 9b at 20 | 9b at 10 | 4b at 20 | 4b at 10 |
+|---|---|---|---|---|
+| Runs passed, of 65 | 58 | 60 | 57 | 58 |
+| Median tool tokens | 6,752 | 5,887 | 6,752 | 5,895 |
+| Median prompt tokens per run | 18.6k | 18.8k | 22.5k | 19.1k |
+
+Pass rates hold; the 11 cases that differ split 8 to 3 in favor of 10, within
+one run's noise. Ten fewer tools save only ~860 tool tokens, 13%: most of
+`ranked`'s block is the pinned tools (`coreToolNames`, the shell tools), which
+`tool_top_n` does not touch. Halving the ranked tail is a small lever beside
+`hybrid`, which cuts the block to ~2,900. The default stays 20.
+
 ## Limits
 
 | Limit | Detail |
