@@ -702,6 +702,14 @@ Phase 4 waits. Before the default flips to `hybrid`, `js_eval`'s description
 names computing, picks are re-made after tool results within a turn, and the
 4b goal miss is understood; the regressed cases then re-run at 9 runs.
 
+### Picks from tool results
+
+Two of the fixes are built. Picks rank each indexed tool on its best cosine
+similarity to the request or to the latest round of tool calls and results
+(cut to 2,000 characters), embedded after each round; a hybrid loop pays one
+embedding per round, which ranked and deferred do not. `js_eval`'s description
+now names computing: arithmetic, sums, counts, dates, sorting or reshaping data.
+
 ## Limits
 
 | Limit | Detail |

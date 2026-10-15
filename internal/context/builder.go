@@ -63,10 +63,14 @@ type BuildInput struct {
 	// session; adr/reactive-events.md §5). Priority 2.6: capped small and
 	// dropped when budget is tight, so enrichment never crowds out the turn.
 	SystemEnrichment string
-	Tools            []ToolWithVector  // priority 2: relevance-filtered
-	QueryVector      []float32         // embedding of the current query; nil → no ranking
-	History          []llm.Message     // priority 3: rolling window, oldest dropped
-	Scratchpad       []ScratchpadEntry // priority 4: oldest entries dropped first
+	Tools            []ToolWithVector // priority 2: relevance-filtered
+	QueryVector      []float32        // embedding of the current query; nil → no ranking
+	// ResultVector embeds the turn's latest tool results. Hybrid picks rank
+	// on the better of it and QueryVector, so a task the model learns from a
+	// tool result gets its tools within the turn. nil → QueryVector alone.
+	ResultVector []float32
+	History      []llm.Message     // priority 3: rolling window, oldest dropped
+	Scratchpad   []ScratchpadEntry // priority 4: oldest entries dropped first
 
 	// SystemPlan is the advisory request-analysis produced by the no-tool plan pass.
 	// Priority 4.5 - capped and dropped when budget is tight and it yields to scratchpad entries.
@@ -151,7 +155,7 @@ func (b *Builder) assemble(input BuildInput, report bool) (llm.Request, int, Rep
 		index   string
 	)
 	if Defers(b.cfg.Exposition) {
-		tools, indexed, rep.Picked, index = deferTools(input.Tools, b.cfg.Resident, input.Promoted, input.QueryVector, b.picks())
+		tools, indexed, rep.Picked, index = deferTools(input.Tools, b.cfg.Resident, input.Promoted, [][]float32{input.QueryVector, input.ResultVector}, b.picks())
 	} else {
 		tools = b.selectTools(input.Tools, input.QueryVector, remaining)
 	}
@@ -294,6 +298,10 @@ func (b *Builder) assemble(input BuildInput, report bool) (llm.Request, int, Rep
 
 // Budget returns the total token budget this builder was configured with.
 func (b *Builder) Budget() int { return b.cfg.Budget }
+
+// Picks reports whether requests advertise picks, so a caller knows whether a
+// ResultVector is worth embedding.
+func (b *Builder) Picks() bool { return b.picks() > 0 }
 
 // --------- tool selection ---------
 

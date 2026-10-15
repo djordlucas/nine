@@ -46,9 +46,9 @@ const indexIntro = "Call any of these by name. Load the full schema first with\n
 // deferTools splits tools into the ones advertised with a schema — resident
 // first, in catalog order, then promoted, in promotion order, then the picks —
 // and the rest, which it returns by name and renders as the index text. The
-// picks are the picks best-ranked of the others against queryVec, in rank
-// order; with no query vector, or picks 0, there are none.
-func deferTools(tools []ToolWithVector, resident, promoted []string, queryVec []float32, picks int) (advertised []llm.ToolDef, indexed, picked []string, index string) {
+// picks are the picks best-ranked of the others against pickVecs, in rank
+// order; with no vector, or picks 0, there are none.
+func deferTools(tools []ToolWithVector, resident, promoted []string, pickVecs [][]float32, picks int) (advertised []llm.ToolDef, indexed, picked []string, index string) {
 	total := 0
 	for _, tw := range tools {
 		if !catalogTools[tw.Tool.Name] {
@@ -86,7 +86,7 @@ func deferTools(tools []ToolWithVector, resident, promoted []string, queryVec []
 		}
 	}
 
-	for _, tw := range pickTools(tools, shown, queryVec, picks) {
+	for _, tw := range pickTools(tools, shown, pickVecs, picks) {
 		advertised = append(advertised, tw.Tool)
 		picked = append(picked, tw.Tool.Name)
 		shown[tw.Tool.Name] = true
@@ -103,11 +103,13 @@ func deferTools(tools []ToolWithVector, resident, promoted []string, queryVec []
 }
 
 // pickTools returns up to k of the tools not yet shown, best-ranked against
-// queryVec by cosine similarity, skipping tools with no vector and the catalog
-// meta-tools. It is the ranked mode's selection, applied to what deferral
-// would otherwise only index.
-func pickTools(tools []ToolWithVector, shown map[string]bool, queryVec []float32, k int) []ToolWithVector {
-	if k <= 0 || len(queryVec) == 0 {
+// vecs, skipping tools with no vector and the catalog meta-tools. A tool's
+// score is its best cosine similarity to any of vecs, so a tool that fits the
+// request or the latest tool results ranks high either way. It is the ranked
+// mode's selection, applied to what deferral would otherwise only index.
+func pickTools(tools []ToolWithVector, shown map[string]bool, vecs [][]float32, k int) []ToolWithVector {
+	vecs = slices.DeleteFunc(slices.Clone(vecs), func(v []float32) bool { return len(v) == 0 })
+	if k <= 0 || len(vecs) == 0 {
 		return nil
 	}
 	type scored struct {
@@ -119,7 +121,11 @@ func pickTools(tools []ToolWithVector, shown map[string]bool, queryVec []float32
 		if shown[tw.Tool.Name] || catalogTools[tw.Tool.Name] || len(tw.Vector) == 0 {
 			continue
 		}
-		cs = append(cs, scored{tw, cosineSim(queryVec, tw.Vector)})
+		best := float32(-2)
+		for _, v := range vecs {
+			best = max(best, cosineSim(v, tw.Vector))
+		}
+		cs = append(cs, scored{tw, best})
 	}
 	slices.SortStableFunc(cs, func(a, b scored) int { return cmp.Compare(b.score, a.score) })
 	out := make([]ToolWithVector, 0, min(k, len(cs)))

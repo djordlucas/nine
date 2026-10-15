@@ -155,6 +155,22 @@ func TestHybrid_PicksAdvertiseTheBestRankedOfTheRest(t *testing.T) {
 	}
 }
 
+// A tool result that turns the task elsewhere brings its tools into the picks:
+// a tool's score is its best match to the request or the latest results.
+func TestHybrid_PicksAlsoRankOnTheLatestResults(t *testing.T) {
+	tools := withVectors(largeCatalog(), map[string]int{"job_wait": 0, "process_list": 1, "restore_file": 2})
+	b := ninectx.New(ninectx.Config{Budget: 100000, Exposition: ninectx.ExpositionHybrid, Picks: 2})
+	_, _, exp := b.BuildForCall(ninectx.BuildInput{
+		SystemCore:   "core",
+		Tools:        tools,
+		QueryVector:  []float32{1, 0.2, 0, 0},
+		ResultVector: []float32{0, 0, 1, 0},
+	})
+	if !slices.Equal(exp.Picked, []string{"restore_file", "job_wait"}) {
+		t.Errorf("picked = %v, want [restore_file job_wait]", exp.Picked)
+	}
+}
+
 func TestHybrid_DefaultPicks(t *testing.T) {
 	tools := withVectors(largeCatalog(), map[string]int{"job_wait": 0, "process_list": 0, "memory_get": 0, "restore_file": 0})
 	b := ninectx.New(ninectx.Config{Budget: 100000, Exposition: ninectx.ExpositionHybrid, Resident: []string{"read_file"}})
