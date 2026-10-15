@@ -710,6 +710,23 @@ similarity to the request or to the latest round of tool calls and results
 embedding per round, which ranked and deferred do not. `js_eval`'s description
 now names computing: arithmetic, sums, counts, dates, sorting or reshaping data.
 
+Re-run in `hybrid` at 9 runs (90 runs, 1 h 16 min), against the previous hybrid
+and `ranked` figures above:
+
+| Case | 9b before | 9b now | 9b `ranked` | 4b before | 4b now | 4b `ranked` |
+|---|---|---|---|---|---|---|
+| `deferred-mid-turn-drift` | 8 | 9 | — | 5 | 7 | — |
+| `js-eval-compute` | 7 | 9 | 8 | 3 | 9 | 9 |
+| `process-start-via-goal` | 9 | 9 | 9 | 1 | 9 | 8 |
+| `skill-search` | 7 | 7 | 9 | 7 | 8 | 9 |
+| `workspace-write-search` | 1 | 3 | 6 | 6 | 7 | 8 |
+
+Hybrid passes 77 of 90 runs, up from 54. On the four cases `ranked` also ran,
+it passes 61 of 72 against `ranked`'s 66, at about 2,900 tool tokens to
+`ranked`'s 6,752. `workspace-write-search` on 9b is the one case still well
+below `ranked`. `process-start-via-goal` on 4b recovered although neither
+change aimed at it. The other cases of the 9-run table are not re-run yet.
+
 ## Limits
 
 | Limit | Detail |
