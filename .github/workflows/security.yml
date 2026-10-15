@@ -105,7 +105,7 @@ jobs:
           output: trivy-fs-results.sarif
 
       - name: Upload to Security Tab
-        uses: github/codeql-action/upload-sarif@3ea06614dafe36dec890db3446326e0d40ce53d4 # v3
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v3
         with:
           sarif_file: trivy-fs-results.sarif
         if: always()
@@ -155,7 +155,7 @@ jobs:
           output: trivy-docker-results.sarif
 
       - name: Upload to Security Tab
-        uses: github/codeql-action/upload-sarif@3ea06614dafe36dec890db3446326e0d40ce53d4 # v3
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v3
         with:
           sarif_file: trivy-docker-results.sarif
         if: always()
