@@ -267,10 +267,25 @@ boot. A bad action, an already-settled request and an unrevocable grant are all
 ```
 GET /api/v1/notifications   GET /api/v1/skills   GET /api/v1/skills/{name}
 POST /api/v1/sessions/attach
+GET /api/v1/sessions         GET /api/v1/sessions/{id}   DELETE /api/v1/sessions/{id}
+GET /api/v1/reflections      GET /api/v1/backup
 GET /api/v1/docs             GET /api/v1/docs/{topic}
 GET /api/v1/spec             GET /api/v1/spec/{topic}
 GET /api/v1/events           GET /api/v1/questions
 ```
+
+`GET /sessions` is every session the store holds, process sessions included, as
+`nine sessions` lists them; `/conversations` is the conversations alone.
+`DELETE /sessions/{id}` erases a session and everything keyed to it, as `nine
+session delete` does, and takes the exact id only. `GET /reflections?agent=…`
+lists what a reflecting session concluded, oldest first; without `agent`, the
+daemon's `self-reflection`.
+
+`GET /backup` downloads a snapshot of the store, written while the daemon runs,
+as `nine backup` writes one; `?with=workspace` makes it a `.tar.gz` holding the
+store and the workspace, and is `400` when no workspace is configured. The daemon
+writes the file and the API server streams and removes it, so the two must share
+a filesystem. Restoring stays with `nine restore`, with the daemon stopped.
 
 `GET /tools` is the whole roster: every tool an agent can call, with its input
 schema, and the sandboxed tools with their `kind` (`sandboxed` or `generated`),

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"nine/internal/backup"
 	"nine/internal/config"
 	"nine/internal/memory"
 )
@@ -103,7 +104,7 @@ func (c *CLI) backupArchive(cfg *config.Config, path string) error {
 		return err
 	}
 
-	files, skipped, err := writeArchive(abs, staged, workRoot)
+	files, skipped, err := backup.WriteArchive(abs, staged, workRoot)
 	if err != nil {
 		os.Remove(abs) //nolint:errcheck // a half-written archive is worse than none
 		return err

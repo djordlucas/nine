@@ -300,6 +300,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/reflections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List reflections
+         * @description What a reflecting session concluded, one entry per turn that ended with a result, oldest first, as `nine reflections` prints it. Without agent, the daemon's own self-reflection.
+         */
+        get: operations["listReflections"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List every session
+         * @description The session roster, as `nine sessions` prints it, process sessions included. Conversations alone are under /conversations.
+         */
+        get: operations["listSessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get one session
+         * @description One session of the roster, by its exact id.
+         */
+        get: operations["getSession"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a session
+         * @description Erases a session and everything keyed to it, its transcript and journal included, as `nine session delete` does. It cannot be undone; stopping a session keeps its history. The id must match exactly.
+         */
+        delete: operations["deleteSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download a backup
+         * @description A consistent snapshot of the store as a download, written by the daemon without stopping it, as `nine backup` writes one. With with=workspace, a .tar.gz holding the store and the workspace. Restoring stays with `nine restore`, which needs the daemon stopped.
+         */
+        get: operations["getBackup"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/goals": {
         parameters: {
             query?: never;
@@ -1213,6 +1297,43 @@ export interface components {
              * @enum {string}
              */
             status: "active" | "paused" | "done" | "archived";
+        };
+        /** @description A reflecting session's conclusions, oldest first. */
+        ListReflectionsResponse: {
+            agent: string;
+            data: components["schemas"]["Reflection"][];
+        };
+        /** @description What one reflection turn concluded. */
+        Reflection: {
+            /** Format: date-time */
+            at: string;
+            turn?: number;
+            text: string;
+        };
+        /** @description A page of the session roster. */
+        ListSessionsResponse: {
+            data?: components["schemas"]["SessionInfo"][];
+            pagination?: components["schemas"]["Pagination"];
+        };
+        /** @description One session of the roster. */
+        SessionInfo: {
+            id: string;
+            name?: string;
+            status: string;
+            /** @description seconds since it was last active */
+            age_seconds: number;
+            /** @description the journal events it holds */
+            events?: number;
+            /** @description kept by retention, because it has an active goal or session plan */
+            protected?: boolean;
+            /** @description a client is attached to it now */
+            attached?: boolean;
+        };
+        /** @description What deleting a session removed. */
+        DeleteSessionResponse: {
+            id: string;
+            /** @description the counts removed, by kind */
+            message: string;
         };
         /** @description The API server's own health, and whether it can reach the daemon. */
         HealthResponse: {
@@ -2701,6 +2822,261 @@ export interface operations {
                 };
             };
             /** @description invalid parameters */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listReflections: {
+        parameters: {
+            query?: {
+                /** @description the reflecting session; self-reflection when absent */
+                agent?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListReflectionsResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listSessions: {
+        parameters: {
+            query?: {
+                /** @description Maximum items to return */
+                limit?: number;
+                /** @description Items to skip before the page */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListSessionsResponse"];
+                };
+            };
+            /** @description invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description session id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionInfo"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description session not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description session id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteSessionResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description session not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getBackup: {
+        parameters: {
+            query?: {
+                /** @description workspace to include the workspace */
+                with?: "workspace";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description the snapshot */
+            200: {
+                headers: {
+                    /** @description attachment, with the file name */
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            /** @description a workspace was asked for and none is configured */
             400: {
                 headers: {
                     [name: string]: unknown;

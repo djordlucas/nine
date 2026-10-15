@@ -9,8 +9,9 @@ import { Goals } from './pages/Goals';
 import { Inbox } from './pages/Inbox';
 import { Journal } from './pages/Journal';
 import { Login } from './pages/Login';
-import { NotFound, Pending } from './pages/Pending';
+import { NotFound } from './pages/NotFound';
 import { Processes } from './pages/Processes';
+import { System } from './pages/System';
 import { Tools } from './pages/Tools';
 import { Turn } from './pages/Turn';
 
@@ -63,7 +64,11 @@ export function App() {
           <Route path="/tools" component={Tools} />
           <Route path="/inbox" component={Inbox} />
           <Route path="/journal" component={Journal} />
-          <Route path="/system/*" component={Pending} />
+          <Route path="/system/sessions/:id" component={System} />
+          <Route path="/system/docs/:id" component={System} />
+          <Route path="/system/spec/:id" component={System} />
+          <Route path="/system/*" component={System} />
+          <Route path="/system" component={System} />
           <Route default component={NotFound} />
         </Router>
       </Shell>

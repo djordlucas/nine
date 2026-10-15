@@ -1051,6 +1051,30 @@ Attach to an existing session for streaming.
 
 ### API-END-13: system
 
+#### GET `/api/v1/sessions`, GET and DELETE `/api/v1/sessions/{id}`
+
+The session roster through the daemon's `sessions_list`, process sessions included:
+`{ id, name, status, age_seconds, events, protected, attached }` per session.
+`GET /sessions/{id}` is one entry. `DELETE /sessions/{id}` erases the session through
+`session_delete` and answers `{ id, message }`, the message naming the rows removed.
+Both take the exact id only: the daemon resolves a prefix for the CLI, and a delete
+**MUST NOT** reach a session the caller did not name. `404` for an unknown id.
+
+#### GET `/api/v1/reflections`
+
+`?agent=` names the reflecting session; absent, `self-reflection`. The daemon's
+`session_events` for it, reduced to each `turn_end` with a result and no error:
+`{ agent, data: [{ at, turn, text }] }`, oldest first.
+
+#### GET `/api/v1/backup`
+
+A snapshot of the store as `application/octet-stream`, with `Content-Disposition:
+attachment` naming it `nine-<UTC stamp>.db`; `?with=workspace` makes it
+`nine-<stamp>.tar.gz` holding the store and the workspace (`400` with no workspace
+configured). The daemon writes it to a temporary file through its `backup` message;
+the API server streams the file, with no write deadline, and **MUST** remove it
+afterwards. It **MUST NOT** remove any path but a backup's temporary directory.
+
 #### GET `/api/v1/docs`
 
 Get documentation topics.
@@ -1413,12 +1437,16 @@ All API configuration options **MUST** be available via CLI flags.
 | `nine tools` | GET `/api/v1/tools` | Implemented |
 | — | GET `/api/v1/skills/{name}` | Implemented |
 | `nine plugins` | GET `/api/v1/plugins` | Implemented |
-| `nine sessions` | GET `/api/v1/conversations` | Implemented |
+| `nine sessions` | GET `/api/v1/sessions` | Implemented |
+| `nine session show` | GET `/api/v1/sessions/{id}` | Implemented |
+| `nine session delete` | DELETE `/api/v1/sessions/{id}` | Implemented |
+| `nine reflections` | GET `/api/v1/reflections` | Implemented |
+| `nine backup` | GET `/api/v1/backup` | Implemented |
 | `nine context` | GET `/api/v1/conversations/{id}/context` | Implemented |
 | `nine trace` | GET `/api/v1/conversations/{id}/trace` | Implemented |
 | `nine replay` | POST `/api/v1/conversations/{id}/replay` | Implemented |
 | `nine stop` | POST `/api/v1/conversations/{id}/stop` | Implemented |
-| `nine session delete` | DELETE `/api/v1/conversations/{id}` | Implemented |
+| — | DELETE `/api/v1/conversations/{id}` | Implemented |
 | `nine workflow stop` | POST `/api/v1/workflows/{id}/stop` | Implemented |
 | `nine workflow fail` | POST `/api/v1/workflows/{id}/fail` | Implemented |
 | `nine plugins reload` | POST `/api/v1/plugins/reload` | Implemented |

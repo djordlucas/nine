@@ -95,6 +95,7 @@ Msg {
 | `grants_decide` | `request_id`, `text` | settle a capability request (`approve`/`deny`) or revoke a grant (`revoke`). Both fields are required: a decision with no id, or an id with no verb, **MUST NOT** resolve to a default |
 | `list_skills` | — | the skill catalog, without bodies |
 | `skill_get` | `text` = skill name (**required**) | one skill with its body |
+| `backup` | (`text` = `workspace`) | write a snapshot of the store, with the workspace when asked, to a temporary file |
 | `goal_create` | `text` = description (**required**), (`id` = parent goal) | create a goal as the operator; a top-level goal gets a pursue session (R-PROTO.13) |
 | `goal_delete` | `text` = goal ID (**required**) | delete a goal and its sub-goals and stop its pursue session (R-PROTO.13) |
 | `goal_set_status` | `id` = goal ID, `text` = status (both **required**) | set a goal's status as the operator (R-PROTO.13) |
@@ -137,6 +138,7 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `set_plan_mode` | `text` = `"plan mode: <mode>"` | mode change acknowledged (or `error` on an unknown mode) |
 | `list_skills` | `text` = JSON `{"skills": []SkillInfo}` | `SkillInfo { name, description, tags, source }`; `source` is `builtin`, `user` or `agent` |
 | `skill_get` | `text` = JSON `SkillDetail` | `SkillInfo` plus `content`, the skill's Markdown body; an unknown name is `error` "… not found" |
+| `backup` | `text` = JSON `BackupResult` | `{ path, name, bytes, files, skipped }`: a temporary file in a `nine-backup-*` directory, which the caller streams and removes with the directory; one left over an hour is swept by the next backup |
 | `goal_create` | `text` = JSON `GoalCreateResult` | `{ goal, pursue_session }`: the stored goal and `spawned` \| `limit_reached` \| `none` (sub-goal) |
 | `goal_delete` | `text` = JSON `GoalDeleteResult` | `{ deleted []string, session_stopped bool }`: every goal id removed, goal first |
 | `goal_set_status` | `text` = JSON goal | the goal as stored after the change |

@@ -816,6 +816,210 @@ paths:
       security:
       - bearerAuth: []
       - cookieAuth: []
+  /reflections:
+    get:
+      operationId: listReflections
+      summary: List reflections
+      description: What a reflecting session concluded, one entry per turn that ended with a result, oldest
+        first, as `nine reflections` prints it. Without agent, the daemon's own self-reflection.
+      tags:
+      - system
+      parameters:
+      - name: agent
+        in: query
+        description: the reflecting session; self-reflection when absent
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListReflectionsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /sessions:
+    get:
+      operationId: listSessions
+      summary: List every session
+      description: The session roster, as `nine sessions` prints it, process sessions included. Conversations
+        alone are under /conversations.
+      tags:
+      - system
+      parameters:
+      - name: limit
+        in: query
+        description: Maximum items to return
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 50
+      - name: offset
+        in: query
+        description: Items to skip before the page
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListSessionsResponse'
+        '400':
+          description: invalid request
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /sessions/{id}:
+    get:
+      operationId: getSession
+      summary: Get one session
+      description: One session of the roster, by its exact id.
+      tags:
+      - system
+      parameters:
+      - name: id
+        in: path
+        description: session id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionInfo'
+        '404':
+          description: session not found
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    delete:
+      operationId: deleteSession
+      summary: Delete a session
+      description: Erases a session and everything keyed to it, its transcript and journal included, as `nine
+        session delete` does. It cannot be undone; stopping a session keeps its history. The id must match
+        exactly.
+      tags:
+      - system
+      parameters:
+      - name: id
+        in: path
+        description: session id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteSessionResponse'
+        '404':
+          description: session not found
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /backup:
+    get:
+      operationId: getBackup
+      summary: Download a backup
+      description: A consistent snapshot of the store as a download, written by the daemon without stopping
+        it, as `nine backup` writes one. With with=workspace, a .tar.gz holding the store and the workspace.
+        Restoring stays with `nine restore`, which needs the daemon stopped.
+      tags:
+      - system
+      parameters:
+      - name: with
+        in: query
+        description: workspace to include the workspace
+        required: false
+        schema:
+          type: string
+          enum:
+          - workspace
+      responses:
+        '200':
+          description: the snapshot
+          headers:
+            Content-Disposition:
+              description: attachment, with the file name
+              schema:
+                type: string
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: a workspace was asked for and none is configured
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
   /goals:
     get:
       operationId: listGoals
@@ -2665,6 +2869,81 @@ components:
           - archived
           description: active is in progress, paused is on hold, done is attained, archived is retired
             without completion.
+    ListReflectionsResponse:
+      description: A reflecting session's conclusions, oldest first.
+      type: object
+      required:
+      - agent
+      - data
+      properties:
+        agent:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Reflection'
+    Reflection:
+      description: What one reflection turn concluded.
+      type: object
+      required:
+      - at
+      - text
+      properties:
+        at:
+          type: string
+          format: date-time
+        turn:
+          type: integer
+        text:
+          type: string
+    ListSessionsResponse:
+      description: A page of the session roster.
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionInfo'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    SessionInfo:
+      description: One session of the roster.
+      type: object
+      required:
+      - id
+      - status
+      - age_seconds
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+        age_seconds:
+          description: seconds since it was last active
+          type: integer
+        events:
+          description: the journal events it holds
+          type: integer
+        protected:
+          description: kept by retention, because it has an active goal or session plan
+          type: boolean
+        attached:
+          description: a client is attached to it now
+          type: boolean
+    DeleteSessionResponse:
+      description: What deleting a session removed.
+      type: object
+      required:
+      - id
+      - message
+      properties:
+        id:
+          type: string
+        message:
+          description: the counts removed, by kind
+          type: string
     HealthResponse:
       description: The API server's own health, and whether it can reach the daemon.
       type: object

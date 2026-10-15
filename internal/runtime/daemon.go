@@ -83,6 +83,8 @@ type queryBackend interface {
 	GoalUpdateStatus(id, status string) error
 	SkillList() ([]memory.Skill, error)
 	SkillGet(name string) (memory.Skill, bool, error)
+	// BackupTo writes a consistent snapshot of the store (the backup message).
+	BackupTo(path string) (string, error)
 	WorkflowList(agentID string) ([]workflow.Workflow, error)
 	WorkflowCancel(id string) (int, error)
 	WorkflowFail(id string, all bool) (int, error)
@@ -619,6 +621,9 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 
 	case protocol.SkillGetReq:
 		d.handleSkillGet(enc, r.Name)
+
+	case protocol.BackupReq:
+		d.handleBackup(enc, r)
 
 	case protocol.SessionHistoryReq:
 		d.handleSessionHistory(enc, r.AgentID)

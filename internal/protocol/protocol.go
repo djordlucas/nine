@@ -67,6 +67,7 @@ const (
 	TypeListTools         MsgType = "list_tools"
 	TypeListSkills        MsgType = "list_skills"
 	TypeSkillGet          MsgType = "skill_get"
+	TypeBackup            MsgType = "backup"
 	TypePluginsList       MsgType = "plugins_list"
 	TypePluginsReload     MsgType = "plugins_reload"
 	TypeSessionsList      MsgType = "sessions_list"
@@ -196,6 +197,7 @@ var ClientMsgTypes = []MsgType{
 	TypeListTools,
 	TypeListSkills,
 	TypeSkillGet,
+	TypeBackup,
 	TypePluginsList,
 	TypePluginsReload,
 	TypeSessionsList,
@@ -241,6 +243,8 @@ const (
 //	                     RequestID = the id, Text = approve|deny|revoke
 //	"list_skills"      — request the skill catalog; no extra fields
 //	"skill_get"        — request one skill with its body; Text = skill name
+//	"backup"           — write a snapshot to a temporary file; Text = "workspace" to
+//	                     include the workspace, else empty
 //	"goal_create"      — create a goal as the operator; Text = description,
 //	                     ID = parent goal id (optional; empty for a top-level goal)
 //	"goal_delete"      — delete a goal, its sub-goals, and stop its session; Text = goal ID
@@ -279,6 +283,7 @@ const (
 //	"stage"            — the turn entered a named waiting phase; Text carries the label
 //	"list_skills"      — skill catalog; Text carries JSON {"skills": [SkillInfo]}
 //	"skill_get"        — one skill; Text carries JSON SkillDetail
+//	"backup"           — the snapshot written; Text carries JSON BackupResult
 //	"goal_create"      — created goal; Text carries JSON-encoded GoalCreateResult
 //	"goal_delete"      — deletion result; Text carries JSON-encoded GoalDeleteResult
 //	"goal_set_status"  — the updated goal; Text carries it as JSON
@@ -611,6 +616,30 @@ type SkillInfo struct {
 type SkillDetail struct {
 	SkillInfo
 	Content string `json:"content"`
+}
+
+// BackupResult is the "backup" reply. Path is a temporary file the caller
+// streams and then removes with its directory; Name is the file name to offer.
+// Files and Skipped count the workspace entries an archive holds and left out.
+type BackupResult struct {
+	Path    string `json:"path"`
+	Name    string `json:"name"`
+	Bytes   int64  `json:"bytes"`
+	Files   int    `json:"files,omitempty"`
+	Skipped int    `json:"skipped,omitempty"`
+}
+
+// BackupWorkspace is the "backup" Text that includes the workspace.
+const BackupWorkspace = "workspace"
+
+// NewBackupMsg asks the daemon to write a snapshot; withWorkspace adds the
+// workspace, making a .tar.gz.
+func NewBackupMsg(withWorkspace bool) Msg {
+	m := Msg{Type: TypeBackup}
+	if withWorkspace {
+		m.Text = BackupWorkspace
+	}
+	return m
 }
 
 // NewSkillGetMsg asks for one skill with its body.

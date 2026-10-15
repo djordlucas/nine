@@ -34,6 +34,16 @@ describe('markdown', () => {
     expect(safeHref('data:text/html,x')).toBeNull();
   });
 
+  it('rewrites links when asked, opens this site’s in place, and drops a refused one to text', () => {
+    const link = (href: string) => (href === 'gone.md' ? null : href.replace(/\.md$/, ''));
+    const out = render(
+      <Markdown text={'[here](/system/docs/usage.md) [gone](gone.md) | x |\n|---|\n| [cell](/system/docs/api.md) |'} link={link} />,
+    ).container.innerHTML;
+    expect(out).toContain('<a href="/system/docs/usage">here</a>');
+    expect(out).toContain('<span>gone</span>');
+    expect(out).not.toContain('target="_blank" rel="noopener noreferrer">here');
+  });
+
   it('renders a table', () => {
     const out = html('| a | b |\n|---|---|\n| 1 | 2 |');
     expect(out).toContain('<th>a</th>');

@@ -1,6 +1,6 @@
 # Design note — The embedded web UI
 
-**Status:** Phases 1–3 implemented (2026-10-14), phases 4–5 (2026-10-15); phase 6 proposed · **Related:** `docs/api.md`, `docs/hitl.md`,
+**Status:** Implemented: phases 1–3 (2026-10-14), 4–6 (2026-10-15) · **Related:** `docs/api.md`, `docs/hitl.md`,
 `docs/processes.md`, `adr/agent-boundary.md`
 
 Nine gets a web UI that is part of the binary: a Preact app, built once and embedded,
@@ -286,6 +286,21 @@ gzipped.
 No journal event marks a tool written, restored or deleted, so the Tools views
 reload after the operator's own actions rather than live. The bundle is 50 KB
 gzipped.
+
+
+## Phase 6 as built
+
+| Planned | Built | Why |
+|---|---|---|
+| `GET /api/v1/backup?with=workspace` | The daemon writes the snapshot through a new `backup` message into a temporary `nine-backup-*` directory; the API server streams it, with no write deadline, and removes it. A directory left over an hour is swept by the next backup. The archive writer moved from the CLI to `internal/backup`. | The API server may not open the database (API-A-1), and the two share a filesystem, as their socket requires. |
+| `GET /api/v1/sessions`, `GET`, `DELETE /api/v1/sessions/{id}` | As planned, over the existing `sessions_list` and `session_delete` | — |
+| — | Over HTTP a session id must match exactly | The daemon resolves a prefix for a person at a terminal; a delete must not reach a session the caller did not name. |
+| `GET /api/v1/reflections[?agent=]` | Built over `session_events`, keeping each `turn_end` with a result | No new daemon message needed. |
+| System: status, plugins, skills, sessions, reflections, docs and spec, backup, CLI-only operations | Overview (status, backup, CLI-only), Sessions, Reflections, Docs, Spec; plugins and skills stay under Tools (phase 5) | — |
+| — | A link inside a docs or spec topic opens the topic it names in place; a link to a file the build does not embed, an ADR say, is text | The topics link to each other by relative `.md` paths, which resolved against the site root. Links to this site no longer open a new tab. |
+| The coverage check | `web/src/api/coverage.test.ts` runs with the unit tests, so `make ci` requires it. It reads the operations from the generated types and the calls from the sources; `unused.ts` lists 7 operations with why. | A unit test needs no YAML parser and no new script. |
+
+`docs/web-ui.md` covers every section. The bundle is 52 KB gzipped.
 
 ---
 

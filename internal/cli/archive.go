@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"nine/internal/backup"
 )
 
 // A combined backup is a gzipped tar holding the database snapshot and the
@@ -17,8 +19,8 @@ import (
 // database restored beside a workspace from a different moment describes files
 // that are not there.
 const (
-	archiveDBEntry    = "nine.db"
-	archiveWorkPrefix = "workspace/"
+	archiveDBEntry    = backup.DBEntry
+	archiveWorkPrefix = backup.WorkPrefix
 )
 
 // archiveSuffix is the extension that selects the combined format. The
@@ -29,83 +31,6 @@ const archiveSuffix = ".tar.gz"
 // isArchivePath reports whether path asks for the combined format.
 func isArchivePath(path string) bool {
 	return strings.HasSuffix(strings.ToLower(path), archiveSuffix)
-}
-
-// writeArchive builds the combined backup: dbSrc becomes nine.db, and every
-// regular file under workRoot lands beneath workspace/.
-//
-// Symlinks are skipped rather than stored. A link is a path, not content: one
-// pointing outside the workspace would either break on extract or, worse,
-// recreate a pointer into the host filesystem somewhere it did not exist
-// before. The count is returned so the caller can say what was left out.
-func writeArchive(dst, dbSrc, workRoot string) (files int, skipped int, err error) {
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return 0, 0, err
-	}
-	defer out.Close() //nolint:errcheck
-
-	gz := gzip.NewWriter(out)
-	tw := tar.NewWriter(gz)
-
-	if err := addFile(tw, dbSrc, archiveDBEntry); err != nil {
-		return 0, 0, fmt.Errorf("add %s: %w", archiveDBEntry, err)
-	}
-
-	if workRoot != "" {
-		err = filepath.WalkDir(workRoot, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			rel, err := filepath.Rel(workRoot, path)
-			if err != nil || rel == "." {
-				return err
-			}
-			switch {
-			case d.IsDir():
-				return nil // directories are implied by the files inside them
-			case !d.Type().IsRegular():
-				skipped++
-				return nil
-			}
-			files++
-			return addFile(tw, path, archiveWorkPrefix+filepath.ToSlash(rel))
-		})
-		if err != nil {
-			return files, skipped, fmt.Errorf("walk workspace: %w", err)
-		}
-	}
-
-	if err := tw.Close(); err != nil {
-		return files, skipped, err
-	}
-	if err := gz.Close(); err != nil {
-		return files, skipped, err
-	}
-	return files, skipped, out.Sync()
-}
-
-// addFile copies one file into the archive under name.
-func addFile(tw *tar.Writer, path, name string) error {
-	info, err := os.Stat(path)
-	if err != nil {
-		return err
-	}
-	hdr, err := tar.FileInfoHeader(info, "")
-	if err != nil {
-		return err
-	}
-	hdr.Name = name
-	if err := tw.WriteHeader(hdr); err != nil {
-		return err
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close() //nolint:errcheck
-	_, err = io.Copy(tw, f)
-	return err
 }
 
 // extractArchive unpacks src into dir, returning the number of workspace files

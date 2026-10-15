@@ -70,7 +70,7 @@ changed; the document stays as the record and is not rewritten.
 | `reactive-events.md` | Event subscriptions: reacting to the journal |
 | `tool-facilities.md` | Host-injected credentials, a wider HTTP method allowlist, streaming progress, and reactions as a third run mode delivered by `reactions_get`. Rejects tool→tool dispatch and MCP reach. |
 | `tui-boxed-messages.md` | Boxed message rendering in the TUI. `internal/tui` only. |
-| `web-ui.md` | A web UI embedded in the binary: Preact, served at `/`, cookie sessions, a daemon-wide event stream, endpoints for the CLI-only features; six phases, phases 1–3 built (2026-10-14) |
+| `web-ui.md` | A web UI embedded in the binary: Preact, served at `/`, cookie sessions, a daemon-wide event stream, endpoints for the CLI-only features; all six phases built (2026-10-15) |
 
 ### Superseded in part
 

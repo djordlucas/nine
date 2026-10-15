@@ -565,6 +565,14 @@ func (c *Client) ListSkills() ([]SkillInfo, error) {
 	return out.Skills, nil
 }
 
+// Backup asks the daemon to write a snapshot to a temporary file. The caller
+// reads it from Path and removes it with backup.RemoveTemp when done.
+func (c *Client) Backup(withWorkspace bool) (BackupResult, error) {
+	var out BackupResult
+	err := c.roundTrip(NewBackupMsg(withWorkspace), &out)
+	return out, err
+}
+
 // GetSkill requests one skill with its body.
 func (c *Client) GetSkill(name string) (SkillDetail, error) {
 	var out SkillDetail
