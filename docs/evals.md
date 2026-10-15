@@ -341,9 +341,9 @@ pass fraction ≥ `pass_threshold`. Everything in §1–§3 applies. Requirement
   the mode caused. Unset runs the configured default once. A case that sets
   `context.tool_exposition` in its own `session.config` runs only in that arm. The
   arms are `ranked`, `deferred` and `hybrid`
-  ([adr/deferred-tool-schemas.md](../adr/deferred-tool-schemas.md) §7.1). `hybrid`
-  is deferred with `context.deferred_picks: 3`, unless the case sets its own; a
-  case pinned to `deferred` runs in `hybrid` too.
+  ([adr/deferred-tool-schemas.md](../adr/deferred-tool-schemas.md) §7.1). A case
+  may pin a list, `context.tool_exposition: [deferred, hybrid]`, to run in each of
+  them that is requested, and in the first when none is.
 - **No embedder for one case**: `session.config` `embeddings.provider: none` runs the
   case with no embedder, as a deployment configured that way does.
 - **Isolation per run**: a fresh session id, a database file per run (reuse the

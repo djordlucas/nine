@@ -10,7 +10,7 @@ tags: [deferred-tools, files, workspace, trash]
 
 session:
   config:
-    context.tool_exposition: deferred
+    context.tool_exposition: [deferred, hybrid]
 
 setup:
   files:

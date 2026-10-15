@@ -132,9 +132,9 @@ func withVectors(tools []ninectx.ToolWithVector, axes map[string]int) []ninectx.
 	return tools
 }
 
-func TestDeferred_PicksAdvertiseTheBestRankedOfTheRest(t *testing.T) {
+func TestHybrid_PicksAdvertiseTheBestRankedOfTheRest(t *testing.T) {
 	tools := withVectors(largeCatalog(), map[string]int{"job_wait": 0, "process_list": 1, "read_file": 0, "tool_list": 0})
-	b := ninectx.New(ninectx.Config{Budget: 100000, Exposition: ninectx.ExpositionDeferred, Resident: []string{"read_file"}, Picks: 2})
+	b := ninectx.New(ninectx.Config{Budget: 100000, Exposition: ninectx.ExpositionHybrid, Resident: []string{"read_file"}, Picks: 2})
 	req, _, exp := b.BuildForCall(ninectx.BuildInput{
 		SystemCore:  "core",
 		Tools:       tools,
@@ -155,16 +155,26 @@ func TestDeferred_PicksAdvertiseTheBestRankedOfTheRest(t *testing.T) {
 	}
 }
 
-func TestDeferred_NoPicksWithoutAQueryOrByDefault(t *testing.T) {
+func TestHybrid_DefaultPicks(t *testing.T) {
+	tools := withVectors(largeCatalog(), map[string]int{"job_wait": 0, "process_list": 0, "memory_get": 0, "restore_file": 0})
+	b := ninectx.New(ninectx.Config{Budget: 100000, Exposition: ninectx.ExpositionHybrid, Resident: []string{"read_file"}})
+	_, _, exp := b.BuildForCall(ninectx.BuildInput{SystemCore: "core", Tools: tools, QueryVector: []float32{1, 0, 0, 0}})
+	if len(exp.Picked) != ninectx.DefaultHybridPicks {
+		t.Errorf("picked %v, want %d tools", exp.Picked, ninectx.DefaultHybridPicks)
+	}
+}
+
+func TestDeferred_NoPicks(t *testing.T) {
 	tools := withVectors(largeCatalog(), map[string]int{"job_wait": 0})
 	for name, tc := range map[string]struct {
+		mode  string
 		picks int
 		query []float32
 	}{
-		"picks 0":     {0, []float32{1, 0, 0, 0}},
-		"no embedder": {3, nil},
+		"deferred ignores picks": {ninectx.ExpositionDeferred, 3, []float32{1, 0, 0, 0}},
+		"hybrid, no embedder":    {ninectx.ExpositionHybrid, 3, nil},
 	} {
-		b := ninectx.New(ninectx.Config{Budget: 100000, Exposition: ninectx.ExpositionDeferred, Resident: []string{"read_file"}, Picks: tc.picks})
+		b := ninectx.New(ninectx.Config{Budget: 100000, Exposition: tc.mode, Resident: []string{"read_file"}, Picks: tc.picks})
 		base, _, _ := deferredBuilder("read_file").BuildForCall(ninectx.BuildInput{SystemCore: "core", Tools: tools})
 		req, _, exp := b.BuildForCall(ninectx.BuildInput{SystemCore: "core", Tools: tools, QueryVector: tc.query})
 		if exp.Picked != nil || !slices.Equal(toolNames(req.Tools), toolNames(base.Tools)) || req.System != base.System {

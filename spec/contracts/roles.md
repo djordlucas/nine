@@ -47,8 +47,8 @@ the daemon prompt).
 A role's tool set **MUST** be enforced at *both*:
 
 1. the **advertised tool list** the loop sends to the model — under deferred
-   exposition, the resident set, the tool index, the promoted set and every
-   `tool_search` result — and
+   or hybrid exposition, the resident set, the tool index, the promoted set,
+   the picks and every `tool_search` result — and
 2. the **dispatcher handler registration** — a disallowed tool dispatches as
    `unknown tool` even if the model hallucinates its name.
 

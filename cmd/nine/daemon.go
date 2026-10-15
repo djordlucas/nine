@@ -219,7 +219,7 @@ func runDaemon() {
 		ToolExposition:         cfg.Context.ToolExposition,
 		ResidentTools:          cfg.Context.ResidentTools,
 		PromotedBudget:         cfg.Context.PromotedBudget,
-		DeferredPicks:          cfg.Context.DeferredPicks,
+		HybridPicks:            cfg.Context.HybridPicks,
 		MaxJobsPerConversation: cfg.Plugins.MaxJobsPerConversation,
 		MaxJobsTotal:           cfg.Plugins.MaxJobsTotal,
 		JobWaiters:             jobWaiters,

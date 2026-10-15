@@ -55,7 +55,7 @@ There are exactly two ways embeddings get produced, and they **MUST** be kept di
    the **dispatcher** intercepts them, calls the embedder, and routes to the store (or,
    for `tool_search`, ranks the in-memory tool-description vectors). Each is embedder-gated
    — absent an embedder it is neither registered nor advertised — except `tool_search`
-   under deferred exposition, where it is the load path: it loads by name and ranks by
+   under deferred or hybrid exposition, where it is the load path: it loads by name and ranks by
    BM25, fused with the vectors when an embedder exists. The agent never holds the
    embedder. The
    `memory_set` handler also embeds — as a best-effort side effect — to mirror the value

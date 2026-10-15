@@ -346,7 +346,7 @@ How to use this file:
 | R-ROLE.1 | Frontmatter format | A skill with a `role:` block is also a role; without one it is a plain skill; a malformed block degrades to a plain skill without failing boot. |
 | R-ROLE.2 | Wildcard tools | `tools: "*"` or an omitted tools key grants all available tools; an explicit list is a strict allowlist. |
 | R-ROLE.3 | Body is the persona | The role body is the loop's system core; an empty body falls back to the daemon prompt (the orchestrator runs on the daemon prompt). |
-| R-ROLE.4 | Two-boundary enforcement | A disallowed tool is absent from the advertised list (and, when deferred, from the tool index, the promoted set and every `tool_search` result) AND dispatches as `unknown tool`. |
+| R-ROLE.4 | Two-boundary enforcement | A disallowed tool is absent from the advertised list (and, when deferred or hybrid, from the tool index, the promoted set, the picks and every `tool_search` result) AND dispatches as `unknown tool`. |
 | R-ROLE.5 | Roles only narrow | An allowlist naming an unavailable tool spawns a leaf without it, no error; `gap_report` survives every allowlist. |
 | R-ROLE.6 | Depth is a guardrail | depthGuard 0 removes delegation tools from a `Delegates:true` role. |
 | R-ROLE.7 | Agent roles are restrictive; operator roles are trusted | An **agent-authored** role with `persists:true` yields a non-persisting leaf (structural flags ignored). A **user** role (`source=user`, from `[skills].user_dir`) with `persists:true`/`delegates:true` keeps them, like a built-in. Neither may widen tools beyond the daemon's surface. |

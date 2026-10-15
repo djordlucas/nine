@@ -201,7 +201,7 @@ See [`../../adr/tool-output-spill.md`](../../adr/tool-output-spill.md) §5.
 
 ## R-DISP.8 — call-to-load
 
-Under deferred exposition (`[context] tool_exposition = "deferred"`) a tool listed in the
+Under deferred or hybrid exposition (`[context] tool_exposition = "deferred"` or `"hybrid"`) a tool listed in the
 request's tool index is dispatched like any other. When such a call fails, the agent loop
 **MUST** append the tool's description and input schema to the failure observation and
 promote the tool, so the next request advertises it. A call that succeeds promotes

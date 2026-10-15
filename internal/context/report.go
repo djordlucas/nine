@@ -18,7 +18,7 @@ type Report struct {
 	// IndexTokens is the index's estimated size, part of the tools section.
 	IndexTokens int `json:"index_tokens,omitempty"`
 	// Picked names the tools a deferred loop advertised because they ranked
-	// best against the query ([context] deferred_picks).
+	// best against the query (hybrid exposition).
 	Picked []string `json:"picked,omitempty"`
 }
 

@@ -565,8 +565,14 @@ func (c *Case) validate() error {
 		return err
 	}
 	if v, set := c.Session.Config[ArmKey]; set {
-		if arm, ok := v.(string); !ok || !knownArms[arm] {
-			return fmt.Errorf("session.config %s: %v is not a known arm (%s)", ArmKey, v, strings.Join(KnownArms(), ", "))
+		arms := c.PinnedArms()
+		if len(arms) == 0 {
+			return fmt.Errorf("session.config %s: %v is not an arm or a list of arms (%s)", ArmKey, v, strings.Join(KnownArms(), ", "))
+		}
+		for _, arm := range arms {
+			if !knownArms[arm] {
+				return fmt.Errorf("session.config %s: %v is not a known arm (%s)", ArmKey, arm, strings.Join(KnownArms(), ", "))
+			}
 		}
 	}
 	if c.Session.Interactive && len(c.HumanAnswers) == 0 {

@@ -94,6 +94,7 @@ type PluginEntry struct {
 const (
 	ToolExpositionRanked   = "ranked"
 	ToolExpositionDeferred = "deferred"
+	ToolExpositionHybrid   = "hybrid"
 )
 
 // ContextConfig is `[context]`.
@@ -109,10 +110,10 @@ type ContextConfig struct {
 	// PromotedBudget bounds, in estimated tokens, the schemas a deferred loop
 	// has loaded. 0 is 1500.
 	PromotedBudget int `toml:"promoted_budget"`
-	// DeferredPicks is how many of the tools a deferred loop would only index
-	// it also advertises with their schemas, best-ranked against the turn's
-	// request. 0, the default, picks none. Needs an embedder.
-	DeferredPicks int `toml:"deferred_picks"`
+	// HybridPicks is how many of the tools a hybrid loop would only index it
+	// also advertises with their schemas, best-ranked against the turn's
+	// request. 0 is 3. Needs an embedder; ignored unless hybrid.
+	HybridPicks int `toml:"hybrid_picks"`
 }
 
 // ToolsConfig tunes the tool-dispatch boundary. It is `[tools]` rather than
@@ -1441,16 +1442,16 @@ func (cfg *Config) Validate() error {
 		return err
 	}
 	switch cfg.Context.ToolExposition {
-	case "", ToolExpositionRanked, ToolExpositionDeferred:
+	case "", ToolExpositionRanked, ToolExpositionDeferred, ToolExpositionHybrid:
 	default:
-		return fmt.Errorf("[context] tool_exposition %q must be %q or %q",
-			cfg.Context.ToolExposition, ToolExpositionRanked, ToolExpositionDeferred)
+		return fmt.Errorf("[context] tool_exposition %q must be %q, %q or %q",
+			cfg.Context.ToolExposition, ToolExpositionRanked, ToolExpositionDeferred, ToolExpositionHybrid)
 	}
 	if cfg.Context.PromotedBudget < 0 {
 		return fmt.Errorf("[context] promoted_budget must not be negative")
 	}
-	if cfg.Context.DeferredPicks < 0 {
-		return fmt.Errorf("[context] deferred_picks must not be negative")
+	if cfg.Context.HybridPicks < 0 {
+		return fmt.Errorf("[context] hybrid_picks must not be negative")
 	}
 	if cfg.Processes.RollbackAfter < 0 {
 		return fmt.Errorf("[processes] rollback_after must not be negative")

@@ -11,11 +11,21 @@ import (
 // Tool exposition modes (adr/deferred-tool-schemas.md). Ranked advertises the
 // pinned tools and the best-ranked rest with full schemas; deferred advertises a
 // small resident set plus the tools the loop has loaded, and lists every other
-// tool by name in a system-prompt index.
+// tool by name in a system-prompt index; hybrid is deferred plus the few indexed
+// tools that rank best against the turn's request.
 const (
 	ExpositionRanked   = "ranked"
 	ExpositionDeferred = "deferred"
+	ExpositionHybrid   = "hybrid"
 )
+
+// DefaultHybridPicks is how many tools a hybrid loop picks when
+// [context] hybrid_picks is unset.
+const DefaultHybridPicks = 3
+
+// Defers reports whether mode lists tools in an index rather than dropping
+// them: deferred and hybrid.
+func Defers(mode string) bool { return mode == ExpositionDeferred || mode == ExpositionHybrid }
 
 // SmallCatalogTokens is the catalog size, in estimated tokens, at or below which
 // a deferred loop advertises every tool and renders no index: deferring a catalog
