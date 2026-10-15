@@ -62,6 +62,7 @@ func (s *Server) GetStatus(ctx context.Context, request apigen.GetStatusRequestO
 		Version:        ptr(s.version),
 		Uptime:         ptr(info.Uptime),
 		ActiveSessions: ptr(len(info.Agents)),
+		MaxRunning:     ptrIfPositive(info.MaxRunning),
 		Plugins:        &plugins,
 	}, nil
 }

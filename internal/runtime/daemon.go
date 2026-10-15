@@ -74,11 +74,13 @@ type NotifStore interface {
 // between the Unix-socket clients and the shared backend.
 type queryBackend interface {
 	GoalList() ([]memory.Goal, error)
-	// Goal create and delete back the operator's goal verbs (goal_create,
-	// goal_delete) — the same rows the agent's goal tools write.
+	// Goal create, delete and status back the operator's goal verbs
+	// (goal_create, goal_delete, goal_set_status) — the same rows the agent's
+	// goal tools write.
 	GoalGet(id string) (*memory.Goal, error)
 	GoalCreate(id, description, parentID, parentType string) error
 	GoalDelete(id string) ([]string, error)
+	GoalUpdateStatus(id, status string) error
 	SkillList() ([]memory.Skill, error)
 	WorkflowList(agentID string) ([]workflow.Workflow, error)
 	WorkflowCancel(id string) (int, error)
@@ -610,6 +612,9 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 
 	case protocol.GoalDeleteReq:
 		d.handleGoalDelete(ctx, enc, r.ID)
+
+	case protocol.GoalSetStatusReq:
+		d.handleGoalSetStatus(enc, r)
 
 	case protocol.SessionHistoryReq:
 		d.handleSessionHistory(enc, r.AgentID)

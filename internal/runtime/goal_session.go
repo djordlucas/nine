@@ -49,6 +49,15 @@ func (d *Daemon) SetMaxRunning(n int) {
 	d.maxRunning = n
 }
 
+// effectiveMaxRunning is the cap a start counts against: [processes]
+// max_running, or DefaultMaxRunning when it is unset.
+func (d *Daemon) effectiveMaxRunning() int {
+	if d.maxRunning <= 0 {
+		return DefaultMaxRunning
+	}
+	return d.maxRunning
+}
+
 // goalProcessID names the pursue process of a goal's session.
 func goalProcessID(goalID string) string { return "goal:" + goalID }
 
@@ -101,10 +110,7 @@ func (d *Daemon) spawnGoalProcess(owner memory.Process, attached []memory.Proces
 		return false, err
 	}
 	if !found {
-		limit := d.maxRunning
-		if limit <= 0 {
-			limit = DefaultMaxRunning
-		}
+		limit := d.effectiveMaxRunning()
 		n, err := d.procs.ProcessesRunning()
 		if err != nil {
 			return false, err

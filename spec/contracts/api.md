@@ -281,7 +281,8 @@ Get daemon status.
 
 **Request:** None
 
-**Response:** Same as CLI `nine status` output, formatted as JSON.
+**Response:** Same as CLI `nine status` output, formatted as JSON, plus
+`max_running`, the `[processes] max_running` cap in force.
 
 ---
 
@@ -620,6 +621,20 @@ are kept; the goal's processes are removed so nothing starts it again.
 
 `404` for an unknown goal. `409 conflict` for a goal with `parent_type` `config`:
 nine.toml declares it, and the next boot would re-create it.
+
+#### POST `/api/v1/goals/{id}/status`
+
+Set a goal's status as the operator, through the daemon's `goal_set_status`
+message.
+
+**Request:**
+```json
+{ "status": "paused" }
+```
+
+`status` is one of `active`, `paused`, `done`, `archived`. **Response:** the
+updated goal, as `GET /api/v1/goals/{id}` returns it. `400` for an unknown
+status, `404` for an unknown goal.
 
 ---
 
@@ -1401,6 +1416,7 @@ All API configuration options **MUST** be available via CLI flags.
 | — | GET `/api/v1/conversations/{id}/history` | Implemented |
 | — | POST `/api/v1/goals` | Implemented — as the operator; not role-gated |
 | — | DELETE `/api/v1/goals/{id}` | Implemented |
+| — | POST `/api/v1/goals/{id}/status` | Implemented |
 | — | GET `/api/v1/skills` | Implemented |
 | — | GET `/api/v1/conversations/{id}/messages/stream` | Implemented |
 | — | WS `/ws/v1/conversations/{id}/messages` | Implemented |

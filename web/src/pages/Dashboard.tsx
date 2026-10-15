@@ -1,9 +1,10 @@
 import type { ComponentChildren } from 'preact';
-import { api, get, type Schemas } from '../api/client';
+import { api, get } from '../api/client';
 import { ago } from '../format';
 import { recentEvents } from '../api/events';
 import { eventKind, shortId, summarize, timeOf } from '../journal';
 import { useLive, useRecent } from '../live';
+import { byAttention, processState, type ProcessState } from '../processes';
 import styles from './Dashboard.module.css';
 
 /**
@@ -102,32 +103,27 @@ function Attention() {
   );
 }
 
-type Process = Schemas['ProcessInfo'];
-type ProcessState = 'running' | 'paused' | 'failing' | 'stopped';
-
-/** A process its budget paused reads as stopped by "budget". */
-function processState(p: Process): ProcessState {
-  if (p.state === 'stopped' && p.stopped_by === 'budget') return 'paused';
-  return p.state;
-}
-
-const stateOrder: Record<ProcessState, number> = { failing: 0, paused: 1, running: 2, stopped: 3 };
-
 function Processes() {
   const { data, error } = useLive(
-    async () => (await get(api.GET('/processes'), 'processes')).data ?? [],
+    async () => {
+      const [list, status] = await Promise.all([
+        get(api.GET('/processes', { params: { query: { limit: 1000 } } }), 'processes'),
+        get(api.GET('/status'), 'the daemon status'),
+      ]);
+      return { list: list.data ?? [], max: status.max_running };
+    },
     ['process_*', 'standing_*'],
   );
   const counts: Record<ProcessState, number> = { running: 0, paused: 0, failing: 0, stopped: 0 };
-  for (const p of data ?? []) counts[processState(p)]++;
-  const shown = [...(data ?? [])].sort((a, b) => stateOrder[processState(a)] - stateOrder[processState(b)]).slice(0, 5);
+  for (const p of data?.list ?? []) counts[processState(p)]++;
+  const shown = byAttention(data?.list ?? []).slice(0, 5);
   return (
     <Tile id="processes" title="Processes" href="/processes" error={error} loading={!data && !error}>
-      {data && data.length === 0 && <Empty>No processes.</Empty>}
-      {data && data.length > 0 && (
+      {data && data.list.length === 0 && <Empty>No processes.</Empty>}
+      {data && data.list.length > 0 && (
         <>
           <p class={styles.summary}>
-            <span>{counts.running} running</span>
+            <span>{data.max ? `${counts.running} of ${data.max} running` : `${counts.running} running`}</span>
             {counts.failing > 0 && <span class="error">{counts.failing} failing</span>}
             {counts.paused > 0 && <span class={styles.warnText}>{counts.paused} paused</span>}
             {counts.stopped > 0 && <span class="muted">{counts.stopped} stopped</span>}
@@ -136,7 +132,9 @@ function Processes() {
             {shown.map((p) => (
               <li key={p.id}>
                 <span class={`${styles.badge} ${styles[processState(p)]}`}>{processState(p)}</span>
-                <span class={styles.text}>{p.id}</span>
+                <a class={styles.text} href={`/processes/${encodeURIComponent(p.id)}`}>
+                  {p.id}
+                </a>
                 <span class={styles.meta}>{p.trigger}</span>
               </li>
             ))}

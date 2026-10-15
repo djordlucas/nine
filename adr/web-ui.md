@@ -1,6 +1,6 @@
 # Design note — The embedded web UI
 
-**Status:** Phases 1–3 implemented (2026-10-14); phases 4–6 proposed · **Related:** `docs/api.md`, `docs/hitl.md`,
+**Status:** Phases 1–3 implemented (2026-10-14), phase 4 (2026-10-15); phases 5–6 proposed · **Related:** `docs/api.md`, `docs/hitl.md`,
 `docs/processes.md`, `adr/agent-boundary.md`
 
 Nine gets a web UI that is part of the binary: a Preact app, built once and embedded,
@@ -254,6 +254,21 @@ behavior change for `on` that wants its own evals. The bundle is 20 KB gzipped.
 | Windowed rendering of long histories | The last 1000 transcript entries | The transcript endpoint pages at 1000; a turn's full record is one click away. |
 
 The bundle is 41 KB gzipped, `marked` included.
+
+## Phase 4 as built
+
+| Planned | Built | Why |
+|---|---|---|
+| Goals: list, create, delete | Also pause, resume, mark done, archive and reactivate, through a new `POST /api/v1/goals/{id}/status` and daemon `goal_set_status` | Only the model could change a goal's status. A process its goal stopped can only run again once the goal is active, so without it the operator could not restart such a process. |
+| Processes: start, stop | A process its goal stopped offers "Resume goal" instead of Start | The operator may start it, but the runner stops it again at its next tick while the goal is not active. |
+| Dashboard: processes against `max_running` | `max_running` in `GET /status` and the daemon's `StatusInfo`; the dashboard and the roster show "N of M running" | Phase 2 deferred it to here (above). |
+| — | A goal's stop and restart of its processes is journaled as `standing_stopped` and `standing_started` with `by` `goal` | Neither was journaled, so a live page never learned of it and the Journal missed the transition. Being `standing_*` events, they are also triggers for a process that listens to them, as the operator's stop already was. |
+| Workflows: list, stop, fail | A workflow's detail is its row: progress, session and dates | The API has no workflow detail endpoint and the store records no current step. |
+
+The goals list is a tree: top-level goals, active first, each followed by its
+sub-goals. Processes and Goals share a list-beside-detail layout
+(`components/Split.module.css`, `Detail.module.css`). The bundle is 45 KB
+gzipped.
 
 ---
 

@@ -175,6 +175,43 @@ func (s *Server) DeleteGoal(ctx context.Context, request apigen.DeleteGoalReques
 	}, nil
 }
 
+// SetGoalStatus sets a goal's status as the operator. The daemon validates the
+// goal and the status; the request's enum is checked here too, so a typo is a
+// 400 before it reaches the socket.
+func (s *Server) SetGoalStatus(ctx context.Context, request apigen.SetGoalStatusRequestObject) (apigen.SetGoalStatusResponseObject, error) {
+	if request.Id == "" {
+		return apigen.SetGoalStatus400JSONResponse(
+			errorBody("invalid_request", "missing goal id", nil)), nil
+	}
+	if request.Body == nil || !request.Body.Status.Valid() {
+		return apigen.SetGoalStatus400JSONResponse(
+			errorBody("invalid_request", "status must be one of "+strings.Join(protocol.GoalStatuses, ", "), nil)), nil
+	}
+
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		return apigen.SetGoalStatus503JSONResponse(
+			errorBody("service_unavailable", err.Error(), nil)), nil
+	}
+	defer cl.Close()
+
+	raw, err := cl.SetGoalStatus(request.Id, string(request.Body.Status))
+	if err != nil {
+		if errNotFound(err) {
+			return apigen.SetGoalStatus404JSONResponse(
+				errorBody("not_found", "goal not found", map[string]any{"id": request.Id})), nil
+		}
+		return apigen.SetGoalStatus500JSONResponse(
+			errorBody("server_error", err.Error(), nil)), nil
+	}
+	var g wireGoal
+	if err := json.Unmarshal(raw, &g); err != nil {
+		return apigen.SetGoalStatus500JSONResponse(
+			errorBody("server_error", fmt.Sprintf("decode goal: %v", err), nil)), nil
+	}
+	return apigen.SetGoalStatus200JSONResponse(toGoalInfo(g)), nil
+}
+
 func (s *Server) ListWorkflows(ctx context.Context, request apigen.ListWorkflowsRequestObject) (apigen.ListWorkflowsResponseObject, error) {
 	p, err := page(request.Params.Limit, request.Params.Offset)
 	if err != nil {

@@ -1,0 +1,138 @@
+/* The open item of a list: a header with its actions, then facts and sections. */
+.detail {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.back {
+  display: none;
+  min-width: var(--touch);
+  min-height: var(--touch);
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-xl);
+  text-decoration: none;
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+
+.title h2 {
+  font-size: var(--text-lg);
+  overflow-wrap: anywhere;
+}
+
+.title span {
+  font-size: var(--text-sm);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.action {
+  min-height: var(--touch);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.action:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.action:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--accent);
+}
+
+.danger {
+  color: var(--danger);
+}
+
+.notice {
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+}
+
+.facts dt {
+  color: var(--text-2);
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.section h3 {
+  font-size: var(--text-md);
+  margin-bottom: var(--space-2);
+}
+
+.badge {
+  flex: none;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12px;
+  font-family: var(--mono);
+  line-height: 20px;
+}
+
+.failing,
+.failed {
+  color: var(--danger);
+}
+
+.paused,
+.cancelled {
+  color: var(--warn);
+}
+
+.running,
+.active,
+.done {
+  color: var(--ok);
+}
+
+@media (max-width: 767px) {
+  .back {
+    display: inline-flex;
+  }
+}

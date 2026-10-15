@@ -31,6 +31,7 @@ var (
 	needText      = fieldRule{"text", func(m Msg) string { return m.Text }}
 	needToolName  = fieldRule{"tool_name", func(m Msg) string { return m.ToolName }}
 	needRequestID = fieldRule{"request_id", func(m Msg) string { return m.RequestID }}
+	needID        = fieldRule{"id", func(m Msg) string { return m.ID }}
 )
 
 // clientMsgSpec is the ingress contract for one client-sent message type.
@@ -90,6 +91,8 @@ var clientMsgSpecs = map[MsgType]clientMsgSpec{
 
 	TypeGoalCreate: {required: []fieldRule{needText}},
 	TypeGoalDelete: {required: []fieldRule{needText}},
+	// An empty status must not reach the store, which accepts any string.
+	TypeGoalSetStatus: {required: []fieldRule{needID, needText}},
 
 	// The same reason attach must name its target: a session read or watch with
 	// an empty id would resolve by prefix to an arbitrary session.

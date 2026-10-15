@@ -250,6 +250,22 @@ func TestGoalBindingStopsAndRestartsTheProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	tickUntil(t, r, "the process running again", running)
+
+	// Both transitions reach the journal, so a live view and a standing_*
+	// trigger see a goal's pause as they see the operator's stop.
+	evs, err := store.SessionEventsByAgent("goal:g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var byGoal []string
+	for _, e := range evs {
+		if (e.Type == "standing_stopped" || e.Type == "standing_started") && strings.Contains(string(e.Payload), `"by":"goal"`) {
+			byGoal = append(byGoal, e.Type)
+		}
+	}
+	if !slices.Equal(byGoal, []string{"standing_stopped", "standing_started"}) {
+		t.Errorf("goal transitions journaled = %v, want a stop then a start", byGoal)
+	}
 }
 
 // ReconcileProcesses maps blocks to processes: a live tool makes a live process

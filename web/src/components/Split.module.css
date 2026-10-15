@@ -1,0 +1,101 @@
+/* A list beside its open item on a desktop; on a phone, the list, then the item
+   in its place. Processes and Goals share it. */
+.split {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.list {
+  position: sticky;
+  top: 0;
+  max-height: calc(100dvh - 120px);
+  overflow-y: auto;
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+}
+
+.list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.list li + li {
+  border-top: 1px solid var(--border);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 2px var(--space-2);
+  min-height: var(--touch);
+  padding: var(--space-2) var(--space-3);
+  color: inherit;
+  text-decoration: none;
+}
+
+.row:hover {
+  background: var(--surface-2);
+}
+
+.row[aria-current='page'] {
+  background: var(--surface-2);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  grid-column: 2;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pane {
+  min-width: 0;
+}
+
+.placeholder {
+  margin: 0;
+}
+
+.heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+/* A phone shows the list, or the open item in its place. */
+@media (max-width: 767px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .list {
+    position: static;
+    max-height: none;
+  }
+
+  .open .list,
+  .split:not(.open) .pane {
+    display: none;
+  }
+}

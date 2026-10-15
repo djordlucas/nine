@@ -127,7 +127,9 @@ it; what it stops is a loop that runs away.
 
 **Goal binding.** A process bound to a goal works on that goal, and the goal's
 status decides whether it runs: paused stops the process, active again restarts
-it, done or archived leaves it stopped. A goal-bound session whose turns call no
+it, done or archived leaves it stopped. Each stop and restart is journaled as
+`standing_stopped` or `standing_started` with `by` `goal`. The operator sets a
+goal's status with `POST /api/v1/goals/{id}/status` or the web UI. A goal-bound session whose turns call no
 tool five times in a row pauses its goal.
 
 **Sharing a session.** A process may attach to another's session instead of

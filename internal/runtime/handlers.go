@@ -47,6 +47,8 @@ func (d *Daemon) handleStatus(enc *json.Encoder) {
 		Plugins:   plugins,
 		Uptime:    time.Since(d.startedAt).Truncate(time.Second).String(),
 		LLMQueue:  queue,
+		// The cap the runner applies: [processes] max_running or its default.
+		MaxRunning: d.effectiveMaxRunning(),
 	}
 	data, _ := json.Marshal(info)
 	enc.Encode(protocol.NewTextMsg(protocol.TypeStatus, string(data))) //nolint:errcheck

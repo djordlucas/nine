@@ -96,6 +96,7 @@ Msg {
 | `list_skills` | — | the skill catalog, without bodies |
 | `goal_create` | `text` = description (**required**), (`id` = parent goal) | create a goal as the operator; a top-level goal gets a pursue session (R-PROTO.13) |
 | `goal_delete` | `text` = goal ID (**required**) | delete a goal and its sub-goals and stop its pursue session (R-PROTO.13) |
+| `goal_set_status` | `id` = goal ID, `text` = status (both **required**) | set a goal's status as the operator (R-PROTO.13) |
 | `session_history` | `agent_id` (**required**) | a session's whole transcript from the journal, every turn; does **not** attach |
 | `session_events` | `agent_id` (**required**), (`turn`) | a session's raw journal: every turn (`turn` 0), turn N, or the latest (`-1`) |
 | `watch` | `agent_id` (**required**) | follow a session's events on this connection until it closes (R-PROTO.14) |
@@ -136,6 +137,7 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `list_skills` | `text` = JSON `{"skills": []SkillInfo}` | `SkillInfo { name, description, tags, source }`; `source` is `builtin`, `user` or `agent` |
 | `goal_create` | `text` = JSON `GoalCreateResult` | `{ goal, pursue_session }`: the stored goal and `spawned` \| `limit_reached` \| `none` (sub-goal) |
 | `goal_delete` | `text` = JSON `GoalDeleteResult` | `{ deleted []string, session_stopped bool }`: every goal id removed, goal first |
+| `goal_set_status` | `text` = JSON goal | the goal as stored after the change |
 | `session_history` | `text` = JSON `[]Msg` | `history_user`, `tool_start`, `tool_end`, `sub_agent_start`, `sub_agent_end`, `response`, in order, each with `ts` and `turn` |
 | `session_events` | `text` = JSON `[]JournalEvent` | `{ seq, agent_id, turn, span_id, parent_span_id, type, ts, payload }` ([`event-journal.md`](event-journal.md)) |
 | `watch` | `agent_id` | watch accepted; the session's events follow (R-PROTO.14) |
@@ -184,7 +186,8 @@ resolved leaf role); it never reaches the LLM and a client **MUST NOT** branch o
 `status` returns `StatusInfo` JSON-encoded in `text`:
 
 ```schema
-StatusInfo { agents []AgentInfo, sub_agents []SubAgentInfo, plugins []string, uptime string }
+StatusInfo { agents []AgentInfo, sub_agents []SubAgentInfo, plugins []string, uptime string,
+             max_running int }  // max_running: [processes] max_running in force
 AgentInfo  { id string, name string, role string, plan_mode string }  // plan_mode: off | plan-only | always
 SubAgentInfo { id string, description string, role string }  // role: the sub-agent's resolved leaf role
 ```
@@ -415,7 +418,7 @@ always did.
 
 ## R-PROTO.13 — operator goal verbs
 
-`goal_create` and `goal_delete` are the operator's goal verbs, reached by the CLI and the
+`goal_create`, `goal_delete` and `goal_set_status` are the operator's goal verbs, reached by the CLI and the
 HTTP API through the socket. They are **not** the agent tool of the same name, and the
 role gate on that tool (a role's `Delegates` flag) **MUST NOT** apply: it decides which
 *agents* may start background work, and a socket client has the standing of an
@@ -427,6 +430,7 @@ role gate on that tool (a role's `Delegates` flag) **MUST NOT** apply: it decide
 | `goal_create`, `id` = parent | the parent **MUST** exist (else `error` "… not found"); records the goal with `parent_type` `goal` and spawns no session |
 | `goal_delete` | stops the pursue session and archives its plan **before** removing rows, so no turn writes to a goal being deleted; removes the goal and every descendant in one transaction; keeps the session's transcript and journal |
 | `goal_delete` on a `config` goal | **MUST** be refused with an `error` whose text starts `conflict: ` (`protocol.ConflictPrefix`): nine.toml declares it, and the next boot would re-create it |
+| `goal_set_status` | the status **MUST** be one of `active`, `paused`, `done`, `archived` and the goal **MUST** exist (else `error` "… not found"); nothing is written otherwise. On success the process runner is woken, so the goal's processes stop or restart without waiting for its tick |
 
 ---
 

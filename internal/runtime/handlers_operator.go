@@ -7,6 +7,8 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"slices"
+	"strings"
 
 	"nine/internal/memory"
 	"nine/internal/protocol"
@@ -174,6 +176,48 @@ func (d *Daemon) handleGoalDelete(ctx context.Context, enc *json.Encoder, id str
 	slog.Info("goal deleted by operator", "id", id, "deleted", deleted, "session_stopped", running)
 	data, _ := json.Marshal(protocol.GoalDeleteResult{Deleted: deleted, SessionStopped: running})
 	enc.Encode(protocol.NewTextMsg(protocol.TypeGoalDelete, string(data))) //nolint:errcheck
+}
+
+// handleGoalSetStatus sets a goal's status on the operator's behalf. The
+// status is the goal's only switch: the process runner stops a process bound
+// to a goal that is no longer active and starts it again once the goal is
+// (docs/processes.md), so pausing or resuming a goal here is how the operator
+// stops or restarts the processes it drives.
+func (d *Daemon) handleGoalSetStatus(enc *json.Encoder, r protocol.GoalSetStatusReq) {
+	if d.store == nil {
+		enc.Encode(protocol.NewErrorMsg("goals not available")) //nolint:errcheck
+		return
+	}
+	if !slices.Contains(protocol.GoalStatuses, r.Status) {
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("status %q is not one of %s", //nolint:errcheck
+			r.Status, strings.Join(protocol.GoalStatuses, ", "))))
+		return
+	}
+	g, err := d.store.GoalGet(r.ID)
+	if err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	if g == nil {
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("goal %s not found", r.ID))) //nolint:errcheck
+		return
+	}
+	if err := d.store.GoalUpdateStatus(r.ID, r.Status); err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	// Apply it to the goal's processes now rather than at the runner's tick.
+	if d.procWake != nil {
+		d.procWake()
+	}
+	g, err = d.store.GoalGet(r.ID)
+	if err != nil || g == nil {
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("read back goal %s: %v", r.ID, err))) //nolint:errcheck
+		return
+	}
+	slog.Info("goal status set by operator", "id", r.ID, "status", r.Status)
+	data, _ := json.Marshal(g)
+	enc.Encode(protocol.NewTextMsg(protocol.TypeGoalSetStatus, string(data))) //nolint:errcheck
 }
 
 // sessionKnown reports whether id names a session the daemon can say something
