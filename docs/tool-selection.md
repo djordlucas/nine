@@ -84,7 +84,10 @@ With no embedder there are no picks, and hybrid behaves as deferred.
 On the eval corpus at one run per case, hybrid passed 111 of the 130 runs ranked
 and deferred share, against ranked's 115 and deferred's 103, at deferred's
 prompt cost: about half of ranked's. Its tool block is ~2,900 tokens to
-deferred's ~2,400, for the three picks.
+deferred's ~2,400, for the three picks. Re-run 9 times on the cases where the
+modes differed, it passed fewer runs than ranked, most on `qwen3.5:4b` (101 of
+162 against 133), so ranked stays the default
+(`adr/deferred-tool-schemas.md`, "Re-runs at 9 runs").
 
 A sub-agent starts from its own role's resident set, not its parent's promoted
 tools.
