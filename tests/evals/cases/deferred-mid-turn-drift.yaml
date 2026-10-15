@@ -11,7 +11,7 @@ tags: [deferred-tools, files, workspace, move]
 
 session:
   config:
-    context.tool_exposition: deferred
+    context.tool_exposition: [deferred, hybrid]
 
 setup:
   files:

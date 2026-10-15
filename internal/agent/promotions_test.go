@@ -146,13 +146,13 @@ func TestDeferredToolSearch_NeedsNamesOrQuery(t *testing.T) {
 // indexes the tools it does not keep resident.
 func bigCatalog() []ninectx.ToolWithVector {
 	pad := strings.Repeat("x", 4000)
-	tool := func(name, schema string) ninectx.ToolWithVector {
-		return ninectx.ToolWithVector{Tool: llm.ToolDef{Name: name, Description: name + " " + pad, InputSchema: json.RawMessage(schema)}}
+	tool := func(name, kit, schema string) ninectx.ToolWithVector {
+		return ninectx.ToolWithVector{Tool: llm.ToolDef{Name: name, Description: name + " " + pad, InputSchema: json.RawMessage(schema)}, Toolkit: kit}
 	}
 	return []ninectx.ToolWithVector{
-		tool("echo", `{"type":"object"}`),
-		tool("restore_file", `{"type":"object","required":["path"],"properties":{"path":{"type":"string"}}}`),
-		tool("job_wait", `{"type":"object"}`),
+		tool("echo", "misc", `{"type":"object"}`),
+		tool("restore_file", "workspace", `{"type":"object","required":["path"],"properties":{"path":{"type":"string"}}}`),
+		tool("job_wait", "jobs", `{"type":"object"}`),
 	}
 }
 
@@ -231,6 +231,51 @@ func TestLoop_CallToLoad(t *testing.T) {
 	}
 	if !slices.Equal(promoted, []string{"restore_file:call"}) {
 		t.Errorf("promotions = %v", promoted)
+	}
+}
+
+// A call to a toolkit's name, which the index prints as "jobs: job_wait",
+// loads the toolkit's tools instead of only failing.
+func TestLoop_ToolkitCallLoadsTheToolkit(t *testing.T) {
+	rec := &recordingProvider{responses: []llm.Response{
+		toolCallResp("c1", "jobs", json.RawMessage(`{}`)),
+	}}
+	p := agent.NewPromotions()
+	loop := deferredLoop(rec, agent.New(), p, 0)
+	var observations []string
+	loop.SetHooks(agent.Hooks{OnToolEnd: func(_, _, _ string, _ json.RawMessage, out agent.ToolOutcome) {
+		observations = append(observations, out.Output)
+	}})
+	if _, err := loop.Run(context.Background(), "wait for the job"); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(rec.requests[1], "job_wait") {
+		t.Errorf("the toolkit's tool was not loaded: %v", rec.requests[1])
+	}
+	if !strings.Contains(observations[0], "job_wait") {
+		t.Errorf("observation does not name the loaded tools: %q", observations[0])
+	}
+}
+
+// A call to "<toolkit>:<tool>" or "<toolkit>/<tool>", the index line read as
+// one name, runs the tool.
+func TestLoop_QualifiedNameRunsTheTool(t *testing.T) {
+	for _, name := range []string{"workspace:restore_file", "mcp/workspace/restore_file"} {
+		rec := &recordingProvider{responses: []llm.Response{
+			toolCallResp("c1", name, json.RawMessage(`{"path":"plan.md"}`)),
+		}}
+		d := agent.New()
+		ran := false
+		d.InjectHandler("restore_file", func(context.Context, json.RawMessage) (string, error) {
+			ran = true
+			return "restored", nil
+		})
+		if _, err := deferredLoop(rec, d, agent.NewPromotions(), 0).Run(context.Background(), "restore plan.md"); err != nil {
+			t.Fatal(err)
+		}
+		if !ran {
+			t.Errorf("%s did not run restore_file", name)
+		}
 	}
 }
 

@@ -11,7 +11,7 @@ tags: [deferred-tools, mcp, plugin]
 
 session:
   config:
-    context.tool_exposition: deferred
+    context.tool_exposition: [deferred, hybrid]
 
 setup:
   mcp_servers:

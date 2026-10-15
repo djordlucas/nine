@@ -253,7 +253,7 @@ returns events in `seq` order with these payloads (see `journal`):
 | Event | Key payload fields | Used to assert |
 |-------|--------------------|----------------|
 | `turn_start` | `input`, `trigger` (`user`/`idle`) | turn boundaries |
-| `llm_request` | `system`, `messages`, `tool_names`, `tool_index`, `tool_tokens`, `tokens_used`, `budget` | prompt/role gating, tool and context budget |
+| `llm_request` | `system`, `messages`, `tool_names`, `tool_index`, `tool_picked`, `tool_tokens`, `tokens_used`, `budget` | prompt/role gating, tool and context budget |
 | `tool_promoted` / `tool_demoted` | `name`, `reason` (`search`/`call`) | the deferred mode's loads |
 | `llm_response` | `text`, `tool_calls`, `stop_reason` | model intent |
 | `tool_start` | `name`, `input` | which tool, with what args |
@@ -340,8 +340,10 @@ pass fraction ≥ `pass_threshold`. Everything in §1–§3 applies. Requirement
   model and arm. A case that passes in one arm and fails in another is a regression
   the mode caused. Unset runs the configured default once. A case that sets
   `context.tool_exposition` in its own `session.config` runs only in that arm. The
-  arms are `ranked` and `deferred`
-  ([adr/deferred-tool-schemas.md](../adr/deferred-tool-schemas.md) §7.1).
+  arms are `ranked`, `deferred` and `hybrid`
+  ([adr/deferred-tool-schemas.md](../adr/deferred-tool-schemas.md) §7.1). A case
+  may pin a list, `context.tool_exposition: [deferred, hybrid]`, to run in each of
+  them that is requested, and in the first when none is.
 - **No embedder for one case**: `session.config` `embeddings.provider: none` runs the
   case with no embedder, as a deployment configured that way does.
 - **Isolation per run**: a fresh session id, a database file per run (reuse the

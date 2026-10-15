@@ -47,6 +47,7 @@ snapshots.
 | Resident set | Full schemas of the most-called tools: `process_list`, `read_file`, `write_file`, `memory_get`, `memory_set`, `list_files`, `file_search_text`, `goal_list`, `process_start`, `delete_file`, plus `tool_search`, `skill_read`, `ask_human` (interactive) and `run_agent` (delegating), where the role has them. `[context] resident_tools` adds more. |
 | Tool index | A `## More tools` section of the system prompt: every other tool by name, one line per toolkit (`workspace`, `memory`, `jobs`, `mcp/<server>` …). A tool Nine did not name carries the first clause of its description. |
 | Promoted tools | Tools the session loaded, with full schemas, after the resident set. |
+| Picks | Hybrid only: the tools of the index ranked best against the turn's request, with full schemas, after the promoted tools. |
 
 **Loading.** `tool_search(names=[...])` loads tools by name, or every tool of a
 toolkit; `tool_search(query=...)` loads the three best matches. Loaded tools are
@@ -57,7 +58,10 @@ this mode.
 
 **Calling from the index.** An indexed tool is callable by name without a load.
 If such a call fails, its result carries the tool's schema and the tool is
-promoted, so the model's next attempt is against a declared tool.
+promoted, so the model's next attempt is against a declared tool. Models also
+read an index line as names: a call to a toolkit's name (`jobs`) loads that
+toolkit's indexed tools, and a call to `<toolkit>:<tool>` or `<toolkit>/<tool>`
+runs the tool.
 
 **Bounds.** Promoted schemas are capped by `[context] promoted_budget` (1,500
 tokens by default). Before a turn's first request, the tool called least
@@ -67,6 +71,23 @@ Each change is journaled as `tool_promoted` or `tool_demoted`.
 **Small catalogs.** A session whose whole catalog is 2,500 tokens or less, such
 as a narrow allowlist role or reflection, is advertised whole, with no index and
 neither `tool_search` nor `tool_list`.
+
+**Hybrid.** `tool_exposition = "hybrid"` is deferred plus picks: the
+`[context] hybrid_picks` tools of the index (3 by default) that rank best
+against the turn's request, by the same embedding similarity ranked mode uses.
+The picks are made once per turn, so they stay put across the turn's requests,
+and they are not promoted: the next turn picks again. A tool whose name hides
+what it does reaches the model with its description this way, without a load.
+With no embedder there are no picks, and hybrid behaves as deferred.
+`llm_request` records the picks as `tool_picked`.
+
+On the eval corpus at one run per case, hybrid passed 111 of the 130 runs ranked
+and deferred share, against ranked's 115 and deferred's 103, at deferred's
+prompt cost: about half of ranked's. Its tool block is ~2,900 tokens to
+deferred's ~2,400, for the three picks. Re-run 9 times on the cases where the
+modes differed, it passed fewer runs than ranked, most on `qwen3.5:4b` (101 of
+162 against 133), so ranked stays the default
+(`adr/deferred-tool-schemas.md`, "Re-runs at 9 runs").
 
 A sub-agent starts from its own role's resident set, not its parent's promoted
 tools.

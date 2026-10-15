@@ -22,7 +22,11 @@ const ArmRanked = "ranked"
 // ArmDeferred advertises a resident set and lists the other tools by name.
 const ArmDeferred = "deferred"
 
-var knownArms = map[string]bool{ArmRanked: true, ArmDeferred: true}
+// ArmHybrid is deferred plus the few indexed tools best-ranked against the
+// turn's request, advertised with their schemas.
+const ArmHybrid = "hybrid"
+
+var knownArms = map[string]bool{ArmRanked: true, ArmDeferred: true, ArmHybrid: true}
 
 // KnownArms returns the arms a run can request, sorted.
 func KnownArms() []string { return slices.Sorted(maps.Keys(knownArms)) }
@@ -47,33 +51,64 @@ func ParseArms(s string) ([]string, error) {
 	return arms, nil
 }
 
-// PinnedArm returns the arm the case sets in its own session.config, or "".
-// A case pins one when it tests that mode's behavior, which the other arm
-// does not have.
-func (c *Case) PinnedArm() string {
-	arm, _ := c.Session.Config[ArmKey].(string)
-	return arm
-}
-
-// ApplicableArms returns the arms the case runs in: every requested arm, or
-// only its pinned one. No requested arms is a single unnamed run, in the
-// case's pinned arm if it has one.
-func (c *Case) ApplicableArms(requested []string) []string {
-	pinned := c.PinnedArm()
-	switch {
-	case len(requested) == 0:
-		return []string{""}
-	case pinned == "":
-		return requested
-	case slices.Contains(requested, pinned):
-		return []string{pinned}
+// PinnedArms returns the arms the case sets in its own session.config: one
+// name, or a list of them for a case that tests behavior several modes share
+// (deferred and hybrid both index). A case pins arms when it tests behavior
+// the others do not have.
+func (c *Case) PinnedArms() []string {
+	switch v := c.Session.Config[ArmKey].(type) {
+	case string:
+		return []string{v}
+	case []any:
+		var arms []string
+		for _, a := range v {
+			if s, ok := a.(string); ok {
+				arms = append(arms, s)
+			}
+		}
+		return arms
+	case []string:
+		return v
 	}
 	return nil
 }
 
-// withArm returns a copy of c that runs in arm; "" leaves c as it is.
+// PinnedArm returns the first arm the case pins, or "": the one it runs in
+// when no arms are requested.
+func (c *Case) PinnedArm() string {
+	if arms := c.PinnedArms(); len(arms) > 0 {
+		return arms[0]
+	}
+	return ""
+}
+
+// ApplicableArms returns the arms the case runs in: every requested arm, or
+// only the requested ones it pins. No requested arms is a single unnamed run,
+// in the case's first pinned arm if it has one.
+func (c *Case) ApplicableArms(requested []string) []string {
+	pinned := c.PinnedArms()
+	switch {
+	case len(requested) == 0:
+		return []string{""}
+	case len(pinned) == 0:
+		return requested
+	}
+	var arms []string
+	for _, a := range requested {
+		if slices.Contains(pinned, a) {
+			arms = append(arms, a)
+		}
+	}
+	return arms
+}
+
+// withArm returns a copy of c that runs in arm; "" runs it in its first
+// pinned arm, or leaves it as it is.
 func (c *Case) withArm(arm string) *Case {
-	if arm == "" || c.PinnedArm() == arm {
+	if arm == "" {
+		arm = c.PinnedArm()
+	}
+	if arm == "" || c.Session.Config[ArmKey] == arm {
 		return c
 	}
 	cp := *c

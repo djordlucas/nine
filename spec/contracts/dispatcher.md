@@ -201,11 +201,15 @@ See [`../../adr/tool-output-spill.md`](../../adr/tool-output-spill.md) §5.
 
 ## R-DISP.8 — call-to-load
 
-Under deferred exposition (`[context] tool_exposition = "deferred"`) a tool listed in the
+Under deferred or hybrid exposition (`[context] tool_exposition = "deferred"` or `"hybrid"`) a tool listed in the
 request's tool index is dispatched like any other. When such a call fails, the agent loop
 **MUST** append the tool's description and input schema to the failure observation and
 promote the tool, so the next request advertises it. A call that succeeds promotes
-nothing. Ranked exposition has no index, so this never applies there.
+nothing. A failed call to the name of a toolkit the index lists **MUST** promote that
+toolkit's indexed tools and say so in the observation. A call to `<toolkit>:<tool>` or
+`<toolkit>/<tool>`, where no tool has that full name and one has the last segment's,
+**MUST** dispatch as a call to that tool. Ranked exposition has no index, so none of
+this applies there.
 
 See [`../../adr/deferred-tool-schemas.md`](../../adr/deferred-tool-schemas.md) §3.4.
 

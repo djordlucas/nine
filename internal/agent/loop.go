@@ -408,6 +408,10 @@ func (l *Loop) LastToolIndex() []string { return l.lastExposure.Indexed }
 // LastIndexTokens is the estimated size of the latest request's tool index.
 func (l *Loop) LastIndexTokens() int { return l.lastExposure.IndexTokens }
 
+// LastToolPicks names the tools the latest request advertised because they
+// ranked best against the turn's query; nil when it picked none.
+func (l *Loop) LastToolPicks() []string { return l.lastExposure.Picked }
+
 // fitPromotions drops promoted tools the catalog no longer has and demotes the
 // least recently used past the budget. Run calls it before a turn's first
 // request, so a demotion never removes a tool mid-turn.
@@ -460,7 +464,15 @@ func (l *Loop) promotedNames() []string {
 // gains the tool's schema and the tool is promoted, making the next attempt a
 // call against a declared definition.
 func (l *Loop) loadOnFailedCall(name, observation string) string {
-	if l.cfg.Promotions == nil || !slices.Contains(l.lastExposure.Indexed, name) {
+	if l.cfg.Promotions == nil {
+		return observation
+	}
+	if kit := l.indexedToolkit(name); len(kit) > 0 {
+		l.cfg.Promotions.Promote(kit, PromoteCall)
+		return observation + fmt.Sprintf("\n\n%s is a group of tools, not a tool. Its tools are now loaded: %s. Call one of them by name.",
+			name, strings.Join(kit, ", "))
+	}
+	if !slices.Contains(l.lastExposure.Indexed, name) {
 		return observation
 	}
 	for _, t := range l.turnTools() {
@@ -471,6 +483,47 @@ func (l *Loop) loadOnFailedCall(name, observation string) string {
 		}
 	}
 	return observation
+}
+
+// indexedToolkit returns the indexed tools of the toolkit called name, in
+// catalog order: the latest request's index lists them under that name, and
+// models read "<toolkit>: a, b" as a tool called <toolkit>.
+func (l *Loop) indexedToolkit(name string) []string {
+	var kit []string
+	for _, t := range l.turnTools() {
+		if t.Toolkit == name && slices.Contains(l.lastExposure.Indexed, t.Tool.Name) {
+			kit = append(kit, t.Tool.Name)
+		}
+	}
+	return kit
+}
+
+// resolveQualifiedName maps a call to "<toolkit>:<tool>" or "<toolkit>/<tool>",
+// the index's line read as one name, to the tool, when the loop has no tool
+// of the full name and has one of the last segment. Other names, and every
+// name in a ranked loop, are returned as they are.
+func (l *Loop) resolveQualifiedName(name string) string {
+	if l.cfg.Promotions == nil {
+		return name
+	}
+	i := strings.LastIndexAny(name, ":/")
+	if i < 0 || i == len(name)-1 {
+		return name
+	}
+	short := name[i+1:]
+	found := false
+	for _, t := range l.turnTools() {
+		switch t.Tool.Name {
+		case name:
+			return name
+		case short:
+			found = true
+		}
+	}
+	if found {
+		return short
+	}
+	return name
 }
 
 // refreshTools applies ToolsForTurn at the start of a turn.
@@ -711,6 +764,7 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 		// Dispatch tool calls and record observations. The first entry gets the
 		// assistant's thought text; subsequent entries (parallel calls) get none.
 		for i, tc := range resp.ToolCalls {
+			tc.Name = l.resolveQualifiedName(tc.Name)
 			dn := l.displayNames[tc.Name]
 			backend := l.dispatcher.Backend(tc.Name)
 			if l.onToolStart != nil {

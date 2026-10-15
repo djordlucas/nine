@@ -551,6 +551,8 @@ plan_approval = "on-risky"
 #   deferred  a resident set of the most-used tools with schemas; every other
 #             tool listed by name in a "More tools" section of the system
 #             prompt, loaded with tool_search or called directly
+#   hybrid    deferred, plus the few listed tools that rank best against the
+#             turn's request, with their schemas
 tool_exposition = "ranked"
 #
 # resident_tools — tools a deferred session keeps resident besides the built-in
@@ -561,6 +563,11 @@ resident_tools = []
 # loaded. Past it, the tool called least recently returns to the index before
 # the next turn. Default 1500.
 promoted_budget = 1500
+#
+# hybrid_picks — how many listed tools a hybrid session also advertises with
+# their schemas, ranked best against the turn's request. Needs an embedder;
+# ignored unless tool_exposition is "hybrid". Default 3.
+hybrid_picks = 3
 
 [tools]
 # max_output_tokens — the per-result tool output cap (docs/tool-output.md).

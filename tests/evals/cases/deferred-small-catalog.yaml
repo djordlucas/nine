@@ -11,7 +11,7 @@ tags: [deferred-tools, roles, files]
 session:
   role: code-reviewer
   config:
-    context.tool_exposition: deferred
+    context.tool_exposition: [deferred, hybrid]
 
 setup:
   files:

@@ -1,6 +1,6 @@
 # Deferred tool schemas
 
-**Status:** Phases 0–2 implemented (2026-10-14); phases 3–4 proposed — 2026-10-07 · **Builds on:** `adr/tool-exposition.md`
+**Status:** Phases 0–2 implemented (2026-10-14); phase 3 under way, `hybrid` added and re-run at 9 runs (2026-10-15); phase 4 proposed — 2026-10-07 · **Builds on:** `adr/tool-exposition.md`
 (the hybrid it shipped: passive top-K plus `tool_search` / `tool_list`) ·
 **Amends:** R-ROLE.4 (what "advertised" means; see §6) · **Depends on:** the eval
 work in §7 landing *before* the default flips
@@ -418,7 +418,7 @@ in both arms before it counts against the criteria.
 | 1 | Eval harness: arms, report columns, §7.2 assertions. New cases written; run in `ranked` to confirm they are mode-agnostic where they should be. Per-tool frequency query; resident set derived from it. | unchanged |
 | 2 | `deferred` mode behind `[context] tool_exposition`: resident set, index, `tool_search(names)`, promotion, call-to-load, BM25 fallback, journal events. Snapshots and Track-R fixtures. | `ranked` |
 | 3 | A/B on the matrix; tune resident set and index wording against §7.5. Results recorded here. | `ranked` |
-| 4 | Flip default to `deferred`. Spec (§6) and docs via `/sync-nine`. | `deferred` |
+| 4 | Flip default to `hybrid` (was `deferred`; see "Phase 3: first sweep, and hybrid") once it passes the 9-run re-runs. Spec (§6) and docs via `/sync-nine`. | `hybrid` |
 
 ## 9. Touch points
 
@@ -594,11 +594,119 @@ the MCP tool. A discovery costs one extra LLM call and still halves the prompt
 tokens; on local Ollama that call's generation time made those cases slower in
 wall-clock time, while the no-load case was faster.
 
+## Phase 3: first sweep, and hybrid
+
+The whole corpus ran once per case on `qwen3.5:9b` and `qwen3.5:4b`, in `ranked`
+and `deferred` (280 runs, 7 h), then in a third mode, `hybrid` (148 runs).
+Medians are over passed runs.
+
+| | `ranked` | `deferred` | `hybrid` |
+|---|---|---|---|
+| Runs passed, of the 130 all three share | 115 | 103 | 111 |
+| Prompt tokens per run, 9b / 4b | 16.3k / 18.8k | 8.7k / 8.7k | 8.8k / 9.7k |
+| Turns, LLM calls per run | 1, 3 | 1, 3 | 1, 3 |
+| Tool tokens, plain read task | 6,678 (snapshot) | 2,389 | 2,893 |
+
+`deferred` fails §7.5 criterion 1. In 11 of its 17 lost runs a plausible tool it
+already had won over the right one in the index, and the call succeeded, so
+call-to-load never fired:
+
+| Task | Called | Expected |
+|---|---|---|
+| remove a process it wrote | `process_stop` | `tool_delete` |
+| compute a sum | `shell` | `js_eval` |
+| tell the time | `shell date` | `time` |
+| move a file | `shell mv` | `move_file` |
+| save a skill | `write_file` | `skill_write` |
+| edit one line of a large file | `write_file` | `edit_file` |
+
+The index's `<toolkit>: name, name` lines also read as names: models called
+`skills`, `workspace`, `data`, `delegation`, `mcp/fixture` and
+`mcp/fixture:fixture__mcp_echo`.
+
+**Hybrid** (`tool_exposition = "hybrid"`) is deferred plus picks: the
+`[context] hybrid_picks` indexed tools (default 3) that rank best against the
+turn's request, by ranked mode's embedding similarity, advertised with their
+schemas. Picks are made once per turn and not promoted, so a turn's requests
+share one prefix. It recovered `process-delete-written`, `skill-search`,
+`skill-write-recall`, `time-current`, `workspace-move-file`,
+`workspace-edit-large`, `mcp-tool-call` and others, at deferred's prompt cost.
+
+What hybrid does not fix:
+
+- **Vocabulary gaps.** "sum of primes" does not rank `js_eval`, whose description
+  speaks of evaluating JavaScript; `js-eval-compute` failed on both models.
+- **Mid-turn drift.** Picks come from the opening request, so a task the model
+  only learns from a file (`deferred-mid-turn-drift`) gets picks for the wrong
+  task.
+- **The 2,500 gate.** Three picks add ~500 tokens. Hybrid's gate is set at
+  3,300, half of ranked's, by `hybrid-resident-no-load`.
+
+Two fixes follow from the sweep, for deferred and hybrid alike. A call to a
+toolkit's name loads that toolkit's indexed tools, and a call to
+`<toolkit>:<tool>` or `<toolkit>/<tool>` runs the tool (R-DISP.8). `js_eval` and
+`tool_delete` get index glosses, "run JavaScript, e.g. to compute" and "removes a
+written tool and its process". Making `edit_file` resident was tried and
+dropped: it costs ~300 tokens, puts deferred over its gate, and hybrid's picks
+already surface it for an edit.
+
+`deferred-call-to-load` and `deferred-resident-no-load` test deferred's own
+mechanics and stay pinned to it; the other deferred cases pin
+`[deferred, hybrid]`.
+
+### Re-runs at 9 runs
+
+The cases that differed between `ranked` and `hybrid`, plus the two hybrid-only
+ones, ran 9 times per model and arm (360 runs, 4 h 9 min). Passes of 9; a case
+passes at 6:
+
+| Case | 9b `ranked` | 9b `hybrid` | 4b `ranked` | 4b `hybrid` |
+|---|---|---|---|---|
+| `js-eval-compute` | 8 | 7 | 9 | **3** |
+| `mcp-tool-call` | 9 | 9 | 9 | 9 |
+| `process-delete-refused-operator` | 9 | 8 | 9 | 9 |
+| `process-start-at-cap` | **5** | 9 | 9 | 9 |
+| `process-start-via-goal` | 9 | 9 | 8 | **1** |
+| `skill-search` | 9 | 7 | 9 | 7 |
+| `workspace-external-file` | 4 | 0 | 4 | 2 |
+| `workspace-search-unindexed` | 5 | 4 | 4 | 1 |
+| `workspace-write-search` | 6 | 1 | 8 | 6 |
+| `deferred-mid-turn-drift` | — | 8 | — | **5** |
+| `hybrid-resident-no-load` | — | 9 | — | 9 |
+
+Over the nine cases both arms ran:
+
+| | 9b `ranked` | 9b `hybrid` | 4b `ranked` | 4b `hybrid` |
+|---|---|---|---|---|
+| Runs passed, of 81 | 64 | 54 | 69 | 47 |
+| Median prompt tokens per run | 27.2k | 10.5k | 22.9k | 10.6k |
+| Median tool tokens | 6,752 | 2,859 | 6,752 | 2,761 |
+| Median LLM calls | 3 | 3 | 3 | 3 |
+
+These cases were chosen because they differed, so the pass rates overstate the
+gap on the whole corpus. Still, `hybrid` fails §7.5 criterion 1: it passes fewer
+runs than `ranked` on 7 of the 9 cases, and loses most on `qwen3.5:4b`. It
+costs 40–45% of `ranked`'s prompt tokens.
+
+- **`js-eval-compute`, 4b.** The vocabulary gap above. The index gloss does not
+  help a pick: picks rank on the description.
+- **`process-start-via-goal`, 4b.** The model calls `goal_update_status` once,
+  then `process_start`, and the process stays stopped. The cause is not yet
+  found.
+- **`deferred-mid-turn-drift`, 4b.** Picks come from the opening request.
+- **The workspace cases** are weak in both arms. The models call `read_file` on
+  the same file again and again without taking the answer from it, which points
+  at the cases or at `read_file`, not at exposition.
+
+Phase 4 waits. Before the default flips to `hybrid`, `js_eval`'s description
+names computing, picks are re-made after tool results within a turn, and the
+4b goal miss is understood; the regressed cases then re-run at 9 runs.
+
 ## Limits
 
 | Limit | Detail |
 |-------|--------|
-| Only phases 0–2 are built | The A/B over the whole corpus (phase 3) and the default flip (phase 4) are proposed; `deferred` is opt-in. Token figures are estimates from `countTokens` (3.45 bytes/token), not a real tokenizer — see `adr/accurate-token-counting.md`. |
+| Phase 3 is under way | `hybrid` regresses against `ranked` at 9 runs, most on `qwen3.5:4b` ("Re-runs at 9 runs"). The default flip (phase 4) waits for its fixes; `deferred` and `hybrid` are opt-in. No Mistral run yet. Token figures are estimates from `countTokens` (3.45 bytes/token), not a real tokenizer — see `adr/accurate-token-counting.md`. |
 | Resident set is derived from the corpus | The frequencies come from eval cases, which are written to exercise each tool, not from real use. The opt-in `session_events` query on a real store has not been run. |
 | Promotions do not survive a restart | They live on the loop; a restarted daemon starts every session from its resident set. |
 | Large MCP catalogs | One operator MCP server with ~100 tools exceeds the 600-token index budget alone. Collapsing an over-budget server to a single index line is proposed but undesigned. |

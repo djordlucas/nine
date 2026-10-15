@@ -143,6 +143,8 @@ func TestValidateContextExposition(t *testing.T) {
 		"[context]\ntool_exposition = \"ranked\"\n":                          true,
 		"[context]\ntool_exposition = \"eager\"\n":                           false,
 		"[context]\npromoted_budget = -1\n":                                  false,
+		"[context]\ntool_exposition = \"hybrid\"\nhybrid_picks = 2\n":        true,
+		"[context]\nhybrid_picks = -1\n":                                     false,
 	} {
 		cfg, err := config.Load(writeConfig(t, "[llm]\nprovider = \"ollama\"\n"+body))
 		if err == nil {

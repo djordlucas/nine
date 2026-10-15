@@ -20,12 +20,17 @@ type Config struct {
 	ExtrasBudget int      // min remaining tokens required to include extras (0 → 200)
 	AlwaysTools  []string // tool names always included regardless of relevance
 
-	// Exposition is ExpositionRanked (the default, also for "") or
-	// ExpositionDeferred. Deferred advertises Resident and the input's Promoted
-	// tools and lists the rest in an index (adr/deferred-tool-schemas.md).
+	// Exposition is ExpositionRanked (the default, also for ""),
+	// ExpositionDeferred or ExpositionHybrid. Deferred advertises Resident and
+	// the input's Promoted tools and lists the rest in an index
+	// (adr/deferred-tool-schemas.md); hybrid also advertises Picks of the rest.
 	Exposition string
-	// Resident names the tools a deferred loop always advertises.
+	// Resident names the tools a deferred or hybrid loop always advertises.
 	Resident []string
+	// Picks is how many of the tools a hybrid loop would only index it also
+	// advertises, best-ranked against the turn's query. 0 is
+	// DefaultHybridPicks. Ignored unless hybrid.
+	Picks int
 }
 
 // ToolWithVector is a tool definition paired with its embedding for ranking.
@@ -98,12 +103,15 @@ func (b *Builder) BuildWithUsage(input BuildInput) (llm.Request, int) {
 type Exposure struct {
 	Indexed     []string
 	IndexTokens int
+	// Picked names the tools advertised because they ranked best against the
+	// query (Config.Picks), in rank order.
+	Picked []string
 }
 
 // BuildForCall is like BuildWithUsage but also returns the request's Exposure.
 func (b *Builder) BuildForCall(input BuildInput) (llm.Request, int, Exposure) {
 	req, used, rep := b.assemble(input, false)
-	return req, used, Exposure{Indexed: rep.Indexed, IndexTokens: rep.IndexTokens}
+	return req, used, Exposure{Indexed: rep.Indexed, IndexTokens: rep.IndexTokens, Picked: rep.Picked}
 }
 
 // BuildReport assembles the context exactly as BuildWithUsage does, but records a
@@ -142,8 +150,8 @@ func (b *Builder) assemble(input BuildInput, report bool) (llm.Request, int, Rep
 		indexed []string
 		index   string
 	)
-	if b.cfg.Exposition == ExpositionDeferred {
-		tools, indexed, index = deferTools(input.Tools, b.cfg.Resident, input.Promoted)
+	if Defers(b.cfg.Exposition) {
+		tools, indexed, rep.Picked, index = deferTools(input.Tools, b.cfg.Resident, input.Promoted, input.QueryVector, b.picks())
 	} else {
 		tools = b.selectTools(input.Tools, input.QueryVector, remaining)
 	}
@@ -154,8 +162,11 @@ func (b *Builder) assemble(input BuildInput, report bool) (llm.Request, int, Rep
 	}
 	remaining -= toolTok
 	detail := fmt.Sprintf("%d of %d selected", len(tools), len(input.Tools))
-	if b.cfg.Exposition == ExpositionDeferred {
+	if Defers(b.cfg.Exposition) {
 		detail = fmt.Sprintf("%d advertised (%d promoted), %d in the index", len(tools), len(input.Promoted), len(indexed))
+		if len(rep.Picked) > 0 {
+			detail = fmt.Sprintf("%d advertised (%d promoted, %d picked), %d in the index", len(tools), len(input.Promoted), len(rep.Picked), len(indexed))
+		}
 	}
 	add("tools", "2", toolTok, len(tools) > 0, detail)
 	rep.Indexed = indexed
@@ -478,6 +489,18 @@ func cosineSim(a, b []float32) float32 {
 }
 
 // --------- config defaults ---------
+
+// picks is how many indexed tools a request advertises by rank: the configured
+// count, or its default, when hybrid; none otherwise.
+func (b *Builder) picks() int {
+	switch {
+	case b.cfg.Exposition != ExpositionHybrid:
+		return 0
+	case b.cfg.Picks > 0:
+		return b.cfg.Picks
+	}
+	return DefaultHybridPicks
+}
 
 func (b *Builder) toolTopN() int {
 	if b.cfg.ToolTopN > 0 {

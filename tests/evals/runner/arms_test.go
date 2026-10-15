@@ -30,6 +30,7 @@ func TestParseArms(t *testing.T) {
 func TestApplicableArms(t *testing.T) {
 	free := &Case{}
 	pinned := &Case{Session: Session{Config: map[string]any{ArmKey: ArmRanked}}}
+	both := &Case{Session: Session{Config: map[string]any{ArmKey: []any{ArmDeferred, ArmHybrid}}}}
 	for _, tc := range []struct {
 		name      string
 		c         *Case
@@ -40,6 +41,8 @@ func TestApplicableArms(t *testing.T) {
 		{"every requested arm", free, []string{ArmRanked}, ArmRanked},
 		{"a pinned case runs in its arm", pinned, []string{ArmRanked}, ArmRanked},
 		{"a pinned case outside the request is not run", pinned, []string{"other"}, "<none>"},
+		{"a case pinning a list runs in each requested", both, []string{ArmRanked, ArmDeferred, ArmHybrid}, "deferred,hybrid"},
+		{"a case pinning a list, no arms requested, runs once", both, nil, ""},
 	} {
 		got := strings.Join(tc.c.ApplicableArms(tc.requested), ",")
 		if got == "" && len(tc.c.ApplicableArms(tc.requested)) == 0 {
@@ -62,6 +65,13 @@ func TestWithArm(t *testing.T) {
 	}
 	if c.withArm("") != c {
 		t.Error(`withArm("") must return the case itself`)
+	}
+	both := &Case{Session: Session{Config: map[string]any{ArmKey: []any{ArmDeferred, ArmHybrid}}}}
+	if got := both.withArm(""); got.Session.Config[ArmKey] != ArmDeferred {
+		t.Errorf(`withArm("") on a list = %v, want its first arm`, got.Session.Config[ArmKey])
+	}
+	if got := both.withArm(ArmHybrid); got.Session.Config[ArmKey] != ArmHybrid {
+		t.Errorf("withArm(hybrid) = %v", got.Session.Config[ArmKey])
 	}
 }
 

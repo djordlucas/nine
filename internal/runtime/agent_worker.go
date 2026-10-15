@@ -484,6 +484,7 @@ func (w *AgentWorker) turnHooks(turn int) agent.Hooks {
 				Messages:   req.Messages,
 				ToolNames:  names,
 				ToolIndex:  w.loop.LastToolIndex(),
+				ToolPicked: w.loop.LastToolPicks(),
 				ToolTokens: toolTokens,
 				MaxTokens:  req.MaxTokens,
 				TokensUsed: tokensUsed,

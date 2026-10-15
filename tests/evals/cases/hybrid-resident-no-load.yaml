@@ -1,0 +1,38 @@
+id: hybrid-resident-no-load
+description: >
+  deferred-resident-no-load in the hybrid mode: a plain read-and-answer task
+  costs no tool_search round trip, and the picks keep the tool block under
+  half of ranked's (adr/deferred-tool-schemas.md, "Hybrid").
+track: live
+tier: smoke
+tags: [deferred-tools, files, workspace]
+
+session:
+  config:
+    context.tool_exposition: hybrid
+
+setup:
+  files:
+    /work/config/service.toml: |
+      [server]
+      host = "0.0.0.0"
+      port = 8743
+
+prompts:
+  - "Which port does /work/config/service.toml set?"
+
+expect:
+  trajectory:
+    tools_all_of: [read_file]
+    tool_calls:
+      tool_search: { max: 0 }
+    llm_request:
+      tool_tokens_max: 3300
+    no_stall: true
+  answer:
+    contains: ["8743"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

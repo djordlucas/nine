@@ -95,14 +95,16 @@ type LoopConfig struct {
 	GeneratedEval bool
 
 	// ToolExposition mirrors [context] tool_exposition: "deferred" advertises a
-	// resident set and indexes the rest (adr/deferred-tool-schemas.md); anything
-	// else is ranked.
+	// resident set and indexes the rest (adr/deferred-tool-schemas.md), "hybrid"
+	// also advertises the best-ranked few of the rest; anything else is ranked.
 	ToolExposition string
 	// ResidentTools mirrors [context] resident_tools: tools a deferred loop keeps
 	// resident besides defaultResidentTools.
 	ResidentTools []string
 	// PromotedBudget mirrors [context] promoted_budget; 0 is the default.
 	PromotedBudget int
+	// HybridPicks mirrors [context] hybrid_picks; 0 is the default.
+	HybridPicks int
 }
 
 // AgentBuilderConfig holds the behavioral dependencies layered on top of the
@@ -544,9 +546,9 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		processTools = append(processTools, agent.SQLToolName)
 	}
 
-	// A deferred loop's tool_search is the load path for its indexed tools, so
-	// it needs no embedder: it loads by name and ranks lexically.
-	deferred := lc.ToolExposition == ninectx.ExpositionDeferred
+	// A deferred or hybrid loop's tool_search is the load path for its indexed
+	// tools, so it needs no embedder: it loads by name and ranks lexically.
+	deferred := ninectx.Defers(lc.ToolExposition)
 	shellTools = append(shellTools, "tool_list", "doc_read", "doc_search")
 	if lc.Embedder != nil || deferred {
 		shellTools = append(shellTools, "tool_search")
@@ -694,6 +696,7 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		AlwaysTools: alwaysTools,
 		Exposition:  lc.ToolExposition,
 		Resident:    append(slices.Clone(defaultResidentTools), lc.ResidentTools...),
+		Picks:       lc.HybridPicks,
 	})
 
 	var selfModelFn func(ctx context.Context, queryVec []float32) string

@@ -117,6 +117,72 @@ func TestDeferred_ToolTokensCountTheIndex(t *testing.T) {
 	}
 }
 
+// withVectors gives each named tool a unit vector along its own axis, so a query
+// vector along an axis ranks that tool first.
+func withVectors(tools []ninectx.ToolWithVector, axes map[string]int) []ninectx.ToolWithVector {
+	for i := range tools {
+		v := make([]float32, 4)
+		if a, ok := axes[tools[i].Tool.Name]; ok {
+			v[a] = 1
+		} else {
+			v[3] = 0.1
+		}
+		tools[i].Vector = v
+	}
+	return tools
+}
+
+func TestHybrid_PicksAdvertiseTheBestRankedOfTheRest(t *testing.T) {
+	tools := withVectors(largeCatalog(), map[string]int{"job_wait": 0, "process_list": 1, "read_file": 0, "tool_list": 0})
+	b := ninectx.New(ninectx.Config{Budget: 100000, Exposition: ninectx.ExpositionHybrid, Resident: []string{"read_file"}, Picks: 2})
+	req, _, exp := b.BuildForCall(ninectx.BuildInput{
+		SystemCore:  "core",
+		Tools:       tools,
+		Promoted:    []string{"trash_list"},
+		QueryVector: []float32{1, 0.5, 0, 0},
+	})
+	// read_file is resident and tool_list a catalog tool, so neither is picked
+	// although both rank first; the picks follow resident and promoted.
+	want := []string{"read_file", "trash_list", "job_wait", "process_list"}
+	if got := toolNames(req.Tools); !slices.Equal(got, want) {
+		t.Errorf("advertised = %v, want %v", got, want)
+	}
+	if !slices.Equal(exp.Picked, []string{"job_wait", "process_list"}) {
+		t.Errorf("picked = %v", exp.Picked)
+	}
+	if slices.Contains(exp.Indexed, "job_wait") || !slices.Contains(exp.Indexed, "tool_list") {
+		t.Errorf("a picked tool must leave the index: %v", exp.Indexed)
+	}
+}
+
+func TestHybrid_DefaultPicks(t *testing.T) {
+	tools := withVectors(largeCatalog(), map[string]int{"job_wait": 0, "process_list": 0, "memory_get": 0, "restore_file": 0})
+	b := ninectx.New(ninectx.Config{Budget: 100000, Exposition: ninectx.ExpositionHybrid, Resident: []string{"read_file"}})
+	_, _, exp := b.BuildForCall(ninectx.BuildInput{SystemCore: "core", Tools: tools, QueryVector: []float32{1, 0, 0, 0}})
+	if len(exp.Picked) != ninectx.DefaultHybridPicks {
+		t.Errorf("picked %v, want %d tools", exp.Picked, ninectx.DefaultHybridPicks)
+	}
+}
+
+func TestDeferred_NoPicks(t *testing.T) {
+	tools := withVectors(largeCatalog(), map[string]int{"job_wait": 0})
+	for name, tc := range map[string]struct {
+		mode  string
+		picks int
+		query []float32
+	}{
+		"deferred ignores picks": {ninectx.ExpositionDeferred, 3, []float32{1, 0, 0, 0}},
+		"hybrid, no embedder":    {ninectx.ExpositionHybrid, 3, nil},
+	} {
+		b := ninectx.New(ninectx.Config{Budget: 100000, Exposition: tc.mode, Resident: []string{"read_file"}, Picks: tc.picks})
+		base, _, _ := deferredBuilder("read_file").BuildForCall(ninectx.BuildInput{SystemCore: "core", Tools: tools})
+		req, _, exp := b.BuildForCall(ninectx.BuildInput{SystemCore: "core", Tools: tools, QueryVector: tc.query})
+		if exp.Picked != nil || !slices.Equal(toolNames(req.Tools), toolNames(base.Tools)) || req.System != base.System {
+			t.Errorf("%s: the request differs from plain deferred: picked=%v", name, exp.Picked)
+		}
+	}
+}
+
 func TestRanked_IgnoresPromotedAndIndexesNothing(t *testing.T) {
 	b := ninectx.New(ninectx.Config{Budget: 100000})
 	req, _, exp := b.BuildForCall(ninectx.BuildInput{SystemCore: "core", Tools: largeCatalog(), Promoted: []string{"job_wait"}})

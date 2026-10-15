@@ -523,6 +523,7 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 		ToolExposition:      caseString(c, ArmKey),
 		ResidentTools:       caseStrings(c, "context.resident_tools"),
 		PromotedBudget:      caseInt(c, "context.promoted_budget", 0),
+		HybridPicks:         caseInt(c, "context.hybrid_picks", 0),
 		SystemPrompt:        runtime.BuildSystemPrompt(),
 		RelatedSessions:     embedder != nil,
 		SurfaceMemories:     embedder != nil,

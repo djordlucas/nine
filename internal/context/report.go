@@ -17,6 +17,9 @@ type Report struct {
 	Indexed []string `json:"indexed,omitempty"`
 	// IndexTokens is the index's estimated size, part of the tools section.
 	IndexTokens int `json:"index_tokens,omitempty"`
+	// Picked names the tools a deferred loop advertised because they ranked
+	// best against the query (hybrid exposition).
+	Picked []string `json:"picked,omitempty"`
 }
 
 // Section is one priority band's contribution to the assembled context.
