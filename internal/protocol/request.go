@@ -148,6 +148,12 @@ type GoalCreateReq struct {
 // GoalDeleteReq deletes a goal, its sub-goals, and stops its pursue session.
 type GoalDeleteReq struct{ ID string }
 
+// GoalSetStatusReq sets a goal's status as the operator.
+type GoalSetStatusReq struct {
+	ID     string
+	Status string
+}
+
 // SessionHistoryReq asks for a session's transcript.
 type SessionHistoryReq struct{ AgentID string }
 
@@ -201,6 +207,7 @@ func (HumanAnswerReq) Type() MsgType       { return TypeHumanInputAnswer }
 func (GrantsDecideReq) Type() MsgType      { return TypeGrantsDecide }
 func (GoalCreateReq) Type() MsgType        { return TypeGoalCreate }
 func (GoalDeleteReq) Type() MsgType        { return TypeGoalDelete }
+func (GoalSetStatusReq) Type() MsgType     { return TypeGoalSetStatus }
 func (SessionHistoryReq) Type() MsgType    { return TypeSessionHistory }
 func (SessionEventsReq) Type() MsgType     { return TypeSessionEvents }
 func (WatchReq) Type() MsgType             { return TypeWatch }
@@ -280,6 +287,8 @@ func DecodeRequest(m Msg) (Request, error) {
 		return GoalCreateReq{Description: m.Text, ParentID: m.ID}, nil
 	case TypeGoalDelete:
 		return GoalDeleteReq{ID: m.Text}, nil
+	case TypeGoalSetStatus:
+		return GoalSetStatusReq{ID: m.ID, Status: m.Text}, nil
 	case TypeSessionHistory:
 		return SessionHistoryReq{AgentID: m.AgentID}, nil
 	case TypeSessionEvents:

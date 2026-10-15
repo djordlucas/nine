@@ -143,6 +143,7 @@ func (r *StandingRunner) bindGoals() {
 			slog.Warn("live process: stop for its goal", "id", p.ID, "err", err)
 			continue
 		}
+		journalTransition(r.store, p.ID, evStandingStopped, map[string]any{"by": "goal", "goal_id": p.GoalID})
 		r.log.add(p.ID, "stopped", "its goal is no longer active")
 	}
 	paused, err := r.store.ProcessesStoppedBy("goal")
@@ -156,7 +157,10 @@ func (r *StandingRunner) bindGoals() {
 		}
 		if _, err := r.store.ProcessSetState(p.ID, memory.ProcessRunning); err != nil {
 			slog.Warn("live process: restart for its goal", "id", p.ID, "err", err)
+			continue
 		}
+		journalTransition(r.store, p.ID, evStandingStarted, map[string]any{"by": "goal", "goal_id": p.GoalID})
+		r.log.add(p.ID, "started", "its goal is active again")
 	}
 }
 

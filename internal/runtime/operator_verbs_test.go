@@ -100,6 +100,35 @@ func TestGoalDeleteRefusesAConfigGoal(t *testing.T) {
 	}
 }
 
+// The operator sets a goal's status over the wire; an unknown goal or status
+// is refused rather than written.
+func TestGoalSetStatusOverTheWire(t *testing.T) {
+	store, sock := operatorHarness(t, seqProvider(nil))
+	if err := store.GoalCreate("g1", "watch", "", "operator"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := dial(t, sock).SetGoalStatus("g1", "paused")
+	if err != nil {
+		t.Fatalf("SetGoalStatus: %v", err)
+	}
+	var g memory.Goal
+	if err := json.Unmarshal(raw, &g); err != nil || g.ID != "g1" || g.Status != "paused" {
+		t.Fatalf("reply = %s (%v)", raw, err)
+	}
+	if stored, _ := store.GoalGet("g1"); stored.Status != "paused" {
+		t.Errorf("stored status = %q", stored.Status)
+	}
+	if _, err := dial(t, sock).SetGoalStatus("nope", "paused"); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Errorf("unknown goal: err = %v, want not found", err)
+	}
+	if _, err := dial(t, sock).SetGoalStatus("g1", "sleeping"); err == nil || !strings.Contains(err.Error(), "not one of") {
+		t.Errorf("unknown status: err = %v", err)
+	}
+	if stored, _ := store.GoalGet("g1"); stored.Status != "paused" {
+		t.Errorf("a refused status was written: %q", stored.Status)
+	}
+}
+
 func TestListSkillsOverTheWire(t *testing.T) {
 	store, sock := operatorHarness(t, seqProvider(nil))
 	if err := store.SkillUpsert(memory.Skill{Name: "triage", Description: "sort issues", Tags: []string{"ops"}, Content: "body", Source: memory.SkillSourceUser}); err != nil {

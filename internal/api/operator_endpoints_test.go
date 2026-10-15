@@ -402,6 +402,41 @@ func TestDeleteGoal(t *testing.T) {
 	}
 }
 
+func TestSetGoalStatus(t *testing.T) {
+	var asked protocol.Msg
+	sock := scriptedDaemon(t, func(m protocol.Msg) []protocol.Msg {
+		asked = m
+		if m.ID != "g1" {
+			return errReply("goal " + m.ID + " not found")
+		}
+		return []protocol.Msg{protocol.NewTextMsg(protocol.TypeGoalSetStatus,
+			`{"id":"g1","description":"watch","status":"`+m.Text+`","parent_type":"operator"}`)}
+	})
+
+	w := doAt(t, sock, "POST", "/api/v1/goals/g1/status", `{"status":"paused"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+	if asked.Type != protocol.TypeGoalSetStatus || asked.ID != "g1" || asked.Text != "paused" {
+		t.Errorf("daemon asked %+v", asked)
+	}
+	var got struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	}
+	decodeJSON(t, w, &got)
+	if got.ID != "g1" || got.Status != "paused" {
+		t.Errorf("response = %+v", got)
+	}
+
+	if w := doAt(t, sock, "POST", "/api/v1/goals/nope/status", `{"status":"active"}`); w.Code != http.StatusNotFound {
+		t.Errorf("missing goal: status %d, want 404", w.Code)
+	}
+	if w := doAt(t, sock, "POST", "/api/v1/goals/g1/status", `{"status":"sleeping"}`); w.Code != http.StatusBadRequest {
+		t.Errorf("unknown status: status %d, want 400", w.Code)
+	}
+}
+
 func TestListSkills(t *testing.T) {
 	sock := scriptedDaemon(t, func(m protocol.Msg) []protocol.Msg {
 		return textReply(t, protocol.TypeListSkills, map[string]any{"skills": []protocol.SkillInfo{

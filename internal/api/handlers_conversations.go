@@ -445,6 +445,15 @@ func decodeContext(raw string) map[string]any {
 // ptr returns a pointer to v, for the optional fields the generator emits.
 func ptr[T any](v T) *T { return &v }
 
+// ptrIfPositive is ptr(n), or nil for an n a daemon too old to report it sent
+// as zero.
+func ptrIfPositive(n int) *int {
+	if n <= 0 {
+		return nil
+	}
+	return &n
+}
+
 // CancelTurn cancels the turn a conversation is running, keeping the session.
 func (s *Server) CancelTurn(ctx context.Context, request apigen.CancelTurnRequestObject) (apigen.CancelTurnResponseObject, error) {
 	if request.Id == "" {

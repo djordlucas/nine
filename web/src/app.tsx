@@ -5,9 +5,11 @@ import { connect, disconnect } from './api/events';
 import { Shell } from './components/Shell';
 import { Dashboard } from './pages/Dashboard';
 import { Conversations } from './pages/Conversations';
+import { Goals } from './pages/Goals';
 import { Journal } from './pages/Journal';
 import { Login } from './pages/Login';
 import { NotFound, Pending } from './pages/Pending';
+import { Processes } from './pages/Processes';
 import { Turn } from './pages/Turn';
 
 export function App() {
@@ -47,8 +49,11 @@ export function App() {
           <Route path="/conversations/:id/turns/:n" component={Turn} />
           <Route path="/conversations/:id" component={Conversations} />
           <Route path="/conversations" component={Conversations} />
-          <Route path="/processes/*" component={Pending} />
-          <Route path="/goals/*" component={Pending} />
+          <Route path="/processes/:id" component={Processes} />
+          <Route path="/processes" component={Processes} />
+          <Route path="/goals/workflows/:id" component={Goals} />
+          <Route path="/goals/:id" component={Goals} />
+          <Route path="/goals" component={Goals} />
           <Route path="/tools/*" component={Pending} />
           <Route path="/inbox/*" component={Pending} />
           <Route path="/journal" component={Journal} />

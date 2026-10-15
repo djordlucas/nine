@@ -348,6 +348,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/goals/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set a goal's status
+         * @description Sets a goal's status as the operator. The status decides whether the processes bound to the goal run, so pausing a goal stops them and setting it active again restarts the ones it stopped; done and archived leave them stopped (docs/processes.md).
+         */
+        post: operations["setGoalStatus"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1161,6 +1181,14 @@ export interface components {
             /** Format: date-time */
             updated_at?: string;
         };
+        /** @description A goal's new status. */
+        SetGoalStatusRequest: {
+            /**
+             * @description active is in progress, paused is on hold, done is attained, archived is retired without completion.
+             * @enum {string}
+             */
+            status: "active" | "paused" | "done" | "archived";
+        };
         /** @description The API server's own health, and whether it can reach the daemon. */
         HealthResponse: {
             daemon_connected: boolean;
@@ -1495,6 +1523,8 @@ export interface components {
         /** @description The daemon's status: uptime, active sessions and the plugin roster. */
         StatusResponse: {
             active_sessions?: number;
+            /** @description [processes] max_running: how many processes may run at once. */
+            max_running?: number;
             config?: {
                 [key: string]: unknown;
             };
@@ -2879,6 +2909,72 @@ export interface operations {
             };
             /** @description goal is declared in nine.toml */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    setGoalStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description goal id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description the new status */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetGoalStatusRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoalInfo"];
+                };
+            };
+            /** @description missing id or an unknown status */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description goal not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

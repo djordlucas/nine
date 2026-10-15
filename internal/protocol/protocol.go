@@ -41,6 +41,7 @@ const (
 	TypePluginCall      MsgType = "plugin_call"
 	TypeGoalCreate      MsgType = "goal_create"
 	TypeGoalDelete      MsgType = "goal_delete"
+	TypeGoalSetStatus   MsgType = "goal_set_status"
 	TypeSessionHistory  MsgType = "session_history"
 	TypeSessionEvents   MsgType = "session_events"
 	TypeTurnCancel      MsgType = "turn_cancel"
@@ -180,6 +181,7 @@ var ClientMsgTypes = []MsgType{
 	TypePluginCall,
 	TypeGoalCreate,
 	TypeGoalDelete,
+	TypeGoalSetStatus,
 	TypeSessionHistory,
 	TypeSessionEvents,
 	TypeWatch,
@@ -239,6 +241,8 @@ const (
 //	"goal_create"      — create a goal as the operator; Text = description,
 //	                     ID = parent goal id (optional; empty for a top-level goal)
 //	"goal_delete"      — delete a goal, its sub-goals, and stop its session; Text = goal ID
+//	"goal_set_status"  — set a goal's status as the operator; ID = goal ID,
+//	                     Text = active|paused|done|archived
 //	"session_history"  — a session's transcript from the journal; AgentID set
 //	"session_events"   — a session's raw journal; AgentID set, Turn = 0 for every
 //	                     turn, N for turn N, or -1 for the latest turn
@@ -273,6 +277,7 @@ const (
 //	"list_skills"      — skill catalog; Text carries JSON {"skills": [SkillInfo]}
 //	"goal_create"      — created goal; Text carries JSON-encoded GoalCreateResult
 //	"goal_delete"      — deletion result; Text carries JSON-encoded GoalDeleteResult
+//	"goal_set_status"  — the updated goal; Text carries it as JSON
 //	"session_history"  — transcript; Text carries a JSON array of Msg (history_user,
 //	                     tool_start, tool_end, sub_agent_start, sub_agent_end, response)
 //	"session_events"   — journal; Text carries a JSON array of JournalEvent
@@ -581,6 +586,8 @@ type StatusInfo struct {
 	Plugins   []string       `json:"plugins"`
 	Uptime    string         `json:"uptime"`
 	LLMQueue  *QueueStat     `json:"llm_queue,omitempty"`
+	// MaxRunning is [processes] max_running, the cap on running processes.
+	MaxRunning int `json:"max_running,omitempty"`
 }
 
 // SkillInfo describes one skill for the "list_skills" response. Source is
@@ -770,6 +777,15 @@ func NewGoalCreateMsg(description, parentID string) Msg {
 func NewGoalDeleteMsg(id string) Msg {
 	return Msg{Type: TypeGoalDelete, Text: id}
 }
+
+// NewGoalSetStatusMsg sets a goal's status as the operator.
+func NewGoalSetStatusMsg(id, status string) Msg {
+	return Msg{Type: TypeGoalSetStatus, ID: id, Text: status}
+}
+
+// GoalStatuses are the statuses a goal may have. A process bound to a goal
+// runs while it is active (docs/processes.md).
+var GoalStatuses = []string{"active", "paused", "done", "archived"}
 
 // NewSessionHistoryMsg asks for a session's transcript.
 func NewSessionHistoryMsg(agentID string) Msg {

@@ -582,6 +582,14 @@ func (c *Client) DeleteGoal(id string) (GoalDeleteResult, error) {
 	return out, err
 }
 
+// SetGoalStatus sets a goal's status as the operator and returns the updated
+// goal as the store holds it.
+func (c *Client) SetGoalStatus(id, status string) (json.RawMessage, error) {
+	var out json.RawMessage
+	err := c.roundTrip(NewGoalSetStatusMsg(id, status), &out)
+	return out, err
+}
+
 // SessionHistory requests a session's transcript from the journal: user
 // prompts (history_user), tool and sub-agent activity, and responses, in order.
 func (c *Client) SessionHistory(agentID string) ([]Msg, error) {

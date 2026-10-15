@@ -156,7 +156,7 @@ All endpoints are under `/api/v1`. Content type is `application/json` for both r
 
 ```
 GET /api/v1/health    — API server health (daemon connectivity, uptime, version)
-GET /api/v1/status    — Daemon status (sessions, plugins, tools, memory)
+GET /api/v1/status    — Daemon status (sessions, plugins, tools, memory, max_running)
 ```
 
 ### Conversations
@@ -202,6 +202,7 @@ drives stop. Its transcript and journal stay.
 ```
 GET    /api/v1/goals              POST /api/v1/goals
 GET    /api/v1/goals/{id}         DELETE /api/v1/goals/{id}
+POST   /api/v1/goals/{id}/status
 
 GET    /api/v1/workflows          POST /api/v1/workflows/{id}/stop  POST /api/v1/workflows/{id}/fail
 
@@ -240,6 +241,13 @@ goal's pursue session; the session's transcript and journal are kept. The
 response lists the deleted ids. A goal declared by a `[[process]]` block in
 `nine.toml` is `409 conflict`, because the next boot would re-create it — remove
 the block instead.
+
+`POST /goals/{id}/status` takes `{"status": "…"}`, one of `active`, `paused`,
+`done` or `archived`, and returns the updated goal. The status decides whether
+the processes bound to the goal run: `paused` stops them, `active` restarts the
+ones it stopped, and `done` or `archived` leave them stopped. A process its goal
+stopped is restarted this way, not with `/processes/{id}/start`. An unknown
+status is `400`, an unknown goal `404`.
 
 `GET /capabilities` returns the generated-tool ceiling in force — each grant with its
 `source`, one of `default`, `config` or `approved` — together with every request the

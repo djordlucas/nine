@@ -987,6 +987,55 @@ paths:
       security:
       - bearerAuth: []
       - cookieAuth: []
+  /goals/{id}/status:
+    post:
+      operationId: setGoalStatus
+      summary: Set a goal's status
+      description: Sets a goal's status as the operator. The status decides whether the processes bound to
+        the goal run, so pausing a goal stops them and setting it active again restarts the ones it stopped;
+        done and archived leave them stopped (docs/processes.md).
+      tags:
+      - goals
+      parameters:
+      - name: id
+        in: path
+        description: goal id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        description: the new status
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetGoalStatusRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoalInfo'
+        '400':
+          description: missing id or an unknown status
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: goal not found
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
   /health:
     get:
       operationId: getHealth
@@ -2554,6 +2603,21 @@ components:
         updated_at:
           type: string
           format: date-time
+    SetGoalStatusRequest:
+      description: A goal's new status.
+      type: object
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          enum:
+          - active
+          - paused
+          - done
+          - archived
+          description: active is in progress, paused is on hold, done is attained, archived is retired
+            without completion.
     HealthResponse:
       description: The API server's own health, and whether it can reach the daemon.
       type: object
@@ -3217,6 +3281,9 @@ components:
       properties:
         active_sessions:
           type: integer
+        max_running:
+          type: integer
+          description: '[processes] max_running: how many processes may run at once.'
         config:
           type: object
           additionalProperties: true
