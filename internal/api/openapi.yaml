@@ -1590,6 +1590,43 @@ paths:
       security:
       - bearerAuth: []
       - cookieAuth: []
+  /skills/{name}:
+    get:
+      operationId: getSkill
+      summary: Get a skill
+      description: Returns one skill with its Markdown body, as skill_read gives it to the model.
+      tags:
+      - skills
+      parameters:
+      - name: name
+        in: path
+        description: skill name
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: skill not found
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
   /tools:
     get:
       operationId: listTools
@@ -2569,10 +2606,20 @@ components:
         input_schema:
           description: The tool's JSON Schema for its arguments, passed through as the tool declares it.
         kind:
+          description: 'core: built into Nine. plugin: served by a plugin. sandboxed: an installed sandboxed
+            tool. generated: one Nine wrote.'
           type: string
         loaded:
           type: boolean
         manifest_path:
+          type: string
+        deps:
+          description: the npm packages a generated tool's bundle carries, as name@version
+          type: array
+          items:
+            type: string
+        timeout:
+          description: this tool's per-call deadline when [tool.<name>] timeout overrides [tools] timeout
           type: string
         name:
           type: string
@@ -3326,6 +3373,33 @@ components:
       required:
       - name
       - source
+    SkillDetail:
+      description: One skill with its body.
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        source:
+          description: 'builtin: seeded from the binary. user: seeded from [skills].user_dir. agent: written by
+            Nine itself.'
+          type: string
+          enum:
+          - builtin
+          - user
+          - agent
+        content:
+          description: the skill's body, in Markdown
+          type: string
+      required:
+      - name
+      - source
+      - content
     CancelTurnResponse:
       description: Whether a running turn was cancelled.
       type: object
@@ -3597,11 +3671,20 @@ components:
         input_schema:
           description: The tool's JSON Schema for its arguments, passed through as the tool declares it.
         kind:
-          description: plugin, sandboxed, generated
+          description: 'core: built into Nine. plugin: served by a plugin. sandboxed: an installed sandboxed
+            tool. generated: one Nine wrote.'
           type: string
         loaded:
           type: boolean
         manifest_path:
+          type: string
+        deps:
+          description: the npm packages a generated tool's bundle carries, as name@version
+          type: array
+          items:
+            type: string
+        timeout:
+          description: this tool's per-call deadline when [tool.<name>] timeout overrides [tools] timeout
           type: string
         name:
           type: string

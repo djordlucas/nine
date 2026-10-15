@@ -209,3 +209,32 @@
     border-top: 1px solid var(--border);
   }
 }
+
+/* The Inbox's count of what waits for the operator. */
+.badge {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: center;
+}
+
+.railLink .badge {
+  margin-left: auto;
+}
+
+@media (max-width: 767px) {
+  .tab {
+    position: relative;
+  }
+
+  .tab .badge {
+    position: absolute;
+    top: 4px;
+    left: calc(50% + 6px);
+  }
+}

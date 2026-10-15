@@ -6,10 +6,12 @@ import { Shell } from './components/Shell';
 import { Dashboard } from './pages/Dashboard';
 import { Conversations } from './pages/Conversations';
 import { Goals } from './pages/Goals';
+import { Inbox } from './pages/Inbox';
 import { Journal } from './pages/Journal';
 import { Login } from './pages/Login';
 import { NotFound, Pending } from './pages/Pending';
 import { Processes } from './pages/Processes';
+import { Tools } from './pages/Tools';
 import { Turn } from './pages/Turn';
 
 export function App() {
@@ -54,8 +56,12 @@ export function App() {
           <Route path="/goals/workflows/:id" component={Goals} />
           <Route path="/goals/:id" component={Goals} />
           <Route path="/goals" component={Goals} />
-          <Route path="/tools/*" component={Pending} />
-          <Route path="/inbox/*" component={Pending} />
+          <Route path="/tools/plugins" component={Tools} />
+          <Route path="/tools/skills/:name" component={Tools} />
+          <Route path="/tools/skills" component={Tools} />
+          <Route path="/tools/:name" component={Tools} />
+          <Route path="/tools" component={Tools} />
+          <Route path="/inbox" component={Inbox} />
           <Route path="/journal" component={Journal} />
           <Route path="/system/*" component={Pending} />
           <Route default component={NotFound} />

@@ -565,6 +565,13 @@ func (c *Client) ListSkills() ([]SkillInfo, error) {
 	return out.Skills, nil
 }
 
+// GetSkill requests one skill with its body.
+func (c *Client) GetSkill(name string) (SkillDetail, error) {
+	var out SkillDetail
+	err := c.roundTrip(NewSkillGetMsg(name), &out)
+	return out, err
+}
+
 // CreateGoal creates a goal on the operator's behalf. parentID names a parent
 // goal for a sub-goal; empty creates a top-level goal with its own pursue
 // session.

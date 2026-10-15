@@ -265,11 +265,18 @@ boot. A bad action, an already-settled request and an unrevocable grant are all
 ### Other
 
 ```
-GET /api/v1/notifications   GET /api/v1/skills   POST /api/v1/sessions/attach
+GET /api/v1/notifications   GET /api/v1/skills   GET /api/v1/skills/{name}
+POST /api/v1/sessions/attach
 GET /api/v1/docs             GET /api/v1/docs/{topic}
 GET /api/v1/spec             GET /api/v1/spec/{topic}
 GET /api/v1/events           GET /api/v1/questions
 ```
+
+`GET /tools` is the whole roster: every tool an agent can call, with its input
+schema, and the sandboxed tools with their `kind` (`sandboxed` or `generated`),
+capabilities, dependencies (`deps`) and timeout. A sandboxed tool that failed to
+load is listed with `loaded: false` and its `error`. `GET /skills/{name}` returns
+one skill with its Markdown body.
 
 `GET /questions` lists the `ask_human` questions still waiting for an answer, oldest
 first, with the conversation that asked. A question is answered over that

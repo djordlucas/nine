@@ -152,6 +152,23 @@ func TestListSkillsOverTheWire(t *testing.T) {
 	}
 }
 
+func TestSkillGetOverTheWire(t *testing.T) {
+	store, sock := operatorHarness(t, seqProvider(nil))
+	if err := store.SkillUpsert(memory.Skill{Name: "triage", Description: "sort issues", Tags: []string{"ops"}, Content: "# Triage\nbody", Source: memory.SkillSourceUser}); err != nil {
+		t.Fatal(err)
+	}
+	sk, err := dial(t, sock).GetSkill("triage")
+	if err != nil {
+		t.Fatalf("GetSkill: %v", err)
+	}
+	if sk.Name != "triage" || sk.Content != "# Triage\nbody" || sk.Source != "user" || len(sk.Tags) != 1 {
+		t.Errorf("skill = %+v", sk)
+	}
+	if _, err := dial(t, sock).GetSkill("nope"); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Errorf("unknown skill: err = %v, want not found", err)
+	}
+}
+
 // History and the journal are read through the daemon, after a turn, without
 // attaching — a read must not register the caller as attached.
 func TestSessionHistoryAndEventsOverTheWire(t *testing.T) {
