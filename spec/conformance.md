@@ -201,6 +201,7 @@ How to use this file:
 | R-DISP.5 | Post-call hooks | A registered post-call hook fires after the matching tool returns. |
 | R-DISP.6 | Role-aware registration (I6) | Registration follows the role's Delegates/SpawnsGoals/allowlist gates; delegation tools are absent once depthGuard is exhausted. |
 | R-DISP.7 | Reference arguments | A property marked `x-nine-ref` is resolved from the file store before dispatch; unmarked properties are never expanded; an unresolvable path fails the call; approval gates and hooks see the unexpanded arguments. |
+| R-DISP.8 | Call-to-load | Under deferred or hybrid exposition, a failed call to an indexed tool returns its description and schema and promotes it; a successful one promotes nothing; a failed call to a toolkit's name promotes its indexed tools; `<toolkit>:<tool>` and `<toolkit>/<tool>` dispatch as the tool. |
 
 ---
 

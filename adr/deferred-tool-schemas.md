@@ -642,6 +642,14 @@ What hybrid does not fix:
 - **The 2,500 gate.** Three picks add ~500 tokens. Hybrid's gate is set at
   3,300, half of ranked's, by `hybrid-resident-no-load`.
 
+Two fixes follow from the sweep, for deferred and hybrid alike. A call to a
+toolkit's name loads that toolkit's indexed tools, and a call to
+`<toolkit>:<tool>` or `<toolkit>/<tool>` runs the tool (R-DISP.8). `js_eval` and
+`tool_delete` get index glosses, "run JavaScript, e.g. to compute" and "removes a
+written tool and its process". Making `edit_file` resident was tried and
+dropped: it costs ~300 tokens, puts deferred over its gate, and hybrid's picks
+already surface it for an edit.
+
 `deferred-call-to-load` and `deferred-resident-no-load` test deferred's own
 mechanics and stay pinned to it; the other deferred cases pin
 `[deferred, hybrid]`. Phase 4 flips the default to `hybrid`, not `deferred`, once

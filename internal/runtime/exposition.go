@@ -51,8 +51,14 @@ var toolkitOf = func() map[string]string {
 	return m
 }()
 
-// builtinGlosses annotate the built-in tools whose names mislead on their own.
-var builtinGlosses = map[string]string{"delete_file": "to trash"}
+// builtinGlosses annotate the built-in tools whose names mislead on their own:
+// in phase 3's sweep models reached for shell over js_eval, and stopped a
+// written process with process_stop rather than remove it with tool_delete.
+var builtinGlosses = map[string]string{
+	"delete_file": "to trash",
+	"js_eval":     "run JavaScript, e.g. to compute",
+	"tool_delete": "removes a written tool and its process",
+}
 
 // annotateBuiltin sets the toolkit and gloss of a tool Nine names.
 func annotateBuiltin(tw *ninectx.ToolWithVector) {

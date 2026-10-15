@@ -58,7 +58,10 @@ this mode.
 
 **Calling from the index.** An indexed tool is callable by name without a load.
 If such a call fails, its result carries the tool's schema and the tool is
-promoted, so the model's next attempt is against a declared tool.
+promoted, so the model's next attempt is against a declared tool. Models also
+read an index line as names: a call to a toolkit's name (`jobs`) loads that
+toolkit's indexed tools, and a call to `<toolkit>:<tool>` or `<toolkit>/<tool>`
+runs the tool.
 
 **Bounds.** Promoted schemas are capped by `[context] promoted_budget` (1,500
 tokens by default). Before a turn's first request, the tool called least
