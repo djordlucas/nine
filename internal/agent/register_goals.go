@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 
 	"nine/internal/llm"
 	"nine/internal/memory"
@@ -35,6 +37,9 @@ var goalToolDefs = []llm.ToolDef{
 		InputSchema: json.RawMessage(`{"type":"object","required":["goal_id","status"],"properties":{"goal_id":{"type":"string"},"status":{"type":"string","enum":["active","paused","done","archived"],"description":"active = in progress, paused = temporarily on hold, done = completed or resolved, archived = retired without completion."}}}`),
 	},
 }
+
+// goalStatuses are the statuses goal_update_status accepts, as its schema lists.
+var goalStatuses = []string{"active", "paused", "done", "archived"}
 
 // RegisterGoalTools registers all four goal handlers into d (goal_create plus
 // the three self-management tools). It is the combined convenience used where a
@@ -159,6 +164,22 @@ func RegisterGoalManagement(d *Dispatcher, store *memory.Store) {
 		}
 		if err := json.Unmarshal(args, &req); err != nil {
 			return "", fmt.Errorf("goal_update_status: %w", err)
+		}
+		// The store writes any string to any id and reports success even when
+		// no goal matched, so a wrong id or a misspelt status came back "ok"
+		// and the model believed the goal had changed.
+		if req.GoalID == "" {
+			return "", fmt.Errorf("goal_update_status: goal_id is required")
+		}
+		if !slices.Contains(goalStatuses, req.Status) {
+			return "", fmt.Errorf("goal_update_status: status %q is not one of %s", req.Status, strings.Join(goalStatuses, ", "))
+		}
+		g, err := store.GoalGet(req.GoalID)
+		if err != nil {
+			return "", err
+		}
+		if g == nil {
+			return "", fmt.Errorf("goal not found: %s; goal_list shows every goal's id", req.GoalID)
 		}
 		if err := store.GoalUpdateStatus(req.GoalID, req.Status); err != nil {
 			return "", err

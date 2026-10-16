@@ -158,6 +158,31 @@ func TestWireGoalList(t *testing.T) {
 	}
 }
 
+// A wrong id or an unknown status is refused, not answered "ok" with nothing
+// written: the model would otherwise believe the goal had changed.
+func TestGoalUpdateStatus_RefusesUnknownGoalAndStatus(t *testing.T) {
+	store := newGoalStore(t)
+	if err := store.GoalCreate("goal-1", "test goal", "", ""); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	d := agent.New()
+	agent.RegisterGoalTools(d, "agent-1", store, nil)
+
+	for _, tc := range []struct{ args, want string }{
+		{`{"goal_id":"nope","status":"paused"}`, "goal not found"},
+		{`{"id":"goal-1","status":"paused"}`, "goal_id is required"},
+		{`{"goal_id":"goal-1","status":"sleeping"}`, "is not one of"},
+	} {
+		_, err := d.Dispatch(context.Background(), "goal_update_status", json.RawMessage(tc.args))
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err = %v, want %q", tc.args, err, tc.want)
+		}
+	}
+	if g, _ := store.GoalGet("goal-1"); g.Status != "active" {
+		t.Errorf("a refused update was written: status %q", g.Status)
+	}
+}
+
 func TestWireGoalUpdateStatus(t *testing.T) {
 	store := newGoalStore(t)
 	if err := store.GoalCreate("goal-1", "test goal", "", ""); err != nil {

@@ -118,6 +118,9 @@ sub-goals or tasks.
 `goal_create` defaults `parent_id`/`parent_type` to the owning conversation when no parent
 is given. `goal_list` is also reachable as a read-only daemon proxy (`nine goals`) without
 an agent loop.
+`goal_update_status` **MUST** refuse an empty `goal_id`, a goal that does not exist and a
+status other than `active`, `paused`, `done` or `archived`, writing nothing; it answers
+`ok` only when the goal's status was set.
 
 ### R-ORCH.12 — pursue session spawning (goal-spawning roles only)
 
