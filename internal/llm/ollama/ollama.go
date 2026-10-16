@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"nine/internal/llm"
+	"nine/internal/logsafe"
 )
 
 const (
@@ -23,6 +25,19 @@ const (
 	// [llm].timeout_seconds. It is generous because a local model on CPU can
 	// take minutes to answer a long prompt.
 	defaultTimeout = 300 * time.Second
+
+	// probeTimeout bounds one capability probe. /api/show reads metadata and
+	// never loads the model, so it answers in milliseconds on a healthy Ollama;
+	// the chat timeout (up to none at all) is the wrong bound for it, and a turn
+	// must not stall on a capability question.
+	probeTimeout = 10 * time.Second
+
+	// probeBackoff is the minimum gap between capability probes once one comes
+	// back inconclusive. It paces retries at roughly one per inner LLM call,
+	// which is the useful rate: both the agent loop and Complete ask on every
+	// call, and a burst of sub-agents can ask at once, but an endpoint that
+	// blackholes the request costs probeTimeout each time it is asked.
+	probeBackoff = 2 * time.Second
 )
 
 // Provider calls the Ollama chat API.
@@ -33,10 +48,16 @@ type Provider struct {
 	thinking bool // when true, request and stream extended thinking traces
 	client   *http.Client
 
-	// For model-native thinking mode detection.
-	// "thinkCap" is set by probeThinking via thinkOnce.
-	thinkOnce sync.Once
-	thinkCap  bool
+	// For model-native thinking mode detection, all guarded by thinkMu.
+	// thinkKnown is set only by a probe that got an answer out of Ollama, so an
+	// inconclusive one (Ollama not up yet, the model not pulled yet, a dropped
+	// connection) is retried on a later call instead of standing as a verdict
+	// for the life of the process. thinkProbedAt is when the last inconclusive
+	// probe ran, and paces the retries.
+	thinkMu       sync.Mutex
+	thinkCap      bool
+	thinkKnown    bool
+	thinkProbedAt time.Time
 }
 
 // New creates a Provider. Pass empty endpoint to use the default Ollama address.
@@ -335,37 +356,77 @@ func convertMessage(m llm.Message) []chatMessage {
 const thinkingCapabilityName = "thinking"
 
 // SupportsThinking reports whether the model supports native thinking mode.
-// It probes the model once and caches the result.
+// It asks Ollama what the model can do and caches the answer, which cannot
+// change while the process runs: the model is fixed per Provider.
+//
+// A probe that fails to get an answer is NOT an answer. It reports false for
+// now — the conservative reading, since think:true on an incapable model is a
+// 400 — but it is not cached, so a Nine that started before Ollama did, or
+// before the model was pulled, picks the capability up on a later call instead
+// of insisting for the rest of its life that a thinking model cannot think.
+// Retries are paced by probeBackoff.
 func (p *Provider) SupportsThinking(ctx context.Context) bool {
-	p.thinkOnce.Do(func() {
-		body, _ := json.Marshal(map[string]string{"model": p.model})
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint+"/api/show", bytes.NewReader(body))
-		if err != nil {
-			return
-		}
+	p.thinkMu.Lock()
+	defer p.thinkMu.Unlock()
 
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := p.client.Do(req)
-		if err != nil {
-			return
-		}
-		defer resp.Body.Close()
+	if p.thinkKnown {
+		return p.thinkCap
+	}
+	if time.Since(p.thinkProbedAt) < probeBackoff {
+		return false
+	}
+	p.thinkProbedAt = time.Now()
 
-		if resp.StatusCode != http.StatusOK {
-			return
-		}
+	caps, err := p.modelCapabilities(ctx)
+	if err != nil {
+		// Warn rather than stay silent: "no thinking trace" and "Nine could not
+		// ask" look identical from the outside, and this is the only place that
+		// can tell them apart.
+		//nolint:gosec // G706: both values go through logsafe.Value, which strips
+		// the control characters a forged log line would need.
+		slog.Warn("could not read model capabilities from Ollama; assuming no native thinking for now",
+			"model", logsafe.Value(p.model), "err", logsafe.Value(err.Error()))
+		return false
+	}
 
-		var showResp showResponse
-		if err := json.NewDecoder(resp.Body).Decode(&showResp); err != nil {
-			return
-		}
-
-		if slices.Contains(showResp.Capabilities, thinkingCapabilityName) {
-			p.thinkCap = true
-			return
-		}
-	})
-
-	// return the cached result of the probe, which is set by the thinkOnce.Do above.
+	p.thinkCap = slices.Contains(caps, thinkingCapabilityName)
+	p.thinkKnown = true
 	return p.thinkCap
+}
+
+// modelCapabilities reads the model's capability list from Ollama's /api/show.
+// An error means Ollama could not be asked, which the caller must not confuse
+// with an answer that omits a capability.
+func (p *Provider) modelCapabilities(ctx context.Context) ([]string, error) {
+	// A capability belongs to the model, not to the turn that happened to ask
+	// first: a cancelled turn must not be what decides it. Detached from the
+	// caller's cancellation and bounded by probeTimeout instead.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), probeTimeout)
+	defer cancel()
+
+	body, err := json.Marshal(map[string]string{"model": p.model})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint+"/api/show", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("/api/show returned %s", resp.Status)
+	}
+
+	var showResp showResponse
+	if err := json.NewDecoder(resp.Body).Decode(&showResp); err != nil {
+		return nil, fmt.Errorf("/api/show: decoding the response: %w", err)
+	}
+	return showResp.Capabilities, nil
 }

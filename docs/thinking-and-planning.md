@@ -44,6 +44,22 @@ This requires a model that advertises the capability, and currently works with
 Ollama. Turning it off asks the model to skip reasoning aloud entirely, which
 is a latency choice rather than a display one.
 
+Nine reads the capability from Ollama itself — `POST /api/show` for the
+configured model, whose `capabilities` list either holds `thinking` or does not.
+`qwen3.5:4b`, `qwen3.5:9b`, `gemma4:e4b` and `gemma4:e2b` all advertise it. The
+probe is lazy, so Nine can start before Ollama does; while it cannot get an
+answer — Ollama not up yet, the model not pulled yet — Nine assumes no native
+thinking (sending `think:true` to a model that lacks it is an error) and logs
+`could not read model capabilities from Ollama` with the reason. That assumption
+is provisional: it is retried on later calls and replaced the moment Ollama
+answers. Only a real answer is cached, and then for the life of the process,
+because the model cannot change under a running daemon.
+
+So *"This model does not support native thinking — running a planning pass
+instead"* is a statement about the model, not about a hiccup. If you see it for a
+model you know reasons, check the warning in the daemon log and that
+`[llm].model` names what you pulled.
+
 Watching the trace does not make the model plan more; that is `plan_mode`.
 Turning the trace off does not disable planning, but it removes the only direct
 evidence that planning happened.
