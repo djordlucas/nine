@@ -8,14 +8,54 @@ import { Lexer, type Token, type Tokens } from 'marked';
  * goes only to http(s) or mailto, and an image is a link, since the page loads
  * nothing from another origin.
  */
-export function Markdown({ text, class: cls }: { text: string; class?: string }) {
+export function Markdown({
+  text,
+  class: cls,
+  link,
+}: {
+  text: string;
+  class?: string;
+  /** Rewrites each link and image target first; null makes it plain text. */
+  link?: (href: string) => string | null;
+}) {
   let tokens: Token[];
   try {
     tokens = Lexer.lex(text, { gfm: true, breaks: false });
   } catch {
     return <p class={cls}>{text}</p>;
   }
+  if (link) rewriteLinks(tokens, link);
   return <div class={cls}>{blocks(tokens)}</div>;
+}
+
+// A target safeHref refuses, so a link the rewrite drops renders as its text.
+const dropped = 'about:blank';
+
+function rewriteLinks(tokens: Token[], link: (href: string) => string | null) {
+  for (const t of tokens) {
+    if (t.type === 'link' || t.type === 'image') {
+      const l = t as Tokens.Link | Tokens.Image;
+      l.href = link(l.href) ?? dropped;
+    }
+    const nested = t as { tokens?: Token[]; items?: Tokens.ListItem[] };
+    if (nested.tokens) rewriteLinks(nested.tokens, link);
+    if (nested.items) for (const it of nested.items) rewriteLinks(it.tokens, link);
+    if (t.type === 'table') {
+      const tb = t as Tokens.Table;
+      for (const c of tb.header) rewriteLinks(c.tokens, link);
+      for (const row of tb.rows) for (const c of row) rewriteLinks(c.tokens, link);
+    }
+  }
+}
+
+/** href as a path when it stays on this site, where the router opens it in place; else null. */
+function onSite(href: string): string | null {
+  try {
+    const u = new URL(href);
+    return u.origin === location.origin ? u.pathname + u.search + u.hash : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Whether a link may be followed: http(s) and mailto only. */
@@ -140,6 +180,14 @@ function inlineToken(t: Token, key: number): ComponentChildren {
       const l = t as Tokens.Link;
       const href = safeHref(l.href);
       if (!href) return <span key={key}>{inline(l.tokens)}</span>;
+      const path = onSite(href);
+      if (path) {
+        return (
+          <a key={key} href={path}>
+            {inline(l.tokens)}
+          </a>
+        );
+      }
       return (
         <a key={key} href={href} target="_blank" rel="noopener noreferrer">
           {inline(l.tokens)}

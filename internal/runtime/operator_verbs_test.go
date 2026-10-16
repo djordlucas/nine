@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"nine/internal/backup"
 	"nine/internal/llm"
 	"nine/internal/memory"
 	"nine/internal/memory/memtest"
@@ -149,6 +151,26 @@ func TestListSkillsOverTheWire(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("triage missing from %+v", skills)
+	}
+}
+
+// A backup is written to a temporary file the caller streams and removes: the
+// store alone as .db, or with the workspace as .tar.gz.
+func TestBackupOverTheWire(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	_, sock := operatorHarness(t, seqProvider(nil))
+	res, err := dial(t, sock).Backup(false)
+	if err != nil {
+		t.Fatalf("Backup: %v", err)
+	}
+	if !strings.HasSuffix(res.Name, ".db") || res.Bytes == 0 {
+		t.Errorf("result = %+v", res)
+	}
+	if info, err := os.Stat(res.Path); err != nil || info.Size() != res.Bytes {
+		t.Errorf("snapshot file: %v", err)
+	}
+	if err := backup.RemoveTemp(res.Path); err != nil {
+		t.Errorf("RemoveTemp: %v", err)
 	}
 }
 

@@ -57,6 +57,10 @@ tags:
     records.'
 - name: questions
   description: ask_human questions waiting for an answer.
+- name: workspace
+  description: "The workspace's files: browse, read, write, delete. Nine's own state stays private."
+- name: database
+  description: 'The database processes keep their records in: tables, rows, statements.'
 paths:
   /auth/session:
     get:
@@ -802,6 +806,695 @@ paths:
                 $ref: '#/components/schemas/EventsStreamEvent'
         '400':
           description: invalid parameters
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /reflections:
+    get:
+      operationId: listReflections
+      summary: List reflections
+      description: What a reflecting session concluded, one entry per turn that ended with a result, oldest
+        first, as `nine reflections` prints it. Without agent, the daemon's own self-reflection.
+      tags:
+      - system
+      parameters:
+      - name: agent
+        in: query
+        description: the reflecting session; self-reflection when absent
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListReflectionsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /sessions:
+    get:
+      operationId: listSessions
+      summary: List every session
+      description: The session roster, as `nine sessions` prints it, process sessions included. Conversations
+        alone are under /conversations.
+      tags:
+      - system
+      parameters:
+      - name: limit
+        in: query
+        description: Maximum items to return
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 50
+      - name: offset
+        in: query
+        description: Items to skip before the page
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListSessionsResponse'
+        '400':
+          description: invalid request
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /sessions/{id}:
+    get:
+      operationId: getSession
+      summary: Get one session
+      description: One session of the roster, by its exact id.
+      tags:
+      - system
+      parameters:
+      - name: id
+        in: path
+        description: session id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionInfo'
+        '404':
+          description: session not found
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    delete:
+      operationId: deleteSession
+      summary: Delete a session
+      description: Erases a session and everything keyed to it, its transcript and journal included, as `nine
+        session delete` does. It cannot be undone; stopping a session keeps its history. The id must match
+        exactly.
+      tags:
+      - system
+      parameters:
+      - name: id
+        in: path
+        description: session id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteSessionResponse'
+        '404':
+          description: session not found
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /backup:
+    get:
+      operationId: getBackup
+      summary: Download a backup
+      description: A consistent snapshot of the store as a download, written by the daemon without stopping
+        it, as `nine backup` writes one. With with=workspace, a .tar.gz holding the store and the workspace.
+        Restoring stays with `nine restore`, which needs the daemon stopped.
+      tags:
+      - system
+      parameters:
+      - name: with
+        in: query
+        description: workspace to include the workspace
+        required: false
+        schema:
+          type: string
+          enum:
+          - workspace
+      responses:
+        '200':
+          description: the snapshot
+          headers:
+            Content-Disposition:
+              description: attachment, with the file name
+              schema:
+                type: string
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: a workspace was asked for and none is configured
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /workspace/files:
+    get:
+      operationId: listWorkspaceFiles
+      summary: List a workspace directory
+      description: One directory of the workspace, directories first. Nine's own state in .nine/ is never listed or reachable.
+      tags:
+      - workspace
+      parameters:
+      - name: path
+        in: query
+        description: directory relative to the workspace root; empty for the root
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceListing'
+        '400':
+          description: a path outside the workspace, or not a directory
+          content: *id001
+        '404':
+          description: no such directory
+          content: *id001
+        '409':
+          description: no workspace is configured
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /workspace/file:
+    get:
+      operationId: getWorkspaceFile
+      summary: Read a workspace file
+      description: The file as it is, with its version as the ETag. Up to 32 MB; a larger file is taken with a backup.
+      tags:
+      - workspace
+      parameters:
+      - name: path
+        in: query
+        description: file path relative to the workspace root
+        required: true
+        schema:
+          type: string
+      - name: download
+        in: query
+        description: true to answer as an attachment, with the file name
+        required: false
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: the file
+          headers:
+            ETag:
+              description: the file's version, for If-Match
+              schema:
+                type: string
+            Last-Modified:
+              description: when the file last changed
+              schema:
+                type: string
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: a path outside the workspace, a directory, or a file over 32 MB
+          content: *id001
+        '404':
+          description: no such file
+          content: *id001
+        '409':
+          description: no workspace is configured
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    put:
+      operationId: putWorkspaceFile
+      summary: Write a workspace file
+      description: Creates the file, and any directories it needs, or replaces it. A replaced file goes to the trash, where the agent's trash_list and restore_file reach it. spill/ is reserved.
+      tags:
+      - workspace
+      parameters:
+      - name: path
+        in: query
+        description: file path relative to the workspace root
+        required: true
+        schema:
+          type: string
+      - name: If-Match
+        in: header
+        description: the version the file was read at (its ETag); the change fails with 409 if the file has
+          changed since
+        required: false
+        schema:
+          type: string
+      requestBody:
+        description: the file's content, up to 32 MB
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceEntry'
+        '400':
+          description: a path outside the workspace or reserved, a directory, or over 32 MB
+          content: *id001
+        '409':
+          description: the file changed since it was read, or no workspace is configured
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    delete:
+      operationId: deleteWorkspaceFile
+      summary: Delete a workspace file
+      description: Moves a file to the trash, or removes an empty directory.
+      tags:
+      - workspace
+      parameters:
+      - name: path
+        in: query
+        description: file or directory path relative to the workspace root
+        required: true
+        schema:
+          type: string
+      - name: If-Match
+        in: header
+        description: the version the file was read at (its ETag); the change fails with 409 if the file has
+          changed since
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceEntry'
+        '400':
+          description: a path outside the workspace, the root, or a directory that is not empty
+          content: *id001
+        '404':
+          description: no such file
+          content: *id001
+        '409':
+          description: the file changed since it was read, or no workspace is configured
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /database/tables:
+    get:
+      operationId: listDatabaseTables
+      summary: List the database's tables
+      description: The tables and views of the database processes keep their records in, with their columns and row counts. SQLite's own tables and a virtual table's shadow tables are left out; the store is never reachable.
+      tags:
+      - database
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListDatabaseTablesResponse'
+        '409':
+          description: this instance has no database
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /database/tables/{table}/rows:
+    get:
+      operationId: listDatabaseRows
+      summary: Read a page of rows
+      description: Rows of one table or view, in rowid order where it has one.
+      tags:
+      - database
+      parameters:
+      - name: table
+        in: path
+        description: table name
+        required: true
+        schema:
+          type: string
+      - name: offset
+        in: query
+        description: rows to skip
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+      - name: limit
+        in: query
+        description: rows to return (at most 500)
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 500
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseRows'
+        '404':
+          description: table not found
+          content: *id001
+        '409':
+          description: this instance has no database
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    post:
+      operationId: insertDatabaseRow
+      summary: Insert a row
+      description: Adds a row; a column not given takes its default.
+      tags:
+      - database
+      parameters:
+      - name: table
+        in: path
+        description: table name
+        required: true
+        schema:
+          type: string
+      requestBody:
+        description: the column values
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatabaseRowValues'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseRunResult'
+        '400':
+          description: an unknown column, or the statement failed
+          content: *id001
+        '404':
+          description: table not found
+          content: *id001
+        '409':
+          description: this instance has no database
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /database/tables/{table}/rows/{rowid}:
+    patch:
+      operationId: updateDatabaseRow
+      summary: Change a row
+      description: Sets the given columns of one row.
+      tags:
+      - database
+      parameters:
+      - name: table
+        in: path
+        description: table name
+        required: true
+        schema:
+          type: string
+      - name: rowid
+        in: path
+        description: the row's rowid
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        description: the columns to set
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatabaseRowValues'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseRunResult'
+        '400':
+          description: an unknown column, a table without rowid, or the statement failed
+          content: *id001
+        '404':
+          description: table not found
+          content: *id001
+        '409':
+          description: this instance has no database
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    delete:
+      operationId: deleteDatabaseRow
+      summary: Delete a row
+      description: Deletes one row.
+      tags:
+      - database
+      parameters:
+      - name: table
+        in: path
+        description: table name
+        required: true
+        schema:
+          type: string
+      - name: rowid
+        in: path
+        description: the row's rowid
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseRunResult'
+        '400':
+          description: a table without rowid, or the statement failed
+          content: *id001
+        '404':
+          description: table not found
+          content: *id001
+        '409':
+          description: this instance has no database
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /database/sql:
+    post:
+      operationId: runDatabaseSQL
+      summary: Run a statement
+      description: Runs one statement as written. A read returns its rows (at most 1000); anything else runs under the policy a process's program has (no ATTACH, transactions, temp objects or pragmas beyond table introspection) and returns what it changed.
+      tags:
+      - database
+      requestBody:
+        description: the statement and its parameters
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunDatabaseSQLRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseRunResult'
+        '400':
+          description: the statement was refused or failed
+          content: *id001
+        '409':
+          description: this instance has no database
           content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -2418,6 +3111,192 @@ components:
       - $ref: '#/components/schemas/JournalEvent'
       - $ref: '#/components/schemas/EventsReset'
       - $ref: '#/components/schemas/ErrorResponse'
+    WorkspaceEntry:
+      description: One file or directory of the workspace.
+      type: object
+      required:
+      - name
+      - path
+      - bytes
+      - modified
+      properties:
+        name:
+          type: string
+        path:
+          description: relative to the workspace root
+          type: string
+        dir:
+          type: boolean
+        bytes:
+          type: integer
+          format: int64
+        modified:
+          type: string
+          format: date-time
+        version:
+          description: a file's version, which changes whenever it does; the ETag and If-Match value
+          type: string
+        trashed:
+          description: the trash entry an overwrite or delete moved the old file to
+          type: string
+    WorkspaceListing:
+      description: One directory of the workspace.
+      type: object
+      required:
+      - path
+      - entries
+      properties:
+        path:
+          description: the directory, relative to the root; empty for the root
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceEntry'
+    DatabaseColumn:
+      description: One column of a table.
+      type: object
+      required:
+      - name
+      - type
+      - not_null
+      - pk
+      properties:
+        name:
+          type: string
+        type:
+          description: the declared type; empty when none was declared
+          type: string
+        not_null:
+          type: boolean
+        default:
+          description: the default, as SQL
+          type: string
+        pk:
+          description: its position in the primary key, from 1; 0 when not part of it
+          type: integer
+    DatabaseTable:
+      description: One table or view of the database.
+      type: object
+      required:
+      - name
+      - kind
+      - columns
+      - rows
+      - rowid
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+          enum:
+          - table
+          - view
+          - virtual
+        columns:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseColumn'
+        rows:
+          type: integer
+          format: int64
+        rowid:
+          description: rows are addressed by rowid, so they can be changed one at a time
+          type: boolean
+    ListDatabaseTablesResponse:
+      description: The database's tables.
+      type: object
+      required:
+      - tables
+      properties:
+        tables:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseTable'
+    DatabaseRows:
+      description: A page of a table's rows.
+      type: object
+      required:
+      - table
+      - columns
+      - rows
+      - total
+      - offset
+      properties:
+        table:
+          type: string
+        columns:
+          type: array
+          items:
+            type: string
+        rowids:
+          description: each row's rowid, in step with rows; absent for a table without one
+          type: array
+          items:
+            type: integer
+            format: int64
+        rows:
+          type: array
+          items:
+            type: array
+            items: {}
+        total:
+          type: integer
+          format: int64
+        offset:
+          type: integer
+    DatabaseRowValues:
+      description: Column values for a row.
+      type: object
+      required:
+      - values
+      properties:
+        values:
+          description: column name to value; a string is stored with the column's type affinity, null as NULL
+          type: object
+          additionalProperties: {}
+    RunDatabaseSQLRequest:
+      description: One statement and its parameters.
+      type: object
+      required:
+      - sql
+      properties:
+        sql:
+          type: string
+          minLength: 1
+        args:
+          description: values for the ? parameters, in order
+          type: array
+          items: {}
+    DatabaseRunResult:
+      description: What a statement did. A read has columns and rows; a write has changes.
+      type: object
+      required:
+      - columns
+      - rows
+      - write
+      - changes
+      properties:
+        columns:
+          type: array
+          items:
+            type: string
+        rows:
+          type: array
+          items:
+            type: array
+            items: {}
+        truncated:
+          description: the read returned more rows than the 1000 shown
+          type: boolean
+        write:
+          type: boolean
+        changes:
+          type: integer
+          format: int64
+        last_insert_rowid:
+          type: integer
+          format: int64
     ErrorResponse:
       description: The error shape every failing request returns.
       type: object
@@ -2665,6 +3544,81 @@ components:
           - archived
           description: active is in progress, paused is on hold, done is attained, archived is retired
             without completion.
+    ListReflectionsResponse:
+      description: A reflecting session's conclusions, oldest first.
+      type: object
+      required:
+      - agent
+      - data
+      properties:
+        agent:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Reflection'
+    Reflection:
+      description: What one reflection turn concluded.
+      type: object
+      required:
+      - at
+      - text
+      properties:
+        at:
+          type: string
+          format: date-time
+        turn:
+          type: integer
+        text:
+          type: string
+    ListSessionsResponse:
+      description: A page of the session roster.
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionInfo'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    SessionInfo:
+      description: One session of the roster.
+      type: object
+      required:
+      - id
+      - status
+      - age_seconds
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+        age_seconds:
+          description: seconds since it was last active
+          type: integer
+        events:
+          description: the journal events it holds
+          type: integer
+        protected:
+          description: kept by retention, because it has an active goal or session plan
+          type: boolean
+        attached:
+          description: a client is attached to it now
+          type: boolean
+    DeleteSessionResponse:
+      description: What deleting a session removed.
+      type: object
+      required:
+      - id
+      - message
+      properties:
+        id:
+          type: string
+        message:
+          description: the counts removed, by kind
+          type: string
     HealthResponse:
       description: The API server's own health, and whether it can reach the daemon.
       type: object

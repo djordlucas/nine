@@ -690,6 +690,7 @@ func (m *mockGoalStore) GoalUpdateStatus(string, string) error { return nil }
 func (m *mockGoalStore) SkillGet(string) (memory.Skill, bool, error) {
 	return memory.Skill{}, false, nil
 }
+func (m *mockGoalStore) BackupTo(string) (string, error)    { return "", nil }
 func (m *mockGoalStore) SkillList() ([]memory.Skill, error) { return nil, nil }
 
 // A condition trigger wakes a session with a turn nobody waits on. Its reply must

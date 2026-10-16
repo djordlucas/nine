@@ -234,6 +234,7 @@ func Assemble(c AssemblyConfig) *Assembly {
 	daemon.ConfigureCoreTools(builder.CoreDispatcher())
 	daemon.SetMaxRunning(c.MaxRunning)
 	daemon.ConfigureWorkspace(c.WorkspaceRoot)
+	daemon.ConfigureDatabase(c.Database)
 
 	// The process runner (adr/process-sessions.md): every process — goal
 	// sessions, standing agents, self-reflection, standing tools — runs through

@@ -67,6 +67,9 @@ const (
 	TypeListTools         MsgType = "list_tools"
 	TypeListSkills        MsgType = "list_skills"
 	TypeSkillGet          MsgType = "skill_get"
+	TypeBackup            MsgType = "backup"
+	TypeWorkspace         MsgType = "workspace"
+	TypeDatabase          MsgType = "database"
 	TypePluginsList       MsgType = "plugins_list"
 	TypePluginsReload     MsgType = "plugins_reload"
 	TypeSessionsList      MsgType = "sessions_list"
@@ -196,6 +199,9 @@ var ClientMsgTypes = []MsgType{
 	TypeListTools,
 	TypeListSkills,
 	TypeSkillGet,
+	TypeBackup,
+	TypeWorkspace,
+	TypeDatabase,
 	TypePluginsList,
 	TypePluginsReload,
 	TypeSessionsList,
@@ -241,6 +247,12 @@ const (
 //	                     RequestID = the id, Text = approve|deny|revoke
 //	"list_skills"      — request the skill catalog; no extra fields
 //	"skill_get"        — request one skill with its body; Text = skill name
+//	"backup"           — write a snapshot to a temporary file; Text = "workspace" to
+//	                     include the workspace, else empty
+//	"workspace"        — a workspace file operation; Text = list|read|write|delete,
+//	                     ToolInput = JSON WorkspaceArgs
+//	"database"         — a database operation; Text = tables|rows|insert|update|delete|run,
+//	                     ToolInput = JSON DatabaseArgs
 //	"goal_create"      — create a goal as the operator; Text = description,
 //	                     ID = parent goal id (optional; empty for a top-level goal)
 //	"goal_delete"      — delete a goal, its sub-goals, and stop its session; Text = goal ID
@@ -279,6 +291,11 @@ const (
 //	"stage"            — the turn entered a named waiting phase; Text carries the label
 //	"list_skills"      — skill catalog; Text carries JSON {"skills": [SkillInfo]}
 //	"skill_get"        — one skill; Text carries JSON SkillDetail
+//	"backup"           — the snapshot written; Text carries JSON BackupResult
+//	"workspace"        — Text carries JSON: WorkspaceListing (list), WorkspaceFile
+//	                     (read), WorkspaceEntry (write, delete)
+//	"database"         — Text carries JSON: {"tables": [...]} (tables), a page of
+//	                     rows (rows), what a statement did (insert, update, delete, run)
 //	"goal_create"      — created goal; Text carries JSON-encoded GoalCreateResult
 //	"goal_delete"      — deletion result; Text carries JSON-encoded GoalDeleteResult
 //	"goal_set_status"  — the updated goal; Text carries it as JSON
@@ -611,6 +628,118 @@ type SkillInfo struct {
 type SkillDetail struct {
 	SkillInfo
 	Content string `json:"content"`
+}
+
+// BackupResult is the "backup" reply. Path is a temporary file the caller
+// streams and then removes with its directory; Name is the file name to offer.
+// Files and Skipped count the workspace entries an archive holds and left out.
+type BackupResult struct {
+	Path    string `json:"path"`
+	Name    string `json:"name"`
+	Bytes   int64  `json:"bytes"`
+	Files   int    `json:"files,omitempty"`
+	Skipped int    `json:"skipped,omitempty"`
+}
+
+// BackupWorkspace is the "backup" Text that includes the workspace.
+const BackupWorkspace = "workspace"
+
+// NewBackupMsg asks the daemon to write a snapshot; withWorkspace adds the
+// workspace, making a .tar.gz.
+func NewBackupMsg(withWorkspace bool) Msg {
+	m := Msg{Type: TypeBackup}
+	if withWorkspace {
+		m.Text = BackupWorkspace
+	}
+	return m
+}
+
+// Workspace actions (the "workspace" Text).
+const (
+	WorkspaceList   = "list"
+	WorkspaceRead   = "read"
+	WorkspaceWrite  = "write"
+	WorkspaceDelete = "delete"
+)
+
+// MaxWorkspaceFileBytes bounds a file read or written through the workspace
+// message: its content travels base64 in one wire line (MaxLineBytes).
+const MaxWorkspaceFileBytes = 32 << 20
+
+// WorkspaceActions are the actions the "workspace" message takes.
+var WorkspaceActions = []string{WorkspaceList, WorkspaceRead, WorkspaceWrite, WorkspaceDelete}
+
+// WorkspaceArgs are a workspace operation's arguments. Path is relative to the
+// workspace root; "" is the root itself for list. Content is the file a write
+// stores (base64 in JSON). IfVersion, when set, makes a write or delete fail
+// unless the file is still the version the caller read.
+type WorkspaceArgs struct {
+	Path      string `json:"path,omitempty"`
+	Content   []byte `json:"content,omitempty"`
+	IfVersion string `json:"if_version,omitempty"`
+}
+
+// WorkspaceEntry is one file or directory of the workspace. Version changes
+// whenever the file does. Trashed names the trash entry an overwrite or delete
+// moved the old file to.
+type WorkspaceEntry struct {
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	Dir      bool   `json:"dir,omitempty"`
+	Bytes    int64  `json:"bytes"`
+	Modified string `json:"modified"`
+	Version  string `json:"version,omitempty"`
+	Trashed  string `json:"trashed,omitempty"`
+}
+
+// WorkspaceListing is one directory's entries, directories first.
+type WorkspaceListing struct {
+	Path    string           `json:"path"`
+	Entries []WorkspaceEntry `json:"entries"`
+}
+
+// WorkspaceFile is a file with its content (base64 in JSON).
+type WorkspaceFile struct {
+	WorkspaceEntry
+	Content []byte `json:"content"`
+}
+
+// NewWorkspaceMsg asks for a workspace operation.
+func NewWorkspaceMsg(action string, args WorkspaceArgs) Msg {
+	raw, _ := json.Marshal(args)
+	return Msg{Type: TypeWorkspace, Text: action, ToolInput: raw}
+}
+
+// Database actions (the "database" Text).
+const (
+	DatabaseTables = "tables"
+	DatabaseRows   = "rows"
+	DatabaseInsert = "insert"
+	DatabaseUpdate = "update"
+	DatabaseDelete = "delete"
+	DatabaseRun    = "run"
+)
+
+// DatabaseActions are the actions the "database" message takes.
+var DatabaseActions = []string{DatabaseTables, DatabaseRows, DatabaseInsert, DatabaseUpdate, DatabaseDelete, DatabaseRun}
+
+// DatabaseArgs are a database operation's arguments: the table and a page of it
+// for rows; the table, a row's rowid and column values for insert, update and
+// delete; a statement and its parameters for run.
+type DatabaseArgs struct {
+	Table  string         `json:"table,omitempty"`
+	Offset int            `json:"offset,omitempty"`
+	Limit  int            `json:"limit,omitempty"`
+	RowID  int64          `json:"rowid,omitempty"`
+	Values map[string]any `json:"values,omitempty"`
+	SQL    string         `json:"sql,omitempty"`
+	Args   []any          `json:"args,omitempty"`
+}
+
+// NewDatabaseMsg asks for a database operation.
+func NewDatabaseMsg(action string, args DatabaseArgs) Msg {
+	raw, _ := json.Marshal(args)
+	return Msg{Type: TypeDatabase, Text: action, ToolInput: raw}
 }
 
 // NewSkillGetMsg asks for one skill with its body.

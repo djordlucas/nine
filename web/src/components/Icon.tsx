@@ -9,6 +9,7 @@ const paths: Record<IconName, string> = {
   tool: 'M14 6a4 4 0 0 0 5 5l-9 9-3-3 9-9a4 4 0 0 0-2-2z',
   inbox: 'M4 13l3-8h10l3 8v6H4zM4 13h5l1 2h4l1-2h5',
   journal: 'M6 3h12v18H6zM9 7h6M9 11h6M9 15h4',
+  data: 'M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3',
   system: 'M4 6h16M4 12h16M4 18h16M8 4v4M16 10v4M10 16v4',
   more: 'M5 12h.01M12 12h.01M19 12h.01',
 };

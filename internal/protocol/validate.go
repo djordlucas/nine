@@ -94,6 +94,9 @@ var clientMsgSpecs = map[MsgType]clientMsgSpec{
 	// An empty status must not reach the store, which accepts any string.
 	TypeGoalSetStatus: {required: []fieldRule{needID, needText}},
 	TypeSkillGet:      {required: []fieldRule{needText}},
+	// The action, as for process_control: no verb must not default to one.
+	TypeWorkspace: {required: []fieldRule{needText}},
+	TypeDatabase:  {required: []fieldRule{needText}},
 
 	// The same reason attach must name its target: a session read or watch with
 	// an empty id would resolve by prefix to an arbitrary session.

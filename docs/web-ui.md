@@ -25,7 +25,74 @@ docker run -e NINE_API_AUTH_TOKEN=… -p 8080:8080 ghcr.io/djordlucas/nine
 | Dashboard | what needs you (capability requests and `ask_human` questions), processes by state, the latest activity, recent conversations, active goals and workflows, notifications, and the daemon's status. Every tile updates as things happen. |
 | Journal | every event the daemon records, live: turns, model and tool calls, process transitions, and changes to approvals, questions, notifications, goals and workflows. Filter by kind or by session, pause, and open any event for its payload. |
 | Conversations | the conversations, newest first, beside the open one; on a phone, the list, then the conversation in its place. Chat live, answer the session's questions, stop a turn, and inspect any turn. |
-| Processes, Goals & workflows, Tools, Inbox, System | not built yet (see Limits) |
+| Processes | every process, failing and paused first, against `[processes] max_running`; one process's trigger, session, goal, budget and recent activity. Start, stop, retry, and message a running live process. |
+| Goals & workflows | goals as a tree beside the workflows. Create goals and sub-goals; pause, resume, finish, archive and delete them; stop or fail a workflow. |
+| Tools | the tools by where they came from, each with its capabilities, dependencies and arguments schema, to call directly; a tool Nine wrote with its versions. Also the plugins, with reload, and the skills, each readable. |
+| Inbox | capability requests to approve or deny, questions waiting for an answer, the notifications, and the capabilities in force. Its link counts what waits. |
+| Data | the workspace's files and the database processes keep their records in, to read and edit. Nine's own state, the store and the workspace's `.nine/`, is not reachable. |
+| System | the daemon's status, a backup to download, every session, reflections, and the docs and spec this build embeds. |
+
+On a phone every list opens its item full screen, with ‹ to go back.
+
+## Processes and goals
+
+A process's state decides its controls.
+
+| State | Controls |
+|---|---|
+| running | Stop (confirmed); Message it, for a live process |
+| failing | Retry now, which clears its failures and runs it at once; Stop |
+| stopped by the operator, the model or itself | Start |
+| paused by its budget | Start, which also resets the day's usage |
+| stopped by its goal | Resume goal, which sets the goal active; the process runs again with it |
+
+A goal's status decides whether the processes bound to it run: Pause stops
+them, Resume restarts the ones it stopped, Mark done and Archive leave them
+stopped ([processes](processes.md#goals-sessions-and-pipes)). A goal that a
+`[[process]]` block in `nine.toml` declares cannot be deleted here.
+
+## Tools, plugins and skills
+
+| Control | Does |
+|---|---|
+| Filter | narrows the roster by name, description or plugin |
+| Reload | re-reads the sandboxed tool directories, or, on Plugins, the plugin directories |
+| Call | runs the tool now with the JSON arguments given, which start from its schema's required properties. No model is involved. A sandboxed tool runs against throwaway state unless "Use its real state" is ticked. |
+| Versions, Restore | a tool Nine wrote: its kept versions, and making one current again |
+| Delete | a tool Nine wrote, with the processes it runs |
+
+## Inbox
+
+| Part | Shows |
+|---|---|
+| Capability requests | what a tool Nine writes asked to use, with its scope and reason. Approve (confirmed) or deny. |
+| Questions | `ask_human` questions waiting; each links to the conversation that answers it |
+| Notifications | newest first, the new ones marked. Opening the Inbox marks them seen. |
+| Capabilities in force | each grant with its source; Revoke for one you approved |
+
+## Data
+
+| View | Does |
+|---|---|
+| Files | browses the workspace. A text file up to 2 MB opens in an editor (⌘S or Ctrl+S saves); any file downloads. New file takes a path, so `notes/today.md` makes `notes/`. Upload puts files in the directory shown. Delete removes a file, or a directory once it is empty. |
+| Database | the tables and views with their row counts; a table's rows 100 at a time. Add row inserts one, a column left empty taking its default; Edit changes or deletes one. NULL stores a NULL. A view, or a table without a rowid, is changed from SQL. |
+| SQL | runs one statement: a read shows up to 1000 rows, a write how many rows it changed. ⌘Enter or Ctrl+Enter runs it. |
+
+| Rule | Detail |
+|---|---|
+| The trash keeps what you replace | Saving, uploading over a file, and deleting move the old file to the workspace trash, where the agent's `trash_list` and `restore_file` reach it until `[workspace]` retention sweeps it. |
+| A file changed since you opened it is not overwritten | Save and Delete fail with "the file changed since it was read" if anything wrote it after the page read it. Copy your text, reopen the file, and apply it again. |
+| The database's rules apply to you | A statement runs under the policy a process's program has: no `ATTACH`, transactions, temporary objects, or pragmas beyond table introspection. Each write is journaled as `sql_write` under `operator`, kinds and tables only. |
+| Files open as downloads | A workspace file is served as bytes that a browser does not run, so an HTML file there cannot act on the UI's origin. |
+
+## System
+
+| View | Shows |
+|---|---|
+| Overview | the daemon's status; Download the store (`.db`), or the store with the workspace (`.tar.gz`), written while Nine runs; and the operations only the CLI performs |
+| Sessions | every session the store holds, process sessions included, with its age, journal size, and whether retention keeps it. Delete erases one and everything recorded for it. |
+| Reflections | what a reflecting session concluded, newest first; `self-reflection` by default |
+| Docs, Spec | the documentation and specification this build embeds; a link to another topic opens it in place |
 
 ## Conversations
 
@@ -115,11 +182,15 @@ in `internal/webui/dist`, so `go build` needs no Node.
 
 | Limit | Detail |
 |---|---|
-| Most sections are not built | The dashboard, Conversations and the Journal work. The rest arrive in order: processes, goals and workflows; tools, plugins, skills and the inbox; then the system section (`adr/web-ui.md` §9). Until then a tile's Open link leads to a placeholder. |
+| Tools reload by hand | No journal event marks a tool written, restored or deleted, so the Tools views reload after your own actions, not when Nine changes a tool. |
+| Two tool names are taken | A tool named `plugins` or `skills` cannot be opened from Tools: those paths are its other views. |
+| A backup is written beside the API server | The daemon writes the snapshot to a temporary file the API server streams and then removes, so the two must share a filesystem, as their socket already requires. A snapshot left by an interrupted download is removed by the next backup after an hour. |
 | A long transcript shows its last 1000 entries | A conversation loads at most 1000 transcript entries, the most recent. Each turn's full record is under Inspect. |
 | A failed turn is not in the transcript | The transcript keeps replies, not errors, so a cancelled or failed turn shows its outcome only while the page that saw it stays open. The turn's trace (`GET /api/v1/conversations/{id}/trace?turn=N`) keeps it. |
 | Large payloads stay out of the stream | A payload over 16 KB, usually a model call's whole context, reaches the Journal as its size only. The turn's trace (`GET /api/v1/conversations/{id}/trace`) has it, and the Journal links to it. |
 | The Journal holds what the tab has seen | It shows the events kept since the tab opened, up to 2000, starting with the 200 before. Older history is in each conversation's trace. |
 | One identity | The API token is the only credential, so every signed-in browser has the same rights. |
 | Sessions are in memory | Restarting the API server signs every browser out. |
+| Files up to 32 MB | A larger workspace file cannot be read or uploaded in Data; `nine backup` with the workspace takes it. |
+| `spill/` is reserved | A workspace path under `spill/` cannot be written, as for the file tools: `read_file` reads `spill/…` from the store. |
 | Some operations stay in the CLI | `nine restore`, `nine daemon`, `nine api serve`, and the `validate` commands, which check a path on the operator's machine. |

@@ -17,6 +17,7 @@ export type IconName =
   | 'tool'
   | 'inbox'
   | 'journal'
+  | 'data'
   | 'system'
   | 'more';
 
@@ -27,6 +28,7 @@ export const sections: Section[] = [
   { path: '/goals', label: 'Goals & workflows', icon: 'goal', tab: false },
   { path: '/tools', label: 'Tools', icon: 'tool', tab: false },
   { path: '/inbox', label: 'Inbox', icon: 'inbox', tab: true },
+  { path: '/data', label: 'Data', icon: 'data', tab: false },
   { path: '/journal', label: 'Journal', icon: 'journal', tab: false },
   { path: '/system', label: 'System', icon: 'system', tab: false },
 ];

@@ -370,4 +370,5 @@ func (m *mockStore) GoalCreate(_, _, _, _ string) error          { return nil }
 func (m *mockStore) GoalDelete(string) ([]string, error)         { return nil, nil }
 func (m *mockStore) GoalUpdateStatus(string, string) error       { return nil }
 func (m *mockStore) SkillGet(string) (memory.Skill, bool, error) { return memory.Skill{}, false, nil }
+func (m *mockStore) BackupTo(string) (string, error)             { return "", nil }
 func (m *mockStore) SkillList() ([]memory.Skill, error)          { return nil, nil }
