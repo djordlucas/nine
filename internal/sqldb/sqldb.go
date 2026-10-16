@@ -11,6 +11,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -108,7 +109,17 @@ func (d *DB) Exec(ctx context.Context, q string, args ...any) (ExecResult, error
 		return Result{}, nil
 	})
 	out.Writes = writes
+	// SQLite leaves changes() and last_insert_rowid() as the previous
+	// statement set them when this one wrote no rows: a CREATE TABLE after an
+	// INSERT would report the INSERT's count as its own.
+	if !slices.ContainsFunc(writes, isRowWrite) {
+		out.Changes, out.LastInsertID = 0, 0
+	}
 	return out, err
+}
+
+func isRowWrite(w Write) bool {
+	return w.Kind == "insert into" || w.Kind == "update" || w.Kind == "delete from"
 }
 
 func (d *DB) query(ctx context.Context, policy authorizer, q string, args []any) (Result, error) {
@@ -151,13 +162,19 @@ func (d *DB) run(ctx context.Context, policy authorizer, writes *[]Write,
 	return res, nil
 }
 
+// readOnlyError is a write refused by the read policy: the statement is
+// allowed, only not as a read. Run tells it from a real refusal by its type.
+type readOnlyError struct{ msg string }
+
+func (e readOnlyError) Error() string { return e.msg }
+
 // reason turns a statement's failure into one a model or program can act on.
 func (d *DB) reason(ctx context.Context, st *authState, err error) error {
 	msg := err.Error()
 	switch {
 	case st != nil && st.writable:
-		return fmt.Errorf("denied: %s — this is a read: query() and sql_query only read. "+
-			"Write with exec() from nine:sql, in a process's program", st.denied)
+		return readOnlyError{fmt.Sprintf("denied: %s — this is a read: query() and sql_query only read. "+
+			"Write with exec() from nine:sql, in a process's program", st.denied)}
 	case st != nil && st.denied != "":
 		return fmt.Errorf("denied: %s is not allowed in the database (only reads, writes and schema changes "+
 			"on your own tables; no ATTACH, transactions, temp objects or pragmas beyond table introspection)", st.denied)

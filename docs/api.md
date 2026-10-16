@@ -287,6 +287,34 @@ store and the workspace, and is `400` when no workspace is configured. The daemo
 writes the file and the API server streams and removes it, so the two must share
 a filesystem. Restoring stays with `nine restore`, with the daemon stopped.
 
+### Workspace and database
+
+```
+GET /api/v1/workspace/files?path=   GET|PUT|DELETE /api/v1/workspace/file?path=
+GET /api/v1/database/tables         GET|POST /api/v1/database/tables/{table}/rows
+PATCH|DELETE /api/v1/database/tables/{table}/rows/{rowid}
+POST /api/v1/database/sql
+```
+
+The workspace's files and the database processes keep their records in, for an
+operator to read and edit. The store is reachable by no endpoint, and the
+workspace's `.nine/` by none.
+
+| Endpoint | Does |
+|---|---|
+| `GET /workspace/files` | one directory, directories first; `path` empty for the root |
+| `GET /workspace/file` | the file's bytes, up to 32 MB, as `application/octet-stream` with `nosniff` and `Content-Security-Policy: sandbox`; its version as the `ETag`; `download=true` for an attachment |
+| `PUT /workspace/file` | the body becomes the file, its directories made as needed; a replaced file goes to the trash. With `If-Match`, `409` if the file changed since that version. `spill/` is reserved. |
+| `DELETE /workspace/file` | a file to the trash, or an empty directory removed; `If-Match` as for `PUT` |
+| `GET /database/tables` | the tables and views, with columns, row counts and whether rows have a rowid; not SQLite's own or a virtual table's shadows |
+| `GET /database/tables/{table}/rows` | `offset` and `limit` (at most 500): rows in rowid order with their `rowids` |
+| `POST …/rows`, `PATCH`, `DELETE …/rows/{rowid}` | insert a row from `{"values": {column: value}}`, change one, delete one |
+| `POST /database/sql` | `{"sql": "…", "args": […]}`: a read returns up to 1000 rows, a write `changes` and `last_insert_rowid`, under the policy a process's program has |
+
+A statement the policy refuses, an unknown column or a SQL error is `400`; an
+unknown table `404`; no workspace, no database, or a stale `If-Match` `409`. The
+operator's database writes are journaled as `sql_write` under `operator`.
+
 `GET /tools` is the whole roster: every tool an agent can call, with its input
 schema, and the sandboxed tools with their `kind` (`sandboxed` or `generated`),
 capabilities, dependencies (`deps`) and timeout. A sandboxed tool that failed to

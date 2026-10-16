@@ -151,6 +151,20 @@ type GoalDeleteReq struct{ ID string }
 // BackupReq asks for a snapshot, with the workspace when Workspace is set.
 type BackupReq struct{ Workspace bool }
 
+// WorkspaceReq is a workspace file operation (Action is one of
+// WorkspaceActions); Args is its JSON WorkspaceArgs.
+type WorkspaceReq struct {
+	Action string
+	Args   json.RawMessage
+}
+
+// DatabaseReq is a database operation (Action is one of DatabaseActions); Args
+// is its JSON DatabaseArgs.
+type DatabaseReq struct {
+	Action string
+	Args   json.RawMessage
+}
+
 // SkillGetReq asks for one skill with its body.
 type SkillGetReq struct{ Name string }
 
@@ -216,6 +230,8 @@ func (GoalDeleteReq) Type() MsgType        { return TypeGoalDelete }
 func (GoalSetStatusReq) Type() MsgType     { return TypeGoalSetStatus }
 func (SkillGetReq) Type() MsgType          { return TypeSkillGet }
 func (BackupReq) Type() MsgType            { return TypeBackup }
+func (WorkspaceReq) Type() MsgType         { return TypeWorkspace }
+func (DatabaseReq) Type() MsgType          { return TypeDatabase }
 func (SessionHistoryReq) Type() MsgType    { return TypeSessionHistory }
 func (SessionEventsReq) Type() MsgType     { return TypeSessionEvents }
 func (WatchReq) Type() MsgType             { return TypeWatch }
@@ -301,6 +317,10 @@ func DecodeRequest(m Msg) (Request, error) {
 		return SkillGetReq{Name: m.Text}, nil
 	case TypeBackup:
 		return BackupReq{Workspace: m.Text == BackupWorkspace}, nil
+	case TypeWorkspace:
+		return WorkspaceReq{Action: m.Text, Args: m.ToolInput}, nil
+	case TypeDatabase:
+		return DatabaseReq{Action: m.Text, Args: m.ToolInput}, nil
 	case TypeSessionHistory:
 		return SessionHistoryReq{AgentID: m.AgentID}, nil
 	case TypeSessionEvents:

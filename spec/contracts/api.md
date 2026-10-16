@@ -1075,6 +1075,24 @@ configured). The daemon writes it to a temporary file through its `backup` messa
 the API server streams the file, with no write deadline, and **MUST** remove it
 afterwards. It **MUST NOT** remove any path but a backup's temporary directory.
 
+#### `/api/v1/workspace/…` and `/api/v1/database/…`
+
+The workspace's files and the database, through the daemon's `workspace` and
+`database` messages. Neither **MUST** reach the store or the workspace's `.nine/`.
+
+| Endpoint | Contract |
+|---|---|
+| GET `/workspace/files?path=` | `WorkspaceListing`; `400` outside the workspace or not a directory, `404` missing |
+| GET `/workspace/file?path=[&download=true]` | the bytes as `application/octet-stream` with `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`, which **MUST** be sent so no file runs on the API's origin; `ETag` = the version; `400` over 32 MB |
+| PUT `/workspace/file?path=` | octet-stream body, up to 32 MB → `WorkspaceEntry`; optional `If-Match`; `409` when the file changed since, `400` for `spill/…` |
+| DELETE `/workspace/file?path=` | `WorkspaceEntry` with the trash entry; `400` for a directory that is not empty |
+| GET `/database/tables` | `{ tables }` |
+| GET `/database/tables/{table}/rows?offset&limit` | `DatabaseRows`, `limit` at most 500 |
+| POST `/database/tables/{table}/rows`, PATCH, DELETE `…/rows/{rowid}` | `DatabaseRunResult`; `400` for an unknown column or a table without rowid |
+| POST `/database/sql` | `{ sql, args }` → `DatabaseRunResult`; `400` when the policy or SQLite refuses it |
+
+`409` answers every one when no workspace, or no database, is configured.
+
 #### GET `/api/v1/docs`
 
 Get documentation topics.
@@ -1442,6 +1460,8 @@ All API configuration options **MUST** be available via CLI flags.
 | `nine session delete` | DELETE `/api/v1/sessions/{id}` | Implemented |
 | `nine reflections` | GET `/api/v1/reflections` | Implemented |
 | `nine backup` | GET `/api/v1/backup` | Implemented |
+| — | `/api/v1/workspace/files`, `/api/v1/workspace/file` | Implemented |
+| — | `/api/v1/database/tables[/{table}/rows[/{rowid}]]`, `/api/v1/database/sql` | Implemented |
 | `nine context` | GET `/api/v1/conversations/{id}/context` | Implemented |
 | `nine trace` | GET `/api/v1/conversations/{id}/trace` | Implemented |
 | `nine replay` | POST `/api/v1/conversations/{id}/replay` | Implemented |

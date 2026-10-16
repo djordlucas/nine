@@ -4,6 +4,7 @@ import { auth, checkSession } from './api/client';
 import { connect, disconnect } from './api/events';
 import { Shell } from './components/Shell';
 import { Dashboard } from './pages/Dashboard';
+import { Data } from './pages/Data';
 import { Conversations } from './pages/Conversations';
 import { Goals } from './pages/Goals';
 import { Inbox } from './pages/Inbox';
@@ -63,6 +64,9 @@ export function App() {
           <Route path="/tools/:name" component={Tools} />
           <Route path="/tools" component={Tools} />
           <Route path="/inbox" component={Inbox} />
+          <Route path="/data/database/:table" component={Data} />
+          <Route path="/data/*" component={Data} />
+          <Route path="/data" component={Data} />
           <Route path="/journal" component={Journal} />
           <Route path="/system/sessions/:id" component={System} />
           <Route path="/system/docs/:id" component={System} />

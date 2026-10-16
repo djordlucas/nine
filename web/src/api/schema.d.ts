@@ -384,6 +384,142 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspace/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a workspace directory
+         * @description One directory of the workspace, directories first. Nine's own state in .nine/ is never listed or reachable.
+         */
+        get: operations["listWorkspaceFiles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspace/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a workspace file
+         * @description The file as it is, with its version as the ETag. Up to 32 MB; a larger file is taken with a backup.
+         */
+        get: operations["getWorkspaceFile"];
+        /**
+         * Write a workspace file
+         * @description Creates the file, and any directories it needs, or replaces it. A replaced file goes to the trash, where the agent's trash_list and restore_file reach it. spill/ is reserved.
+         */
+        put: operations["putWorkspaceFile"];
+        post?: never;
+        /**
+         * Delete a workspace file
+         * @description Moves a file to the trash, or removes an empty directory.
+         */
+        delete: operations["deleteWorkspaceFile"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/database/tables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the database's tables
+         * @description The tables and views of the database processes keep their records in, with their columns and row counts. SQLite's own tables and a virtual table's shadow tables are left out; the store is never reachable.
+         */
+        get: operations["listDatabaseTables"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/database/tables/{table}/rows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a page of rows
+         * @description Rows of one table or view, in rowid order where it has one.
+         */
+        get: operations["listDatabaseRows"];
+        put?: never;
+        /**
+         * Insert a row
+         * @description Adds a row; a column not given takes its default.
+         */
+        post: operations["insertDatabaseRow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/database/tables/{table}/rows/{rowid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a row
+         * @description Deletes one row.
+         */
+        delete: operations["deleteDatabaseRow"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a row
+         * @description Sets the given columns of one row.
+         */
+        patch: operations["updateDatabaseRow"];
+        trace?: never;
+    };
+    "/database/sql": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run a statement
+         * @description Runs one statement as written. A read returns its rows (at most 1000); anything else runs under the policy a process's program has (no ATTACH, transactions, temp objects or pragmas beyond table introspection) and returns what it changed.
+         */
+        post: operations["runDatabaseSQL"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/goals": {
         parameters: {
             query?: never;
@@ -1163,6 +1299,89 @@ export interface components {
         };
         /** @description One server-sent event on /events. The SSE event name (connected, journal, reset, error) selects the member. */
         EventsStreamEvent: components["schemas"]["EventsConnected"] | components["schemas"]["JournalEvent"] | components["schemas"]["EventsReset"] | components["schemas"]["ErrorResponse"];
+        /** @description One file or directory of the workspace. */
+        WorkspaceEntry: {
+            name: string;
+            /** @description relative to the workspace root */
+            path: string;
+            dir?: boolean;
+            /** Format: int64 */
+            bytes: number;
+            /** Format: date-time */
+            modified: string;
+            /** @description a file's version, which changes whenever it does; the ETag and If-Match value */
+            version?: string;
+            /** @description the trash entry an overwrite or delete moved the old file to */
+            trashed?: string;
+        };
+        /** @description One directory of the workspace. */
+        WorkspaceListing: {
+            /** @description the directory, relative to the root; empty for the root */
+            path: string;
+            entries: components["schemas"]["WorkspaceEntry"][];
+        };
+        /** @description One column of a table. */
+        DatabaseColumn: {
+            name: string;
+            /** @description the declared type; empty when none was declared */
+            type: string;
+            not_null: boolean;
+            /** @description the default, as SQL */
+            default?: string;
+            /** @description its position in the primary key, from 1; 0 when not part of it */
+            pk: number;
+        };
+        /** @description One table or view of the database. */
+        DatabaseTable: {
+            name: string;
+            /** @enum {string} */
+            kind: "table" | "view" | "virtual";
+            columns: components["schemas"]["DatabaseColumn"][];
+            /** Format: int64 */
+            rows: number;
+            /** @description rows are addressed by rowid, so they can be changed one at a time */
+            rowid: boolean;
+        };
+        /** @description The database's tables. */
+        ListDatabaseTablesResponse: {
+            tables: components["schemas"]["DatabaseTable"][];
+        };
+        /** @description A page of a table's rows. */
+        DatabaseRows: {
+            table: string;
+            columns: string[];
+            /** @description each row's rowid, in step with rows; absent for a table without one */
+            rowids?: number[];
+            rows: unknown[][];
+            /** Format: int64 */
+            total: number;
+            offset: number;
+        };
+        /** @description Column values for a row. */
+        DatabaseRowValues: {
+            /** @description column name to value; a string is stored with the column's type affinity, null as NULL */
+            values: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description One statement and its parameters. */
+        RunDatabaseSQLRequest: {
+            sql: string;
+            /** @description values for the ? parameters, in order */
+            args?: unknown[];
+        };
+        /** @description What a statement did. A read has columns and rows; a write has changes. */
+        DatabaseRunResult: {
+            columns: string[];
+            rows: unknown[][];
+            /** @description the read returned more rows than the 1000 shown */
+            truncated?: boolean;
+            write: boolean;
+            /** Format: int64 */
+            changes: number;
+            /** Format: int64 */
+            last_insert_rowid?: number;
+        };
         /** @description The error shape every failing request returns. */
         ErrorResponse: {
             error: components["schemas"]["ErrorDetails"];
@@ -3086,6 +3305,696 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listWorkspaceFiles: {
+        parameters: {
+            query?: {
+                /** @description directory relative to the workspace root; empty for the root */
+                path?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceListing"];
+                };
+            };
+            /** @description a path outside the workspace, or not a directory */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description no such directory */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description no workspace is configured */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getWorkspaceFile: {
+        parameters: {
+            query: {
+                /** @description file path relative to the workspace root */
+                path: string;
+                /** @description true to answer as an attachment, with the file name */
+                download?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description the file */
+            200: {
+                headers: {
+                    /** @description the file's version, for If-Match */
+                    ETag?: string;
+                    /** @description when the file last changed */
+                    "Last-Modified"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            /** @description a path outside the workspace, a directory, or a file over 32 MB */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description no such file */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description no workspace is configured */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    putWorkspaceFile: {
+        parameters: {
+            query: {
+                /** @description file path relative to the workspace root */
+                path: string;
+            };
+            header?: {
+                /** @description the version the file was read at (its ETag); the change fails with 409 if the file has changed since */
+                "If-Match"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        /** @description the file's content, up to 32 MB */
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceEntry"];
+                };
+            };
+            /** @description a path outside the workspace or reserved, a directory, or over 32 MB */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description the file changed since it was read, or no workspace is configured */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteWorkspaceFile: {
+        parameters: {
+            query: {
+                /** @description file or directory path relative to the workspace root */
+                path: string;
+            };
+            header?: {
+                /** @description the version the file was read at (its ETag); the change fails with 409 if the file has changed since */
+                "If-Match"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceEntry"];
+                };
+            };
+            /** @description a path outside the workspace, the root, or a directory that is not empty */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description no such file */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description the file changed since it was read, or no workspace is configured */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listDatabaseTables: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListDatabaseTablesResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description this instance has no database */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listDatabaseRows: {
+        parameters: {
+            query?: {
+                /** @description rows to skip */
+                offset?: number;
+                /** @description rows to return (at most 500) */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description table name */
+                table: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseRows"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description table not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description this instance has no database */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    insertDatabaseRow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description table name */
+                table: string;
+            };
+            cookie?: never;
+        };
+        /** @description the column values */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabaseRowValues"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseRunResult"];
+                };
+            };
+            /** @description an unknown column, or the statement failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description table not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description this instance has no database */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteDatabaseRow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description table name */
+                table: string;
+                /** @description the row's rowid */
+                rowid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseRunResult"];
+                };
+            };
+            /** @description a table without rowid, or the statement failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description table not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description this instance has no database */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateDatabaseRow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description table name */
+                table: string;
+                /** @description the row's rowid */
+                rowid: number;
+            };
+            cookie?: never;
+        };
+        /** @description the columns to set */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabaseRowValues"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseRunResult"];
+                };
+            };
+            /** @description an unknown column, a table without rowid, or the statement failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description table not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description this instance has no database */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    runDatabaseSQL: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description the statement and its parameters */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunDatabaseSQLRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseRunResult"];
+                };
+            };
+            /** @description the statement was refused or failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description this instance has no database */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             429: components["responses"]["TooManyRequests"];
             /** @description internal error */
             500: {

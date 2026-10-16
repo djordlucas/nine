@@ -1,6 +1,6 @@
 # Design note — The embedded web UI
 
-**Status:** Implemented: phases 1–3 (2026-10-14), 4–6 (2026-10-15) · **Related:** `docs/api.md`, `docs/hitl.md`,
+**Status:** Implemented: phases 1–3 (2026-10-14), 4–6 (2026-10-15), Data (2026-10-16) · **Related:** `docs/api.md`, `docs/hitl.md`,
 `docs/processes.md`, `adr/agent-boundary.md`
 
 Nine gets a web UI that is part of the binary: a Preact app, built once and embedded,
@@ -106,6 +106,8 @@ gets an endpoint, and `openapi.yaml` gains it first:
 | `GET /api/v1/reflections[?agent=]` | `nine reflections` |
 | `GET /api/v1/sessions`, `GET`, `DELETE /api/v1/sessions/{id}` | `nine sessions`, `session show\|delete` |
 | `GET /api/v1/backup?with=workspace` | `nine backup`, streamed as a download: `.db`, or `.tar.gz` with the workspace |
+| `GET /api/v1/workspace/files`, `GET`, `PUT`, `DELETE /api/v1/workspace/file` | the workspace's files (§10) |
+| `GET /api/v1/database/tables`, `/database/tables/{table}/rows[/{rowid}]`, `POST /api/v1/database/sql` | the database (§10) |
 
 Out of scope, with the UI naming the CLI command where it would be:
 
@@ -137,6 +139,7 @@ Each tile links to its section.
 | Goals and workflows | list, create and delete goals; list workflows, stop or fail one |
 | Tools | the roster, provenance and deps; show, call, versions, restore, delete, reload |
 | Inbox | notifications; capability requests (approve, deny, revoke) |
+| Data | the workspace's files and the database, to read and edit (§10) |
 | Journal | the live event stream, filtered by type, agent and session |
 | System | status, plugins (reload), skills, sessions, reflections, docs and spec topics, backup, and the CLI-only operations from §4 |
 
@@ -206,6 +209,28 @@ does this for a real daemon yet, so phase 1 builds the stub.
 
 Each phase ships with its docs, contract changes and tests, and the API changes land in
 `openapi.yaml` in the same PR.
+
+---
+
+## 10. Data
+
+The Data section reads and edits what Nine works on: the workspace's files and the
+database processes keep their records in. Nine's own state is not reachable from it:
+not the store, and not the workspace's `.nine/`, which holds the trash.
+
+| View | Does | Through |
+|---|---|---|
+| Files | browse directories; open a text file up to 2 MB in an editor and save it; create, upload, download and delete files; delete an empty directory | the daemon's `workspace` message, opened as an `os.Root`, so no path or link leaves the workspace |
+| Database | list tables and views with their columns and row counts; page rows; insert a row, change one or delete one by rowid | the daemon's `database` message, under the policies `nine:sql` has |
+| SQL | run one statement: a read shows its rows, a write what it changed | the same, with a program's write policy |
+
+| Decision | Choice | Rejected |
+|---|---|---|
+| A replaced or deleted file | moves to the trash, as `write_file` and `delete_file` do; the agent's `restore_file` brings it back | destroyed |
+| Two editors at once | a write or delete sends the version it read as `If-Match`; a file changed since is refused with 409 | last write wins |
+| A file's bytes in the browser | `application/octet-stream`, `nosniff`, `Content-Security-Policy: sandbox` | its own type, which would let an HTML file a model wrote run on the UI's origin |
+| Size | 32 MB a file, in one wire line; larger files go with a backup | streaming through the socket |
+| The operator's database writes | journaled as `sql_write` under `operator`, kinds and tables only, as a process's are | not journaled |
 
 ---
 
@@ -301,6 +326,13 @@ gzipped.
 | The coverage check | `web/src/api/coverage.test.ts` runs with the unit tests, so `make ci` requires it. It reads the operations from the generated types and the calls from the sources; `unused.ts` lists 7 operations with why. | A unit test needs no YAML parser and no new script. |
 
 `docs/web-ui.md` covers every section. The bundle is 52 KB gzipped.
+
+## Data as built
+
+As §10. The end-to-end test found that SQLite leaves `changes()` as the previous
+statement set it when a statement writes no rows, so a `CREATE TABLE` after an `INSERT`
+reported the insert's count; `sqldb.Exec` now reports 0 for a statement with no row
+writes, for processes too. The bundle is 57 KB gzipped.
 
 ---
 

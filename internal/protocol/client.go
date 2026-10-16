@@ -573,6 +573,16 @@ func (c *Client) Backup(withWorkspace bool) (BackupResult, error) {
 	return out, err
 }
 
+// Workspace runs a workspace file operation and decodes its reply into out.
+func (c *Client) Workspace(action string, args WorkspaceArgs, out any) error {
+	return c.roundTrip(NewWorkspaceMsg(action, args), out)
+}
+
+// Database runs a database operation and decodes its reply into out.
+func (c *Client) Database(action string, args DatabaseArgs, out any) error {
+	return c.roundTrip(NewDatabaseMsg(action, args), out)
+}
+
 // GetSkill requests one skill with its body.
 func (c *Client) GetSkill(name string) (SkillDetail, error) {
 	var out SkillDetail

@@ -20,6 +20,7 @@ import (
 	"nine/internal/memory"
 	"nine/internal/plugin"
 	"nine/internal/protocol"
+	"nine/internal/sqldb"
 	"nine/internal/subscribe"
 	"nine/internal/toolvm"
 	"nine/internal/workflow"
@@ -170,6 +171,9 @@ type Daemon struct {
 	maxRunning int // see SetMaxRunning
 	// workspaceRoot is [workspace].root (ConfigureWorkspace).
 	workspaceRoot string
+	// database is the database processes write through nine:sql, for the
+	// operator's database message (ConfigureDatabase); nil when there is none.
+	database *sqldb.DB
 
 	// procs is the process store (see ConfigureProcesses); procWake asks the
 	// process runner for a pass now. Both nil on a daemon with no processes.
@@ -625,6 +629,12 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 	case protocol.BackupReq:
 		d.handleBackup(enc, r)
 
+	case protocol.WorkspaceReq:
+		d.handleWorkspace(enc, r)
+
+	case protocol.DatabaseReq:
+		d.handleDatabase(ctx, enc, r)
+
 	case protocol.SessionHistoryReq:
 		d.handleSessionHistory(enc, r.AgentID)
 
@@ -773,6 +783,10 @@ func (d *Daemon) ConfigureStandingTools(r *StandingRunner) { d.standing = r }
 // ConfigureWorkspace gives the daemon [workspace].root, which a piped turn's
 // write guard checks paths against (pipedTurn).
 func (d *Daemon) ConfigureWorkspace(root string) { d.workspaceRoot = root }
+
+// ConfigureDatabase gives the daemon the database, which the operator reads
+// and edits through the database message.
+func (d *Daemon) ConfigureDatabase(db *sqldb.DB) { d.database = db }
 
 func (d *Daemon) ConfigureSandboxedTools(h *toolvm.Host) {
 	d.tools = h

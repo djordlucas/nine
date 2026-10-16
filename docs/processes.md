@@ -297,6 +297,7 @@ changes.
 |---|---|---|
 | A process's program, live or slice, with `sql = true` | `import { query, exec } from "nine:sql"` | `exec()` writes: rows, and the schema of its own tables. `query()` reads |
 | A turn whose role grants `sql_query` | `sql_query` | one read-only statement: `SELECT`, or `PRAGMA table_list` and `table_info` |
+| The operator | the web UI's Data section, or `/api/v1/database/…` ([api](api.md#workspace-and-database)) | browse tables and rows, insert, change or delete a row, and run one statement, under a program's policy |
 
 ```js
 import { next } from "nine:process";
@@ -315,7 +316,7 @@ export default () => {
 |---|---|
 | Policy | reads, writes and schema changes on Nine's own tables. Refused, with the reason: `ATTACH`, transactions and savepoints, temp objects, `load_extension`, pragmas beyond table introspection |
 | Quotas | `[processes] database_max_mb` (100) for the file, `statement_timeout` (5s) for one statement; each refused with the reason |
-| Journal | each write as `sql_write` under the process: statement kinds and tables, never values |
+| Journal | each write as `sql_write` under the process, or under `operator`: statement kinds and tables, never values |
 | Results | at most 1000 rows; objects and arrays bound as parameters are stored as JSON text |
 
 ## Watching and controlling processes
