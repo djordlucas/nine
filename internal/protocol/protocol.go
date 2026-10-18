@@ -29,6 +29,7 @@ const (
 	TypeUserTurn        MsgType = "user_turn"
 	TypeSessionStop     MsgType = "session_stop"
 	TypeSessionDelete   MsgType = "session_delete"
+	TypeSessionRename   MsgType = "session_rename"
 	TypeProcessShow     MsgType = "process_show"
 	TypeProcessControl  MsgType = "process_control"
 	TypeProcessSend     MsgType = "process_send"
@@ -60,6 +61,7 @@ const (
 	// Queries. Each is echoed back as the type of its own reply, with the
 	// payload in Text — so these appear in both directions.
 	TypeStatus            MsgType = "status"
+	TypeConfig            MsgType = "config"
 	TypeContext           MsgType = "context"
 	TypeListGoals         MsgType = "list_goals"
 	TypeListWorkflows     MsgType = "list_workflows"
@@ -173,6 +175,7 @@ var ClientMsgTypes = []MsgType{
 	TypeUserTurn,
 	TypeSessionStop,
 	TypeSessionDelete,
+	TypeSessionRename,
 	TypeProcessShow,
 	TypeProcessControl,
 	TypeProcessSend,
@@ -192,6 +195,7 @@ var ClientMsgTypes = []MsgType{
 	TypeJournalFollow,
 	TypeTurnCancel,
 	TypeStatus,
+	TypeConfig,
 	TypeContext,
 	TypeListGoals,
 	TypeListWorkflows,
@@ -612,6 +616,9 @@ type StatusInfo struct {
 	LLMQueue  *QueueStat     `json:"llm_queue,omitempty"`
 	// MaxRunning is [processes] max_running, the cap on running processes.
 	MaxRunning int `json:"max_running,omitempty"`
+	// Provider and Model are the LLM the daemon calls, overrides applied.
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
 }
 
 // SkillInfo describes one skill for the "list_skills" response. Source is
@@ -830,6 +837,16 @@ func NewWorkflowStopMsg(id string) Msg {
 // workflow ID or "--all".
 func NewWorkflowFailMsg(text string) Msg {
 	return Msg{Type: TypeWorkflowFail, Text: text}
+}
+
+// MaxConversationName is the longest display name a conversation may be given,
+// in characters.
+const MaxConversationName = 80
+
+// NewSessionRenameMsg gives a conversation the display name name, in place of
+// the one inferred from its first message.
+func NewSessionRenameMsg(agentID, name string) Msg {
+	return Msg{Type: TypeSessionRename, AgentID: agentID, Name: name}
 }
 
 // NewSessionStopMsg requests termination of a session. Pass an agent ID to stop

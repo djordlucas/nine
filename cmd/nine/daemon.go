@@ -242,6 +242,12 @@ func runDaemon() {
 		JobWorkers:             cfg.Tools.JobWorkers,
 	})
 	daemon := asm.Daemon
+	daemon.ConfigureModel(cfg.LLMIdentity())
+	if view, err := cfg.RedactedTOML(); err != nil {
+		slog.Warn("render the configuration for the operator", "err", err)
+	} else {
+		daemon.ConfigureConfigView(view)
+	}
 	supervisor := asm.Supervisor
 	defer asm.EventSink.Close() //nolint:errcheck // best-effort drain on shutdown
 

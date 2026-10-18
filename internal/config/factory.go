@@ -318,6 +318,27 @@ func (cfg *Config) CheckProvider() error {
 		cfg.LLM.Provider, []string{ProviderOllama, ProviderMistral})
 }
 
+// LLMIdentity is the provider and model the daemon calls, with the
+// environment overrides applied as BuildProvider applies them. The provider
+// is "ollama" when none is set, which is what BuildProvider builds then.
+func (cfg *Config) LLMIdentity() (provider, model string) {
+	provider = cfg.LLM.Provider
+	if e := os.Getenv("NINE_LLM_PROVIDER"); e != "" {
+		provider = e
+	}
+	if provider == "" {
+		provider = ProviderOllama
+	}
+	model = cfg.LLM.Model
+	if e := os.Getenv("NINE_LLM_MODEL"); e != "" {
+		model = e
+	}
+	if model == "" {
+		model = "gemma4:e2b"
+	}
+	return provider, model
+}
+
 // BuildProvider constructs an LLM provider from cfg, with environment variable
 // overrides applied on top.
 //
@@ -326,18 +347,7 @@ func (cfg *Config) CheckProvider() error {
 // skipped that check; it is logged and Ollama is built anyway, because
 // BuildProvider cannot fail and a running daemon beats a nil provider.
 func (cfg *Config) BuildProvider() llm.Provider {
-	provider := cfg.LLM.Provider
-	if e := os.Getenv("NINE_LLM_PROVIDER"); e != "" {
-		provider = e
-	}
-
-	model := cfg.LLM.Model
-	if e := os.Getenv("NINE_LLM_MODEL"); e != "" {
-		model = e
-	}
-	if model == "" {
-		model = "gemma4:e2b"
-	}
+	provider, model := cfg.LLMIdentity()
 
 	endpoint := cfg.LLM.Endpoint
 	if e := os.Getenv("NINE_LLM_ENDPOINT"); e != "" {

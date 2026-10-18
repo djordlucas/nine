@@ -72,6 +72,7 @@ Msg {
 | `user_turn` | `agent_id`, `text`, (`force_think` flag) | send a user message (one turn); `force_think` forces reasoning for this turn (`/think`) |
 | `set_plan_mode` | `agent_id`, `text` = `off` \| `plan-only` \| `always` | change a session's reasoning mode live, no restart |
 | `status` | — | request daemon status |
+| `config` | — | request the configuration the daemon runs with, as redacted TOML |
 | `context` | `agent_id` | request a session's assembled-context breakdown, **no LLM call** |
 | `list_goals` | — | request goal list |
 | `list_workflows` | — | request workflow list |
@@ -79,6 +80,7 @@ Msg {
 | `workflow_stop` | `text` = workflow ID | live-cancel a workflow |
 | `workflow_fail` | `text` = ID or `--all` | post-mortem fail |
 | `session_stop` | `agent_id`, or `text` = `--all` | terminate a session (stop its worker + delete its persisted state) |
+| `session_rename` | `agent_id`, `name` (both **required**) | give a conversation a display name: one line of at most 80 characters, trimmed. It persists across restarts and replaces the name inferred from the first message |
 | `session_delete` | `agent_id` (**required**; no `--all`) | erase a session: the conversation and every row keyed to it |
 | `sessions_list` | — | the session roster |
 | `plugin_call` | `tool_name`, `tool_input` | invoke a tool directly, **bypassing the LLM** |
@@ -132,9 +134,11 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `tool_delete` | `text` = a sentence | the tool deleted |
 | `process_list` / `process_show` | `text` = JSON `[]ProcessInfo` / `ProcessInfo` | id, tool, mode, state, `stopped_by`, trigger, session, goal, pipe, budget use and reset, failures, recent activity (show only) |
 | `process_control` / `process_send` | `text` = a sentence | what was done (or `error` naming the reason: an unknown id says `no such process`) |
+| `config` | `text` = TOML | the file, then the `NINE_*` overrides, with only what is set; every credential (a key, token, secret or password, and an MCP server's env and headers) reads `(set, hidden)` |
 | `context` | `text` = JSON `ninectx.Report` | per-section token breakdown + assembled prompt/messages |
 | `workflow_stop` / `workflow_fail` | `text` = `"stopped"` / `"failed"` | operator-command result |
 | `session_stop` | `text` = human-readable outcome (`stopped <id>`, `stopped N session(s)`) | terminate result (or `error` when the id is unknown) |
+| `session_rename` | `agent_id`, `name` | the conversation and the name it now has (or `error` when the name is empty, too long or more than one line, or the conversation is unknown) |
 | `session_delete` | `text` = what was removed, by count | erase result (or `error` when the id is unknown) |
 | `sessions_list` | `text` = JSON `[]SessionInfo` | roster: id, name, status, age, events, protected, attached |
 | `set_plan_mode` | `text` = `"plan mode: <mode>"` | mode change acknowledged (or `error` on an unknown mode) |

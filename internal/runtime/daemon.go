@@ -174,6 +174,11 @@ type Daemon struct {
 	// database is the database processes write through nine:sql, for the
 	// operator's database message (ConfigureDatabase); nil when there is none.
 	database *sqldb.DB
+	// llmProvider and llmModel name the LLM for status (ConfigureModel).
+	llmProvider, llmModel string
+	// configView is the configuration for the operator to read
+	// (ConfigureConfigView); "" when none was given.
+	configView string
 
 	// procs is the process store (see ConfigureProcesses); procWake asks the
 	// process runner for a pass now. Both nil on a daemon with no processes.
@@ -559,6 +564,8 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 	case protocol.ContextReq:
 		d.handleContext(ctx, enc, r.AgentID)
 
+	case protocol.SessionRenameReq:
+		d.handleSessionRename(enc, r.AgentID, r.Name)
 	case protocol.SessionStopReq:
 		d.handleSessionStop(enc, r.AgentID, r.All)
 
@@ -658,6 +665,8 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 		switch r.Kind {
 		case protocol.TypeStatus:
 			d.handleStatus(enc)
+		case protocol.TypeConfig:
+			d.handleConfig(enc)
 		case protocol.TypeListGoals:
 			d.handleListGoals(enc)
 		case protocol.TypeListWorkflows:
@@ -787,6 +796,15 @@ func (d *Daemon) ConfigureWorkspace(root string) { d.workspaceRoot = root }
 // ConfigureDatabase gives the daemon the database, which the operator reads
 // and edits through the database message.
 func (d *Daemon) ConfigureDatabase(db *sqldb.DB) { d.database = db }
+
+// ConfigureConfigView gives the daemon its configuration as the operator may
+// see it: TOML with credentials hidden (config.Config.RedactedTOML).
+func (d *Daemon) ConfigureConfigView(toml string) { d.configView = toml }
+
+// ConfigureModel names the LLM the daemon calls, for its status.
+func (d *Daemon) ConfigureModel(provider, model string) {
+	d.llmProvider, d.llmModel = provider, model
+}
 
 func (d *Daemon) ConfigureSandboxedTools(h *toolvm.Host) {
 	d.tools = h

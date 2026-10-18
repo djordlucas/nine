@@ -134,6 +134,41 @@ paths:
         '429':
           $ref: '#/components/responses/TooManyRequests'
       security: []
+  /config:
+    get:
+      operationId: getConfig
+      summary: Get the configuration
+      description: Returns the configuration the daemon runs with — the file, then the NINE_* overrides — as
+        TOML. Only what is set is shown; an unset setting takes its default. Every credential (a key, token,
+        secret or password, and an MCP server's env and headers) is replaced by "(set, hidden)".
+      tags:
+      - health
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
   /conversations:
     get:
       operationId: listConversations
@@ -242,6 +277,51 @@ paths:
                 $ref: '#/components/schemas/GetConversationResponse'
         '400':
           description: missing id
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: conversation not found
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    patch:
+      operationId: renameConversation
+      summary: Rename a conversation
+      description: Gives a conversation a display name, in place of the one inferred from its first message.
+      tags:
+      - conversations
+      parameters:
+      - name: id
+        in: path
+        description: conversation id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameConversationRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenameConversationResponse'
+        '400':
+          description: missing id, or a name that is empty, longer than 80 characters or more than one line
           content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -2946,6 +3026,15 @@ components:
           format: date-time
         turn_number:
           type: integer
+    ConfigResponse:
+      description: The configuration the daemon runs with, credentials hidden.
+      type: object
+      required:
+      - toml
+      properties:
+        toml:
+          type: string
+          description: The settings that are set, as TOML.
     ConversationInfo:
       description: 'One conversation in a listing. Role, plan mode and timestamps are absent: the daemon''s
         session roster does not carry them.'
@@ -4290,10 +4379,16 @@ components:
           additionalProperties: true
         memory:
           $ref: '#/components/schemas/MemoryStats'
+        model:
+          type: string
+          description: The model the daemon calls, as [llm] model or NINE_LLM_MODEL names it.
         plugins:
           type: array
           items:
             $ref: '#/components/schemas/PluginInfo'
+        provider:
+          type: string
+          description: The LLM provider the daemon calls, ollama or mistral.
         status:
           type: string
         tools:
@@ -4303,6 +4398,28 @@ components:
         uptime:
           type: string
         version:
+          type: string
+    RenameConversationRequest:
+      description: A conversation's new display name.
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+          description: One line; surrounding spaces are trimmed.
+    RenameConversationResponse:
+      description: The conversation and the name it now has.
+      type: object
+      required:
+      - id
+      - name
+      properties:
+        id:
+          type: string
+        name:
           type: string
     SkillInfo:
       description: One skill in the catalog.

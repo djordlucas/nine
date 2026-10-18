@@ -1,9 +1,11 @@
 package runtime_test
 
 import (
+	"strings"
 	"testing"
 
 	"nine/internal/llm"
+	"nine/internal/memory/memtest"
 	"nine/internal/protocol"
 	"nine/internal/runtime"
 )
@@ -208,5 +210,62 @@ func TestSessionNamePersistedAndRestoredOnAttach(t *testing.T) {
 	}
 	if ar.Name != "refactor-the-payment-service" {
 		t.Errorf("Attach name = %q, want %q", ar.Name, "refactor-the-payment-service")
+	}
+}
+
+// The operator's name replaces the inferred one, and a later turn does not
+// rename the conversation back; a name that is empty, too long or more than
+// one line is refused, and so is a conversation that does not exist. Both
+// names are kept in the store, where they outlive the daemon.
+func TestSessionRename(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ckpt, _, _ := runtime.NewStores(store)
+	provider := seqProvider([]llm.Response{finalResp("ok"), finalResp("again")})
+	d, sock := startDaemon(t, makeFactory(provider), ckpt, nil)
+	d.ConfigureMemory(store)
+	c := dial(t, sock)
+
+	id, err := c.NewConversation()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Turn(id, "fix the login bug"); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.ConversationNameLoad(id); got != "fix-the-login-bug" {
+		t.Errorf("stored inferred name = %q, want fix-the-login-bug", got)
+	}
+	name, err := c.RenameSession(id, "  Login bug  ")
+	if err != nil || name != "Login bug" {
+		t.Fatalf("rename = %q, %v; want the trimmed name", name, err)
+	}
+	if _, err := c.Turn(id, "and the logout one"); err != nil {
+		t.Fatal(err)
+	}
+	info, err := c.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range info.Agents {
+		if a.ID == id && a.Name != "Login bug" {
+			t.Errorf("name after another turn = %q, want %q", a.Name, "Login bug")
+		}
+	}
+	if got := store.ConversationNameLoad(id); got != "Login bug" {
+		t.Errorf("stored name = %q, want Login bug", got)
+	}
+
+	for _, tc := range []struct{ id, name, want string }{
+		{id, "   ", "may not be empty"},
+		{id, strings.Repeat("x", protocol.MaxConversationName+1), "at most"},
+		{id, "two\nlines", "one line"},
+		{"nope", "Name", "not found"},
+	} {
+		if _, err := c.RenameSession(tc.id, tc.name); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("rename %q to %q: err = %v, want %q", tc.id, tc.name, err, tc.want)
+		}
 	}
 }

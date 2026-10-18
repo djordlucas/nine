@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"nine/internal/api/apigen"
@@ -110,10 +111,53 @@ func (s *Server) GetConversation(ctx context.Context, request apigen.GetConversa
 			errorBody("server_error", err.Error(), nil)), nil
 	}
 
+	// The context carries no name; the session roster does. A roster that
+	// cannot be read leaves the name out rather than failing the page.
+	var name *string
+	if sessions, err := cl.ListSessions(); err == nil {
+		for _, sess := range sessions {
+			if sess.ID == request.Id {
+				name = nonEmpty(sess.Name)
+			}
+		}
+	}
+
 	return apigen.GetConversation200JSONResponse{
 		Id:      ptr(request.Id),
+		Name:    name,
 		Context: ptr(decodeContext(ctxJSON)),
 	}, nil
+}
+
+// RenameConversation gives a conversation a display name. The daemon checks
+// the name, so its refusal is the 400's message.
+func (s *Server) RenameConversation(ctx context.Context, request apigen.RenameConversationRequestObject) (apigen.RenameConversationResponseObject, error) {
+	if request.Id == "" || request.Body == nil {
+		return apigen.RenameConversation400JSONResponse(
+			errorBody("invalid_request", "missing conversation id or name", nil)), nil
+	}
+
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		return apigen.RenameConversation503JSONResponse(
+			errorBody("service_unavailable", err.Error(), nil)), nil
+	}
+	defer cl.Close()
+
+	name, err := cl.RenameSession(request.Id, request.Body.Name)
+	if err != nil {
+		switch {
+		case errNotFound(err):
+			return apigen.RenameConversation404JSONResponse(
+				errorBody("not_found", "conversation not found", map[string]any{"id": request.Id})), nil
+		case strings.HasPrefix(err.Error(), "daemon: "):
+			return apigen.RenameConversation400JSONResponse(
+				errorBody("invalid_request", strings.TrimPrefix(err.Error(), "daemon: "), nil)), nil
+		}
+		return apigen.RenameConversation500JSONResponse(
+			errorBody("server_error", err.Error(), nil)), nil
+	}
+	return apigen.RenameConversation200JSONResponse{Id: request.Id, Name: name}, nil
 }
 
 func (s *Server) DeleteConversation(ctx context.Context, request apigen.DeleteConversationRequestObject) (apigen.DeleteConversationResponseObject, error) {

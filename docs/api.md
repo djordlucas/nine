@@ -156,7 +156,8 @@ All endpoints are under `/api/v1`. Content type is `application/json` for both r
 
 ```
 GET /api/v1/health    — API server health (daemon connectivity, uptime, version)
-GET /api/v1/status    — Daemon status (sessions, plugins, tools, memory, max_running)
+GET /api/v1/status    — Daemon status (sessions, plugins, tools, memory, max_running, provider, model)
+GET /api/v1/config    — The configuration in force, as TOML, credentials hidden
 ```
 
 ### Conversations
@@ -165,6 +166,7 @@ GET /api/v1/status    — Daemon status (sessions, plugins, tools, memory, max_r
 POST   /api/v1/conversations                    — Create a conversation
 GET    /api/v1/conversations                     — List all conversations
 GET    /api/v1/conversations/{id}                — Get conversation details
+PATCH  /api/v1/conversations/{id}                — Rename a conversation
 POST   /api/v1/conversations/{id}/messages       — Send a message (execute a turn)
 GET    /api/v1/conversations/{id}/context         — Context breakdown
 GET    /api/v1/conversations/{id}/history        — Transcript, every turn

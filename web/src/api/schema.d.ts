@@ -32,6 +32,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the configuration
+         * @description Returns the configuration the daemon runs with — the file, then the NINE_* overrides — as TOML. Only what is set is shown; an unset setting takes its default. Every credential (a key, token, secret or password, and an MCP server's env and headers) is replaced by "(set, hidden)".
+         */
+        get: operations["getConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/conversations": {
         parameters: {
             query?: never;
@@ -77,7 +97,11 @@ export interface paths {
         delete: operations["deleteConversation"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Rename a conversation
+         * @description Gives a conversation a display name, in place of the one inferred from its first message.
+         */
+        patch: operations["renameConversation"];
         trace?: never;
     };
     "/conversations/{id}/context": {
@@ -1215,6 +1239,11 @@ export interface components {
             timestamp?: string;
             turn_number?: number;
         };
+        /** @description The configuration the daemon runs with, credentials hidden. */
+        ConfigResponse: {
+            /** @description The settings that are set, as TOML. */
+            toml: string;
+        };
         /** @description One conversation in a listing. Role, plan mode and timestamps are absent: the daemon's session roster does not carry them. */
         ConversationInfo: {
             age_seconds?: number;
@@ -1894,11 +1923,25 @@ export interface components {
                 [key: string]: unknown;
             };
             memory?: components["schemas"]["MemoryStats"];
+            /** @description The model the daemon calls, as [llm] model or NINE_LLM_MODEL names it. */
+            model?: string;
             plugins?: components["schemas"]["PluginInfo"][];
+            /** @description The LLM provider the daemon calls, ollama or mistral. */
+            provider?: string;
             status?: string;
             tools?: components["schemas"]["ToolInfo"][];
             uptime?: string;
             version?: string;
+        };
+        /** @description A conversation's new display name. */
+        RenameConversationRequest: {
+            /** @description One line; surrounding spaces are trimmed. */
+            name: string;
+        };
+        /** @description The conversation and the name it now has. */
+        RenameConversationResponse: {
+            id: string;
+            name: string;
         };
         /** @description One skill in the catalog. */
         SkillInfo: {
@@ -2192,6 +2235,46 @@ export interface operations {
             429: components["responses"]["TooManyRequests"];
         };
     };
+    getConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listConversations: {
         parameters: {
             query?: {
@@ -2386,6 +2469,71 @@ export interface operations {
                 };
             };
             /** @description missing id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    renameConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description conversation id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameConversationRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenameConversationResponse"];
+                };
+            };
+            /** @description missing id, or a name that is empty, longer than 80 characters or more than one line */
             400: {
                 headers: {
                     [name: string]: unknown;

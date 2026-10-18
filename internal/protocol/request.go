@@ -63,6 +63,9 @@ type SessionStopReq struct {
 // it. Distinct from SessionStopReq, which ends a session and keeps its history.
 type SessionDeleteReq struct{ AgentID string }
 
+// SessionRenameReq gives a conversation a display name.
+type SessionRenameReq struct{ AgentID, Name string }
+
 // ProcessShowReq asks for one process in detail.
 type ProcessShowReq struct {
 	ID    string
@@ -212,6 +215,7 @@ func (SetPlanModeReq) Type() MsgType       { return TypeSetPlanMode }
 func (ContextReq) Type() MsgType           { return TypeContext }
 func (SessionStopReq) Type() MsgType       { return TypeSessionStop }
 func (SessionDeleteReq) Type() MsgType     { return TypeSessionDelete }
+func (SessionRenameReq) Type() MsgType     { return TypeSessionRename }
 func (ProcessShowReq) Type() MsgType       { return TypeProcessShow }
 func (ProcessControlReq) Type() MsgType    { return TypeProcessControl }
 func (ProcessSendReq) Type() MsgType       { return TypeProcessSend }
@@ -241,7 +245,7 @@ func (q QueryReq) Type() MsgType           { return q.Kind }
 
 // queryKinds are the field-less requests QueryReq stands for.
 var queryKinds = map[MsgType]bool{
-	TypeStatus: true, TypeListGoals: true, TypeListWorkflows: true,
+	TypeStatus: true, TypeConfig: true, TypeListGoals: true, TypeListWorkflows: true,
 	TypeListTools: true, TypePluginsList: true, TypePluginsReload: true,
 	TypeToolsList: true, TypeToolsReload: true, TypeSessionsList: true,
 	TypeProcessList: true, TypeGrantsList: true, TypeListSkills: true,
@@ -278,6 +282,8 @@ func DecodeRequest(m Msg) (Request, error) {
 		return SessionStopReq{AgentID: m.AgentID, All: m.Text == "--all"}, nil
 	case TypeSessionDelete:
 		return SessionDeleteReq{AgentID: m.AgentID}, nil
+	case TypeSessionRename:
+		return SessionRenameReq{AgentID: m.AgentID, Name: m.Name}, nil
 	case TypeProcessShow:
 		return ProcessShowReq{ID: m.AgentID, Limit: m.Limit}, nil
 	case TypeProcessControl:
