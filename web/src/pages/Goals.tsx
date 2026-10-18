@@ -6,10 +6,13 @@ import { fromConfig, goalTree, statusActions, type Goal, type GoalStatus } from 
 import { shortId } from '../journal';
 import { useLive } from '../live';
 import { processState } from '../processes';
+import { ask } from '../components/Confirm';
+import { ListHead, Split } from '../components/Split';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
 import { param, processPath } from './Processes';
 import styles from './Goals.module.css';
+import { Icon } from '../components/Icon';
 
 type Workflow = Schemas['WorkflowInfo'];
 
@@ -27,7 +30,7 @@ export function Goals() {
   const id = param(params.id as string | undefined);
   const isWorkflow = path.startsWith('/goals/workflows/');
   return (
-    <div class={`${split.split} ${id ? split.open : ''}`}>
+    <Split name="goals" noun="goals and workflows" open={!!id}>
       <div class={split.list}>
         <GoalList current={isWorkflow ? undefined : id} />
         <WorkflowList current={isWorkflow ? id : undefined} />
@@ -35,9 +38,9 @@ export function Goals() {
       <section class={split.pane} aria-label={isWorkflow ? 'Workflow' : 'Goal'}>
         {id && isWorkflow && <WorkflowDetail key={id} id={id} />}
         {id && !isWorkflow && <GoalDetail key={id} id={id} />}
-        {!id && <p class={`card muted ${split.placeholder}`}>Choose a goal or a workflow, or create a goal.</p>}
+        {!id && <p class="empty">Choose a goal or a workflow, or create a goal.</p>}
       </section>
-    </div>
+    </Split>
   );
 }
 
@@ -54,11 +57,13 @@ function GoalList({ current }: { current?: string }) {
   const rows = data ? goalTree(data) : [];
   return (
     <nav class={styles.group} aria-label="Goals">
-      <h2 class={styles.groupTitle}>Goals</h2>
+      <ListHead>
+        <h2 class={styles.groupTitle}>Goals</h2>
+      </ListHead>
       <NewGoal />
       {error && <p class="error">{error}</p>}
       {!data && !error && <p class="muted">Loading…</p>}
-      {data && rows.length === 0 && <p class="muted">No goals yet.</p>}
+      {data && rows.length === 0 && <p class="empty">No goals yet.</p>}
       {rows.length > 0 && (
         <ul>
           {rows.map(({ goal: g, depth }) => (
@@ -66,7 +71,7 @@ function GoalList({ current }: { current?: string }) {
               <a
                 href={goalPath(g.id ?? '')}
                 class={split.row}
-                style={{ paddingLeft: `calc(var(--space-3) + ${depth} * var(--space-4))` }}
+                style={{ paddingLeft: `calc(var(--space-2) + ${depth} * var(--space-4))` }}
                 aria-current={g.id === current ? 'page' : undefined}
               >
                 <span class={`${detail.badge} ${detail[g.status ?? '']}`}>{g.status}</span>
@@ -141,7 +146,7 @@ function GoalDetail({ id }: { id: string }) {
   if (error) return <p class="card error">{error}</p>;
   if (!data) return <p class="card muted">Loading…</p>;
   const g = data.goals.find((x) => x.id === id);
-  if (!g) return <p class="card muted">No goal {id}. It may have been deleted.</p>;
+  if (!g) return <p class="empty">No goal {id}. It may have been deleted.</p>;
   const parent = g.parent_type === 'goal' ? data.goals.find((x) => x.id === g.parent_id) : undefined;
   const subs = data.goals.filter((x) => x.parent_type === 'goal' && x.parent_id === id);
 
@@ -157,7 +162,7 @@ function GoalDetail({ id }: { id: string }) {
   };
   const remove = async () => {
     const what = subs.length ? `this goal and its ${subs.length} sub-goal(s)` : 'this goal';
-    if (!confirm(`Delete ${what}? Its session stops; its history is kept.`)) return;
+    if (!(await ask({ title: `Delete ${what}?`, message: 'Its session stops; its history is kept.', confirm: 'Delete', danger: true }))) return;
     setBusy(true);
     const { data: done, error: err } = await api.DELETE('/goals/{id}', { params: { path: { id } } });
     setBusy(false);
@@ -193,8 +198,8 @@ function GoalDetail({ id }: { id: string }) {
             </button>
           ))}
           {!fromConfig(g) && (
-            <button type="button" class={`${detail.action} ${detail.danger}`} disabled={busy} onClick={() => void remove()}>
-              Delete
+            <button type="button" class={`${detail.action} ${detail.iconAction} ${detail.danger}`} disabled={busy} onClick={() => void remove()} aria-label="Delete" title="Delete this goal">
+              <Icon name="trash" size={16} />
             </button>
           )}
         </div>
@@ -274,7 +279,7 @@ function WorkflowList({ current }: { current?: string }) {
       <h2 class={styles.groupTitle}>Workflows</h2>
       {error && <p class="error">{error}</p>}
       {!data && !error && <p class="muted">Loading…</p>}
-      {data && data.length === 0 && <p class="muted">No workflows. The model starts one for a bounded, multi-step plan.</p>}
+      {data && data.length === 0 && <p class="empty">No workflows. The model starts one for a bounded, multi-step plan.</p>}
       {data && data.length > 0 && (
         <ul>
           {data.map((w) => (
@@ -305,14 +310,14 @@ function WorkflowDetail({ id }: { id: string }) {
   if (error) return <p class="card error">{error}</p>;
   if (!data) return <p class="card muted">Loading…</p>;
   const w = data.find((x) => x.id === id);
-  if (!w) return <p class="card muted">No workflow {id}.</p>;
+  if (!w) return <p class="empty">No workflow {id}.</p>;
 
   const end = async (how: 'stop' | 'fail') => {
     const q =
       how === 'stop'
-        ? 'Stop this workflow? Its remaining steps are cancelled.'
-        : 'Mark this workflow failed? Its remaining steps are not run.';
-    if (!confirm(q)) return;
+        ? { title: 'Stop this workflow?', message: 'Its remaining steps are cancelled.', confirm: 'Stop' }
+        : { title: 'Mark this workflow failed?', message: 'Its remaining steps are not run.', confirm: 'Mark failed' };
+    if (!(await ask(q))) return;
     setBusy(true);
     setOutcome(null);
     const path = { params: { path: { id } } };
@@ -338,8 +343,8 @@ function WorkflowDetail({ id }: { id: string }) {
         </div>
         {w.status === 'active' && (
           <div class={detail.actions}>
-            <button type="button" class={detail.action} disabled={busy} onClick={() => void end('stop')}>
-              Stop
+            <button type="button" class={`${detail.action} ${detail.iconAction}`} disabled={busy} onClick={() => void end('stop')} aria-label="Stop" title="Stop this workflow">
+              <Icon name="stop" size={16} />
             </button>
             <button type="button" class={`${detail.action} ${detail.danger}`} disabled={busy} onClick={() => void end('fail')}>
               Mark failed

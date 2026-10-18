@@ -1,23 +1,8 @@
-.page {
+/* A turn's record, opened in the chat under its reply (components/TurnDetail.tsx). */
+.detail {
   display: grid;
-  gap: var(--space-4);
-  max-width: 900px;
-}
-
-.crumbs {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
   gap: var(--space-3);
-}
-
-.steps {
-  display: flex;
-  gap: var(--space-4);
-}
-
-.title {
-  font-size: var(--text-lg);
+  min-width: 0;
 }
 
 .h {

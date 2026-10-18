@@ -282,7 +282,20 @@ Get daemon status.
 **Request:** None
 
 **Response:** Same as CLI `nine status` output, formatted as JSON, plus
-`max_running`, the `[processes] max_running` cap in force.
+`max_running`, the `[processes] max_running` cap in force, and `provider` and
+`model`, the LLM the daemon calls with every override applied.
+
+#### GET `/api/v1/config`
+
+Get the configuration the daemon runs with: the file, then the `NINE_*`
+overrides, as TOML. Only what is set is shown; an unset setting takes its
+default. Every credential (a key, token, secret or password, and an MCP
+server's env and headers) **MUST** read `"(set, hidden)"`.
+
+**Response:**
+```json
+{ "toml": "[llm]\nprovider = \"mistral\"\napi_key = \"(set, hidden)\"\n" }
+```
 
 ---
 
@@ -351,6 +364,35 @@ Get conversation details.
   "protected": false
 }
 ```
+
+#### GET `/api/v1/self-model`
+
+Get the self-model as every turn's self-model block carries it: `self/identity`,
+`self/persona`, `self/capabilities` and `self/learned`, in that order. A key
+never written is left out. It is read-only.
+
+**Response:**
+```json
+{ "entries": [ { "key": "self/identity", "value": "Nine is a persistent AI agent daemon…" } ] }
+```
+
+#### PATCH `/api/v1/conversations/{id}`
+
+Rename a conversation, in place of the name inferred from its first message.
+The name persists across restarts.
+
+**Request:**
+```json
+{ "name": "Trip planning" }
+```
+
+**Response:**
+```json
+{ "id": "agent-id", "name": "Trip planning" }
+```
+
+A name that is empty after trimming, longer than 80 characters or more than one
+line is `400`; an unknown conversation is `404`.
 
 #### POST `/api/v1/conversations/{id}/messages`
 
@@ -435,7 +477,7 @@ journal through the daemon's `session_history` message; it does not attach.
 {
   "data": [
     {
-      "type": "user_turn" | "response" | "tool_start" | "tool_end" | "sub_agent_start" | "sub_agent_end",
+      "type": "user_turn" | "response" | "turn_error" | "tool_start" | "tool_end" | "sub_agent_start" | "sub_agent_end",
       "agent_id": "agent-id",
       "text": "prompt, reply, or sub-agent task",
       "tool_name": "tool-name",
@@ -1450,6 +1492,8 @@ All API configuration options **MUST** be available via CLI flags.
 |-------------|--------------|--------|
 | `nine send` | POST `/api/v1/conversations/{id}/messages` | Implemented |
 | `nine status` | GET `/api/v1/status` | Implemented |
+| — | GET `/api/v1/config` | Implemented |
+| — | GET `/api/v1/self-model` | Implemented |
 | `nine goals` | GET `/api/v1/goals` | Implemented |
 | `nine workflows` | GET `/api/v1/workflows` | Implemented |
 | `nine tools` | GET `/api/v1/tools` | Implemented |
@@ -1467,6 +1511,7 @@ All API configuration options **MUST** be available via CLI flags.
 | `nine replay` | POST `/api/v1/conversations/{id}/replay` | Implemented |
 | `nine stop` | POST `/api/v1/conversations/{id}/stop` | Implemented |
 | — | DELETE `/api/v1/conversations/{id}` | Implemented |
+| — | PATCH `/api/v1/conversations/{id}` | Implemented |
 | `nine workflow stop` | POST `/api/v1/workflows/{id}/stop` | Implemented |
 | `nine workflow fail` | POST `/api/v1/workflows/{id}/fail` | Implemented |
 | `nine plugins reload` | POST `/api/v1/plugins/reload` | Implemented |

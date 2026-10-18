@@ -2,6 +2,7 @@ import { useEffect } from 'preact/hooks';
 import { LocationProvider, Router, Route } from 'preact-iso';
 import { auth, checkSession } from './api/client';
 import { connect, disconnect } from './api/events';
+import { ConfirmHost } from './components/Confirm';
 import { Shell } from './components/Shell';
 import { Dashboard } from './pages/Dashboard';
 import { Data } from './pages/Data';
@@ -14,7 +15,6 @@ import { NotFound } from './pages/NotFound';
 import { Processes } from './pages/Processes';
 import { System } from './pages/System';
 import { Tools } from './pages/Tools';
-import { Turn } from './pages/Turn';
 
 export function App() {
   useEffect(() => {
@@ -50,7 +50,6 @@ export function App() {
       <Shell>
         <Router>
           <Route path="/" component={Dashboard} />
-          <Route path="/conversations/:id/turns/:n" component={Turn} />
           <Route path="/conversations/:id" component={Conversations} />
           <Route path="/conversations" component={Conversations} />
           <Route path="/processes/:id" component={Processes} />
@@ -75,6 +74,7 @@ export function App() {
           <Route path="/system" component={System} />
           <Route default component={NotFound} />
         </Router>
+        <ConfirmHost />
       </Shell>
     </LocationProvider>
   );

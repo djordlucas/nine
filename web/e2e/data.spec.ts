@@ -42,8 +42,8 @@ test('a workspace file is edited, uploaded beside and deleted; .nine stays priva
   await files.getByRole('link', { name: /data\.bin/ }).click();
   await expect(page.getByText('Not a text file.', { exact: false })).toBeVisible();
 
-  page.once('dialog', (d) => void d.accept());
   await page.getByRole('region', { name: 'File' }).getByRole('button', { name: 'Delete' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
   await expect(page).toHaveURL(new RegExp(`dir=${encodeURIComponent(dir).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
   await expect(files.getByRole('link', { name: /data\.bin/ })).toHaveCount(0);
 });
@@ -81,12 +81,21 @@ test('a table is created, a row added, changed and deleted', async ({ page }, in
 
   await page.goto(`/data/database/${table}`);
   await page.getByRole('table', { name: `Rows of ${table}` }).getByRole('button', { name: 'Edit' }).click();
-  page.once('dialog', (d) => void d.accept());
   await page.getByRole('button', { name: 'Delete row' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
   await expect(page.getByText('No rows')).toBeVisible();
 
   await page.goto('/data/sql');
   await page.getByRole('textbox', { name: 'Statement' }).fill(`ATTACH DATABASE ':memory:' AS o`);
   await page.getByRole('button', { name: 'Run' }).click();
   await expect(sql.getByRole('alert')).toContainText('attach');
+});
+
+test('the self-model reads as every turn carries it', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/data/self-model');
+  await expect(page.getByRole('heading', { name: 'Self-model', level: 2 })).toBeVisible();
+  // The first start seeds an identity.
+  await expect(page.getByRole('region', { name: 'self/identity' })).toContainText('Nine');
+  await expect(page.getByRole('textbox')).toHaveCount(0);
 });

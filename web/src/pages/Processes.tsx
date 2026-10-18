@@ -4,9 +4,13 @@ import { api, errorMessage, get } from '../api/client';
 import { ago } from '../format';
 import { useLive } from '../live';
 import { actionsFor, byAttention, processState, stoppedReason, used, type Process } from '../processes';
+import { Area } from '../components/Area';
+import { ask } from '../components/Confirm';
+import { ListHead, Split } from '../components/Split';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
 import styles from './Processes.module.css';
+import { Icon } from '../components/Icon';
 
 const processEvents = ['process_*', 'standing_*', 'goal_status'];
 
@@ -33,16 +37,16 @@ export function Processes() {
   const { params } = useRoute();
   const id = param(params.id as string | undefined);
   return (
-    <div class={`${split.split} ${id ? split.open : ''}`}>
+    <Split name="processes" noun="processes" open={!!id}>
       <Roster current={id} />
       <section class={split.pane} aria-label="Process">
         {id ? (
           <ProcessDetail key={id} id={id} />
         ) : (
-          <p class={`card muted ${split.placeholder}`}>Choose a process.</p>
+          <p class="empty">Choose a process.</p>
         )}
       </section>
-    </div>
+    </Split>
   );
 }
 
@@ -60,16 +64,20 @@ function Roster({ current }: { current?: string }) {
   const running = data?.list.filter((p) => p.state !== 'stopped').length ?? 0;
   return (
     <nav class={split.list} aria-label="Processes">
-      {data && (
+      <ListHead>
         <p class={split.heading}>
-          <span>{data.max ? `${running} of ${data.max} running` : `${running} running`}</span>
-          <span>{data.list.length} in all</span>
+          {data && (
+            <>
+              <span>{data.max ? `${running} of ${data.max} running` : `${running} running`}</span>
+              <span>{data.list.length} in all</span>
+            </>
+          )}
         </p>
-      )}
+      </ListHead>
       {error && <p class="error">{error}</p>}
       {!data && !error && <p class="muted">Loading…</p>}
       {data && data.list.length === 0 && (
-        <p class="muted">No processes. A goal, a [[process]] block in nine.toml, or the model starts one.</p>
+        <p class="empty">No processes. A goal, a [[process]] block in nine.toml, or the model starts one.</p>
       )}
       {data && data.list.length > 0 && (
         <ul>
@@ -110,14 +118,14 @@ function ProcessDetail({ id }: { id: string }) {
   };
 
   if (error) return <p class="card error">{error}</p>;
-  if (p === null) return <p class="card muted">No process {id}. It may have been removed.</p>;
+  if (p === null) return <p class="empty">No process {id}. It may have been removed.</p>;
   if (!p) return <p class="card muted">Loading…</p>;
 
   const can = actionsFor(p);
   const path = { params: { path: { id } } };
   const start = () => act(() => api.POST('/processes/{id}/start', path), 'Started.');
-  const stop = () => {
-    if (!confirm(`Stop ${id}? It stays stopped until you start it again.`)) return;
+  const stop = async () => {
+    if (!(await ask({ title: `Stop ${id}?`, message: 'It stays stopped until you start it again.', confirm: 'Stop' }))) return;
     void act(() => api.POST('/processes/{id}/stop', path), 'Stopped.');
   };
   const resume = (goal: string) =>
@@ -148,13 +156,20 @@ function ProcessDetail({ id }: { id: string }) {
             </button>
           )}
           {can.start && (
-            <button type="button" class={`${detail.action} ${detail.primary}`} disabled={busy} onClick={() => void start()}>
-              {p.state === 'failing' ? 'Retry now' : 'Start'}
+            <button
+              type="button"
+              class={`${detail.action} ${detail.iconAction}`}
+              disabled={busy}
+              onClick={() => void start()}
+              aria-label={p.state === 'failing' ? 'Retry now' : 'Start'}
+              title={p.state === 'failing' ? 'Retry now' : 'Start this process'}
+            >
+              <Icon name={p.state === 'failing' ? 'reload' : 'play'} size={16} />
             </button>
           )}
           {can.stop && (
-            <button type="button" class={`${detail.action} ${detail.danger}`} disabled={busy} onClick={stop}>
-              Stop
+            <button type="button" class={`${detail.action} ${detail.iconAction}`} disabled={busy} onClick={stop} aria-label="Stop" title="Stop this process">
+              <Icon name="stop" size={16} />
             </button>
           )}
         </div>
@@ -293,9 +308,10 @@ function Send({ id }: { id: string }) {
     <section class={detail.section} aria-labelledby="send-h">
       <h3 id="send-h">Message it</h3>
       <form class={styles.send} onSubmit={(e) => void send(e)}>
-        <textarea
+        <Area
           class="input"
           rows={2}
+          max={200}
           aria-label="Message to the process"
           placeholder="It receives this as its next trigger."
           value={text}
@@ -319,7 +335,7 @@ function Recent({ p }: { p: Process }) {
   return (
     <section class={detail.section} aria-labelledby="recent-h">
       <h3 id="recent-h">Recent activity</h3>
-      {recent.length === 0 && <p class="muted">Nothing yet.</p>}
+      {recent.length === 0 && <p class="empty">Nothing yet.</p>}
       {recent.length > 0 && (
         <ol class={styles.recent}>
           {recent.map((r, i) => (

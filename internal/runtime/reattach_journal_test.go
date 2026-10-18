@@ -86,6 +86,9 @@ func TestJournalHistoryReattach(t *testing.T) {
 		// Turn 3: a second user prompt.
 		{Seq: 7, Turn: 3, Type: "turn_start", Payload: mustJSON(map[string]any{"input": "second", "trigger": "user"})},
 		{Seq: 8, Turn: 3, Type: "turn_end", Payload: mustJSON(map[string]any{"result": "answer two"})},
+		// Turn 4: a prompt whose turn failed keeps its error in the transcript.
+		{Seq: 9, Turn: 4, Type: "turn_start", Payload: mustJSON(map[string]any{"input": "third", "trigger": "user"})},
+		{Seq: 10, Turn: 4, Type: "turn_end", Payload: mustJSON(map[string]any{"error": "llm: HTTP 404"})},
 	}
 
 	d := runtime.New("/tmp/unused.sock", nil, nil)
@@ -105,6 +108,8 @@ func TestJournalHistoryReattach(t *testing.T) {
 		{protocol.TypeResponse, "background note"}, // idle turn: response but no user bubble
 		{protocol.TypeHistoryUser, "second"},
 		{protocol.TypeResponse, "answer two"},
+		{protocol.TypeHistoryUser, "third"},
+		{protocol.TypeHistoryError, "llm: HTTP 404"},
 	}
 	if len(msgs) != len(wants) {
 		t.Fatalf("got %d msgs, want %d: %+v", len(msgs), len(wants), msgs)

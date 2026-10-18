@@ -1,14 +1,20 @@
 import { useState } from 'preact/hooks';
 import { useLocation, useRoute } from 'preact-iso';
 import { api, errorMessage, get, type Schemas } from '../api/client';
-import { duration, pretty } from '../format';
+import { duration } from '../format';
 import { useLive } from '../live';
 import { Markdown } from '../markdown';
 import { argsTemplate, groupTools, kindLabels, parseArgs, type Tool } from '../tools';
+import { Toggle } from '../components/Toggle';
+import { Area } from '../components/Area';
+import { ask } from '../components/Confirm';
+import { ListHead, Split } from '../components/Split';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
 import { param } from './Processes';
 import styles from './Tools.module.css';
+import { Json } from '../components/Json';
+import { Icon } from '../components/Icon';
 
 type Plugin = Schemas['PluginInfo'];
 type Skill = Schemas['SkillInfo'];
@@ -63,16 +69,16 @@ function ToolsView({ name }: { name?: string }) {
   const [reloads, setReloads] = useState(0);
   const { data, error } = useLive(loadTools, [], reloads);
   return (
-    <div class={`${split.split} ${name ? split.open : ''}`}>
+    <Split name="tools" noun="tools" open={!!name}>
       <ToolList tools={data} error={error} current={name} onReloaded={() => setReloads((n) => n + 1)} />
       <section class={split.pane} aria-label="Tool">
         {name ? (
           <ToolDetail key={name} name={name} onChanged={() => setReloads((n) => n + 1)} />
         ) : (
-          <p class={`card muted ${split.placeholder}`}>Choose a tool.</p>
+          <p class="empty">Choose a tool.</p>
         )}
       </section>
-    </div>
+    </Split>
   );
 }
 
@@ -91,7 +97,7 @@ function ToolList(props: { tools: Tool[] | null; error: string | null; current?:
   const groups = props.tools ? groupTools(props.tools, filter) : [];
   return (
     <nav class={split.list} aria-label="Tools">
-      <div class={styles.listHead}>
+      <ListHead>
         <input
           class="input"
           type="search"
@@ -100,10 +106,10 @@ function ToolList(props: { tools: Tool[] | null; error: string | null; current?:
           value={filter}
           onInput={(e) => setFilter(e.currentTarget.value)}
         />
-        <button type="button" class={detail.action} disabled={busy} onClick={() => void reload()}>
-          Reload
+        <button type="button" class={`${detail.action} ${detail.iconAction}`} disabled={busy} onClick={() => void reload()} aria-label="Reload" title="Reload the tools">
+          <Icon name="reload" size={16} />
         </button>
-      </div>
+      </ListHead>
       {outcome && (
         <p class="muted" role="status">
           {outcome}
@@ -111,7 +117,7 @@ function ToolList(props: { tools: Tool[] | null; error: string | null; current?:
       )}
       {props.error && <p class="error">{props.error}</p>}
       {!props.tools && !props.error && <p class="muted">Loading…</p>}
-      {props.tools && groups.length === 0 && <p class="muted">No tool matches.</p>}
+      {props.tools && groups.length === 0 && <p class="empty">No tool matches.</p>}
       {groups.map(([kind, tools]) => (
         <div key={kind} class={styles.group}>
           <h2 class={split.heading}>
@@ -155,11 +161,11 @@ function ToolDetail({ name, onChanged }: { name: string; onChanged: () => void }
   const [outcome, setOutcome] = useState<{ ok: boolean; text: string } | null>(null);
 
   if (error) return <p class="card error">{error}</p>;
-  if (t === null) return <p class="card muted">No tool {name}. It may have been deleted.</p>;
+  if (t === null) return <p class="empty">No tool {name}. It may have been deleted.</p>;
   if (!t) return <p class="card muted">Loading…</p>;
 
   const remove = async () => {
-    if (!confirm(`Delete ${name}? Its processes stop and it is gone from every session.`)) return;
+    if (!(await ask({ title: `Delete ${name}?`, message: 'Its processes stop and it is gone from every session.', confirm: 'Delete', danger: true }))) return;
     const { data, error: e } = await api.DELETE('/tools/{name}', { params: { path: { name } } });
     if (data) {
       onChanged();
@@ -182,8 +188,8 @@ function ToolDetail({ name, onChanged }: { name: string; onChanged: () => void }
         </div>
         {t.generated && (
           <div class={detail.actions}>
-            <button type="button" class={`${detail.action} ${detail.danger}`} onClick={() => void remove()}>
-              Delete
+            <button type="button" class={`${detail.action} ${detail.iconAction} ${detail.danger}`} onClick={() => void remove()} aria-label="Delete" title="Delete this tool">
+              <Icon name="trash" size={16} />
             </button>
           </div>
         )}
@@ -236,7 +242,7 @@ function ToolDetail({ name, onChanged }: { name: string; onChanged: () => void }
       {t.input_schema != null && (
         <details class={detail.section}>
           <summary>Arguments schema</summary>
-          <pre class={styles.code}>{pretty(t.input_schema)}</pre>
+          <Json value={t.input_schema} class={styles.code} />
         </details>
       )}
       {t.loaded !== false && <Call name={name} schema={t.input_schema} sandboxed={t.kind === 'sandboxed' || t.kind === 'generated'} />}
@@ -275,9 +281,10 @@ function Call({ name, schema, sandboxed }: { name: string; schema: unknown; sand
       <h3 id="call-h">Call it</h3>
       <p class="muted">Runs the tool now, as the operator, with these arguments. No model is involved.</p>
       <form class={styles.call} onSubmit={(e) => void call(e)}>
-        <textarea
+        <Area
           class={`input ${styles.code}`}
           rows={5}
+          max={360}
           aria-label="Arguments as JSON"
           spellcheck={false}
           value={text}
@@ -285,10 +292,9 @@ function Call({ name, schema, sandboxed }: { name: string; schema: unknown; sand
         />
         <div class={styles.callRow}>
           {sandboxed && (
-            <label class={styles.check}>
-              <input type="checkbox" checked={live} onChange={(e) => setLive(e.currentTarget.checked)} />
+            <Toggle on={live} onChange={setLive}>
               Use its real state (a call otherwise gets a throwaway one)
-            </label>
+            </Toggle>
           )}
           <button type="submit" class="button" disabled={busy}>
             {busy ? 'Calling…' : 'Call'}
@@ -301,7 +307,7 @@ function Call({ name, schema, sandboxed }: { name: string; schema: unknown; sand
             {result.ok ? 'Returned' : 'Failed'}
             {result.ms !== undefined ? ` in ${duration(result.ms)}` : ''}
           </p>
-          {result.text && <pre class={styles.code}>{pretty(result.text)}</pre>}
+          {result.text && <Json value={result.text} class={styles.code} />}
         </div>
       )}
     </section>
@@ -317,7 +323,7 @@ function Versions({ name, onRestored }: { name: string; onRestored: () => void }
     restored,
   );
   const restore = async (version: number) => {
-    if (!confirm(`Make version ${version} of ${name} current again? A process it runs restarts on it.`)) return;
+    if (!(await ask({ title: `Restore version ${version} of ${name}?`, message: 'It becomes current again. A process it runs restarts on it.', confirm: 'Restore' }))) return;
     const { data: done, error: e } = await api.POST('/tools/{name}/versions/{version}/restore', {
       params: { path: { name, version } },
     });
@@ -341,7 +347,7 @@ function Versions({ name, onRestored }: { name: string; onRestored: () => void }
             {data.written_by ? `, written by ${data.written_by}` : ''}
             {data.probation ? ' — on probation: rolled back if it fails before it first succeeds' : ''}.
           </p>
-          {data.previous.length === 0 && <p class="muted">No earlier versions are kept.</p>}
+          {data.previous.length === 0 && <p class="empty">No earlier versions are kept.</p>}
           {data.previous.length > 0 && (
             <ul class={styles.versions}>
               {data.previous.map((v) => (
@@ -393,8 +399,8 @@ function PluginsView() {
           <span class="muted">Programs that serve tools. Reloading re-reads the plugin directories.</span>
         </div>
         <div class={detail.actions}>
-          <button type="button" class={detail.action} disabled={busy} onClick={() => void reload()}>
-            Reload
+          <button type="button" class={`${detail.action} ${detail.iconAction}`} disabled={busy} onClick={() => void reload()} aria-label="Reload" title="Reload the plugins">
+            <Icon name="reload" size={16} />
           </button>
         </div>
       </header>
@@ -405,13 +411,13 @@ function PluginsView() {
       )}
       {error && <p class="error">{error}</p>}
       {!data && !error && <p class="muted">Loading…</p>}
-      {data && data.length === 0 && <p class="muted">No plugins.</p>}
+      {data && data.length === 0 && <p class="empty">No plugins.</p>}
       {data && data.length > 0 && (
         <ul class={styles.plugins}>
           {data.map((p: Plugin) => (
             <li key={p.name}>
               <div class={styles.pluginHead}>
-                <span class={`${detail.badge} ${p.disabled ? detail.paused : p.loaded ? detail.running : detail.failing}`}>
+                <span class={`${detail.badge} ${p.disabled || p.loaded ? '' : detail.failing}`}>
                   {p.disabled ? 'disabled' : p.loaded ? 'loaded' : 'failed'}
                 </span>
                 <strong>{p.name}</strong>
@@ -454,19 +460,21 @@ function SkillsView({ name }: { name?: string }) {
     (s: Skill) => !f || `${s.name} ${s.description ?? ''} ${(s.tags ?? []).join(' ')}`.toLowerCase().includes(f),
   );
   return (
-    <div class={`${split.split} ${name ? split.open : ''}`}>
+    <Split name="skills" noun="skills" open={!!name}>
       <nav class={split.list} aria-label="Skills">
-        <input
-          class="input"
-          type="search"
-          aria-label="Filter skills"
-          placeholder="Filter skills"
-          value={filter}
-          onInput={(e) => setFilter(e.currentTarget.value)}
-        />
+        <ListHead>
+          <input
+            class="input"
+            type="search"
+            aria-label="Filter skills"
+            placeholder="Filter skills"
+            value={filter}
+            onInput={(e) => setFilter(e.currentTarget.value)}
+          />
+        </ListHead>
         {error && <p class="error">{error}</p>}
         {!data && !error && <p class="muted">Loading…</p>}
-        {data && shown.length === 0 && <p class="muted">No skill matches.</p>}
+        {data && shown.length === 0 && <p class="empty">No skill matches.</p>}
         {shown.length > 0 && (
           <ul>
             {shown.map((s) => (
@@ -482,9 +490,9 @@ function SkillsView({ name }: { name?: string }) {
         )}
       </nav>
       <section class={split.pane} aria-label="Skill">
-        {name ? <SkillDetail key={name} name={name} /> : <p class={`card muted ${split.placeholder}`}>Choose a skill to read it.</p>}
+        {name ? <SkillDetail key={name} name={name} /> : <p class="empty">Choose a skill to read it.</p>}
       </section>
-    </div>
+    </Split>
   );
 }
 
@@ -505,7 +513,7 @@ function SkillDetail({ name }: { name: string }) {
     [],
   );
   if (error) return <p class="card error">{error}</p>;
-  if (s === null) return <p class="card muted">No skill {name}.</p>;
+  if (s === null) return <p class="empty">No skill {name}.</p>;
   if (!s) return <p class="card muted">Loading…</p>;
   return (
     <article class={`card ${detail.detail}`}>
@@ -521,7 +529,7 @@ function SkillDetail({ name }: { name: string }) {
         </div>
       </header>
       {s.description && <p class="muted">{s.description}</p>}
-      <Markdown text={s.content} class={styles.skill} />
+      <Markdown text={s.content} />
     </article>
   );
 }

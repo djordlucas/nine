@@ -1,0 +1,19 @@
+/* JSON's parts (components/Json.tsx). The key is what a reader looks for, so
+   it is the strongest. */
+.key {
+  color: var(--syntax-key);
+  font-weight: 600;
+}
+
+.string {
+  color: var(--syntax-string);
+}
+
+.number,
+.literal {
+  color: var(--syntax-number);
+}
+
+.punct {
+  color: var(--text-2);
+}

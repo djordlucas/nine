@@ -4,6 +4,12 @@
   gap: var(--space-4);
 }
 
+/* A grid item is as wide as its widest content unless allowed to shrink: a
+   long code line or a wide table would push the pane past its box. */
+.detail > * {
+  min-width: 0;
+}
+
 .head {
   display: flex;
   flex-wrap: wrap;
@@ -42,38 +48,69 @@
   gap: var(--space-2);
 }
 
+/* An action: the filled button of the rest of the UI (the New conversation
+   button's kind), 32px tall, with its hard shadow and press. An icon action
+   is a square holding only its icon, named by its label and tooltip. A
+   destructive one is red; a secondary one (Cancel) is light with a dark edge. */
 .action {
-  min-height: var(--touch);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 32px;
   padding: 0 var(--space-3);
-  border: 1px solid var(--border);
+  border: 1px solid var(--ink);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--ink);
+  color: var(--ink-text);
   font-size: var(--text-sm);
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: var(--shadow);
   cursor: pointer;
 }
 
-.action:hover:not(:disabled) {
-  background: var(--surface-2);
+.action:active:not(:disabled) {
+  box-shadow: none;
+  transform: translate(3px, 3px);
 }
 
 .action:disabled {
   opacity: 0.6;
+  box-shadow: none;
   cursor: default;
 }
 
+.action:focus-visible {
+  outline-color: var(--ink-text);
+  outline-offset: -4px;
+}
+
+.iconAction {
+  width: 32px;
+  padding: 0;
+}
+
+/* Kept for the markup that still names it; every action is filled now. */
 .primary {
-  background: var(--accent);
-  border-color: transparent;
-  color: var(--accent-text);
   font-weight: 600;
 }
 
-.primary:hover:not(:disabled) {
-  background: var(--accent);
+.secondary {
+  border-color: var(--edge);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.secondary:focus-visible {
+  outline-color: var(--focus);
+  outline-offset: -2px;
 }
 
 .danger {
-  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #ffffff;
 }
 
 .notice {
@@ -106,29 +143,25 @@
 
 .badge {
   flex: none;
-  padding: 0 var(--space-2);
+  padding: 0 6px;
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface-2);
   color: var(--text-2);
-  font-size: 12px;
-  font-family: var(--mono);
-  line-height: 20px;
+  font-size: 11px;
+  line-height: 18px;
 }
 
+/* A tag is plain: only what went wrong is red, so red always means that. */
 .failing,
 .failed {
+  border-color: var(--danger);
   color: var(--danger);
 }
 
-.paused,
-.cancelled {
-  color: var(--warn);
-}
-
-.running,
-.active,
-.done {
-  color: var(--ok);
+/* On a selected row, a tag takes the row's light text. */
+[aria-current='page'] .badge {
+  border-color: currentColor;
+  color: inherit;
 }
 
 @media (max-width: 767px) {

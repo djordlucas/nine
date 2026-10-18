@@ -3,6 +3,12 @@
   flex-direction: column;
   gap: var(--space-3);
   min-width: 0;
+  /* On a wide screen the conversation stops growing; its lines stay readable. */
+  max-width: 900px;
+  padding: var(--space-4) var(--space-4) 0;
+  background: var(--surface);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
 }
 
 .head {
@@ -30,9 +36,48 @@
 
 .title h2 {
   font-size: var(--text-lg);
+  min-width: 0;
+}
+
+/* The name reads as a heading and is a button: a click renames it. It spans
+   the title's whole width, as the field that replaces it does, so all of
+   that is clickable and not only the name's own length. */
+.rename {
+  display: block;
+  width: calc(100% + var(--space-1));
+  min-height: 32px;
+  padding: 0 var(--space-1);
+  margin-left: calc(-1 * var(--space-1));
+  border: 1px solid transparent;
+  background: none;
+  font: inherit;
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: text;
+  border-radius: var(--radius);
+}
+
+.rename:hover {
+  border-color: var(--edge);
+}
+
+.renaming {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.nameField {
+  width: calc(100% + var(--space-1));
+  min-height: 32px;
+  padding: 0 var(--space-1);
+  margin-left: calc(-1 * var(--space-1));
+  border: 1px solid var(--edge);
+  background: var(--surface);
+  font-size: var(--text-lg);
+  font-weight: bold;
+  border-radius: var(--radius);
 }
 
 .title span {
@@ -45,22 +90,28 @@
   gap: var(--space-2);
 }
 
-.action {
-  min-height: 36px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+/* Send and Stop cast their shadow only while hovered, and press into its
+   place, a shade lighter, on a click. */
+.press {
+  box-shadow: none;
+}
+
+.press:hover:not(:disabled) {
+  box-shadow: var(--shadow);
+}
+
+.press:active:not(:disabled) {
+  box-shadow: none;
+  transform: translate(3px, 3px);
+  background: var(--text-2);
+}
+
+/* The conversation's controls are the shared icon actions
+   (components/Detail.module.css); Context, while its panel is open, is light
+   with a dark edge. */
+.actions [aria-expanded='true'] {
   background: var(--surface);
-  font-size: var(--text-sm);
-  cursor: pointer;
-}
-
-.action:hover {
-  background: var(--surface-2);
-}
-
-.danger {
-  color: var(--danger);
+  color: var(--text);
 }
 
 .timeline {
@@ -72,16 +123,19 @@
   gap: var(--space-3);
 }
 
+/* The operator's message spans the row, its bubble at the right. The row's
+   size never depends on state, so shading its turn moves nothing. */
 .user {
-  align-self: flex-end;
-  max-width: min(85%, 640px);
+  display: flex;
+  justify-content: flex-end;
 }
 
 .bubble {
+  min-width: 0;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-lg);
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--ink);
+  color: var(--ink-text);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -90,23 +144,32 @@
   opacity: 0.75;
 }
 
-.reply {
-  max-width: 100%;
-}
 
-.md {
+/* A failed turn, in the reply's place. */
+.failed {
+  max-width: min(85%, 640px);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--danger);
+  border-left-width: 4px;
   overflow-wrap: anywhere;
+  border-radius: var(--radius);
 }
 
-.md > :first-child {
-  margin-top: 0;
+.failed strong {
+  color: var(--danger);
+  font-size: var(--text-sm);
 }
 
-.md > :last-child {
-  margin-bottom: 0;
+.failed p {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
 }
 
-.md pre,
+/* A reply's Markdown is styled with every other (markdown.module.css). */
+.md {
+  min-width: 0;
+}
+
 .pre {
   margin: var(--space-2) 0;
   padding: var(--space-3);
@@ -118,39 +181,6 @@
   font-size: 13px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-.md code {
-  font-family: var(--mono);
-  font-size: 0.92em;
-}
-
-.md :not(pre) > code {
-  padding: 1px 4px;
-  border-radius: 4px;
-  background: var(--surface-2);
-}
-
-.md blockquote {
-  margin: var(--space-2) 0;
-  padding-left: var(--space-3);
-  border-left: 3px solid var(--border);
-  color: var(--text-2);
-}
-
-.md :global(.md-table) {
-  overflow-x: auto;
-}
-
-.md table {
-  border-collapse: collapse;
-}
-
-.md th,
-.md td {
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--border);
-  text-align: left;
 }
 
 .caret {
@@ -175,22 +205,166 @@
   }
 }
 
-.inspect {
-  display: inline-block;
-  margin-top: var(--space-1);
-  font-size: var(--text-sm);
+/* A message's buttons: a column at its top right, one under the other. */
+.side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  width: 18px;
 }
+
+.reply {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.replyBody {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The turn's inspector, a square under MD; it stays dark while its turn
+   is open. */
+.inspect {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--edge);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+
+.inspect:hover {
+  box-shadow: 2px 2px 0 var(--border);
+}
+
+.inspect[aria-expanded='true'] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--ink-text);
+}
+
+/* The open turn's record, boxed like an open tool call. */
+.turnBox {
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.turnBox :global(.card) {
+  padding: var(--space-3);
+}
+
+/* The operator's message, with its buttons at the right. */
+.userRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 2px;
+  max-width: min(85%, 660px);
+}
+
+.copy {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--ink-text);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+
+.copy:hover {
+  box-shadow: 2px 2px 0 var(--border);
+}
+
+.copy:focus-visible {
+  outline-color: var(--ink-text);
+  outline-offset: -3px;
+  outline-width: 1px;
+}
+
+/* Pressed or just copied: the button inverts; refused: it turns red. */
+.copy:active,
+.copy[data-state='copied'] {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.copy[data-state='failed'] {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #ffffff;
+}
+
+/* The reply whose inspect button is hovered or focused, shaded; the spread
+   gives it a margin, so its buttons sit in the shaded box's corner. */
+.timeline > li[data-inspected] {
+  background: var(--surface-2);
+  box-shadow: 0 0 0 var(--space-1) var(--surface-2);
+}
+
 
 .tool {
+  display: flex;
   font-size: var(--text-sm);
 }
 
-.tool summary {
+/* A tool call, boxed like a message; its summary opens it. */
+.toolBox {
+  min-width: 0;
+  max-width: min(85%, 640px);
+  padding: 0 var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.toolBox[open] {
+  max-width: 100%;
+  padding-bottom: var(--space-1);
+}
+
+.toolBox summary {
   display: flex;
   gap: var(--space-2);
-  align-items: baseline;
-  min-height: 32px;
+  align-items: center;
+  min-height: 36px;
   cursor: pointer;
+}
+
+.toolBox .pre {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* Hovered, it casts the buttons' hard shadow; clicked, it presses in like
+   them and lightens for the moment of the click. Only its summary presses
+   it: selecting text in an open box does not. */
+.toolBox:hover {
+  box-shadow: var(--shadow);
+}
+
+.toolBox:has(> summary:active) {
+  background: var(--surface);
+  box-shadow: none;
+  transform: translate(3px, 3px);
 }
 
 .toolName {
@@ -206,7 +380,8 @@
 .question {
   display: grid;
   gap: var(--space-3);
-  border-color: var(--accent);
+  border-color: var(--edge);
+  box-shadow: var(--shadow);
 }
 
 .qText {
@@ -230,8 +405,8 @@
   bottom: 0;
   display: grid;
   gap: var(--space-2);
-  padding: var(--space-3) 0 var(--space-2);
-  background: var(--bg);
+  padding: var(--space-3) 0 var(--space-4);
+  background: var(--surface);
 }
 
 .composer .error {
@@ -242,29 +417,91 @@
   width: 100%;
   min-height: var(--touch);
   max-height: 200px;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
+  /* One 22px line, centred in the 44px box: 10 + 22 + 10 + the border. */
+  padding: 10px var(--space-3);
+  border: 1px solid var(--edge);
   border-radius: var(--radius);
   background: var(--surface);
   resize: none;
-  line-height: 1.5;
+  /* The text wraps, so the box never scrolls sideways; it scrolls down only
+     past its 200px, which grow() in Chat.tsx turns on. */
+  overflow-x: hidden;
+  overflow-y: hidden;
+  overflow-wrap: anywhere;
+  line-height: 22px;
+}
+
+/* The message box with Send and Think at its right; the model below, at the left. */
+.entry {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.entry .input {
+  flex: 1;
+  min-width: 0;
 }
 
 .controls {
   display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-2);
+  justify-content: flex-start;
 }
 
+/* Think, a toggle shaped like MD: light with a dark edge when off, dark when
+   on; it presses in on a click like MD and the inspect button do. */
 .think {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.think:hover {
+  box-shadow: 2px 2px 0 var(--border);
+}
+
+.think[aria-pressed='true'] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--ink-text);
+}
+
+.think:active {
+  box-shadow: none;
+  transform: translate(1px, 1px);
+}
+
+.model {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+
+.provider {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.send {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  margin-right: auto;
-  min-height: var(--touch);
-  font-size: var(--text-sm);
-  color: var(--text-2);
+  gap: var(--space-3);
+  flex-shrink: 0;
 }
 
 .stop {
@@ -303,7 +540,7 @@
     display: inline-flex;
   }
 
-  .user {
+  .userRow {
     max-width: 90%;
   }
 }

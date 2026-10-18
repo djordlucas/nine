@@ -56,7 +56,7 @@ function Tile(props: {
 }
 
 function Empty({ children }: { children: ComponentChildren }) {
-  return <p class="muted">{children}</p>;
+  return <p class="empty">{children}</p>;
 }
 
 /** Pending approvals and unanswered ask_human questions. */
@@ -229,13 +229,13 @@ function Goals() {
         <ul class={styles.list}>
           {data.goals.slice(0, 4).map((g) => (
             <li key={g.id}>
-              <span class={`${styles.badge} ${styles.state}`}>goal</span>
+              <span class={styles.badge}>goal</span>
               <span class={styles.text}>{g.description}</span>
             </li>
           ))}
           {data.workflows.slice(0, 4).map((w) => (
             <li key={w.id}>
-              <span class={`${styles.badge} ${styles.state}`}>workflow</span>
+              <span class={styles.badge}>workflow</span>
               <span class={styles.text}>{w.name}</span>
               <span class={styles.meta}>
                 {w.completed_steps ?? 0}/{w.steps ?? 0}

@@ -141,6 +141,7 @@ func TestEveryClientMsgTypeDecodes(t *testing.T) {
 		protocol.TypeSetPlanMode:      {AgentID: "a1", Text: "off"},
 		protocol.TypeSessionStop:      {AgentID: "a1"},
 		protocol.TypeSessionDelete:    {AgentID: "a1"},
+		protocol.TypeSessionRename:    {AgentID: "a1", Name: "Weekly review"},
 		protocol.TypeProcessShow:      {AgentID: "s1"},
 		protocol.TypeProcessControl:   {AgentID: "s1", Text: "stop"},
 		protocol.TypeProcessSend:      {AgentID: "s1", Text: "hello"},
@@ -165,6 +166,8 @@ func TestEveryClientMsgTypeDecodes(t *testing.T) {
 		protocol.TypeWatch:            {AgentID: "a1"},
 		protocol.TypeJournalFollow:    {After: 7, Limit: 10},
 		protocol.TypeTurnCancel:       {AgentID: "a1"},
+		protocol.TypeConfig:           {},
+		protocol.TypeSelfModel:        {},
 	}
 	for _, mt := range protocol.ClientMsgTypes {
 		m := fill[mt]

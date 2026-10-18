@@ -29,6 +29,7 @@ const (
 	TypeUserTurn        MsgType = "user_turn"
 	TypeSessionStop     MsgType = "session_stop"
 	TypeSessionDelete   MsgType = "session_delete"
+	TypeSessionRename   MsgType = "session_rename"
 	TypeProcessShow     MsgType = "process_show"
 	TypeProcessControl  MsgType = "process_control"
 	TypeProcessSend     MsgType = "process_send"
@@ -60,6 +61,8 @@ const (
 	// Queries. Each is echoed back as the type of its own reply, with the
 	// payload in Text — so these appear in both directions.
 	TypeStatus            MsgType = "status"
+	TypeConfig            MsgType = "config"
+	TypeSelfModel         MsgType = "self_model"
 	TypeContext           MsgType = "context"
 	TypeListGoals         MsgType = "list_goals"
 	TypeListWorkflows     MsgType = "list_workflows"
@@ -89,6 +92,7 @@ const (
 	TypeDone            MsgType = "done"
 	TypeError           MsgType = "error"
 	TypeHistoryUser     MsgType = "history_user"
+	TypeHistoryError    MsgType = "history_error"
 	TypeSetName         MsgType = "set_name"
 	TypeSetInstanceName MsgType = "set_instance_name"
 
@@ -173,6 +177,7 @@ var ClientMsgTypes = []MsgType{
 	TypeUserTurn,
 	TypeSessionStop,
 	TypeSessionDelete,
+	TypeSessionRename,
 	TypeProcessShow,
 	TypeProcessControl,
 	TypeProcessSend,
@@ -192,6 +197,8 @@ var ClientMsgTypes = []MsgType{
 	TypeJournalFollow,
 	TypeTurnCancel,
 	TypeStatus,
+	TypeConfig,
+	TypeSelfModel,
 	TypeContext,
 	TypeListGoals,
 	TypeListWorkflows,
@@ -604,6 +611,13 @@ type QueueStat struct {
 }
 
 // StatusInfo is the payload returned by the "status" protocol message.
+// SelfModelEntry is one key of the self-model (the self_model query): a
+// self/ key that rides in every turn's self-model block, and what it holds.
+type SelfModelEntry struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
 type StatusInfo struct {
 	Agents    []AgentInfo    `json:"agents"`
 	SubAgents []SubAgentInfo `json:"sub_agents,omitempty"`
@@ -612,6 +626,9 @@ type StatusInfo struct {
 	LLMQueue  *QueueStat     `json:"llm_queue,omitempty"`
 	// MaxRunning is [processes] max_running, the cap on running processes.
 	MaxRunning int `json:"max_running,omitempty"`
+	// Provider and Model are the LLM the daemon calls, overrides applied.
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
 }
 
 // SkillInfo describes one skill for the "list_skills" response. Source is
@@ -832,6 +849,16 @@ func NewWorkflowFailMsg(text string) Msg {
 	return Msg{Type: TypeWorkflowFail, Text: text}
 }
 
+// MaxConversationName is the longest display name a conversation may be given,
+// in characters.
+const MaxConversationName = 80
+
+// NewSessionRenameMsg gives a conversation the display name name, in place of
+// the one inferred from its first message.
+func NewSessionRenameMsg(agentID, name string) Msg {
+	return Msg{Type: TypeSessionRename, AgentID: agentID, Name: name}
+}
+
 // NewSessionStopMsg requests termination of a session. Pass an agent ID to stop
 // one session, or all=true to stop every active session.
 func NewSessionStopMsg(agentID string, all bool) Msg {
@@ -1013,6 +1040,13 @@ type AttachResult struct {
 // replayed prompt from a live one.
 func NewHistoryUserMsg(agentID, text string) Msg {
 	return Msg{Type: TypeHistoryUser, AgentID: agentID, Text: text}
+}
+
+// NewHistoryErrorMsg is a replayed turn that ended in an error instead of a
+// reply: a transcript entry, not a live error, so a client replaying it does
+// not take it for one.
+func NewHistoryErrorMsg(agentID, text string) Msg {
+	return Msg{Type: TypeHistoryError, AgentID: agentID, Text: text}
 }
 
 // NewTextMsg builds a response carrying msgType and a text/JSON payload —

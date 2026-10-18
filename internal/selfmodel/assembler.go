@@ -11,6 +11,11 @@ import (
 	"nine/internal/memory"
 )
 
+// Keys are the self/ keys every turn's self-model block carries, in its
+// order. Another self/ key is stored and reachable with memory_get, but
+// nothing puts it in front of the model.
+var Keys = []string{"self/identity", "self/persona", "self/capabilities", "self/learned"}
+
 // Assembler builds a SystemSelf block from live data: loaded tool names,
 // KV-stored self-knowledge, and vector-ranked relevant skills.
 type Assembler struct {
@@ -59,7 +64,7 @@ func (a *Assembler) Build(_ context.Context, queryVec []float32) string {
 	// §4): a bootstrap file's `[persona]` section lands there, and a key nothing
 	// reads would make the section decorative. It is absent on a stock
 	// deployment, and an absent key costs a lookup and no context.
-	for _, key := range []string{"self/identity", "self/persona", "self/capabilities", "self/learned"} {
+	for _, key := range Keys {
 		val := a.store.KVGetString(key)
 		if val != "" {
 			sb.WriteString("\n## " + key + "\n")

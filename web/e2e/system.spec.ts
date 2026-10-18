@@ -36,8 +36,8 @@ test('a session is listed, opened and deleted', async ({ page, request }) => {
   const session = page.getByRole('region', { name: 'Session' });
   await expect(session.getByText(id, { exact: true })).toBeVisible();
 
-  page.once('dialog', (d) => void d.accept());
   await session.getByRole('button', { name: 'Delete' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
   await expect(page).toHaveURL(/\/system\/sessions$/);
   await expect(row).toHaveCount(0);
 });

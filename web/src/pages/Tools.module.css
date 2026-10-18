@@ -20,15 +20,12 @@
   margin-bottom: -1px;
 }
 
+/* The selected tab: dark with light text, the reverse in dark mode. */
 .view[aria-current='page'] {
-  color: var(--text);
-  border-bottom-color: var(--accent);
-}
-
-.listHead {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--space-2);
+  background: var(--ink);
+  color: var(--ink-text);
+  border-bottom-color: var(--ink);
+  border-radius: var(--radius) var(--radius) 0 0;
 }
 
 .group {
@@ -60,7 +57,7 @@
 textarea.code {
   border: 1px solid var(--border);
   background: var(--surface);
-  resize: vertical;
+  resize: none;
 }
 
 .call {
@@ -74,14 +71,6 @@ textarea.code {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-}
-
-.check {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: var(--touch);
-  font-size: var(--text-sm);
 }
 
 .result {
@@ -131,10 +120,6 @@ textarea.code {
 .pluginTools {
   margin: var(--space-1) 0 0;
   font-size: var(--text-sm);
-  overflow-wrap: anywhere;
-}
-
-.skill {
   overflow-wrap: anywhere;
 }
 

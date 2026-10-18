@@ -64,7 +64,50 @@ func (s *Server) GetStatus(ctx context.Context, request apigen.GetStatusRequestO
 		ActiveSessions: ptr(len(info.Agents)),
 		MaxRunning:     ptrIfPositive(info.MaxRunning),
 		Plugins:        &plugins,
+		Provider:       nonEmpty(info.Provider),
+		Model:          nonEmpty(info.Model),
 	}, nil
+}
+
+// GetConfig returns the configuration the daemon runs with. The daemon hides
+// the credentials; the API server never reads the file itself.
+func (s *Server) GetConfig(ctx context.Context, request apigen.GetConfigRequestObject) (apigen.GetConfigResponseObject, error) {
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		return apigen.GetConfig503JSONResponse(
+			errorBody("service_unavailable", err.Error(), nil)), nil
+	}
+	defer cl.Close()
+
+	view, err := cl.Config()
+	if err != nil {
+		return apigen.GetConfig500JSONResponse(
+			errorBody("server_error", err.Error(), nil)), nil
+	}
+	return apigen.GetConfig200JSONResponse{Toml: view}, nil
+}
+
+func (s *Server) GetSelfModel(ctx context.Context, request apigen.GetSelfModelRequestObject) (apigen.GetSelfModelResponseObject, error) {
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		return apigen.GetSelfModel503JSONResponse(
+			errorBody("service_unavailable", err.Error(), nil)), nil
+	}
+	defer cl.Close()
+
+	model, err := cl.SelfModel()
+	if err != nil {
+		return apigen.GetSelfModel500JSONResponse(
+			errorBody("server_error", err.Error(), nil)), nil
+	}
+	entries := make([]struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}, len(model))
+	for i, e := range model {
+		entries[i].Key, entries[i].Value = e.Key, e.Value
+	}
+	return apigen.GetSelfModel200JSONResponse{Entries: entries}, nil
 }
 
 func (s *Server) ListNotifications(ctx context.Context, request apigen.ListNotificationsRequestObject) (apigen.ListNotificationsResponseObject, error) {

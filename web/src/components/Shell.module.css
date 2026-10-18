@@ -14,17 +14,16 @@
   overflow-y: auto;
 }
 
+/* The name as a word, not a mark. */
 .brand {
-  display: grid;
-  place-items: center;
-  width: 36px;
+  display: flex;
+  align-items: center;
   height: 36px;
   margin: 0 0 var(--space-4) var(--space-2);
-  border-radius: var(--radius);
-  background: var(--text);
-  color: var(--bg);
+  color: var(--text);
   font-weight: 700;
-  font-size: var(--text-lg);
+  font-size: 22px;
+  letter-spacing: -0.02em;
   text-decoration: none;
 }
 
@@ -45,8 +44,8 @@
 }
 
 .railLink[aria-current='page'] {
-  background: var(--surface-2);
-  color: var(--text);
+  background: var(--ink);
+  color: var(--ink-text);
   font-weight: 600;
 }
 
@@ -169,7 +168,8 @@
   }
 
   .tab[aria-current='page'] {
-    color: var(--accent);
+    background: var(--ink);
+    color: var(--ink-text);
     font-weight: 600;
   }
 
@@ -214,9 +214,9 @@
 .badge {
   min-width: 20px;
   padding: 0 6px;
-  border-radius: 10px;
-  background: var(--danger);
-  color: #fff;
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: var(--ink-text);
   font-size: 12px;
   font-weight: 600;
   line-height: 20px;
@@ -225,6 +225,12 @@
 
 .railLink .badge {
   margin-left: auto;
+}
+
+/* On the selected link, which is ink, the count turns over. */
+[aria-current='page'] > .badge {
+  background: var(--ink-text);
+  color: var(--ink);
 }
 
 @media (max-width: 767px) {

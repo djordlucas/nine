@@ -5,6 +5,8 @@ import { ago } from '../format';
 import { shortId } from '../journal';
 import { useLive } from '../live';
 import { Chat } from './Chat';
+import { ListHead, Split } from '../components/Split';
+import split from '../components/Split.module.css';
 import styles from './Conversations.module.css';
 
 /**
@@ -14,21 +16,23 @@ import styles from './Conversations.module.css';
 export function Conversations() {
   const { params } = useRoute();
   const id = params.id as string | undefined;
+  // Bumped by a rename, so the list reads the new name.
+  const [renamed, setRenamed] = useState(0);
   return (
-    <div class={`${styles.split} ${id ? styles.hasChat : ''}`}>
-      <List current={id} />
-      <section class={styles.pane} aria-label="Conversation">
+    <Split name="conversations" noun="conversations" open={!!id}>
+      <List current={id} reloadKey={renamed} />
+      <section class={split.pane} aria-label="Conversation">
         {id ? (
-          <Chat key={id} id={id} />
+          <Chat key={id} id={id} onRenamed={() => setRenamed((n) => n + 1)} />
         ) : (
-          <p class={`card muted ${styles.placeholder}`}>Choose a conversation, or start a new one.</p>
+          <p class="empty">Choose a conversation, or start a new one.</p>
         )}
       </section>
-    </div>
+    </Split>
   );
 }
 
-function List({ current }: { current?: string }) {
+function List({ current, reloadKey }: { current?: string; reloadKey: number }) {
   const { route } = useLocation();
   const [created, setCreated] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -39,7 +43,7 @@ function List({ current }: { current?: string }) {
       return [...list].sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''));
     },
     ['turn_start', 'turn_end'],
-    created,
+    `${created}:${reloadKey}`,
   );
 
   const start = async () => {
@@ -57,14 +61,16 @@ function List({ current }: { current?: string }) {
   };
 
   return (
-    <nav class={styles.list} aria-label="Conversations">
-      <button type="button" class={`button ${styles.new}`} onClick={() => void start()} disabled={busy}>
-        New conversation
-      </button>
+    <nav class={split.list} aria-label="Conversations">
+      <ListHead>
+        <button type="button" class={`button ${styles.new}`} onClick={() => void start()} disabled={busy}>
+          New conversation
+        </button>
+      </ListHead>
       {error && <p class="error">{error}</p>}
       {loadError && <p class="error">{loadError}</p>}
       {!data && !loadError && <p class="muted">Loading…</p>}
-      {data && data.length === 0 && <p class="muted">No conversations yet.</p>}
+      {data && data.length === 0 && <p class="empty">No conversations yet.</p>}
       {data && data.length > 0 && (
         <ul>
           {data.map((c) => (

@@ -1,44 +1,18 @@
-.split {
-  display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
-  gap: var(--space-4);
-  align-items: start;
-}
-
-.list {
-  position: sticky;
-  top: 0;
-  max-height: calc(100dvh - 120px);
-  overflow-y: auto;
-  display: grid;
-  gap: var(--space-3);
-  align-content: start;
-}
-
-.list ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-}
-
-.list li + li {
-  border-top: 1px solid var(--border);
-}
+/* The list and the chat share the sections' layout (components/Split). */
 
 .new {
-  width: 100%;
+  min-height: 32px;
 }
 
+/* One line a conversation: its name, then its details at the right. */
 .row {
   display: grid;
-  gap: 2px;
-  min-height: var(--touch);
-  padding: var(--space-2) var(--space-3);
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: 6px var(--space-2);
   color: inherit;
+  font-size: var(--text-sm);
   text-decoration: none;
 }
 
@@ -47,8 +21,15 @@
 }
 
 .row[aria-current='page'] {
-  background: var(--surface-2);
-  box-shadow: inset 3px 0 0 var(--accent);
+  background: var(--ink);
+  color: var(--ink-text);
+}
+
+/* Selected, a row is dark with light text (the reverse in dark mode); its
+   details stay readable on it. */
+.row[aria-current='page'] .meta {
+  color: var(--ink-text);
+  opacity: 0.75;
 }
 
 .name {
@@ -58,31 +39,18 @@
 }
 
 .meta {
+  max-width: 9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-2);
-  font-size: var(--text-sm);
+  font-size: 11px;
 }
 
-.pane {
-  min-width: 0;
-}
-
-.placeholder {
-  margin: 0;
-}
-
-/* A phone shows the list, or the chat in its place. */
+/* A finger needs the full touch height. */
 @media (max-width: 767px) {
-  .split {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .list {
-    position: static;
-    max-height: none;
-  }
-
-  .hasChat .list,
-  .split:not(.hasChat) .pane {
-    display: none;
+  .row {
+    min-height: var(--touch);
+    align-items: center;
   }
 }

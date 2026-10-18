@@ -78,6 +78,33 @@ describe('chat timeline', () => {
     expect(merged.items[0]).toMatchObject({ turn: 3 });
   });
 
+  it('keeps an error in its own turn after the next message', () => {
+    let live = run([{ type: 'error', error: { message: 'llm: mistral: HTTP 404' } }], sent(empty, 'one'));
+    live = run([{ type: 'response', text: 'ok' }, { type: 'done' }], sent(live, 'two'));
+    const history = fromHistory([
+      { type: 'user_turn', agent_id: 'a', text: 'one', turn_number: 1 },
+      { type: 'user_turn', agent_id: 'a', text: 'two', turn_number: 2 },
+      { type: 'response', agent_id: 'a', text: 'ok', turn_number: 2 },
+    ]);
+    const merged = reconcile(history, live.items);
+    expect(merged.items.map((i) => i.kind)).toEqual(['user', 'error', 'user', 'reply']);
+  });
+
+  it('shows a journaled error after a reload, once, in its turn', () => {
+    const history = fromHistory([
+      { type: 'user_turn', agent_id: 'a', text: 'one', turn_number: 1 },
+      { type: 'turn_error', agent_id: 'a', text: 'llm: mistral: HTTP 404', turn_number: 1 },
+      { type: 'user_turn', agent_id: 'a', text: 'two', turn_number: 2 },
+      { type: 'turn_error', agent_id: 'a', text: 'turn cancelled', turn_number: 2 },
+    ]);
+    expect(history.slice(1, 2)).toEqual([{ kind: 'error', text: 'llm: mistral: HTTP 404', cancelled: false }]);
+    expect(history[3]).toEqual({ kind: 'error', text: 'Cancelled.', cancelled: true });
+    // The page that saw the error live does not show it twice.
+    const live = run([{ type: 'error', error: { message: 'llm: mistral: HTTP 404' } }], sent(empty, 'one'));
+    const merged = reconcile(history.slice(0, 2), live.items);
+    expect(merged.items.map((i) => i.kind)).toEqual(['user', 'error']);
+  });
+
   it('keeps live messages the transcript has not caught up with', () => {
     let live = run([{ type: 'response', text: 'first' }, { type: 'done' }], sent(empty, 'one'));
     live = run([{ type: 'response', text: 'second' }, { type: 'done' }], sent(live, 'two'));

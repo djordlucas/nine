@@ -71,6 +71,8 @@ var clientMsgSpecs = map[MsgType]clientMsgSpec{
 	// No --all escape hatch, unlike session_stop. Erasing every session at once
 	// is not an operation anyone should reach by a flag.
 	TypeSessionDelete: {required: []fieldRule{needAgentID}},
+	// The name is checked by the daemon, which says what is wrong with it.
+	TypeSessionRename: {required: []fieldRule{needAgentID}},
 
 	TypeProcessShow: {required: []fieldRule{needAgentID}},
 	// The action is required too: a control message with no verb should not

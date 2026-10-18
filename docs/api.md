@@ -156,7 +156,9 @@ All endpoints are under `/api/v1`. Content type is `application/json` for both r
 
 ```
 GET /api/v1/health    — API server health (daemon connectivity, uptime, version)
-GET /api/v1/status    — Daemon status (sessions, plugins, tools, memory, max_running)
+GET /api/v1/status    — Daemon status (sessions, plugins, tools, memory, max_running, provider, model)
+GET /api/v1/config    — The configuration in force, as TOML, credentials hidden
+GET /api/v1/self-model — The self/ keys every turn's self-model block carries
 ```
 
 ### Conversations
@@ -165,6 +167,7 @@ GET /api/v1/status    — Daemon status (sessions, plugins, tools, memory, max_r
 POST   /api/v1/conversations                    — Create a conversation
 GET    /api/v1/conversations                     — List all conversations
 GET    /api/v1/conversations/{id}                — Get conversation details
+PATCH  /api/v1/conversations/{id}                — Rename a conversation
 POST   /api/v1/conversations/{id}/messages       — Send a message (execute a turn)
 GET    /api/v1/conversations/{id}/context         — Context breakdown
 GET    /api/v1/conversations/{id}/history        — Transcript, every turn
@@ -183,7 +186,7 @@ reading them does not attach to the session.
 
 | Endpoint | Returns |
 |----------|---------|
-| `GET …/history` | The transcript, oldest first: `user_turn`, `tool_start`, `tool_end`, `sub_agent_start`, `sub_agent_end` and `response` entries, each with its `turn_number`. Paged with `limit`/`offset`. |
+| `GET …/history` | The transcript, oldest first: `user_turn`, `tool_start`, `tool_end`, `sub_agent_start`, `sub_agent_end`, `response` and `turn_error` entries, each with its `turn_number`. A `turn_error` is a turn that ended without a reply, failed or cancelled, and carries its error in `text`. Paged with `limit`/`offset`. |
 | `GET …/trace` | Every journal event — `seq`, `turn`, `type`, span ids, timestamp and the payload exactly as journaled. `turn=N` limits it to one turn; `sub_agents=true` adds a `sub_agents` list holding each spawned sub-agent's own trace, recursively, linked to the `seq` of the event that spawned it. |
 | `POST …/replay` | Turn `{"turn": N}` reconstructed: trigger and input, each LLM call (request size, token estimate and provider counts, stop reason, requested tools), each tool call with its input, output, timing and outbound HTTP, the sub-agents, and the result. Nothing is re-executed. |
 

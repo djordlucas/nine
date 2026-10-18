@@ -8,11 +8,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"nine/internal/agent"
 	"nine/internal/memory"
 	"nine/internal/plugin"
 	"nine/internal/protocol"
+	"nine/internal/selfmodel"
 	"nine/internal/toolvm"
 )
 
@@ -49,6 +52,8 @@ func (d *Daemon) handleStatus(enc *json.Encoder) {
 		LLMQueue:  queue,
 		// The cap the runner applies: [processes] max_running or its default.
 		MaxRunning: d.effectiveMaxRunning(),
+		Provider:   d.llmProvider,
+		Model:      d.llmModel,
 	}
 	data, _ := json.Marshal(info)
 	enc.Encode(protocol.NewTextMsg(protocol.TypeStatus, string(data))) //nolint:errcheck
@@ -200,10 +205,7 @@ func (d *Daemon) attach(agentID string) error {
 
 	r := d.makeAgentWorker(agentID, data, d.isInteractive(agentID))
 
-	var name string
-	if nb, found, err := d.ckpt.Load("name:" + agentID); err == nil && found {
-		name = string(nb)
-	}
+	name := d.loadName(agentID)
 
 	d.mu.Lock()
 	d.sessions[agentID] = r
@@ -324,8 +326,8 @@ func (d *Daemon) userTurn(ctx context.Context, enc *json.Encoder, agentID, text 
 			d.mu.Lock()
 			d.names[agentID] = name
 			d.mu.Unlock()
-			if d.ckpt != nil {
-				d.ckpt.Save("name:"+agentID, []byte(name)) //nolint:errcheck
+			if err := d.saveName(agentID, name); err != nil {
+				slog.Warn("save the conversation's name", "id", agentID, "err", err)
 			}
 			enc.Encode(protocol.NewSetNameMsg(agentID, name)) //nolint:errcheck
 		}
@@ -389,6 +391,109 @@ func (d *Daemon) userTurn(ctx context.Context, enc *json.Encoder, agentID, text 
 			}
 		}
 	}
+}
+
+// handleConfig returns the configuration the daemon runs with, credentials
+// hidden.
+func (d *Daemon) handleConfig(enc *json.Encoder) {
+	if d.configView == "" {
+		enc.Encode(protocol.NewErrorMsg("this daemon was given no configuration to show")) //nolint:errcheck
+		return
+	}
+	enc.Encode(protocol.NewTextMsg(protocol.TypeConfig, d.configView)) //nolint:errcheck
+}
+
+// kvReader is the store's key-value read, which the self_model query needs and
+// queryBackend leaves out: a test backend need not hold a key-value store.
+type kvReader interface {
+	KVGetString(key string) string
+}
+
+// handleSelfModel returns the self-model as every turn's block carries it:
+// each self/ key the block reads that holds something, in its order. It only
+// reads; the self-model is the agent's own, changed by its turns.
+func (d *Daemon) handleSelfModel(enc *json.Encoder) {
+	kv, ok := d.store.(kvReader)
+	if !ok {
+		enc.Encode(protocol.NewErrorMsg("self-model not available")) //nolint:errcheck
+		return
+	}
+	out := []protocol.SelfModelEntry{}
+	for _, key := range selfmodel.Keys {
+		if v := kv.KVGetString(key); v != "" {
+			out = append(out, protocol.SelfModelEntry{Key: key, Value: v})
+		}
+	}
+	data, _ := json.Marshal(out)
+	enc.Encode(protocol.NewTextMsg(protocol.TypeSelfModel, string(data))) //nolint:errcheck
+}
+
+// handleSessionRename gives a conversation the operator's display name. It
+// replaces the name inferred from the first message, and since a conversation
+// is named only while it has none, no later turn renames it back.
+func (d *Daemon) handleSessionRename(enc *json.Encoder, agentID, name string) {
+	name = strings.TrimSpace(name)
+	switch {
+	case name == "":
+		enc.Encode(protocol.NewErrorMsg("a conversation's name may not be empty")) //nolint:errcheck
+		return
+	case utf8.RuneCountInString(name) > protocol.MaxConversationName:
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("a conversation's name is at most %d characters", protocol.MaxConversationName))) //nolint:errcheck
+		return
+	case strings.IndexFunc(name, unicode.IsControl) >= 0:
+		enc.Encode(protocol.NewErrorMsg("a conversation's name is one line, with no control characters")) //nolint:errcheck
+		return
+	}
+
+	resolved := d.resolveID(agentID)
+	d.mu.RLock()
+	_, running := d.sessions[resolved]
+	d.mu.RUnlock()
+	if !running {
+		found := false
+		if d.ckpt != nil {
+			_, found, _ = d.ckpt.Load(resolved)
+		}
+		if !found {
+			enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("conversation %s not found", agentID))) //nolint:errcheck
+			return
+		}
+	}
+	if err := d.saveName(resolved, name); err != nil {
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("save the name: %v", err))) //nolint:errcheck
+		return
+	}
+	d.mu.Lock()
+	d.names[resolved] = name
+	d.mu.Unlock()
+	enc.Encode(protocol.Msg{Type: protocol.TypeSessionRename, AgentID: resolved, Name: name}) //nolint:errcheck
+}
+
+// saveName keeps a conversation's display name across restarts. The store
+// keeps it in kv, where the session roster reads it: the conversations table
+// holds only a JSON checkpoint and refuses a bare name. A store with no kv —
+// the in-memory one tests use — takes it under the "name:" key instead.
+func (d *Daemon) saveName(id, name string) error {
+	if s, ok := d.ckpt.(*SQLCheckpointStore); ok {
+		return s.store.ConversationNameSave(id, name)
+	}
+	if d.ckpt != nil {
+		return d.ckpt.Save("name:"+id, []byte(name))
+	}
+	return nil
+}
+
+// loadName is the name saveName kept, or "".
+func (d *Daemon) loadName(id string) string {
+	if s, ok := d.ckpt.(*SQLCheckpointStore); ok {
+		return s.store.ConversationNameLoad(id)
+	}
+	if d.ckpt != nil {
+		if b, found, err := d.ckpt.Load("name:" + id); err == nil && found {
+			return string(b)
+		}
+	}
+	return ""
 }
 
 // handleSessionStop terminates one session (or every session, when all is set):
