@@ -75,7 +75,7 @@ function ToolsView({ name }: { name?: string }) {
         {name ? (
           <ToolDetail key={name} name={name} onChanged={() => setReloads((n) => n + 1)} />
         ) : (
-          <p class={`card muted ${split.placeholder}`}>Choose a tool.</p>
+          <p class="empty">Choose a tool.</p>
         )}
       </section>
     </Split>
@@ -117,7 +117,7 @@ function ToolList(props: { tools: Tool[] | null; error: string | null; current?:
       )}
       {props.error && <p class="error">{props.error}</p>}
       {!props.tools && !props.error && <p class="muted">Loading…</p>}
-      {props.tools && groups.length === 0 && <p class="muted">No tool matches.</p>}
+      {props.tools && groups.length === 0 && <p class="empty">No tool matches.</p>}
       {groups.map(([kind, tools]) => (
         <div key={kind} class={styles.group}>
           <h2 class={split.heading}>
@@ -161,7 +161,7 @@ function ToolDetail({ name, onChanged }: { name: string; onChanged: () => void }
   const [outcome, setOutcome] = useState<{ ok: boolean; text: string } | null>(null);
 
   if (error) return <p class="card error">{error}</p>;
-  if (t === null) return <p class="card muted">No tool {name}. It may have been deleted.</p>;
+  if (t === null) return <p class="empty">No tool {name}. It may have been deleted.</p>;
   if (!t) return <p class="card muted">Loading…</p>;
 
   const remove = async () => {
@@ -347,7 +347,7 @@ function Versions({ name, onRestored }: { name: string; onRestored: () => void }
             {data.written_by ? `, written by ${data.written_by}` : ''}
             {data.probation ? ' — on probation: rolled back if it fails before it first succeeds' : ''}.
           </p>
-          {data.previous.length === 0 && <p class="muted">No earlier versions are kept.</p>}
+          {data.previous.length === 0 && <p class="empty">No earlier versions are kept.</p>}
           {data.previous.length > 0 && (
             <ul class={styles.versions}>
               {data.previous.map((v) => (
@@ -411,7 +411,7 @@ function PluginsView() {
       )}
       {error && <p class="error">{error}</p>}
       {!data && !error && <p class="muted">Loading…</p>}
-      {data && data.length === 0 && <p class="muted">No plugins.</p>}
+      {data && data.length === 0 && <p class="empty">No plugins.</p>}
       {data && data.length > 0 && (
         <ul class={styles.plugins}>
           {data.map((p: Plugin) => (
@@ -474,7 +474,7 @@ function SkillsView({ name }: { name?: string }) {
         </ListHead>
         {error && <p class="error">{error}</p>}
         {!data && !error && <p class="muted">Loading…</p>}
-        {data && shown.length === 0 && <p class="muted">No skill matches.</p>}
+        {data && shown.length === 0 && <p class="empty">No skill matches.</p>}
         {shown.length > 0 && (
           <ul>
             {shown.map((s) => (
@@ -490,7 +490,7 @@ function SkillsView({ name }: { name?: string }) {
         )}
       </nav>
       <section class={split.pane} aria-label="Skill">
-        {name ? <SkillDetail key={name} name={name} /> : <p class={`card muted ${split.placeholder}`}>Choose a skill to read it.</p>}
+        {name ? <SkillDetail key={name} name={name} /> : <p class="empty">Choose a skill to read it.</p>}
       </section>
     </Split>
   );
@@ -513,7 +513,7 @@ function SkillDetail({ name }: { name: string }) {
     [],
   );
   if (error) return <p class="card error">{error}</p>;
-  if (s === null) return <p class="card muted">No skill {name}.</p>;
+  if (s === null) return <p class="empty">No skill {name}.</p>;
   if (!s) return <p class="card muted">Loading…</p>;
   return (
     <article class={`card ${detail.detail}`}>

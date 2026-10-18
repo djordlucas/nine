@@ -196,7 +196,7 @@ function SessionsView({ id }: { id?: string }) {
         </ListHead>
         {error && <p class="error">{error}</p>}
         {!data && !error && <p class="muted">Loading…</p>}
-        {data && shown.length === 0 && <p class="muted">No session matches.</p>}
+        {data && shown.length === 0 && <p class="empty">No session matches.</p>}
         {shown.length > 0 && (
           <ul>
             {shown.map((s) => (
@@ -219,7 +219,7 @@ function SessionsView({ id }: { id?: string }) {
         {id ? (
           <SessionDetail key={id} id={id} session={data?.find((s) => s.id === id)} loaded={!!data} onDeleted={() => setDeleted((n) => n + 1)} />
         ) : (
-          <p class={`card muted ${split.placeholder}`}>Every session Nine holds, process sessions included. Choose one.</p>
+          <p class="empty">Every session Nine holds, process sessions included. Choose one.</p>
         )}
       </section>
     </Split>
@@ -327,7 +327,7 @@ function Reflections() {
       </form>
       {error && <p class="error">{error}</p>}
       {!data && !error && <p class="muted">Loading…</p>}
-      {data && data.items.length === 0 && <p class="muted">No reflections for {data.agent} yet.</p>}
+      {data && data.items.length === 0 && <p class="empty">No reflections for {data.agent} yet.</p>}
       {data && data.items.length > 0 && (
         <ol class={styles.reflections}>
           {data.items.map((r, i) => (
@@ -385,7 +385,7 @@ function DocsView({ kind, topic }: { kind: DocKind; topic?: string }) {
         {topic && topics ? (
           <Topic key={`${kind}/${topic}`} kind={kind} topic={topic} topics={topics} />
         ) : (
-          <p class={`card muted ${split.placeholder}`}>
+          <p class="empty">
             {kind === 'docs' ? 'The documentation this build of Nine embeds.' : 'The specification this build of Nine implements.'}
           </p>
         )}
@@ -405,7 +405,7 @@ function Topic({ kind, topic, topics }: { kind: DocKind; topic: string; topics: 
     return r.data.content;
   }, []);
   if (error) return <p class="card error">{error}</p>;
-  if (data === null) return <p class="card muted">No topic {topic}.</p>;
+  if (data === null) return <p class="empty">No topic {topic}.</p>;
   if (data === undefined) return <p class="card muted">Loading…</p>;
   return (
     <article class={`card ${styles.doc}`}>

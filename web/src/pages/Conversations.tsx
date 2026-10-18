@@ -25,7 +25,7 @@ export function Conversations() {
         {id ? (
           <Chat key={id} id={id} onRenamed={() => setRenamed((n) => n + 1)} />
         ) : (
-          <p class={`card muted ${split.placeholder}`}>Choose a conversation, or start a new one.</p>
+          <p class="empty">Choose a conversation, or start a new one.</p>
         )}
       </section>
     </Split>
@@ -70,7 +70,7 @@ function List({ current, reloadKey }: { current?: string; reloadKey: number }) {
       {error && <p class="error">{error}</p>}
       {loadError && <p class="error">{loadError}</p>}
       {!data && !loadError && <p class="muted">Loading…</p>}
-      {data && data.length === 0 && <p class="muted">No conversations yet.</p>}
+      {data && data.length === 0 && <p class="empty">No conversations yet.</p>}
       {data && data.length > 0 && (
         <ul>
           {data.map((c) => (

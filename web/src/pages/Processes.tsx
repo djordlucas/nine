@@ -43,7 +43,7 @@ export function Processes() {
         {id ? (
           <ProcessDetail key={id} id={id} />
         ) : (
-          <p class={`card muted ${split.placeholder}`}>Choose a process.</p>
+          <p class="empty">Choose a process.</p>
         )}
       </section>
     </Split>
@@ -77,7 +77,7 @@ function Roster({ current }: { current?: string }) {
       {error && <p class="error">{error}</p>}
       {!data && !error && <p class="muted">Loading…</p>}
       {data && data.list.length === 0 && (
-        <p class="muted">No processes. A goal, a [[process]] block in nine.toml, or the model starts one.</p>
+        <p class="empty">No processes. A goal, a [[process]] block in nine.toml, or the model starts one.</p>
       )}
       {data && data.list.length > 0 && (
         <ul>
@@ -118,7 +118,7 @@ function ProcessDetail({ id }: { id: string }) {
   };
 
   if (error) return <p class="card error">{error}</p>;
-  if (p === null) return <p class="card muted">No process {id}. It may have been removed.</p>;
+  if (p === null) return <p class="empty">No process {id}. It may have been removed.</p>;
   if (!p) return <p class="card muted">Loading…</p>;
 
   const can = actionsFor(p);
@@ -335,7 +335,7 @@ function Recent({ p }: { p: Process }) {
   return (
     <section class={detail.section} aria-labelledby="recent-h">
       <h3 id="recent-h">Recent activity</h3>
-      {recent.length === 0 && <p class="muted">Nothing yet.</p>}
+      {recent.length === 0 && <p class="empty">Nothing yet.</p>}
       {recent.length > 0 && (
         <ol class={styles.recent}>
           {recent.map((r, i) => (

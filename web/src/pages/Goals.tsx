@@ -38,7 +38,7 @@ export function Goals() {
       <section class={split.pane} aria-label={isWorkflow ? 'Workflow' : 'Goal'}>
         {id && isWorkflow && <WorkflowDetail key={id} id={id} />}
         {id && !isWorkflow && <GoalDetail key={id} id={id} />}
-        {!id && <p class={`card muted ${split.placeholder}`}>Choose a goal or a workflow, or create a goal.</p>}
+        {!id && <p class="empty">Choose a goal or a workflow, or create a goal.</p>}
       </section>
     </Split>
   );
@@ -63,7 +63,7 @@ function GoalList({ current }: { current?: string }) {
       <NewGoal />
       {error && <p class="error">{error}</p>}
       {!data && !error && <p class="muted">Loading…</p>}
-      {data && rows.length === 0 && <p class="muted">No goals yet.</p>}
+      {data && rows.length === 0 && <p class="empty">No goals yet.</p>}
       {rows.length > 0 && (
         <ul>
           {rows.map(({ goal: g, depth }) => (
@@ -146,7 +146,7 @@ function GoalDetail({ id }: { id: string }) {
   if (error) return <p class="card error">{error}</p>;
   if (!data) return <p class="card muted">Loading…</p>;
   const g = data.goals.find((x) => x.id === id);
-  if (!g) return <p class="card muted">No goal {id}. It may have been deleted.</p>;
+  if (!g) return <p class="empty">No goal {id}. It may have been deleted.</p>;
   const parent = g.parent_type === 'goal' ? data.goals.find((x) => x.id === g.parent_id) : undefined;
   const subs = data.goals.filter((x) => x.parent_type === 'goal' && x.parent_id === id);
 
@@ -279,7 +279,7 @@ function WorkflowList({ current }: { current?: string }) {
       <h2 class={styles.groupTitle}>Workflows</h2>
       {error && <p class="error">{error}</p>}
       {!data && !error && <p class="muted">Loading…</p>}
-      {data && data.length === 0 && <p class="muted">No workflows. The model starts one for a bounded, multi-step plan.</p>}
+      {data && data.length === 0 && <p class="empty">No workflows. The model starts one for a bounded, multi-step plan.</p>}
       {data && data.length > 0 && (
         <ul>
           {data.map((w) => (
@@ -310,7 +310,7 @@ function WorkflowDetail({ id }: { id: string }) {
   if (error) return <p class="card error">{error}</p>;
   if (!data) return <p class="card muted">Loading…</p>;
   const w = data.find((x) => x.id === id);
-  if (!w) return <p class="card muted">No workflow {id}.</p>;
+  if (!w) return <p class="empty">No workflow {id}.</p>;
 
   const end = async (how: 'stop' | 'fail') => {
     const q =

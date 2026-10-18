@@ -119,10 +119,6 @@
   min-width: 0;
 }
 
-.placeholder {
-  margin: 0;
-}
-
 .heading {
   display: flex;
   align-items: baseline;

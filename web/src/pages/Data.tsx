@@ -147,7 +147,7 @@ function Files({ dir, file }: { dir: string; file?: string }) {
         </div>
         {(error || loadError) && <p class="error">{error || loadError}</p>}
         {!data && !loadError && <p class="muted">Loading…</p>}
-        {data && data.entries.length === 0 && <p class="muted">This directory is empty.</p>}
+        {data && data.entries.length === 0 && <p class="empty">This directory is empty.</p>}
         {data && data.entries.length > 0 && (
           <ul>
             {data.entries.map((e) => (
@@ -177,7 +177,7 @@ function Files({ dir, file }: { dir: string; file?: string }) {
         {file !== undefined ? (
           <FileDetail key={`${file}#${changed}`} path={file} put={put} onChanged={reload} />
         ) : (
-          <p class={`card muted ${split.placeholder}`}>
+          <p class="empty">
             The workspace: the files Nine's tools read and write, and yours. Choose a file to read or edit it.
           </p>
         )}
@@ -233,7 +233,7 @@ function FileDetail(props: {
   const download = `/api/v1/workspace/file?path=${encodeURIComponent(path)}&download=true`;
 
   if (loadError) return <p class="card error">{loadError}</p>;
-  if (file === 'missing') return <p class="card muted">No file {path}.</p>;
+  if (file === 'missing') return <p class="empty">No file {path}.</p>;
   if (file === null) return <p class="card muted">Loading…</p>;
 
   const dirty = draft !== null && draft !== file.text;
@@ -351,7 +351,7 @@ function Database({ table }: { table?: string }) {
         </ListHead>
         {error && <p class="error">{error}</p>}
         {!data && !error && <p class="muted">Loading…</p>}
-        {data && data.length === 0 && <p class="muted">No tables yet. Processes create them; so can the SQL view.</p>}
+        {data && data.length === 0 && <p class="empty">No tables yet. Processes create them; so can the SQL view.</p>}
         {data && data.length > 0 && (
           <ul>
             {data.map((t) => (
@@ -376,7 +376,7 @@ function Database({ table }: { table?: string }) {
             <p class="card muted">Loading…</p>
           )
         ) : (
-          <p class={`card muted ${split.placeholder}`}>
+          <p class="empty">
             The database processes keep their records in. Choose a table to read and edit its rows.
           </p>
         )}
@@ -403,7 +403,7 @@ function TableDetail({ table, name, onChanged }: { table?: Table; name: string; 
     ['sql_write'],
     `${offset}#${changed}`,
   );
-  if (!table) return <p class="card muted">No table {name}.</p>;
+  if (!table) return <p class="empty">No table {name}.</p>;
   const editable = table.rowid;
   const done = () => {
     setEditing(null);

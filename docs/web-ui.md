@@ -21,6 +21,7 @@ docker run -e NINE_API_AUTH_TOKEN=… -p 8080:8080 ghcr.io/djordlucas/nine
 | Colour | black and white (the reverse in dark mode): links are underlined text, counts and meters ink. Red marks only what failed or needs you; the connection light keeps green and amber. |
 | Tags | a state or kind is a plain outlined tag; only a failure is red |
 | Forms | a choice is a square that fills when on; a text box grows with its text |
+| Empty | nothing to show, or nothing chosen yet, is a dashed box saying so |
 | Actions | an obvious action (reload, start, stop, delete, upload, download) is an icon that names itself on hover; the rest are labelled |
 
 ## Sections

@@ -56,7 +56,7 @@ function Tile(props: {
 }
 
 function Empty({ children }: { children: ComponentChildren }) {
-  return <p class="muted">{children}</p>;
+  return <p class="empty">{children}</p>;
 }
 
 /** Pending approvals and unanswered ask_human questions. */
