@@ -14,17 +14,16 @@
   overflow-y: auto;
 }
 
+/* The name as a word, not a mark. */
 .brand {
-  display: grid;
-  place-items: center;
-  width: 36px;
+  display: flex;
+  align-items: center;
   height: 36px;
   margin: 0 0 var(--space-4) var(--space-2);
-  border-radius: var(--radius);
-  background: var(--text);
-  color: var(--bg);
+  color: var(--text);
   font-weight: 700;
-  font-size: var(--text-lg);
+  font-size: 22px;
+  letter-spacing: -0.02em;
   text-decoration: none;
 }
 
