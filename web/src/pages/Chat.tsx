@@ -225,10 +225,10 @@ export function Chat({ id, onRenamed }: { id: string; onRenamed?: () => void }) 
             title={panel ? 'Hide the context' : 'Context: what the next model call would be shown'}
             onClick={() => setPanel(!panel)}
           >
-            <Icon name="context" size={18} />
+            <Icon name="context" size={16} />
           </button>
           <button type="button" class={`${detail.action} ${detail.iconAction}`} aria-label="End session" title="End session" onClick={endSession}>
-            <Icon name="power" size={18} />
+            <Icon name="power" size={16} />
           </button>
           <button
             type="button"
@@ -237,7 +237,7 @@ export function Chat({ id, onRenamed }: { id: string; onRenamed?: () => void }) 
             title="Delete this conversation"
             onClick={remove}
           >
-            <Icon name="trash" size={18} />
+            <Icon name="trash" size={16} />
           </button>
         </div>
       </header>

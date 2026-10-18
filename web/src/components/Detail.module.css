@@ -49,7 +49,7 @@
 }
 
 /* An action: the filled button of the rest of the UI (the New conversation
-   button's kind), 36px tall, with its hard shadow and press. An icon action
+   button's kind), 32px tall, with its hard shadow and press. An icon action
    is a square holding only its icon, named by its label and tooltip. A
    destructive one is red; a secondary one (Cancel) is light with a dark edge. */
 .action {
@@ -57,7 +57,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  min-height: 36px;
+  min-height: 32px;
   padding: 0 var(--space-3);
   border: 1px solid var(--ink);
   border-radius: var(--radius);
@@ -87,7 +87,7 @@
 }
 
 .iconAction {
-  width: 36px;
+  width: 32px;
   padding: 0;
 }
 

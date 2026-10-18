@@ -164,12 +164,12 @@ function ProcessDetail({ id }: { id: string }) {
               aria-label={p.state === 'failing' ? 'Retry now' : 'Start'}
               title={p.state === 'failing' ? 'Retry now' : 'Start this process'}
             >
-              <Icon name={p.state === 'failing' ? 'reload' : 'play'} size={18} />
+              <Icon name={p.state === 'failing' ? 'reload' : 'play'} size={16} />
             </button>
           )}
           {can.stop && (
             <button type="button" class={`${detail.action} ${detail.iconAction}`} disabled={busy} onClick={stop} aria-label="Stop" title="Stop this process">
-              <Icon name="stop" size={18} />
+              <Icon name="stop" size={16} />
             </button>
           )}
         </div>

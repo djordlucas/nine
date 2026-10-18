@@ -149,7 +149,7 @@ function Notifications() {
           Notifications {unseen > 0 && <span class={styles.count}>{unseen} new</span>}
         </h2>
         <button type="button" class={`${detail.action} ${detail.iconAction}`} onClick={() => setMarked((n) => n + 1)} aria-label="Refresh" title="Refresh">
-          <Icon name="reload" size={18} />
+          <Icon name="reload" size={16} />
         </button>
       </header>
       {error && <p class="error">{error}</p>}
