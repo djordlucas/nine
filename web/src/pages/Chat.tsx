@@ -3,10 +3,15 @@ import { useLocation } from 'preact-iso';
 import { api, errorMessage, get, type Schemas } from '../api/client';
 import { ConversationSocket, type SocketState } from '../api/socket';
 import { answered, apply, empty, fromHistory, pendingQuestions, reconcile, sent, type Chat as ChatState, type Item } from '../chat';
-import { pretty } from '../format';
 import { shortId } from '../journal';
 import { Markdown } from '../markdown';
 import styles from './Chat.module.css';
+import { Json } from '../components/Json';
+import { Icon } from '../components/Icon';
+import { Confirm, type Ask } from '../components/Confirm';
+import { copyText } from '../clipboard';
+import { TurnDetail } from '../components/TurnDetail';
+import detail from '../components/Detail.module.css';
 
 /** The most history entries the API returns in one page. */
 const HISTORY_PAGE = 1000;
@@ -36,7 +41,7 @@ const enterSends = () => !matchMedia('(pointer: coarse)').matches;
  * whoever started it. Send a turn, answer the session's questions, cancel a
  * running turn.
  */
-export function Chat({ id }: { id: string }) {
+export function Chat({ id, onRenamed }: { id: string; onRenamed?: () => void }) {
   const { route } = useLocation();
   const [info, setInfo] = useState<Schemas['ConversationInfo'] | null>(null);
   const [missing, setMissing] = useState(false);
@@ -46,6 +51,15 @@ export function Chat({ id }: { id: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sock, setSock] = useState<SocketState>('connecting');
   const [panel, setPanel] = useState(false);
+  // The model that answers and its provider, from the daemon's status; empty
+  // until they are known.
+  const [llm, setLlm] = useState({ model: '', provider: '' });
+  useEffect(() => {
+    api.GET('/status').then(
+      ({ data }) => setLlm({ model: data?.model ?? '', provider: data?.provider ?? '' }),
+      () => undefined,
+    );
+  }, []);
   const socket = useRef<ConversationSocket | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -137,18 +151,41 @@ export function Chat({ id }: { id: string }) {
   };
   const cancel = () => socket.current?.send({ type: 'cancel' });
 
-  const endSession = async () => {
-    if (!confirm('End this session? Its worker stops and its checkpoint is deleted; the transcript stays.')) return;
-    const { error } = await api.POST('/conversations/{id}/stop', { params: { path: { id } } });
-    if (error) alert(errorMessage(error));
-    else void load();
-  };
-  const remove = async () => {
-    if (!confirm('Delete this conversation and everything recorded for it? This cannot be undone.')) return;
-    const { error } = await api.DELETE('/conversations/{id}', { params: { path: { id } } });
-    if (error) alert(errorMessage(error));
-    else route('/conversations');
-  };
+  const [ask, setAsk] = useState<Ask | null>(null);
+  // The reply whose inspect button is under the pointer or focused, by its
+  // place in the timeline; that reply is shaded, its buttons in the corner.
+  const [inspected, setInspected] = useState<number | null>(null);
+  // The turns whose record is open under their reply, by turn number.
+  const [opened, setOpened] = useState<ReadonlySet<number>>(new Set());
+  const toggleTurn = (turn: number) =>
+    setOpened((o) => {
+      const next = new Set(o);
+      if (!next.delete(turn)) next.add(turn);
+      return next;
+    });
+  const endSession = () =>
+    setAsk({
+      title: 'End this session?',
+      message: 'Its worker stops and its checkpoint is deleted; the transcript stays.',
+      confirm: 'End session',
+      onConfirm: async () => {
+        const { error } = await api.POST('/conversations/{id}/stop', { params: { path: { id } } });
+        if (error) alert(errorMessage(error));
+        else void load();
+      },
+    });
+  const remove = () =>
+    setAsk({
+      title: 'Delete this conversation?',
+      message: 'Everything recorded for it goes too. This cannot be undone.',
+      confirm: 'Delete',
+      danger: true,
+      onConfirm: async () => {
+        const { error } = await api.DELETE('/conversations/{id}', { params: { path: { id } } });
+        if (error) alert(errorMessage(error));
+        else route('/conversations');
+      },
+    });
 
   if (missing) {
     return (
@@ -167,20 +204,40 @@ export function Chat({ id }: { id: string }) {
           ‹
         </a>
         <div class={styles.title}>
-          <h2>{title}</h2>
+          <Title
+            id={id}
+            title={title}
+            onRenamed={(name) => {
+              setInfo((i) => ({ ...(i ?? {}), name }));
+              onRenamed?.();
+            }}
+          />
           <span class="muted">
             {[info?.role, sock === 'open' ? '' : sock === 'connecting' ? 'connecting…' : 'reconnecting…'].filter(Boolean).join(' · ')}
           </span>
         </div>
         <div class={styles.actions}>
-          <button type="button" class={styles.action} aria-expanded={panel} onClick={() => setPanel(!panel)}>
-            Context
+          <button
+            type="button"
+            class={`${detail.action} ${detail.iconAction}`}
+            aria-expanded={panel}
+            aria-label="Context"
+            title={panel ? 'Hide the context' : 'Context: what the next model call would be shown'}
+            onClick={() => setPanel(!panel)}
+          >
+            <Icon name="context" size={18} />
           </button>
-          <button type="button" class={styles.action} onClick={() => void endSession()}>
-            End session
+          <button type="button" class={`${detail.action} ${detail.iconAction}`} aria-label="End session" title="End session" onClick={endSession}>
+            <Icon name="power" size={18} />
           </button>
-          <button type="button" class={`${styles.action} ${styles.danger}`} onClick={() => void remove()}>
-            Delete
+          <button
+            type="button"
+            class={`${detail.action} ${detail.iconAction} ${detail.danger}`}
+            aria-label="Delete"
+            title="Delete this conversation"
+            onClick={remove}
+          >
+            <Icon name="trash" size={18} />
           </button>
         </div>
       </header>
@@ -191,8 +248,15 @@ export function Chat({ id }: { id: string }) {
       <ol class={styles.timeline} aria-label="Messages">
         {chat.items.length === 0 && !loadError && <li class="muted">No messages yet. Say something.</li>}
         {chat.items.map((item, i) => (
-          <li key={i} class={styles[item.kind]}>
-            <ItemView item={item} id={id} onAnswer={answer} />
+          <li key={i} class={styles[item.kind]} data-inspected={i === inspected || undefined}>
+            <ItemView
+              item={item}
+              id={id}
+              onAnswer={answer}
+              onInspect={(on) => setInspected(on ? i : null)}
+              opened={opened}
+              onToggleTurn={toggleTurn}
+            />
           </li>
         ))}
         {chat.busy && !chat.items.some((i) => i.kind === 'reply' && i.streaming) && (
@@ -203,8 +267,155 @@ export function Chat({ id }: { id: string }) {
       </ol>
       <div ref={bottom} />
 
-      <Composer busy={chat.busy} connected={sock === 'open'} onSend={send} onCancel={cancel} />
+      <Confirm ask={ask} onClose={() => setAsk(null)} />
+      <Composer busy={chat.busy} connected={sock === 'open'} model={llm.model} provider={llm.provider} onSend={send} onCancel={cancel} />
     </div>
+  );
+}
+
+/**
+ * The conversation's name, which a click turns into a field: Enter or leaving
+ * the field saves it, Escape keeps the old one.
+ */
+function Title({ id, title, onRenamed }: { id: string; title: string; onRenamed: (name: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(title);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const field = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) field.current?.select();
+  }, [editing]);
+
+  const save = async () => {
+    const name = draft.trim();
+    if (saving) return;
+    if (!name || name === title) {
+      setEditing(false);
+      setError(null);
+      return;
+    }
+    setSaving(true);
+    const { data, error: e } = await api.PATCH('/conversations/{id}', { params: { path: { id } }, body: { name } });
+    setSaving(false);
+    if (!data) {
+      setError(errorMessage(e, 'Could not rename the conversation.'));
+      field.current?.focus();
+      return;
+    }
+    setError(null);
+    setEditing(false);
+    onRenamed(data.name);
+  };
+
+  if (!editing) {
+    return (
+      <h2>
+        <button
+          type="button"
+          class={styles.rename}
+          title="Rename"
+          aria-label={`${title}, rename`}
+          onClick={() => {
+            setDraft(title);
+            setEditing(true);
+          }}
+        >
+          {title}
+        </button>
+      </h2>
+    );
+  }
+  return (
+    <div class={styles.renaming}>
+      <input
+        ref={field}
+        class={styles.nameField}
+        aria-label="Conversation name"
+        maxLength={80}
+        value={draft}
+        disabled={saving}
+        onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            void save();
+          } else if (e.key === 'Escape') {
+            setEditing(false);
+            setError(null);
+          }
+        }}
+        onBlur={() => void save()}
+      />
+      {error && (
+        <span class="error" role="alert">
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A turn's inspector: it opens the turn's record under the reply, boxed like
+ * an open tool call, and closes it again. Which turns are open is kept by turn
+ * number in the chat, so a reload of the transcript that moves the reply in
+ * the list does not close it.
+ */
+function InspectButton({
+  turn,
+  open,
+  onToggle,
+  onInspect,
+}: {
+  turn: number;
+  open: boolean;
+  onToggle: () => void;
+  onInspect: (on: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      class={styles.inspect}
+      aria-expanded={open}
+      aria-label={`Inspect turn ${turn}`}
+      title={open ? `Close turn ${turn}` : `Inspect turn ${turn}`}
+      onClick={onToggle}
+      onMouseEnter={() => onInspect(true)}
+      onMouseLeave={() => onInspect(false)}
+      onFocus={() => onInspect(true)}
+      onBlur={() => onInspect(false)}
+    >
+      <Icon name="inspect" size={12} />
+    </button>
+  );
+}
+
+/**
+ * Copies a message's text, as Markdown, to the clipboard. It answers the way
+ * the UI's other buttons do, by its shade: dark for a moment when the copy
+ * went through, red when the browser refused it.
+ */
+function CopyMd({ text, what }: { text: string; what: string }) {
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  useEffect(() => {
+    if (state === 'idle') return;
+    // About as long as a click: a flash, not a state.
+    const t = setTimeout(() => setState('idle'), 150);
+    return () => clearTimeout(t);
+  }, [state]);
+  return (
+    <button
+      type="button"
+      class={styles.copy}
+      data-state={state === 'idle' ? undefined : state}
+      title={`Copy ${what} as Markdown`}
+      aria-label={`Copy ${what} as Markdown`}
+      onClick={() => void copyText(text).then((ok) => setState(ok ? 'copied' : 'failed'))}
+    >
+      MD
+    </button>
   );
 }
 
@@ -212,39 +423,65 @@ function ItemView({
   item,
   id,
   onAnswer,
+  onInspect,
+  opened,
+  onToggleTurn,
 }: {
   item: Item;
   id: string;
   onAnswer: (q: Extract<Item, { kind: 'question' }>, a: string) => void;
+  onInspect: (on: boolean) => void;
+  opened: ReadonlySet<number>;
+  onToggleTurn: (turn: number) => void;
 }) {
   switch (item.kind) {
     case 'user':
       return (
-        <div class={styles.bubble} data-pending={item.pending || undefined}>
-          {item.text}
+        <div class={styles.userRow}>
+          <div class={styles.bubble} data-pending={item.pending || undefined}>
+            {item.text}
+          </div>
+          <div class={styles.side}>
+            <CopyMd text={item.text} what="your message" />
+          </div>
         </div>
       );
     case 'reply':
       return (
         <div class={styles.reply}>
-          <Markdown text={item.text} class={styles.md} />
-          {item.streaming && <span class={styles.caret} aria-hidden="true" />}
-          {item.turn !== undefined && !item.streaming && (
-            <a class={styles.inspect} href={`/conversations/${id}/turns/${item.turn}`}>
-              Inspect turn {item.turn}
-            </a>
+          <div class={styles.replyBody}>
+            <Markdown text={item.text} class={styles.md} />
+            {item.streaming && <span class={styles.caret} aria-hidden="true" />}
+            {item.turn !== undefined && opened.has(item.turn) && (
+              <div class={styles.turnBox}>
+                <TurnDetail id={id} n={item.turn} />
+              </div>
+            )}
+          </div>
+          {!item.streaming && (
+            <div class={styles.side}>
+              <CopyMd text={item.text} what="the reply" />
+              {item.turn !== undefined && (
+                <InspectButton
+                  turn={item.turn}
+                  open={opened.has(item.turn)}
+                  onToggle={() => onToggleTurn(item.turn!)}
+                  onInspect={onInspect}
+                />
+              )}
+            </div>
           )}
         </div>
       );
     case 'tool':
       return (
-        <details class={styles.tool}>
+        <details class={styles.toolBox}>
           <summary>
             <span class={styles.toolName}>{item.name}</span>
             <span class="muted">{item.done ? 'done' : 'running…'}</span>
           </summary>
-          {item.input !== undefined && item.input !== null && <pre class={styles.pre}>{pretty(item.input)}</pre>}
-          {item.output !== undefined && <pre class={styles.pre}>{item.output}</pre>}
+          {item.input !== undefined && item.input !== null && <Json value={item.input} class={styles.pre} />}
+          {item.output !== undefined && <Json value={item.output} class={styles.pre} />}
         </details>
       );
     case 'agent':
@@ -259,7 +496,13 @@ function ItemView({
     case 'notice':
       return <p class="muted">{item.text}</p>;
     case 'error':
-      return <p class={item.cancelled ? 'muted' : 'error'}>{item.text}</p>;
+      if (item.cancelled) return <p class="muted">{item.text}</p>;
+      return (
+        <div class={styles.failed} role="alert">
+          <strong>The turn failed</strong>
+          <p>{item.text}</p>
+        </div>
+      );
   }
 }
 
@@ -311,14 +554,21 @@ function Question({
   );
 }
 
+/** The tallest the message box grows before it scrolls, in px. */
+const MAX_INPUT = 200;
+
 function Composer({
   busy,
   connected,
+  model,
+  provider,
   onSend,
   onCancel,
 }: {
   busy: boolean;
   connected: boolean;
+  model: string;
+  provider: string;
   onSend: (text: string, think: boolean) => boolean;
   onCancel: () => void;
 }) {
@@ -331,7 +581,11 @@ function Composer({
     const a = area.current;
     if (!a) return;
     a.style.height = 'auto';
-    a.style.height = `${Math.min(a.scrollHeight, 200)}px`;
+    // scrollHeight leaves out the border, which a border-box height includes:
+    // without it the box is 2px short of its text and shows a scroll bar.
+    const h = a.scrollHeight + a.offsetHeight - a.clientHeight;
+    a.style.height = `${Math.min(h, MAX_INPUT)}px`;
+    a.style.overflowY = h > MAX_INPUT ? 'auto' : 'hidden';
   };
   const submit = () => {
     const t = text.trim();
@@ -355,37 +609,52 @@ function Composer({
       }}
     >
       {error && <p class="error">{error}</p>}
-      <textarea
-        ref={area}
-        class={styles.input}
-        rows={1}
-        aria-label="Message"
-        placeholder={busy ? 'A message now waits for the turn to finish' : 'Message'}
-        value={text}
-        onInput={(e) => {
-          setText((e.target as HTMLTextAreaElement).value);
-          grow();
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && enterSends()) {
-            e.preventDefault();
-            submit();
-          }
-        }}
-      />
-      <div class={styles.controls}>
-        <label class={styles.think}>
-          <input type="checkbox" checked={think} onChange={(e) => setThink((e.target as HTMLInputElement).checked)} />
-          Think
-        </label>
-        {busy && (
-          <button type="button" class={`button ${styles.stop}`} onClick={onCancel}>
-            Stop
+      <div class={styles.entry}>
+        <textarea
+          ref={area}
+          class={styles.input}
+          rows={1}
+          aria-label="Message"
+          placeholder={busy ? 'A message now waits for the turn to finish' : 'Message'}
+          value={text}
+          onInput={(e) => {
+            setText((e.target as HTMLTextAreaElement).value);
+            grow();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && enterSends()) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+        />
+        <div class={styles.send}>
+          {busy && (
+            <button type="button" class={`button ${styles.press} ${styles.stop}`} onClick={onCancel}>
+              Stop
+            </button>
+          )}
+          <button type="submit" class={`button ${styles.press}`} disabled={!text.trim() || !connected}>
+            Send
           </button>
-        )}
-        <button type="submit" class="button" disabled={!text.trim() || !connected}>
-          Send
-        </button>
+          <button
+            type="button"
+            class={styles.think}
+            aria-pressed={think}
+            aria-label="Think"
+            title={think ? 'Think: on for the next message' : 'Think: reason before answering the next message'}
+            onClick={() => setThink(!think)}
+          >
+            T
+          </button>
+        </div>
+      </div>
+      <div class={styles.controls}>
+        <span class={styles.model} title={model ? `The model that answers: ${model}, on ${provider}` : undefined}>
+          {provider && <span class={styles.provider}>{provider}</span>}
+          {provider && model && <span aria-hidden="true"> | </span>}
+          {model}
+        </span>
       </div>
     </form>
   );

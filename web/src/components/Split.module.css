@@ -12,6 +12,8 @@
   top: 0;
   max-height: calc(100dvh - 120px);
   overflow-y: auto;
+  /* Room for the buttons' offset shadow, which the scroll box would clip. */
+  padding: 0 3px 3px 0;
   display: grid;
   gap: var(--space-3);
   align-content: start;
@@ -47,8 +49,16 @@
 }
 
 .row[aria-current='page'] {
-  background: var(--surface-2);
-  box-shadow: inset 3px 0 0 var(--accent);
+  background: var(--ink);
+  color: var(--ink-text);
+}
+
+/* Selected, a row is dark with light text (the reverse in dark mode); its
+   secondary line stays readable on it. */
+.row[aria-current='page'] .meta,
+.row[aria-current='page'] :global(.muted) {
+  color: var(--ink-text);
+  opacity: 0.75;
 }
 
 .name {

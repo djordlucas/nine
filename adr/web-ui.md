@@ -334,6 +334,17 @@ statement set it when a statement writes no rows, so a `CREATE TABLE` after an `
 reported the insert's count; `sqldb.Exec` now reports 0 for a statement with no row
 writes, for processes too. The bundle is 57 KB gzipped.
 
+## Adjustments as built
+
+| Change | Built | Why |
+|---|---|---|
+| The model in the chat | `provider` and `model` in `GET /status` and the daemon's `StatusInfo`, from `config.LLMIdentity`, overrides applied | Nothing said which model a conversation talks to. |
+| Rename a conversation | A new daemon `session_rename` and `PATCH /conversations/{id}`; `GET /conversations/{id}` returns the name | A conversation was named after its first message, for good. The store's checkpoint table holds JSON only and refused a bare name, so the name never persisted: it now lives in the store's kv, where the roster reads it. |
+| Inspect a turn | The turn's record opens under its reply; the separate Turn page is gone | It took the reader away from the conversation it explains. |
+| A config viewer | A new daemon `config` message and `GET /config`: the configuration in force, as TOML, only what is set, credentials redacted by name (`config.RedactedTOML`) | The operator could not see what the daemon runs with without a shell on its machine. It is read-only; editing is a later step. |
+| Confirmation | A styled dialog (`components/Confirm.tsx`) for End session and Delete | The browser's own dialog does not follow the UI's theme. |
+| One look | Square-ish boxes with hard shadows, ink (black, or white in dark mode) for actions and selections, one sans font with mono for code, JSON and TOML coloured by token | The operator asked for a lighter, brutalist look that holds across sections. |
+
 ---
 
 ## Limits

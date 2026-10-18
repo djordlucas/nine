@@ -14,7 +14,6 @@ import { NotFound } from './pages/NotFound';
 import { Processes } from './pages/Processes';
 import { System } from './pages/System';
 import { Tools } from './pages/Tools';
-import { Turn } from './pages/Turn';
 
 export function App() {
   useEffect(() => {
@@ -50,7 +49,6 @@ export function App() {
       <Shell>
         <Router>
           <Route path="/" component={Dashboard} />
-          <Route path="/conversations/:id/turns/:n" component={Turn} />
           <Route path="/conversations/:id" component={Conversations} />
           <Route path="/conversations" component={Conversations} />
           <Route path="/processes/:id" component={Processes} />

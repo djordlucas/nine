@@ -29,7 +29,7 @@ test('a conversation streams its reply and renders Markdown', async ({ page }) =
   await expect(list.getByRole('listitem').filter({ hasText: /^one$/ })).toBeVisible();
   await expect(list.locator('code', { hasText: 'code' })).toBeVisible();
   // Once the turn is over the transcript numbers it.
-  await expect(page.getByRole('link', { name: 'Inspect turn 1' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Inspect turn 1' })).toBeVisible();
 });
 
 test('a tool call shows in the chat and in the turn inspector', async ({ page }) => {
@@ -38,14 +38,20 @@ test('a tool call shows in the chat and in the turn inspector', async ({ page })
   await expect(messages(page).locator('summary', { hasText: 'skill_list' })).toBeVisible();
   await expect(messages(page).getByText('answered.')).toBeVisible();
 
-  await page.getByRole('link', { name: 'Inspect turn 1' }).click();
-  await expect(page.getByRole('heading', { name: 'Turn 1' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Input' })).toContainText('please use a tool');
-  await expect(page.getByRole('region', { name: 'Tool calls' })).toContainText('skill_list');
-  await expect(page.getByRole('region', { name: 'Model calls' })).toContainText('Call 2');
-  await expect(page.getByRole('region', { name: 'Result' })).toContainText('answered');
-  await page.getByText(/^Raw events/).click();
-  await expect(page.getByText('turn_start').first()).toBeVisible();
+  // The inspector opens the turn's record in place, and closes it again.
+  const inspect = page.getByRole('button', { name: 'Inspect turn 1' });
+  await inspect.click();
+  await expect(inspect).toHaveAttribute('aria-expanded', 'true');
+  const turn = page.getByRole('region', { name: 'Turn 1' });
+  await expect(turn.getByRole('region', { name: 'Input' })).toContainText('please use a tool');
+  await expect(turn.getByRole('region', { name: 'Tool calls' })).toContainText('skill_list');
+  await expect(turn.getByRole('region', { name: 'Model calls' })).toContainText('Call 2');
+  await expect(turn.getByRole('region', { name: 'Result' })).toContainText('answered');
+  await turn.getByText(/^Raw events/).click();
+  await expect(turn.getByText('turn_start').first()).toBeVisible();
+  await inspect.click();
+  await expect(turn).toHaveCount(0);
+  await expect(page).toHaveURL(/\/conversations\/[^/]+$/);
 });
 
 test('the session’s question is answered in the chat', async ({ page }) => {
@@ -78,10 +84,10 @@ test('the context panel shows what the next call would see', async ({ page }) =>
 test('a conversation can be deleted', async ({ page }) => {
   await newConversation(page);
   await send(page, 'delete me soon');
-  await expect(page.getByRole('link', { name: 'Inspect turn 1' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Inspect turn 1' })).toBeVisible();
   const url = page.url();
-  page.once('dialog', (d) => void d.accept());
   await page.getByRole('button', { name: 'Delete' }).click();
+  await page.getByRole('dialog', { name: 'Delete this conversation?' }).getByRole('button', { name: 'Delete' }).click();
   await expect(page).toHaveURL(/\/conversations$/);
   await page.goto(url);
   await expect(page.getByText('This conversation does not exist.')).toBeVisible();

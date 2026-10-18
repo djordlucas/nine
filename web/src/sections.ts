@@ -10,6 +10,19 @@ export interface Section {
 }
 
 export type IconName =
+  | 'inspect'
+  | 'context'
+  | 'power'
+  | 'trash'
+  | 'stop'
+  | 'play'
+  | 'reload'
+  | 'download'
+  | 'upload'
+  | 'filePlus'
+  | 'plus'
+  | 'prev'
+  | 'next'
   | 'dashboard'
   | 'chat'
   | 'process'

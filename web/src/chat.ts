@@ -166,8 +166,9 @@ export function answered(chat: Chat, id: string, answer: string): Chat {
  * path, so a transcript read the moment a turn ends can lack some of that
  * turn — its reply is written last. Until the transcript has as many messages
  * and replies as the live view, the live view stays as it is and complete is
- * false, so the caller reads again. Open questions, errors and notices are
- * never in the transcript, and are kept.
+ * false, so the caller reads again. Errors, notices and open questions are
+ * never in the transcript: each is kept at the end of the turn it came in, so
+ * an error stays in the conversation after the next message is sent.
  */
 export function reconcile(history: Item[], live: Item[]): { items: Item[]; complete: boolean } {
   const count = (items: Item[], kind: 'user' | 'reply') =>
@@ -175,9 +176,23 @@ export function reconcile(history: Item[], live: Item[]): { items: Item[]; compl
   if (count(live, 'user') > count(history, 'user') || count(live, 'reply') > count(history, 'reply')) {
     return { items: live, complete: false };
   }
-  const lastUser = live.findLastIndex((i) => i.kind === 'user');
-  const tail = live.slice(lastUser + 1).filter((i) => i.kind === 'error' || i.kind === 'notice' || (i.kind === 'question' && !i.answered));
-  return { items: [...history, ...tail], complete: true };
+  // Each kept item, by how many of the operator's messages came before it.
+  const kept = new Map<number, Item[]>();
+  let users = 0;
+  for (const i of live) {
+    if (i.kind === 'user') users++;
+    else if (i.kind === 'error' || i.kind === 'notice' || (i.kind === 'question' && !i.answered)) {
+      kept.set(users, [...(kept.get(users) ?? []), i]);
+    }
+  }
+  const items: Item[] = [];
+  users = 0;
+  for (const i of history) {
+    if (i.kind === 'user') items.push(...(kept.get(users++) ?? []));
+    items.push(i);
+  }
+  items.push(...(kept.get(users) ?? []));
+  return { items, complete: true };
 }
 
 /** Questions waiting for this conversation, as timeline items. */

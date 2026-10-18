@@ -23,7 +23,7 @@
 .count {
   min-width: 22px;
   padding: 0 var(--space-2);
-  border-radius: 11px;
+  border-radius: var(--radius);
   background: var(--accent);
   color: var(--accent-text);
   font-size: var(--text-sm);
@@ -89,7 +89,6 @@
   background: var(--surface-2);
   color: var(--text-2);
   font-size: 12px;
-  font-family: var(--mono);
   line-height: 20px;
 }
 

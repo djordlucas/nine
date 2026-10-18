@@ -10,6 +10,7 @@ import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
 import { param, processPath } from './Processes';
 import styles from './Goals.module.css';
+import { Icon } from '../components/Icon';
 
 type Workflow = Schemas['WorkflowInfo'];
 
@@ -193,8 +194,8 @@ function GoalDetail({ id }: { id: string }) {
             </button>
           ))}
           {!fromConfig(g) && (
-            <button type="button" class={`${detail.action} ${detail.danger}`} disabled={busy} onClick={() => void remove()}>
-              Delete
+            <button type="button" class={`${detail.action} ${detail.iconAction} ${detail.danger}`} disabled={busy} onClick={() => void remove()} aria-label="Delete" title="Delete this goal">
+              <Icon name="trash" size={18} />
             </button>
           )}
         </div>
@@ -338,8 +339,8 @@ function WorkflowDetail({ id }: { id: string }) {
         </div>
         {w.status === 'active' && (
           <div class={detail.actions}>
-            <button type="button" class={detail.action} disabled={busy} onClick={() => void end('stop')}>
-              Stop
+            <button type="button" class={`${detail.action} ${detail.iconAction}`} disabled={busy} onClick={() => void end('stop')} aria-label="Stop" title="Stop this workflow">
+              <Icon name="stop" size={18} />
             </button>
             <button type="button" class={`${detail.action} ${detail.danger}`} disabled={busy} onClick={() => void end('fail')}>
               Mark failed

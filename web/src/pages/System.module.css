@@ -67,3 +67,26 @@
   text-align: left;
   vertical-align: top;
 }
+
+/* The Config view: the configuration as TOML. */
+.config {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 900px;
+}
+
+.config p {
+  margin: 0;
+}
+
+.toml {
+  margin: 0;
+  padding: var(--space-3);
+  overflow-x: auto;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.6;
+  border-radius: var(--radius);
+}

@@ -1,21 +1,18 @@
 import { useEffect, useState } from 'preact/hooks';
-import { useRoute } from 'preact-iso';
 import { api, errorMessage, type Schemas } from '../api/client';
-import { duration, pretty } from '../format';
+import { duration } from '../format';
 import { shortId, summarize, timeOf } from '../journal';
 import { Markdown } from '../markdown';
-import styles from './Turn.module.css';
+import { Json } from './Json';
+import styles from './TurnDetail.module.css';
 
 /**
  * One turn, as the journal recorded it (adr/web-ui.md §5): its input, every
  * model call and tool call with what went in and came out, its sub-agents and
- * its result, then the raw events. Replay here renders the record; it calls
- * no model and no tool.
+ * its result, then the raw events. It opens in the chat, under the turn's
+ * reply. Replay here renders the record; it calls no model and no tool.
  */
-export function Turn() {
-  const { params } = useRoute();
-  const id = params.id as string;
-  const n = Number(params.n);
+export function TurnDetail({ id, n }: { id: string; n: number }) {
   const [replay, setReplay] = useState<Schemas['ReplayTurnResponse'] | null>(null);
   const [events, setEvents] = useState<Schemas['TraceEvent'][] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -35,15 +32,7 @@ export function Turn() {
   }, [id, n]);
 
   return (
-    <div class={styles.page}>
-      <nav class={styles.crumbs} aria-label="Breadcrumb">
-        <a href={`/conversations/${id}`}>‹ Conversation {shortId(id)}</a>
-        <span class={styles.steps}>
-          {n > 1 && <a href={`/conversations/${id}/turns/${n - 1}`}>Turn {n - 1}</a>}
-          <a href={`/conversations/${id}/turns/${n + 1}`}>Turn {n + 1}</a>
-        </span>
-      </nav>
-      <h2 class={styles.title}>Turn {n}</h2>
+    <div class={styles.detail} role="region" aria-label={`Turn ${n}`}>
       {error && <p class="error">{error}</p>}
       {!replay && !error && <p class="muted">Loading…</p>}
       {replay && <ReplayView r={replay} />}
@@ -58,7 +47,7 @@ export function Turn() {
                     <span class="muted">{timeOf({ ...e, agent_id: id, timestamp: e.timestamp ?? '' })}</span> <code>{e.type}</code>{' '}
                     {summarize({ ...e, agent_id: id, timestamp: e.timestamp ?? '' })}
                   </summary>
-                  <pre class={styles.pre}>{pretty(e.payload ?? {})}</pre>
+                  <Json value={e.payload ?? {}} class={styles.pre} />
                 </details>
               </li>
             ))}
@@ -133,7 +122,7 @@ function ReplayView({ r }: { r: Schemas['ReplayTurnResponse'] }) {
                 {t.input !== undefined && (
                   <details>
                     <summary>Input</summary>
-                    <pre class={styles.pre}>{pretty(t.input)}</pre>
+                    <Json value={t.input} class={styles.pre} />
                   </details>
                 )}
                 {t.output !== undefined && (
@@ -141,7 +130,7 @@ function ReplayView({ r }: { r: Schemas['ReplayTurnResponse'] }) {
                     <summary>
                       Output{t.truncated ? ` (truncated, ${t.output_chars ?? '?'} chars)` : ''}
                     </summary>
-                    <pre class={styles.pre}>{t.output}</pre>
+                    <Json value={t.output} class={styles.pre} />
                   </details>
                 )}
                 {t.error && <p class="error">{t.error}</p>}
@@ -174,7 +163,7 @@ function ReplayView({ r }: { r: Schemas['ReplayTurnResponse'] }) {
                   {s.status && <span>{s.status}</span>}
                 </p>
                 {s.task && <p>{s.task}</p>}
-                <a href={`/conversations/${s.id}/turns/1`}>Its first turn</a>
+                <a href={`/conversations/${s.id}`}>Its conversation</a>
               </li>
             ))}
           </ul>

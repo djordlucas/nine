@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import { useLocation, useRoute } from 'preact-iso';
 import { api, errorMessage, get, type Schemas } from '../api/client';
-import { duration, pretty } from '../format';
+import { duration } from '../format';
 import { useLive } from '../live';
 import { Markdown } from '../markdown';
 import { argsTemplate, groupTools, kindLabels, parseArgs, type Tool } from '../tools';
@@ -9,6 +9,8 @@ import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
 import { param } from './Processes';
 import styles from './Tools.module.css';
+import { Json } from '../components/Json';
+import { Icon } from '../components/Icon';
 
 type Plugin = Schemas['PluginInfo'];
 type Skill = Schemas['SkillInfo'];
@@ -100,8 +102,8 @@ function ToolList(props: { tools: Tool[] | null; error: string | null; current?:
           value={filter}
           onInput={(e) => setFilter(e.currentTarget.value)}
         />
-        <button type="button" class={detail.action} disabled={busy} onClick={() => void reload()}>
-          Reload
+        <button type="button" class={`${detail.action} ${detail.iconAction}`} disabled={busy} onClick={() => void reload()} aria-label="Reload" title="Reload the tools">
+          <Icon name="reload" size={18} />
         </button>
       </div>
       {outcome && (
@@ -182,8 +184,8 @@ function ToolDetail({ name, onChanged }: { name: string; onChanged: () => void }
         </div>
         {t.generated && (
           <div class={detail.actions}>
-            <button type="button" class={`${detail.action} ${detail.danger}`} onClick={() => void remove()}>
-              Delete
+            <button type="button" class={`${detail.action} ${detail.iconAction} ${detail.danger}`} onClick={() => void remove()} aria-label="Delete" title="Delete this tool">
+              <Icon name="trash" size={18} />
             </button>
           </div>
         )}
@@ -236,7 +238,7 @@ function ToolDetail({ name, onChanged }: { name: string; onChanged: () => void }
       {t.input_schema != null && (
         <details class={detail.section}>
           <summary>Arguments schema</summary>
-          <pre class={styles.code}>{pretty(t.input_schema)}</pre>
+          <Json value={t.input_schema} class={styles.code} />
         </details>
       )}
       {t.loaded !== false && <Call name={name} schema={t.input_schema} sandboxed={t.kind === 'sandboxed' || t.kind === 'generated'} />}
@@ -301,7 +303,7 @@ function Call({ name, schema, sandboxed }: { name: string; schema: unknown; sand
             {result.ok ? 'Returned' : 'Failed'}
             {result.ms !== undefined ? ` in ${duration(result.ms)}` : ''}
           </p>
-          {result.text && <pre class={styles.code}>{pretty(result.text)}</pre>}
+          {result.text && <Json value={result.text} class={styles.code} />}
         </div>
       )}
     </section>
@@ -393,8 +395,8 @@ function PluginsView() {
           <span class="muted">Programs that serve tools. Reloading re-reads the plugin directories.</span>
         </div>
         <div class={detail.actions}>
-          <button type="button" class={detail.action} disabled={busy} onClick={() => void reload()}>
-            Reload
+          <button type="button" class={`${detail.action} ${detail.iconAction}`} disabled={busy} onClick={() => void reload()} aria-label="Reload" title="Reload the plugins">
+            <Icon name="reload" size={18} />
           </button>
         </div>
       </header>

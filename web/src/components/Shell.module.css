@@ -45,8 +45,8 @@
 }
 
 .railLink[aria-current='page'] {
-  background: var(--surface-2);
-  color: var(--text);
+  background: var(--ink);
+  color: var(--ink-text);
   font-weight: 600;
 }
 
@@ -169,7 +169,8 @@
   }
 
   .tab[aria-current='page'] {
-    color: var(--accent);
+    background: var(--ink);
+    color: var(--ink-text);
     font-weight: 600;
   }
 
@@ -214,7 +215,7 @@
 .badge {
   min-width: 20px;
   padding: 0 6px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--danger);
   color: #fff;
   font-size: 12px;

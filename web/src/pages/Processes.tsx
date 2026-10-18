@@ -7,6 +7,7 @@ import { actionsFor, byAttention, processState, stoppedReason, used, type Proces
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
 import styles from './Processes.module.css';
+import { Icon } from '../components/Icon';
 
 const processEvents = ['process_*', 'standing_*', 'goal_status'];
 
@@ -148,13 +149,20 @@ function ProcessDetail({ id }: { id: string }) {
             </button>
           )}
           {can.start && (
-            <button type="button" class={`${detail.action} ${detail.primary}`} disabled={busy} onClick={() => void start()}>
-              {p.state === 'failing' ? 'Retry now' : 'Start'}
+            <button
+              type="button"
+              class={`${detail.action} ${detail.iconAction}`}
+              disabled={busy}
+              onClick={() => void start()}
+              aria-label={p.state === 'failing' ? 'Retry now' : 'Start'}
+              title={p.state === 'failing' ? 'Retry now' : 'Start this process'}
+            >
+              <Icon name={p.state === 'failing' ? 'reload' : 'play'} size={18} />
             </button>
           )}
           {can.stop && (
-            <button type="button" class={`${detail.action} ${detail.danger}`} disabled={busy} onClick={stop}>
-              Stop
+            <button type="button" class={`${detail.action} ${detail.iconAction}`} disabled={busy} onClick={stop} aria-label="Stop" title="Stop this process">
+              <Icon name="stop" size={18} />
             </button>
           )}
         </div>

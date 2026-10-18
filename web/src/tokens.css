@@ -4,7 +4,10 @@
   --bg: #f7f7f8;
   --surface: #ffffff;
   --surface-2: #f0f1f3;
-  --border: #dcdee3;
+  --border: #a4a8b1;
+  --edge: #16181d;
+  --ink: #16181d;
+  --ink-text: #ffffff;
   --text: #16181d;
   --text-2: #5b6170;
   --accent: #2f5bd3;
@@ -12,7 +15,10 @@
   --ok: #1d7a46;
   --warn: #9a6200;
   --danger: #b42318;
-  --focus: #2f5bd3;
+  --focus: #16181d;
+  --syntax-key: #8a2be2;
+  --syntax-string: #1d7a46;
+  --syntax-number: #9a4a00;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -21,8 +27,9 @@
   --space-5: 24px;
   --space-6: 32px;
 
-  --radius: 8px;
-  --radius-lg: 12px;
+  --radius: 3px;
+  --radius-lg: 4px;
+  --shadow: 3px 3px 0 var(--border);
   --touch: 44px;
 
   --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -42,7 +49,10 @@
     --bg: #0f1115;
     --surface: #171a20;
     --surface-2: #1f232b;
-    --border: #2c313b;
+    --border: #4a505c;
+    --edge: #e8eaee;
+    --ink: #e8eaee;
+    --ink-text: #0f1115;
     --text: #e8eaee;
     --text-2: #9aa1af;
     --accent: #7c9cff;
@@ -50,7 +60,10 @@
     --ok: #4cc38a;
     --warn: #e0a83a;
     --danger: #ff7b72;
-    --focus: #7c9cff;
+    --focus: #e8eaee;
+    --syntax-key: #d2a8ff;
+    --syntax-string: #7ee2a8;
+    --syntax-number: #f0a860;
     color-scheme: dark;
   }
 }
@@ -59,7 +72,10 @@
   --bg: #0f1115;
   --surface: #171a20;
   --surface-2: #1f232b;
-  --border: #2c313b;
+  --border: #4a505c;
+  --edge: #e8eaee;
+  --ink: #e8eaee;
+  --ink-text: #0f1115;
   --text: #e8eaee;
   --text-2: #9aa1af;
   --accent: #7c9cff;
@@ -67,7 +83,10 @@
   --ok: #4cc38a;
   --warn: #e0a83a;
   --danger: #ff7b72;
-  --focus: #7c9cff;
+  --focus: #e8eaee;
+  --syntax-key: #d2a8ff;
+  --syntax-string: #7ee2a8;
+  --syntax-number: #f0a860;
   color-scheme: dark;
 }
 
@@ -108,9 +127,21 @@ select {
   color: inherit;
 }
 
+/* Focus thickens an element's own edge instead of drawing a second box
+   around it: the 2px outline lies over the 1px border, inward. A dark-filled
+   element (a primary button, a selected row) would hide a dark outline, so it
+   gets a light one just inside its edge. */
 :focus-visible {
   outline: 2px solid var(--focus);
-  outline-offset: 2px;
+  outline-offset: -2px;
+}
+
+.button:focus-visible,
+[aria-current='page']:focus-visible,
+[aria-expanded='true']:focus-visible,
+[aria-pressed='true']:focus-visible {
+  outline-color: var(--ink-text);
+  outline-offset: -4px;
 }
 
 h1,
@@ -120,10 +151,20 @@ h3 {
   margin: 0;
 }
 
+/* One rule for type: text is in --font, headings included; --mono is only
+   for code, JSON, TOML and identifiers. These elements would otherwise take
+   the browser's own monospace, a third face. */
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--mono);
+}
+
 /* Shared building blocks. */
 .card {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--edge);
   border-radius: var(--radius-lg);
   padding: var(--space-4);
 }
@@ -131,16 +172,23 @@ h3 {
 .button {
   min-height: var(--touch);
   padding: 0 var(--space-4);
-  border: 1px solid transparent;
+  border: 1px solid var(--edge);
   border-radius: var(--radius);
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--ink);
+  color: var(--ink-text);
   font-weight: 600;
+  box-shadow: var(--shadow);
   cursor: pointer;
+}
+
+.button:active:not(:disabled) {
+  box-shadow: none;
+  transform: translate(3px, 3px);
 }
 
 .button:disabled {
   opacity: 0.6;
+  box-shadow: none;
   cursor: default;
 }
 
@@ -148,7 +196,7 @@ h3 {
   min-height: var(--touch);
   width: 100%;
   padding: 0 var(--space-3);
-  border: 1px solid var(--border);
+  border: 1px solid var(--edge);
   border-radius: var(--radius);
   background: var(--surface);
 }

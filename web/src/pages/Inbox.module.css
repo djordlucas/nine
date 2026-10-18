@@ -13,7 +13,7 @@
 
 .count {
   padding: 0 var(--space-2);
-  border-radius: 11px;
+  border-radius: var(--radius);
   background: var(--accent);
   color: var(--accent-text);
   font-size: var(--text-sm);

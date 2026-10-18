@@ -9,11 +9,14 @@ import detail from '../components/Detail.module.css';
 import { param } from './Processes';
 import tools from './Tools.module.css';
 import styles from './System.module.css';
+import { Toml } from '../components/Json';
+import { Icon } from '../components/Icon';
 
 type Session = Schemas['SessionInfo'];
 
 const views = [
   { path: '/system', label: 'Overview' },
+  { path: '/system/config', label: 'Config' },
   { path: '/system/sessions', label: 'Sessions' },
   { path: '/system/reflections', label: 'Reflections' },
   { path: '/system/docs', label: 'Docs' },
@@ -40,11 +43,35 @@ export function System() {
         ))}
       </nav>
       {view === '/system' && <Overview />}
+      {view === '/system/config' && <ConfigView />}
       {view === '/system/sessions' && <SessionsView id={id} />}
       {view === '/system/reflections' && <Reflections />}
       {view === '/system/docs' && <DocsView kind="docs" topic={id} />}
       {view === '/system/spec' && <DocsView kind="spec" topic={id} />}
     </div>
+  );
+}
+
+/**
+ * The configuration the daemon runs with, as it reports it: the settings that
+ * are set, credentials hidden. Read-only; editing is for a later version.
+ */
+function ConfigView() {
+  const { data, error } = useLive(async () => (await get(api.GET('/config'), 'the configuration')).toml, []);
+  return (
+    <section class={`card ${styles.config}`} aria-labelledby="config-h">
+      <h2 id="config-h" class={styles.title}>
+        Configuration
+      </h2>
+      <p class="muted">
+        What the daemon runs with: its config file, then the <code>NINE_*</code> environment variables. Only what is
+        set is shown; everything else takes its default. Keys and tokens are hidden. Changing a setting means editing
+        the file and restarting Nine.
+      </p>
+      {error && <p class="error">{error}</p>}
+      {!data && !error && <p class="muted">Loading…</p>}
+      {data && <Toml text={data} class={styles.toml} />}
+    </section>
   );
 }
 
@@ -227,8 +254,8 @@ function SessionDetail(props: { id: string; session?: Session; loaded: boolean; 
           <span class="muted">{s.status}</span>
         </div>
         <div class={detail.actions}>
-          <button type="button" class={`${detail.action} ${detail.danger}`} disabled={busy} onClick={() => void remove()}>
-            Delete
+          <button type="button" class={`${detail.action} ${detail.iconAction} ${detail.danger}`} disabled={busy} onClick={() => void remove()} aria-label="Delete" title="Delete this session">
+            <Icon name="trash" size={18} />
           </button>
         </div>
       </header>

@@ -37,15 +37,14 @@
 }
 
 .upload:focus-within {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
+  outline: 2px solid var(--ink-text);
+  outline-offset: -4px;
 }
 
 .linkButton {
   display: inline-flex;
   align-items: center;
   text-decoration: none;
-  color: inherit;
 }
 
 .editor {

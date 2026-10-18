@@ -6,6 +6,7 @@ import { shortId } from '../journal';
 import { useLive } from '../live';
 import detail from '../components/Detail.module.css';
 import styles from './Inbox.module.css';
+import { Icon } from '../components/Icon';
 
 /**
  * The Inbox (adr/web-ui.md §5): what waits for the operator — capability
@@ -146,8 +147,8 @@ function Notifications() {
         <h2 id="notifications-h" class={styles.title}>
           Notifications {unseen > 0 && <span class={styles.count}>{unseen} new</span>}
         </h2>
-        <button type="button" class={detail.action} onClick={() => setMarked((n) => n + 1)}>
-          Refresh
+        <button type="button" class={`${detail.action} ${detail.iconAction}`} onClick={() => setMarked((n) => n + 1)} aria-label="Refresh" title="Refresh">
+          <Icon name="reload" size={18} />
         </button>
       </header>
       {error && <p class="error">{error}</p>}

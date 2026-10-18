@@ -20,9 +20,12 @@
   margin-bottom: -1px;
 }
 
+/* The selected tab: dark with light text, the reverse in dark mode. */
 .view[aria-current='page'] {
-  color: var(--text);
-  border-bottom-color: var(--accent);
+  background: var(--ink);
+  color: var(--ink-text);
+  border-bottom-color: var(--ink);
+  border-radius: var(--radius) var(--radius) 0 0;
 }
 
 .listHead {
