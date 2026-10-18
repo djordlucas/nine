@@ -24,8 +24,8 @@
   min-width: 22px;
   padding: 0 var(--space-2);
   border-radius: var(--radius);
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--ink);
+  color: var(--ink-text);
   font-size: var(--text-sm);
   font-weight: 600;
   text-align: center;

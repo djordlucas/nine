@@ -115,19 +115,13 @@
   white-space: nowrap;
 }
 
-/* Kinds, as on the dashboard. */
+/* Kinds, as on the dashboard: plain, and red for what needs attention. */
+.type {
+  color: var(--text-2);
+}
+
 .attention {
   color: var(--danger);
-}
-
-.state,
-.process {
-  color: var(--ok);
-}
-
-.turn,
-.agent {
-  color: var(--accent);
 }
 
 .detail {
@@ -158,7 +152,10 @@
   padding: 0;
   border: 0;
   background: none;
-  color: var(--accent);
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--text-2);
+  text-underline-offset: 2px;
   font-family: var(--mono);
   text-align: left;
   overflow-wrap: anywhere;

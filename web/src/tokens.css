@@ -115,8 +115,17 @@ body {
   height: 100%;
 }
 
+/* Links are the text's colour, underlined: colour is kept for what went wrong. */
 a {
-  color: var(--accent);
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--text-2);
+  text-underline-offset: 2px;
+}
+
+a:hover {
+  text-decoration-color: currentColor;
+  text-decoration-thickness: 2px;
 }
 
 button,

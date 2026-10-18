@@ -216,8 +216,8 @@
   min-width: 20px;
   padding: 0 6px;
   border-radius: var(--radius);
-  background: var(--danger);
-  color: #fff;
+  background: var(--ink);
+  color: var(--ink-text);
   font-size: 12px;
   font-weight: 600;
   line-height: 20px;
@@ -226,6 +226,12 @@
 
 .railLink .badge {
   margin-left: auto;
+}
+
+/* On the selected link, which is ink, the count turns over. */
+[aria-current='page'] > .badge {
+  background: var(--ink-text);
+  color: var(--ink);
 }
 
 @media (max-width: 767px) {
