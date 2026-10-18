@@ -4,6 +4,12 @@
   gap: var(--space-4);
 }
 
+/* A grid item is as wide as its widest content unless allowed to shrink: a
+   long code line or a wide table would push the pane past its box. */
+.detail > * {
+  min-width: 0;
+}
+
 .head {
   display: flex;
   flex-wrap: wrap;

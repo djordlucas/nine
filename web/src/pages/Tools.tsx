@@ -529,7 +529,7 @@ function SkillDetail({ name }: { name: string }) {
         </div>
       </header>
       {s.description && <p class="muted">{s.description}</p>}
-      <Markdown text={s.content} class={styles.skill} />
+      <Markdown text={s.content} />
     </article>
   );
 }

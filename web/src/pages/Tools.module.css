@@ -123,10 +123,6 @@ textarea.code {
   overflow-wrap: anywhere;
 }
 
-.skill {
-  overflow-wrap: anywhere;
-}
-
 /* A roster row with no badge: the name takes the badge's column too. */
 .wide {
   grid-column: 1 / -1;
