@@ -26,14 +26,24 @@ file.
 
 ## Screenshots
 
+The web UI that `nine api serve` serves beside the API ([web UI](docs/web-ui.md)).
+
 <table>
 <tr>
-<td><img src="docs/img/nine_what_is_ai_agent_runtime.png" alt="Nine TUI answering &quot;What is an AI agent runtime?&quot; by searching its own docs"></td>
-<td><img src="docs/img/nine_tell_me_one_headline.png" alt="Nine TUI fetching the current time and searching the web for a news headline"></td>
+<td><img src="docs/img/web_chat.png" alt="A conversation in the web UI: the reply, the tool calls it made (time, web_search), and the provider and model under the message box"></td>
+<td><img src="docs/img/web_inspect.png" alt="A turn opened under its reply: its input, each model call with its context size and tokens, and each tool call's input and output"></td>
 </tr>
 <tr>
-<td><img src="docs/img/nine_memory.png" alt="Nine TUI writing a joke and storing it with memory_set"></td>
-<td><img src="docs/img/nine_subagent.png" alt="Nine TUI spawning a sub-agent to research banana farming while researching carrot farming itself"></td>
+<td><img src="docs/img/web_dashboard.png" alt="The dashboard: what needs you, processes, the latest activity, recent conversations, goals, notifications and the daemon"></td>
+<td><img src="docs/img/web_processes.png" alt="Processes: the self-reflection process with its trigger, session, budget for the day and recent activity"></td>
+</tr>
+<tr>
+<td><img src="docs/img/web_tools.png" alt="Tools: the sandboxed web_search tool with its capabilities, to call directly"></td>
+<td><img src="docs/img/web_journal.png" alt="The journal: every event the daemon records, live, filterable by kind and session"></td>
+</tr>
+<tr>
+<td><img src="docs/img/web_self-model.png" alt="Data › Self-model: what Nine holds about itself, read-only"></td>
+<td><img src="docs/img/web_config.png" alt="System › Config: the configuration in force, as TOML, with credentials hidden"></td>
 </tr>
 </table>
 
