@@ -76,6 +76,15 @@ func LoadDefault() (*Config, error) {
 // endpoints that differ, without a second config file.
 func ApplyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("NINE_LLM_PROVIDER"); v != "" {
+		// The file's endpoint and model belong to the file's provider: switching
+		// provider from the environment and keeping them sends the new provider's
+		// requests to the old one's server, for a model it does not have. They
+		// give way to the new provider's defaults, unless NINE_LLM_ENDPOINT and
+		// NINE_LLM_MODEL (below) name others.
+		if orDefault(v) != orDefault(cfg.LLM.Provider) {
+			cfg.LLM.Endpoint = ""
+			cfg.LLM.Model = ""
+		}
 		cfg.LLM.Provider = v
 	}
 	if v := os.Getenv("NINE_LLM_MODEL"); v != "" {
@@ -326,17 +335,29 @@ func (cfg *Config) LLMIdentity() (provider, model string) {
 	if e := os.Getenv("NINE_LLM_PROVIDER"); e != "" {
 		provider = e
 	}
-	if provider == "" {
-		provider = ProviderOllama
-	}
+	provider = orDefault(provider)
 	model = cfg.LLM.Model
 	if e := os.Getenv("NINE_LLM_MODEL"); e != "" {
 		model = e
 	}
 	if model == "" {
-		model = "gemma4:e2b"
+		model = defaultModels[provider]
 	}
 	return provider, model
+}
+
+// defaultModels is the model each provider runs when none is set.
+var defaultModels = map[string]string{
+	ProviderOllama:  "gemma4:e2b",
+	ProviderMistral: "mistral-small-latest",
+}
+
+// orDefault is a provider name with unset read as the default, Ollama.
+func orDefault(provider string) string {
+	if provider == "" {
+		return ProviderOllama
+	}
+	return provider
 }
 
 // BuildProvider constructs an LLM provider from cfg, with environment variable

@@ -880,7 +880,7 @@ the agent loop well is recorded in [Model compatibility](model-compatibility.md)
 ```toml
 [llm]
 provider = "mistral"
-model    = "mistral-small"       # whatever the endpoint serves
+model    = "mistral-small-latest" # whatever the endpoint serves; this is the default
 endpoint = ""                      # empty uses https://api.mistral.ai/v1
 api_key  = ""                      # or NINE_LLM_API_KEY
 max_tokens = 8192                  # hosted models write long replies; the default is 2048
@@ -938,7 +938,7 @@ Environment variables take priority over `nine.toml` values.
 | Variable | Description |
 |----------|-------------|
 | `NINE_CONFIG` | Explicit path to `nine.toml` (skips the default search order) |
-| `NINE_LLM_PROVIDER` | Override `llm.provider` |
+| `NINE_LLM_PROVIDER` | Override `llm.provider`. Naming a provider other than the file's drops the file's `endpoint` and `model`, which belong to its provider: the new one's defaults apply unless `NINE_LLM_ENDPOINT` and `NINE_LLM_MODEL` name others |
 | `NINE_LLM_MODEL` | Override `llm.model` |
 | `NINE_LLM_ENDPOINT` | Override `llm.endpoint` |
 | `NINE_LLM_API_KEY` | Override `llm.api_key` — the bearer token for a remote provider |
