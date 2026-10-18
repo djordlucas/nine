@@ -4,6 +4,7 @@ import { api, errorMessage, get, type Schemas } from '../api/client';
 import { useLive } from '../live';
 import { asText, cell, crumbs, dirHref, fieldValue, fileHref, join, MAX_EDIT_BYTES, parent, version } from '../data';
 import { bytes } from '../system';
+import { ask } from '../components/Confirm';
 import { ListHead, Split } from '../components/Split';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
@@ -97,7 +98,7 @@ function Files({ dir, file }: { dir: string; file?: string }) {
     if (!files?.length) return;
     const existing = new Set(data?.entries.map((e) => e.name));
     const replaced = [...files].filter((f) => existing.has(f.name)).map((f) => f.name);
-    if (replaced.length && !confirm(`Replace ${replaced.join(', ')}? The current version goes to the trash.`)) return;
+    if (replaced.length && !(await ask({ title: `Replace ${replaced.join(', ')}?`, message: 'The current version goes to the trash.', confirm: 'Replace' }))) return;
     setBusy(true);
     setError(null);
     try {
@@ -251,7 +252,7 @@ function FileDetail(props: {
     }
   };
   const remove = async () => {
-    if (!confirm(`Delete ${path}? It goes to the trash, where the agent's restore_file can bring it back.`)) return;
+    if (!(await ask({ title: `Delete ${path}?`, message: "It goes to the trash, where the agent's restore_file can bring it back.", confirm: 'Delete', danger: true }))) return;
     setBusy(true);
     const { data: e, error: err } = await api.DELETE('/workspace/file', {
       params: { query: { path }, header: file.version ? { 'If-Match': `"${file.version}"` } : {} },
@@ -504,7 +505,7 @@ function RowForm(props: { table: Table; editing: NonNullable<Editing>; onDone: (
     props.onDone();
   };
   const remove = async () => {
-    if (editing.rowid === null || !confirm(`Delete row ${editing.rowid} of ${table.name}?`)) return;
+    if (editing.rowid === null || !(await ask({ title: `Delete row ${editing.rowid} of ${table.name}?`, message: 'This cannot be undone.', confirm: 'Delete', danger: true }))) return;
     setBusy(true);
     const { data, error: err } = await api.DELETE('/database/tables/{table}/rows/{rowid}', {
       params: { path: { table: table.name, rowid: editing.rowid } },

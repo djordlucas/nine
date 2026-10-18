@@ -5,6 +5,7 @@ import { duration } from '../format';
 import { useLive } from '../live';
 import { Markdown } from '../markdown';
 import { argsTemplate, groupTools, kindLabels, parseArgs, type Tool } from '../tools';
+import { ask } from '../components/Confirm';
 import { ListHead, Split } from '../components/Split';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
@@ -162,7 +163,7 @@ function ToolDetail({ name, onChanged }: { name: string; onChanged: () => void }
   if (!t) return <p class="card muted">Loading…</p>;
 
   const remove = async () => {
-    if (!confirm(`Delete ${name}? Its processes stop and it is gone from every session.`)) return;
+    if (!(await ask({ title: `Delete ${name}?`, message: 'Its processes stop and it is gone from every session.', confirm: 'Delete', danger: true }))) return;
     const { data, error: e } = await api.DELETE('/tools/{name}', { params: { path: { name } } });
     if (data) {
       onChanged();
@@ -320,7 +321,7 @@ function Versions({ name, onRestored }: { name: string; onRestored: () => void }
     restored,
   );
   const restore = async (version: number) => {
-    if (!confirm(`Make version ${version} of ${name} current again? A process it runs restarts on it.`)) return;
+    if (!(await ask({ title: `Restore version ${version} of ${name}?`, message: 'It becomes current again. A process it runs restarts on it.', confirm: 'Restore' }))) return;
     const { data: done, error: e } = await api.POST('/tools/{name}/versions/{version}/restore', {
       params: { path: { name, version } },
     });

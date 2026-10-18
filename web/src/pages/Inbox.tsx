@@ -4,6 +4,7 @@ import { ago } from '../format';
 import { attentionEvents, loadAttention, scopeOf, type CapabilityRequest, type Grant } from '../inbox';
 import { shortId } from '../journal';
 import { useLive } from '../live';
+import { ask } from '../components/Confirm';
 import detail from '../components/Detail.module.css';
 import styles from './Inbox.module.css';
 import { Icon } from '../components/Icon';
@@ -49,7 +50,7 @@ function Request({ r }: { r: CapabilityRequest }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const decide = async (action: 'approve' | 'deny') => {
-    if (action === 'approve' && !confirm(`Grant ${r.capability} (${scopeOf(r.params)}) to the tools Nine writes?`)) return;
+    if (action === 'approve' && !(await ask({ title: `Grant ${r.capability}?`, message: `Scope: ${scopeOf(r.params)}. The tools Nine writes may use it.`, confirm: 'Approve' }))) return;
     setBusy(true);
     setError(null);
     const { data, error: e } = await api.POST('/capabilities/{id}/decision', {
@@ -185,7 +186,7 @@ function Grants({ grants }: { grants?: Grant[] }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const revoke = async (g: Grant) => {
-    if (!confirm(`Revoke ${g.capability} (${scopeOf(g.params)})? Tools that use it lose it.`)) return;
+    if (!(await ask({ title: `Revoke ${g.capability}?`, message: `Scope: ${scopeOf(g.params)}. Tools that use it lose it.`, confirm: 'Revoke', danger: true }))) return;
     setBusy(g.id);
     setError(null);
     const { data, error: e } = await api.POST('/capabilities/{id}/decision', {

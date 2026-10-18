@@ -42,8 +42,8 @@ test('a workspace file is edited, uploaded beside and deleted; .nine stays priva
   await files.getByRole('link', { name: /data\.bin/ }).click();
   await expect(page.getByText('Not a text file.', { exact: false })).toBeVisible();
 
-  page.once('dialog', (d) => void d.accept());
   await page.getByRole('region', { name: 'File' }).getByRole('button', { name: 'Delete' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
   await expect(page).toHaveURL(new RegExp(`dir=${encodeURIComponent(dir).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
   await expect(files.getByRole('link', { name: /data\.bin/ })).toHaveCount(0);
 });
@@ -81,8 +81,8 @@ test('a table is created, a row added, changed and deleted', async ({ page }, in
 
   await page.goto(`/data/database/${table}`);
   await page.getByRole('table', { name: `Rows of ${table}` }).getByRole('button', { name: 'Edit' }).click();
-  page.once('dialog', (d) => void d.accept());
   await page.getByRole('button', { name: 'Delete row' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
   await expect(page.getByText('No rows')).toBeVisible();
 
   await page.goto('/data/sql');

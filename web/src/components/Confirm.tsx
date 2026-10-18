@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import styles from './Confirm.module.css';
 
 export type Ask = {
@@ -53,8 +53,8 @@ export function Confirm({ ask, onClose }: { ask: Ask | null; onClose: () => void
               type="button"
               class={`button ${ask.danger ? styles.danger : ''}`}
               onClick={() => {
-                onClose();
                 ask.onConfirm();
+                onClose();
               }}
             >
               {ask.confirm}
@@ -63,5 +63,50 @@ export function Confirm({ ask, onClose }: { ask: Ask | null; onClose: () => void
         </div>
       )}
     </dialog>
+  );
+}
+
+/** A question for ask(): the dialog's title, message and confirming label. */
+export type Question = Omit<Ask, 'onConfirm'>;
+
+type Pending = Question & { resolve: (ok: boolean) => void };
+
+let show: ((p: Pending) => void) | null = null;
+
+/**
+ * Asks before an action, in the dialog ConfirmHost holds, and resolves to
+ * whether the operator confirmed. Without a host, it falls back to the
+ * browser's confirm().
+ */
+export function ask(q: Question): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (show) show({ ...q, resolve });
+    else resolve(window.confirm(q.message));
+  });
+}
+
+/** The one dialog every ask() uses, mounted once in the app. */
+export function ConfirmHost() {
+  const [pending, setPending] = useState<Pending | null>(null);
+  useEffect(() => {
+    show = (p) =>
+      setPending((was) => {
+        // A question asked over another one cancels the first.
+        was?.resolve(false);
+        return p;
+      });
+    return () => {
+      show = null;
+    };
+  }, []);
+  return (
+    <Confirm
+      ask={pending && { ...pending, onConfirm: () => pending.resolve(true) }}
+      onClose={() => {
+        // Settled already when confirmed: a promise resolves once.
+        pending?.resolve(false);
+        setPending(null);
+      }}
+    />
   );
 }

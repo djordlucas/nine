@@ -4,6 +4,7 @@ import { api, errorMessage, get, type Schemas } from '../api/client';
 import { useLive } from '../live';
 import { Markdown } from '../markdown';
 import { docLink, topicPath, type DocKind } from '../system';
+import { ask } from '../components/Confirm';
 import { ListHead, Split } from '../components/Split';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
@@ -232,8 +233,13 @@ function SessionDetail(props: { id: string; session?: Session; loaded: boolean; 
   const s = props.session;
   if (!s) return <p class="card muted">{props.loaded ? `No session ${props.id}.` : 'Loading…'}</p>;
   const remove = async () => {
-    const what = `${s.name || s.id}: its transcript, its ${s.events ?? 0} journal events, its notifications, tool state and jobs`;
-    if (!confirm(`Delete ${what}? This cannot be undone. Ending a session instead keeps all of it.`)) return;
+    const ok = await ask({
+      title: `Delete ${s.name || s.id}?`,
+      message: `Its transcript, its ${s.events ?? 0} journal events, its notifications, tool state and jobs go. This cannot be undone. Ending a session instead keeps all of it.`,
+      confirm: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     setBusy(true);
     setError(null);
     const { data, error: e } = await api.DELETE('/sessions/{id}', { params: { path: { id: s.id } } });

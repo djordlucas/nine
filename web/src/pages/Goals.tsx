@@ -6,6 +6,7 @@ import { fromConfig, goalTree, statusActions, type Goal, type GoalStatus } from 
 import { shortId } from '../journal';
 import { useLive } from '../live';
 import { processState } from '../processes';
+import { ask } from '../components/Confirm';
 import { ListHead, Split } from '../components/Split';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
@@ -161,7 +162,7 @@ function GoalDetail({ id }: { id: string }) {
   };
   const remove = async () => {
     const what = subs.length ? `this goal and its ${subs.length} sub-goal(s)` : 'this goal';
-    if (!confirm(`Delete ${what}? Its session stops; its history is kept.`)) return;
+    if (!(await ask({ title: `Delete ${what}?`, message: 'Its session stops; its history is kept.', confirm: 'Delete', danger: true }))) return;
     setBusy(true);
     const { data: done, error: err } = await api.DELETE('/goals/{id}', { params: { path: { id } } });
     setBusy(false);
@@ -314,9 +315,9 @@ function WorkflowDetail({ id }: { id: string }) {
   const end = async (how: 'stop' | 'fail') => {
     const q =
       how === 'stop'
-        ? 'Stop this workflow? Its remaining steps are cancelled.'
-        : 'Mark this workflow failed? Its remaining steps are not run.';
-    if (!confirm(q)) return;
+        ? { title: 'Stop this workflow?', message: 'Its remaining steps are cancelled.', confirm: 'Stop' }
+        : { title: 'Mark this workflow failed?', message: 'Its remaining steps are not run.', confirm: 'Mark failed' };
+    if (!(await ask(q))) return;
     setBusy(true);
     setOutcome(null);
     const path = { params: { path: { id } } };

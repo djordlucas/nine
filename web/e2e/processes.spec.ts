@@ -30,8 +30,8 @@ test('a process is stopped and started from its page', async ({ page, request })
     await expect(page.getByRole('heading', { name: `goal:${id}`, level: 2 })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Budget today' })).toBeVisible();
 
-    page.once('dialog', (d) => void d.accept());
-    await page.getByRole('button', { name: 'Stop' }).click();
+      await page.getByRole('button', { name: 'Stop' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Stop' }).click();
     await expect(state(page)).toContainText('stopped');
     await expect(page.getByText('Stopped by the operator.')).toBeVisible();
 
@@ -82,8 +82,8 @@ test('a goal and a sub-goal are created and deleted from the page', async ({ pag
   // The goal's own list, which a phone shows in place of the goal list.
   await expect(page.getByRole('region', { name: 'Sub-goals' }).getByRole('link', { name: step })).toBeVisible();
 
-  page.once('dialog', (d) => void d.accept());
   await page.getByRole('button', { name: 'Delete' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
   await expect(page).toHaveURL(/\/goals$/);
   const goals = page.getByRole('navigation', { name: 'Goals' });
   await expect(goals.getByRole('link', { name: description })).toHaveCount(0);

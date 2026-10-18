@@ -4,6 +4,7 @@ import { api, errorMessage, get } from '../api/client';
 import { ago } from '../format';
 import { useLive } from '../live';
 import { actionsFor, byAttention, processState, stoppedReason, used, type Process } from '../processes';
+import { ask } from '../components/Confirm';
 import { ListHead, Split } from '../components/Split';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
@@ -122,8 +123,8 @@ function ProcessDetail({ id }: { id: string }) {
   const can = actionsFor(p);
   const path = { params: { path: { id } } };
   const start = () => act(() => api.POST('/processes/{id}/start', path), 'Started.');
-  const stop = () => {
-    if (!confirm(`Stop ${id}? It stays stopped until you start it again.`)) return;
+  const stop = async () => {
+    if (!(await ask({ title: `Stop ${id}?`, message: 'It stays stopped until you start it again.', confirm: 'Stop' }))) return;
     void act(() => api.POST('/processes/{id}/stop', path), 'Stopped.');
   };
   const resume = (goal: string) =>

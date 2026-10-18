@@ -8,7 +8,7 @@ import { Markdown } from '../markdown';
 import styles from './Chat.module.css';
 import { Json } from '../components/Json';
 import { Icon } from '../components/Icon';
-import { Confirm, type Ask } from '../components/Confirm';
+import { ask } from '../components/Confirm';
 import { copyText } from '../clipboard';
 import { TurnDetail } from '../components/TurnDetail';
 import detail from '../components/Detail.module.css';
@@ -151,7 +151,6 @@ export function Chat({ id, onRenamed }: { id: string; onRenamed?: () => void }) 
   };
   const cancel = () => socket.current?.send({ type: 'cancel' });
 
-  const [ask, setAsk] = useState<Ask | null>(null);
   // The reply whose inspect button is under the pointer or focused, by its
   // place in the timeline; that reply is shaded, its buttons in the corner.
   const [inspected, setInspected] = useState<number | null>(null);
@@ -163,29 +162,29 @@ export function Chat({ id, onRenamed }: { id: string; onRenamed?: () => void }) 
       if (!next.delete(turn)) next.add(turn);
       return next;
     });
-  const endSession = () =>
-    setAsk({
+  const endSession = async () => {
+    const ok = await ask({
       title: 'End this session?',
       message: 'Its worker stops and its checkpoint is deleted; the transcript stays.',
       confirm: 'End session',
-      onConfirm: async () => {
-        const { error } = await api.POST('/conversations/{id}/stop', { params: { path: { id } } });
-        if (error) alert(errorMessage(error));
-        else void load();
-      },
     });
-  const remove = () =>
-    setAsk({
+    if (!ok) return;
+    const { error } = await api.POST('/conversations/{id}/stop', { params: { path: { id } } });
+    if (error) alert(errorMessage(error));
+    else void load();
+  };
+  const remove = async () => {
+    const ok = await ask({
       title: 'Delete this conversation?',
       message: 'Everything recorded for it goes too. This cannot be undone.',
       confirm: 'Delete',
       danger: true,
-      onConfirm: async () => {
-        const { error } = await api.DELETE('/conversations/{id}', { params: { path: { id } } });
-        if (error) alert(errorMessage(error));
-        else route('/conversations');
-      },
     });
+    if (!ok) return;
+    const { error } = await api.DELETE('/conversations/{id}', { params: { path: { id } } });
+    if (error) alert(errorMessage(error));
+    else route('/conversations');
+  };
 
   if (missing) {
     return (
@@ -267,7 +266,6 @@ export function Chat({ id, onRenamed }: { id: string; onRenamed?: () => void }) 
       </ol>
       <div ref={bottom} />
 
-      <Confirm ask={ask} onClose={() => setAsk(null)} />
       <Composer busy={chat.busy} connected={sock === 'open'} model={llm.model} provider={llm.provider} onSend={send} onCancel={cancel} />
     </div>
   );
