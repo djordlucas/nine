@@ -73,6 +73,7 @@ Msg {
 | `set_plan_mode` | `agent_id`, `text` = `off` \| `plan-only` \| `always` | change a session's reasoning mode live, no restart |
 | `status` | — | request daemon status |
 | `config` | — | request the configuration the daemon runs with, as redacted TOML |
+| `self_model` | — | request the self-model: the `self/` keys every turn's self-model block carries |
 | `context` | `agent_id` | request a session's assembled-context breakdown, **no LLM call** |
 | `list_goals` | — | request goal list |
 | `list_workflows` | — | request workflow list |
@@ -135,6 +136,7 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `process_list` / `process_show` | `text` = JSON `[]ProcessInfo` / `ProcessInfo` | id, tool, mode, state, `stopped_by`, trigger, session, goal, pipe, budget use and reset, failures, recent activity (show only) |
 | `process_control` / `process_send` | `text` = a sentence | what was done (or `error` naming the reason: an unknown id says `no such process`) |
 | `config` | `text` = TOML | the file, then the `NINE_*` overrides, with only what is set; every credential (a key, token, secret or password, and an MCP server's env and headers) reads `(set, hidden)` |
+| `self_model` | `text` = JSON `[]SelfModelEntry` | `{ key, value }` for `self/identity`, `self/persona`, `self/capabilities`, `self/learned`, in that order; a key never written is left out |
 | `context` | `text` = JSON `ninectx.Report` | per-section token breakdown + assembled prompt/messages |
 | `workflow_stop` / `workflow_fail` | `text` = `"stopped"` / `"failed"` | operator-command result |
 | `session_stop` | `text` = human-readable outcome (`stopped <id>`, `stopped N session(s)`) | terminate result (or `error` when the id is unknown) |

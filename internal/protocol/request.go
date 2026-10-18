@@ -245,7 +245,7 @@ func (q QueryReq) Type() MsgType           { return q.Kind }
 
 // queryKinds are the field-less requests QueryReq stands for.
 var queryKinds = map[MsgType]bool{
-	TypeStatus: true, TypeConfig: true, TypeListGoals: true, TypeListWorkflows: true,
+	TypeStatus: true, TypeConfig: true, TypeSelfModel: true, TypeListGoals: true, TypeListWorkflows: true,
 	TypeListTools: true, TypePluginsList: true, TypePluginsReload: true,
 	TypeToolsList: true, TypeToolsReload: true, TypeSessionsList: true,
 	TypeProcessList: true, TypeGrantsList: true, TypeListSkills: true,

@@ -62,6 +62,7 @@ const (
 	// payload in Text — so these appear in both directions.
 	TypeStatus            MsgType = "status"
 	TypeConfig            MsgType = "config"
+	TypeSelfModel         MsgType = "self_model"
 	TypeContext           MsgType = "context"
 	TypeListGoals         MsgType = "list_goals"
 	TypeListWorkflows     MsgType = "list_workflows"
@@ -197,6 +198,7 @@ var ClientMsgTypes = []MsgType{
 	TypeTurnCancel,
 	TypeStatus,
 	TypeConfig,
+	TypeSelfModel,
 	TypeContext,
 	TypeListGoals,
 	TypeListWorkflows,
@@ -609,6 +611,13 @@ type QueueStat struct {
 }
 
 // StatusInfo is the payload returned by the "status" protocol message.
+// SelfModelEntry is one key of the self-model (the self_model query): a
+// self/ key that rides in every turn's self-model block, and what it holds.
+type SelfModelEntry struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
 type StatusInfo struct {
 	Agents    []AgentInfo    `json:"agents"`
 	SubAgents []SubAgentInfo `json:"sub_agents,omitempty"`

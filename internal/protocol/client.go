@@ -314,6 +314,26 @@ func (c *Client) Config() (string, error) {
 	return reply.Text, nil
 }
 
+// SelfModel returns the keys that ride in every turn's self-model block, in
+// the order the block shows them; a key never written is left out.
+func (c *Client) SelfModel() ([]SelfModelEntry, error) {
+	if err := c.send(NewQueryMsg(TypeSelfModel)); err != nil {
+		return nil, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return nil, err
+	}
+	if err := expectReply(reply, TypeSelfModel); err != nil {
+		return nil, err
+	}
+	var out []SelfModelEntry
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return nil, fmt.Errorf("decode self_model: %w", err)
+	}
+	return out, nil
+}
+
 func (c *Client) Status() (*StatusInfo, error) {
 	if err := c.send(NewQueryMsg(TypeStatus)); err != nil {
 		return nil, err

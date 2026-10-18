@@ -35,7 +35,7 @@ docker run -e NINE_API_AUTH_TOKEN=… -p 8080:8080 ghcr.io/djordlucas/nine
 | Goals & workflows | goals as a tree beside the workflows. Create goals and sub-goals; pause, resume, finish, archive and delete them; stop or fail a workflow. |
 | Tools | the tools by where they came from, each with its capabilities, dependencies and arguments schema, to call directly; a tool Nine wrote with its versions. Also the plugins, with reload, and the skills, each readable. |
 | Inbox | capability requests to approve or deny, questions waiting for an answer, the notifications, and the capabilities in force. Its link counts what waits. |
-| Data | the workspace's files and the database processes keep their records in, to read and edit. Nine's own state, the store and the workspace's `.nine/`, is not reachable. |
+| Data | the workspace's files and the database processes keep their records in, to read and edit, and Nine's self-model, to read. Nine's own state, the store and the workspace's `.nine/`, is not reachable. |
 | System | the daemon's status, a backup to download, every session, reflections, and the docs and spec this build embeds. |
 
 On a phone every list opens its item full screen, with ‹ to go back.
@@ -83,6 +83,7 @@ stopped ([processes](processes.md#goals-sessions-and-pipes)). A goal that a
 | Files | browses the workspace. A text file up to 2 MB opens in an editor (⌘S or Ctrl+S saves); any file downloads. New file takes a path, so `notes/today.md` makes `notes/`. Upload puts files in the directory shown. Delete removes a file, or a directory once it is empty. |
 | Database | the tables and views with their row counts; a table's rows 100 at a time. Add row inserts one, a column left empty taking its default; Edit changes or deletes one. NULL stores a NULL. A view, or a table without a rowid, is changed from SQL. |
 | SQL | runs one statement: a read shows up to 1000 rows, a write how many rows it changed. ⌘Enter or Ctrl+Enter runs it. |
+| Self-model | what Nine holds about itself, in the `self/` keys every turn shows the model: identity, persona, capabilities and what it learned. Read-only; reflection and Nine's own memory writes change it. |
 
 | Rule | Detail |
 |---|---|

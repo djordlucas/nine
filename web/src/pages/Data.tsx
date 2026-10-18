@@ -14,6 +14,7 @@ import { param } from './Processes';
 import tools from './Tools.module.css';
 import styles from './Data.module.css';
 import { Icon } from '../components/Icon';
+import { Markdown } from '../markdown';
 
 type Entry = Schemas['WorkspaceEntry'];
 type Table = Schemas['DatabaseTable'];
@@ -23,6 +24,7 @@ const views = [
   { path: '/data/files', label: 'Files' },
   { path: '/data/database', label: 'Database' },
   { path: '/data/sql', label: 'SQL' },
+  { path: '/data/self-model', label: 'Self-model' },
 ];
 
 /**
@@ -46,6 +48,7 @@ export function Data() {
       {view === '/data/files' && <Files file={query.file} dir={query.file !== undefined ? parent(query.file) : (query.dir ?? '')} />}
       {view === '/data/database' && <Database table={param(params.table as string | undefined)} />}
       {view === '/data/sql' && <Sql />}
+      {view === '/data/self-model' && <SelfModel />}
     </div>
   );
 }
@@ -129,10 +132,10 @@ function Files({ dir, file }: { dir: string; file?: string }) {
         </ListHead>
         <div class={detail.actions}>
           <button type="button" class={`${detail.action} ${detail.iconAction}`} disabled={busy} onClick={() => void newFile()} aria-label="New file" title="New file">
-            <Icon name="filePlus" size={18} />
+            <Icon name="filePlus" size={16} />
           </button>
           <label class={`${detail.action} ${detail.iconAction} ${styles.upload}`} title="Upload">
-            <Icon name="upload" size={18} />
+            <Icon name="upload" size={16} />
             <input
               type="file"
               aria-label="Upload"
@@ -169,7 +172,7 @@ function Files({ dir, file }: { dir: string; file?: string }) {
         )}
         {data && dir !== '' && data.entries.length === 0 && (
           <button type="button" class={`${detail.action} ${detail.iconAction} ${detail.danger}`} disabled={busy} onClick={() => void removeDir(dir)} aria-label="Delete this directory" title="Delete this directory">
-            <Icon name="trash" size={18} />
+            <Icon name="trash" size={16} />
           </button>
         )}
       </nav>
@@ -289,10 +292,10 @@ function FileDetail(props: {
             </button>
           )}
           <a class={`${detail.action} ${detail.iconAction} ${styles.linkButton}`} href={download} download={name} aria-label="Download" title="Download">
-            <Icon name="download" size={18} />
+            <Icon name="download" size={16} />
           </a>
           <button type="button" class={`${detail.action} ${detail.iconAction} ${detail.danger}`} disabled={busy} onClick={() => void remove()} aria-label="Delete" title="Delete this file">
-            <Icon name="trash" size={18} />
+            <Icon name="trash" size={16} />
           </button>
         </div>
       </header>
@@ -425,7 +428,7 @@ function TableDetail({ table, name, onChanged }: { table?: Table; name: string; 
         {table.kind === 'table' && (
           <div class={detail.actions}>
             <button type="button" class={`${detail.action} ${detail.iconAction} ${detail.primary}`} onClick={() => setEditing({ rowid: null })} aria-label="Add row" title="Add row">
-              <Icon name="plus" size={18} />
+              <Icon name="plus" size={16} />
             </button>
           </div>
         )}
@@ -453,13 +456,13 @@ function TableDetail({ table, name, onChanged }: { table?: Table; name: string; 
           />
           <div class={styles.pager}>
             <button type="button" class={`${detail.action} ${detail.iconAction}`} disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))} aria-label="Previous" title="Previous page">
-              <Icon name="prev" size={18} />
+              <Icon name="prev" size={16} />
             </button>
             <span class="muted">
               {data.total === 0 ? 'No rows' : `${offset + 1}–${offset + data.rows.length} of ${data.total}`}
             </span>
             <button type="button" class={`${detail.action} ${detail.iconAction}`} disabled={offset + PAGE >= data.total} onClick={() => setOffset(offset + PAGE)} aria-label="Next" title="Next page">
-              <Icon name="next" size={18} />
+              <Icon name="next" size={16} />
             </button>
           </div>
         </>
@@ -557,7 +560,7 @@ function RowForm(props: { table: Table; editing: NonNullable<Editing>; onDone: (
         </button>
         {editing.rowid !== null && (
           <button type="button" class={`${detail.action} ${detail.iconAction} ${detail.danger}`} disabled={busy} onClick={() => void remove()} aria-label="Delete row" title="Delete row">
-            <Icon name="trash" size={18} />
+            <Icon name="trash" size={16} />
           </button>
         )}
       </div>
@@ -668,6 +671,34 @@ function Sql() {
           <Grid columns={result.columns} rows={result.rows} label="Result" />
         </>
       )}
+    </section>
+  );
+}
+
+/**
+ * What Nine holds about itself, as every turn's self-model block carries it.
+ * Read-only: it is the agent's own, changed by reflection and its memory_set.
+ */
+function SelfModel() {
+  const { data, error } = useLive(async () => (await get(api.GET('/self-model'), 'the self-model')).entries, ['turn_end']);
+  return (
+    <section class={`card ${styles.self}`} aria-labelledby="self-h">
+      <h2 id="self-h">Self-model</h2>
+      <p class="muted">
+        What Nine holds about itself, in the <code>self/</code> keys every turn shows the model. Reflection and Nine's own
+        memory writes change it; it is read-only here.
+      </p>
+      {error && <p class="error">{error}</p>}
+      {!data && !error && <p class="muted">Loading…</p>}
+      {data && data.length === 0 && <p class="empty">Nothing yet. The first start seeds an identity, and reflection adds to it.</p>}
+      {data?.map((e) => (
+        <section key={e.key} class={styles.selfKey} aria-label={e.key}>
+          <h3>
+            <code>{e.key}</code>
+          </h3>
+          <Markdown text={e.value} />
+        </section>
+      ))}
     </section>
   );
 }

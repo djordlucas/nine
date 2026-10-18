@@ -675,6 +675,8 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 			d.handleStatus(enc)
 		case protocol.TypeConfig:
 			d.handleConfig(enc)
+		case protocol.TypeSelfModel:
+			d.handleSelfModel(enc)
 		case protocol.TypeListGoals:
 			d.handleListGoals(enc)
 		case protocol.TypeListWorkflows:

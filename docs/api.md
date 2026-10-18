@@ -158,6 +158,7 @@ All endpoints are under `/api/v1`. Content type is `application/json` for both r
 GET /api/v1/health    — API server health (daemon connectivity, uptime, version)
 GET /api/v1/status    — Daemon status (sessions, plugins, tools, memory, max_running, provider, model)
 GET /api/v1/config    — The configuration in force, as TOML, credentials hidden
+GET /api/v1/self-model — The self/ keys every turn's self-model block carries
 ```
 
 ### Conversations

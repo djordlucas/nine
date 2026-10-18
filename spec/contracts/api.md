@@ -365,6 +365,17 @@ Get conversation details.
 }
 ```
 
+#### GET `/api/v1/self-model`
+
+Get the self-model as every turn's self-model block carries it: `self/identity`,
+`self/persona`, `self/capabilities` and `self/learned`, in that order. A key
+never written is left out. It is read-only.
+
+**Response:**
+```json
+{ "entries": [ { "key": "self/identity", "value": "Nine is a persistent AI agent daemon…" } ] }
+```
+
 #### PATCH `/api/v1/conversations/{id}`
 
 Rename a conversation, in place of the name inferred from its first message.
@@ -1482,6 +1493,7 @@ All API configuration options **MUST** be available via CLI flags.
 | `nine send` | POST `/api/v1/conversations/{id}/messages` | Implemented |
 | `nine status` | GET `/api/v1/status` | Implemented |
 | — | GET `/api/v1/config` | Implemented |
+| — | GET `/api/v1/self-model` | Implemented |
 | `nine goals` | GET `/api/v1/goals` | Implemented |
 | `nine workflows` | GET `/api/v1/workflows` | Implemented |
 | `nine tools` | GET `/api/v1/tools` | Implemented |
