@@ -4,6 +4,7 @@ import { ago } from '../format';
 import { attentionEvents, loadAttention, scopeOf, type CapabilityRequest, type Grant } from '../inbox';
 import { shortId } from '../journal';
 import { useLive } from '../live';
+import { ask } from '../components/Confirm';
 import detail from '../components/Detail.module.css';
 import styles from './Inbox.module.css';
 import { Icon } from '../components/Icon';
@@ -33,7 +34,7 @@ function Requests({ requests }: { requests?: CapabilityRequest[] }) {
         Capability requests {requests && requests.length > 0 && <span class={styles.count}>{requests.length}</span>}
       </h2>
       {!requests && <p class="muted">Loading…</p>}
-      {requests && requests.length === 0 && <p class="muted">No request is waiting.</p>}
+      {requests && requests.length === 0 && <p class="empty">No request is waiting.</p>}
       {requests && requests.length > 0 && (
         <ul class={styles.items}>
           {requests.map((r) => (
@@ -49,7 +50,7 @@ function Request({ r }: { r: CapabilityRequest }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const decide = async (action: 'approve' | 'deny') => {
-    if (action === 'approve' && !confirm(`Grant ${r.capability} (${scopeOf(r.params)}) to the tools Nine writes?`)) return;
+    if (action === 'approve' && !(await ask({ title: `Grant ${r.capability}?`, message: `Scope: ${scopeOf(r.params)}. The tools Nine writes may use it.`, confirm: 'Approve' }))) return;
     setBusy(true);
     setError(null);
     const { data, error: e } = await api.POST('/capabilities/{id}/decision', {
@@ -101,7 +102,7 @@ function Questions({ data }: { data: Awaited<ReturnType<typeof loadAttention>> |
         Questions {qs && qs.length > 0 && <span class={styles.count}>{qs.length}</span>}
       </h2>
       {!qs && <p class="muted">Loading…</p>}
-      {qs && qs.length === 0 && <p class="muted">No conversation is waiting for an answer.</p>}
+      {qs && qs.length === 0 && <p class="empty">No conversation is waiting for an answer.</p>}
       {qs && qs.length > 0 && (
         <ul class={styles.items}>
           {qs.map((q) => (
@@ -153,7 +154,7 @@ function Notifications() {
       </header>
       {error && <p class="error">{error}</p>}
       {!data && !error && <p class="muted">Loading…</p>}
-      {data && data.length === 0 && <p class="muted">No notifications.</p>}
+      {data && data.length === 0 && <p class="empty">No notifications.</p>}
       {data && data.length > 0 && (
         <ul class={styles.notes}>
           {data.map((n) => (
@@ -185,7 +186,7 @@ function Grants({ grants }: { grants?: Grant[] }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const revoke = async (g: Grant) => {
-    if (!confirm(`Revoke ${g.capability} (${scopeOf(g.params)})? Tools that use it lose it.`)) return;
+    if (!(await ask({ title: `Revoke ${g.capability}?`, message: `Scope: ${scopeOf(g.params)}. Tools that use it lose it.`, confirm: 'Revoke', danger: true }))) return;
     setBusy(g.id);
     setError(null);
     const { data, error: e } = await api.POST('/capabilities/{id}/decision', {

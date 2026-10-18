@@ -115,7 +115,7 @@ export function Journal() {
       )}
 
       {shown.length === 0 ? (
-        <p class="card muted">{events.length ? 'No kept event matches.' : 'No events yet. They appear here as they happen.'}</p>
+        <p class="empty">{events.length ? 'No kept event matches.' : 'No events yet. They appear here as they happen.'}</p>
       ) : (
         <ol class={styles.list} aria-label="Journal events">
           {shown.slice(0, limit).map((e) => (

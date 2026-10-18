@@ -1,72 +1,7 @@
-.split {
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  gap: var(--space-4);
-  align-items: start;
-}
-
-.list {
-  position: sticky;
-  top: 0;
-  max-height: calc(100dvh - 120px);
-  overflow-y: auto;
-  /* Room for the buttons' offset shadow, which the scroll box would clip. */
-  padding: 0 3px 3px 0;
-  display: grid;
-  gap: var(--space-2);
-  align-content: start;
-}
-
-.list ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-}
-
-.list li + li {
-  border-top: 1px solid var(--border);
-}
-
-/* New conversation, with the button that folds the list at its right. */
-.top {
-  display: flex;
-  gap: var(--space-2);
-}
+/* The list and the chat share the sections' layout (components/Split). */
 
 .new {
-  flex: 1;
   min-height: 36px;
-}
-
-/* Folded, on a desktop, the list gives way to a thin strip with the button
-   that brings it back. */
-@media (min-width: 768px) {
-  .collapsed {
-    grid-template-columns: 35px minmax(0, 1fr);
-  }
-
-  .collapsed .list {
-    display: none;
-  }
-}
-
-.strip {
-  position: sticky;
-  top: 0;
-}
-
-/* The fold buttons are the New conversation button's kind, narrow. */
-.fold {
-  flex-shrink: 0;
-  width: 32px;
-  min-height: 36px;
-  padding: 0;
-  font-size: var(--text-lg);
-  line-height: 1;
 }
 
 /* One line a conversation: its name, then its details at the right. */
@@ -91,9 +26,8 @@
 }
 
 /* Selected, a row is dark with light text (the reverse in dark mode); its
-   secondary line stays readable on it. */
-.row[aria-current='page'] .meta,
-.row[aria-current='page'] :global(.muted) {
+   details stay readable on it. */
+.row[aria-current='page'] .meta {
   color: var(--ink-text);
   opacity: 0.75;
 }
@@ -113,39 +47,10 @@
   font-size: 11px;
 }
 
-.pane {
-  min-width: 0;
-}
-
-.placeholder {
-  margin: 0;
-}
-
-/* A phone shows the list, or the chat in its place. */
+/* A finger needs the full touch height. */
 @media (max-width: 767px) {
-  /* A phone already shows the list or the chat, never both: nothing folds. */
-  .fold,
-  .strip {
-    display: none;
-  }
-
-  /* A finger needs the full touch height. */
   .row {
     min-height: var(--touch);
     align-items: center;
-  }
-
-  .split {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .list {
-    position: static;
-    max-height: none;
-  }
-
-  .hasChat .list,
-  .split:not(.hasChat) .pane {
-    display: none;
   }
 }

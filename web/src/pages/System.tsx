@@ -4,6 +4,8 @@ import { api, errorMessage, get, type Schemas } from '../api/client';
 import { useLive } from '../live';
 import { Markdown } from '../markdown';
 import { docLink, topicPath, type DocKind } from '../system';
+import { ask } from '../components/Confirm';
+import { ListHead, Split } from '../components/Split';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
 import { param } from './Processes';
@@ -180,19 +182,21 @@ function SessionsView({ id }: { id?: string }) {
   const f = filter.trim().toLowerCase();
   const shown = (data ?? []).filter((s) => !f || `${s.id} ${s.name ?? ''} ${s.status}`.toLowerCase().includes(f));
   return (
-    <div class={`${split.split} ${id ? split.open : ''}`}>
+    <Split name="sessions" noun="sessions" open={!!id}>
       <nav class={split.list} aria-label="Sessions">
-        <input
-          class="input"
-          type="search"
-          aria-label="Filter sessions"
-          placeholder="Filter sessions"
-          value={filter}
-          onInput={(e) => setFilter(e.currentTarget.value)}
-        />
+        <ListHead>
+          <input
+            class="input"
+            type="search"
+            aria-label="Filter sessions"
+            placeholder="Filter sessions"
+            value={filter}
+            onInput={(e) => setFilter(e.currentTarget.value)}
+          />
+        </ListHead>
         {error && <p class="error">{error}</p>}
         {!data && !error && <p class="muted">Loading…</p>}
-        {data && shown.length === 0 && <p class="muted">No session matches.</p>}
+        {data && shown.length === 0 && <p class="empty">No session matches.</p>}
         {shown.length > 0 && (
           <ul>
             {shown.map((s) => (
@@ -215,10 +219,10 @@ function SessionsView({ id }: { id?: string }) {
         {id ? (
           <SessionDetail key={id} id={id} session={data?.find((s) => s.id === id)} loaded={!!data} onDeleted={() => setDeleted((n) => n + 1)} />
         ) : (
-          <p class={`card muted ${split.placeholder}`}>Every session Nine holds, process sessions included. Choose one.</p>
+          <p class="empty">Every session Nine holds, process sessions included. Choose one.</p>
         )}
       </section>
-    </div>
+    </Split>
   );
 }
 
@@ -229,8 +233,13 @@ function SessionDetail(props: { id: string; session?: Session; loaded: boolean; 
   const s = props.session;
   if (!s) return <p class="card muted">{props.loaded ? `No session ${props.id}.` : 'Loading…'}</p>;
   const remove = async () => {
-    const what = `${s.name || s.id}: its transcript, its ${s.events ?? 0} journal events, its notifications, tool state and jobs`;
-    if (!confirm(`Delete ${what}? This cannot be undone. Ending a session instead keeps all of it.`)) return;
+    const ok = await ask({
+      title: `Delete ${s.name || s.id}?`,
+      message: `Its transcript, its ${s.events ?? 0} journal events, its notifications, tool state and jobs go. This cannot be undone. Ending a session instead keeps all of it.`,
+      confirm: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     setBusy(true);
     setError(null);
     const { data, error: e } = await api.DELETE('/sessions/{id}', { params: { path: { id: s.id } } });
@@ -318,7 +327,7 @@ function Reflections() {
       </form>
       {error && <p class="error">{error}</p>}
       {!data && !error && <p class="muted">Loading…</p>}
-      {data && data.items.length === 0 && <p class="muted">No reflections for {data.agent} yet.</p>}
+      {data && data.items.length === 0 && <p class="empty">No reflections for {data.agent} yet.</p>}
       {data && data.items.length > 0 && (
         <ol class={styles.reflections}>
           {data.items.map((r, i) => (
@@ -346,16 +355,18 @@ function DocsView({ kind, topic }: { kind: DocKind; topic?: string }) {
   const list = (topics?.[kind] ?? []).filter((t) => !filter || t.toLowerCase().includes(filter.trim().toLowerCase()));
   const label = kind === 'docs' ? 'Docs' : 'Spec';
   return (
-    <div class={`${split.split} ${topic ? split.open : ''}`}>
+    <Split name={kind} noun="topics" open={!!topic}>
       <nav class={split.list} aria-label={`${label} topics`}>
-        <input
-          class="input"
-          type="search"
-          aria-label={`Filter ${label.toLowerCase()} topics`}
-          placeholder="Filter topics"
-          value={filter}
-          onInput={(e) => setFilter(e.currentTarget.value)}
-        />
+        <ListHead>
+          <input
+            class="input"
+            type="search"
+            aria-label={`Filter ${label.toLowerCase()} topics`}
+            placeholder="Filter topics"
+            value={filter}
+            onInput={(e) => setFilter(e.currentTarget.value)}
+          />
+        </ListHead>
         {error && <p class="error">{error}</p>}
         {!topics && !error && <p class="muted">Loading…</p>}
         {list.length > 0 && (
@@ -374,12 +385,12 @@ function DocsView({ kind, topic }: { kind: DocKind; topic?: string }) {
         {topic && topics ? (
           <Topic key={`${kind}/${topic}`} kind={kind} topic={topic} topics={topics} />
         ) : (
-          <p class={`card muted ${split.placeholder}`}>
+          <p class="empty">
             {kind === 'docs' ? 'The documentation this build of Nine embeds.' : 'The specification this build of Nine implements.'}
           </p>
         )}
       </section>
-    </div>
+    </Split>
   );
 }
 
@@ -394,7 +405,7 @@ function Topic({ kind, topic, topics }: { kind: DocKind; topic: string; topics: 
     return r.data.content;
   }, []);
   if (error) return <p class="card error">{error}</p>;
-  if (data === null) return <p class="card muted">No topic {topic}.</p>;
+  if (data === null) return <p class="empty">No topic {topic}.</p>;
   if (data === undefined) return <p class="card muted">Loading…</p>;
   return (
     <article class={`card ${styles.doc}`}>

@@ -115,8 +115,17 @@ body {
   height: 100%;
 }
 
+/* Links are the text's colour, underlined: colour is kept for what went wrong. */
 a {
-  color: var(--accent);
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--text-2);
+  text-underline-offset: 2px;
+}
+
+a:hover {
+  text-decoration-color: currentColor;
+  text-decoration-thickness: 2px;
 }
 
 button,
@@ -199,6 +208,26 @@ samp {
   border: 1px solid var(--edge);
   border-radius: var(--radius);
   background: var(--surface);
+}
+
+/* A pointer needs less than a finger: on a desktop, fields and buttons are the
+   height of the actions beside them. */
+@media (min-width: 768px) {
+  .input,
+  .button {
+    min-height: 36px;
+  }
+}
+
+/* Nothing to show yet, or nothing chosen: one look everywhere, a dashed box
+   that holds the place of what will be there. */
+.empty {
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text-2);
+  font-size: var(--text-sm);
 }
 
 .muted {

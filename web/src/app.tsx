@@ -2,6 +2,7 @@ import { useEffect } from 'preact/hooks';
 import { LocationProvider, Router, Route } from 'preact-iso';
 import { auth, checkSession } from './api/client';
 import { connect, disconnect } from './api/events';
+import { ConfirmHost } from './components/Confirm';
 import { Shell } from './components/Shell';
 import { Dashboard } from './pages/Dashboard';
 import { Data } from './pages/Data';
@@ -73,6 +74,7 @@ export function App() {
           <Route path="/system" component={System} />
           <Route default component={NotFound} />
         </Router>
+        <ConfirmHost />
       </Shell>
     </LocationProvider>
   );

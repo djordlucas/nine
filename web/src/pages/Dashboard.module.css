@@ -24,8 +24,8 @@
   min-width: 22px;
   padding: 0 var(--space-2);
   border-radius: var(--radius);
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--ink);
+  color: var(--ink-text);
   font-size: var(--text-sm);
   font-weight: 600;
   text-align: center;
@@ -84,31 +84,19 @@
 
 .badge {
   flex: none;
-  padding: 0 var(--space-2);
+  padding: 0 6px;
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface-2);
   color: var(--text-2);
-  font-size: 12px;
-  line-height: 20px;
+  font-size: 11px;
+  line-height: 18px;
 }
 
+/* A tag is plain: only what went wrong is red, so red always means that. */
 .attention,
 .failing {
+  border-color: var(--danger);
   color: var(--danger);
-}
-
-.paused {
-  color: var(--warn);
-}
-
-.running,
-.state {
-  color: var(--ok);
-}
-
-.turn,
-.agent {
-  color: var(--accent);
 }
 
 .facts {

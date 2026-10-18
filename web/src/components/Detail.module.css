@@ -137,28 +137,25 @@
 
 .badge {
   flex: none;
-  padding: 0 var(--space-2);
+  padding: 0 6px;
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface-2);
   color: var(--text-2);
-  font-size: 12px;
-  line-height: 20px;
+  font-size: 11px;
+  line-height: 18px;
 }
 
+/* A tag is plain: only what went wrong is red, so red always means that. */
 .failing,
 .failed {
+  border-color: var(--danger);
   color: var(--danger);
 }
 
-.paused,
-.cancelled {
-  color: var(--warn);
-}
-
-.running,
-.active,
-.done {
-  color: var(--ok);
+/* On a selected row, a tag takes the row's light text. */
+[aria-current='page'] .badge {
+  border-color: currentColor;
+  color: inherit;
 }
 
 @media (max-width: 767px) {

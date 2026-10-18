@@ -13,7 +13,7 @@ test('the tool roster groups tools, filters them, and calls one', async ({ page 
   await expect(page.getByRole('heading', { name: 'time', level: 2 })).toBeVisible();
   await expect(page.getByText('Capabilities')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Call' }).click();
+  await page.getByRole('button', { name: 'Call', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: /Returned|Failed/ })).toBeVisible();
 });
 
@@ -22,7 +22,7 @@ test('a call with arguments that are not JSON is refused before it is sent', asy
   await page.goto('/tools/read_file');
   await expect(page.getByRole('heading', { name: 'read_file', level: 2 })).toBeVisible();
   await page.getByRole('textbox', { name: 'Arguments as JSON' }).fill('{not json');
-  await page.getByRole('button', { name: 'Call' }).click();
+  await page.getByRole('button', { name: 'Call', exact: true }).click();
   await expect(page.getByText(/Not JSON/)).toBeVisible();
 });
 
@@ -55,4 +55,23 @@ test('the inbox shows what waits, the notifications and the capabilities in forc
     await expect(page.getByRole('heading', { name, level: 2 })).toBeVisible();
   }
   await expect(page.getByText('No request is waiting.')).toBeVisible();
+});
+
+test('a list folds away and stays folded on a desktop; a phone has nothing to fold', async ({ page, isMobile }) => {
+  await signIn(page);
+  await page.goto('/tools');
+  const list = page.getByRole('navigation', { name: 'Tools', exact: true });
+  const hide = page.getByRole('button', { name: 'Hide tools' });
+  if (isMobile) {
+    await expect(list).toBeVisible();
+    await expect(hide).toBeHidden();
+    return;
+  }
+  await hide.click();
+  await expect(list).toBeHidden();
+  await page.reload();
+  await expect(list).toBeHidden();
+  await page.getByRole('button', { name: 'Show tools' }).click();
+  await expect(list).toBeVisible();
+  await expect(hide).toBeVisible();
 });

@@ -421,7 +421,8 @@
 .question {
   display: grid;
   gap: var(--space-3);
-  border-color: var(--accent);
+  border-color: var(--edge);
+  box-shadow: var(--shadow);
 }
 
 .qText {

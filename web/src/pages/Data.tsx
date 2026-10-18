@@ -4,6 +4,10 @@ import { api, errorMessage, get, type Schemas } from '../api/client';
 import { useLive } from '../live';
 import { asText, cell, crumbs, dirHref, fieldValue, fileHref, join, MAX_EDIT_BYTES, parent, version } from '../data';
 import { bytes } from '../system';
+import { Toggle } from '../components/Toggle';
+import { Area } from '../components/Area';
+import { ask } from '../components/Confirm';
+import { ListHead, Split } from '../components/Split';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
 import { param } from './Processes';
@@ -96,7 +100,7 @@ function Files({ dir, file }: { dir: string; file?: string }) {
     if (!files?.length) return;
     const existing = new Set(data?.entries.map((e) => e.name));
     const replaced = [...files].filter((f) => existing.has(f.name)).map((f) => f.name);
-    if (replaced.length && !confirm(`Replace ${replaced.join(', ')}? The current version goes to the trash.`)) return;
+    if (replaced.length && !(await ask({ title: `Replace ${replaced.join(', ')}?`, message: 'The current version goes to the trash.', confirm: 'Replace' }))) return;
     setBusy(true);
     setError(null);
     try {
@@ -110,17 +114,19 @@ function Files({ dir, file }: { dir: string; file?: string }) {
   };
 
   return (
-    <div class={`${split.split} ${file !== undefined ? split.open : ''}`}>
+    <Split name="files" noun="files" open={file !== undefined}>
       <nav class={split.list} aria-label="Files">
-        <ol class={styles.crumbs} aria-label="Directory">
-          {crumbs(dir).map((c) => (
-            <li key={c.path}>
-              <a href={dirHref(c.path)} aria-current={c.path === dir ? 'page' : undefined}>
-                {c.name}
-              </a>
-            </li>
-          ))}
-        </ol>
+        <ListHead>
+          <ol class={styles.crumbs} aria-label="Directory">
+            {crumbs(dir).map((c) => (
+              <li key={c.path}>
+                <a href={dirHref(c.path)} aria-current={c.path === dir ? 'page' : undefined}>
+                  {c.name}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </ListHead>
         <div class={detail.actions}>
           <button type="button" class={`${detail.action} ${detail.iconAction}`} disabled={busy} onClick={() => void newFile()} aria-label="New file" title="New file">
             <Icon name="filePlus" size={18} />
@@ -141,7 +147,7 @@ function Files({ dir, file }: { dir: string; file?: string }) {
         </div>
         {(error || loadError) && <p class="error">{error || loadError}</p>}
         {!data && !loadError && <p class="muted">Loading…</p>}
-        {data && data.entries.length === 0 && <p class="muted">This directory is empty.</p>}
+        {data && data.entries.length === 0 && <p class="empty">This directory is empty.</p>}
         {data && data.entries.length > 0 && (
           <ul>
             {data.entries.map((e) => (
@@ -171,12 +177,12 @@ function Files({ dir, file }: { dir: string; file?: string }) {
         {file !== undefined ? (
           <FileDetail key={`${file}#${changed}`} path={file} put={put} onChanged={reload} />
         ) : (
-          <p class={`card muted ${split.placeholder}`}>
+          <p class="empty">
             The workspace: the files Nine's tools read and write, and yours. Choose a file to read or edit it.
           </p>
         )}
       </section>
-    </div>
+    </Split>
   );
 
   async function removeDir(path: string) {
@@ -227,7 +233,7 @@ function FileDetail(props: {
   const download = `/api/v1/workspace/file?path=${encodeURIComponent(path)}&download=true`;
 
   if (loadError) return <p class="card error">{loadError}</p>;
-  if (file === 'missing') return <p class="card muted">No file {path}.</p>;
+  if (file === 'missing') return <p class="empty">No file {path}.</p>;
   if (file === null) return <p class="card muted">Loading…</p>;
 
   const dirty = draft !== null && draft !== file.text;
@@ -248,7 +254,7 @@ function FileDetail(props: {
     }
   };
   const remove = async () => {
-    if (!confirm(`Delete ${path}? It goes to the trash, where the agent's restore_file can bring it back.`)) return;
+    if (!(await ask({ title: `Delete ${path}?`, message: "It goes to the trash, where the agent's restore_file can bring it back.", confirm: 'Delete', danger: true }))) return;
     setBusy(true);
     const { data: e, error: err } = await api.DELETE('/workspace/file', {
       params: { query: { path }, header: file.version ? { 'If-Match': `"${file.version}"` } : {} },
@@ -298,7 +304,7 @@ function FileDetail(props: {
       )}
       {notice && <p class={detail.notice}>{notice}</p>}
       {file.text !== null ? (
-        <textarea
+        <Area
           class={styles.editor}
           aria-label={`Contents of ${name}`}
           spellcheck={false}
@@ -335,11 +341,17 @@ function Database({ table }: { table?: string }) {
     changed,
   );
   return (
-    <div class={`${split.split} ${table ? split.open : ''}`}>
+    <Split name="tables" noun="tables" open={!!table}>
       <nav class={split.list} aria-label="Tables">
+        <ListHead>
+          <p class={split.heading}>
+            <span>Tables and views</span>
+            {data && <span>{data.length}</span>}
+          </p>
+        </ListHead>
         {error && <p class="error">{error}</p>}
         {!data && !error && <p class="muted">Loading…</p>}
-        {data && data.length === 0 && <p class="muted">No tables yet. Processes create them; so can the SQL view.</p>}
+        {data && data.length === 0 && <p class="empty">No tables yet. Processes create them; so can the SQL view.</p>}
         {data && data.length > 0 && (
           <ul>
             {data.map((t) => (
@@ -364,12 +376,12 @@ function Database({ table }: { table?: string }) {
             <p class="card muted">Loading…</p>
           )
         ) : (
-          <p class={`card muted ${split.placeholder}`}>
+          <p class="empty">
             The database processes keep their records in. Choose a table to read and edit its rows.
           </p>
         )}
       </section>
-    </div>
+    </Split>
   );
 }
 
@@ -391,7 +403,7 @@ function TableDetail({ table, name, onChanged }: { table?: Table; name: string; 
     ['sql_write'],
     `${offset}#${changed}`,
   );
-  if (!table) return <p class="card muted">No table {name}.</p>;
+  if (!table) return <p class="empty">No table {name}.</p>;
   const editable = table.rowid;
   const done = () => {
     setEditing(null);
@@ -495,7 +507,7 @@ function RowForm(props: { table: Table; editing: NonNullable<Editing>; onDone: (
     props.onDone();
   };
   const remove = async () => {
-    if (editing.rowid === null || !confirm(`Delete row ${editing.rowid} of ${table.name}?`)) return;
+    if (editing.rowid === null || !(await ask({ title: `Delete row ${editing.rowid} of ${table.name}?`, message: 'This cannot be undone.', confirm: 'Delete', danger: true }))) return;
     setBusy(true);
     const { data, error: err } = await api.DELETE('/database/tables/{table}/rows/{rowid}', {
       params: { path: { table: table.name, rowid: editing.rowid } },
@@ -516,19 +528,19 @@ function RowForm(props: { table: Table; editing: NonNullable<Editing>; onDone: (
           <label for={`col-${i}`}>
             {c.name} <span class="muted">{[c.type, c.pk ? 'key' : '', c.not_null ? 'required' : ''].filter(Boolean).join(' · ')}</span>
           </label>
-          <textarea
+          <Area
             id={`col-${i}`}
             class="input"
             rows={1}
+            max={200}
             disabled={nulls[i]}
             placeholder={editing.rowid === null ? (c.default ? `default ${c.default}` : c.pk ? 'automatic' : '') : ''}
             value={texts[i]}
             onInput={(e) => setTexts(texts.map((t, j) => (j === i ? e.currentTarget.value : t)))}
           />
-          <label class={styles.null}>
-            <input type="checkbox" checked={nulls[i]} onChange={(e) => setNulls(nulls.map((n, j) => (j === i ? e.currentTarget.checked : n)))} />
+          <Toggle on={nulls[i]} onChange={(on) => setNulls(nulls.map((n, j) => (j === i ? on : n)))} title={`Store NULL in ${c.name}`}>
             NULL
-          </label>
+          </Toggle>
         </div>
       ))}
       {error && (
@@ -618,8 +630,9 @@ function Sql() {
         ATTACH, transactions, temporary objects or pragmas beyond table introspection.
       </p>
       <form class={styles.sql} onSubmit={(e) => void run(e)}>
-        <textarea
+        <Area
           class={styles.editor}
+          max={400}
           aria-label="Statement"
           spellcheck={false}
           placeholder="SELECT * FROM …"
