@@ -416,7 +416,7 @@ Use semantic versioning for your personality:
 ### 7. Test the personality
 
 Test your personality with:
-- Manual interaction via TUI
+- Manual interaction in the web UI
 - Automated tests via CLI
 - Long-running tests to verify growth loop
 - Edge cases (empty input, malformed input, etc.)

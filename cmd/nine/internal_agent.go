@@ -74,7 +74,7 @@ func startInternalAgent(ctx context.Context, cfg *config.Config, store *memory.S
 		}
 	}
 
-	// Resolve this instance's display name (shown in the TUI top bar): the
+	// Resolve this instance's display name (sent to clients as the instance name): the
 	// configured name if set, else a previously generated one from the store,
 	// else a placeholder that a background LLM call replaces with a random name
 	// and persists (docs/configuration.md). Non-blocking.

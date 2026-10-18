@@ -14,9 +14,9 @@ The CLI is a
 thin client that connects to it over a Unix socket and auto-starts it if not
 running (`EnsureDaemon`). See [Daemon Architecture](daemon.md).
 
-**CLI** — The `nine` binary used both as a one-shot client (`nine
-"<message>"`) and as the interactive TUI (`nine` with no args). See
-[CLI Usage](usage.md).
+**CLI** — The `nine` binary used as a one-shot client (`nine
+"<message>"`) and to operate the daemon. Conversations are in the web UI. See
+[CLI Usage](usage.md) and [Web UI](web-ui.md).
 
 **AgentWorker** — Per-session goroutine that wraps one `agent.Loop`,
 serializes turns through a buffered-1 inbox channel, prepends pending
@@ -72,16 +72,16 @@ to fit `context_budget`. See [Context Builder](context-builder.md).
 
 **Checkpoint** — Serialized `history` + `scratchpad` for one agent, persisted
 to the `conversations` table (`CheckpointStore`) after every turn via `SaveCheckpoint`/
-`LoadCheckpoint`. Enables `nine attach <id>` and survival of daemon
+`LoadCheckpoint`. Enables reattaching to a session and survival of daemon
 restarts. See [Agent Loop § Checkpointing](agent-loop.md#checkpointing).
 
 ---
 
 ## Work units
 
-**Conversation** — An interactive thread tied to a terminal session. Status
-`active` (terminal connected) or `archived` (disconnected, resumable via
-`nine attach`).
+**Conversation** — An interactive thread, held in the web UI or through the
+API. Status `active` (a client connected) or `archived` (disconnected,
+resumable by attaching again).
 
 **Work unit** — Nine has two fundamental units: a **session** (an agent loop —
 conversation, goal-pursue, reflection, or sub-agent) and a **tool call** (the
@@ -533,7 +533,7 @@ than self-generated.
 **`nine.toml`** — TOML config file, located via `$NINE_CONFIG` → `./nine.toml`
 → `/nine.toml` (Docker bind-mount) → `~/.nine/nine.toml`. Sections:
 `[llm]`, `[daemon]`, `[plugins]`, `[skills]`, `[memory]`, `[embeddings]`,
-`[ui]`, `[workspace]`. See [Configuration](configuration.md).
+`[workspace]`, among others. See [Configuration](configuration.md).
 
 **LLM provider** — `[llm].provider`: `ollama`, the only chat backend
 `BuildProvider` wires. Nine runs on local models, so any other value is reported
@@ -569,21 +569,17 @@ daemon opens, creating it and its parent directory if absent. Defaults to
 
 ---
 
-## CLI & TUI
+## CLI
 
 **`nine <message>`** — One-shot client call; auto-starts the daemon if
 needed and continues the same conversation thread across calls.
 
-**`nine attach <agent-id>`** — Reconnect to a specific conversation/task/goal
-session by its agent ID (restores from checkpoint if not already running).
-
-**`nine status` / `/status`** — Daemon uptime, active agent count, loaded
+**`nine status`** — Daemon uptime, active agent count, loaded
 plugins (and tool counts).
 
 **`nine goals` / `nine reflections` / `nine workflows`** —
 List goals (with their sub-goals), self-reflection history,
-and active/recent workflows respectively. TUI equivalents: `/goals`,
-`/reflections`, `/workflows`. (There is no `tasks` verb.)
+and active/recent workflows respectively. (There is no `tasks` verb.)
 
 **`nine workflow stop <id>`** — Live cancellation of an ongoing workflow
 (daemon must be running): marks it `cancelled`, pending steps `skipped`,
@@ -598,14 +594,6 @@ plugin as a one-shot process).
 all `running` workflow steps as `failed` (`interrupted`) and auto-closes
 workflows whose steps are now all terminal; workflows with remaining
 `pending` steps stay `active` for the LLM to resume.
-
-**TUI slash commands** — `/help`, `/sessions`, `/status`, `/config`,
-`/context [id]`, `/plan-mode <mode>`, `/goals`, `/workflows`,
-`/tools [filter]`, `/processes [id]`, `/skills [name]`, `/memory [key]`, `/new`,
-`/think <message>`, `/clear`. Handled locally — no LLM tokens consumed
-(`/think` is the exception: it sends a real turn). Typing `/` opens a picker
-that filters the list as you type. See
-[CLI Usage § TUI Slash Commands](usage.md#tui-slash-commands).
 
 ---
 

@@ -1,6 +1,6 @@
 # Contract — human-in-the-loop (HITL)
 
-**Status:** Built · **Depends on:** [`memory-store.md`](memory-store.md), [`wire-protocol.md`](wire-protocol.md), [`dispatcher.md`](dispatcher.md), [`agent-worker.md`](agent-worker.md), [`config.md`](config.md) · **Used by:** daemon, TUI
+**Status:** Built · **Depends on:** [`memory-store.md`](memory-store.md), [`wire-protocol.md`](wire-protocol.md), [`dispatcher.md`](dispatcher.md), [`agent-worker.md`](agent-worker.md), [`config.md`](config.md) · **Used by:** daemon, API server, web UI
 
 > **Built.** Implemented in the reference tree: `internal/runtime/hitl.go` (`HITL`,
 > `NewHITL`, `ExpireStale`, approval gates), `internal/agent/register_human.go`
@@ -14,7 +14,7 @@ Nine can pause mid-turn and wait for a human. Two cases, one mechanism:
 - **Automatic gates** — the dispatcher intercepts a configured set of tools and demands
   explicit approval before running them, by issuing an `ask_human` itself.
 
-Both route through `ask_human`, so the TUI has one rendering path and the protocol has
+Both route through `ask_human`, so a client has one rendering path and the protocol has
 one pair of message types.
 
 ---
@@ -22,7 +22,7 @@ one pair of message types.
 ## R-HITL.1 — interactive-session gating
 
 `ask_human` is available **only in interactive sessions** — conversations started by a
-human through the TUI. Every other session kind (self-reflection, goal/pursue,
+human in the web UI. Every other session kind (self-reflection, goal/pursue,
 sub-agents, the one-shot CLI request path) is **non-interactive** and **MUST NOT** be
 given `ask_human`. A sub-agent is a bounded worker, not a conversational participant: it
 may be stopped for permission, but it never gets to interrogate the user itself.
@@ -34,7 +34,7 @@ tool unprompted. A sub-agent of a *non-interactive* root stays ungated — there
 human attached, so blocking would hang on a question nobody can see.
 
 The daemon learns interactivity from the `new_conversation` message's `Interactive` flag
-(see [`wire-protocol.md`](wire-protocol.md) R-PROTO.2). The TUI sets it; the
+(see [`wire-protocol.md`](wire-protocol.md) R-PROTO.2). The web UI sets it; the
 fire-and-forget CLI path does not; background-session and sub-agent creation paths pass
 `false`. Interactive session IDs **MUST** be persisted (table `interactive_sessions`) so
 the flag survives a daemon restart. The loop factory takes an `interactive bool`, and the
@@ -227,29 +227,26 @@ cancelled and write `timed_out`; the rows survive in the DB for the next boot.
 
 ---
 
-## R-HITL.8 — TUI rendering
+## R-HITL.8 — client rendering
 
-On `human_input_required` the TUI **MUST**: render a question panel above the input box
-with the question and any options; change the input prompt to `Answer:`; on submit send
-`human_input_answer` (not a new turn) and clear the panel; append the question/answer to
-the transcript as a distinct entry. If no client is attached when the question is issued,
-it waits in the DB and is re-emitted automatically when the user reattaches (R-HITL.4). The
-status bar **SHOULD** show a `?` badge while a pending unanswered question exists in the
-current session.
+On `human_input_required` a client **MUST**: show the question in the conversation that
+owns it, with any options; send `human_input_answer` (not a new turn) when it is
+answered; keep the question and its answer in the conversation as a distinct entry. If
+no client is attached when the question is issued, it waits in the DB and is re-emitted
+automatically when a client reattaches (R-HITL.4). A client **SHOULD** show the operator,
+outside the conversation, that a question waits; the web UI lists them in the Inbox and
+counts them on its link.
 
-A question carrying `Origin` **MUST** be rendered with that attribution — an approval
+A question carrying `Origin` **MUST** be shown with that attribution — an approval
 prompt for a tool the user never saw requested is unactionable without knowing which
 sub-agent wants it.
 
-### Queueing
+### Several at once
 
 Parallel sub-agents can each raise a gate at once (R-HITL.5), so a session may have
-several unanswered questions. The client **MUST** queue them and render **one at a
-time**, oldest first: a question arriving while another is on screen waits rather than
-replacing the one the user is reading. Answering the head uncovers the next and keeps the
-`Answer:` prompt active until the queue drains. The status bar **SHOULD** report how many
-remain behind the visible one. When a turn ends with questions still unanswered (they
-timed out with it), the whole queue is discarded — every asker's wait ended too.
+several unanswered questions. A question arriving while another waits **MUST NOT**
+replace it: each stays until it is answered on its own. When a turn ends with questions
+still unanswered (they timed out with it), they are no longer answerable.
 
 ---
 
@@ -261,5 +258,5 @@ gate wiring — `gateCtx`, `subGate`, `registerAskHuman`, `registerApprovalGates
 `internal/runtime/builder.go`; `agent.ApprovalError` and its handling in
 `dispatchWithRetry` (`internal/agent/`); the `[hitl]` block in
 [`config.md`](config.md); `human_requests`/`interactive_sessions` and their methods on
-`memory.Store`; the question queue (`chatState.humanQueue`, `pendingHuman`, `popHuman`)
-in `internal/tui`. Design source: [`docs/hitl.md`](../../docs/hitl.md).
+`memory.Store`; the question in the web UI's conversation (`web/src/chat.ts`,
+`web/src/pages/Chat.tsx`). Design source: [`docs/hitl.md`](../../docs/hitl.md).

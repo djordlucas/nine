@@ -46,7 +46,7 @@ max_concurrent = 1
 # Requested context window; also sets the per-turn context budget.
 num_ctx        = 32768
 # context_budget defaults to num_ctx (32768) when not set
-# thinking: stream the model's reasoning as a live trace in the TUI (Ollama only;
+# thinking: stream the model's reasoning to clients as it is produced (Ollama only;
 # the model must advertise the "thinking" capability). Defaults to true; set to
 # false to suppress thinking (restores /no_think) for lower latency.
 # thinking = true
@@ -54,7 +54,7 @@ num_ctx        = 32768
 [daemon]
 socket_path = "/tmp/nine.sock"
 task_timeout_seconds = 1800  # 30 minutes
-# Display name for this Nine instance, shown in the TUI top bar. Set it here to
+# Display name for this Nine instance, sent to clients. Set it here to
 # pin a fixed name. Left unset, the daemon reuses a name it generated on a prior
 # boot, or — on a first boot with none — shows "nine" and asks the LLM to coin a
 # random name, then persists it so it stays stable thereafter.
@@ -142,9 +142,6 @@ model    = "nomic-embed-text"
 # Only used when provider = "ollama"; empty uses Ollama's local default.
 endpoint = ""
 api_key  = ""
-
-[ui]
-theme = "dark"  # "auto" detects terminal background; "light" or "dark" to force
 
 [workspace]
 # The one directory Nine writes agent files into: the sandboxed file tools are
@@ -268,7 +265,7 @@ root = "./dist"
 # allow_network_deps is set on [tools.agent], not here, and lifting it is dangerous:
 # a networked dependency turns the sandbox into an exfiltration path.
 
-# Human-in-the-loop (docs/hitl.md), interactive TUI conversations only.
+# Human-in-the-loop (docs/hitl.md), interactive conversations only.
 # require_approval names tools that need an explicit "yes" before each call;
 # gate_sub_agents (default true) extends those gates to sub-agents the
 # conversation spawns, so delegation is not a way around them — the prompt

@@ -18,7 +18,7 @@ type ToolDef struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	InputSchema json.RawMessage `json:"input_schema,omitempty"`
-	DisplayName string          `json:"-"` // human-friendly label for TUI display; never sent to the LLM
+	DisplayName string          `json:"-"` // human-friendly label for display; never sent to the LLM
 }
 
 // ToolCall is a tool invocation requested by the LLM.

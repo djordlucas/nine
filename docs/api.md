@@ -583,7 +583,7 @@ In the dev container, the API server is an s6 longrun service. When the hot-relo
 | Local transport underneath | The API server is a translation layer over the daemon's Unix socket, so it runs on the same host as the daemon. It is also the only way to reach Nine over a network: the socket itself carries no authentication, and `auth_token` is the API server's. |
 | Browser WebSocket clients cannot send the token | A browser's WebSocket API sets no `Authorization` header, so with `auth_token` set a browser reaches the socket only through a proxy that adds it. Non-browser clients send the header. |
 | A slow stream reader loses events | The daemon queues up to 1024 events per stream or socket; a client that falls further behind loses the excess rather than stalling the session's turn. A WebSocket write that cannot complete in 10 seconds closes the socket. |
-| Stream omits reasoning detail | Reasoning tokens, stage labels and context-usage updates are not forwarded; the TUI renders them, and the API declares no schema for them. |
+| Stream omits reasoning detail | Reasoning tokens, stage labels and context-usage updates are not forwarded; the API declares no schema for them, so no client shows them yet. |
 | `ask_human` is answerable over the WebSocket only | The SSE stream does not carry `human_input_required`, and no REST endpoint answers one. An interactive conversation driven without the WebSocket waits out each question's timeout. |
 | The journal stream resumes within bounds | A client more than 10,000 events behind, or whose next events were scrubbed, gets `reset` and starts from now. |
 | Startup races the daemon | The API server polls for the daemon socket on startup and refuses requests until the daemon is ready. |

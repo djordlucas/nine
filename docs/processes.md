@@ -10,7 +10,7 @@ genesis, from a conversation, or when it revises what it wrote.
 
 | | Driven by | Started by |
 |---|---|---|
-| Conversation | a person, through the TUI or the API | a message |
+| Conversation | a person, through the web UI or the API | a message |
 | Process session | a process | its triggers |
 
 ## Live and slice
@@ -324,7 +324,7 @@ export default () => {
 | Surface | List | One | Start, stop | Message |
 |---|---|---|---|---|
 | CLI | `nine process` | `nine process show <id>` | `nine process start\|stop <id>` | `nine process send <id> <text>` |
-| TUI | `/processes` | `/processes <id>` | `/processes start\|stop <id>` | — |
+| Web UI | Processes | the process, beside the list | Start, Stop | Message it |
 | HTTP | `GET /api/v1/processes` | `GET /api/v1/processes/{id}` | `POST …/{id}/start\|stop` | `POST …/{id}/messages` |
 
 The operator may start any process; the start rule binds models only. A

@@ -106,10 +106,6 @@ model    = ""
 endpoint = ""
 api_key  = ""
 
-[ui]
-theme        = "light"          # light | dark
-show_context = true             # show the context-usage bar (a ⚠ warning shows at ≥90% even when false)
-
 [workspace]
 root = ""                       # the directory agent file tools and `shell` work in.
                                 # Empty resolves to NINE_WORKSPACE_ROOT, else /data/workspace

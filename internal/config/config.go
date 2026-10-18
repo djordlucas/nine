@@ -33,7 +33,6 @@ type Config struct {
 	Plugins    PluginsConfig    `toml:"plugins"`
 	Memory     MemoryConfig     `toml:"memory"`
 	Embeddings EmbeddingsConfig `toml:"embeddings"`
-	UI         UIConfig         `toml:"ui"`
 	Workspace  WorkspaceConfig  `toml:"workspace"`
 	Skills     SkillsConfig     `toml:"skills"`
 	HITL       HITLConfig       `toml:"hitl"`
@@ -868,11 +867,6 @@ type SkillsConfig struct {
 	UserDir string `toml:"user_dir"`
 }
 
-type UIConfig struct {
-	Theme       string `toml:"theme"`        // "light" (default) or "dark"
-	ShowContext *bool  `toml:"show_context"` // nil or true = show context bar; false = hide
-}
-
 type LLMConfig struct {
 	Provider       string `toml:"provider"`
 	Model          string `toml:"model"`
@@ -890,7 +884,7 @@ type LLMConfig struct {
 	MaxTokens int `toml:"max_tokens"`
 
 	// Thinking surfaces the model's extended-thinking reasoning as a live trace in
-	// the TUI (sends think:true to Ollama and drops /no_think). A *bool
+	// clients (sends think:true to Ollama and drops /no_think). A *bool
 	// so an unset value defaults to on while an explicit false disables it. The
 	// model must advertise the "thinking" capability.
 	Thinking *bool `toml:"thinking"`
@@ -921,7 +915,7 @@ type DaemonConfig struct {
 	// something more useful than "container".
 	Runtime string `toml:"runtime"`
 
-	// InstanceName is the display name for this Nine instance, shown in the TUI
+	// InstanceName is the display name for this Nine instance, sent to clients
 	// top bar. When set here it is authoritative and fixed. When empty, the
 	// daemon reuses a previously generated name persisted in the store, or — on a
 	// first boot with neither — shows a placeholder and asks the LLM to coin a

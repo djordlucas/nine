@@ -14,7 +14,6 @@ The daemon runs as one container; there is no docker-compose.
 
 ```bash
 make up        # build and run the daemon
-make session   # open an interactive TUI session
 ```
 
 Native build:
@@ -34,7 +33,7 @@ before the first run.
 |----------|--------|
 | [Installation](installation.md) | Build from source, Docker, first run |
 | [Container image](docker-image.md) | The published image: registries, tags, verification, configuration |
-| [CLI usage](usage.md) | Commands, interactive TUI, slash commands, background tasks |
+| [CLI usage](usage.md) | Commands, one-shot turns, background tasks |
 | [Configuration](configuration.md) | `nine.toml` reference, LLM providers, environment variables |
 | [Operations](operations.md) | Backup, restore, upgrade, and what retention is already discarding |
 
@@ -88,26 +87,6 @@ Ordered outside in.
 | [Evals](evals.md) | Replay and live-model tracks, the case schema, the feature map |
 | [Model compatibility](model-compatibility.md) | Models Nine has run against, results, hardware |
 | [Roadmap](roadmap.md) | What is still missing or partial, undated |
-
-## TUI slash commands
-
-`nine` with no arguments opens the TUI. `/help` lists every command. Common ones:
-
-| Command | Shows |
-|---------|-------|
-| `/sessions` | Running sessions, with IDs to reattach to |
-| `/status` | Daemon uptime, active agents, loaded plugins |
-| `/context [id]` | The assembled-context token breakdown, with no model call |
-| `/tools [filter]` | Every tool the session can call |
-| `/tools delete <name>` | Delete a tool Nine wrote |
-| `/processes [id]` | Processes, or one with its recent activity; `start`/`stop <id>` as the operator |
-| `/goals`, `/workflows` | Goals, and active and recent workflows |
-| `/grants [approve\|deny\|revoke <id>]` | Capability requests waiting, and the ceiling in force |
-| `/plan-mode <mode>` | The session's reasoning mode: `off`, `plan-only`, `always` |
-| `/think <message>` | One message with reasoning forced on |
-| `/new`, `/clear` | A fresh conversation; a cleared screen |
-
-[CLI usage](usage.md#tui-slash-commands) documents them all with examples.
 
 ## Limits
 

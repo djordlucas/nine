@@ -517,7 +517,7 @@ func TestDaemonListGoals(t *testing.T) {
 // plugin_call reaches a core-intercepted tool. list_tools advertises skill_*,
 // memory_*, file_* and doc_* under the "core" plugin, but no subprocess serves
 // them, so a plugin-only lookup answered "unknown tool" for a tool the client
-// had just been shown — which is what the TUI's /skills and /memory hit.
+// had just been shown — which is what a client listing skills or memory hits.
 func TestDaemonPluginCallReachesCoreTools(t *testing.T) {
 	store := seedTestStore(t)
 	if err := store.SkillUpsert(memory.Skill{

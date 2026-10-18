@@ -29,14 +29,14 @@ fetched (`npx`) or hosted elsewhere (§10).
    │  HOST / CONTAINER                                                      │
    │                                                                        │
    │   ┌─────────────────┐         ┌─────────────────┐                      │
-   │   │  nine (TUI)     │         │  nine "msg"     │   ← same binary,     │
-   │   │  interactive    │         │  one-shot CLI   │     client mode      │
+   │   │  nine <command> │         │  nine "msg"     │   ← same binary,     │
+   │   │  operator CLI   │         │  one-shot CLI   │     client mode      │
    │   └────────┬────────┘         └────────┬────────┘                      │
    │            │ newline-delimited JSON     │                              │
    │            │ over AF_UNIX socket        │                              │
    │            └─────────────┬──────────────┘                              │
    │           ┌──────────────┴──────────────┐                              │
-   │           │  nine api (HTTP server)     │  ← REST/Swagger, same socket  │
+   │           │  nine api (HTTP server)     │  ← REST, web UI; same socket  │
    │           └──────────────┬──────────────┘                              │
    │                          ▼                                             │
    │           ┌──────────────────────────────┐                            │
@@ -81,7 +81,7 @@ is set, which is the shipped default.
 Key consequences of this shape:
 
 - **All durable state is in the daemon + its SQLite file.** Clients are disposable.
-  Closing a TUI does not stop work; reattaching replays what was missed.
+  Closing the web UI does not stop work; reattaching replays what was missed.
 - **Plugins are isolation boundaries.** A crashing or hanging plugin is a child
   process, not a daemon panic. Tools are reached only through the manager.
 - **There are two kinds of isolation, and they are not the same kind.** A plugin
@@ -98,7 +98,7 @@ Key consequences of this shape:
 
 | Process | Binary | Role | Lifetime |
 |---------|--------|------|----------|
-| Client  | `nine` | TUI or one-shot request; connects to socket | Per invocation |
+| Client  | `nine` | One-shot request or operator command; connects to socket | Per invocation |
 | Daemon  | `nine` (re-exec) | Owns sockets, sessions, queue, plugins, DB connection | Long-lived |
 | API server | `nine` (re-exec) | HTTP/REST server; translates requests to the daemon socket. Serves OpenAPI/Swagger at `/api/v1/swagger/` (see [api.md](api.md)) | Long-lived (s6-managed in Docker) |
 | Plugin  | `bin/<name>`, or `nine` (re-exec) for the built-ins | One tool provider, HTTP over a unix socket | Spawned by daemon, killed on stop |
@@ -106,8 +106,8 @@ Key consequences of this shape:
 | Sandboxed tool | *(none)* | JS/wasm in a wazero instance inside the daemon | One instance per call, closed on return |
 
 The CLI auto-starts the daemon if the socket is dead. One binary is the entry
-point for everything: it dispatches to the TUI, the one-shot client, or the
-daemon, depending on how it was invoked.
+point for everything: it dispatches to the one-shot client, an operator
+command, the API server, or the daemon, depending on how it was invoked.
 
 ### Volume layout (Docker)
 
@@ -323,12 +323,12 @@ AgentWorker
 During a turn, `userTurn` registers a `progressFn` that pushes every event onto
 a buffered (cap 256) `progressCh`; the connection goroutine `select`s on that
 channel and the response channel, forwarding events to the client as they
-arrive. This is how the TUI shows tool calls live.
+arrive. This is how the web UI shows tool calls live, through the API server.
 
 Simultaneously, `emitEvent` pushes `tool_start`/`tool_end`/`sub_agent_*` events
 into a **bounded ring buffer** (`replayBuffer`, cap 200, sends up to 50 on
 attach) and records the last completed response. When a client reattaches
-(`attach`), the daemon hands back a snapshot so a reconnecting TUI can redraw
+(`attach`), the daemon hands back a snapshot so a reconnecting client can redraw
 the recent history and any answer it missed while disconnected.
 
 ```
@@ -887,7 +887,7 @@ Four consumers sit on top of the journal:
      ckpt.Load(agentID) → loop.LoadState(data) → AgentWorker rebuilt
 ```
 
-Checkpoints are what make `nine attach <id>` and Level-4 restart survival work:
+Checkpoints are what make reattaching to a session and Level-4 restart survival work:
 a session is fully reconstructable from its serialized loop state, plus — for
 a process session — the process that owns it, which supplies its role.
 
@@ -1086,7 +1086,7 @@ Go toolchain, no git, and no source tree.
    restarts because `{history, scratchpad}` is always persisted.
 6. **Sub-agent recursion is depth-capped (`< 2`).** Delegation cannot spiral.
 7. **Display names never reach the LLM.** `DisplayName` is JSON-`-` on `ToolDef`;
-   it exists purely for the TUI.
+   it exists purely for display.
 8. **Background autonomy is resumable.** Processes are persisted and started at
    boot; ordinary conversations are attach-on-demand.
 9. **The journal is append-only and reactions are out-of-band.** Every step is

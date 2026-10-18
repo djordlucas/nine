@@ -269,4 +269,4 @@ No configuration is required. The queued messages feature is always available wh
 | One message drained per turn | The post-turn drain takes the oldest unconsumed message and starts one turn with it, so three ignored messages take three turns to clear. |
 | Consumed messages are never pruned | A consumed message stays in the column with `consumed: true`, so the stored queue grows for the life of the conversation. `queued_messages_count` counts those too; `queued_messages_unconsumed_count` is the one that reflects outstanding work. |
 | No size or age limit | Nothing bounds how many messages a queue holds or how large one is, and nothing expires them. |
-| Almost no operator surface | The TUI marks a message `[queued]` as it sends it. No CLI command lists a session's queue, no API endpoint manages it, and there is no configuration. |
+| Almost no operator surface | The web UI says a message is queued as it sends it. No CLI command lists a session's queue, no API endpoint manages it, and there is no configuration. |

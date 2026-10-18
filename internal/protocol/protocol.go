@@ -137,7 +137,7 @@ const (
 // reply; a client that ignores a progress event just quietly shows nothing, and
 // the feature looks unimplemented rather than unwired.
 //
-// Kept in step with the const block above by the TUI's coverage test.
+// Keep it in step with the const block above.
 var ServerMsgTypes = []MsgType{
 	TypeConversationID,
 	TypeOK,
@@ -379,7 +379,7 @@ type Msg struct {
 	Origin         string   `json:"origin,omitempty"`
 }
 
-// HumanRequest is a pending request for human input, surfaced to the TUI as
+// HumanRequest is a pending request for human input, surfaced to a client as
 // part of a ProgressEvent. Origin is empty for a question from the session's
 // own loop and names the sub-agent for a delegated one.
 type HumanRequest struct {
@@ -390,7 +390,7 @@ type HumanRequest struct {
 	Origin         string
 }
 
-// ProgressEvent is a structured progress update delivered to the TUI client
+// ProgressEvent is a structured progress update delivered to a client
 // during a turn. It is constructed by the client from streaming Msgs.
 type ProgressEvent struct {
 	Type            MsgType // "tool_start" | "tool_end" | "context_update" | "response_chunk" | "thinking_chunk" | "sub_agent_start" | "sub_agent_end" | "thinking" | "plan_start" | "plan_end" | "notice" | "set_instance_name"
@@ -1010,7 +1010,7 @@ func NewOKMsg(agentID, name string) Msg {
 }
 
 // NewOKMsgWithReplay acknowledges a successful attach and includes recent
-// session events and the last completed response for the TUI to replay.
+// session events and the last completed response for a client to replay.
 func NewOKMsgWithReplay(agentID, name string, replay []Msg, pendingResponse string) Msg {
 	return Msg{
 		Type:            TypeOK,
@@ -1139,7 +1139,7 @@ func NewThinkingChunkMsg(agentID, text string) Msg {
 
 // NewSubAgentStartMsg announces that a sub-agent was spawned to work on task.
 // role is the sub-agent's resolved leaf role (e.g. "software-dev"), shown in
-// the TUI so the user can see which kind of agent is doing the work.
+// a client so the user can see which kind of agent is doing the work.
 func NewSubAgentStartMsg(agentID, subAgentID, task, role string) Msg {
 	return Msg{
 		Type:       TypeSubAgentStart,
@@ -1220,7 +1220,7 @@ func NewThinkingMsg(agentID string, llmCallN int, think bool) Msg {
 
 // NewPlanStartMsg announces that the no-tool request-analysis (planning) pass
 // has begun — the graceful-degradation substitute for native thinking on models
-// that lack it. Surfaced in the TUI like thinking; ephemeral, never journaled.
+// that lack it. Surfaced to a client like thinking; ephemeral, never journaled.
 func NewPlanStartMsg(agentID string) Msg {
 	return Msg{Type: TypePlanStart, AgentID: agentID, Timestamp: time.Now().UnixMilli()}
 }
@@ -1249,7 +1249,7 @@ func NewNoticeMsg(agentID, text string) Msg {
 
 // ToProgressEvent converts a streaming Msg ("tool_start", "tool_end",
 // "context_update", "response_chunk", "thinking_chunk", "set_name",
-// "sub_agent_start", "sub_agent_end") into a ProgressEvent for the TUI client.
+// "sub_agent_start", "sub_agent_end") into a ProgressEvent for a client.
 // ok is false for message types that aren't progress events.
 func (m Msg) ToProgressEvent() (ProgressEvent, bool) {
 	switch m.Type {

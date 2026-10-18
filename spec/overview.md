@@ -57,7 +57,7 @@ becomes hard to trust.)
    ┌──────────────────────────────────────────────────────────────────┐
    │  HOST / CONTAINER                                                  │
    │                                                                    │
-   │   nine (TUI)        nine "msg"      ← same binary, client mode     │
+   │   nine <command>    nine "msg"      ← same binary, client mode     │
    │       │ newline-delimited JSON over AF_UNIX socket                 │
    │       └──────────────┬──────────────┘                             │
    │                      ▼                                             │
@@ -82,7 +82,7 @@ Three process kinds:
 
 | Process | Binary | Role | Lifetime |
 |---------|--------|------|----------|
-| Client  | `nine` | TUI or one-shot request; connects to the socket | per invocation |
+| Client  | `nine` | one-shot request or operator command; connects to the socket | per invocation |
 | Daemon  | `nine` (re-exec) | owns socket, sessions, queue, plugins, DB connection | long-lived |
 | Plugin  | `bin/<name>` or the `nine` binary | one tool provider, HTTP over a Unix socket (an MCP server is one, via the `mcp` bridge) | spawned/killed by daemon |
 

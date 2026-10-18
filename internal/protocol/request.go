@@ -31,7 +31,7 @@ type Request interface {
 // --- the requests ---
 
 // NewConversationReq opens a fresh conversation. Interactive marks it
-// HITL-eligible; only the TUI sets it.
+// HITL-eligible; the web UI's conversations set it.
 type NewConversationReq struct{ Interactive bool }
 
 // AttachReq reconnects to an existing conversation.

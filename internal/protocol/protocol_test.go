@@ -106,7 +106,7 @@ func TestProgressEventConversion(t *testing.T) {
 // R-PROTO.6 / I8: display names are carried on the client-facing tool events but
 // MUST NOT be serialized on the tool definitions sent to the LLM.
 func TestDisplayNamesClientOnly(t *testing.T) {
-	// Client-facing: the tool event carries the display name for the TUI.
+	// Client-facing: the tool event carries the display name for a client.
 	ev, _ := protocol.NewToolStartMsg("a", "shell", "Run Shell", "", nil).ToProgressEvent()
 	if ev.ToolDisplayName != "Run Shell" {
 		t.Errorf("client event display name = %q, want \"Run Shell\"", ev.ToolDisplayName)

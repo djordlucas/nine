@@ -274,7 +274,7 @@ only consumer in v1 is the model, via `job_check` / `job_list` and the context
 line — and a model reads `"41% · 1.2 GB/2.9 GB"` exactly as well as it reads a
 parsed struct, while a struct forces every plugin to express its progress as a
 percentage even when it has no total (a log tail, a scan of an unknown number of
-hosts). A plugin that knows a percentage simply puts it in the string. If the TUI
+hosts). A plugin that knows a percentage simply puts it in the string. If a client
 later wants a real progress bar, an optional `percent` field is additive and can
 land then, with the text staying authoritative for display.
 

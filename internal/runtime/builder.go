@@ -898,7 +898,7 @@ func (f *AgentBuilder) registerSubAgentTools(d *agent.Dispatcher, lc LoopConfig,
 		// The child inherits this loop's gate owner, so an approval prompt from
 		// any delegation depth still lands on the session a human is watching.
 		// Forward the sub-agent's tool events to the parent's progress stream,
-		// prefixed with the sub-agent's role so the TUI can distinguish them.
+		// prefixed with the sub-agent's role so a client can distinguish them.
 		subProgress := func(msg protocol.Msg) {
 			switch msg.Type {
 			case protocol.TypeToolStart, protocol.TypeToolEnd:
@@ -1001,7 +1001,7 @@ func (f *AgentBuilder) registerAskHuman(d *agent.Dispatcher, agentID string) {
 
 // registerApprovalGates arms the [hitl].require_approval gates for a loop
 // owned by an interactive session, routing each prompt through HITL.AskFrom so
-// the TUI has one rendering path (R-HITL.5). askerID is this loop's own agent
+// a client has one rendering path (R-HITL.5). askerID is this loop's own agent
 // ID — it keys the persisted request, keeping parallel sub-agents from
 // colliding on a single pending row.
 // genGated are the generated-tier tools (tool_write/js_eval) armed under

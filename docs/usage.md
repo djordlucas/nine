@@ -1,9 +1,13 @@
 # CLI usage
 
+Conversations live in the web UI: run `nine api serve` and open the API
+server's address, `http://localhost:8080/` by default ([Web UI](web-ui.md)).
+The CLI below runs one-shot turns and operates the daemon.
+
 ## Commands
 
 ```
-nine                             Launch the interactive TUI (no arguments)
+nine                             Show this usage reference (no arguments)
 nine <message>                   Send a message; auto-starts the daemon if needed
 nine help                        Show this usage reference (also --help, -h)
 nine docs [topic]                Show bundled documentation (no topic lists them)
@@ -16,7 +20,6 @@ nine send [--id <id>] <message>  Non-interactive one-shot turn (scripting);
 nine status                      Show daemon info, active agents, loaded plugins
 nine context <agent-id> [-v]     Show the session's assembled-context token
                                  breakdown (no LLM call; -v dumps the full prompt)
-nine attach <agent-id>           Reconnect to an existing conversation/session
 nine stop <agent-id>             Terminate a session (stops the worker and
                                  deletes its saved state)
 nine stop --all                  Terminate every active session
@@ -99,51 +102,6 @@ nine api stop                    Stop the API server
 
 ---
 
-## TUI slash commands
-
-When running the interactive TUI (`nine` with no arguments), you can type slash commands directly in the input box.
-
-Typing `/` opens a picker above the input listing every command with a short
-description. It narrows as you keep typing (`/to` leaves just `/tools`), and it
-closes as soon as the leading `/` is deleted, an argument is started, nothing
-matches, or you press Esc.
-
-| Key | While the picker is open |
-|-----|--------------------------|
-| `↑` / `↓` | Move the highlight (`ctrl+p` / `ctrl+n` also work) |
-| `Tab` | Complete to the highlighted command without running it |
-| `Enter` | Run the highlighted command — or, if it takes an argument, complete it and wait for you to type one |
-| `Esc` | Dismiss the picker (Esc quits the TUI when it is closed) |
-
-The picker stays out of the way while Nine is waiting on an answer to an
-`ask_human` question, where the input box is free text.
-
-| Command | Description | Example |
-|---------|-------------|---------|
-| `/help` | List all slash commands | `/help` |
-| `/sessions` | List running sessions (copy an ID to reattach with `nine attach`) | `/sessions` |
-| `/status` | Daemon uptime, active agents, loaded plugins | `/status` |
-| `/config` | Show running configuration (the embeddings API key, the only one left, is masked) | `/config` |
-| `/context [id]` | Assembled-context token breakdown for the current (or given) session | `/context` |
-| `/tools [filter]` | List all available tools, grouped by provider (optional name filter) | `/tools shell` |
-| `/skills [name]` | List skills, or show the full content of a specific skill | `/skills git-workflow` |
-| `/memory [key]` | List all KV memory keys, or show the value at a specific key | `/memory self/identity` |
-| `/goals` | List active goals | `/goals` |
-| `/workflows` | List active and recent workflows | `/workflows` |
-| `/processes [id \| start <id> \| stop <id>]` | List processes, show one with its recent activity, or start or stop one | `/processes digest` |
-| `/grants [approve\|deny\|revoke <id>]` | Capability requests and the ceiling in force, or decide one without leaving the session | `/grants approve 59488812` |
-| `/plan-mode <mode>` | Change the session's reasoning mode live: `off`, `plan-only`, or `always` | `/plan-mode always` |
-| `/think <message>` | Send a message with reasoning forced on for this one turn | `/think reconcile these two specs` |
-| `/new` | Start a fresh conversation | `/new` |
-| `/clear` | Clear the screen | `/clear` |
-
-Most slash commands are handled locally and consume no LLM tokens; type `/help`
-in the TUI for the same list. `/think` is the exception — it sends a normal turn
-(and so runs the model) with native thinking / the analysis pass forced on,
-regardless of the session's plan mode.
-
----
-
 ## Sending messages
 
 The simplest use is passing a message directly:
@@ -162,17 +120,6 @@ Each call to `nine <message>` continues the same conversation thread. The agent 
 ./nine "Read the file /etc/hosts"
 ./nine "Now count how many lines contain '127'"
 ./nine "Store that count in memory under the key 'loopback_count'"
-```
-
-### Attaching to a specific agent
-
-If you want to connect to a different session (e.g., a background goal-pursue session):
-
-```bash
-./nine status
-# output includes active agent IDs
-
-./nine attach a1b2c3d4-...
 ```
 
 ---
@@ -313,21 +260,6 @@ reuse the id to drive more turns on the same session:
 Unlike `nine <message>` (which reuses the CLI's default conversation), `nine send`
 hands you an explicit session id per conversation.
 
-### `nine attach`
-
-Reconnect the TUI to a specific session — for example a background goal-pursue
-session — using an id from `nine status` or the TUI `/sessions` command:
-
-```bash
-./nine status                 # lists active agent IDs
-./nine attach a1b2c3d4-...
-```
-
-On reconnect the full conversation transcript is restored — prior prompts, tool
-activity, and responses — so the session looks as it did before you detached,
-not like a fresh conversation. The history is reconstructed from the durable
-event journal, so it survives daemon restarts too.
-
 ### `nine stop` — terminate a session
 
 Stops a session and deletes its saved state, so it is not revived on the next
@@ -431,8 +363,6 @@ retrieval, as a real turn would, to rank tools and surface the self-model). Add
 ./nine context a1b2c3d4-...             # token breakdown
 ./nine context a1b2c3d4-... --verbose   # + full assembled prompt and messages
 ```
-
-In the TUI, `/context` targets the current session (or `/context <id>` another one).
 
 ### `nine backup` — snapshot the store
 
@@ -693,8 +623,7 @@ NINE_LOG_FORMAT=json NINE_LOG_LEVEL=info ./nine daemon
 
 | Limit | Detail |
 |-------|--------|
-| Local clients only | The CLI and TUI reach the daemon over a Unix socket on the same host. |
-| No conversation reset command | Starting genuinely fresh means restarting the daemon. `/new` starts a new conversation but leaves the daemon's other state in place. |
-| TUI views are read-only, with two exceptions | Slash commands surface goals, workflows, tools, skills, memory and the context breakdown without letting you edit them. `/plan-mode` and `/grants approve\|deny\|revoke` are the exceptions: both decide something an operator would otherwise have to leave the session to do. |
-| The journal has no TUI view | `nine trace` and `nine replay` are CLI-only; nothing surfaces the journal inside the TUI. The context breakdown is the exception — `/context [id]` is the same view as `nine context`. |
+| Local clients only | The CLI reaches the daemon over a Unix socket on the same host; the web UI and other remote clients go through the API server. |
+| No conversation reset command | Starting genuinely fresh means restarting the daemon. A new conversation in the web UI, or `nine send` without `--id`, leaves the daemon's other state in place. |
+| No live plan-mode change | A session's reasoning mode is set when it starts; neither the CLI nor the web UI changes it mid-session. |
 | Config changes need a restart | Editing `nine.toml` takes effect on daemon restart. |

@@ -45,7 +45,6 @@ changed; the document stays as the record and is not rewritten.
 | `thinking-and-planning.md` | Thinking and planning modes, M1–M7 | yes |
 | `tool-exposition.md` | Top-K ranking vs. on-demand lookup; the hybrid is live behavior | yes |
 | `tool-output-spill.md` | Spilling oversized tool output to the store, passing it back by reference | yes |
-| `tui-slash-suggestions.md` | Slash-command suggestions in the TUI | yes |
 | `architecture-wiring.md` | Boot order, end-to-end data flows, component map. Names types and call sites. | yes |
 | `roles-design.md` | Worker kinds as data; migration off depth-based gating | yes |
 | `capability-grants.md` | Defaulting both tool tiers on, and moving the generated tier's ceiling into the store so an operator can grant a requested capability without a restart | 2026-09-27 |
@@ -69,8 +68,14 @@ changed; the document stays as the record and is not rewritten.
 | `predefined-agents-design.md` | Standing agents as config-seeded goals: motivation, work breakdown, phasing |
 | `reactive-events.md` | Event subscriptions: reacting to the journal |
 | `tool-facilities.md` | Host-injected credentials, a wider HTTP method allowlist, streaming progress, and reactions as a third run mode delivered by `reactions_get`. Rejects tool→tool dispatch and MCP reach. |
-| `tui-boxed-messages.md` | Boxed message rendering in the TUI. `internal/tui` only. |
 | `web-ui.md` | A web UI embedded in the binary: Preact, served at `/`, cookie sessions, a daemon-wide event stream, endpoints for the CLI-only features; all six phases built (2026-10-15) |
+
+### Superseded
+
+| Document | What changed |
+|----------|--------------|
+| `tui-boxed-messages.md` | Boxed message rendering in the TUI. The TUI was removed for the web UI (`web-ui.md`). |
+| `tui-slash-suggestions.md` | Slash-command suggestions in the TUI. The TUI was removed for the web UI (`web-ui.md`). |
 
 ### Superseded in part
 

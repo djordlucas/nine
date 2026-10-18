@@ -78,7 +78,7 @@ links a parent to its children across the flat, per-`agent_id` log.
   or tool calls** and reproduces the recorded answers. It backs the record-then-replay
   gate (`TestRecordThenReplay`) and the eval suite's replay track.
 - **Journal-backed reattach**: a revived session's real history is reconstructed from the
-  journal, so `nine attach` shows what actually happened.
+  journal, so a client that reattaches shows what actually happened.
 
 ---
 

@@ -29,7 +29,8 @@ asked for.
 Nine is a **daemon/client** system, which the directory tree does not make
 obvious:
 
-- The **CLI** (`internal/cli`) and **TUI** (`internal/tui`) are thin clients.
+- The **CLI** (`internal/cli`) and the **API server** (`internal/api`), which
+  serves the web UI (`web/`), are thin clients.
 - They talk to a long-running **daemon** (`internal/runtime`) over a
   Unix-socket **wire protocol** (`internal/protocol`, newline-delimited JSON).
 - The daemon routes each turn to a per-conversation **`AgentWorker`**, which

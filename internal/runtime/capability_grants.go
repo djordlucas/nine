@@ -307,7 +307,7 @@ func configMounts(in []toolvm.Mount) []config.ToolMount {
 	return out
 }
 
-// CapabilityService is the daemon's capability surface, shared by the CLI, the TUI
+// CapabilityService is the daemon's capability surface, shared by the CLI, the API
 // and the API so that one decision path serves all three.
 //
 // It holds the config and the host because a decision is not only a store write: an
@@ -409,7 +409,7 @@ func (s *CapabilityService) Decide(ctx context.Context, id, action string) (stri
 	}
 }
 
-// PendingCount is how many requests await a decision. Used for the TUI's badge and
+// PendingCount is how many requests await a decision. Used for the Inbox's badge and
 // the API's summary, where a full listing would be more than the caller wants.
 func (s *CapabilityService) PendingCount() (int, error) {
 	pending, err := s.store.CapabilityRequestList(true)

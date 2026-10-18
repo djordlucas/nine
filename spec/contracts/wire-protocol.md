@@ -1,6 +1,6 @@
 # Contract — wire protocol (daemon ↔ client)
 
-**Status:** Built · **Depends on:** nothing (shared package) · **Used by:** daemon, CLI, TUI
+**Status:** Built · **Depends on:** nothing (shared package) · **Used by:** daemon, CLI, API server
 
 The protocol package defines the messages exchanged between the daemon and any client.
 It depends on neither the daemon nor the client, so client code never pulls in the
@@ -262,8 +262,8 @@ Its reach **MUST** match what `list_tools` advertises: the core-intercepted stor
 (`memory_*`, `file_*`, `skill_*`, `doc_*` — see [`plugin.md`](plugin.md) R-PLUG.5) are
 listed under the `core` plugin but served in-process, so the daemon resolves the name
 against the core dispatcher first and only then against the plugin roster. A tool the
-client can *see* but not *call* is a contract violation — it is what broke the TUI's
-`/skills` and `/memory`. The delegation tools (`run_agent`, `workflow_*`, `goal_*`) are the
+client can *see* but not *call* is a contract violation — it is what once broke a
+client's skill and memory listings. The delegation tools (`run_agent`, `workflow_*`, `goal_*`) are the
 one exception: they need a live session to spawn into, so they are registered per loop and
 are not reachable this way.
 

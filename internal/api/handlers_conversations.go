@@ -433,7 +433,7 @@ func writeSSE(w io.Writer, event string, payload any) error {
 
 // toStreamEvent maps one daemon message to an SSE event name and payload. The
 // daemon's other progress types — reasoning tokens, stage labels, context
-// usage — are TUI rendering detail the API does not declare, so they are
+// usage — are rendering detail the API does not declare, so they are
 // skipped rather than sent under names a client has no schema for.
 func toStreamEvent(m protocol.Msg) (string, any, bool) {
 	ts := m.Timestamp

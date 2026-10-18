@@ -26,7 +26,7 @@ type ToolDefinition struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	InputSchema json.RawMessage `json:"input_schema,omitempty"`
-	DisplayName string          `json:"display_name,omitempty"` // optional human-friendly label for TUI display
+	DisplayName string          `json:"display_name,omitempty"` // optional human-friendly label for display
 }
 
 // ToLLMDef converts a ToolDefinition to the llm.ToolDef representation used

@@ -71,8 +71,7 @@ the recorded hash and runs in CI.
 The built runtime image (immutable; no toolchain or source):
 
 ```bash
-make up
-make session          # docker exec -it nine nine
+make up               # then open http://localhost:8080 for the web UI
 ```
 
 ### Hot-reload mode
@@ -85,7 +84,6 @@ This is the containerized development loop:
 ```bash
 make up-hot
 make logs              # watch builds + daemon output
-make session           # attaches to nine-dev if nine isn't running
 ```
 
 The hot-reload container (`nine-dev`) uses its own volumes and a cached Go build
@@ -161,7 +159,7 @@ make all
 
 The build produces **one file**:
 
-- `dist/nine` — the CLI, the TUI, the daemon, and the `shell` plugin. The daemon
+- `dist/nine` — the CLI, the daemon, the API server with its web UI, and the `shell` plugin. The daemon
   starts a plugin as a `nine plugin serve <name>` child process, so it keeps its
   own process, socket, and crash isolation while needing no build step and no
   binary of its own. Files, HTTP and the clock are sandboxed tools rather than
@@ -244,7 +242,6 @@ and no machine-to-machine drift in what the gate reports.
 |--------|-------------|
 | `make up` | Build + run the production container |
 | `make up-hot` | Build + run the hot-reload container (rebuild on `.go` change) |
-| `make session` | Open an interactive TUI session in the running container |
 | `make shell` | Open a shell in the running container |
 | `make logs` | Follow the container's logs |
 | `make down` | Remove the container, keeping all data volumes |
@@ -261,10 +258,11 @@ The rest of the Makefile is documented where its subject is: `image`,
 
 ## Verifying the installation
 
-**Deployed in a container** — attach a session and check status:
+**Deployed in a container** — open `http://localhost:8080` for the web UI, or
+check status from a shell in the container:
 
 ```bash
-make session
+make shell
 nine status
 ```
 

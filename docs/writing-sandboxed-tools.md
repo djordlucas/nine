@@ -152,7 +152,7 @@ turn, so anything you print on the way to failing goes with it.
 | `entrypoint` | ✅ | Path to your file, relative to the manifest. |
 | `description` | ✅ | The whole basis on which the model decides to call your tool. Write it for a reader who has never seen your tool. |
 | `input_schema` | | Path to a JSON Schema file. Omit for a tool taking no arguments. |
-| `display_name` | | Human-friendly label for the TUI. Never reaches the model. |
+| `display_name` | | Human-friendly label for display. Never reaches the model. |
 | `abi` | | Guest ABI version. Omit; it defaults correctly. |
 | `resumable` | | `true` lets the tool end a call with `again()` and be called back — see [Work too long for one call](#work-too-long-for-one-call). Without it the envelope is refused. |
 | `[capabilities]` | | What you need. See below. |

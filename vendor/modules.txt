@@ -1,17 +1,3 @@
-# charm.land/bubbles/v2 v2.2.1
-## explicit; go 1.25.0
-charm.land/bubbles/v2/cursor
-charm.land/bubbles/v2/help
-charm.land/bubbles/v2/internal/runeutil
-charm.land/bubbles/v2/key
-charm.land/bubbles/v2/list
-charm.land/bubbles/v2/paginator
-charm.land/bubbles/v2/spinner
-charm.land/bubbles/v2/textinput
-charm.land/bubbles/v2/viewport
-# charm.land/bubbletea/v2 v2.0.9
-## explicit; go 1.25.0
-charm.land/bubbletea/v2
 # charm.land/glamour/v2 v2.0.1
 ## explicit; go 1.25.8
 charm.land/glamour/v2
@@ -21,7 +7,6 @@ charm.land/glamour/v2/styles
 # charm.land/lipgloss/v2 v2.0.6
 ## explicit; go 1.25.0
 charm.land/lipgloss/v2
-charm.land/lipgloss/v2/compat
 charm.land/lipgloss/v2/table
 # github.com/BurntSushi/toml v1.4.0
 ## explicit; go 1.18
@@ -39,9 +24,6 @@ github.com/alecthomas/chroma/v2/styles
 # github.com/apapsch/go-jsonmerge/v2 v2.0.0
 ## explicit; go 1.12
 github.com/apapsch/go-jsonmerge/v2
-# github.com/atotto/clipboard v0.1.4
-## explicit
-github.com/atotto/clipboard
 # github.com/aymerick/douceur v0.2.0
 ## explicit
 github.com/aymerick/douceur/css
@@ -177,9 +159,6 @@ github.com/remyoudompheng/bigfft
 github.com/rivo/uniseg
 # github.com/rogpeppe/go-internal v1.15.0
 ## explicit; go 1.25
-# github.com/sahilm/fuzzy v0.1.3
-## explicit; go 1.24.5
-github.com/sahilm/fuzzy
 # github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 ## explicit; go 1.21
 github.com/santhosh-tekuri/jsonschema/v6

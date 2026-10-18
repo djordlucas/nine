@@ -691,7 +691,7 @@ the refusal reaches the model rather than the operator.
 
 - It records a `pending` row and surfaces it to the operator's notification feed. It confers
   nothing and **MUST NOT** be able to.
-- An operator settles it through one path — `nine grants`, the TUI's `/grants`, or the API's
+- An operator settles it through one path — `nine grants`, the web UI's Inbox, or the API's
   `/capabilities/{id}/decision` — all of which reach the same service in the daemon, because
   only the process running the agents can install a ceiling on its live host.
 - An approval **MUST** take effect without a restart: the ceiling is recomputed from the

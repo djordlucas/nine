@@ -6,7 +6,7 @@ The daemon is a Unix-socket server that routes user turns to per-conversation ag
 
 ```mermaid
 flowchart TD
-    subgraph Client["Client (CLI / TUI)"]
+    subgraph Client["Client (CLI / API server)"]
         CLI[nine CLI]
         C[daemon.Client]
         CLI -->|"EnsureDaemon() auto-starts if not running"| C
@@ -117,7 +117,7 @@ These message types are handled synchronously in the dispatch loop:
 
 ## Protocol
 
-All messages are newline-delimited JSON (`Msg` struct). The full message type reference and the client used by the CLI/TUI live in `protocol`, kept separate from the daemon implementation so client code doesn't pull in the whole runtime.
+All messages are newline-delimited JSON (`Msg` struct). The full message type reference and the client used by the CLI and the API server live in `protocol`, kept separate from the daemon implementation so client code doesn't pull in the whole runtime.
 
 ## Source files
 

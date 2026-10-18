@@ -279,7 +279,7 @@ func runDaemon() {
 	// standing agents and self-reflection all run through it
 	// (adr/process-sessions.md).
 	standing := asm.Processes
-	// The capability surface behind `nine grants`, the TUI's /grants view and the
+	// The capability surface behind `nine grants`, the web UI's Inbox and the
 	// API's /capabilities endpoints — one decision path for all three, because an
 	// approval widens the live ceiling and that must not be three implementations.
 	daemon.ConfigureCapabilities(runtime.NewCapabilityService(store, cfg, toolHost, pluginManager))

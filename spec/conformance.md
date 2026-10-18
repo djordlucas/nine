@@ -228,7 +228,7 @@ How to use this file:
 | Thread continuity | A second `nine "..."` continues the same thread (history retained). |
 | Streaming | Tool calls stream to the client during a turn. |
 | Status | `nine status` lists uptime, active agents, loaded plugins. |
-| Attach mid-turn | Disconnect mid-turn, `nine attach <id>` redraws recent activity and delivers the final answer. |
+| Attach mid-turn | Disconnect mid-turn; a client's `attach` redraws recent activity and delivers the final answer. |
 | Attach after restart | After a daemon restart, `attach` rebuilds the session from its checkpoint. |
 
 ---
@@ -315,7 +315,7 @@ How to use this file:
 | R-HITL.5 | Approval gates | With `require_approval=["shell"]`, a `shell` call prompts; non-`y` fails it and is **not** retried; a sub-agent of an interactive session prompts on that session's stream with an `origin`; `gate_sub_agents=false` or a non-interactive root is never prompted. |
 | R-HITL.6 | Protocol messages | `human_input_required` streams on the **owning** session's progress channel (with `origin` when a sub-agent asks); `human_input_answer` is a top-level message that starts no turn. |
 | R-HITL.7 | Persistence | `human_requests`/`interactive_sessions` tables + methods; HITL tables are never tools (I4). |
-| R-HITL.8 | TUI rendering | A pending question renders a panel with a `?` badge; submit sends an answer, not a turn; concurrent questions queue and render oldest-first with a waiting count, and an `origin` is shown. |
+| R-HITL.8 | Client rendering | A pending question shows in its conversation with its options and `origin`; answering sends an answer, not a turn; a question that arrives while another waits does not replace it. |
 
 ---
 
@@ -363,9 +363,7 @@ How to use this file:
 |-------|------------|
 | List verbs | `goals`/`workflows` render the matching read-only daemon query; `reflections` reads the journal directly. |
 | `workflow stop\|fail [--all]` | Operator workflow commands act as in R-ORCH.8. |
-| Slash commands | `/help`, `/status`, `/config`, `/context [id]`, `/plan-mode <mode>`, `/sessions`, `/tools [filter]`, `/skills [name]`, `/memory [key]`, `/goals`, `/workflows`, `/new`, `/clear` run with no LLM call. |
-| Command picker | Typing `/` at the start of the TUI input opens a picker listing every command with its description; typing filters it by name prefix, and it closes when the leading `/` is deleted, when an argument is started, when nothing matches, or on Esc. Suppressed while an `ask_human` question is on screen. |
-| Live TUI | The TUI shows tool calls live; a pending `ask_human` renders with a `?` badge. Also: `nine trace`/`nine replay`/`nine send` (see §12) and `nine notifications`. |
+| Live client | The web UI shows tool calls live; a pending `ask_human` shows in its conversation and in the Inbox. Also: `nine trace`/`nine replay`/`nine send` (see §12) and `nine notifications`. |
 
 ---
 

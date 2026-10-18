@@ -13,7 +13,7 @@ import (
 	"nine/internal/runtime"
 )
 
-// TestHITLEndToEnd drives the full daemon path the docker TUI uses: an
+// TestHITLEndToEnd drives the full daemon path an interactive client uses: an
 // interactive conversation whose LLM calls ask_human, answered over a second
 // connection. Reproduces "no pending question for that request".
 func TestHITLEndToEnd(t *testing.T) {
@@ -90,7 +90,7 @@ func TestHITLEndToEnd(t *testing.T) {
 		t.Fatal("empty request id")
 	}
 
-	// Answer on a second connection, exactly as the TUI does.
+	// Answer on a second connection, as the API server does.
 	a := dial(t, sock)
 	if err := a.AnswerHuman(id, reqID, "yes"); err != nil {
 		t.Fatalf("AnswerHuman: %v", err)

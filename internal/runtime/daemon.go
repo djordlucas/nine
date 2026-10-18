@@ -1,7 +1,7 @@
 // Package runtime implements the Nine daemon: a Unix-socket server that
 // routes user turns to per-conversation agent loops and persists state via
 // checkpoints. See nine/internal/protocol for the wire protocol and the
-// client used by the CLI/TUI to connect to it.
+// client used by the CLI and the API server to connect to it.
 package runtime
 
 import (
@@ -150,7 +150,7 @@ type Daemon struct {
 	ckpt        CheckpointStore
 	startedAt   time.Time
 	names       map[string]string // agentID → display name (set on first turn)
-	instName    string            // instance display name shown in the TUI top bar (guarded by mu)
+	instName    string            // instance display name sent to clients (guarded by mu)
 
 	mgr   pluginRegistry
 	tools *toolvm.Host // sandboxed-tool host (see ConfigureSandboxedTools); nil = disabled
@@ -379,7 +379,7 @@ func (d *Daemon) EmitProgress(agentID string, msg protocol.Msg) {
 }
 
 // InstanceName returns the daemon's current display name (the instance name
-// shown in the TUI top bar). Empty until ResolveInstanceName has run.
+// sent to clients). Empty until ResolveInstanceName has run.
 func (d *Daemon) InstanceName() string {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -825,7 +825,7 @@ func (d *Daemon) ConfigureSandboxedTools(h *toolvm.Host) {
 func (d *Daemon) ConfigureCapabilities(s *CapabilityService) { d.grants = s }
 
 // Capabilities exposes the capability surface so the API server can serve the same
-// decision path the CLI and TUI use rather than reimplementing it.
+// decision path the CLI and the API use rather than reimplementing it.
 func (d *Daemon) Capabilities() *CapabilityService { return d.grants }
 
 // ConfigureGeneratedTools stores the generated-tool store, so the operator can

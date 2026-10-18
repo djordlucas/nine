@@ -249,7 +249,7 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 			return llm.Response{}, fmt.Errorf("ollama: %s", chunk.Error)
 		}
 
-		// emit thinking chunks to TUI
+		// emit thinking chunks to the client
 		if chunk.Message.Thinking != "" && req.OnThinkingChunk != nil {
 			req.OnThinkingChunk(chunk.Message.Thinking)
 		}

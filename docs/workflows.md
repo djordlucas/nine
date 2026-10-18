@@ -45,11 +45,7 @@ def98765432  [failed]  Build release pipeline
   [skipped] s2: publish artifacts
 ```
 
-In the TUI:
-
-```
-/workflows
-```
+In the web UI, Goals & workflows lists them beside the goals.
 
 ## Stopping and failing workflows
 
@@ -88,13 +84,6 @@ On every daemon start, Nine automatically runs a **startup scrub** that:
 - Closes any workflow where all steps are now terminal
 
 Workflows that still have `pending` steps are left `active` so the LLM can resume them on the next turn. The scrub requires no user action.
-
-## TUI commands
-
-| Command | Description |
-|---------|-------------|
-| `/workflows` | List active and recent workflows |
-| `/status` | Shows active workflows alongside agents and sub-agents |
 
 ## Limits
 

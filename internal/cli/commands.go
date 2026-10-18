@@ -33,8 +33,6 @@ type CLI struct {
 	StartDaemon func()
 	// StartAPI launches the API server process.
 	StartAPI func()
-	// StartTUI opens the terminal UI, optionally attaching to attachID.
-	StartTUI func(attachID string) error
 }
 
 // New returns a CLI wired to the standard streams.
@@ -43,10 +41,11 @@ func New(binary string) *CLI {
 }
 
 // Run dispatches args to the appropriate subcommand. An empty args slice
-// launches the TUI. Returns a non-nil error on failure or unknown command.
+// prints the usage, which points to the web UI for conversations. Returns a
+// non-nil error on failure or unknown command.
 func (c *CLI) Run(args []string, cfg *config.Config) error {
 	if len(args) == 0 {
-		return c.StartTUI("")
+		return c.Help()
 	}
 
 	switch args[0] {
@@ -228,7 +227,7 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 		// `plugin serve` never reaches here: it is the daemon's entry point for a
 		// built-in plugin child, and cmd/nine/main.go dispatches it before the
 		// config or this CLI is built, so a plugin process holds no StartDaemon
-		// or StartTUI (spec/contracts/plugin.md R-PLUG.13).
+		// (spec/contracts/plugin.md R-PLUG.13).
 		if len(args) < 2 || args[1] != "validate" {
 			return fmt.Errorf("usage: nine plugin validate [path]")
 		}
@@ -277,10 +276,9 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 		}
 		return c.Restore(cfg, args[1])
 	case "attach":
-		if len(args) < 2 {
-			return fmt.Errorf("usage: nine attach <agent-id>")
-		}
-		return c.StartTUI(args[1])
+		// Removed with the terminal UI. Named here so the words are not sent to
+		// the model as a message by the one-shot default below.
+		return fmt.Errorf("nine attach was removed with the terminal UI: open the conversation in the web UI (nine api serve)")
 	case "sessions":
 		return c.Sessions(cfg)
 	case "session":

@@ -10,7 +10,7 @@ import (
 	"nine/internal/llm"
 )
 
-// DefaultInstanceName is the placeholder shown in the TUI top bar before a real
+// DefaultInstanceName is the placeholder name sent to clients before a real
 // instance name has been resolved or generated.
 const DefaultInstanceName = "nine"
 

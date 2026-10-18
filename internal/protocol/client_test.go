@@ -12,8 +12,8 @@ import (
 )
 
 // The daemon EnsureDaemon spawns must not write to the caller's terminal. The
-// caller is usually the TUI, which is about to draw a full-screen UI there, so
-// an inherited stderr means the daemon's boot log lands in the chat area — the
+// caller is usually a CLI command printing its own output there, so an
+// inherited stderr means the daemon's boot log lands in that output — the
 // symptom when file logging is off and slog goes to stderr.
 //
 // The fake daemon writes to both streams and only then becomes reachable, so
