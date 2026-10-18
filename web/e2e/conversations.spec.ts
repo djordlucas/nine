@@ -30,6 +30,8 @@ test('a conversation streams its reply and renders Markdown', async ({ page }) =
   await expect(list.locator('code', { hasText: 'code' })).toBeVisible();
   // Once the turn is over the transcript numbers it.
   await expect(page.getByRole('button', { name: 'Inspect turn 1' })).toBeVisible();
+  // The first turn names the conversation, and the title shows the name.
+  await expect(page.getByRole('heading', { level: 2, name: 'hello-there' })).toBeVisible();
 });
 
 test('a tool call shows in the chat and in the turn inspector', async ({ page }) => {
@@ -86,7 +88,7 @@ test('a conversation can be deleted', async ({ page }) => {
   await send(page, 'delete me soon');
   await expect(page.getByRole('button', { name: 'Inspect turn 1' })).toBeVisible();
   const url = page.url();
-  await page.getByRole('button', { name: 'Delete' }).click();
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
   await page.getByRole('dialog', { name: 'Delete this conversation?' }).getByRole('button', { name: 'Delete' }).click();
   await expect(page).toHaveURL(/\/conversations$/);
   await page.goto(url);

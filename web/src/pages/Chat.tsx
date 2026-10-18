@@ -113,8 +113,15 @@ export function Chat({ id, onRenamed }: { id: string; onRenamed?: () => void }) 
         event: (ev) => {
           if (ev.type === 'connected' || ev.type === 'human_input_answered' || ev.type === 'cancel') return;
           setChat((c) => apply(c, ev));
-          // The turn is over: the transcript now has it, with its number.
-          if (ev.type === 'done') void load();
+          // The turn is over: the transcript now has it, with its number. The
+          // first turn also names the conversation, so its details are read
+          // again for the title.
+          if (ev.type === 'done') {
+            void load();
+            void api.GET('/conversations/{id}', { params: { path: { id } } }).then(({ data: d }) => {
+              if (alive && d) setInfo(d);
+            });
+          }
         },
         state: setSock,
         reopened: () => void load(),
