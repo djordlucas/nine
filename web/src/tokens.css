@@ -201,6 +201,15 @@ samp {
   background: var(--surface);
 }
 
+/* A pointer needs less than a finger: on a desktop, fields and buttons are the
+   height of the actions beside them. */
+@media (min-width: 768px) {
+  .input,
+  .button {
+    min-height: 36px;
+  }
+}
+
 .muted {
   color: var(--text-2);
 }

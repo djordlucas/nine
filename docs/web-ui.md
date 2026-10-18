@@ -17,6 +17,8 @@ docker run -e NINE_API_AUTH_TOKEN=… -p 8080:8080 ghcr.io/djordlucas/nine
 | Turn off | `[api] ui = false`, or `NINE_API_UI=false` |
 | Layout | a rail on desktop; a bottom tab bar under 768px, with More for the rest |
 | Theme | follows the system; the theme control switches to light or dark |
+| Lists | on a desktop, ‹ folds a list away beside what it opens and › brings it back; the browser remembers which, per list |
+| Tags | a state or kind is a plain outlined tag; only a failure is red |
 | Actions | an obvious action (reload, start, stop, delete, upload, download) is an icon that names itself on hover; the rest are labelled |
 
 ## Sections
@@ -107,7 +109,6 @@ daemon calls.
 | Control | Does |
 |---|---|
 | New conversation | starts an interactive session, which may ask you questions |
-| ‹ and › | fold the list of conversations away and back; the browser remembers which |
 | The title | renames the conversation: one line, up to 80 characters. Enter saves, Escape cancels. |
 | Send | sends a turn; Enter sends on a keyboard, Shift+Enter is a new line. A message sent mid-turn waits for the turn to end. |
 | T | asks for the model's reasoning on the next turn (`force_think`) |

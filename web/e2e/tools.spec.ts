@@ -56,3 +56,22 @@ test('the inbox shows what waits, the notifications and the capabilities in forc
   }
   await expect(page.getByText('No request is waiting.')).toBeVisible();
 });
+
+test('a list folds away and stays folded on a desktop; a phone has nothing to fold', async ({ page, isMobile }) => {
+  await signIn(page);
+  await page.goto('/tools');
+  const list = page.getByRole('navigation', { name: 'Tools', exact: true });
+  const hide = page.getByRole('button', { name: 'Hide tools' });
+  if (isMobile) {
+    await expect(list).toBeVisible();
+    await expect(hide).toBeHidden();
+    return;
+  }
+  await hide.click();
+  await expect(list).toBeHidden();
+  await page.reload();
+  await expect(list).toBeHidden();
+  await page.getByRole('button', { name: 'Show tools' }).click();
+  await expect(list).toBeVisible();
+  await expect(hide).toBeVisible();
+});

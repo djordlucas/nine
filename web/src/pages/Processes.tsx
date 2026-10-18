@@ -4,6 +4,7 @@ import { api, errorMessage, get } from '../api/client';
 import { ago } from '../format';
 import { useLive } from '../live';
 import { actionsFor, byAttention, processState, stoppedReason, used, type Process } from '../processes';
+import { ListHead, Split } from '../components/Split';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
 import styles from './Processes.module.css';
@@ -34,7 +35,7 @@ export function Processes() {
   const { params } = useRoute();
   const id = param(params.id as string | undefined);
   return (
-    <div class={`${split.split} ${id ? split.open : ''}`}>
+    <Split name="processes" noun="processes" open={!!id}>
       <Roster current={id} />
       <section class={split.pane} aria-label="Process">
         {id ? (
@@ -43,7 +44,7 @@ export function Processes() {
           <p class={`card muted ${split.placeholder}`}>Choose a process.</p>
         )}
       </section>
-    </div>
+    </Split>
   );
 }
 
@@ -61,12 +62,16 @@ function Roster({ current }: { current?: string }) {
   const running = data?.list.filter((p) => p.state !== 'stopped').length ?? 0;
   return (
     <nav class={split.list} aria-label="Processes">
-      {data && (
+      <ListHead>
         <p class={split.heading}>
-          <span>{data.max ? `${running} of ${data.max} running` : `${running} running`}</span>
-          <span>{data.list.length} in all</span>
+          {data && (
+            <>
+              <span>{data.max ? `${running} of ${data.max} running` : `${running} running`}</span>
+              <span>{data.list.length} in all</span>
+            </>
+          )}
         </p>
-      )}
+      </ListHead>
       {error && <p class="error">{error}</p>}
       {!data && !error && <p class="muted">Loading…</p>}
       {data && data.list.length === 0 && (

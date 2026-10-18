@@ -4,6 +4,7 @@ import { api, errorMessage, get, type Schemas } from '../api/client';
 import { useLive } from '../live';
 import { asText, cell, crumbs, dirHref, fieldValue, fileHref, join, MAX_EDIT_BYTES, parent, version } from '../data';
 import { bytes } from '../system';
+import { ListHead, Split } from '../components/Split';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
 import { param } from './Processes';
@@ -110,17 +111,19 @@ function Files({ dir, file }: { dir: string; file?: string }) {
   };
 
   return (
-    <div class={`${split.split} ${file !== undefined ? split.open : ''}`}>
+    <Split name="files" noun="files" open={file !== undefined}>
       <nav class={split.list} aria-label="Files">
-        <ol class={styles.crumbs} aria-label="Directory">
-          {crumbs(dir).map((c) => (
-            <li key={c.path}>
-              <a href={dirHref(c.path)} aria-current={c.path === dir ? 'page' : undefined}>
-                {c.name}
-              </a>
-            </li>
-          ))}
-        </ol>
+        <ListHead>
+          <ol class={styles.crumbs} aria-label="Directory">
+            {crumbs(dir).map((c) => (
+              <li key={c.path}>
+                <a href={dirHref(c.path)} aria-current={c.path === dir ? 'page' : undefined}>
+                  {c.name}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </ListHead>
         <div class={detail.actions}>
           <button type="button" class={`${detail.action} ${detail.iconAction}`} disabled={busy} onClick={() => void newFile()} aria-label="New file" title="New file">
             <Icon name="filePlus" size={18} />
@@ -176,7 +179,7 @@ function Files({ dir, file }: { dir: string; file?: string }) {
           </p>
         )}
       </section>
-    </div>
+    </Split>
   );
 
   async function removeDir(path: string) {
@@ -335,8 +338,14 @@ function Database({ table }: { table?: string }) {
     changed,
   );
   return (
-    <div class={`${split.split} ${table ? split.open : ''}`}>
+    <Split name="tables" noun="tables" open={!!table}>
       <nav class={split.list} aria-label="Tables">
+        <ListHead>
+          <p class={split.heading}>
+            <span>Tables and views</span>
+            {data && <span>{data.length}</span>}
+          </p>
+        </ListHead>
         {error && <p class="error">{error}</p>}
         {!data && !error && <p class="muted">Loading…</p>}
         {data && data.length === 0 && <p class="muted">No tables yet. Processes create them; so can the SQL view.</p>}
@@ -369,7 +378,7 @@ function Database({ table }: { table?: string }) {
           </p>
         )}
       </section>
-    </div>
+    </Split>
   );
 }
 

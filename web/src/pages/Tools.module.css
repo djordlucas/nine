@@ -28,12 +28,6 @@
   border-radius: var(--radius) var(--radius) 0 0;
 }
 
-.listHead {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--space-2);
-}
-
 .group {
   display: grid;
   gap: var(--space-2);

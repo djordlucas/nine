@@ -5,6 +5,7 @@ import { duration } from '../format';
 import { useLive } from '../live';
 import { Markdown } from '../markdown';
 import { argsTemplate, groupTools, kindLabels, parseArgs, type Tool } from '../tools';
+import { ListHead, Split } from '../components/Split';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
 import { param } from './Processes';
@@ -65,7 +66,7 @@ function ToolsView({ name }: { name?: string }) {
   const [reloads, setReloads] = useState(0);
   const { data, error } = useLive(loadTools, [], reloads);
   return (
-    <div class={`${split.split} ${name ? split.open : ''}`}>
+    <Split name="tools" noun="tools" open={!!name}>
       <ToolList tools={data} error={error} current={name} onReloaded={() => setReloads((n) => n + 1)} />
       <section class={split.pane} aria-label="Tool">
         {name ? (
@@ -74,7 +75,7 @@ function ToolsView({ name }: { name?: string }) {
           <p class={`card muted ${split.placeholder}`}>Choose a tool.</p>
         )}
       </section>
-    </div>
+    </Split>
   );
 }
 
@@ -93,7 +94,7 @@ function ToolList(props: { tools: Tool[] | null; error: string | null; current?:
   const groups = props.tools ? groupTools(props.tools, filter) : [];
   return (
     <nav class={split.list} aria-label="Tools">
-      <div class={styles.listHead}>
+      <ListHead>
         <input
           class="input"
           type="search"
@@ -105,7 +106,7 @@ function ToolList(props: { tools: Tool[] | null; error: string | null; current?:
         <button type="button" class={`${detail.action} ${detail.iconAction}`} disabled={busy} onClick={() => void reload()} aria-label="Reload" title="Reload the tools">
           <Icon name="reload" size={18} />
         </button>
-      </div>
+      </ListHead>
       {outcome && (
         <p class="muted" role="status">
           {outcome}
@@ -413,7 +414,7 @@ function PluginsView() {
           {data.map((p: Plugin) => (
             <li key={p.name}>
               <div class={styles.pluginHead}>
-                <span class={`${detail.badge} ${p.disabled ? detail.paused : p.loaded ? detail.running : detail.failing}`}>
+                <span class={`${detail.badge} ${p.disabled || p.loaded ? '' : detail.failing}`}>
                   {p.disabled ? 'disabled' : p.loaded ? 'loaded' : 'failed'}
                 </span>
                 <strong>{p.name}</strong>
@@ -456,16 +457,18 @@ function SkillsView({ name }: { name?: string }) {
     (s: Skill) => !f || `${s.name} ${s.description ?? ''} ${(s.tags ?? []).join(' ')}`.toLowerCase().includes(f),
   );
   return (
-    <div class={`${split.split} ${name ? split.open : ''}`}>
+    <Split name="skills" noun="skills" open={!!name}>
       <nav class={split.list} aria-label="Skills">
-        <input
-          class="input"
-          type="search"
-          aria-label="Filter skills"
-          placeholder="Filter skills"
-          value={filter}
-          onInput={(e) => setFilter(e.currentTarget.value)}
-        />
+        <ListHead>
+          <input
+            class="input"
+            type="search"
+            aria-label="Filter skills"
+            placeholder="Filter skills"
+            value={filter}
+            onInput={(e) => setFilter(e.currentTarget.value)}
+          />
+        </ListHead>
         {error && <p class="error">{error}</p>}
         {!data && !error && <p class="muted">Loading…</p>}
         {data && shown.length === 0 && <p class="muted">No skill matches.</p>}
@@ -486,7 +489,7 @@ function SkillsView({ name }: { name?: string }) {
       <section class={split.pane} aria-label="Skill">
         {name ? <SkillDetail key={name} name={name} /> : <p class={`card muted ${split.placeholder}`}>Choose a skill to read it.</p>}
       </section>
-    </div>
+    </Split>
   );
 }
 

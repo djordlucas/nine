@@ -6,6 +6,7 @@ import { fromConfig, goalTree, statusActions, type Goal, type GoalStatus } from 
 import { shortId } from '../journal';
 import { useLive } from '../live';
 import { processState } from '../processes';
+import { ListHead, Split } from '../components/Split';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
 import { param, processPath } from './Processes';
@@ -28,7 +29,7 @@ export function Goals() {
   const id = param(params.id as string | undefined);
   const isWorkflow = path.startsWith('/goals/workflows/');
   return (
-    <div class={`${split.split} ${id ? split.open : ''}`}>
+    <Split name="goals" noun="goals and workflows" open={!!id}>
       <div class={split.list}>
         <GoalList current={isWorkflow ? undefined : id} />
         <WorkflowList current={isWorkflow ? id : undefined} />
@@ -38,7 +39,7 @@ export function Goals() {
         {id && !isWorkflow && <GoalDetail key={id} id={id} />}
         {!id && <p class={`card muted ${split.placeholder}`}>Choose a goal or a workflow, or create a goal.</p>}
       </section>
-    </div>
+    </Split>
   );
 }
 
@@ -55,7 +56,9 @@ function GoalList({ current }: { current?: string }) {
   const rows = data ? goalTree(data) : [];
   return (
     <nav class={styles.group} aria-label="Goals">
-      <h2 class={styles.groupTitle}>Goals</h2>
+      <ListHead>
+        <h2 class={styles.groupTitle}>Goals</h2>
+      </ListHead>
       <NewGoal />
       {error && <p class="error">{error}</p>}
       {!data && !error && <p class="muted">Loading…</p>}
@@ -67,7 +70,7 @@ function GoalList({ current }: { current?: string }) {
               <a
                 href={goalPath(g.id ?? '')}
                 class={split.row}
-                style={{ paddingLeft: `calc(var(--space-3) + ${depth} * var(--space-4))` }}
+                style={{ paddingLeft: `calc(var(--space-2) + ${depth} * var(--space-4))` }}
                 aria-current={g.id === current ? 'page' : undefined}
               >
                 <span class={`${detail.badge} ${detail[g.status ?? '']}`}>{g.status}</span>

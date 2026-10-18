@@ -4,6 +4,7 @@ import { api, errorMessage, get, type Schemas } from '../api/client';
 import { useLive } from '../live';
 import { Markdown } from '../markdown';
 import { docLink, topicPath, type DocKind } from '../system';
+import { ListHead, Split } from '../components/Split';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
 import { param } from './Processes';
@@ -180,16 +181,18 @@ function SessionsView({ id }: { id?: string }) {
   const f = filter.trim().toLowerCase();
   const shown = (data ?? []).filter((s) => !f || `${s.id} ${s.name ?? ''} ${s.status}`.toLowerCase().includes(f));
   return (
-    <div class={`${split.split} ${id ? split.open : ''}`}>
+    <Split name="sessions" noun="sessions" open={!!id}>
       <nav class={split.list} aria-label="Sessions">
-        <input
-          class="input"
-          type="search"
-          aria-label="Filter sessions"
-          placeholder="Filter sessions"
-          value={filter}
-          onInput={(e) => setFilter(e.currentTarget.value)}
-        />
+        <ListHead>
+          <input
+            class="input"
+            type="search"
+            aria-label="Filter sessions"
+            placeholder="Filter sessions"
+            value={filter}
+            onInput={(e) => setFilter(e.currentTarget.value)}
+          />
+        </ListHead>
         {error && <p class="error">{error}</p>}
         {!data && !error && <p class="muted">Loading…</p>}
         {data && shown.length === 0 && <p class="muted">No session matches.</p>}
@@ -218,7 +221,7 @@ function SessionsView({ id }: { id?: string }) {
           <p class={`card muted ${split.placeholder}`}>Every session Nine holds, process sessions included. Choose one.</p>
         )}
       </section>
-    </div>
+    </Split>
   );
 }
 
@@ -346,16 +349,18 @@ function DocsView({ kind, topic }: { kind: DocKind; topic?: string }) {
   const list = (topics?.[kind] ?? []).filter((t) => !filter || t.toLowerCase().includes(filter.trim().toLowerCase()));
   const label = kind === 'docs' ? 'Docs' : 'Spec';
   return (
-    <div class={`${split.split} ${topic ? split.open : ''}`}>
+    <Split name={kind} noun="topics" open={!!topic}>
       <nav class={split.list} aria-label={`${label} topics`}>
-        <input
-          class="input"
-          type="search"
-          aria-label={`Filter ${label.toLowerCase()} topics`}
-          placeholder="Filter topics"
-          value={filter}
-          onInput={(e) => setFilter(e.currentTarget.value)}
-        />
+        <ListHead>
+          <input
+            class="input"
+            type="search"
+            aria-label={`Filter ${label.toLowerCase()} topics`}
+            placeholder="Filter topics"
+            value={filter}
+            onInput={(e) => setFilter(e.currentTarget.value)}
+          />
+        </ListHead>
         {error && <p class="error">{error}</p>}
         {!topics && !error && <p class="muted">Loading…</p>}
         {list.length > 0 && (
@@ -379,7 +384,7 @@ function DocsView({ kind, topic }: { kind: DocKind; topic?: string }) {
           </p>
         )}
       </section>
-    </div>
+    </Split>
   );
 }
 

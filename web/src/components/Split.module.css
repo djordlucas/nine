@@ -1,8 +1,8 @@
 /* A list beside its open item on a desktop; on a phone, the list, then the item
-   in its place. Processes and Goals share it. */
+   in its place. Every section with a list shares it (Split.tsx). */
 .split {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: 240px minmax(0, 1fr);
   gap: var(--space-4);
   align-items: start;
 }
@@ -15,8 +15,47 @@
   /* Room for the buttons' offset shadow, which the scroll box would clip. */
   padding: 0 3px 3px 0;
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-2);
   align-content: start;
+}
+
+/* The list's first row: its controls, then the fold button at its right. */
+.top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.top > :first-child:not(.fold) {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Folded, on a desktop, the list gives way to a thin strip with the button
+   that brings it back. */
+@media (min-width: 768px) {
+  .collapsed {
+    grid-template-columns: 35px minmax(0, 1fr);
+  }
+
+  .collapsed .list {
+    display: none;
+  }
+}
+
+.strip {
+  position: sticky;
+  top: 0;
+}
+
+/* The fold buttons are the New conversation button's kind, narrow. */
+.fold {
+  flex-shrink: 0;
+  width: 32px;
+  min-height: 36px;
+  padding: 0;
+  font-size: var(--text-lg);
+  line-height: 1;
 }
 
 .list ul {
@@ -38,9 +77,9 @@
   grid-template-columns: auto minmax(0, 1fr);
   align-items: baseline;
   gap: 2px var(--space-2);
-  min-height: var(--touch);
-  padding: var(--space-2) var(--space-3);
+  padding: 6px var(--space-2);
   color: inherit;
+  font-size: var(--text-sm);
   text-decoration: none;
 }
 
@@ -70,7 +109,7 @@
 .meta {
   grid-column: 2;
   color: var(--text-2);
-  font-size: var(--text-sm);
+  font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -95,6 +134,18 @@
 
 /* A phone shows the list, or the open item in its place. */
 @media (max-width: 767px) {
+  /* A phone already shows the list or the item, never both: nothing folds. */
+  .fold,
+  .strip {
+    display: none;
+  }
+
+  /* A finger needs the full touch height. */
+  .row {
+    min-height: var(--touch);
+    align-content: center;
+  }
+
   .split {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -108,4 +159,8 @@
   .split:not(.open) .pane {
     display: none;
   }
+}
+
+.top .fold {
+  margin-left: auto;
 }
