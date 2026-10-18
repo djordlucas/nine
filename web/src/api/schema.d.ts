@@ -2587,6 +2587,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description the new display name */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["RenameConversationRequest"];

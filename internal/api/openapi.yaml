@@ -343,6 +343,7 @@ paths:
         schema:
           type: string
       requestBody:
+        description: the new display name
         required: true
         content:
           application/json:
