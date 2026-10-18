@@ -42,7 +42,12 @@ const enterSends = () => !matchMedia('(pointer: coarse)').matches;
  * whoever started it. Send a turn, answer the session's questions, cancel a
  * running turn.
  */
-export function Chat({ id, onRenamed }: { id: string; onRenamed?: () => void }) {
+/**
+ * One session's chat. readOnly watches it without taking part: a process's
+ * session, which its process drives, has no message box, rename or controls
+ * beyond the context.
+ */
+export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () => void; readOnly?: boolean }) {
   const { route } = useLocation();
   const [info, setInfo] = useState<Schemas['ConversationInfo'] | null>(null);
   const [missing, setMissing] = useState(false);
@@ -79,7 +84,7 @@ export function Chat({ id, onRenamed }: { id: string; onRenamed?: () => void }) 
       for (const q of pendingQuestions(questions.data, id)) {
         if (!merged.items.some((i) => i.kind === 'question' && i.id === q.id)) merged.items.push(q);
       }
-      setChat((c) => ({ items: merged.items, busy: c.busy }));
+      setChat((c) => ({ ...c, items: merged.items }));
       setLoadError(null);
       // The journal lags the turn by a moment; read again until it has it.
       if (!merged.complete && behind.current < 5) {
@@ -98,6 +103,10 @@ export function Chat({ id, onRenamed }: { id: string; onRenamed?: () => void }) 
   useEffect(() => {
     let alive = true;
     let s: ConversationSocket | null = null;
+    const refreshInfo = async () => {
+      const { data: d } = await api.GET('/conversations/{id}', { params: { path: { id } } });
+      if (alive && d) setInfo(d);
+    };
     // The socket opens only once the conversation is known to exist: a
     // handshake for a missing one is refused, and the browser reports that as
     // an error of the page's own.
@@ -111,6 +120,8 @@ export function Chat({ id, onRenamed }: { id: string; onRenamed?: () => void }) 
       void load();
       s = new ConversationSocket(id, {
         event: (ev) => {
+          // Connected, the session is loaded: its details now carry its plan mode.
+          if (ev.type === 'connected') void refreshInfo();
           if (ev.type === 'connected' || ev.type === 'human_input_answered' || ev.type === 'cancel') return;
           setChat((c) => apply(c, ev));
           // The turn is over: the transcript now has it, with its number. The
@@ -118,9 +129,7 @@ export function Chat({ id, onRenamed }: { id: string; onRenamed?: () => void }) 
           // again for the title.
           if (ev.type === 'done') {
             void load();
-            void api.GET('/conversations/{id}', { params: { path: { id } } }).then(({ data: d }) => {
-              if (alive && d) setInfo(d);
-            });
+            void refreshInfo();
           }
         },
         state: setSock,
@@ -211,14 +220,18 @@ export function Chat({ id, onRenamed }: { id: string; onRenamed?: () => void }) 
           ‹
         </a>
         <div class={styles.title}>
-          <Title
-            id={id}
-            title={title}
-            onRenamed={(name) => {
-              setInfo((i) => ({ ...(i ?? {}), name }));
-              onRenamed?.();
-            }}
-          />
+          {readOnly ? (
+            <h2>{title}</h2>
+          ) : (
+            <Title
+              id={id}
+              title={title}
+              onRenamed={(name) => {
+                setInfo((i) => ({ ...(i ?? {}), name }));
+                onRenamed?.();
+              }}
+            />
+          )}
           <span class="muted">
             {[info?.role, sock === 'open' ? '' : sock === 'connecting' ? 'connecting…' : 'reconnecting…'].filter(Boolean).join(' · ')}
           </span>
@@ -234,18 +247,22 @@ export function Chat({ id, onRenamed }: { id: string; onRenamed?: () => void }) 
           >
             <Icon name="context" size={16} />
           </button>
-          <button type="button" class={`${detail.action} ${detail.iconAction}`} aria-label="End session" title="End session" onClick={endSession}>
-            <Icon name="power" size={16} />
-          </button>
-          <button
-            type="button"
-            class={`${detail.action} ${detail.iconAction} ${detail.danger}`}
-            aria-label="Delete"
-            title="Delete this conversation"
-            onClick={remove}
-          >
-            <Icon name="trash" size={16} />
-          </button>
+          {!readOnly && (
+            <>
+              <button type="button" class={`${detail.action} ${detail.iconAction}`} aria-label="End session" title="End session" onClick={endSession}>
+                <Icon name="power" size={16} />
+              </button>
+              <button
+                type="button"
+                class={`${detail.action} ${detail.iconAction} ${detail.danger}`}
+                aria-label="Delete"
+                title="Delete this conversation"
+                onClick={remove}
+              >
+                <Icon name="trash" size={16} />
+              </button>
+            </>
+          )}
         </div>
       </header>
 
@@ -268,13 +285,21 @@ export function Chat({ id, onRenamed }: { id: string; onRenamed?: () => void }) 
         ))}
         {chat.busy && !chat.items.some((i) => i.kind === 'reply' && i.streaming) && (
           <li class={styles.working} aria-live="polite">
-            Working…
+            {chat.stage ? `${chat.stage}…` : 'Working…'}
           </li>
         )}
       </ol>
       <div ref={bottom} />
 
-      <Composer busy={chat.busy} connected={sock === 'open'} model={llm.model} provider={llm.provider} onSend={send} onCancel={cancel} />
+      {!readOnly && <Composer busy={chat.busy} connected={sock === 'open'} onSend={send} onCancel={cancel} />}
+      <SessionBar
+        id={id}
+        model={llm.model}
+        provider={llm.provider}
+        context={chat.context}
+        planMode={readOnly ? undefined : info?.plan_mode}
+        onPlanMode={(plan_mode) => setInfo((i) => ({ ...(i ?? {}), plan_mode }))}
+      />
     </div>
   );
 }
@@ -499,6 +524,17 @@ function ItemView({
       );
     case 'question':
       return <Question q={item} onAnswer={onAnswer} />;
+    case 'thinking':
+      // Open while the model reasons; folded once its call moves on.
+      return (
+        <details class={styles.thinkingBox} open={!item.done}>
+          <summary>
+            {item.done ? 'Reasoning' : 'Reasoning…'}
+            {item.step > 0 && <span class="muted"> · call {item.step}</span>}
+          </summary>
+          <p class={styles.thinkingText}>{item.text}</p>
+        </details>
+      );
     case 'notice':
       return <p class="muted">{item.text}</p>;
     case 'error':
@@ -567,15 +603,11 @@ const MAX_INPUT = 200;
 function Composer({
   busy,
   connected,
-  model,
-  provider,
   onSend,
   onCancel,
 }: {
   busy: boolean;
   connected: boolean;
-  model: string;
-  provider: string;
   onSend: (text: string, think: boolean) => boolean;
   onCancel: () => void;
 }) {
@@ -647,15 +679,77 @@ function Composer({
           </button>
         </div>
       </div>
-      <div class={styles.controls}>
-        <span class={styles.model} title={model ? `The model that answers: ${model}, on ${provider}` : undefined}>
-          {provider && <span class={styles.provider}>{provider}</span>}
-          {provider && model && <span aria-hidden="true"> | </span>}
-          {model}
-        </span>
-      </div>
     </form>
   );
+}
+
+/** The plan modes a session can run in (docs/thinking-and-planning.md). */
+const PLAN_MODES = ['off', 'plan-only', 'always'] as const;
+
+/**
+ * Under the message box: the model that answers, how much of its context the
+ * latest call used (marked from 90%, where the daemon starts trimming), and the
+ * session's plan mode, which changes it for this session only.
+ */
+function SessionBar(props: {
+  id: string;
+  model: string;
+  provider: string;
+  context?: { used: number; budget: number };
+  planMode?: string;
+  onPlanMode: (mode: string) => void;
+}) {
+  const { model, provider, context, planMode } = props;
+  const [error, setError] = useState<string | null>(null);
+  const share = context && context.budget > 0 ? context.used / context.budget : 0;
+  const change = async (mode: string) => {
+    setError(null);
+    const { data, error: e } = await api.POST('/conversations/{id}/plan-mode', {
+      params: { path: { id: props.id } },
+      body: { mode: mode as (typeof PLAN_MODES)[number] },
+    });
+    if (data) props.onPlanMode(data.plan_mode);
+    else setError(errorMessage(e, 'Could not change the plan mode.'));
+  };
+  return (
+    <div class={styles.controls}>
+      <span class={styles.model} title={model ? `The model that answers: ${model}, on ${provider}` : undefined}>
+        {provider && <span class={styles.provider}>{provider}</span>}
+        {provider && model && <span aria-hidden="true"> | </span>}
+        {model}
+      </span>
+      {context && context.budget > 0 && (
+        <span
+          class={share >= 0.9 ? styles.ctxWarn : styles.ctx}
+          title={`The latest model call used ${context.used} of ${context.budget} context tokens${share >= 0.9 ? '; past 90% the daemon trims older context' : ''}`}
+        >
+          {share >= 0.9 && '⚠ '}ctx {tokens(context.used)} / {tokens(context.budget)}
+        </span>
+      )}
+      {planMode && (
+        <label class={styles.plan} title="How the session reasons before acting, for this session only">
+          Plan
+          <select value={planMode} onChange={(e) => void change(e.currentTarget.value)}>
+            {PLAN_MODES.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {error && (
+        <span class={styles.ctxWarn} role="alert">
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** A token count as a short figure: 950, 9.7k, 32.8k. */
+function tokens(n: number): string {
+  return n < 1000 ? String(n) : `${(n / 1000).toFixed(1)}k`;
 }
 
 /** What the session's next model call would be shown, by section. */

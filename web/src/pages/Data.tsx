@@ -25,6 +25,7 @@ const views = [
   { path: '/data/database', label: 'Database' },
   { path: '/data/sql', label: 'SQL' },
   { path: '/data/self-model', label: 'Self-model' },
+  { path: '/data/memory', label: 'Memory' },
 ];
 
 /**
@@ -49,6 +50,7 @@ export function Data() {
       {view === '/data/database' && <Database table={param(params.table as string | undefined)} />}
       {view === '/data/sql' && <Sql />}
       {view === '/data/self-model' && <SelfModel />}
+      {view === '/data/memory' && <Memory memoryKey={query.key} />}
     </div>
   );
 }
@@ -700,5 +702,89 @@ function SelfModel() {
         </section>
       ))}
     </section>
+  );
+}
+
+/**
+ * The key-value memory the agent reads and writes with memory_get and
+ * memory_set: every key, then one key's value. Read-only.
+ */
+function Memory({ memoryKey }: { memoryKey?: string }) {
+  const [filter, setFilter] = useState('');
+  const { data, error } = useLive(async () => (await get(api.GET('/memory'), 'the memory')).entries, ['turn_end']);
+  const f = filter.trim().toLowerCase();
+  const shown = (data ?? []).filter((e) => !f || e.key.toLowerCase().includes(f));
+  return (
+    <Split name="memory" noun="memory keys" open={memoryKey !== undefined}>
+      <nav class={split.list} aria-label="Memory keys">
+        <ListHead>
+          <input
+            class="input"
+            type="search"
+            aria-label="Filter memory keys"
+            placeholder="Filter keys"
+            value={filter}
+            onInput={(e) => setFilter(e.currentTarget.value)}
+          />
+        </ListHead>
+        {error && <p class="error">{error}</p>}
+        {!data && !error && <p class="muted">Loading…</p>}
+        {data && shown.length === 0 && <p class="empty">{data.length ? 'No key matches.' : 'Nothing in memory yet.'}</p>}
+        {shown.length > 0 && (
+          <ul>
+            {shown.map((e) => (
+              <li key={e.key}>
+                <a href={memoryHref(e.key)} class={split.row} aria-current={e.key === memoryKey ? 'page' : undefined}>
+                  <span class={`${split.name} ${tools.wide}`}>{e.key}</span>
+                  <span class={split.meta}>{[bytes(e.bytes), e.updated_at].filter(Boolean).join(' · ')}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+      </nav>
+      <section class={split.pane} aria-label="Memory key">
+        {memoryKey !== undefined ? (
+          <MemoryValue key={memoryKey} memoryKey={memoryKey} />
+        ) : (
+          <p class="empty">What Nine keeps in its key-value memory. Choose a key to read its value.</p>
+        )}
+      </section>
+    </Split>
+  );
+}
+
+function memoryHref(key: string): string {
+  return `/data/memory?key=${encodeURIComponent(key)}`;
+}
+
+function MemoryValue({ memoryKey }: { memoryKey: string }) {
+  const { data, error } = useLive(
+    async () => {
+      const { data: v, error: e, response } = await api.GET('/memory/value', { params: { query: { key: memoryKey } } });
+      if (response.status === 404) return null;
+      if (!v) throw new Error(errorMessage(e, 'Could not read the key.'));
+      return v;
+    },
+    ['turn_end'],
+  );
+  if (error) return <p class="card error">{error}</p>;
+  if (data === null) return <p class="empty">No key {memoryKey}. It may have been deleted.</p>;
+  if (!data) return <p class="card muted">Loading…</p>;
+  return (
+    <article class={`card ${detail.detail}`}>
+      <header class={detail.head}>
+        <a class={detail.back} href="/data/memory" aria-label="All memory keys">
+          ‹
+        </a>
+        <div class={detail.title}>
+          <h2>
+            <code>{data.key}</code>
+          </h2>
+          <span class="muted">{bytes(new TextEncoder().encode(data.value).length)}</span>
+        </div>
+      </header>
+      <pre class={styles.memoryValue}>{data.value}</pre>
+    </article>
   );
 }

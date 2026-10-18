@@ -54,6 +54,8 @@ func (d *Daemon) handleStatus(enc *json.Encoder) {
 		MaxRunning: d.effectiveMaxRunning(),
 		Provider:   d.llmProvider,
 		Model:      d.llmModel,
+
+		InstanceName: d.InstanceName(),
 	}
 	data, _ := json.Marshal(info)
 	enc.Encode(protocol.NewTextMsg(protocol.TypeStatus, string(data))) //nolint:errcheck
@@ -426,6 +428,53 @@ func (d *Daemon) handleSelfModel(enc *json.Encoder) {
 	}
 	data, _ := json.Marshal(out)
 	enc.Encode(protocol.NewTextMsg(protocol.TypeSelfModel, string(data))) //nolint:errcheck
+}
+
+// kvStore is the store's key-value listing and read, which the memory queries
+// need and queryBackend leaves out: a test backend need not hold one.
+type kvStore interface {
+	KVEntries() ([]memory.KVEntry, error)
+	Get(key string) (string, bool, error)
+}
+
+// handleMemoryList lists the key-value memory's keys for the operator, as the
+// agent's memory_list sees them, with each one's size. It only reads.
+func (d *Daemon) handleMemoryList(enc *json.Encoder) {
+	kv, ok := d.store.(kvStore)
+	if !ok {
+		enc.Encode(protocol.NewErrorMsg("memory not available")) //nolint:errcheck
+		return
+	}
+	entries, err := kv.KVEntries()
+	if err != nil {
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("list memory: %v", err))) //nolint:errcheck
+		return
+	}
+	out := make([]protocol.MemoryEntry, len(entries))
+	for i, e := range entries {
+		out[i] = protocol.MemoryEntry{Key: e.Key, Bytes: e.Bytes, UpdatedAt: e.UpdatedAt}
+	}
+	data, _ := json.Marshal(out)
+	enc.Encode(protocol.NewTextMsg(protocol.TypeMemoryList, string(data))) //nolint:errcheck
+}
+
+// handleMemoryGet reads one key of the key-value memory for the operator.
+func (d *Daemon) handleMemoryGet(enc *json.Encoder, key string) {
+	kv, ok := d.store.(kvStore)
+	if !ok {
+		enc.Encode(protocol.NewErrorMsg("memory not available")) //nolint:errcheck
+		return
+	}
+	v, found, err := kv.Get(key)
+	switch {
+	case err != nil:
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("read memory: %v", err))) //nolint:errcheck
+	case !found:
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("memory key %s not found", key))) //nolint:errcheck
+	default:
+		data, _ := json.Marshal(protocol.MemoryValue{Key: key, Value: v})
+		enc.Encode(protocol.NewTextMsg(protocol.TypeMemoryGet, string(data))) //nolint:errcheck
+	}
 }
 
 // handleSessionRename gives a conversation the operator's display name. It

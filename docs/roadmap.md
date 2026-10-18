@@ -10,7 +10,6 @@ from this table rather than marked done, so what is listed here is what is still
 | Model routing | Planned | Route different work to different models in one deployment. Nine uses one model at a time. |
 | More LLM backends | Partial | Mistral is supported. llama.cpp and vLLM both speak an OpenAI-compatible API, so one adapter covers them. |
 | Richer sandboxed tools | Planned | FS and env gaps, runtime wasm grants, binary data, missing JS globals, HTTP audit, secret sharing, structured tool errors. |
-| Web UI gaps | Partial | The terminal UI was removed for the web UI, which does not yet show the live reasoning trace, change a session's plan mode, or show the instance name. |
 | More built-in plugins | Planned | — |
 | Codebase improvements | Planned | Refactoring and performance work — [`adr/codebase-improvement.md`](../adr/codebase-improvement.md). |
 | Fix eval-runner daemon hang | Planned | `tests/evals/runner` spins up a real in-process daemon per test and intermittently deadlocks under CI load on a turn whose reply never arrives. Excluded from `make ci` until fixed; `make eval-replay` still runs. |

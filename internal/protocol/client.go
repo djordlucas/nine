@@ -634,6 +634,20 @@ func (c *Client) Database(action string, args DatabaseArgs, out any) error {
 	return c.roundTrip(NewDatabaseMsg(action, args), out)
 }
 
+// MemoryList lists the key-value memory's keys, with their sizes.
+func (c *Client) MemoryList() ([]MemoryEntry, error) {
+	var out []MemoryEntry
+	err := c.roundTrip(NewQueryMsg(TypeMemoryList), &out)
+	return out, err
+}
+
+// MemoryGet reads one key of the key-value memory.
+func (c *Client) MemoryGet(key string) (MemoryValue, error) {
+	var out MemoryValue
+	err := c.roundTrip(NewMemoryGetMsg(key), &out)
+	return out, err
+}
+
 // GetSkill requests one skill with its body.
 func (c *Client) GetSkill(name string) (SkillDetail, error) {
 	var out SkillDetail

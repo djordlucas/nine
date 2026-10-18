@@ -66,6 +66,7 @@ func (s *Server) GetStatus(ctx context.Context, request apigen.GetStatusRequestO
 		Plugins:        &plugins,
 		Provider:       nonEmpty(info.Provider),
 		Model:          nonEmpty(info.Model),
+		InstanceName:   nonEmpty(info.InstanceName),
 	}, nil
 }
 
@@ -85,6 +86,58 @@ func (s *Server) GetConfig(ctx context.Context, request apigen.GetConfigRequestO
 			errorBody("server_error", err.Error(), nil)), nil
 	}
 	return apigen.GetConfig200JSONResponse{Toml: view}, nil
+}
+
+// ListMemory lists the key-value memory's keys, as the agent's memory_list
+// sees them, with their sizes. Values are read one at a time.
+func (s *Server) ListMemory(ctx context.Context, request apigen.ListMemoryRequestObject) (apigen.ListMemoryResponseObject, error) {
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		return apigen.ListMemory503JSONResponse(
+			errorBody("service_unavailable", err.Error(), nil)), nil
+	}
+	defer cl.Close()
+
+	list, err := cl.MemoryList()
+	if err != nil {
+		return apigen.ListMemory500JSONResponse(
+			errorBody("server_error", err.Error(), nil)), nil
+	}
+	var out apigen.MemoryListResponse
+	out.Entries = make([]struct {
+		Bytes     int     `json:"bytes"`
+		Key       string  `json:"key"`
+		UpdatedAt *string `json:"updated_at,omitempty"`
+	}, len(list))
+	for i, e := range list {
+		out.Entries[i].Key, out.Entries[i].Bytes, out.Entries[i].UpdatedAt = e.Key, e.Bytes, nonEmpty(e.UpdatedAt)
+	}
+	return apigen.ListMemory200JSONResponse(out), nil
+}
+
+// GetMemoryValue reads one key of the key-value memory.
+func (s *Server) GetMemoryValue(ctx context.Context, request apigen.GetMemoryValueRequestObject) (apigen.GetMemoryValueResponseObject, error) {
+	if request.Params.Key == "" {
+		return apigen.GetMemoryValue400JSONResponse(
+			errorBody("invalid_request", "missing key", nil)), nil
+	}
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		return apigen.GetMemoryValue503JSONResponse(
+			errorBody("service_unavailable", err.Error(), nil)), nil
+	}
+	defer cl.Close()
+
+	v, err := cl.MemoryGet(request.Params.Key)
+	if err != nil {
+		if errNotFound(err) {
+			return apigen.GetMemoryValue404JSONResponse(
+				errorBody("not_found", err.Error(), map[string]any{"key": request.Params.Key})), nil
+		}
+		return apigen.GetMemoryValue500JSONResponse(
+			errorBody("server_error", err.Error(), nil)), nil
+	}
+	return apigen.GetMemoryValue200JSONResponse{Key: v.Key, Value: v.Value}, nil
 }
 
 func (s *Server) GetSelfModel(ctx context.Context, request apigen.GetSelfModelRequestObject) (apigen.GetSelfModelResponseObject, error) {

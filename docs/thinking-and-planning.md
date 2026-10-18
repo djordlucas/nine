@@ -28,8 +28,8 @@ those and rarely on the rest, since by then the approach is already chosen.
 `plan-only` is the default because the cost of reasoning is paid per call while
 the benefit lands almost entirely on the first one.
 
-A client changes it live with the wire protocol's `set_plan_mode` (`off`,
-`plan-only` or `always`). The setting applies to that session, leaving the
+Change it live with **Plan** under the web UI's message box (`off`, `plan-only`
+or `always`), or `POST /api/v1/conversations/{id}/plan-mode`. The setting applies to that session, leaving the
 configured default alone. For a single turn, the web UI's **T** toggle beside
 Send (`force_think`) forces reasoning on without changing the session's mode —
 the way to think hard about one question in a session running `off`.
@@ -100,7 +100,7 @@ background session has nobody to ask.
 |-------|--------|
 | Thinking needs model support | The live trace requires a model that advertises the capability, and currently works with Ollama. See [model compatibility](model-compatibility.md). |
 | Approval is interactive only | `plan_approval` applies to interactive conversations. A background session has nobody to ask, so a plan there runs unapproved whatever the setting. |
-| The web UI shows no trace and changes no mode | The web UI does not render the live reasoning trace, and has no control for a session's plan mode; `set_plan_mode` is reachable only over the daemon's socket. |
+| The trace is not kept | Reasoning is streamed, not journaled: the web UI shows it while the page is open, and a reload loses it. |
 | Approval redirects, it does not edit | Answering anything but `approve` re-runs the reasoning pass with your answer as clarification. There is no way to edit the plan in place and continue from it. |
 | The risky check reads the plan's words | `on-risky` matches an approval-listed tool name in the plan text. A plan that will use a gated tool without naming it is not caught here — only at the call. |
 | Reasoning cost is per call | `always` pays the reasoning cost on every call in a turn. The benefit lands almost entirely on the first, which is why `plan-only` is the default. |

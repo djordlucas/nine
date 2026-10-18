@@ -52,6 +52,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the key-value memory
+         * @description Every key of the key-value memory the agent reads and writes with memory_get and memory_set, with its size and when it last changed. Values are read one at a time. Read-only.
+         */
+        get: operations["listMemory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/memory/value": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one memory key
+         * @description One key of the key-value memory with its value. Read-only.
+         */
+        get: operations["getMemoryValue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/self-model": {
         parameters: {
             query?: never;
@@ -238,6 +278,26 @@ export interface paths {
          * @description Cancels the turn a conversation is running. The turn ends with the error "turn cancelled", which every stream following the conversation receives; the session, its history and its checkpoint stay, and a queued message still runs. cancelled is false when no turn was running.
          */
         post: operations["cancelTurn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/conversations/{id}/plan-mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change a conversation's plan mode
+         * @description Changes how the session reasons before acting, for this session only and while it is loaded — off, plan-only or always. The configured default is left alone. A session that is not loaded (one no client has opened since the daemon started) is not found.
+         */
+        post: operations["setPlanMode"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1259,6 +1319,31 @@ export interface components {
             timestamp?: string;
             turn_number?: number;
         };
+        /** @description The plan mode to run a session in. */
+        PlanModeRequest: {
+            /** @enum {string} */
+            mode: "off" | "plan-only" | "always";
+        };
+        /** @description The session and the plan mode it now runs in. */
+        PlanModeResponse: {
+            id: string;
+            plan_mode: string;
+        };
+        /** @description The key-value memory's keys. */
+        MemoryListResponse: {
+            entries: {
+                key: string;
+                /** @description The value's size in bytes. */
+                bytes: number;
+                /** @description When the key last changed, as the store records it. */
+                updated_at?: string;
+            }[];
+        };
+        /** @description One key of the key-value memory with its value. */
+        MemoryValue: {
+            key: string;
+            value: string;
+        };
         /** @description The self-model, key by key. */
         SelfModelResponse: {
             entries: {
@@ -1957,6 +2042,8 @@ export interface components {
             plugins?: components["schemas"]["PluginInfo"][];
             /** @description The LLM provider the daemon calls, ollama or mistral. */
             provider?: string;
+            /** @description This instance's display name, from [daemon] instance_name or the name it chose for itself. */
+            instance_name?: string;
             status?: string;
             tools?: components["schemas"]["ToolInfo"][];
             uptime?: string;
@@ -2036,8 +2123,8 @@ export interface components {
             /** Format: date-time */
             expires_at: string;
         };
-        /** @description One server-sent event. The SSE event name (connected, tool_start, tool_end, response_chunk, response, sub_agent_start, sub_agent_end, notice, done, error) selects the member. */
-        StreamEvent: components["schemas"]["StreamConnected"] | components["schemas"]["StreamToolStart"] | components["schemas"]["StreamToolEnd"] | components["schemas"]["StreamResponseChunk"] | components["schemas"]["StreamResponse"] | components["schemas"]["StreamSubAgent"] | components["schemas"]["StreamNotice"] | components["schemas"]["StreamDone"] | components["schemas"]["ErrorResponse"];
+        /** @description One server-sent event. The SSE event name (connected, tool_start, tool_end, response_chunk, response, sub_agent_start, sub_agent_end, notice, thinking, thinking_chunk, stage, plan_start, plan_end, context_update, done, error) selects the member. */
+        StreamEvent: components["schemas"]["StreamConnected"] | components["schemas"]["StreamToolStart"] | components["schemas"]["StreamToolEnd"] | components["schemas"]["StreamResponseChunk"] | components["schemas"]["StreamResponse"] | components["schemas"]["StreamSubAgent"] | components["schemas"]["StreamNotice"] | components["schemas"]["StreamThinking"] | components["schemas"]["StreamThinkingChunk"] | components["schemas"]["StreamStage"] | components["schemas"]["StreamPlan"] | components["schemas"]["StreamContextUpdate"] | components["schemas"]["StreamDone"] | components["schemas"]["ErrorResponse"];
         /** @description A turn's final reply. Sent whether or not the reply was also streamed as chunks. */
         StreamResponse: {
             agent_id: string;
@@ -2058,6 +2145,38 @@ export interface components {
         /** @description An informational, session-level notice, such as a capability downgrade. */
         StreamNotice: {
             text: string;
+            /** Format: int64 */
+            timestamp: number;
+        };
+        /** @description A model call began within the turn. think says whether it streams its reasoning as thinking_chunk events. */
+        StreamThinking: {
+            /** @description The call's number within the turn, from 1. */
+            llm_call_n: number;
+            think: boolean;
+            /** Format: int64 */
+            timestamp: number;
+        };
+        /** @description A fragment of the model's reasoning as it is produced. Not journaled. */
+        StreamThinkingChunk: {
+            text: string;
+            /** Format: int64 */
+            timestamp: number;
+        };
+        /** @description A label for what the turn is doing now, such as the request-analysis pass. */
+        StreamStage: {
+            text: string;
+            /** Format: int64 */
+            timestamp: number;
+        };
+        /** @description The turn's planning pass began (plan_start) or ended (plan_end). */
+        StreamPlan: {
+            /** Format: int64 */
+            timestamp: number;
+        };
+        /** @description The context for the next model call was assembled, with how much of the budget it uses. */
+        StreamContextUpdate: {
+            context_used: number;
+            context_budget: number;
             /** Format: int64 */
             timestamp: number;
         };
@@ -2283,6 +2402,107 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listMemory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryListResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getMemoryValue: {
+        parameters: {
+            query: {
+                /** @description the key, e.g. self/identity */
+                key: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryValue"];
+                };
+            };
+            /** @description missing key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description no such key */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             429: components["responses"]["TooManyRequests"];
             /** @description internal error */
             500: {
@@ -2998,6 +3218,72 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             /** @description conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    setPlanMode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description conversation id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description the mode to run the session in */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanModeRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanModeResponse"];
+                };
+            };
+            /** @description missing id, or a mode that is not off, plan-only or always */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description conversation not loaded */
             404: {
                 headers: {
                     [name: string]: unknown;

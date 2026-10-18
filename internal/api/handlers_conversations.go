@@ -121,12 +121,53 @@ func (s *Server) GetConversation(ctx context.Context, request apigen.GetConversa
 			}
 		}
 	}
+	// The plan mode is a loaded session's, which the daemon's status lists.
+	var planMode *string
+	if info, err := cl.Status(); err == nil {
+		for _, a := range info.Agents {
+			if a.ID == request.Id && a.PlanMode != "" {
+				planMode = ptr(a.PlanMode)
+			}
+		}
+	}
 
 	return apigen.GetConversation200JSONResponse{
-		Id:      ptr(request.Id),
-		Name:    name,
-		Context: ptr(decodeContext(ctxJSON)),
+		Id:       ptr(request.Id),
+		Name:     name,
+		PlanMode: planMode,
+		Context:  ptr(decodeContext(ctxJSON)),
 	}, nil
+}
+
+// SetPlanMode changes a loaded session's plan mode for that session only.
+func (s *Server) SetPlanMode(ctx context.Context, request apigen.SetPlanModeRequestObject) (apigen.SetPlanModeResponseObject, error) {
+	if request.Id == "" || request.Body == nil {
+		return apigen.SetPlanMode400JSONResponse(
+			errorBody("invalid_request", "missing conversation id or mode", nil)), nil
+	}
+	mode := string(request.Body.Mode)
+	switch mode {
+	case "off", "plan-only", "always":
+	default:
+		return apigen.SetPlanMode400JSONResponse(
+			errorBody("invalid_request", fmt.Sprintf("plan mode %q is not off, plan-only or always", mode), nil)), nil
+	}
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		return apigen.SetPlanMode503JSONResponse(
+			errorBody("service_unavailable", err.Error(), nil)), nil
+	}
+	defer cl.Close()
+
+	if _, err := cl.SetPlanMode(request.Id, mode); err != nil {
+		if errNotFound(err) {
+			return apigen.SetPlanMode404JSONResponse(
+				errorBody("not_found", "conversation not loaded", map[string]any{"id": request.Id})), nil
+		}
+		return apigen.SetPlanMode500JSONResponse(
+			errorBody("server_error", err.Error(), nil)), nil
+	}
+	return apigen.SetPlanMode200JSONResponse{Id: request.Id, PlanMode: mode}, nil
 }
 
 // RenameConversation gives a conversation a display name. The daemon checks
@@ -431,10 +472,9 @@ func writeSSE(w io.Writer, event string, payload any) error {
 	return err
 }
 
-// toStreamEvent maps one daemon message to an SSE event name and payload. The
-// daemon's other progress types — reasoning tokens, stage labels, context
-// usage — are rendering detail the API does not declare, so they are
-// skipped rather than sent under names a client has no schema for.
+// toStreamEvent maps one daemon message to an SSE event name and payload. A
+// progress type the API does not declare is skipped rather than sent under a
+// name a client has no schema for.
 func toStreamEvent(m protocol.Msg) (string, any, bool) {
 	ts := m.Timestamp
 	if ts == 0 {
@@ -463,6 +503,16 @@ func toStreamEvent(m protocol.Msg) (string, any, bool) {
 		}, true
 	case protocol.TypeNotice:
 		return "notice", apigen.StreamNotice{Text: m.Text, Timestamp: ts}, true
+	case protocol.TypeThinking:
+		return "thinking", apigen.StreamThinking{LlmCallN: m.LLMCallN, Think: m.Think, Timestamp: ts}, true
+	case protocol.TypeThinkingChunk:
+		return "thinking_chunk", apigen.StreamThinkingChunk{Text: m.Text, Timestamp: ts}, true
+	case protocol.TypeStage:
+		return "stage", apigen.StreamStage{Text: m.Text, Timestamp: ts}, true
+	case protocol.TypePlanStart, protocol.TypePlanEnd:
+		return string(m.Type), apigen.StreamPlan{Timestamp: ts}, true
+	case protocol.TypeContextUpdate:
+		return "context_update", apigen.StreamContextUpdate{ContextUsed: m.ContextUsed, ContextBudget: m.ContextBudget, Timestamp: ts}, true
 	case protocol.TypeDone:
 		return "done", apigen.StreamDone{AgentId: m.AgentID, Timestamp: ts}, true
 	case protocol.TypeError:

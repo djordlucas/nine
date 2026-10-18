@@ -625,5 +625,4 @@ NINE_LOG_FORMAT=json NINE_LOG_LEVEL=info ./nine daemon
 |-------|--------|
 | Local clients only | The CLI reaches the daemon over a Unix socket on the same host; the web UI and other remote clients go through the API server. |
 | No conversation reset command | Starting genuinely fresh means restarting the daemon. A new conversation in the web UI, or `nine send` without `--id`, leaves the daemon's other state in place. |
-| No live plan-mode change | A session's reasoning mode is set when it starts; neither the CLI nor the web UI changes it mid-session. |
 | Config changes need a restart | Editing `nine.toml` takes effect on daemon restart. |

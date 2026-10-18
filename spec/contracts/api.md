@@ -376,6 +376,25 @@ never written is left out. It is read-only.
 { "entries": [ { "key": "self/identity", "value": "Nine is a persistent AI agent daemon…" } ] }
 ```
 
+#### GET `/api/v1/memory`, GET `/api/v1/memory/value?key=…`
+
+The key-value memory the agent reads and writes with `memory_get` and
+`memory_set`, read-only. The list gives every key with its size in bytes and
+when it last changed; the value is read one key at a time, and a missing key is
+`404`.
+
+```json
+{ "entries": [ { "key": "self/identity", "bytes": 326, "updated_at": "2026-10-18T13:12:33Z" } ] }
+{ "key": "self/identity", "value": "Nine is a persistent AI agent daemon…" }
+```
+
+#### POST `/api/v1/conversations/{id}/plan-mode`
+
+Change a loaded session's plan mode, for that session only:
+`{"mode": "off" | "plan-only" | "always"}`. Answers `{"id", "plan_mode"}`. A mode
+that is not one of the three is `400`; a session that is not loaded is `404`.
+`GET /conversations/{id}` reports a loaded session's `plan_mode`.
+
 #### PATCH `/api/v1/conversations/{id}`
 
 Rename a conversation, in place of the name inferred from its first message.
@@ -1225,6 +1244,24 @@ data: {"text": "chunk", "timestamp": 1234567890}
 event: notice
 data: {"text": "...", "timestamp": 1234567890}
 
+event: thinking
+data: {"llm_call_n": 1, "think": true, "timestamp": 1234567890}
+
+event: thinking_chunk
+data: {"text": "...", "timestamp": 1234567890}
+
+event: stage
+data: {"text": "...", "timestamp": 1234567890}
+
+event: plan_start
+data: {"timestamp": 1234567890}
+
+event: plan_end
+data: {"timestamp": 1234567890}
+
+event: context_update
+data: {"context_used": 9726, "context_budget": 32768, "timestamp": 1234567890}
+
 event: response
 data: {"agent_id": "id", "text": "the reply", "timestamp": 1234567890}
 
@@ -1494,6 +1531,8 @@ All API configuration options **MUST** be available via CLI flags.
 | `nine status` | GET `/api/v1/status` | Implemented |
 | — | GET `/api/v1/config` | Implemented |
 | — | GET `/api/v1/self-model` | Implemented |
+| — | GET `/api/v1/memory`, `/api/v1/memory/value` | Implemented |
+| — | POST `/api/v1/conversations/{id}/plan-mode` | Implemented |
 | `nine goals` | GET `/api/v1/goals` | Implemented |
 | `nine workflows` | GET `/api/v1/workflows` | Implemented |
 | `nine tools` | GET `/api/v1/tools` | Implemented |

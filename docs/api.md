@@ -159,6 +159,8 @@ GET /api/v1/health    — API server health (daemon connectivity, uptime, versio
 GET /api/v1/status    — Daemon status (sessions, plugins, tools, memory, max_running, provider, model)
 GET /api/v1/config    — The configuration in force, as TOML, credentials hidden
 GET /api/v1/self-model — The self/ keys every turn's self-model block carries
+GET /api/v1/memory    — Every key of the key-value memory, with its size
+GET /api/v1/memory/value?key=… — One memory key with its value
 ```
 
 ### Conversations
@@ -175,6 +177,7 @@ GET    /api/v1/conversations/{id}/trace          — Event journal (nine trace)
 POST   /api/v1/conversations/{id}/replay         — One turn reconstructed (nine replay)
 DELETE /api/v1/conversations/{id}                — Delete a conversation
 POST   /api/v1/conversations/{id}/cancel         — Cancel the running turn
+POST   /api/v1/conversations/{id}/plan-mode      — Change a loaded session's plan mode
 POST   /api/v1/conversations/{id}/stop           — End the session
 GET    /api/v1/conversations/{id}/messages/stream — Live events (SSE)
 WS     /ws/v1/conversations/{id}/messages          — Live events + send turns (WebSocket)
@@ -414,6 +417,11 @@ curl -N http://localhost:8080/api/v1/conversations/abc/messages/stream
 | `sub_agent_start`, `sub_agent_end` | A sub-agent is spawned and finishes |
 | `response_chunk` | A fragment of the reply, when the model streams |
 | `notice` | A session-level notice, such as a capability downgrade |
+| `thinking` | A model call begins, with its number in the turn and whether it streams its reasoning |
+| `thinking_chunk` | A fragment of the model's reasoning. Not journaled: a reload does not bring it back |
+| `stage` | What the turn is doing now, such as waiting for the model |
+| `plan_start`, `plan_end` | The turn's planning pass begins and ends |
+| `context_update` | The next model call's context is assembled: `context_used` of `context_budget` tokens |
 | `response` | The turn's final reply |
 | `error` | The turn failed, or the stream ended on the daemon's side |
 | `done` | The turn is over; the stream stays open for the next one |
@@ -583,7 +591,6 @@ In the dev container, the API server is an s6 longrun service. When the hot-relo
 | Local transport underneath | The API server is a translation layer over the daemon's Unix socket, so it runs on the same host as the daemon. It is also the only way to reach Nine over a network: the socket itself carries no authentication, and `auth_token` is the API server's. |
 | Browser WebSocket clients cannot send the token | A browser's WebSocket API sets no `Authorization` header, so with `auth_token` set a browser reaches the socket only through a proxy that adds it. Non-browser clients send the header. |
 | A slow stream reader loses events | The daemon queues up to 1024 events per stream or socket; a client that falls further behind loses the excess rather than stalling the session's turn. A WebSocket write that cannot complete in 10 seconds closes the socket. |
-| Stream omits reasoning detail | Reasoning tokens, stage labels and context-usage updates are not forwarded; the API declares no schema for them, so no client shows them yet. |
 | `ask_human` is answerable over the WebSocket only | The SSE stream does not carry `human_input_required`, and no REST endpoint answers one. An interactive conversation driven without the WebSocket waits out each question's timeout. |
 | The journal stream resumes within bounds | A client more than 10,000 events behind, or whose next events were scrubbed, gets `reset` and starts from now. |
 | Startup races the daemon | The API server polls for the daemon socket on startup and refuses requests until the daemon is ready. |

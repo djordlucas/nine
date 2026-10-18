@@ -70,6 +70,8 @@ const (
 	TypeListTools         MsgType = "list_tools"
 	TypeListSkills        MsgType = "list_skills"
 	TypeSkillGet          MsgType = "skill_get"
+	TypeMemoryList        MsgType = "memory_list"
+	TypeMemoryGet         MsgType = "memory_get"
 	TypeBackup            MsgType = "backup"
 	TypeWorkspace         MsgType = "workspace"
 	TypeDatabase          MsgType = "database"
@@ -206,6 +208,8 @@ var ClientMsgTypes = []MsgType{
 	TypeListTools,
 	TypeListSkills,
 	TypeSkillGet,
+	TypeMemoryList,
+	TypeMemoryGet,
 	TypeBackup,
 	TypeWorkspace,
 	TypeDatabase,
@@ -610,7 +614,6 @@ type QueueStat struct {
 	MaxConcurrent int `json:"max_concurrent"` // slot limit
 }
 
-// StatusInfo is the payload returned by the "status" protocol message.
 // SelfModelEntry is one key of the self-model (the self_model query): a
 // self/ key that rides in every turn's self-model block, and what it holds.
 type SelfModelEntry struct {
@@ -618,6 +621,7 @@ type SelfModelEntry struct {
 	Value string `json:"value"`
 }
 
+// StatusInfo is the payload returned by the "status" protocol message.
 type StatusInfo struct {
 	Agents    []AgentInfo    `json:"agents"`
 	SubAgents []SubAgentInfo `json:"sub_agents,omitempty"`
@@ -629,6 +633,8 @@ type StatusInfo struct {
 	// Provider and Model are the LLM the daemon calls, overrides applied.
 	Provider string `json:"provider,omitempty"`
 	Model    string `json:"model,omitempty"`
+	// InstanceName is the daemon's display name for this instance.
+	InstanceName string `json:"instance_name,omitempty"`
 }
 
 // SkillInfo describes one skill for the "list_skills" response. Source is
@@ -757,6 +763,25 @@ type DatabaseArgs struct {
 func NewDatabaseMsg(action string, args DatabaseArgs) Msg {
 	raw, _ := json.Marshal(args)
 	return Msg{Type: TypeDatabase, Text: action, ToolInput: raw}
+}
+
+// NewMemoryGetMsg asks for one key of the key-value memory, with its value.
+func NewMemoryGetMsg(key string) Msg {
+	return Msg{Type: TypeMemoryGet, Text: key}
+}
+
+// MemoryEntry is one key of the key-value memory, as memory_list lists it:
+// its size and when it last changed, not its value.
+type MemoryEntry struct {
+	Key       string `json:"key"`
+	Bytes     int    `json:"bytes"`
+	UpdatedAt string `json:"updated_at,omitempty"`
+}
+
+// MemoryValue is one key of the key-value memory with its value (memory_get).
+type MemoryValue struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 // NewSkillGetMsg asks for one skill with its body.

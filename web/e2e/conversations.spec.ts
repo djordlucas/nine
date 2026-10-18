@@ -104,3 +104,15 @@ test('a phone shows the list or the chat, not both', async ({ page, isMobile }) 
     await expect(list).toBeVisible();
   }
 });
+
+test('the plan mode changes for the session, and the context use shows', async ({ page }) => {
+  await newConversation(page);
+  const plan = page.getByRole('combobox', { name: 'Plan' });
+  await expect(plan).toBeVisible();
+  await plan.selectOption('always');
+  await page.reload();
+  await expect(page.getByRole('combobox', { name: 'Plan' })).toHaveValue('always');
+  await send(page, 'hello there');
+  await expect(page.getByRole('button', { name: 'Inspect turn 1' })).toBeVisible();
+  await expect(page.getByText(/^ctx \d/)).toBeVisible();
+});

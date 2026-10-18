@@ -516,8 +516,8 @@ cert_path = ""
 key_path  = ""
 
 [planning]
-# Plan-before-execute policy (../adr/thinking-and-planning.md). A session's mode
-# is set when it starts; the wire protocol's set_plan_mode changes it live.
+# Plan-before-execute policy (../adr/thinking-and-planning.md). The web UI's Plan
+# control changes a session's mode live, for that session only.
 #
 # plan_mode — how the agent reasons before acting:
 #   off        no native thinking and no request-analysis pass

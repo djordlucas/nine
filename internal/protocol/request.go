@@ -171,6 +171,9 @@ type DatabaseReq struct {
 // SkillGetReq asks for one skill with its body.
 type SkillGetReq struct{ Name string }
 
+// MemoryGetReq asks for one key of the key-value memory, with its value.
+type MemoryGetReq struct{ Key string }
+
 // GoalSetStatusReq sets a goal's status as the operator.
 type GoalSetStatusReq struct {
 	ID     string
@@ -233,6 +236,7 @@ func (GoalCreateReq) Type() MsgType        { return TypeGoalCreate }
 func (GoalDeleteReq) Type() MsgType        { return TypeGoalDelete }
 func (GoalSetStatusReq) Type() MsgType     { return TypeGoalSetStatus }
 func (SkillGetReq) Type() MsgType          { return TypeSkillGet }
+func (MemoryGetReq) Type() MsgType         { return TypeMemoryGet }
 func (BackupReq) Type() MsgType            { return TypeBackup }
 func (WorkspaceReq) Type() MsgType         { return TypeWorkspace }
 func (DatabaseReq) Type() MsgType          { return TypeDatabase }
@@ -245,7 +249,7 @@ func (q QueryReq) Type() MsgType           { return q.Kind }
 
 // queryKinds are the field-less requests QueryReq stands for.
 var queryKinds = map[MsgType]bool{
-	TypeStatus: true, TypeConfig: true, TypeSelfModel: true, TypeListGoals: true, TypeListWorkflows: true,
+	TypeStatus: true, TypeConfig: true, TypeSelfModel: true, TypeMemoryList: true, TypeListGoals: true, TypeListWorkflows: true,
 	TypeListTools: true, TypePluginsList: true, TypePluginsReload: true,
 	TypeToolsList: true, TypeToolsReload: true, TypeSessionsList: true,
 	TypeProcessList: true, TypeGrantsList: true, TypeListSkills: true,
@@ -321,6 +325,8 @@ func DecodeRequest(m Msg) (Request, error) {
 		return GoalSetStatusReq{ID: m.ID, Status: m.Text}, nil
 	case TypeSkillGet:
 		return SkillGetReq{Name: m.Text}, nil
+	case TypeMemoryGet:
+		return MemoryGetReq{Key: m.Text}, nil
 	case TypeBackup:
 		return BackupReq{Workspace: m.Text == BackupWorkspace}, nil
 	case TypeWorkspace:

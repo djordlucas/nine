@@ -30,7 +30,7 @@ test('a process is stopped and started from its page', async ({ page, request })
     await expect(page.getByRole('heading', { name: `goal:${id}`, level: 2 })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Budget today' })).toBeVisible();
 
-      await page.getByRole('button', { name: 'Stop' }).click();
+    await page.getByRole('button', { name: 'Stop' }).click();
     await page.getByRole('dialog').getByRole('button', { name: 'Stop' }).click();
     await expect(state(page)).toContainText('stopped');
     await expect(page.getByText('Stopped by the operator.')).toBeVisible();
@@ -96,4 +96,23 @@ test('the goals page lists workflows, or says there are none', async ({ page }) 
   const workflows = page.getByRole('navigation', { name: 'Workflows' });
   await expect(workflows.getByRole('heading', { name: 'Workflows' })).toBeVisible();
   await expect(workflows.getByText(/No workflows|steps/).first()).toBeVisible();
+});
+
+test('a process session is watched, read-only', async ({ page, request }) => {
+  const id = await createGoal(request, `e2e watch ${Date.now()}`);
+  try {
+    await signIn(page);
+    await page.goto(processPage(id));
+    await page.getByRole('link', { name: 'Watch it' }).click();
+    await expect(page).toHaveURL(/\/session$/);
+    const pane = page.getByRole('region', { name: 'Process' });
+    // Its session has a chat once the process has run a turn; until then the pane says so.
+    await expect(pane.getByRole('list', { name: 'Messages' }).or(pane.getByText('has not run a turn yet'))).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Message' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Delete', exact: true })).toHaveCount(0);
+    await pane.getByRole('link', { name: `‹ goal:${id}` }).click();
+    await expect(page.getByRole('heading', { name: `goal:${id}`, level: 2 })).toBeVisible();
+  } finally {
+    await deleteGoal(request, id);
+  }
 });

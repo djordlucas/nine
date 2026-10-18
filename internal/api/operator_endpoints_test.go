@@ -572,7 +572,8 @@ func TestStream_ForwardsTheWatchFeed(t *testing.T) {
 		return []protocol.Msg{
 			{Type: protocol.TypeWatch, AgentID: "abc"},
 			protocol.NewToolStartMsg("abc", "fetch", "", "", json.RawMessage(`{"url":"https://x"}`)),
-			protocol.NewThinkingChunkMsg("abc", "hmm"), // not declared by the API: skipped
+			protocol.NewThinkingChunkMsg("abc", "hmm"),
+			{Type: protocol.TypeSetName, AgentID: "abc", Text: "x"}, // not declared by the API: skipped
 			protocol.NewResponseChunkMsg("abc", "hel"),
 			protocol.NewResponseMsg("abc", "hello"),
 			protocol.NewDoneMsg("abc"),
@@ -624,7 +625,7 @@ func TestStream_ForwardsTheWatchFeed(t *testing.T) {
 			break
 		}
 	}
-	want := []string{"connected", "tool_start", "response_chunk", "response", "done"}
+	want := []string{"connected", "tool_start", "thinking_chunk", "response_chunk", "response", "done"}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Errorf("events = %v, want %v", names, want)
 	}
@@ -849,5 +850,71 @@ func TestCancelTurn(t *testing.T) {
 		if got.ID != c.id || got.Cancelled != c.cancelled {
 			t.Errorf("%s: %+v", c.id, got)
 		}
+	}
+}
+
+// The memory is listed with sizes and read one key at a time; a missing key is
+// 404 and an empty one 400.
+func TestMemoryEndpoints(t *testing.T) {
+	sock := scriptedDaemon(t, func(m protocol.Msg) []protocol.Msg {
+		switch m.Type {
+		case protocol.TypeMemoryList:
+			return textReply(t, protocol.TypeMemoryList, []protocol.MemoryEntry{{Key: "self/identity", Bytes: 14, UpdatedAt: "2026-10-18"}})
+		case protocol.TypeMemoryGet:
+			if m.Text != "self/identity" {
+				return errReply("memory key " + m.Text + " not found")
+			}
+			return textReply(t, protocol.TypeMemoryGet, protocol.MemoryValue{Key: m.Text, Value: "Nine, a daemon"})
+		}
+		return errReply("unexpected " + string(m.Type))
+	})
+	w := doAt(t, sock, "GET", "/api/v1/memory", "")
+	var list struct {
+		Entries []struct {
+			Key   string `json:"key"`
+			Bytes int    `json:"bytes"`
+		} `json:"entries"`
+	}
+	decodeJSON(t, w, &list)
+	if len(list.Entries) != 1 || list.Entries[0].Key != "self/identity" || list.Entries[0].Bytes != 14 {
+		t.Errorf("list = %+v", list)
+	}
+	w = doAt(t, sock, "GET", "/api/v1/memory/value?key=self%2Fidentity", "")
+	var v struct{ Key, Value string }
+	decodeJSON(t, w, &v)
+	if v.Value != "Nine, a daemon" {
+		t.Errorf("value = %+v", v)
+	}
+	if w := doAt(t, sock, "GET", "/api/v1/memory/value?key=nope", ""); w.Code != http.StatusNotFound {
+		t.Errorf("missing key: status %d, want 404", w.Code)
+	}
+	if w := doAt(t, sock, "GET", "/api/v1/memory/value?key=", ""); w.Code != http.StatusBadRequest {
+		t.Errorf("empty key: status %d, want 400", w.Code)
+	}
+}
+
+// A plan mode is set on a loaded session; a mode that is not one of the three
+// is 400, and a session that is not loaded 404.
+func TestSetPlanMode(t *testing.T) {
+	sock := scriptedDaemon(t, func(m protocol.Msg) []protocol.Msg {
+		if m.AgentID != "abc" {
+			return []protocol.Msg{protocol.NewAgentErrorMsg(m.AgentID, "conversation not found")}
+		}
+		return []protocol.Msg{protocol.NewTextMsg(protocol.TypeSetPlanMode, "plan mode: "+m.Text)}
+	})
+	w := doAt(t, sock, "POST", "/api/v1/conversations/abc/plan-mode", `{"mode":"always"}`)
+	var got struct {
+		ID       string `json:"id"`
+		PlanMode string `json:"plan_mode"`
+	}
+	decodeJSON(t, w, &got)
+	if got.ID != "abc" || got.PlanMode != "always" {
+		t.Errorf("response = %+v", got)
+	}
+	if w := doAt(t, sock, "POST", "/api/v1/conversations/abc/plan-mode", `{"mode":"sometimes"}`); w.Code != http.StatusBadRequest {
+		t.Errorf("bad mode: status %d, want 400", w.Code)
+	}
+	if w := doAt(t, sock, "POST", "/api/v1/conversations/zzz/plan-mode", `{"mode":"off"}`); w.Code != http.StatusNotFound {
+		t.Errorf("not loaded: status %d, want 404", w.Code)
 	}
 }

@@ -640,6 +640,8 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 
 	case protocol.SkillGetReq:
 		d.handleSkillGet(enc, r.Name)
+	case protocol.MemoryGetReq:
+		d.handleMemoryGet(enc, r.Key)
 
 	case protocol.BackupReq:
 		d.handleBackup(enc, r)
@@ -677,6 +679,8 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 			d.handleConfig(enc)
 		case protocol.TypeSelfModel:
 			d.handleSelfModel(enc)
+		case protocol.TypeMemoryList:
+			d.handleMemoryList(enc)
 		case protocol.TypeListGoals:
 			d.handleListGoals(enc)
 		case protocol.TypeListWorkflows:

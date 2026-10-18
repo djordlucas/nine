@@ -60,6 +60,32 @@ func (s *Store) List(prefix string) ([]string, error) {
 	return keys, rows.Err()
 }
 
+// KVEntry is one key with its size in bytes and when it last changed.
+type KVEntry struct {
+	Key       string
+	Bytes     int
+	UpdatedAt string
+}
+
+// KVEntries lists every key with its size and when it last changed, sorted by
+// key, without the values.
+func (s *Store) KVEntries() ([]KVEntry, error) {
+	rows, err := s.db.Query(`SELECT key, length(CAST(value AS BLOB)), COALESCE(updated_at, '') FROM kv ORDER BY key`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []KVEntry
+	for rows.Next() {
+		var e KVEntry
+		if err := rows.Scan(&e.Key, &e.Bytes, &e.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 // KVGetString is a convenience wrapper that returns the value or "" on miss/error.
 func (s *Store) KVGetString(key string) string {
 	val, _, _ := s.Get(key)

@@ -445,7 +445,10 @@
 
 .controls {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-start;
+  gap: var(--space-1) var(--space-3);
 }
 
 /* Think, a toggle shaped like MD: light with a dark edge when off, dark when
@@ -543,4 +546,58 @@
   .userRow {
     max-width: 90%;
   }
+}
+
+/* The model's reasoning: a quiet box, italic and muted, open while it streams. */
+.thinkingBox {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+
+.thinkingBox summary {
+  cursor: pointer;
+}
+
+.thinkingText {
+  margin: var(--space-2) 0 0;
+  max-height: 240px;
+  overflow-y: auto;
+  font-style: italic;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Context use beside the model; red from 90%, where the daemon trims. */
+.ctx,
+.ctxWarn {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.ctxWarn {
+  color: var(--danger);
+}
+
+/* The session's plan mode, as small as the model label beside it. */
+.plan {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.plan select {
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
 }
