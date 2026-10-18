@@ -42,7 +42,7 @@ The web UI that `nine api serve` serves beside the API ([web UI](docs/web-ui.md)
 <td><img src="docs/img/web_journal.png" alt="The journal: every event the daemon records, live, filterable by kind and session"></td>
 </tr>
 <tr>
-<td><img src="docs/img/web_self-model.png" alt="Data › Self-model: what Nine holds about itself, read-only"></td>
+<td><img src="docs/img/web_memory.png" alt="Data › Memory: every key of the key-value memory the agent reads and writes, with one key's value, read-only"></td>
 <td><img src="docs/img/web_config.png" alt="System › Config: the configuration in force, as TOML, with credentials hidden"></td>
 </tr>
 </table>
