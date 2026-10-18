@@ -11,7 +11,7 @@ require (
 	github.com/oapi-codegen/nethttp-middleware v1.2.0
 	github.com/oapi-codegen/runtime v1.7.0
 	github.com/tetratelabs/wazero v1.12.0
-	golang.org/x/term v0.46.0
+	golang.org/x/term v0.47.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/libc v1.74.4
 	modernc.org/sqlite v1.56.0
@@ -54,7 +54,7 @@ require (
 	github.com/yuin/goldmark-emoji v1.0.6 // indirect
 	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
