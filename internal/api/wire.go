@@ -47,9 +47,14 @@ type wireWorkflow struct {
 
 // wireStep is one step of a workflow (workflow.Step).
 type wireStep struct {
-	ID     string `json:"id"`
-	Label  string `json:"label"`
-	Status string `json:"status"`
+	ID            string   `json:"id"`
+	Label         string   `json:"label"`
+	Status        string   `json:"status"`
+	AgentID       string   `json:"agent_id,omitempty"`
+	Result        string   `json:"result,omitempty"`
+	FailureReason string   `json:"failure_reason,omitempty"`
+	DependsOn     []string `json:"depends_on,omitempty"`
+	UpdatedAt     string   `json:"updated_at"`
 }
 
 // wireNotification is one row of the daemon's `list_notifications` reply
@@ -145,11 +150,13 @@ func toGoalInfo(g wireGoal) apigen.GoalInfo {
 // summarising the step list as a total and a completed count.
 func toWorkflowInfo(w wireWorkflow) apigen.WorkflowInfo {
 	completed := 0
+	steps := make([]apigen.WorkflowStep, 0, len(w.Steps))
 	for _, step := range w.Steps {
 		switch step.Status {
 		case "done", "skipped":
 			completed++
 		}
+		steps = append(steps, toWorkflowStep(step))
 	}
 
 	out := apigen.WorkflowInfo{
@@ -158,11 +165,36 @@ func toWorkflowInfo(w wireWorkflow) apigen.WorkflowInfo {
 		Status:         ptr(w.Status),
 		Steps:          ptr(len(w.Steps)),
 		CompletedSteps: ptr(completed),
+		StepList:       &steps,
 		CreatedAt:      optionalTime(w.CreatedAt),
 		UpdatedAt:      optionalTime(w.UpdatedAt),
 	}
 	if w.AgentID != "" {
 		out.AgentId = ptr(w.AgentID)
+	}
+	return out
+}
+
+// toWorkflowStep maps one stored step to the API representation, leaving out
+// the fields the step has not set.
+func toWorkflowStep(st wireStep) apigen.WorkflowStep {
+	out := apigen.WorkflowStep{
+		Id:        ptr(st.ID),
+		Label:     ptr(st.Label),
+		Status:    ptr(st.Status),
+		UpdatedAt: optionalTime(st.UpdatedAt),
+	}
+	if st.AgentID != "" {
+		out.AgentId = ptr(st.AgentID)
+	}
+	if st.Result != "" {
+		out.Result = ptr(st.Result)
+	}
+	if st.FailureReason != "" {
+		out.FailureReason = ptr(st.FailureReason)
+	}
+	if len(st.DependsOn) > 0 {
+		out.DependsOn = &st.DependsOn
 	}
 	return out
 }

@@ -41,3 +41,43 @@
   width: 100%;
   height: 10px;
 }
+
+/* A workflow's steps, numbered in plan order. */
+.steps {
+  margin: 0;
+  padding-left: 1.6em;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.step {
+  min-width: 0;
+}
+
+.stepHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.stepLabel {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.stepMeta,
+.stepText {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.stepMeta {
+  color: var(--text-2);
+}
+
+/* A result can run to several lines; it keeps its own breaks. */
+.stepText {
+  white-space: pre-wrap;
+}

@@ -2256,7 +2256,7 @@ export interface components {
             name?: string;
             plugin?: string;
         };
-        /** @description A workflow as the daemon stores it. Steps and completed_steps summarise the stored step list; the store records no current step. */
+        /** @description A workflow as the daemon stores it. Steps and completed_steps count the entries of step_list; the store records no current step. */
         WorkflowInfo: {
             agent_id?: string;
             completed_steps?: number;
@@ -2267,6 +2267,25 @@ export interface components {
             /** @description active, done, failed, cancelled */
             status?: string;
             steps?: number;
+            /** @description The steps in plan order. */
+            step_list?: components["schemas"]["WorkflowStep"][];
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        /** @description One step of a workflow's plan. */
+        WorkflowStep: {
+            id?: string;
+            label?: string;
+            /** @description pending, running, done, failed, skipped */
+            status?: string;
+            /** @description The session that ran the step, when one did. */
+            agent_id?: string;
+            /** @description What the step produced, once done. */
+            result?: string;
+            /** @description Why the step failed, when it did. */
+            failure_reason?: string;
+            /** @description IDs of the steps this one waits for. */
+            depends_on?: string[];
             /** Format: date-time */
             updated_at?: string;
         };

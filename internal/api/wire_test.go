@@ -128,6 +128,31 @@ func TestToWorkflowInfo_SummarisesSteps(t *testing.T) {
 	}
 }
 
+// Each step keeps its details, in plan order; unset fields stay out.
+func TestToWorkflowInfo_ListsSteps(t *testing.T) {
+	got := toWorkflowInfo(wireWorkflow{
+		ID: "w1",
+		Steps: []wireStep{
+			{ID: "s1", Label: "fetch", Status: "done", AgentID: "a1", Result: "3 files", UpdatedAt: "2026-10-18T10:00:00Z"},
+			{ID: "s2", Label: "build", Status: "failed", FailureReason: "no compiler", DependsOn: []string{"s1"}},
+		},
+	})
+
+	if got.StepList == nil || len(*got.StepList) != 2 {
+		t.Fatalf("Expected 2 listed steps, got %v", got.StepList)
+	}
+	first, second := (*got.StepList)[0], (*got.StepList)[1]
+	if deref(first.Label) != "fetch" || deref(first.Result) != "3 files" || deref(first.AgentId) != "a1" || first.UpdatedAt == nil {
+		t.Errorf("First step lost details: %+v", first)
+	}
+	if first.FailureReason != nil || first.DependsOn != nil {
+		t.Errorf("First step has fields it never set: %+v", first)
+	}
+	if deref(second.FailureReason) != "no compiler" || second.DependsOn == nil || (*second.DependsOn)[0] != "s1" {
+		t.Errorf("Second step lost details: %+v", second)
+	}
+}
+
 func TestToWorkflowInfo_NoSteps(t *testing.T) {
 	got := toWorkflowInfo(wireWorkflow{ID: "w1"})
 	if deref(got.Steps) != 0 || deref(got.CompletedSteps) != 0 {
