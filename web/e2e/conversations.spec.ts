@@ -105,13 +105,20 @@ test('a phone shows the list or the chat, not both', async ({ page, isMobile }) 
   }
 });
 
-test('the plan mode changes for the session, and the context use shows', async ({ page }) => {
+test('the plan button steps through the modes for the session, and the context use always shows', async ({ page }) => {
   await newConversation(page);
-  const plan = page.getByRole('combobox', { name: 'Plan' });
+  // Before any turn, the bar already shows the context the next call would take.
+  await expect(page.getByText(/^ctx \d/)).toBeVisible();
+  const plan = page.getByRole('button', { name: /^Plan: / });
   await expect(plan).toBeVisible();
-  await plan.selectOption('always');
+  for (let i = 0; i < 3 && (await plan.getAttribute('aria-label')) !== 'Plan: always'; i++) {
+    const before = await plan.getAttribute('aria-label');
+    await plan.click();
+    await expect(plan).not.toHaveAttribute('aria-label', before ?? '');
+  }
+  await expect(plan).toHaveAttribute('aria-label', 'Plan: always');
   await page.reload();
-  await expect(page.getByRole('combobox', { name: 'Plan' })).toHaveValue('always');
+  await expect(page.getByRole('button', { name: 'Plan: always' })).toBeVisible();
   await send(page, 'hello there');
   await expect(page.getByRole('button', { name: 'Inspect turn 1' })).toBeVisible();
   await expect(page.getByText(/^ctx \d/)).toBeVisible();
