@@ -12,7 +12,7 @@ docker run -d --name nine \
   -v nine-data:/data \
   ghcr.io/djordlucas/nine:latest
 
-docker exec -it -u nine nine nine    # interactive TUI
+# then open http://localhost:8080 for the web UI
 ```
 
 The image ships a working `/nine.toml`, so nothing needs mounting for a first

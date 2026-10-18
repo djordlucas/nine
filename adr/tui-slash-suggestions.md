@@ -1,11 +1,11 @@
 # TUI slash-command suggestions
 
-**Status:** implemented · **Scope:** `internal/tui` only — no wire-protocol,
+**Status:** superseded — the TUI was removed; the web UI ([web-ui.md](web-ui.md))
+is the interactive client · **Scope:** `internal/tui` only — no wire-protocol,
 daemon, or persistence changes.
 
-> This records the design and the reasoning behind it. The behaviour itself is
-> documented in [usage.md](../docs/usage.md#tui-slash-commands) and pinned by
-> `spec/conformance.md` §10.
+> This records the design and the reasoning behind it, as it was built. The
+> behaviour it describes no longer exists.
 
 ## Goal
 

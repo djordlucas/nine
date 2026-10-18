@@ -49,7 +49,7 @@ function List({ current, reloadKey }: { current?: string; reloadKey: number }) {
   const start = async () => {
     setBusy(true);
     setError(null);
-    // Interactive, as the TUI's are: the session may ask the operator questions.
+    // Interactive: the session may ask the operator questions.
     const { data: made, error: e } = await api.POST('/conversations', { body: { interactive: true } });
     setBusy(false);
     if (!made) {

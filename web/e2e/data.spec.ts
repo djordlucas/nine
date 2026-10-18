@@ -99,3 +99,14 @@ test('the self-model reads as every turn carries it', async ({ page }) => {
   await expect(page.getByRole('region', { name: 'self/identity' })).toContainText('Nine');
   await expect(page.getByRole('textbox')).toHaveCount(0);
 });
+
+test('the memory lists every key and reads one', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/data/memory');
+  const keys = page.getByRole('navigation', { name: 'Memory keys' });
+  await keys.getByRole('link', { name: /self\/identity/ }).click();
+  const pane = page.getByRole('region', { name: 'Memory key' });
+  await expect(pane.getByRole('heading', { name: 'self/identity' })).toBeVisible();
+  await expect(pane.locator('pre')).toContainText('Nine');
+  await expect(pane.getByRole('textbox')).toHaveCount(0); // read-only: nothing to edit
+});

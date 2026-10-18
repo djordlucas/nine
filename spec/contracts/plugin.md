@@ -362,7 +362,7 @@ plugin process:
 - **opens no log file.** Plugin output goes to stderr, which the manager wires to the
   daemon's. The daemon's log stays one process's account of itself rather than five
   interleaved.
-- **builds no CLI**, so it never holds a `StartDaemon` or `StartTUI`.
+- **builds no CLI**, so it never holds a `StartDaemon`.
 
 It **MUST** also fail closed: with `NINE_PLUGIN_SOCKET` unset there is no caller to
 answer, so the process exits non-zero naming the missing variable instead of idling.

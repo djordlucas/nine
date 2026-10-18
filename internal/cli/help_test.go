@@ -41,6 +41,24 @@ func TestRunHelpAliases(t *testing.T) {
 	}
 }
 
+// With no arguments, nine prints the usage, which points to the web UI; and
+// attach, removed with the terminal UI, is refused rather than sent as a
+// message.
+func TestRunBareAndAttach(t *testing.T) {
+	var out bytes.Buffer
+	c := &CLI{Out: &out, Err: &bytes.Buffer{}}
+	if err := c.Run(nil, &config.Config{}); err != nil {
+		t.Fatalf("Run(): %v", err)
+	}
+	if !strings.Contains(out.String(), "# CLI usage") || !strings.Contains(out.String(), "web UI") {
+		t.Errorf("Run() did not print the usage with the web UI pointer:\n%s", out.String())
+	}
+	err := c.Run([]string{"attach", "abc"}, &config.Config{})
+	if err == nil || !strings.Contains(err.Error(), "web UI") {
+		t.Errorf("Run(attach) = %v, want an error pointing to the web UI", err)
+	}
+}
+
 // TestRunUnknownFlagShowsHelp verifies a flag-shaped first argument is treated
 // as a mistyped command — help on stdout, an error note on stderr — instead of
 // being sent as a message (which would require a daemon and hang the test).

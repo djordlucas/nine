@@ -11,7 +11,7 @@ choose: a tool you do not see is not available to you.
 
 | Session | Tool | What it does |
 |---|---|---|
-| Interactive (a person in the TUI) | `ask_human` | Pauses the turn and waits for an answer |
+| Interactive (a person in the web UI) | `ask_human` | Pauses the turn and waits for an answer |
 | Background (goal, pursue, standing agent) | `notify_user` | Posts to a feed the human reads later; does not wait |
 | Sub-agent, `nine query` | neither | Make a reasonable assumption and proceed |
 

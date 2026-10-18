@@ -5,7 +5,7 @@ Three independent settings, often confused with each other:
 | Setting | Section | Controls |
 |---------|---------|----------|
 | `plan_mode` | `[planning]` | Whether the model reasons before acting |
-| `thinking` | `[llm]` | Whether that reasoning is streamed to the TUI |
+| `thinking` | `[llm]` | Whether that reasoning is streamed to clients |
 | `plan_approval` | `[planning]` | Whether you are asked to approve a plan before it runs |
 
 They combine freely: you can plan without watching, and watch without
@@ -28,17 +28,17 @@ those and rarely on the rest, since by then the approach is already chosen.
 `plan-only` is the default because the cost of reasoning is paid per call while
 the benefit lands almost entirely on the first one.
 
-Change it live in the TUI with `/plan-mode off | plan-only | always`. The
-setting applies to that session, leaving the configured default alone. For a
-single turn, `/think <message>` forces reasoning on without changing the
-session's mode — the way to think hard about one question in a session running
-`off`.
+Change it live with **Plan** under the web UI's message box (`off`, `plan-only`
+or `always`), or `POST /api/v1/conversations/{id}/plan-mode`. The setting applies to that session, leaving the
+configured default alone. For a single turn, the web UI's **T** toggle beside
+Send (`force_think`) forces reasoning on without changing the session's mode —
+the way to think hard about one question in a session running `off`.
 
 ## Watching it reason
 
 Reasoning happens whether or not you see it. `thinking` in the `[llm]` section
-decides whether it is **streamed to the TUI as a live trace**, and defaults to
-on.
+decides whether it is **streamed to clients as a live trace**, and defaults
+to on.
 
 This requires a model that advertises the capability, and currently works with
 Ollama. Turning it off asks the model to skip reasoning aloud entirely, which
@@ -91,7 +91,7 @@ The prompt offers `approve` and `clarify`. Approving proceeds; anything else is
 folded back in as clarification and the reasoning pass runs again with it, which
 is how a plan gets redirected rather than merely stopped.
 
-Approval is interactive by nature, so it applies to TUI conversations. A
+Approval is interactive by nature, so it applies to interactive conversations. A
 background session has nobody to ask.
 
 ## Limits
@@ -99,7 +99,8 @@ background session has nobody to ask.
 | Limit | Detail |
 |-------|--------|
 | Thinking needs model support | The live trace requires a model that advertises the capability, and currently works with Ollama. See [model compatibility](model-compatibility.md). |
-| Approval is interactive only | `plan_approval` applies to TUI conversations. A background session has nobody to ask, so a plan there runs unapproved whatever the setting. |
+| Approval is interactive only | `plan_approval` applies to interactive conversations. A background session has nobody to ask, so a plan there runs unapproved whatever the setting. |
+| The trace is not kept | Reasoning is streamed, not journaled: the web UI shows it while the page is open, and a reload loses it. |
 | Approval redirects, it does not edit | Answering anything but `approve` re-runs the reasoning pass with your answer as clarification. There is no way to edit the plan in place and continue from it. |
 | The risky check reads the plan's words | `on-risky` matches an approval-listed tool name in the plan text. A plan that will use a gated tool without naming it is not caught here — only at the call. |
 | Reasoning cost is per call | `always` pays the reasoning cost on every call in a turn. The benefit lands almost entirely on the first, which is why `plan-only` is the default. |

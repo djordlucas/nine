@@ -141,7 +141,7 @@ type Store struct {
 	// queueMu serializes read-modify-write operations on the queued-messages
 	// array. Each QueueMessage/MarkConsumed/MarkAllConsumed call reads the
 	// queue, modifies it in memory, and writes it back; without a lock,
-	// concurrent calls (one per connection — the TUI sends each queued
+	// concurrent calls (one per connection — a client sends each queued
 	// message on its own connection) race and the last writer wins,
 	// silently dropping earlier messages.
 	queueMu sync.Mutex

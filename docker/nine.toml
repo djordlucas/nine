@@ -53,7 +53,7 @@ provider = "keyword"
 
 [hitl]
 # Tools that need an explicit yes before each call, in an interactive session.
-# A background session has nobody to ask, so these gate the TUI and CLI only.
+# A background session has nobody to ask, so these gate interactive conversations only.
 require_approval = ["shell", "write_file"]
 
 [tools]

@@ -169,6 +169,93 @@ paths:
       security:
       - bearerAuth: []
       - cookieAuth: []
+  /memory:
+    get:
+      operationId: listMemory
+      summary: List the key-value memory
+      description: Every key of the key-value memory the agent reads and writes with memory_get and
+        memory_set, with its size and when it last changed. Values are read one at a time. Read-only.
+      tags:
+      - health
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /memory/value:
+    get:
+      operationId: getMemoryValue
+      summary: Read one memory key
+      description: One key of the key-value memory with its value. Read-only.
+      tags:
+      - health
+      parameters:
+      - name: key
+        in: query
+        description: the key, e.g. self/identity
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryValue'
+        '400':
+          description: missing key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: no such key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
   /self-model:
     get:
       operationId: getSelfModel
@@ -701,6 +788,67 @@ paths:
         '503':
           description: daemon unavailable
           content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /conversations/{id}/plan-mode:
+    post:
+      operationId: setPlanMode
+      summary: Change a conversation's plan mode
+      description: Changes how the session reasons before acting, for this session only and while it is
+        loaded — off, plan-only or always. The configured default is left alone. A session that is not
+        loaded (one no client has opened since the daemon started) is not found.
+      tags:
+      - conversations
+      parameters:
+      - name: id
+        in: path
+        description: conversation id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        description: the mode to run the session in
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlanModeRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanModeResponse'
+        '400':
+          description: missing id, or a mode that is not off, plan-only or always
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: conversation not loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
       security:
       - bearerAuth: []
       - cookieAuth: []
@@ -3064,6 +3212,62 @@ components:
           format: date-time
         turn_number:
           type: integer
+    PlanModeRequest:
+      description: The plan mode to run a session in.
+      type: object
+      required:
+      - mode
+      properties:
+        mode:
+          type: string
+          enum:
+          - 'off'
+          - plan-only
+          - always
+    PlanModeResponse:
+      description: The session and the plan mode it now runs in.
+      type: object
+      required:
+      - id
+      - plan_mode
+      properties:
+        id:
+          type: string
+        plan_mode:
+          type: string
+    MemoryListResponse:
+      description: The key-value memory's keys.
+      type: object
+      required:
+      - entries
+      properties:
+        entries:
+          type: array
+          items:
+            type: object
+            required:
+            - key
+            - bytes
+            properties:
+              key:
+                type: string
+              bytes:
+                type: integer
+                description: The value's size in bytes.
+              updated_at:
+                type: string
+                description: When the key last changed, as the store records it.
+    MemoryValue:
+      description: One key of the key-value memory with its value.
+      type: object
+      required:
+      - key
+      - value
+      properties:
+        key:
+          type: string
+        value:
+          type: string
     SelfModelResponse:
       description: The self-model, key by key.
       type: object
@@ -4447,6 +4651,9 @@ components:
         provider:
           type: string
           description: The LLM provider the daemon calls, ollama or mistral.
+        instance_name:
+          type: string
+          description: This instance's display name, from [daemon] instance_name or the name it chose for itself.
         status:
           type: string
         tools:
@@ -4612,7 +4819,8 @@ components:
           format: date-time
     StreamEvent:
       description: One server-sent event. The SSE event name (connected, tool_start, tool_end, response_chunk,
-        response, sub_agent_start, sub_agent_end, notice, done, error) selects the member.
+        response, sub_agent_start, sub_agent_end, notice, thinking, thinking_chunk, stage, plan_start, plan_end,
+        context_update, done, error) selects the member.
       oneOf:
       - $ref: '#/components/schemas/StreamConnected'
       - $ref: '#/components/schemas/StreamToolStart'
@@ -4621,6 +4829,11 @@ components:
       - $ref: '#/components/schemas/StreamResponse'
       - $ref: '#/components/schemas/StreamSubAgent'
       - $ref: '#/components/schemas/StreamNotice'
+      - $ref: '#/components/schemas/StreamThinking'
+      - $ref: '#/components/schemas/StreamThinkingChunk'
+      - $ref: '#/components/schemas/StreamStage'
+      - $ref: '#/components/schemas/StreamPlan'
+      - $ref: '#/components/schemas/StreamContextUpdate'
       - $ref: '#/components/schemas/StreamDone'
       - $ref: '#/components/schemas/ErrorResponse'
     StreamResponse:
@@ -4666,6 +4879,71 @@ components:
       properties:
         text:
           type: string
+        timestamp:
+          type: integer
+          format: int64
+    StreamThinking:
+      description: A model call began within the turn. think says whether it streams its reasoning as
+        thinking_chunk events.
+      type: object
+      required:
+      - llm_call_n
+      - think
+      - timestamp
+      properties:
+        llm_call_n:
+          type: integer
+          description: The call's number within the turn, from 1.
+        think:
+          type: boolean
+        timestamp:
+          type: integer
+          format: int64
+    StreamThinkingChunk:
+      description: A fragment of the model's reasoning as it is produced. Not journaled.
+      type: object
+      required:
+      - text
+      - timestamp
+      properties:
+        text:
+          type: string
+        timestamp:
+          type: integer
+          format: int64
+    StreamStage:
+      description: A label for what the turn is doing now, such as the request-analysis pass.
+      type: object
+      required:
+      - text
+      - timestamp
+      properties:
+        text:
+          type: string
+        timestamp:
+          type: integer
+          format: int64
+    StreamPlan:
+      description: The turn's planning pass began (plan_start) or ended (plan_end).
+      type: object
+      required:
+      - timestamp
+      properties:
+        timestamp:
+          type: integer
+          format: int64
+    StreamContextUpdate:
+      description: The context for the next model call was assembled, with how much of the budget it uses.
+      type: object
+      required:
+      - context_used
+      - context_budget
+      - timestamp
+      properties:
+        context_used:
+          type: integer
+        context_budget:
+          type: integer
         timestamp:
           type: integer
           format: int64

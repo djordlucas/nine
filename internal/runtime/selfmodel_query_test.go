@@ -39,3 +39,35 @@ func TestSelfModelQuery(t *testing.T) {
 		t.Errorf("self_model = %+v, want %+v", got, want)
 	}
 }
+
+// The memory queries list every key with its size, and read one; a missing
+// key is an error naming it.
+func TestMemoryQueries(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k, v := range map[string]string{"notes/a": "hello", "self/identity": "Nine"} {
+		if err := store.Set(k, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	d, sock := startDaemon(t, makeFactory(seqProvider([]llm.Response{})), nil, nil)
+	d.ConfigureMemory(store)
+	c := dial(t, sock)
+
+	list, err := c.MemoryList()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 2 || list[0].Key != "notes/a" || list[0].Bytes != 5 || list[0].UpdatedAt == "" {
+		t.Errorf("memory_list = %+v", list)
+	}
+	v, err := c.MemoryGet("self/identity")
+	if err != nil || v.Value != "Nine" {
+		t.Errorf("memory_get = %+v, %v", v, err)
+	}
+	if _, err := c.MemoryGet("nope"); err == nil {
+		t.Error("memory_get of a missing key: want an error")
+	}
+}

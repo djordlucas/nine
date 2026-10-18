@@ -13,14 +13,14 @@
 [![GHCR](https://img.shields.io/badge/ghcr.io-djordlucas%2Fnine-blue?logo=github)](https://github.com/djordlucas/nine/pkgs/container/nine)
 
 Nine is a **self-hosted AI agent runtime in a single Go binary**: local models through Ollama
-or the hosted Mistral API, persistent SQLite state, a TUI and an OpenAPI-specified REST API,
+or the hosted Mistral API, persistent SQLite state, a web UI and an OpenAPI-specified REST API,
 and tools from plugins, MCP servers and sandboxed JS/Wasm.
 Use Nine to research subjects, work on codebases, automate processes, experiment.
 Nine is developed against small models as a baseline.
 
 The binary ships for Docker, Linux and macOS, and implements client, server and plugin roles at
 once. Each session runs a dedicated agent loop that plans work, calls tools, persists data and
-orchestrates sub-agent loops — interactively through the TUI, or unattended through scheduled and
+orchestrates sub-agent loops — interactively through the web UI, or unattended through scheduled and
 periodic goals. Everything — conversations, goals, memories, session events — lives in one SQLite
 file.
 
@@ -42,7 +42,7 @@ The web UI that `nine api serve` serves beside the API ([web UI](docs/web-ui.md)
 <td><img src="docs/img/web_journal.png" alt="The journal: every event the daemon records, live, filterable by kind and session"></td>
 </tr>
 <tr>
-<td><img src="docs/img/web_self-model.png" alt="Data › Self-model: what Nine holds about itself, read-only"></td>
+<td><img src="docs/img/web_memory.png" alt="Data › Memory: every key of the key-value memory the agent reads and writes, with one key's value, read-only"></td>
 <td><img src="docs/img/web_config.png" alt="System › Config: the configuration in force, as TOML, with credentials hidden"></td>
 </tr>
 </table>
@@ -82,15 +82,14 @@ cosign verify ghcr.io/djordlucas/nine:latest \
 ```
 
 From a clone, for hacking on Nine or building the image yourself. `make all` produces
-exactly one file, `dist/nine` — the CLI, the TUI, the daemon and the four built-in
+exactly one file, `dist/nine` — the CLI, the daemon, the API server with its web UI and the four built-in
 plugins. Deploying Nine is copying that file.
 
 ```bash
 git clone https://github.com/djordlucas/nine
 cd nine
 make all       # native build -> dist/nine
-make up        # or: build and run the runtime image
-make session   # interactive TUI session
+make up        # or: build and run the runtime image; the web UI is at http://localhost:8080
 ```
 
 Nine reads its config from `$NINE_CONFIG`, `./nine.toml`, `/nine.toml`, then
@@ -111,7 +110,7 @@ configuration reference: [installation](docs/installation.md),
 
 | Concept | Description |
 |---------|-------------|
-| **UI** | CLI or TUI, both thin clients over the daemon's Unix socket |
+| **UI** | The web UI, served by the API server, and the CLI; both thin clients of the daemon's Unix socket |
 | **Daemon** | Long-running background process; manages agents, plugins and state |
 | **Agent** | An LLM agent running the ReAct loop |
 | **Plugin** | A tool container — a standalone binary, or an MCP server |
@@ -151,11 +150,11 @@ Tested against `qwen3.5:4b`, `qwen3.5:9b`, `gemma4:e4b` and `gemma4:e2b` on a 16
 
 ## Architecture
 
-Nine is a daemon/client pair. The CLI is thin — it opens a Unix socket, sends a message, prints
-the reply. Everything long-lived is in the daemon.
+Nine is a daemon/client pair. The CLI and the API server, which serves the web UI, are thin —
+they open a Unix socket, send a message, relay the reply. Everything long-lived is in the daemon.
 
 ```
-  nine <message> / TUI  ──JSON over Unix socket──┐   (thin client: send, print)
+  nine CLI / API server ──JSON over Unix socket──┐   (thin client: send, print)
                                                  │
 ┌────────────────────────────────────────────────▼──────────────────────────┐
 │ Daemon                                                                    │

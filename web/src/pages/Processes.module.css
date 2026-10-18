@@ -88,3 +88,9 @@
     grid-column: 2;
   }
 }
+
+/* A process's session, watched as a chat under a link back to the process. */
+.watch {
+  display: grid;
+  gap: var(--space-2);
+}

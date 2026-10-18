@@ -1,6 +1,6 @@
 # Contract — wire protocol (daemon ↔ client)
 
-**Status:** Built · **Depends on:** nothing (shared package) · **Used by:** daemon, CLI, TUI
+**Status:** Built · **Depends on:** nothing (shared package) · **Used by:** daemon, CLI, API server
 
 The protocol package defines the messages exchanged between the daemon and any client.
 It depends on neither the daemon nor the client, so client code never pulls in the
@@ -74,6 +74,8 @@ Msg {
 | `status` | — | request daemon status |
 | `config` | — | request the configuration the daemon runs with, as redacted TOML |
 | `self_model` | — | request the self-model: the `self/` keys every turn's self-model block carries |
+| `memory_list` | — | the key-value memory's keys, each with its size and when it last changed |
+| `memory_get` | `text` = key (**required**) | one key of the key-value memory with its value |
 | `context` | `agent_id` | request a session's assembled-context breakdown, **no LLM call** |
 | `list_goals` | — | request goal list |
 | `list_workflows` | — | request workflow list |
@@ -136,6 +138,8 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `process_list` / `process_show` | `text` = JSON `[]ProcessInfo` / `ProcessInfo` | id, tool, mode, state, `stopped_by`, trigger, session, goal, pipe, budget use and reset, failures, recent activity (show only) |
 | `process_control` / `process_send` | `text` = a sentence | what was done (or `error` naming the reason: an unknown id says `no such process`) |
 | `config` | `text` = TOML | the file, then the `NINE_*` overrides, with only what is set; every credential (a key, token, secret or password, and an MCP server's env and headers) reads `(set, hidden)` |
+| `memory_list` | `text` = JSON `[]MemoryEntry` | `{ key, bytes, updated_at }`, sorted by key |
+| `memory_get` | `text` = JSON `MemoryValue` | `{ key, value }` (or `error` naming a missing key) |
 | `self_model` | `text` = JSON `[]SelfModelEntry` | `{ key, value }` for `self/identity`, `self/persona`, `self/capabilities`, `self/learned`, in that order; a key never written is left out |
 | `context` | `text` = JSON `ninectx.Report` | per-section token breakdown + assembled prompt/messages |
 | `workflow_stop` / `workflow_fail` | `text` = `"stopped"` / `"failed"` | operator-command result |
@@ -262,8 +266,8 @@ Its reach **MUST** match what `list_tools` advertises: the core-intercepted stor
 (`memory_*`, `file_*`, `skill_*`, `doc_*` — see [`plugin.md`](plugin.md) R-PLUG.5) are
 listed under the `core` plugin but served in-process, so the daemon resolves the name
 against the core dispatcher first and only then against the plugin roster. A tool the
-client can *see* but not *call* is a contract violation — it is what broke the TUI's
-`/skills` and `/memory`. The delegation tools (`run_agent`, `workflow_*`, `goal_*`) are the
+client can *see* but not *call* is a contract violation — it is what once broke a
+client's skill and memory listings. The delegation tools (`run_agent`, `workflow_*`, `goal_*`) are the
 one exception: they need a live session to spawn into, so they are registered per loop and
 are not reachable this way.
 

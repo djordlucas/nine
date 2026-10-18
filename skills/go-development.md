@@ -63,7 +63,7 @@ go mod vendor
 | `nine/internal/toolvm` | Sandboxed wasm host for shipped and generated tools |
 | `nine/internal/builtins` | Handlers for the built-in plugins and MCP servers |
 | `nine/internal/config` | Config parsing (`nine.toml`) |
-| `nine/internal/cli`, `nine/internal/tui` | The thin clients |
+| `nine/internal/cli`, `nine/internal/api` | The thin clients: the CLI, and the API server with the web UI |
 | `nine/internal/embed` | Embedding interface |
 
 ### Common idioms used here

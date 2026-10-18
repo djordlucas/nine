@@ -22,6 +22,7 @@ docker run -e NINE_API_AUTH_TOKEN=… -p 8080:8080 ghcr.io/djordlucas/nine
 | Tags | a state or kind is a plain outlined tag; only a failure is red |
 | Forms | a choice is a square that fills when on; a text box grows with its text |
 | Empty | nothing to show, or nothing chosen yet, is a dashed box saying so |
+| Instance | the instance's name, beside the word mark |
 | Actions | an obvious action (reload, start, stop, delete, upload, download) is an icon that names itself on hover; the rest are labelled |
 
 ## Sections
@@ -51,6 +52,10 @@ A process's state decides its controls.
 | stopped by the operator, the model or itself | Start |
 | paused by its budget | Start, which also resets the day's usage |
 | stopped by its goal | Resume goal, which sets the goal active; the process runs again with it |
+
+Watch it, beside a process's session, shows that session as a chat, live and
+read-only: its turns, tool calls and reasoning as they happen. A process that
+has not run a turn yet has no session to show.
 
 A goal's status decides whether the processes bound to it run: Pause stops
 them, Resume restarts the ones it stopped, Mark done and Archive leave them
@@ -83,6 +88,7 @@ stopped ([processes](processes.md#goals-sessions-and-pipes)). A goal that a
 | Files | browses the workspace. A text file up to 2 MB opens in an editor (⌘S or Ctrl+S saves); any file downloads. New file takes a path, so `notes/today.md` makes `notes/`. Upload puts files in the directory shown. Delete removes a file, or a directory once it is empty. |
 | Database | the tables and views with their row counts; a table's rows 100 at a time. Add row inserts one, a column left empty taking its default; Edit changes or deletes one. NULL stores a NULL. A view, or a table without a rowid, is changed from SQL. |
 | SQL | runs one statement: a read shows up to 1000 rows, a write how many rows it changed. ⌘Enter or Ctrl+Enter runs it. |
+| Memory | every key of the key-value memory the agent reads and writes, with its size, and one key's value. Read-only. |
 | Self-model | what Nine holds about itself, in the `self/` keys every turn shows the model: identity, persona, capabilities and what it learned. Read-only; reflection and Nine's own memory writes change it. |
 
 | Rule | Detail |
@@ -107,8 +113,13 @@ stopped ([processes](processes.md#goals-sessions-and-pipes)). A goal that a
 A conversation shows its transcript, then every turn it runs as it happens,
 whoever started it: this browser, another client, or the session's own schedule.
 Replies render as Markdown. A turn that fails or is cancelled shows its error
-in the conversation, in its place, and keeps it after a reload. Below the message box is the provider and model the
-daemon calls.
+in the conversation, in its place, and keeps it after a reload. Below the
+message box are the provider and model the daemon calls, how much of the
+context budget the latest model call used (red from 90%, where the daemon
+starts trimming), and the plan mode. While a turn runs, the conversation says
+what it is doing, and a model that streams its reasoning shows it in a box
+under the message, folded once the call moves on. The reasoning is not
+journaled, so it is gone after a reload.
 
 | Control | Does |
 |---|---|
@@ -116,6 +127,7 @@ daemon calls.
 | The title | renames the conversation: one line, up to 80 characters. Enter saves, Escape cancels. |
 | Send | sends a turn; Enter sends on a keyboard, Shift+Enter is a new line. A message sent mid-turn waits for the turn to end. |
 | T | asks for the model's reasoning on the next turn (`force_think`) |
+| Plan | the session's plan mode, `off`, `plan-only` or `always`, for this session only |
 | Stop | cancels the running turn; the session and its history stay |
 | A question's options, or your own words | answers the session's `ask_human` question |
 | Tool calls | open to show their input and output, as coloured JSON |

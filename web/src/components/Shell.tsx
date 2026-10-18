@@ -2,7 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import { sections, sectionFor } from '../sections';
-import { authRequired, signOut } from '../api/client';
+import { api, authRequired, get, signOut } from '../api/client';
 import { streamState } from '../api/events';
 import { cycleTheme, theme } from '../theme';
 import { attentionEvents, loadAttention } from '../inbox';
@@ -23,12 +23,14 @@ export function Shell({ children }: { children: ComponentChildren }) {
   const rest = sections.filter((s) => !s.tab);
   const inMore = !current.tab;
   const waiting = useWaiting();
+  const instance = useInstanceName();
 
   return (
     <div class={styles.shell}>
       <nav class={styles.rail} aria-label="Sections">
         <a class={styles.brand} href="/">
           Nine
+          {instance && <span class={styles.instance} title="This instance's name">{instance}</span>}
         </a>
         {sections.map((s) => (
           <a
@@ -106,6 +108,15 @@ export function Shell({ children }: { children: ComponentChildren }) {
       )}
     </div>
   );
+}
+
+/**
+ * This instance's display name, from the daemon's status; empty until known,
+ * and while it is still the placeholder "nine" the word mark already says.
+ */
+function useInstanceName(): string {
+  const { data } = useLive(async () => (await get(api.GET('/status'), 'the daemon status')).instance_name ?? '', []);
+  return data && data.toLowerCase() !== 'nine' ? data : '';
 }
 
 /** How many approvals and questions wait for the operator; 0 until known. */

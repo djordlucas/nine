@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks';
-import { useRoute } from 'preact-iso';
+import { useLocation, useRoute } from 'preact-iso';
 import { api, errorMessage, get } from '../api/client';
 import { ago } from '../format';
 import { useLive } from '../live';
@@ -11,6 +11,7 @@ import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
 import styles from './Processes.module.css';
 import { Icon } from '../components/Icon';
+import { Chat } from './Chat';
 
 const processEvents = ['process_*', 'standing_*', 'goal_status'];
 
@@ -35,18 +36,49 @@ export function processPath(id: string): string {
  */
 export function Processes() {
   const { params } = useRoute();
+  const { path } = useLocation();
   const id = param(params.id as string | undefined);
+  const watching = !!id && path.endsWith('/session');
   return (
     <Split name="processes" noun="processes" open={!!id}>
       <Roster current={id} />
       <section class={split.pane} aria-label="Process">
-        {id ? (
-          <ProcessDetail key={id} id={id} />
-        ) : (
-          <p class="empty">Choose a process.</p>
-        )}
+        {id && watching && <ProcessSession key={id} id={id} />}
+        {id && !watching && <ProcessDetail key={id} id={id} />}
+        {!id && <p class="empty">Choose a process.</p>}
       </section>
     </Split>
+  );
+}
+
+/**
+ * A process's session as a chat, live, to watch: its turns, tool calls and
+ * reasoning as they happen. Read-only; the process drives it, and the
+ * operator's way in is Message it on the process.
+ */
+function ProcessSession({ id }: { id: string }) {
+  // Its session exists once the process has run a turn; until then there is
+  // nothing to watch.
+  const { data, error } = useLive(
+    async () => {
+      const p = await get(api.GET('/processes/{id}', { params: { path: { id } } }), 'the process');
+      if (!p.session) return { session: '', ran: false };
+      const { response } = await api.GET('/conversations/{id}', { params: { path: { id: p.session } } });
+      return { session: p.session, ran: response.status !== 404 };
+    },
+    ['process_*', 'standing_*', 'turn_end'],
+  );
+  if (error) return <p class="card error">{error}</p>;
+  if (!data) return <p class="card muted">Loading…</p>;
+  return (
+    <div class={styles.watch}>
+      <a href={processPath(id)}>‹ {id}</a>
+      {data.ran ? (
+        <Chat key={data.session} id={data.session} readOnly />
+      ) : (
+        <p class="empty">This process has not run a turn yet. Its session appears here once it has.</p>
+      )}
+    </div>
   );
 }
 
@@ -211,7 +243,7 @@ function Facts({ p }: { p: Process }) {
           <dt>Session</dt>
           <dd>
             <code>{p.session}</code>
-            {p.attached ? ' (shared)' : ''}
+            {p.attached ? ' (shared)' : ''} · <a href={`${processPath(p.id)}/session`}>Watch it</a>
           </dd>
         </>
       )}

@@ -7,17 +7,17 @@ stuck. Two cases:
 - **LLM-initiated**: Nine calls `ask_human` when it needs clarification, a decision, or approval before it can safely proceed.
 - **Automatic gates**: a tool call you have marked as requiring approval is intercepted before it runs, and you are asked to permit or refuse it.
 
-Both cases route through the same mechanism — `ask_human` — so the TUI has one rendering path and the protocol has one pair of message types.
+Both cases route through the same mechanism — `ask_human` — so a client has one rendering path and the protocol has one pair of message types.
 
 ---
 
 ## Session eligibility
 
-`ask_human` is only available in **interactive sessions**: conversations started by a human through the TUI. Everything else — background sessions (self-reflection, goal/pursue), sub-agents, `nine query` — is treated as non-interactive and cannot raise its own questions. A sub-agent is a bounded worker, not a conversational participant.
+`ask_human` is only available in **interactive sessions**: conversations started by a human in the web UI. Everything else — background sessions (self-reflection, goal/pursue), sub-agents, `nine query` — is treated as non-interactive and cannot raise its own questions. A sub-agent is a bounded worker, not a conversational participant.
 
 **Approval gates are the exception, and they follow the owning session rather than the asking loop.** A sub-agent spawned by an interactive conversation inherits that conversation's gates at any delegation depth, so delegating a risky tool is not a way around `require_approval`. See [Approval gates](#approval-gates) below.
 
-The daemon learns whether a session is interactive from the `new_conversation` protocol message (`Interactive: true`). The TUI sets this flag; the CLI fire-and-forget path does not. Interactive session IDs are persisted in the `interactive_sessions` DB table so the flag survives daemon restarts.
+The daemon learns whether a session is interactive from the `new_conversation` protocol message (`Interactive: true`). The web UI sets this flag; the CLI fire-and-forget path does not. Interactive session IDs are persisted in the `interactive_sessions` DB table so the flag survives daemon restarts.
 
 ---
 
@@ -51,7 +51,7 @@ Available only in interactive sessions.
 
 ### Restart recovery
 
-The loop's checkpoint is saved after each completed tool call. `ask_human` blocks before its result is recorded in the scratchpad, so the checkpoint predates the call. On daemon restart the loop is rebuilt from that checkpoint and the LLM re-runs the same turn — which re-calls `ask_human`. The handler finds the existing `pending` DB row, re-emits the question to any attached TUI client, and resumes waiting. If the human answered while the daemon was down the row is already `answered` and the handler returns immediately.
+The loop's checkpoint is saved after each completed tool call. `ask_human` blocks before its result is recorded in the scratchpad, so the checkpoint predates the call. On daemon restart the loop is rebuilt from that checkpoint and the LLM re-runs the same turn — which re-calls `ask_human`. The handler finds the existing `pending` DB row, re-emits the question to any attached client, and resumes waiting. If the human answered while the daemon was down the row is already `answered` and the handler returns immediately.
 
 ---
 
@@ -138,7 +138,7 @@ Routing keeps three identities apart:
 
 Emitting to the asker would go nowhere: a sub-agent's ID is not a registered session, so `Daemon.EmitProgress` finds no stream and drops the message, leaving the call blocked until timeout. `HITL.AskFrom` takes asker and owner separately for exactly this reason; `HITL.Ask` is the same call with the two collapsed.
 
-Since a `run_agents` fan-out can put several sub-agents at a gate simultaneously, the TUI queues questions and renders them one at a time, oldest first, with a count of those still waiting.
+Since a `run_agents` fan-out can put several sub-agents at a gate simultaneously, the web UI shows each in the conversation that owns it, and the Inbox lists every question still waiting.
 
 ---
 
@@ -176,17 +176,13 @@ At startup, every `pending` row already past its expiry is marked `timed_out`. T
 
 ---
 
-## TUI
+## Web UI
 
 When `human_input_required` arrives:
-- A question panel renders above the input box with the question text and any options.
-- The input box prompt changes to `"Answer: "`.
-- Submitting sends `human_input_answer` (not a new turn) and clears the panel.
-- The question and answer are appended to the chat transcript as a distinct entry type.
+- The question appears in the conversation, with its options as buttons, or a field for a free answer.
+- Answering sends `human_input_answer` (not a new turn), and the answer stays in the conversation under the question.
 
-If the TUI is not attached when a question is issued (the user is away), the question waits in the DB. When the user reattaches, the session re-emits the pending question automatically and the panel appears.
-
-The status bar shows a `?` badge whenever there is a pending unanswered question in the current session.
+If no page has the conversation open when a question is issued (the user is away), the question waits in the DB. The Inbox lists it with a link to its conversation, and the Inbox link counts what waits; opening the conversation shows the question again. See [Web UI](web-ui.md).
 
 ---
 
@@ -201,7 +197,7 @@ On shutdown every blocked question is cancelled and written to the store as `tim
 ## Limits
 
 - **Non-interactive sessions cannot ask** — sub-agents and background sessions that need human input must surface it to their parent conversation via their return value or a notification; they cannot call `ask_human` directly.
-- **One pending question per asking loop** — a loop has at most one question outstanding, and concurrent `ask_human` calls within one turn serialise behind each other. Several sub-agents of one conversation can each be waiting at once, which is why the TUI queues them.
+- **One pending question per asking loop** — a loop has at most one question outstanding, and concurrent `ask_human` calls within one turn serialise behind each other. Several sub-agents of one conversation can each be waiting at once, which is why the Inbox lists them all.
 - **An approval diff is truncated at 40 lines** — a larger change is approved on a partial view, with the line counts naming what was not shown. A prompt that scrolls is one nobody reads, which is the failure the bound exists to prevent.
 - **No goroutine interruption on timeout** — when a question times out, `ask_human` returns an error to the LLM. Any tool call the LLM subsequently makes may still proceed; timeout is not equivalent to task cancellation.
 - **Approval gate scope** — the `[hitl].require_approval` list is global; there is no per-session or per-argument pattern matching for it. Fine-grained rules (e.g., "approve `shell` only for destructive-looking commands") are deferred. The generated-tools gate (`[tools.agent].require_approval = "on_capability"`) is the one per-argument exception, and only for `tool_write`/`js_eval`.

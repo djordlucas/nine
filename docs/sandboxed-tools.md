@@ -582,7 +582,7 @@ useful answer (§7):
 
 **Deleting one.** Nine deletes its own tools with `tool_delete`; the operator
 deletes them with `nine tools delete <name>`, `DELETE /api/v1/tools/{name}` or
-`/tools delete <name>` in the TUI. Both go through the same store and refuse the
+Delete in the web UI's Tools. All go through the same store and refuse the
 same tools: a shipped or operator-installed tool cannot be deleted this way, and
 the refusal names which it is. Deleting a tool also deletes its standing run.
 
@@ -950,8 +950,9 @@ nine grants deny <id>
 nine grants revoke <grant-id>   # withdraw one you approved earlier
 ```
 
-`/grants` in the TUI takes the same verbs, and the API has `GET /capabilities` and
-`POST /capabilities/{id}/decision`. All three reach one service in the daemon.
+The web UI's Inbox approves, denies and revokes, through the API's
+`GET /capabilities` and `POST /capabilities/{id}/decision`. Both reach one
+service in the daemon.
 
 **An approval applies to the running daemon.** The ceiling is recomputed, installed
 on the live host, and every stored generated tool is re-resolved against it — so the

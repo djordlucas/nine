@@ -14,10 +14,11 @@
   overflow-y: auto;
 }
 
-/* The name as a word, not a mark. */
+/* The name as a word, not a mark, with this instance's name beside it. */
 .brand {
   display: flex;
   align-items: center;
+  gap: var(--space-2);
   height: 36px;
   margin: 0 0 var(--space-4) var(--space-2);
   color: var(--text);
@@ -243,4 +244,15 @@
     top: 4px;
     left: calc(50% + 6px);
   }
+}
+
+.instance {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  letter-spacing: 0;
 }

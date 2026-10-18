@@ -158,6 +158,8 @@ func TestEveryClientMsgTypeDecodes(t *testing.T) {
 		protocol.TypeGoalDelete:       {Text: "g1"},
 		protocol.TypeGoalSetStatus:    {ID: "g1", Text: "paused"},
 		protocol.TypeSkillGet:         {Text: "triage"},
+		protocol.TypeMemoryGet:        {Text: "self/identity"},
+		protocol.TypeMemoryList:       {},
 		protocol.TypeBackup:           {},
 		protocol.TypeWorkspace:        {Text: "list"},
 		protocol.TypeDatabase:         {Text: "tables"},

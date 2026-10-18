@@ -52,6 +52,7 @@ export function App() {
           <Route path="/" component={Dashboard} />
           <Route path="/conversations/:id" component={Conversations} />
           <Route path="/conversations" component={Conversations} />
+          <Route path="/processes/:id/session" component={Processes} />
           <Route path="/processes/:id" component={Processes} />
           <Route path="/processes" component={Processes} />
           <Route path="/goals/workflows/:id" component={Goals} />

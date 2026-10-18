@@ -33,7 +33,7 @@ type Config struct {
 	// Role is the resolved role name this loop runs (orchestrator, executor,
 	// pursue, …). Descriptive only — the tool boundary and persona are already
 	// baked into the loop at build time; this is carried so the daemon can
-	// surface which role a session or sub-agent is running (status, TUI header).
+	// surface which role a session or sub-agent is running (status, the client's header).
 	Role string
 	// SessionID identifies the session this loop runs — a conversation,
 	// goal-pursue, reflection, or sub-agent (see docs/glossary.md § Work Units).

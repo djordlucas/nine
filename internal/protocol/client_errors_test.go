@@ -147,7 +147,7 @@ func TestTurnWithProgressStreamsThenReturns(t *testing.T) {
 		t.Errorf("chunks joined = %q, want %q", strings.Join(chunks, ""), "partial")
 	}
 	// The final response is not delivered as a progress event — it is the return
-	// value, and delivering it twice would double it in a TUI transcript.
+	// value, and delivering it twice would double it in a transcript.
 	for _, e := range got {
 		if e == protocol.TypeResponse {
 			t.Error("the final response was also delivered as a progress event")
@@ -279,7 +279,7 @@ func TestClientSendsWellFormedRequests(t *testing.T) {
 			t.Fatalf("NewConversationInteractive: %v", err)
 		}
 		if got := f.lastReceived(); !got.Interactive {
-			t.Errorf("Interactive = false, want true (only the TUI sets it)")
+			t.Errorf("Interactive = false, want true (the caller asked for it)")
 		}
 	})
 

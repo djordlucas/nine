@@ -11,14 +11,22 @@ export type Item =
   | { kind: 'tool'; name: string; input?: unknown; output?: string; done: boolean }
   | { kind: 'agent'; id: string; task?: string; role?: string; status?: string }
   | { kind: 'reply'; text: string; turn?: number; streaming: boolean }
-  | { kind: 'question'; id: string; question: string; options: string[]; answered?: string }
+  | { kind: 'question'; id: string; question: string; options: string[]; origin?: string; answered?: string }
   | { kind: 'notice'; text: string }
+  /** The model's reasoning for one call, streamed as it is produced; never journaled. */
+  | { kind: 'thinking'; step: number; text: string; done: boolean }
   | { kind: 'error'; text: string; cancelled: boolean };
 
 export interface Chat {
   items: Item[];
   /** A turn is running: one this tab sent, or one the stream shows. */
   busy: boolean;
+  /** What the running turn is doing, when the daemon says: "Planning", or a stage label. */
+  stage?: string;
+  /** How much of the context budget the latest model call used. */
+  context?: { used: number; budget: number };
+  /** The running turn's latest model call, by number, which a reasoning box is labelled with. */
+  call?: number;
 }
 
 export const empty: Chat = { items: [], busy: false };
@@ -83,11 +91,55 @@ export type WsEvent = { type: string } & Record<string, unknown>;
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
 
-/** The timeline after one WebSocket event. */
+const num = (v: unknown) => (typeof v === 'number' ? v : 0);
+
+/** The timeline after one WebSocket event, with what the turn is doing and how full its context is. */
 export function apply(chat: Chat, ev: WsEvent): Chat {
+  const next = applyItems(chat, ev);
+  let { stage, context, call } = chat;
+  switch (ev.type) {
+    case 'thinking':
+      call = num(ev.llm_call_n) || undefined;
+      break;
+    case 'plan_start':
+      stage = 'Planning';
+      break;
+    case 'plan_end':
+      stage = undefined;
+      break;
+    case 'stage':
+      stage = str(ev.text) || undefined;
+      break;
+    case 'context_update':
+      context = { used: num(ev.context_used), budget: num(ev.context_budget) };
+      break;
+    case 'done':
+    case 'error':
+      stage = undefined;
+      break;
+  }
+  return { ...next, stage, context, call };
+}
+
+/** The timeline's items after one WebSocket event. */
+function applyItems(chat: Chat, ev: WsEvent): Chat {
   const items = [...chat.items];
   switch (ev.type) {
+    case 'thinking':
+      // A model call began: the previous call's reasoning is over.
+      endThinking(items);
+      return { ...chat, items, busy: true };
+    case 'thinking_chunk': {
+      // The first chunk of a call's reasoning opens its box; a provider that
+      // streams none opens none.
+      const i = items.findLastIndex((x) => x.kind === 'thinking' && !x.done);
+      const t = i >= 0 ? (items[i] as Extract<Item, { kind: 'thinking' }>) : undefined;
+      if (t) items[i] = { ...t, text: t.text + str(ev.text) };
+      else items.push({ kind: 'thinking', step: chat.call ?? 0, text: str(ev.text), done: false });
+      return { ...chat, items, busy: true };
+    }
     case 'tool_start':
+      endThinking(items);
       items.push({ kind: 'tool', name: str(ev.tool_name), input: ev.tool_input, done: false });
       return { items, busy: true };
     case 'tool_end': {
@@ -106,12 +158,14 @@ export function apply(chat: Chat, ev: WsEvent): Chat {
       return { items, busy: true };
     }
     case 'response_chunk': {
+      endThinking(items);
       const r = streamingReply(items);
       if (r) items[items.length - 1] = { ...r, text: r.text + str(ev.text) };
       else items.push({ kind: 'reply', text: str(ev.text), streaming: true });
       return { items, busy: true };
     }
     case 'response': {
+      endThinking(items);
       const r = streamingReply(items);
       const reply: Item = { kind: 'reply', text: str(ev.text), streaming: false };
       if (r) items[items.length - 1] = reply;
@@ -137,6 +191,9 @@ export function apply(chat: Chat, ev: WsEvent): Chat {
           id: str(ev.request_id),
           question: str(ev.question),
           options: Array.isArray(ev.options) ? ev.options.map(String) : [],
+          // Who asks, when it is not the conversation itself: a sub-agent at
+          // an approval gate (spec/contracts/hitl.md R-HITL.8).
+          ...(str(ev.origin) ? { origin: str(ev.origin) } : {}),
         });
       }
       return { items, busy: chat.busy };
@@ -145,8 +202,15 @@ export function apply(chat: Chat, ev: WsEvent): Chat {
 }
 
 /** Ends what a finished turn left open: its streaming reply, its tools. */
+/** Closes the reasoning box still streaming, if any: its call moved on. */
+function endThinking(items: Item[]) {
+  const i = items.findLastIndex((x) => x.kind === 'thinking' && !x.done);
+  if (i >= 0) items[i] = { ...(items[i] as Extract<Item, { kind: 'thinking' }>), done: true };
+}
+
 function settle(items: Item[]): Item[] {
   return items.map((i) => {
+    if (i.kind === 'thinking' && !i.done) return { ...i, done: true };
     if (i.kind === 'reply' && i.streaming) return { ...i, streaming: false };
     if (i.kind === 'tool' && !i.done) return { ...i, done: true };
     if (i.kind === 'user' && i.pending) return { ...i, pending: false };
@@ -156,7 +220,7 @@ function settle(items: Item[]): Item[] {
 
 /** The timeline with the operator's message added as it is sent. */
 export function sent(chat: Chat, text: string): Chat {
-  return { items: [...chat.items, { kind: 'user', text, pending: true }], busy: true };
+  return { ...chat, items: [...chat.items, { kind: 'user', text, pending: true }], busy: true };
 }
 
 /** The timeline with a question marked answered. */
@@ -173,8 +237,8 @@ export function answered(chat: Chat, id: string, answer: string): Chat {
  * path, so a transcript read the moment a turn ends can lack some of that
  * turn — its reply is written last. Until the transcript has as many messages
  * and replies as the live view, the live view stays as it is and complete is
- * false, so the caller reads again. Notices and open questions are never in
- * the transcript, and an error is not until its turn is journaled: each is
+ * false, so the caller reads again. Notices, reasoning and open questions are
+ * never in the transcript, and an error is not until its turn is journaled: each is
  * kept at the end of the turn it came in, so it stays in the conversation
  * after the next message is sent. A turn whose error the transcript already
  * has keeps that one instead.
@@ -190,7 +254,7 @@ export function reconcile(history: Item[], live: Item[]): { items: Item[]; compl
   let users = 0;
   for (const i of live) {
     if (i.kind === 'user') users++;
-    else if (i.kind === 'error' || i.kind === 'notice' || (i.kind === 'question' && !i.answered)) {
+    else if (i.kind === 'error' || i.kind === 'notice' || i.kind === 'thinking' || (i.kind === 'question' && !i.answered)) {
       kept.set(users, [...(kept.get(users) ?? []), i]);
     }
   }
@@ -201,11 +265,18 @@ export function reconcile(history: Item[], live: Item[]): { items: Item[]; compl
     if (i.kind === 'user') users++;
     else if (i.kind === 'error') journaled.add(users);
   }
-  const keep = (n: number) => (kept.get(n) ?? []).filter((i) => i.kind !== 'error' || !journaled.has(n));
-  const items: Item[] = [];
+  // The reasoning goes where it streamed, under the message that started its
+  // turn; the rest at the turn's end.
+  const thinking = (n: number) => (kept.get(n) ?? []).filter((i) => i.kind === 'thinking');
+  const keep = (n: number) =>
+    (kept.get(n) ?? []).filter((i) => i.kind !== 'thinking' && (i.kind !== 'error' || !journaled.has(n)));
+  const items: Item[] = [...thinking(0)];
   users = 0;
   for (const i of history) {
-    if (i.kind === 'user') items.push(...keep(users++));
+    if (i.kind === 'user') {
+      items.push(...keep(users++), i, ...thinking(users));
+      continue;
+    }
     items.push(i);
   }
   items.push(...keep(users));

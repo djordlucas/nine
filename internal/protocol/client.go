@@ -31,14 +31,13 @@ func EnsureDaemon(sock, binary string) (*os.Process, error) {
 	}
 	cmd := exec.Command(binary, "daemon")
 	// Leave Stdout/Stderr nil so the daemon's go to os.DevNull rather than
-	// being inherited from whoever started it. The caller is usually the TUI,
-	// which is about to take over that same terminal with an alt screen — a
-	// daemon writing there paints its boot log over the UI. That is not
-	// hypothetical: with file logging disabled (NINE_LOG_FILE=off, the
-	// container default) slog *is* stderr, so every boot line lands in the
-	// chat area. The daemon owns its log destination; the terminal is the
-	// client's, and the Setsid below already says this process is detached
-	// from it.
+	// being inherited from whoever started it. The caller is usually a CLI
+	// command printing its own output to that terminal — a daemon writing
+	// there mixes its boot log into it. With file logging disabled
+	// (NINE_LOG_FILE=off, the container default) slog *is* stderr, so every
+	// boot line would land there. The daemon owns its log destination; the
+	// terminal is the client's, and the Setsid below already says this
+	// process is detached from it.
 	//
 	// The daemon's own logging is unaffected — see setupLogger in
 	// cmd/nine/main.go for where its output actually goes.
@@ -108,7 +107,7 @@ func (c *Client) NewConversation() (string, error) {
 }
 
 // NewConversationInteractive creates a conversation, marking it interactive
-// (HITL-eligible) when interactive is true. Only the TUI sets this. Returns the
+// (HITL-eligible) when interactive is true. Returns the
 // new conversation's ID, its resolved role, and the daemon's instance name.
 func (c *Client) NewConversationInteractive(interactive bool) (id, role, instanceName string, err error) {
 	if err := c.send(Msg{Type: TypeNewConversation, Interactive: interactive}); err != nil {
@@ -633,6 +632,20 @@ func (c *Client) Workspace(action string, args WorkspaceArgs, out any) error {
 // Database runs a database operation and decodes its reply into out.
 func (c *Client) Database(action string, args DatabaseArgs, out any) error {
 	return c.roundTrip(NewDatabaseMsg(action, args), out)
+}
+
+// MemoryList lists the key-value memory's keys, with their sizes.
+func (c *Client) MemoryList() ([]MemoryEntry, error) {
+	var out []MemoryEntry
+	err := c.roundTrip(NewQueryMsg(TypeMemoryList), &out)
+	return out, err
+}
+
+// MemoryGet reads one key of the key-value memory.
+func (c *Client) MemoryGet(key string) (MemoryValue, error) {
+	var out MemoryValue
+	err := c.roundTrip(NewMemoryGetMsg(key), &out)
+	return out, err
 }
 
 // GetSkill requests one skill with its body.

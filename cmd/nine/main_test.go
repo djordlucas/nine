@@ -6,27 +6,13 @@ import (
 	"testing"
 )
 
-// setupLogger's return value is what stops the TUI from painting log lines over
-// its own frame, so the stderr cases have to be reported as such. The container
-// sets NINE_LOG_FILE=off (see the Makefile), which is exactly this path.
-func TestSetupLoggerReportsStderrWhenFileLoggingIsOff(t *testing.T) {
-	t.Setenv("NINE_LOG_FILE", "off")
-
-	if !setupLogger() {
-		t.Error("setupLogger() = false with NINE_LOG_FILE=off, want true (logs go to stderr)")
-	}
-}
-
-// The complement: with the log file in play, stderr is clear and the TUI has no
-// reason to silence anything.
-func TestSetupLoggerReportsFileWhenLogFileOpens(t *testing.T) {
+// With file logging in play, the log goes to nine.log beside the binary.
+func TestSetupLoggerWritesTheLogFile(t *testing.T) {
 	t.Setenv("NINE_LOG_FILE", "")
 
-	if setupLogger() {
-		// os.Executable() under `go test` is the test binary, in a writable
-		// temp dir, so the log file opens.
-		t.Error("setupLogger() = true with file logging available, want false")
-	}
+	// os.Executable() under `go test` is the test binary, in a writable temp
+	// dir, so the log file opens.
+	setupLogger()
 
 	exe, err := os.Executable()
 	if err != nil {

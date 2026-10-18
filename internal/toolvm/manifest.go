@@ -47,7 +47,7 @@ type Manifest struct {
 	// than a default.
 	Description string `toml:"description"`
 
-	// DisplayName is an optional human-friendly label for TUI display, matching
+	// DisplayName is an optional human-friendly label for display, matching
 	// plugin.ToolDefinition.
 	DisplayName string `toml:"display_name"`
 

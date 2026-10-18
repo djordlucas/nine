@@ -190,3 +190,17 @@
   margin: 0;
   font-size: var(--text-sm);
 }
+
+/* A memory key's value, as the agent reads it. */
+.memoryValue {
+  margin: 0;
+  padding: var(--space-3);
+  max-height: 70dvh;
+  overflow: auto;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

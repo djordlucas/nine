@@ -198,8 +198,8 @@ the client. `nine status` lists uptime, active agents, and loaded plugins.
 then return a replay snapshot (recent events + last response) from the worker's replay
 buffer.
 
-**Gate.** Start a turn; disconnect the client mid-turn; reconnect with `nine attach
-<id>`; the client redraws recent tool activity and receives the final answer. After a
+**Gate.** Start a turn; disconnect the client mid-turn; reconnect with `attach`;
+the client redraws recent tool activity and receives the final answer. After a
 daemon restart, `attach` rebuilds the session from its checkpoint.
 
 ---
@@ -336,7 +336,7 @@ caller.
 - Restart recovery: pending requests survive restarts and are re-emitted on resume;
   stale ones expire at boot.
 
-**Gate.** In a TUI session, `ask_human` blocks the turn until `human_input_answer`
+**Gate.** In an interactive session, `ask_human` blocks the turn until `human_input_answer`
 arrives, then resumes. With `require_approval = ["shell"]`, a `shell` call prompts and a
 non-`y` answer fails it. A background session offered the same tool name never prompts.
 
@@ -363,21 +363,16 @@ mutates `nine.toml`, builds a plugin, or rebuilds the binary.
 
 ---
 
-## Phase 16 — CLI commands and TUI
+## Phase 16 — CLI commands
 
-**Goal.** Full operator surface.
+**Goal.** Full operator surface from the terminal. Interactive conversations are the
+web UI's, over the HTTP API ([`contracts/api.md`](contracts/api.md)).
 
 **Build.** → [`contracts/wire-protocol.md`](contracts/wire-protocol.md) (client methods)
 - CLI verbs (reference set): `<message>`, `daemon`, `goals`, `reflections`, `workflows`,
-  `workflow stop|fail [--all]`, `status`, `attach <id>`.
-- TUI: interactive input, live progress rendering, the HITL question panel (Phase 14),
-  and locally-handled slash commands (`/help`, `/status`, `/config`, `/tools [filter]`,
-  `/skills [name]`, `/memory [key]`, `/goals`, `/workflows`, `/new`, `/clear`) — these
-  consume no LLM tokens.
+  `workflow stop|fail [--all]`, `status`. `nine` with no arguments prints the usage.
 
-**Gate.** Each list verb renders the matching read-only daemon query; slash commands run
-without an LLM call; the TUI shows tool calls live. (Once Phase 14 ships, a pending
-`ask_human` question renders with a `?` badge.)
+**Gate.** Each list verb renders the matching read-only daemon query with no LLM call.
 
 ---
 

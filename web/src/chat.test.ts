@@ -105,6 +105,49 @@ describe('chat timeline', () => {
     expect(merged.items.map((i) => i.kind)).toEqual(['user', 'error']);
   });
 
+  it('keeps who asks a question when it is not the conversation itself', () => {
+    const live = run([{ type: 'human_input_required', request_id: 'q1', question: 'Run shell?', options: ['y', 'n'], origin: 'sub-agent "executor" · build' }], empty);
+    expect(live.items[0]).toMatchObject({ kind: 'question', origin: 'sub-agent "executor" · build' });
+  });
+
+  it('streams a call’s reasoning into a box that closes when the call moves on', () => {
+    const live = run([
+      { type: 'thinking', llm_call_n: 1, think: true },
+      { type: 'thinking_chunk', text: 'Weigh ' },
+      { type: 'thinking_chunk', text: 'the options.' },
+      { type: 'tool_start', tool_name: 'time' },
+    ], sent(empty, 'go'));
+    expect(live.items[1]).toEqual({ kind: 'thinking', step: 1, text: 'Weigh the options.', done: true });
+    // A call that streams no reasoning opens no box, whatever it announced.
+    expect(run([{ type: 'thinking', llm_call_n: 2, think: true }, { type: 'response', text: 'ok' }], empty).items.map((i) => i.kind)).toEqual(['reply']);
+  });
+
+  it('says what the turn is doing, and how full its context is', () => {
+    let live = run([{ type: 'plan_start' }, { type: 'context_update', context_used: 900, context_budget: 1000 }], sent(empty, 'go'));
+    expect(live.stage).toBe('Planning');
+    expect(live.context).toEqual({ used: 900, budget: 1000 });
+    live = run([{ type: 'plan_end' }, { type: 'stage', text: 'Analysing' }], live);
+    expect(live.stage).toBe('Analysing');
+    live = run([{ type: 'done' }], live);
+    expect(live.stage).toBeUndefined();
+    // Sending a message keeps the context reading.
+    expect(sent(live, 'more').context).toEqual({ used: 900, budget: 1000 });
+  });
+
+  it('keeps the reasoning under its message when the transcript catches up', () => {
+    const live = run([
+      { type: 'thinking', llm_call_n: 1, think: true },
+      { type: 'thinking_chunk', text: 'hmm' },
+      { type: 'response', text: 'ok' },
+      { type: 'done' },
+    ], sent(empty, 'go'));
+    const history = fromHistory([
+      { type: 'user_turn', agent_id: 'a', text: 'go', turn_number: 1 },
+      { type: 'response', agent_id: 'a', text: 'ok', turn_number: 1 },
+    ]);
+    expect(reconcile(history, live.items).items.map((i) => i.kind)).toEqual(['user', 'thinking', 'reply']);
+  });
+
   it('keeps live messages the transcript has not caught up with', () => {
     let live = run([{ type: 'response', text: 'first' }, { type: 'done' }], sent(empty, 'one'));
     live = run([{ type: 'response', text: 'second' }, { type: 'done' }], sent(live, 'two'));

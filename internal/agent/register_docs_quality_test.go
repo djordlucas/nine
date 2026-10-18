@@ -44,7 +44,6 @@ var docRetrievalCases = []struct{ query, want string }{
 	{"how do I run everything in a single docker container", "single-container"},
 	{"what is the append only event journal", "event-journal"},
 	{"how do I subscribe to journal events", "event-journal"},
-	{"what slash commands does the tui support", "slash"},
 	{"how do I declare a standing agent in configuration", "predefined-agents"},
 	{"can nine modify its own source code", "self-modification"},
 	{"how are evals run against recorded replays", "evals"},

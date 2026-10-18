@@ -65,7 +65,7 @@ max_tokens = 2048
 # Ollama. NINE_LLM_API_KEY overrides it, which is how it stays out of the file.
 api_key = ""
 
-# Stream the model's extended-thinking reasoning as a live trace in the TUI
+# Stream the model's extended-thinking reasoning to clients as it is produced
 # (sends think:true and drops the /no_think suppression; the model must
 # advertise the "thinking" capability). Defaults to true; set to false to
 # suppress thinking for lower latency.
@@ -99,7 +99,7 @@ task_timeout_seconds = 1800
 # being reaped explains itself. Every deletion is logged with what it removed.
 # session_retention_days = 10
 
-# Display name for this Nine instance, shown in the TUI top bar (replacing the
+# Display name for this Nine instance, sent to clients (replacing the
 # literal "nine"). When set, it is authoritative and fixed. When unset, the
 # daemon reuses a name it generated on a prior boot (persisted in the store), or
 # — on a first boot with none — shows "nine" as a placeholder and asks the LLM
@@ -348,17 +348,6 @@ endpoint = ""
 api_key = ""
 
 
-[ui]
-# Color theme. Options: auto (detect from terminal), light, dark
-theme = "auto"
-
-# Show context token usage in the TUI header.
-# Defaults to true (shown) when unset. When usage crosses the trim threshold
-# (90% of the budget) the header shows a "⚠ ctx: used/budget (NN%)" warning even
-# if this is false — a warning overrides the opt-out of the routine readout.
-show_context = true
-
-
 [workspace]
 # The one directory Nine writes agent files into: the sandboxed file tools are
 # mounted here and `shell` runs here. Optional; the container overrides it to
@@ -447,7 +436,7 @@ max_delegation_depth = 2
 
 
 [hitl]
-# Human-in-the-loop (docs/hitl.md). Interactive TUI conversations only.
+# Human-in-the-loop (docs/hitl.md). Interactive conversations only.
 #
 # timeout_seconds — how long a question waits for an answer before it fails the
 # call and lets the model move on. Default 300 (5 min).
@@ -527,8 +516,8 @@ cert_path = ""
 key_path  = ""
 
 [planning]
-# Plan-before-execute policy (../adr/thinking-and-planning.md). Both keys have a
-# live per-session override via the TUI /plan-mode command.
+# Plan-before-execute policy (../adr/thinking-and-planning.md). The web UI's Plan
+# control changes a session's mode live, for that session only.
 #
 # plan_mode — how the agent reasons before acting:
 #   off        no native thinking and no request-analysis pass
@@ -968,11 +957,8 @@ file cannot be opened (an installed binary in a read-only directory) as well as
 when `NINE_LOG_FILE=off` asks for it — which is what the container sets, so
 `docker logs` carries everything.
 
-Two places deliberately keep those logs off an interactive terminal, because the
-TUI draws a full-screen UI on it and a stray log line lands in the chat area:
-the TUI discards client-side logging for its own lifetime when the destination
-is stderr, and a daemon auto-started by a client (`EnsureDaemon`) never inherits
-the caller's stdout/stderr. Run `nine daemon` yourself to watch a daemon's
+A daemon auto-started by a client (`EnsureDaemon`) never inherits the caller's
+stdout/stderr, so its log never mixes into a command's output. Run `nine daemon` yourself to watch a daemon's
 output live.
 
 These are how one `nine.toml` serves every deployment. The Makefile's `up`/`up-hot`

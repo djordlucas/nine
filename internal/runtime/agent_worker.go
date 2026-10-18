@@ -694,5 +694,5 @@ func (w *AgentWorker) setPlanMode(mode string) { w.loop.SetPlanMode(mode) }
 func (w *AgentWorker) planMode() string { return w.loop.PlanMode() }
 
 // role reports the resolved role the session runs (surfaced in status and the
-// TUI header).
+// client's header).
 func (w *AgentWorker) role() string { return w.loop.Role() }

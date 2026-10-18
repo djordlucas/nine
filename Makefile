@@ -19,7 +19,7 @@ GOFLAGS  := -mod=vendor
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS  := -ldflags "-X main.Version=$(VERSION)"
 
-.PHONY: all dev build openapi openapi-check openapi-lint test test-v lint cover cover-html clean model up up-hot session shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-code eval-generate quickjs-wasm quickjs-verify harness-bc image image-test image-scan image-verify ci ci-test scan scan-fs lint-host webui webui-check webui-test webui-e2e
+.PHONY: all dev build openapi openapi-check openapi-lint test test-v lint cover cover-html clean model up up-hot shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-code eval-generate quickjs-wasm quickjs-verify harness-bc image image-test image-scan image-verify ci ci-test scan scan-fs lint-host webui webui-check webui-test webui-e2e
 
 dev: build
 
@@ -224,7 +224,7 @@ up:
 	  $(NINE_RUN_FLAGS) $(LLM_ENV) $(NINE_ENV) $(NINE_MOUNTS) \
 	  -v nine-data:/data \
 	  nine
-	@echo "nine is up. API at http://localhost:8080. Attach a session with: make session"
+	@echo "nine is up. Web UI and API at http://localhost:8080."
 
 up-hot:
 	docker build --target dev -t nine-dev .
@@ -238,13 +238,6 @@ up-hot:
 	  -v nine-dev-gocache:/root/.cache/go-build \
 	  nine-dev
 	@echo "nine (hot-reload) is building/starting. API at http://localhost:8080. Follow it with: make logs"
-
-# -u nine matters: the runtime container's services run as uid 1000, and a
-# session started as root writes root-owned files into /data that the daemon
-# then cannot touch. The dev container runs as root throughout, so it takes no
-# -u and is the fallback here.
-session:
-	@docker exec -it -u nine nine nine 2>/dev/null || docker exec -it nine-dev nine
 
 shell:
 	@docker exec -it -u nine nine sh 2>/dev/null || docker exec -it nine-dev sh

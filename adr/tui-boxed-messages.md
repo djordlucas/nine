@@ -1,6 +1,6 @@
 # TUI Boxed Messages
 
-**Status:** proposed  **Scope:** `internal/tui` only  no wire-protocol,
+**Status:** superseded — the TUI was removed for the web UI ([web-ui.md](web-ui.md)), and this was never built · **Scope:** `internal/tui` only — no wire-protocol,
 daemon, or persistence changes.
 
 > This records the design decision to render chat messages in visual boxes
