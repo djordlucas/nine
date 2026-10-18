@@ -105,6 +105,11 @@ describe('chat timeline', () => {
     expect(merged.items.map((i) => i.kind)).toEqual(['user', 'error']);
   });
 
+  it('keeps who asks a question when it is not the conversation itself', () => {
+    const live = run([{ type: 'human_input_required', request_id: 'q1', question: 'Run shell?', options: ['y', 'n'], origin: 'sub-agent "executor" · build' }], empty);
+    expect(live.items[0]).toMatchObject({ kind: 'question', origin: 'sub-agent "executor" · build' });
+  });
+
   it('keeps live messages the transcript has not caught up with', () => {
     let live = run([{ type: 'response', text: 'first' }, { type: 'done' }], sent(empty, 'one'));
     live = run([{ type: 'response', text: 'second' }, { type: 'done' }], sent(live, 'two'));

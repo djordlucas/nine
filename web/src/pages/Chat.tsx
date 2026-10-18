@@ -522,6 +522,7 @@ function Question({
   const [text, setText] = useState('');
   return (
     <div class={`card ${styles.question}`} role="group" aria-label="Question from the session">
+      {q.origin && <p class="muted">From {q.origin}</p>}
       <p class={styles.qText}>{q.question}</p>
       {q.answered !== undefined ? (
         <p class="muted">Answered: {q.answered}</p>

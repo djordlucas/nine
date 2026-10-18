@@ -11,7 +11,7 @@ export type Item =
   | { kind: 'tool'; name: string; input?: unknown; output?: string; done: boolean }
   | { kind: 'agent'; id: string; task?: string; role?: string; status?: string }
   | { kind: 'reply'; text: string; turn?: number; streaming: boolean }
-  | { kind: 'question'; id: string; question: string; options: string[]; answered?: string }
+  | { kind: 'question'; id: string; question: string; options: string[]; origin?: string; answered?: string }
   | { kind: 'notice'; text: string }
   | { kind: 'error'; text: string; cancelled: boolean };
 
@@ -137,6 +137,9 @@ export function apply(chat: Chat, ev: WsEvent): Chat {
           id: str(ev.request_id),
           question: str(ev.question),
           options: Array.isArray(ev.options) ? ev.options.map(String) : [],
+          // Who asks, when it is not the conversation itself: a sub-agent at
+          // an approval gate (spec/contracts/hitl.md R-HITL.8).
+          ...(str(ev.origin) ? { origin: str(ev.origin) } : {}),
         });
       }
       return { items, busy: chat.busy };
