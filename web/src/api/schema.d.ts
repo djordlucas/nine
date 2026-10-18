@@ -52,6 +52,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/self-model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the self-model
+         * @description Returns what the agent holds about itself, as every turn's self-model block carries it — self/identity, self/persona, self/capabilities and self/learned, in that order. A key never written is left out. Read-only; reflection and the agent's own memory_set change it.
+         */
+        get: operations["getSelfModel"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/conversations": {
         parameters: {
             query?: never;
@@ -1224,9 +1244,9 @@ export interface components {
         /** @description One transcript entry. Which fields are set depends on type. */
         HistoryEntry: {
             /** @enum {string} */
-            type: "user_turn" | "response" | "tool_start" | "tool_end" | "sub_agent_start" | "sub_agent_end";
+            type: "user_turn" | "response" | "tool_start" | "tool_end" | "sub_agent_start" | "sub_agent_end" | "turn_error";
             agent_id: string;
-            /** @description user_turn: the prompt. response: the reply. sub_agent_*: the sub-agent's task. */
+            /** @description user_turn: the prompt. response: the reply. turn_error: why a turn ended without a reply, failed or cancelled. sub_agent_*: the sub-agent's task. */
             text?: string;
             tool_name?: string;
             /** @description Tool arguments, shaped by that tool's own input schema. */
@@ -1238,6 +1258,15 @@ export interface components {
             /** Format: date-time */
             timestamp?: string;
             turn_number?: number;
+        };
+        /** @description The self-model, key by key. */
+        SelfModelResponse: {
+            entries: {
+                /** @description The self/ key, e.g. self/identity. */
+                key: string;
+                /** @description What it holds, as the model reads it. */
+                value: string;
+            }[];
         };
         /** @description The configuration the daemon runs with, credentials hidden. */
         ConfigResponse: {
@@ -2251,6 +2280,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConfigResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getSelfModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfModelResponse"];
                 };
             };
             401: components["responses"]["Unauthorized"];

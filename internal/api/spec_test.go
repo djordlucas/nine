@@ -134,8 +134,8 @@ func TestOpenAPI_MatchesRegisteredRoutes(t *testing.T) {
 		}
 	}
 
-	if len(declared) != 68 {
-		t.Errorf("Expected 68 declared operations, got %d — update this count deliberately", len(declared))
+	if len(declared) != 69 {
+		t.Errorf("Expected 69 declared operations, got %d — update this count deliberately", len(declared))
 	}
 }
 

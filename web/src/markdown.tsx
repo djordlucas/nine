@@ -1,5 +1,6 @@
 import { h, type ComponentChildren } from 'preact';
 import { Lexer, type Token, type Tokens } from 'marked';
+import css from './markdown.module.css';
 
 /**
  * Markdown from the model, rendered as Preact elements (adr/web-ui.md §7).
@@ -22,10 +23,10 @@ export function Markdown({
   try {
     tokens = Lexer.lex(text, { gfm: true, breaks: false });
   } catch {
-    return <p class={cls}>{text}</p>;
+    return <p class={`${css.md} ${cls ?? ''}`}>{text}</p>;
   }
   if (link) rewriteLinks(tokens, link);
-  return <div class={cls}>{blocks(tokens)}</div>;
+  return <div class={`${css.md} ${cls ?? ''}`}>{blocks(tokens)}</div>;
 }
 
 // A target safeHref refuses, so a link the rewrite drops renders as its text.

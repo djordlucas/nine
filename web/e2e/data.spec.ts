@@ -90,3 +90,12 @@ test('a table is created, a row added, changed and deleted', async ({ page }, in
   await page.getByRole('button', { name: 'Run' }).click();
   await expect(sql.getByRole('alert')).toContainText('attach');
 });
+
+test('the self-model reads as every turn carries it', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/data/self-model');
+  await expect(page.getByRole('heading', { name: 'Self-model', level: 2 })).toBeVisible();
+  // The first start seeds an identity.
+  await expect(page.getByRole('region', { name: 'self/identity' })).toContainText('Nine');
+  await expect(page.getByRole('textbox')).toHaveCount(0);
+});

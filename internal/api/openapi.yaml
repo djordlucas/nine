@@ -169,6 +169,41 @@ paths:
       security:
       - bearerAuth: []
       - cookieAuth: []
+  /self-model:
+    get:
+      operationId: getSelfModel
+      summary: Get the self-model
+      description: Returns what the agent holds about itself, as every turn's self-model block carries it
+        — self/identity, self/persona, self/capabilities and self/learned, in that order. A key never
+        written is left out. Read-only; reflection and the agent's own memory_set change it.
+      tags:
+      - health
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfModelResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
   /conversations:
     get:
       operationId: listConversations
@@ -3004,10 +3039,12 @@ components:
           - tool_end
           - sub_agent_start
           - sub_agent_end
+          - turn_error
         agent_id:
           type: string
         text:
-          description: 'user_turn: the prompt. response: the reply. sub_agent_*: the sub-agent''s task.'
+          description: 'user_turn: the prompt. response: the reply. turn_error: why a turn ended without
+            a reply, failed or cancelled. sub_agent_*: the sub-agent''s task.'
           type: string
         tool_name:
           type: string
@@ -3026,6 +3063,26 @@ components:
           format: date-time
         turn_number:
           type: integer
+    SelfModelResponse:
+      description: The self-model, key by key.
+      type: object
+      required:
+      - entries
+      properties:
+        entries:
+          type: array
+          items:
+            type: object
+            required:
+            - key
+            - value
+            properties:
+              key:
+                type: string
+                description: The self/ key, e.g. self/identity.
+              value:
+                type: string
+                description: What it holds, as the model reads it.
     ConfigResponse:
       description: The configuration the daemon runs with, credentials hidden.
       type: object

@@ -264,7 +264,7 @@ function SessionDetail(props: { id: string; session?: Session; loaded: boolean; 
         </div>
         <div class={detail.actions}>
           <button type="button" class={`${detail.action} ${detail.iconAction} ${detail.danger}`} disabled={busy} onClick={() => void remove()} aria-label="Delete" title="Delete this session">
-            <Icon name="trash" size={18} />
+            <Icon name="trash" size={16} />
           </button>
         </div>
       </header>

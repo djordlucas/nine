@@ -35,7 +35,7 @@ docker run -e NINE_API_AUTH_TOKEN=… -p 8080:8080 ghcr.io/djordlucas/nine
 | Goals & workflows | goals as a tree beside the workflows. Create goals and sub-goals; pause, resume, finish, archive and delete them; stop or fail a workflow. |
 | Tools | the tools by where they came from, each with its capabilities, dependencies and arguments schema, to call directly; a tool Nine wrote with its versions. Also the plugins, with reload, and the skills, each readable. |
 | Inbox | capability requests to approve or deny, questions waiting for an answer, the notifications, and the capabilities in force. Its link counts what waits. |
-| Data | the workspace's files and the database processes keep their records in, to read and edit. Nine's own state, the store and the workspace's `.nine/`, is not reachable. |
+| Data | the workspace's files and the database processes keep their records in, to read and edit, and Nine's self-model, to read. Nine's own state, the store and the workspace's `.nine/`, is not reachable. |
 | System | the daemon's status, a backup to download, every session, reflections, and the docs and spec this build embeds. |
 
 On a phone every list opens its item full screen, with ‹ to go back.
@@ -83,6 +83,7 @@ stopped ([processes](processes.md#goals-sessions-and-pipes)). A goal that a
 | Files | browses the workspace. A text file up to 2 MB opens in an editor (⌘S or Ctrl+S saves); any file downloads. New file takes a path, so `notes/today.md` makes `notes/`. Upload puts files in the directory shown. Delete removes a file, or a directory once it is empty. |
 | Database | the tables and views with their row counts; a table's rows 100 at a time. Add row inserts one, a column left empty taking its default; Edit changes or deletes one. NULL stores a NULL. A view, or a table without a rowid, is changed from SQL. |
 | SQL | runs one statement: a read shows up to 1000 rows, a write how many rows it changed. ⌘Enter or Ctrl+Enter runs it. |
+| Self-model | what Nine holds about itself, in the `self/` keys every turn shows the model: identity, persona, capabilities and what it learned. Read-only; reflection and Nine's own memory writes change it. |
 
 | Rule | Detail |
 |---|---|
@@ -105,8 +106,8 @@ stopped ([processes](processes.md#goals-sessions-and-pipes)). A goal that a
 
 A conversation shows its transcript, then every turn it runs as it happens,
 whoever started it: this browser, another client, or the session's own schedule.
-Replies render as Markdown. A turn that fails shows its error in the
-conversation, in its place. Below the message box is the provider and model the
+Replies render as Markdown. A turn that fails or is cancelled shows its error
+in the conversation, in its place, and keeps it after a reload. Below the message box is the provider and model the
 daemon calls.
 
 | Control | Does |
@@ -199,7 +200,6 @@ in `internal/webui/dist`, so `go build` needs no Node.
 | Two tool names are taken | A tool named `plugins` or `skills` cannot be opened from Tools: those paths are its other views. |
 | A backup is written beside the API server | The daemon writes the snapshot to a temporary file the API server streams and then removes, so the two must share a filesystem, as their socket already requires. A snapshot left by an interrupted download is removed by the next backup after an hour. |
 | A long transcript shows its last 1000 entries | A conversation loads at most 1000 transcript entries, the most recent. Each turn's full record is under Inspect. |
-| A failed turn is not in the transcript | The transcript keeps replies, not errors, so a cancelled or failed turn shows its error only while the page that saw it stays open. The turn's trace (`GET /api/v1/conversations/{id}/trace?turn=N`) keeps it. |
 | Large payloads stay out of the stream | A payload over 16 KB, usually a model call's whole context, reaches the Journal as its size only. The turn's trace (`GET /api/v1/conversations/{id}/trace`) has it, and the Journal links to it. |
 | The Journal holds what the tab has seen | It shows the events kept since the tab opened, up to 2000, starting with the 200 before. Older history is in each conversation's trace. |
 | One identity | The API token is the only credential, so every signed-in browser has the same rights. |

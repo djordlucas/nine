@@ -87,6 +87,29 @@ func (s *Server) GetConfig(ctx context.Context, request apigen.GetConfigRequestO
 	return apigen.GetConfig200JSONResponse{Toml: view}, nil
 }
 
+func (s *Server) GetSelfModel(ctx context.Context, request apigen.GetSelfModelRequestObject) (apigen.GetSelfModelResponseObject, error) {
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		return apigen.GetSelfModel503JSONResponse(
+			errorBody("service_unavailable", err.Error(), nil)), nil
+	}
+	defer cl.Close()
+
+	model, err := cl.SelfModel()
+	if err != nil {
+		return apigen.GetSelfModel500JSONResponse(
+			errorBody("server_error", err.Error(), nil)), nil
+	}
+	entries := make([]struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}, len(model))
+	for i, e := range model {
+		entries[i].Key, entries[i].Value = e.Key, e.Value
+	}
+	return apigen.GetSelfModel200JSONResponse{Entries: entries}, nil
+}
+
 func (s *Server) ListNotifications(ctx context.Context, request apigen.ListNotificationsRequestObject) (apigen.ListNotificationsResponseObject, error) {
 	p, err := page(request.Params.Limit, request.Params.Offset)
 	if err != nil {

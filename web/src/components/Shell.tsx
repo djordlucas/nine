@@ -27,8 +27,8 @@ export function Shell({ children }: { children: ComponentChildren }) {
   return (
     <div class={styles.shell}>
       <nav class={styles.rail} aria-label="Sections">
-        <a class={styles.brand} href="/" aria-label="Nine">
-          9
+        <a class={styles.brand} href="/">
+          Nine
         </a>
         {sections.map((s) => (
           <a

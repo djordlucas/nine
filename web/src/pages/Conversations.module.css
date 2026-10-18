@@ -1,7 +1,7 @@
 /* The list and the chat share the sections' layout (components/Split). */
 
 .new {
-  min-height: 36px;
+  min-height: 32px;
 }
 
 /* One line a conversation: its name, then its details at the right. */

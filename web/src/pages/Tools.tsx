@@ -107,7 +107,7 @@ function ToolList(props: { tools: Tool[] | null; error: string | null; current?:
           onInput={(e) => setFilter(e.currentTarget.value)}
         />
         <button type="button" class={`${detail.action} ${detail.iconAction}`} disabled={busy} onClick={() => void reload()} aria-label="Reload" title="Reload the tools">
-          <Icon name="reload" size={18} />
+          <Icon name="reload" size={16} />
         </button>
       </ListHead>
       {outcome && (
@@ -189,7 +189,7 @@ function ToolDetail({ name, onChanged }: { name: string; onChanged: () => void }
         {t.generated && (
           <div class={detail.actions}>
             <button type="button" class={`${detail.action} ${detail.iconAction} ${detail.danger}`} onClick={() => void remove()} aria-label="Delete" title="Delete this tool">
-              <Icon name="trash" size={18} />
+              <Icon name="trash" size={16} />
             </button>
           </div>
         )}
@@ -400,7 +400,7 @@ function PluginsView() {
         </div>
         <div class={detail.actions}>
           <button type="button" class={`${detail.action} ${detail.iconAction}`} disabled={busy} onClick={() => void reload()} aria-label="Reload" title="Reload the plugins">
-            <Icon name="reload" size={18} />
+            <Icon name="reload" size={16} />
           </button>
         </div>
       </header>
@@ -529,7 +529,7 @@ function SkillDetail({ name }: { name: string }) {
         </div>
       </header>
       {s.description && <p class="muted">{s.description}</p>}
-      <Markdown text={s.content} class={styles.skill} />
+      <Markdown text={s.content} />
     </article>
   );
 }

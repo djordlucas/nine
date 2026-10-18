@@ -17,10 +17,11 @@ import (
 // same rows `nine trace` and `nine replay` read.
 
 // historyTypes maps the daemon's transcript message types to the entry types
-// the API declares. history_user is the daemon's name for a replayed prompt;
-// the API calls it what it is.
+// the API declares. history_user and history_error are the daemon's names for
+// a replayed prompt and a turn's error; the API calls them what they are.
 var historyTypes = map[protocol.MsgType]apigen.HistoryEntryType{
 	protocol.TypeHistoryUser:   "user_turn",
+	protocol.TypeHistoryError:  "turn_error",
 	protocol.TypeResponse:      "response",
 	protocol.TypeToolStart:     "tool_start",
 	protocol.TypeToolEnd:       "tool_end",

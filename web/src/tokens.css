@@ -215,7 +215,7 @@ samp {
 @media (min-width: 768px) {
   .input,
   .button {
-    min-height: 36px;
+    min-height: 32px;
   }
 }
 

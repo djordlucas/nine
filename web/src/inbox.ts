@@ -20,6 +20,19 @@ export async function loadAttention(): Promise<{ requests: CapabilityRequest[]; 
   };
 }
 
+/**
+ * One value of a scope as text: a mount as host=>guest, as the Tools view
+ * shows it; another object as JSON.
+ */
+function item(x: unknown): string {
+  if (x && typeof x === 'object') {
+    const m = x as Record<string, unknown>;
+    if (typeof m.host === 'string' && typeof m.guest === 'string') return `${m.host}=>${m.guest}`;
+    return JSON.stringify(x);
+  }
+  return String(x);
+}
+
 /** A capability request's scope as text: its params, or "any" when it named none. */
 export function scopeOf(params: string | undefined): string {
   if (!params) return 'any';
@@ -27,7 +40,7 @@ export function scopeOf(params: string | undefined): string {
     const v: unknown = JSON.parse(params);
     if (v && typeof v === 'object' && !Array.isArray(v)) {
       const parts = Object.entries(v as Record<string, unknown>).map(
-        ([k, x]) => `${k}: ${Array.isArray(x) ? x.join(', ') : typeof x === 'object' ? JSON.stringify(x) : String(x)}`,
+        ([k, x]) => `${k}: ${Array.isArray(x) ? x.map(item).join(', ') : item(x)}`,
       );
       return parts.length ? parts.join('; ') : 'any';
     }

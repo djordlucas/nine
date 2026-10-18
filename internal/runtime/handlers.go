@@ -15,6 +15,7 @@ import (
 	"nine/internal/memory"
 	"nine/internal/plugin"
 	"nine/internal/protocol"
+	"nine/internal/selfmodel"
 	"nine/internal/toolvm"
 )
 
@@ -400,6 +401,31 @@ func (d *Daemon) handleConfig(enc *json.Encoder) {
 		return
 	}
 	enc.Encode(protocol.NewTextMsg(protocol.TypeConfig, d.configView)) //nolint:errcheck
+}
+
+// kvReader is the store's key-value read, which the self_model query needs and
+// queryBackend leaves out: a test backend need not hold a key-value store.
+type kvReader interface {
+	KVGetString(key string) string
+}
+
+// handleSelfModel returns the self-model as every turn's block carries it:
+// each self/ key the block reads that holds something, in its order. It only
+// reads; the self-model is the agent's own, changed by its turns.
+func (d *Daemon) handleSelfModel(enc *json.Encoder) {
+	kv, ok := d.store.(kvReader)
+	if !ok {
+		enc.Encode(protocol.NewErrorMsg("self-model not available")) //nolint:errcheck
+		return
+	}
+	out := []protocol.SelfModelEntry{}
+	for _, key := range selfmodel.Keys {
+		if v := kv.KVGetString(key); v != "" {
+			out = append(out, protocol.SelfModelEntry{Key: key, Value: v})
+		}
+	}
+	data, _ := json.Marshal(out)
+	enc.Encode(protocol.NewTextMsg(protocol.TypeSelfModel, string(data))) //nolint:errcheck
 }
 
 // handleSessionRename gives a conversation the operator's display name. It
