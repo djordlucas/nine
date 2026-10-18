@@ -150,7 +150,7 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `goal_create` | `text` = JSON `GoalCreateResult` | `{ goal, pursue_session }`: the stored goal and `spawned` \| `limit_reached` \| `none` (sub-goal) |
 | `goal_delete` | `text` = JSON `GoalDeleteResult` | `{ deleted []string, session_stopped bool }`: every goal id removed, goal first |
 | `goal_set_status` | `text` = JSON goal | the goal as stored after the change |
-| `session_history` | `text` = JSON `[]Msg` | `history_user`, `tool_start`, `tool_end`, `sub_agent_start`, `sub_agent_end`, `response`, in order, each with `ts` and `turn` |
+| `session_history` | `text` = JSON `[]Msg` | `history_user`, `tool_start`, `tool_end`, `sub_agent_start`, `sub_agent_end`, `response`, `history_error`, in order, each with `ts` and `turn`. `history_error` is a turn that ended in an error instead of a reply, with the error in `text`; it is a transcript entry, not an `error` |
 | `session_events` | `text` = JSON `[]JournalEvent` | `{ seq, agent_id, turn, span_id, parent_span_id, type, ts, payload }` ([`event-journal.md`](event-journal.md)) |
 | `watch` | `agent_id` | watch accepted; the session's events follow (R-PROTO.14) |
 | `turn_cancel` | `text` = `cancelled` \| `idle` | a running turn was cancelled, or the session was idle (or `error` when the session is unknown) |

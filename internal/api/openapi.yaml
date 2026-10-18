@@ -3004,10 +3004,12 @@ components:
           - tool_end
           - sub_agent_start
           - sub_agent_end
+          - turn_error
         agent_id:
           type: string
         text:
-          description: 'user_turn: the prompt. response: the reply. sub_agent_*: the sub-agent''s task.'
+          description: 'user_turn: the prompt. response: the reply. turn_error: why a turn ended without
+            a reply, failed or cancelled. sub_agent_*: the sub-agent''s task.'
           type: string
         tool_name:
           type: string

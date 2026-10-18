@@ -343,10 +343,18 @@ func (d *Daemon) journalHistoryTurns(agentID string, maxTurns int) []protocol.Ms
 			m = protocol.NewSubAgentEndMsg(agentID, p.SubID, p.Task, p.Status, p.Role)
 		case "turn_end":
 			var p turnEndPayload
-			if json.Unmarshal(e.Payload, &p) != nil || p.Result == "" {
+			if json.Unmarshal(e.Payload, &p) != nil {
 				continue
 			}
-			m = protocol.NewResponseMsg(agentID, p.Result)
+			switch {
+			case p.Result != "":
+				m = protocol.NewResponseMsg(agentID, p.Result)
+			case p.Error != "":
+				// A failed or cancelled turn keeps its outcome in the transcript.
+				m = protocol.NewHistoryErrorMsg(agentID, p.Error)
+			default:
+				continue
+			}
 		default:
 			continue
 		}

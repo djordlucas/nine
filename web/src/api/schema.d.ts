@@ -1224,9 +1224,9 @@ export interface components {
         /** @description One transcript entry. Which fields are set depends on type. */
         HistoryEntry: {
             /** @enum {string} */
-            type: "user_turn" | "response" | "tool_start" | "tool_end" | "sub_agent_start" | "sub_agent_end";
+            type: "user_turn" | "response" | "tool_start" | "tool_end" | "sub_agent_start" | "sub_agent_end" | "turn_error";
             agent_id: string;
-            /** @description user_turn: the prompt. response: the reply. sub_agent_*: the sub-agent's task. */
+            /** @description user_turn: the prompt. response: the reply. turn_error: why a turn ended without a reply, failed or cancelled. sub_agent_*: the sub-agent's task. */
             text?: string;
             tool_name?: string;
             /** @description Tool arguments, shaped by that tool's own input schema. */

@@ -466,7 +466,7 @@ journal through the daemon's `session_history` message; it does not attach.
 {
   "data": [
     {
-      "type": "user_turn" | "response" | "tool_start" | "tool_end" | "sub_agent_start" | "sub_agent_end",
+      "type": "user_turn" | "response" | "turn_error" | "tool_start" | "tool_end" | "sub_agent_start" | "sub_agent_end",
       "agent_id": "agent-id",
       "text": "prompt, reply, or sub-agent task",
       "tool_name": "tool-name",

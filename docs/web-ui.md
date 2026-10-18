@@ -105,8 +105,8 @@ stopped ([processes](processes.md#goals-sessions-and-pipes)). A goal that a
 
 A conversation shows its transcript, then every turn it runs as it happens,
 whoever started it: this browser, another client, or the session's own schedule.
-Replies render as Markdown. A turn that fails shows its error in the
-conversation, in its place. Below the message box is the provider and model the
+Replies render as Markdown. A turn that fails or is cancelled shows its error
+in the conversation, in its place, and keeps it after a reload. Below the message box is the provider and model the
 daemon calls.
 
 | Control | Does |
@@ -199,7 +199,6 @@ in `internal/webui/dist`, so `go build` needs no Node.
 | Two tool names are taken | A tool named `plugins` or `skills` cannot be opened from Tools: those paths are its other views. |
 | A backup is written beside the API server | The daemon writes the snapshot to a temporary file the API server streams and then removes, so the two must share a filesystem, as their socket already requires. A snapshot left by an interrupted download is removed by the next backup after an hour. |
 | A long transcript shows its last 1000 entries | A conversation loads at most 1000 transcript entries, the most recent. Each turn's full record is under Inspect. |
-| A failed turn is not in the transcript | The transcript keeps replies, not errors, so a cancelled or failed turn shows its error only while the page that saw it stays open. The turn's trace (`GET /api/v1/conversations/{id}/trace?turn=N`) keeps it. |
 | Large payloads stay out of the stream | A payload over 16 KB, usually a model call's whole context, reaches the Journal as its size only. The turn's trace (`GET /api/v1/conversations/{id}/trace`) has it, and the Journal links to it. |
 | The Journal holds what the tab has seen | It shows the events kept since the tab opened, up to 2000, starting with the 200 before. Older history is in each conversation's trace. |
 | One identity | The API token is the only credential, so every signed-in browser has the same rights. |

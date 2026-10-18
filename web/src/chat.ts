@@ -46,6 +46,9 @@ export function fromHistory(entries: Schemas['HistoryEntry'][]): Item[] {
       case 'sub_agent_start':
         items.push({ kind: 'agent', id: e.sub_agent_id ?? '', task: e.text, role: e.role });
         break;
+      case 'turn_error':
+        items.push(errorItem(e.text ?? ''));
+        break;
       case 'sub_agent_end': {
         const a = items.findLast((i): i is Extract<Item, { kind: 'agent' }> => i.kind === 'agent' && i.id === e.sub_agent_id);
         if (a) a.status = e.status ?? 'done';
@@ -57,6 +60,12 @@ export function fromHistory(entries: Schemas['HistoryEntry'][]): Item[] {
   // cut off in; it is not running now.
   for (const i of items) if (i.kind === 'tool' && !i.done) i.done = true;
   return items;
+}
+
+/** A turn's error as the timeline shows it, live or from the transcript. */
+function errorItem(message: string): Item {
+  const cancelled = /turn cancelled/.test(message);
+  return { kind: 'error', text: cancelled ? 'Cancelled.' : message || 'Something went wrong.', cancelled };
 }
 
 function lastOpenTool(items: Item[], name: string) {
@@ -118,9 +127,7 @@ export function apply(chat: Chat, ev: WsEvent): Chat {
       items.push({ kind: 'notice', text: 'Queued: the session is mid-turn, so this message runs after it.' });
       return { items, busy: chat.busy };
     case 'error': {
-      const message = str((ev.error as { message?: unknown } | undefined)?.message) || 'Something went wrong.';
-      const cancelled = /turn cancelled/.test(message);
-      items.push({ kind: 'error', text: cancelled ? 'Cancelled.' : message, cancelled });
+      items.push(errorItem(str((ev.error as { message?: unknown } | undefined)?.message)));
       return { items: settle(items), busy: false };
     }
     case 'human_input_required':
@@ -166,9 +173,11 @@ export function answered(chat: Chat, id: string, answer: string): Chat {
  * path, so a transcript read the moment a turn ends can lack some of that
  * turn — its reply is written last. Until the transcript has as many messages
  * and replies as the live view, the live view stays as it is and complete is
- * false, so the caller reads again. Errors, notices and open questions are
- * never in the transcript: each is kept at the end of the turn it came in, so
- * an error stays in the conversation after the next message is sent.
+ * false, so the caller reads again. Notices and open questions are never in
+ * the transcript, and an error is not until its turn is journaled: each is
+ * kept at the end of the turn it came in, so it stays in the conversation
+ * after the next message is sent. A turn whose error the transcript already
+ * has keeps that one instead.
  */
 export function reconcile(history: Item[], live: Item[]): { items: Item[]; complete: boolean } {
   const count = (items: Item[], kind: 'user' | 'reply') =>
@@ -185,13 +194,21 @@ export function reconcile(history: Item[], live: Item[]): { items: Item[]; compl
       kept.set(users, [...(kept.get(users) ?? []), i]);
     }
   }
+  // The turns, by the same count, whose error the transcript has.
+  const journaled = new Set<number>();
+  users = 0;
+  for (const i of history) {
+    if (i.kind === 'user') users++;
+    else if (i.kind === 'error') journaled.add(users);
+  }
+  const keep = (n: number) => (kept.get(n) ?? []).filter((i) => i.kind !== 'error' || !journaled.has(n));
   const items: Item[] = [];
   users = 0;
   for (const i of history) {
-    if (i.kind === 'user') items.push(...(kept.get(users++) ?? []));
+    if (i.kind === 'user') items.push(...keep(users++));
     items.push(i);
   }
-  items.push(...(kept.get(users) ?? []));
+  items.push(...keep(users));
   return { items, complete: true };
 }
 

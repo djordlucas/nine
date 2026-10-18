@@ -185,7 +185,7 @@ reading them does not attach to the session.
 
 | Endpoint | Returns |
 |----------|---------|
-| `GET …/history` | The transcript, oldest first: `user_turn`, `tool_start`, `tool_end`, `sub_agent_start`, `sub_agent_end` and `response` entries, each with its `turn_number`. Paged with `limit`/`offset`. |
+| `GET …/history` | The transcript, oldest first: `user_turn`, `tool_start`, `tool_end`, `sub_agent_start`, `sub_agent_end`, `response` and `turn_error` entries, each with its `turn_number`. A `turn_error` is a turn that ended without a reply, failed or cancelled, and carries its error in `text`. Paged with `limit`/`offset`. |
 | `GET …/trace` | Every journal event — `seq`, `turn`, `type`, span ids, timestamp and the payload exactly as journaled. `turn=N` limits it to one turn; `sub_agents=true` adds a `sub_agents` list holding each spawned sub-agent's own trace, recursively, linked to the `seq` of the event that spawned it. |
 | `POST …/replay` | Turn `{"turn": N}` reconstructed: trigger and input, each LLM call (request size, token estimate and provider counts, stop reason, requested tools), each tool call with its input, output, timing and outbound HTTP, the sub-agents, and the result. Nothing is re-executed. |
 

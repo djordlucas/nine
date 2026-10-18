@@ -91,6 +91,7 @@ const (
 	TypeDone            MsgType = "done"
 	TypeError           MsgType = "error"
 	TypeHistoryUser     MsgType = "history_user"
+	TypeHistoryError    MsgType = "history_error"
 	TypeSetName         MsgType = "set_name"
 	TypeSetInstanceName MsgType = "set_instance_name"
 
@@ -1030,6 +1031,13 @@ type AttachResult struct {
 // replayed prompt from a live one.
 func NewHistoryUserMsg(agentID, text string) Msg {
 	return Msg{Type: TypeHistoryUser, AgentID: agentID, Text: text}
+}
+
+// NewHistoryErrorMsg is a replayed turn that ended in an error instead of a
+// reply: a transcript entry, not a live error, so a client replaying it does
+// not take it for one.
+func NewHistoryErrorMsg(agentID, text string) Msg {
+	return Msg{Type: TypeHistoryError, AgentID: agentID, Text: text}
 }
 
 // NewTextMsg builds a response carrying msgType and a text/JSON payload —
