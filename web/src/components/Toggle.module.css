@@ -1,0 +1,57 @@
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.toggle:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* The square: the chat's T button, a check in place of the letter. */
+.box {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.toggle:hover:not(:disabled) .box {
+  box-shadow: 2px 2px 0 var(--border);
+}
+
+.toggle[aria-pressed='true'] .box {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--ink-text);
+}
+
+.toggle:active:not(:disabled) .box {
+  box-shadow: none;
+  transform: translate(1px, 1px);
+}
+
+/* The focus ring sits on the square, which is what is pressed. */
+.toggle:focus-visible {
+  outline: none;
+}
+
+.toggle:focus-visible .box {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}

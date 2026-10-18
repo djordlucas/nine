@@ -13,7 +13,7 @@ test('the tool roster groups tools, filters them, and calls one', async ({ page 
   await expect(page.getByRole('heading', { name: 'time', level: 2 })).toBeVisible();
   await expect(page.getByText('Capabilities')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Call' }).click();
+  await page.getByRole('button', { name: 'Call', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: /Returned|Failed/ })).toBeVisible();
 });
 
@@ -22,7 +22,7 @@ test('a call with arguments that are not JSON is refused before it is sent', asy
   await page.goto('/tools/read_file');
   await expect(page.getByRole('heading', { name: 'read_file', level: 2 })).toBeVisible();
   await page.getByRole('textbox', { name: 'Arguments as JSON' }).fill('{not json');
-  await page.getByRole('button', { name: 'Call' }).click();
+  await page.getByRole('button', { name: 'Call', exact: true }).click();
   await expect(page.getByText(/Not JSON/)).toBeVisible();
 });
 

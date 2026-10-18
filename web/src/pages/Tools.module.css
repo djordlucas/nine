@@ -57,7 +57,7 @@
 textarea.code {
   border: 1px solid var(--border);
   background: var(--surface);
-  resize: vertical;
+  resize: none;
 }
 
 .call {
@@ -71,14 +71,6 @@ textarea.code {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-}
-
-.check {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: var(--touch);
-  font-size: var(--text-sm);
 }
 
 .result {

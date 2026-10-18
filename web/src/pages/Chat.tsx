@@ -8,6 +8,7 @@ import { Markdown } from '../markdown';
 import styles from './Chat.module.css';
 import { Json } from '../components/Json';
 import { Icon } from '../components/Icon';
+import { fit } from '../components/Area';
 import { ask } from '../components/Confirm';
 import { copyText } from '../clipboard';
 import { TurnDetail } from '../components/TurnDetail';
@@ -575,16 +576,7 @@ function Composer({
   const [error, setError] = useState<string | null>(null);
   const area = useRef<HTMLTextAreaElement>(null);
 
-  const grow = () => {
-    const a = area.current;
-    if (!a) return;
-    a.style.height = 'auto';
-    // scrollHeight leaves out the border, which a border-box height includes:
-    // without it the box is 2px short of its text and shows a scroll bar.
-    const h = a.scrollHeight + a.offsetHeight - a.clientHeight;
-    a.style.height = `${Math.min(h, MAX_INPUT)}px`;
-    a.style.overflowY = h > MAX_INPUT ? 'auto' : 'hidden';
-  };
+  const grow = () => fit(area.current, MAX_INPUT);
   const submit = () => {
     const t = text.trim();
     if (!t) return;

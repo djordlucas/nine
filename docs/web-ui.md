@@ -19,6 +19,7 @@ docker run -e NINE_API_AUTH_TOKEN=… -p 8080:8080 ghcr.io/djordlucas/nine
 | Theme | follows the system; the theme control switches to light or dark |
 | Lists | on a desktop, ‹ folds a list away beside what it opens and › brings it back; the browser remembers which, per list |
 | Tags | a state or kind is a plain outlined tag; only a failure is red |
+| Forms | a choice is a square that fills when on; a text box grows with its text |
 | Actions | an obvious action (reload, start, stop, delete, upload, download) is an icon that names itself on hover; the rest are labelled |
 
 ## Sections

@@ -4,6 +4,7 @@ import { api, errorMessage, get } from '../api/client';
 import { ago } from '../format';
 import { useLive } from '../live';
 import { actionsFor, byAttention, processState, stoppedReason, used, type Process } from '../processes';
+import { Area } from '../components/Area';
 import { ask } from '../components/Confirm';
 import { ListHead, Split } from '../components/Split';
 import split from '../components/Split.module.css';
@@ -307,9 +308,10 @@ function Send({ id }: { id: string }) {
     <section class={detail.section} aria-labelledby="send-h">
       <h3 id="send-h">Message it</h3>
       <form class={styles.send} onSubmit={(e) => void send(e)}>
-        <textarea
+        <Area
           class="input"
           rows={2}
+          max={200}
           aria-label="Message to the process"
           placeholder="It receives this as its next trigger."
           value={text}

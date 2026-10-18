@@ -24,7 +24,7 @@
 
 .send textarea {
   padding: var(--space-2) var(--space-3);
-  resize: vertical;
+  resize: none;
 }
 
 .recent {

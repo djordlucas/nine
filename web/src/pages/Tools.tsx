@@ -5,6 +5,8 @@ import { duration } from '../format';
 import { useLive } from '../live';
 import { Markdown } from '../markdown';
 import { argsTemplate, groupTools, kindLabels, parseArgs, type Tool } from '../tools';
+import { Toggle } from '../components/Toggle';
+import { Area } from '../components/Area';
 import { ask } from '../components/Confirm';
 import { ListHead, Split } from '../components/Split';
 import split from '../components/Split.module.css';
@@ -279,9 +281,10 @@ function Call({ name, schema, sandboxed }: { name: string; schema: unknown; sand
       <h3 id="call-h">Call it</h3>
       <p class="muted">Runs the tool now, as the operator, with these arguments. No model is involved.</p>
       <form class={styles.call} onSubmit={(e) => void call(e)}>
-        <textarea
+        <Area
           class={`input ${styles.code}`}
           rows={5}
+          max={360}
           aria-label="Arguments as JSON"
           spellcheck={false}
           value={text}
@@ -289,10 +292,9 @@ function Call({ name, schema, sandboxed }: { name: string; schema: unknown; sand
         />
         <div class={styles.callRow}>
           {sandboxed && (
-            <label class={styles.check}>
-              <input type="checkbox" checked={live} onChange={(e) => setLive(e.currentTarget.checked)} />
+            <Toggle on={live} onChange={setLive}>
               Use its real state (a call otherwise gets a throwaway one)
-            </label>
+            </Toggle>
           )}
           <button type="submit" class="button" disabled={busy}>
             {busy ? 'Calling…' : 'Call'}

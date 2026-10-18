@@ -4,6 +4,8 @@ import { api, errorMessage, get, type Schemas } from '../api/client';
 import { useLive } from '../live';
 import { asText, cell, crumbs, dirHref, fieldValue, fileHref, join, MAX_EDIT_BYTES, parent, version } from '../data';
 import { bytes } from '../system';
+import { Toggle } from '../components/Toggle';
+import { Area } from '../components/Area';
 import { ask } from '../components/Confirm';
 import { ListHead, Split } from '../components/Split';
 import split from '../components/Split.module.css';
@@ -302,7 +304,7 @@ function FileDetail(props: {
       )}
       {notice && <p class={detail.notice}>{notice}</p>}
       {file.text !== null ? (
-        <textarea
+        <Area
           class={styles.editor}
           aria-label={`Contents of ${name}`}
           spellcheck={false}
@@ -526,19 +528,19 @@ function RowForm(props: { table: Table; editing: NonNullable<Editing>; onDone: (
           <label for={`col-${i}`}>
             {c.name} <span class="muted">{[c.type, c.pk ? 'key' : '', c.not_null ? 'required' : ''].filter(Boolean).join(' · ')}</span>
           </label>
-          <textarea
+          <Area
             id={`col-${i}`}
             class="input"
             rows={1}
+            max={200}
             disabled={nulls[i]}
             placeholder={editing.rowid === null ? (c.default ? `default ${c.default}` : c.pk ? 'automatic' : '') : ''}
             value={texts[i]}
             onInput={(e) => setTexts(texts.map((t, j) => (j === i ? e.currentTarget.value : t)))}
           />
-          <label class={styles.null}>
-            <input type="checkbox" checked={nulls[i]} onChange={(e) => setNulls(nulls.map((n, j) => (j === i ? e.currentTarget.checked : n)))} />
+          <Toggle on={nulls[i]} onChange={(on) => setNulls(nulls.map((n, j) => (j === i ? on : n)))} title={`Store NULL in ${c.name}`}>
             NULL
-          </label>
+          </Toggle>
         </div>
       ))}
       {error && (
@@ -628,8 +630,9 @@ function Sql() {
         ATTACH, transactions, temporary objects or pragmas beyond table introspection.
       </p>
       <form class={styles.sql} onSubmit={(e) => void run(e)}>
-        <textarea
+        <Area
           class={styles.editor}
+          max={400}
           aria-label="Statement"
           spellcheck={false}
           placeholder="SELECT * FROM …"
