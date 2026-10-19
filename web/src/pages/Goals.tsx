@@ -377,6 +377,44 @@ function WorkflowDetail({ id }: { id: string }) {
         <dt>Updated</dt>
         <dd>{ago(w.updated_at)}</dd>
       </dl>
+
+      <section class={detail.section} aria-labelledby="steps-h">
+        <h3 id="steps-h">Steps</h3>
+        {(w.step_list ?? []).length === 0 && <p class="muted">None.</p>}
+        {(w.step_list ?? []).length > 0 && <StepList steps={w.step_list ?? []} />}
+      </section>
     </article>
+  );
+}
+
+type Step = Schemas['WorkflowStep'];
+
+/** A workflow's steps in plan order: what each waits for, ran in, made or hit. */
+function StepList({ steps }: { steps: Step[] }) {
+  const label = new Map(steps.map((s) => [s.id, s.label || shortId(s.id ?? '')]));
+  return (
+    <ol class={styles.steps}>
+      {steps.map((s) => (
+        <li key={s.id} class={styles.step}>
+          <div class={styles.stepHead}>
+            <span class={`${detail.badge} ${detail[s.status ?? '']}`}>{s.status}</span>
+            <span class={styles.stepLabel}>{s.label || shortId(s.id ?? '')}</span>
+            {s.updated_at && <span class="muted">{ago(s.updated_at)}</span>}
+          </div>
+          {(s.depends_on?.length || s.agent_id) && (
+            <p class={styles.stepMeta}>
+              {s.depends_on?.length ? <>After {s.depends_on.map((d) => label.get(d) ?? shortId(d)).join(', ')}. </> : null}
+              {s.agent_id && (
+                <>
+                  Ran in <a href={`/conversations/${s.agent_id}`}>{shortId(s.agent_id)}</a>.
+                </>
+              )}
+            </p>
+          )}
+          {s.failure_reason && <p class={`error ${styles.stepText}`}>{s.failure_reason}</p>}
+          {s.result && <p class={styles.stepText}>{s.result}</p>}
+        </li>
+      ))}
+    </ol>
   );
 }

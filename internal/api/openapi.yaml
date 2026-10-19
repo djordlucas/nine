@@ -5098,8 +5098,8 @@ components:
         plugin:
           type: string
     WorkflowInfo:
-      description: A workflow as the daemon stores it. Steps and completed_steps summarise the stored
-        step list; the store records no current step.
+      description: A workflow as the daemon stores it. Steps and completed_steps count the entries of
+        step_list; the store records no current step.
       type: object
       properties:
         agent_id:
@@ -5118,6 +5118,39 @@ components:
           type: string
         steps:
           type: integer
+        step_list:
+          description: The steps in plan order.
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowStep'
+        updated_at:
+          type: string
+          format: date-time
+    WorkflowStep:
+      description: One step of a workflow's plan.
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        status:
+          description: pending, running, done, failed, skipped
+          type: string
+        agent_id:
+          description: The session that ran the step, when one did.
+          type: string
+        result:
+          description: What the step produced, once done.
+          type: string
+        failure_reason:
+          description: Why the step failed, when it did.
+          type: string
+        depends_on:
+          description: IDs of the steps this one waits for.
+          type: array
+          items:
+            type: string
         updated_at:
           type: string
           format: date-time

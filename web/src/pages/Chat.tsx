@@ -66,6 +66,8 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
       () => undefined,
     );
   }, []);
+  // How full the session's context is before any turn reports it.
+  const [contextNow, setContextNow] = useState<{ used: number; budget: number } | undefined>();
   const socket = useRef<ConversationSocket | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -106,6 +108,11 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
     const refreshInfo = async () => {
       const { data: d } = await api.GET('/conversations/{id}', { params: { path: { id } } });
       if (alive && d) setInfo(d);
+      // Until a turn reports its context use, the bar shows what the next
+      // call would take.
+      const { data: c } = await api.GET('/conversations/{id}/context', { params: { path: { id } } });
+      const report = c?.context as unknown as ContextReport | undefined;
+      if (alive && report?.budget) setContextNow({ used: report.used ?? 0, budget: report.budget });
     };
     // The socket opens only once the conversation is known to exist: a
     // handshake for a missing one is refused, and the browser reports that as
@@ -291,15 +298,20 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
       </ol>
       <div ref={bottom} />
 
-      {!readOnly && <Composer busy={chat.busy} connected={sock === 'open'} onSend={send} onCancel={cancel} />}
-      <SessionBar
-        id={id}
-        model={llm.model}
-        provider={llm.provider}
-        context={chat.context}
-        planMode={readOnly ? undefined : info?.plan_mode}
-        onPlanMode={(plan_mode) => setInfo((i) => ({ ...(i ?? {}), plan_mode }))}
-      />
+      <footer class={styles.footer}>
+        {!readOnly && (
+          <Composer
+            id={id}
+            busy={chat.busy}
+            connected={sock === 'open'}
+            onSend={send}
+            onCancel={cancel}
+            planMode={info?.plan_mode}
+            onPlanMode={(plan_mode) => setInfo((i) => ({ ...(i ?? {}), plan_mode }))}
+          />
+        )}
+        <SessionBar model={llm.model} provider={llm.provider} context={chat.context ?? contextNow} />
+      </footer>
     </div>
   );
 }
@@ -601,15 +613,21 @@ function Question({
 const MAX_INPUT = 200;
 
 function Composer({
+  id,
   busy,
   connected,
   onSend,
   onCancel,
+  planMode,
+  onPlanMode,
 }: {
+  id: string;
   busy: boolean;
   connected: boolean;
   onSend: (text: string, think: boolean) => boolean;
   onCancel: () => void;
+  planMode?: string;
+  onPlanMode: (mode: string) => void;
 }) {
   const [text, setText] = useState('');
   const [think, setThink] = useState(false);
@@ -677,40 +695,67 @@ function Composer({
           >
             T
           </button>
+          {planMode && <PlanButton id={id} mode={planMode} onChange={onPlanMode} onError={setError} />}
         </div>
       </div>
     </form>
   );
 }
 
-/** The plan modes a session can run in (docs/thinking-and-planning.md). */
+/** The plan modes a session can run in, in the order a click steps through
+ * them (docs/thinking-and-planning.md). */
 const PLAN_MODES = ['off', 'plan-only', 'always'] as const;
 
+const PLAN_HELP: Record<string, string> = {
+  off: 'Plan: off. The session acts without a plan first',
+  'plan-only': 'Plan: plan-only. The session plans when the task calls for it',
+  always: 'Plan: always. The session plans before every turn',
+};
+
 /**
- * Under the message box: the model that answers, how much of its context the
- * latest call used (marked from 90%, where the daemon starts trimming), and the
- * session's plan mode, which changes it for this session only.
+ * The session's plan mode, beside Think and shaped like it: a click moves to
+ * the next mode, for this session only. Light when off, edged when plan-only,
+ * dark when always.
  */
-function SessionBar(props: {
-  id: string;
-  model: string;
-  provider: string;
-  context?: { used: number; budget: number };
-  planMode?: string;
-  onPlanMode: (mode: string) => void;
-}) {
-  const { model, provider, context, planMode } = props;
-  const [error, setError] = useState<string | null>(null);
-  const share = context && context.budget > 0 ? context.used / context.budget : 0;
-  const change = async (mode: string) => {
-    setError(null);
+function PlanButton(props: { id: string; mode: string; onChange: (mode: string) => void; onError: (e: string | null) => void }) {
+  const [busy, setBusy] = useState(false);
+  const at = PLAN_MODES.indexOf(props.mode as (typeof PLAN_MODES)[number]);
+  const next = PLAN_MODES[(at + 1) % PLAN_MODES.length];
+  const change = async () => {
+    setBusy(true);
+    props.onError(null);
     const { data, error: e } = await api.POST('/conversations/{id}/plan-mode', {
       params: { path: { id: props.id } },
-      body: { mode: mode as (typeof PLAN_MODES)[number] },
+      body: { mode: next },
     });
-    if (data) props.onPlanMode(data.plan_mode);
-    else setError(errorMessage(e, 'Could not change the plan mode.'));
+    setBusy(false);
+    if (data) props.onChange(data.plan_mode);
+    else props.onError(errorMessage(e, 'Could not change the plan mode.'));
   };
+  return (
+    <button
+      type="button"
+      class={`${styles.think} ${styles.planMode}`}
+      data-mode={props.mode}
+      disabled={busy}
+      aria-label={`Plan: ${props.mode}`}
+      title={`${PLAN_HELP[props.mode] ?? `Plan: ${props.mode}`}. Click for ${next}.`}
+      onClick={() => void change()}
+    >
+      P
+    </button>
+  );
+}
+
+/**
+ * Under the message box, always in view: the model that answers and how much
+ * of its context the latest call used (marked from 90%, where the daemon
+ * starts trimming).
+ */
+function SessionBar(props: { model: string; provider: string; context?: { used: number; budget: number } }) {
+  const { model, provider, context } = props;
+  const known = !!context && context.budget > 0;
+  const share = known ? context.used / context.budget : 0;
   return (
     <div class={styles.controls}>
       <span class={styles.model} title={model ? `The model that answers: ${model}, on ${provider}` : undefined}>
@@ -718,29 +763,16 @@ function SessionBar(props: {
         {provider && model && <span aria-hidden="true"> | </span>}
         {model}
       </span>
-      {context && context.budget > 0 && (
+      {known ? (
         <span
           class={share >= 0.9 ? styles.ctxWarn : styles.ctx}
           title={`The latest model call used ${context.used} of ${context.budget} context tokens${share >= 0.9 ? '; past 90% the daemon trims older context' : ''}`}
         >
           {share >= 0.9 && '⚠ '}ctx {tokens(context.used)} / {tokens(context.budget)}
         </span>
-      )}
-      {planMode && (
-        <label class={styles.plan} title="How the session reasons before acting, for this session only">
-          Plan
-          <select value={planMode} onChange={(e) => void change(e.currentTarget.value)}>
-            {PLAN_MODES.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      {error && (
-        <span class={styles.ctxWarn} role="alert">
-          {error}
+      ) : (
+        <span class={styles.ctx} title="Context use shows once the session is loaded">
+          ctx –
         </span>
       )}
     </div>

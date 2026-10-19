@@ -33,7 +33,7 @@ docker run -e NINE_API_AUTH_TOKEN=… -p 8080:8080 ghcr.io/djordlucas/nine
 | Journal | every event the daemon records, live: turns, model and tool calls, process transitions, and changes to approvals, questions, notifications, goals and workflows. Filter by kind or by session, pause, and open any event for its payload. |
 | Conversations | the conversations, newest first, beside the open one; on a phone, the list, then the conversation in its place. Chat live, answer the session's questions, stop a turn, and inspect any turn. |
 | Processes | every process, failing and paused first, against `[processes] max_running`; one process's trigger, session, goal, budget and recent activity. Start, stop, retry, and message a running live process. |
-| Goals & workflows | goals as a tree beside the workflows. Create goals and sub-goals; pause, resume, finish, archive and delete them; stop or fail a workflow. |
+| Goals & workflows | goals as a tree beside the workflows. Create goals and sub-goals; pause, resume, finish, archive and delete them. A workflow lists its steps in plan order, each with its status, the steps it waits for, the session that ran it, and its result or why it failed; stop or fail a workflow. |
 | Tools | the tools by where they came from, each with its capabilities, dependencies and arguments schema, to call directly; a tool Nine wrote with its versions. Also the plugins, with reload, and the skills, each readable. |
 | Inbox | capability requests to approve or deny, questions waiting for an answer, the notifications, and the capabilities in force. Its link counts what waits. |
 | Data | the workspace's files and the database processes keep their records in, to read and edit, and Nine's self-model, to read. Nine's own state, the store and the workspace's `.nine/`, is not reachable. |
@@ -113,10 +113,11 @@ stopped ([processes](processes.md#goals-sessions-and-pipes)). A goal that a
 A conversation shows its transcript, then every turn it runs as it happens,
 whoever started it: this browser, another client, or the session's own schedule.
 Replies render as Markdown. A turn that fails or is cancelled shows its error
-in the conversation, in its place, and keeps it after a reload. Below the
-message box are the provider and model the daemon calls, how much of the
-context budget the latest model call used (red from 90%, where the daemon
-starts trimming), and the plan mode. While a turn runs, the conversation says
+in the conversation, in its place, and keeps it after a reload. The message
+box stays at the bottom of the view. Below it are the provider and model the
+daemon calls, and how much of the context budget the latest model call used
+(red from 90%, where the daemon starts trimming); before the first turn, it is
+what the next call would use. While a turn runs, the conversation says
 what it is doing, and a model that streams its reasoning shows it in a box
 under the message, folded once the call moves on. The reasoning is not
 journaled, so it is gone after a reload.
@@ -127,7 +128,7 @@ journaled, so it is gone after a reload.
 | The title | renames the conversation: one line, up to 80 characters. Enter saves, Escape cancels. |
 | Send | sends a turn; Enter sends on a keyboard, Shift+Enter is a new line. A message sent mid-turn waits for the turn to end. |
 | T | asks for the model's reasoning on the next turn (`force_think`) |
-| Plan | the session's plan mode, `off`, `plan-only` or `always`, for this session only |
+| P | beside T: steps the session's plan mode through `off`, `plan-only` and `always`, for this session only. It is light when off, edged when plan-only, dark when always. |
 | Stop | cancels the running turn; the session and its history stay |
 | A question's options, or your own words | answers the session's `ask_human` question |
 | Tool calls | open to show their input and output, as coloured JSON |
