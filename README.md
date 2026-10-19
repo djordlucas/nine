@@ -63,9 +63,34 @@ docker run -d --name nine \
   -v nine-data:/data \
   ghcr.io/djordlucas/nine:latest
 
-# 3. A session in the terminal, or the web UI at http://localhost:8080
-docker exec -it -u nine nine nine
+# 3. Open the web UI at http://localhost:8080
 ```
+
+### The web UI
+
+Open `http://localhost:8080` once Nine runs. The UI is part of the binary and the image, and
+`nine api serve` serves it beside the API, so there is nothing else to install or start.
+
+| To | Go to |
+|---|---|
+| Chat with Nine | Conversations › New conversation. T asks for its reasoning on the next message; P changes the session's plan mode. |
+| See what needs you | Inbox: capability requests to approve and questions to answer. The dashboard shows them too. |
+| Watch what Nine does on its own | Processes, then a process's Watch it; the Journal for every event, live |
+| Follow goals and workflows | Goals & workflows: a goal's tree, a workflow's steps |
+| Call a tool, read a skill | Tools |
+| Read or edit the workspace and the database | Data |
+| Download a backup, read the docs | System |
+
+Sign-in depends on the API token:
+
+| `auth_token` | The UI |
+|---|---|
+| unset (the quick start) | opens straight to the dashboard, open to anyone who reaches the port; keep the port on `127.0.0.1` |
+| set (`-e NINE_API_AUTH_TOKEN=…`) | asks for the token once per browser and keeps a session cookie, never the token; required to reach Nine from another machine |
+
+The CLI stays available in the container for scripting and operator tasks:
+`docker exec -u nine nine nine help`. The [web UI guide](docs/web-ui.md) covers every section
+and control.
 
 Point Nine at a different LLM without a config file, and verify what you pulled before
 running it:
