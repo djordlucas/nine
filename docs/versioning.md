@@ -73,7 +73,7 @@ that `nine api serve` serves at `/` ([web-ui.md](web-ui.md)) replaces it.
 |---|---|
 | `nine` with no arguments opened the TUI | it prints the usage, which points to the web UI |
 | `nine attach <id>` | refused with a pointer to the web UI; open the conversation there |
-| TUI slash commands | the web UI's sections, or the matching `nine` command: `/memory` is Data › Memory, `/plan-mode` the chat's Plan, the reasoning trace the chat's reasoning box |
+| TUI slash commands | the web UI's sections, or the matching `nine` command: `/memory` is Data › Memory, `/plan-mode` the chat's P button, the reasoning trace the chat's reasoning box |
 | `make session` | removed; open `http://localhost:8080`, or `make shell` for a shell in the container |
 | `[ui] theme`, `[ui] show_context` | removed; a file that still has them loads and warns that the keys had no effect |
 
