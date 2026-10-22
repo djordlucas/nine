@@ -197,6 +197,36 @@
           }
         },
         {
+          "name": "goal_create",
+          "description": "Create a persistent, open-ended goal (no defined end condition, e.g. 'monitor this repo for security issues'). A top-level goal gets a background session that works on it between your turns. Give a schedule for recurring work ('keep me updated', 'a daily digest'): the session then does the whole job once per run instead of checking every few minutes.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "description"
+            ],
+            "properties": {
+              "description": {
+                "type": "string"
+              },
+              "schedule": {
+                "type": "string",
+                "description": "For recurring work on a top-level goal: how often it runs, as a duration (24h, 6h) or a 5-field cron expression ('0 8 * * *' is daily at 08:00 UTC). Leave out for a goal to work on until it is done."
+              },
+              "parent_id": {
+                "type": "string",
+                "description": "The conversation or goal this one comes from. Defaults to the current conversation."
+              },
+              "parent_type": {
+                "type": "string",
+                "enum": [
+                  "conversation",
+                  "goal"
+                ]
+              }
+            }
+          }
+        },
+        {
           "name": "doc_search",
           "description": "Semantically search Nine's own bundled documentation and specification by a natural-language query, returning the most relevant section addresses with snippets. Use this whenever a question is about how Nine itself works — its architecture, configuration, tools, wire protocol, or terminology — before answering from memory. Then doc_read the address for the exact text.",
           "input_schema": {
@@ -523,32 +553,6 @@
               "failure_reason": {
                 "type": "string",
                 "description": "Why the step failed (optional)."
-              }
-            }
-          }
-        },
-        {
-          "name": "goal_create",
-          "description": "Create a persistent, open-ended goal (no defined end condition, e.g. 'monitor this repo for security issues'). A top-level goal gets a background session that works on it between your turns.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "description"
-            ],
-            "properties": {
-              "description": {
-                "type": "string"
-              },
-              "parent_id": {
-                "type": "string",
-                "description": "The conversation or goal this one comes from. Defaults to the current conversation."
-              },
-              "parent_type": {
-                "type": "string",
-                "enum": [
-                  "conversation",
-                  "goal"
-                ]
               }
             }
           }
@@ -1302,6 +1306,36 @@
           }
         },
         {
+          "name": "goal_create",
+          "description": "Create a persistent, open-ended goal (no defined end condition, e.g. 'monitor this repo for security issues'). A top-level goal gets a background session that works on it between your turns. Give a schedule for recurring work ('keep me updated', 'a daily digest'): the session then does the whole job once per run instead of checking every few minutes.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "description"
+            ],
+            "properties": {
+              "description": {
+                "type": "string"
+              },
+              "schedule": {
+                "type": "string",
+                "description": "For recurring work on a top-level goal: how often it runs, as a duration (24h, 6h) or a 5-field cron expression ('0 8 * * *' is daily at 08:00 UTC). Leave out for a goal to work on until it is done."
+              },
+              "parent_id": {
+                "type": "string",
+                "description": "The conversation or goal this one comes from. Defaults to the current conversation."
+              },
+              "parent_type": {
+                "type": "string",
+                "enum": [
+                  "conversation",
+                  "goal"
+                ]
+              }
+            }
+          }
+        },
+        {
           "name": "doc_search",
           "description": "Semantically search Nine's own bundled documentation and specification by a natural-language query, returning the most relevant section addresses with snippets. Use this whenever a question is about how Nine itself works — its architecture, configuration, tools, wire protocol, or terminology — before answering from memory. Then doc_read the address for the exact text.",
           "input_schema": {
@@ -1628,32 +1662,6 @@
               "failure_reason": {
                 "type": "string",
                 "description": "Why the step failed (optional)."
-              }
-            }
-          }
-        },
-        {
-          "name": "goal_create",
-          "description": "Create a persistent, open-ended goal (no defined end condition, e.g. 'monitor this repo for security issues'). A top-level goal gets a background session that works on it between your turns.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "description"
-            ],
-            "properties": {
-              "description": {
-                "type": "string"
-              },
-              "parent_id": {
-                "type": "string",
-                "description": "The conversation or goal this one comes from. Defaults to the current conversation."
-              },
-              "parent_type": {
-                "type": "string",
-                "enum": [
-                  "conversation",
-                  "goal"
-                ]
               }
             }
           }
@@ -2213,7 +2221,7 @@
       "turn": 1,
       "type": "context_update",
       "payload": {
-        "used": 7527,
+        "used": 7644,
         "budget": 100000
       }
     },
@@ -2240,6 +2248,7 @@
           "skill_write",
           "workflow_list",
           "skill_search",
+          "goal_create",
           "doc_search",
           "queued_messages_get",
           "diff_file",
@@ -2258,7 +2267,6 @@
           "list_files",
           "workflow_create",
           "workflow_update",
-          "goal_create",
           "goal_get",
           "goal_list",
           "goal_update_status",
@@ -2288,9 +2296,9 @@
           "process_start",
           "process_stop"
         ],
-        "tool_tokens": 6678,
+        "tool_tokens": 6795,
         "max_tokens": 2048,
-        "tokens_used": 7527,
+        "tokens_used": 7644,
         "budget": 100000,
         "llm_call_n": 1
       }
@@ -2347,7 +2355,7 @@
       "turn": 1,
       "type": "context_update",
       "payload": {
-        "used": 7546,
+        "used": 7663,
         "budget": 100000
       }
     },
@@ -2400,6 +2408,7 @@
           "skill_write",
           "workflow_list",
           "skill_search",
+          "goal_create",
           "doc_search",
           "queued_messages_get",
           "diff_file",
@@ -2418,7 +2427,6 @@
           "list_files",
           "workflow_create",
           "workflow_update",
-          "goal_create",
           "goal_get",
           "goal_list",
           "goal_update_status",
@@ -2448,9 +2456,9 @@
           "process_start",
           "process_stop"
         ],
-        "tool_tokens": 6678,
+        "tool_tokens": 6795,
         "max_tokens": 2048,
-        "tokens_used": 7546,
+        "tokens_used": 7663,
         "budget": 100000,
         "llm_call_n": 2
       }

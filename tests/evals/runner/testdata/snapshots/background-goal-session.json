@@ -1,29 +1,44 @@
 {
   "requests": [
     {
-      "system": "Current time: <time>\nSession ID: tidy-notes\n\nYou are Nine, a persistent AI agent running as a daemon. You can write and refine skills (markdown how-to notes) to capture what you learn, and you update your understanding of yourself over time. Your self-model lives in the `self/` key-value namespace — read it to understand your current capabilities and what you have learned. You are direct and action-oriented. When a tool fails, try a different approach.\n\nSkills are also there to be read. When a task has an established procedure — web research, git work, file management — call skill_search once with a short description of the task before you start — or skill_list if you have no skill_search — and read any relevant hit. One cheap call, and it is where knowledge lives that your tool descriptions do not carry: which tools this particular deployment has for a job, and what to do when it lacks them. Skip it for something trivial or already worked out this session.\n\nBefore searching for anything time-sensitive (news, current events, recent releases, prices, status), call the time tool first so your queries and reasoning use the correct date. Never read the date from memory or assume it — always call the time tool directly.\n\nWhen a request requires multiple independent steps or sub-agents, start by calling workflow_create with a name and step list. Assign sub-agents to steps using run_agent or run_agents, then call workflow_update after each result. At the start of any turn, call workflow_list first — if an active workflow exists, call workflow_get to re-read the current plan before deciding what to do next. This also handles recovery after a restart: interrupted steps will appear as failed and can be retried with workflow_retry_step.\n\nA workflow is finite — use it for a bounded plan with a clear end. A goal is different: it is a persistent, open-ended intention with no defined end condition (e.g. \"monitor this repo for security issues\" or \"keep dependencies up to date\"). When a request implies ongoing or recurring work rather than a one-off task, call goal_create to record it. Decompose goals into sub-goals and tasks autonomously — no user approval needed — using goal_create (with parent_id/parent_type set to the parent goal) and run_agent/run_agents. Call goal_list at the start of any turn involving open-ended work to check on active goals, goal_get to re-read one before acting on it, and goal_update_status to mark a goal paused, done, or archived as its situation changes.\n\nWhen delegating with run_agent or run_agents, pick the narrowest role that fits the task (code-reviewer, monitor, report-writer, software-dev, sysadmin); use executor only when no narrower role matches. Each role's description is in the run_agent tool schema.\n\n## Environment\n\n## Relevant skills\n- goal-pursuit\n- orchestrator\n- pursue\n",
+      "system": "Current time: <time>\nSession ID: tidy-notes\n\nYou are Nine, a persistent AI agent running as a daemon. You can write and refine skills (markdown how-to notes) to capture what you learn, and you update your understanding of yourself over time. Your self-model lives in the `self/` key-value namespace — read it to understand your current capabilities and what you have learned. You are direct and action-oriented. When a tool fails, try a different approach.\n\nSkills are also there to be read. When a task has an established procedure — web research, git work, file management — call skill_search once with a short description of the task before you start — or skill_list if you have no skill_search — and read any relevant hit. One cheap call, and it is where knowledge lives that your tool descriptions do not carry: which tools this particular deployment has for a job, and what to do when it lacks them. Skip it for something trivial or already worked out this session.\n\nBefore searching for anything time-sensitive (news, current events, recent releases, prices, status), call the time tool first so your queries and reasoning use the correct date. Never read the date from memory or assume it — always call the time tool directly.\n\nWhen a request requires multiple independent steps or sub-agents, start by calling workflow_create with a name and step list. Assign sub-agents to steps using run_agent or run_agents, then call workflow_update after each result. At the start of any turn, call workflow_list first — if an active workflow exists, call workflow_get to re-read the current plan before deciding what to do next. This also handles recovery after a restart: interrupted steps will appear as failed and can be retried with workflow_retry_step.\n\nA workflow is finite — use it for a bounded plan with a clear end. A goal is different: it is a persistent, open-ended intention with no defined end condition (e.g. \"monitor this repo for security issues\" or \"keep dependencies up to date\"). When a request implies ongoing or recurring work rather than a one-off task, call goal_create to record it. Decompose goals into sub-goals and tasks autonomously — no user approval needed — using goal_create (with parent_id/parent_type set to the parent goal) and run_agent/run_agents. Call goal_list at the start of any turn involving open-ended work to check on active goals, goal_get to re-read one before acting on it, and goal_update_status to mark a goal paused, done, or archived as its situation changes.\n\nWhen delegating with run_agent or run_agents, pick the narrowest role that fits the task (code-reviewer, monitor, report-writer, software-dev, sysadmin); use executor only when no narrower role matches. Each role's description is in the run_agent tool schema.\n\n## Environment\n\n## Relevant skills\n- delegation\n- goal-pursuit\n- pursue\n",
       "max_tokens": 2048,
       "think": true,
       "messages": [
         {
           "Role": "user",
-          "Text": "Check on goal tidy-notes (\"Keep notes/plan.md tidy.\") and its subtree (goal_get). Take any useful action toward it, including spawning sub-goals or sub-agents. If its status should change (e.g. done once attained, or paused if you're stuck), call goal_update_status.",
+          "Text": "This is a scheduled run of recurring goal tidy-notes (\"Keep notes/plan.md tidy.\"), which runs every 1s. Do the whole job now: find what is new since the last run, then write or update its result. When the result is written, end the turn. A recurring goal is never done: leave its status active, unless it cannot go on (paused) or should stop for good (archived). Unless the goal names where its output goes, keep what it produces in goals/keep-notes-plan-md-tidy-tidy-notes/: look there first for what earlier turns wrote, and update those files rather than writing new copies elsewhere.",
           "ToolCalls": null,
           "ToolResults": null
         }
       ],
       "tools": [
         {
-          "name": "goal_get",
-          "description": "Get a goal by ID, including its status and sub-goal/task tree.",
+          "name": "goal_create",
+          "description": "Create a persistent, open-ended goal (no defined end condition, e.g. 'monitor this repo for security issues'). A top-level goal gets a background session that works on it between your turns. Give a schedule for recurring work ('keep me updated', 'a daily digest'): the session then does the whole job once per run instead of checking every few minutes.",
           "input_schema": {
             "type": "object",
             "required": [
-              "goal_id"
+              "description"
             ],
             "properties": {
-              "goal_id": {
+              "description": {
                 "type": "string"
+              },
+              "schedule": {
+                "type": "string",
+                "description": "For recurring work on a top-level goal: how often it runs, as a duration (24h, 6h) or a 5-field cron expression ('0 8 * * *' is daily at 08:00 UTC). Leave out for a goal to work on until it is done."
+              },
+              "parent_id": {
+                "type": "string",
+                "description": "The conversation or goal this one comes from. Defaults to the current conversation."
+              },
+              "parent_type": {
+                "type": "string",
+                "enum": [
+                  "conversation",
+                  "goal"
+                ]
               }
             }
           }
@@ -50,32 +65,6 @@
                   "archived"
                 ],
                 "description": "active = in progress, paused = temporarily on hold, done = completed or resolved, archived = retired without completion."
-              }
-            }
-          }
-        },
-        {
-          "name": "goal_create",
-          "description": "Create a persistent, open-ended goal (no defined end condition, e.g. 'monitor this repo for security issues'). A top-level goal gets a background session that works on it between your turns.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "description"
-            ],
-            "properties": {
-              "description": {
-                "type": "string"
-              },
-              "parent_id": {
-                "type": "string",
-                "description": "The conversation or goal this one comes from. Defaults to the current conversation."
-              },
-              "parent_type": {
-                "type": "string",
-                "enum": [
-                  "conversation",
-                  "goal"
-                ]
               }
             }
           }
@@ -143,11 +132,34 @@
           }
         },
         {
-          "name": "goal_list",
-          "description": "List all goals. Call this at the start of any turn that involves open-ended, persistent work to check for active goals and recover after a restart.",
+          "name": "goal_get",
+          "description": "Get a goal by ID, including its status and sub-goal/task tree.",
           "input_schema": {
             "type": "object",
-            "properties": {}
+            "required": [
+              "goal_id"
+            ],
+            "properties": {
+              "goal_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "name": "doc_read",
+          "description": "Read a section or a whole document from Nine's bundled documentation and specification. Accepts an address from doc_search (\"docs/skills.md#tools\"), a topic name (\"agent-loop\"), or a bundle path (\"spec/contracts/wire-protocol\"). Quote what you find rather than paraphrasing when the answer turns on exact behavior: these documents are the source of truth, and a wrong reference is a bug worth reporting.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "ref"
+            ],
+            "properties": {
+              "ref": {
+                "type": "string",
+                "description": "Section address, topic name, or bundle path"
+              }
+            }
           }
         },
         {
@@ -164,6 +176,152 @@
                 "type": "string"
               },
               "step_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "name": "list_files",
+          "description": "List files in the workspace. Filter by prefix (a directory), by pattern (a glob such as *_test.go, matched against the whole path), or by changed_since (an ISO-8601 timestamp) to see what appeared or changed — including files created outside Nine, by a git pull or dropped in by a person. Each entry reports its size and whether its text is searchable.",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "prefix": {
+                "type": "string",
+                "description": "Only paths under this directory."
+              },
+              "pattern": {
+                "type": "string",
+                "description": "Glob over the whole path, e.g. *_test.go or src/*.md."
+              },
+              "changed_since": {
+                "type": "string",
+                "description": "ISO-8601 timestamp; only files changed at or after it."
+              },
+              "limit": {
+                "type": "integer",
+                "description": "Maximum entries (default 200)."
+              }
+            }
+          }
+        },
+        {
+          "name": "goal_list",
+          "description": "List all goals. Call this at the start of any turn that involves open-ended, persistent work to check for active goals and recover after a restart.",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "name": "skill_write",
+          "description": "Create or replace one of your own skills (a markdown how-to note). Built-in skills are read-only and cannot be overwritten.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "name",
+              "description",
+              "content"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "content": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "name": "workflow_list",
+          "description": "List your active workflows and the 10 most recently completed ones. Call this at the start of every turn to check for in-progress work and to recover after a restart.",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "name": "job_wait",
+          "description": "Wait for a background job (one a long-running tool started) to finish, then return its result. If it has not finished in time, this returns its current progress instead — that is NOT an error: you can simply move on and check again later. Use the handle from when the job started, or from job_list.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "handle"
+            ],
+            "properties": {
+              "handle": {
+                "type": "string",
+                "description": "The job handle, e.g. job_7f3a."
+              },
+              "timeout_seconds": {
+                "type": "integer",
+                "description": "How long to wait before returning. Default 60."
+              }
+            }
+          }
+        },
+        {
+          "name": "tool_list",
+          "description": "List every tool available to you, with names and descriptions. Use this when you need the whole catalog rather than the best matches for a keyword — for example when the user asks what you can do or which tools you have. Prefer tool_search when you are looking for a specific capability.",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "include_schemas": {
+                "type": "boolean",
+                "description": "Also return each tool's input schema (verbose; default false)"
+              }
+            }
+          }
+        },
+        {
+          "name": "notify_user",
+          "description": "Post a concise finding or alert to the human's notification feed. You are a background agent with no live conversation, so this is how a human learns what you found. Use it only when something genuinely warrants human attention; keep it short and specific. Readable with `nine notifications`.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "text"
+            ],
+            "properties": {
+              "text": {
+                "type": "string",
+                "description": "The message to show the human. One or two sentences."
+              }
+            }
+          }
+        },
+        {
+          "name": "skill_modify",
+          "description": "Update one of your own skills, replacing description, tags, and/or content as provided. Built-in skills cannot be modified.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "content": {
                 "type": "string"
               }
             }
@@ -207,37 +365,6 @@
           }
         },
         {
-          "name": "doc_read",
-          "description": "Read a section or a whole document from Nine's bundled documentation and specification. Accepts an address from doc_search (\"docs/skills.md#tools\"), a topic name (\"agent-loop\"), or a bundle path (\"spec/contracts/wire-protocol\"). Quote what you find rather than paraphrasing when the answer turns on exact behavior: these documents are the source of truth, and a wrong reference is a bug worth reporting.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "ref"
-            ],
-            "properties": {
-              "ref": {
-                "type": "string",
-                "description": "Section address, topic name, or bundle path"
-              }
-            }
-          }
-        },
-        {
-          "name": "workflow_get",
-          "description": "Get the full plan and current step statuses for a workflow by ID.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "workflow_id"
-            ],
-            "properties": {
-              "workflow_id": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        {
           "name": "file_search_text",
           "description": "Full-text search over stored file content. Pass path to search inside one file (or one directory prefix) — the way to find the relevant region of a large spilled tool output.",
           "input_schema": {
@@ -260,16 +387,46 @@
           }
         },
         {
-          "name": "tool_list",
-          "description": "List every tool available to you, with names and descriptions. Use this when you need the whole catalog rather than the best matches for a keyword — for example when the user asks what you can do or which tools you have. Prefer tool_search when you are looking for a specific capability.",
+          "name": "job_check",
+          "description": "Return a background job's current state and progress — and its result if it has finished — without waiting. Use it to poll a job you are not blocking on.",
           "input_schema": {
             "type": "object",
+            "required": [
+              "handle"
+            ],
             "properties": {
-              "include_schemas": {
-                "type": "boolean",
-                "description": "Also return each tool's input schema (verbose; default false)"
+              "handle": {
+                "type": "string",
+                "description": "The job handle, e.g. job_7f3a."
               }
             }
+          }
+        },
+        {
+          "name": "diff_file",
+          "description": "Show what changed in a workspace file, as a unified diff against the version before the most recent change. Use it to report an edit back to the person you are working for, rather than describing the change in prose. Only a file that write_file, edit_file or delete_file has changed has a previous version; pass against with a trash entry name from trash_list to compare with an older one.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "path"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "against": {
+                "type": "string",
+                "description": "Trash entry name to compare against; defaults to the most recent version of this file."
+              }
+            }
+          }
+        },
+        {
+          "name": "job_list",
+          "description": "List your outstanding background jobs — handle, tool, age, and progress. Use it to see what is still running.",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
           }
         },
         {
@@ -287,38 +444,6 @@
               "top_k": {
                 "type": "integer",
                 "description": "Number of results (default 5)"
-              }
-            }
-          }
-        },
-        {
-          "name": "queued_message_mark_consumed",
-          "description": "Mark a specific queued message as consumed by its index. Once marked as consumed, the message will be moved to conversation history and appear in future context. This allows fine-grained control: you can process some messages and leave others in the queue.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "index"
-            ],
-            "properties": {
-              "index": {
-                "type": "integer",
-                "description": "0-based index of the message to mark as consumed"
-              }
-            }
-          }
-        },
-        {
-          "name": "notify_user",
-          "description": "Post a concise finding or alert to the human's notification feed. You are a background agent with no live conversation, so this is how a human learns what you found. Use it only when something genuinely warrants human attention; keep it short and specific. Readable with `nine notifications`.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "text"
-            ],
-            "properties": {
-              "text": {
-                "type": "string",
-                "description": "The message to show the human. One or two sentences."
               }
             }
           }
@@ -348,138 +473,17 @@
           }
         },
         {
-          "name": "skill_modify",
-          "description": "Update one of your own skills, replacing description, tags, and/or content as provided. Built-in skills cannot be modified.",
+          "name": "queued_message_mark_consumed",
+          "description": "Mark a specific queued message as consumed by its index. Once marked as consumed, the message will be moved to conversation history and appear in future context. This allows fine-grained control: you can process some messages and leave others in the queue.",
           "input_schema": {
             "type": "object",
             "required": [
-              "name"
+              "index"
             ],
             "properties": {
-              "name": {
-                "type": "string"
-              },
-              "description": {
-                "type": "string"
-              },
-              "tags": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "content": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        {
-          "name": "tool_search",
-          "description": "Semantically search the tools available to you by a natural-language query, returning the most relevant tool names, descriptions, and input schemas. Use this when the tools you can currently see do not fit the task — a relevant tool may exist that was not surfaced up front. Call the returned tool directly by its name.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "query"
-            ],
-            "properties": {
-              "query": {
-                "type": "string",
-                "description": "What capability you are looking for"
-              },
-              "top_k": {
+              "index": {
                 "type": "integer",
-                "description": "Number of results (default 5)"
-              }
-            }
-          }
-        },
-        {
-          "name": "workflow_list",
-          "description": "List your active workflows and the 10 most recently completed ones. Call this at the start of every turn to check for in-progress work and to recover after a restart.",
-          "input_schema": {
-            "type": "object",
-            "properties": {}
-          }
-        },
-        {
-          "name": "job_wait",
-          "description": "Wait for a background job (one a long-running tool started) to finish, then return its result. If it has not finished in time, this returns its current progress instead — that is NOT an error: you can simply move on and check again later. Use the handle from when the job started, or from job_list.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "handle"
-            ],
-            "properties": {
-              "handle": {
-                "type": "string",
-                "description": "The job handle, e.g. job_7f3a."
-              },
-              "timeout_seconds": {
-                "type": "integer",
-                "description": "How long to wait before returning. Default 60."
-              }
-            }
-          }
-        },
-        {
-          "name": "queued_messages_mark_all_consumed",
-          "description": "Mark all queued messages as consumed. This moves all messages to conversation history so they will appear in future context as normal user messages.",
-          "input_schema": {
-            "type": "object"
-          }
-        },
-        {
-          "name": "diff_file",
-          "description": "Show what changed in a workspace file, as a unified diff against the version before the most recent change. Use it to report an edit back to the person you are working for, rather than describing the change in prose. Only a file that write_file, edit_file or delete_file has changed has a previous version; pass against with a trash entry name from trash_list to compare with an older one.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "path"
-            ],
-            "properties": {
-              "path": {
-                "type": "string"
-              },
-              "against": {
-                "type": "string",
-                "description": "Trash entry name to compare against; defaults to the most recent version of this file."
-              }
-            }
-          }
-        },
-        {
-          "name": "queued_messages_count",
-          "description": "Get the number of messages currently queued for this session (including both consumed and unconsumed).",
-          "input_schema": {
-            "type": "object"
-          }
-        },
-        {
-          "name": "skill_write",
-          "description": "Create or replace one of your own skills (a markdown how-to note). Built-in skills are read-only and cannot be overwritten.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "name",
-              "description",
-              "content"
-            ],
-            "properties": {
-              "name": {
-                "type": "string"
-              },
-              "description": {
-                "type": "string"
-              },
-              "tags": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "content": {
-                "type": "string"
+                "description": "0-based index of the message to mark as consumed"
               }
             }
           }
@@ -501,99 +505,8 @@
           }
         },
         {
-          "name": "job_check",
-          "description": "Return a background job's current state and progress — and its result if it has finished — without waiting. Use it to poll a job you are not blocking on.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "handle"
-            ],
-            "properties": {
-              "handle": {
-                "type": "string",
-                "description": "The job handle, e.g. job_7f3a."
-              }
-            }
-          }
-        },
-        {
           "name": "queued_messages_get",
           "description": "Read all messages currently queued for this session. Returns messages with their consumption status. Queued messages are user replies that were added while the session was busy, and are NOT automatically included in the model's context. Each message has a 'consumed' field indicating whether it has been processed. Use queued_message_mark_consumed to mark individual messages as consumed after processing them.",
-          "input_schema": {
-            "type": "object"
-          }
-        },
-        {
-          "name": "memory_get",
-          "description": "Retrieve a value from the key-value store by key.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "key"
-            ],
-            "properties": {
-              "key": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        {
-          "name": "list_files",
-          "description": "List files in the workspace. Filter by prefix (a directory), by pattern (a glob such as *_test.go, matched against the whole path), or by changed_since (an ISO-8601 timestamp) to see what appeared or changed — including files created outside Nine, by a git pull or dropped in by a person. Each entry reports its size and whether its text is searchable.",
-          "input_schema": {
-            "type": "object",
-            "properties": {
-              "prefix": {
-                "type": "string",
-                "description": "Only paths under this directory."
-              },
-              "pattern": {
-                "type": "string",
-                "description": "Glob over the whole path, e.g. *_test.go or src/*.md."
-              },
-              "changed_since": {
-                "type": "string",
-                "description": "ISO-8601 timestamp; only files changed at or after it."
-              },
-              "limit": {
-                "type": "integer",
-                "description": "Maximum entries (default 200)."
-              }
-            }
-          }
-        },
-        {
-          "name": "doc_search",
-          "description": "Semantically search Nine's own bundled documentation and specification by a natural-language query, returning the most relevant section addresses with snippets. Use this whenever a question is about how Nine itself works — its architecture, configuration, tools, wire protocol, or terminology — before answering from memory. Then doc_read the address for the exact text.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "query"
-            ],
-            "properties": {
-              "query": {
-                "type": "string",
-                "description": "What you want to know about Nine"
-              },
-              "top_k": {
-                "type": "integer",
-                "description": "Number of results (default 5)"
-              },
-              "bundle": {
-                "type": "string",
-                "enum": [
-                  "docs",
-                  "spec"
-                ],
-                "description": "Restrict to the user documentation or the specification; omit to search both"
-              }
-            }
-          }
-        },
-        {
-          "name": "queued_messages_unconsumed_count",
-          "description": "Get the number of unconsumed messages currently queued for this session.",
           "input_schema": {
             "type": "object"
           }
@@ -630,6 +543,113 @@
               "params": {
                 "type": "object",
                 "description": "The narrowest scope that works, e.g. {\"allow_hosts\":[\"api.example.com\"],\"methods\":[\"GET\"]} for net.http, {\"env\":[\"TZ\"]} for env."
+              }
+            }
+          }
+        },
+        {
+          "name": "workflow_get",
+          "description": "Get the full plan and current step statuses for a workflow by ID.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "workflow_id"
+            ],
+            "properties": {
+              "workflow_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "name": "tool_search",
+          "description": "Semantically search the tools available to you by a natural-language query, returning the most relevant tool names, descriptions, and input schemas. Use this when the tools you can currently see do not fit the task — a relevant tool may exist that was not surfaced up front. Call the returned tool directly by its name.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "query"
+            ],
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "What capability you are looking for"
+              },
+              "top_k": {
+                "type": "integer",
+                "description": "Number of results (default 5)"
+              }
+            }
+          }
+        },
+        {
+          "name": "queued_messages_mark_all_consumed",
+          "description": "Mark all queued messages as consumed. This moves all messages to conversation history so they will appear in future context as normal user messages.",
+          "input_schema": {
+            "type": "object"
+          }
+        },
+        {
+          "name": "skill_list",
+          "description": "List all available skills with their names, descriptions, and tags.",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "name": "queued_messages_count",
+          "description": "Get the number of messages currently queued for this session (including both consumed and unconsumed).",
+          "input_schema": {
+            "type": "object"
+          }
+        },
+        {
+          "name": "queued_messages_unconsumed_count",
+          "description": "Get the number of unconsumed messages currently queued for this session.",
+          "input_schema": {
+            "type": "object"
+          }
+        },
+        {
+          "name": "doc_search",
+          "description": "Semantically search Nine's own bundled documentation and specification by a natural-language query, returning the most relevant section addresses with snippets. Use this whenever a question is about how Nine itself works — its architecture, configuration, tools, wire protocol, or terminology — before answering from memory. Then doc_read the address for the exact text.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "query"
+            ],
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "What you want to know about Nine"
+              },
+              "top_k": {
+                "type": "integer",
+                "description": "Number of results (default 5)"
+              },
+              "bundle": {
+                "type": "string",
+                "enum": [
+                  "docs",
+                  "spec"
+                ],
+                "description": "Restrict to the user documentation or the specification; omit to search both"
+              }
+            }
+          }
+        },
+        {
+          "name": "memory_get",
+          "description": "Retrieve a value from the key-value store by key.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "key"
+            ],
+            "properties": {
+              "key": {
+                "type": "string"
               }
             }
           }
@@ -681,14 +701,6 @@
           }
         },
         {
-          "name": "skill_list",
-          "description": "List all available skills with their names, descriptions, and tags.",
-          "input_schema": {
-            "type": "object",
-            "properties": {}
-          }
-        },
-        {
           "name": "skill_read",
           "description": "Read the full content of a skill by name.",
           "input_schema": {
@@ -699,107 +711,6 @@
             "properties": {
               "name": {
                 "type": "string"
-              }
-            }
-          }
-        },
-        {
-          "name": "job_list",
-          "description": "List your outstanding background jobs — handle, tool, age, and progress. Use it to see what is still running.",
-          "input_schema": {
-            "type": "object",
-            "properties": {}
-          }
-        },
-        {
-          "name": "web_page_read",
-          "description": "Fetch a web page and return its readable text, with markup and scripts stripped.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "url"
-            ],
-            "properties": {
-              "url": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        {
-          "name": "http_post",
-          "description": "POST a body to a URL and return the status and response.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "url"
-            ],
-            "properties": {
-              "url": {
-                "type": "string"
-              },
-              "body": {},
-              "headers": {
-                "type": "object"
-              }
-            }
-          }
-        },
-        {
-          "name": "http_get",
-          "description": "Fetch a URL and return its status and body.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "url"
-            ],
-            "properties": {
-              "url": {
-                "type": "string"
-              },
-              "headers": {
-                "type": "object"
-              }
-            }
-          }
-        },
-        {
-          "name": "copy_file",
-          "description": "Copy a file inside the WORKSPACE FILESYSTEM. The contents stream from one path to the other without passing through your context, so a large file costs nothing to duplicate. Refuses an existing destination unless overwrite is true.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "from",
-              "to"
-            ],
-            "properties": {
-              "from": {
-                "type": "string"
-              },
-              "to": {
-                "type": "string"
-              },
-              "overwrite": {
-                "type": "boolean",
-                "description": "Replace the destination if it exists (default false)."
-              }
-            }
-          }
-        },
-        {
-          "name": "web_search",
-          "description": "Search the web and return result titles, URLs, and snippets. Uses DuckDuckGo by default; set SEARCH_PROVIDER=brave|serpapi and SEARCH_API_KEY for another backend.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "query"
-            ],
-            "properties": {
-              "query": {
-                "type": "string"
-              },
-              "limit": {
-                "type": "integer"
               }
             }
           }
@@ -860,6 +771,29 @@
           }
         },
         {
+          "name": "copy_file",
+          "description": "Copy a file inside the WORKSPACE FILESYSTEM. The contents stream from one path to the other without passing through your context, so a large file costs nothing to duplicate. Refuses an existing destination unless overwrite is true.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "from",
+              "to"
+            ],
+            "properties": {
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "overwrite": {
+                "type": "boolean",
+                "description": "Replace the destination if it exists (default false)."
+              }
+            }
+          }
+        },
+        {
           "name": "edit_file",
           "description": "Replace exact text in a WORKSPACE FILESYSTEM file, leaving the rest byte-for-byte unchanged. Use this rather than write_file whenever the file already exists: it never loads the file into your context, so it works on a file far larger than your context window. old_text must match the file exactly, including indentation and line breaks — read the region with read_file(lines) first. The call fails, changing nothing, when the number of matches is not what you said to expect.",
           "input_schema": {
@@ -892,25 +826,24 @@
           }
         },
         {
-          "name": "restore_file",
-          "description": "Restore a file from the trash to the workspace, by the entry name trash_list reports. Restores to its original path unless to names another. Never overwrites: if something already occupies the destination the call fails, since recovering one file by destroying another is not a recovery.",
+          "name": "move_file",
+          "description": "Move or rename a file inside the WORKSPACE FILESYSTEM. The file is relinked, not copied and not read, so this costs nothing for a large file and never spends context on its contents. Refuses an existing destination unless overwrite is true.",
           "input_schema": {
             "type": "object",
             "required": [
-              "entry"
+              "from",
+              "to"
             ],
             "properties": {
-              "entry": {
-                "type": "string",
-                "description": "Trash entry name from trash_list, e.g. 20260920T143015Z-1f2e3d4c."
-              },
-              "path": {
-                "type": "string",
-                "description": "Which file to restore, when the entry holds more than one."
+              "from": {
+                "type": "string"
               },
               "to": {
-                "type": "string",
-                "description": "Destination path; defaults to where the file came from."
+                "type": "string"
+              },
+              "overwrite": {
+                "type": "boolean",
+                "description": "Replace the destination if it exists (default false)."
               }
             }
           }
@@ -948,34 +881,18 @@
           }
         },
         {
-          "name": "move_file",
-          "description": "Move or rename a file inside the WORKSPACE FILESYSTEM. The file is relinked, not copied and not read, so this costs nothing for a large file and never spends context on its contents. Refuses an existing destination unless overwrite is true.",
+          "name": "web_page_read",
+          "description": "Fetch a web page and return its readable text, with markup and scripts stripped.",
           "input_schema": {
             "type": "object",
             "required": [
-              "from",
-              "to"
+              "url"
             ],
             "properties": {
-              "from": {
+              "url": {
                 "type": "string"
-              },
-              "to": {
-                "type": "string"
-              },
-              "overwrite": {
-                "type": "boolean",
-                "description": "Replace the destination if it exists (default false)."
               }
             }
-          }
-        },
-        {
-          "name": "time",
-          "description": "Return the current date and time in UTC (ISO-8601 and a readable form).",
-          "input_schema": {
-            "type": "object",
-            "properties": {}
           }
         },
         {
@@ -994,6 +911,93 @@
               }
             }
           }
+        },
+        {
+          "name": "restore_file",
+          "description": "Restore a file from the trash to the workspace, by the entry name trash_list reports. Restores to its original path unless to names another. Never overwrites: if something already occupies the destination the call fails, since recovering one file by destroying another is not a recovery.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "entry"
+            ],
+            "properties": {
+              "entry": {
+                "type": "string",
+                "description": "Trash entry name from trash_list, e.g. 20260920T143015Z-1f2e3d4c."
+              },
+              "path": {
+                "type": "string",
+                "description": "Which file to restore, when the entry holds more than one."
+              },
+              "to": {
+                "type": "string",
+                "description": "Destination path; defaults to where the file came from."
+              }
+            }
+          }
+        },
+        {
+          "name": "http_get",
+          "description": "Fetch a URL and return its status and body.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "url"
+            ],
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "headers": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "name": "web_search",
+          "description": "Search the web and return result titles, URLs, and snippets. Uses DuckDuckGo by default; set SEARCH_PROVIDER=brave|serpapi and SEARCH_API_KEY for another backend.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "query"
+            ],
+            "properties": {
+              "query": {
+                "type": "string"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        {
+          "name": "http_post",
+          "description": "POST a body to a URL and return the status and response.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "url"
+            ],
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "body": {},
+              "headers": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "name": "time",
+          "description": "Return the current date and time in UTC (ISO-8601 and a readable form).",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
         }
       ]
     }
@@ -1003,7 +1007,7 @@
       "turn": 1,
       "type": "turn_start",
       "payload": {
-        "input": "Check on goal tidy-notes (\"Keep notes/plan.md tidy.\") and its subtree (goal_get). Take any useful action toward it, including spawning sub-goals or sub-agents. If its status should change (e.g. done once attained, or paused if you're stuck), call goal_update_status.",
+        "input": "This is a scheduled run of recurring goal tidy-notes (\"Keep notes/plan.md tidy.\"), which runs every 1s. Do the whole job now: find what is new since the last run, then write or update its result. When the result is written, end the turn. A recurring goal is never done: leave its status active, unless it cannot go on (paused) or should stop for good (archived). Unless the goal names where its output goes, keep what it produces in goals/keep-notes-plan-md-tidy-tidy-notes/: look there first for what earlier turns wrote, and update those files rather than writing new copies elsewhere.",
         "trigger": "idle",
         "depth": 1
       }
@@ -1019,7 +1023,7 @@
       "turn": 1,
       "type": "context_update",
       "payload": {
-        "used": 7079,
+        "used": 7288,
         "budget": 100000
       }
     },
@@ -1027,71 +1031,71 @@
       "turn": 1,
       "type": "llm_request",
       "payload": {
-        "system": "Current time: <time>\nSession ID: tidy-notes\n\nYou are Nine, a persistent AI agent running as a daemon. You can write and refine skills (markdown how-to notes) to capture what you learn, and you update your understanding of yourself over time. Your self-model lives in the `self/` key-value namespace — read it to understand your current capabilities and what you have learned. You are direct and action-oriented. When a tool fails, try a different approach.\n\nSkills are also there to be read. When a task has an established procedure — web research, git work, file management — call skill_search once with a short description of the task before you start — or skill_list if you have no skill_search — and read any relevant hit. One cheap call, and it is where knowledge lives that your tool descriptions do not carry: which tools this particular deployment has for a job, and what to do when it lacks them. Skip it for something trivial or already worked out this session.\n\nBefore searching for anything time-sensitive (news, current events, recent releases, prices, status), call the time tool first so your queries and reasoning use the correct date. Never read the date from memory or assume it — always call the time tool directly.\n\nWhen a request requires multiple independent steps or sub-agents, start by calling workflow_create with a name and step list. Assign sub-agents to steps using run_agent or run_agents, then call workflow_update after each result. At the start of any turn, call workflow_list first — if an active workflow exists, call workflow_get to re-read the current plan before deciding what to do next. This also handles recovery after a restart: interrupted steps will appear as failed and can be retried with workflow_retry_step.\n\nA workflow is finite — use it for a bounded plan with a clear end. A goal is different: it is a persistent, open-ended intention with no defined end condition (e.g. \"monitor this repo for security issues\" or \"keep dependencies up to date\"). When a request implies ongoing or recurring work rather than a one-off task, call goal_create to record it. Decompose goals into sub-goals and tasks autonomously — no user approval needed — using goal_create (with parent_id/parent_type set to the parent goal) and run_agent/run_agents. Call goal_list at the start of any turn involving open-ended work to check on active goals, goal_get to re-read one before acting on it, and goal_update_status to mark a goal paused, done, or archived as its situation changes.\n\nWhen delegating with run_agent or run_agents, pick the narrowest role that fits the task (code-reviewer, monitor, report-writer, software-dev, sysadmin); use executor only when no narrower role matches. Each role's description is in the run_agent tool schema.\n\n## Environment\n\n## Relevant skills\n- goal-pursuit\n- orchestrator\n- pursue\n",
+        "system": "Current time: <time>\nSession ID: tidy-notes\n\nYou are Nine, a persistent AI agent running as a daemon. You can write and refine skills (markdown how-to notes) to capture what you learn, and you update your understanding of yourself over time. Your self-model lives in the `self/` key-value namespace — read it to understand your current capabilities and what you have learned. You are direct and action-oriented. When a tool fails, try a different approach.\n\nSkills are also there to be read. When a task has an established procedure — web research, git work, file management — call skill_search once with a short description of the task before you start — or skill_list if you have no skill_search — and read any relevant hit. One cheap call, and it is where knowledge lives that your tool descriptions do not carry: which tools this particular deployment has for a job, and what to do when it lacks them. Skip it for something trivial or already worked out this session.\n\nBefore searching for anything time-sensitive (news, current events, recent releases, prices, status), call the time tool first so your queries and reasoning use the correct date. Never read the date from memory or assume it — always call the time tool directly.\n\nWhen a request requires multiple independent steps or sub-agents, start by calling workflow_create with a name and step list. Assign sub-agents to steps using run_agent or run_agents, then call workflow_update after each result. At the start of any turn, call workflow_list first — if an active workflow exists, call workflow_get to re-read the current plan before deciding what to do next. This also handles recovery after a restart: interrupted steps will appear as failed and can be retried with workflow_retry_step.\n\nA workflow is finite — use it for a bounded plan with a clear end. A goal is different: it is a persistent, open-ended intention with no defined end condition (e.g. \"monitor this repo for security issues\" or \"keep dependencies up to date\"). When a request implies ongoing or recurring work rather than a one-off task, call goal_create to record it. Decompose goals into sub-goals and tasks autonomously — no user approval needed — using goal_create (with parent_id/parent_type set to the parent goal) and run_agent/run_agents. Call goal_list at the start of any turn involving open-ended work to check on active goals, goal_get to re-read one before acting on it, and goal_update_status to mark a goal paused, done, or archived as its situation changes.\n\nWhen delegating with run_agent or run_agents, pick the narrowest role that fits the task (code-reviewer, monitor, report-writer, software-dev, sysadmin); use executor only when no narrower role matches. Each role's description is in the run_agent tool schema.\n\n## Environment\n\n## Relevant skills\n- delegation\n- goal-pursuit\n- pursue\n",
         "messages": [
           {
             "Role": "user",
-            "Text": "Check on goal tidy-notes (\"Keep notes/plan.md tidy.\") and its subtree (goal_get). Take any useful action toward it, including spawning sub-goals or sub-agents. If its status should change (e.g. done once attained, or paused if you're stuck), call goal_update_status.",
+            "Text": "This is a scheduled run of recurring goal tidy-notes (\"Keep notes/plan.md tidy.\"), which runs every 1s. Do the whole job now: find what is new since the last run, then write or update its result. When the result is written, end the turn. A recurring goal is never done: leave its status active, unless it cannot go on (paused) or should stop for good (archived). Unless the goal names where its output goes, keep what it produces in goals/keep-notes-plan-md-tidy-tidy-notes/: look there first for what earlier turns wrote, and update those files rather than writing new copies elsewhere.",
             "ToolCalls": null,
             "ToolResults": null
           }
         ],
         "tool_names": [
-          "goal_get",
-          "goal_update_status",
           "goal_create",
+          "goal_update_status",
           "run_agents",
           "run_agent",
-          "goal_list",
-          "workflow_retry_step",
-          "workflow_update",
+          "goal_get",
           "doc_read",
-          "workflow_get",
-          "file_search_text",
-          "tool_list",
-          "skill_search",
-          "queued_message_mark_consumed",
-          "notify_user",
-          "workflow_create",
-          "skill_modify",
-          "tool_search",
+          "workflow_retry_step",
+          "list_files",
+          "goal_list",
+          "skill_write",
           "workflow_list",
           "job_wait",
-          "queued_messages_mark_all_consumed",
-          "diff_file",
-          "queued_messages_count",
-          "skill_write",
-          "job_cancel",
+          "tool_list",
+          "notify_user",
+          "skill_modify",
+          "workflow_update",
+          "file_search_text",
           "job_check",
+          "diff_file",
+          "job_list",
+          "skill_search",
+          "workflow_create",
+          "queued_message_mark_consumed",
+          "job_cancel",
           "queued_messages_get",
-          "memory_get",
-          "list_files",
-          "doc_search",
-          "queued_messages_unconsumed_count",
           "capability_request",
+          "workflow_get",
+          "tool_search",
+          "queued_messages_mark_all_consumed",
+          "skill_list",
+          "queued_messages_count",
+          "queued_messages_unconsumed_count",
+          "doc_search",
+          "memory_get",
           "memory_set",
           "memory_delete",
           "memory_list",
-          "skill_list",
           "skill_read",
-          "job_list",
-          "web_page_read",
-          "http_post",
-          "http_get",
-          "copy_file",
-          "web_search",
           "write_file",
           "delete_file",
+          "copy_file",
           "edit_file",
-          "restore_file",
-          "read_file",
           "move_file",
-          "time",
-          "trash_list"
+          "read_file",
+          "web_page_read",
+          "trash_list",
+          "restore_file",
+          "http_get",
+          "web_search",
+          "http_post",
+          "time"
         ],
-        "tool_tokens": 6165,
+        "tool_tokens": 6282,
         "max_tokens": 2048,
-        "tokens_used": 7079,
+        "tokens_used": 7288,
         "budget": 100000,
         "llm_call_n": 1
       }

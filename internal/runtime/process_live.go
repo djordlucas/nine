@@ -417,7 +417,8 @@ func (h *liveHandler) Next(ctx context.Context) (toolvm.Trigger, error) {
 				if err != nil || g == nil || g.Status != "active" {
 					continue
 				}
-				t.Goal = &toolvm.TriggerGoal{ID: g.ID, Description: g.Description, Schedule: g.Schedule}
+				t.Goal = &toolvm.TriggerGoal{ID: g.ID, Description: g.Description, Schedule: g.Schedule,
+					Folder: GoalFolder(g.ID, g.Description)}
 			}
 			return t, nil
 		case <-ctx.Done():

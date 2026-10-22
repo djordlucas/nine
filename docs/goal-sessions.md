@@ -41,6 +41,16 @@ prompts come from a process instead of a person.
 What "useful action" means is left to the model. The cycle supplies the
 occasion and the goal, not the plan.
 
+## A goal's folder
+
+Each goal has a folder in the workspace for what it produces, and every turn
+`pursue` starts names it: `goals/`, a slug of the description, and the start
+of the goal's id — `goals/news-about-canada-1eb9e2c3/`. The turn is told to look
+there first for what earlier turns wrote and to update those files rather than
+write new copies elsewhere. A goal that names its own location ("keep
+notes/plan.md tidy") keeps it. Sub-goals share their parent's folder, since the
+parent's session works on them.
+
 ## Recurring goals
 
 A goal with a **schedule** recurs: "keep me updated on Canadian news", "a daily

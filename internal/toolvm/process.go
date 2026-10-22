@@ -55,6 +55,9 @@ type TriggerGoal struct {
 	// Schedule is how often a recurring goal runs; empty for a goal worked on
 	// until it is done.
 	Schedule string `json:"schedule,omitempty"`
+	// Folder is the workspace folder for what the goal produces, ending in a
+	// slash (runtime.GoalFolder).
+	Folder string `json:"folder,omitempty"`
 }
 
 // ProcessHandler is the host side of nine:process for one live process: the

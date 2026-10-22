@@ -1,33 +1,18 @@
 {
   "requests": [
     {
-      "system": "Current time: <time>\nSession ID: sec-watch\n\n\n# Monitor role\n\nYou are Nine operating as a standing monitoring agent. You watch a specific,\nopen-ended concern over time. Each time you wake:\n\n1. Read your goal with `goal_get` to recall exactly what you are watching.\n2. Gather current information from the web (`web_search`, `web_page_read`),\n   HTTP endpoints (`http_get`), and workspace files (`read_file`,\n   `list_files`, `file_search_text`).\n3. Compare what you find against what you recorded before (`memory_get`, and\n   your goal's subtree).\n4. Record what changed with `goal_append_subtree` and `memory_set`.\n5. If something genuinely warrants human attention, call `notify_user` with a\n   concise summary — you have no live conversation, so this is the only way a\n   human learns what you found. Do not notify for routine \"nothing changed\"\n   checks.\n\nYou cannot run shell commands or write to the host filesystem — you observe and\nresearch only. If you determine your concern is fully resolved or no longer\nwarrants watching, mark the goal `done` with `goal_update_status`; if you are\nblocked and cannot make progress, mark it `paused`. Be terse; never repeat a\nfinding you have already recorded or notified.\n\n\n## Environment\n\n## Relevant skills\n- goal-pursuit\n- report-writer\n- orchestrator\n",
+      "system": "Current time: <time>\nSession ID: sec-watch\n\n\n# Monitor role\n\nYou are Nine operating as a standing monitoring agent. You watch a specific,\nopen-ended concern over time. Each time you wake:\n\n1. Read your goal with `goal_get` to recall exactly what you are watching.\n2. Gather current information from the web (`web_search`, `web_page_read`),\n   HTTP endpoints (`http_get`), and workspace files (`read_file`,\n   `list_files`, `file_search_text`).\n3. Compare what you find against what you recorded before (`memory_get`, and\n   your goal's subtree).\n4. Record what changed with `goal_append_subtree` and `memory_set`.\n5. If something genuinely warrants human attention, call `notify_user` with a\n   concise summary — you have no live conversation, so this is the only way a\n   human learns what you found. Do not notify for routine \"nothing changed\"\n   checks.\n\nYou cannot run shell commands or write to the host filesystem — you observe and\nresearch only. If you determine your concern is fully resolved or no longer\nwarrants watching, mark the goal `done` with `goal_update_status`; if you are\nblocked and cannot make progress, mark it `paused`. Be terse; never repeat a\nfinding you have already recorded or notified.\n\n\n## Environment\n\n## Relevant skills\n- goal-pursuit\n- report-writer\n- pursue\n",
       "max_tokens": 2048,
       "think": true,
       "messages": [
         {
           "Role": "user",
-          "Text": "Check on goal sec-watch (\"Watch the workspace for files that look like secrets.\") and its subtree (goal_get). Take any useful action toward it, including spawning sub-goals or sub-agents. If its status should change (e.g. done once attained, or paused if you're stuck), call goal_update_status.",
+          "Text": "This is a scheduled run of recurring goal sec-watch (\"Watch the workspace for files that look like secrets.\"), which runs every 1s. Do the whole job now: find what is new since the last run, then write or update its result. When the result is written, end the turn. A recurring goal is never done: leave its status active, unless it cannot go on (paused) or should stop for good (archived). Unless the goal names where its output goes, keep what it produces in goals/watch-the-workspace-for-files-that-look-sec-watch/: look there first for what earlier turns wrote, and update those files rather than writing new copies elsewhere.",
           "ToolCalls": null,
           "ToolResults": null
         }
       ],
       "tools": [
-        {
-          "name": "goal_get",
-          "description": "Get a goal by ID, including its status and sub-goal/task tree.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "goal_id"
-            ],
-            "properties": {
-              "goal_id": {
-                "type": "string"
-              }
-            }
-          }
-        },
         {
           "name": "goal_update_status",
           "description": "Update a goal's status.",
@@ -50,65 +35,6 @@
                   "archived"
                 ],
                 "description": "active = in progress, paused = temporarily on hold, done = completed or resolved, archived = retired without completion."
-              }
-            }
-          }
-        },
-        {
-          "name": "goal_list",
-          "description": "List all goals. Call this at the start of any turn that involves open-ended, persistent work to check for active goals and recover after a restart.",
-          "input_schema": {
-            "type": "object",
-            "properties": {}
-          }
-        },
-        {
-          "name": "file_search_text",
-          "description": "Full-text search over stored file content. Pass path to search inside one file (or one directory prefix) — the way to find the relevant region of a large spilled tool output.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "query"
-            ],
-            "properties": {
-              "query": {
-                "type": "string"
-              },
-              "path": {
-                "type": "string",
-                "description": "Restrict the search to paths starting with this prefix; omit to search all files."
-              },
-              "limit": {
-                "type": "integer"
-              }
-            }
-          }
-        },
-        {
-          "name": "doc_read",
-          "description": "Read a section or a whole document from Nine's bundled documentation and specification. Accepts an address from doc_search (\"docs/skills.md#tools\"), a topic name (\"agent-loop\"), or a bundle path (\"spec/contracts/wire-protocol\"). Quote what you find rather than paraphrasing when the answer turns on exact behavior: these documents are the source of truth, and a wrong reference is a bug worth reporting.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "ref"
-            ],
-            "properties": {
-              "ref": {
-                "type": "string",
-                "description": "Section address, topic name, or bundle path"
-              }
-            }
-          }
-        },
-        {
-          "name": "tool_list",
-          "description": "List every tool available to you, with names and descriptions. Use this when you need the whole catalog rather than the best matches for a keyword — for example when the user asks what you can do or which tools you have. Prefer tool_search when you are looking for a specific capability.",
-          "input_schema": {
-            "type": "object",
-            "properties": {
-              "include_schemas": {
-                "type": "boolean",
-                "description": "Also return each tool's input schema (verbose; default false)"
               }
             }
           }
@@ -139,27 +65,47 @@
           }
         },
         {
-          "name": "skill_search",
-          "description": "Semantically search available skills by a natural-language query, returning the most relevant skill names and descriptions. Use this to find a skill when you do not know its exact name or when the task changes; then skill_read the one you want.",
+          "name": "goal_get",
+          "description": "Get a goal by ID, including its status and sub-goal/task tree.",
           "input_schema": {
             "type": "object",
             "required": [
-              "query"
+              "goal_id"
             ],
             "properties": {
-              "query": {
+              "goal_id": {
                 "type": "string"
-              },
-              "top_k": {
-                "type": "integer",
-                "description": "Number of results (default 5)"
               }
             }
           }
         },
         {
-          "name": "job_cancel",
-          "description": "Request cancellation of a background job. Best-effort; the job stops as soon as the plugin notices.",
+          "name": "doc_read",
+          "description": "Read a section or a whole document from Nine's bundled documentation and specification. Accepts an address from doc_search (\"docs/skills.md#tools\"), a topic name (\"agent-loop\"), or a bundle path (\"spec/contracts/wire-protocol\"). Quote what you find rather than paraphrasing when the answer turns on exact behavior: these documents are the source of truth, and a wrong reference is a bug worth reporting.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "ref"
+            ],
+            "properties": {
+              "ref": {
+                "type": "string",
+                "description": "Section address, topic name, or bundle path"
+              }
+            }
+          }
+        },
+        {
+          "name": "goal_list",
+          "description": "List all goals. Call this at the start of any turn that involves open-ended, persistent work to check for active goals and recover after a restart.",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "name": "job_wait",
+          "description": "Wait for a background job (one a long-running tool started) to finish, then return its result. If it has not finished in time, this returns its current progress instead — that is NOT an error: you can simply move on and check again later. Use the handle from when the job started, or from job_list.",
           "input_schema": {
             "type": "object",
             "required": [
@@ -169,13 +115,30 @@
               "handle": {
                 "type": "string",
                 "description": "The job handle, e.g. job_7f3a."
+              },
+              "timeout_seconds": {
+                "type": "integer",
+                "description": "How long to wait before returning. Default 60."
               }
             }
           }
         },
         {
-          "name": "tool_search",
-          "description": "Semantically search the tools available to you by a natural-language query, returning the most relevant tool names, descriptions, and input schemas. Use this when the tools you can currently see do not fit the task — a relevant tool may exist that was not surfaced up front. Call the returned tool directly by its name.",
+          "name": "tool_list",
+          "description": "List every tool available to you, with names and descriptions. Use this when you need the whole catalog rather than the best matches for a keyword — for example when the user asks what you can do or which tools you have. Prefer tool_search when you are looking for a specific capability.",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "include_schemas": {
+                "type": "boolean",
+                "description": "Also return each tool's input schema (verbose; default false)"
+              }
+            }
+          }
+        },
+        {
+          "name": "file_search_text",
+          "description": "Full-text search over stored file content. Pass path to search inside one file (or one directory prefix) — the way to find the relevant region of a large spilled tool output.",
           "input_schema": {
             "type": "object",
             "required": [
@@ -183,28 +146,14 @@
             ],
             "properties": {
               "query": {
-                "type": "string",
-                "description": "What capability you are looking for"
+                "type": "string"
               },
-              "top_k": {
-                "type": "integer",
-                "description": "Number of results (default 5)"
-              }
-            }
-          }
-        },
-        {
-          "name": "notify_user",
-          "description": "Post a concise finding or alert to the human's notification feed. You are a background agent with no live conversation, so this is how a human learns what you found. Use it only when something genuinely warrants human attention; keep it short and specific. Readable with `nine notifications`.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "text"
-            ],
-            "properties": {
-              "text": {
+              "path": {
                 "type": "string",
-                "description": "The message to show the human. One or two sentences."
+                "description": "Restrict the search to paths starting with this prefix; omit to search all files."
+              },
+              "limit": {
+                "type": "integer"
               }
             }
           }
@@ -229,8 +178,8 @@
           }
         },
         {
-          "name": "job_wait",
-          "description": "Wait for a background job (one a long-running tool started) to finish, then return its result. If it has not finished in time, this returns its current progress instead — that is NOT an error: you can simply move on and check again later. Use the handle from when the job started, or from job_list.",
+          "name": "job_cancel",
+          "description": "Request cancellation of a background job. Best-effort; the job stops as soon as the plugin notices.",
           "input_schema": {
             "type": "object",
             "required": [
@@ -240,10 +189,22 @@
               "handle": {
                 "type": "string",
                 "description": "The job handle, e.g. job_7f3a."
-              },
-              "timeout_seconds": {
-                "type": "integer",
-                "description": "How long to wait before returning. Default 60."
+              }
+            }
+          }
+        },
+        {
+          "name": "notify_user",
+          "description": "Post a concise finding or alert to the human's notification feed. You are a background agent with no live conversation, so this is how a human learns what you found. Use it only when something genuinely warrants human attention; keep it short and specific. Readable with `nine notifications`.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "text"
+            ],
+            "properties": {
+              "text": {
+                "type": "string",
+                "description": "The message to show the human. One or two sentences."
               }
             }
           }
@@ -265,16 +226,48 @@
           }
         },
         {
-          "name": "memory_get",
-          "description": "Retrieve a value from the key-value store by key.",
+          "name": "job_list",
+          "description": "List your outstanding background jobs — handle, tool, age, and progress. Use it to see what is still running.",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "name": "skill_search",
+          "description": "Semantically search available skills by a natural-language query, returning the most relevant skill names and descriptions. Use this to find a skill when you do not know its exact name or when the task changes; then skill_read the one you want.",
           "input_schema": {
             "type": "object",
             "required": [
-              "key"
+              "query"
             ],
             "properties": {
-              "key": {
+              "query": {
                 "type": "string"
+              },
+              "top_k": {
+                "type": "integer",
+                "description": "Number of results (default 5)"
+              }
+            }
+          }
+        },
+        {
+          "name": "tool_search",
+          "description": "Semantically search the tools available to you by a natural-language query, returning the most relevant tool names, descriptions, and input schemas. Use this when the tools you can currently see do not fit the task — a relevant tool may exist that was not surfaced up front. Call the returned tool directly by its name.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "query"
+            ],
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "What capability you are looking for"
+              },
+              "top_k": {
+                "type": "integer",
+                "description": "Number of results (default 5)"
               }
             }
           }
@@ -303,6 +296,21 @@
                   "spec"
                 ],
                 "description": "Restrict to the user documentation or the specification; omit to search both"
+              }
+            }
+          }
+        },
+        {
+          "name": "memory_get",
+          "description": "Retrieve a value from the key-value store by key.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "key"
+            ],
+            "properties": {
+              "key": {
+                "type": "string"
               }
             }
           }
@@ -354,11 +362,35 @@
           }
         },
         {
-          "name": "job_list",
-          "description": "List your outstanding background jobs — handle, tool, age, and progress. Use it to see what is still running.",
+          "name": "read_file",
+          "description": "Read a file from the WORKSPACE FILESYSTEM. Paths resolve under /work; a relative path is taken as relative to it. Read part of a large file with lines (\"120-180\") or with offset and limit, rather than pulling the whole thing into context. Pass line_numbers when you intend to edit, so you can name the exact text for edit_file. A windowed read also returns a version token for write_file's if_unchanged. A spill/... path from a truncated tool result is read with this same tool.",
           "input_schema": {
             "type": "object",
-            "properties": {}
+            "required": [
+              "path"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Path under the workspace, e.g. notes.txt or /work/notes.txt"
+              },
+              "lines": {
+                "type": "string",
+                "description": "1-based inclusive line range, e.g. \"120-180\" or \"120\". Preferred over offset/limit for text."
+              },
+              "offset": {
+                "type": "integer",
+                "description": "Byte offset to start at (default 0)."
+              },
+              "limit": {
+                "type": "integer",
+                "description": "Maximum bytes to return; omit or 0 for the rest of the file."
+              },
+              "line_numbers": {
+                "type": "boolean",
+                "description": "Prefix each line with its number."
+              }
+            }
           }
         },
         {
@@ -411,38 +443,6 @@
               }
             }
           }
-        },
-        {
-          "name": "read_file",
-          "description": "Read a file from the WORKSPACE FILESYSTEM. Paths resolve under /work; a relative path is taken as relative to it. Read part of a large file with lines (\"120-180\") or with offset and limit, rather than pulling the whole thing into context. Pass line_numbers when you intend to edit, so you can name the exact text for edit_file. A windowed read also returns a version token for write_file's if_unchanged. A spill/... path from a truncated tool result is read with this same tool.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "path"
-            ],
-            "properties": {
-              "path": {
-                "type": "string",
-                "description": "Path under the workspace, e.g. notes.txt or /work/notes.txt"
-              },
-              "lines": {
-                "type": "string",
-                "description": "1-based inclusive line range, e.g. \"120-180\" or \"120\". Preferred over offset/limit for text."
-              },
-              "offset": {
-                "type": "integer",
-                "description": "Byte offset to start at (default 0)."
-              },
-              "limit": {
-                "type": "integer",
-                "description": "Maximum bytes to return; omit or 0 for the rest of the file."
-              },
-              "line_numbers": {
-                "type": "boolean",
-                "description": "Prefix each line with its number."
-              }
-            }
-          }
         }
       ]
     }
@@ -452,7 +452,7 @@
       "turn": 1,
       "type": "turn_start",
       "payload": {
-        "input": "Check on goal sec-watch (\"Watch the workspace for files that look like secrets.\") and its subtree (goal_get). Take any useful action toward it, including spawning sub-goals or sub-agents. If its status should change (e.g. done once attained, or paused if you're stuck), call goal_update_status.",
+        "input": "This is a scheduled run of recurring goal sec-watch (\"Watch the workspace for files that look like secrets.\"), which runs every 1s. Do the whole job now: find what is new since the last run, then write or update its result. When the result is written, end the turn. A recurring goal is never done: leave its status active, unless it cannot go on (paused) or should stop for good (archived). Unless the goal names where its output goes, keep what it produces in goals/watch-the-workspace-for-files-that-look-sec-watch/: look there first for what earlier turns wrote, and update those files rather than writing new copies elsewhere.",
         "trigger": "idle",
         "depth": 1
       }
@@ -468,7 +468,7 @@
       "turn": 1,
       "type": "context_update",
       "payload": {
-        "used": 3108,
+        "used": 3203,
         "budget": 100000
       }
     },
@@ -476,44 +476,44 @@
       "turn": 1,
       "type": "llm_request",
       "payload": {
-        "system": "Current time: <time>\nSession ID: sec-watch\n\n\n# Monitor role\n\nYou are Nine operating as a standing monitoring agent. You watch a specific,\nopen-ended concern over time. Each time you wake:\n\n1. Read your goal with `goal_get` to recall exactly what you are watching.\n2. Gather current information from the web (`web_search`, `web_page_read`),\n   HTTP endpoints (`http_get`), and workspace files (`read_file`,\n   `list_files`, `file_search_text`).\n3. Compare what you find against what you recorded before (`memory_get`, and\n   your goal's subtree).\n4. Record what changed with `goal_append_subtree` and `memory_set`.\n5. If something genuinely warrants human attention, call `notify_user` with a\n   concise summary — you have no live conversation, so this is the only way a\n   human learns what you found. Do not notify for routine \"nothing changed\"\n   checks.\n\nYou cannot run shell commands or write to the host filesystem — you observe and\nresearch only. If you determine your concern is fully resolved or no longer\nwarrants watching, mark the goal `done` with `goal_update_status`; if you are\nblocked and cannot make progress, mark it `paused`. Be terse; never repeat a\nfinding you have already recorded or notified.\n\n\n## Environment\n\n## Relevant skills\n- goal-pursuit\n- report-writer\n- orchestrator\n",
+        "system": "Current time: <time>\nSession ID: sec-watch\n\n\n# Monitor role\n\nYou are Nine operating as a standing monitoring agent. You watch a specific,\nopen-ended concern over time. Each time you wake:\n\n1. Read your goal with `goal_get` to recall exactly what you are watching.\n2. Gather current information from the web (`web_search`, `web_page_read`),\n   HTTP endpoints (`http_get`), and workspace files (`read_file`,\n   `list_files`, `file_search_text`).\n3. Compare what you find against what you recorded before (`memory_get`, and\n   your goal's subtree).\n4. Record what changed with `goal_append_subtree` and `memory_set`.\n5. If something genuinely warrants human attention, call `notify_user` with a\n   concise summary — you have no live conversation, so this is the only way a\n   human learns what you found. Do not notify for routine \"nothing changed\"\n   checks.\n\nYou cannot run shell commands or write to the host filesystem — you observe and\nresearch only. If you determine your concern is fully resolved or no longer\nwarrants watching, mark the goal `done` with `goal_update_status`; if you are\nblocked and cannot make progress, mark it `paused`. Be terse; never repeat a\nfinding you have already recorded or notified.\n\n\n## Environment\n\n## Relevant skills\n- goal-pursuit\n- report-writer\n- pursue\n",
         "messages": [
           {
             "Role": "user",
-            "Text": "Check on goal sec-watch (\"Watch the workspace for files that look like secrets.\") and its subtree (goal_get). Take any useful action toward it, including spawning sub-goals or sub-agents. If its status should change (e.g. done once attained, or paused if you're stuck), call goal_update_status.",
+            "Text": "This is a scheduled run of recurring goal sec-watch (\"Watch the workspace for files that look like secrets.\"), which runs every 1s. Do the whole job now: find what is new since the last run, then write or update its result. When the result is written, end the turn. A recurring goal is never done: leave its status active, unless it cannot go on (paused) or should stop for good (archived). Unless the goal names where its output goes, keep what it produces in goals/watch-the-workspace-for-files-that-look-sec-watch/: look there first for what earlier turns wrote, and update those files rather than writing new copies elsewhere.",
             "ToolCalls": null,
             "ToolResults": null
           }
         ],
         "tool_names": [
-          "goal_get",
           "goal_update_status",
-          "goal_list",
-          "file_search_text",
-          "doc_read",
-          "tool_list",
           "list_files",
-          "skill_search",
-          "job_cancel",
-          "tool_search",
-          "notify_user",
-          "diff_file",
+          "goal_get",
+          "doc_read",
+          "goal_list",
           "job_wait",
+          "tool_list",
+          "file_search_text",
+          "diff_file",
+          "job_cancel",
+          "notify_user",
           "job_check",
-          "memory_get",
+          "job_list",
+          "skill_search",
+          "tool_search",
           "doc_search",
+          "memory_get",
           "memory_set",
           "memory_list",
           "skill_read",
-          "job_list",
+          "read_file",
           "web_page_read",
           "http_get",
-          "web_search",
-          "read_file"
+          "web_search"
         ],
         "tool_tokens": 2640,
         "max_tokens": 2048,
-        "tokens_used": 3108,
+        "tokens_used": 3203,
         "budget": 100000,
         "llm_call_n": 1
       }

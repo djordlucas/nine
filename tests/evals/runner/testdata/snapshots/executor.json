@@ -578,7 +578,7 @@
         },
         {
           "name": "goal_create",
-          "description": "Create a persistent, open-ended goal (no defined end condition, e.g. 'monitor this repo for security issues'). A top-level goal gets a background session that works on it between your turns.",
+          "description": "Create a persistent, open-ended goal (no defined end condition, e.g. 'monitor this repo for security issues'). A top-level goal gets a background session that works on it between your turns. Give a schedule for recurring work ('keep me updated', 'a daily digest'): the session then does the whole job once per run instead of checking every few minutes.",
           "input_schema": {
             "type": "object",
             "required": [
@@ -587,6 +587,10 @@
             "properties": {
               "description": {
                 "type": "string"
+              },
+              "schedule": {
+                "type": "string",
+                "description": "For recurring work on a top-level goal: how often it runs, as a duration (24h, 6h) or a 5-field cron expression ('0 8 * * *' is daily at 08:00 UTC). Leave out for a goal to work on until it is done."
               },
               "parent_id": {
                 "type": "string",
@@ -1659,7 +1663,7 @@
         },
         {
           "name": "goal_create",
-          "description": "Create a persistent, open-ended goal (no defined end condition, e.g. 'monitor this repo for security issues'). A top-level goal gets a background session that works on it between your turns.",
+          "description": "Create a persistent, open-ended goal (no defined end condition, e.g. 'monitor this repo for security issues'). A top-level goal gets a background session that works on it between your turns. Give a schedule for recurring work ('keep me updated', 'a daily digest'): the session then does the whole job once per run instead of checking every few minutes.",
           "input_schema": {
             "type": "object",
             "required": [
@@ -1668,6 +1672,10 @@
             "properties": {
               "description": {
                 "type": "string"
+              },
+              "schedule": {
+                "type": "string",
+                "description": "For recurring work on a top-level goal: how often it runs, as a duration (24h, 6h) or a 5-field cron expression ('0 8 * * *' is daily at 08:00 UTC). Leave out for a goal to work on until it is done."
               },
               "parent_id": {
                 "type": "string",
@@ -2167,7 +2175,7 @@
       "turn": 1,
       "type": "context_update",
       "payload": {
-        "used": 6810,
+        "used": 6927,
         "budget": 100000
       }
     },
@@ -2241,9 +2249,9 @@
           "process_show",
           "process_start"
         ],
-        "tool_tokens": 6598,
+        "tool_tokens": 6715,
         "max_tokens": 2048,
-        "tokens_used": 6810,
+        "tokens_used": 6927,
         "budget": 100000,
         "llm_call_n": 1
       }
@@ -2294,7 +2302,7 @@
       "turn": 1,
       "type": "context_update",
       "payload": {
-        "used": 6904,
+        "used": 7021,
         "budget": 100000
       }
     },
@@ -2392,9 +2400,9 @@
           "process_show",
           "process_start"
         ],
-        "tool_tokens": 6598,
+        "tool_tokens": 6715,
         "max_tokens": 2048,
-        "tokens_used": 6904,
+        "tokens_used": 7021,
         "budget": 100000,
         "llm_call_n": 2
       }
