@@ -2,7 +2,7 @@
 # so a digest is the only way a rebuild of an old commit produces the image that
 # commit was tested against. Dependabot's docker ecosystem bumps these (see
 # .github/dependabot.yml); the tag beside each digest is what it reads.
-FROM golang:1.26.9-alpine@sha256:cdfd4fe2da6b225d8b40c6b7a105736e548e83ff56d5d8f9394446eeb5eb84e0 AS go-build
+FROM golang:1.26.10-alpine@sha256:27f2d3b83cfc5803c8078f8e730af0f7c431bf067afaec8f60a36fb763187cba AS go-build
 
 WORKDIR /nine-src
 COPY . .
