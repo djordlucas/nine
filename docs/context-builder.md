@@ -142,6 +142,25 @@ request and swamp the user's own text. It is not tokenizer-independent, though â
 it was measured against one model family, and a model whose tokenizer differs
 materially wants its own number.
 
+### Calibration
+
+The estimate is corrected against what the provider counts. After each model
+call that reports its input tokens, the shared calibration reads the ratio of
+that count to the estimate and moves a quarter of the way toward it. The
+builder then spends the budget in calibrated tokens, so a request it sizes to
+fit the budget fits what the provider counts, and the usage it reports (the
+chat's context figure, the context report) is calibrated too.
+
+| | |
+|---|---|
+| Shared | one calibration for every session's builder: the ratio is the model's tokenizer's, not a session's |
+| Direction | up only, from 1.0 to at most 1.6: an estimate above the provider's count is harmless |
+| Read from | calls estimated at 1 000 tokens or more |
+| Starts | at 1.0, at every daemon start |
+
+Mistral billed a full 32 768-token context at up to 41 000 tokens before this,
+25% above the estimate.
+
 | Function | What it counts |
 |----------|---------------|
 | `countTokens(s)` | `len(s)` bytes at 3.45 bytes/token, rounded up |
@@ -160,7 +179,7 @@ materially wants its own number.
 
 | Limit | Detail |
 |-------|--------|
-| Token counts are estimated | Every count uses a 3.45-bytes-per-token approximation measured against one model family. A model that tokenizes differently is budgeted inaccurately, and a second LLM backend needs its own measurement â€” the reconciliation logging against provider-reported usage is how that is found out. A real tokenizer is designed in [`adr/accurate-token-counting.md`](../adr/accurate-token-counting.md). |
+| Token counts are estimated | Every count uses a 3.45-bytes-per-token approximation measured against one model family, scaled by a calibration learned from the provider's reported usage. Until the first calls report it, and with a provider that reports none, a model that tokenizes more densely is budgeted low. The calibration is one figure for all content, and is relearned at each start. A real tokenizer is designed in [`adr/accurate-token-counting.md`](../adr/accurate-token-counting.md). |
 | Ranking needs an embedder | With `[embeddings].provider = "none"` there is no embedder, every tool scores 0, and ranking degrades to insertion order under the `TopN` cap. |
 | Tool vectors are cached at boot | Each tool's `name: description` is embedded once and cached by name. A description that changes at runtime keeps its old vector. |
 | Trimming is not compaction | Over-budget history is dropped from the front, not summarized. Content that falls out of the window is gone from the turn. |

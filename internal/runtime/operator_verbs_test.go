@@ -37,7 +37,7 @@ func TestGoalCreateAndDeleteOverTheWire(t *testing.T) {
 	store, sock := operatorHarness(t, seqProvider(nil))
 	c := dial(t, sock)
 
-	res, err := c.CreateGoal("watch the repo", "")
+	res, err := c.CreateGoal("watch the repo", "", "")
 	if err != nil {
 		t.Fatalf("CreateGoal: %v", err)
 	}
@@ -53,14 +53,14 @@ func TestGoalCreateAndDeleteOverTheWire(t *testing.T) {
 	}
 
 	// A sub-goal records its parent and gets no session of its own.
-	sub, err := dial(t, sock).CreateGoal("check the PRs", g.ID)
+	sub, err := dial(t, sock).CreateGoal("check the PRs", g.ID, "")
 	if err != nil {
 		t.Fatalf("CreateGoal(sub): %v", err)
 	}
 	if sub.PursueSession != "none" {
 		t.Errorf("sub-goal pursue_session = %q, want none", sub.PursueSession)
 	}
-	if _, err := dial(t, sock).CreateGoal("orphan", "no-such-goal"); err == nil || !strings.Contains(err.Error(), "not found") {
+	if _, err := dial(t, sock).CreateGoal("orphan", "no-such-goal", ""); err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("CreateGoal under a missing parent: err = %v, want not found", err)
 	}
 

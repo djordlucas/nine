@@ -216,7 +216,7 @@ func TestWireGoalCreateSpawnsSessionForTopLevelGoal(t *testing.T) {
 	store := newGoalStore(t)
 	d := agent.New()
 	var gotGoalID string
-	spawnFn := agent.GoalSessionSpawnFn(func(_ context.Context, goalID string) (bool, error) {
+	spawnFn := agent.GoalSessionSpawnFn(func(_ context.Context, goalID, _ string) (bool, error) {
 		gotGoalID = goalID
 		return true, nil
 	})
@@ -246,7 +246,7 @@ func TestWireGoalCreateSpawnsSessionForTopLevelGoal(t *testing.T) {
 func TestWireGoalCreateLimitReached(t *testing.T) {
 	store := newGoalStore(t)
 	d := agent.New()
-	spawnFn := agent.GoalSessionSpawnFn(func(context.Context, string) (bool, error) {
+	spawnFn := agent.GoalSessionSpawnFn(func(context.Context, string, string) (bool, error) {
 		return false, nil
 	})
 	agent.RegisterGoalTools(d, "agent-1", store, spawnFn)
@@ -276,7 +276,7 @@ func TestWireGoalCreateSubGoalDoesNotSpawn(t *testing.T) {
 
 	d := agent.New()
 	called := false
-	spawnFn := agent.GoalSessionSpawnFn(func(context.Context, string) (bool, error) {
+	spawnFn := agent.GoalSessionSpawnFn(func(context.Context, string, string) (bool, error) {
 		called = true
 		return true, nil
 	})
@@ -303,7 +303,7 @@ func TestWireGoalCreateSubGoalDoesNotSpawn(t *testing.T) {
 func TestWireGoalCreateSpawnFnError(t *testing.T) {
 	store := newGoalStore(t)
 	d := agent.New()
-	spawnFn := agent.GoalSessionSpawnFn(func(context.Context, string) (bool, error) {
+	spawnFn := agent.GoalSessionSpawnFn(func(context.Context, string, string) (bool, error) {
 		return false, fmt.Errorf("boom")
 	})
 	agent.RegisterGoalTools(d, "agent-1", store, spawnFn)
@@ -312,5 +312,55 @@ func TestWireGoalCreateSpawnFnError(t *testing.T) {
 		json.RawMessage(`{"description":"will fail to spawn"}`))
 	if err == nil {
 		t.Error("expected error when spawnFn fails, got nil")
+	}
+}
+
+// goal_create hands a top-level goal's schedule to the spawn and returns it;
+// it refuses an unreadable one, and a schedule on a sub-goal, before recording
+// anything.
+func TestGoalCreateWithASchedule(t *testing.T) {
+	store := newGoalStore(t)
+	d := agent.New()
+	var gotCadence string
+	agent.RegisterGoalTools(d, "agent-1", store, func(_ context.Context, goalID, cadence string) (bool, error) {
+		gotCadence = cadence
+		return true, store.ProcessUpsertDefinition(memory.Process{ID: "goal:" + goalID, Tool: "pursue", GoalID: goalID,
+			IntervalSecs: 86400, Args: `{"schedule":"` + cadence + `"}`})
+	})
+
+	res, err := d.Dispatch(context.Background(), "goal_create", json.RawMessage(`{"description":"a daily news digest","schedule":"24h"}`))
+	if err != nil {
+		t.Fatalf("goal_create: %v", err)
+	}
+	if gotCadence != "24h" || !strings.Contains(res.Output, `"schedule":"24h"`) {
+		t.Errorf("cadence passed %q, result %s; want 24h in both", gotCadence, res.Output)
+	}
+
+	before, _ := store.GoalList()
+	for _, args := range []string{
+		`{"description":"news","schedule":"daily"}`,
+		`{"description":"sub","schedule":"24h","parent_id":"g0","parent_type":"goal"}`,
+	} {
+		if _, err := d.Dispatch(context.Background(), "goal_create", json.RawMessage(args)); err == nil {
+			t.Errorf("goal_create %s: want an error", args)
+		}
+	}
+	if after, _ := store.GoalList(); len(after) != len(before) {
+		t.Errorf("a refused goal_create recorded a goal: %d goals, want %d", len(after), len(before))
+	}
+}
+
+// A session that cannot start a goal's runs refuses a schedule rather than
+// dropping it: the goal would not recur.
+func TestGoalCreateRefusesAScheduleItCannotRun(t *testing.T) {
+	store := newGoalStore(t)
+	d := agent.New()
+	agent.RegisterGoalTools(d, "agent-1", store, nil)
+
+	if _, err := d.Dispatch(context.Background(), "goal_create", json.RawMessage(`{"description":"news","schedule":"24h"}`)); err == nil {
+		t.Error("goal_create with a schedule and no spawn: want an error")
+	}
+	if goals, _ := store.GoalList(); len(goals) != 0 {
+		t.Errorf("a refused goal_create recorded %d goals", len(goals))
 	}
 }

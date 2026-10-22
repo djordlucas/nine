@@ -110,7 +110,8 @@ task_timeout_seconds = 1800
 
 # The dedicated self-reflection session: a Go duration for its cadence, or "off"
 # to remove it. Unset ships enabled at 2m — reflection is how Nine maintains its
-# own self-model, so it is on by default.
+# own self-model, so it is on by default. A tick finding nothing new in the
+# journal since the last reflection runs no turn (docs/processes.md).
 #
 # Removal is subtractive, not merely "stop creating it": an existing session is
 # deactivated on the next boot, so turning reflection off takes effect on a
@@ -952,10 +953,12 @@ Environment variables take priority over `nine.toml` values.
 
 The HTTP API has its own `NINE_API_*` overrides, listed in [API](api.md).
 
-Logs default to `nine.log` beside the binary, falling back to stderr when that
+The daemon logs to `nine.log` beside the binary, falling back to stderr when that
 file cannot be opened (an installed binary in a read-only directory) as well as
-when `NINE_LOG_FILE=off` asks for it — which is what the container sets, so
-`docker logs` carries everything.
+when `NINE_LOG_FILE=off` asks for it — which is what the container image sets, so
+`docker logs` carries everything. The API server always logs to stderr. A client
+command such as `nine status` logs only warnings, to stderr, and never writes
+the file, so the container's health check adds nothing to the log.
 
 A daemon auto-started by a client (`EnsureDaemon`) never inherits the caller's
 stdout/stderr, so its log never mixes into a command's output. Run `nine daemon` yourself to watch a daemon's

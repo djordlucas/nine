@@ -230,7 +230,11 @@ own pursue session ([goal sessions](goal-sessions.md)); the response's
 `pursue_session` is `spawned`, or `limit_reached` when the daemon is at
 `[processes] max_running` and the goal is recorded unattended. Adding `"parent_id"`
 creates a sub-goal instead, which gets no session (`none`); an unknown parent is
-`404`. The API caller creates the goal as the operator, so the role gate on the
+`404`. Adding `"schedule"` makes a top-level goal recurring: a duration of at
+least a minute (`"24h"`) or a 5-field cron expression in UTC (`"0 8 * * *"`).
+Its session then does the whole job once per run instead of checking the goal
+every five minutes. A goal reads its schedule back in `schedule`; a schedule on
+a sub-goal, or one Nine cannot read, is `400`. The API caller creates the goal as the operator, so the role gate on the
 agent's `goal_create` tool does not apply — it decides which agents may start
 background work, and an authenticated API caller is not an agent.
 

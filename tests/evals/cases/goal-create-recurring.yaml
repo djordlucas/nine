@@ -1,0 +1,24 @@
+id: goal-create-recurring
+description: "Ask for work that repeats on a cadence; the model must create a recurring goal (goal_create with a schedule), not a goal checked every few minutes until done."
+track: live
+tier: delegation
+tags: [goals, delegation, recurring]
+
+# A conversation's role: only it starts a goal's runs.
+session:
+  role: orchestrator
+
+prompts:
+  - "Every day, put together a short digest of new Go releases for me. This repeats daily for as long as I want it, so set it up as a recurring goal that runs once a day."
+
+expect:
+  side_effects:
+    goals: { created: 1, recurring: true }
+  trajectory:
+    tools_all_of: [goal_create]
+    no_stall: true
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: medium

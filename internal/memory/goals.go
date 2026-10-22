@@ -5,6 +5,19 @@ import (
 	"fmt"
 )
 
+// PursueDefaultIntervalSecs is how often a goal session with no cadence of its
+// own wakes: every five minutes (docs/goal-sessions.md).
+const PursueDefaultIntervalSecs = 300
+
+// goalColumns are a goal's columns and the schedule its pursue process was
+// given, read with goalFrom.
+const goalColumns = `g.id, g.description, g.status, g.parent_id, g.parent_type, g.created_at, g.updated_at,
+	coalesce(json_extract(p.args, '$.schedule'), '')`
+
+// goalFrom joins each goal to its pursue process, whose id is "goal:" and the
+// goal's.
+const goalFrom = `FROM goals g LEFT JOIN processes p ON p.id = 'goal:' || g.id`
+
 // Goal is one row from the goals table.
 type Goal struct {
 	ID          string `json:"id"`
@@ -19,16 +32,21 @@ type Goal struct {
 	// hand — wrong at some rate, and unverifiable
 	// (adr/concept-consolidation.md C6). The JSON key is unchanged so the
 	// model-facing shape of goal_get is what it always was.
-	Subtree   []string `json:"subtree"`
-	CreatedAt string   `json:"created_at"`
-	UpdatedAt string   `json:"updated_at"`
+	Subtree []string `json:"subtree"`
+	// Schedule is how often the goal recurs: a cron expression or an interval
+	// such as "24h", as it was given when the goal was created and recorded in
+	// its pursue process's args. Empty for a goal worked on until it is done,
+	// whatever its process's wake cadence.
+	Schedule  string `json:"schedule,omitempty"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 func scanGoal(row interface{ Scan(...any) error }) (Goal, error) {
 	var g Goal
 	var parentID, parentType sql.NullString
 	err := row.Scan(&g.ID, &g.Description, &g.Status,
-		&parentID, &parentType, &g.CreatedAt, &g.UpdatedAt)
+		&parentID, &parentType, &g.CreatedAt, &g.UpdatedAt, &g.Schedule)
 	if err != nil {
 		return Goal{}, err
 	}
@@ -62,8 +80,7 @@ func (s *Store) GoalCreate(id, description, parentID, parentType string) error {
 // GoalGet returns a goal by id. Returns (nil, nil) if not found.
 func (s *Store) GoalGet(id string) (*Goal, error) {
 	row := s.db.QueryRow(
-		`SELECT id, description, status, parent_id, parent_type, created_at, updated_at
-		 FROM goals WHERE id = ?`, id)
+		`SELECT `+goalColumns+` `+goalFrom+` WHERE g.id = ?`, id)
 	g, err := scanGoal(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -83,8 +100,7 @@ func (s *Store) GoalGet(id string) (*Goal, error) {
 // GoalList returns all goals ordered by creation time.
 func (s *Store) GoalList() ([]Goal, error) {
 	rows, err := s.db.Query(
-		`SELECT id, description, status, parent_id, parent_type, created_at, updated_at
-		 FROM goals ORDER BY created_at`)
+		`SELECT ` + goalColumns + ` ` + goalFrom + ` ORDER BY g.created_at`)
 	if err != nil {
 		return nil, err
 	}

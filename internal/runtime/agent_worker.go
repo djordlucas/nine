@@ -27,6 +27,10 @@ type turnReq struct {
 	allow []string
 	// depth is the turn's lineage depth, journaled on turn_start.
 	depth int
+	// onTool, when set, is told the name of each tool the turn calls.
+	onTool func(name string)
+	// fresh starts the turn from an empty history (TurnOptions.Fresh).
+	fresh bool
 }
 
 // TurnOptions are how a process's turn is run: the journal's trigger label,
@@ -35,6 +39,14 @@ type TurnOptions struct {
 	Trigger string
 	Allow   []string
 	Depth   int
+	// OnTool, when set, is told the name of each tool the turn calls, on the
+	// worker's goroutine and before the tool runs.
+	OnTool func(name string)
+	// Fresh starts the turn from an empty history: the model sees the turn's
+	// text and what it calls, not the session's earlier turns, which stay in
+	// the journal. A goal session's clock turns run this way
+	// (docs/goal-sessions.md).
+	Fresh bool
 }
 
 // wakeReq is a woken turn: a pipe's report and its lineage depth.
@@ -363,7 +375,10 @@ func (w *AgentWorker) processTurn(req turnReq) {
 		trigger = "user"
 	}
 	w.journal(turn, "turn_start", turnSpan(turn), "", turnStartPayload{Input: text, Trigger: trigger, Depth: req.depth})
-	w.loop.SetHooks(w.turnHooks(turn))
+	if req.fresh {
+		w.loop.ClearHistory()
+	}
+	w.loop.SetHooks(w.turnHooks(turn, req.onTool))
 	slog.Debug("turn_start", "agent_id", w.id, "turn_n", turn)
 	w.loop.SetForceThinkNextTurn(req.forceThink)
 	if req.allow != nil {
@@ -432,7 +447,7 @@ func (w *AgentWorker) processTurn(req turnReq) {
 // These run on the worker goroutine (the loop calls them synchronously), so
 // llmCallN/toolN need no locking. The one exception is OnStage, which the Loop
 // guards itself because a queue wait is reported from the queue's goroutine.
-func (w *AgentWorker) turnHooks(turn int) agent.Hooks {
+func (w *AgentWorker) turnHooks(turn int, onTool func(name string)) agent.Hooks {
 	root := turnSpan(turn)
 	return agent.Hooks{
 		OnContextUpdate: func(used, budget int) {
@@ -442,6 +457,9 @@ func (w *AgentWorker) turnHooks(turn int) agent.Hooks {
 		OnToolStart: func(name, displayName, backend string, input json.RawMessage) {
 			w.emitEvent(protocol.NewToolStartMsg(w.id, name, displayName, backend, input))
 			w.journalToolStart(turn, name, input)
+			if onTool != nil {
+				onTool(name)
+			}
 		},
 		OnToolEnd: func(name, displayName, backend string, input json.RawMessage, out agent.ToolOutcome) {
 			w.emitEvent(protocol.NewToolEndMsg(w.id, name, displayName, backend, input, out.Output))
@@ -600,7 +618,7 @@ func (w *AgentWorker) turnAs(ctx context.Context, text, trigger string) (string,
 func (w *AgentWorker) turnCounted(ctx context.Context, text string, opt TurnOptions) turnResp {
 	ch := make(chan turnResp, 1)
 	select {
-	case w.inbox <- turnReq{ctx: ctx, text: text, respCh: ch, trigger: opt.Trigger, allow: opt.Allow, depth: opt.Depth}:
+	case w.inbox <- turnReq{ctx: ctx, text: text, respCh: ch, trigger: opt.Trigger, allow: opt.Allow, depth: opt.Depth, onTool: opt.OnTool, fresh: opt.Fresh}:
 	case <-ctx.Done():
 		return turnResp{err: ctx.Err()}
 	case <-w.quit:

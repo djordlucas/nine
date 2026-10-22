@@ -50,8 +50,16 @@ Nine starts it, it is not called.
 
 | Process | Runs | Each tick |
 |---|---|---|
-| `pursue` | every [goal session](goal-sessions.md) and [standing agent](predefined-agents.md) | asks the session to assess and act on its goal; a piped report is put to the session as it is |
-| `reflect` | self-reflection, or beside a standing agent | asks the session to reflect and update its self-model |
+| `pursue` | every [goal session](goal-sessions.md) and [standing agent](predefined-agents.md) | asks the session to assess and act on its goal, or for a recurring goal to do one run; a piped report is put to the session as it is |
+| `reflect` | self-reflection, or beside a standing agent | hands the session a digest of what the journal recorded since the last reflection, and asks it to update its self-model; a tick with nothing new is skipped |
+
+The reflection digest is read from the journal, leaving out the reflecting
+session's own events: each other session's turns and the tokens its model calls
+used, turns that failed and why, tool calls that failed, turns stopped for
+repeating a call, and processes and goals that changed. When no other session
+ran a turn and nothing changed, the tick runs no turn and costs nothing; the
+process log says it was skipped. The first tick after a start reads from the
+end of the session's own last turn.
 
 They are read-only programs you can inspect with `nine tools show pursue`.
 

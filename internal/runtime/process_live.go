@@ -62,6 +62,12 @@ type liveProc struct {
 	// version is the tool version this instance runs, for a process Nine
 	// wrote (process_revision.go).
 	version int
+	// idleStreak counts the clock turns in a row that changed nothing
+	// (process_idle.go).
+	idleStreak int
+	// reflectedSeq is, for a reflect process, the last journal seq its digest
+	// read; 0 until the first tick reads where its session left off.
+	reflectedSeq int64
 }
 
 // SetSessions wires the session side of live processes. Without it, live
@@ -406,6 +412,15 @@ func (h *liveHandler) Next(ctx context.Context) (toolvm.Trigger, error) {
 			lp.piped = t.Piped
 			lp.depth = t.Depth
 			lp.mu.Unlock()
+			// A reflect process reflects on what happened since its last tick,
+			// and a tick with nothing new is skipped (reflect_digest.go).
+			if t.Kind == "clock" && lp.row.Tool == "reflect" {
+				digest, ok := h.r.reflectionDigest(lp)
+				if !ok {
+					continue
+				}
+				t.Activity = digest
+			}
 			// A goal-bound process works on its goal as it stands now; a tick
 			// that finds the goal gone or inactive does nothing, as the routine
 			// it replaces did, and the next pass stops the process.
@@ -414,7 +429,8 @@ func (h *liveHandler) Next(ctx context.Context) (toolvm.Trigger, error) {
 				if err != nil || g == nil || g.Status != "active" {
 					continue
 				}
-				t.Goal = &toolvm.TriggerGoal{ID: g.ID, Description: g.Description}
+				t.Goal = &toolvm.TriggerGoal{ID: g.ID, Description: g.Description, Schedule: g.Schedule,
+					Folder: GoalFolder(g.ID, g.Description)}
 			}
 			return t, nil
 		case <-ctx.Done():
@@ -436,8 +452,13 @@ func (h *liveHandler) Turn(ctx context.Context, text string) (string, error) {
 	if err := h.r.spendTurn(row.ID, time.Now()); err != nil {
 		return "", err
 	}
+	var activity turnActivity
 	reply, tokens, err := h.r.sessions.ProcessTurn(ctx, row.SessionID, h.r.sessionParams(row), text,
-		TurnOptions{Trigger: label, Allow: allow, Depth: depth + 1})
+		TurnOptions{Trigger: label, Allow: allow, Depth: depth + 1, OnTool: activity.onTool,
+			Fresh: label == "idle" && row.GoalID != ""})
+	if err == nil {
+		h.r.noteTurn(lp, label, activity.acted, time.Now())
+	}
 	// A turn that ran is counted, failed or not; one stopped before it began
 	// spent nothing.
 	if err == nil || tokens > 0 {

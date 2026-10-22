@@ -146,13 +146,17 @@ setup:
       budget: { turns_per_day: 2 }   # lowers [processes] budget, as a block does
       stopped_by: operator           # start it stopped by operator|model|goal|budget|self
       goal_status: paused            # a goal block's goal starts in this status
+      recurs: 1m                     # a recurring goal, created as goal_create's schedule
+                                     # creates one (at least 1m; every is then ignored)
 
 # ── Infrastructure this case needs but the suite cannot provide. Unset → the
 #    case is reported as skipped (never as a pass, never fatal). ──
 requires_env: [NINE_EVAL_BROWSER]
 
 # ── Background work: after the prompts, wait until these side effects hold or
-#    the time runs out. With processes and a wait, prompts may be empty. ──
+#    the time runs out. With processes and a wait, prompts may be empty. A wait
+#    with no `until` lasts the whole time, for a case asserting that background
+#    work did not happen. ──
 wait:
   seconds: 240
   session: status-report             # grade this process session's journal instead
@@ -189,7 +193,7 @@ expect:
     kv:
       self/prod_db: { equals: "db.prod.example.com" }   # or { matches: "..." }
     workflows: { status: done, min_steps: 3 }
-    goals: { created: 1, pursue_spawned: true }
+    goals: { created: 1, pursue_spawned: true, recurring: true }   # recurring: some goal has a schedule
     notifications: { min: 1, contains: "spent its budget" }   # contains: some notice has it
     processes:                        # processes by id
       time-log: { state: stopped, stopped_by: budget }   # by process id (a goal block's is goal:<name>); or { absent: true }

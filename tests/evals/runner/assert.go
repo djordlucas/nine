@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 
 	"nine/internal/memory"
@@ -184,6 +185,9 @@ func (g *grader) gradeSideEffects() {
 			}
 			if gexp.PursueSpawned && !pursueSpawned(store) {
 				g.fail("side_effect goals.pursue_spawned: no active pursue session")
+			}
+			if gexp.Recurring && !slices.ContainsFunc(goals, func(gl memory.Goal) bool { return gl.Schedule != "" }) {
+				g.fail("side_effect goals.recurring: no goal has a schedule")
 			}
 		}
 	}

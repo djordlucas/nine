@@ -150,6 +150,29 @@ func TestDaemonRunsAsNonRoot(t *testing.T) {
 	}
 }
 
+// TestDaemonLogsReachDockerLogs: the daemon logs to stderr in the image, so
+// `docker logs` carries its account of itself, and a client command — the
+// health check runs one every 30 seconds — neither logs a line there nor
+// leaves a root-owned log file beside the binary that the daemon could not
+// write.
+func TestDaemonLogsReachDockerLogs(t *testing.T) {
+	id := startContainer(t)
+	for range 3 {
+		mustDocker(t, "exec", id, "nine", "status")
+	}
+
+	logs, err := exec.Command("docker", "logs", id).CombinedOutput()
+	if err != nil {
+		t.Fatalf("docker logs: %v", err)
+	}
+	if n := strings.Count(string(logs), "msg=nine version="); n != 1 {
+		t.Errorf("docker logs has %d version lines, want the daemon's one:\n%s", n, logs)
+	}
+	if out, err := dockerRun(t, "exec", id, "ls", "/usr/local/bin/nine.log"); err == nil {
+		t.Errorf("a log file beside the binary exists: %s", out)
+	}
+}
+
 // TestServiceUserIsUID1000 pins the uid rather than just "not root", because a
 // bind-mounted /data from a host user is only writable if the uid matches what
 // the docs tell people to expect.

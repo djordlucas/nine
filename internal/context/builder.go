@@ -31,6 +31,10 @@ type Config struct {
 	// advertises, best-ranked against the turn's query. 0 is
 	// DefaultHybridPicks. Ignored unless hybrid.
 	Picks int
+	// Calibration, when set, scales the estimate to what the provider counts:
+	// the budget is spent in calibrated tokens, and the usage the builder
+	// reports is calibrated too.
+	Calibration *Calibration
 }
 
 // ToolWithVector is a tool definition paired with its embedding for ranking.
@@ -132,7 +136,10 @@ func (b *Builder) BuildReport(input BuildInput) Report {
 // false the returned Report is the zero value (the hot path skips the extra
 // bookkeeping).
 func (b *Builder) assemble(input BuildInput, report bool) (llm.Request, int, Report) {
-	remaining := b.cfg.Budget
+	// The budget is spent in estimated tokens, so a calibration above 1.0
+	// leaves less of it: what the provider will count fits the real budget.
+	budget := b.cfg.Budget * 1000 / b.cfg.Calibration.Scale()
+	remaining := budget
 	var rep Report
 	add := func(name, priority string, tokens int, included bool, detail string) {
 		if report {
@@ -286,7 +293,7 @@ func (b *Builder) assemble(input BuildInput, report bool) (llm.Request, int, Rep
 		messages = append(messages, entryToMessages(e)...)
 	}
 
-	used := b.cfg.Budget - remaining
+	used := b.Calibrated(budget - remaining)
 	if report {
 		rep.Budget = b.cfg.Budget
 		rep.Used = used
@@ -298,6 +305,21 @@ func (b *Builder) assemble(input BuildInput, report bool) (llm.Request, int, Rep
 
 // Budget returns the total token budget this builder was configured with.
 func (b *Builder) Budget() int { return b.cfg.Budget }
+
+// Calibrated converts an estimate to the provider's count, as the builder's
+// Calibration has learned it.
+func (b *Builder) Calibrated(estimated int) int {
+	return estimated * b.cfg.Calibration.Scale() / 1000
+}
+
+// Observe feeds the Calibration one call: the usage the builder reported for
+// the request, and the input tokens the provider counted.
+func (b *Builder) Observe(reported, actual int) {
+	if b.cfg.Calibration == nil {
+		return
+	}
+	b.cfg.Calibration.Observe(reported*1000/b.cfg.Calibration.Scale(), actual)
+}
 
 // Picks reports whether requests advertise picks, so a caller knows whether a
 // ResultVector is worth embedding.

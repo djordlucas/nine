@@ -381,6 +381,9 @@ type Msg struct {
 	TimeoutSeconds int      `json:"timeout_seconds,omitempty"`
 	Answer         string   `json:"answer,omitempty"`
 	Origin         string   `json:"origin,omitempty"`
+	// Schedule is goal_create's cadence for a recurring top-level goal: a
+	// duration ("24h") or a cron expression.
+	Schedule string `json:"schedule,omitempty"`
 }
 
 // HumanRequest is a pending request for human input, surfaced to a client as
@@ -967,9 +970,10 @@ func NewPluginCallMsg(tool string, args json.RawMessage) Msg {
 }
 
 // NewGoalCreateMsg creates a goal on the operator's behalf. parentID names a
-// parent goal for a sub-goal and is empty for a top-level goal.
-func NewGoalCreateMsg(description, parentID string) Msg {
-	return Msg{Type: TypeGoalCreate, Text: description, ID: parentID}
+// parent goal for a sub-goal and is empty for a top-level goal; schedule makes
+// a top-level goal recurring and is empty otherwise.
+func NewGoalCreateMsg(description, parentID, schedule string) Msg {
+	return Msg{Type: TypeGoalCreate, Text: description, ID: parentID, Schedule: schedule}
 }
 
 // NewGoalDeleteMsg deletes a goal and its sub-goals and stops its session.

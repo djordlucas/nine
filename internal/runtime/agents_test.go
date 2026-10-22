@@ -21,14 +21,18 @@ func TestInternalAgentWithoutSupervisorHasNoHooks(t *testing.T) {
 	}
 }
 
-// A supervisor brings stall detection after five quiet turns and a completion
-// callback; an explicit stall config takes precedence over the default.
+// A supervisor brings a goal session stall detection after five quiet turns,
+// and every session a completion callback; a session that owns no goal does
+// not stall. An explicit stall config takes precedence over the default.
 func TestInternalAgentSupervisorHooks(t *testing.T) {
 	sup := runtime.NewSupervisor(8)
 
-	s := runtime.InternalAgent{Build: nilLoop, Supervisor: sup}.NewSession("a", runtime.RoleParams{})
+	s := runtime.InternalAgent{Build: nilLoop, Supervisor: sup}.NewSession("a", runtime.RoleParams{OwnsGoal: true})
 	if s.Stall.Limit != 5 || s.Stall.OnStall == nil {
 		t.Errorf("stall = %+v, want limit 5 with a callback", s.Stall)
+	}
+	if c := (runtime.InternalAgent{Build: nilLoop, Supervisor: sup}.NewSession("self-reflection", runtime.RoleParams{})); c.Stall.Limit != 0 {
+		t.Errorf("a session with no goal stalls: %+v", c.Stall)
 	}
 	if s.OnComplete == nil {
 		t.Error("no completion callback with a supervisor")

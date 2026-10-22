@@ -1,0 +1,34 @@
+id: process-goal-recurring
+description: "A recurring goal's run writes its result to the goal's folder, keeps its notes there for the next run, and leaves the goal active: its process is still running."
+track: live
+tier: multi_step
+tags: [processes, goals, recurring]
+
+setup:
+  processes:
+    - name: date-digest
+      tool: pursue
+      goal: "Each run, append the current UTC date as one line to digest.md."
+      recurs: 1m
+
+wait:
+  seconds: 540
+  session: date-digest
+  until:
+    files:
+      goals/each-run-append-the-current-utc-date-as-date-digest/digest.md: { matches: "\\d{4}-\\d{2}-\\d{2}" }
+      goals/each-run-append-the-current-utc-date-as-date-digest/notes.md: { matches: "\\S" }
+
+expect:
+  side_effects:
+    files:
+      goals/each-run-append-the-current-utc-date-as-date-digest/digest.md: { matches: "\\d{4}-\\d{2}-\\d{2}" }
+      goals/each-run-append-the-current-utc-date-as-date-digest/notes.md: { matches: "\\S" }
+    processes:
+      goal:date-digest: { state: running }
+
+runs: 3
+pass_threshold: "2/3"
+timeout_seconds: 600
+models:
+  expected_pass_min_class: medium

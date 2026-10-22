@@ -146,6 +146,8 @@ type GrantsDecideReq struct {
 type GoalCreateReq struct {
 	Description string
 	ParentID    string
+	// Schedule makes a top-level goal recurring (cron.ParseCadence).
+	Schedule string
 }
 
 // GoalDeleteReq deletes a goal, its sub-goals, and stops its pursue session.
@@ -318,7 +320,7 @@ func DecodeRequest(m Msg) (Request, error) {
 	case TypeGrantsDecide:
 		return GrantsDecideReq{ID: m.RequestID, Action: m.Text}, nil
 	case TypeGoalCreate:
-		return GoalCreateReq{Description: m.Text, ParentID: m.ID}, nil
+		return GoalCreateReq{Description: m.Text, ParentID: m.ID, Schedule: m.Schedule}, nil
 	case TypeGoalDelete:
 		return GoalDeleteReq{ID: m.Text}, nil
 	case TypeGoalSetStatus:

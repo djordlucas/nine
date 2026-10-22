@@ -26,6 +26,10 @@ type fakeSessions struct {
 	allows [][]string
 	// depths records each turn's lineage depth.
 	depths []int
+	// tools are the tools each turn calls, told to the turn's OnTool.
+	tools []string
+	// fresh records whether each turn started from an empty history.
+	fresh []bool
 }
 
 func (f *fakeSessions) ProcessTurn(_ context.Context, id string, _ RoleParams, text string, opt TurnOptions) (string, int, error) {
@@ -34,6 +38,12 @@ func (f *fakeSessions) ProcessTurn(_ context.Context, id string, _ RoleParams, t
 	f.turns = append(f.turns, id+"|"+opt.Trigger+"|"+text)
 	f.allows = append(f.allows, opt.Allow)
 	f.depths = append(f.depths, opt.Depth)
+	f.fresh = append(f.fresh, opt.Fresh)
+	if opt.OnTool != nil {
+		for _, name := range f.tools {
+			opt.OnTool(name)
+		}
+	}
 	if f.fail != nil {
 		return "", f.tokens, f.fail
 	}

@@ -170,7 +170,10 @@ The daemon asks its `Agent` for each session it creates or resumes
 worker runs around turns: stall detection, the notifications prepended to a user
 turn, and a completion callback. `InternalAgent` is Nine's own agent: its loop
 comes from `AgentBuilder.BuildForRole`, its notifications from the
-`NotifStore`, and its stall and completion events go to the `Supervisor`.
+`NotifStore`, and its stall and completion events go to the `Supervisor`. Only
+a session that owns a goal gets stall detection, since a stall pauses the goal;
+a conversation or a reflection that answers without calling a tool is not
+stuck.
 
 Every client connection is handled by one goroutine (`handleConn`), which reads
 newline-delimited JSON and routes each `protocol.Msg` through `dispatch`:
@@ -253,6 +256,13 @@ Cross-session parallelism (two different conversations, or a conversation plus
 its pursue session) is real, but it is bounded downstream by the LLM queue's
 `maxConcurrent`. For a local Ollama model you set `max_concurrent = 1` and the
 queue serializes *everything*, ordered by priority.
+
+The queue also absorbs a provider's rate limit. A request refused with HTTP 429
+is sent again after 5, 15, 30 and 60 seconds, or after the provider's
+`Retry-After` when it gives one, capped at 2 minutes. It keeps its slot while it
+waits, since the limit is the provider's and the next request would be refused
+too. Nothing has streamed when a 429 comes back, so a retry repeats nothing.
+Only after the last retry does the turn fail.
 
 ---
 

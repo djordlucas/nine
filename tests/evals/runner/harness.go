@@ -211,11 +211,21 @@ func startProcesses(ctx context.Context, lv *live, setup []ProcessSetup) error {
 		if role == "" {
 			role = "monitor"
 		}
-		if err := store.GoalCreate(b.Name, b.Goal, "", runtime.ConfigGoalOrigin); err != nil {
-			return err
-		}
-		if _, err := lv.Daemon.SpawnStandingSession(ctx, b.Name, role, b.Delegates, every, b.Schedule, b.Budget); err != nil {
-			return err
+		if recurs := setup[i].Recurs; recurs != "" {
+			// A recurring goal, created the way goal_create creates one.
+			if err := store.GoalCreate(b.Name, b.Goal, "", "conversation"); err != nil {
+				return err
+			}
+			if _, err := lv.Daemon.SpawnGoalSession(ctx, b.Name, recurs); err != nil {
+				return err
+			}
+		} else {
+			if err := store.GoalCreate(b.Name, b.Goal, "", runtime.ConfigGoalOrigin); err != nil {
+				return err
+			}
+			if _, err := lv.Daemon.SpawnStandingSession(ctx, b.Name, role, b.Delegates, every, b.Schedule, b.Budget); err != nil {
+				return err
+			}
 		}
 		// At once, so a process a case starts stopped does not count against
 		// max_running when the next block is spawned.
@@ -258,6 +268,15 @@ func applyStartState(store *memory.Store, id string, p ProcessSetup) error {
 func waitFor(ctx context.Context, r *RunResult, w *WaitSpec) {
 	probe := &Case{Expect: Expect{SideEffects: w.Until}}
 	deadline := time.Now().Add(time.Duration(w.Seconds) * time.Second)
+	// With nothing to wait for, the wait is the whole time: a case asserting
+	// that background work did not happen gives it that long to.
+	if !(Expect{SideEffects: w.Until}).hasAny() {
+		select {
+		case <-time.After(time.Until(deadline)):
+		case <-ctx.Done():
+		}
+		return
+	}
 	for time.Now().Before(deadline) && ctx.Err() == nil {
 		g := &grader{c: probe, res: r}
 		g.gradeSideEffects()

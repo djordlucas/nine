@@ -46,12 +46,21 @@ type Trigger struct {
 	Depth int `json:"-"`
 	// Goal is the goal a goal-bound process works on, as it stands now.
 	Goal *TriggerGoal `json:"goal,omitempty"`
+	// Activity is, for a reflect process's clock tick, a digest of what the
+	// journal recorded since its last reflection.
+	Activity string `json:"activity,omitempty"`
 }
 
 // TriggerGoal is the goal a trigger carries to a goal-bound process.
 type TriggerGoal struct {
 	ID          string `json:"id"`
 	Description string `json:"description"`
+	// Schedule is how often a recurring goal runs; empty for a goal worked on
+	// until it is done.
+	Schedule string `json:"schedule,omitempty"`
+	// Folder is the workspace folder for what the goal produces, ending in a
+	// slash (runtime.GoalFolder).
+	Folder string `json:"folder,omitempty"`
 }
 
 // ProcessHandler is the host side of nine:process for one live process: the

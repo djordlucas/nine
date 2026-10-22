@@ -86,9 +86,26 @@ function GoalList({ current }: { current?: string }) {
 }
 
 /** A form that creates a goal: top-level, or a sub-goal of parent. */
+/** How often a new top-level goal recurs; "" is a goal worked on until done. */
+const CADENCES = [
+  { value: '', label: 'Until done' },
+  { value: '1h', label: 'Every hour' },
+  { value: '6h', label: 'Every 6 hours' },
+  { value: '24h', label: 'Daily' },
+  { value: '168h', label: 'Weekly' },
+];
+
+/** A goal's schedule as a person reads it: "daily", "every 6h", or the cron line. */
+export function cadenceLabel(schedule: string): string {
+  const known = CADENCES.find((c) => c.value && c.value === schedule);
+  if (known) return known.label.toLowerCase();
+  return /^\d+[hms]$/.test(schedule) ? `every ${schedule}` : `cron ${schedule} (UTC)`;
+}
+
 function NewGoal({ parent }: { parent?: string }) {
   const { route } = useLocation();
   const [text, setText] = useState('');
+  const [cadence, setCadence] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const create = async (e: Event) => {
@@ -97,7 +114,7 @@ function NewGoal({ parent }: { parent?: string }) {
     setBusy(true);
     setError(null);
     const { data, error: err } = await api.POST('/goals', {
-      body: parent ? { description: text, parent_id: parent } : { description: text },
+      body: parent ? { description: text, parent_id: parent } : { description: text, ...(cadence ? { schedule: cadence } : {}) },
     });
     setBusy(false);
     if (!data) {
@@ -105,6 +122,7 @@ function NewGoal({ parent }: { parent?: string }) {
       return;
     }
     setText('');
+    setCadence('');
     if (data.pursue_session === 'limit_reached') {
       setError('Created, but nothing pursues it yet: the daemon is at its process limit.');
     }
@@ -112,7 +130,7 @@ function NewGoal({ parent }: { parent?: string }) {
   };
   const label = parent ? 'New sub-goal' : 'New goal';
   return (
-    <form class={styles.create} onSubmit={(e) => void create(e)}>
+    <form class={`${styles.create} ${parent ? '' : styles.withCadence}`} onSubmit={(e) => void create(e)}>
       <input
         class="input"
         aria-label={label}
@@ -120,6 +138,21 @@ function NewGoal({ parent }: { parent?: string }) {
         value={text}
         onInput={(e) => setText(e.currentTarget.value)}
       />
+      {!parent && (
+        <select
+          class="input"
+          aria-label="Repeat"
+          title="Until done: worked on until attained. A cadence makes it recurring: the whole job runs once per period."
+          value={cadence}
+          onChange={(e) => setCadence(e.currentTarget.value)}
+        >
+          {CADENCES.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+      )}
       <button type="submit" class="button" disabled={busy || !text.trim()}>
         {parent ? 'Add' : 'Create'}
       </button>
@@ -221,6 +254,8 @@ function GoalDetail({ id }: { id: string }) {
             </dd>
           </>
         )}
+        <dt>Repeats</dt>
+        <dd>{g.schedule ? cadenceLabel(g.schedule) : 'no: worked on until done'}</dd>
         <dt>Created</dt>
         <dd>{ago(g.created_at)}</dd>
         <dt>Updated</dt>

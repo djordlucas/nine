@@ -3337,6 +3337,11 @@ components:
         parent_id:
           description: A goal to create this one under. Omit for a top-level goal, which gets its own session.
           type: string
+        schedule:
+          description: Makes a top-level goal recurring. Its session then does the whole job once per run,
+            on this cadence, instead of checking it every five minutes until it is done. A duration of
+            at least a minute (24h, 90m) or a 5-field cron expression in UTC (0 8 * * *).
+          type: string
       required:
       - description
     CreateGoalResponse:
@@ -3727,6 +3732,10 @@ components:
           type: string
         parent_type:
           type: string
+        schedule:
+          description: How often a recurring goal runs, as a duration (24h) or a cron expression. Absent
+            for a goal worked on until it is done.
+          type: string
         status:
           type: string
         subtree:
@@ -3870,6 +3879,10 @@ components:
         parent_id:
           type: string
         parent_type:
+          type: string
+        schedule:
+          description: How often a recurring goal runs, as a duration (24h) or a cron expression. Absent
+            for a goal worked on until it is done.
           type: string
         status:
           type: string

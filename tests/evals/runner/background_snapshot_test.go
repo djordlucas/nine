@@ -144,6 +144,11 @@ func TestBackgroundSnapshots(t *testing.T) {
 
 	t.Run("self-reflection", func(t *testing.T) {
 		lv, p := startBackground(t, "")
+		// A reflection with nothing new to read is skipped, so another session
+		// runs a turn first; its digest is what the reflection is shown.
+		if _, _, err := lv.Daemon.ProcessTurn(context.Background(), "earlier-work", runtime.RoleParams{}, "hello", runtime.TurnOptions{Trigger: "user"}); err != nil {
+			t.Fatal(err)
+		}
 		if err := runtime.ReconcileSelfReflection(lv.Result.Store, time.Second); err != nil {
 			t.Fatal(err)
 		}

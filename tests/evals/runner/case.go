@@ -159,11 +159,14 @@ type GeneratedProcessSetup struct {
 
 // ProcessSetup is one [[process]] block, with the same fields.
 type ProcessSetup struct {
-	Name      string         `yaml:"name"`
-	Tool      string         `yaml:"tool"`
-	Every     string         `yaml:"every"`
-	Schedule  string         `yaml:"schedule"`
-	Goal      string         `yaml:"goal"`
+	Name     string `yaml:"name"`
+	Tool     string `yaml:"tool"`
+	Every    string `yaml:"every"`
+	Schedule string `yaml:"schedule"`
+	Goal     string `yaml:"goal"`
+	// Recurs makes the goal recurring, as goal_create's schedule does: a
+	// duration of at least a minute, or a cron expression. Every is ignored.
+	Recurs    string         `yaml:"recurs"`
 	Role      string         `yaml:"role"`
 	Delegates bool           `yaml:"delegates"`
 	Session   string         `yaml:"session"`
@@ -337,6 +340,8 @@ type WorkflowExpect struct {
 type GoalExpect struct {
 	Created       int  `yaml:"created"`
 	PursueSpawned bool `yaml:"pursue_spawned"`
+	// Recurring asserts that some goal has a schedule (docs/goal-sessions.md).
+	Recurring bool `yaml:"recurring"`
 }
 
 // CountExpect asserts a minimum count.

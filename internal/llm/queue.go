@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"context"
 	"sync"
+	"time"
 )
 
 type queueResult struct {
@@ -52,6 +53,10 @@ type Queue struct {
 	mu            sync.Mutex
 	pending       itemHeap
 	inflight      int
+	// rateWaits and sleep are the waits before each retry of a rate-limited
+	// request, and how they are waited; tests shorten them.
+	rateWaits []time.Duration
+	sleep     func(context.Context, time.Duration) error
 }
 
 // NewQueue creates a Queue backed by provider, limiting concurrency.
@@ -59,7 +64,7 @@ func NewQueue(provider Provider, maxConcurrent int) *Queue {
 	if maxConcurrent < 1 {
 		maxConcurrent = 1
 	}
-	return &Queue{provider: provider, maxConcurrent: maxConcurrent}
+	return &Queue{provider: provider, maxConcurrent: maxConcurrent, rateWaits: rateLimitWaits, sleep: sleepCtx}
 }
 
 // Submit enqueues a request at the given priority and blocks until the provider
@@ -104,7 +109,7 @@ func (q *Queue) run(item *queueItem) {
 	if item.ctx.Err() != nil {
 		err = item.ctx.Err()
 	} else {
-		resp, err = q.provider.Complete(item.ctx, item.req)
+		resp, err = completeRetryingRateLimits(item.ctx, q.provider, item.req, q.rateWaits, q.sleep)
 	}
 
 	// Non-blocking send: if the caller already left via ctx.Done() the channel

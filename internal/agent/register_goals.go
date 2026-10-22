@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"nine/internal/cron"
 	"nine/internal/llm"
 	"nine/internal/memory"
 )
@@ -15,8 +16,8 @@ var goalToolDefs = []llm.ToolDef{
 	{
 		Name:        "goal_create",
 		DisplayName: "Create Goal",
-		Description: "Create a persistent, open-ended goal (no defined end condition, e.g. 'monitor this repo for security issues'). A top-level goal gets a background session that works on it between your turns.",
-		InputSchema: json.RawMessage(`{"type":"object","required":["description"],"properties":{"description":{"type":"string"},"parent_id":{"type":"string","description":"The conversation or goal this one comes from. Defaults to the current conversation."},"parent_type":{"type":"string","enum":["conversation","goal"]}}}`),
+		Description: "Create a persistent, open-ended goal (no defined end condition, e.g. 'monitor this repo for security issues'). A top-level goal gets a background session that works on it between your turns. Give a schedule for recurring work ('keep me updated', 'a daily digest'): the session then does the whole job once per run instead of checking every few minutes.",
+		InputSchema: json.RawMessage(`{"type":"object","required":["description"],"properties":{"description":{"type":"string"},"schedule":{"type":"string","description":"For recurring work on a top-level goal: how often it runs, as a duration (24h, 6h) or a 5-field cron expression ('0 8 * * *' is daily at 08:00 UTC). Leave out for a goal to work on until it is done."},"parent_id":{"type":"string","description":"The conversation or goal this one comes from. Defaults to the current conversation."},"parent_type":{"type":"string","enum":["conversation","goal"]}}}`),
 	},
 	{
 		Name:        "goal_get",
@@ -65,6 +66,7 @@ func RegisterGoalCreate(d *Dispatcher, agentID string, store *memory.Store, spaw
 	d.handlers["goal_create"] = func(ctx context.Context, args json.RawMessage) (string, error) {
 		var req struct {
 			Description string `json:"description"`
+			Schedule    string `json:"schedule"`
 			ParentID    string `json:"parent_id"`
 			ParentType  string `json:"parent_type"`
 		}
@@ -77,6 +79,17 @@ func RegisterGoalCreate(d *Dispatcher, agentID string, store *memory.Store, spaw
 		if req.ParentID == "" {
 			req.ParentID = agentID
 			req.ParentType = "conversation"
+		}
+		if req.Schedule != "" {
+			if req.ParentType != "conversation" {
+				return "", fmt.Errorf("goal_create: only a top-level goal recurs; a sub-goal is worked on in its parent's runs")
+			}
+			if spawnFn == nil {
+				return "", fmt.Errorf("goal_create: this session cannot start a goal's runs, so its goal cannot recur; leave out the schedule")
+			}
+			if _, _, err := cron.ParseCadence(req.Schedule); err != nil {
+				return "", fmt.Errorf("goal_create: %w", err)
+			}
 		}
 		id := memory.NewID()
 		if err := store.GoalCreate(id, req.Description, req.ParentID, req.ParentType); err != nil {
@@ -97,7 +110,7 @@ func RegisterGoalCreate(d *Dispatcher, agentID string, store *memory.Store, spaw
 		}
 
 		if spawnFn != nil && req.ParentType == "conversation" {
-			spawned, err := spawnFn(ctx, id)
+			spawned, err := spawnFn(ctx, id, req.Schedule)
 			if err != nil {
 				return "", err
 			}
@@ -105,6 +118,10 @@ func RegisterGoalCreate(d *Dispatcher, agentID string, store *memory.Store, spaw
 				result["pursue_session"] = "spawned"
 			} else {
 				result["pursue_session"] = "limit_reached"
+			}
+			// The cadence lives on the goal's process, which the spawn wrote.
+			if g, err := store.GoalGet(id); err == nil && g != nil && g.Schedule != "" {
+				result["schedule"] = g.Schedule
 			}
 		}
 

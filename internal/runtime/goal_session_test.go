@@ -26,7 +26,7 @@ func goalDaemon(t *testing.T) (*runtime.Daemon, *memory.Store) {
 
 func TestSpawnGoalSessionRequiresAProcessStore(t *testing.T) {
 	d := runtime.New("", nil, nil)
-	if _, err := d.SpawnGoalSession(context.Background(), "goal-1"); err == nil {
+	if _, err := d.SpawnGoalSession(context.Background(), "goal-1", ""); err == nil {
 		t.Fatal("SpawnGoalSession without a process store: want error, got nil")
 	}
 }
@@ -37,7 +37,7 @@ func TestSpawnGoalSessionRequiresAProcessStore(t *testing.T) {
 func TestSpawnGoalSessionWritesItsProcessOnce(t *testing.T) {
 	d, store := goalDaemon(t)
 	for i := 0; i < 2; i++ {
-		spawned, err := d.SpawnGoalSession(context.Background(), "goal-1")
+		spawned, err := d.SpawnGoalSession(context.Background(), "goal-1", "")
 		if err != nil || !spawned {
 			t.Fatalf("SpawnGoalSession #%d = %v, %v", i+1, spawned, err)
 		}
@@ -93,13 +93,13 @@ func TestSpawnGoalSessionRespectsMaxGoalSessions(t *testing.T) {
 	d, _ := goalDaemon(t)
 	d.SetMaxRunning(1)
 
-	if spawned, err := d.SpawnGoalSession(context.Background(), "goal-1"); err != nil || !spawned {
+	if spawned, err := d.SpawnGoalSession(context.Background(), "goal-1", ""); err != nil || !spawned {
 		t.Fatalf("SpawnGoalSession(goal-1) = (%v, %v), want (true, nil)", spawned, err)
 	}
-	if spawned, err := d.SpawnGoalSession(context.Background(), "goal-2"); err != nil || spawned {
+	if spawned, err := d.SpawnGoalSession(context.Background(), "goal-2", ""); err != nil || spawned {
 		t.Errorf("SpawnGoalSession(goal-2) = (%v, %v), want (false, nil) at the cap", spawned, err)
 	}
-	if spawned, err := d.SpawnGoalSession(context.Background(), "goal-1"); err != nil || !spawned {
+	if spawned, err := d.SpawnGoalSession(context.Background(), "goal-1", ""); err != nil || !spawned {
 		t.Errorf("re-spawning goal-1 at the cap = (%v, %v), want (true, nil)", spawned, err)
 	}
 	if n := d.RunningProcessCountForTest(); n != 1 {
@@ -136,5 +136,54 @@ func TestReconcileSelfReflection(t *testing.T) {
 	p, _, _ = store.ProcessGet(runtime.SelfReflectionAgentID)
 	if p.State != memory.ProcessRunning || p.IntervalSecs != 3600 {
 		t.Errorf("turned on again: %+v, want running at the new cadence", p)
+	}
+}
+
+// A recurring goal's process wakes on its cadence: a duration is its interval,
+// a cron expression its schedule, and the goal reads the cadence back. A bad
+// cadence writes nothing.
+func TestSpawnGoalSessionWithACadence(t *testing.T) {
+	d, store := goalDaemon(t)
+	for _, c := range []struct {
+		goal, cadence string
+		interval      int
+		schedule      string
+	}{
+		{"daily", "24h", 86400, ""},
+		{"mornings", "0 8 * * *", 0, "0 8 * * *"},
+	} {
+		if err := store.GoalCreate(c.goal, "news", "", "operator"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := d.SpawnGoalSession(context.Background(), c.goal, c.cadence); err != nil {
+			t.Fatalf("SpawnGoalSession(%s, %q): %v", c.goal, c.cadence, err)
+		}
+		p, _, _ := store.ProcessGet("goal:" + c.goal)
+		if p.IntervalSecs != c.interval || p.Schedule != c.schedule {
+			t.Errorf("%s: interval %d, schedule %q; want %d, %q", c.goal, p.IntervalSecs, p.Schedule, c.interval, c.schedule)
+		}
+		g, _ := store.GoalGet(c.goal)
+		if g.Schedule != c.cadence {
+			t.Errorf("%s: goal schedule %q, want %q", c.goal, g.Schedule, c.cadence)
+		}
+	}
+
+	if _, err := d.SpawnGoalSession(context.Background(), "bad", "daily"); err == nil {
+		t.Error("an unreadable cadence was accepted")
+	}
+	if _, found, _ := store.ProcessGet("goal:bad"); found {
+		t.Error("an unreadable cadence wrote a process")
+	}
+
+	// A wake cadence alone, as a [[process]] block gives one, does not make a
+	// goal recurring.
+	if err := store.GoalCreate("watch", "watch the repo", "", "config"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SpawnStandingSession(context.Background(), "watch", "", false, time.Hour, "", config.BudgetConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	if g, _ := store.GoalGet("watch"); g.Schedule != "" {
+		t.Errorf("a standing agent's every made its goal recurring: %q", g.Schedule)
 	}
 }
