@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"nine/internal/api/apigen"
+	"nine/internal/cron"
 	"nine/internal/protocol"
 )
 
@@ -100,6 +101,19 @@ func (s *Server) CreateGoal(ctx context.Context, request apigen.CreateGoalReques
 	if request.Body.ParentId != nil {
 		parentID = *request.Body.ParentId
 	}
+	schedule := ""
+	if request.Body.Schedule != nil {
+		schedule = strings.TrimSpace(*request.Body.Schedule)
+	}
+	if schedule != "" {
+		if parentID != "" {
+			return apigen.CreateGoal400JSONResponse(
+				errorBody("invalid_request", "only a top-level goal recurs; a sub-goal is worked on in its parent's runs", nil)), nil
+		}
+		if _, _, err := cron.ParseCadence(schedule); err != nil {
+			return apigen.CreateGoal400JSONResponse(errorBody("invalid_request", err.Error(), nil)), nil
+		}
+	}
 
 	cl, err := s.getDaemonClient()
 	if err != nil {
@@ -108,7 +122,7 @@ func (s *Server) CreateGoal(ctx context.Context, request apigen.CreateGoalReques
 	}
 	defer cl.Close()
 
-	res, err := cl.CreateGoal(request.Body.Description, parentID)
+	res, err := cl.CreateGoal(request.Body.Description, parentID, schedule)
 	if err != nil {
 		if errNotFound(err) {
 			return apigen.CreateGoal404JSONResponse(

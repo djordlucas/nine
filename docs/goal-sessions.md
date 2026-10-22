@@ -41,6 +41,26 @@ prompts come from a process instead of a person.
 What "useful action" means is left to the model. The cycle supplies the
 occasion and the goal, not the plan.
 
+## Recurring goals
+
+A goal with a **schedule** recurs: "keep me updated on Canadian news", "a daily
+digest of the repository's issues". Such a goal is never attained, so checking
+it every five minutes finds nothing to do once its first pass is over. With a
+schedule, `pursue` wakes on that cadence instead, and each tick is one run that
+does the whole job again: find what is new since the last run, write or update
+its result, end the turn. The goal stays active between runs.
+
+| Given as | Example | Runs |
+|---|---|---|
+| A duration, at least a minute | `24h`, `6h`, `90m` | that long after the previous run |
+| A 5-field cron expression | `0 8 * * *` | at those times, in UTC |
+
+The model sets it with `goal_create`'s `schedule`, the operator with
+`POST /goals` (`"schedule"`), the web UI's Repeat choice, or `every`/`schedule`
+on a goal `[[process]]` block. Only a top-level goal recurs: a sub-goal is worked
+on in its parent's runs. The schedule lives on the goal's pursue process, and
+the goal reads it back as `schedule`.
+
 ## Only top-level goals get one
 
 Sub-goals do not get their own sessions. A goal spawned by another goal is
@@ -70,6 +90,7 @@ that its work is finished is the agent's call to make.
 | Fourteen running processes | `[processes] max_running`, default 14, counts goal sessions with every other running process. At the cap, creating a goal still records the goal but starts no session for it. The goal is real and unattended rather than queued, so how far behind pursuit has fallen stays visible. |
 | Sub-goals get no session | Only top-level goals are paired with a session. A goal spawned by another is worked on by the session already pursuing its parent. |
 | Five-minute wake interval | A goal session's `pursue` process ticks every five minutes while it acts, and up to every 6 hours while it only looks. The cycle supplies the occasion and the goal, not a plan — what counts as useful action is left to the model. |
+| A schedule is set once | A goal's schedule is set when it is created. Changing it means creating the goal again. |
 | What counts as only looking | A fixed list of read tools. A tool missing from it counts as acting, so a new tool can make the clock slow less often, never more. A goal session on a cron `schedule` keeps its schedule. |
 | Stall detection releases the slot | Five consecutive turns that call no tool count as a stall, which pauses the goal and so stops its process and frees the slot: one wedged pursuit cannot hold capacity indefinitely. Progress on that goal stops until it is resumed. |
 | Only some roles create them | A role that may not spawn goals creates no goal sessions. The operator is not role-gated. |

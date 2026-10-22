@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"nine/internal/cron"
 	"nine/internal/memory"
 	"nine/internal/protocol"
 )
@@ -100,6 +101,16 @@ func (d *Daemon) handleGoalCreate(ctx context.Context, enc *json.Encoder, r prot
 		return
 	}
 	parentType := operatorGoalOrigin
+	if r.Schedule != "" {
+		if r.ParentID != "" {
+			enc.Encode(protocol.NewErrorMsg("only a top-level goal recurs; a sub-goal is worked on in its parent's runs")) //nolint:errcheck
+			return
+		}
+		if _, _, err := cron.ParseCadence(r.Schedule); err != nil {
+			enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+			return
+		}
+	}
 	if r.ParentID != "" {
 		parent, err := d.store.GoalGet(r.ParentID)
 		if err != nil {
@@ -121,7 +132,7 @@ func (d *Daemon) handleGoalCreate(ctx context.Context, enc *json.Encoder, r prot
 
 	pursue := "none"
 	if r.ParentID == "" {
-		spawned, err := d.SpawnGoalSession(ctx, id)
+		spawned, err := d.SpawnGoalSession(ctx, id, r.Schedule)
 		if err != nil {
 			// A top-level goal is a promise that something pursues it. Leaving
 			// the row behind would make an unattended goal look like a slot-cap

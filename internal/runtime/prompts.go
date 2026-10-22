@@ -73,10 +73,4 @@ const (
 - ` + "`self/capabilities`" + `: a concise description of what you can currently do
 - ` + "`self/learned`" + `: append a short dated entry with key insights from recent activity
 Be brief and factual. Do not ask questions.`
-
-	// PursuePromptTemplate is the OnIdle turn text for a "pursue" session
-	// (docs/goal-sessions.md). %s placeholders are the goal ID and
-	// description; the LLM does the actual assess/act/check-attainment work
-	// using goal_get/goal_list/goal_update_status.
-	PursuePromptTemplate = `Check on goal %s ("%s") and its subtree (goal_get). Take any useful action toward it, including spawning sub-goals or sub-agents. If its status should change (e.g. done once attained, or paused if you're stuck), call goal_update_status.`
 )

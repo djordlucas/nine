@@ -22,7 +22,7 @@ func TestSessionRoleComesFromItsOwningProcess(t *testing.T) {
 	d.ConfigureProcesses(store, nil)
 	ctx := context.Background()
 
-	if _, err := d.SpawnGoalSession(ctx, "tidy"); err != nil {
+	if _, err := d.SpawnGoalSession(ctx, "tidy", ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := d.SpawnStandingSession(ctx, "sec-watch", "monitor", true, time.Hour, "", config.BudgetConfig{}); err != nil {

@@ -657,10 +657,11 @@ func (c *Client) GetSkill(name string) (SkillDetail, error) {
 
 // CreateGoal creates a goal on the operator's behalf. parentID names a parent
 // goal for a sub-goal; empty creates a top-level goal with its own pursue
-// session.
-func (c *Client) CreateGoal(description, parentID string) (GoalCreateResult, error) {
+// session. schedule makes a top-level goal recurring: a duration ("24h") or a
+// cron expression; empty is a goal worked on until it is done.
+func (c *Client) CreateGoal(description, parentID, schedule string) (GoalCreateResult, error) {
 	var out GoalCreateResult
-	err := c.roundTrip(NewGoalCreateMsg(description, parentID), &out)
+	err := c.roundTrip(NewGoalCreateMsg(description, parentID, schedule), &out)
 	return out, err
 }
 

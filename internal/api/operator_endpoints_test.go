@@ -362,6 +362,18 @@ func TestCreateGoal(t *testing.T) {
 	if w := doAt(t, sock, "POST", "/api/v1/goals", `{"description":""}`); w.Code != http.StatusBadRequest {
 		t.Errorf("empty description: status %d, want 400", w.Code)
 	}
+
+	// A recurring goal's schedule reaches the daemon; a bad one, or one on a
+	// sub-goal, is refused before it.
+	if w := doAt(t, sock, "POST", "/api/v1/goals", `{"description":"news","schedule":"24h"}`); w.Code != http.StatusCreated || asked.Schedule != "24h" {
+		t.Errorf("schedule: status %d, daemon asked %+v", w.Code, asked)
+	}
+	asked = protocol.Msg{}
+	for _, body := range []string{`{"description":"news","schedule":"daily"}`, `{"description":"x","schedule":"24h","parent_id":"g1"}`} {
+		if w := doAt(t, sock, "POST", "/api/v1/goals", body); w.Code != http.StatusBadRequest || asked.Type != "" {
+			t.Errorf("%s: status %d, daemon asked %+v; want 400 and no call", body, w.Code, asked)
+		}
+	}
 }
 
 func TestDeleteGoal(t *testing.T) {

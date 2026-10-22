@@ -3,7 +3,23 @@ package memory
 import (
 	"database/sql"
 	"fmt"
+	"time"
+
+	"nine/internal/cron"
 )
+
+// PursueDefaultIntervalSecs is how often a goal session with no cadence of its
+// own wakes: every five minutes (docs/goal-sessions.md).
+const PursueDefaultIntervalSecs = 300
+
+// goalColumns are a goal's columns and its pursue process's cadence, read with
+// goalFrom.
+const goalColumns = `g.id, g.description, g.status, g.parent_id, g.parent_type, g.created_at, g.updated_at,
+	coalesce(p.schedule, ''), coalesce(p.interval_secs, 0)`
+
+// goalFrom joins each goal to its pursue process, whose id is "goal:" and the
+// goal's.
+const goalFrom = `FROM goals g LEFT JOIN processes p ON p.id = 'goal:' || g.id`
 
 // Goal is one row from the goals table.
 type Goal struct {
@@ -19,7 +35,11 @@ type Goal struct {
 	// hand — wrong at some rate, and unverifiable
 	// (adr/concept-consolidation.md C6). The JSON key is unchanged so the
 	// model-facing shape of goal_get is what it always was.
-	Subtree   []string `json:"subtree"`
+	Subtree []string `json:"subtree"`
+	// Schedule is how often the goal recurs: a cron expression or an interval
+	// such as "24h", from its pursue process. Empty for a goal worked on
+	// continuously, every five minutes until it is done.
+	Schedule  string `json:"schedule,omitempty"`
 	CreatedAt string   `json:"created_at"`
 	UpdatedAt string   `json:"updated_at"`
 }
@@ -27,11 +47,14 @@ type Goal struct {
 func scanGoal(row interface{ Scan(...any) error }) (Goal, error) {
 	var g Goal
 	var parentID, parentType sql.NullString
+	var schedule string
+	var intervalSecs int
 	err := row.Scan(&g.ID, &g.Description, &g.Status,
-		&parentID, &parentType, &g.CreatedAt, &g.UpdatedAt)
+		&parentID, &parentType, &g.CreatedAt, &g.UpdatedAt, &schedule, &intervalSecs)
 	if err != nil {
 		return Goal{}, err
 	}
+	g.Schedule = goalCadence(schedule, intervalSecs)
 	if parentID.Valid {
 		g.ParentID = parentID.String
 	}
@@ -62,8 +85,7 @@ func (s *Store) GoalCreate(id, description, parentID, parentType string) error {
 // GoalGet returns a goal by id. Returns (nil, nil) if not found.
 func (s *Store) GoalGet(id string) (*Goal, error) {
 	row := s.db.QueryRow(
-		`SELECT id, description, status, parent_id, parent_type, created_at, updated_at
-		 FROM goals WHERE id = ?`, id)
+		`SELECT `+goalColumns+` `+goalFrom+` WHERE g.id = ?`, id)
 	g, err := scanGoal(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -83,8 +105,7 @@ func (s *Store) GoalGet(id string) (*Goal, error) {
 // GoalList returns all goals ordered by creation time.
 func (s *Store) GoalList() ([]Goal, error) {
 	rows, err := s.db.Query(
-		`SELECT id, description, status, parent_id, parent_type, created_at, updated_at
-		 FROM goals ORDER BY created_at`)
+		`SELECT `+goalColumns+` `+goalFrom+` ORDER BY g.created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -201,4 +222,16 @@ func (s *Store) GoalDelete(id string) ([]string, error) {
 		s.journalState(id, EvGoalDeleted, map[string]any{"id": id, "ids": ids})
 	}
 	return ids, nil
+}
+
+// goalCadence is a goal's schedule as its pursue process holds it: the cron
+// expression, or the interval when it is not the default five minutes.
+func goalCadence(schedule string, intervalSecs int) string {
+	if schedule != "" {
+		return schedule
+	}
+	if intervalSecs > 0 && intervalSecs != PursueDefaultIntervalSecs {
+		return cron.FormatEvery(time.Duration(intervalSecs) * time.Second)
+	}
+	return ""
 }

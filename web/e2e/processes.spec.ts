@@ -90,6 +90,21 @@ test('a goal and a sub-goal are created and deleted from the page', async ({ pag
   await expect(goals.getByRole('link', { name: step })).toHaveCount(0);
 });
 
+test('a recurring goal is created with its cadence, which its page and process show', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/goals');
+  const description = `e2e daily ${Date.now()}`;
+  await page.getByRole('textbox', { name: 'New goal' }).fill(description);
+  await page.getByRole('combobox', { name: 'Repeat' }).selectOption('24h');
+  await page.getByRole('button', { name: 'Create' }).click();
+  await expect(page.getByRole('heading', { name: description, level: 2 })).toBeVisible();
+  await expect(page.getByText('daily', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Delete' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
+  await expect(page).toHaveURL(/\/goals$/);
+});
+
 test('the goals page lists workflows, or says there are none', async ({ page }) => {
   await signIn(page);
   await page.goto('/goals');

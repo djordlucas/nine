@@ -1380,6 +1380,8 @@ export interface components {
             description: string;
             /** @description A goal to create this one under. Omit for a top-level goal, which gets its own session. */
             parent_id?: string;
+            /** @description Makes a top-level goal recurring. Its session then does the whole job once per run, on this cadence, instead of checking it every five minutes until it is done. A duration of at least a minute (24h, 90m) or a 5-field cron expression in UTC (0 8 * * *). */
+            schedule?: string;
         };
         /** @description The goal created, and what happened to its background session. */
         CreateGoalResponse: {
@@ -1571,6 +1573,8 @@ export interface components {
             id?: string;
             parent_id?: string;
             parent_type?: string;
+            /** @description How often a recurring goal runs, as a duration (24h) or a cron expression. Absent for a goal worked on until it is done. */
+            schedule?: string;
             status?: string;
             subtree?: string[];
             /** Format: date-time */
@@ -1647,6 +1651,8 @@ export interface components {
             id?: string;
             parent_id?: string;
             parent_type?: string;
+            /** @description How often a recurring goal runs, as a duration (24h) or a cron expression. Absent for a goal worked on until it is done. */
+            schedule?: string;
             status?: string;
             subtree?: string[];
             /** Format: date-time */

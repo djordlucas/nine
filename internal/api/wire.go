@@ -28,6 +28,7 @@ type wireGoal struct {
 	Status      string   `json:"status"`
 	ParentID    string   `json:"parent_id,omitempty"`
 	ParentType  string   `json:"parent_type,omitempty"`
+	Schedule    string   `json:"schedule,omitempty"`
 	Subtree     []string `json:"subtree"`
 	CreatedAt   string   `json:"created_at"`
 	UpdatedAt   string   `json:"updated_at"`
@@ -139,6 +140,9 @@ func toGoalInfo(g wireGoal) apigen.GoalInfo {
 	}
 	if g.ParentType != "" {
 		out.ParentType = ptr(g.ParentType)
+	}
+	if g.Schedule != "" {
+		out.Schedule = ptr(g.Schedule)
 	}
 	if len(g.Subtree) > 0 {
 		out.Subtree = ptr(g.Subtree)

@@ -52,6 +52,9 @@ type Trigger struct {
 type TriggerGoal struct {
 	ID          string `json:"id"`
 	Description string `json:"description"`
+	// Schedule is how often a recurring goal runs; empty for a goal worked on
+	// until it is done.
+	Schedule string `json:"schedule,omitempty"`
 }
 
 // ProcessHandler is the host side of nine:process for one live process: the

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"nine/internal/config"
+	"nine/internal/cron"
 	"nine/internal/memory"
 )
 
@@ -15,8 +16,9 @@ import (
 // is the goal's. Spawning one writes its process; the process runner starts it.
 
 // PursueIdleInterval is how often a goal session's pursue process wakes to
-// assess and act on its goal (docs/goal-sessions.md).
-const PursueIdleInterval = 5 * time.Minute
+// assess and act on its goal when the goal has no cadence of its own
+// (docs/goal-sessions.md).
+const PursueIdleInterval = memory.PursueDefaultIntervalSecs * time.Second
 
 // DefaultMaxRunning is the cap on running processes when the daemon is given
 // none: [processes] max_running's default.
@@ -62,15 +64,29 @@ func (d *Daemon) effectiveMaxRunning() int {
 func goalProcessID(goalID string) string { return "goal:" + goalID }
 
 // SpawnGoalSession starts the pursue process for goalID (docs/goal-sessions.md).
-// It is idempotent: a goal that already has its process returns (true, nil). At
-// the max_running cap it returns (false, nil); the goal itself is still
-// recorded by the caller (goal_create) either way.
-func (d *Daemon) SpawnGoalSession(_ context.Context, goalID string) (bool, error) {
-	return d.spawnGoalProcess(memory.Process{
+// cadence, when set, makes the goal recurring: a duration ("24h") or a cron
+// expression the process wakes on instead of every PursueIdleInterval
+// (cron.ParseCadence). It is idempotent: a goal that already has its process
+// returns (true, nil). At the max_running cap it returns (false, nil); the goal
+// itself is still recorded by the caller (goal_create) either way.
+func (d *Daemon) SpawnGoalSession(_ context.Context, goalID, cadence string) (bool, error) {
+	every, schedule, err := cron.ParseCadence(cadence)
+	if err != nil {
+		return false, err
+	}
+	p := memory.Process{
 		ID: goalProcessID(goalID), Tool: "pursue", Mode: memory.ProcessLive,
 		SessionID: goalID, Owner: true, Role: PursueRole, GoalID: goalID,
-		IntervalSecs: int(PursueIdleInterval.Seconds()),
-	}, nil)
+		Schedule: schedule,
+	}
+	switch {
+	case schedule != "":
+	case every > 0:
+		p.IntervalSecs = int(every.Seconds())
+	default:
+		p.IntervalSecs = int(PursueIdleInterval.Seconds())
+	}
+	return d.spawnGoalProcess(p, nil)
 }
 
 // SpawnStandingSession writes the pursue process for a pre-defined standing
