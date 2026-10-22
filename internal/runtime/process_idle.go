@@ -65,10 +65,12 @@ func idleBackoff(interval time.Duration, streak int) time.Duration {
 }
 
 // backsOff reports whether a process's clock slows when it idles: a goal
-// session on a fixed interval. A cron schedule is a cadence the operator set,
-// and a process that is not bound to a goal may watch on purpose.
+// session on a fixed interval. A cron schedule or a recurring goal's cadence
+// is one the operator set, and a process that is not bound to a goal may watch
+// on purpose.
 func backsOff(lp *liveProc) bool {
-	return lp.row.GoalID != "" && lp.row.Schedule == "" && lp.row.IntervalSecs > 0
+	return lp.row.GoalID != "" && lp.row.Schedule == "" && lp.row.IntervalSecs > 0 &&
+		goalCadence(lp.row.Args) == ""
 }
 
 // noteTurn updates the idle streak after a turn the given trigger label

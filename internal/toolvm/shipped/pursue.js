@@ -28,7 +28,7 @@ const ongoing = (g) =>
 const recurring = (g) =>
   `This is a scheduled run of recurring goal ${g.id} ("${g.description}"), which runs ${cadence(g.schedule)}. ` +
   "Do the whole job now: find what is new since the last run, then write or update its result. " +
-  "When the result is written, end the turn. " +
+  "Once the result is written and the notes below are updated, end the turn. " +
   "A recurring goal is never done: leave its status active, unless it cannot go on (paused) " +
   "or should stop for good (archived)." +
   folder(g);

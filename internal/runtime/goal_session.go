@@ -100,6 +100,18 @@ func (d *Daemon) SpawnGoalSession(_ context.Context, goalID, cadence string) (bo
 	return d.spawnGoalProcess(p, nil)
 }
 
+// goalCadence is the schedule a goal process's args carry, which
+// SpawnGoalSession writes for a recurring goal; "" for any other process.
+func goalCadence(args string) string {
+	var a struct {
+		Schedule string `json:"schedule"`
+	}
+	if args == "" || json.Unmarshal([]byte(args), &a) != nil {
+		return ""
+	}
+	return a.Schedule
+}
+
 // SpawnStandingSession writes the pursue process for a pre-defined standing
 // agent (docs/predefined-agents.md): the configured work role, delegation
 // opt-in and wake trigger. The trigger is a cron schedule when schedule is

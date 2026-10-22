@@ -349,3 +349,18 @@ func TestGoalCreateWithASchedule(t *testing.T) {
 		t.Errorf("a refused goal_create recorded a goal: %d goals, want %d", len(after), len(before))
 	}
 }
+
+// A session that cannot start a goal's runs refuses a schedule rather than
+// dropping it: the goal would not recur.
+func TestGoalCreateRefusesAScheduleItCannotRun(t *testing.T) {
+	store := newGoalStore(t)
+	d := agent.New()
+	agent.RegisterGoalTools(d, "agent-1", store, nil)
+
+	if _, err := d.Dispatch(context.Background(), "goal_create", json.RawMessage(`{"description":"news","schedule":"24h"}`)); err == nil {
+		t.Error("goal_create with a schedule and no spawn: want an error")
+	}
+	if goals, _ := store.GoalList(); len(goals) != 0 {
+		t.Errorf("a refused goal_create recorded %d goals", len(goals))
+	}
+}

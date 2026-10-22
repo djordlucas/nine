@@ -84,6 +84,9 @@ func RegisterGoalCreate(d *Dispatcher, agentID string, store *memory.Store, spaw
 			if req.ParentType != "conversation" {
 				return "", fmt.Errorf("goal_create: only a top-level goal recurs; a sub-goal is worked on in its parent's runs")
 			}
+			if spawnFn == nil {
+				return "", fmt.Errorf("goal_create: this session cannot start a goal's runs, so its goal cannot recur; leave out the schedule")
+			}
 			if _, _, err := cron.ParseCadence(req.Schedule); err != nil {
 				return "", fmt.Errorf("goal_create: %w", err)
 			}

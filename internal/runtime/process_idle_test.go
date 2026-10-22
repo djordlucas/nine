@@ -108,6 +108,10 @@ func TestUnboundProcessKeepsItsCadence(t *testing.T) {
 	if backsOff(lp) {
 		t.Error("a goal session on a cron schedule backs off")
 	}
+	lp.row.Schedule, lp.row.Args = "", `{"schedule":"24h"}`
+	if backsOff(lp) {
+		t.Error("a recurring goal on an interval backs off")
+	}
 }
 
 // A goal session's clock turn starts fresh; an unbound process keeps its

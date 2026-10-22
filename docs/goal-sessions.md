@@ -26,6 +26,8 @@ session. From the second such turn in a row, the next tick waits twice as long
 as the last: 10 minutes, then 20, 40, and so on up to 6 hours. A turn that calls
 any other tool, or a message or event the process is given, brings back the
 five-minute clock. The process log says when the clock slowed and for how long.
+A [recurring goal](#recurring-goals) keeps its cadence: it runs as often as it
+was asked to, however little a run finds.
 
 | Turns in a row that only looked | Next tick in |
 |---|---|
@@ -66,7 +68,7 @@ digest of the repository's issues". Such a goal is never attained, so checking
 it every five minutes finds nothing to do once its first pass is over. With a
 schedule, `pursue` wakes on that cadence instead, and each tick is one run that
 does the whole job again: find what is new since the last run, write or update
-its result, end the turn. The goal stays active between runs.
+its result, update `notes.md`, end the turn. The goal stays active between runs.
 
 | Given as | Example | Runs |
 |---|---|---|
@@ -75,7 +77,9 @@ its result, end the turn. The goal stays active between runs.
 
 The model sets it with `goal_create`'s `schedule`, the operator with
 `POST /goals` (`"schedule"`) or the web UI's Repeat choice. Only a top-level goal
-recurs: a sub-goal is worked on in its parent's runs. The schedule is recorded
+recurs: a sub-goal is worked on in its parent's runs. `goal_create` refuses a
+schedule from a session that cannot start a goal's runs, such as a sub-agent,
+rather than record a goal that would never recur. The schedule is recorded
 on the goal's pursue process, and the goal reads it back as `schedule`. A goal
 `[[process]]` block's `every` or `schedule` only sets how often its goal is
 checked; it does not make the goal recurring.
