@@ -442,7 +442,8 @@ func (h *liveHandler) Turn(ctx context.Context, text string) (string, error) {
 	}
 	var activity turnActivity
 	reply, tokens, err := h.r.sessions.ProcessTurn(ctx, row.SessionID, h.r.sessionParams(row), text,
-		TurnOptions{Trigger: label, Allow: allow, Depth: depth + 1, OnTool: activity.onTool})
+		TurnOptions{Trigger: label, Allow: allow, Depth: depth + 1, OnTool: activity.onTool,
+			Fresh: label == "idle" && row.GoalID != ""})
 	if err == nil {
 		h.r.noteTurn(lp, label, activity.acted, time.Now())
 	}

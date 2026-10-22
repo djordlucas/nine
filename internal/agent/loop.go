@@ -1112,7 +1112,7 @@ const RestrictedInputStub = "[This turn's input came from an automated source â€
 	"What the turn made of it is in the reply that follows and in what it recorded.]"
 
 // ClearHistory discards conversation history and scratchpad, making the loop
-// stateless for the next turn. Used by the reflection loop.
+// stateless for the next turn. A goal session's clock turns start this way.
 func (l *Loop) ClearHistory() {
 	l.history = l.history[:0]
 	l.scratchpad = l.scratchpad[:0]

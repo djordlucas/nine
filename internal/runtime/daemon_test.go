@@ -813,6 +813,33 @@ func TestProcessTurnRunsInTheProcessSession(t *testing.T) {
 	}
 }
 
+// A fresh turn starts from an empty history: the model sees only its own text,
+// not the turn before it.
+func TestFreshProcessTurnSeesNoEarlierTurn(t *testing.T) {
+	var mu sync.Mutex
+	var requests []llm.Request
+	provider := llm.ProviderFunc(func(_ context.Context, req llm.Request) (llm.Response, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		requests = append(requests, req)
+		return finalResp(fmt.Sprintf("reply %d", len(requests))), nil
+	})
+	d, _ := startDaemon(t, makeFactory(provider), nil, nil)
+
+	for _, text := range []string{"first tick", "second tick"} {
+		if _, _, err := d.ProcessTurn(context.Background(), "goal-session", runtime.RoleParams{}, text, runtime.TurnOptions{Trigger: "idle", Fresh: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for _, m := range requests[len(requests)-1].Messages {
+		if strings.Contains(m.Text, "first tick") || m.Text == "reply 1" {
+			t.Errorf("the fresh turn saw the earlier one: %s %q", m.Role, m.Text)
+		}
+	}
+}
+
 // A goal-bound process session that stalls — turns calling no tool — pauses its
 // goal, as the pursue routine did.
 func TestStalledGoalSessionPausesItsGoal(t *testing.T) {

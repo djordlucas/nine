@@ -34,6 +34,14 @@ five-minute clock. The process log says when the clock slowed and for how long.
 | 3 | 20 minutes |
 | 8 or more | 6 hours |
 
+Each tick's turn starts from an empty history. A goal session lives for days,
+and carrying every earlier turn made each wake cost more than the last: one
+goal's turns grew from 49 k to 119 k tokens over four days, with the context
+full and the oldest turns cut. The model sees the tick's text and the goal,
+reads `notes.md` in the [goal's folder](#a-goals-folder) for what earlier turns
+did, and rewrites it before it ends. The journal keeps every turn. A message or
+event turn keeps the history, until the next tick.
+
 That turn runs through exactly the same path as a turn you typed. A goal
 session is not a special execution mode; it is an ordinary session whose
 prompts come from a process instead of a person.

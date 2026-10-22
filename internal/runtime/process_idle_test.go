@@ -109,3 +109,29 @@ func TestUnboundProcessKeepsItsCadence(t *testing.T) {
 		t.Error("a goal session on a cron schedule backs off")
 	}
 }
+
+// A goal session's clock turn starts fresh; an unbound process keeps its
+// session's history.
+func TestGoalClockTurnsStartFresh(t *testing.T) {
+	for _, c := range []struct {
+		row  memory.Process
+		want bool
+	}{
+		{memory.Process{ID: "goal:g1", SessionID: "g1", GoalID: "g1", IntervalSecs: 1, ReportTo: "nobody"}, true},
+		{memory.Process{ID: "digest", SessionID: "digest-session", IntervalSecs: 1, ReportTo: "nobody"}, false},
+	} {
+		r, store, sessions := liveSetup(t, c.row)
+		if c.row.GoalID != "" {
+			if err := store.GoalCreate(c.row.GoalID, "news", "", "operator"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		tickUntil(t, r, "a clock turn", func() bool { return len(sessions.seen()) >= 1 })
+		sessions.mu.Lock()
+		got := sessions.fresh[0]
+		sessions.mu.Unlock()
+		if got != c.want {
+			t.Errorf("%s: fresh = %v, want %v", c.row.ID, got, c.want)
+		}
+	}
+}

@@ -29,6 +29,8 @@ type turnReq struct {
 	depth int
 	// onTool, when set, is told the name of each tool the turn calls.
 	onTool func(name string)
+	// fresh starts the turn from an empty history (TurnOptions.Fresh).
+	fresh bool
 }
 
 // TurnOptions are how a process's turn is run: the journal's trigger label,
@@ -40,6 +42,11 @@ type TurnOptions struct {
 	// OnTool, when set, is told the name of each tool the turn calls, on the
 	// worker's goroutine and before the tool runs.
 	OnTool func(name string)
+	// Fresh starts the turn from an empty history: the model sees the turn's
+	// text and what it calls, not the session's earlier turns, which stay in
+	// the journal. A goal session's clock turns run this way
+	// (docs/goal-sessions.md).
+	Fresh bool
 }
 
 // wakeReq is a woken turn: a pipe's report and its lineage depth.
@@ -368,6 +375,9 @@ func (w *AgentWorker) processTurn(req turnReq) {
 		trigger = "user"
 	}
 	w.journal(turn, "turn_start", turnSpan(turn), "", turnStartPayload{Input: text, Trigger: trigger, Depth: req.depth})
+	if req.fresh {
+		w.loop.ClearHistory()
+	}
 	w.loop.SetHooks(w.turnHooks(turn, req.onTool))
 	slog.Debug("turn_start", "agent_id", w.id, "turn_n", turn)
 	w.loop.SetForceThinkNextTurn(req.forceThink)
@@ -608,7 +618,7 @@ func (w *AgentWorker) turnAs(ctx context.Context, text, trigger string) (string,
 func (w *AgentWorker) turnCounted(ctx context.Context, text string, opt TurnOptions) turnResp {
 	ch := make(chan turnResp, 1)
 	select {
-	case w.inbox <- turnReq{ctx: ctx, text: text, respCh: ch, trigger: opt.Trigger, allow: opt.Allow, depth: opt.Depth, onTool: opt.OnTool}:
+	case w.inbox <- turnReq{ctx: ctx, text: text, respCh: ch, trigger: opt.Trigger, allow: opt.Allow, depth: opt.Depth, onTool: opt.OnTool, fresh: opt.Fresh}:
 	case <-ctx.Done():
 		return turnResp{err: ctx.Err()}
 	case <-w.quit:

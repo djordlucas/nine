@@ -13,7 +13,9 @@ import { next, turn } from "nine:process";
 const folder = (g) =>
   g.folder
     ? ` Unless the goal names where its output goes, keep what it produces in ${g.folder}: ` +
-      "look there first for what earlier turns wrote, and update those files rather than writing new copies elsewhere."
+      "look there first for what earlier turns wrote, and update those files rather than writing new copies elsewhere. " +
+      `Earlier turns are not in your context: ${g.folder}notes.md says what they did, if it exists. ` +
+      "Before you end, rewrite it in a few lines: what you did, what you found, what is left."
     : "";
 
 const ongoing = (g) =>
