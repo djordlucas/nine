@@ -62,6 +62,9 @@ type liveProc struct {
 	// version is the tool version this instance runs, for a process Nine
 	// wrote (process_revision.go).
 	version int
+	// idleStreak counts the clock turns in a row that changed nothing
+	// (process_idle.go).
+	idleStreak int
 }
 
 // SetSessions wires the session side of live processes. Without it, live
@@ -436,8 +439,12 @@ func (h *liveHandler) Turn(ctx context.Context, text string) (string, error) {
 	if err := h.r.spendTurn(row.ID, time.Now()); err != nil {
 		return "", err
 	}
+	var activity turnActivity
 	reply, tokens, err := h.r.sessions.ProcessTurn(ctx, row.SessionID, h.r.sessionParams(row), text,
-		TurnOptions{Trigger: label, Allow: allow, Depth: depth + 1})
+		TurnOptions{Trigger: label, Allow: allow, Depth: depth + 1, OnTool: activity.onTool})
+	if err == nil {
+		h.r.noteTurn(lp, label, activity.acted, time.Now())
+	}
 	// A turn that ran is counted, failed or not; one stopped before it began
 	// spent nothing.
 	if err == nil || tokens > 0 {

@@ -19,6 +19,21 @@ and its sub-goals, take any useful action toward it — including spawning
 sub-goals or delegating to sub-agents — and update the goal's status if it
 should change. The first tick comes five minutes after the session starts.
 
+A tick that finds nothing to do slows the clock. A turn that only looks —
+calls nothing but tools that read, such as `goal_get`, `read_file` or
+`memory_get` — changes nothing, yet still pays for a model call over the whole
+session. From the second such turn in a row, the next tick waits twice as long
+as the last: 10 minutes, then 20, 40, and so on up to 6 hours. A turn that calls
+any other tool, or a message or event the process is given, brings back the
+five-minute clock. The process log says when the clock slowed and for how long.
+
+| Turns in a row that only looked | Next tick in |
+|---|---|
+| 0 or 1 | 5 minutes |
+| 2 | 10 minutes |
+| 3 | 20 minutes |
+| 8 or more | 6 hours |
+
 That turn runs through exactly the same path as a turn you typed. A goal
 session is not a special execution mode; it is an ordinary session whose
 prompts come from a process instead of a person.
@@ -54,7 +69,8 @@ that its work is finished is the agent's call to make.
 |-------|--------|
 | Fourteen running processes | `[processes] max_running`, default 14, counts goal sessions with every other running process. At the cap, creating a goal still records the goal but starts no session for it. The goal is real and unattended rather than queued, so how far behind pursuit has fallen stays visible. |
 | Sub-goals get no session | Only top-level goals are paired with a session. A goal spawned by another is worked on by the session already pursuing its parent. |
-| Five-minute wake interval | A goal session's `pursue` process ticks on a fixed clock. The cycle supplies the occasion and the goal, not a plan — what counts as useful action is left to the model. |
+| Five-minute wake interval | A goal session's `pursue` process ticks every five minutes while it acts, and up to every 6 hours while it only looks. The cycle supplies the occasion and the goal, not a plan — what counts as useful action is left to the model. |
+| What counts as only looking | A fixed list of read tools. A tool missing from it counts as acting, so a new tool can make the clock slow less often, never more. A goal session on a cron `schedule` keeps its schedule. |
 | Stall detection releases the slot | Five consecutive turns that call no tool count as a stall, which pauses the goal and so stops its process and frees the slot: one wedged pursuit cannot hold capacity indefinitely. Progress on that goal stops until it is resumed. |
 | Only some roles create them | A role that may not spawn goals creates no goal sessions. The operator is not role-gated. |
 
