@@ -633,6 +633,7 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 	var resultVec []float32 // the latest tool results, for hybrid picks
 	var toolErrs []string   // tool failures seen this turn, surfaced if the answer is empty
 	emptyAnswers := 0       // no-text, no-tool-call responses so far (see maxEmptyAnswerRetries)
+	var repeats repeatGuard // identical calls with identical results (repeats.go)
 	for {
 		llmCallN++
 		think := l.thinkFor(mode, llmCallN, forced)
@@ -762,6 +763,7 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 		}
 
 		l.lastToolCount += len(resp.ToolCalls)
+		stuck, stuckN := "", 0 // a call repeated RepeatStopAt times ends the turn after this batch
 
 		// Dispatch tool calls and record observations. The first entry gets the
 		// assistant's thought text; subsequent entries (parallel calls) get none.
@@ -823,6 +825,12 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 				toolErrs = append(toolErrs, fmt.Sprintf("%s: %v", tc.Name, dispErr))
 				observation = l.loadOnFailedCall(tc.Name, observation)
 			}
+			if n := repeats.note(tc.Name, tc.Input, observation); n >= RepeatNoticeAt {
+				observation += "\n\n" + repeatNotice(tc.Name, n)
+				if n >= RepeatStopAt && stuck == "" {
+					stuck, stuckN = tc.Name, n
+				}
+			}
 			if l.onToolEnd != nil {
 				l.onToolEnd(tc.Name, dn, backend, tc.Input, ToolOutcome{
 					Output:      observation,
@@ -851,6 +859,13 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 				ToolArgs:    tc.Input,
 				Observation: observation,
 			})
+		}
+		if stuck != "" {
+			// The answer is about the turn, not the model's own words, so it
+			// stays out of the history, as the empty-answer fallback does.
+			slog.Warn("turn stopped on a repeated tool call", "priority", l.cfg.Priority, "tool", stuck, "calls", stuckN)
+			l.scratchpad = l.scratchpad[:0]
+			return repeatStopAnswer(stuck, stuckN), nil
 		}
 		if l.builder.Picks() {
 			resultVec = embedText(ctx, l.cfg.Embedder, latestResults(l.scratchpad[len(l.scratchpad)-len(resp.ToolCalls):]))

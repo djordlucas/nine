@@ -33,7 +33,7 @@ var lookTools = map[string]bool{
 	"doc_read": true, "doc_search": true,
 	"tool_list": true, "tool_search": true, "tool_read": true,
 	"time": true, "job_check": true, "job_list": true,
-	"workflow_list": true, "process_list": true,
+	"workflow_list": true, "workflow_get": true, "process_list": true, "process_show": true, "job_wait": true,
 	"queued_messages_get": true, "queued_messages_count": true, "queued_messages_unconsumed_count": true,
 }
 

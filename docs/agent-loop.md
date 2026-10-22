@@ -119,6 +119,24 @@ sequenceDiagram
     end
 ```
 
+### Repeated calls
+
+A call the model has already made this turn, with the same arguments and the
+same result, is counted. A model whose context is full loses its earlier calls
+and makes them again: a goal session was journaled calling `goal_get` 13 times
+in one turn, each call another model request over the whole context.
+
+| Identical call, same result | The loop |
+|---|---|
+| 1st and 2nd | runs it as usual |
+| 3rd and 4th | appends to the result that it will not change, and that the turn ends at the 5th |
+| 5th | runs it, then ends the turn: the answer says which tool repeated and how often |
+
+A call whose result changes starts the count again, so polling a job that is
+still moving is not cut short. The stop answer is about the turn, not the
+model's words, so it stays out of the history, as the empty-answer fallback
+does.
+
 ## Dispatcher
 
 The `Dispatcher` is a registry of `handlers` (tool name → function). It routes every tool call, expands `x-nine-ref` arguments, runs post-call hooks, and caps output at 2048 tokens (~8 000 chars) — spilling anything larger to the file store and returning a head+tail preview naming the path ([tool-output-spill.md](tool-output.md)).
