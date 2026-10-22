@@ -120,6 +120,16 @@ func (s *Store) LatestTurnResult(agentID string) (string, error) {
 	return strings.TrimSpace(p.Result), nil
 }
 
+// LastEventSeq returns the seq of agentID's latest journaled event, or 0 when
+// it has none.
+func (s *Store) LastEventSeq(agentID string) (int64, error) {
+	var seq sql.NullInt64
+	if err := s.db.QueryRow(`SELECT max(seq) FROM session_events WHERE agent_id = ?`, agentID).Scan(&seq); err != nil {
+		return 0, err
+	}
+	return seq.Int64, nil
+}
+
 // SessionEventsByAgent returns every journaled event for agentID in causal
 // (seq) order. It is the read path behind observational replay (adr/event-log.md
 // §3, §10).

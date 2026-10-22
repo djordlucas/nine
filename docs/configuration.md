@@ -110,7 +110,8 @@ task_timeout_seconds = 1800
 
 # The dedicated self-reflection session: a Go duration for its cadence, or "off"
 # to remove it. Unset ships enabled at 2m — reflection is how Nine maintains its
-# own self-model, so it is on by default.
+# own self-model, so it is on by default. A tick finding nothing new in the
+# journal since the last reflection runs no turn (docs/processes.md).
 #
 # Removal is subtractive, not merely "stop creating it": an existing session is
 # deactivated on the next boot, so turning reflection off takes effect on a

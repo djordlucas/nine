@@ -53,7 +53,10 @@ func (a InternalAgent) NewSession(id string, p RoleParams) Session {
 		s.Notifications = func(id string) ([]string, error) { return notif.Fetch(id) }
 	}
 	if sup := a.Supervisor; sup != nil {
-		if s.Stall.Limit == 0 {
+		// Only a goal session stalls: five turns without a tool call is a
+		// pursuit going nowhere, and pauses its goal. A conversation or a
+		// reflection that answers in words is doing what it is for.
+		if s.Stall.Limit == 0 && p.OwnsGoal {
 			s.Stall = StallConfig{
 				Limit: supervisorStallLimit,
 				OnStall: func(agentID string) {

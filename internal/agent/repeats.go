@@ -65,7 +65,11 @@ func repeatNotice(name string, n int) string {
 		"at %d identical calls the turn ends.", n, name, RepeatStopAt)
 }
 
+// RepeatStopPrefix begins the answer of a turn that ended on a repeated call,
+// which reflection's digest counts.
+const RepeatStopPrefix = "Stopped this turn:"
+
 // repeatStopAnswer is the turn's answer when it ends on a repeated call.
 func repeatStopAnswer(name string, n int) string {
-	return fmt.Sprintf("Stopped this turn: %s was called %d times with the same arguments and kept returning the same result.", name, n)
+	return fmt.Sprintf("%s %s was called %d times with the same arguments and kept returning the same result.", RepeatStopPrefix, name, n)
 }

@@ -67,10 +67,3 @@ func DelegationSteering(names []string, defaultLeaf string) string {
 		strings.Join(narrower, ", ") + "); use " + defaultLeaf +
 		" only when no narrower role matches. Each role's description is in the run_agent tool schema."
 }
-
-const (
-	ReflectionPrompt = `You have been idle. Reflect on your recent sessions. Use memory_set to update:
-- ` + "`self/capabilities`" + `: a concise description of what you can currently do
-- ` + "`self/learned`" + `: append a short dated entry with key insights from recent activity
-Be brief and factual. Do not ask questions.`
-)

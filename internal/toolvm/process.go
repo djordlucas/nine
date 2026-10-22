@@ -46,6 +46,9 @@ type Trigger struct {
 	Depth int `json:"-"`
 	// Goal is the goal a goal-bound process works on, as it stands now.
 	Goal *TriggerGoal `json:"goal,omitempty"`
+	// Activity is, for a reflect process's clock tick, a digest of what the
+	// journal recorded since its last reflection.
+	Activity string `json:"activity,omitempty"`
 }
 
 // TriggerGoal is the goal a trigger carries to a goal-bound process.

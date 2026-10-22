@@ -170,7 +170,10 @@ The daemon asks its `Agent` for each session it creates or resumes
 worker runs around turns: stall detection, the notifications prepended to a user
 turn, and a completion callback. `InternalAgent` is Nine's own agent: its loop
 comes from `AgentBuilder.BuildForRole`, its notifications from the
-`NotifStore`, and its stall and completion events go to the `Supervisor`.
+`NotifStore`, and its stall and completion events go to the `Supervisor`. Only
+a session that owns a goal gets stall detection, since a stall pauses the goal;
+a conversation or a reflection that answers without calling a tool is not
+stuck.
 
 Every client connection is handled by one goroutine (`handleConn`), which reads
 newline-delimited JSON and routes each `protocol.Msg` through `dispatch`:
