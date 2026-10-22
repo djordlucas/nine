@@ -155,7 +155,11 @@ RUN apt-get update && apt-get dist-upgrade -y && apt-get install -y --no-install
 RUN groupadd --system --gid 1000 nine && \
     useradd --system --uid 1000 --gid 1000 --home-dir /data --shell /usr/sbin/nologin nine
 
-ENV NINE_BIN=/opt/nine/bin
+# NINE_LOG_FILE=off puts the daemon's and the API server's logs on stderr, so
+# `docker logs` carries them: the default file beside the binary sits in
+# /usr/local/bin, which the unprivileged daemon cannot write.
+ENV NINE_BIN=/opt/nine/bin \
+    NINE_LOG_FILE=off
 
 COPY --from=go-build /usr/local/bin/nine /usr/local/bin/nine
 

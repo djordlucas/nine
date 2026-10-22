@@ -70,6 +70,7 @@ right one. arm64 covers Apple Silicon and Graviton.
 | API | `nine api serve --host 0.0.0.0 --port 8080`, as uid 1000 |
 | State | `/data` — the SQLite database and the workspace |
 | Health | `nine status` every 30s, after a 20s start period, matching on the uptime line — the command exits 0 even with no daemon reachable |
+| Logs | the daemon's and the API server's, on stderr (`NINE_LOG_FILE=off`), read with `docker logs`; the health check logs nothing |
 
 The daemon and the API run unprivileged. Everything the agent reaches through
 the `shell` plugin inherits uid 1000, so it cannot write outside `/data` or

@@ -33,7 +33,7 @@ func main() {
 		serveAPIAndExit()
 	}
 
-	setupLogger()
+	setupLogger(len(os.Args) > 1 && os.Args[1] == "daemon")
 
 	cfg, err := config.LoadDefault()
 	if err != nil {
@@ -123,9 +123,13 @@ func servePluginAndExit(name string) {
 	os.Exit(0)
 }
 
-// setupLogger configures the global slog logger.
+// setupLogger configures the global slog logger. The daemon's log is its
+// account of itself; a client command (`nine status`, which the container's
+// health check runs every 30 seconds) logs only warnings, to stderr, and never
+// touches the file, so it neither floods the daemon's log nor creates the file
+// as a user the daemon cannot write as.
 //
-// Log destination (in priority order):
+// The daemon's log destination (in priority order):
 //  1. NINE_LOG_FILE=off  → stderr only (disables file logging)
 //  2. default             → <binary-dir>/nine.log (appended)
 //
@@ -138,8 +142,11 @@ func servePluginAndExit(name string) {
 //
 //	NINE_LOG_LEVEL=debug   verbose output
 //	NINE_LOG_FORMAT=json   machine-readable JSON
-func setupLogger() {
+func setupLogger(daemon bool) {
 	level := slog.LevelInfo
+	if !daemon {
+		level = slog.LevelWarn
+	}
 	if v := os.Getenv("NINE_LOG_LEVEL"); v != "" {
 		var l slog.Level
 		if err := l.UnmarshalText([]byte(v)); err == nil {
@@ -149,7 +156,7 @@ func setupLogger() {
 
 	var w io.Writer = os.Stderr
 
-	if os.Getenv("NINE_LOG_FILE") != "off" {
+	if daemon && os.Getenv("NINE_LOG_FILE") != "off" {
 		if exePath, err := os.Executable(); err == nil {
 			logPath := filepath.Join(filepath.Dir(exePath), "nine.log")
 			if f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600); err == nil {
@@ -166,5 +173,7 @@ func setupLogger() {
 		h = slog.NewTextHandler(w, opts)
 	}
 	slog.SetDefault(slog.New(h))
-	slog.Info("nine", "version", Version)
+	if daemon {
+		slog.Info("nine", "version", Version)
+	}
 }
