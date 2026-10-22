@@ -3,10 +3,12 @@ package mistral
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"nine/internal/llm"
 )
@@ -375,5 +377,25 @@ func TestMapFinishReason(t *testing.T) {
 				t.Errorf("mapFinishReason(%q, %v) = %q, want %q", tt.reason, tt.calls, got, tt.want)
 			}
 		})
+	}
+}
+
+// A 429 is a RateLimitError carrying the provider's Retry-After and message,
+// which the queue retries; other failures stay plain errors.
+func TestRateLimitIsARateLimitError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "12")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"message":"Requests rate limit exceeded"}}`))
+	}))
+	defer server.Close()
+
+	_, err := New("m", server.URL, "key", 5).Complete(context.Background(), llm.Request{Messages: []llm.Message{{Role: "user", Text: "hi"}}})
+	var rl *llm.RateLimitError
+	if !errors.As(err, &rl) {
+		t.Fatalf("err = %v, want a RateLimitError", err)
+	}
+	if rl.RetryAfter != 12*time.Second || rl.Detail != "Requests rate limit exceeded" {
+		t.Errorf("got %+v, want the Retry-After and the message", rl)
 	}
 }

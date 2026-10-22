@@ -211,8 +211,15 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 	if httpResp.StatusCode != http.StatusOK {
 		var errBody errorResponse
 		body, _ := io.ReadAll(httpResp.Body)
+		detail := ""
 		if err := json.Unmarshal(body, &errBody); err == nil && errBody.Error.Message != "" {
-			return llm.Response{}, fmt.Errorf("mistral: %s", errBody.Error.Message)
+			detail = errBody.Error.Message
+		}
+		if httpResp.StatusCode == http.StatusTooManyRequests {
+			return llm.Response{}, &llm.RateLimitError{Provider: "mistral", RetryAfter: llm.RetryAfter(httpResp.Header, time.Now()), Detail: detail}
+		}
+		if detail != "" {
+			return llm.Response{}, fmt.Errorf("mistral: %s", detail)
 		}
 		return llm.Response{}, fmt.Errorf("mistral: HTTP %d", httpResp.StatusCode)
 	}

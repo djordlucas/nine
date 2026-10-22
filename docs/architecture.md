@@ -254,6 +254,13 @@ its pursue session) is real, but it is bounded downstream by the LLM queue's
 `maxConcurrent`. For a local Ollama model you set `max_concurrent = 1` and the
 queue serializes *everything*, ordered by priority.
 
+The queue also absorbs a provider's rate limit. A request refused with HTTP 429
+is sent again after 5, 15, 30 and 60 seconds, or after the provider's
+`Retry-After` when it gives one, capped at 2 minutes. It keeps its slot while it
+waits, since the limit is the provider's and the next request would be refused
+too. Nothing has streamed when a 429 comes back, so a retry repeats nothing.
+Only after the last retry does the turn fail.
+
 ---
 
 ## 5. The AgentWorker — session lifecycle

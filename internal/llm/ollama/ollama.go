@@ -224,6 +224,10 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 			Error string `json:"error"`
 		}
 		json.NewDecoder(httpResp.Body).Decode(&errResp) //nolint:errcheck
+		if httpResp.StatusCode == http.StatusTooManyRequests {
+			// Ollama Cloud and proxies in front of Ollama rate-limit.
+			return llm.Response{}, &llm.RateLimitError{Provider: "ollama", RetryAfter: llm.RetryAfter(httpResp.Header, time.Now()), Detail: errResp.Error}
+		}
 		if errResp.Error != "" {
 			return llm.Response{}, fmt.Errorf("ollama %d: %s", httpResp.StatusCode, errResp.Error)
 		}
