@@ -40,8 +40,8 @@ type Goal struct {
 	// such as "24h", from its pursue process. Empty for a goal worked on
 	// continuously, every five minutes until it is done.
 	Schedule  string `json:"schedule,omitempty"`
-	CreatedAt string   `json:"created_at"`
-	UpdatedAt string   `json:"updated_at"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 func scanGoal(row interface{ Scan(...any) error }) (Goal, error) {
@@ -105,7 +105,7 @@ func (s *Store) GoalGet(id string) (*Goal, error) {
 // GoalList returns all goals ordered by creation time.
 func (s *Store) GoalList() ([]Goal, error) {
 	rows, err := s.db.Query(
-		`SELECT `+goalColumns+` `+goalFrom+` ORDER BY g.created_at`)
+		`SELECT ` + goalColumns + ` ` + goalFrom + ` ORDER BY g.created_at`)
 	if err != nil {
 		return nil, err
 	}

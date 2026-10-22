@@ -174,8 +174,12 @@ type AgentBuilderConfig struct {
 // the role registry.
 // Its BuildForRole method satisfies the LoopFactory type.
 type AgentBuilder struct {
-	cfg          AgentBuilderConfig
-	roles        *RoleRegistry
+	cfg   AgentBuilderConfig
+	roles *RoleRegistry
+	// calibration is shared by every loop's context builder: how far the token
+	// estimate falls short of the provider's count is the model's, not a
+	// session's.
+	calibration  *ninectx.Calibration
 	queuePtr     atomic.Pointer[llm.Queue]
 	goalSpawnFn  atomic.Pointer[agent.GoalSessionSpawnFn]
 	processes    atomic.Pointer[agent.ProcessControl]
@@ -236,7 +240,7 @@ func NewAgentBuilder(cfg AgentBuilderConfig) *AgentBuilder {
 	if cfg.Loop.Memory != nil {
 		rs = cfg.Loop.Memory
 	}
-	f := &AgentBuilder{cfg: cfg, roles: NewRoleRegistry(rs, cfg.DefaultLeafRole)}
+	f := &AgentBuilder{cfg: cfg, roles: NewRoleRegistry(rs, cfg.DefaultLeafRole), calibration: ninectx.NewCalibration()}
 	f.queuePtr.Store(cfg.InitialQueue)
 	return f
 }
@@ -699,6 +703,7 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		Exposition:  lc.ToolExposition,
 		Resident:    append(slices.Clone(defaultResidentTools), lc.ResidentTools...),
 		Picks:       lc.HybridPicks,
+		Calibration: f.calibration,
 	})
 
 	var selfModelFn func(ctx context.Context, queryVec []float32) string

@@ -705,6 +705,7 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 		// provider that reports no counts leaves InputTokens zero; skip it
 		// instead of recording a spurious -100%.
 		if resp.Usage.InputTokens > 0 {
+			l.builder.Observe(tokensUsed, resp.Usage.InputTokens)
 			slog.Debug("token_reconciliation",
 				"llm_call_n", llmCallN,
 				"estimated_input", tokensUsed,
