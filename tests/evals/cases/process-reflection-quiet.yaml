@@ -1,0 +1,26 @@
+id: process-reflection-quiet
+description: "With nothing new in the journal, the reflect process's ticks run no turn at all: an idle Nine spends nothing on reflection."
+track: live
+tier: basic
+tags: [processes, reflection, runtime]
+
+setup:
+  processes:
+    - name: introspect
+      tool: reflect
+      role: reflection
+      every: 1s
+
+wait:
+  seconds: 15
+  session: introspect
+
+expect:
+  trajectory:
+    max_turns: 0
+
+runs: 1
+pass_threshold: "1/1"
+timeout_seconds: 60
+models:
+  expected_pass_min_class: small

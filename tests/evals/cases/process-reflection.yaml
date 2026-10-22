@@ -1,5 +1,5 @@
 id: process-reflection
-description: "The reflect process asks its session to reflect with no prompt, and the model updates its self-model (self/learned) with memory_set."
+description: "After another session's turn, the reflect process hands its session a digest of the journal with no prompt of its own, and the model updates its self-model (self/learned) with memory_set."
 track: live
 tier: basic
 tags: [processes, reflection]
@@ -10,6 +10,11 @@ setup:
       tool: reflect
       role: reflection
       every: 2s
+
+# A reflection with nothing new to read is skipped, so a conversation turn
+# gives it something.
+prompts:
+  - "Remember that my favourite colour is teal."
 
 wait:
   seconds: 180
