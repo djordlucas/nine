@@ -2,8 +2,10 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"nine/internal/config"
@@ -78,6 +80,15 @@ func (d *Daemon) SpawnGoalSession(_ context.Context, goalID, cadence string) (bo
 		ID: goalProcessID(goalID), Tool: "pursue", Mode: memory.ProcessLive,
 		SessionID: goalID, Owner: true, Role: PursueRole, GoalID: goalID,
 		Schedule: schedule,
+	}
+	// The schedule as given marks the goal recurring; a wake cadence alone
+	// does not (a [[process]] block's every is how often it is checked).
+	if cadence != "" {
+		args, err := json.Marshal(map[string]string{"schedule": strings.TrimSpace(cadence)})
+		if err != nil {
+			return false, err
+		}
+		p.Args = string(args)
 	}
 	switch {
 	case schedule != "":

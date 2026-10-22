@@ -174,4 +174,16 @@ func TestSpawnGoalSessionWithACadence(t *testing.T) {
 	if _, found, _ := store.ProcessGet("goal:bad"); found {
 		t.Error("an unreadable cadence wrote a process")
 	}
+
+	// A wake cadence alone, as a [[process]] block gives one, does not make a
+	// goal recurring.
+	if err := store.GoalCreate("watch", "watch the repo", "", "config"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.SpawnStandingSession(context.Background(), "watch", "", false, time.Hour, "", config.BudgetConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	if g, _ := store.GoalGet("watch"); g.Schedule != "" {
+		t.Errorf("a standing agent's every made its goal recurring: %q", g.Schedule)
+	}
 }

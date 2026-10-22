@@ -31,15 +31,3 @@ func ParseCadence(s string) (every time.Duration, schedule string, err error) {
 	}
 	return 0, s, nil
 }
-
-// FormatEvery writes an interval as a cadence reads it: 24h, 90m, 45s.
-func FormatEvery(d time.Duration) string {
-	switch {
-	case d%time.Hour == 0:
-		return fmt.Sprintf("%dh", d/time.Hour)
-	case d%time.Minute == 0:
-		return fmt.Sprintf("%dm", d/time.Minute)
-	default:
-		return fmt.Sprintf("%ds", d/time.Second)
-	}
-}

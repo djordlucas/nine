@@ -324,7 +324,8 @@ func TestGoalCreateWithASchedule(t *testing.T) {
 	var gotCadence string
 	agent.RegisterGoalTools(d, "agent-1", store, func(_ context.Context, goalID, cadence string) (bool, error) {
 		gotCadence = cadence
-		return true, store.ProcessUpsertDefinition(memory.Process{ID: "goal:" + goalID, Tool: "pursue", GoalID: goalID, IntervalSecs: 86400})
+		return true, store.ProcessUpsertDefinition(memory.Process{ID: "goal:" + goalID, Tool: "pursue", GoalID: goalID,
+			IntervalSecs: 86400, Args: `{"schedule":"` + cadence + `"}`})
 	})
 
 	res, err := d.Dispatch(context.Background(), "goal_create", json.RawMessage(`{"description":"a daily news digest","schedule":"24h"}`))

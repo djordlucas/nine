@@ -74,10 +74,11 @@ its result, end the turn. The goal stays active between runs.
 | A 5-field cron expression | `0 8 * * *` | at those times, in UTC |
 
 The model sets it with `goal_create`'s `schedule`, the operator with
-`POST /goals` (`"schedule"`), the web UI's Repeat choice, or `every`/`schedule`
-on a goal `[[process]]` block. Only a top-level goal recurs: a sub-goal is worked
-on in its parent's runs. The schedule lives on the goal's pursue process, and
-the goal reads it back as `schedule`.
+`POST /goals` (`"schedule"`) or the web UI's Repeat choice. Only a top-level goal
+recurs: a sub-goal is worked on in its parent's runs. The schedule is recorded
+on the goal's pursue process, and the goal reads it back as `schedule`. A goal
+`[[process]]` block's `every` or `schedule` only sets how often its goal is
+checked; it does not make the goal recurring.
 
 ## Only top-level goals get one
 

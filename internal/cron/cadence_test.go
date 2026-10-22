@@ -33,11 +33,3 @@ func TestParseCadence(t *testing.T) {
 		}
 	}
 }
-
-func TestFormatEvery(t *testing.T) {
-	for d, want := range map[time.Duration]string{24 * time.Hour: "24h", 90 * time.Minute: "90m", 45 * time.Second: "45s"} {
-		if got := FormatEvery(d); got != want {
-			t.Errorf("FormatEvery(%s) = %q, want %q", d, got, want)
-		}
-	}
-}
