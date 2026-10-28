@@ -64,7 +64,7 @@ jobs:
       # Pinned to the same SHA as the upload-sarif steps below, since all three
       # are the same action repository. Dependabot moves them together.
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@3ea06614dafe36dec890db3446326e0d40ce53d4 # v3
+        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v3
         with:
           languages: go
           build-mode: manual
