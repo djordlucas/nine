@@ -4,19 +4,22 @@
 **Related:** `adr/process-sessions.md`, `adr/tool-facilities.md`, `adr/roles-design.md`,
 `adr/generated-tool-authoring-loop.md`, `adr/deferred-tool-schemas.md` ·
 **Amends:** R-ORCH.1–2 (a delegation may run a program), `adr/tool-facilities.md` §7 (the
-containable shape it describes, built for one host call), R-PROC (live processes gain `ask`)
+containable shape it describes, built for one host call), R-PROC (live processes gain `ask`),
+the glossary's "there is no Task entity" (§5)
 
 A **coded sub-agent** is a delegation whose child is a **program** instead of a ReAct loop.
 A program is a sandboxed tool that decides the steps of a finite task. It asks the model only
 for language and judgment, in small calls with fresh contexts. Before anything is kept, it
 checks what the model said against **evidence**: what the run's tools actually returned.
 
-`run_agent` and `run_agents` gain a `program` argument. Everything else about a delegation
-stays as it is: the parent waits for the result, and the child has its own session, a
-timeout, the depth guard and priority 3.
+Programs run two ways. `run_agent` and `run_agents` gain a `program` argument, for a parent
+that waits for the result. **The board** is for work posted without waiting: a durable pool of
+tasks that the daemon drains as slots free, that programs can post to themselves, and whose
+record every session can read. Either way the run is the same: its own session, a timeout,
+the depth guard and priority 3.
 
-This note proposes a mechanism, not an application: the program shape, three host calls, a
-set of runtime checks, and a check library. Nothing in it is about a domain.
+This note proposes a mechanism, not an application: the program shape, three host calls, the
+board, a set of runtime checks, and a check library. Nothing in it is about a domain.
 
 ---
 
@@ -45,6 +48,11 @@ Nine has two homes for code that calls a model, and neither fits a finite delega
 | A sandboxed tool | no | no: it cannot ask the model anything |
 | A live process | `turn(text)`, in its own session | no: it runs until stopped and returns no result, its session history grows every turn, and a conversation reaches it only asynchronously |
 
+Delegation is also synchronous only. A parent that wants ten things researched waits through
+all ten. No delegate can hand a follow-up to another. And when the turn ends, nothing is left
+of what was asked and what came back except that session's history. Workflows record a plan,
+but they are passive by design: nothing runs a step unless a model calls a `workflow_*` tool.
+
 Nothing in Nine checks a delegate's claims against what it read.
 
 ---
@@ -56,6 +64,7 @@ research, but nothing in the mechanism is about news. Its findings, from 30-minu
 
 | Change (generic) | Effect |
 |---|---|
+| A board: the delegator posts and moves on, programs post follow-ups, and every result stays readable | several runs at once on one small model, and the delegator chose its next tasks from the record |
 | Delegates as code, the model for single steps | first results, but the delegating model wrote programs that did nothing |
 | The result must be text; a written program's trial must have an effect; the delegator's tasks must point at something it read | the useless programs and tasks invented from memory stopped |
 | Constrained decoding and a schema for structured asks | no more failed parses |
@@ -63,7 +72,7 @@ research, but nothing in the mechanism is about news. Its findings, from 30-minu
 | Claims kept only when the evidence carries them | every kept claim traceable to a source it was checked against |
 
 What did **not** help: prompt changes, or letting the model write more of its own programs.
-The best run wrote none. The counts were made by hand, in one domain. Phase 0 (§9) turns
+The best run wrote none. The counts were made by hand, in one domain. Phase 0 (§10) turns
 them into evals across several domains, so Nine measures the result rather than inheriting it.
 
 ---
@@ -96,8 +105,9 @@ from what it writes.
 | Built, with budgets, health and versions | Asynchronous: the sender cannot wait for a result |
 | | `turn()` appends to the session's history, so contexts grow |
 
-**Decision: B, built on the process sandbox.** Processes stay the home for work driven by a
-clock or by events. A is rejected for now (§10).
+**Decision: B, built on the process sandbox, with a board (§5) for the work posted without
+waiting.** Processes stay the home for work driven by a
+clock or by events. A is rejected for now (§11).
 
 ---
 
@@ -112,7 +122,7 @@ result.
 [tool.<name>.program]
 role    = "monitor"     # bounds its agent() calls: their tools are a subset of this role's
 timeout = "6m"          # replaces the delegation's default
-writes  = true          # its effect is files; the trial (§5) checks it has one
+writes  = true          # its effect is files; the trial (§6) checks it has one
 ```
 
 **Calling.** `run_agent({ program: "<name>", task: "…" })`. `role` and `program` are
@@ -125,7 +135,7 @@ is synchronous.
 
 | Call | Context | Reach |
 |---|---|---|
-| `ask(prompt, { system?, schema?, max_tokens? })` | fresh: a system line and the prompt, nothing else. With `schema`, it uses the provider's constrained decoding where it has one. The reply is parsed and validated against the schema (§5) | none: no tools |
+| `ask(prompt, { system?, schema?, max_tokens? })` | fresh: a system line and the prompt, nothing else. With `schema`, it uses the provider's constrained decoding where it has one. The reply is parsed and validated against the schema (§6) | none: no tools |
 | `agent({ prompt, system?, tools, max_steps? })` | fresh: a ReAct loop in the child session, with only `tools` | `tools`, a subset of the program's `role`. This is the shape `tool-facilities.md` §7 called containable: a named allowlist under its own role, depth 1, and the closure printed in the roster |
 | `evidence()` | — | what this run's tools returned: from its `agent()` calls and its own `fs` and `net.http`. Each entry is `{ source, kind, text }`, where the source is a URL, a workspace path or a command, and the kind is page, search, file, http or command |
 
@@ -147,7 +157,81 @@ a process's with every turn.
 
 ---
 
-## 5. Checks
+## 5. The board
+
+`run_agent({ program })` is a parent waiting for a result. The board is the other half: work
+posted without waiting, run when a slot frees, and recorded where anyone can read it.
+
+**A task** is one program run on the board:
+
+| Field | |
+|---|---|
+| `program`, `task` | what runs, and its input |
+| `posted_by` | a session, or the task whose program posted it |
+| `depth` | 0 when posted by a session; one more than its poster when posted by a program |
+| `status` | `queued`, `running`, `done`, `failed`, `cancelled` |
+| `result` | the program's text, or the failure's reason |
+| `session` | the run's child session, for its journal |
+
+**Posting.**
+
+| From | With |
+|---|---|
+| A conversation or a process session | `task_post({ program, task })`, granted per role like `run_agent` |
+| A program | `post(program, task)` from `nine:board` |
+| The operator | `nine task post`, `POST /api/v1/tasks` |
+
+A post is admitted or refused on the spot, with a reason. The poster is a model or a program
+that can act on the refusal. The checks that apply are the runtime checks of §6: the program
+exists, `accepts(task)`, alike tasks, and the poster's budget. One more applies to posting:
+depth. A task at `[board] max_depth` (default 2) cannot post. A program may hand work on, and
+that work may hand work on once, but chains end, as processes' lineage does.
+
+**Running.** A driver in the daemon takes queued tasks oldest first, up to
+`[board] max_running` at once (default: the LLM queue's `max_concurrent`). Each runs exactly
+as `run_agent({ program })` runs it. `run_agent({ program })` also records its run on the
+board, as a task that starts `running` at once. Waited-for and posted runs therefore share one
+record and one alike check, and a waited-for run never queues behind posted ones.
+
+**Results.** A finished task's result is delivered to its poster:
+
+| Poster | Receives the result as |
+|---|---|
+| A conversation | a queued message (`docs/queued-messages.md`), so it gets a turn even if the model never opens the queue |
+| A process session | a message, which is a trigger, as a pipe's report is |
+| A program | nothing: its run has ended. The result is on the board for whoever reads it |
+| Gone (deleted, archived) | the human feed |
+
+A result is data a program produced from what it read, so it is an injection path, as piped
+reports are. It is delivered framed with its task, as `[Result of task #12 (<program>): …]`,
+and the turn it starts is restricted as a piped turn is (`adr/process-sessions.md`, Limits).
+
+**Reading and control.**
+
+| Tool | Does |
+|---|---|
+| `task_list({ status?, program?, posted_by? })` | the board, newest first, with each result's first line |
+| `task_get(id)` | one task: its input, result, timings and session |
+| `task_cancel(id)` | stops a queued or running task, allowed to its poster and to the operator |
+
+The operator has `nine task list|show|cancel`, `/api/v1/tasks`, and a web UI page.
+
+**Restarts.** At boot, a task left `running` is queued again once. If it is interrupted
+again, it fails as "interrupted twice". A program's writes are its own concern: a program
+that must not run twice says so in `accepts`.
+
+**Retention.** Finished tasks stay for `[board] retention` (default 30 days), then go with
+their sessions in the session-retention sweep.
+
+**Why not workflows.** A workflow is an ordered plan a model keeps, with no driver.
+`spec/overview.md` §3.1 makes the difference between workflows and goals a matter of
+autonomy, and the board is autonomous. Giving workflow steps a driver would blur that line.
+A board is a pool with no order, and a workflow step may still name the task that carries it
+out.
+
+---
+
+## 6. Checks
 
 Checks come in two kinds. **Runtime checks** hold for every program, whatever its code does.
 **Content checks** are a library a program calls: the runtime cannot know what a claim is in
@@ -165,6 +249,9 @@ a given task, but it can make checking one a single line of code.
 | **Task admission** | a program may export `accepts(task)`, which runs before anything else with no model access. A string it returns refuses the delegation with that reason | delegations built from memory: a program can require that the task point at something that exists, such as a file, a URL the parent read, or a record |
 | **Trial** (written programs) | before a write is saved, the program runs on a sample task in a copy of the workspace. It must return text and, when `writes`, change a file | written programs that do nothing and report success |
 | **Own state** | a program keeps its state in `nine:state` or the database, never in workspace files another delegate can edit | another component damaging a program's state |
+
+Admission checks (alike, task admission, budget, and depth on the board) run when a task is
+posted or delegated, before it queues, so the poster learns of the refusal at once.
 
 Task admission is the generic form of five's grounding rule. Five's research program refused
 any task that did not cite a link from the news it had read. Another program might require
@@ -187,7 +274,7 @@ program asks for claims with their sources, keeps what `cited` keeps, and writes
 
 ---
 
-## 6. Writing programs
+## 7. Writing programs
 
 `tool_write` with a `program` block, gated by `[tools.agent] allow_programs` (off by
 default). The write passes today's checks: parse, the declaration against the ceiling, and
@@ -203,45 +290,48 @@ option, not the feature.
 
 ---
 
-## 7. What ships
+## 8. What ships
 
 | | Content |
 |---|---|
 | `program` declarations and `run_agent({ program })` | §4 |
 | `nine:llm` (`ask`, `agent`, `evidence`) | §4 |
-| The runtime checks | §5 |
-| `nine:check` | §5 |
+| The board | §5 |
+| The runtime checks | §6 |
+| `nine:check` | §6 |
 | The `program-patterns` skill | the three shapes of §4 as complete programs, each run by a test, and the common mistakes, as `process-patterns` is for processes |
 
 No domain program ships. The skill's examples are examples.
 
 ---
 
-## 8. What this amends
+## 9. What this amends
 
 | | Today | With coded sub-agents |
 |---|---|---|
 | R-ORCH.1–2 | A delegation runs a ReAct loop under a leaf role | …or a program, whose `agent()` calls run under its role |
 | `tool-facilities.md` §7 | Tool→tool dispatch is rejected; a containable shape is recorded | That shape is built for `agent()` only |
 | R-PROC | A live process asks the model only with `turn()` | Live processes may also `ask()`, so a process that needs no history stops growing its session |
+| Glossary, "Work unit" | There is no Task entity: finite work is a sub-agent or a workflow step | A **task** is a program run on the board. It adds no new kind of work, only a record of one: a task runs as a coded sub-agent |
 | `run_agents` timeout | 120 s for every child | A program's `timeout` overrides it for its entry |
 
 ---
 
-## 9. Phases
+## 10. Phases
 
 | # | Content | Acceptance |
 |---|---|---|
 | 0 | Live cases in three domains: a web question, a code location and a log diagnosis. Each is delegated to `executor` on 4b and 9b and graded on side effects: claims whose quote is in their source, claims without one, results that say nothing, and runs that kept nothing | Recorded on `main`: the baseline |
 | 1 | `program` declarations (developer and shipped tiers), `run_agent({ program })`, `nine:llm` | Replay snapshots of existing delegation unchanged; a program run journals as a child session |
 | 2 | The runtime checks | Each refusal has a case that fails for its reason |
-| 3 | `nine:check`, the `program-patterns` skill, and each phase-0 case rewritten as a program | On 4b, each domain keeps more checked claims than its baseline and writes **no** unchecked ones, in 3 of 3 runs |
-| 4 | Written programs: `allow_programs`, `program_roles`, the trial | A written program with no effect is refused; one with an effect is saved and runs |
-| 5 | `ask()` in live processes; docs, the glossary, the spec (R-PROG) | Each phase's cases pass on a local model |
+| 3 | The board: tasks, `task_post`, `post()`, the driver, delivery, `task_list`, `task_get`, `task_cancel`, the operator surface | Ten tasks posted at once all finish with at most `max_running` running; a program's follow-up runs; a post at `max_depth` is refused; a result reaches its conversation as a queued message, and its turn is restricted |
+| 4 | `nine:check`, the `program-patterns` skill, and each phase-0 case rewritten as a program | On 4b, each domain keeps more checked claims than its baseline and writes **no** unchecked ones, in 3 of 3 runs |
+| 5 | Written programs: `allow_programs`, `program_roles`, the trial | A written program with no effect is refused; one with an effect is saved and runs |
+| 6 | `ask()` in live processes; docs, the glossary, the spec (R-PROG, R-BOARD) | Each phase's cases pass on a local model |
 
 ---
 
-## 10. Open questions
+## 11. Open questions
 
 | Question | Proposal |
 |---|---|
@@ -249,6 +339,9 @@ No domain program ships. The skill's examples are examples.
 | A new tool or a `run_agent` argument | **An argument**: it adds no tool schema (`deferred-tool-schemas.md`), and delegation is already where a model looks for it |
 | `ask()` in ordinary tools (option A) | **Later**: `ask` has no reach, so it would not break §7, but a long tool call holding a turn is a separate question |
 | How far alike delegations reach | **Daemon-wide**, within the window. Checking per session misses `pursue` delegating the same task at every tick |
+| The board's order | **Oldest first.** Priorities wait for a case that needs them; five ran first come, first served |
+| A flood of posts | A per-poster cap on queued tasks, `[board] max_queued` (default 20), beside the budgets |
+| Results to a busy conversation | **A queued message**, so a result never interrupts a turn and is never lost |
 | Parallel calls inside a program | **No**: the guest is synchronous. Parallelism comes from several programs through `run_agents` |
 | `evidence()` and size | It keeps each entry's full text for the run, in the run's spill namespace, never in a prompt. The cap is open |
 
@@ -260,6 +353,8 @@ No domain program ships. The skill's examples are examples.
   current, or that the claim matters.
 - `says` and `novel` are lexical: a paraphrase in other words is dropped, and the same claim
   from two sources in different words is kept twice.
+- The board's results are restricted when they start a turn, and that restriction has the
+  same gaps as piped reports: a restricted turn can still create files or plant a memory.
 - The trial shows that a written program has an effect, not that the effect is good.
 - The evidence for the pattern is one experiment: one domain, runs counted by hand, a 4B model
   on one 16 GB machine. Phase 0 runs three domains for this reason.
