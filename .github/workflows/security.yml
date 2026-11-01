@@ -64,7 +64,7 @@ jobs:
       # Pinned to the same SHA as the upload-sarif steps below, since all three
       # are the same action repository. Dependabot moves them together.
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@3ea06614dafe36dec890db3446326e0d40ce53d4 # v3
+        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           languages: go
           build-mode: manual
@@ -77,7 +77,7 @@ jobs:
         run: make build
 
       - name: Analyze
-        uses: github/codeql-action/analyze@3ea06614dafe36dec890db3446326e0d40ce53d4 # v3
+        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           category: codeql-go
 
@@ -105,7 +105,7 @@ jobs:
           output: trivy-fs-results.sarif
 
       - name: Upload to Security Tab
-        uses: github/codeql-action/upload-sarif@3ea06614dafe36dec890db3446326e0d40ce53d4 # v3
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: trivy-fs-results.sarif
         if: always()
@@ -155,7 +155,7 @@ jobs:
           output: trivy-docker-results.sarif
 
       - name: Upload to Security Tab
-        uses: github/codeql-action/upload-sarif@3ea06614dafe36dec890db3446326e0d40ce53d4 # v3
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: trivy-docker-results.sarif
         if: always()
