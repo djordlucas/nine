@@ -600,6 +600,25 @@ Nothing the seeds need. `research` uses files, regular expressions and host call
 QuickJS has. `feeds` needs an XML parser, which a program bundles or writes (the `node:*`
 shims widen what bundles), and it would use `fetch` directly, which `evidence()` records.
 
+### 9.4 The threat model, and what isolation is for
+
+The code in the sandbox is **model-generated or model-authored** — written by `tool_write` or by
+a program the model wrote. The adversary is a prompt-injected or confused model, not a
+determined human: the goal is that *what the code may touch* is bounded by grants, not that a
+clever exploit of the interpreter is impossible. That is why the boundary is the capability
+table (R-TVM.5: ungranted reach is structurally absent) rather than an OS jail, and why wasm's
+linear-memory isolation plus a per-call instance, memory cap, deadline and work budget
+(`internal/toolvm/host.go`: `WithMemoryLimitPages`, `WithCloseOnContextDone`, the QuickJS
+interrupt handler) is the right shape: a bug in wazero or the blob is a daemon bug, so a
+`recover()` around the guest call is the cheap insurance to add, but guest code escaping the
+wasm sandbox is not the case to design against. Container-level isolation belongs one layer
+up: the daemon itself ships as a container (`docs/docker-image.md`), and an operator who runs
+genuinely adversarial artifacts uses a container plugin (§9.2, last row), not per-tool
+processes. Embedding a second language is deliberately not done: the ABI accepts any wasm
+module (R-TVM.2), but a raw module is unmetered — wazero has no fuel — so QuickJS-NG (ES2023,
+~1 MB blob, vendored at a pinned tag) is the one interpreter, and `node:*` compatibility comes
+from shims over granted `nine:*` modules, not from a Node runtime.
+
 ---
 
 ## 10. What ships
