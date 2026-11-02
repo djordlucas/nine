@@ -551,14 +551,18 @@ to the same phase.
 
 ## 9. Code runtime
 
-Five runs each program as a Node child process with no permission model. Nine does not adopt
-that. A program is a `js` tool in QuickJS under wazero.
+A program stays a `js` tool in QuickJS under wazero, running in-process in the daemon. Neither
+a container runtime nor Node is adopted as the program runtime; both were weighed (§9.2) and
+rejected for that role. A container plugin remains available as an operator-installed tool
+inside `agent()`'s allowlist, where it cannot reach `nine:llm` (§9.2, last row).
+
+### 9.1 Five against Nine
 
 | | Five | Nine |
 |---|---|---|
 | Runtime | Node 24 child process, killed with what it spawned | QuickJS in wazero, no process to spawn |
 | Reach | all of Node: files, processes, network, any package | capabilities, granted by the operator |
-| Memory | 1 GiB V8 heap | 64 MiB for a program (§4) |
+| Memory | 1 GiB V8 heap | 64 MiB for a program (§4): 64 MiB × `[board] pool` (8) is 512 MiB, exact, against a cgroup-dependent bound |
 | Files | `node:fs` in the workspace | `nine:fs`, on granted mounts |
 | Web | `fetch`, `five.web.*` | `fetch` under `net.http`, `nine:html`; `web_search` and `web_page_read` only through `agent()` |
 | Packages | any bare import, installed by `npm` at run time | bundled at write time by `[tools.agent.deps]`, off by default |
@@ -566,16 +570,35 @@ that. A program is a `js` tool in QuickJS under wazero.
 
 Five's own limit states the reason: "`run_js` and task workers run with all of Node". In Nine,
 reach outside a grant is structurally absent (R-TVM.5), and the runtime image has no package
-manager (`docs/sandboxed-tools.md`). Option E of `adr/node-compat.md` rejected a Node tool kind
-because it would give up that confinement.
+manager (`docs/sandboxed-tools.md`, `docs/docker-image.md`: "No browser, no Node").
 
-**What programs lose.** Nothing the seeds need. `research` uses files, regular expressions and
-host calls, all of which QuickJS has. `feeds` needs an XML parser, which a program bundles or
-writes, and it would use `fetch` directly, which `evidence()` records.
+### 9.2 Options weighed
 
-**`adr/node-compat.md` is independent of this note.** It would let bundled npm packages that
-touch `Buffer`, `path` or `events` load, which widens what a program can import. No phase here
-depends on it, and it does not change a program's reach.
+The deciding constraint is that `nine:llm` is host-side. `ask`/`agent`/`evidence` go through
+the daemon's LLM queue at priority 3, under the program's declared `role`, charged to the
+poster's budget, and journaled in the child session (§4) — all of which the host can only
+enforce from inside its own process. The plugin contract (R-PLUG.1) carries exactly two
+methods, daemon→plugin (`plugin.describe`, `plugin.call`); there is no reverse channel by
+which a subprocess guest could initiate a model call, so an out-of-process runtime would need
+a new guest→daemon RPC with per-run authorization, built for the written-program tier (§7) that
+five's evidence says is the least reliable. `net.http` is enforced host-side (R-TVM.12), and a
+container with its own network namespace cannot be policed by the host, so egress would have
+to run `--network none` and proxy back through host-enforced calls — rebuilding the in-process
+sandbox with worse ergonomics.
+
+| Option | Verdict | Reason |
+|---|---|---|
+| QuickJS in wazero, in-process (today) | **Adopt** | `nine:llm`, `nine:board`, undo (§6) and the trial's workspace copy (§7) are host functions and trivial here; R-TVM.5 holds without an OS sandbox Nine would have to build and verify; the memory bound is exact (§9.1) |
+| Node as a `node` tool kind or program runtime | **Not adopted** | Puts Node and a package manager in the runtime image, against R-TVM.2 ("the daemon MUST NOT contain a compiler or a package manager") and the image contract; replaces wazero's structural confinement with an OS sandbox Nine would build. This is option E of `adr/node-compat.md`, rejected there for the same reason; five's "no permission model" limit is the evidence |
+| Source-level `node:*` shims (`adr/node-compat.md`, `origin/adr/node-compat`) | **Adopted independently** | Pure-JS shims over existing `nine:*` capabilities (`node:fs` over `nine:fs`; `child_process`/`net` throw on use); no blob rebuild, no new reach. Buys back the npm packages that fail at bundle time today, inside the same sandbox. No phase here depends on it, and it does not change a program's reach |
+| Podman/Docker as the program runtime | **Not adopted** | Needs the reverse RPC above; fs grants and pre-opens become volume plumbing; per-run deadlines exist (R-PLUG.8, R-PLUG.12) but the trial's copy and undo become volume mounts; R-PLUG.13a and the immutable-image rule (N1) make per-program containers a poor fit |
+| Podman as an operator-installed plugin exposing a tool | **Viable, orthogonal** | The right home for "run this untrusted artifact in a container", alongside `shell` (which already runs as uid 1000 in the image, `spec/contracts/plugin.md`). Its result is text returned to the loop, so it can be one of the tools in `agent()`'s allowlist — never the program itself |
+
+### 9.3 What programs lose
+
+Nothing the seeds need. `research` uses files, regular expressions and host calls, all of which
+QuickJS has. `feeds` needs an XML parser, which a program bundles or writes (the `node:*`
+shims widen what bundles), and it would use `fetch` directly, which `evidence()` records.
 
 ---
 
