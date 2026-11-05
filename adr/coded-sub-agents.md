@@ -602,18 +602,20 @@ shims widen what bundles), and it would use `fetch` directly, which `evidence()`
 
 ### 9.4 The threat model, and what isolation is for
 
-The code in the sandbox is **model-generated or model-authored** — written by `tool_write` or by
-a program the model wrote. The adversary is a prompt-injected or confused model, not a
-determined human: the goal is that *what the code may touch* is bounded by grants, not that a
-clever exploit of the interpreter is impossible. That is why the boundary is the capability
-table (R-TVM.5: ungranted reach is structurally absent) rather than an OS jail, and why wasm's
-linear-memory isolation plus a per-call instance, memory cap, deadline and work budget
-(`internal/toolvm/host.go`: `WithMemoryLimitPages`, `WithCloseOnContextDone`, the QuickJS
-interrupt handler) is the right shape: a bug in wazero or the blob is a daemon bug, so a
-`recover()` around the guest call is the cheap insurance to add, but guest code escaping the
-wasm sandbox is not the case to design against. Container-level isolation belongs one layer
-up: the daemon itself ships as a container (`docs/docker-image.md`), and an operator who runs
-genuinely adversarial artifacts uses a container plugin (§9.2, last row), not per-tool
+**Opinion: keep one embedded interpreter (QuickJS-NG), expose any other language as an
+operator-installed plugin, and make the grant table — not an OS jail — the isolation
+boundary.** The code in the sandbox is **model-generated or model-authored** — written by
+`tool_write` or by a program the model wrote — so the adversary is a prompt-injected or
+confused model, not a determined human. The goal is that *what the code may touch* is bounded
+by grants, not that a clever exploit of the interpreter is impossible. That is why the boundary
+is the capability table (R-TVM.5: ungranted reach is structurally absent) rather than an OS
+jail, and why wasm's linear-memory isolation plus a per-call instance, memory cap, deadline
+and work budget (`internal/toolvm/host.go`: `WithMemoryLimitPages`, `WithCloseOnContextDone`,
+the QuickJS interrupt handler) is the right shape: a bug in wazero or the blob is a daemon
+bug, so a `recover()` around the guest call is the cheap insurance to add, but guest code
+escaping the wasm sandbox is not the case to design against. Container-level isolation belongs
+one layer up: the daemon itself ships as a container (`docs/docker-image.md`), and an operator
+who runs genuinely adversarial artifacts uses a container plugin (§9.2, last row), not per-tool
 processes. A second language is likewise not embedded: if one is ever needed, it arrives as an
 operator-installed **plugin** exposing a tool (the `[[mcp.server]]` pattern, R-PLUG.6/15) —
 not as another interpreter blob in toolvm, since a raw wasm module is unmetered (wazero has no
