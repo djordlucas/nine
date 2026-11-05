@@ -614,10 +614,12 @@ interrupt handler) is the right shape: a bug in wazero or the blob is a daemon b
 wasm sandbox is not the case to design against. Container-level isolation belongs one layer
 up: the daemon itself ships as a container (`docs/docker-image.md`), and an operator who runs
 genuinely adversarial artifacts uses a container plugin (§9.2, last row), not per-tool
-processes. Embedding a second language is deliberately not done: the ABI accepts any wasm
-module (R-TVM.2), but a raw module is unmetered — wazero has no fuel — so QuickJS-NG (ES2023,
-~1 MB blob, vendored at a pinned tag) is the one interpreter, and `node:*` compatibility comes
-from shims over granted `nine:*` modules, not from a Node runtime.
+processes. A second language is likewise not embedded: if one is ever needed, it arrives as an
+operator-installed **plugin** exposing a tool (the `[[mcp.server]]` pattern, R-PLUG.6/15) —
+not as another interpreter blob in toolvm, since a raw wasm module is unmetered (wazero has no
+fuel) — and it still cannot reach `nine:llm`, so it is a tool inside `agent()`, never a program.
+QuickJS-NG (ES2023, ~1 MB blob, vendored at a pinned tag) is the one embedded interpreter, and
+`node:*` compatibility comes from shims over granted `nine:*` modules, not from a Node runtime.
 
 ---
 
