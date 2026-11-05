@@ -254,7 +254,7 @@ golang.org/x/text/unicode/norm
 # gopkg.in/yaml.v3 v3.0.1
 ## explicit
 gopkg.in/yaml.v3
-# modernc.org/libc v1.79.1
+# modernc.org/libc v1.80.0
 ## explicit; go 1.26.0
 modernc.org/libc
 modernc.org/libc/errno
