@@ -2,6 +2,7 @@
 
 - **Status:** Proposed (architecture analysis). Nothing here is built.
 - **Date:** 2026-11-01.
+- **Reviewed:** 2026-11-06 — fact-checked against the tree; §1 tool count and names, §2 progress-rail wording, §3 database ownership, §5 supervision wording corrected; test plan added as §10.
 - **Scope:** the daemon's tool-serving path — the plugin contract (`spec/contracts/plugin.md`), the `mcp` bridge (`internal/builtins/mcp.go`, `mcp_stdio.go`, `mcp_http.go`), the toolvm host front (`internal/toolvm/host.go`), the core-intercepted handlers (`internal/agent/register_*.go`), and the dispatcher (`spec/contracts/dispatcher.md`). The wire protocol (`list_tools`/`plugin_call`, R-PROTO.5), the config shape (`[[mcp.server]]`, `[plugins]`, `[tools]`), and the tool catalogs themselves are touched only where named below.
 - **Depends on:** `internal/plugin` (manager), `internal/builtins`, `internal/toolvm`, `internal/agent`.
 - **Follows:** R-PLUG.15 (an MCP server is a plugin, `spec/contracts/plugin.md`), `adr/plugin-http-transport-design.md`, `adr/deferred-tool-schemas.md` (toolkit exposition), `adr/tool-facilities.md` §7 (tool→tool dispatch and MCP reach rejected).
@@ -22,7 +23,7 @@ client. Architecture B in §4 is the recommendation; §8 phases it so tool names
 
 | Tier | Where it runs | Protocol today | Tools |
 |------|---------------|----------------|-------|
-| Core-intercepted | in-process dispatcher handlers (`internal/agent/register_*.go`) | none — direct function calls into `memory.Store` et al. | ~40: `memory_*`, `skill_*`, `goal_*`, `workflow_*`, `job_*`, `queued_*`, `process_*`, `run_agent(s)`, `run_sql`, `doc_*`, `tool_list/search`, `notify_user`, `ask_human`, `file_search_text`, `list_files`, `gap_report`, `tool_write/read/delete`, `js_eval` |
+| Core-intercepted | in-process dispatcher handlers (`internal/agent/register_*.go`) | none — direct function calls into `memory.Store` et al. | 46 defs in `InterceptedDefs`: `memory_*`, `skill_*`, `goal_*`, `workflow_*`, `job_*`, `queued_*`, `process_*`, `run_agent(s)`, `sql_query`, `doc_*`, `tool_list/search`, `notify_user`, `file_search_text`, `list_files`, `gap_report`, `capability_request`; `ask_human` and the generated tier (`tool_write/read/delete`, `js_eval`) register outside `InterceptedDefs` |
 | Built-in plugins | subprocess `nine plugin serve <name>` (`internal/builtins`) | custom envelope R-PLUG.1: `plugin.describe`/`plugin.call`/`plugin.job_*` over HTTP on a per-plugin unix socket | `shell`, plus one `mcp` bridge instance per `[[mcp.server]]` |
 | Sandboxed tools | in-process toolvm host, wazero/QuickJS (`internal/toolvm`) | internal guest ABI (host functions), not a wire protocol | shipped (`read_file` … `time`, `internal/toolvm/shipped/`), developer (`[tools].user_dir`), generated (`tool_write` rows) |
 | User plugins | subprocess executable from `[plugins].user_dir` | same R-PLUG.1 envelope | operator-defined |
@@ -48,7 +49,7 @@ client-side or host-side and moves with it, not into the wire.
 | Content arrays (`text`/`image`/`audio`/`resource`/`resource_link`) | yes | dispatcher receives structured content; binary parts spill to files instead of the bridge's text flattening (R-PLUG.15b) |
 | stdio and streamable HTTP transports | yes | two transports behind one client interface |
 | Protocol version negotiation (`initialize.protocolVersion`) | yes | replaces `plugin.ProtocolVersion` for MCP-speaking servers (the bridge already negotiates 2024-11-05 / 2025-03-26) |
-| `notifications/progress` with progressToken | yes | first-party servers ride it for job progress and the `nine:progress` rail |
+| `notifications/progress` with progressToken | yes | first-party servers ride it for job progress and the planned `nine:progress` rail (`adr/tool-facilities.md`, proposed) |
 | `notifications/tools/list_changed` | yes | `tool_write`/`tool_delete`/`nine tools reload` notify mid-session instead of relying on `SyncSandboxed` between turns |
 | `title` / `annotations` | yes | maps to `ToolDef.DisplayName`; invariant I8 (display names never reach the LLM) stays client-side filtering |
 | Async jobs (R-PLUG.12: `job_id`, `job_status`, `job_cancel`, sweeper) | no | first-party: a `_meta` extension on the `tools/call` result, consumed by the dispatcher's existing `JobStarter`; third-party servers: absent, exactly as today (the bridge already reports `async_jobs: false`) |
@@ -61,11 +62,14 @@ client-side or host-side and moves with it, not into the wire.
 
 ## 3. The hard constraint: one SQLite writer, one sandbox host
 
-Invariant 3 (docs/architecture.md §16): `memory.Store` is the only `*sql.DB`
-owner. The core-intercepted tools read and write that store, so they can be
-served only by an **in-process** MCP server (a loopback transport inside the
-daemon) — never a subprocess, which would mean a second writer or an RPC
-channel back to the daemon.
+Invariant 3 (docs/architecture.md §16) makes `memory.Store` the only `*sql.DB`
+owner of the store, and the daemon additionally owns the `[processes] database`
+file (`sqldb.Open`, `cmd/nine/daemon.go:432`), which `spec/contracts/processes.md:253`
+requires to sit apart from the store. Either way, every database handle belongs
+to the daemon process. The core-intercepted tools read and write that store, so
+they can be served only by an **in-process** MCP server (a loopback transport
+inside the daemon) — never a subprocess, which could hold neither handle and
+would need an RPC channel back to the daemon.
 
 The same argument pins the toolvm host in-process: its host functions (workspace
 confinement and SSRF gates in `ssrf.go`/`nethttp.go`, `nine:state`, `nine:sql`,
@@ -115,11 +119,12 @@ agent.Loop ── Dispatcher ── one MCP client (internal/mcp)
   write lock. The bridge's code (`internal/builtins/mcp*.go`) moves into
   `internal/mcp` as the shared client and the `mcp` builtin is deleted. The
   bridge's process-per-server disappears for external servers: the server
-  process itself is still a supervised child of the daemon, so crash isolation
-  of the *server* is unchanged, and a wedged stdio read blocks only that
-  server's goroutine until the existing 5-minute call timeout tears the
-  connection down (the failure mode R-PLUG.15's process boundary guarded
-  against).
+  process becomes a directly supervised child of the daemon (today it is a
+  grandchild behind the bridge, with `exitWhenServerDies` chaining its death to
+  the bridge's exit), so crash isolation of the *server* is unchanged, and a
+  wedged stdio read blocks only that server's goroutine until the existing
+  5-minute call timeout tears the connection down (the failure mode R-PLUG.15's
+  process boundary guarded against).
 - **`nine mcp serve <name>`** — a new hidden subcommand beside `nine plugin
   serve` — speaks MCP streamable HTTP on the per-instance unix socket, reusing
   the manager's socket, sanitized env, cache dir, and `[plugins].disabled`
@@ -209,6 +214,42 @@ JSON-encoded string in the text part.
 7. **Phasing** — phased dual-stack (§8, recommended) or big-bang? Role
    allowlists, eval cases, and prompts name tools literally, which argues for
    phased.
+
+---
+
+## 10. Test plan
+
+Phases follow §8. Harness rules: daemon tests use `startDaemon`/`dial`/`seqProvider`
+(`internal/runtime/daemon_test.go`) with sockets in `/tmp` (macOS caps socket
+paths at 104 bytes); a plugin process that dies before listening is a real
+failure, not a timeout (30s readiness budget); the evals runner deadlocks
+intermittently and is excluded from `make ci`, so it is run explicitly per
+phase; Playwright end-to-end only under `NINE_PLAYWRIGHT_TEST=1`; the pre-merge
+gate is `make ci` (plus `make scan` for the image).
+
+| Phase | Unit | Integration | Gate |
+|---|---|---|---|
+| P0 `internal/mcp` | JSON-RPC framing on the in-proc and unix-socket HTTP transports; request-id correlation; `isError`→error mapping; content-array flattening parity with `flattenMCPContent` (port `mcp_content_test.go`); protocol-version matrix (2024-11-05 stdio, 2025-03-26 HTTP); `NINE_MCP_HANDSHAKE_TIMEOUT` parse and fallback | against `internal/builtins/testmcpserver` over stdio and HTTP; ctx cancel tears down a blocked stdio read | `go test ./internal/mcp/` |
+| P1 `nine mcp serve shell`, dual-stack | shell over MCP: destructive-command guard (`shell_security_test`), `NINE_WORKSPACE` cwd, per-call timeout; legacy-envelope plugin still loads with a deprecation warning; `nine plugin validate` accepts both | manager dual-stack (MCP first, legacy fallback); `[plugins].disabled` blocks both start paths; roster unchanged; tool-name collision skips the whole plugin (R-PLUG.9); `list_tools`/`plugin_call` wire tests unchanged | `go test ./internal/plugin/ ./internal/builtins/`; evals runner run explicitly |
+| P2 in-proc `nine:tools` | every shipped tool callable through the client; grants still enforced (`capability_test`, `ssrf_test`); bounds (`timeout_test`, `workbudget_test`); `x-nine-ref` expanded before `tools/call` (`refs_test`); spill and cap unchanged (`spill_test`) | `tool_write`/`tool_delete`/`nine tools reload` emit `tools/list_changed`; a written tool is callable from the next turn (`sync_sandboxed_test` plus a new notification test) | toolvm suites; evals incl. `deferred-mcp-discovery` |
+| P3 in-proc `nine:core` | all 46 `InterceptedDefs` reachable via the client; approval gate fires pre-call with the original args (`approval_test`); `RestrictTo` enforced (`restrict_test`); hooks fire (`hooks_test`); unknown-tool + did-you-mean (`dispatcher_test`) | benchmark `memory_get` over the loopback vs the direct handler — validates §5's "json.RawMessage only" cost claim | dispatcher + `register_*_test.go` suites |
+| P4 user plugins MCP-only | manifest gate: no manifest → binary never executed; malformed manifest or non-MCP binary skipped while others load (fail-soft); `Probe`/`validate` | `nine plugins reload` starts/stops only user plugins; in-flight turns keep their tool set | `userplugins_test.go`, `transport_test.go`, `startup_test.go` |
+| P5 manager spawns `[[mcp.server]]` directly | stdio spawn + handshake; `<server>__<tool>` prefixing unchanged (`mcp_test.go`); server death marks the plugin down and the next call errors (replaces the `exitWhenServerDies` chain); handshake-timeout test via the env override; listen-first ordering preserved | hosted streamable HTTP (`mcp_http_test.go`); N servers start concurrently and one dead server does not block boot; `disabled = ["mcp:github"]` | `mcp_*_test.go`; `mcp_playwright_test.go` only under `NINE_PLAYWRIGHT_TEST=1`; evals |
+| P6 (optional) export | `nine mcp export` stdio: `tools/list` equals the daemon's `list_tools`; `tools/call` proxies `plugin_call`; sampling/elicitation refused | API `/mcp` behind the same authentication as REST | API tests; `make ci` OpenAPI drift + lint |
+
+Cross-cutting, at every phase:
+
+- **Name stability** — snapshot the full catalog (names + schemas) before and
+  after; it must be byte-identical, which is what keeps role allowlists, eval
+  cases, skills, and prompts working (§9 q4).
+- **Conformance** — each new or rewritten rule gets a row in
+  `spec/conformance.md` (R-PLUG.1 as "plugins are MCP servers", the `_meta`
+  jobs extension, the in-proc transport).
+- **Boot order** — MCP servers start concurrently and a dead server never
+  blocks boot; regression-test both.
+- **Gate** — `go build ./...`, `go test ./...`, an explicit `tests/evals/runner`
+  run compared against the baselines in `adr/deferred-tool-schemas.md`, then
+  `make ci` before merge.
 
 ---
 
