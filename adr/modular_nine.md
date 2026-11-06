@@ -239,7 +239,9 @@ paths at 104 bytes); a plugin process that dies before listening is a real
 failure, not a timeout (30s readiness budget); the evals runner deadlocks
 intermittently and is excluded from `make ci`, so it is run explicitly per
 phase; Playwright end-to-end only under `NINE_PLAYWRIGHT_TEST=1`; the pre-merge
-gate is `make ci` (plus `make scan` for the image).
+gate is `make ci` (plus `make scan` for the image). At the requester's direction
+(2026-11-06) the evals are a behaviour-parity gate at every phase, not a
+one-off check — see "Behaviour parity" below.
 
 | Phase | Unit | Integration | Gate |
 |---|---|---|---|
@@ -250,6 +252,29 @@ gate is `make ci` (plus `make scan` for the image).
 | P4 user plugins MCP-only | manifest gate: no manifest → binary never executed; malformed manifest or non-MCP binary skipped while others load (fail-soft); `Probe`/`validate` | `nine plugins reload` starts/stops only user plugins; in-flight turns keep their tool set | `userplugins_test.go`, `transport_test.go`, `startup_test.go` |
 | P5 manager spawns `[[mcp.server]]` directly | stdio spawn + handshake; `<server>__<tool>` prefixing unchanged (`mcp_test.go`); server death marks the plugin down and the next call errors (replaces the `exitWhenServerDies` chain); handshake-timeout test via the env override; listen-first ordering preserved | hosted streamable HTTP (`mcp_http_test.go`); N servers start concurrently and one dead server does not block boot; `disabled = ["mcp:github"]` | `mcp_*_test.go`; `mcp_playwright_test.go` only under `NINE_PLAYWRIGHT_TEST=1`; evals |
 | P6 (optional) export | `nine mcp export` stdio: `tools/list` equals the daemon's `list_tools`; `tools/call` proxies `plugin_call`; sampling/elicitation refused | API `/mcp` behind the same authentication as REST | API tests; `make ci` OpenAPI drift + lint |
+
+### Behaviour parity
+
+Every phase runs the eval tracks of `docs/evals.md` and compares **per case**
+against a baseline captured on `main` before P0 starts:
+
+- `make eval-replay` — deterministic and infra-free (`TestCasesValidate` +
+  `TestReplayFixtures` in `./tests/evals/`; already `make ci`'s eval gate) —
+  must be identical at every phase: same cases pass, same fail, nothing new
+  skipped.
+- `make eval-live` — the live model matrix (`NINE_EVAL_MODELS`, needs
+  `make build`; `TestLiveMatrix` in `./tests/evals/`) — run at every phase that
+  renames or reroutes tools; per-case outcomes must match the baseline. The
+  runner starts a real in-process daemon per test and deadlocks intermittently,
+  which is why it is outside `make ci`: rerun once on a deadlock before treating
+  a failure as real.
+- The only sanctioned difference is a rename (§9.4): eval cases, replay
+  fixtures (`tests/evals/replay/<id>/journal.json` — their assertions name
+  tools, e.g. `tool_start.name`), and role allowlists are updated in the same
+  PR through the phase's old→new mapping table, and a case must pass under its
+  new name exactly where it passed under the old one.
+- Any other per-case difference — a new failure, a new pass, a new skip — is a
+  behaviour change and blocks the phase until explained.
 
 Cross-cutting, at every phase:
 
@@ -263,9 +288,9 @@ Cross-cutting, at every phase:
   jobs extension, the in-proc transport).
 - **Boot order** — MCP servers start concurrently and a dead server never
   blocks boot; regression-test both.
-- **Gate** — `go build ./...`, `go test ./...`, an explicit `tests/evals/runner`
-  run compared against the baselines in `adr/deferred-tool-schemas.md`, then
-  `make ci` before merge.
+- **Gate** — `go build ./...`, `go test ./...`, the behaviour-parity check
+  above (recorded pass counts also live in `adr/deferred-tool-schemas.md`),
+  then `make ci` before merge.
 
 ---
 
