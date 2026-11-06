@@ -3,6 +3,7 @@
 - **Status:** Proposed (architecture analysis). Nothing here is built.
 - **Date:** 2026-11-01.
 - **Reviewed:** 2026-11-06 — fact-checked against the tree; §1 tool count and names, §2 progress-rail wording, §3 database ownership, §5 supervision wording corrected; test plan added as §10.
+- **Decisions:** 2026-11-06 — §9 items 1–4 answered by the requester: all tiers in scope, both directions, the sandbox fronted by MCP, prefix every server's tools.
 - **Scope:** the daemon's tool-serving path — the plugin contract (`spec/contracts/plugin.md`), the `mcp` bridge (`internal/builtins/mcp.go`, `mcp_stdio.go`, `mcp_http.go`), the toolvm host front (`internal/toolvm/host.go`), the core-intercepted handlers (`internal/agent/register_*.go`), and the dispatcher (`spec/contracts/dispatcher.md`). The wire protocol (`list_tools`/`plugin_call`, R-PROTO.5), the config shape (`[[mcp.server]]`, `[plugins]`, `[tools]`), and the tool catalogs themselves are touched only where named below.
 - **Depends on:** `internal/plugin` (manager), `internal/builtins`, `internal/toolvm`, `internal/agent`.
 - **Follows:** R-PLUG.15 (an MCP server is a plugin, `spec/contracts/plugin.md`), `adr/plugin-http-transport-design.md`, `adr/deferred-tool-schemas.md` (toolkit exposition), `adr/tool-facilities.md` §7 (tool→tool dispatch and MCP reach rejected).
@@ -107,8 +108,8 @@ smallest first step.
 
 ```text
 agent.Loop ── Dispatcher ── one MCP client (internal/mcp)
-                                   ├─ in-proc  nine:core    InterceptedDefs + register_* handlers, store-backed
-                                   ├─ in-proc  nine:tools   toolvm.Host front: Tools()→tools/list, CallOutput→tools/call
+                                   ├─ in-proc  core         InterceptedDefs + register_* handlers, store-backed
+                                   ├─ in-proc  tools        toolvm.Host front: Tools()→tools/list, CallOutput→tools/call
                                    ├─ unix-socket HTTP MCP   nine mcp serve shell   (subprocess, same binary)
                                    ├─ stdio subprocess       [[mcp.server]] command = …   (spawned by the manager directly)
                                    └─ streamable HTTP        [[mcp.server]] url = …
@@ -144,11 +145,15 @@ agent.Loop ── Dispatcher ── one MCP client (internal/mcp)
   migration the manager dual-stacks — MCP handshake first, legacy envelope as
   a deprecated fallback — then the envelope is removed and `nine plugin
   validate` accepts only MCP.
-- **Naming:** first-party servers keep bare tool names (the R-PLUG.9 collision
-  rules already reserve them); third-party `[[mcp.server]]` tools keep the
-  `<server>__<tool>` prefix. The deferred index's toolkits become uniform:
-  `mcp/<server>` for external servers, named toolkits for first-party ones.
-  (Open question 4.)
+- **Naming (decided, §9.4):** every server's tools carry the `<server>__<tool>`
+  prefix, first-party servers included — `shell__shell`, `tools__read_file`,
+  `core__memory_get` — so a cross-server collision is structurally impossible
+  and the rule is uniform. This renames every first-party tool; each renaming
+  phase ships an old→new mapping table and updates everything that names tools
+  literally (role allowlists, eval cases, skills, prompts, `[context]
+  resident_tools`, the toolkit table in `internal/runtime/exposition.go`). The
+  deferred index's toolkits become uniform: `mcp/<server>` for external
+  servers, named toolkits for first-party ones.
 - **Wire protocol:** `list_tools`/`plugin_call` (R-PROTO.5) are unchanged — they
   address the dispatcher, which now fans out over MCP.
 
@@ -170,11 +175,13 @@ and vet the same way the API does, because Nine does not vet a server's argument
 
 ## 7. What the model sees
 
-Nothing changes: same tool names, schemas, and descriptions; exposition
-(ranked/deferred/hybrid, `adr/deferred-tool-schemas.md`), ref expansion, spill,
-and approval gates are all dispatcher-side and untouched. Optional later:
-`structuredContent` for `shell`'s `{stdout, stderr, exit_code}` instead of a
-JSON-encoded string in the text part.
+Schemas, descriptions, exposition (ranked/deferred/hybrid,
+`adr/deferred-tool-schemas.md`), ref expansion, spill, and approval gates are
+unchanged — all dispatcher-side. Tool **names** change: every tool gains its
+server's `<server>__` prefix (§9.4), so the model sees `tools__read_file`,
+`core__memory_get`, `shell__shell`. Optional later: `structuredContent` for
+`shell`'s `{stdout, stderr, exit_code}` instead of a JSON-encoded string in the
+text part.
 
 ---
 
@@ -184,36 +191,43 @@ JSON-encoded string in the text part.
 |---|---|---|
 | P0 | `internal/mcp`: hand-rolled MCP client (moved from `internal/builtins`) + symmetric server + in-proc transport; no new dependency | unit tests against `internal/builtins/testmcpserver` |
 | P1 | `nine mcp serve shell`; manager dual-stack (MCP first, legacy fallback); `shell` served over MCP (architecture C as the first step) | `go test ./...`; evals green; `nine plugins` roster unchanged |
-| P2 | in-proc `nine:tools` front over `toolvm.Host`; sandboxed tools registered through the client; `tools/list_changed` on write/delete/reload | toolvm + `sync_sandboxed_test.go` suites |
-| P3 | in-proc `nine:core` server; core tools registered through the client; refs/approval/spill stay in front | dispatcher + `register_*_test.go` suites |
+| P2 | in-proc `tools` front over `toolvm.Host`; sandboxed tools registered through the client; `tools/list_changed` on write/delete/reload | toolvm + `sync_sandboxed_test.go` suites |
+| P3 | in-proc `core` server; core tools registered through the client; refs/approval/spill stay in front | dispatcher + `register_*_test.go` suites |
 | P4 | user plugins speak MCP; legacy envelope removed; `nine plugin validate` MCP-only; `spec/contracts/plugin.md` rewritten as "plugins are MCP servers" | `userplugins` + plugin contract suites |
 | P5 | external `[[mcp.server]]` spawned directly by the manager; bridge builtin deleted; roster and `[plugins].disabled` semantics unchanged | `mcp_test.go`, `mcp_http_test.go`, evals incl. `deferred-mcp-discovery` |
-| P6 (optional) | export direction: `nine mcp export` / API `/mcp` over the same adapters (§6) | OpenAPI drift checks, API tests |
+| P6 | export direction (in scope, §9.2): `nine mcp export` / API `/mcp` over the same adapters (§6) | OpenAPI drift checks, API tests |
 
 ---
 
-## 9. Open questions
+## 9. Decisions and remaining open questions
 
-1. **Scope of "all tooling"** — are the core-intercepted tools in scope (served
-   by the in-proc `nine:core` server), or only the provider tiers (`shell`,
-   sandboxed, user plugins, MCP)? Asked of the requester.
-2. **Direction** — consume-only (architecture B), or also expose Nine's own
-   tools to external MCP clients (§6)? Asked of the requester.
-3. **Toolvm fate** — front the existing host with MCP (recommended; keeps the
-   capability model), or retire the sandbox and run JS tools as their own MCP
-   server processes (loses R-TVM.5/6/7 enforcement)? Asked of the requester.
-4. **Naming** — keep `<server>__<tool>` for every server uniformly, or bare
-   names for first-party servers with prefixes only for third-party? Asked of
-   the requester; §5 recommends the latter because names are load-bearing.
+Answered by the requester on 2026-11-06:
+
+1. **Scope — all tiers, core included.** The core-intercepted tools are served
+   by the in-proc `core` server (P3); a subprocess is impossible because the
+   daemon owns every database handle (§3).
+2. **Direction — both.** The dispatcher consumes only MCP, and Nine also
+   exposes its own tools to external MCP clients (`nine mcp export` / API
+   `/mcp`, §6); P6 is in scope, not optional.
+3. **Toolvm — the sandbox is fronted by MCP.** The host stays in-process behind
+   the `tools` front; capability grants (R-TVM.5/6/7) are unchanged.
+4. **Naming — prefix everything.** Uniform `<server>__<tool>` for every
+   server, first-party included (`shell__shell`, `tools__read_file`,
+   `core__memory_get`). This reverses §5's earlier bare-names leaning: every
+   first-party tool is renamed, and the ripple (roles, evals, skills, prompts,
+   `resident_tools`, toolkit table) is part of the migration, not a separate
+   decision. See §7 and §10.
+
+Still open:
+
 5. **SDK** — hand-roll the MCP server symmetric to the existing client
    (recommended; `go.mod` vendors everything and carries no MCP SDK today), or
    vendor `mcp-go`?
 6. **First-party subprocess transport** — unix-socket HTTP (reuses R-PLUG.8
    concurrency machinery; recommended) or stdio (simpler, serial, fine for
    `shell` alone)?
-7. **Phasing** — phased dual-stack (§8, recommended) or big-bang? Role
-   allowlists, eval cases, and prompts name tools literally, which argues for
-   phased.
+7. **Phasing** — phased dual-stack (§8, recommended) or big-bang? With renames
+   in scope (§9.4), each renaming phase ships its old→new name-mapping table.
 
 ---
 
@@ -231,17 +245,19 @@ gate is `make ci` (plus `make scan` for the image).
 |---|---|---|---|
 | P0 `internal/mcp` | JSON-RPC framing on the in-proc and unix-socket HTTP transports; request-id correlation; `isError`→error mapping; content-array flattening parity with `flattenMCPContent` (port `mcp_content_test.go`); protocol-version matrix (2024-11-05 stdio, 2025-03-26 HTTP); `NINE_MCP_HANDSHAKE_TIMEOUT` parse and fallback | against `internal/builtins/testmcpserver` over stdio and HTTP; ctx cancel tears down a blocked stdio read | `go test ./internal/mcp/` |
 | P1 `nine mcp serve shell`, dual-stack | shell over MCP: destructive-command guard (`shell_security_test`), `NINE_WORKSPACE` cwd, per-call timeout; legacy-envelope plugin still loads with a deprecation warning; `nine plugin validate` accepts both | manager dual-stack (MCP first, legacy fallback); `[plugins].disabled` blocks both start paths; roster unchanged; tool-name collision skips the whole plugin (R-PLUG.9); `list_tools`/`plugin_call` wire tests unchanged | `go test ./internal/plugin/ ./internal/builtins/`; evals runner run explicitly |
-| P2 in-proc `nine:tools` | every shipped tool callable through the client; grants still enforced (`capability_test`, `ssrf_test`); bounds (`timeout_test`, `workbudget_test`); `x-nine-ref` expanded before `tools/call` (`refs_test`); spill and cap unchanged (`spill_test`) | `tool_write`/`tool_delete`/`nine tools reload` emit `tools/list_changed`; a written tool is callable from the next turn (`sync_sandboxed_test` plus a new notification test) | toolvm suites; evals incl. `deferred-mcp-discovery` |
-| P3 in-proc `nine:core` | all 46 `InterceptedDefs` reachable via the client; approval gate fires pre-call with the original args (`approval_test`); `RestrictTo` enforced (`restrict_test`); hooks fire (`hooks_test`); unknown-tool + did-you-mean (`dispatcher_test`) | benchmark `memory_get` over the loopback vs the direct handler — validates §5's "json.RawMessage only" cost claim | dispatcher + `register_*_test.go` suites |
+| P2 in-proc `tools` | every shipped tool callable through the client; grants still enforced (`capability_test`, `ssrf_test`); bounds (`timeout_test`, `workbudget_test`); `x-nine-ref` expanded before `tools/call` (`refs_test`); spill and cap unchanged (`spill_test`) | `tool_write`/`tool_delete`/`nine tools reload` emit `tools/list_changed`; a written tool is callable from the next turn (`sync_sandboxed_test` plus a new notification test) | toolvm suites; evals incl. `deferred-mcp-discovery` |
+| P3 in-proc `core` | all 46 `InterceptedDefs` reachable via the client; approval gate fires pre-call with the original args (`approval_test`); `RestrictTo` enforced (`restrict_test`); hooks fire (`hooks_test`); unknown-tool + did-you-mean (`dispatcher_test`) | benchmark `memory_get` over the loopback vs the direct handler — validates §5's "json.RawMessage only" cost claim | dispatcher + `register_*_test.go` suites |
 | P4 user plugins MCP-only | manifest gate: no manifest → binary never executed; malformed manifest or non-MCP binary skipped while others load (fail-soft); `Probe`/`validate` | `nine plugins reload` starts/stops only user plugins; in-flight turns keep their tool set | `userplugins_test.go`, `transport_test.go`, `startup_test.go` |
 | P5 manager spawns `[[mcp.server]]` directly | stdio spawn + handshake; `<server>__<tool>` prefixing unchanged (`mcp_test.go`); server death marks the plugin down and the next call errors (replaces the `exitWhenServerDies` chain); handshake-timeout test via the env override; listen-first ordering preserved | hosted streamable HTTP (`mcp_http_test.go`); N servers start concurrently and one dead server does not block boot; `disabled = ["mcp:github"]` | `mcp_*_test.go`; `mcp_playwright_test.go` only under `NINE_PLAYWRIGHT_TEST=1`; evals |
 | P6 (optional) export | `nine mcp export` stdio: `tools/list` equals the daemon's `list_tools`; `tools/call` proxies `plugin_call`; sampling/elicitation refused | API `/mcp` behind the same authentication as REST | API tests; `make ci` OpenAPI drift + lint |
 
 Cross-cutting, at every phase:
 
-- **Name stability** — snapshot the full catalog (names + schemas) before and
-  after; it must be byte-identical, which is what keeps role allowlists, eval
-  cases, skills, and prompts working (§9 q4).
+- **Name mapping** — snapshot the full catalog (names + schemas) before and
+  after each phase; every rename must appear in that phase's old→new mapping
+  table and nothing else may change. Role allowlists, eval cases, skills,
+  prompts, `[context] resident_tools`, and the toolkit table
+  (`internal/runtime/exposition.go`) are updated in the same PR (§9.4).
 - **Conformance** — each new or rewritten rule gets a row in
   `spec/conformance.md` (R-PLUG.1 as "plugins are MCP servers", the `_meta`
   jobs extension, the in-proc transport).
@@ -262,6 +278,6 @@ Cross-cutting, at every phase:
 | stdio stays serial | One client-side write lock per stdio server; the 3-minute handshake budget and 5-minute call timeout move with the client into the manager. |
 | Third-party server trust is unchanged | Declaring an MCP server is trusting it (R-PLUG.15b); standardization does not vet a server's arguments. |
 | Export direction adds a trust surface | An external `/mcp` endpoint needs the API's authentication, and server→client sampling/elicitation stay disabled (adr/tool-facilities.md §7). |
-| Names must not change during migration | Role allowlists, eval cases (`deferred-mcp-discovery` and the `mcp/fixture` toolkit), skills, and prompts reference tool names literally; renaming is a separate, larger decision (open question 4). |
+| First-party tool names change (decided, §9.4) | Uniform `<server>__<tool>` prefixing renames every built-in (`shell__shell`, `tools__read_file`, `core__memory_get`); role allowlists, eval cases (`deferred-mcp-discovery`, `mcp/fixture`), skills, prompts, `resident_tools`, and the toolkit table must migrate with the rename, in the same phase. |
 | Tool→tool dispatch stays rejected | An in-proc MCP front for toolvm does not give sandboxed tools MCP reach; the guest ABI has no dispatch verb and none is added. |
 | In-proc servers lose process isolation for core/toolvm | They never had it — both tiers are already in-process; §3 only forbids moving them out. |
