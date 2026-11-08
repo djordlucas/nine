@@ -472,6 +472,20 @@ prompts and tool output included, so it needs the same token as the rest of the 
 
 ---
 
+## MCP export
+
+`POST /api/v1/mcp` is the export direction of adr/modular_nine.md §6 (P6): the API
+server speaks MCP streamable HTTP, so an external MCP client can use the daemon's
+tools. `tools/list` is the daemon's `list_tools` roster (resynced on a ticker, so a
+`plugins reload` is picked up) and `tools/call` proxies `plugin_call` — the same
+surfaces the CLI uses. Sampling and elicitation are refused (the capabilities are
+never advertised). The endpoint sits under `/api/`, so it requires the same
+authentication as every other API route. OpenAPI cannot describe the MCP protocol,
+so like the WebSocket route it is mounted outside the document. The same adapter
+backs `nine mcp export`, which serves stdio instead of HTTP. A client POSTs
+JSON-RPC to `http://<host>:8080/api/v1/mcp` with `Content-Type: application/json`
+and `Accept: application/json, text/event-stream`.
+
 ## WebSocket
 
 `/ws/v1/conversations/{id}/messages` carries the event stream's events and lets the

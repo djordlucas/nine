@@ -57,6 +57,8 @@ nine skills validate [path]      Check your own skill/role files against the
 nine plugins                     Show the plugin roster (built-in + user, with
                                  any skipped user plugins and the reason)
 nine plugins reload              Re-scan [plugins].user_dir and reload user
+nine mcp export                  Serve the daemon's tools as an MCP stdio
+                                 server for an external MCP client (adr/modular_nine.md §6)
                                  plugins live (built-ins untouched)
 nine plugin validate [path]      Check a user plugin with the load-time handshake
                                  (defaults to [plugins].user_dir; a path may be a
