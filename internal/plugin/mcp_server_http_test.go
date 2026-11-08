@@ -1,4 +1,4 @@
-package builtins_test
+package plugin_test
 
 import (
 	"context"
@@ -10,14 +10,15 @@ import (
 	"sync"
 	"testing"
 
+	"nine/internal/mcp"
 	"nine/internal/plugin"
 )
 
-// The streamable-HTTP transport, driven end to end: a real bridge process, in
-// its own plugin instance, talking to a stand-in MCP server over HTTP. The
-// server here answers initialize with a plain JSON body and tools/call as an
-// SSE stream, because a real server chooses per request and a client that only
-// handles one shape works until it doesn't.
+// The streamable-HTTP transport, driven end to end: the manager talking to a
+// stand-in MCP server over HTTP. The server here answers initialize with a
+// plain JSON body and tools/call as an SSE stream, because a real server
+// chooses per request and a client that only handles one shape works until it
+// doesn't.
 
 // fakeMCPHTTP is a minimal streamable-HTTP MCP server. It records the headers it
 // saw so the session and auth plumbing can be asserted.
@@ -109,27 +110,21 @@ func writeJSONRPCError(w http.ResponseWriter, id, code int, msg string) {
 	})
 }
 
-func startHTTPBridge(t *testing.T, name string) (*plugin.Plugin, *plugin.Manager, *fakeMCPHTTP) {
+func startHTTPServer(t *testing.T, name string) (*plugin.Plugin, *plugin.Manager, *fakeMCPHTTP) {
 	t.Helper()
 
 	fake := &fakeMCPHTTP{}
 	srv := httptest.NewServer(fake.handler(t))
 	t.Cleanup(srv.Close)
 
-	spec, err := json.Marshal(map[string]any{
-		"name":    name,
-		"url":     srv.URL,
-		"headers": map[string]string{"Authorization": "Bearer test-token"},
+	m := plugin.NewManager("")
+	p, err := m.StartMCPServer(mcp.ServerSpec{
+		Name:    name,
+		URL:     srv.URL,
+		Headers: map[string]string{"Authorization": "Bearer test-token"},
 	})
 	if err != nil {
-		t.Fatalf("marshal spec: %v", err)
-	}
-
-	m := plugin.NewManager("")
-	m.SetBuiltinBinary(nineBin)
-	p, err := m.StartBuiltinInstance("mcp", plugin.MCPInstanceName(name), "NINE_MCP_SERVER="+string(spec))
-	if err != nil {
-		t.Fatalf("start http mcp bridge: %v", err)
+		t.Fatalf("start hosted MCP server: %v", err)
 	}
 	t.Cleanup(func() { m.Stop(p) }) //nolint:errcheck // test cleanup
 	return p, m, fake
@@ -137,8 +132,8 @@ func startHTTPBridge(t *testing.T, name string) (*plugin.Plugin, *plugin.Manager
 
 // A hosted server is a plugin exactly like a spawned one: same instance name,
 // same prefixing, same contract.
-func TestMCPHTTPBridgeDescribe(t *testing.T) {
-	p, _, _ := startHTTPBridge(t, "hosted")
+func TestMCPHTTPServerDescribe(t *testing.T) {
+	p, _, _ := startHTTPServer(t, "hosted")
 
 	if p.Name != "mcp:hosted" {
 		t.Errorf("plugin name = %q, want mcp:hosted", p.Name)
@@ -146,13 +141,17 @@ func TestMCPHTTPBridgeDescribe(t *testing.T) {
 	if len(p.Tools) != 1 || p.Tools[0].Name != "hosted__echo" {
 		t.Fatalf("tools = %+v, want [hosted__echo]", p.Tools)
 	}
+	// A hosted server has no process and no serial transport: HTTP is concurrent.
+	if p.MaxConcurrent != 0 {
+		t.Errorf("max_concurrent = %d, want 0 (unbounded) for streamable HTTP", p.MaxConcurrent)
+	}
 }
 
 // tools/call comes back as SSE here, with a keep-alive and an unrelated
 // notification ahead of the answer. Reading the first data frame, or treating a
 // notification as the reply, would both produce the wrong result.
-func TestMCPHTTPBridgeCallOverSSE(t *testing.T) {
-	p, m, _ := startHTTPBridge(t, "hosted")
+func TestMCPHTTPServerCallOverSSE(t *testing.T) {
+	p, m, _ := startHTTPServer(t, "hosted")
 
 	res, err := m.Call(context.Background(), p, "hosted__echo", json.RawMessage(`{"message":"hi"}`))
 	if err != nil {
@@ -165,8 +164,8 @@ func TestMCPHTTPBridgeCallOverSSE(t *testing.T) {
 
 // The session a server issues on initialize has to ride every later request, or
 // a stateful server rejects them.
-func TestMCPHTTPBridgeEchoesSession(t *testing.T) {
-	p, m, fake := startHTTPBridge(t, "hosted")
+func TestMCPHTTPServerEchoesSession(t *testing.T) {
+	p, m, fake := startHTTPServer(t, "hosted")
 
 	if _, err := m.Call(context.Background(), p, "hosted__echo", json.RawMessage(`{}`)); err != nil {
 		t.Fatalf("Call: %v", err)
@@ -191,8 +190,8 @@ func TestMCPHTTPBridgeEchoesSession(t *testing.T) {
 
 // Operator headers are what authenticate a hosted server, so they must be on
 // every request, not just the handshake.
-func TestMCPHTTPBridgeSendsHeaders(t *testing.T) {
-	p, m, fake := startHTTPBridge(t, "hosted")
+func TestMCPHTTPServerSendsHeaders(t *testing.T) {
+	p, m, fake := startHTTPServer(t, "hosted")
 
 	if _, err := m.Call(context.Background(), p, "hosted__echo", json.RawMessage(`{}`)); err != nil {
 		t.Fatalf("Call: %v", err)
@@ -213,17 +212,14 @@ func TestMCPHTTPBridgeSendsHeaders(t *testing.T) {
 	}
 }
 
-// An unreachable URL must fail the bridge rather than yield a plugin with no
+// An unreachable URL must fail the start rather than yield a plugin with no
 // tools, the same as an unspawnable command.
-func TestMCPHTTPBridgeUnreachableFails(t *testing.T) {
+func TestMCPHTTPServerUnreachableFails(t *testing.T) {
 	// Port 0 is never listening.
-	spec, _ := json.Marshal(map[string]any{"name": "down", "url": "http://127.0.0.1:0/rpc"})
-
 	m := plugin.NewManager("")
-	m.SetBuiltinBinary(nineBin)
-	p, err := m.StartBuiltinInstance("mcp", plugin.MCPInstanceName("down"), "NINE_MCP_SERVER="+string(spec))
+	p, err := m.StartMCPServer(mcp.ServerSpec{Name: "down", URL: "http://127.0.0.1:0/rpc"})
 	if err == nil {
 		m.Stop(p) //nolint:errcheck // cleanup on unexpected success
-		t.Fatal("bridge started against an unreachable URL; want failure")
+		t.Fatal("start succeeded against an unreachable URL; want failure")
 	}
 }

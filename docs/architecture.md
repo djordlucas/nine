@@ -21,7 +21,7 @@ Nine is a **daemon/client pair**. A single long-lived daemon process owns all
 state; the `nine` binary is both the thin client and the daemon (it re-execs
 itself with a hidden subcommand). Plugins are independent child processes. The
 LLM endpoint is the only external dependency Nine always has; each declared
-`[[mcp.server]]` adds another, because the bridge reaches a server that is
+`[[mcp.server]]` adds another, because the manager connects to a server that is
 fetched (`npx`) or hosted elsewhere (§10).
 
 ```
@@ -65,8 +65,9 @@ fetched (`npx`) or hosted elsewhere (§10).
 ```
 
 Memory, the durable file store, and skills are **in-process** capabilities of
-`memory.Store`, not plugin subprocesses. The plugin subprocesses are `shell`, one
-`mcp` bridge per declared `[[mcp.server]]`, and any user plugin. The workspace
+`memory.Store`, not plugin subprocesses. The plugin subprocesses are `shell`, any user plugin, and one spawned
+process per declared `[[mcp.server]]` that uses `command` (a `url` server is
+hosted and has no process). The workspace
 file tools, the fetching tools and `time` are **shipped sandboxed tools** in the
 binary (§11) — they were plugins, and moving them put Nine's own capabilities
 under the capability model instead of the daemon's uid.
@@ -102,7 +103,7 @@ Key consequences of this shape:
 | Daemon  | `nine` (re-exec) | Owns sockets, sessions, queue, plugins, DB connection | Long-lived |
 | API server | `nine` (re-exec) | HTTP/REST server; translates requests to the daemon socket. Serves OpenAPI/Swagger at `/api/v1/swagger/` (see [api.md](api.md)) | Long-lived (s6-managed in Docker) |
 | Plugin  | `bin/<name>`, or `nine` (re-exec) for the built-ins | One tool provider, HTTP over a unix socket | Spawned by daemon, killed on stop |
-| MCP bridge | `nine` (re-exec) | One declared `[[mcp.server]]`: the plugin contract to the daemon, stdio or HTTP to the server | Spawned by daemon, killed on stop |
+| MCP server | `command` child, or hosted `url` | One declared `[[mcp.server]]`: the manager connects over stdio or streamable HTTP | Spawned by daemon (command form), killed on stop |
 | Sandboxed tool | *(none)* | JS/wasm in a wazero instance inside the daemon | One instance per call, closed on return |
 
 The CLI auto-starts the daemon if the socket is dead. One binary is the entry
@@ -580,12 +581,11 @@ lifecycle. A native plugin speaks a small two-method protocol (`plugin.describe`
 `POST /rpc`): the manager spawns the process, waits for the socket, and drives it
 with an `http.Client`, which gives free per-request concurrency and
 context-based cancellation (plugins-http-transport.md). There is no second
-transport on the daemon's side: an external **MCP** server is a plugin too,
-reached through the `mcp` bridge, which speaks this same contract to the daemon.
-How the bridge reaches the server is the part that varies — `dialSpec`
-(`mcp`) opens HTTP when the `[[mcp.server]]` declares a
-`url`, and spawns the `command` over stdio otherwise. Everything past that dial
-is transport-agnostic: one `mcpConn`, one handshake, one tool-prefixing rule.
+transport on the daemon's side: an external **MCP** server is a plugin row too,
+reached by the manager's one MCP client. What varies is the dial — streamable
+HTTP when the `[[mcp.server]]` declares a `url`, a spawned `command` over stdio
+otherwise. Everything past that dial is transport-agnostic: one connection, one
+handshake, one tool-prefixing rule.
 
 The Go default plugins are not separate executables: their handlers live in
 `builtins`, and `Manager.StartBuiltin` spawns them by re-executing the
@@ -622,9 +622,9 @@ compiled into the image at build time and started at daemon boot:
 ```
 
 An MCP server is the exception to "compiled into the image": nothing is built for
-it, and the bridge reaches a server that is fetched (`npx`) or hosted elsewhere.
-The bridge process itself is still `nine plugin serve mcp`, so the lifecycle above
-is unchanged from the daemon's side. [Browser automation](browser.md) is the
+it, and the manager reaches a server that is fetched (`npx`) or hosted elsewhere.
+The server process is a direct child of the daemon — no bridge in between — so the
+lifecycle above is unchanged from the daemon's side. [Browser automation](browser.md) is the
 worked example: Playwright's MCP server declared in `nine.toml`, no plugin
 written and nothing added to the image.
 
@@ -635,7 +635,7 @@ table.) A crashed
 subprocess is isolated from the daemon; restart from the existing binary is the
 manager's responsibility.
 
-Default plugins started at boot: `shell` — then one `mcp` bridge per
+Default plugins started at boot: `shell` — then one connection per
 `[[mcp.server]]`, then user plugins. Reading and writing files, fetching over
 HTTP and reading the clock are **sandboxed tools**, not plugins: they run in
 the wasm tool host with only the capabilities they are granted, rather than as

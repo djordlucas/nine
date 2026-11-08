@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"nine/internal/mcp"
 )
 
 // [plugins].disabled is the operator's lever for withholding a capability —
@@ -149,20 +151,21 @@ func TestUnmatchedDisabledEmptyWhenAllMatched(t *testing.T) {
 // An MCP server is disabled by its instance name, which is what boot registers
 // and what the roster shows. Getting this wrong would mean an operator writing
 // `disabled = ["mcp:github"]` and quietly getting the server anyway.
-func TestDisabledRefusesBuiltinInstance(t *testing.T) {
+func TestDisabledRefusesMCPServerInstance(t *testing.T) {
 	m := NewManager("")
 	m.SetDisabled([]string{MCPInstanceName("github")})
 
-	if p := m.TryStartBuiltinInstance("mcp", MCPInstanceName("github")); p != nil {
-		t.Error("TryStartBuiltinInstance returned a plugin for a disabled instance")
+	spec := mcp.ServerSpec{Name: "github", Command: "/nonexistent/mcp-server"}
+	if p := m.TryStartMCPServer(spec); p != nil {
+		t.Error("TryStartMCPServer returned a plugin for a disabled instance")
 	}
 	if got := m.DisabledSkipped(); len(got) != 1 || got[0] != "mcp:github" {
 		t.Errorf("DisabledSkipped() = %v, want [mcp:github]", got)
 	}
 
-	// Disabling one instance must not disable the built-in for the others.
-	if m.IsDisabled("mcp") {
-		t.Error(`disabling "mcp:github" also disabled the "mcp" built-in`)
+	// Disabling one instance must not disable the others.
+	if m.IsDisabled("mcp:other") {
+		t.Error(`disabling "mcp:github" also disabled "mcp:other"`)
 	}
 	if m.IsDisabled(MCPInstanceName("slack")) {
 		t.Error(`disabling "mcp:github" also disabled "mcp:slack"`)

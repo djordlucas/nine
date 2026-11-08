@@ -286,19 +286,10 @@ func (m *Manager) StartBuiltin(name string, extraEnv ...string) (*Plugin, error)
 	return m.start(builtinLaunch(bin, name), extraEnv...)
 }
 
-// StartBuiltinInstance starts the built-in `builtin` under the wire name
-// `instance`. It is how one built-in backs several plugins: the `mcp` bridge
-// runs once per configured server (R-PLUG.15), each instance a separate process
-// with its own tools, roster row, and failure domain. Everything else — the
-// sanitized environment, cache dir, describe, disable check — is identical to
-// StartBuiltin, which is the same call with instance == builtin.
-func (m *Manager) StartBuiltinInstance(builtin, instance string, extraEnv ...string) (*Plugin, error) {
-	bin, err := m.builtinBinary()
-	if err != nil {
-		return nil, err
-	}
-	return m.start(builtinInstanceLaunch(bin, builtin, instance), extraEnv...)
-}
+// StartBuiltinInstance and its Try variant are gone with the `mcp` bridge
+// (adr/modular_nine.md P5): external MCP servers are spawned directly by
+// StartMCPServer under the wire name `mcp:<server>`, so no built-in backs
+// several instances any more.
 
 // StartMCPBuiltin spawns a built-in plugin that serves MCP — one whose handlers
 // are linked into the nine binary — by re-executing that binary as
@@ -330,31 +321,13 @@ func (m *Manager) TryStartMCPBuiltin(name string, extraEnv ...string) *Plugin {
 	return p
 }
 
-// TryStartBuiltinInstance is StartBuiltinInstance with TryStart's tolerance: it
-// logs and returns nil rather than failing the daemon's boot, so one unreachable
-// MCP server does not stop Nine from starting.
-func (m *Manager) TryStartBuiltinInstance(builtin, instance string, extraEnv ...string) *Plugin {
-	if m.IsDisabled(instance) {
-		m.noteDisabledSkip(instance)
-		slog.Info("plugin disabled by config, not starting", "name", instance)
-		return nil
-	}
-	p, err := m.StartBuiltinInstance(builtin, instance, extraEnv...)
-	if err != nil {
-		slog.Warn("plugin start failed", "name", instance, "builtin", builtin, "err", err)
-		return nil
-	}
-	return p
-}
-
 func (m *Manager) start(l launch, extraEnv ...string) (*Plugin, error) {
 	name := l.name
 
 	// Every start path funnels through here, so a disabled plugin cannot be
 	// spawned by any caller — including a future one that forgets to ask. No
-	// process, no socket, no cache dir. MCP servers are covered too: each is a
-	// bridge plugin started through StartBuiltinInstance (R-PLUG.15), not a
-	// separate spawn path of its own.
+	// process, no socket, no cache dir. External MCP servers are covered too:
+	// StartMCPServer checks the same set by instance name (R-PLUG.14/15).
 	if m.IsDisabled(name) {
 		return nil, fmt.Errorf("%q: %w", name, ErrPluginDisabled)
 	}
@@ -416,17 +389,7 @@ func binaryLaunch(binaryPath string) launch {
 // builtinLaunch runs a built-in plugin out of the nine binary at nineBin, under
 // its own name.
 func builtinLaunch(nineBin, name string) launch {
-	return builtinInstanceLaunch(nineBin, name, name)
-}
-
-// builtinInstanceLaunch runs the built-in `builtin` under a different wire name.
-// The two come apart when one built-in serves several plugins: the `mcp` bridge
-// runs once per configured MCP server, so four processes all execute
-// `nine plugin serve mcp` while presenting as `mcp:github`, `mcp:slack`, and so
-// on (R-PLUG.15). Keeping them distinct is what lets each server hold its own
-// row in the roster, its own crash isolation, and its own disable switch.
-func builtinInstanceLaunch(nineBin, builtin, instance string) launch {
-	return launch{name: instance, path: nineBin, args: []string{"plugin", "serve", builtin}}
+	return launch{name: name, path: nineBin, args: []string{"plugin", "serve", name}}
 }
 
 // mcpBuiltinLaunch runs a built-in that serves MCP out of the nine binary at

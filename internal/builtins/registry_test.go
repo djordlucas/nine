@@ -36,18 +36,21 @@ func TestAutoStartMatchesDaemonRoster(t *testing.T) {
 	}
 }
 
-// Servable and auto-started are different questions, and mcp is the case that
-// separates them: it must be servable (the daemon spawns `nine plugin serve
-// mcp` per configured server) while staying out of the boot roster.
-func TestMCPIsServableButNotAutoStarted(t *testing.T) {
-	if !builtins.Has(builtins.MCPBuiltinName) {
-		t.Error("mcp must be servable: the daemon spawns it per [[mcp.server]]")
+// The `mcp` bridge builtin is gone (adr/modular_nine.md P5): the manager spawns
+// [[mcp.server]] servers directly. What remains auto-started is shell, and it
+// has an MCP serve path — the daemon starts it as `nine mcp serve shell`.
+func TestShellIsTheMCPAutoStart(t *testing.T) {
+	if builtins.Has("mcp") {
+		t.Error("the mcp bridge must not be a built-in any more: the manager spawns [[mcp.server]] directly")
 	}
-	if !slices.Contains(builtins.Names(), builtins.MCPBuiltinName) {
-		t.Error("Names() must include mcp, so `plugin serve` usage lists it")
+	if !builtins.HasMCPServe("shell") {
+		t.Error("shell must be MCP-servable: the daemon spawns `nine mcp serve shell`")
 	}
-	if slices.Contains(builtins.AutoStart(), builtins.MCPBuiltinName) {
-		t.Error("mcp must not auto-start: with no server spec it can only fail")
+	if !slices.Contains(builtins.MCPNames(), "shell") {
+		t.Error("MCPNames() must include shell")
+	}
+	if !slices.Contains(builtins.AutoStart(), "shell") {
+		t.Error("shell must stay in the boot roster")
 	}
 }
 

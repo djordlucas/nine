@@ -1,4 +1,4 @@
-// testmcpserver is a minimal MCP server used by internal/builtins tests.
+// testmcpserver is a minimal MCP server used by internal/mcp and internal/plugin tests.
 // It implements the MCP stdio transport with one tool: "mcp_echo".
 //
 // MCP_TEST_STARTUP_DELAY makes it slow to come up, standing in for the real
