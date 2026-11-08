@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -10,7 +9,6 @@ import (
 	"time"
 
 	"nine/internal/memory"
-	"nine/internal/toolvm"
 )
 
 // Live processes (adr/process-sessions.md §2): a js tool started once and left
@@ -35,8 +33,8 @@ const liveTriggerQueue = 8
 // liveProc is one running live process.
 type liveProc struct {
 	row      memory.Process
-	live     *toolvm.Live
-	triggers chan toolvm.Trigger
+	live     *Live
+	triggers chan Trigger
 
 	mu sync.Mutex
 	// waiting is true while the program is blocked in next() with nothing
@@ -182,7 +180,7 @@ func (r *StandingRunner) goalActive(id string) bool {
 // startLive starts one live process and watches it until it ends. A process
 // that cannot start is recorded as a failure.
 func (r *StandingRunner) startLive(ctx context.Context, row memory.Process) {
-	lp := &liveProc{row: row, triggers: make(chan toolvm.Trigger, liveTriggerQueue),
+	lp := &liveProc{row: row, triggers: make(chan Trigger, liveTriggerQueue),
 		recovering: row.Failures > 0}
 	// The version this instance runs, so its run proves that version only.
 	if row.Generated {
@@ -190,7 +188,7 @@ func (r *StandingRunner) startLive(ctx context.Context, row memory.Process) {
 			lp.version = t.Version
 		}
 	}
-	live, err := r.host.StartLive(ctx, row.Tool, json.RawMessage(argsOrEmptyString(row.Args)), &liveHandler{r: r, lp: lp})
+	live, err := startProgram(ctx, row.Tool, &liveHandler{r: r, lp: lp})
 	if err != nil {
 		r.recordFailure(row, err)
 		return
@@ -219,14 +217,14 @@ func (r *StandingRunner) startLive(ctx context.Context, row memory.Process) {
 	slog.Info("live process started", "id", row.ID, "tool", row.Tool, "session", row.SessionID)
 
 	go func() {
-		_, err := live.Wait()
+		err := live.Wait()
 		r.liveMu.Lock()
 		if r.lives[row.ID] == lp {
 			delete(r.lives, row.ID)
 		}
 		r.liveMu.Unlock()
 		switch {
-		case errors.Is(err, toolvm.ErrStopped):
+		case errors.Is(err, ErrStopped):
 			r.log.add(row.ID, "stopped", "")
 		case err != nil && r.stoppedInStore(row.ID):
 			// A program that throws because it was stopped — a budget refusing
@@ -325,7 +323,7 @@ func (r *StandingRunner) Deliver(sessionID, text, from string, piped bool, depth
 	if owner == nil {
 		return false, false
 	}
-	return true, owner.offerMessage(toolvm.Trigger{Kind: "message", At: time.Now(), Text: text, From: from, Piped: piped, Depth: depth})
+	return true, owner.offerMessage(Trigger{Kind: "message", At: time.Now(), Text: text, From: from, Piped: piped, Depth: depth})
 }
 
 func (lp *liveProc) enqueueClock(now time.Time) {
@@ -335,7 +333,7 @@ func (lp *liveProc) enqueueClock(now time.Time) {
 		return
 	}
 	select {
-	case lp.triggers <- toolvm.Trigger{Kind: "clock", At: now}:
+	case lp.triggers <- Trigger{Kind: "clock", At: now}:
 		lp.clockQueued = true
 	default:
 	}
@@ -344,7 +342,7 @@ func (lp *liveProc) enqueueClock(now time.Time) {
 // offerEvent queues an event trigger for the process, unlike a message, which
 // is taken only while the process waits: events arrive in bursts and each is
 // worth handling. A full queue drops it, and the caller journals the drop.
-func (lp *liveProc) offerEvent(t toolvm.Trigger) bool {
+func (lp *liveProc) offerEvent(t Trigger) bool {
 	select {
 	case lp.triggers <- t:
 		return true
@@ -353,7 +351,7 @@ func (lp *liveProc) offerEvent(t toolvm.Trigger) bool {
 	}
 }
 
-func (lp *liveProc) offerMessage(t toolvm.Trigger) bool {
+func (lp *liveProc) offerMessage(t Trigger) bool {
 	lp.mu.Lock()
 	defer lp.mu.Unlock()
 	if !lp.waiting || len(lp.triggers) > 0 {
@@ -373,7 +371,7 @@ type liveHandler struct {
 	lp *liveProc
 }
 
-func (h *liveHandler) Next(ctx context.Context) (toolvm.Trigger, error) {
+func (h *liveHandler) Next(ctx context.Context) (Trigger, error) {
 	lp := h.lp
 	lp.mu.Lock()
 	lp.waiting = true
@@ -429,12 +427,12 @@ func (h *liveHandler) Next(ctx context.Context) (toolvm.Trigger, error) {
 				if err != nil || g == nil || g.Status != "active" {
 					continue
 				}
-				t.Goal = &toolvm.TriggerGoal{ID: g.ID, Description: g.Description, Schedule: g.Schedule,
+				t.Goal = &TriggerGoal{ID: g.ID, Description: g.Description, Schedule: g.Schedule,
 					Folder: GoalFolder(g.ID, g.Description)}
 			}
 			return t, nil
 		case <-ctx.Done():
-			return toolvm.Trigger{}, toolvm.ErrStopped
+			return Trigger{}, ErrStopped
 		}
 	}
 }
@@ -465,7 +463,7 @@ func (h *liveHandler) Turn(ctx context.Context, text string) (string, error) {
 		h.r.chargeTurn(row.ID, tokens)
 	}
 	if err != nil && ctx.Err() != nil {
-		return "", toolvm.ErrStopped
+		return "", ErrStopped
 	}
 	return reply, err
 }
@@ -489,73 +487,6 @@ func (h *liveHandler) Report(_ context.Context, text string) (bool, error) {
 	// What the process reports is one deeper than the trigger it is handling,
 	// as its turns are.
 	return h.r.pipe(row, text, depth+1), nil
-}
-
-// SQL runs a statement in the database for the process (nine:sql).
-func (h *liveHandler) SQL(ctx context.Context, write bool, query string, args []any) (json.RawMessage, error) {
-	return h.r.processSQL(ctx, h.lp.row, write, query, args)
-}
-
-// sliceSQL runs a slice process's database statements: the runner marks the
-// process's calls with it, so nine:sql serves them and no other call.
-type sliceSQL struct {
-	r   *StandingRunner
-	row memory.Process
-}
-
-func (s sliceSQL) SQL(ctx context.Context, write bool, query string, args []any) (json.RawMessage, error) {
-	return s.r.processSQL(ctx, s.row, write, query, args)
-}
-
-// processSQL runs a statement in the database for a process program. A write
-// is journaled under the process as a summary — kinds and tables, never
-// values.
-func (r *StandingRunner) processSQL(ctx context.Context, row memory.Process, write bool, query string, args []any) (json.RawMessage, error) {
-	db := r.database
-	if db == nil {
-		return nil, errors.New("this instance has no database")
-	}
-	args = sqlArgs(args)
-	if !write {
-		res, err := db.Query(ctx, query, args...)
-		if err != nil {
-			return nil, err
-		}
-		return json.Marshal(res)
-	}
-	res, err := db.Exec(ctx, query, args...)
-	if len(res.Writes) > 0 {
-		journalTransition(r.store, row.ID, evSQLWrite, map[string]any{
-			"writes": res.Writes, "changes": res.Changes, "error": errText(err),
-		})
-	}
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(res)
-}
-
-// sqlArgs binds JSON values as SQLite does values: objects and arrays as their
-// JSON text.
-func sqlArgs(args []any) []any {
-	out := make([]any, len(args))
-	for i, a := range args {
-		switch a.(type) {
-		case map[string]any, []any:
-			b, _ := json.Marshal(a)
-			out[i] = string(b)
-		default:
-			out[i] = a
-		}
-	}
-	return out
-}
-
-func errText(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
 }
 
 // hasClock reports whether a process has a clock trigger.

@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -89,7 +90,7 @@ type StandingRunner struct {
 	maxDepth int
 	// heldEvents are event triggers for processes whose instance has not
 	// started yet, under liveMu (deliverEvent).
-	heldEvents map[string][]toolvm.Trigger
+	heldEvents map[string][]Trigger
 	// database is the database processes write through nine:sql; nil when the
 	// instance has none.
 	database *sqldb.DB
@@ -126,10 +127,11 @@ func (r *StandingRunner) SetWaker(w AgentWaker) {
 	}
 }
 
-// NewStandingRunner builds the driver, or nil when there is no sandboxed-tool
-// host — which keeps the feature additive for a deployment with [tools] unset.
+// NewStandingRunner builds the driver, or nil when there is no store. The host
+// is only needed for slice processes (dev/generated JS tools); live programs
+// are Go and need nothing from it.
 func NewStandingRunner(store *memory.Store, host *toolvm.Host, minDelayMS, workers int) *StandingRunner {
-	if store == nil || host == nil {
+	if store == nil {
 		return nil
 	}
 	if minDelayMS <= 0 {
@@ -174,8 +176,8 @@ func (r *StandingRunner) Log() *standingLog {
 // session is kept, so re-adding the block brings the process back with its
 // history.
 //
-// host decides each process's mode from its tool: a live tool makes a live
-// process, any other a slice one.
+// A process's mode comes from its tool: a built-in live program (pursue,
+// reflect) makes a live process, any other a slice one.
 func ReconcileProcesses(store *memory.Store, host *toolvm.Host, blocks []config.ProcessConfig) {
 	if store == nil {
 		return
@@ -212,7 +214,7 @@ func ReconcileProcesses(store *memory.Store, host *toolvm.Host, blocks []config.
 			Declared: true,
 		}
 		p.OnEvents, p.EventFilter, p.EventContent = encodeEventTrigger(b.On, b.OnFilter, b.EventContent)
-		if t := liveTool(host, b.Tool); t != nil {
+		if LiveProgram(b.Tool) {
 			p.Mode = memory.ProcessLive
 			p.SessionID, p.Role, p.Delegates = b.Name, b.Role, b.Delegates
 		} else if len(b.On) > 0 {
@@ -630,4 +632,66 @@ func liveTool(host *toolvm.Host, name string) *toolvm.Tool {
 		return t
 	}
 	return nil
+}
+
+// sliceSQL runs a slice process's database statements: the runner marks the
+// process's calls with it, so nine:sql serves them and no other call.
+type sliceSQL struct {
+	r   *StandingRunner
+	row memory.Process
+}
+
+func (s sliceSQL) SQL(ctx context.Context, write bool, query string, args []any) (json.RawMessage, error) {
+	return s.r.processSQL(ctx, s.row, write, query, args)
+}
+
+// processSQL runs a statement in the database for a process program. A write
+// is journaled under the process as a summary — kinds and tables, never values.
+func (r *StandingRunner) processSQL(ctx context.Context, row memory.Process, write bool, query string, args []any) (json.RawMessage, error) {
+	db := r.database
+	if db == nil {
+		return nil, errors.New("this instance has no database")
+	}
+	args = sqlArgs(args)
+	if !write {
+		res, err := db.Query(ctx, query, args...)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(res)
+	}
+	res, err := db.Exec(ctx, query, args...)
+	if len(res.Writes) > 0 {
+		journalTransition(r.store, row.ID, evSQLWrite, map[string]any{
+			"writes": res.Writes, "changes": res.Changes, "error": errText(err),
+		})
+	}
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(res)
+}
+
+// sqlArgs binds JSON values as SQLite does values: objects and arrays as their
+// JSON text.
+func sqlArgs(args []any) []any {
+	out := make([]any, len(args))
+	for i, a := range args {
+		switch a.(type) {
+		case map[string]any, []any:
+			b, _ := json.Marshal(a)
+			out[i] = string(b)
+		default:
+			out[i] = a
+		}
+	}
+	return out
+}
+
+// errText renders an error for a journal field, or "" for nil.
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }

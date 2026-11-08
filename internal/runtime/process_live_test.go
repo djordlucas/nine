@@ -79,8 +79,7 @@ func liveSetup(t *testing.T, row memory.Process) (*StandingRunner, *memory.Store
 	if err != nil {
 		t.Fatal(err)
 	}
-	host := standingHost(t, "relay", relayManifest, relaySource, nil)
-	r := NewStandingRunner(store, host, 1, 2)
+	r := NewStandingRunner(store, nil, 1, 2)
 	sessions := &fakeSessions{}
 	r.SetSessions(sessions)
 	t.Cleanup(r.StopLive)
@@ -287,8 +286,7 @@ func TestReconcileProcessesMapsBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	host := standingHost(t, "relay", relayManifest+"live = true\n", relaySource, nil)
-	ReconcileProcesses(store, host, []config.ProcessConfig{
+	ReconcileProcesses(store, nil, []config.ProcessConfig{
 		{Name: "sec-watch", Tool: "pursue", Goal: "watch the repo"},
 		{Name: "digest", Tool: "relay", Every: "1h", Role: "writer"},
 		{Name: "sec-watch-relay", Tool: "relay", Every: "30m", Session: "sec-watch"},
@@ -418,14 +416,9 @@ func TestProgramThatNeverWaitsFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	host := standingHost(t, "gen", `
-name = "gen"
-kind = "js"
-entrypoint = "./gen.js"
-description = "an async generator, never run"
-live = true
-`, `export default async function* main() { for (;;) { yield 1; } };`, nil)
-	r := NewStandingRunner(store, host, 1, 2)
+	// "gen" is registered as a Go test program that returns without calling
+	// Next — the async-generator shape from the JS fixture.
+	r := NewStandingRunner(store, nil, 1, 2)
 	r.SetSessions(&fakeSessions{})
 	t.Cleanup(r.StopLive)
 	if err := store.ProcessUpsertDefinition(memory.Process{ID: "gen", Tool: "gen", Mode: memory.ProcessLive, SessionID: "gen", Owner: true}); err != nil {

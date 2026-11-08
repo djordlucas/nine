@@ -10,7 +10,6 @@ import (
 
 	"nine/internal/config"
 	"nine/internal/memory"
-	"nine/internal/toolvm"
 )
 
 // Journal event type of a delivery skipped for its depth or its source.
@@ -148,7 +147,7 @@ func (e *EventRouter) Handle(_ context.Context, ev memory.SessionEvent) error {
 			}
 			continue
 		}
-		t := toolvm.Trigger{
+		t := Trigger{
 			Kind: "event", At: ev.TS, From: ev.AgentID, Depth: depth,
 			Event: eventPayload(ev, row.EventContent),
 			// Content is text from elsewhere; a turn it starts is restricted as a
@@ -167,14 +166,14 @@ func (e *EventRouter) Handle(_ context.Context, ev memory.SessionEvent) error {
 // deliverEvent gives a running process an event trigger, or holds it for one
 // whose instance has not started yet; startLive hands held events over. It
 // reports false when the process has no room, up to liveTriggerQueue either way.
-func (r *StandingRunner) deliverEvent(id string, t toolvm.Trigger) bool {
+func (r *StandingRunner) deliverEvent(id string, t Trigger) bool {
 	r.liveMu.Lock()
 	defer r.liveMu.Unlock()
 	if lp := r.lives[id]; lp != nil {
 		return lp.offerEvent(t)
 	}
 	if r.heldEvents == nil {
-		r.heldEvents = map[string][]toolvm.Trigger{}
+		r.heldEvents = map[string][]Trigger{}
 	}
 	if len(r.heldEvents[id]) >= liveTriggerQueue {
 		return false

@@ -39,8 +39,7 @@ func eventSetup(t *testing.T, row memory.Process) (*StandingRunner, *EventRouter
 	if err != nil {
 		t.Fatal(err)
 	}
-	host := standingHost(t, "eventrelay", eventRelayManifest, eventRelaySource, nil)
-	r := NewStandingRunner(store, host, 1, 2)
+	r := NewStandingRunner(store, nil, 1, 2)
 	sessions := &fakeSessions{}
 	r.SetSessions(sessions)
 	t.Cleanup(r.StopLive)
@@ -196,8 +195,7 @@ func TestEventHeldUntilTheProcessStarts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	host := standingHost(t, "eventrelay", eventRelayManifest, eventRelaySource, nil)
-	r := NewStandingRunner(store, host, 1, 2)
+	r := NewStandingRunner(store, nil, 1, 2)
 	sessions := &fakeSessions{}
 	r.SetSessions(sessions)
 	t.Cleanup(r.StopLive)
