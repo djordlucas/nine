@@ -752,10 +752,3 @@ func expandAll(args []string) []string {
 	}
 	return out
 }
-
-func orJSON(s, fallback string) string {
-	if s == "" {
-		return fallback
-	}
-	return s
-}

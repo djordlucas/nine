@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -48,7 +49,7 @@ func (f *shippedFS) resolveErr(path, label string) (string, error) {
 		return filepath.Join(f.root, rel), nil
 	}
 	if strings.HasPrefix(p, "/") {
-		return "", fmt.Errorf("%s is outside this tool's workspace. Paths resolve under %s — use a relative path, or a %s/... path.", p, guestRoot, guestRoot)
+		return "", fmt.Errorf("%s is outside this tool's workspace. Paths resolve under %s — use a relative path, or a %s/... path", p, guestRoot, guestRoot)
 	}
 	return filepath.Join(f.root, p), nil
 }
@@ -65,7 +66,7 @@ func (f *shippedFS) guestPath(host string) string {
 // refuseState keeps Nine's own bookkeeping out of reach of the file tools.
 func (f *shippedFS) refuseState(host string) error {
 	if host == f.stateDir() || strings.HasPrefix(host, f.stateDir()+string(os.PathSeparator)) {
-		return fmt.Errorf("%s is Nine's own bookkeeping and is not writable. Use trash_list and restore_file to reach a deleted file.", f.guestPath(host))
+		return fmt.Errorf("%s is Nine's own bookkeeping and is not writable. Use trash_list and restore_file to reach a deleted file", f.guestPath(host))
 	}
 	return nil
 }
@@ -77,7 +78,7 @@ func (f *shippedFS) refuseSpill(host string) error {
 		return nil
 	}
 	if rel == "spill" || strings.HasPrefix(rel, "spill"+string(os.PathSeparator)) {
-		return fmt.Errorf("%s is reserved: spill/ holds truncated tool output, which only Nine writes. Choose another path.", f.guestPath(host))
+		return fmt.Errorf("%s is reserved: spill/ holds truncated tool output, which only Nine writes. Choose another path", f.guestPath(host))
 	}
 	return nil
 }
@@ -289,8 +290,8 @@ func readRange(path string, off, lim int, size int64) ([]byte, error) {
 	}
 	buf := make([]byte, lim)
 	n, err := fh.Read(buf)
-	if err != nil && err.Error() != "EOF" {
-		// io.ReadAll-style semantics: a short read at EOF is fine
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
 	}
 	return buf[:n], nil
 }

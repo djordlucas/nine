@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -107,17 +106,6 @@ func (js *jobStarter) atCapacity() (string, bool) {
 // return a continuation — so the row starts at calls=1 with the cursor it
 // produced, and the sweeper takes it from there.
 //
-// The per-conversation cap is a genuine refusal here, unlike the plugin path.
-// A plugin has already started its goroutine by the time its id reaches us, so
-// an over-cap plugin job must be admitted and then cancelled; the daemon decides
-// when a tool job's next call happens, so it can simply decline. The one call
-// already spent is the tool's own doing and is not charged to anything.
-func argsOrEmpty(args json.RawMessage) json.RawMessage {
-	if len(args) == 0 {
-		return json.RawMessage(`{}`)
-	}
-	return args
-}
 
 // StartJob writes the registry row and returns a one-line observation naming the
 // handle. The job is recorded as running; the sweeper reconciles its true state

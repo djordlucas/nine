@@ -110,24 +110,6 @@ type subAgentPayload struct {
 	Role   string `json:"role,omitempty"`
 }
 
-// toolHTTPPayload records one outbound request a built-in web tool made
-// (the removed sandboxed tier (adr/modular_nine.md 9.10)§8). The URL is already redacted of credentials by
-// the host; the host allowlist and SSRF checks that permitted it are not
-// repeated here, because this records what happened rather than why it was
-// allowed.
-type toolHTTPPayload struct {
-	Tool       string `json:"tool"`
-	Method     string `json:"method"`
-	Host       string `json:"host"`
-	URL        string `json:"url"`
-	Status     int    `json:"status,omitempty"`
-	Bytes      int    `json:"bytes"`
-	Truncated  bool   `json:"truncated,omitempty"`
-	DurationMs int64  `json:"duration_ms"`
-	// Error carries the refusal reason. A blocked request is the most
-	// audit-worthy thing a tool does, so it is journaled rather than dropped.
-	Error string `json:"error,omitempty"`
-}
 
 // turnSpan returns the span id of a turn's root.
 func turnSpan(turn int) string { return fmt.Sprintf("t%d", turn) }
