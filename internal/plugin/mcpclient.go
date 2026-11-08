@@ -45,7 +45,14 @@ func (c *mcpClient) call(ctx context.Context, method string, params any) (json.R
 		if !ok {
 			return nil, fmt.Errorf("plugin.call: unexpected params type %T", params)
 		}
-		slog.Debug("plugin call", "plugin", c.name, "method", "tools/call", "tool", req.Tool)
+		// Ensure a trace ID on the ctx; the socket transport carries it as
+		// X-Nine-Request-ID so one ID greps across daemon and plugin logs.
+		id := RequestIDFromContext(ctx)
+		if id == "" {
+			id = newRequestID()
+			ctx = ContextWithRequestID(ctx, id)
+		}
+		slog.Debug("plugin call", "plugin", c.name, "method", "tools/call", "tool", req.Tool, "request_id", id)
 		// The daemon's ctx carries task_timeout, and a call bounded by nothing
 		// is how one hung server wedges every later call to it.
 		ctx, cancel := context.WithTimeout(ctx, mcp.CallTimeout)

@@ -441,7 +441,7 @@ collision is a load failure, not a silent override:
  (RegisterPlugin)      (Register* in            (RegisterSandboxed)
  handler =             builder.go)              handler = host.Call(name, …)
    m.Call(plugin, …)   in-process, no           → wazero instance, in-process,
- → HTTP plugin.call      subprocess:              capabilities only (§11)
+ → MCP tools/call       subprocess:              capabilities only (§11)
                         • memory_* / skill_*
  shell,                 • list_files            binary tools   (shipped)
  mcp:<server> tools     • doc_* / job_*         tools.d/*.js   (developer)
@@ -576,49 +576,51 @@ separate method.
 ## 10. Plugin subsystem
 
 `plugin.Manager` owns plugin subprocess
-lifecycle. A native plugin speaks a small two-method protocol (`plugin.describe`,
-`plugin.call`) over **HTTP on a per-plugin Unix socket** (`NINE_PLUGIN_SOCKET`,
-`POST /rpc`): the manager spawns the process, waits for the socket, and drives it
-with an `http.Client`, which gives free per-request concurrency and
-context-based cancellation (plugins-http-transport.md). There is no second
-transport on the daemon's side: an external **MCP** server is a plugin row too,
-reached by the manager's one MCP client. What varies is the dial — streamable
-HTTP when the `[[mcp.server]]` declares a `url`, a spawned `command` over stdio
-otherwise. Everything past that dial is transport-agnostic: one connection, one
-handshake, one tool-prefixing rule.
+lifecycle. A plugin **is an MCP server**: it speaks MCP streamable HTTP on
+**a per-plugin Unix socket** (`NINE_PLUGIN_SOCKET`, `POST /mcp`) by default, or
+stdio when its manifest opts in: the manager spawns the process, waits for the
+socket, and handshakes (`initialize` -> `tools/list`), which gives free
+per-request concurrency and context-based cancellation on the socket transport
+(plugins-http-transport.md). An external **MCP** server is a plugin row too,
+reached by the manager's one MCP client — streamable HTTP when the
+`[[mcp.server]]` declares a `url`, a spawned `command` over stdio otherwise.
+Everything past the dial is transport-agnostic: one connection, one handshake,
+one tool-prefixing rule.
 
 The Go default plugins are not separate executables: their handlers live in
-`builtins`, and `Manager.StartBuiltin` spawns them by re-executing the
-nine binary as `nine plugin serve <name>`. That is a packaging difference only —
+`builtins`, and `Manager.StartMCPBuiltin` spawns them by re-executing the
+nine binary as `nine mcp serve <name>`. That is a packaging difference only —
 each still gets its own process, socket, sanitized environment, and crash
 isolation.
 
 ```
-   Manager.Start(binaryPath, extraEnv…)        (user plugins)
-   Manager.StartBuiltin(name, extraEnv…)       (shell)
-   Manager.StartBuiltinInstance("mcp", …)      (one per [[mcp.server]])
+   Manager.Start(binaryPath, extraEnv…)        (user plugins, socket HTTP)
+   Manager.StartStdio(binaryPath, extraEnv…)   (user plugins, stdio)
+   Manager.StartMCPBuiltin(name, extraEnv…)    (shell)
+   Manager.StartMCPServer(spec)                (one per [[mcp.server]])
         │  spawn process with NINE_PLUGIN_SOCKET (+ NINE_BIN, extra env)
-        │  wait for the socket, then use an http.Client on POST /rpc
+        │  wait for the socket, then MCP handshake on POST /mcp
         ▼
-   ─► POST /rpc {method:"plugin.describe"} ───────────►  plugin
-   ◄─ {result:{protocol_version, max_concurrent, tools:[…]}} ◄──  plugin
+   ─► POST /mcp {"method":"initialize",…} ────────►  plugin
+   ─► POST /mcp {"method":"tools/list",…} ────────►  plugin
+   ◄─ {result:{tools:[…]}} ◄─  plugin
         │
         ▼  Manager tracks the *Plugin{Name, client, Tools}
         ▼
    Dispatcher.RegisterPlugin → handlers[tool] = m.Call(p, tool, args)
         │
-        │  on each tool invocation during a turn (one HTTP request each):
-   ─► POST /rpc {method:"plugin.call", params:{tool, args}} ─►  plugin
-   ◄─ {result:{output}}  (or {error:{code,message}}) ◄────────  plugin
+        │  on each tool invocation during a turn (one MCP request each):
+   ─► POST /mcp {"method":"tools/call","params":{name, arguments}} ─►  plugin
+   ◄─ {result:{content:[…]}}  (or {error:{…}}) ◄────  plugin
 ```
 
 Plugins are fixed: there is no runtime generation, build, or hot-swap. Each is
 compiled into the image at build time and started at daemon boot:
 
 ```
-   go build (image build) ──► TryStartBuiltin (daemon boot) ──► (in use) ──► SIGTERM
-   the nine binary            spawn `nine plugin serve <name>`,  plugin.call  (shutdown)
-                              describe, register
+   go build (image build) ──► TryStartMCPBuiltin (daemon boot) ──► (in use) ──► SIGTERM
+   the nine binary            spawn `nine mcp serve <name>`,  tools/call  (shutdown)
+                              handshake, register
 ```
 
 An MCP server is the exception to "compiled into the image": nothing is built for
@@ -787,7 +789,7 @@ type SandboxedHost interface {
 `Dispatcher.RegisterSandboxed` indexes every loaded tool into the same `handlers`
 map a plugin tool lands in, so dispatch, ref-parameter expansion, and output
 capping are identical; a nil host registers nothing. Unlike a plugin there is no
-process to ask `plugin.describe`, so the **manifest** is authoritative for name,
+process to ask over MCP `tools/list`, so the **manifest** is authoritative for name,
 description, and schema.
 
 Every load attempt — the failures included — is retained as a `toolvm.Status` and

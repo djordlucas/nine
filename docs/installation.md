@@ -160,7 +160,7 @@ make all
 The build produces **one file**:
 
 - `dist/nine` — the CLI, the daemon, the API server with its web UI, and the `shell` plugin. The daemon
-  starts a plugin as a `nine plugin serve <name>` child process, so it keeps its
+  starts a plugin as a `nine mcp serve <name>` child process, so it keeps its
   own process, socket, and crash isolation while needing no build step and no
   binary of its own. Files, HTTP and the clock are sandboxed tools rather than
   plugins, and need no subprocess at all.

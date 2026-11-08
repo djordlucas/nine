@@ -124,9 +124,10 @@ func TestShellOverMCPBlocked(t *testing.T) {
 	}
 }
 
-// [plugins].disabled blocks both start paths by wire name (R-PLUG.14): the MCP
-// launch and the legacy launch of `shell` are both refused before spawning.
-func TestDisabledBlocksBothShellStartPaths(t *testing.T) {
+// [plugins].disabled blocks the built-in's start path by wire name (R-PLUG.14):
+// the MCP launch of `shell` is refused before spawning, and the refusal counts
+// as matched so UnmatchedDisabled does not report the name as a typo.
+func TestDisabledBlocksShellMCPStart(t *testing.T) {
 	m := plugin.NewManager("")
 	m.SetBuiltinBinary(nineBin)
 	m.SetDisabled([]string{"shell"})
@@ -134,10 +135,6 @@ func TestDisabledBlocksBothShellStartPaths(t *testing.T) {
 	if p := m.TryStartMCPBuiltin("shell"); p != nil {
 		m.Stop(p) //nolint:errcheck
 		t.Error("TryStartMCPBuiltin(shell) returned a plugin, want nil")
-	}
-	if p := m.TryStartBuiltin("shell"); p != nil {
-		m.Stop(p) //nolint:errcheck
-		t.Error("TryStartBuiltin(shell) returned a plugin, want nil")
 	}
 	if got := m.UnmatchedDisabled(); len(got) != 0 {
 		t.Errorf("UnmatchedDisabled = %v, want none", got)

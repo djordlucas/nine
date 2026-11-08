@@ -36,7 +36,7 @@ priority than background work but lower than active conversations. See
 [Architecture § 14 Autonomy & oversight](architecture.md#14-autonomy--oversight-components).
 
 **Tool Dispatcher** — Routes each tool call
-to its registered handler: plugin tools via `plugin.call`, sandboxed tools into
+to its registered handler: plugin tools via MCP `tools/call`, sandboxed tools into
 the wasm host, core-intercepted tools in-process. Fires post-call hooks on success and caps every result at
 ~2048 tokens, spilling larger output to the file store
 ([tool-output-spill.md](tool-output.md)). Handlers are registered at
@@ -55,10 +55,10 @@ stored content before the call, so a large payload moves between tools without
 passing through the model's context.
 
 **Plugin Manager** — Spawns plugin
-subprocesses, calls `plugin.describe`, and registers their tools with the
-dispatcher. Plugins are fixed at build time — started at boot and stopped on
-shutdown (`Start`/`TryStart`/`Stop`/`StopAll`); there is no runtime hot-swap. A
-crashed subprocess is isolated from the daemon. See [Plugins](plugins.md).
+subprocesses, handshakes MCP with them (`initialize` → `tools/list`), and registers
+their tools with the dispatcher. Plugins are fixed at build time — started at boot and
+stopped on shutdown (`Start`/`TryStart`/`Stop`/`StopAll`); there is no runtime hot-swap.
+A crashed subprocess is isolated from the daemon. See [Plugins](plugins.md).
 
 **LLM Queue** — Prioritized queue in front of the
 LLM provider. Enforces `max_concurrent` in-flight requests. Priority order:
@@ -275,11 +275,12 @@ later user turn *pulls* the most relevant link into context under the token budg
 
 ## Plugins & tools
 
-**Plugin** — A standalone binary that answers two methods — `plugin.describe`
-(returns tool definitions) and `plugin.call` (executes a tool, returns a result)
-— over **HTTP on a per-plugin Unix socket** (`NINE_PLUGIN_SOCKET`, `POST /rpc`;
-see [HTTP transport](plugins-http-transport.md)). That is the only plugin
-transport: an external **MCP** server is reached through the `mcp` bridge plugin,
+**Plugin** — A standalone binary that is an **MCP server**: it answers
+`initialize`, `tools/list` and `tools/call` over **MCP streamable HTTP on a
+per-plugin Unix socket** (`NINE_PLUGIN_SOCKET`, `POST /mcp`) or **stdio** (manifest
+opt-in; see [HTTP transport](plugins-http-transport.md)). An external **MCP**
+server declared as `[[mcp.server]]` is reached by the manager directly, as the
+plugin row `mcp:<name>`,
 which speaks stdio JSON-RPC to the server and the ordinary plugin contract to
 Nine. A plugin may also implement two optional
 job methods (`plugin.job_status` / `plugin.job_cancel`, protocol v2) for
@@ -386,10 +387,10 @@ is now done inline by `skill_write`/`skill_modify` in `RegisterSkillTools`, not
 via a hook.)
 
 **Plugin lifecycle** — Built into the image (the Go built-ins into the `nine`
-binary itself) → started at daemon boot (`TryStartBuiltin` spawns `nine plugin
-serve <name>`, one `mcp` bridge instance per `[[mcp.server]]`, `TryStart` spawns
-a user plugin's binary; then `plugin.describe`, register tools)
-→ in use via `plugin.call` → SIGTERM on shutdown. A crashed
+binary itself) → started at daemon boot (`TryStartMCPBuiltin` spawns `nine mcp
+serve <name>`, `StartMCPServer` connects per `[[mcp.server]]`, `TryStart` spawns
+a user plugin's binary; then the MCP handshake, register tools)
+→ in use via `tools/call` → SIGTERM on shutdown. A crashed
 subprocess is isolated from the daemon; restart from the existing binary is the
 plugin manager's responsibility. See [Plugins § Plugin Lifecycle](plugins.md#plugin-lifecycle).
 
@@ -414,9 +415,9 @@ Nine enforces no URL policy on it. This replaced a built-in Playwright plugin
 that did block private/loopback URLs — see [Browser Automation](browser.md) for
 the migration and the security consequences.
 
-**`plugin.Serve`** — Helper in `plugin` (`serve.go`) that implements the
-JSON-RPC server loop for a plugin, so a plugin's `main` only passes its
-`ToolDefinition`s and a `name → ToolHandler` map. See
+**`mcp.Serve`** — Helper in `internal/mcp` that implements the
+MCP server loop for a plugin, so a plugin's `main` only passes its
+`ServerTool`s and a `name → Handler` map. See
 [Plugins § Adding a Plugin](plugins.md#adding-a-plugin).
 
 **`NINE_BIN`** — Environment variable passed to every plugin subprocess: the
@@ -438,9 +439,9 @@ it. The model drives one with `job_wait` / `job_check` / `job_list` /
 `job_cancel`, and those four are the same whichever **backend** runs it.
 Distinct from a *task* (the per-turn unit) and a *goal*.
 
-**Plugin job** — the original backend. `plugin.call` returns a `job_id` and an
-ack instead of a result; the work is a goroutine inside the plugin process and a
-sweeper polls `plugin.job_status` until it finishes. It dies with the daemon —
+**Plugin job** — suspended with the legacy envelope (adr/modular_nine.md P4):
+MCP has no job methods, so no plugin can start one until jobs land as a `_meta`
+extension on `tools/call`. It dies with the daemon —
 rows still running at boot are marked `lost` — and cancelling is a best-effort
 request. See [Plugin capabilities § 5](plugin-capabilities.md).
 

@@ -173,7 +173,9 @@ func (c *CLI) validateManifest(path string) error {
 }
 
 func (c *CLI) validateBinary(binPath string) error {
-	desc, err := plugin.Probe(binPath)
+	// A bare binary has no manifest to say which transport it speaks, so try
+	// both: socket HTTP (the default) first, stdio as the fallback.
+	desc, err := plugin.ProbeAny(binPath)
 	if err != nil {
 		fmt.Fprintf(c.Out, "  FAIL  %s\n          %v\n", relPath(binPath), err)
 		return fmt.Errorf("plugin failed validation")
@@ -200,7 +202,7 @@ func (c *CLI) probeManifest(manifestPath string) ([]string, error) {
 	if _, err := os.Stat(bin); err != nil {
 		return nil, fmt.Errorf("entrypoint %q not found: %w", m.Entrypoint, err)
 	}
-	desc, err := plugin.Probe(bin)
+	desc, err := plugin.ProbeTransport(bin, m.Transport)
 	if err != nil {
 		return nil, err
 	}

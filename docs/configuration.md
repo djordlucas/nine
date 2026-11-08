@@ -235,7 +235,7 @@ authoritative = false
 [plugins]
 # The directory holding plugins that ship as their own binaries. Nine ships none:
 # the Go built-in (shell) is compiled into the nine binary and
-# started as `nine plugin serve <name>`, so they are not looked up here at all.
+# started as `nine mcp serve <name>`, so they are not looked up here at all.
 # It stays configurable for a plugin of your own that puts its binary here; in
 # Docker the path is /opt/nine/bin, which the container sets via
 # NINE_PLUGINS_BIN. Operator-supplied plugins use `user_dir` below, not this.

@@ -82,20 +82,15 @@ func runDaemon() {
 	// before any start so nothing disabled is ever spawned, not even briefly.
 	pluginManager.SetDisabled(cfg.Plugins.Disabled)
 	pluginManager.SweepCache()
-	// The Go built-ins are served by this same binary — still one process each,
-	// just no separate artifact to ship or keep in protocol lockstep. A built-in
-	// that has an MCP serve path (`nine mcp serve <name>`) is started over MCP,
-	// the only wire protocol that crosses a process boundary (adr/modular_nine.md
-	// P1); the manager handshakes MCP first and falls back to the legacy envelope
-	// for anything else. Nothing else starts by name: a capability
-	// Nine does not implement itself arrives as an [[mcp.server]] below, browser
-	// automation included (docs/browser.md).
+	// The Go built-ins are served by this same binary as `nine mcp serve <name>`
+	// child processes — still one process each, just no separate artifact to
+	// ship, and MCP is the only wire protocol that crosses the process boundary
+	// (adr/modular_nine.md; the legacy `nine plugin serve` envelope was removed
+	// at P4). Nothing else starts by name: a capability Nine does not implement
+	// itself arrives as an [[mcp.server]] below, browser automation included
+	// (docs/browser.md).
 	for _, name := range builtins.AutoStart() {
-		if builtins.HasMCPServe(name) {
-			pluginManager.TryStartMCPBuiltin(name, cfg.PluginEnvs(name)...)
-		} else {
-			pluginManager.TryStartBuiltin(name, cfg.PluginEnvs(name)...)
-		}
+		pluginManager.TryStartMCPBuiltin(name, cfg.PluginEnvs(name)...)
 	}
 
 	// One MCP server, one manager-held connection. Each [[mcp.server]] becomes

@@ -2,89 +2,78 @@
 
 **Status:** Built · **Depends on:** dispatcher (registration) · **Used by:** every turn that calls an external tool
 
-Every external capability is a **subprocess** serving HTTP on a **per-plugin Unix
-socket**, so one process handles many concurrent calls. A subprocess speaks **MCP
-streamable HTTP** on that socket (R-PLUG.16) or the compact legacy envelope; MCP is the
-only wire protocol that crosses a process boundary (adr/modular_nine.md). External MCP
+Every external capability is a **subprocess speaking MCP** — the only wire protocol that
+crosses a process boundary (adr/modular_nine.md) — over **streamable HTTP on a per-plugin
+Unix socket** (concurrent) or **stdio** (serial; the manifest opt-in, §9.6). External MCP
 servers need no subprocess plugin of their own: the manager connects to them directly
-(R-PLUG.15).
+(R-PLUG.15). The legacy `plugin.describe`/`plugin.call` envelope was removed at P4.
 Plugins are isolation boundaries (invariant I9): a crash is a child-process failure, not a
 daemon panic. They are **immutable image content** — there is no runtime generation, build,
 or hot-swap (N1).
 
-> **Transport.** Plugins use HTTP over a Unix socket (see
-> `docs/plugins-http-transport.md`) — either MCP streamable HTTP on the socket
-> (R-PLUG.16) or the two-method envelope (R-PLUG.1, deprecated), with `max_concurrent`
-> (R-PLUG.8). External MCP servers arrive through the bridge plugin (R-PLUG.15), not
-> through a second one.
+> **Transport.** A plugin speaks MCP (R-PLUG.1): streamable HTTP on the Unix socket named
+> by `NINE_PLUGIN_SOCKET` (see `docs/plugins-http-transport.md`), or stdio. Concurrency is
+> a transport property — socket HTTP is concurrent, stdio is serial (`max_concurrent` 1,
+> R-PLUG.8). External `[[mcp.server]]` entries are reached by the manager's one MCP client
+> directly (R-PLUG.15), not through a second path.
 >
 > **Packaging.** "Subprocess" does not imply "separate executable": the Go default
-> plugins are served out of the `nine` binary as `nine plugin serve <name>` or
-> `nine mcp serve <name>` (R-PLUG.13, R-PLUG.16). They are still one process each —
-> everything below applies to them unchanged.
+> plugins are served out of the `nine` binary as `nine mcp serve <name>` (R-PLUG.13).
+> They are still one process each — everything below applies to them unchanged.
 
 ---
 
-## R-PLUG.1 — the plugin contract (two methods)
+## R-PLUG.1 — the plugin contract: MCP
 
-A plugin is any executable that implements exactly two methods. A native plugin serves
-them over HTTP — `POST /rpc` on the Unix socket named by `NINE_PLUGIN_SOCKET` — with a
-compact envelope. There is **no JSON-RPC `id`**: each call owns its connection, so
-reply↔request correlation is per-connection. Only these two methods flow; there is no
-generic method route.
+A plugin is any executable that is an **MCP server**. The wire contract is MCP's:
+`initialize` → `notifications/initialized` → `tools/list` → `tools/call`, JSON-RPC 2.0
+with real message ids. Two transports, exactly one per plugin:
 
-```text
-plugin.describe → returns {protocol_version, max_concurrent, async_jobs?, tools: [ {name, description, inputSchema [, display_name]} ]}
-plugin.call({tool, args}) → returns {output [, job_id]}   (or an error envelope)
-```
-
-A native plugin that runs long work **MAY** additionally implement two job
-methods (R-PLUG.12); `async_jobs: true` in `describe` advertises them, and a
-`plugin.call` that started detached work returns a `job_id` in place of a result.
-These are additive — protocol **v2** (see `docs/versioning.md`) — and a v1 plugin
-that implements neither is fully conforming.
+- **http** (default): streamable HTTP at `POST /mcp` on the Unix socket named by
+  `NINE_PLUGIN_SOCKET`. A server answers each POST with a JSON body or an SSE stream;
+  the client accepts both. Concurrent — `max_concurrent` 0 (R-PLUG.8). The daemon **MAY**
+  send an `X-Nine-Request-ID` header carrying a per-call trace ID; a plugin **SHOULD** log
+  it so one ID greps across daemon and plugin logs.
+- **stdio**: JSON-RPC over the process's stdin/stdout pipes, one line per message. Serial
+  by construction — the response can only be matched to its request by owning the stream
+  for the round trip — so the plugin is registered with `max_concurrent` 1 (R-PLUG.8).
+  Selected in the sidecar manifest as `transport = "stdio"` (adr/modular_nine.md §9.6).
 
 ```text
-POST http://unix/rpc
-  body:   {"method":"plugin.call","params":{"tool":"my_tool","args":{"input":"hi"}}}
-  reply:  {"result":{"output":"…"}}                  (success)
-       |  {"error":{"code":-1,"message":"…"}}         (failure)
-  HTTP status: always 200; errors live in the body envelope.
+POST http://unix/mcp   (or a line on stdio)
+  body:   {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"my_tool","arguments":{"input":"hi"}}}
+  reply:  {"result":{"content":[{"type":"text","text":"…"}],"isError":false}}
 ```
 
-A conforming implementation **MAY** support plugins in any language; the contract is the
-wire format, not the runtime. `display_name` is optional UI metadata and **MUST NOT**
-reach the LLM (invariant I8). `max_concurrent` is optional (R-PLUG.8).
-
-The daemon **MAY** send an `X-Nine-Request-ID` header carrying a per-call trace ID; a
-plugin **SHOULD** log it (and surface it on the handler context) so one ID greps across
-daemon and plugin logs. It is not part of the envelope — reply↔request correlation is
-per-connection.
+Versioning rides the MCP `initialize` negotiation (`protocolVersion`); there is no
+hand-stamped integer version any more. A conforming implementation **MAY** support
+plugins in any language; the contract is the wire format, not the runtime. Tool names are
+bare for first-party plugins (§9.9); only MCP-roster servers carry `<server>__` (R-PLUG.15).
+`display_name` is optional UI metadata and **MUST NOT** reach the LLM (invariant I8).
+Content arrays are flattened client-side, never filtered (R-PLUG.15b). Jobs are not part of
+MCP's core and are suspended with the envelope (R-PLUG.12).
 
 ---
 
-## R-PLUG.2 — `plugin.Serve` (author ergonomics)
+## R-PLUG.2 — `mcp.Serve` (author ergonomics)
 
-A helper — `plugin.Serve` in `internal/plugin` — implements the HTTP server loop so a
-plugin author only declares tools and handlers:
+A helper — `mcp.Serve` in `internal/mcp` (server side built on the vendored `mcp-go` SDK,
+adr/modular_nine.md §9.5) — implements the MCP server loop so a plugin author only
+declares tools and handlers:
 
 ```text
-plugin.Serve(
-    []plugin.ToolDefinition{ {Name, Description, InputSchema (raw JSON via plugin.Schema) [, DisplayName]} },
-    map[string]plugin.ToolHandler{ "name": func(ctx, args) (output, error) },
-    opts... // e.g. plugin.WithMaxConcurrent(n)
+mcp.Serve(name, version,
+    []mcp.ServerTool{ {Name, Description, InputSchema (raw JSON)} },
+    map[string]mcp.Handler{ "name": func(ctx, args json.RawMessage) (output string, err error) },
 )
 ```
 
-It handles the HTTP listener on `NINE_PLUGIN_SOCKET`, `describe`/`call` routing, and error
-encoding (`plugin.InvalidArgs`, etc.) — one goroutine per request, so handlers run
-concurrently up to the advertised `max_concurrent`. This is a convenience, not a
-requirement; the requirement is R-PLUG.1.
-
-For long-running work, `plugin.WithJobHandlers(map[string]plugin.JobHandler)` (with an
-optional `plugin.WithJobs(plugin.NewJobs())`) makes `Serve` advertise `async_jobs`, answer
-the job methods (R-PLUG.12), and run each job on a context **detached from the HTTP
-request** so writing the reply does not cancel the work. See R-PLUG.12.
+It serves streamable HTTP on `NINE_PLUGIN_SOCKET` by default, or stdio when
+`NINE_MCP_TRANSPORT=stdio`, handles the handshake and `tools/list`/`tools/call` routing,
+and maps a handler error to an in-band `isError` result — one goroutine per request on the
+socket transport, so handlers run concurrently; stdio is serial. This is a convenience,
+not a requirement; the requirement is R-PLUG.1. (With the mcp-go SDK directly, the same
+shape is `server.NewMCPServer` + `mcp.NewToolWithRawSchema` + `AddTool`.)
 
 ---
 
@@ -93,18 +82,25 @@ request** so writing the reply does not cancel the work. See R-PLUG.12.
 The manager owns subprocess lifecycle:
 
 ```text
-Start(binaryPath, extraEnv…)         — a plugin shipped as its own binary
-StartBuiltin(name, extraEnv…)        — a plugin served by the nine binary (R-PLUG.13)
-   allocate a per-plugin Unix socket path; pass it via NINE_PLUGIN_SOCKET
-     (+ NINE_BIN, the cache-dir vars (R-PLUG.11), operator settings (R-PLUG.10), extras)
-   spawn process; dial the socket until it accepts, the process exits, or the
-     budget expires (R-PLUG.14)
-   → plugin.describe  → {tool defs, max_concurrent, async_jobs}
-   set the per-plugin HTTP transport's MaxConnsPerHost from max_concurrent (0 = unbounded; R-PLUG.8)
-   track *Plugin{Name, client, Tools, AsyncJobs}
+Start(binaryPath, extraEnv…)          — a plugin shipped as its own binary, socket HTTP (default transport)
+StartStdio(binaryPath, extraEnv…)     — the same, over stdio (manifest transport = "stdio")
+StartMCPBuiltin(name, extraEnv…)      — a plugin served by the nine binary (R-PLUG.13)
+StartMCPServer(spec)                  — an external [[mcp.server]] (R-PLUG.15)
+   disabled check by wire name first (R-PLUG.14): no process, no socket, no cache dir
+   socket path: allocate a per-plugin Unix socket path; pass it via NINE_PLUGIN_SOCKET
+     (+ NINE_BIN, the cache-dir vars (R-PLUG.11), operator settings (R-PLUG.10), extras);
+     stdio path: no socket, pipes instead
+   spawn process (sanitized host env); socket path: dial until it accepts, the process
+     exits, or the budget expires (R-PLUG.14); stdio path: the handshake fails at once
+     if the process dies before answering
+   → MCP handshake: initialize → notifications/initialized → tools/list, under the
+     handshake budget (3m, NINE_MCP_HANDSHAKE_TIMEOUT to override)
+   → {tool defs}; socket HTTP is max_concurrent 0, stdio 1 (R-PLUG.8)
+   track *Plugin{Name, client, Tools, MaxConcurrent}; async_jobs is always false (R-PLUG.12)
    register each tool with the dispatcher (handler = manager.Call(plugin, tool, args))
-on each tool invocation:  → plugin.call{tool,args} → {output}  (or {job_id} → R-PLUG.12; its own pooled connection)
-Stop:  SIGTERM, wait for clean exit (kill after grace), unlink the socket, remove the ephemeral cache dir
+on each tool invocation:  → tools/call{name,arguments} → {content[], isError} → flattened output
+Stop:  close the MCP connection, SIGTERM, wait for clean exit (kill after grace), unlink
+   the socket, remove the ephemeral cache dir
 ```
 
 The manager registers tool definitions at start. (It does **not** write tool embeddings
@@ -292,42 +288,17 @@ scratch, never embedded, and reaches the model only if the plugin returns it.
 - `Probe` (validate / user-plugin vetting) always uses a throwaway ephemeral dir,
   regardless of `persist_cache`, so validation never touches persistent state.
 
-## R-PLUG.12 — long-running jobs (opt-in)
+## R-PLUG.12 — long-running jobs: suspended with the envelope
 
-A tool call **MAY** start detached work and return a `job_id` plus a one-line
-`output` ack instead of a result. Such a plugin **MUST** advertise `async_jobs`
-and implement two methods; the daemon **rejects a `job_id` from a plugin that did
-not advertise it** (fail-closed against version skew).
+The envelope's job methods (`plugin.job_status`/`plugin.job_cancel`, `async_jobs`) were
+removed with it at P4; MCP has no status/cancel to map onto them, so **no plugin can start
+a job now**: the manager's job methods fail closed and `async_jobs` is always false. The
+daemon-side registry, sweeper, and model-facing tools (`job_wait`/`job_check`/`job_list`/
+`job_cancel`) stay for the tool backend, and a boot still marks orphaned rows `lost`.
 
-```text
-plugin.job_status({job_id}) → {state: queued|running|done|failed|cancelled, progress?, output?, error?}
-plugin.job_cancel({job_id}) → {cancelled: true}
-```
-
-An unknown `job_id` **MUST** answer `job_status` with `failed` and a clear error
-(not an RPC error), so a daemon that lost track cannot wedge. `cancelled` is
-terminal and distinct from `failed`. `progress` is free text.
-
-- **Plugin side** (`plugin.NewJobs`): runs jobs through a worker pool honouring
-  `max_concurrent` (excess jobs sit `queued`, since a job start frees the HTTP
-  connection at once and the daemon's cap cannot hold that line), gives each job a
-  `<cache_dir>/jobs/<job_id>/` dir, and evicts terminal jobs after a TTL.
-- **Daemon side:** a `jobs` registry row keyed to the owning
-  conversation records a stable `handle` (`job_<hex>`; the plugin-side id is never
-  shown). A single sweeper polls `job_status` on an age-based backoff (base cadence
-  for the first minute, then ~30s) and, on a terminal state, cap-or-spills the
-  output into the row, journals the event, and posts a notification to the owner —
-  so the completion enriches a **later** turn (pull, not push; per
-  `adr/reactive-events.md`). A boot marks orphaned `running` rows `lost`;
-  `job_max_seconds` expires an over-age job; `max_jobs_per_conversation` caps a
-  conversation on admission.
-- **Model-facing tools** (core-intercepted, granted whenever the registry is wired):
-  `job_wait` (blocks up to a timeout, returns the result or current progress — a
-  timeout is not an error), `job_check`, `job_list`, `job_cancel`. The context
-  builder surfaces outstanding jobs as one compact line each.
-- **The MCP bridge does not advertise jobs:** MCP has no status/cancel to map onto them,
-  so the bridge reports `async_jobs: false` like any plugin without them. Nothing special
-  is needed — it is a plugin declining an optional capability, not an exclusion.
+The plan (adr/modular_nine.md §2) is a `_meta` extension on the `tools/call` result for
+first-party servers, consumed by the existing job starter — until that lands, this rule is
+suspended, not deleted.
 
 ---
 
@@ -341,20 +312,20 @@ of the SSRF checks in the way. `shell` stays because it needs real `exec`.) The 
 binary:
 
 ```text
-StartBuiltin(name, extraEnv…):
+StartMCPBuiltin(name, extraEnv…):
    resolve the nine binary (os.Executable)
-   spawn it as:  nine plugin serve <name>
-   …then exactly as R-PLUG.3: socket, describe, version check, transport, tracking
+   spawn it as:  nine mcp serve <name>
+   …then exactly as R-PLUG.3: socket, MCP handshake, transport, tracking
 ```
 
-`nine plugin serve <name>` is a daemon-internal entry point, not an operator command:
+`nine mcp serve <name>` is a daemon-internal entry point, not an operator command:
 it is absent from `nine help`. This is the same self-exec the client already uses to
 auto-start the daemon ([`wire-protocol.md`](wire-protocol.md) R-PROTO.7).
 
 ### R-PLUG.13a — A plugin child does plugin work and nothing else
 
 Sharing the binary means a plugin child could otherwise run the whole of nine's
-startup. An implementation **MUST** dispatch `plugin serve` **before** any of it, so a
+startup. An implementation **MUST** dispatch `mcp serve` **before** any of it, so a
 plugin process:
 
 - **loads no configuration.** The config search reaches the cwd and `$HOME`, which a
@@ -418,7 +389,7 @@ An implementation **MUST**:
   MCP behind a plugin (R-PLUG.15) there is no longer a second spawn path to keep in
   step;
 - treat the refusal as a **decision, not a failure**: the daemon boots normally and
-  the tolerant starters (`TryStart`, `TryStartBuiltin`, user-plugin loading) report it
+  the tolerant starters (`TryStart`, `TryStartMCPBuiltin`, user-plugin loading) report it
   as switched off rather than broken;
 - **surface it**. A disabled plugin appears in `plugins_list` with `disabled: true`
   and a reason, and `nine plugins` prints it as `off`. A plugin that is simply absent
@@ -478,7 +449,7 @@ An implementation **MUST**:
 - **prefix each tool** with the server name (`github__create_issue`). Two MCP servers
   commonly advertise the same generic name (`search`, `read`), and an unprefixed
   collision means one server silently loses a tool depending on load order (R-PLUG.9).
-  First-party tools keep bare names (R-PLUG.16);
+  First-party tools keep bare names (§9.9 of the ADR; R-PLUG.1);
 - pass the server's configuration **from the daemon's parsed config**, and spawn it with
   the sanitized host environment (R-PLUG.13a) — never the daemon's own environment, which
   carries its secrets;
@@ -518,61 +489,30 @@ server, and one called `../escaped` would otherwise write outside the cache dir.
 
 ---
 
-## R-PLUG.16 — MCP-first handshake; the legacy envelope is deprecated
-
-A plugin subprocess may speak **MCP streamable HTTP** on its Unix socket instead of the
-R-PLUG.1 envelope (adr/modular_nine.md): MCP is the only wire protocol that crosses a
-process boundary. On spawn the manager **MUST** handshake MCP first — `initialize` →
-`notifications/initialized` → `tools/list` on the socket — and fall back to
-`plugin.describe` only when the child does not answer `initialize`. A legacy child still
-loads during the dual-stack, but the manager logs a deprecation warning; the envelope is
-removed at P4, and `nine plugin validate` (Probe) accepts both wires meanwhile.
-
-- First-party MCP tools keep **bare names** (adr/modular_nine.md §9.9): only servers on
-  the MCP roster (`mcp:<server>`, R-PLUG.15) carry the `<server>__` prefix.
-- Concurrency comes from the transport: unix-socket HTTP is concurrent (`max_concurrent`
-  0); stdio is serial (1) with one client-side write lock.
-- `async_jobs` is false for MCP plugins: jobs ride a `_meta` extension on the `tools/call`
-  result that the manager does not consume yet, and the job methods fail closed
-  (R-PLUG.12).
-- First-party servers are spawned as `nine mcp serve <name>` — unix-socket HTTP by
-  default, stdio when `NINE_MCP_TRANSPORT=stdio` (§9.6) — reusing the same socket,
-  sanitized env, cache dir, and disable switch as every other plugin. The server side is
-  built on the vendored `mcp-go` SDK (§9.5); the client stays hand-rolled in
-  `internal/mcp`.
-- `[plugins].disabled` (R-PLUG.14) blocks both start paths by wire name before any
-  process is spawned.
-
----
 
 ## Reference symbols
 
-`internal/builtins/` (`Serve`, `Names`, `Has`; `shell.go`, `files.go`, `http.go`,
-`time.go` — the built-in handlers, R-PLUG.13),
-`cmd/nine/main.go` (`pluginServeArgs`, `servePluginAndExit` — the single-purpose
-plugin entry point, R-PLUG.13a),
-`internal/plugin/manager.go` (`Manager`, `Start`, `StartBuiltin`, `StartMCPBuiltin`,
-`Call`, `JobStatus`, `JobCancel`, `PluginByName`, `TryStart`, `TryStartBuiltin`,
-`TryStartMCPBuiltin`, `launch`/`binaryLaunch`/`builtinLaunch`, `mcpBuiltinLaunch`,
-`MCPInstanceName`, `spawnAndDescribe`, `describeSocket`, `Probe`,
-`SetPluginEnv`, `SetBuiltinBinary`, `SetCacheConfig`, `SweepCache`),
+`internal/plugin/manager.go` (`Manager`, `Start`, `StartStdio`, `StartMCPBuiltin`,
+`Call`, `JobStatus`, `JobCancel`, `PluginByName`, `TryStart`, `TryStartMCPBuiltin`,
+`launch`/`binaryLaunch`/`mcpBuiltinLaunch`, `MCPInstanceName`, `spawnAndHandshake`,
+`handshakeSocket`, `ProbeTransport`, `ProbeAny`, `SetPluginEnv`, `SetBuiltinBinary`,
+`SetCacheConfig`, `SweepCache`; `process.go` — `procWatch`/`waitForSocket`),
+`internal/plugin/mcpclient.go` (`newMCPClient` — the one plugin client, MCP over socket
+HTTP or stdio),
 `internal/plugin/mcpserver.go` (`StartMCPServer`, `TryStartMCPServer` — external MCP
 servers as manager children, R-PLUG.15),
 `internal/plugin/userplugins.go` (`LoadUserPlugins`, `ReloadUserPlugins`, `UserStatus`),
 `internal/plugin/cache.go` (`allocCacheDir`, `SweepCache`),
-`internal/plugin/jobs.go` (`Jobs`, `Job`, `JobHandler`, `JobStatus`, `JobDir`, `SetProgress`),
-`internal/plugin/manifest.go` (`Manifest`, `LoadManifest`, `discoverPlugins`),
-`internal/plugin/httpclient.go` (`newHTTPClient` — the legacy envelope client) and
-`internal/plugin/mcpclient.go` (`newMCPClient` — the MCP plugin client, R-PLUG.16),
+`internal/plugin/manifest.go` (`Manifest` incl. `transport`, `LoadManifest`,
+`discoverPlugins`),
+`internal/plugin/contract.go` (`ToolDefinition`, `DescribeResult`, `CallRequest`/`CallResult`,
+`ToolHandler`, `Schema`, error helpers), `jobstate.go` (job row states),
 `internal/mcp/` (the hand-rolled MCP client — `Connect`, `ConnectSocket`, `CallTool`,
 `DialStdio`/`DialStdioEnv`, `DialHTTP`, `DialSocket`, content flattening — and the mcp-go
-server side — `Serve`, `NewServer`, `ServeHTTP`, `ServeStdio`, R-PLUG.16),
-`cmd/nine/main.go` (`pluginServeArgs`, `servePluginAndExit`, `mcpServeArgs`,
-`serveMCPAndExit` — the single-purpose plugin entry points, R-PLUG.13a/R-PLUG.16),
-`internal/builtins/builtins.go` (`Serve`, `ServeMCP`, `Names`, `MCPNames`, `Has`,
-`HasMCPServe`),
-`internal/plugin/serve.go` `plugin.Serve` — the plugin-side HTTP server loop on
-`NINE_PLUGIN_SOCKET`, `WithJobHandlers`/`WithJobs`; `contract.go` — `ToolDefinition`/`DescribeResult`),
+server side — `Serve`, `NewServer`, `ServeHTTP`, `ServeStdio`),
+`cmd/nine/main.go` (`mcpServeArgs`, `serveMCPAndExit` — the single-purpose plugin entry
+point, R-PLUG.13a),
+`internal/builtins/builtins.go` (`ServeMCP`, `AutoStart`, `MCPNames`, `HasMCPServe`),
 `internal/memory/jobs.go` (the `jobs` registry), `internal/runtime/jobs.go`
 (job starter + sweeper), `internal/runtime/job_tools.go` (model-facing tools + surfacing),
 `internal/agent/register_jobs.go` (`job_wait`/`job_check`/`job_list`/`job_cancel`),

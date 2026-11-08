@@ -30,18 +30,24 @@ func statusByName(sts []plugin.UserPluginStatus, name string) (plugin.UserPlugin
 
 func TestProbeValidPlugin(t *testing.T) {
 	bin := buildBinary(t, "./internal/plugin/testplugin")
-	desc, err := plugin.Probe(bin)
+	desc, err := plugin.ProbeTransport(bin, plugin.TransportHTTP)
 	if err != nil {
 		t.Fatalf("Probe: %v", err)
 	}
-	if len(desc.Tools) != 1 || desc.Tools[0].Name != "echo" {
-		t.Fatalf("unexpected tools: %+v", desc.Tools)
+	found := false
+	for _, tool := range desc.Tools {
+		if tool.Name == "echo" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("echo not advertised: %+v", desc.Tools)
 	}
 }
 
 func TestProbeRejectsNonPlugin(t *testing.T) {
 	// A binary that runs but never listens on the socket is not a plugin.
-	if _, err := plugin.Probe("/usr/bin/true"); err == nil {
+	if _, err := plugin.ProbeAny("/usr/bin/true"); err == nil {
 		t.Fatal("expected Probe to reject a non-plugin binary")
 	}
 }

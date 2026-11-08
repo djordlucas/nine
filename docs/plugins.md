@@ -245,7 +245,7 @@ Plugins are part of the source repo and are compiled into the image at build tim
 Nine cannot generate, build, or load a plugin at runtime — adding a capability means
 adding a plugin to the tree and rebuilding.
 
-A plugin you supply is a standalone binary (see [User Plugins](#user-plugins) below); Nine's own Go plugins skip the separate binary by registering in `builtins`. Either way the code is the same shape — `plugin.Serve` with a tool list and a handler map. Here is a minimal standalone example:
+A plugin you supply is a standalone binary (see [User Plugins](#user-plugins) below); Nine's own Go plugins skip the separate binary by registering in `builtins`. Either way the code is the same shape — an MCP server with a tool list and a handler map. Here is a minimal standalone example, using the `mcp-go` SDK that Nine vendors:
 
 ```go
 package main
@@ -253,46 +253,49 @@ package main
 import (
     "context"
     "encoding/json"
+    "net"
+    "net/http"
+    "os"
 
-    "nine/internal/plugin"
+    "github.com/mark3labs/mcp-go/mcp"
+    "github.com/mark3labs/mcp-go/server"
 )
 
 func main() {
-    plugin.Serve(
-        []plugin.ToolDefinition{
-            {
-                Name:        "greet",
-                DisplayName: "Greet",
-                Description: "Return a greeting for a given name.",
-                InputSchema: plugin.Schema(`{
-                    "type": "object",
-                    "required": ["name"],
-                    "properties": {"name": {"type": "string", "description": "Name to greet"}}
-                }`),
-            },
-        },
-        map[string]plugin.ToolHandler{
-            "greet": func(_ context.Context, args json.RawMessage) (string, error) {
-                var p struct{ Name string `json:"name"` }
-                if err := json.Unmarshal(args, &p); err != nil {
-                    return "", plugin.InvalidArgs("%v", err)
-                }
-                return "Hello, " + p.Name + "!", nil
-            },
-        },
-    )
+    srv := server.NewMCPServer("greet", "1.0.0")
+    srv.AddTool(mcp.NewToolWithRawSchema("greet",
+        "Return a greeting for a given name.",
+        json.RawMessage(`{
+            "type": "object",
+            "required": ["name"],
+            "properties": {"name": {"type": "string", "description": "Name to greet"}}
+        }`),
+    ), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+        args, _ := json.Marshal(req.GetArguments())
+        var p struct{ Name string `json:"name"` }
+        if err := json.Unmarshal(args, &p); err != nil {
+            return mcp.NewToolResultErrorFromErr("bad arguments", err), nil
+        }
+        return mcp.NewToolResultText("Hello, " + p.Name + "!"), nil
+    })
+
+    // Default transport: streamable HTTP on the daemon-allocated socket.
+    ln, err := net.Listen("unix", os.Getenv("NINE_PLUGIN_SOCKET"))
+    if err != nil { panic(err) }
+    http.Serve(ln, server.NewStreamableHTTPServer(srv, server.WithStateLess(true)))
+    // For stdio instead, set `transport = "stdio"` in the manifest and use
+    // server.NewStdioServer(srv).Listen(ctx, os.Stdin, os.Stdout).
 }
 ```
 
-`plugin.Serve` (in `nine/internal/plugin`) handles the JSON-RPC loop: pass your
-`[]plugin.ToolDefinition` (schemas as raw JSON via `plugin.Schema`) and a
-`name → plugin.ToolHandler` map, and implement only the business logic. Return
-`plugin.InvalidArgs(...)` for bad input.
+The server loop handles the MCP handshake and `tools/list`/`tools/call` routing;
+you implement only the business logic, and a handler error becomes an in-band
+`isError` result the model sees as a failed tool call. (Nine's own built-ins use
+the `mcp.Serve` helper in `nine/internal/mcp`, which is the same shape.)
 
-To register the new plugin: add it under `plugins/<name>/`, add `<name>` to the
-`PLUGINS` list in the `Makefile` and the build loop in the `Dockerfile`, start it
-in `daemon` (`pluginManager.TryStart("<name>", …)`), and rebuild. Default
-plugins are sub-packages of the core module and use the vendored dependencies.
+To register a new **built-in**: add a `serve<Name>MCP` entry in
+`internal/builtins` (`mcpServeFuncs`), add the name to `autoStart` if it starts
+at boot, and rebuild — the daemon then spawns it as `nine mcp serve <name>`.
 
 ### Taking large input by reference
 
@@ -355,11 +358,13 @@ plugins.d/
 ```toml
 name = "weather"
 entrypoint = "./weather"   # resolved relative to the manifest
+# transport = "stdio"       # optional; default "http" (streamable HTTP on the plugin socket)
 ```
 
 The manifest is the **gate**: a binary with no manifest beside it is never
 executed. It declares intent only — the authoritative tool list still comes from
-`plugin.describe` at load time — so it needs just `name` and `entrypoint`.
+the MCP `tools/list` at load time — so it needs just `name` and `entrypoint`
+(plus the optional `transport`).
 
 ### Loading rules
 
@@ -367,8 +372,9 @@ At boot (and on reload), for each manifest in name order:
 
 1. A malformed manifest or a missing binary is **skipped** — the binary is never
    run.
-2. The binary is started and must pass the same handshake as a built-in
-   (`plugin.describe` + a matching `ProtocolVersion`). A non-plugin is **skipped**.
+2. The binary is started and must pass the same handshake as a built-in (the MCP
+   `initialize` → `tools/list` on its declared transport). A non-MCP binary is
+   **skipped**.
 3. Its tools must not collide with an already-loaded plugin — a built-in **or** an
    earlier user plugin (built-ins load first, so they always win). A collision
    **skips the whole plugin**; there is no overriding, ever.
@@ -394,12 +400,12 @@ See `plugins.d/README.md` for an operator walkthrough.
 build time            built-in:  go build ./cmd/nine    (handlers linked into nine)
                       MCP:       nothing — the server is fetched or hosted elsewhere
      │
-daemon start          built-in:  TryStartBuiltin → spawn `nine plugin serve <name>`
-                      MCP:       one `nine plugin serve mcp` bridge per [[mcp.server]]
+daemon start          built-in:  TryStartMCPBuiltin → spawn `nine mcp serve <name>`
+                      MCP:       StartMCPServer → spawn the command (stdio) or dial the url
                       user:      spawn the manifest's entrypoint binary
-                      then all:  plugin.describe → register tools
+                      then all:  MCP handshake (initialize → tools/list) → register tools
      │
-[in use]              Dispatcher routes tool calls via plugin.call
+[in use]              Dispatcher routes tool calls via MCP tools/call
      │
 [crash]               Subprocess exit is isolated from the daemon; restart from the
                       existing binary is the plugin manager's responsibility
@@ -416,14 +422,14 @@ The plugin manager passes these to each subprocess:
 | Variable | Value | Purpose |
 |----------|-------|---------|
 | `NINE_BIN` | `plugins.bin` from config | Directory of plugins that ship their own binary |
-| `NINE_PLUGIN_SOCKET` | per-plugin socket path | Where the plugin listens |
+| `NINE_PLUGIN_SOCKET` | per-plugin socket path | Where an `http`-transport plugin listens (stdio plugins get no socket) |
 | `NINE_PLUGIN_CACHE_DIR` | per-plugin scratch dir | Cache directory (below) |
 | `NINE_PLUGIN_CACHE_PERSISTENT` | `0`/`1` | Whether the cache dir persists |
 
 Individual plugins also receive their built-in defaults (`NINE_WORKSPACE` for
 `shell`, so a relative path means the same file there as in the workspace tools)
-plus any operator settings. An MCP bridge additionally receives
-`NINE_MCP_SERVER`, the JSON spec of the one server it fronts.
+plus any operator settings. `[[mcp.server]]` servers get their `env` from config,
+not from a bridge process — there is no `NINE_MCP_SERVER` any more.
 
 ### Operator settings (no rebuild needed)
 
@@ -460,35 +466,13 @@ tells the plugin which it got). The root is `[plugins].cache_dir`
 
 ### Long-running work (jobs)
 
-A tool that would hold the turn open for minutes — a download, a scan — can run
-detached. Return a `plugin.Job` from a job handler: the call replies immediately
-with a one-line ack and a job id, and the work runs on a context **detached from
-the request** so writing the reply does not cancel it. The daemon polls the job
-and surfaces its result on a later turn; the model steers it with
-`job_wait`/`job_check`/`job_list`/`job_cancel`.
-
-```go
-jobs := plugin.NewJobs()
-plugin.Serve(tools, handlers,
-    plugin.WithJobHandlers(map[string]plugin.JobHandler{
-        "download_file": func(ctx context.Context, args json.RawMessage) (plugin.Job, error) {
-            var req struct{ URL string `json:"url"` }
-            // … validate synchronously; a bad argument is a normal error, not a job …
-            return plugin.Job{
-                Ack: "started download of " + req.URL,
-                Run: func(ctx context.Context) (string, error) { return download(ctx, req.URL) },
-            }, nil
-        },
-    }),
-    plugin.WithJobs(jobs),
-)
-```
-
-Inside `Run`, use `plugin.JobDir(ctx)` for per-job scratch and
-`plugin.SetProgress(ctx, "41% · 1.2 GB/2.9 GB")` to report progress. `Serve`
-honours the plugin's `max_concurrent` for jobs (excess jobs queue) and evicts
-finished jobs after a TTL. Jobs are native-plugin only (protocol v2); MCP servers
-cannot use them. See [Plugin capabilities § 5](plugin-capabilities.md).
+Detached tool jobs (a download, a scan that would hold the turn open for minutes)
+are **suspended with the legacy envelope**: MCP has no status/cancel to map onto
+them, so no plugin can start one right now — the manager's job methods fail
+closed. The daemon-side registry and the model-facing `job_wait`/`job_check`/
+`job_list`/`job_cancel` tools remain for tool-backend jobs, and plugin jobs return
+via a `_meta` extension on the `tools/call` result (adr/modular_nine.md §2). See
+[Plugin capabilities § 5](plugin-capabilities.md).
 
 ## Limits
 
