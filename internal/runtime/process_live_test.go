@@ -56,30 +56,13 @@ func (f *fakeSessions) seen() []string {
 	return append([]string{}, f.turns...)
 }
 
-const relayManifest = `
-name = "relay"
-kind = "js"
-entrypoint = "./relay.js"
-description = "A live process: turn every trigger into a model turn and report the reply."
-`
-
-// relay asks the model about each trigger and reports the reply.
-const relaySource = `
-import { next, turn, report } from "nine:process";
-export default () => {
-  for (;;) {
-    const t = next();
-    report(turn(t.kind === "clock" ? "tick" : t.text));
-  }
-};`
-
 func liveSetup(t *testing.T, row memory.Process) (*StandingRunner, *memory.Store, *fakeSessions) {
 	t.Helper()
 	store, err := memtest.Open(t)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := NewStandingRunner(store, nil, 1, 2)
+	r := NewStandingRunner(store, 1, 2)
 	sessions := &fakeSessions{}
 	r.SetSessions(sessions)
 	t.Cleanup(r.StopLive)
@@ -286,7 +269,7 @@ func TestReconcileProcessesMapsBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ReconcileProcesses(store, nil, []config.ProcessConfig{
+	ReconcileProcesses(store, []config.ProcessConfig{
 		{Name: "sec-watch", Tool: "pursue", Goal: "watch the repo"},
 		{Name: "digest", Tool: "relay", Every: "1h", Role: "writer"},
 		{Name: "sec-watch-relay", Tool: "relay", Every: "30m", Session: "sec-watch"},
@@ -418,7 +401,7 @@ func TestProgramThatNeverWaitsFails(t *testing.T) {
 	}
 	// "gen" is registered as a Go test program that returns without calling
 	// Next — the async-generator shape from the JS fixture.
-	r := NewStandingRunner(store, nil, 1, 2)
+	r := NewStandingRunner(store, 1, 2)
 	r.SetSessions(&fakeSessions{})
 	t.Cleanup(r.StopLive)
 	if err := store.ProcessUpsertDefinition(memory.Process{ID: "gen", Tool: "gen", Mode: memory.ProcessLive, SessionID: "gen", Owner: true}); err != nil {

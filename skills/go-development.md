@@ -60,7 +60,6 @@ go mod vendor
 | `nine/internal/llm` | Provider-agnostic LLM interface and request queue |
 | `nine/internal/context` | Token-budget-aware context builder (package `ninectx`) |
 | `nine/internal/selfmodel` | Assembles the agent's self-description each turn |
-| `nine/internal/toolvm` | Sandboxed wasm host for shipped and generated tools |
 | `nine/internal/builtins` | Handlers for the built-in plugins and MCP servers |
 | `nine/internal/config` | Config parsing (`nine.toml`) |
 | `nine/internal/cli`, `nine/internal/api` | The thin clients: the CLI, and the API server with the web UI |

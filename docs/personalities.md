@@ -21,7 +21,7 @@ The personality pattern **packages these primitives** into a deployable artifact
 
 1. **Starts with a predefined identity** (a self-model file seeded under `self/`)
 2. **Has custom knowledge** (via skills directory)
-3. **Has custom capabilities** (via sandboxed tools)
+3. **Has custom capabilities** (via MCP servers and user plugins)
 4. **Runs autonomously** (via standing agents and goals)
 5. **Grows over time** (via memory and skill accumulation)
 
@@ -57,11 +57,7 @@ personality-<name>/
 ├── skills/                     # Personality-specific skills (optional)
 │   ├── <role-name>.md         # Role definition(s)
 │   └── <skill-name>.md        # Knowledge skills
-├── tools.d/                    # Personality-specific tools (optional)
-│   ├── <tool-name>.js         # Tool code
-│   ├── <tool-name>.toml       # Tool manifest
-│   └── <tool-name>.schema.json # Tool schema
-└── plugins.d/                  # Native plugins (optional)
+└── plugins.d/                  # Personality-specific user plugins (optional)
     └── <plugin-name>           # Plugin binary + manifest
 ```
 
@@ -130,20 +126,14 @@ goal = "Alice: autonomous code review assistant"
 role = "code-reviewer"
 schedule = "0 * * * *"  # Wake hourly
 
-# Tool configuration
-[tools]
-enabled = true
-user_dir = "/etc/nine-personality/tools.d"
-
-[tools.agent]
-enabled = true
-max_tools = 32
-require_approval = "on_capability"
-
-# The ceiling a generated tool may be granted — never an automatic grant.
-[tools.agent.capabilities.net.http]
-allow_hosts = ["api.github.com", "raw.githubusercontent.com"]
-methods     = ["GET"]          # required; there is no implicit default
+# User plugins and MCP servers — the personality's custom capabilities.
+# A GitHub API MCP server, for example:
+# [[mcp.server]]
+# name    = "github"
+# command = "npx"
+# args    = ["-y", "@modelcontextprotocol/server-github"]
+# [mcp.server.env]
+# GITHUB_PERSONAL_ACCESS_TOKEN = "ghp_..."
 
 # Skills configuration
 [skills]
@@ -243,49 +233,11 @@ Your purpose: {{ memory_get("self/identity/purpose") }}.
    - Update `self/capabilities` with the new capability
 ```
 
-### Step 6: create sandboxed tools (optional)
+### Step 6: add custom capabilities (optional)
 
-Tools extend the personality's capabilities. They live in the `tools.d/` directory.
-
-```javascript
-// personality-alice/tools.d/analyze_pr.js
-export default ({ diff, pr_number }) => {
-  const lines = diff.split('\n');
-  const additions = lines.filter(line => line.startsWith('+') && !line.startsWith('+++'));
-  const deletions = lines.filter(line => line.startsWith('-') && !line.startsWith('---'));
-  
-  return {
-    pr_number,
-    additions: additions.length,
-    deletions: deletions.length,
-    files_changed: new Set(lines.filter(line => line.startsWith('diff --git')).map(line => line.split(' ')[2])).size,
-    summary: `PR #${pr_number}: ${additions.length} additions, ${deletions.length} deletions across ${files_changed} files`
-  };
-};
-```
-
-```toml
-# personality-alice/tools.d/analyze_pr.toml
-name = "analyze_pr"
-kind = "js"
-entrypoint = "./analyze_pr.js"
-description = "Analyze a PR diff and return summary statistics"
-
-[capabilities]
-# No capabilities needed for this pure computation tool
-```
-
-```json
-// personality-alice/tools.d/analyze_pr.schema.json
-{
-  "type": "object",
-  "properties": {
-    "diff": {"type": "string", "description": "The PR diff text"},
-    "pr_number": {"type": "integer", "description": "The PR number"}
-  },
-  "required": ["diff", "pr_number"]
-}
-```
+Capabilities beyond the built-ins arrive as MCP servers or user plugins — declare
+an `[[mcp.server]]` or drop a plugin into `plugins.d/` (see [plugins.md](plugins.md)).
+The wasm tool tier a personality used to extend is gone (adr/modular_nine.md §9.10).
 
 ### Step 7: build and run
 
@@ -428,7 +380,7 @@ Test your personality with:
 ### 1. Code review assistant (Alice)
 
 - **Purpose**: Review PRs and identify patterns
-- **Tools**: GitHub API (via sandboxed tool), file analysis
+- **Tools**: GitHub API (via an MCP server), built-in file analysis
 - **Skills**: Code review best practices, pattern recognition
 - **Growth**: Writes skills for new patterns found in PRs
 - **Schedule**: Hourly wake to check for new PRs
@@ -595,7 +547,6 @@ unconsumed message starts its own turn once the current one ends
 - [Pre-defined agents](predefined-agents.md) – Standing agents and their lifecycle
 - [Roles](roles.md) – Worker kinds as data
 - [Skills](skills.md) – Procedural knowledge
-- [Sandboxed tools](sandboxed-tools.md) – Safe capability extensions
 - [Processes](processes.md) – Autonomous behavior
 - [Configuration](configuration.md) – All configuration options
 - [CLI Usage](usage.md) – Command-line interface
@@ -610,7 +561,7 @@ unconsumed message starts its own turn once the current one ends
 
 | Limit | Detail |
 |-------|--------|
-| A personality is configuration, not a feature | It is a `nine.toml`, a set of skills, and optionally some sandboxed tools, packaged in an image. Nothing in the daemon knows what a personality is. |
+| A personality is configuration, not a feature | It is a `nine.toml`, a set of skills, and optionally some user plugins, packaged in an image. Nothing in the daemon knows what a personality is. |
 | Each needs its own image and container | There is no way to run two personalities in one daemon. They are separate deployments with separate databases. |
 | The self-model is seeded once, then owned by the agent | With no file configured, `self/identity` and `self/capabilities` get Nine's generic defaults on first start. Either way, what the instance believes about itself after that is whatever reflection wrote. |
 | Skills are copied, not shared | Two personalities that need the same skill each carry their own copy. There is no shared skill registry. |

@@ -7,7 +7,7 @@ import (
 
 // A generated tool is store state, exactly like a goal, a workflow, or an agent
 // skill: listable, readable, exportable, deletable, and journalled
-// (docs/sandboxed-tools.md §2). It does not drift the binary — the property that
+// (the removed sandboxed tier (adr/modular_nine.md 9.10)§2). It does not drift the binary — the property that
 // docs/ and the binary match its version is untouched — which is precisely why
 // runtime tool *generation* is permitted where runtime plugin generation is not.
 //
@@ -28,7 +28,7 @@ type GeneratedTool struct {
 	// that no longer fits under it rather than leaving it running.
 	Capabilities json.RawMessage `json:"capabilities,omitempty"`
 	// Lockfile is the exact external npm code the bundled Source carries: name,
-	// version, integrity, and requester per package (docs/sandboxed-tools.md §4.4).
+	// version, integrity, and requester per package (the removed sandboxed tier (adr/modular_nine.md 9.10)§4.4).
 	// "{}" for a tool with no external dependencies, which is the common case.
 	Lockfile json.RawMessage `json:"lockfile,omitempty"`
 	// Resumable asks for the long-running lifecycle: the tool may end a call with
@@ -40,7 +40,7 @@ type GeneratedTool struct {
 	Live      bool   `json:"live,omitempty"`
 	CreatedAt string `json:"created_at,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
-	// LastCalledAt drives LRU eviction (docs/sandboxed-tools.md §9.2). Empty
+	// LastCalledAt drives LRU eviction (the removed sandboxed tier (adr/modular_nine.md 9.10)§9.2). Empty
 	// until the tool is first called.
 	LastCalledAt string `json:"last_called_at,omitempty"`
 	CallCount    int    `json:"call_count"`
@@ -166,7 +166,7 @@ func (s *Store) GeneratedToolCount() (int, error) {
 // every one competes for the context budget in selectTools. A catalog of 200
 // half-redundant generated tools degrades the ranking for the *built-in* tools
 // too — the agent poisons its own tool selection and gets worse at everything
-// (docs/sandboxed-tools.md §9.2). Eviction is on last-called-at, so a tool that
+// (the removed sandboxed tier (adr/modular_nine.md 9.10)§9.2). Eviction is on last-called-at, so a tool that
 // earns its place keeps it. A tool a process runs is never evicted: a process
 // is never called as a tool, so its last call says nothing, and evicting its
 // program would leave the process failing on every trigger.

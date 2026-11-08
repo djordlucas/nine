@@ -13,7 +13,6 @@ import (
 	ninectx "nine/internal/context"
 	"nine/internal/llm"
 	"nine/internal/protocol"
-	"nine/internal/toolvm"
 )
 
 type turnReq struct {
@@ -385,16 +384,13 @@ func (w *AgentWorker) processTurn(req turnReq) {
 		w.loop.RestrictNextTurn(pipedTurn(req.allow, w.workspaceRoot))
 	}
 	// Both of these travel with the turn rather than being configured at boot,
-	// because the sandboxed-tool host is daemon-wide: the journal destination for
-	// a tool's outbound HTTP, and the conversation a conversation-scoped state
-	// grant resolves against.
+	// because they are daemon-wide: the journal destination for a tool's outbound
+	// HTTP, and the conversation a conversation-scoped grant resolves against.
 	turnCtx, cancel := context.WithCancelCause(req.ctx)
 	w.mu.Lock()
 	w.cancelTurn = cancel
 	w.mu.Unlock()
-	toolCtx := toolvm.WithHTTPAudit(turnCtx, w.httpAuditor(turn))
-	toolCtx = toolvm.WithStateScope(toolCtx, w.id)
-	result, err := w.loop.Run(toolCtx, text)
+	result, err := w.loop.Run(turnCtx, text)
 	w.mu.Lock()
 	w.cancelTurn = nil
 	w.mu.Unlock()

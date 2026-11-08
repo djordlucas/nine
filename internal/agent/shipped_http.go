@@ -14,17 +14,16 @@ import (
 	"time"
 )
 
-// The network half of the shipped tier in Go: http_get/http_post/web_page_read/
-// web_search, with the SSRF boundary ported from the sandbox host
-// (internal/toolvm/ssrf.go). Two gates, both of which must pass — the URL
+// The network half of the built-in tier in Go: http_get/http_post/web_page_read/
+// web_search, with the SSRF boundary carried over from the removed sandbox host
+// (adr/modular_nine.md 9.10). Two gates, both of which must pass — the URL
 // hostname against the tool's allowlist, and the resolved IP at dial time
 // (after DNS, per connection, including redirect hops), because a hostname-only
 // check is defeated by DNS rebinding and a URL-only check by redirects.
 
-// blockedRanges are the CIDR blocks a shipped tool may never reach, beyond what
-// netip's own predicates cover. See internal/toolvm/ssrf.go for the per-block
-// rationale (169.254.0.0/16 is cloud instance metadata, and it is spelled out so
-// a future edit cannot quietly drop it).
+// blockedRanges are the CIDR blocks a web tool may never reach, beyond what
+// netip's own predicates cover. The per-block rationale: 169.254.0.0/16 is cloud
+// instance metadata, and it is spelled out so a future edit cannot quietly drop it.
 var blockedRanges = []netip.Prefix{
 	netip.MustParsePrefix("169.254.0.0/16"),  // link-local (cloud instance metadata)
 	netip.MustParsePrefix("fe80::/10"),       // IPv6 link-local

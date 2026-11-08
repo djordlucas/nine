@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -15,9 +16,9 @@ import (
 	"unicode/utf8"
 )
 
-// shippedFS implements the file half of the shipped tier in Go, confined to the
+// shippedFS implements the file half of the built-in tier in Go, confined to the
 // workspace at root. The guest sees the workspace as /work; the host path is
-// root. Ported from internal/toolvm/shipped/*.js (adr/modular_nine.md §9.10) —
+// root. Ported from the removed wasm sandbox (adr/modular_nine.md §9.10) —
 // the semantics, including the trash and the error messages, are carried over
 // so a model sees the same behavior.
 
@@ -48,7 +49,7 @@ func (f *shippedFS) resolveErr(path, label string) (string, error) {
 		return filepath.Join(f.root, rel), nil
 	}
 	if strings.HasPrefix(p, "/") {
-		return "", fmt.Errorf("%s is outside this tool's workspace. Paths resolve under %s — use a relative path, or a %s/... path.", p, guestRoot, guestRoot)
+		return "", fmt.Errorf("%s is outside this tool's workspace. Paths resolve under %s — use a relative path, or a %s/... path", p, guestRoot, guestRoot)
 	}
 	return filepath.Join(f.root, p), nil
 }
@@ -65,7 +66,7 @@ func (f *shippedFS) guestPath(host string) string {
 // refuseState keeps Nine's own bookkeeping out of reach of the file tools.
 func (f *shippedFS) refuseState(host string) error {
 	if host == f.stateDir() || strings.HasPrefix(host, f.stateDir()+string(os.PathSeparator)) {
-		return fmt.Errorf("%s is Nine's own bookkeeping and is not writable. Use trash_list and restore_file to reach a deleted file.", f.guestPath(host))
+		return fmt.Errorf("%s is Nine's own bookkeeping and is not writable. Use trash_list and restore_file to reach a deleted file", f.guestPath(host))
 	}
 	return nil
 }
@@ -77,7 +78,7 @@ func (f *shippedFS) refuseSpill(host string) error {
 		return nil
 	}
 	if rel == "spill" || strings.HasPrefix(rel, "spill"+string(os.PathSeparator)) {
-		return fmt.Errorf("%s is reserved: spill/ holds truncated tool output, which only Nine writes. Choose another path.", f.guestPath(host))
+		return fmt.Errorf("%s is reserved: spill/ holds truncated tool output, which only Nine writes. Choose another path", f.guestPath(host))
 	}
 	return nil
 }
@@ -125,7 +126,7 @@ func (f *shippedFS) refuseBinary(host string, info os.FileInfo) error {
 	n, _ := fh.Read(head)
 	for _, b := range head[:n] {
 		if b == 0 {
-			return fmt.Errorf("%s is not a text file (%d bytes, contains NUL). read_file returns text; use a tool that understands the format.", guestOf(f, host), info.Size())
+			return fmt.Errorf("%s is not a text file (%d bytes, contains NUL). read_file returns text; use a tool that understands the format", guestOf(f, host), info.Size())
 		}
 	}
 	return nil
@@ -138,7 +139,7 @@ func guestOf(f *shippedFS, host string) string { return f.guestPath(host) }
 // decodeOrExplain decodes bytes as strict UTF-8 or explains why it cannot.
 func decodeOrExplain(b []byte, guest string) (string, error) {
 	if !utf8.Valid(b) {
-		return "", fmt.Errorf("%s is not valid UTF-8, so it cannot be returned as text. Read a byte range with offset and limit if you need part of it.", guest)
+		return "", fmt.Errorf("%s is not valid UTF-8, so it cannot be returned as text. Read a byte range with offset and limit if you need part of it", guest)
 	}
 	return string(b), nil
 }
@@ -289,8 +290,8 @@ func readRange(path string, off, lim int, size int64) ([]byte, error) {
 	}
 	buf := make([]byte, lim)
 	n, err := fh.Read(buf)
-	if err != nil && err.Error() != "EOF" {
-		// io.ReadAll-style semantics: a short read at EOF is fine
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
 	}
 	return buf[:n], nil
 }
@@ -387,7 +388,7 @@ func (f *shippedFS) writeFile(_ context.Context, args json.RawMessage) (string, 
 			now = versionToken(info)
 		}
 		if now != req.IfUnchanged {
-			return "", fmt.Errorf("%s changed since you read it (version %s, you passed %s). Read it again and redo the change against the current contents.", guest, now, req.IfUnchanged)
+			return "", fmt.Errorf("%s changed since you read it (version %s, you passed %s). Read it again and redo the change against the current contents", guest, now, req.IfUnchanged)
 		}
 	}
 
@@ -546,7 +547,7 @@ func (f *shippedFS) editFile(_ context.Context, args json.RawMessage) (string, e
 	}
 	hits := findAllOffsets(data, []byte(req.OldText), all, want)
 	if len(hits) == 0 {
-		return "", fmt.Errorf("old_text was not found in %s. It must match the file exactly, including indentation and line breaks — read the region first.", guest)
+		return "", fmt.Errorf("old_text was not found in %s. It must match the file exactly, including indentation and line breaks — read the region first", guest)
 	}
 	if !all && len(hits) != want {
 		got := len(hits)
@@ -693,7 +694,7 @@ func (f *shippedFS) moveFile(_ context.Context, args json.RawMessage) (string, e
 	_ = info
 	existing, statErr := os.Stat(dst)
 	if statErr == nil && !req.Overwrite {
-		return "", fmt.Errorf("%s already exists. Pass overwrite: true to replace it, or choose another path.", f.guestPath(dst))
+		return "", fmt.Errorf("%s already exists. Pass overwrite: true to replace it, or choose another path", f.guestPath(dst))
 	}
 	if statErr == nil && existing.IsDir() {
 		return "", fmt.Errorf("%s is a directory; name the destination file itself", f.guestPath(dst))
@@ -742,7 +743,7 @@ func (f *shippedFS) copyFile(_ context.Context, args json.RawMessage) (string, e
 		return "", fmt.Errorf("%s is a directory; copy_file copies one file", f.guestPath(src))
 	}
 	if _, statErr := os.Stat(dst); statErr == nil && !req.Overwrite {
-		return "", fmt.Errorf("%s already exists. Pass overwrite: true to replace it, or choose another path.", f.guestPath(dst))
+		return "", fmt.Errorf("%s already exists. Pass overwrite: true to replace it, or choose another path", f.guestPath(dst))
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return "", err
@@ -788,7 +789,7 @@ func (f *shippedFS) deleteFile(_ context.Context, args json.RawMessage) (string,
 		return "", fmt.Errorf("refusing to delete the workspace root")
 	}
 	if err := f.refuseState(target); err != nil {
-		return "", fmt.Errorf("%s is Nine's own bookkeeping (the trash lives there). Use restore_file to recover a deleted file.", guest)
+		return "", fmt.Errorf("%s is Nine's own bookkeeping (the trash lives there). Use restore_file to recover a deleted file", guest)
 	}
 	rel0, relErr := filepath.Rel(f.root, target)
 	if relErr != nil {
@@ -812,7 +813,7 @@ func (f *shippedFS) deleteFile(_ context.Context, args json.RawMessage) (string,
 			return "", err
 		}
 		if len(entries) > 0 {
-			return "", fmt.Errorf("%s is a directory and is not empty. Delete its contents first — there is no recursive delete.", guest)
+			return "", fmt.Errorf("%s is a directory and is not empty. Delete its contents first — there is no recursive delete", guest)
 		}
 	}
 	if err := f.trashTo(target); err != nil {
@@ -943,7 +944,7 @@ func (f *shippedFS) restoreFile(_ context.Context, args json.RawMessage) (string
 	}
 	dir := filepath.Join(f.trashDir(), name)
 	if _, err := os.Stat(dir); err != nil {
-		return "", fmt.Errorf("no trash entry named %s. It may have been swept; list what remains with trash_list.", name)
+		return "", fmt.Errorf("no trash entry named %s. It may have been swept; list what remains with trash_list", name)
 	}
 	var files []trashFile
 	f.walkTrash(dir, "", &files)
@@ -985,7 +986,7 @@ func (f *shippedFS) restoreFile(_ context.Context, args json.RawMessage) (string
 		return "", err
 	}
 	if _, statErr := os.Stat(destHost); statErr == nil {
-		return "", fmt.Errorf("%s already exists. Restoring over it would destroy the current file — pass to with a free path if you want both.", dest)
+		return "", fmt.Errorf("%s already exists. Restoring over it would destroy the current file — pass to with a free path if you want both", dest)
 	}
 	if err := os.MkdirAll(filepath.Dir(destHost), 0o700); err != nil {
 		return "", err
@@ -1056,7 +1057,7 @@ func (f *shippedFS) diffFile(_ context.Context, args json.RawMessage) (string, e
 			}
 		}
 		if prevPath == "" {
-			return "", fmt.Errorf("no previous version of %s is in the trash. Only a file that write_file, edit_file or delete_file has changed has one.", guest)
+			return "", fmt.Errorf("no previous version of %s is in the trash. Only a file that write_file, edit_file or delete_file has changed has one", guest)
 		}
 	}
 

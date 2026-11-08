@@ -1,6 +1,6 @@
 # Modular Nine — built-ins as Go, MCP for subprocess tools
 
-- **Status:** Proposed. P1, P5, P4-plugins built 2026-11-08; P4-toolvm in progress 2026-11-08 (non-live shipped tools are Go dispatcher handlers — `internal/agent` `RegisterShippedTools`; the two Live programs `pursue`/`reflect` are Go loops in `internal/runtime/liveprog.go` driven through the same runner). Remaining: delete the toolvm host + wazero + dev/generated tiers (P4), P6 (export).
+- **Status:** Proposed. P1, P5, P4 built 2026-11-08 (P4 in full: the toolvm host, wazero, the dev `[tools].user_dir` and generated tiers are deleted; shipped tools are Go dispatcher handlers in `internal/agent`, and `pursue`/`reflect` are Go live programs in `internal/runtime/liveprog.go`; config schema is 3 and the toolvm-era keys are refused at load; the generated-tools eval track is reworked — 21 cases removed, `process-condition-trigger` moved onto an MCP fixture tool; genesis is suspended until the model-authored-tools refactor). Remaining: P6 (export).
 - **Date:** 2026-11-01.
 - **Reviewed:** 2026-11-06 — fact-checked against the tree; §1 tool count and names, §2 progress-rail wording, §3 database ownership, §5 supervision wording corrected; test plan added as §10.
 - **Decisions:** 2026-11-06 — §9 items 1–4 answered by the requester: all tiers in scope, both directions, the sandbox fronted by MCP, prefix every server's tools.
@@ -200,7 +200,7 @@ built, so there is no loopback transport, no toolvm front and no core front.
 | Phase | Work | Gate |
 |---|---|---|
 | P1 | `internal/mcp`: hand-rolled MCP client (moved from `internal/builtins`) + server side on vendored `mcp-go` (§9.5) over real transports; `nine mcp serve shell` on unix-socket HTTP by default, stdio per server (§9.6); manager dual-stack (MCP first, legacy fallback); `shell` served over MCP | unit tests against `internal/builtins/testmcpserver`; `go test ./...`; evals green; `nine plugins` roster unchanged |
-| P4 | user plugins speak MCP; legacy envelope removed; `nine plugin validate` MCP-only; `spec/contracts/plugin.md` rewritten as "plugins are MCP servers". toolvm removed; shipped tools translated to Go built-ins (§9.10) | `userplugins` + plugin contract suites; toolvm suites deleted, built-in tool coverage moves to `register_*_test.go` |
+| P4 — built 2026-11-08 | user plugins speak MCP; legacy envelope removed; `nine plugin validate` MCP-only; `spec/contracts/plugin.md` rewritten as "plugins are MCP servers". toolvm removed; shipped tools translated to Go built-ins (§9.10) | `userplugins` + plugin contract suites; toolvm suites deleted, built-in tool coverage moves to `register_*_test.go` |
 | P5 | external `[[mcp.server]]` spawned directly by the manager; bridge builtin deleted; roster and `[plugins].disabled` semantics unchanged | `mcp_test.go`, `mcp_http_test.go`, evals incl. `deferred-mcp-discovery` |
 | P6 | export direction (in scope, §9.2): `nine mcp export` / API `/mcp` over the same adapters (§6) | OpenAPI drift checks, API tests |
 

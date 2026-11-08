@@ -36,27 +36,13 @@ func (f *fakeWaker) seen() []string {
 	return append([]string{}, f.woke...)
 }
 
-const predicateManifest = `
-name = "predicate"
-kind = "js"
-entrypoint = "./predicate.js"
-description = "Report only when there is something."
-resumable = true
-`
-
-// The predicate shape: silent unless it finds something.
-const predicateSrc = `
-export default function (args) { return args.found ? "found: " + args.found : ""; }
-`
-
 func conditionSetup(t *testing.T, args string) (*StandingRunner, *memory.Store, *fakeWaker) {
 	t.Helper()
 	store, err := memtest.Open(t)
 	if err != nil {
 		t.Fatal(err)
 	}
-	host := standingHost(t, "predicate", predicateManifest, predicateSrc, nil)
-	r := NewStandingRunner(store, host, 1, 2)
+	r, _ := newStandingRunner(t, store, predicateFn)
 	w := &fakeWaker{accept: true}
 	r.SetWaker(w)
 
@@ -129,8 +115,7 @@ func TestOrdinaryStandingToolStillReportsToHumans(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	host := standingHost(t, "predicate", predicateManifest, predicateSrc, nil)
-	r := NewStandingRunner(store, host, 1, 2)
+	r, _ := newStandingRunner(t, store, predicateFn)
 	w := &fakeWaker{accept: true}
 	r.SetWaker(w)
 
@@ -163,8 +148,8 @@ func TestConditionTriggerReconcileIsIdempotent(t *testing.T) {
 		Name: "when-sec-watch", Tool: "predicate", Every: "10s", ReportTo: "sec-watch",
 		Args: map[string]any{"path": "/var/log/app.log"},
 	}}
-	ReconcileProcesses(store, nil, blocks)
-	ReconcileProcesses(store, nil, blocks)
+	ReconcileProcesses(store, blocks)
+	ReconcileProcesses(store, blocks)
 
 	runs, err := store.ProcessList()
 	if err != nil {
@@ -196,12 +181,12 @@ func TestStoppedConditionTriggerStaysStopped(t *testing.T) {
 	blocks := []config.ProcessConfig{{
 		Name: "when-sec-watch", Tool: "predicate", Every: "10s", ReportTo: "sec-watch",
 	}}
-	ReconcileProcesses(store, nil, blocks)
+	ReconcileProcesses(store, blocks)
 	if _, err := store.ProcessSetState("when-sec-watch", memory.ProcessStopped); err != nil {
 		t.Fatal(err)
 	}
 
-	ReconcileProcesses(store, nil, blocks)
+	ReconcileProcesses(store, blocks)
 
 	got, _, _ := store.ProcessGet("when-sec-watch")
 	if got.State != memory.ProcessStopped {

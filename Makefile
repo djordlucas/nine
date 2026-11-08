@@ -19,7 +19,7 @@ GOFLAGS  := -mod=vendor
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS  := -ldflags "-X main.Version=$(VERSION)"
 
-.PHONY: all dev build openapi openapi-check openapi-lint test test-v lint cover cover-html clean model up up-hot shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-code eval-generate quickjs-wasm quickjs-verify harness-bc image image-test image-scan image-verify ci ci-test scan scan-fs lint-host webui webui-check webui-test webui-e2e
+.PHONY: all dev build openapi openapi-check openapi-lint test test-v lint cover cover-html clean model up up-hot shell logs down destroy integration-test integration-test-short eval-replay eval-live eval-generate image image-test image-scan image-verify ci ci-test scan scan-fs lint-host webui webui-check webui-test webui-e2e
 
 dev: build
 
@@ -94,34 +94,11 @@ openapi-check: openapi
 
 FORCE:
 
-# ── sandboxed tools: the QuickJS blob ─────────────────────────────────────────
-# Deliberately NOT part of `dev` or `build` (docs/sandboxed-tools.md §10.1). The
-# interpreter is built from pinned tags and committed, so an ordinary build needs
-# no wasi-sdk, no clang, and no clone — and the runtime image gains no toolchain.
-# Run this only on a deliberate version bump, and review the qjs.wasm diff and
-# the new hash in that PR.
-
-quickjs-wasm:
-	sh internal/toolvm/quickjs/build.sh
-
-# Recompile harness.js to bytecode without touching qjs.wasm. This is what an
-# edit to harness.js needs: the daemon embeds the bytecode, not the JavaScript.
-harness-bc:
-	sh internal/toolvm/quickjs/build.sh --harness-only
-
-# Verify the committed blob against its recorded hash. A binary artifact in the
-# tree is only acceptable if changing it is loud; this is what makes it loud in
-# CI, where it runs on every build.
-quickjs-verify:
-	cd internal/toolvm/quickjs && shasum -a 256 -c qjs.wasm.sha256
-
 # ── tests ─────────────────────────────────────────────────────────────────────
 
-# The per-package timeout is explicit rather than Go's 10m default. internal/toolvm
-# runs ~4 minutes on its own — it compiles wasm modules — so the default leaves
-# little headroom, and a loaded machine has blown through it. A killed package
-# reports a goroutine dump rather than a test failure, which is the least useful
-# way to learn a suite is slow. Override for a slow host:
+# The per-package timeout is explicit rather than Go's 10m default, because a
+# killed package reports a goroutine dump rather than a test failure, which is
+# the least useful way to learn a suite is slow. Override for a slow host:
 #   NINE_TEST_TIMEOUT=30m make test
 NINE_TEST_TIMEOUT ?= 20m
 test:
@@ -191,17 +168,16 @@ NINE_ENV = \
 	-e NINE_WORKSPACE_ROOT=/data/workspace \
 	-e NINE_SKILLS_USER_DIR=/skills.d \
 	-e NINE_PLUGINS_USER_DIR=/plugins.d \
-	-e NINE_TOOLS_USER_DIR=/tools.d \
 	-e NINE_LOG_FILE=off
-# None of the three user directories is mounted. The env vars above wire the
-# paths — /skills.d, /plugins.d, /tools.d — and an operator who wants any of them
+# None of the two user directories is mounted. The env vars above wire the
+# paths — /skills.d, /plugins.d — and an operator who wants either
 # adds their own `-v /my/skills.d:/skills.d:ro`, getting exactly what they chose.
 #
 # Mounting the repo's copies would install whatever they happen to contain on
-# every `make up`: sandboxed tools become live capability the model is offered,
-# and skills become instructions the agent is seeded with. That is not a decision
+# every `make up`: plugins become live tools the model is offered, and skills
+# become instructions the agent is seeded with. That is not a decision
 # this Makefile should be making on an operator's behalf, and it is the reason
-# all three directories ship empty. Worked tool examples are in examples/tools/.
+# both directories ship empty.
 #
 # For plugins there is a second reason: a plugin is an executable, and one built
 # on the host does not run in this debian container unless it happens to be a
@@ -391,18 +367,6 @@ eval-replay:
 NINE_EVAL_TIMEOUT ?= 7200s
 eval-live: build
 	NINE_EVALS_LIVE=1 \
-	NINE_BINARY=$(abspath $(DIST)/$(BINARY)) \
-	$(GO) test $(GOFLAGS) -v -count=1 -timeout $(NINE_EVAL_TIMEOUT) -run TestLiveMatrix ./tests/evals/
-
-# Code the model writes and runs — generated tools and js_eval, the cases tagged
-# `generated` — on qwen3.5:9b, which is capable enough for them to carry
-# signal, beside the 4b default for comparison.
-#   NINE_EVAL_CODE_MODELS=qwen3.5:9b make eval-code
-NINE_EVAL_CODE_MODELS ?= qwen3.5:9b,qwen3.5:4b
-eval-code: build
-	NINE_EVALS_LIVE=1 \
-	NINE_EVAL_MODELS=$(NINE_EVAL_CODE_MODELS) \
-	NINE_EVAL_TAGS=generated \
 	NINE_BINARY=$(abspath $(DIST)/$(BINARY)) \
 	$(GO) test $(GOFLAGS) -v -count=1 -timeout $(NINE_EVAL_TIMEOUT) -run TestLiveMatrix ./tests/evals/
 

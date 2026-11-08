@@ -71,33 +71,6 @@ github.com/dlclark/regexp2/syntax
 # github.com/dustin/go-humanize v1.1.0
 ## explicit; go 1.21
 github.com/dustin/go-humanize
-# github.com/evanw/esbuild v0.28.1
-## explicit; go 1.13
-github.com/evanw/esbuild/internal/api_helpers
-github.com/evanw/esbuild/internal/ast
-github.com/evanw/esbuild/internal/bundler
-github.com/evanw/esbuild/internal/cache
-github.com/evanw/esbuild/internal/compat
-github.com/evanw/esbuild/internal/config
-github.com/evanw/esbuild/internal/css_ast
-github.com/evanw/esbuild/internal/css_lexer
-github.com/evanw/esbuild/internal/css_parser
-github.com/evanw/esbuild/internal/css_printer
-github.com/evanw/esbuild/internal/fs
-github.com/evanw/esbuild/internal/graph
-github.com/evanw/esbuild/internal/helpers
-github.com/evanw/esbuild/internal/js_ast
-github.com/evanw/esbuild/internal/js_lexer
-github.com/evanw/esbuild/internal/js_parser
-github.com/evanw/esbuild/internal/js_printer
-github.com/evanw/esbuild/internal/linker
-github.com/evanw/esbuild/internal/logger
-github.com/evanw/esbuild/internal/renamer
-github.com/evanw/esbuild/internal/resolver
-github.com/evanw/esbuild/internal/runtime
-github.com/evanw/esbuild/internal/sourcemap
-github.com/evanw/esbuild/internal/xxhash
-github.com/evanw/esbuild/pkg/api
 # github.com/getkin/kin-openapi v0.152.0
 ## explicit; go 1.25
 github.com/getkin/kin-openapi/openapi3
@@ -174,42 +147,6 @@ github.com/santhosh-tekuri/jsonschema/v6/kind
 # github.com/spf13/cast v1.7.1
 ## explicit; go 1.19
 github.com/spf13/cast
-# github.com/tetratelabs/wazero v1.12.0
-## explicit; go 1.25.0
-github.com/tetratelabs/wazero
-github.com/tetratelabs/wazero/api
-github.com/tetratelabs/wazero/experimental
-github.com/tetratelabs/wazero/experimental/sys
-github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1
-github.com/tetratelabs/wazero/internal/descriptor
-github.com/tetratelabs/wazero/internal/engine/interpreter
-github.com/tetratelabs/wazero/internal/engine/wazevo
-github.com/tetratelabs/wazero/internal/engine/wazevo/backend
-github.com/tetratelabs/wazero/internal/engine/wazevo/backend/isa/amd64
-github.com/tetratelabs/wazero/internal/engine/wazevo/backend/isa/arm64
-github.com/tetratelabs/wazero/internal/engine/wazevo/backend/regalloc
-github.com/tetratelabs/wazero/internal/engine/wazevo/frontend
-github.com/tetratelabs/wazero/internal/engine/wazevo/ssa
-github.com/tetratelabs/wazero/internal/engine/wazevo/wazevoapi
-github.com/tetratelabs/wazero/internal/expctxkeys
-github.com/tetratelabs/wazero/internal/filecache
-github.com/tetratelabs/wazero/internal/ieee754
-github.com/tetratelabs/wazero/internal/internalapi
-github.com/tetratelabs/wazero/internal/leb128
-github.com/tetratelabs/wazero/internal/moremath
-github.com/tetratelabs/wazero/internal/platform
-github.com/tetratelabs/wazero/internal/sock
-github.com/tetratelabs/wazero/internal/sys
-github.com/tetratelabs/wazero/internal/sysfs
-github.com/tetratelabs/wazero/internal/u32
-github.com/tetratelabs/wazero/internal/u64
-github.com/tetratelabs/wazero/internal/version
-github.com/tetratelabs/wazero/internal/wasip1
-github.com/tetratelabs/wazero/internal/wasm
-github.com/tetratelabs/wazero/internal/wasm/binary
-github.com/tetratelabs/wazero/internal/wasmdebug
-github.com/tetratelabs/wazero/internal/wasmruntime
-github.com/tetratelabs/wazero/sys
 # github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e
 ## explicit; go 1.19
 github.com/xo/terminfo

@@ -1,12 +1,13 @@
 # Processes
 
 Nine has two kinds of session. A **conversation** is driven by a person. A
-**process session** is driven by a **process**: a sandboxed tool that runs on
+**process session** is driven by a **process**: a tool that runs on
 its triggers — a clock, a report piped to it, or a journal event — and can ask
 the model for a turn in its own session. Everything Nine does between your
 turns is a process: goal pursuit, standing agents, self-reflection, condition
-triggers, standing tools, and the processes Nine writes itself — at its
-genesis, from a conversation, or when it revises what it wrote.
+triggers, and standing tools. The tool is a built-in or an MCP plugin tool
+(adr/modular_nine.md §9.10 — the wasm tool tier a process used to run in is
+gone); the live programs `pursue` and `reflect` are Go code in the binary.
 
 | | Driven by | Started by |
 |---|---|---|
@@ -19,28 +20,26 @@ A process runs in one of two modes, decided by its tool:
 
 | | Live | Slice |
 |---|---|---|
-| Instance | started once, runs until stopped | created for each trigger, destroyed after |
-| Receiving work | `next()` from `nine:process` waits for the next trigger | the trigger is the call |
-| Asking the model | `turn(text)` runs a turn in its session and returns the reply | not possible |
-| Output | `report(text)`: to its pipe, or the human feed without one | the call's non-empty result, the same way |
-| Examples | `pursue`, `reflect`, a tool whose manifest says `live = true` | any resumable tool on a cadence — what standing tools were |
+| Instance | started once, runs until stopped | one synchronous call per trigger, then the cycle completes |
+| Receiving work | the Go live program's `Next(ctx)` waits for the next trigger | the trigger is the call |
+| Asking the model | the program's `Turn(ctx, text)` runs a turn in its session and returns the reply | not possible |
+| Output | the program's `Report(ctx, text)`: to its pipe, or the human feed without one | the call's non-empty result, the same way |
+| Examples | `pursue`, `reflect` — Go live programs in the binary | any built-in or MCP plugin tool (`<server>__<tool>`) on a cadence |
 
 A live process's instance has no call deadline. Its work budget bounds the work
-done for each trigger and refills when `next()` returns one, and every call it
+done for each trigger and refills when `Next` returns one, and every call it
 makes carries its own bound: an HTTP request its timeout, a model turn the
 turn's limits. Live instances run in their own pool, sized by
 `[processes] max_running`, so a process waiting for a trigger never takes a slot
 an ordinary tool call needs.
 
-```js
-import { next, turn, report } from "nine:process";
-
-export default () => {
-  for (;;) {
-    const trigger = next();                       // a clock tick, a piped report, an event
-    report(turn(`Summarize: ${trigger.text ?? ""}`));
-  }
-};
+```go
+// The shape of a live program (internal/runtime/liveprog.go): a loop over
+// Next/Turn/Report until the process is stopped.
+for {
+    t := h.Next(ctx)                    // a clock tick, a piped report, an event
+    h.Report(ctx, h.Turn(ctx, "Summarize: "+t.Text))
+}
 ```
 
 A live tool is never in a conversation's tool list, and calling one is refused:
@@ -61,7 +60,7 @@ ran a turn and nothing changed, the tick runs no turn and costs nothing; the
 process log says it was skipped. The first tick after a start reads from the
 end of the session's own last turn.
 
-They are read-only programs you can inspect with `nine tools show pursue`.
+They are Go programs in the binary — read `internal/runtime/liveprog.go`.
 
 ## Triggers
 
@@ -209,91 +208,21 @@ stopped process, except one stopped by:
 Every start counts against `[processes] max_running`. Each refusal names its
 reason.
 
-## Processes Nine writes
+## Processes Nine writes — removed
 
-With `[tools.agent] allow_processes`, Nine can write a process itself: `tool_write` with a
-`process` block starts the tool as a process, named `gen:<tool>`.
+Nine no longer writes processes: that was the model-authored tool tier
+(`tool_write` with a `process` block), removed with the toolvm
+(adr/modular_nine.md §9.10). Processes are declared by the operator in
+`[[process]]` blocks below; a `tool` names a built-in or an MCP plugin tool
+(`<server>__<tool>`).
 
-```json
-{"name":"notes_digest", "capabilities":{"fs":["read","write"]}, "source":"…",
- "process":{"every":"30m", "role":"process", "budget":{"turns_per_day":5}}}
-```
+## Genesis — suspended
 
-| Rule | Detail |
-|---|---|
-| Live or slice | a live program (`next()`, `turn()`), or a slice process when the tool is resumable |
-| Role | its turns run under a role from `[tools.agent] process_roles`, default `["process"]`: Nine's identity and no tools, so the program reads and writes and its turns only think |
-| Approval | as `require_approval` says; under `on_capability` a process write prompts even when it declares nothing |
-| Budget | `[processes] budget`, which the block may lower |
-| Pipes | `report_to` only into another live process Nine wrote |
-| Rewriting | a new version, which the process restarts on; the run state is kept, so a process you stopped stays stopped. Refused for a process the operator stopped. See [Revision](#revision) |
-| Deleting | `tool_delete` deletes the tool and its process, unless you stopped it; `nine tools delete` always does |
-| Checks at write | refused, with the reason, before anything is stored: source that does not parse, a `nine:*` import or name the module does not have, a `nine:*` function called but not imported, capabilities of the wrong shape or beyond the ceiling |
-| Examples | the `process-patterns` skill: complete programs to copy, each run by a test |
-
-Its tool is never evicted from Nine's catalog while the process exists.
-
-## Genesis
-
-An instance can be born from a document. On the first boot of its store, the
-operator's genesis document becomes the instance's first processes:
-
-```toml
-[bootstrap]
-genesis = "/etc/nine/genesis.md"   # needs [tools.agent] enabled and allow_processes
-
-[tools.agent]
-enabled         = true
-allow_processes = true
-```
-
-| Step | What happens |
-|---|---|
-| Start | a `genesis` session, under the shipped `genesis` role (`tool_write`, `tool_read`, `sql_query`, the read tools), is given the document and what this instance allows |
-| Writing | each process is one `tool_write`; a refusal comes back in the turn and is fixed there |
-| Turns | the session gets further turns until it says `GENESIS DONE` with a process it wrote running, up to `genesis_turns` (8) |
-| Checking | on `GENESIS DONE`, genesis watches what it wrote until each process has run once (up to twice the shortest cadence, 30 s to 3 min); a process that fails is handed back as the next turn, with its error |
-| Guidance | the first turn carries a complete program, and the `process-patterns` skill has more to copy |
-| Done | marked in the store and reported to `nine notifications`; genesis never runs again here |
-| Not done | reported; genesis runs again at the next boot |
-| Revision | with `allow_revision` and `reviser` in `process_roles`, genesis also writes a reviser; without, it is told revision is off |
-
-The daemon serves while genesis runs. The genesis session's history shows what
-it did and why.
-
-## Revision
-
-Every tool Nine writes keeps its previous versions, and a rewritten process
-that fails before it has run is rolled back.
-
-| When | Then |
-|---|---|
-| A tool Nine wrote is rewritten | The version it replaces is kept, with the process definition it ran under; the newest ten are kept |
-| A process's program is written | It is **on probation** until it has run |
-| A process's program is rewritten | It restarts on the new version, on probation, journaled as `process_revised` |
-| The new version has run — a live program back in `next()`, a slice call completed | Probation ends |
-| It fails `[processes] rollback_after` times (3) while on probation | The newest kept version that ran is restored as a new one, its failures cleared — with none that ran, nothing is restored; journaled as `process_rolled_back`, reported to `nine notifications`, and sent to the process that wrote it |
-
-A process's turns can revise what Nine wrote when the operator allows it:
-
-```toml
-[processes]
-allow_revision = true            # a process's turn may write and rewrite processes
-
-[tools.agent]
-process_roles = ["process", "reviser"]
-```
-
-The shipped `reviser` role holds `tool_read`, `tool_write` and the read tools. A
-reviser process runs a turn under it — on a clock, say — and the turn reads what
-Nine wrote with `tool_read`, looks at what it produces, and rewrites one thing.
-Without `allow_revision`, a process's turn may write ordinary tools but not
-processes.
-
-| Who | Sees | Restores |
-|---|---|---|
-| A model | `tool_read`: a tool's source, version, probation, and its process's state and last error | by rewriting |
-| The operator | `nine tools versions <name>`, `GET /api/v1/tools/{name}/versions` | `nine tools restore <name> <version>`, `POST /api/v1/tools/{name}/versions/{version}/restore` |
+`[bootstrap] genesis` turned a document into the instance's first processes on
+first boot, by having a `genesis` session write them with `tool_write`. That
+tier is gone (adr/modular_nine.md §9.10), so a configured genesis is reported
+and skipped at boot until the model-authored-tools refactor lands; the key
+itself is still accepted so an existing file loads.
 
 ## The database
 
@@ -303,22 +232,9 @@ changes.
 
 | Who | How | What |
 |---|---|---|
-| A process's program, live or slice, with `sql = true` | `import { query, exec } from "nine:sql"` | `exec()` writes: rows, and the schema of its own tables. `query()` reads |
+| A live process's session (pursue, reflect), with `[processes] database` | the session's database handler | writes: rows, and the schema of its own tables; reads |
 | A turn whose role grants `sql_query` | `sql_query` | one read-only statement: `SELECT`, or `PRAGMA table_list` and `table_info` |
-| The operator | the web UI's Data section, or `/api/v1/database/…` ([api](api.md#workspace-and-database)) | browse tables and rows, insert, change or delete a row, and run one statement, under a program's policy |
-
-```js
-import { next } from "nine:process";
-import { exec, query } from "nine:sql";
-
-export default () => {
-  exec("CREATE TABLE IF NOT EXISTS seen (url TEXT PRIMARY KEY, at TEXT)");
-  for (;;) {
-    const t = next();
-    exec("INSERT OR IGNORE INTO seen VALUES (?, ?)", [t.text, t.at]);
-  }
-};
-```
+| The operator | the web UI's Data section, or `/api/v1/database/…` ([api](api.md#workspace-and-database)) | browse tables and rows, insert, change or delete a row, and run one statement, under the policy |
 
 | Rule | Detail |
 |---|---|
@@ -379,9 +295,8 @@ budget        = { turns_per_day = 200, tokens_per_day = 2000000 }
 authoritative = false           # true: a goal process no longer listed is retired at boot
 ```
 
-The rest of `[processes]` — `max_depth`, `allow_revision`, `rollback_after`,
-`database`, `database_max_mb`, `statement_timeout` — is in
-[Configuration](configuration.md).
+The rest of `[processes]` — `max_depth`, `database`, `database_max_mb`,
+`statement_timeout` — is in [Configuration](configuration.md).
 
 The file owns each process's definition; the runtime owns whether it is running.
 Editing a block adjusts what a process does without restarting one that was
@@ -412,7 +327,6 @@ use instead.
 - [Goal sessions](goal-sessions.md) — the goals `pursue` works on
 - [Pre-defined agents](predefined-agents.md) — standing agents declared in `nine.toml`
 - [Scheduling](scheduling.md) — cron expressions
-- [Sandboxed tools](sandboxed-tools.md) — the sandbox every process runs in
 
 > The design and its phases — [../adr/process-sessions.md](../adr/process-sessions.md).
 
@@ -421,17 +335,13 @@ use instead.
 | Limit | Detail |
 |-------|--------|
 | No backfill | A clock tick missed while the daemon or the process was down is not replayed: the first tick comes one cadence after the start. |
-| Approval follows `require_approval` | Under `never`, or in a conversation nobody attends (an API conversation), a process write is not put to anyone: `allow_processes` and `process_roles` are the only controls. |
 | Event content is visible to any process that asks | A process with `event_content = true`, Nine's own included, receives the content of every session it watches: what tools read and returned, what people asked. Turns it starts are restricted, but its program sees the text. |
 | Events are delivered from boot onward | A stopped or paused process misses the events of that time, and nothing from before boot is replayed. A process that is starting, or failing and retrying, receives them. |
 | A piped report can still steer what a restricted turn allows | An instruction inside a report can make the agent create files, plant memories, pause or finish its own goal, or post a misleading notification. |
 | A piped turn cannot append to an existing file | A watcher that reports repeatedly gets each finding recorded in a new file, or in its log on the session's own next turn. |
-| Taint is not tracked through the shell or process programs | A turn that reads a tainted file with `shell`, or a process program that reads one through `nine:fs` and hands it to `turn()`, is not restricted. |
+| Taint is not tracked through the shell | A turn that reads a tainted file with `shell` is not restricted. |
 | The restricted turn's reply stays in the history | The report's text is removed when its turn ends, but the model's reply to it stays; a reply that restates an instruction from the report can still steer a later turn, in the model's words rather than the report's. |
 | Configuration is read at boot | Editing a block takes effect at the next start. |
-| Genesis judges itself done | It ends when the session says so and a process it wrote runs; whether the processes do what the document meant is the reviser's, or the operator's, to judge. |
-| Rollback catches a version that fails, not one that does worse | A rewritten process that runs but produces worse results stays; noticing it is the next review's job, or the operator's. |
-| A version is only on probation until its first success | One that runs once and fails later is an ordinary failure: it is not rolled back. |
-| Only process programs reach the database | A tool a model calls cannot use `nine:sql`, even with the grant: it reads through `sql_query` instead. |
+| Slice tools read the database, not write it | A process's slice call reads through `sql_query`; writes go through the live session's handler. |
 | No transactions in the database | Each statement commits on its own, so a program cannot make several writes atomic. |
 | The authorizer depends on the SQLite driver's internals | nine reads the connection handle by reflection, since the driver has no API for it. A driver upgrade that moves it fails at boot, with the database unopened, and `TestAuthorizerShim` fails first. |

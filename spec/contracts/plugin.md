@@ -190,12 +190,10 @@ lets an operator add skills (R-SKILL.2), `[plugins].user_dir` lets an operator a
 plugins (R-PLUG.9). Both are driven by operator-controlled config and CLI, never by
 an agent tool, so neither is a path by which Nine mutates its own capabilities.
 
-**Scope: native plugins.** Sandboxed tools (`spec/contracts/toolvm.md`) are a separate
-subsystem with its own runtime, and the rule above is written about this one. The
-sentence that generalizes — *Nine cannot grant itself capabilities* — is unchanged and
-now covers both: a sandboxed tool's capabilities come from `[tool.<name>]` in
-`nine.toml`, written by the operator, and no agent-reachable path writes one (I-TVM.2).
-Nothing in the sandboxed-tool subsystem as built lets an agent author a tool at all.
+**Scope: plugins.** The wasm sandboxed-tool subsystem is removed (adr/modular_nine.md
+9.10); the rule above is written about plugins. The sentence that generalizes —
+*Nine cannot grant itself capabilities* — is unchanged: no agent-reachable path writes
+a capability grant; `capability_request` only records a request.
 
 ---
 
@@ -305,10 +303,7 @@ suspended, not deleted.
 ## R-PLUG.13 — built-in plugins are served by the `nine` binary
 
 The one Go default plugin, `shell`, ships **inside the `nine` binary**, not as a separate
-executable. (`time`, `files` and `http` were among them and are now shipped sandboxed tools
-— R-TVM.16. None needed a subprocess holding the daemon's uid, which meant `read_file`
-could read any absolute path and `http_get` could reach cloud instance metadata with none
-of the SSRF checks in the way. `shell` stays because it needs real `exec`.) The manager starts one by re-executing that
+executable. (`time`, `files` and `http` were among them and are now built-in Go tools in the daemon (adr/modular_nine.md 9.8/9.10): no subprocess, no wasm host. `shell` stays a plugin because it needs a real exec.) The manager starts one by re-executing that
 binary:
 
 ```text
@@ -395,7 +390,7 @@ An implementation **MUST**:
   and a reason, and `nine plugins` prints it as `off`. A plugin that is simply absent
   from the roster gives an operator debugging a missing tool nothing to read — the
   same reasoning as the skipped-user-plugin entries in R-PLUG.9 and the skipped tools
-  in [`toolvm.md`](toolvm.md) R-TVM.6.
+  in the plugin contract (R-PLUG.9).
 
 A name that matched nothing **MUST** be reported. `disabled = ["shel"]` withholds
 nothing and leaves `shell` — arbitrary command execution — running, with no error and

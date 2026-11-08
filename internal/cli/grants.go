@@ -9,7 +9,7 @@ import (
 	"nine/internal/protocol"
 )
 
-// The operator's side of the capability loop (docs/sandboxed-tools.md).
+// The operator's side of the plugin-capability loop (docs/plugin-capabilities.md 3).
 //
 // A generated tool that declares a capability the ceiling does not permit is
 // refused, and the agent's route out is `capability_request` — a pending row a

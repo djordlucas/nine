@@ -5,8 +5,7 @@ infrastructure. The case schema below is deliberately precise enough that new
 cases can be generated from this document, by a person or by a model, to cover
 features and guard against regressions.
 
-Run them with `make eval-replay` and `make eval-live`; `make eval-code` runs the
-cases about code the model writes on models expected to pass them.
+Run them with `make eval-replay` and `make eval-live`.
 
 There are **two tracks**, and every case declares which it belongs to:
 
@@ -68,18 +67,14 @@ depends on the model following an instruction exactly, it will eventually not.
 
 **Corollary: a case measures the model; don't tune the prompt to pass it.** When a case
 fails on one model, the fix is in nine or in the case — not in wording added to steer that
-model over the bar. `tool-write-call` is the worked example. It failed on `qwen3.5:4b` for
-four reasons that turned out to be nine's (a written tool never reached the writing session;
-a malformed `input_schema` 400'd every later turn; `tool_write` misreported when a tool was
-callable; an identical rewrite reported success), and those were fixed. What remained was the
-model preferring to delegate the call, and the considered fix — a system-prompt line telling
-models not to delegate work their own tools cover — was declined:
+model over the bar. The considered fix on a multi-step tool-using case — a system-prompt
+line telling models not to delegate work their own tools cover — was declined:
 
 - It pushes against `delegate-subagent` and `workflow-plan`, whose point is that the model
   *does* delegate.
-- Prompt text is only measurable statistically, and 4b's spread on this case was already
-  0/3–2/3 across runs, so several full matrices per variant would be needed to tell a real
-  effect from noise.
+- Prompt text is only measurable statistically, and a small model's spread on such a case
+  is already wide across runs, so several full matrices per variant would be needed to tell
+  a real effect from noise.
 - It taxes every session's context to lift one 4B model over one case's bar.
 
 The case declares `expected_pass_min_class: medium` instead, which records the finding rather
@@ -131,12 +126,6 @@ setup:
       command: "${NINE_EVAL_MCP_FIXTURE}"   # ${VAR} is expanded from the environment
       args: []
       env: {}                        # passed to the server process only
-  generated_tools:                   # tools Nine wrote earlier, seeded through tool_write's store;
-    slugify:                         # needs session.config tools.agent.enabled
-      description: "Turn a title into a URL slug"
-      input_schema: '{"type":"object","properties":{"text":{"type":"string"}}}'
-      source: 'export default ({ text }) => text.split(" ").join("-");'
-      capabilities: ""               # JSON declaration; empty declares nothing
   processes:                         # [[process]] blocks, reconciled as at boot (docs/processes.md)
     - name: status-report            # a goal block becomes a goal and its pursue process
       tool: pursue
@@ -198,9 +187,6 @@ expect:
     processes:                        # processes by id
       time-log: { state: stopped, stopped_by: budget }   # by process id (a goal block's is goal:<name>); or { absent: true }
     vectors: { namespace: skills, min: 1 }
-    generated_tools:                  # the tools Nine wrote, by name
-      slugify: { source: { matches: "toLowerCase" } }
-      old_helper: { absent: true }
   trajectory:
     tools_all_of: [memory_set]        # every one MUST appear
     tools_any_of: [memory_get]        # at least one MUST appear
@@ -270,8 +256,7 @@ Mappings:
   session's own journal. A tool a sub-agent called is **not** in it: a sub-agent journals
   under its own agent id, and `sub_agents` is what asserts over delegation. A case whose
   point is that *this* session used a tool therefore fails when the model delegates the
-  call, which is the intended reading — see `tool-write-call`, where a sub-agent's loop is
-  built after the write and could always see the tool.
+  call, which is the intended reading.
 - **`max_turns` / `min_turns`** → count of `turn_end` (user-triggered) events.
 - **`no_stall`** → no `turn_end.error == "stall"` and no `supervisor` event of kind stall.
 - **`gap_report`** → a `tool_start.name == "gap_report"` (or the supervisor `gap_reported` event).
@@ -382,12 +367,6 @@ pass fraction ≥ `pass_threshold`. Everything in §1–§3 applies. Requirement
 
   Size this generously. A matrix that overruns is killed by the test binary and the
   run is **lost**, not truncated — see below.
-- **Code the model writes** — the cases tagged `generated` (`tool_write`,
-  `tool_delete`, `js_eval`) — need a model above the small default's class to give
-  any signal: on it they fail on every build, so a regression would not show.
-  `make eval-code` runs only those cases (`NINE_EVAL_TAGS=generated`) on
-  `qwen3.5:9b` and `qwen3.5:4b`; `NINE_EVAL_CODE_MODELS` overrides the list.
-  `NINE_EVAL_TAGS` narrows any run to the cases carrying one of its tags.
 - **Context window**: live runs give Ollama a 16384-token window
   (`NINE_EVAL_NUM_CTX` overrides it), and nine assembles each turn within that window
   less the 2048-token reply cap. A turn's first prompt is ~7,000–8,000 tokens, almost
@@ -521,14 +500,6 @@ strongest available assertion for that feature.
 | processes | a conversation hands a live process a task with `process_send`, and the process carries it out | `wait` + side-effect `files` + `tools_all_of:[process_send]` | multi_step |
 | processes | real token counts pause a process at its token budget; a live process that throws reaches `failing` | side-effect `processes` + `notifications.contains` | basic |
 | processes | an instruction inside a piped report is not obeyed: the file it says to delete survives | side-effect `files` + `tools_none_of:[delete_file]` | multi_step |
-| processes | a process Nine wrote runs: wakes on its clock, its turns under the tool-less `process` role, writes its result | `setup.generated_tools` with a `process` block + `wait` + side-effect `files`/`processes` + `llm_request.tool_advertised_none_of` | basic |
-| processes | asked for a recurring digest, the model writes a process that runs and writes it unprompted (phase 3's acceptance) | `wait` + side-effect `files` + `tools_all_of:[tool_write]` | multi_step |
-| processes | a process write refused with processes off is reported; a written process is removed with `tool_delete`, except one the operator stopped | answer + side-effect `generated_tools`/`processes` | basic |
-| generated tools | `tool_write` a tool, call it in a later turn | `tools_all_of:[tool_write,<name>]` + answer | multi_step |
-| generated tools | one-off computation via `js_eval`, nothing persisted | `tools_all_of:[js_eval]`, `tools_none_of:[tool_write]` + answer | basic |
-| generated tools | fix a seeded tool with `tool_write`, then call it | side-effect `generated_tools` source + `tools_all_of:[tool_write,<name>]` + answer | multi_step |
-| generated tools | delete its own tool; a built-in is refused | side-effect `generated_tools` absent + `tools_all_of:[tool_delete]` + answer | basic |
-| generated tools | write a tool declaring a capability, use it on a file | side-effect `generated_tools` source + `tools_all_of:[tool_write,<name>]` + answer | multi_step |
 | roles | report-writer denied `shell` | `llm_request.tool_advertised_none_of:[shell]` | basic |
 | HITL | needs clarification | `ask_human` fired; resumes on `human_answers` | hitl |
 | approval gate | gated `shell` needs approval | approval prompt; blocked on "no" | hitl |
@@ -571,7 +542,7 @@ To add coverage, or to have an LLM expand the corpus:
 | Live runs are nondeterministic | Track L runs against a real model, so a pass fraction is a sample. Track R is the deterministic half. |
 | Cases assume a clean store | Each case assumes a fresh store and workspace. A case that leaks state breaks the next one rather than failing itself. |
 | No exact-wording assertions | Free-text wording is not asserted on, so a regression that changes only phrasing is invisible to the suite. |
-| Only some `session.config` keys are honored | The harness reads `tools.max_output_tokens`, `tools.agent.enabled`, `tools.agent.eval` and `processes.max_running`. Any other key is ignored without an error, so a case that sets one runs with the production default. |
+| Only some `session.config` keys are honored | The harness reads `tools.max_output_tokens`, the `context.*` keys, `processes.max_running`, `processes.database`, `processes.process_roles`, `processes.allow_revision` and `bootstrap.genesis_turns`. Any other key is ignored without an error, so a case that sets one runs with the production default. |
 | Generated cases need review | The generator prompt produces plausible YAML; nothing checks that a generated case actually forces the behavior it names. |
 | Eight feature rows have no case | §9 asks for ≥1 case per row. The corpus covers 28 live cases across `smoke`, `basic`, `multi_step` and `delegation`; **nothing covers** HTTP/web fetching, HITL (`ask_human`), the approval gate, `gap_report`, stall detection, safety (`rm -rf`, SSRF to loopback), context-budget pressure, or related-session surfacing. The `hitl` and `safety` tiers have no cases at all, so those two tier names are aspirational. |
 | Long-running plugin jobs are untested end to end | The mechanism has unit tests; the model behavior around a job — waiting posture, remembering an outstanding one, escalation — has no eval case ([plugin-capabilities.md](plugin-capabilities.md) §8). |

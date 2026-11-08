@@ -449,9 +449,9 @@ func TestSetGoalStatus(t *testing.T) {
 	}
 }
 
-// The roster joins the agent's tool list with the sandboxed roster: kind and
-// provenance, capabilities, dependencies, and a sandboxed tool that failed to
-// load, which the agent's list leaves out.
+// The roster is the agent's tool list: core (built-in) and plugin tools with
+// their schemas. The sandboxed tier is removed (adr/modular_nine.md 9.10), so
+// nothing sandboxed-only appears and the stub tools_list answer is ignored.
 func TestToolRoster(t *testing.T) {
 	sock := scriptedDaemon(t, func(m protocol.Msg) []protocol.Msg {
 		switch m.Type {
@@ -459,13 +459,9 @@ func TestToolRoster(t *testing.T) {
 			return textReply(t, protocol.TypeListTools, []protocol.ToolSummary{
 				{Plugin: "core", Name: "read_file", Description: "read", InputSchema: json.RawMessage(`{"type":"object"}`)},
 				{Plugin: "shell", Name: "shell", Description: "run"},
-				{Plugin: "sandboxed", Name: "digest", Description: "digest"},
 			})
 		case protocol.TypeToolsList:
-			return textReply(t, protocol.TypeToolsList, []protocol.SandboxedToolStatus{
-				{Name: "digest", Kind: "slice", Loaded: true, Generated: true, Capabilities: "fs.read /work; net.http GET a.example", Deps: []string{"left-pad@1.3.0"}},
-				{Name: "broken", Loaded: false, ManifestPath: "/tools/broken/manifest.toml", Error: "bad manifest", Capabilities: "none"},
-			})
+			return textReply(t, protocol.TypeToolsList, []protocol.SandboxedToolStatus{})
 		}
 		return errReply("unexpected " + string(m.Type))
 	})
@@ -476,43 +472,28 @@ func TestToolRoster(t *testing.T) {
 	}
 	var got struct {
 		Data []struct {
-			Name         string   `json:"name"`
-			Kind         string   `json:"kind"`
-			Loaded       bool     `json:"loaded"`
-			Capabilities []string `json:"capabilities"`
-			Deps         []string `json:"deps"`
-			Error        string   `json:"error"`
-			InputSchema  any      `json:"input_schema"`
+			Name        string `json:"name"`
+			Kind        string `json:"kind"`
+			InputSchema any    `json:"input_schema"`
 		} `json:"data"`
 	}
 	decodeJSON(t, w, &got)
 	kinds := map[string]string{}
 	for _, d := range got.Data {
 		kinds[d.Name] = d.Kind
-		switch d.Name {
-		case "read_file":
-			if d.InputSchema == nil {
-				t.Error("read_file lost its input schema")
-			}
-		case "digest":
-			if len(d.Capabilities) != 2 || len(d.Deps) != 1 {
-				t.Errorf("digest = %+v", d)
-			}
-		case "broken":
-			if d.Loaded || d.Error != "bad manifest" || len(d.Capabilities) != 0 {
-				t.Errorf("broken = %+v", d)
-			}
+		if d.Name == "read_file" && d.InputSchema == nil {
+			t.Error("read_file lost its input schema")
 		}
 	}
-	want := map[string]string{"read_file": "core", "shell": "plugin", "digest": "generated", "broken": "sandboxed"}
+	want := map[string]string{"read_file": "core", "shell": "plugin"}
 	for name, kind := range want {
 		if kinds[name] != kind {
 			t.Errorf("%s: kind %q, want %q", name, kinds[name], kind)
 		}
 	}
 
-	if w := doAt(t, sock, "GET", "/api/v1/tools/broken", ""); w.Code != http.StatusOK {
-		t.Errorf("a tool that failed to load: status %d, want 200", w.Code)
+	if w := doAt(t, sock, "GET", "/api/v1/tools/broken", ""); w.Code != http.StatusNotFound {
+		t.Errorf("a tool that is not in the roster: status %d, want 404", w.Code)
 	}
 }
 

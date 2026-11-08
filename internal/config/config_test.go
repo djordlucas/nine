@@ -443,27 +443,26 @@ args = { keep = 7 }
 // Every mistake in a [[process]] block is refused at load, with its reason.
 func TestProcessBlockMistakesAreRefused(t *testing.T) {
 	cases := map[string]string{
-		"no name":                   "[[process]]\ntool = \"x\"\n",
-		"no tool":                   "[[process]]\nname = \"a\"\n",
-		"reserved colon":            "[[process]]\nname = \"goal:a\"\ntool = \"x\"\n",
-		"duplicate":                 "[[process]]\nname = \"a\"\ntool = \"x\"\n[[process]]\nname = \"a\"\ntool = \"y\"\n",
-		"both clocks":               "[[process]]\nname = \"a\"\ntool = \"x\"\nevery = \"1m\"\nschedule = \"* * * * *\"\n",
-		"bad every":                 "[[process]]\nname = \"a\"\ntool = \"x\"\nevery = \"soon\"\n",
-		"bad schedule":              "[[process]]\nname = \"a\"\ntool = \"x\"\nschedule = \"not cron\"\n",
-		"goal not pursue":           "[[process]]\nname = \"a\"\ntool = \"x\"\ngoal = \"g\"\n",
-		"unknown session":           "[[process]]\nname = \"a\"\ntool = \"x\"\nsession = \"nobody\"\n",
-		"unknown report_to":         "[[process]]\nname = \"a\"\ntool = \"x\"\nreport_to = \"nobody\"\n",
-		"attached with role":        "[[process]]\nname = \"o\"\ntool = \"pursue\"\ngoal = \"g\"\n[[process]]\nname = \"a\"\ntool = \"reflect\"\nsession = \"o\"\nrole = \"x\"\n",
-		"budget above default":      "[[process]]\nname = \"a\"\ntool = \"x\"\nbudget = { turns_per_day = 500 }\n",
-		"budget above ceiling":      "[processes]\nbudget = { tokens_per_day = 1000 }\n[[process]]\nname = \"a\"\ntool = \"x\"\nbudget = { tokens_per_day = 2000 }\n",
-		"negative budget":           "[processes]\nbudget = { turns_per_day = -1 }\n",
-		"unknown event":             "[[process]]\nname = \"a\"\ntool = \"x\"\non = [\"llm_request\"]\n",
-		"bad sessions scope":        "[[process]]\nname = \"a\"\ntool = \"x\"\non = [\"tool_end\"]\non_filter = { sessions = \"mine\" }\n",
-		"content without on":        "[[process]]\nname = \"a\"\ntool = \"x\"\nevent_content = true\n",
-		"genesis without processes": "[bootstrap]\ngenesis = \"genesis.md\"\n",
-		"bad statement timeout":     "[processes]\nstatement_timeout = \"soon\"\n",
-		"negative database size":    "[processes]\ndatabase_max_mb = -1\n",
-		"goal with on":              "[[process]]\nname = \"a\"\ntool = \"pursue\"\ngoal = \"g\"\non = [\"tool_end\"]\n",
+		"no name":                "[[process]]\ntool = \"x\"\n",
+		"no tool":                "[[process]]\nname = \"a\"\n",
+		"reserved colon":         "[[process]]\nname = \"goal:a\"\ntool = \"x\"\n",
+		"duplicate":              "[[process]]\nname = \"a\"\ntool = \"x\"\n[[process]]\nname = \"a\"\ntool = \"y\"\n",
+		"both clocks":            "[[process]]\nname = \"a\"\ntool = \"x\"\nevery = \"1m\"\nschedule = \"* * * * *\"\n",
+		"bad every":              "[[process]]\nname = \"a\"\ntool = \"x\"\nevery = \"soon\"\n",
+		"bad schedule":           "[[process]]\nname = \"a\"\ntool = \"x\"\nschedule = \"not cron\"\n",
+		"goal not pursue":        "[[process]]\nname = \"a\"\ntool = \"x\"\ngoal = \"g\"\n",
+		"unknown session":        "[[process]]\nname = \"a\"\ntool = \"x\"\nsession = \"nobody\"\n",
+		"unknown report_to":      "[[process]]\nname = \"a\"\ntool = \"x\"\nreport_to = \"nobody\"\n",
+		"attached with role":     "[[process]]\nname = \"o\"\ntool = \"pursue\"\ngoal = \"g\"\n[[process]]\nname = \"a\"\ntool = \"reflect\"\nsession = \"o\"\nrole = \"x\"\n",
+		"budget above default":   "[[process]]\nname = \"a\"\ntool = \"x\"\nbudget = { turns_per_day = 500 }\n",
+		"budget above ceiling":   "[processes]\nbudget = { tokens_per_day = 1000 }\n[[process]]\nname = \"a\"\ntool = \"x\"\nbudget = { tokens_per_day = 2000 }\n",
+		"negative budget":        "[processes]\nbudget = { turns_per_day = -1 }\n",
+		"unknown event":          "[[process]]\nname = \"a\"\ntool = \"x\"\non = [\"llm_request\"]\n",
+		"bad sessions scope":     "[[process]]\nname = \"a\"\ntool = \"x\"\non = [\"tool_end\"]\non_filter = { sessions = \"mine\" }\n",
+		"content without on":     "[[process]]\nname = \"a\"\ntool = \"x\"\nevent_content = true\n",
+		"bad statement timeout":  "[processes]\nstatement_timeout = \"soon\"\n",
+		"negative database size": "[processes]\ndatabase_max_mb = -1\n",
+		"goal with on":           "[[process]]\nname = \"a\"\ntool = \"pursue\"\ngoal = \"g\"\non = [\"tool_end\"]\n",
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -482,12 +481,33 @@ func TestRetiredBlocksAreRefused(t *testing.T) {
 		"[[standing_tool]]\nid = \"s\"\ntool = \"x\"\ninterval = \"1m\"\n",
 		"[daemon]\nstanding_agents_authoritative = true\n",
 		"[daemon]\nmax_goal_sessions = 5\n",
-		"[tools.agent]\nmax_standing = 2\n",
-		"[tools.agent]\nallow_standing = true\n",
 	} {
 		_, err := loadString(t, body)
 		if err == nil || !strings.Contains(err.Error(), "replaced by") {
 			t.Errorf("Load(%q) = %v, want an error naming the replacement", body, err)
+		}
+	}
+}
+
+// The toolvm-era keys under [tools] and the [[tool.<name>]] tables fail loudly
+// too (adr/modular_nine.md §9.10): a warning would leave an operator believing
+// a sandbox cap still applies when nothing enforces it any more.
+func TestRetiredToolKeysAreRefused(t *testing.T) {
+	for _, body := range []string{
+		"[tools]\nenabled = true\n",
+		"[tools]\nuser_dir = \"./tools.d\"\n",
+		"[tools]\ntimeout = \"5s\"\n",
+		"[tools]\nmax_ops = 1000\n",
+		"[tools]\nmemory_mb = 16\n",
+		"[tools]\nmax_concurrent = 8\n",
+		"[tools]\njob_min_delay_ms = 100\n",
+		"[tools]\njob_workers = 2\n",
+		"[tools.agent]\nenabled = true\n",
+		"[[tool.csv_stats]]\n[tool.csv_stats.capabilities.fs]\nread = []\n",
+	} {
+		_, err := loadString(t, body)
+		if err == nil || (!strings.Contains(err.Error(), "toolvm") && !strings.Contains(err.Error(), "moved to [plugins]")) {
+			t.Errorf("Load(%q) = %v, want a refusal naming the toolvm removal", body, err)
 		}
 	}
 }
@@ -514,14 +534,14 @@ func TestProcessBudget(t *testing.T) {
 
 // process_roles defaults to the lean process role; a list replaces it.
 func TestProcessRolesDefault(t *testing.T) {
-	if got := (config.ToolsAgentConfig{}).ProcessRolesOrDefault(); len(got) != 1 || got[0] != "process" {
+	if got := (config.ProcessesConfig{}).ProcessRolesOrDefault(); len(got) != 1 || got[0] != "process" {
 		t.Errorf("default process_roles = %v, want [process]", got)
 	}
-	cfg, err := loadString(t, "[tools.agent]\nallow_processes = true\nprocess_roles = [\"process\", \"writer\"]\n")
+	cfg, err := loadString(t, "[processes]\nprocess_roles = [\"process\", \"writer\"]\n")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.Tools.Agent.AllowProcesses || len(cfg.Tools.Agent.ProcessRolesOrDefault()) != 2 {
-		t.Errorf("tools.agent = %+v", cfg.Tools.Agent)
+	if len(cfg.Processes.ProcessRolesOrDefault()) != 2 {
+		t.Errorf("processes.process_roles = %+v", cfg.Processes.ProcessRoles)
 	}
 }

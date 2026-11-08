@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"nine/internal/cron"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -66,9 +65,6 @@ type Config struct {
 	Plugin map[string]PluginEntry `toml:"plugin"`
 
 	// Tool holds per-tool `[tool.<name>]` tables (singular), sibling to the plural
-	// `[tools]` table above and following the same split. It is the grant half of
-	// the sandboxed-tool capability model (spec/contracts/toolvm.md).
-	Tool map[string]ToolEntry `toml:"tool"`
 }
 
 // PluginEntry is one `[plugin.<name>]` table. Its Settings are schema-less on
@@ -121,278 +117,14 @@ type ContextConfig struct {
 
 // ToolsConfig tunes the tool-dispatch boundary. It is `[tools]` rather than
 // `[agent]` because `[[agent]]` is already the standing-agent table array.
+// ToolsConfig is `[tools]`: the per-result output cap. The sandbox host and
+// generated tier that used to live under this table are gone
+// (adr/modular_nine.md §9.10).
 type ToolsConfig struct {
 	// MaxOutputTokens is the per-result output cap (adr/tool-output-spill.md).
 	// A result over it is spilled to the memory file store and replaced by a
-	// short preview naming the path, so raising this is rarely needed — the data
-	// is not lost either way. Raise it when a model should routinely see more of
-	// a large result inline; lower it to keep observations tight. 0 (unset)
-	// keeps agent.DefaultMaxOutputTokens (2048).
+	// short preview naming the path. 0 (unset) keeps agent.DefaultMaxOutputTokens.
 	MaxOutputTokens int `toml:"max_output_tokens"`
-
-	// Enabled turns the sandboxed-tool host on (spec/contracts/toolvm.md).
-	// Defaults to true; set it false to run without the host at all.
-	//
-	// On by default because this tier carries the workspace file tools —
-	// read_file, write_file, edit_file and the rest — so a deployment without it
-	// cannot read or write a file. It is also the *narrower* of the two
-	// capabilities Nine ships: `shell` runs commands as the daemon's process user
-	// with its full reach, while these run in a wasm sandbox scoped to declared
-	// filesystem capabilities. Defaulting it on reduces the share of the agent's
-	// reach that sits outside a boundary; it does not widen the total
-	// (docs/sandboxed-tools.md §1).
-	//
-	// A pointer so that "unset" and "false" are distinguishable: read it through
-	// IsEnabled, never directly.
-	Enabled *bool `toml:"enabled"`
-
-	// UserDir holds developer sandboxed tools, discovered at boot from the same
-	// sidecar-manifest layout user plugins use: a `<name>.js` or `<name>.wasm`
-	// beside a `<name>.toml` manifest. Empty or absent loads nothing. A file with
-	// no manifest is never loaded, and a tool whose name collides with a built-in,
-	// a plugin tool, or an earlier-loaded sandboxed tool is skipped and surfaced
-	// rather than aborting the boot (R-TVM.10).
-	UserDir string `toml:"user_dir"`
-
-	// Timeout is the per-call wall-clock deadline. It is the only CPU bound the
-	// host has — wazero offers no fuel metering — so an operator running many
-	// concurrent sessions is trusting this, not a work budget
-	// (docs/sandboxed-tools.md §3). Empty uses toolvm.DefaultTimeout (5s).
-	Timeout string `toml:"timeout"`
-
-	// MemoryMB caps a single call's linear memory. 0 uses toolvm.DefaultMemoryMB
-	// (16 MiB).
-	MemoryMB int `toml:"memory_mb"`
-
-	// MaxOps is the per-call work budget for a `js` tool, in operations. 0 uses
-	// toolvm.DefaultMaxOps (50,000,000); a negative value turns the budget off,
-	// leaving the wall clock as the only bound.
-	//
-	// It bounds what a call *does*, where timeout bounds how long it takes. The
-	// difference is that a deadline is a property of the machine — the same tool
-	// passes on an idle host and fails on a loaded one — while a work budget is a
-	// property of the tool. A `wasm` tool is not metered by it: the budget is
-	// QuickJS's interrupt handler, and a raw module has no interpreter to
-	// interrupt.
-	MaxOps int `toml:"max_ops"`
-
-	// MaxConcurrent bounds how many sandboxed tool calls run at once, across
-	// every tool and every conversation. 0 uses toolvm.DefaultMaxConcurrent (8).
-	//
-	// memory_mb is per call, so this is what multiplies it: the two together are
-	// the host's worst-case memory. It is the turn-driven counterpart of
-	// job_workers, which bounds the sweeper's share the same way.
-	MaxConcurrent int `toml:"max_concurrent"`
-
-	// CacheDir is the root for the generated tier's dependency cache: extracted,
-	// integrity-verified npm packages, content-addressed and shared across tools
-	// (docs/sandboxed-tools.md §4.4). Empty uses os.UserCacheDir()/nine/tools.
-	CacheDir string `toml:"cache_dir"`
-
-	// JobMaxCalls bounds how many times one long-running tool job may be called
-	// before the daemon fails it. 0 uses runtime.DefaultJobMaxCalls (720).
-	//
-	// This bound is essential rather than defensive. Each call is deadline-bounded
-	// as ever, but a tool returning `continue` with after_ms = 0 forever converts
-	// a bounded CPU story into an unbounded one, one legal call at a time.
-	JobMaxCalls int `toml:"job_max_calls"`
-
-	// JobWorkers bounds how many long-running tool calls the sweeper makes at
-	// once. 0 uses runtime.DefaultJobWorkers (4).
-	//
-	// Each concurrent call is a wasm instantiation holding up to [tools] memory_mb,
-	// so this is the knob that decides how much memory a busy job queue can take.
-	JobWorkers int `toml:"job_workers"`
-
-	// JobMinDelayMS is the floor on the delay a resumable tool may ask for
-	// between calls. 0 uses runtime.DefaultJobMinDelayMS (250).
-	//
-	// The tool's request is a request: the effective delay is at least this, and
-	// in practice is rounded up to the sweeper's next tick.
-	JobMinDelayMS int `toml:"job_min_delay_ms"`
-
-	// Agent is the `[tools.agent]` table: the generated tier, where Nine writes
-	// its own tools (docs/sandboxed-tools.md §5.2). On by default, and gated by
-	// `enabled` underneath: the generated tier needs the host, so turning the host
-	// off turns this off with it whatever it says.
-	Agent ToolsAgentConfig `toml:"agent"`
-}
-
-// IsEnabled reports whether the sandboxed-tool host should run. Unset means yes
-// — see the Enabled field for why the default is on.
-func (c ToolsConfig) IsEnabled() bool { return c.Enabled == nil || *c.Enabled }
-
-// GeneratedEnabled reports whether the generated tier should run, honoring the
-// host gate above it. The generated tier executes on the host, so `[tools]
-// enabled = false` turns it off whatever `[tools.agent] enabled` says — this
-// method is where that dependency is stated once instead of being rediscovered
-// at each call site.
-func (c ToolsConfig) GeneratedEnabled() bool { return c.IsEnabled() && c.Agent.IsEnabled() }
-
-// ToolsAgentConfig governs generated tools: the ones Nine writes itself.
-//
-// The distinction this table exists to enforce is the whole design
-// (docs/sandboxed-tools.md §2): **the agent writes the code; the operator writes
-// the grants; these are never the same actor.** Nine gains one column and never
-// the other. A generated tool that could grant itself filesystem access would be
-// a shell with extra steps.
-type ToolsAgentConfig struct {
-	// Enabled turns on `tool_write`. Defaults to true; set it false to keep the
-	// host's shipped and developer tools without letting the agent author any.
-	//
-	// On by default because closing a capability gap by writing a tool is the
-	// behavior this design exists to make safe, and a tier nobody runs is a design
-	// nobody benefits from. What bounds it is Capabilities below, which grants
-	// nothing a tool does not declare and nothing the operator has not conferred —
-	// the ceiling, not this switch, is the control that matters.
-	//
-	// Gated by `[tools] enabled` underneath: the generated tier runs on the host,
-	// so with the host off this has no effect whatever it says.
-	//
-	// A pointer so that "unset" and "false" are distinguishable: read it through
-	// IsEnabled, never directly.
-	Enabled *bool `toml:"enabled"`
-
-	// Eval additionally allows `js_eval` — one execution, nothing persisted
-	// (§5.3). It is not a third trust tier: it runs under exactly the
-	// generated-tool rules and is strictly *less* persistent. It earns a separate
-	// switch because it is the surface that keeps iteration out of the catalog.
-	Eval bool `toml:"eval"`
-
-	// MaxTools caps the catalog. 0 uses toolvm.DefaultMaxGeneratedTools (64).
-	//
-	// This is the sleeper problem, not a resource limit: every generated tool
-	// competes for the context budget in tool selection, so a catalog of 200
-	// half-redundant tools degrades ranking for the *built-in* tools too. The
-	// agent poisons its own tool selection and gets worse at everything (§9.2).
-	MaxTools int `toml:"max_tools"`
-
-	// RequireApproval selects when tool_write and js_eval route through the HITL
-	// gate: "on_capability" (default), "always", or "never".
-	//
-	// The default gates on substance rather than frequency, and that is the whole
-	// intent. Approval fatigue is what defeats approval gates: prompting a human
-	// on a pure date-formatting tool trains them to approve without reading, and
-	// then the one prompt that matters meets the same reflex. A gate that fires
-	// rarely is a gate that gets read.
-	RequireApproval string `toml:"require_approval"`
-
-	// Capabilities is the MAXIMUM a generated tool may be granted — a ceiling,
-	// not a default. A tool that declares nothing still gets nothing, however
-	// permissive this is. The ceiling bounds what is *grantable*; the tool's own
-	// declaration decides what is *granted*. The two are deliberately separate so
-	// that widening the ceiling does not retroactively widen every existing tool.
-	Capabilities ToolCapabilities `toml:"capabilities"`
-
-	// Deps is the `[tools.agent.deps]` table: external npm dependencies for
-	// generated tools (docs/sandboxed-tools.md §4.4). Off by default — the single
-	// riskiest switch in the design.
-	Deps ToolsDepsConfig `toml:"deps"`
-
-	// AllowLongRunning lets a generated tool declare itself resumable and be run
-	// as a long-running job. Off by default, mirroring [tools.agent.deps].mode.
-	//
-	// Nine writing itself a date formatter and Nine writing itself something that
-	// runs for an hour across restarts are different propositions, and the
-	// capability ceiling cannot express the difference: it bounds *reach*, not
-	// *duration*. A capability-free tool that never stops is inert per call and
-	// unbounded in aggregate.
-	AllowLongRunning bool `toml:"allow_long_running"`
-
-	// AllowProcesses lets Nine write processes: tool_write with a `process`
-	// block, run until stopped (adr/process-sessions.md §9). Off by default, and
-	// separate from AllowLongRunning: a job the model started still ends, where
-	// a process does not until somebody stops it. A process write is approved
-	// as RequireApproval says, and prompts under on_capability even when it
-	// declares nothing, since it runs indefinitely.
-	AllowProcesses bool `toml:"allow_processes"`
-
-	// ProcessRoles are the roles the model turns of a process Nine writes may
-	// run under. Unset is ["process"], the lean role with no tools. A role
-	// listed here bounds what Nine's processes can reach, so list one only if
-	// its tools are fine to run unattended.
-	ProcessRoles []string `toml:"process_roles"`
-
-	// AllowNetworkDeps lifts the deps+net.http interlock. A package that can reach
-	// the network can exfiltrate whatever the tool sees, so a tool that both
-	// declares net.http AND resolves an external dependency is refused unless this
-	// is set. The two features are individually reasonable and jointly a
-	// data-exfiltration primitive (§4.4).
-	AllowNetworkDeps bool `toml:"allow_network_deps"`
-}
-
-// ToolsDepsConfig is `[tools.agent.deps]`: when and how a generated tool may pull
-// an external npm package. Resolution happens once, in the daemon, at tool_write
-// time; by call time the tool is one self-contained module with no imports and no
-// network (docs/sandboxed-tools.md §4.4).
-type ToolsDepsConfig struct {
-	// Mode is "off" (default), "allowlist" (only named packages, transitive
-	// included), or "open" (anything within the budgets — a development posture).
-	Mode string `toml:"mode"`
-	// Registry is the npm-compatible registry base URL. Empty uses the public
-	// registry; an internal mirror is the hardened choice.
-	Registry string `toml:"registry"`
-	// Allow is the operator's package list for allowlist mode: a name and a semver
-	// range they are willing to stand behind. Ignored in open mode.
-	Allow []DepAllow `toml:"allow"`
-	// MaxPackages caps the resolved tree (transitive included), MaxBundleKB the
-	// final bundle, MaxDepth the transitive depth. 0 uses the deps-package
-	// defaults (24 / 2048 / 4). Budgets are how a small allowlist is kept small.
-	MaxPackages int `toml:"max_packages"`
-	MaxBundleKB int `toml:"max_bundle_kb"`
-	MaxDepth    int `toml:"max_depth"`
-	// Frozen resolves only from the cache/lockfile and never touches the network —
-	// the air-gapped / reproducible posture. Iterate open, then freeze.
-	Frozen bool `toml:"frozen"`
-}
-
-// DepAllow is one `[tools.agent.deps].allow` entry.
-type DepAllow struct {
-	Name    string `toml:"name"`
-	Version string `toml:"version"` // a semver range, e.g. "^4.17.21"
-}
-
-// Deps modes for [tools.agent.deps].mode.
-const (
-	DepsModeOff       = "off"
-	DepsModeAllowlist = "allowlist"
-	DepsModeOpen      = "open"
-)
-
-// IsEnabled reports whether the generated tier should run. Unset means yes — see
-// the Enabled field. This answers for `[tools.agent]` alone; the caller is
-// responsible for the `[tools] enabled` gate underneath it, which is why
-// ToolsConfig.GeneratedEnabled exists and is the one to prefer.
-func (a ToolsAgentConfig) IsEnabled() bool { return a.Enabled == nil || *a.Enabled }
-
-// DepsMode returns the effective deps mode, defaulting to off.
-func (a ToolsAgentConfig) DepsMode() string {
-	switch a.Deps.Mode {
-	case DepsModeAllowlist, DepsModeOpen, DepsModeOff:
-		return a.Deps.Mode
-	default:
-		return DepsModeOff
-	}
-}
-
-// Approval modes for [tools.agent].require_approval.
-const (
-	ToolApprovalOnCapability = "on_capability"
-	ToolApprovalAlways       = "always"
-	ToolApprovalNever        = "never"
-)
-
-// ApprovalMode returns the effective require_approval mode, defaulting to
-// on_capability.
-func (a ToolsAgentConfig) ApprovalMode() string {
-	switch a.RequireApproval {
-	case ToolApprovalAlways, ToolApprovalNever, ToolApprovalOnCapability:
-		return a.RequireApproval
-	case "":
-		return ToolApprovalOnCapability
-	default:
-		return ToolApprovalOnCapability
-	}
 }
 
 // ProcessConfig is one `[[process]]` block: a process this file declares
@@ -406,7 +138,7 @@ func (a ToolsAgentConfig) ApprovalMode() string {
 type ProcessConfig struct {
 	// Name is operator-chosen and stable; reconciliation keys on it.
 	Name string `toml:"name"`
-	// Tool is the sandboxed tool that drives the process.
+	// Tool is the tool that drives the process: a built-in, or an MCP plugin tool (`<server>__<tool>`).
 	Tool string `toml:"tool"`
 	// Every and Schedule are its clock, mutually exclusive: a duration ("10s")
 	// or a 5-field cron expression. A process with neither wakes only on what
@@ -509,12 +241,9 @@ type ProcessesConfig struct {
 	DatabaseMaxMB int `toml:"database_max_mb"`
 	// StatementTimeout bounds one statement ("5s"); empty is 5s.
 	StatementTimeout string `toml:"statement_timeout"`
-	// AllowRevision lets a process's turn write and rewrite processes, under a
-	// role that holds tool_write (adr/process-sessions.md §9). Off by default.
-	AllowRevision bool `toml:"allow_revision"`
-	// RollbackAfter is how many failures a rewritten process's new version may
-	// have before it first runs, after which it is rolled back; 0 is 3.
-	RollbackAfter int `toml:"rollback_after"`
+	// ProcessRoles lists the roles a genesis-written process may run under.
+	// 0 uses the default ["process"].
+	ProcessRoles []string `toml:"process_roles"`
 }
 
 // DefaultMaxDepth is [processes] max_depth when unset: a process may react to
@@ -590,126 +319,6 @@ func (c ProcessesConfig) MaxRunningOrDefault() int {
 		return c.MaxRunning
 	}
 	return DefaultMaxRunning
-}
-
-// ToolEntry is one `[tool.<name>]` table (singular), sibling to the plural
-// `[tools]` subsystem table above — the same split `[plugin.<name>]` and
-// `[plugins]` already use (R-PLUG.10).
-//
-// It is where an operator confers capabilities on one named sandboxed tool. The
-// asymmetry with the tool's own manifest is the point: a manifest *declares a
-// need* and only this *grants* (docs/sandboxed-tools.md §6.3). There is
-// deliberately no wildcard `[tool."*"]` — an operator granting filesystem access
-// to a tool does so to a tool they have read.
-type ToolEntry struct {
-	Capabilities ToolCapabilities `toml:"capabilities"`
-
-	// Timeout overrides `[tools] timeout` for this one tool. Empty inherits it.
-	//
-	// It exists because one slow tool otherwise sets the deadline for every tool:
-	// raising the global bound to accommodate a tool that legitimately takes
-	// twenty seconds also hands twenty seconds to a tool that is merely stuck.
-	// Naming the tool keeps the exception where it belongs.
-	//
-	// It is a resource bound rather than a capability, which is why it sits here
-	// and not under [capabilities] (spec/contracts/toolvm.md R-TVM.4).
-	Timeout string `toml:"timeout"`
-
-	// MaxOps overrides `[tools] max_ops` for this one tool. 0 inherits it; a
-	// negative value turns the budget off for this tool alone.
-	//
-	// Same argument as Timeout above, applied to work rather than time: a tool
-	// that legitimately grinds should not have to raise the budget for every
-	// other tool to get its own.
-	MaxOps int `toml:"max_ops"`
-}
-
-// ToolCapabilities is the grant side of the capability model. Every field
-// defaults to the empty set: no filesystem, no network, no environment. Clock,
-// randomness, and logging are granted unconditionally because they leak nothing
-// (docs/sandboxed-tools.md §6.2) and so have no knob here.
-type ToolCapabilities struct {
-	FS ToolFSGrant `toml:"fs"`
-
-	// Env is an explicit key allowlist, never an all-or-nothing flag: the
-	// daemon's environment holds LLM provider API keys, so a tool granted "env"
-	// wholesale would be a credential exfiltration primitive. The NINE_* and
-	// *_API_KEY patterns are refused outright at load (Config.Validate).
-	Env []string `toml:"env"`
-
-	// Net grants outbound HTTP. It is the one capability with no wazero primitive
-	// behind it — wazero has no network at all — so every check that makes it
-	// safe is Nine's own (docs/sandboxed-tools.md §8).
-	Net ToolNetGrant `toml:"net"`
-
-	// State grants a durable, host-owned key/value store scoped to this tool.
-	// Absent (nil) is the default and means the tool remembers nothing between
-	// calls, which is how every tool behaved before this existed.
-	State *ToolStateGrant `toml:"state"`
-
-	// SQL grants the database ([processes] database): `sql = true`. Only a live
-	// process's program reaches it, under the database's policy and quotas.
-	SQL bool `toml:"sql"`
-}
-
-// ToolStateGrant is the `state` grant: what a tool may remember between calls.
-//
-// Scope is required and deliberately has no default. It decides whether the
-// namespace is shared across every caller or keyed by conversation, and that is
-// the whole security argument for the capability — a tool-scoped store is a
-// cross-session information channel that needs no other capability, since a
-// tool's arguments come from the model and can carry anything in that session's
-// context. Defaulting it would be choosing that on the operator's behalf.
-type ToolStateGrant struct {
-	// Scope is "tool" or "conversation".
-	Scope string `toml:"scope"`
-	// MaxKeys, MaxValueKB and MaxTotalKB bound one namespace. 0 uses the
-	// toolvm defaults (128 keys, 64 KB per value, 1024 KB in total).
-	MaxKeys    int `toml:"max_keys"`
-	MaxValueKB int `toml:"max_value_kb"`
-	MaxTotalKB int `toml:"max_total_kb"`
-	// TTL expires a written value after a duration ("24h"). Empty never expires.
-	TTL string `toml:"ttl"`
-}
-
-// ToolFSGrant maps host paths into a tool's guest filesystem. wazero enforces
-// the scope itself via pre-opens, so this is the one capability Nine does not
-// have to police at call time.
-type ToolFSGrant struct {
-	Read  []ToolMount `toml:"read"`
-	Write []ToolMount `toml:"write"`
-}
-
-// ToolMount is one host→guest path mapping. The guest path is what the tool's
-// own code sees, which is what makes narrowing a mount to a subdirectory a
-// one-line change on the operator's side (docs/sandboxed-tools.md §7.1).
-type ToolMount struct {
-	Host  string `toml:"host"`
-	Guest string `toml:"guest"`
-}
-
-// ToolNetGrant carries the `net.http` grant. Absent (nil HTTP) is the default
-// and means no network at all.
-type ToolNetGrant struct {
-	HTTP *ToolHTTPGrant `toml:"http"`
-}
-
-// ToolHTTPGrant is the shape §8 specifies.
-type ToolHTTPGrant struct {
-	// AllowHosts is required. Entries are exact names ("api.example.com"),
-	// single-wildcard subdomain patterns ("*.example.com", which does not match
-	// the apex), or a bare "*" for any host.
-	//
-	// This is only half the control: the allowlist is a *name* check, and a name
-	// resolves wherever its owner points it. The other half — rejecting
-	// link-local, loopback, and private addresses on the IP actually dialed — is
-	// unconditional and not configurable, because an operator cannot be asked to
-	// remember that 169.254.169.254 is where their cloud keeps its credentials.
-	AllowHosts []string `toml:"allow_hosts"`
-	// Methods is required: the HTTP methods this tool may use.
-	Methods []string `toml:"methods"`
-	// MaxBytes caps the response body. 0 uses toolvm.DefaultHTTPMaxBytes (1 MiB).
-	MaxBytes int `toml:"max_bytes"`
 }
 
 // PlanningConfig controls the plan-before-execute policy
@@ -977,6 +586,14 @@ type PluginsConfig struct {
 	// (docs/plugin-capabilities.md §5). 0 uses runtime.DefaultJobPollSeconds.
 	JobPollSeconds int `toml:"job_poll_seconds"`
 
+	// JobMinDelayMS is the floor on the delay between a standing tool's calls.
+	// 0 uses runtime.DefaultJobMinDelayMS.
+	JobMinDelayMS int `toml:"job_min_delay_ms"`
+
+	// JobWorkers bounds how many standing-tool calls run at once.
+	// 0 uses runtime.DefaultJobWorkers.
+	JobWorkers int `toml:"job_workers"`
+
 	// JobMaxSeconds bounds a single job's lifetime: the sweeper marks an over-age
 	// job failed and attempts a cancel. 0 uses runtime.DefaultJobMaxSeconds (1h).
 	JobMaxSeconds int `toml:"job_max_seconds"`
@@ -1035,28 +652,34 @@ type BootstrapConfig struct {
 	SelfModelPath string `toml:"self_model_path"`
 
 	// Genesis names a document turned into the instance's first processes on
-	// the first boot of its store (adr/process-sessions.md §10). It needs
-	// [tools.agent] enabled and allow_processes. NINE_BOOTSTRAP_GENESIS
-	// overrides it.
+	// the first boot of its store (adr/process-sessions.md §10).
+	// NINE_BOOTSTRAP_GENESIS overrides it.
 	Genesis string `toml:"genesis"`
 	// GenesisTurns bounds the genesis session; 0 is 8.
 	GenesisTurns int `toml:"genesis_turns"`
 }
 
-// GenesisReady reports why genesis cannot run with this config, or nil: it
-// writes processes, so it needs what writing them needs.
+// ProcessRolesOrDefault returns [processes] process_roles, defaulted.
+func (c ProcessesConfig) ProcessRolesOrDefault() []string {
+	if len(c.ProcessRoles) > 0 {
+		return c.ProcessRoles
+	}
+	return []string{"process"}
+}
+
+// GenesisReady reports why genesis cannot run with this config, or nil. Genesis
+// writes processes through the model-authored tool tier, which the toolvm removal
+// took away (adr/modular_nine.md §9.10); until that refactor lands, a configured
+// genesis is reported and skipped rather than run against tools that no longer
+// exist.
 func (c *Config) GenesisReady() error {
 	if strings.TrimSpace(c.Bootstrap.Genesis) == "" {
 		return nil
 	}
-	if !c.Tools.GeneratedEnabled() || !c.Tools.Agent.AllowProcesses {
-		return fmt.Errorf("[bootstrap] genesis needs [tools.agent] enabled and allow_processes = true: " +
-			"genesis writes the instance's processes")
-	}
 	if c.Bootstrap.GenesisTurns < 0 {
 		return fmt.Errorf("[bootstrap] genesis_turns must not be negative")
 	}
-	return nil
+	return fmt.Errorf("genesis is suspended with the model-authored tool tier it wrote through (adr/modular_nine.md §9.10)")
 }
 
 // APIConfig holds the HTTP API server configuration for remote access to
@@ -1310,7 +933,7 @@ type EmbeddingsConfig struct {
 // CurrentConfigSchema is the config shape this binary understands. Bump it in
 // the same change that makes an incompatible alteration to the layout, and add
 // the matching step to configMigrations.
-const CurrentConfigSchema = 2
+const CurrentConfigSchema = 3
 
 // SchemaTooNewError is returned when a config declares a shape this binary does
 // not know. It is a distinct type because the caller must not treat it the way
@@ -1339,6 +962,13 @@ var configMigrations = []func(*Config) error{
 	// a schema-1 file that reaches this step has nothing to change. Bumping the
 	// schema is what makes an older binary refuse a [[process]] file instead of
 	// silently ignoring every block in it.
+	func(*Config) error { return nil },
+	// 2 → 3: the toolvm is gone (adr/modular_nine.md §9.10). [tools] keeps only
+	// max_output_tokens; the sandbox host, its limits and the generated tier
+	// under [tools]/[tools.agent]/[[tool.<name>]] are refused from the raw TOML
+	// (retiredToolKeys below), and [tools] job_min_delay_ms/job_workers moved to
+	// [plugins]. Nothing is translated: a schema-2 file that reaches this step
+	// has none of the retired keys left to change.
 	func(*Config) error { return nil },
 }
 
@@ -1372,13 +1002,14 @@ func Load(path string) (*Config, error) {
 	if md.IsDefined("daemon", "standing_agents_authoritative") {
 		return nil, fmt.Errorf("%s: [daemon] standing_agents_authoritative is replaced by [processes] authoritative", path)
 	}
-	if md.IsDefined("tools", "agent", "allow_standing") {
-		return nil, fmt.Errorf("%s: [tools.agent] allow_standing is replaced by [tools.agent] allow_processes: "+
-			"a tool Nine writes runs indefinitely through tool_write's process block (docs/configuration.md)", path)
-	}
 	for _, k := range retiredLimits {
 		if md.IsDefined(k.key...) {
 			return nil, fmt.Errorf("%s: %s is replaced by [processes] max_running, the one cap on processes running at once (docs/configuration.md)", path, k.name)
+		}
+	}
+	for _, k := range retiredToolKeys {
+		if md.IsDefined(k.key...) {
+			return nil, fmt.Errorf("%s: %s (adr/modular_nine.md §9.10; docs/configuration.md)", path, k.hint)
 		}
 	}
 	warnUndecoded(path, md)
@@ -1422,11 +1053,6 @@ func (cfg *Config) Validate() error {
 			return err
 		}
 	}
-	for name, entry := range cfg.Tool {
-		if err := validateToolEntry("tool."+name, entry); err != nil {
-			return err
-		}
-	}
 	if err := validateMCPServers(cfg.MCP.Servers); err != nil {
 		return err
 	}
@@ -1454,35 +1080,11 @@ func (cfg *Config) Validate() error {
 	if cfg.Context.ToolTopN < 0 {
 		return fmt.Errorf("[context] tool_top_n must not be negative")
 	}
-	if cfg.Processes.RollbackAfter < 0 {
-		return fmt.Errorf("[processes] rollback_after must not be negative")
-	}
 	if cfg.Processes.DatabaseMaxMB < 0 {
 		return fmt.Errorf("[processes] database_max_mb must not be negative")
 	}
 	if _, err := cfg.Processes.StatementTimeoutOrDefault(); err != nil {
 		return err
-	}
-	if err := validateToolEntry("tools.agent", ToolEntry{Capabilities: cfg.Tools.Agent.Capabilities}); err != nil {
-		return err
-	}
-	switch cfg.Tools.Agent.RequireApproval {
-	case "", ToolApprovalOnCapability, ToolApprovalAlways, ToolApprovalNever:
-	default:
-		return fmt.Errorf("[tools.agent]: require_approval %q must be %q, %q, or %q",
-			cfg.Tools.Agent.RequireApproval,
-			ToolApprovalOnCapability, ToolApprovalAlways, ToolApprovalNever)
-	}
-	switch cfg.Tools.Agent.Deps.Mode {
-	case "", DepsModeOff, DepsModeAllowlist, DepsModeOpen:
-	default:
-		return fmt.Errorf("[tools.agent.deps]: mode %q must be %q, %q, or %q",
-			cfg.Tools.Agent.Deps.Mode, DepsModeOff, DepsModeAllowlist, DepsModeOpen)
-	}
-	for _, a := range cfg.Tools.Agent.Deps.Allow {
-		if a.Name == "" {
-			return fmt.Errorf("[tools.agent.deps]: an allow entry has an empty name")
-		}
 	}
 	return nil
 }
@@ -1522,186 +1124,6 @@ func validateMCPServers(servers []MCPServer) error {
 		seen[s.Name] = true
 	}
 	return nil
-}
-
-// validateToolEntry checks one `[tool.<name>]` grant. Everything here is a
-// config error rather than a runtime surprise, because a grant that silently
-// does not mean what the operator thought is the failure mode the capability
-// model exists to prevent.
-func validateToolEntry(table string, entry ToolEntry) error {
-	caps := entry.Capabilities
-
-	for _, m := range append(append([]ToolMount{}, caps.FS.Read...), caps.FS.Write...) {
-		if m.Host == "" || m.Guest == "" {
-			return fmt.Errorf("[%s]: fs mount needs both host and guest paths", table)
-		}
-		if !filepath.IsAbs(m.Host) {
-			return fmt.Errorf("[%s]: fs mount host path %q must be absolute", table, m.Host)
-		}
-	}
-
-	for _, k := range caps.Env {
-		if k == "" {
-			return fmt.Errorf("[%s]: env grant has an empty key", table)
-		}
-		// The daemon's environment holds LLM provider credentials, and a
-		// sandboxed tool is precisely the thing that should never see them. This
-		// is a refusal rather than a filter so that an operator who meant to grant
-		// one finds out at load, not by wondering why the key is empty.
-		if strings.HasPrefix(k, "NINE_") || strings.HasSuffix(k, "_API_KEY") {
-			return fmt.Errorf("[%s]: env key %q is reserved and cannot be granted to a sandboxed tool", table, k)
-		}
-	}
-
-	if err := validateStateGrant(table, caps.State); err != nil {
-		return err
-	}
-
-	return validateHTTPGrant(table, caps.Net.HTTP)
-}
-
-// validateStateGrant checks a `state` grant.
-//
-// The scope check is the one that matters. Refusing an unset scope rather than
-// picking the safer one is deliberate: the two scopes differ in whether a tool
-// can carry data from one conversation into another, and an operator who did
-// not decide that should be told, not defaulted.
-func validateStateGrant(table string, g *ToolStateGrant) error {
-	if g == nil {
-		return nil
-	}
-	// The literals are toolvm.StateScopeTool / StateScopeConversation. They are
-	// spelled out rather than imported for the same reason the net.http method
-	// names are: this package validates the operator's file and stays free of the
-	// subsystems the file configures, and runtime does the translation.
-	switch g.Scope {
-	case "tool", "conversation":
-	case "":
-		return fmt.Errorf(
-			"[%s]: state needs scope = \"tool\" or \"conversation\"; there is no implicit "+
-				"default, because the two differ in whether this tool can carry data "+
-				"between conversations", table)
-	default:
-		return fmt.Errorf("[%s]: state scope %q is not \"tool\" or \"conversation\"", table, g.Scope)
-	}
-	for _, b := range []struct {
-		name string
-		v    int
-	}{{"max_keys", g.MaxKeys}, {"max_value_kb", g.MaxValueKB}, {"max_total_kb", g.MaxTotalKB}} {
-		if b.v < 0 {
-			return fmt.Errorf("[%s]: state %s cannot be negative", table, b.name)
-		}
-	}
-	if g.TTL != "" {
-		d, err := time.ParseDuration(g.TTL)
-		if err != nil {
-			return fmt.Errorf("[%s]: state ttl %q: %w", table, g.TTL, err)
-		}
-		if d <= 0 {
-			return fmt.Errorf("[%s]: state ttl %q must be positive; omit it for no expiry", table, g.TTL)
-		}
-	}
-	return nil
-}
-
-// validateHTTPGrant checks a `net.http` grant. Every rejection here is a config
-// error rather than a runtime surprise, because the whole point of an egress
-// allowlist is that the operator knows exactly what they permitted.
-func validateHTTPGrant(table string, g *ToolHTTPGrant) error {
-	if g == nil {
-		return nil
-	}
-
-	if len(g.AllowHosts) == 0 {
-		return fmt.Errorf("[%s]: net.http needs allow_hosts; there is no implicit default", table)
-	}
-	for _, h := range g.AllowHosts {
-		h = strings.ToLower(strings.TrimSpace(h))
-		switch {
-		case h == "":
-			return fmt.Errorf("[%s]: net.http allow_hosts has an empty entry", table)
-		case h == "*":
-			// Permitted, and deliberately the only pattern that has to be written
-			// out in full. It grants any *host*; it does not grant any *address* —
-			// loopback, link-local, private ranges and multicast stay blocked at
-			// dial time whatever the allowlist says (internal/toolvm/ssrf.go).
-			// Refusing it used to point operators at a native plugin instead,
-			// which has the daemon's uid and none of those checks.
-		case strings.Contains(h, "://"), strings.Contains(h, "/"):
-			return fmt.Errorf("[%s]: net.http allow_hosts entry %q must be a hostname, not a URL", table, h)
-		case strings.Count(h, "*") > 1, strings.Contains(h, "*") && !strings.HasPrefix(h, "*."):
-			return fmt.Errorf("[%s]: net.http allow_hosts entry %q must be an exact host or a leading %q pattern", table, h, "*.")
-		}
-	}
-
-	if len(g.Methods) == 0 {
-		return fmt.Errorf("[%s]: net.http needs methods; there is no implicit default", table)
-	}
-	for _, m := range g.Methods {
-		switch strings.ToUpper(strings.TrimSpace(m)) {
-		case "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS":
-		default:
-			return fmt.Errorf("[%s]: net.http method %q is not a permitted method", table, m)
-		}
-	}
-
-	if g.MaxBytes < 0 {
-		return fmt.Errorf("[%s]: net.http max_bytes must not be negative", table)
-	}
-	return nil
-}
-
-// CapabilityGrantParams is one capability's scope, in the shape a capability
-// request or a stored grant carries it: flat, capability-agnostic, and only the
-// fields that capability uses.
-type CapabilityGrantParams struct {
-	Mounts     []ToolMount // fs.read, fs.write
-	Env        []string    // env
-	AllowHosts []string    // net.http
-	Methods    []string    // net.http
-	MaxBytes   int         // net.http
-	Scope      string      // state
-	MaxKeys    int
-	MaxValueKB int
-	MaxTotalKB int
-	TTL        string
-}
-
-// ValidateCapabilityGrant holds a grant that did not come from nine.toml to the
-// same rules the file is held to.
-//
-// It exists because the generated tier's ceiling now lives in the store, where an
-// operator's approval can put a grant the file never declared. Without this the
-// store could hold a ceiling nine.toml could not express — an empty `allow_hosts`,
-// a relative mount host, a reserved `NINE_*` env key — and the file's validators
-// would be a rule that applied only to operators who happened to use a file.
-//
-// The rules are not restated: the params are mapped into the same
-// ToolCapabilities shape and handed to the same validator the loader uses.
-func ValidateCapabilityGrant(capability string, p CapabilityGrantParams) error {
-	var caps ToolCapabilities
-	switch capability {
-	case "fs.read":
-		caps.FS.Read = p.Mounts
-	case "fs.write":
-		caps.FS.Write = p.Mounts
-	case "env":
-		caps.Env = p.Env
-	case "net.http":
-		caps.Net.HTTP = &ToolHTTPGrant{
-			AllowHosts: p.AllowHosts, Methods: p.Methods, MaxBytes: p.MaxBytes,
-		}
-	case "state":
-		caps.State = &ToolStateGrant{
-			Scope: p.Scope, MaxKeys: p.MaxKeys,
-			MaxValueKB: p.MaxValueKB, MaxTotalKB: p.MaxTotalKB, TTL: p.TTL,
-		}
-	case "sql":
-		caps.SQL = true
-	default:
-		return fmt.Errorf("unknown capability %q", capability)
-	}
-	return validateToolEntry("tools.agent.capabilities", ToolEntry{Capabilities: caps})
 }
 
 // validateProcesses checks the `[[process]]` blocks.
@@ -1797,15 +1219,6 @@ var retiredLimits = []struct {
 	key  []string
 }{
 	{"[daemon] max_goal_sessions", []string{"daemon", "max_goal_sessions"}},
-	{"[tools.agent] max_standing", []string{"tools", "agent", "max_standing"}},
-}
-
-// ProcessRolesOrDefault returns [tools.agent] process_roles, defaulted.
-func (c ToolsAgentConfig) ProcessRolesOrDefault() []string {
-	if len(c.ProcessRoles) > 0 {
-		return c.ProcessRoles
-	}
-	return []string{"process"}
 }
 
 // retiredBlocks are the tables [[process]] replaced (adr/process-sessions.md
@@ -1815,4 +1228,24 @@ func (c ToolsAgentConfig) ProcessRolesOrDefault() []string {
 var retiredBlocks = map[string]string{
 	"agent":         `[[agent]] is replaced by [[process]]: name = <id>, tool = "pursue", goal = <description>, with role, delegates, every or schedule as before`,
 	"standing_tool": `[[standing_tool]] is replaced by [[process]]: name = <id>, tool, args, every or schedule as before`,
+}
+
+// retiredToolKeys are the toolvm-era keys under [tools] and the [[tool.<name>]]
+// tables, removed with the toolvm (adr/modular_nine.md §9.10). Loading a file
+// that still has one is an error naming its replacement: a warning would let an
+// operator believe a sandbox cap still applies when nothing enforces it.
+var retiredToolKeys = []struct {
+	hint string
+	key  []string
+}{
+	{`[tools] enabled is retired with the toolvm; the shipped tools are built in and the shell is a plugin`, []string{"tools", "enabled"}},
+	{`[tools] user_dir is retired with the toolvm; user tools are MCP servers now ([plugins].user_dir)`, []string{"tools", "user_dir"}},
+	{`[tools] timeout is retired with the toolvm`, []string{"tools", "timeout"}},
+	{`[tools] max_ops is retired with the toolvm`, []string{"tools", "max_ops"}},
+	{`[tools] memory_mb is retired with the toolvm`, []string{"tools", "memory_mb"}},
+	{`[tools] max_concurrent is retired with the toolvm`, []string{"tools", "max_concurrent"}},
+	{`[tools] job_min_delay_ms moved to [plugins] job_min_delay_ms`, []string{"tools", "job_min_delay_ms"}},
+	{`[tools] job_workers moved to [plugins] job_workers`, []string{"tools", "job_workers"}},
+	{`[tools.agent] is retired with the toolvm; Nine does not write tools any more — write an MCP user plugin instead ([plugins].user_dir)`, []string{"tools", "agent"}},
+	{`[[tool.<name>]] is retired with the toolvm`, []string{"tool"}},
 }

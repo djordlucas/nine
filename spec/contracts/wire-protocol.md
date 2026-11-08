@@ -89,8 +89,8 @@ Msg {
 | `plugin_call` | `tool_name`, `tool_input` | invoke a tool directly, **bypassing the LLM** |
 | `plugins_list` | — | request the plugin roster (built-in + user, with skip reasons) |
 | `plugins_reload` | — | re-scan `[plugins].user_dir` and reload user plugins live (built-ins untouched) |
-| `tools_list` | — | request the sandboxed-tool roster (with resolved capabilities and skip reasons) |
-| `tools_reload` | — | re-scan `[tools].user_dir` and reload sandboxed tools live |
+| `tools_list` | — | stub: answers an empty roster (the sandboxed tier is removed, adr/modular_nine.md 9.10) |
+| `tools_reload` | — | stub: answers an error naming the removal |
 | `tool_delete` | `tool_name` (**required**) | delete a tool Nine wrote, and its standing run; a shipped, operator-installed or unknown tool is refused with the reason |
 | `process_list` | — | the process roster |
 | `process_show` | `agent_id` = process id (**required**), (`limit`) | one process with up to `limit` lines of recent activity (default 20) |
@@ -102,7 +102,7 @@ Msg {
 | `skill_get` | `text` = skill name (**required**) | one skill with its body |
 | `backup` | (`text` = `workspace`) | write a snapshot of the store, with the workspace when asked, to a temporary file |
 | `workspace` | `text` = `list` \| `read` \| `write` \| `delete` (**required**), `tool_input` = JSON `WorkspaceArgs { path, content, if_version }` | a workspace file operation as the operator. Paths resolve inside the workspace root, links included; `.nine/` is refused. A replaced or deleted file **MUST** go to the trash. With `if_version`, a write or delete of a file at another version **MUST** fail. |
-| `database` | `text` = `tables` \| `rows` \| `insert` \| `update` \| `delete` \| `run` (**required**), `tool_input` = JSON `DatabaseArgs { table, offset, limit, rowid, values, sql, args }` | a database operation as the operator, under the policies `nine:sql` has; never the store. Writes are journaled as `sql_write` under `operator`. |
+| `database` | `text` = `tables` \| `rows` \| `insert` \| `update` \| `delete` \| `run` (**required**), `tool_input` = JSON `DatabaseArgs { table, offset, limit, rowid, values, sql, args }` | a database operation as the operator, under the database policy; never the store. Writes are journaled as `sql_write` under `operator`. |
 | `goal_create` | `text` = description (**required**), (`id` = parent goal) | create a goal as the operator; a top-level goal gets a pursue session (R-PROTO.13) |
 | `goal_delete` | `text` = goal ID (**required**) | delete a goal and its sub-goals and stop its pursue session (R-PROTO.13) |
 | `goal_set_status` | `id` = goal ID, `text` = status (both **required**) | set a goal's status as the operator (R-PROTO.13) |
@@ -131,8 +131,8 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `error` | `text` | failure |
 | `status` / `list_*` | `text` = JSON payload | the requested read (StatusInfo / array) |
 | `plugins_list` / `plugins_reload` | `text` = JSON `[]PluginStatus` | the plugin roster (each: `name`, `source`, `loaded`, `tools`, `error`) |
-| `tools_list` / `tools_reload` | `text` = JSON `[]SandboxedToolStatus` | the sandboxed-tool roster (see R-PROTO.4a) |
-| `grants_list` | `text` = JSON `CapabilityState` | grants in force, each with its `source`, plus every capability request and its status ([`toolvm.md`](toolvm.md) R-TVM.14) |
+| `tools_list` / `tools_reload` | `text` = JSON `[]` / an error | stubs; see R-PROTO.4a |
+| `grants_list` | `text` = JSON `CapabilityState` | grants in force, each with its `source`, plus every capability request and its status (plugin.md) |
 | `grants_decide` | `text` = a sentence | what the decision did, including whether it took effect without a restart |
 | `tool_delete` | `text` = a sentence | the tool deleted |
 | `process_list` / `process_show` | `text` = JSON `[]ProcessInfo` / `ProcessInfo` | id, tool, mode, state, `stopped_by`, trigger, session, goal, pipe, budget use and reset, failures, recent activity (show only) |
@@ -230,31 +230,12 @@ PluginStatus { name string, source string, loaded bool, tools []string, error st
 plugins) before returning the resulting roster; both are operator reads/actions,
 never agent tools.
 
-### R-PROTO.4a — sandboxed tool roster
+### R-PROTO.4a — sandboxed tool roster — removed
 
-`tools_list` and `tools_reload` return `[]SandboxedToolStatus` JSON-encoded in `text`
-(`spec/contracts/toolvm.md`):
-
-```schema
-SandboxedToolStatus { name string, kind string, loaded bool, generated bool,
-                      capabilities string, description string, manifest_path string,
-                      error string, deps []string }
-// kind: js | wasm. A skipped tool has loaded=false and error set.
-// capabilities is the RESOLVED grant — what the tool runs with, never what its
-// manifest asked for.
-// generated=true marks a tool Nine authored via tool_write (toolvm.md R-TVM.14):
-// its code lives in the store, so it has no manifest_path.
-// deps are the external npm packages a generated tool's bundle carries, as
-// "name@version" (toolvm.md R-TVM.15); empty for a tool with none. All additive/optional.
-```
-
-The skipped entries are the point: a capability mismatch is deliberately a load failure
-rather than a degraded tool (R-TVM.6), and that promise is only kept if an operator can
-read the reason. Both messages are operator reads/actions, never agent tools; with
-`[tools] enabled` unset, `tools_list` returns an empty array and `tools_reload` returns an
-error naming the disabled subsystem.
-
----
+`tools_list` answers an empty roster and `tools_reload` answers an error: the
+sandboxed tier is removed (adr/modular_nine.md 9.10). The wire messages stay so
+older clients get an answer rather than a dropped connection. `tool_delete`,
+`tool_versions` and `tool_restore` likewise answer with the removal.
 
 ## R-PROTO.5 — `plugin_call` bypasses the LLM
 

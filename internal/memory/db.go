@@ -372,7 +372,7 @@ func initSchema(d db) error {
 			source      TEXT NOT NULL DEFAULT 'agent',
 			updated_at  TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,
-		// Generated sandboxed tools (spec/contracts/toolvm.md R-TVM.14): code the
+		// Generated sandboxed tools (the removed toolvm (adr/modular_nine.md 9.10)): code the
 		// agent wrote, as store state. `capabilities` is the tool's DECLARATION,
 		// never a grant — grants live in nine.toml and are the operator's.
 		// `source` is the BUNDLED js (external npm deps inlined at write time,
@@ -396,8 +396,8 @@ func initSchema(d db) error {
 		)`,
 		toolVersionsSchema,
 		taintedSchema,
-		// tool_state is a sandboxed tool's durable state (spec/contracts/toolvm.md
-		// R-TVM.18): the host-owned store that lets a tool remember across calls
+		// tool_state is a sandboxed tool's durable state — dormant since the toolvm
+		// removal (adr/modular_nine.md 9.10): the host-owned store that let a tool remember across calls
 		// without anything surviving the wasm instance. Deliberately NOT the `kv`
 		// table — that one is Nine's own namespace, and admitting tool writes to it
 		// would make every prefix Nine reads its bookkeeping from agent-writable.
@@ -444,7 +444,7 @@ func initSchema(d db) error {
 			id TEXT PRIMARY KEY
 		)`,
 		// capability_requests: the agent asking an operator to widen the generated
-		// tier's ceiling (spec/contracts/toolvm.md R-TVM.14). A request is a
+		// tier's ceiling (the removed toolvm (adr/modular_nine.md 9.10)). A request is a
 		// conversation with an outcome and is never itself a grant — approving one
 		// writes a capability_grants row, which is the state that confers.
 		//

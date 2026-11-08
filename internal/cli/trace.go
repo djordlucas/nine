@@ -133,7 +133,7 @@ type toolEndPayload struct {
 }
 
 // toolHTTPPayload mirrors runtime.toolHTTPPayload — one outbound request a
-// sandboxed tool made, nested under the tool call that made it.
+// tool call made, nested under the tool call that made it.
 type toolHTTPPayload struct {
 	Tool       string `json:"tool"`
 	Method     string `json:"method"`

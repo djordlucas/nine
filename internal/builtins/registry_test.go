@@ -15,7 +15,7 @@ import (
 //
 // Only shell is left. `browser` is Node + Chromium, not Go, so it is not a
 // built-in; it arrives as an [[mcp.server]] (docs/browser.md). `time`, `files`
-// and `http` are shipped sandboxed tools now (internal/toolvm/shipped.go). The
+// and `http` are built-in Go tools now (internal/agent/shipped_*.go). The
 // `mcp` bridge builtin is gone (P5): the manager spawns [[mcp.server]] servers
 // directly.
 func TestAutoStartMatchesDaemonRoster(t *testing.T) {

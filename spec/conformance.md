@@ -73,27 +73,14 @@ How to use this file:
 | R-MEM.12 | The workspace index | Derived from the filesystem, not from Nine's writes: scanned at startup and on an interval, with the searched subtree refreshed before answering. Contentless FTS with snippets read from the file; unindexed files still list with a reason and searches report how many they skipped; a named unindexed file is scanned directly; a truncated scan drops nothing it did not reach. |
 | R-MEM.10 | Schema versioning and migration | `user_version` tracks the schema generation and equals the step count; each step and its bump commit atomically (a failing step leaves the version untouched); a fresh database is stamped without running steps; a database newer than the binary is refused, not rewritten. |
 
-### Sandboxed tools — [`toolvm.md`](contracts/toolvm.md)
+### Sandboxed tools — removed (adr/modular_nine.md §9.10)
 
-| ID | Property | Observable check |
-|----|----------|------------------|
-| R-TVM.1 | ABI | A tool module exports exactly `nine_alloc` and the call entrypoint at `ABIVersion` 1; a module missing either is refused at load. |
-| R-TVM.2 | Two module kinds | A `wasm` tool is the developer's own module; a `js` tool runs the pre-supplied QuickJS-NG interpreter over its source. Nothing is compiled at install time. |
-| R-TVM.3 | Compile once, instantiate per call | The module is compiled once and a fresh instance is created per call and closed when it returns; no state survives between calls of the same tool. |
-| R-TVM.4 | Resource bounds | Each call is bounded by wall clock (default 5s, per-tool overridable), memory pages (default 16 MiB), and is torn down when the context is done. |
-| R-TVM.5 | Default-empty capabilities | With no grant, a tool has no filesystem pre-open and no host functions: a denied capability is **structurally absent**, not refused at call time — there is no function to call. |
-| R-TVM.6 | Declaration ≠ grant | A manifest declares a need; only `nine.toml` grants. A capability declared but not granted is absent, **and one granted but not declared is refused** — the check runs both ways. |
-| R-TVM.7 | Grant table shape | Grants live in a singular `[tool.<name>]` table beside the plural `[tools]` subsystem table, mirroring R-PLUG.10. |
-| R-TVM.8 | Imports resolve in the host | Module resolution happens host-side against a closed allowlist **before instantiation**; the guest never receives a resolver, so `import` cannot reach disk or network. |
-| R-TVM.9 | Trimmed interpreter surface | The QuickJS `std` and `os` modules are not linked: no filesystem API, no `os.exec`, no `std.urlGet`, and no `std.evalScript`/`loadScript` eval hooks are reachable from a tool. The granted surface `nine:fs` exposes includes a ranged read, an append, a rename and a non-recursive remove, so a file larger than a call's memory cap is reachable and a write can be replaced atomically. |
-| R-TVM.10 | Loading | Developer tools load from `[tools].user_dir` in the same sidecar-manifest layout as user plugins (R-PLUG.9); a module without its manifest does not load. |
-| R-TVM.11 | Visibility and reload | A newly loaded tool appears to **subsequently built** loops only; a turn in flight keeps the tool set it started with, so the turn stays replayable. |
-| R-TVM.12 | `net.http` | Network access is a host function the host enforces: the SSRF checklist applies to every request. `allow_hosts` may be a bare `*`, which grants any host and no additional address — loopback, link-local, private and multicast stay refused at dial time regardless. |
-| R-TVM.13 | Fully built | Every feature the design specifies is implemented — the `nine:*` stdlib, external dependencies, and the deps/`net.http` interlock — with nothing stubbed or refused by name. |
-| R-TVM.14 | Generated tools | A tool Nine wrote via `tool_write` is a row in `tools` carrying source, schema, and a capability **declaration with no grant**; it runs through the same host, ABI, and instance model, and is capped by the generated ceiling. |
-| R-TVM.15 | Dependencies and the `nine:*` stdlib | Both `nine:*` and external npm imports resolve **before** the call, never by the guest and never at call time. |
-| R-TVM.16 | The shipped tier | First-party tools compiled into the binary run through the same host, ABI, and bounds; they are granted what they declare, that grant is visible in the roster, a declaration the host cannot enforce is refused, and they load before the other tiers so neither can take their names. An fs tool's workspace is created if absent, and its `path` argument accepts the workspace's host path as well as its guest mount. Removing or replacing a workspace file keeps the previous contents under `.nine/trash/`, which is agent-unwritable, excluded from the operator's version control, restorable, and bounded by both age (taken from the entry, not the file's mtime) and total size. A change is renderable as a diff before it happens (`preview`), inside the approval prompt, and afterwards against the trashed version; the prompt reuses the tool's own preview, survives a preview failure, and is bounded without rendering an oversized change as empty. |
-| R-TVM.17 | `fs.write` includes directory creation | A tool granted `fs.write` can create a directory and its missing parents, recursively and idempotently; creation is confined to the mount by the pre-open, and a tool without `fs.write` is refused. |
+The `toolvm.md` contract and its R-TVM rules are deleted with the host. What they
+covered lives elsewhere now: the shipped tools are Go built-ins whose confinement,
+trash, diff-preview and output-spill rules are checked under the dispatcher /
+workspace / HITL sections; developer tools are user plugins (R-PLUG.9); the
+generated tier (R-TVM.14/15) is gone — `tools`/`tool_state` store rows remain
+dormant, and the wire verbs that read them answer with the removal.
 
 ### Wire protocol — [`wire-protocol.md`](contracts/wire-protocol.md)
 
@@ -147,7 +134,7 @@ How to use this file:
 | R-PLUG.2 | `mcp.Serve` ergonomics | `mcp.Serve(name, version, []mcp.ServerTool, handlers)` serves the full MCP contract on `NINE_PLUGIN_SOCKET` (or stdio via `NINE_MCP_TRANSPORT=stdio`); handler errors become in-band `isError` results. Server side is the vendored `mcp-go` SDK. |
 | R-PLUG.3 | Manager lifecycle | Disabled check by wire name, spawn with sanitized env + `NINE_PLUGIN_SOCKET`/`NINE_BIN`/extras, await socket (or stdio handshake), MCP handshake under the handshake budget, track `*Plugin`, forward calls as `tools/call`. |
 | R-PLUG.4 | Crash isolation (I9) | Killing a plugin subprocess mid-run is reported without crashing the daemon. |
-| R-PLUG.5 | Default plugins | `shell` starts at boot as `nine mcp serve shell` (skills/memory are core-intercepted; files/http/time are shipped sandboxed tools). |
+| R-PLUG.5 | Default plugins | `shell` starts at boot as `nine mcp serve shell` (skills/memory are core-intercepted; files/http/time are built-in Go tools). |
 | R-PLUG.13 | Built-ins in the `nine` binary | `shell` starts as a `nine mcp serve shell` child process — no per-plugin binary on disk — and still gets its own process, sanitized env, cache dir, and transport-derived `max_concurrent`. Nine ships nothing into `[plugins].bin`. |
 | R-PLUG.13a | Plugin child is single-purpose | A plugin child reads no config file (even with one in its cwd or `$HOME`), opens no `nine.log`, and builds no CLI; `mcp serve` without `NINE_PLUGIN_SOCKET` (and without `NINE_MCP_TRANSPORT=stdio`) exits non-zero naming the variable. |
 | R-PLUG.15b | MCP content flattening | An image part is saved to the plugin cache dir and its path named in the tool result — never dropped; a tool named `../escaped` cannot write outside that dir. |
@@ -243,7 +230,7 @@ How to use this file:
 | R-PROC.1 | Data model | Config owns the definition, the runtime the run state; `stopped_by` decides who may restart. |
 | R-PROC.2 | Modes | Mode follows the tool; a live tool is in no tool list and cannot be called. |
 | R-PROC.3 | Live instances | No call deadline; own pool (`max_running`); work budget refilled per trigger; stop throws `E_STOPPED`. |
-| R-PROC.4 | `nine:process` | `next`/`turn`/`report` work in a live process and are refused (`E_NOT_LIVE`) anywhere else. |
+| R-PROC.4 | Live program interface (Go) | `Next`/`Turn`/`Report` work in a running live program and fail with `ErrStopped` once stopped. |
 | R-PROC.5 | Triggers and the clock (I7) | First tick one cadence after start; ticks not queued twice; both modes back off on failure, reach `failing` after three, and report entering and leaving it. |
 | R-PROC.6 | Process sessions | Owner sets the role; attached processes run under it; turns labelled `idle`/`condition`. |
 | R-PROC.7 | Goal binding | Inactive goal stops its process, active restarts it; a stall pauses the goal. |
@@ -252,11 +239,9 @@ How to use this file:
 | R-PROC.10 | Configuration | `[[process]]` mistakes fail the load; retired blocks and caps fail with their replacement; a removed non-goal block deletes its process and keeps its session. |
 | R-PROC.11 | Budgets | Turns and tokens per rolling day; at the limit `turn()` fails `E_BUDGET`, the process pauses and reaches the human feed, and runs again when its day is over. |
 | R-PROC.12 | Process tools | A conversation's only, by role; the start rule's refusals name their reason; every start counts against `max_running`. |
-| R-PROC.13 | Processes Nine writes | `tool_write`'s `process` block behind `allow_processes`; roles from `process_roles`; budget may only lower; pipes only to Nine's own; a model cannot delete one the operator stopped. |
 | R-PROC.14 | Event triggers and lineage | Allowlisted journal events reach live processes, metadata unless `event_content`; never from their own session; nothing at `max_depth`, and the skip journaled. |
-| R-PROC.15 | The database | A file apart from the store; process programs (live or slice) with `sql` write it through `nine:sql`, turns read it through `sql_query`; denied statements refused with a reason; quotas enforced; writes journaled as kinds and tables. |
-| R-PROC.16 | Versions and revision | Every rewrite keeps a version; a rewritten process restarts on probation and rolls back after `rollback_after` failures; process sessions write processes only with `allow_revision`; `tool_read` reads. |
-| R-PROC.17 | Genesis | A genesis document becomes running processes on the first boot of a store, once; an unfinished genesis runs again at the next boot. |
+| R-PROC.15 | The database | A file apart from the store; a live process's session writes it through its database handler, turns read it through `sql_query`; denied statements refused with a reason; quotas enforced; writes journaled as kinds and tables. |
+| R-PROC.17 | Genesis | Suspended with the model-authored tool tier it wrote through (adr/modular_nine.md 9.10): a configured `[bootstrap] genesis` is reported and skipped. |
 
 ### Goals — [`orchestration.md`](contracts/orchestration.md) (§ goals)
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -12,7 +11,6 @@ import (
 
 	"nine/internal/memory"
 	"nine/internal/plugin"
-	"nine/internal/toolvm"
 )
 
 // DefaultMaxJobsTotal bounds the daemon's outstanding jobs across every
@@ -102,64 +100,12 @@ func (js *jobStarter) atCapacity() (string, bool) {
 	return "", false
 }
 
-// StartToolJob records a long-running sandboxed-tool job.
+// StartToolJob records a long-running tool job (dormant: the toolvm is removed, adr/modular_nine.md 9.10).
 //
 // The tool has already done one call's worth of work — that is how it came to
 // return a continuation — so the row starts at calls=1 with the cursor it
 // produced, and the sweeper takes it from there.
 //
-// The per-conversation cap is a genuine refusal here, unlike the plugin path.
-// A plugin has already started its goroutine by the time its id reaches us, so
-// an over-cap plugin job must be admitted and then cancelled; the daemon decides
-// when a tool job's next call happens, so it can simply decline. The one call
-// already spent is the tool's own doing and is not charged to anything.
-func (js *jobStarter) StartToolJob(ctx context.Context, tool string, args json.RawMessage, c *toolvm.Continuation) (string, error) {
-	if c == nil {
-		return "", fmt.Errorf("tool %q: no continuation to start a job from", tool)
-	}
-	// A genuine refusal, unlike the plugin path above: the daemon decides when a
-	// tool job's next call happens, so nothing has to be started and cancelled.
-	if msg, full := js.atCapacity(); full {
-		return msg, nil
-	}
-
-	ack := c.Progress
-	if ack == "" {
-		ack = "started " + tool
-	}
-
-	handle := newJobHandle()
-	// Args and Ack are separate fields on purpose. Every later call is made with
-	// the model's original arguments — a resumable tool is called with the same
-	// arguments and a changing cursor, and the cursor is the only thing that
-	// moves — while Ack stays the one line a human or the model reads.
-	if err := js.store.JobCreate(memory.Job{
-		Handle:  handle,
-		Backend: memory.JobBackendTool,
-		Tool:    tool,
-		OwnerID: js.ownerID,
-		State:   string(plugin.JobRunning),
-		Ack:     ack,
-		Args:    string(argsOrEmpty(args)),
-		Cursor:  c.Cursor,
-	}); err != nil {
-		return "", fmt.Errorf("record background job: %w", err)
-	}
-	next := time.Now().Add(max(time.Duration(c.AfterMS)*time.Millisecond, js.minDelay))
-	if _, err := js.store.JobAdvance(handle, c.Cursor, c.Progress, next); err != nil {
-		slog.Warn("could not schedule the first call of a tool job", "handle", handle, "err", err)
-	}
-	return fmt.Sprintf("Started background job %s: %s. It runs detached — its result will reach you on a later turn.", handle, ack), nil
-}
-
-// argsOrEmpty normalizes absent arguments to an empty object, so a later call
-// re-parses something valid.
-func argsOrEmpty(args json.RawMessage) json.RawMessage {
-	if len(args) == 0 {
-		return json.RawMessage(`{}`)
-	}
-	return args
-}
 
 // StartJob writes the registry row and returns a one-line observation naming the
 // handle. The job is recorded as running; the sweeper reconciles its true state
@@ -209,8 +155,6 @@ type jobSweeper struct {
 	waiters     *JobWaiters
 	maxSeconds  int
 	baseSeconds int
-	// tools runs the tool backend, or nil when no sandboxed-tool host exists.
-	tools *ToolJobRunner
 }
 
 // RunJobSweeper polls running plugin jobs until ctx is cancelled, completing
@@ -220,18 +164,10 @@ type jobSweeper struct {
 // on each completion so a blocked job_wait wakes at once. Production-only, like
 // the spill sweeper. A nil store or manager is a no-op.
 func RunJobSweeper(ctx context.Context, store *memory.Store, mgr *plugin.Manager, waiters *JobWaiters, interval time.Duration, maxSeconds int) {
-	RunJobSweeperWithTools(ctx, store, mgr, waiters, interval, maxSeconds, nil)
-}
-
-// RunJobSweeperWithTools is RunJobSweeper with the tool backend wired in. Both
-// backends share one sweeper for the reason the registry is one table: the
-// model-facing surface (job_wait/job_check/job_list/job_cancel) is already
-// backend-agnostic, and two loops would mean two cadences, two shutdown paths,
-// and two places to forget something.
-func RunJobSweeperWithTools(ctx context.Context, store *memory.Store, mgr *plugin.Manager, waiters *JobWaiters, interval time.Duration, maxSeconds int, tools *ToolJobRunner) {
-	// A nil manager still leaves the tool backend usable: sandboxed tools do not
-	// need plugins, and a deployment can reasonably run one without the other.
-	if store == nil || (mgr == nil && tools == nil) {
+	// The tool backend went with the toolvm (adr/modular_nine.md §9.10); plugin
+	// jobs are suspended with the envelope (R-PLUG.12), so the sweeper's live
+	// work is expiry and orphan marking.
+	if store == nil || mgr == nil {
 		return
 	}
 	if interval <= 0 {
@@ -246,7 +182,6 @@ func RunJobSweeperWithTools(ctx context.Context, store *memory.Store, mgr *plugi
 		waiters:     waiters,
 		maxSeconds:  maxSeconds,
 		baseSeconds: max(int(interval/time.Second), 1),
-		tools:       tools,
 	}
 	t := time.NewTicker(interval)
 	defer t.Stop()
@@ -275,16 +210,8 @@ func (s *jobSweeper) sweepOnce(ctx context.Context) {
 		return
 	}
 	for _, j := range jobs {
-		// The age-based backoff above is a *polling* schedule and applies only to
-		// the plugin backend. A tool job's next call is due when the tool said it
-		// was, which JobsDueForCall answers.
-		if j.Backend == memory.JobBackendTool {
-			continue
-		}
 		s.reconcile(ctx, j)
 	}
-
-	s.tools.runDue(ctx, s)
 }
 
 // expireOverAge fails jobs past their lifetime bound, attempts a best-effort
@@ -358,7 +285,7 @@ func (s *jobSweeper) finishJob(j memory.Job, state, output, errMsg string) {
 }
 
 // pluginFor resolves a job's plugin, tolerating a daemon with no plugin manager
-// at all — a deployment can run sandboxed tools without plugins.
+// at all — a deployment can run processes without plugins.
 func (s *jobSweeper) pluginFor(j memory.Job) (*plugin.Plugin, bool) {
 	if s.mgr == nil {
 		return nil, false

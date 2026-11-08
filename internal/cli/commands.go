@@ -162,42 +162,7 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 		}
 		return c.Plugins(cfg)
 	case "tools":
-		if len(args) > 1 {
-			switch args[1] {
-			case "reload":
-				return c.ToolsReload(cfg)
-			case "show":
-				if len(args) < 3 {
-					return fmt.Errorf("usage: nine tools show <name>")
-				}
-				return c.ToolsShow(cfg, args[2])
-			case "delete":
-				if len(args) < 3 {
-					return fmt.Errorf("usage: nine tools delete <name>")
-				}
-				return c.ToolsDelete(cfg, args[2])
-			case "versions":
-				if len(args) < 3 {
-					return fmt.Errorf("usage: nine tools versions <name>")
-				}
-				return c.ToolsVersions(cfg, args[2])
-			case "restore":
-				if len(args) < 4 {
-					return fmt.Errorf("usage: nine tools restore <name> <version>")
-				}
-				v, err := strconv.Atoi(args[3])
-				if err != nil || v < 1 {
-					return fmt.Errorf("usage: nine tools restore <name> <version>: %q is not a version number", args[3])
-				}
-				return c.ToolsRestore(cfg, args[2], v)
-			case "deps":
-				return c.ToolsDeps(cfg)
-			case "standing":
-				return fmt.Errorf("`nine tools standing` is now `nine process list`, which lists every process")
-			}
-			return fmt.Errorf("usage: nine tools [reload|show <name>|delete <name>|versions <name>|restore <name> <version>|deps]")
-		}
-		return c.Tools(cfg)
+		return fmt.Errorf("the sandboxed-tool tier is removed (adr/modular_nine.md §9.10); use `nine plugins` for the plugin roster and `nine tool call <name>` to call a tool")
 	case "process", "processes":
 		return c.processCommand(cfg, args[1:])
 	case "tool":
@@ -206,11 +171,7 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 		}
 		switch args[1] {
 		case "validate":
-			p := ""
-			if len(args) > 2 {
-				p = args[2]
-			}
-			return c.ToolValidate(cfg, p)
+			return fmt.Errorf("`nine tool validate` validated model-written tools, a tier removed in adr/modular_nine.md §9.10; use `nine plugin validate` to vet an MCP plugin")
 		case "status", "logs":
 			return fmt.Errorf("`nine tool %s` is now `nine process show <id> [-n N]`", args[1])
 		case "stop", "start":
@@ -335,7 +296,7 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 var knownCommands = []string{
 	"help", "docs", "spec", "version", "daemon", "goals", "reflections",
 	"notifications", "grants", "workflows", "workflow", "send", "skills", "plugins",
-	"plugin", "tools", "tool", "status", "context", "trace", "replay", "attach", "backup", "restore",
+	"plugin", "tool", "status", "context", "trace", "replay", "attach", "backup", "restore",
 	"stop",
 }
 

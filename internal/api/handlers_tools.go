@@ -134,22 +134,14 @@ func (s *Server) ReloadTools(ctx context.Context, request apigen.ReloadToolsRequ
 	}
 	defer cl.Close()
 
-	tools, err := cl.ReloadSandboxedTools()
-	if err != nil {
+	// The sandboxed-tool directory is gone (adr/modular_nine.md 9.10); the only
+	// reloadable directory left is the user plugins'.
+	if _, err := cl.ReloadPlugins(); err != nil {
 		return apigen.ReloadTools500JSONResponse(
 			errorBody("server_error", err.Error(), nil)), nil
 	}
-
-	infos := make([]apigen.ToolInfo, 0, len(tools))
-	for _, tool := range tools {
-		info := toToolInfo(tool.Name, tool.Description, "sandboxed")
-		applySandboxed(&info, tool)
-		infos = append(infos, info)
-	}
-
 	return apigen.ReloadTools200JSONResponse{
-		Message: ptr("sandboxed tools reloaded"),
-		Tools:   &infos,
+		Message: ptr("user plugins reloaded; the sandboxed-tool tier is removed (adr/modular_nine.md 9.10)"),
 	}, nil
 }
 
@@ -236,26 +228,15 @@ func toToolInfo(name, description, plugin string) apigen.ToolInfo {
 	return info
 }
 
-// toolRoster is every tool the daemon has, as `nine tools` and the agent see
-// them: the core and plugin tools with their schemas, and the sandboxed tools
-// with where they came from, their capabilities and dependencies. A sandboxed
-// tool that failed to load is listed too, with its error, though no agent can
-// call it.
+// toolRoster is every tool the daemon has, as the agent sees it: the core
+// (built-in) and plugin tools with their schemas. The sandboxed tier that used
+// to appear here is removed (adr/modular_nine.md 9.10).
 func toolRoster(cl *protocol.Client) ([]apigen.ToolInfo, error) {
 	tools, err := cl.ListTools()
 	if err != nil {
 		return nil, err
 	}
-	boxed, err := cl.ListSandboxedTools()
-	if err != nil {
-		return nil, err
-	}
-	byName := make(map[string]protocol.SandboxedToolStatus, len(boxed))
-	for _, b := range boxed {
-		byName[b.Name] = b
-	}
-	seen := make(map[string]bool, len(tools))
-	infos := make([]apigen.ToolInfo, 0, len(tools)+len(boxed))
+	infos := make([]apigen.ToolInfo, 0, len(tools))
 	for _, t := range tools {
 		info := toToolInfo(t.Name, t.Description, t.Plugin)
 		if len(t.InputSchema) > 0 {
@@ -264,66 +245,9 @@ func toolRoster(cl *protocol.Client) ([]apigen.ToolInfo, error) {
 				info.InputSchema = schema
 			}
 		}
-		if b, ok := byName[t.Name]; ok && t.Plugin == "sandboxed" {
-			applySandboxed(&info, b)
-		}
-		seen[t.Name] = true
-		infos = append(infos, info)
-	}
-	for _, b := range boxed {
-		if seen[b.Name] {
-			continue
-		}
-		info := toToolInfo(b.Name, b.Description, "sandboxed")
-		applySandboxed(&info, b)
 		infos = append(infos, info)
 	}
 	return infos, nil
-}
-
-// applySandboxed fills what the sandboxed roster knows of a tool.
-func applySandboxed(info *apigen.ToolInfo, b protocol.SandboxedToolStatus) {
-	kind := "sandboxed"
-	if b.Generated {
-		kind = "generated"
-	}
-	info.Kind = ptr(kind)
-	info.Loaded = ptr(b.Loaded)
-	info.Generated = ptr(b.Generated)
-	if b.Description != "" {
-		info.Description = ptr(b.Description)
-	}
-	if caps := splitCapabilities(b.Capabilities); len(caps) > 0 {
-		info.Capabilities = &caps
-	}
-	if b.ManifestPath != "" {
-		info.ManifestPath = ptr(b.ManifestPath)
-	}
-	if b.Error != "" {
-		info.Error = ptr(b.Error)
-	}
-	if b.Timeout != "" {
-		info.Timeout = ptr(b.Timeout)
-	}
-	if len(b.Deps) > 0 {
-		deps := b.Deps
-		info.Deps = &deps
-	}
-}
-
-// splitCapabilities turns the roster's capability summary, "fs.read /work;
-// net.http GET api.example.com", into one entry per capability. "none" is none.
-func splitCapabilities(s string) []string {
-	if s == "" || s == "none" {
-		return nil
-	}
-	var out []string
-	for _, c := range strings.Split(s, "; ") {
-		if c = strings.TrimSpace(c); c != "" {
-			out = append(out, c)
-		}
-	}
-	return out
 }
 
 // DeleteTool deletes a tool Nine wrote. The daemon decides what may be deleted;

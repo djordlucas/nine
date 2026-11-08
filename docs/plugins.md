@@ -6,10 +6,10 @@ running shell commands is the example, and `shell` is the one built-in plugin
 Nine ships.
 
 Most capabilities do not need that. Reading and writing files, fetching over
-HTTP and reading the clock are [sandboxed tools](sandboxed-tools.md): they run
-inside the wasm tool host with only the capabilities they are granted, and no
-subprocess at all. A tool that needs a workspace directory is given that
-directory and nothing else, which is a much narrower grant than a process
+HTTP and reading the clock are **built-in tools** compiled into the nine binary:
+direct in-process calls into the same store and workspace backend, no subprocess
+and no sandbox tier (the wasm tool host they used to run in was removed,
+adr/modular_nine.md §9.10)
 running as the daemon's user.
 
 Built-in plugins are fixed at build time — not generated or loaded at runtime.
@@ -52,12 +52,13 @@ Run "ls -la /tmp" and tell me the five largest files.
 
 ---
 
-## Shipped sandboxed tools
+## Built-in tools
 
-These are **not plugins**. They are first-party [sandboxed tools](sandboxed-tools.md#54-shipped-tools--first-party-in-the-binary)
-compiled into the binary and run in the wasm host with a declared, operator-visible
-grant — where as plugins they held the daemon's uid. `nine tools` lists them with
-the grant each one resolved.
+These are **not plugins**. They are first-party Go functions compiled into the
+binary and registered on the dispatcher directly — no subprocess, and no sandbox
+tier (adr/modular_nine.md §9.10). Where they once held a capability grant, the
+grant is now simply their code: `write_file` is confined to the workspace root
+by construction, not by a wazero pre-open.
 
 ### Workspace files
 
@@ -125,10 +126,6 @@ research (news, current events, prices, status) so it never reasons from a stale
 assumed date.
 
 **It reports UTC, where the plugin it replaced reported the daemon's local zone.**
-A sandboxed tool has no more access to host state than any other: the guest
-carries no timezone database, and a tool cannot learn the host's zone unless the
-host confers it. That is the tier's constraint showing through, and the price of
-the clock no longer running with the daemon's authority.
 
 **Example prompt:**
 ```
@@ -481,7 +478,7 @@ via a `_meta` extension on the `tools/call` result (adr/modular_nine.md §2). Se
 | Fixed at build time | Built-in plugins are compiled into the `nine` binary. Adding one means editing the source repo and rebuilding; there is no runtime path for an agent or an operator to add a native plugin. |
 | User plugins need a restart or reload | A new plugin under `[plugins].user_dir` is discovered at boot. `nine plugins reload` picks up changes for user plugins; built-ins need a daemon restart. |
 | Unbounded concurrency by default | `max_concurrent` defaults to 0, meaning unbounded. A plugin holding shared mutable state must declare its own cap. |
-| No capability sandbox | A plugin is an ordinary subprocess running as the daemon's process user, with the daemon's filesystem and network reach. Only sandboxed tools run behind a capability boundary. |
-| A reloaded plugin reaches only new loops | `nine plugins reload` starts the plugin, but a session already running keeps the tool set its loop was built with. Sandboxed tools differ — they re-sync at every turn boundary — so a reloaded plugin tool reaches an existing conversation only after it ends. |
+| No capability sandbox | A plugin is an ordinary subprocess running as the daemon's process user, with the daemon's filesystem and network reach; `shell` is the sharpest case. The wasm capability boundary is gone with the toolvm (adr/modular_nine.md §9.10) — contain reach with the container or a restricted user. |
+| A reloaded plugin reaches only new loops | `nine plugins reload` starts the plugin, but a session already running keeps the tool set its loop was built with, so a reloaded plugin tool reaches an existing conversation only after it ends. |
 | MCP tools are invisible to built-in roles | Their names carry an operator-chosen prefix, and role allowlists match exactly. |
 | A plugin cannot call back | The daemon dials the plugin and never the reverse. A plugin reports long-running work by being polled. |

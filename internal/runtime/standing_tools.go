@@ -14,7 +14,6 @@ import (
 	"nine/internal/cron"
 	"nine/internal/memory"
 	"nine/internal/sqldb"
-	"nine/internal/toolvm"
 )
 
 // Health bounds for a standing run.
@@ -35,16 +34,15 @@ const (
 	StandingMaxBackoff = 30 * time.Minute
 )
 
-// StandingRunner drives standing tools: resumable tools the daemon runs
-// indefinitely on their own cadence (adr/standing-tools.md).
+// StandingRunner drives standing tools: the processes the daemon runs
+// indefinitely on their own cadence (adr/standing-tools.md). One due tick is
+// one synchronous call of the tool through the wired ProcessToolCaller; the
+// resumable-cursor engine went with the toolvm (adr/modular_nine.md §9.10), so
+// a call that returns completes the cycle outright.
 //
-// It is the same engine as the job driver — call, take the cursor, wait, call
-// again — under a different lifecycle. The differences that matter:
-//
-//   - **A cycle, not a job.** Calls run until the tool returns a result instead
-//     of asking to continue. That completes one *cycle*: the cursor resets and
-//     the trigger decides when the next cycle starts. So there are two cadences,
-//     the trigger between cycles and after_ms within one.
+//   - **A cycle, not a job.** A call that returns a result completes one
+//     *cycle*: the cycle count moves, the cursor resets, and the trigger
+//     decides when the next cycle starts.
 //   - **No terminal state.** A standing run is stopped or it is going.
 //   - **Nobody's turn.** There is no conversation to notify, so a cycle that
 //     produces output posts to the human feed and one that returns nothing is
@@ -62,7 +60,9 @@ type AgentWaker interface {
 
 type StandingRunner struct {
 	store *memory.Store
-	host  *toolvm.Host
+	// caller runs a standing tool's tick: the core dispatcher for Go builtins,
+	// the plugin manager for MCP plugins. Wired by SetToolCaller.
+	caller ProcessToolCaller
 	// waker delivers a condition trigger's finding, or nil when standing runs can
 	// only reach the human feed.
 	waker    AgentWaker
@@ -94,14 +94,18 @@ type StandingRunner struct {
 	// database is the database processes write through nine:sql; nil when the
 	// instance has none.
 	database *sqldb.DB
-	// rollbackAfter is [processes] rollback_after (process_revision.go).
-	rollbackAfter int
-	// restore makes a previous version of a tool current; the generated-tool
-	// store provides it (LinkStandingTools). Nil disables rollback.
-	restore func(ctx context.Context, name string, version int, by string) error
+	// database is the database processes write through nine:sql; nil when the
+	// instance has none.
 }
 
 // SetDatabase gives live processes the database.
+// SetToolCaller wires the caller a standing tool's tick goes through.
+func (r *StandingRunner) SetToolCaller(c ProcessToolCaller) {
+	if r != nil {
+		r.caller = c
+	}
+}
+
 func (r *StandingRunner) SetDatabase(db *sqldb.DB) {
 	if r != nil {
 		r.database = db
@@ -127,10 +131,10 @@ func (r *StandingRunner) SetWaker(w AgentWaker) {
 	}
 }
 
-// NewStandingRunner builds the driver, or nil when there is no store. The host
-// is only needed for slice processes (dev/generated JS tools); live programs
-// are Go and need nothing from it.
-func NewStandingRunner(store *memory.Store, host *toolvm.Host, minDelayMS, workers int) *StandingRunner {
+// NewStandingRunner builds the driver, or nil when there is no store.
+// minDelayMS and workers bound the cadence and the concurrency; <= 0 takes the
+// defaults.
+func NewStandingRunner(store *memory.Store, minDelayMS, workers int) *StandingRunner {
 	if store == nil {
 		return nil
 	}
@@ -142,7 +146,6 @@ func NewStandingRunner(store *memory.Store, host *toolvm.Host, minDelayMS, worke
 	}
 	return &StandingRunner{
 		store:    store,
-		host:     host,
 		minDelay: time.Duration(minDelayMS) * time.Millisecond,
 		workers:  workers,
 		log:      newStandingLog(),
@@ -178,7 +181,7 @@ func (r *StandingRunner) Log() *standingLog {
 //
 // A process's mode comes from its tool: a built-in live program (pursue,
 // reflect) makes a live process, any other a slice one.
-func ReconcileProcesses(store *memory.Store, host *toolvm.Host, blocks []config.ProcessConfig) {
+func ReconcileProcesses(store *memory.Store, blocks []config.ProcessConfig) {
 	if store == nil {
 		return
 	}
@@ -323,8 +326,7 @@ func orEmptyArgs(m map[string]any) map[string]any {
 // RunStandingTools drives every due standing tool until ctx is cancelled.
 //
 // It shares the sweeper's cadence and its worker budget rather than taking its
-// own: what both bound is the same scarce thing — concurrent wasm instantiations,
-// each holding up to [tools] memory_mb.
+// own: what both bound is the same scarce thing — concurrent tool calls.
 func RunStandingTools(ctx context.Context, r *StandingRunner, interval time.Duration) {
 	if r == nil {
 		return
@@ -387,23 +389,17 @@ func (r *StandingRunner) runDue(ctx context.Context) {
 
 // runOnce makes a single call of one standing tool and writes back what happened.
 func (r *StandingRunner) runOnce(ctx context.Context, st memory.Process) {
-	// A process's call, unlike a tool the model invoked, reaches the database.
-	callCtx := toolvm.WithSQLHandler(ctx, sliceSQL{r: r, row: st})
-	out, err := r.host.CallJob(callCtx, st.Tool, json.RawMessage(argsOrEmptyString(st.Args)),
-		toolvm.JobContext{Cursor: st.Cursor, Call: st.Calls + 1})
-	if err != nil {
-		r.recordFailure(st, err)
+	// One call of the tool, through the runner's caller: a Go builtin via the
+	// dispatcher, an MCP plugin tool via the manager. Resumable cursors went
+	// with the toolvm (jobs are suspended, R-PLUG.12); a standing tool runs one
+	// synchronous call per cycle now.
+	if r.caller == nil {
+		r.recordFailure(st, errors.New("no tool caller wired"))
 		return
 	}
-
-	// Still working: schedule the next call at the delay it asked for.
-	if out.Continue != nil {
-		next := time.Now().Add(max(time.Duration(out.Continue.AfterMS)*time.Millisecond, r.minDelay))
-		r.proveVersion(st, 0)
-		if _, err := r.store.ProcessAdvance(st.ID, out.Continue.Cursor, next); err != nil {
-			slog.Warn("standing tool: advance", "id", st.ID, "err", err)
-		}
-		r.log.add(st.ID, "continued", out.Continue.Progress)
+	text, err := r.caller.CallProcessTool(ctx, st.Tool, json.RawMessage(argsOrEmptyString(st.Args)))
+	if err != nil {
+		r.recordFailure(st, err)
 		return
 	}
 
@@ -414,8 +410,8 @@ func (r *StandingRunner) runOnce(ctx context.Context, st memory.Process) {
 		slog.Warn("standing tool: complete cycle", "id", st.ID, "err", err)
 		return
 	}
-	r.log.add(st.ID, "completed", clipDetail(out.Text, 120))
-	r.report(st, out)
+	r.log.add(st.ID, "completed", clipDetail(text, 120))
+	r.report(st, text)
 
 	if st.State == memory.ProcessFailing {
 		// Recovered: the edge, not every call.
@@ -438,13 +434,7 @@ func (r *StandingRunner) runOnce(ctx context.Context, st memory.Process) {
 // agent, which keeps a deterministic tool from steering an autonomous one with
 // no human in between; and it cannot wake anything, which is R-SUB.3's
 // enrich-don't-interject applied unchanged.
-func (r *StandingRunner) report(st memory.Process, out toolvm.Output) {
-	text := out.Text
-	if out.Bytes != nil {
-		slog.Warn("standing tool returned bytes, which the human feed cannot carry",
-			"id", st.ID, "bytes", len(out.Bytes))
-		return
-	}
+func (r *StandingRunner) report(st memory.Process, text string) {
 	if text == "" {
 		return
 	}
@@ -532,11 +522,6 @@ func (r *StandingRunner) notifyHuman(msg string) {
 // posts to the human feed, so a flapping tool cannot produce a storm.
 func (r *StandingRunner) recordFailure(st memory.Process, cause error) {
 	failures := st.Failures + 1
-	// A rewritten program that keeps failing before it ever ran is rolled back
-	// rather than counted towards failing or switched off.
-	if r.rollback(st, failures, cause) {
-		return
-	}
 	state := st.State
 	tripped := failures >= StandingFailureThreshold && st.State != memory.ProcessFailing
 	if failures >= StandingFailureThreshold {
@@ -623,71 +608,6 @@ func argsOrEmptyString(args string) string {
 	return args
 }
 
-// liveTool returns name's tool when host has it loaded as a live tool, or nil.
-func liveTool(host *toolvm.Host, name string) *toolvm.Tool {
-	if host == nil {
-		return nil
-	}
-	if t := host.Get(name); t != nil && t.Live {
-		return t
-	}
-	return nil
-}
-
-// sliceSQL runs a slice process's database statements: the runner marks the
-// process's calls with it, so nine:sql serves them and no other call.
-type sliceSQL struct {
-	r   *StandingRunner
-	row memory.Process
-}
-
-func (s sliceSQL) SQL(ctx context.Context, write bool, query string, args []any) (json.RawMessage, error) {
-	return s.r.processSQL(ctx, s.row, write, query, args)
-}
-
-// processSQL runs a statement in the database for a process program. A write
-// is journaled under the process as a summary — kinds and tables, never values.
-func (r *StandingRunner) processSQL(ctx context.Context, row memory.Process, write bool, query string, args []any) (json.RawMessage, error) {
-	db := r.database
-	if db == nil {
-		return nil, errors.New("this instance has no database")
-	}
-	args = sqlArgs(args)
-	if !write {
-		res, err := db.Query(ctx, query, args...)
-		if err != nil {
-			return nil, err
-		}
-		return json.Marshal(res)
-	}
-	res, err := db.Exec(ctx, query, args...)
-	if len(res.Writes) > 0 {
-		journalTransition(r.store, row.ID, evSQLWrite, map[string]any{
-			"writes": res.Writes, "changes": res.Changes, "error": errText(err),
-		})
-	}
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(res)
-}
-
-// sqlArgs binds JSON values as SQLite does values: objects and arrays as their
-// JSON text.
-func sqlArgs(args []any) []any {
-	out := make([]any, len(args))
-	for i, a := range args {
-		switch a.(type) {
-		case map[string]any, []any:
-			b, _ := json.Marshal(a)
-			out[i] = string(b)
-		default:
-			out[i] = a
-		}
-	}
-	return out
-}
-
 // errText renders an error for a journal field, or "" for nil.
 func errText(err error) string {
 	if err == nil {
@@ -695,3 +615,13 @@ func errText(err error) string {
 	}
 	return err.Error()
 }
+
+// DefaultJobMinDelayMS / DefaultJobWorkers bound standing-tool scheduling.
+const (
+	DefaultJobMinDelayMS = 1000
+	DefaultJobWorkers    = 4
+)
+
+// proveVersion was the generated tier's revision proof; with the tier gone
+// (adr/modular_nine.md §9.10) there is no version to prove.
+func (r *StandingRunner) proveVersion(row memory.Process, v int) {}

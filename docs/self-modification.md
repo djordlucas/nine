@@ -49,45 +49,34 @@ See [skills.md](skills.md) for the full skill format and lifecycle.
 | Modify built-in skills at runtime | **Removed** | Curated defaults should not drift on a running instance; edit the repo + rebuild |
 | Rebuild its own Go source (`nine_propose_rebuild`) | **Removed** | Nine never edits and recompiles itself |
 | Read its own source tree (`self_read`) | **Removed** | The source tree is no longer shipped in the container |
+| Write its own tools (`tool_write` / `js_eval`) | **Removed** | The model-authored tool tier went with the toolvm (adr/modular_nine.md §9.10); custom capabilities are operator-installed MCP servers and user plugins |
 
-**Sandboxed tools are the one adjacent thing that is *not* removed, and Nine can now write
-them — but only their code, never their capabilities.** Two shapes exist. A **developer
-tool** is installed by an operator from `[tools].user_dir` and granted capabilities in
-`nine.toml` — operator action, the same category as `[plugins].user_dir`. A **generated
-tool** is written by Nine itself through `tool_write` and lives as a row in the store
-(`spec/contracts/toolvm.md` R-TVM.14); it is *store state*, exactly like a goal, a workflow,
-or an agent skill — listable, deletable, and journalled — so it does **not** drift the binary
-the way a rebuilt native plugin would, which is the distinction that makes it permissible
-where plugin generation is not.
+**The adjacent thing that *was* permissible is now removed too: Nine no longer writes
+tools.** The generated tier (`tool_write`/`js_eval`, store rows in the `tools` table) ran
+in the wasm sandbox and was removed with it (adr/modular_nine.md §9.10); the store tables
+stay dormant so an existing database still opens. Custom capabilities now arrive only as
+operator action: an `[[mcp.server]]` or a user plugin under `[plugins].user_dir`.
 
-The invariant holds: **no agent-reachable path writes a capability grant.** `tool_write` writes JavaScript and a capability *declaration*; the operator writes
-the **ceiling** (`[tools.agent.capabilities]`) that bounds what any generated tool may be
-granted, and a tool that declares nothing gets nothing. *Nine cannot grant itself
-capabilities* (R-PLUG.7) holds unchanged — the agent writes the code, the operator writes the
-grants, and they are never the same actor. The generated tier is **on by default**, bounded
-by a ceiling that defaults to the workspace
-(`[tools.agent] enabled`). Nothing about the toolchain property below changes: the QuickJS
-interpreter is built ahead of time from pinned tags and committed as an artifact, so even a
-generated tool adds no compiler to the runtime image — the agent writes JavaScript for a
-pre-supplied interpreter, never anything that is built.
+The invariant is unchanged and now structural: **no agent-reachable path writes a
+capability grant.** `capability_request` lets the agent *ask* — it records a pending
+request a human decides on, and cannot confer anything (docs/plugin-capabilities.md §3).
 
 Because of this, the runtime container carries **no Go toolchain, no git, and no
-source tree** — only the compiled `nine` binary, which is also the default
-plugins. Configuration changes are made by editing
+source tree** — only the compiled `nine` binary, which also carries the built-in
+tools and the `shell` plugin server. Configuration changes are made by editing
 `nine.toml` and restarting the daemon.
 
 ---
 
 ## Plugins are fixed
 
-Nine ships one plugin, `shell`, alongside its sandboxed tools. It is immutable
+Nine ships one plugin, `shell`, alongside its built-in tools. `shell` is immutable
 image content: compiled into the `nine` binary and served as
 `nine mcp serve shell`. Reading and writing files, fetching over HTTP and
-reading the clock were plugins too, and are now shipped sandboxed tools — first-party
-capabilities under the capability model rather than subprocesses holding the
-daemon's uid. There is no mechanism for an agent to add, build, or replace a
-plugin at runtime. To add a built-in capability, add a plugin to the source repo
-and rebuild the image.
+reading the clock are built-ins too — direct in-process Go calls, not subprocesses
+holding the daemon's uid (adr/modular_nine.md §9.8/§9.10). There is no mechanism
+for an agent to add, build, or replace a plugin or a built-in at runtime. To add a
+built-in capability, edit the source repo and rebuild the image.
 
 An `[[mcp.server]]` is the operator's escape hatch from that, not the agent's: it
 adds a capability without a rebuild, but only by editing `nine.toml` and
@@ -103,10 +92,8 @@ existing binary) is the plugin manager's responsibility — no recompilation is 
 
 | Limit | Detail |
 |-------|--------|
-| Skills only | Nine writes skills and, where enabled, sandboxed tools. It does not generate native plugins, rewrite `nine.toml`, or rebuild its own source. Deliberate: a daemon that changes its own form is hard to reason about, debug and trust. |
+| Skills only | Nine writes skills. It does not generate tools, plugins, rewrite `nine.toml`, or rebuild its own source. Deliberate: a daemon that changes its own form is hard to reason about, debug and trust. |
 | Built-in skills are immutable at runtime | `skill_write` and `skill_modify` refuse to touch a skill seeded from the binary. Changing one means editing `skills/*.md` and rebuilding. |
-| Generated tools are bounded by a ceiling, not by being off | `[tools.agent] enabled` defaults to true. The bound is `[tools.agent.capabilities]`, which defaults to the workspace — the same directory the shipped file tools and `shell` already reach — and confers nothing a tool has not declared. Set `enabled = false` to keep the host without the tier. |
-| Duration is gated separately from reach | A generated tool that runs as a job needs `[tools.agent] allow_long_running`, and one that runs as a **process** — until stopped — needs `allow_processes`, with its turns under a role from `process_roles` (default `process`, no tools). The capability ceiling cannot express this: it bounds what a tool may *reach*, and duration is not reach. A process write prompts under `require_approval = "on_capability"` even when it declares nothing. |
-| Capabilities are never agent-writable | `tool_write` writes JavaScript and a capability *declaration*. The operator writes every grant. `capability_request` lets the agent **ask** — it records a pending request a human decides on, and cannot confer anything. A tool that declares nothing gets nothing. |
-| Config changes need a restart, except a grant | Editing `nine.toml` takes effect on daemon restart, for agent or operator. The one thing that changes live is the generated tier's capability ceiling: an approved request is installed on the running host and the tool catalog re-projected against it. Nothing writes `nine.toml` — the grant is recorded in the store, and the file is reconciled into it at each boot ([sandboxed-tools.md](sandboxed-tools.md) §7.2). |
+| Capabilities are never agent-writable | The operator writes every plugin capability grant. `capability_request` lets the agent **ask** — it records a pending request a human decides on, and cannot confer anything. |
+| Config changes need a restart, except a grant | Editing `nine.toml` takes effect on daemon restart, for agent or operator. The one thing that changes live is a plugin capability grant: an approved request is recorded in the store and the file is reconciled into it at each boot (docs/plugin-capabilities.md §3). |
 | Adding a built-in plugin needs a rebuild | An `[[mcp.server]]` is the operator's way to add a capability without rebuilding; it still requires editing `nine.toml` and restarting. Nothing an agent does at runtime can declare one. |

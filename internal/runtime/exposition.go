@@ -34,10 +34,9 @@ var toolkits = map[string][]string{
 	"web":        {"http_get", "http_post", "web_page_read", "web_search"},
 	"messages": {"ask_human", "notify_user", "queued_messages_get", "queued_message_mark_consumed",
 		"queued_messages_mark_all_consumed", "queued_messages_count", "queued_messages_unconsumed_count"},
-	"authoring": {"tool_read", "tool_write", "tool_delete", "js_eval"},
-	"catalog":   {"tool_list", "tool_search", "doc_read", "doc_search", "capability_request"},
-	"data":      {"sql_query"},
-	"time":      {"time"},
+	"catalog": {"tool_list", "tool_search", "doc_read", "doc_search", "capability_request"},
+	"data":    {"sql_query"},
+	"time":    {"time"},
 }
 
 // toolkitOf maps a built-in tool name to its toolkit.
@@ -51,13 +50,9 @@ var toolkitOf = func() map[string]string {
 	return m
 }()
 
-// builtinGlosses annotate the built-in tools whose names mislead on their own:
-// in phase 3's sweep models reached for shell over js_eval, and stopped a
-// written process with process_stop rather than remove it with tool_delete.
+// builtinGlosses annotate the built-in tools whose names mislead on their own.
 var builtinGlosses = map[string]string{
 	"delete_file": "to trash",
-	"js_eval":     "run JavaScript, e.g. to compute",
-	"tool_delete": "removes a written tool and its process",
 }
 
 // annotateBuiltin sets the toolkit and gloss of a tool Nine names.

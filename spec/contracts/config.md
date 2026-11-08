@@ -57,31 +57,11 @@ bin = ""                        # dir of plugins shipping their own binary; Nine
 # [plugin.<name>.settings]      # schema-less env vars passed through verbatim at spawn (R-PLUG.10);
 #   KEY = "value"               #   keys are env-var names, values TOML scalars; reserved NINE_PLUGIN_* rejected
 
-# Sandboxed tools (toolvm.md is normative for the whole [tools] / [tool.<name>] surface).
-# [tools] enabled defaults to TRUE: the tier carries the workspace file tools, so enabled =
-# false means no host and no way to read or write a file. [tools.agent] is the generated tier
-# (R-TVM.14), also defaulting to true, and gated by [tools] enabled above it. Both are *bool
-# in Go so that unset and false are distinguishable (ToolsConfig.IsEnabled,
-# ToolsConfig.GeneratedEnabled).
-# [tools] enabled   = true          # default; false turns the host off entirely
-# [tools] cache_dir = ""            # dependency cache root; default os.UserCacheDir()/nine/tools
-# [tools.agent]
-# enabled            = true         # default; false keeps the host without tool_write/tool_delete
-# eval               = false        # additionally allow js_eval
-# max_tools          = 64           # catalog cap; LRU eviction past it
-# require_approval   = "on_capability" # on_capability (default) | always | never — validated at load
-# allow_network_deps = false        # lift the deps+net.http interlock (R-TVM.15); dangerous
-# [tools.agent.capabilities]        # the CEILING: the maximum a generated tool may be granted,
-#   fs = { read = [ … ] }           #   never an automatic grant. A tool that declares nothing
-#                                   #   gets nothing. Same shape as [tool.<name>.capabilities].
-#                                   #   DEFAULT: [workspace].root, read+write, derived at boot.
-#                                   #   An explicit fs grant REPLACES that default, not adds.
-# [tools.agent.deps]                # external npm deps (R-TVM.15); off by default
-#   mode          = "off"           #   off (default) | allowlist | open — validated at load
-#   registry      = ""              #   npm-compatible base URL; empty = public registry
-#   frozen        = false           #   resolve only from cache/lockfile, never the network
-#   max_packages  = 24              #   budgets (incl. transitive) / max_bundle_kb / max_depth
-#   allow = [{ name = "date-fns", version = "^4.1.0" }]  # allowlist mode: named packages + ranges
+# [tools] keeps only the per-result output cap. The toolvm-era keys are refused at
+# load with a message naming the replacement (adr/modular_nine.md 9.10; schema 3):
+# [tools] enabled/cache_dir/user_dir/timeout/max_ops/memory_mb/max_concurrent,
+# [tools.agent] and its capabilities/deps tables, [[tool.<name>]], and
+# [tools] job_min_delay_ms/job_workers (moved to [plugins]).
 
 [[mcp.server]]                  # zero or more; each becomes one `mcp:<name>` plugin (plugin.md R-PLUG.15)
 name    = "github"              # required; alphanumeric+dashes, prefixes the server's tools

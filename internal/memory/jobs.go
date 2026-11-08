@@ -15,7 +15,7 @@ import (
 //   - JobBackendPlugin — the work is a goroutine inside a plugin process. The
 //     sweeper POLLS it at (Plugin, BackendRef). It cannot survive a restart,
 //     because the process that held it is gone.
-//   - JobBackendTool — the work is a sandboxed tool called repeatedly. The
+//   - JobBackendTool — dormant: the work was a sandboxed tool called repeatedly (toolvm removed, adr/modular_nine.md 9.10). The
 //     sweeper IS the executor: it makes the next call, passing back the Cursor
 //     the tool last returned. The whole live state is this row, so the job
 //     resumes after a restart rather than being lost.

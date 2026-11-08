@@ -60,13 +60,6 @@ func (l *standingLog) recent(id string, n int) []StandingLogEntry {
 	return out
 }
 
-// forget drops a tool's buffer, for a standing run that has been deleted.
-func (l *standingLog) forget(id string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	delete(l.entries, id)
-}
-
 // Standing-tool journal event types. These are the *only* things a standing run
 // writes to the journal.
 const (

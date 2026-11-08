@@ -88,19 +88,15 @@ Three ways, in increasing order of control:
 2. **Mount your own config.** `-v ./my-nine.toml:/nine.toml:ro` shadows the
    baked one entirely.
 3. **Derive an image.** `FROM ghcr.io/djordlucas/nine:1.4.2`, then add an MCP
-   server's runtime or your own `tools.d`.
+   server's runtime or your own `plugins.d`.
 
 The baked config is narrower than the repo's `nine.toml`, which is a development
-config. It is not narrower on the tool tiers: both are on, because an agent that
-cannot read or write a file is not a working default, and because what bounds the
-generated tier is its capability ceiling rather than its switch.
+config: it loads no user plugin directory, and every path points at the `/data`
+volume. The built-in tools (shell, file, http, web, time) ship inside the binary;
+anything beyond them is an MCP server you declare yourself.
 
 | Setting | Baked value | Why |
 |---------|-------------|-----|
-| `[tools] enabled` | `true` | The shipped sandboxed tools are the agent's filesystem — `read_file`, `write_file`, `edit_file` and the rest. Without them it cannot open a file. They are embedded in the binary, so nothing is mounted to get them. |
-| `[tools] user_dir` | unset | Only the shipped, reviewed tools load. A directory of tools is not read. |
-| `[tools.agent] enabled` | `true` | Nine writes its own tools, bounded by a ceiling that defaults to the workspace — the same directory the shipped tools reach and `shell` runs in. A generated tool is narrower than the `shell` this image also ships: wasm, one instance per call, no network, no environment. |
-| `[tools.agent.deps]`, `allow_network_deps`, `allow_long_running`, `allow_processes` | off | Every switch that widens a generated tool beyond the workspace stays an operator's decision. `net.http` is likewise ungranted in the ceiling; `web_search`, `web_page_read` and `http_get` are shipped tools, so the agent reaches the web without one. |
 | `[daemon] self_reflection` | `30m` | Every tick is an LLM call. At the 2m default an idle container bills a metered API around the clock. `off` removes it. |
 | `[memory] path` | `/data/nine.db` | The container's writable layer is discarded when the container is replaced. |
 | `[workspace] root` | `/data/workspace` | Scopes the workspace to the volume. |
@@ -179,7 +175,7 @@ Supply-chain properties:
 | Limit | Detail |
 |-------|--------|
 | API auth is off unless you set it | The image runs `nine api serve --host 0.0.0.0`, so port 8080 answers anyone who reaches it until a token is configured. Set `NINE_API_AUTH_TOKEN` (or `[api] auth_token`), or publish to loopback only (`-p 127.0.0.1:8080:8080`). Nine logs a warning at startup in this state. The daemon's own socket is local-only. |
-| Container isolation is the boundary | Only sandboxed tools run behind a capability boundary. The `shell` plugin runs commands as uid 1000 with that user's full reach inside the container. Do not point it at anything you do not trust. |
+| Container isolation is the boundary | The `shell` plugin runs commands as uid 1000 with that user's full reach inside the container (the wasm capability boundary is gone with the toolvm, adr/modular_nine.md 9.10). Do not point it at anything you do not trust. |
 | uid 1000 is fixed | A bind-mounted `/data` owned by another uid is chowned at boot when the volume root is not already 1000. A read-only mount logs a warning and the daemon cannot write. |
 | No package installs at runtime | Running unprivileged means the agent cannot `apt-get install`. Derive an image instead. |
 | No browser, no Node | An MCP server needing either must come from a derived image or a hosted URL — [browser.md](browser.md). |

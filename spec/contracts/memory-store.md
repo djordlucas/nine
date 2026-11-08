@@ -52,7 +52,7 @@ tables to be agent-visible (R-MEM.4).
 | `files` | file content, full-text indexed by a companion FTS5 table kept in sync by triggers; the `spill/` prefix is daemon-owned (R-MEM.9) | agent (tools) |
 | `vectors` | embeddings as packed float32 blobs, ranked by cosine similarity, namespaced (`skills`, `session-index`, `memories`, `docs`, agent namespaces) | mixed (see below) |
 | `skills` | skill records (name, description, tags, body, source) | mixed |
-| `tools` | generated sandboxed tools Nine authored (name, description, input_schema, `js` source, capability **declaration**, usage counters) — code and declaration only, never a grant (see [`toolvm.md`](toolvm.md) R-TVM.14) | daemon-private |
+| `tools` | *dormant:* the model-authored tool rows the removed toolvm wrote (adr/modular_nine.md 9.10); kept so an existing database still opens. No writer, no agent surface | daemon-private |
 | `conversations` | message history, scratchpad checkpoint, status, display name, **queued_messages** (buffered user replies) | daemon-private |
 | `goals` | open-ended intentions; status; parent (`parent_id` is the only edge) | daemon-private |
 | `workflows` | multi-step plans; steps as a JSON array on the row | daemon-private |
@@ -64,11 +64,11 @@ tables to be agent-visible (R-MEM.4).
 | `session_events` | append-only execution journal (see [`event-journal.md`](event-journal.md)) | daemon-private |
 | `event_cursors` | per-subscriber durable journal position | daemon-private |
 | `related_sessions` | derived cross-session links (see [`subscriptions.md`](subscriptions.md)) | daemon-private |
-| `jobs` | long-running work tracked across turns and restarts, for both backends — a plugin's detached goroutine and a resumable sandboxed tool (see [`plugin.md`](plugin.md), [`toolvm.md`](toolvm.md) R-TVM.19). Was `plugin_jobs`; `backend` says which, and `cursor`/`calls` belong to the tool backend | daemon-private |
-| `capability_requests` | the agent asking an operator to widen the generated tier's capability ceiling ([`toolvm.md`](toolvm.md) R-TVM.14). A record of the asking with a `pending`/`approved`/`denied` outcome, never itself a grant | daemon-private |
-| `capability_grants` | what the generated tier's ceiling **is**. `source` distinguishes `default` (derived from `[workspace].root`), `config` (from `[tools.agent.capabilities]`) and `approved` (conferred by an operator answering a request). The first two are rewritten from `nine.toml` at every boot; only the third persists across one independently | daemon-private |
-| `processes` | tools the daemon runs indefinitely on their triggers ([`adr/process-sessions.md`](../../adr/process-sessions.md); until the process runner, the standing tools) (see [`toolvm.md`](toolvm.md) R-TVM.20); `report_to` makes one a standing agent's condition trigger. Separate from `jobs`: a job is conversation-owned and terminates, a standing run is operator-owned, reconciled by a stable id, and has no terminal state | daemon-private |
-| `tool_state` | a sandboxed tool's durable state, keyed `(tool, scope_key, key)` — the store behind the `state` capability (see [`toolvm.md`](toolvm.md) R-TVM.18). Deliberately separate from `kv`, which is Nine's own namespace and must not become tool-writable | daemon-private |
+| `jobs` | *dormant:* long-running work rows. Plugin jobs are suspended with the legacy envelope (adr/modular_nine.md P4): MCP has no job methods, so rows still running at boot are marked `lost` | daemon-private |
+| `capability_requests` | the agent asking an operator to confer a plugin capability (`capability_request`, plugin.md). A record of the asking with a `pending`/`approved`/`denied` outcome, never itself a grant | daemon-private |
+| `capability_grants` | plugin capabilities in force. `source` distinguishes `config` (from `nine.toml`) and `approved` (conferred by an operator answering a request). The file is reconciled into the store at every boot; only an `approved` grant persists independently | daemon-private |
+| `processes` | tools the daemon runs indefinitely on their triggers ([`adr/process-sessions.md`](../../adr/process-sessions.md); until the process runner, the standing tools) (`adr/process-sessions.md`); `report_to` makes one a standing agent's condition trigger. Separate from `jobs`: a job is conversation-owned and terminates, a standing run is operator-owned, reconciled by a stable id, and has no terminal state | daemon-private |
+| `tool_state` | *dormant:* a removed sandboxed tool's durable state, keyed `(tool, scope_key, key)` (adr/modular_nine.md 9.10). Deliberately separate from `kv`, which is Nine's own namespace | daemon-private |
 | `workspace_files` | the workspace index: one row per file under `[workspace].root`, with its size, mtime, whether its text is searchable and why not. Its companion `workspace_fts` is **contentless** — postings only, with snippets read back from the file — because the text's home is the operator's disk, not this database (R-MEM.12) | daemon-private |
 
 There is **no `plugin_registry` table** (plugins are immutable image content) and **no
@@ -115,7 +115,7 @@ tables, notifications, or processes through a tool call.
 | Reflections | `ReflectionCreate/List` |
 | Processes | `ProcessUpsertDefinition/Get/List/SetState/Stop/Delete`, `ProcessesDue/Live/StoppedBy/OfSession` |
 | HITL | `human_requests` / `interactive_sessions` state (see [`hitl.md`](hitl.md)) |
-| Capabilities | `CapabilityRequestList/Get/Decide`, `CapabilityGrantList/Revoke`, `CapabilityGrantsReconcile`. `CapabilityRequestCreate` is the sole exception and the reason the split exists: it is reachable from the agent through the core-intercepted `capability_request` tool, it can insert a `pending` row and nothing else, and no method that *confers* a capability is reachable from a tool at all ([`toolvm.md`](toolvm.md) R-TVM.14) |
+| Capabilities | `CapabilityRequestList/Get/Decide`, `CapabilityGrantList/Revoke`, `CapabilityGrantsReconcile`. `CapabilityRequestCreate` is the sole exception and the reason the split exists: it is reachable from the agent through the core-intercepted `capability_request` tool, it can insert a `pending` row and nothing else, and no method that *confers* a capability is reachable from a tool at all |
 | Event journal | `SessionEventsAppend`, `SessionEventsByAgent`, `SessionEventsAfter`, `SessionEventsScrub`, `LatestTurnResult` (see [`event-journal.md`](event-journal.md)) |
 | Subscriptions | `EventCursorGet/Set`, `RelatedSessionAdd`, `RelatedSessions` (see [`subscriptions.md`](subscriptions.md)) |
 | Spill retention | `FileDeleteOlderThan(pathPrefix, age)` — the sweep for spilled tool output. **MUST** reject an empty prefix and a non-positive age, so it can never clear the store (see [`../../adr/tool-output-spill.md`](../../adr/tool-output-spill.md) §6) |
@@ -252,7 +252,7 @@ R-EVT.4), and "deleted session X" is not an auditable statement.
 **Tool state is removed for the conversation scope only** — rows whose
 `scope_key` is the session id. Tool-scoped state (`scope_key = ''`) is shared
 across every caller of a tool and is nobody's session to delete
-([`toolvm.md`](toolvm.md) R-TVM.18).
+(removed with the toolvm, adr/modular_nine.md 9.10).
 
 ### Retention
 

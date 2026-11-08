@@ -104,9 +104,7 @@ func htmlToText(html string) string {
 // tagName extracts the lowercased tag name from tag content.
 func tagName(tag string) string {
 	t := strings.TrimSpace(tag)
-	if strings.HasPrefix(t, "/") {
-		t = t[1:]
-	}
+	t = strings.TrimPrefix(t, "/")
 	if i := strings.IndexAny(t, " \t\n\r/>"); i >= 0 {
 		t = t[:i]
 	}

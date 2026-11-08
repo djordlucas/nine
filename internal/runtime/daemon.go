@@ -22,7 +22,6 @@ import (
 	"nine/internal/protocol"
 	"nine/internal/sqldb"
 	"nine/internal/subscribe"
-	"nine/internal/toolvm"
 	"nine/internal/workflow"
 )
 
@@ -91,10 +90,6 @@ type queryBackend interface {
 	WorkflowFail(id string, all bool) (int, error)
 	UserNotificationList(unseenOnly bool) ([]memory.UserNotification, error)
 	UserNotificationMarkSeen(id string) error
-	// GeneratedToolList backs the lockfile column of the `nine tools` roster: the
-	// host holds a generated tool's code, but its dependency lockfile lives in the
-	// store (spec/contracts/toolvm.md R-TVM.14).
-	GeneratedToolList() ([]memory.GeneratedTool, error)
 	SessionEventsByAgent(agentID string) ([]memory.SessionEvent, error)
 	// Session listing and deletion. Deletion is the one operation here that
 	// destroys history rather than bounding it, which is why it reports what it
@@ -152,11 +147,7 @@ type Daemon struct {
 	names       map[string]string // agentID → display name (set on first turn)
 	instName    string            // instance display name sent to clients (guarded by mu)
 
-	mgr   pluginRegistry
-	tools *toolvm.Host // sandboxed-tool host (see ConfigureSandboxedTools); nil = disabled
-	// generated is the store of tools Nine wrote, for the operator's delete (see
-	// ConfigureGeneratedTools); nil when tool writing is off.
-	generated agent.GeneratedToolStore
+	mgr pluginRegistry
 	// standing drives standing tools (see ConfigureStandingTools); nil = none.
 	standing *StandingRunner
 
@@ -777,9 +768,6 @@ func (d *Daemon) ConfigurePlugins(mgr *plugin.Manager) {
 	d.mgr = mgr
 }
 
-// ConfigureSandboxedTools stores the sandboxed-tool host, so `tools_list` and
-// `tools_reload` can reach it. Passing nil (the default, when [tools] enabled is
-// unset) leaves both messages answering that the subsystem is disabled.
 // WakeAgent runs a turn on agentID now, with text as its input — the delivery
 // half of a condition trigger (docs/scheduling.md).
 //
@@ -820,10 +808,6 @@ func (d *Daemon) ConfigureModel(provider, model string) {
 	d.llmProvider, d.llmModel = provider, model
 }
 
-func (d *Daemon) ConfigureSandboxedTools(h *toolvm.Host) {
-	d.tools = h
-}
-
 // ConfigureCapabilities installs the capability surface behind `grants_list` and
 // `grants_decide`. Nil leaves those messages answering that no store is present.
 func (d *Daemon) ConfigureCapabilities(s *CapabilityService) { d.grants = s }
@@ -831,10 +815,6 @@ func (d *Daemon) ConfigureCapabilities(s *CapabilityService) { d.grants = s }
 // Capabilities exposes the capability surface so the API server can serve the same
 // decision path the CLI and the API use rather than reimplementing it.
 func (d *Daemon) Capabilities() *CapabilityService { return d.grants }
-
-// ConfigureGeneratedTools stores the generated-tool store, so the operator can
-// delete a tool Nine wrote. Nil leaves the operator's delete refusing.
-func (d *Daemon) ConfigureGeneratedTools(g agent.GeneratedToolStore) { d.generated = g }
 
 // ConfigureCoreTools stores the dispatcher carrying the core-intercepted tools
 // (memory/file/skill/doc — the ones handled in-process rather than by a

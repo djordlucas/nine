@@ -278,9 +278,9 @@ func TestCoarseRoleEnforcesBothBoundaries(t *testing.T) {
 			t.Errorf("report-writer advertises %q; allowlist must exclude it (boundary 1)", banned)
 		}
 	}
-	// Core-intercepted tools only: this builder has no sandboxed host, so the
-	// file tools that live there (write_file, edit_file, …) are not advertised
-	// here whatever the role allows.
+	// Core-intercepted tools only: this builder has no plugin manager, so the
+	// plugin tools are not advertised here whatever the role allows.
+
 	for _, want := range []string{"memory_get", "memory_set", "file_search_text", "skill_read"} {
 		if !subTools[want] {
 			t.Errorf("report-writer missing allowed tool %q", want)

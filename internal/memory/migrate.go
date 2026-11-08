@@ -146,8 +146,8 @@ var migrations = []migrationStep{
 	}},
 
 	// 6 → 7: `plugin_jobs` becomes `jobs`, gaining a `backend` column so one
-	// registry serves both long-running plugin work and long-running sandboxed
-	// tools (adr/durable-and-long-running-tools.md §4.3). `plugin_job_id` becomes
+	// registry served both long-running plugin work and long-running sandboxed
+	// tools (adr/durable-and-long-running-tools.md); the tool backend is dormant since the toolvm removal (adr/modular_nine.md 9.10). `plugin_job_id` becomes
 	// the backend-neutral `backend_ref`; `cursor` and `calls` are new and belong
 	// only to the tool backend.
 	//

@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"nine/internal/plugin"
-	"nine/internal/toolvm"
 )
 
 // DefaultMaxOutputTokens is the per-result token cap. Results exceeding it are
@@ -119,11 +118,6 @@ func (d *Dispatcher) SetApproval(toolNames []string, fn ApprovalFn) {
 type JobStarter interface {
 	StartJob(ctx context.Context, pluginName, tool, pluginJobID, ack string) (string, error)
 
-	// StartToolJob records a long-running sandboxed-tool job and returns the
-	// observation the model sees. Unlike a plugin job the work has not begun —
-	// the daemon decides when to make the first call — so this can be refused
-	// outright rather than admitted and cancelled.
-	StartToolJob(ctx context.Context, tool string, args json.RawMessage, c *toolvm.Continuation) (string, error)
 }
 
 // SetJobStarter installs the sink for plugin jobs. Registered per worker so the
@@ -142,117 +136,12 @@ func (d *Dispatcher) RegisterPlugin(m *plugin.Manager, p *plugin.Plugin) {
 			if err != nil {
 				return "", err
 			}
-			return d.resolveCallResult(ctx, pp, toolName, cr)
-		}
-	}
-}
-
-// SandboxedHost is the sandboxed-tool backend, as the dispatcher needs it
-// (spec/contracts/toolvm.md). Narrowed to these two methods so the agent package
-// does not depend on the wasm runtime — and so a test can substitute a fake
-// without one.
-type SandboxedHost interface {
-	Tools() []*toolvm.Tool
-	CallOutput(ctx context.Context, name string, args json.RawMessage) (toolvm.Output, error)
-}
-
-// RegisterSandboxed indexes every tool the sandboxed host holds, so it can be
-// dispatched exactly like a plugin tool. A nil host registers nothing — callers
-// pass one only when [tools] enabled is set, which is what keeps the whole
-// subsystem additive.
-//
-// Unlike a plugin, a sandboxed tool's schema is authoritative from its manifest
-// (there is no process to ask plugin.describe), but it reaches the ref machinery
-// through the same declaration path, so a sandboxed tool can take a ref argument
-// on the same terms.
-func (d *Dispatcher) RegisterSandboxed(h SandboxedHost) {
-	if h == nil {
-		return
-	}
-	for _, t := range h.Tools() {
-		d.registerSandboxedTool(h, t)
-	}
-}
-
-// SyncSandboxed brings the sandboxed handlers in line with the host's current
-// catalog, for a loop that outlives a change to it: a tool written with
-// tool_write since the loop was built gains a handler, and one deleted or evicted
-// loses its handler. allow is the role's allowlist (nil admits every name), applied
-// on the same terms as RestrictTo. A handler this method did not install — a core
-// or plugin tool — is never replaced, so core and plugin tools win a name
-// collision. Call it after every other registration, and between turns, never
-// mid-turn.
-func (d *Dispatcher) SyncSandboxed(h SandboxedHost, allow func(name string) bool) {
-	if h == nil {
-		return
-	}
-	current := make(map[string]bool)
-	for _, t := range h.Tools() {
-		if allow != nil && !allow(t.Name) {
-			continue
-		}
-		if _, has := d.handlers[t.Name]; has && d.backends[t.Name] != "wasm" {
-			continue
-		}
-		current[t.Name] = true
-		d.registerSandboxedTool(h, t)
-	}
-	for name, b := range d.backends {
-		if b == "wasm" && !current[name] {
-			delete(d.handlers, name)
-			delete(d.backends, name)
-			delete(d.refParams, name)
-		}
-	}
-}
-
-// registerSandboxedTool installs the handler for one sandboxed tool. The handler
-// resolves the tool by name at call time, so a rewrite of the same name runs the
-// new source without re-registering.
-func (d *Dispatcher) registerSandboxedTool(h SandboxedHost, t *toolvm.Tool) {
-	toolName := t.Name
-	delete(d.refParams, toolName) // a rewritten schema may have dropped a ref param
-	d.declareRefParams(toolName, t.InputSchema)
-	d.backends[toolName] = "wasm"
-	d.handlers[toolName] = func(ctx context.Context, args json.RawMessage) (string, error) {
-		out, err := h.CallOutput(ctx, toolName, args)
-		if err != nil {
-			return "", err
-		}
-		if out.Continue != nil {
-			// The tool did bounded work and asked to be called again, so this
-			// turn gets an acknowledgement and the job runs on past it. Same
-			// shape as a plugin returning a job id, and the model sees the same
-			// vocabulary: a handle it can job_wait or job_check.
-			if d.jobs == nil {
-				return "", fmt.Errorf(
-					"tool %q asked to run as a background job, but background jobs are not enabled here", toolName)
+			if cr.JobID != "" {
+				return "", fmt.Errorf("plugin %q returned a job id but jobs are suspended (adr/modular_nine.md P4)", pp.Name)
 			}
-			return d.jobs.StartToolJob(ctx, toolName, args, out.Continue)
+			return cr.Output, nil
 		}
-		if out.Bytes != nil {
-			return d.storeToolBytes(ctx, toolName, out)
-		}
-		return out.Text, nil
 	}
-}
-
-// resolveCallResult turns a plugin CallResult into the string the model sees. An
-// ordinary result passes through; a job id is recorded via the JobStarter and
-// replaced with its handle observation. A job id from a plugin that did not
-// advertise async_jobs is rejected (fail-closed against version skew), as is one
-// when no JobStarter is wired.
-func (d *Dispatcher) resolveCallResult(ctx context.Context, p *plugin.Plugin, tool string, cr plugin.CallResult) (string, error) {
-	if cr.JobID == "" {
-		return cr.Output, nil
-	}
-	if !p.AsyncJobs {
-		return "", fmt.Errorf("plugin %q returned a job id but did not advertise async_jobs", p.Name)
-	}
-	if d.jobs == nil {
-		return "", fmt.Errorf("plugin %q started a job but background jobs are not enabled here", p.Name)
-	}
-	return d.jobs.StartJob(ctx, p.Name, tool, cr.JobID, cr.Output)
 }
 
 // InjectHandler registers a handler function directly by tool name.

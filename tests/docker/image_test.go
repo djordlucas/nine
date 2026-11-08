@@ -206,44 +206,44 @@ func TestDataIsWritableByServiceUser(t *testing.T) {
 	}
 }
 
-// TestSandboxedToolsAreAvailable asserts the agent can actually reach a file in
-// the image. write_file is a wasm tool (internal/toolvm/shipped.go), so this
-// exercises the whole stack: qjs.wasm loads out of the binary, the harness runs,
-// the declared filesystem capability resolves to the workspace, and the bytes
+// TestBuiltinFileToolsAreAvailable asserts the agent can actually reach a file in
+// the image. write_file is a built-in Go tool (adr/modular_nine.md 9.10), so this
+// exercises the whole stack: the dispatcher, the workspace confinement, and
+// the bytes
 // land on the volume.
 //
 // Asserted by behaviour rather than by reading the config, because the config
 // saying enabled = true is not evidence that a tool ran. The image previously
 // shipped with no file tools and no working shell, and every shape assertion in
 // this file passed the whole time.
-func TestSandboxedToolsAreAvailable(t *testing.T) {
+func TestBuiltinFileToolRuns(t *testing.T) {
 	id := startContainer(t)
 
 	out, err := dockerRun(t, "exec", "-u", "nine", id, "nine", "tool", "call", "write_file",
-		`{"path":"sandbox-probe.txt","content":"written by a sandboxed tool"}`)
+		`{"path":"builtin-probe.txt","content":"written by a built-in tool"}`)
 	if err != nil {
 		logs, _ := dockerRun(t, "logs", id)
 		t.Fatalf("write_file did not run: %v\noutput: %s\n\ncontainer logs:\n%s", err, out, logs)
 	}
-	if !strings.Contains(out, `"ok": true`) {
-		t.Errorf("write_file did not report success:\n%s", out)
+	if !strings.Contains(out, "wrote /work/builtin-probe.txt") {
+		t.Errorf("write_file did not report success: %s", out)
 	}
 
 	// The tool's own report is not proof the bytes landed; read them back.
-	content, err := dockerRun(t, "exec", id, "cat", "/data/workspace/sandbox-probe.txt")
+	content, err := dockerRun(t, "exec", id, "cat", "/data/workspace/builtin-probe.txt")
 	if err != nil {
 		listing, _ := dockerRun(t, "exec", id, "ls", "-la", "/data/workspace")
-		t.Fatalf("no file at /data/workspace/sandbox-probe.txt: %v\nworkspace holds:\n%s", err, listing)
+		t.Fatalf("no file at /data/workspace/builtin-probe.txt: %v\nworkspace holds:\n%s", err, listing)
 	}
-	if content != "written by a sandboxed tool" {
-		t.Errorf("file content = %q, want %q", content, "written by a sandboxed tool")
+	if content != "written by a built-in tool" {
+		t.Errorf("file content = %q, want %q", content, "written by a built-in tool")
 	}
 }
 
 // TestBuiltinPluginsStart asserts the shell built-in actually starts in the
-// image. The sandboxed tier that carries write_file is on in the baked config, so
-// shell is not the agent's only route to a file — it is the unsandboxed one, which
-// is why its own startup is worth asserting separately.
+// image. write_file is a built-in Go tool, so shell is not the agent's only route
+// to a file — it is the subprocess one, which is why its own startup is worth
+// asserting separately.
 //
 // The regression this exists for: s6-setuidgid changes uid and gid and nothing
 // else, so the daemon ran as uid 1000 with HOME still pointing at root's home.
@@ -276,7 +276,7 @@ func TestBuiltinPluginsStart(t *testing.T) {
 // the services themselves: they run as uid 1000 and the link lands at the
 // filesystem root.
 //
-// The sandboxed file tools address the workspace as /work and `shell` sees
+// The built-in file tools address the workspace as /work and `shell` sees
 // /data/workspace, so a path one prints has to resolve for the other. A broken
 // link fails no service and shows up only as an agent that cannot find a file
 // it just wrote.

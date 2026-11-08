@@ -22,8 +22,6 @@ import (
 	"nine/internal/plugin"
 	"nine/internal/protocol"
 	"nine/internal/selfmodel"
-	"nine/internal/toolvm"
-	"nine/internal/toolvm/deps"
 )
 
 // minSubAgentTimeoutSeconds is the smallest run_agents timeout the caller may
@@ -82,19 +80,6 @@ type LoopConfig struct {
 	// may name a workspace file as well as a spill.
 	WorkspaceRoot string
 
-	// Tools is the sandboxed-tool host (spec/contracts/toolvm.md), or nil when
-	// the subsystem is disabled. Its tools are registered and advertised
-	// alongside plugin tools and are subject to the same role allowlist.
-	Tools *toolvm.Host
-
-	// GeneratedTools is the generated tier's write/delete/eval backend, or nil
-	// when `[tools.agent]` is off (docs/sandboxed-tools.md §5.2). When set, the
-	// tool_write/tool_delete/js_eval meta-tools are registered and advertised; the
-	// tools they produce reach the loop through Tools like any other host tool.
-	GeneratedTools agent.GeneratedToolStore
-	// GeneratedEval enables js_eval alongside tool_write (`[tools.agent] eval`).
-	GeneratedEval bool
-
 	// ToolExposition mirrors [context] tool_exposition: "deferred" advertises a
 	// resident set and indexes the rest (adr/deferred-tool-schemas.md), "hybrid"
 	// also advertises the best-ranked few of the rest; anything else is ranked.
@@ -144,12 +129,6 @@ type AgentBuilderConfig struct {
 	// ([hitl].gate_sub_agents, default on). Sub-agents never get ask_human
 	// regardless — only the automatic gates (R-HITL.1/R-HITL.5).
 	GateSubAgents bool
-
-	// GeneratedApproval is when tool_write/js_eval route through the approval gate
-	// ([tools.agent].require_approval; docs/sandboxed-tools.md §9.4): "on_capability"
-	// (default — gate only a write that declares reach), "always", or "never". Like
-	// ApprovalTools, it is enforced only for loops an interactive session owns.
-	GeneratedApproval string
 
 	// DefaultLeafRole names the role used when a delegation names none
 	// (roles.default_leaf; default "executor" — R-ROLE.9).
@@ -499,22 +478,8 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 	if role.Interactive && f.cfg.HITL != nil {
 		f.registerAskHuman(d, agentID)
 	}
-	// The generated tier routes tool_write (and js_eval, when enabled) through the
-	// same gate, keyed on [tools.agent].require_approval rather than the [hitl] list
-	// (§9.4). "never" adds nothing; "always" and "on_capability" both arm the name,
-	// and the callback decides per-call whether a given write is substantial enough
-	// to actually prompt. Like every approval gate, it applies only to a loop an
-	// interactive session owns — a non-interactive deployment has no gate at all.
-	var genGated []string
-	if lc.GeneratedTools != nil && gate.gated() && f.cfg.HITL != nil &&
-		f.cfg.GeneratedApproval != config.ToolApprovalNever {
-		genGated = append(genGated, "tool_write")
-		if lc.GeneratedEval {
-			genGated = append(genGated, "js_eval")
-		}
-	}
-	if gate.gated() && f.cfg.HITL != nil && (len(f.cfg.ApprovalTools) > 0 || len(genGated) > 0) {
-		f.registerApprovalGates(d, agentID, gate, genGated)
+	if gate.gated() && f.cfg.HITL != nil && len(f.cfg.ApprovalTools) > 0 {
+		f.registerApprovalGates(d, agentID, gate)
 	}
 
 	// Catalog meta-tools let the model query the full tool/skill catalogs on
@@ -564,26 +529,6 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		shellTools = append(shellTools, "skill_search")
 	}
 
-	// The generated tier's meta-tools (tool_write/tool_delete/js_eval) are the
-	// agent's own path to authoring sandboxed tools (docs/sandboxed-tools.md §5.2).
-	// They are shell-granted like the catalog meta-tools above: the operator opted
-	// the whole instance in via [tools.agent], so they survive an allowlist role's
-	// pruning rather than needing to be named in every role. The tools they
-	// *produce* are ordinary host tools and reach the loop through lc.Tools.
-	//
-	// A process session is the exception: its turns are its process's, so it
-	// holds them only when its role grants tool_write (pursue's "*" does,
-	// process's [] does not), and writing a process from there needs
-	// [processes] allow_revision (adr/process-sessions.md §9).
-	var generatedDefs []llm.ToolDef
-	if lc.GeneratedTools != nil && (!role.ProcessSession || isRevisingRole(role.Tools, role.AllTools)) {
-		agent.RegisterGeneratedTools(d, lc.GeneratedTools, lc.GeneratedEval, agentID, role.ProcessSession)
-		generatedDefs = agent.GeneratedToolDefs(lc.GeneratedEval)
-		for _, def := range generatedDefs {
-			shellTools = append(shellTools, def.Name)
-		}
-	}
-
 	// Boundary 2 of R-ROLE.4: for allowlist roles, prune dispatch handlers so
 	// a disallowed tool cannot run even if the model hallucinates its name.
 	// gap_report survives every allowlist — it is the escape hatch when no
@@ -596,17 +541,9 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		d.RestrictTo(allow)
 	}
 
-	// Sandboxed tools are a second backend behind the same dispatcher, registered
-	// last so a core or plugin tool keeps any name they share, and filtered by the
-	// role's allowlist here rather than by RestrictTo. With the host disabled — the
-	// default — this is a no-op and the loop is byte-for-byte the loop it was before.
-	allowSandboxed := func(name string) bool { return role.AllTools || slices.Contains(role.Tools, name) }
-	if lc.Tools != nil {
-		d.SyncSandboxed(lc.Tools, allowSandboxed)
-	}
-	// read_file answers for spilled output too, once the sandboxed handler it
-	// wraps is in place. One read tool over both namespaces is what stops the
-	// most common model error in adr/tool-output-spill.md from being possible.
+	// read_file answers for spilled output too, over both namespaces at once
+	// (adr/tool-output-spill.md): one read tool is what stops the most common
+	// model error there from being possible.
 	agent.RegisterSpillReader(d, lc.Memory)
 
 	// Boundary 1 of R-ROLE.4: the advertised tool list. The role enum is
@@ -622,14 +559,6 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		tools = appendInterceptedTools(tools, processTools, roleEnum)
 		if role.Interactive && f.cfg.HITL != nil {
 			tools = append(tools, ninectx.ToolWithVector{Tool: agent.AskHumanDef})
-		}
-
-		// The generated meta-tool defs are not in InterceptedDefs, so buildToolList's
-		// shell-tool pass cannot advertise them — append them here, the way AskHumanDef
-		// is. Handlers were registered above; their names are in shellTools, so an
-		// allowlist role keeps them.
-		for _, def := range generatedDefs {
-			tools = append(tools, ninectx.ToolWithVector{Tool: def})
 		}
 
 		// Every tool without a toolkit yet is one Nine names. A deferred loop
@@ -652,33 +581,8 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 	}
 	tools := assembleTools()
 
-	// A loop lives as long as its session, but the sandboxed catalog can change
-	// under it: tool_write and tool_delete edit it, and so does a developer-tool
-	// reload. So each turn starts by comparing the host's catalog with the one this
-	// loop last saw, and on any change re-syncs the handlers and re-assembles the
-	// advertised list — which is what makes "write it this turn, use it next turn"
-	// (docs/sandboxed-tools.md §9.1) true for the session that wrote it. The host
-	// replaces a tool's *Tool on every load, so pointer identity catches rewrites
-	// too. A turn in flight keeps the set it started with.
-	var toolsForTurn func() []ninectx.ToolWithVector
-	if lc.Tools != nil {
-		seen := lc.Tools.Tools()
-		toolsForTurn = func() []ninectx.ToolWithVector {
-			current := lc.Tools.Tools()
-			if slices.Equal(current, seen) {
-				return nil
-			}
-			seen = current
-			d.SyncSandboxed(lc.Tools, allowSandboxed)
-			tools = assembleTools()
-			return tools
-		}
-	}
-
 	// tool_search ranks — and tool_list enumerates — the finalized advertised set
 	// (vectors populated above), so register them now that `tools` is complete.
-	// The closure reads this loop's current slice, which toolsForTurn replaces when
-	// the catalog changes, so results only ever include tools it can actually call.
 	getTools := func() []ninectx.ToolWithVector { return tools }
 	var promotions *agent.Promotions
 	if deferred {
@@ -799,7 +703,6 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		Priority:       llm.PriorityConversation,
 		MaxTokens:      lc.maxReplyTokens(),
 		Tools:          tools,
-		ToolsForTurn:   toolsForTurn,
 		Embedder:       lc.Embedder,
 		SelfModelFn:    selfModelFn,
 		EnrichmentFn:   enrichmentFn,
@@ -1019,30 +922,11 @@ func (f *AgentBuilder) registerAskHuman(d *agent.Dispatcher, agentID string) {
 // branches on the name: a generated tool under "on_capability" is only prompted
 // when its declared capabilities are non-empty (§9.4), while every [hitl] entry
 // and every generated tool under "always" prompts unconditionally.
-func (f *AgentBuilder) registerApprovalGates(d *agent.Dispatcher, askerID string, gate gateCtx, genGated []string) {
+func (f *AgentBuilder) registerApprovalGates(d *agent.Dispatcher, askerID string, gate gateCtx) {
 	hitl := f.cfg.HITL
-	names := append(append([]string{}, f.cfg.ApprovalTools...), genGated...)
-	genSet := make(map[string]bool, len(genGated))
-	for _, n := range genGated {
-		genSet[n] = true
-	}
-	onCapability := f.cfg.GeneratedApproval == config.ToolApprovalOnCapability
-	approvalNever := f.cfg.GeneratedApproval == config.ToolApprovalNever
+	names := append([]string{}, f.cfg.ApprovalTools...)
 
 	d.SetApproval(names, func(ctx context.Context, toolName string, args json.RawMessage) error {
-		// A write asking for a process follows require_approval like any other
-		// (decided 2026-10-08), except that under on_capability it is never inert:
-		// it runs until stopped, whatever it declares.
-		process := genSet[toolName] && requestsProcess(args)
-		if genSet[toolName] && approvalNever {
-			return nil
-		}
-		// A capability-free generated write under the default mode is inert — nothing
-		// for a human to usefully evaluate — so it is allowed to pass without a
-		// prompt. Gating it would train the reflex that defeats the gate that matters.
-		if genSet[toolName] && onCapability && !declaresCapability(args) && !process {
-			return nil
-		}
 		// A path names the file; a diff names the change, which is what the
 		// human is actually being asked about (approval_diff.go).
 		question := approvalQuestion(toolName, args)
@@ -1058,42 +942,6 @@ func (f *AgentBuilder) registerApprovalGates(d *agent.Dispatcher, askerID string
 		}
 		return nil
 	})
-}
-
-// requestsProcess reports whether a tool_write asks to run as a process.
-// Unparseable arguments count as yes, the fail-closed direction for an approval
-// decision.
-func requestsProcess(args json.RawMessage) bool {
-	var req struct {
-		Process json.RawMessage `json:"process,omitempty"`
-	}
-	if err := json.Unmarshal(args, &req); err != nil {
-		return true
-	}
-	return len(req.Process) > 0 && string(req.Process) != "null"
-}
-
-// declaresCapability reports whether a tool_write/js_eval argument object asks
-// for any capability OR pulls in an external dependency — the two things §9.4
-// says a human is actually being asked to weigh (reach and third-party code).
-// Unparseable arguments gate to be safe — the fail-closed direction for an
-// approval decision.
-func declaresCapability(args json.RawMessage) bool {
-	var req struct {
-		Capabilities json.RawMessage `json:"capabilities,omitempty"`
-		Source       string          `json:"source"`
-	}
-	if err := json.Unmarshal(args, &req); err != nil {
-		return true
-	}
-	if len(deps.ExternalImports(req.Source)) > 0 {
-		return true
-	}
-	decl, err := parseDeclaration(req.Capabilities)
-	if err != nil {
-		return true
-	}
-	return len(decl.FS) > 0 || len(decl.Net) > 0 || len(decl.Env) > 0
 }
 
 // truncate shortens s to at most n runes, appending an ellipsis when it cuts.
@@ -1123,18 +971,6 @@ func approvalQuestion(toolName string, args json.RawMessage) string {
 		detail = "Command: " + unquote("command")
 	case "write_file", "edit_file", "delete_file":
 		detail = "Path: " + unquote("path")
-	case "tool_write":
-		// The two things §9.4 says a human is actually being asked to weigh: the
-		// tool's name and the reach it declares.
-		detail = "Write tool: " + unquote("name")
-		if caps := capsSummary(fields["capabilities"]); caps != "" {
-			detail += " · declares " + caps
-		}
-	case "js_eval":
-		detail = "Evaluate JavaScript"
-		if caps := capsSummary(fields["capabilities"]); caps != "" {
-			detail += " · declares " + caps
-		}
 	default:
 		a := strings.TrimSpace(string(args))
 		if len(a) > 200 {
@@ -1159,30 +995,6 @@ func approvalQuestionWithDiff(toolName string, args json.RawMessage, diff string
 		toolName, path, diff)
 }
 
-// capsSummary renders a generated tool's declared capabilities for the approval
-// prompt, e.g. "fs=read net=http env=TZ". Empty for a tool that declares nothing.
-func capsSummary(raw json.RawMessage) string {
-	decl, err := parseDeclaration(raw)
-	if err != nil {
-		return "unparseable capabilities"
-	}
-	var parts []string
-	if len(decl.FS) > 0 {
-		parts = append(parts, "fs="+strings.Join(decl.FS, ","))
-	}
-	if len(decl.Net) > 0 {
-		parts = append(parts, "net="+strings.Join(decl.Net, ","))
-	}
-	if len(decl.Env) > 0 {
-		parts = append(parts, "env="+strings.Join(decl.Env, ","))
-	}
-	return strings.Join(parts, " ")
-}
-
-// filterByRole returns names intersected with the role's allowlist; wildcard
-// roles pass through unchanged (R-ROLE.5: roles only narrow, never widen —
-// names the role grants but the daemon doesn't expose are dropped by virtue
-// of never being in names).
 func filterByRole(names []string, role Role) []string {
 	if role.AllTools {
 		return names
@@ -1219,26 +1031,6 @@ func buildToolList(lc LoopConfig, role Role, shellTools []string, roleEnum strin
 			tools = append(tools, tw)
 		}
 	}
-	// Sandboxed tools are advertised on the same footing as plugin tools, and
-	// intersected with the role allowlist the same way (boundary 1 of R-ROLE.4).
-	// A role that does not name one does not see it. (The non-live shipped tools
-	// are Go handlers now — the pass below — so the host contributes only the
-	// live process programs and the developer/generated tiers.)
-	if lc.Tools != nil {
-		for _, st := range lc.Tools.Tools() {
-			if !role.AllTools && !slices.Contains(role.Tools, st.Name) {
-				continue
-			}
-			tw := ninectx.ToolWithVector{Tool: st.ToLLMDef()}
-			if st.Shipped {
-				annotateBuiltin(&tw)
-			} else {
-				annotateExternal(&tw, "tools")
-			}
-			tools = append(tools, tw)
-		}
-	}
-
 	// The shipped tools translated to Go (adr/modular_nine.md §9.10) are
 	// advertised like the host's shipped tools were: builtin toolkit, same role
 	// allowlist intersection, same name-sorted order the host's Tools() produced,

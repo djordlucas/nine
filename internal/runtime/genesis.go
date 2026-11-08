@@ -41,9 +41,6 @@ const (
 type GenesisOptions struct {
 	// Turns bounds the session; <= 0 is DefaultGenesisTurns.
 	Turns int
-	// Revision says a reviser can be written: [processes] allow_revision is
-	// on and the reviser role is in [tools.agent] process_roles.
-	Revision bool
 	// ProcessRoles are the roles a written process may run under.
 	ProcessRoles []string
 	// Database says nine:sql and sql_query are available.
@@ -222,12 +219,6 @@ func genesisPrompt(doc string, opt GenesisOptions) string {
 	if opt.Database {
 		b.WriteString("- For records that outlast a run, declare {\"sql\":true} and keep them in the database through " +
 			"nine:sql; each process creates its own tables with CREATE TABLE IF NOT EXISTS.\n")
-	}
-	if opt.Revision {
-		b.WriteString("- Revision is on: also write a reviser process, under the role \"reviser\", that every few hours " +
-			"reviews what you wrote with tool_read and fixes one thing at a time (the process-revision skill shows how).\n")
-	} else {
-		b.WriteString("- Revision is off on this instance: write no process that rewrites other processes.\n")
 	}
 	b.WriteString("- Write only what the document asks for. Keep each program small and complete.\n")
 	b.WriteString("- When every process the document needs is written and running, say " + genesisDone + ".\n\n")

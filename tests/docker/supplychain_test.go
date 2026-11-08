@@ -272,57 +272,25 @@ func TestReleaseGateIsAGate(t *testing.T) {
 // TestPublishedConfigIsConservative asserts the posture the config baked into the
 // image resolves to. A published default reaches people who never read it.
 //
-// It loads the file rather than matching its text, because since the tool tiers
-// defaulted on, an absent key means the feature is *enabled* — so the absence of
-// a section is no longer evidence of anything, and the old textual form of this
-// test would have passed a config that turned everything on. Loading also covers
-// this file with the unknown-key warning that only the repo's own nine.toml had.
+// It loads the file rather than matching its text: since schema 3 the retired
+// toolvm keys ([tools] enabled/user_dir/... and [tools.agent]) are refused at
+// load, and any other unrecognized key warns — so a file that still carried them
+// fails here rather than booting with them silently dropped.
 func TestPublishedConfigIsConservative(t *testing.T) {
 	cfg, err := config.Load(filepath.Join(repoRoot, "docker/nine.toml"))
 	if err != nil {
 		t.Fatalf("the published config does not load: %v", err)
 	}
 
-	// The two tiers are on, and both are the reason the agent can touch a file at
-	// all: the shipped tools are its filesystem, and the generated tier is bounded
-	// by the same workspace those tools reach.
-	if !cfg.Tools.IsEnabled() {
-		t.Error("[tools] is off; the image would ship with no file tools")
+	// The toolvm is gone (adr/modular_nine.md §9.10): [tools] carries only the
+	// per-result output cap, and the sandbox keys would have failed to load
+	// above. The built-in tools ship inside the binary; user tools are MCP
+	// servers, and the published image loads none.
+	if cfg.Tools.MaxOutputTokens < 0 {
+		t.Errorf("[tools] max_output_tokens = %d, want >= 0", cfg.Tools.MaxOutputTokens)
 	}
-	if !cfg.Tools.GeneratedEnabled() {
-		t.Error("[tools.agent] is off; the published image is meant to carry the generated tier")
-	}
-
-	// Everything with reach beyond the workspace stays off. These are the switches
-	// a published default must not make for someone.
-	for _, c := range []struct {
-		on   bool
-		what string
-	}{
-		{cfg.Tools.Agent.DepsMode() != config.DepsModeOff, "[tools.agent.deps] mode is not off; external npm packages must be an operator's decision"},
-		{cfg.Tools.Agent.AllowNetworkDeps, "allow_network_deps is on; a networked dependency plus net.http is an exfiltration path"},
-		{cfg.Tools.Agent.AllowLongRunning, "allow_long_running is on; duration is conferred, not defaulted"},
-		{cfg.Tools.Agent.AllowProcesses, "allow_processes is on; a process Nine writes runs unattended and is conferred, not defaulted"},
-		{cfg.Tools.Agent.Capabilities.Net.HTTP != nil, "the generated-tool ceiling grants net.http; the shipped web tools cover that need"},
-		{len(cfg.Tools.Agent.Capabilities.Env) > 0, "the generated-tool ceiling grants environment keys"},
-		{cfg.Tools.Agent.RequireApproval == config.ToolApprovalNever, `require_approval is "never"; the published default must keep the gate`},
-	} {
-		if c.on {
-			t.Error("docker/nine.toml: " + c.what)
-		}
-	}
-
-	// The ceiling must stay the workspace. An explicit fs grant in this file would
-	// replace the derived workspace mount rather than add to it, so a grant here is
-	// a widening even when it looks like documentation.
-	if fs := cfg.Tools.Agent.Capabilities.FS; len(fs.Read) > 0 || len(fs.Write) > 0 {
-		t.Errorf("docker/nine.toml grants an explicit fs ceiling (%+v); the derived workspace mount is the intended bound", fs)
-	}
-
-	// The shipped set is embedded in the binary and reviewed; a directory of tools
-	// is neither.
-	if cfg.Tools.UserDir != "" {
-		t.Errorf("[tools] user_dir = %q; the published image loads only the shipped tools", cfg.Tools.UserDir)
+	if cfg.Plugins.UserDir != "" {
+		t.Errorf("[plugins] user_dir = %q; the published image loads no user plugins", cfg.Plugins.UserDir)
 	}
 
 	// Durable state belongs on the volume, not in the image's writable layer,

@@ -645,7 +645,6 @@ type mockGoalStore struct {
 }
 
 func (m *mockGoalStore) GoalList() ([]memory.Goal, error)                   { return m.goals, nil }
-func (m *mockGoalStore) GeneratedToolList() ([]memory.GeneratedTool, error) { return nil, nil }
 func (m *mockGoalStore) WorkflowList(_ string) ([]workflow.Workflow, error) { return nil, nil }
 func (m *mockGoalStore) WorkflowCancel(_ string) (int, error)               { return 0, nil }
 func (m *mockGoalStore) WorkflowFail(_ string, _ bool) (int, error)         { return 0, nil }
@@ -736,47 +735,14 @@ func TestWokenSessionKeepsTakingTurns(t *testing.T) {
 	}
 }
 
-// fakeGenerated records deletes for the operator's tool_delete; "built_in"
-// stands for a tool Nine did not write.
-type fakeGenerated struct{ deleted []string }
-
-func (f *fakeGenerated) Write(context.Context, agent.GeneratedToolSpec) (agent.WriteResult, error) {
-	return agent.WriteResult{}, nil
-}
-func (f *fakeGenerated) Eval(context.Context, string, json.RawMessage, json.RawMessage) (string, error) {
-	return "", nil
-}
-func (f *fakeGenerated) Read(string) (any, error) { return nil, nil }
-
-func (f *fakeGenerated) Delete(_ context.Context, name string) error {
-	if name == "built_in" {
-		return fmt.Errorf("tool %q is built into Nine and cannot be deleted", name)
-	}
-	f.deleted = append(f.deleted, name)
-	return nil
-}
-
-// The operator's delete goes through the generated-tool store, so it deletes
-// what the model's tool_delete would and refuses what it would refuse.
-func TestOperatorToolDelete(t *testing.T) {
-	d, sock := startDaemon(t, makeFactory(seqProvider(nil)), nil, nil)
+// The generated-tools tier is gone (adr/modular_nine.md §9.10): the operator's
+// tool_delete is answered with the removal, not a roster of deletable tools.
+func TestOperatorToolDeleteRefuses(t *testing.T) {
+	_, sock := startDaemon(t, makeFactory(seqProvider(nil)), nil, nil)
 	c := dial(t, sock)
 
-	if _, err := c.DeleteTool("mine"); err == nil || !strings.Contains(err.Error(), "tool writing is off") {
-		t.Errorf("with tool writing off: err = %v", err)
-	}
-
-	g := &fakeGenerated{}
-	d.ConfigureGeneratedTools(g)
-	out, err := c.DeleteTool("mine")
-	if err != nil || !strings.Contains(out, "deleted") {
-		t.Fatalf("DeleteTool(mine) = %q, %v", out, err)
-	}
-	if len(g.deleted) != 1 || g.deleted[0] != "mine" {
-		t.Errorf("store deletes = %v, want [mine]", g.deleted)
-	}
-	if _, err := c.DeleteTool("built_in"); err == nil || !strings.Contains(err.Error(), "cannot be deleted") {
-		t.Errorf("deleting a built-in: err = %v, want a refusal", err)
+	if _, err := c.DeleteTool("mine"); err == nil || !strings.Contains(err.Error(), "generated-tools tier is removed") {
+		t.Fatalf("DeleteTool(mine) err = %v, want the tier-removed refusal", err)
 	}
 }
 

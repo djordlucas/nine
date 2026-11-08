@@ -741,22 +741,6 @@
           }
         },
         {
-          "name": "process_stop",
-          "description": "Stop a process; it stays, stopped, and can be started again. A model may start it again later; one the operator stops only the operator can. To remove a process you wrote (id gen:\u003ctool\u003e) for good, delete its tool with tool_delete instead.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "id"
-            ],
-            "properties": {
-              "id": {
-                "type": "string",
-                "description": "The process id, as process_list shows it."
-              }
-            }
-          }
-        },
-        {
           "name": "process_list",
           "description": "List the processes running in the background — goal sessions, standing agents, reflection, watchers, standing tools — with each one's state, trigger and budget use. Use it to see what runs between conversations. The process-management skill (skill_read) explains stopping versus removing, and each refusal.",
           "input_schema": {
@@ -1046,6 +1030,22 @@
         {
           "name": "process_start",
           "description": "Start a stopped process. It runs under its own grants, role and budget, so starting it grants nothing new. Refused for a process the operator stopped, one its goal stopped (reactivate the goal instead), one paused by its budget until the budget resets, and at the running-process cap.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The process id, as process_list shows it."
+              }
+            }
+          }
+        },
+        {
+          "name": "process_stop",
+          "description": "Stop a process; it stays, stopped, and can be started again. A model may start it again later; one the operator stops only the operator can. To remove a process for good, remove its [[process]] block from nine.toml.",
           "input_schema": {
             "type": "object",
             "required": [
@@ -2814,22 +2814,6 @@
           }
         },
         {
-          "name": "process_stop",
-          "description": "Stop a process; it stays, stopped, and can be started again. A model may start it again later; one the operator stops only the operator can. To remove a process you wrote (id gen:\u003ctool\u003e) for good, delete its tool with tool_delete instead.",
-          "input_schema": {
-            "type": "object",
-            "required": [
-              "id"
-            ],
-            "properties": {
-              "id": {
-                "type": "string",
-                "description": "The process id, as process_list shows it."
-              }
-            }
-          }
-        },
-        {
           "name": "process_list",
           "description": "List the processes running in the background — goal sessions, standing agents, reflection, watchers, standing tools — with each one's state, trigger and budget use. Use it to see what runs between conversations. The process-management skill (skill_read) explains stopping versus removing, and each refusal.",
           "input_schema": {
@@ -3131,6 +3115,22 @@
               }
             }
           }
+        },
+        {
+          "name": "process_stop",
+          "description": "Stop a process; it stays, stopped, and can be started again. A model may start it again later; one the operator stops only the operator can. To remove a process for good, remove its [[process]] block from nine.toml.",
+          "input_schema": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The process id, as process_list shows it."
+              }
+            }
+          }
         }
       ]
     }
@@ -3163,7 +3163,7 @@
       "turn": 1,
       "type": "context_update",
       "payload": {
-        "used": 7574,
+        "used": 7567,
         "budget": 100000
       }
     },
@@ -3220,7 +3220,6 @@
           "job_cancel",
           "trash_list",
           "restore_file",
-          "process_stop",
           "process_list",
           "delete_file",
           "write_file",
@@ -3235,11 +3234,12 @@
           "web_page_read",
           "web_search",
           "process_show",
-          "process_start"
+          "process_start",
+          "process_stop"
         ],
-        "tool_tokens": 6715,
+        "tool_tokens": 6708,
         "max_tokens": 2048,
-        "tokens_used": 7574,
+        "tokens_used": 7567,
         "budget": 100000,
         "llm_call_n": 1
       }
@@ -3318,7 +3318,7 @@
       "turn": 1,
       "type": "context_update",
       "payload": {
-        "used": 7595,
+        "used": 7588,
         "budget": 100000
       }
     },
@@ -3402,7 +3402,6 @@
           "job_cancel",
           "trash_list",
           "restore_file",
-          "process_stop",
           "process_list",
           "delete_file",
           "write_file",
@@ -3417,11 +3416,12 @@
           "web_page_read",
           "web_search",
           "process_show",
-          "process_start"
+          "process_start",
+          "process_stop"
         ],
-        "tool_tokens": 6715,
+        "tool_tokens": 6708,
         "max_tokens": 2048,
-        "tokens_used": 7595,
+        "tokens_used": 7588,
         "budget": 100000,
         "llm_call_n": 2
       }

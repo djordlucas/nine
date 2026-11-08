@@ -2,13 +2,11 @@ package runner
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -23,7 +21,6 @@ import (
 	"nine/internal/protocol"
 	"nine/internal/runtime"
 	"nine/internal/sqldb"
-	"nine/internal/toolvm"
 )
 
 // Harness stands up a real Nine daemon in-process — the production wiring from
@@ -183,11 +180,8 @@ func startProcesses(ctx context.Context, lv *live, setup []ProcessSetup) error {
 	if err := (&config.Config{Process: blocks}).Validate(); err != nil {
 		return err
 	}
-	// A case may supply its own tools under the workspace's .tools directory.
-	lv.Tools.Load(ctx, nil)
-
 	store := lv.Result.Store
-	runtime.ReconcileProcesses(store, lv.Tools, blocks)
+	runtime.ReconcileProcesses(store, blocks)
 	for _, p := range setup {
 		if p.Goal == "" {
 			if err := applyStartState(store, p.Name, p); err != nil {
@@ -292,10 +286,13 @@ func waitFor(ctx context.Context, r *RunResult, w *WaitSpec) {
 type live struct {
 	Result *RunResult
 	Daemon *runtime.Daemon
-	Tools  *toolvm.Host
 	// Processes is the process runner the harness started.
 	Processes *runtime.StandingRunner
-	Sock      string
+	// Core is the daemon's core dispatcher: tests register fixture tools on it
+	// (InjectHandler) for slice processes to call, the way production registers
+	// Go built-ins.
+	Core *agent.Dispatcher
+	Sock string
 	// CloseJournal drains the event sink so the journal can be read; idempotent.
 	CloseJournal func()
 }
@@ -411,36 +408,8 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 		}
 	}
 
-	// The sandboxed-tool host, with the case's workspace as the mount for shipped
-	// tools that declare fs. Cases used to get read_file/write_file from the
-	// `files` plugin; those are shipped tools now, so without this a case that
-	// touches a file has no tool to do it with — and eval-replay would not catch
-	// it, because the file cases are Track L.
-	toolHost, terr := toolvm.Open(ctx, toolvm.Config{UserDir: filepath.Join(workspace, ".tools")})
-	if terr != nil {
-		return nil, fmt.Errorf("open sandboxed tool host: %w", terr)
-	}
-	// The generated tier (tool_write/tool_delete/js_eval) is off unless a case opts
-	// in with session.config "tools.agent.enabled" (and "tools.agent.eval" for
-	// js_eval). That is the one place the harness deliberately does *not* mirror
-	// production, where the tier and its workspace ceiling are both on by default:
-	// a case must state the reach it exercises, so a case that does not mention
-	// generated tools cannot start writing them when a default moves.
-	//
-	// The policy is installed before any generated tool loads, mirroring
-	// OpenSandboxedTools. An opted-in case gets the production default ceiling —
-	// the workspace, read and write, at the same guest path shipped tools use — so
-	// what it exercises is what a deployment has. Still no deps bundler: a
-	// case-written tool is import-free.
-	generatedOn := caseBool(c, "tools.agent.enabled")
-	agentCfg := toolvm.AgentConfig{Enabled: generatedOn, AllowLongRunning: caseBool(c, "tools.agent.allow_long_running")}
-	if generatedOn {
-		m := []toolvm.Mount{{Host: workspace, Guest: toolvm.ShippedWorkspaceGuest}}
-		agentCfg.Ceiling = toolvm.Ceiling{Grant: toolvm.Grant{FSRead: m, FSWrite: m,
-			SQL: caseBool(c, "tools.agent.capabilities.sql")}}
-	}
-	// The database, outside the workspace as beside a store: the file tools
-	// must not see it.
+	// The process database, outside the workspace as beside a store: the file
+	// tools must not see it.
 	var processDB *sqldb.DB
 	if caseBool(c, "processes.database") {
 		dir, err := os.MkdirTemp("", "nine-eval-db-")
@@ -461,63 +430,6 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 	} else if len(c.Setup.Database) > 0 {
 		return nil, fmt.Errorf("setup.database needs session.config processes.database")
 	}
-	toolHost.SetAgentConfig(agentCfg)
-	toolHost.SetShippedWorkspace(toolvm.ShippedWorkspace{Host: workspace})
-	toolHost.LoadShipped(ctx, nil)
-	r.cleanups = append(r.cleanups, func() { toolHost.Close(ctx) }) //nolint:errcheck
-	var generatedTools agent.GeneratedToolStore
-	if generatedOn {
-		generatedTools = runtime.NewGeneratedToolStoreWithPolicy(store, toolHost, pluginMgr, nil, false, runtime.GeneratedPolicy{
-			AllowProcesses: caseBool(c, "tools.agent.allow_processes"),
-			ProcessRoles:   caseStrings(c, "tools.agent.process_roles"),
-			MaxRunning:     caseInt(c, "processes.max_running", runtime.DefaultMaxRunning),
-			AllowRevision:  caseBool(c, "processes.allow_revision"),
-		})
-	}
-	// Tools Nine wrote in an earlier session, through the store tool_write uses.
-	var pendingRevisions func() error
-	if len(c.Setup.GeneratedTools) > 0 {
-		if generatedTools == nil {
-			return nil, fmt.Errorf("setup.generated_tools needs session.config tools.agent.enabled")
-		}
-		write := func(name string, g GeneratedToolSetup) error {
-			spec := agent.GeneratedToolSpec{
-				Name: name, Description: g.Description, Source: g.Source,
-				InputSchema: json.RawMessage(orJSON(g.InputSchema, `{"type":"object","properties":{}}`)),
-			}
-			if g.Capabilities != "" {
-				spec.Capabilities = json.RawMessage(g.Capabilities)
-			}
-			spec.Resumable = g.Resumable
-			if p := g.Process; p != nil {
-				spec.Process = &agent.ProcessRequest{Every: p.Every, Schedule: p.Schedule, Role: p.Role, ReportTo: p.ReportTo,
-					On: p.On, EventContent: p.EventContent}
-				if p.OnFilter != (EventFilterSetup{}) {
-					spec.Process.OnFilter = &agent.EventFilter{Tool: p.OnFilter.Tool, Sessions: p.OnFilter.Sessions, Session: p.OnFilter.Session}
-				}
-			}
-			_, err := generatedTools.Write(ctx, spec)
-			return err
-		}
-		for name, g := range c.Setup.GeneratedTools {
-			if err := write(name, g); err != nil {
-				return nil, fmt.Errorf("seed generated tool %s: %w", name, err)
-			}
-			if p := g.Process; p != nil && p.StoppedBy != "" {
-				if ok, err := store.ProcessStop("gen:"+name, p.StoppedBy); err != nil || !ok {
-					return nil, fmt.Errorf("seed process gen:%s stopped by %s: ok=%v err=%v", name, p.StoppedBy, ok, err)
-				}
-			}
-		}
-		pendingRevisions = func() error {
-			for _, rv := range c.Setup.Revisions {
-				if err := write(rv.Name, rv.GeneratedToolSetup); err != nil {
-					return fmt.Errorf("setup revision of %s: %w", rv.Name, err)
-				}
-			}
-			return nil
-		}
-	}
 
 	sock := filepath.Join(workspace, "d.sock")
 	// The workspace index, as the daemon wires it. A case that writes a file and
@@ -530,9 +442,6 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 	asm := runtime.Assemble(runtime.AssemblyConfig{
 		Workspace:           runtime.NewWorkspaceBackend(store, workspaceScanner, workspace),
 		WorkspaceRoot:       workspace,
-		Tools:               toolHost,
-		GeneratedTools:      generatedTools,
-		GeneratedEval:       generatedOn && caseBool(c, "tools.agent.eval"),
 		SocketPath:          sock,
 		Store:               store,
 		Plugins:             pluginMgr,
@@ -554,7 +463,6 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 		MaxRunning:          caseInt(c, "processes.max_running", runtime.DefaultMaxRunning),
 		RoleFactory:         roleFactory,
 		Database:            processDB,
-		RollbackAfter:       caseInt(c, "processes.rollback_after", 0),
 	})
 	daemon := asm.Daemon
 	supervisor := asm.Supervisor
@@ -587,25 +495,16 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 			dcancel()
 			return nil, err
 		}
-		roles := caseStrings(c, "tools.agent.process_roles")
+		roles := caseStrings(c, "processes.process_roles")
 		if len(roles) == 0 {
 			roles = []string{runtime.ProcessRole}
 		}
 		if _, err := runtime.RunGenesis(ctx, daemon, store, doc, runtime.GenesisOptions{
 			Turns:        caseInt(c, "bootstrap.genesis_turns", 0),
-			Revision:     caseBool(c, "processes.allow_revision") && slices.Contains(roles, "reviser"),
 			ProcessRoles: roles,
 			Database:     processDB != nil,
 		}); err != nil {
 			slog.Warn("eval genesis", "case", c.ID, "err", err)
-		}
-	}
-	// Revisions rewrite seeded processes once they run, as a later turn would.
-	if pendingRevisions != nil && len(c.Setup.Revisions) > 0 {
-		time.Sleep(2 * time.Second)
-		if err := pendingRevisions(); err != nil {
-			dcancel()
-			return nil, err
 		}
 	}
 	go daemon.Start(dctx) //nolint:errcheck
@@ -614,7 +513,7 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 		return nil, err
 	}
 
-	return &live{Result: r, Daemon: daemon, Tools: toolHost, Processes: asm.Processes, Sock: sock, CloseJournal: closeSink}, nil
+	return &live{Result: r, Daemon: daemon, Processes: asm.Processes, Core: asm.Core, Sock: sock, CloseJournal: closeSink}, nil
 }
 
 // driveTurns sends each prompt in order and returns the final answers. When the
@@ -852,11 +751,4 @@ func expandAll(args []string) []string {
 		out[i] = os.ExpandEnv(a)
 	}
 	return out
-}
-
-func orJSON(s, fallback string) string {
-	if s == "" {
-		return fallback
-	}
-	return s
 }
