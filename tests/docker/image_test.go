@@ -225,8 +225,8 @@ func TestBuiltinFileToolRuns(t *testing.T) {
 		logs, _ := dockerRun(t, "logs", id)
 		t.Fatalf("write_file did not run: %v\noutput: %s\n\ncontainer logs:\n%s", err, out, logs)
 	}
-	if !strings.Contains(out, `"ok": true`) {
-		t.Errorf("write_file did not report success:\n%s", out)
+	if !strings.Contains(out, "wrote /work/builtin-probe.txt") {
+		t.Errorf("write_file did not report success: %s", out)
 	}
 
 	// The tool's own report is not proof the bytes landed; read them back.
