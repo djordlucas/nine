@@ -1,6 +1,6 @@
 # Modular Nine — built-ins as Go, MCP for subprocess tools
 
-- **Status:** Proposed. P1, P5, P4-plugins built 2026-11-08; P4-toolvm in progress 2026-11-08 (non-live shipped tools are Go dispatcher handlers — `internal/agent` `RegisterShippedTools`; the toolvm host now loads only the Live programs `pursue`/`reflect`). Remaining: full toolvm deletion (dev/generated tiers, wazero), P6 (export).
+- **Status:** Proposed. P1, P5, P4-plugins built 2026-11-08; P4-toolvm in progress 2026-11-08 (non-live shipped tools are Go dispatcher handlers — `internal/agent` `RegisterShippedTools`; the two Live programs `pursue`/`reflect` are Go loops in `internal/runtime/liveprog.go` driven through the same runner). Remaining: delete the toolvm host + wazero + dev/generated tiers (P4), P6 (export).
 - **Date:** 2026-11-01.
 - **Reviewed:** 2026-11-06 — fact-checked against the tree; §1 tool count and names, §2 progress-rail wording, §3 database ownership, §5 supervision wording corrected; test plan added as §10.
 - **Decisions:** 2026-11-06 — §9 items 1–4 answered by the requester: all tiers in scope, both directions, the sandbox fronted by MCP, prefix every server's tools.
