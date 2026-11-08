@@ -36,8 +36,7 @@ import (
 // over the legacy plugin envelope. Each entry blocks until the plugin process
 // is told to stop.
 var serveFuncs = map[string]func(){
-	"shell":        serveShell,
-	MCPBuiltinName: serveMCP,
+	"shell": serveShell,
 }
 
 // mcpServeFuncs maps a built-in's wire name to the function that serves it over
@@ -49,23 +48,18 @@ var mcpServeFuncs = map[string]func(version string){
 	"shell": serveShellMCP,
 }
 
-// MCPBuiltinName is the built-in that bridges one MCP server. It is served like
-// any other built-in but started differently — see AutoStart.
-const MCPBuiltinName = "mcp"
-
 // autoStart names the built-ins the daemon starts unconditionally at boot, one
-// process each.
+// process each — each over MCP (`nine mcp serve <name>`, adr/modular_nine.md).
 //
-// `mcp` is deliberately absent. It is started once per [[mcp.server]], under an
-// instance name (`mcp:github`) and with that server's spec in its environment
-// (R-PLUG.15); a bare `mcp` has nothing to bridge and would do nothing but fail
-// on every boot. Servable and startable are different questions, and this is the
-// one built-in where they diverge.
 // Only shell remains. time, files and http are shipped sandboxed tools now
 // (internal/toolvm/shipped.go). None of them needed a subprocess holding the
 // daemon's uid — which is what a built-in plugin is, and which meant read_file
 // could read any absolute path and http_get could reach cloud instance
 // metadata. shell stays because it needs real exec.
+//
+// The `mcp` bridge builtin is gone (P5): external [[mcp.server]] servers are
+// spawned directly by the plugin manager (StartMCPServer), so there is no
+// built-in left that is not auto-started.
 var autoStart = []string{"shell"}
 
 // AutoStart returns the built-ins to start at daemon boot, in a stable order.

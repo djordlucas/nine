@@ -43,9 +43,10 @@ const (
 // Unix socket (DialSocket), which is how the manager reaches a first-party
 // subprocess plugin that speaks MCP.
 type httpConn struct {
-	url     string
-	headers map[string]string
-	hc      *http.Client
+	url      string
+	headers  map[string]string
+	hc       *http.Client
+	spillDir string
 
 	mu        sync.Mutex
 	nextID    int
@@ -60,12 +61,17 @@ type httpConn struct {
 }
 
 // DialHTTP reaches a hosted MCP server over streamable HTTP.
-func DialHTTP(url string, headers map[string]string) Conn {
+func DialHTTP(url string, headers map[string]string, opts ...ConnOption) Conn {
+	var cfg connConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
 	return &httpConn{
-		url:     url,
-		headers: headers,
-		hc:      &http.Client{Timeout: httpTimeout},
-		done:    make(chan struct{}),
+		url:      url,
+		headers:  headers,
+		hc:       &http.Client{Timeout: httpTimeout},
+		spillDir: cfg.spillDir,
+		done:     make(chan struct{}),
 	}
 }
 
@@ -73,11 +79,16 @@ func DialHTTP(url string, headers map[string]string) Conn {
 // the default transport for first-party subprocess plugins (adr/modular_nine.md
 // §9.6). The pseudo-host is ignored by the dialer, which always dials
 // socketPath.
-func DialSocket(socketPath string) Conn {
+func DialSocket(socketPath string, opts ...ConnOption) Conn {
+	var cfg connConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
 	var d net.Dialer
 	return &httpConn{
-		url:     "http://unix" + EndpointPath,
-		headers: nil,
+		url:      "http://unix" + EndpointPath,
+		headers:  nil,
+		spillDir: cfg.spillDir,
 		hc: &http.Client{
 			Timeout: httpTimeout,
 			Transport: &http.Transport{
@@ -92,6 +103,9 @@ func DialSocket(socketPath string) Conn {
 
 // Exited implements Conn.
 func (c *httpConn) Exited() <-chan struct{} { return c.done }
+
+// SpillDir implements Conn.
+func (c *httpConn) SpillDir() string { return c.spillDir }
 
 // StoppedDeliberately implements Conn.
 func (c *httpConn) StoppedDeliberately() bool {

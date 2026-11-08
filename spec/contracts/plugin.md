@@ -5,9 +5,9 @@
 Every external capability is a **subprocess** serving HTTP on a **per-plugin Unix
 socket**, so one process handles many concurrent calls. A subprocess speaks **MCP
 streamable HTTP** on that socket (R-PLUG.16) or the compact legacy envelope; MCP is the
-only wire protocol that crosses a process boundary (adr/modular_nine.md), and an external
-MCP server still reaches Nine through a bridge plugin like anything else (R-PLUG.15), so
-stdio remains one bridge's internal detail rather than a second path through the manager.
+only wire protocol that crosses a process boundary (adr/modular_nine.md). External MCP
+servers need no subprocess plugin of their own: the manager connects to them directly
+(R-PLUG.15).
 Plugins are isolation boundaries (invariant I9): a crash is a child-process failure, not a
 daemon panic. They are **immutable image content** — there is no runtime generation, build,
 or hot-swap (N1).
@@ -446,10 +446,11 @@ a binary *is* a plugin, which is independent of whether this daemon runs it.
 
 ---
 
-## R-PLUG.15 — MCP servers are plugins
+## R-PLUG.15 — MCP servers are manager children, not bridge plugins
 
-An MCP server is reached through a **bridge plugin**, not through a second code path in
-the manager. The daemon starts one bridge instance per `[[mcp.server]]`:
+An MCP server is reached by the manager's one MCP client (`internal/mcp`), not through a
+bridge process. The daemon connects once per `[[mcp.server]]` — spawn the `command` and
+speak JSON-RPC over its stdio pipes, or POST to the `url` over **streamable HTTP**:
 
 ```text
 [[mcp.server]]                        [[mcp.server]]
@@ -459,51 +460,45 @@ args    = ["-y", "…server-github"]    [mcp.server.headers]
 [mcp.server.env]                      Authorization = "Bearer …"
 GITHUB_TOKEN = "…"
 
-  → daemon: StartBuiltinInstance("mcp", "mcp:<name>", NINE_MCP_SERVER={…})
-  → bridge: listen, then connect — spawn over stdio, or POST over streamable HTTP
-  → bridge: initialize → notifications/initialized → tools/list
-  → bridge: serve those tools over the ordinary plugin contract (R-PLUG.1)
+  → manager: StartMCPServer(spec) — spawn (sanitized env, cache dir) or dial URL
+  → client: initialize → notifications/initialized → tools/list  (handshake budget)
+  → registered as the plugin `mcp:<name>` with tools prefixed <server>__
 ```
 
-Two transports are supported, and exactly one is configured per server: `command`
-spawns a local server and speaks JSON-RPC over its stdio pipes; `url` reaches a hosted
-one over **streamable HTTP**, where a server answers each POST with either a JSON body
-or an SSE stream and the client must handle both. Hosted servers never run locally, so
-stdio cannot reach them at all.
+Streamable HTTP answers each POST with either a JSON body or an SSE stream; the client
+must handle both. Hosted servers never run locally, so stdio cannot reach them at all.
 
 An implementation **MUST**:
 
-- give each server **its own plugin instance**, named `mcp:<server>`. One server crashing,
-  hanging, or failing to start affects only itself — the isolation guarantee of R-PLUG.4,
-  which an in-manager adapter could not offer because a wedged stdio read blocked inside
-  the daemon. The name is also what the roster shows and what `[plugins].disabled`
-  matches (R-PLUG.14);
+- give each server **its own plugin row**, named `mcp:<server>`. One server crashing,
+  hanging, or failing to start affects only itself — the isolation guarantee of R-PLUG.4:
+  a spawned server is a direct supervised child, and when it dies the row stays and the
+  next call errors on the dead connection. The name is also what the roster shows and
+  what `[plugins].disabled` matches (R-PLUG.14);
 - **prefix each tool** with the server name (`github__create_issue`). Two MCP servers
   commonly advertise the same generic name (`search`, `read`), and an unprefixed
-  collision means one server silently loses a tool depending on load order (R-PLUG.9);
-- pass the server's configuration **from the daemon**, not by reading `nine.toml` in the
-  bridge — a plugin child loads no config (R-PLUG.13a), and that file carries other
-  plugins' secrets;
+  collision means one server silently loses a tool depending on load order (R-PLUG.9).
+  First-party tools keep bare names (R-PLUG.16);
+- pass the server's configuration **from the daemon's parsed config**, and spawn it with
+  the sanitized host environment (R-PLUG.13a) — never the daemon's own environment, which
+  carries its secrets;
 - **declare the transport's limits through the contract, not around it.** stdio is
-  serial, so the bridge reports `max_concurrent: 1` (R-PLUG.8) and `async_jobs: false`
-  (R-PLUG.12). These are ordinary plugin declarations, not exemptions;
-- **listen before handshaking.** The daemon bounds how long it waits for a plugin's
-  socket (~3s, R-PLUG.3) but puts no deadline on `plugin.describe`. An MCP server
-  launched through `npx`/`uvx` routinely needs far longer than the socket budget just
-  to start — a measured 72s in one case — so a bridge that completes the handshake
-  before listening is declared dead for every real server. It **MUST** listen first and
-  resolve its tools inside `describe` (`plugin.ServeDeferred`), under its own finite
-  timeout so a server that never answers cannot hold up boot.
+  serial, so a spawned server reports `max_concurrent: 1` (R-PLUG.8) and `async_jobs:
+  false` (R-PLUG.12); streamable HTTP is concurrent (0). The handshake runs under a finite
+  budget (3 minutes, `NINE_MCP_HANDSHAKE_TIMEOUT` to override) so a server that never
+  answers cannot hold up boot — an `npx`/`uvx` server routinely needs far longer than any
+  socket budget just to start (a measured 72s in one case);
+- **spill binary content to the server's own cache dir** (R-PLUG.15b below), which the
+  manager allocates even for hosted servers, since the client runs inside the daemon.
 
-The point is what the core no longer contains. There is one plugin transport, one client
-implementation, and no `except MCP` clause in this contract: the stdio client, the
-`plugin.call ↔ tools/call` adapter, and the second spawn path all live inside one plugin
-that the daemon treats like every other.
+The point is what the core no longer contains. There is no bridge process and no second
+spawn path: one client implementation in `internal/mcp`, one handshake, one
+tool-prefixing rule, and the daemon treats an MCP server like every other plugin row.
 
 ### R-PLUG.15b — content is flattened, never filtered
 
-An MCP reply is an array of content parts and the plugin contract returns one string, so
-the bridge flattens. It **MUST NOT** drop a part it does not understand.
+An MCP reply is an array of content parts and the tool contract returns one string, so
+the client (`internal/mcp`) flattens. It **MUST NOT** drop a part it does not understand.
 
 Text passes through. Binary parts — `image`, `audio`, and a `resource` carrying a blob —
 are decoded and written into the plugin's cache dir (R-PLUG.11), with the path named in
@@ -558,9 +553,11 @@ removed at P4, and `nine plugin validate` (Probe) accepts both wires meanwhile.
 plugin entry point, R-PLUG.13a),
 `internal/plugin/manager.go` (`Manager`, `Start`, `StartBuiltin`, `StartMCPBuiltin`,
 `Call`, `JobStatus`, `JobCancel`, `PluginByName`, `TryStart`, `TryStartBuiltin`,
-`TryStartMCPBuiltin`, `launch`/`binaryLaunch`/`builtinLaunch`, `builtinInstanceLaunch`,
-`mcpBuiltinLaunch`, `MCPInstanceName`, `spawnAndDescribe`, `describeSocket`, `Probe`,
+`TryStartMCPBuiltin`, `launch`/`binaryLaunch`/`builtinLaunch`, `mcpBuiltinLaunch`,
+`MCPInstanceName`, `spawnAndDescribe`, `describeSocket`, `Probe`,
 `SetPluginEnv`, `SetBuiltinBinary`, `SetCacheConfig`, `SweepCache`),
+`internal/plugin/mcpserver.go` (`StartMCPServer`, `TryStartMCPServer` — external MCP
+servers as manager children, R-PLUG.15),
 `internal/plugin/userplugins.go` (`LoadUserPlugins`, `ReloadUserPlugins`, `UserStatus`),
 `internal/plugin/cache.go` (`allocCacheDir`, `SweepCache`),
 `internal/plugin/jobs.go` (`Jobs`, `Job`, `JobHandler`, `JobStatus`, `JobDir`, `SetProgress`),
@@ -568,11 +565,10 @@ plugin entry point, R-PLUG.13a),
 `internal/plugin/httpclient.go` (`newHTTPClient` — the legacy envelope client) and
 `internal/plugin/mcpclient.go` (`newMCPClient` — the MCP plugin client, R-PLUG.16),
 `internal/mcp/` (the hand-rolled MCP client — `Connect`, `ConnectSocket`, `CallTool`,
-`DialStdio`, `DialHTTP`, `DialSocket` — and the mcp-go server side — `Serve`, `NewServer`,
-`ServeHTTP`, `ServeStdio`, R-PLUG.16),
+`DialStdio`/`DialStdioEnv`, `DialHTTP`, `DialSocket`, content flattening — and the mcp-go
+server side — `Serve`, `NewServer`, `ServeHTTP`, `ServeStdio`, R-PLUG.16),
 `cmd/nine/main.go` (`pluginServeArgs`, `servePluginAndExit`, `mcpServeArgs`,
 `serveMCPAndExit` — the single-purpose plugin entry points, R-PLUG.13a/R-PLUG.16),
-`internal/builtins/mcp.go` (the MCP bridge, R-PLUG.15),
 `internal/builtins/builtins.go` (`Serve`, `ServeMCP`, `Names`, `MCPNames`, `Has`,
 `HasMCPServe`),
 `internal/plugin/serve.go` `plugin.Serve` — the plugin-side HTTP server loop on
@@ -580,8 +576,9 @@ plugin entry point, R-PLUG.13a),
 `internal/memory/jobs.go` (the `jobs` registry), `internal/runtime/jobs.go`
 (job starter + sweeper), `internal/runtime/job_tools.go` (model-facing tools + surfacing),
 `internal/agent/register_jobs.go` (`job_wait`/`job_check`/`job_list`/`job_cancel`),
-`internal/builtins/mcp_playwright_test.go` (the opt-in end-to-end check against the real
-upstream Playwright MCP server), `cmd/nine/daemon.go` (`LoadUserPlugins`, `startMCPServers`, job
+`internal/plugin/mcp_playwright_test.go` (the opt-in end-to-end check against the real
+upstream Playwright MCP server, connected directly by the manager),
+`cmd/nine/daemon.go` (`LoadUserPlugins`, `startMCPServers`, job
 sweeper, graceful shutdown at boot), `internal/cli/plugins.go` (`nine plugins` / `nine plugin validate`).
 
 ---

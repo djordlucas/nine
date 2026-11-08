@@ -30,9 +30,10 @@ const scannerMaxBytes = 4 * 1024 * 1024
 const stdioStopGrace = 3 * time.Second
 
 type stdioConn struct {
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	stdout *bufio.Scanner
+	cmd      *exec.Cmd
+	stdin    io.WriteCloser
+	stdout   *bufio.Scanner
+	spillDir string
 
 	// callMu serializes a whole request/response round trip: it owns the stream.
 	// nextID rides with it because ids are only meaningful within one round trip.
@@ -60,6 +61,9 @@ type stdioConn struct {
 // reason. See stdioConn.done.
 func (c *stdioConn) Exited() <-chan struct{} { return c.done }
 
+// SpillDir implements Conn.
+func (c *stdioConn) SpillDir() string { return c.spillDir }
+
 // StoppedDeliberately reports whether the exit followed a Stop() rather than a
 // crash, so a watchdog can tell shutdown from failure.
 func (c *stdioConn) StoppedDeliberately() bool {
@@ -81,12 +85,21 @@ type rpcError struct {
 }
 
 // DialStdio spawns the MCP server and sets up its stdio pipes. env is the extra
-// environment for the server process, on top of this process's own — which the
-// daemon already sanitized, so a server sees Nine's secrets no more than any
-// other plugin does.
-func DialStdio(command string, args []string, env []string) (Conn, error) {
+// environment for the server process, on top of this process's own.
+func DialStdio(command string, args []string, env []string, opts ...ConnOption) (Conn, error) {
+	return DialStdioEnv(command, args, append(os.Environ(), env...), opts...)
+}
+
+// DialStdioEnv is DialStdio with full control of the child's environment. The
+// plugin manager uses it to spawn an [[mcp.server]] with the sanitized host env
+// rather than the daemon's own (unsanitized) one.
+func DialStdioEnv(command string, args []string, env []string, opts ...ConnOption) (Conn, error) {
+	var cfg connConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
 	cmd := exec.Command(command, args...) //nolint:gosec // operator-configured [[mcp.server]] command
-	cmd.Env = append(os.Environ(), env...)
+	cmd.Env = env
 	// Put the server in its own process group so the whole tree can be signalled
 	// as one. `npx foo` is sh → npm → node: killing the direct child leaves the
 	// node process running, and it accumulates one orphan per daemon restart.
@@ -110,7 +123,7 @@ func DialStdio(command string, args []string, env []string) (Conn, error) {
 	scanner := bufio.NewScanner(stdoutPipe)
 	scanner.Buffer(make([]byte, scannerMaxBytes), scannerMaxBytes)
 
-	c := &stdioConn{cmd: cmd, stdin: stdinPipe, stdout: scanner, done: make(chan struct{})}
+	c := &stdioConn{cmd: cmd, stdin: stdinPipe, stdout: scanner, done: make(chan struct{}), spillDir: cfg.spillDir}
 	go func() {
 		c.waitErr = cmd.Wait()
 		close(c.done)

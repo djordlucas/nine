@@ -63,12 +63,18 @@ func (c *mcpClient) call(ctx context.Context, method string, params any) (json.R
 }
 
 // stop tears down the MCP connection and then the plugin process, mirroring
-// httpClient.stop. Idempotent.
+// httpClient.stop. Idempotent. A nil cmd means the connection owns the process
+// (a spawned stdio MCP server) or owns none (a hosted one) — conn.Stop() is
+// the whole stop in both cases.
 func (c *mcpClient) stop() error {
 	if c.stopped.Swap(true) {
 		return nil
 	}
-	c.conn.Stop() //nolint:errcheck // best-effort; the SIGTERM below is the real stop
+	c.conn.Stop() //nolint:errcheck // best-effort; for stdio this kills and reaps the server
+
+	if c.cmd == nil {
+		return nil
+	}
 
 	if c.cmd.Process != nil {
 		c.cmd.Process.Signal(syscall.SIGTERM) //nolint:errcheck // best-effort; fall through to Wait/Kill
@@ -84,7 +90,9 @@ func (c *mcpClient) stop() error {
 		c.cmd.Process.Kill() //nolint:errcheck // best-effort
 		err = <-done
 	}
-	os.Remove(c.socketPath) //nolint:errcheck // best-effort socket cleanup
+	if c.socketPath != "" {
+		os.Remove(c.socketPath) //nolint:errcheck // best-effort socket cleanup
+	}
 
 	// We asked the process to stop, so an exit caused by our own SIGTERM/SIGKILL
 	// is a clean stop, not a failure (a plugin need not trap SIGTERM).

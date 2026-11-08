@@ -1148,10 +1148,10 @@ type APITLSConfig struct {
 }
 
 // MCPConfig holds the MCP servers Nine should connect to. Each becomes one
-// plugin: the daemon starts an `mcp` bridge instance per server, so an MCP
-// server is a plugin in every respect that matters — its own process, its own
-// crash isolation, its own row in `nine plugins`, and the same disable switch
-// (spec/contracts/plugin.md R-PLUG.15).
+// plugin row: the manager connects per server — spawning the command as a
+// supervised child or dialing the URL — so an MCP server is a plugin in every
+// respect that matters: its own failure domain, its own row in `nine plugins`,
+// and the same disable switch (spec/contracts/plugin.md R-PLUG.15).
 type MCPConfig struct {
 	// Servers are declared as [[mcp.server]] table arrays, following the same
 	// singular-table-in-a-plural-section shape [[agent]] already uses.

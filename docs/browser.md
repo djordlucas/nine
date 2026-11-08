@@ -246,10 +246,10 @@ install one into `/data` as above.
 
 ## 7. Testing
 
-Nine's own end-to-end test drives the real upstream server through the bridge:
+Nine's own end-to-end test drives the real upstream server through the manager:
 
 ```sh
-NINE_PLAYWRIGHT_TEST=1 go test ./internal/builtins/ -run Playwright
+NINE_PLAYWRIGHT_TEST=1 go test ./internal/plugin/ -run Playwright
 ```
 
 It is opt-in because it needs `npx`, network for the first fetch, and an
@@ -299,4 +299,4 @@ matched exactly and the prefix is yours to choose, so built-in roles like
 - [plugins.md](plugins.md) — the plugin model, and MCP servers in general
 - [configuration.md](configuration.md) — `[[mcp.server]]` reference
 - [tool selection](tool-selection.md) — how tools are ranked into context
-- [spec/contracts/plugin.md](../spec/contracts/plugin.md) — R-PLUG.15, the MCP bridge
+- [spec/contracts/plugin.md](../spec/contracts/plugin.md) — R-PLUG.15, MCP servers as manager children

@@ -18,6 +18,21 @@ type Conn interface {
 	// process dies; for HTTP, only on Stop, since there is no process to lose.
 	Exited() <-chan struct{}
 	StoppedDeliberately() bool
+	// SpillDir is where binary content parts are written (R-PLUG.15b). Empty
+	// falls back to NINE_PLUGIN_CACHE_DIR, then to reporting the part unsaved.
+	SpillDir() string
+}
+
+// ConnOption configures one connection.
+type ConnOption func(*connConfig)
+
+type connConfig struct {
+	spillDir string
+}
+
+// WithSpillDir sets the directory binary content parts are written to.
+func WithSpillDir(dir string) ConnOption {
+	return func(c *connConfig) { c.spillDir = dir }
 }
 
 // Tool is one tool as an MCP server describes it.
@@ -163,7 +178,7 @@ func CallTool(ctx context.Context, conn Conn, tool string, args json.RawMessage)
 		return "", fmt.Errorf("parse tools/call response: %w", err)
 	}
 
-	text := FlattenContent(tool, result.Content)
+	text := FlattenContent(tool, result.Content, conn.SpillDir())
 	if result.IsError {
 		return "", fmt.Errorf("%s: %s", tool, text)
 	}

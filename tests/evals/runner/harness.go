@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"nine/internal/agent"
-	"nine/internal/builtins"
 	"nine/internal/config"
 	"nine/internal/embed"
 	"nine/internal/llm"
+	"nine/internal/mcp"
 	"nine/internal/memory"
 	"nine/internal/plugin"
 	"nine/internal/protocol"
@@ -810,37 +810,32 @@ func caseBool(c *Case, key string) bool {
 	return b
 }
 
-// startCaseMCPServers brings up one `mcp` bridge per server the case declares.
+// startCaseMCPServers brings up one manager-held MCP connection per server the
+// case declares.
 //
-// It hand-mirrors startMCPServers in cmd/nine/daemon.go — same spec encoding,
-// same instance naming, same concurrent start with a wait — so a case exercises
-// the path production uses rather than a shortcut. The wait matters for the same
+// It hand-mirrors startMCPServers in cmd/nine/daemon.go — same spec shape, same
+// instance naming, same concurrent start with a wait — so a case exercises the
+// path production uses rather than a shortcut. The wait matters for the same
 // reason it does there: the tool registry has to be complete before the first
 // turn, or the model is asked to use a tool that has not registered yet and the
 // case fails as a model error.
 //
-// A server that fails to start is logged by TryStartBuiltinInstance and skipped,
+// A server that fails to start is logged by TryStartMCPServer and skipped,
 // leaving its tools absent — which surfaces as the case failing its trajectory
 // assertion, naming the tool that never arrived.
 func startCaseMCPServers(mgr *plugin.Manager, servers []MCPServerSetup) {
 	var wg sync.WaitGroup
 	for _, srv := range servers {
-		spec, err := json.Marshal(map[string]any{
-			"name":    srv.Name,
-			"command": os.ExpandEnv(srv.Command),
-			"args":    expandAll(srv.Args),
-			"env":     srv.Env,
-		})
-		if err != nil {
-			// Only unmarshalable values could cause this and these are all
-			// strings; skip rather than abort the run.
-			continue
+		spec := mcp.ServerSpec{
+			Name:    srv.Name,
+			Command: os.ExpandEnv(srv.Command),
+			Args:    expandAll(srv.Args),
+			Env:     srv.Env,
 		}
-		instance := plugin.MCPInstanceName(srv.Name)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			mgr.TryStartBuiltinInstance(builtins.MCPBuiltinName, instance, "NINE_MCP_SERVER="+string(spec))
+			mgr.TryStartMCPServer(spec)
 		}()
 	}
 	wg.Wait()

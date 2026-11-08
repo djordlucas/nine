@@ -1,4 +1,4 @@
-package builtins_test
+package plugin_test
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"nine/internal/mcp"
 	"nine/internal/plugin"
 )
 
@@ -21,13 +22,14 @@ import (
 // Nine used to ship its own Playwright wrapper as a Node plugin. It is gone: a
 // browser is now an ordinary [[mcp.server]] (docs/browser.md), which means the
 // thing worth testing is no longer "do our browser tools work" but "does a real,
-// third-party MCP server load and answer through the bridge". The rest of the
-// MCP tests run against a compiled fixture in testmcpserver/, which is fast and
-// hermetic but agrees with us by construction — it cannot catch a handshake
-// quirk, a slow `npx` cold start, or a content shape we guessed wrong. This one
-// can, which is exactly why it exists and why it is opt-in.
+// third-party MCP server load and answer when the manager connects to it
+// directly". The rest of the MCP tests run against a compiled fixture in
+// internal/mcp/testmcpserver, which is fast and hermetic but agrees with us by
+// construction — it cannot catch a handshake quirk, a slow `npx` cold start, or
+// a content shape we guessed wrong. This one can, which is exactly why it exists
+// and why it is opt-in.
 //
-//	NINE_PLAYWRIGHT_TEST=1 go test ./internal/builtins/ -run Playwright
+//	NINE_PLAYWRIGHT_TEST=1 go test ./internal/plugin/ -run Playwright
 //
 // Prerequisites: `npx` on PATH, and a browser for Playwright to drive:
 //
@@ -44,9 +46,10 @@ import (
 // is to tell us when *our* side broke. Bump it deliberately.
 const playwrightPackage = "@playwright/mcp@0.0.79"
 
-// Cold `npx` resolution dominates: the bridge's own default allows 3 minutes
-// (mcpHandshakeTimeout) for exactly this reason. Kept explicit so a slow fetch
-// reads as a slow fetch rather than a mysterious bridge failure.
+// Cold `npx` resolution dominates: the handshake default allows 3 minutes
+// (mcp.DefaultHandshakeTimeout) for exactly this reason. Kept explicit so a
+// slow fetch reads as a slow fetch rather than a mysterious failure. The
+// manager runs in-process here, so t.Setenv reaches mcp.HandshakeTimeout.
 const playwrightHandshake = "5m"
 
 // requirePlaywright gates the test. Missing prerequisites *after* opting in are
@@ -62,20 +65,22 @@ func requirePlaywright(t *testing.T) {
 	}
 }
 
-// startPlaywrightBridge starts an `mcp` bridge pointed at the upstream
-// Playwright server, wired exactly as cmd/nine/daemon.go wires an
-// [[mcp.server]] — same manager, same instance naming, same env-passed spec.
-// Nothing here reaches into the bridge.
-func startPlaywrightBridge(t *testing.T) (*plugin.Plugin, *plugin.Manager, string) {
+// startPlaywrightServer connects the manager to the upstream Playwright server,
+// wired exactly as cmd/nine/daemon.go wires an [[mcp.server]] — same manager,
+// same instance naming, same spec. Nothing here reaches into any bridge (there
+// is none any more).
+func startPlaywrightServer(t *testing.T) (*plugin.Plugin, *plugin.Manager, string) {
 	t.Helper()
+
+	t.Setenv("NINE_MCP_HANDSHAKE_TIMEOUT", playwrightHandshake)
 
 	cacheRoot := t.TempDir()
 	outputDir := t.TempDir()
 
-	spec, err := json.Marshal(map[string]any{
-		"name":    "playwright",
-		"command": "npx",
-		"args": []string{
+	spec := mcp.ServerSpec{
+		Name:    "playwright",
+		Command: "npx",
+		Args: []string{
 			"-y", playwrightPackage,
 			"--headless",
 			// Upstream defaults to the `chrome` channel — a real Google Chrome
@@ -92,25 +97,18 @@ func startPlaywrightBridge(t *testing.T) (*plugin.Plugin, *plugin.Manager, strin
 			"--no-sandbox",
 			"--output-dir", outputDir,
 		},
-	})
-	if err != nil {
-		t.Fatalf("marshal spec: %v", err)
 	}
 
 	m := plugin.NewManager("")
-	m.SetBuiltinBinary(nineBin)
-	// A cache dir is what makes binary content reachable: the bridge writes
-	// image parts there and names the file in its text reply, rather than
-	// spending a context window on base64. Persisted so the assertions can read
-	// the file back before Stop reclaims the directory.
+	// A cache dir is what makes binary content reachable: spilled image parts
+	// are written there and named in the text reply, rather than spending a
+	// context window on base64. Persisted so the assertions can read the file
+	// back before Stop reclaims the directory.
 	m.SetCacheConfig(cacheRoot, func(string) bool { return true })
 
-	p, err := m.StartBuiltinInstance("mcp", plugin.MCPInstanceName("playwright"),
-		"NINE_MCP_SERVER="+string(spec),
-		"NINE_MCP_HANDSHAKE_TIMEOUT="+playwrightHandshake,
-	)
+	p, err := m.StartMCPServer(spec)
 	if err != nil {
-		t.Fatalf("start playwright bridge: %v\n"+
+		t.Fatalf("start playwright server: %v\n"+
 			"is a browser installed? try: npx %s install-browser chrome-for-testing",
 			err, playwrightPackage)
 	}
@@ -144,13 +142,13 @@ func callTool(t *testing.T, m *plugin.Manager, p *plugin.Plugin, tool, args stri
 	return res.Output
 }
 
-// The server's tools arrive under the bridge, prefixed with the name the
+// The server's tools arrive from the manager, prefixed with the name the
 // operator gave it in nine.toml. This is the load-bearing claim of the whole
 // move: a browser reaches Nine through the ordinary plugin path, with no
 // browser-specific code anywhere in the daemon.
 func TestPlaywrightMCPAdvertisesPrefixedTools(t *testing.T) {
 	requirePlaywright(t)
-	p, _, _ := startPlaywrightBridge(t)
+	p, _, _ := startPlaywrightServer(t)
 
 	if p.Name != "mcp:playwright" {
 		t.Errorf("plugin name = %q, want %q", p.Name, "mcp:playwright")
@@ -180,7 +178,7 @@ func TestPlaywrightMCPAdvertisesPrefixedTools(t *testing.T) {
 	}
 }
 
-// A page is fetched and read back through the bridge — the replacement for the
+// A page is fetched and read back through the manager — the replacement for the
 // old browser_navigate + browser_extract pair, and the proof that a round trip
 // carrying real page data survives the stdio transport.
 //
@@ -191,7 +189,7 @@ func TestPlaywrightMCPAdvertisesPrefixedTools(t *testing.T) {
 // asked for explicitly, which is what browser_evaluate does below.
 func TestPlaywrightMCPNavigatesAndReadsPage(t *testing.T) {
 	requirePlaywright(t)
-	p, m, _ := startPlaywrightBridge(t)
+	p, m, _ := startPlaywrightServer(t)
 
 	const marker = "nine-mcp-browser-marker"
 	const title = "Nine MCP"
@@ -222,7 +220,7 @@ func TestPlaywrightMCPNavigatesAndReadsPage(t *testing.T) {
 // a picture it never received.
 func TestPlaywrightMCPScreenshotIsSaved(t *testing.T) {
 	requirePlaywright(t)
-	p, m, cacheRoot := startPlaywrightBridge(t)
+	p, m, cacheRoot := startPlaywrightServer(t)
 
 	url := servePage(t, `<!doctype html><title>Shot</title><h1>shot</h1>`)
 	callTool(t, m, p, "playwright__browser_navigate", `{"url":`+jsonString(url)+`}`)
@@ -230,7 +228,7 @@ func TestPlaywrightMCPScreenshotIsSaved(t *testing.T) {
 	out := callTool(t, m, p, "playwright__browser_take_screenshot", `{}`)
 
 	if strings.Contains(out, "not saved") {
-		t.Fatalf("screenshot was not persisted; the bridge had no cache dir:\n%s", out)
+		t.Fatalf("screenshot was not persisted; the server had no cache dir:\n%s", out)
 	}
 	// Base64 must not be inlined into the reply — that is the regression the
 	// cache-dir handoff exists to prevent.
@@ -240,7 +238,7 @@ func TestPlaywrightMCPScreenshotIsSaved(t *testing.T) {
 
 	saved := findFiles(t, cacheRoot)
 	if len(saved) == 0 {
-		t.Fatalf("no file written under the plugin cache dir %s; reply was:\n%s", cacheRoot, out)
+		t.Fatalf("no file written under the server cache dir %s; reply was:\n%s", cacheRoot, out)
 	}
 	// The reply has to name the file, or the bytes are unreachable in practice.
 	var named bool

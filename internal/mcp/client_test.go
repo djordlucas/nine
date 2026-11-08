@@ -37,7 +37,7 @@ func findModuleRoot(t *testing.T) string {
 func buildTestMCPServer(t *testing.T) string {
 	t.Helper()
 	out := filepath.Join(t.TempDir(), "testmcpserver")
-	cmd := exec.Command("go", "build", "-o", out, "./internal/builtins/testmcpserver")
+	cmd := exec.Command("go", "build", "-o", out, "./internal/mcp/testmcpserver")
 	cmd.Dir = findModuleRoot(t)
 	if b, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build test MCP server: %v\n%s", err, b)

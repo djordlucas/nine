@@ -28,16 +28,22 @@ type Content struct {
 }
 
 // FlattenContent renders a tools/call result as the single string Nine's tool
-// contract returns.
+// contract returns. The optional spillDir is where binary parts are written
+// (the owning connection's cache dir); empty falls back to
+// NINE_PLUGIN_CACHE_DIR.
 //
 // Everything that is not text used to be dropped on the floor. That is worse
 // than it sounds: a screenshot came back as a text summary saying a screenshot
 // was taken, plus the image — so the model was handed a confident description
 // of a picture it never received, and had no way to tell. Nothing is silently
-// discarded now. Binary parts are written to the plugin's cache dir and named
+// discarded now. Binary parts are written to the spill dir and named
 // in the text, so the bytes stay reachable (read_file) without spending a
 // context window on base64.
-func FlattenContent(tool string, content []Content) string {
+func FlattenContent(tool string, content []Content, spillDir ...string) string {
+	dir0 := ""
+	if len(spillDir) > 0 {
+		dir0 = spillDir[0]
+	}
 	var b strings.Builder
 	for _, c := range content {
 		switch c.Type {
@@ -45,7 +51,7 @@ func FlattenContent(tool string, content []Content) string {
 			b.WriteString(c.Text)
 
 		case "image", "audio":
-			writeBinaryPart(&b, tool, c.Type, c.MimeType, c.Data)
+			writeBinaryPart(&b, tool, c.Type, c.MimeType, c.Data, dir0)
 
 		case "resource":
 			switch {
@@ -54,7 +60,7 @@ func FlattenContent(tool string, content []Content) string {
 			case c.Resource.Text != "":
 				b.WriteString(c.Resource.Text)
 			case c.Resource.Blob != "":
-				writeBinaryPart(&b, tool, "resource", c.Resource.MimeType, c.Resource.Blob)
+				writeBinaryPart(&b, tool, "resource", c.Resource.MimeType, c.Resource.Blob, dir0)
 			default:
 				fmt.Fprintf(&b, "\n[resource: %s]", c.Resource.URI)
 			}
@@ -71,10 +77,10 @@ func FlattenContent(tool string, content []Content) string {
 	return b.String()
 }
 
-// writeBinaryPart saves a base64 part beside the plugin's cache dir and notes
-// where it went. With no cache dir configured it says what was received and
-// that it was not kept — still better than silence.
-func writeBinaryPart(b *strings.Builder, tool, kind, mime, data string) {
+// writeBinaryPart saves a base64 part in dir and notes where it went. With no
+// dir configured it says what was received and that it was not kept — still
+// better than silence.
+func writeBinaryPart(b *strings.Builder, tool, kind, mime, data, dir string) {
 	if data == "" {
 		fmt.Fprintf(b, "\n[%s: empty]", kind)
 		return
@@ -85,7 +91,9 @@ func writeBinaryPart(b *strings.Builder, tool, kind, mime, data string) {
 		return
 	}
 
-	dir := os.Getenv("NINE_PLUGIN_CACHE_DIR")
+	if dir == "" {
+		dir = os.Getenv("NINE_PLUGIN_CACHE_DIR")
+	}
 	if dir == "" {
 		fmt.Fprintf(b, "\n[%s: %s, %d bytes, not saved — no plugin cache dir configured]", kind, mime, len(decoded))
 		return

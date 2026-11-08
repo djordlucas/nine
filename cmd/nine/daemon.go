@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"nine/internal/builtins"
 	"nine/internal/config"
 	"nine/internal/embed"
+	"nine/internal/mcp"
 	"nine/internal/memory"
 	"nine/internal/plugin"
 	"nine/internal/runtime"
@@ -98,12 +98,13 @@ func runDaemon() {
 		}
 	}
 
-	// One MCP server, one plugin. Each [[mcp.server]] gets its own `mcp` bridge
-	// instance (R-PLUG.15), so an MCP server has the same failure domain and the
-	// same operator controls as any other plugin: it crashes alone, it shows up
-	// in `nine plugins` under its own name, and [plugins].disabled switches it
-	// off by that name. Started before user plugins so a user plugin colliding
-	// with an MCP tool is the one skipped.
+	// One MCP server, one manager-held connection. Each [[mcp.server]] becomes
+	// the plugin `mcp:<name>` (R-PLUG.15) — spawned directly by the manager, no
+	// bridge process — so an MCP server has the same failure domain and the same
+	// operator controls as any other plugin: it crashes alone, it shows up in
+	// `nine plugins` under its own name, and [plugins].disabled switches it off
+	// by that name. Started before user plugins so a user plugin colliding with
+	// an MCP tool is the one skipped.
 	startMCPServers(pluginManager, cfg)
 
 	// Load operator-supplied plugins from [plugins].user_dir, after the built-ins
@@ -395,7 +396,10 @@ func runDaemon() {
 //
 // A server that fails to start is logged and skipped by TryStartBuiltinInstance
 // — one unreachable MCP server must not stop the daemon from booting.
-// startMCPServers brings up one bridge per configured MCP server.
+// startMCPServers brings up one manager-held MCP connection per configured
+// server — no bridge process in between (adr/modular_nine.md P5): each
+// [[mcp.server]] is a supervised child of the daemon (stdio) or a hosted URL
+// (streamable HTTP), registered as the plugin `mcp:<name>` with prefixed tools.
 //
 // Concurrently, because each start blocks for that server's whole handshake and
 // a measured `npx` server takes ~72s to answer tools/list. Serially, four
@@ -405,27 +409,19 @@ func runDaemon() {
 func startMCPServers(mgr *plugin.Manager, cfg *config.Config) {
 	var wg sync.WaitGroup
 	for _, srv := range cfg.MCP.Servers {
-		spec, err := json.Marshal(map[string]any{
-			"name":         srv.Name,
-			"command":      srv.Command,
-			"args":         srv.Args,
-			"env":          srv.Env,
-			"url":          srv.URL,
-			"headers":      srv.Headers,
-			"nine_version": Version,
-		})
-		if err != nil {
-			// Only unmarshalable values could cause this, and the config types are
-			// all strings; log rather than fail the boot.
-			slog.Error("failed to encode MCP server spec", "server", srv.Name, "err", err)
-			continue
+		spec := mcp.ServerSpec{
+			Name:        srv.Name,
+			Command:     srv.Command,
+			Args:        srv.Args,
+			Env:         srv.Env,
+			URL:         srv.URL,
+			Headers:     srv.Headers,
+			NineVersion: Version,
 		}
-		instance := plugin.MCPInstanceName(srv.Name)
-		env := append(cfg.PluginEnvs(instance), "NINE_MCP_SERVER="+string(spec))
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			mgr.TryStartBuiltinInstance(builtins.MCPBuiltinName, instance, env...)
+			mgr.TryStartMCPServer(spec)
 		}()
 	}
 	// Waited on rather than left running: the tool registry has to be complete
