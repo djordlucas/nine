@@ -1,22 +1,27 @@
-# Modular Nine — all tooling over MCP
+# Modular Nine — built-ins as Go, MCP for subprocess tools
 
 - **Status:** Proposed (architecture analysis). Nothing here is built.
 - **Date:** 2026-11-01.
 - **Reviewed:** 2026-11-06 — fact-checked against the tree; §1 tool count and names, §2 progress-rail wording, §3 database ownership, §5 supervision wording corrected; test plan added as §10.
 - **Decisions:** 2026-11-06 — §9 items 1–4 answered by the requester: all tiers in scope, both directions, the sandbox fronted by MCP, prefix every server's tools.
+- **Revised:** 2026-11-08 — §9 items 8–11: built-in tools stay direct Go calls in the dispatcher and MCP is the only wire protocol across process boundaries (architecture C taken to completion); the toolvm is removed with its shipped tools translated to Go (model-authored tools refactored separately); first-party tool names do not change (reverses item 4); phases P0/P2/P3 dropped.
 - **Scope:** the daemon's tool-serving path — the plugin contract (`spec/contracts/plugin.md`), the `mcp` bridge (`internal/builtins/mcp.go`, `mcp_stdio.go`, `mcp_http.go`), the toolvm host front (`internal/toolvm/host.go`), the core-intercepted handlers (`internal/agent/register_*.go`), and the dispatcher (`spec/contracts/dispatcher.md`). The wire protocol (`list_tools`/`plugin_call`, R-PROTO.5), the config shape (`[[mcp.server]]`, `[plugins]`, `[tools]`), and the tool catalogs themselves are touched only where named below.
 - **Depends on:** `internal/plugin` (manager), `internal/builtins`, `internal/toolvm`, `internal/agent`.
 - **Follows:** R-PLUG.15 (an MCP server is a plugin, `spec/contracts/plugin.md`), `adr/plugin-http-transport-design.md`, `adr/deferred-tool-schemas.md` (toolkit exposition), `adr/tool-facilities.md` §7 (tool→tool dispatch and MCP reach rejected).
 
-**Recommendation: make MCP the only tool protocol on the daemon's tool path.**
-The dispatcher reaches every tool through one MCP client (`initialize` →
-`tools/list` → `tools/call`), and every first-party tool is served by an MCP
-server built into the same `nine` binary — in-process for the store-backed core
-tools and the sandboxed-tool host, a subprocess over the existing unix-socket
-HTTP transport for `shell`. The custom plugin envelope (R-PLUG.1) is retired and
-the `mcp` bridge builtin dissolves into the manager, which becomes that single
-client. Architecture B in §4 is the recommendation; §8 phases it so tool names
-— which role allowlists, eval cases, and prompts name literally — never change.
+**Recommendation: MCP is the only wire protocol that crosses a process
+boundary; built-in tools stay direct Go calls.** The dispatcher invokes
+built-in tools as in-process function calls into `memory.Store` et al. — no
+envelope, no transport, exactly as today — and reaches every tool in another
+process through one MCP client (`initialize` → `tools/list` → `tools/call`):
+`shell` and user plugins as MCP subprocesses (unix-socket HTTP / stdio), and
+external `[[mcp.server]]` spawned directly by the manager. The custom plugin
+envelope (R-PLUG.1) is retired and the `mcp` bridge builtin dissolves into the
+manager, which becomes that single client. This is architecture C in §4 taken
+to completion (revised 2026-11-08; the in-proc servers of the earlier
+architecture B are dropped). Because built-ins never enter the MCP roster,
+their names do not change, so role allowlists, eval cases, and prompts keep
+naming tools literally and untouched.
 
 ---
 
@@ -86,7 +91,7 @@ unix-socket HTTP transport instead of the custom envelope.
 
 ## 4. Architectures compared
 
-| | A — every family a stdio subprocess | B — one MCP client; in-proc servers for core + toolvm, subprocess MCP for shell and user plugins (**recommended**) | C — swap the envelope only (MCP over unix-socket HTTP for subprocesses; core/toolvm untouched) | D — keep both protocols forever |
+| | A — every family a stdio subprocess | B — one MCP client; in-proc servers for core + toolvm, subprocess MCP for shell and user plugins (recommended 2026-11-06, dropped 2026-11-08) | C — built-ins stay direct Go calls; every subprocess tool over MCP (**recommended**) | D — keep both protocols forever |
 |---|---|---|---|---|
 | One protocol on the tool path | yes | yes | no | no |
 | Crash isolation | maximum | per tier: subprocess where it matters (`shell`, third-party servers), in-proc where it is already the case | as today | as today |
@@ -99,63 +104,63 @@ unix-socket HTTP transport instead of the custom envelope.
 A is rejected because §3 makes it unachievable for the core tier and the toolvm
 host, and costly on the hottest path. D is rejected because two clients with an
 "except MCP" clause in each contract is exactly what R-PLUG.15 removed. C is
-not "all tooling over MCP" but is retained as phase P1 of §8, since it is the
-smallest first step.
+the recommendation: §3 shows the in-proc MCP fronts of B add a loopback layer
+without adding isolation — the same process owns the database handles either
+way — so built-ins remain plain Go calls and MCP is reserved for what crosses
+a process boundary. B was the recommendation on 2026-11-06; it is kept above
+as the record.
 
 ---
 
-## 5. Recommended architecture (B)
+## 5. Recommended architecture
 
 ```text
-agent.Loop ── Dispatcher ── one MCP client (internal/mcp)
-                                   ├─ in-proc  core         InterceptedDefs + register_* handlers, store-backed
-                                   ├─ in-proc  tools        toolvm.Host front: Tools()→tools/list, CallOutput→tools/call
-                                   ├─ unix-socket HTTP MCP   nine mcp serve shell   (subprocess, same binary)
-                                   ├─ stdio subprocess       [[mcp.server]] command = …   (spawned by the manager directly)
-                                   └─ streamable HTTP        [[mcp.server]] url = …
+agent.Loop ── Dispatcher ── direct Go calls ──► built-in tools (register_* handlers,
+                │                                   store-backed, in-process as today)
+                └─ one MCP client (internal/mcp) ─┬─ unix-socket HTTP MCP    nine mcp serve shell
+                                                  ├─ stdio/HTTP subprocess   user plugins, MCP-only
+                                                  └─ stdio/streamable HTTP  [[mcp.server]] externals
 ```
 
-- **The manager becomes the MCP client manager.** Spawn → `initialize` →
-  `tools/list` → register, per server, with its own connection, read loop, and
-  write lock. The bridge's code (`internal/builtins/mcp*.go`) moves into
-  `internal/mcp` as the shared client and the `mcp` builtin is deleted. The
-  bridge's process-per-server disappears for external servers: the server
-  process becomes a directly supervised child of the daemon (today it is a
-  grandchild behind the bridge, with `exitWhenServerDies` chaining its death to
-  the bridge's exit), so crash isolation of the *server* is unchanged, and a
-  wedged stdio read blocks only that server's goroutine until the existing
-  5-minute call timeout tears the connection down (the failure mode R-PLUG.15's
-  process boundary guarded against).
+- **Built-ins are plain function calls.** The core-intercepted tools keep their
+  `register_*` handlers and call `memory.Store` et al. directly — no envelope,
+  no transport, no marshalling on the hot path. §3 is the reason: the daemon
+  owns every database handle, so this tier is in-process either way. The
+  dispatcher's ref expansion, approval gate, hooks, and output cap stay in
+  front of the dispatch with R-DISP.1's order unchanged, and invariant 12 (one
+  tool name, one backend) is enforced at registration across both paths.
+- **The manager becomes the MCP client manager for subprocess servers only.**
+  Spawn → `initialize` → `tools/list` → register, per server, with its own
+  connection, read loop, and write lock. The bridge's code
+  (`internal/builtins/mcp*.go`) moves into `internal/mcp` as the shared
+  client and the `mcp` builtin is deleted. External servers become directly
+  supervised children of the daemon (today they are grandchildren behind the
+  bridge, with `exitWhenServerDies` chaining); a wedged stdio read blocks only
+  that server's goroutine until the existing 5-minute call timeout tears the
+  connection down.
 - **`nine mcp serve <name>`** — a new hidden subcommand beside `nine plugin
   serve` — speaks MCP streamable HTTP on the per-instance unix socket, reusing
   the manager's socket, sanitized env, cache dir, and `[plugins].disabled`
   machinery (R-PLUG.3/10/11/13/13a/14 all survive; only the envelope changes).
   First user: `shell`.
-- **toolvm:** `Host` gains a `ServeMCP` adapter (`Tools()` → `tools/list`,
-  `CallOutput` → `tools/call`). Capability resolution, bounds, and audit
-  (R-TVM.4/5/6/7/12) are untouched — transport only. `tool_write`/`tool_delete`
-  and `nine tools reload` emit `tools/list_changed`.
-- **Core tools:** an in-proc server over the existing `register_*` handlers.
-  The dispatcher's ref expansion, approval gate, hooks, and output cap stay in
-  front of the client; R-DISP.1's order is unchanged. The loopback transport
-  passes `json.RawMessage` without a socket, so the hot path pays JSON
-  marshalling only.
+- **toolvm: removed (§9.10).** The shipped sandboxed tools
+  (`internal/toolvm/shipped/`) are translated to Go built-ins wired directly in
+  the dispatcher; `[tools].user_dir` developer tools become user plugins.
+  Model-authored tools (`tool_write`/`js_eval`, generated rows) are refactored
+  separately and are out of scope here.
 - **User plugins:** the sidecar-manifest gate (R-PLUG.9) is unchanged; the
   executable must speak MCP (stdio, or HTTP on the socket provided). During
   migration the manager dual-stacks — MCP handshake first, legacy envelope as
   a deprecated fallback — then the envelope is removed and `nine plugin
   validate` accepts only MCP.
-- **Naming (decided, §9.4):** every server's tools carry the `<server>__<tool>`
-  prefix, first-party servers included — `shell__shell`, `tools__read_file`,
-  `core__memory_get` — so a cross-server collision is structurally impossible
-  and the rule is uniform. This renames every first-party tool; each renaming
-  phase ships an old→new mapping table and updates everything that names tools
-  literally (role allowlists, eval cases, skills, prompts, `[context]
-  resident_tools`, the toolkit table in `internal/runtime/exposition.go`). The
-  deferred index's toolkits become uniform: `mcp/<server>` for external
-  servers, named toolkits for first-party ones.
+- **Naming (decided, §9.9):** built-ins keep their bare names (`memory_get`,
+  `read_file`); only servers on the MCP roster carry `<server>__<tool>`, which
+  is today's convention for external MCP servers. No first-party tool is
+  renamed, so role allowlists, eval cases, skills, prompts, `[context]
+  resident_tools`, and the toolkit table are untouched.
 - **Wire protocol:** `list_tools`/`plugin_call` (R-PROTO.5) are unchanged — they
-  address the dispatcher, which now fans out over MCP.
+  address the dispatcher, which splits: direct calls for built-ins, the MCP
+  client for everything in another process.
 
 ---
 
@@ -177,23 +182,22 @@ and vet the same way the API does, because Nine does not vet a server's argument
 
 Schemas, descriptions, exposition (ranked/deferred/hybrid,
 `adr/deferred-tool-schemas.md`), ref expansion, spill, and approval gates are
-unchanged — all dispatcher-side. Tool **names** change: every tool gains its
-server's `<server>__` prefix (§9.4), so the model sees `tools__read_file`,
-`core__memory_get`, `shell__shell`. Optional later: `structuredContent` for
-`shell`'s `{stdout, stderr, exit_code}` instead of a JSON-encoded string in the
-text part.
+unchanged — all dispatcher-side. Tool **names** do not change (§9.9): built-ins
+keep their bare names and remote tools keep `<server>__<tool>`, as today.
+Optional later: `structuredContent` for `shell`'s `{stdout, stderr, exit_code}`
+instead of a JSON-encoded string in the text part.
 
 ---
 
 ## 8. Migration phases
 
+P0, P2 and P3 are dropped (revised 2026-11-08, §9.11): no in-proc MCP servers are
+built, so there is no loopback transport, no toolvm front and no core front.
+
 | Phase | Work | Gate |
 |---|---|---|
-| P0 | `internal/mcp`: hand-rolled MCP client (moved from `internal/builtins`) + symmetric server + in-proc transport; no new dependency | unit tests against `internal/builtins/testmcpserver` |
-| P1 | `nine mcp serve shell`; manager dual-stack (MCP first, legacy fallback); `shell` served over MCP (architecture C as the first step) | `go test ./...`; evals green; `nine plugins` roster unchanged |
-| P2 | in-proc `tools` front over `toolvm.Host`; sandboxed tools registered through the client; `tools/list_changed` on write/delete/reload | toolvm + `sync_sandboxed_test.go` suites |
-| P3 | in-proc `core` server; core tools registered through the client; refs/approval/spill stay in front | dispatcher + `register_*_test.go` suites |
-| P4 | user plugins speak MCP; legacy envelope removed; `nine plugin validate` MCP-only; `spec/contracts/plugin.md` rewritten as "plugins are MCP servers" | `userplugins` + plugin contract suites |
+| P1 | `internal/mcp`: hand-rolled MCP client (moved from `internal/builtins`) + symmetric server over real transports, no new dependency; `nine mcp serve shell`; manager dual-stack (MCP first, legacy fallback); `shell` served over MCP | unit tests against `internal/builtins/testmcpserver`; `go test ./...`; evals green; `nine plugins` roster unchanged |
+| P4 | user plugins speak MCP; legacy envelope removed; `nine plugin validate` MCP-only; `spec/contracts/plugin.md` rewritten as "plugins are MCP servers". toolvm removed; shipped tools translated to Go built-ins (§9.10) | `userplugins` + plugin contract suites; toolvm suites deleted, built-in tool coverage moves to `register_*_test.go` |
 | P5 | external `[[mcp.server]]` spawned directly by the manager; bridge builtin deleted; roster and `[plugins].disabled` semantics unchanged | `mcp_test.go`, `mcp_http_test.go`, evals incl. `deferred-mcp-discovery` |
 | P6 | export direction (in scope, §9.2): `nine mcp export` / API `/mcp` over the same adapters (§6) | OpenAPI drift checks, API tests |
 
@@ -205,18 +209,40 @@ Answered by the requester on 2026-11-06:
 
 1. **Scope — all tiers, core included.** The core-intercepted tools are served
    by the in-proc `core` server (P3); a subprocess is impossible because the
-   daemon owns every database handle (§3).
+   daemon owns every database handle (§3). (Superseded by item 8, 2026-11-08:
+   they stay direct Go calls.)
 2. **Direction — both.** The dispatcher consumes only MCP, and Nine also
    exposes its own tools to external MCP clients (`nine mcp export` / API
    `/mcp`, §6); P6 is in scope, not optional.
 3. **Toolvm — the sandbox is fronted by MCP.** The host stays in-process behind
    the `tools` front; capability grants (R-TVM.5/6/7) are unchanged.
+   (Superseded by item 10, 2026-11-08: the toolvm is removed outright.)
 4. **Naming — prefix everything.** Uniform `<server>__<tool>` for every
    server, first-party included (`shell__shell`, `tools__read_file`,
    `core__memory_get`). This reverses §5's earlier bare-names leaning: every
    first-party tool is renamed, and the ripple (roles, evals, skills, prompts,
    `resident_tools`, toolkit table) is part of the migration, not a separate
    decision. See §7 and §10.
+   (Reversed by item 9, 2026-11-08: no first-party tool is renamed.)
+
+Answered by the requester on 2026-11-08:
+
+8. **Architecture — built-ins stay direct Go calls.** No in-proc MCP front for
+   core or toolvm: the daemon owns every database handle (§3), so those tiers
+   are in-process either way, and a loopback MCP layer adds complexity without
+   isolation. MCP is the only wire protocol across process boundaries —
+   architecture C taken to completion (§5 rewritten).
+9. **Naming — no renames.** Built-ins keep bare names (`memory_get`,
+   `read_file`); only MCP-roster servers carry `<server>__<tool>`, today's
+   convention. Reverses item 4, so the §7/§10 ripple disappears and the
+   behaviour-parity gate has no sanctioned differences.
+10. **toolvm — removed.** Shipped sandboxed tools become Go built-ins wired
+    directly in the dispatcher; `[tools].user_dir` tools become user plugins.
+    Model-authored tools (`tool_write`/`js_eval`/generated rows) are refactored
+    separately, out of scope here; the generated-tools eval track is reworked
+    in the same PR that lands the removal.
+11. **Phasing — P1/P4/P5/P6 only.** P0/P2/P3 dropped (§8); phased dual-stack
+    remains. Answers open question 7.
 
 Still open:
 
@@ -226,8 +252,6 @@ Still open:
 6. **First-party subprocess transport** — unix-socket HTTP (reuses R-PLUG.8
    concurrency machinery; recommended) or stdio (simpler, serial, fine for
    `shell` alone)?
-7. **Phasing** — phased dual-stack (§8, recommended) or big-bang? With renames
-   in scope (§9.4), each renaming phase ships its old→new name-mapping table.
 
 ---
 
@@ -242,6 +266,10 @@ phase; Playwright end-to-end only under `NINE_PLAYWRIGHT_TEST=1`; the pre-merge
 gate is `make ci` (plus `make scan` for the image). At the requester's direction
 (2026-11-06) the evals are a behaviour-parity gate at every phase, not a
 one-off check — see "Behaviour parity" below.
+
+Revised 2026-11-08: the P0, P2 and P3 rows below are dropped with those
+phases; P1 covers the client and server over real transports (no in-proc
+transport).
 
 | Phase | Unit | Integration | Gate |
 |---|---|---|---|
@@ -268,21 +296,17 @@ against a baseline captured on `main` before P0 starts:
   runner starts a real in-process daemon per test and deadlocks intermittently,
   which is why it is outside `make ci`: rerun once on a deadlock before treating
   a failure as real.
-- The only sanctioned difference is a rename (§9.4): eval cases, replay
-  fixtures (`tests/evals/replay/<id>/journal.json` — their assertions name
-  tools, e.g. `tool_start.name`), and role allowlists are updated in the same
-  PR through the phase's old→new mapping table, and a case must pass under its
-  new name exactly where it passed under the old one.
-- Any other per-case difference — a new failure, a new pass, a new skip — is a
-  behaviour change and blocks the phase until explained.
+- There is no sanctioned difference (renames reversed, §9.9): any per-case
+  difference — a new failure, a new pass, a new skip — is a behaviour change
+  and blocks the phase until explained. (The 2026-11-06 version allowed a
+  rename through per-phase old→new mapping tables.)
 
 Cross-cutting, at every phase:
 
-- **Name mapping** — snapshot the full catalog (names + schemas) before and
-  after each phase; every rename must appear in that phase's old→new mapping
-  table and nothing else may change. Role allowlists, eval cases, skills,
-  prompts, `[context] resident_tools`, and the toolkit table
-  (`internal/runtime/exposition.go`) are updated in the same PR (§9.4).
+- **Catalog stability** — snapshot the full catalog (names + schemas) before and
+  after each phase; nothing may change (§9.9). Role allowlists, eval cases,
+  skills, prompts, `[context] resident_tools`, and the toolkit table
+  (`internal/runtime/exposition.go`) are untouched.
 - **Conformance** — each new or rewritten rule gets a row in
   `spec/conformance.md` (R-PLUG.1 as "plugins are MCP servers", the `_meta`
   jobs extension, the in-proc transport).
@@ -303,6 +327,7 @@ Cross-cutting, at every phase:
 | stdio stays serial | One client-side write lock per stdio server; the 3-minute handshake budget and 5-minute call timeout move with the client into the manager. |
 | Third-party server trust is unchanged | Declaring an MCP server is trusting it (R-PLUG.15b); standardization does not vet a server's arguments. |
 | Export direction adds a trust surface | An external `/mcp` endpoint needs the API's authentication, and server→client sampling/elicitation stay disabled (adr/tool-facilities.md §7). |
-| First-party tool names change (decided, §9.4) | Uniform `<server>__<tool>` prefixing renames every built-in (`shell__shell`, `tools__read_file`, `core__memory_get`); role allowlists, eval cases (`deferred-mcp-discovery`, `mcp/fixture`), skills, prompts, `resident_tools`, and the toolkit table must migrate with the rename, in the same phase. |
-| Tool→tool dispatch stays rejected | An in-proc MCP front for toolvm does not give sandboxed tools MCP reach; the guest ABI has no dispatch verb and none is added. |
-| In-proc servers lose process isolation for core/toolvm | They never had it — both tiers are already in-process; §3 only forbids moving them out. |
+| First-party tool names do not change (decided, §9.9) | Built-ins keep bare names; only MCP-roster servers carry `<server>__<tool>`, today's convention (reverses §9.4). Role allowlists, eval cases, skills, prompts, `resident_tools`, and the toolkit table are untouched. |
+| Tool→tool dispatch stays rejected | With the toolvm removed (§9.10) there is no guest ABI; no dispatch verb is added. |
+| Built-ins are in-process by design | Core tools call the daemon's store directly (§3); process isolation applies only to subprocess tools (`shell`, plugins, external servers). |
+| Model-authored tools are out of scope | `tool_write`/`js_eval`/generated tools are refactored separately (§9.10); the generated-tools eval track is reworked in the same PR that lands the removal. |

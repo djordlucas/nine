@@ -65,7 +65,7 @@ changed; the document stays as the record and is not rewritten.
 | `durable-and-long-running-tools.md` | Giving a sandboxed tool memory and letting work outlive a turn. Amends I-TVM.3. |
 | `generated-tool-authoring-loop.md` | Shortening the write→fail→rewrite loop for agent-authored tools: parse at write time, dry-run, logs on failure, stdlib gaps, catalog hygiene. |
 | `event-log.md` | Investigation behind the session journal. Written against PostgreSQL; the store is SQLite. |
-| `modular_nine.md` | All tooling over MCP: one MCP client in the daemon, first-party tools served by in-binary MCP servers (in-proc core/toolvm, subprocess `shell`), the plugin envelope retired. Architectures compared, phased migration, test plan, open questions |
+| `modular_nine.md` | MCP as the only cross-process tool protocol: built-ins stay direct Go calls in the dispatcher, `shell`/plugins/external servers reached via one MCP client, plugin envelope retired, toolvm removed (shipped tools translated to Go; model-authored tools refactored separately). Architectures compared, phased migration, test plan, open questions |
 | `personality-pattern.md` | Packaging complete Nine instances as specialized agents; self-model bootstrapping |
 | `predefined-agents-design.md` | Standing agents as config-seeded goals: motivation, work breakdown, phasing |
 | `reactive-events.md` | Event subscriptions: reacting to the journal |
