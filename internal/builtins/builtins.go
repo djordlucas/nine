@@ -32,11 +32,21 @@ import (
 )
 
 // serveFuncs maps a built-in plugin's wire name — the name the daemon starts it
-// under and the agent sees in `nine plugins` — to the function that serves it.
-// Each entry blocks until the plugin process is told to stop.
+// under and the agent sees in `nine plugins` — to the function that serves it
+// over the legacy plugin envelope. Each entry blocks until the plugin process
+// is told to stop.
 var serveFuncs = map[string]func(){
 	"shell":        serveShell,
 	MCPBuiltinName: serveMCP,
+}
+
+// mcpServeFuncs maps a built-in's wire name to the function that serves it over
+// MCP (`nine mcp serve <name>`, adr/modular_nine.md): the same tools as the
+// legacy path, on the one wire protocol that crosses a process boundary. The
+// daemon starts these with the manager's MCP launch so the subprocess speaks
+// MCP end to end.
+var mcpServeFuncs = map[string]func(version string){
+	"shell": serveShellMCP,
 }
 
 // MCPBuiltinName is the built-in that bridges one MCP server. It is served like
@@ -81,6 +91,38 @@ func Names() []string {
 func Has(name string) bool {
 	_, ok := serveFuncs[name]
 	return ok
+}
+
+// HasMCPServe reports whether name is a built-in this binary can serve over MCP
+// (`nine mcp serve <name>`). The daemon starts those through the manager's MCP
+// launch (adr/modular_nine.md P1).
+func HasMCPServe(name string) bool {
+	_, ok := mcpServeFuncs[name]
+	return ok
+}
+
+// MCPNames returns every built-in this binary can serve over MCP, in a stable
+// order.
+func MCPNames() []string {
+	out := make([]string, 0, len(mcpServeFuncs))
+	for name := range mcpServeFuncs {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// ServeMCP runs the named built-in over MCP, blocking until it is stopped. It
+// is the body of `nine mcp serve <name>`, invoked by the daemon's plugin
+// manager as a child process. It returns an error only for an unknown name; a
+// serving plugin that cannot listen exits the process itself (mcp.Serve).
+func ServeMCP(name, version string) error {
+	fn, ok := mcpServeFuncs[name]
+	if !ok {
+		return fmt.Errorf("unknown MCP-servable built-in %q (have: %v)", name, MCPNames())
+	}
+	fn(version)
+	return nil
 }
 
 // Serve runs the named built-in plugin, blocking until it is stopped. It is the

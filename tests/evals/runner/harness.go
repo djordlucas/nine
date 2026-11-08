@@ -371,7 +371,7 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 		// case's workspace, as the daemon's shell runs in [workspace].root
 		// (NINE_WORKSPACE): started without it, a model's commands ran in the test
 		// process's directory — this repository's tests/evals.
-		pluginMgr.TryStartBuiltin("shell", "NINE_WORKSPACE="+workspace)
+		pluginMgr.TryStartMCPBuiltin("shell", "NINE_WORKSPACE="+workspace)
 		// 5b. MCP servers the case declares, mirroring startMCPServers in
 		//     cmd/nine/daemon.go. This is not an optional extra: a capability Nine
 		//     does not implement itself now arrives this way and no other, so a

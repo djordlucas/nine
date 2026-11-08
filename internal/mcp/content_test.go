@@ -1,4 +1,4 @@
-package builtins
+package mcp_test
 
 import (
 	"encoding/base64"
@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"nine/internal/mcp"
 )
 
 // A tools/call result may carry more than text, and everything that was not
@@ -15,10 +17,10 @@ import (
 // way to tell. These pin that nothing is silently discarded.
 
 // pngContent is a one-pixel PNG as an MCP image part.
-func pngContent(t *testing.T) mcpContent {
+func pngContent(t *testing.T) mcp.Content {
 	t.Helper()
 	raw := []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01, 0x02}
-	return mcpContent{Type: "image", MimeType: "image/png", Data: base64.StdEncoding.EncodeToString(raw)}
+	return mcp.Content{Type: "image", MimeType: "image/png", Data: base64.StdEncoding.EncodeToString(raw)}
 }
 
 // TestFlattenScreenshotShape uses the exact response shape observed from
@@ -28,7 +30,7 @@ func TestFlattenScreenshotShape(t *testing.T) {
 	t.Setenv("NINE_PLUGIN_CACHE_DIR", dir)
 
 	summary := "### Result\n- [Screenshot of viewport](.playwright-mcp/page.png)\n"
-	got := flattenMCPContent("browser_take_screenshot", []mcpContent{
+	got := mcp.FlattenContent("browser_take_screenshot", []mcp.Content{
 		{Type: "text", Text: summary},
 		pngContent(t),
 	})
@@ -66,7 +68,7 @@ func TestFlattenDoesNotInlineBase64(t *testing.T) {
 	t.Setenv("NINE_PLUGIN_CACHE_DIR", t.TempDir())
 	img := pngContent(t)
 
-	got := flattenMCPContent("shot", []mcpContent{img})
+	got := mcp.FlattenContent("shot", []mcp.Content{img})
 
 	if strings.Contains(got, img.Data) {
 		t.Errorf("base64 payload was inlined into the tool output:\n%s", got)
@@ -78,7 +80,7 @@ func TestFlattenDoesNotInlineBase64(t *testing.T) {
 func TestFlattenReportsImageWithoutCacheDir(t *testing.T) {
 	t.Setenv("NINE_PLUGIN_CACHE_DIR", "")
 
-	got := flattenMCPContent("shot", []mcpContent{pngContent(t)})
+	got := mcp.FlattenContent("shot", []mcp.Content{pngContent(t)})
 
 	for _, want := range []string{"image", "image/png", "not saved"} {
 		if !strings.Contains(got, want) {
@@ -93,7 +95,7 @@ func TestFlattenResourceKinds(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("NINE_PLUGIN_CACHE_DIR", dir)
 
-	textRes := mcpContent{Type: "resource"}
+	textRes := mcp.Content{Type: "resource"}
 	textRes.Resource = &struct {
 		URI      string `json:"uri,omitempty"`
 		MimeType string `json:"mimeType,omitempty"`
@@ -101,7 +103,7 @@ func TestFlattenResourceKinds(t *testing.T) {
 		Blob     string `json:"blob,omitempty"`
 	}{URI: "file:///a.txt", MimeType: "text/plain", Text: "embedded text"}
 
-	blobRes := mcpContent{Type: "resource"}
+	blobRes := mcp.Content{Type: "resource"}
 	blobRes.Resource = &struct {
 		URI      string `json:"uri,omitempty"`
 		MimeType string `json:"mimeType,omitempty"`
@@ -110,7 +112,7 @@ func TestFlattenResourceKinds(t *testing.T) {
 	}{URI: "file:///a.bin", MimeType: "application/octet-stream",
 		Blob: base64.StdEncoding.EncodeToString([]byte("bytes"))}
 
-	got := flattenMCPContent("t", []mcpContent{textRes, blobRes})
+	got := mcp.FlattenContent("t", []mcp.Content{textRes, blobRes})
 
 	if !strings.Contains(got, "embedded text") {
 		t.Errorf("resource text was dropped:\n%s", got)
@@ -122,7 +124,7 @@ func TestFlattenResourceKinds(t *testing.T) {
 
 // A content type MCP adds later must look like something missing, not nothing.
 func TestFlattenUnknownTypeIsReported(t *testing.T) {
-	got := flattenMCPContent("t", []mcpContent{{Type: "hologram"}})
+	got := mcp.FlattenContent("t", []mcp.Content{{Type: "hologram"}})
 
 	if !strings.Contains(got, "hologram") {
 		t.Errorf("unknown content type was dropped silently:\n%s", got)
@@ -130,7 +132,7 @@ func TestFlattenUnknownTypeIsReported(t *testing.T) {
 }
 
 func TestFlattenResourceLink(t *testing.T) {
-	got := flattenMCPContent("t", []mcpContent{
+	got := mcp.FlattenContent("t", []mcp.Content{
 		{Type: "resource_link", Name: "report", URI: "file:///r.pdf"},
 	})
 
@@ -153,8 +155,8 @@ func TestExtensionForMIME(t *testing.T) {
 		"image/../../etc/passwd":   ".bin", // never let a mime type shape a path
 	}
 	for mime, want := range cases {
-		if got := extensionForMIME(mime); got != want {
-			t.Errorf("extensionForMIME(%q) = %q, want %q", mime, got, want)
+		if got := mcp.ExtensionForMIME(mime); got != want {
+			t.Errorf("ExtensionForMIME(%q) = %q, want %q", mime, got, want)
 		}
 	}
 }
@@ -172,7 +174,7 @@ func TestFlattenToolNameCannotEscapeCacheDir(t *testing.T) {
 	t.Setenv("NINE_PLUGIN_CACHE_DIR", cache)
 
 	for _, hostile := range []string{"../escaped", "../../etc/passwd", "a/b", `..\win`, "/abs"} {
-		flattenMCPContent(hostile, []mcpContent{pngContent(t)})
+		mcp.FlattenContent(hostile, []mcp.Content{pngContent(t)})
 	}
 
 	// Nothing may appear beside the cache dir.
@@ -205,8 +207,8 @@ func TestSafeFileName(t *testing.T) {
 		"...":                     "part",
 	}
 	for in, want := range cases {
-		if got := safeFileName(in); got != want {
-			t.Errorf("safeFileName(%q) = %q, want %q", in, got, want)
+		if got := mcp.SafeFileName(in); got != want {
+			t.Errorf("SafeFileName(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

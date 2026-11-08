@@ -11,6 +11,7 @@ import (
 	"nine/internal/builtins"
 	"nine/internal/cli"
 	"nine/internal/config"
+	"nine/internal/mcp"
 )
 
 // Version is the release version. It is overridden at build time via
@@ -25,6 +26,14 @@ func main() {
 	// piece of it is inappropriate there (spec/contracts/plugin.md R-PLUG.13).
 	if name, isServe := pluginServeArgs(os.Args[1:]); isServe {
 		servePluginAndExit(name)
+	}
+
+	// MCP-serving built-in child: `nine mcp serve <name>`, spawned by the
+	// plugin manager for first-party tools served over MCP
+	// (adr/modular_nine.md). Same single-purpose dispatch as plugin serve
+	// above — no config, no log file, no CLI in the child.
+	if name, isServe := mcpServeArgs(os.Args[1:]); isServe {
+		serveMCPAndExit(name)
 	}
 
 	// API server mode: `nine api serve` starts the HTTP API server as a
@@ -52,6 +61,47 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+// mcpServeArgs reports whether argv invokes `nine mcp serve [name]`, and the
+// name if one was given. A bare `mcp serve` still reports true so the missing
+// name is answered by serveMCPAndExit — which knows the MCP-servable roster —
+// rather than falling through to the CLI.
+func mcpServeArgs(args []string) (name string, isServe bool) {
+	if len(args) >= 2 && args[0] == "mcp" && args[1] == "serve" {
+		if len(args) >= 3 {
+			return args[2], true
+		}
+		return "", true
+	}
+	return "", false
+}
+
+// serveMCPAndExit runs one MCP-serving built-in and never returns. It is the
+// whole of what an `nine mcp serve <name>` child process does; see
+// servePluginAndExit for why a plugin child must not run the ordinary startup.
+func serveMCPAndExit(name string) {
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	// Fail closed outside the daemon. An MCP-serving built-in is only ever
+	// spawned by the plugin manager, which allocates the socket first; with no
+	// socket and no stdio opt-in there is nothing to serve and no caller to
+	// answer. mcp.Serve enforces this too.
+	stdio := os.Getenv(mcp.TransportEnv) == mcp.TransportStdio
+	if !stdio && os.Getenv(mcp.SocketEnv) == "" {
+		fmt.Fprintf(os.Stderr, "nine mcp serve: %s is not set — this subcommand is spawned by the daemon, not run directly (set %s=%s to serve over stdio)\n",
+			mcp.SocketEnv, mcp.TransportEnv, mcp.TransportStdio)
+		os.Exit(1)
+	}
+	if name == "" {
+		fmt.Fprintf(os.Stderr, "usage: nine mcp serve <%s>\n", strings.Join(builtins.MCPNames(), "|"))
+		os.Exit(1)
+	}
+	if err := builtins.ServeMCP(name, Version); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	os.Exit(0)
 }
 
 // apiServeArgs reports whether argv invokes `nine api serve`.

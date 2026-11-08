@@ -9,28 +9,53 @@ import (
 	"os/exec"
 	"time"
 
+	"nine/internal/mcp"
 	"nine/internal/plugin"
 )
 
-// serveShell runs the `shell` built-in: a single tool that executes a command
-// through sh, with the destructive-command guard in shell_security.go.
+// shellTool is the `shell` tool definition, shared by both serve paths: the
+// legacy envelope (`nine plugin serve shell`) and MCP (`nine mcp serve shell`).
+// The tool name stays bare on both (adr/modular_nine.md §9.9).
+func shellTool() plugin.ToolDefinition {
+	return plugin.ToolDefinition{
+		Name:        "shell",
+		DisplayName: "Shell",
+		Description: "Execute a shell command and return its stdout, stderr, and exit code as JSON. Commands run in the workspace, so a relative path means the same file here as it does to read_file and write_file. Destructive commands (recursive deletion, disk formatting, sudo, force-push, etc.) are blocked unless NINE_SHELL_UNSAFE=1 is set.",
+		InputSchema: plugin.Schema(`{
+			"type":"object",
+			"required":["command"],
+			"properties":{
+				"command":{"type":"string","description":"Shell command to execute"},
+				"timeout":{"type":"integer","description":"Timeout in seconds (default 30)"}
+			}
+		}`),
+	}
+}
+
+// serveShell runs the `shell` built-in over the legacy plugin envelope: a single
+// tool that executes a command through sh, with the destructive-command guard
+// in shell_security.go. Deprecated in favour of serveShellMCP
+// (adr/modular_nine.md); the manager still accepts it during the dual-stack.
 func serveShell() {
 	plugin.Serve(
-		[]plugin.ToolDefinition{{
-			Name:        "shell",
-			DisplayName: "Shell",
-			Description: "Execute a shell command and return its stdout, stderr, and exit code as JSON. Commands run in the workspace, so a relative path means the same file here as it does to read_file and write_file. Destructive commands (recursive deletion, disk formatting, sudo, force-push, etc.) are blocked unless NINE_SHELL_UNSAFE=1 is set.",
-			InputSchema: plugin.Schema(`{
-				"type":"object",
-				"required":["command"],
-				"properties":{
-					"command":{"type":"string","description":"Shell command to execute"},
-					"timeout":{"type":"integer","description":"Timeout in seconds (default 30)"}
-				}
-			}`),
-		}},
+		[]plugin.ToolDefinition{shellTool()},
 		map[string]plugin.ToolHandler{"shell": runShell},
 	)
+}
+
+// serveShellMCP runs the `shell` built-in over MCP (adr/modular_nine.md): the
+// same tool and handler, served by `nine mcp serve shell` on the manager's
+// Unix socket by default or over stdio when NINE_MCP_TRANSPORT=stdio (§9.6).
+func serveShellMCP(version string) {
+	def := shellTool()
+	err := mcp.Serve("shell", version,
+		[]mcp.ServerTool{{Name: def.Name, Description: def.Description, InputSchema: def.InputSchema}},
+		map[string]mcp.Handler{"shell": runShell},
+	)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
 
 // workspaceDir returns the directory shell commands run in: the workspace the

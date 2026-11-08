@@ -1,4 +1,4 @@
-package builtins
+package mcp
 
 import (
 	"bufio"
@@ -13,24 +13,23 @@ import (
 	"time"
 )
 
-// This is the JSON-RPC 2.0 stdio client for talking to an MCP server. It used
-// to live in internal/plugin as a second transport the manager had to know
-// about, alongside the HTTP one every native plugin uses. It belongs here
-// instead: MCP is now reached through a plugin like anything else, so stdio is
-// one bridge's private implementation detail rather than a fork in the core
-// (spec/contracts/plugin.md R-PLUG.15).
+// This is the JSON-RPC 2.0 stdio client for talking to an MCP server. stdio has
+// no per-message framing, so a response can only be matched to its request by
+// owning the stream for the whole round trip; the transport is serial and the
+// caller declares that honestly (max_concurrent: 1) rather than discovering it
+// as contention (R-PLUG.8).
 //
-// Reads are serialized under a mutex because stdio has no per-message framing —
-// there is no way to match an arbitrary response to a request without owning
-// the stream for the round trip. That is why the bridge advertises
-// max_concurrent: 1; the serialization is inherent to the transport, not a
-// choice, and now it is declared where the daemon can see it.
+// Reads are serialized under a mutex for that reason.
 
-// mcpScannerMaxBytes bounds a single JSON-RPC line. MCP responses carry tool
+// scannerMaxBytes bounds a single JSON-RPC line. MCP responses carry tool
 // output inline, which can be large.
-const mcpScannerMaxBytes = 4 * 1024 * 1024
+const scannerMaxBytes = 4 * 1024 * 1024
 
-type mcpStdio struct {
+// stdioStopGrace is how long an MCP server gets to exit on its own after stdin
+// closes, before it is killed.
+const stdioStopGrace = 3 * time.Second
+
+type stdioConn struct {
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
 	stdout *bufio.Scanner
@@ -41,57 +40,56 @@ type mcpStdio struct {
 	nextID int
 
 	// stateMu guards closed, and is deliberately *not* callMu. A single mutex
-	// deadlocks teardown: call() holds it across a blocking Scan, so stop() —
+	// deadlocks teardown: Call() holds it across a blocking Scan, so Stop() —
 	// which is how a hung server is supposed to be interrupted — would wait on
 	// the very read it is meant to unblock. The handshake timeout could then
 	// never fire, and a server that accepts stdin without ever replying would
-	// hang plugin.describe, and with it daemon boot, forever.
+	// hang the handshake, and with it boot, forever.
 	stateMu sync.Mutex
 	closed  bool
 
 	// done closes when the server process has exited and been reaped; waitErr
-	// holds why. Exactly one goroutine calls cmd.Wait (started in dialMCP), so
-	// stop and the crash watchdog can both learn the outcome without racing on
+	// holds why. Exactly one goroutine calls cmd.Wait (started in DialStdio), so
+	// Stop and the crash watchdog can both learn the outcome without racing on
 	// a second Wait — and a server that dies is reaped rather than left a zombie.
 	done    chan struct{}
 	waitErr error
 }
 
 // Exited returns a channel closed when the MCP server process exits, for any
-// reason. See mcpStdio.done.
-func (c *mcpStdio) Exited() <-chan struct{} { return c.done }
+// reason. See stdioConn.done.
+func (c *stdioConn) Exited() <-chan struct{} { return c.done }
 
-// StoppedDeliberately reports whether the exit followed a stop() rather than a
+// StoppedDeliberately reports whether the exit followed a Stop() rather than a
 // crash, so a watchdog can tell shutdown from failure.
-func (c *mcpStdio) StoppedDeliberately() bool {
+func (c *stdioConn) StoppedDeliberately() bool {
 	c.stateMu.Lock()
 	defer c.stateMu.Unlock()
 	return c.closed
 }
 
-// isClosed reports whether stop() has run.
-func (c *mcpStdio) isClosed() bool {
+// isClosed reports whether Stop() has run.
+func (c *stdioConn) isClosed() bool {
 	c.stateMu.Lock()
 	defer c.stateMu.Unlock()
 	return c.closed
 }
 
-type mcpRPCError struct {
+type rpcError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 }
 
-// dialMCP spawns the MCP server and sets up its stdio pipes. env is the extra
-// environment for the server process, on top of this bridge's own — which the
+// DialStdio spawns the MCP server and sets up its stdio pipes. env is the extra
+// environment for the server process, on top of this process's own — which the
 // daemon already sanitized, so a server sees Nine's secrets no more than any
 // other plugin does.
-func dialMCP(command string, args []string, env []string) (*mcpStdio, error) {
+func DialStdio(command string, args []string, env []string) (Conn, error) {
 	cmd := exec.Command(command, args...) //nolint:gosec // operator-configured [[mcp.server]] command
 	cmd.Env = append(os.Environ(), env...)
 	// Put the server in its own process group so the whole tree can be signalled
 	// as one. `npx foo` is sh → npm → node: killing the direct child leaves the
 	// node process running, and it accumulates one orphan per daemon restart.
-	// Verified by finding exactly those orphans still alive after teardown.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	// The server's own stderr is worth keeping: it is where an MCP server
 	// explains why it refused to start, and it lands in the daemon's log.
@@ -110,9 +108,9 @@ func dialMCP(command string, args []string, env []string) (*mcpStdio, error) {
 	}
 
 	scanner := bufio.NewScanner(stdoutPipe)
-	scanner.Buffer(make([]byte, mcpScannerMaxBytes), mcpScannerMaxBytes)
+	scanner.Buffer(make([]byte, scannerMaxBytes), scannerMaxBytes)
 
-	c := &mcpStdio{cmd: cmd, stdin: stdinPipe, stdout: scanner, done: make(chan struct{})}
+	c := &stdioConn{cmd: cmd, stdin: stdinPipe, stdout: scanner, done: make(chan struct{})}
 	go func() {
 		c.waitErr = cmd.Wait()
 		close(c.done)
@@ -120,18 +118,17 @@ func dialMCP(command string, args []string, env []string) (*mcpStdio, error) {
 	return c, nil
 }
 
-// call sends a JSON-RPC request and returns the raw result, skipping any
+// Call sends a JSON-RPC request and returns the raw result, skipping any
 // notifications (messages with no id) that arrive before the response.
-// call sends a JSON-RPC request and returns the raw result.
 //
 // ctx bounds the round trip, but stdio cannot abandon one in-flight request and
 // resynchronize: the reply has no framing to skip past, so a request given up on
 // would leave the next call reading someone else's answer. Cancellation
-// therefore tears the connection down — the server is killed and the bridge
-// follows it out (exitWhenServerDies) — which is a loud, correct failure rather
-// than a stream silently out of step. HTTP has real per-request cancellation and
-// does not need this.
-func (c *mcpStdio) call(ctx context.Context, method string, params any) (json.RawMessage, error) {
+// therefore tears the connection down — the server is killed and whoever watches
+// Exited follows it out — which is a loud, correct failure rather than a stream
+// silently out of step. HTTP has real per-request cancellation and does not
+// need this.
+func (c *stdioConn) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	type result struct {
 		raw json.RawMessage
 		err error
@@ -146,14 +143,14 @@ func (c *mcpStdio) call(ctx context.Context, method string, params any) (json.Ra
 	case r := <-done:
 		return r.raw, r.err
 	case <-ctx.Done():
-		// stop() takes only stateMu, so it can interrupt a read blocked under
+		// Stop() takes only stateMu, so it can interrupt a read blocked under
 		// callMu — the whole reason those are separate locks.
-		c.stop() //nolint:errcheck // best-effort teardown of a hung server
+		c.Stop() //nolint:errcheck // best-effort teardown of a hung server
 		return nil, fmt.Errorf("MCP %s: %w", method, ctx.Err())
 	}
 }
 
-func (c *mcpStdio) roundTrip(method string, params any) (json.RawMessage, error) {
+func (c *stdioConn) roundTrip(method string, params any) (json.RawMessage, error) {
 	c.callMu.Lock()
 	defer c.callMu.Unlock()
 
@@ -187,7 +184,7 @@ func (c *mcpStdio) roundTrip(method string, params any) (json.RawMessage, error)
 		var raw struct {
 			ID     json.RawMessage `json:"id,omitempty"`
 			Result json.RawMessage `json:"result,omitempty"`
-			Error  *mcpRPCError    `json:"error,omitempty"`
+			Error  *rpcError       `json:"error,omitempty"`
 			Method string          `json:"method,omitempty"`
 		}
 		if err := json.Unmarshal(c.stdout.Bytes(), &raw); err != nil {
@@ -212,9 +209,9 @@ func (c *mcpStdio) roundTrip(method string, params any) (json.RawMessage, error)
 	}
 }
 
-// notify sends a JSON-RPC notification: no id, no response expected. The MCP
+// Notify sends a JSON-RPC notification: no id, no response expected. The MCP
 // handshake requires exactly one (notifications/initialized).
-func (c *mcpStdio) notify(method string, params any) error {
+func (c *stdioConn) Notify(method string, params any) error {
 	c.callMu.Lock()
 	defer c.callMu.Unlock()
 
@@ -234,8 +231,8 @@ func (c *mcpStdio) notify(method string, params any) error {
 	return err
 }
 
-// stop closes stdin and waits for the server to exit.
-func (c *mcpStdio) stop() error {
+// Stop closes stdin and waits for the server to exit.
+func (c *stdioConn) Stop() error {
 	c.stateMu.Lock()
 	if c.closed {
 		c.stateMu.Unlock()
@@ -253,7 +250,7 @@ func (c *mcpStdio) stop() error {
 	// escalation the plugin manager applies to plugins themselves.
 	select {
 	case <-c.done:
-	case <-time.After(mcpStopGrace):
+	case <-time.After(stdioStopGrace):
 		c.killGroup()
 		<-c.done
 	}
@@ -266,13 +263,9 @@ func (c *mcpStdio) stop() error {
 
 // killGroup signals the server's whole process group. Negating the pid is what
 // makes it a group signal; it is a no-op once everything has exited.
-func (c *mcpStdio) killGroup() {
+func (c *stdioConn) killGroup() {
 	if c.cmd.Process == nil {
 		return
 	}
 	syscall.Kill(-c.cmd.Process.Pid, syscall.SIGKILL) //nolint:errcheck // best-effort; the group may already be gone
 }
-
-// mcpStopGrace is how long an MCP server gets to exit on its own after stdin
-// closes, before it is killed.
-const mcpStopGrace = 3 * time.Second

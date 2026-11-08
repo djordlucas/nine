@@ -28,6 +28,16 @@ const stopGrace = 2 * time.Second
 // so high-fan-out call bursts don't churn connections.
 const defaultIdleConns = 64
 
+// pluginClient is how the manager reaches one running plugin process: the
+// legacy envelope over HTTP on the plugin's Unix socket (httpClient), or MCP
+// streamable HTTP on the same socket when the plugin speaks it (mcpClient,
+// adr/modular_nine.md R-PLUG.16). One interface because the manager's spawn,
+// describe, call, job, and stop paths must not care which wire the child picked.
+type pluginClient interface {
+	call(ctx context.Context, method string, params any) (json.RawMessage, error)
+	stop() error
+}
+
 // httpClient speaks the compact RPC envelope over HTTP on
 // a per-plugin Unix socket. It is concurrency-safe by construction: http.Client
 // pools connections, so there is no mutex, reader goroutine, or pending map.

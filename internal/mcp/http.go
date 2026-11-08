@@ -1,4 +1,4 @@
-package builtins
+package mcp
 
 import (
 	"bufio"
@@ -7,14 +7,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 )
 
-// The streamable-HTTP MCP transport, for servers that are reached at a URL
-// rather than spawned as a subprocess (MCP revision 2025-03-26). Hosted MCP
+// The streamable-HTTP MCP transport (MCP revision 2025-03-26), for servers
+// reached at a URL and for first-party servers on a Unix socket. Hosted MCP
 // services never run locally, so stdio cannot reach them at all.
 //
 // The shape is a single endpoint that takes a JSON-RPC request by POST and
@@ -28,13 +29,20 @@ import (
 // negotiated protocol version rides along the same way.
 
 const (
-	mcpSessionHeader  = "Mcp-Session-Id"
-	mcpVersionHeader  = "MCP-Protocol-Version"
-	mcpHTTPTimeout    = 120 * time.Second
-	mcpSSEContentType = "text/event-stream"
+	// EndpointPath is the path streamable-HTTP servers answer on. mcp-go's
+	// default; the socket client posts here.
+	EndpointPath = "/mcp"
+
+	sessionHeader  = "Mcp-Session-Id"
+	versionHeader  = "MCP-Protocol-Version"
+	httpTimeout    = 120 * time.Second
+	sseContentType = "text/event-stream"
 )
 
-type mcpHTTP struct {
+// httpConn speaks streamable HTTP to one server: either a hosted URL or a
+// Unix socket (DialSocket), which is how the manager reaches a first-party
+// subprocess plugin that speaks MCP.
+type httpConn struct {
 	url     string
 	headers map[string]string
 	hc      *http.Client
@@ -44,31 +52,56 @@ type mcpHTTP struct {
 	sessionID string
 	closed    bool
 
-	// done closes on stop. An HTTP server has no process to outlive us, so this
+	// done closes on Stop. An HTTP server has no process to outlive us, so this
 	// is the only way it "exits" — which keeps the connection interface uniform
 	// with stdio without pretending there is a child to watch.
 	done     chan struct{}
 	stopOnce sync.Once
 }
 
-func dialMCPHTTP(url string, headers map[string]string) *mcpHTTP {
-	return &mcpHTTP{
+// DialHTTP reaches a hosted MCP server over streamable HTTP.
+func DialHTTP(url string, headers map[string]string) Conn {
+	return &httpConn{
 		url:     url,
 		headers: headers,
-		hc:      &http.Client{Timeout: mcpHTTPTimeout},
+		hc:      &http.Client{Timeout: httpTimeout},
 		done:    make(chan struct{}),
 	}
 }
 
-func (c *mcpHTTP) Exited() <-chan struct{} { return c.done }
+// DialSocket speaks streamable HTTP to a server listening on a Unix socket,
+// the default transport for first-party subprocess plugins (adr/modular_nine.md
+// §9.6). The pseudo-host is ignored by the dialer, which always dials
+// socketPath.
+func DialSocket(socketPath string) Conn {
+	var d net.Dialer
+	return &httpConn{
+		url:     "http://unix" + EndpointPath,
+		headers: nil,
+		hc: &http.Client{
+			Timeout: httpTimeout,
+			Transport: &http.Transport{
+				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+					return d.DialContext(ctx, "unix", socketPath)
+				},
+			},
+		},
+		done: make(chan struct{}),
+	}
+}
 
-func (c *mcpHTTP) StoppedDeliberately() bool {
+// Exited implements Conn.
+func (c *httpConn) Exited() <-chan struct{} { return c.done }
+
+// StoppedDeliberately implements Conn.
+func (c *httpConn) StoppedDeliberately() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.closed
 }
 
-func (c *mcpHTTP) stop() error {
+// Stop implements Conn.
+func (c *httpConn) Stop() error {
 	c.stopOnce.Do(func() {
 		c.mu.Lock()
 		c.closed = true
@@ -79,8 +112,8 @@ func (c *mcpHTTP) stop() error {
 	return nil
 }
 
-// call sends one JSON-RPC request and returns its result.
-func (c *mcpHTTP) call(ctx context.Context, method string, params any) (json.RawMessage, error) {
+// Call sends one JSON-RPC request and returns its result.
+func (c *httpConn) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -107,7 +140,7 @@ func (c *mcpHTTP) call(ctx context.Context, method string, params any) (json.Raw
 	defer resp.Body.Close() //nolint:errcheck // response body close
 
 	// initialize is where a server hands out the session it wants echoed back.
-	if sid := resp.Header.Get(mcpSessionHeader); sid != "" {
+	if sid := resp.Header.Get(sessionHeader); sid != "" {
 		c.mu.Lock()
 		c.sessionID = sid
 		c.mu.Unlock()
@@ -118,7 +151,7 @@ func (c *mcpHTTP) call(ctx context.Context, method string, params any) (json.Raw
 		return nil, fmt.Errorf("HTTP %s: %s", resp.Status, strings.TrimSpace(string(snippet)))
 	}
 
-	if strings.Contains(resp.Header.Get("Content-Type"), mcpSSEContentType) {
+	if strings.Contains(resp.Header.Get("Content-Type"), sseContentType) {
 		return readJSONRPCFromSSE(resp.Body, id)
 	}
 	raw, err := io.ReadAll(resp.Body)
@@ -128,9 +161,9 @@ func (c *mcpHTTP) call(ctx context.Context, method string, params any) (json.Raw
 	return resultFromJSONRPC(raw)
 }
 
-// notify sends a JSON-RPC notification. A server acknowledges with 202 and no
+// Notify sends a JSON-RPC notification. A server acknowledges with 202 and no
 // body, so there is nothing to read back.
-func (c *mcpHTTP) notify(method string, params any) error {
+func (c *httpConn) Notify(method string, params any) error {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -162,7 +195,7 @@ func (c *mcpHTTP) notify(method string, params any) error {
 // post issues one request with the headers this transport carries: the
 // operator's (typically an Authorization bearer), the negotiated protocol
 // version, and the session id once the server has issued one.
-func (c *mcpHTTP) post(ctx context.Context, body []byte) (*http.Response, error) {
+func (c *httpConn) post(ctx context.Context, body []byte) (*http.Response, error) {
 	// Unlike stdio, HTTP can cancel one request without disturbing the next, so
 	// the caller's ctx rides the request directly.
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
@@ -171,8 +204,8 @@ func (c *mcpHTTP) post(ctx context.Context, body []byte) (*http.Response, error)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	// Both are accepted because the server chooses which to send per request.
-	req.Header.Set("Accept", "application/json, "+mcpSSEContentType)
-	req.Header.Set(mcpVersionHeader, mcpProtocolVersionHTTP)
+	req.Header.Set("Accept", "application/json, "+sseContentType)
+	req.Header.Set(versionHeader, ProtocolVersionHTTP)
 	for k, v := range c.headers {
 		req.Header.Set(k, v)
 	}
@@ -181,7 +214,7 @@ func (c *mcpHTTP) post(ctx context.Context, body []byte) (*http.Response, error)
 	sid := c.sessionID
 	c.mu.Unlock()
 	if sid != "" {
-		req.Header.Set(mcpSessionHeader, sid)
+		req.Header.Set(sessionHeader, sid)
 	}
 
 	resp, err := c.hc.Do(req)
@@ -196,7 +229,7 @@ func (c *mcpHTTP) post(ctx context.Context, body []byte) (*http.Response, error)
 // same stream, and only the frame carrying our id is the answer.
 func readJSONRPCFromSSE(body io.Reader, wantID int) (json.RawMessage, error) {
 	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, mcpScannerMaxBytes), mcpScannerMaxBytes)
+	scanner.Buffer(make([]byte, scannerMaxBytes), scannerMaxBytes)
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -214,7 +247,7 @@ func readJSONRPCFromSSE(body io.Reader, wantID int) (json.RawMessage, error) {
 		var probe struct {
 			ID     *int            `json:"id"`
 			Result json.RawMessage `json:"result,omitempty"`
-			Error  *mcpRPCError    `json:"error,omitempty"`
+			Error  *rpcError       `json:"error,omitempty"`
 			Method string          `json:"method,omitempty"`
 		}
 		if err := json.Unmarshal([]byte(payload), &probe); err != nil {
@@ -240,7 +273,7 @@ func readJSONRPCFromSSE(body io.Reader, wantID int) (json.RawMessage, error) {
 func resultFromJSONRPC(raw []byte) (json.RawMessage, error) {
 	var resp struct {
 		Result json.RawMessage `json:"result,omitempty"`
-		Error  *mcpRPCError    `json:"error,omitempty"`
+		Error  *rpcError       `json:"error,omitempty"`
 	}
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		return nil, fmt.Errorf("unmarshal response: %w", err)

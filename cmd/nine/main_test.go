@@ -29,3 +29,23 @@ func TestOnlyTheDaemonWritesTheLogFile(t *testing.T) {
 		t.Errorf("expected the daemon's log file at %s: %v", logPath, err)
 	}
 }
+
+func TestMCPServeArgs(t *testing.T) {
+	cases := []struct {
+		args     []string
+		wantName string
+		wantOK   bool
+	}{
+		{[]string{"mcp", "serve", "shell"}, "shell", true},
+		{[]string{"mcp", "serve"}, "", true},
+		{[]string{"mcp"}, "", false},
+		{[]string{"mcp", "export"}, "", false},
+		{[]string{"plugin", "serve", "shell"}, "", false},
+	}
+	for _, tc := range cases {
+		name, ok := mcpServeArgs(tc.args)
+		if ok != tc.wantOK || (ok && name != tc.wantName) {
+			t.Errorf("mcpServeArgs(%v) = (%q, %v), want (%q, %v)", tc.args, name, ok, tc.wantName, tc.wantOK)
+		}
+	}
+}
