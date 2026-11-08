@@ -11,14 +11,13 @@ import (
 	"nine/internal/agent"
 	"nine/internal/memory"
 	"nine/internal/memory/memtest"
-	"nine/internal/toolvm"
 )
 
-// spillReadHost is a dispatcher carrying the shipped file tools over a real
+// spillReadHost is a dispatcher carrying the shipped Go file tools over a real
 // workspace, plus a store — the two namespaces read_file now spans.
 func spillReadHost(t *testing.T) (*agent.Dispatcher, *memory.Store, string) {
 	t.Helper()
-	ctx := context.Background()
+
 	ws := t.TempDir()
 
 	store, err := memtest.Open(t)
@@ -27,16 +26,8 @@ func spillReadHost(t *testing.T) (*agent.Dispatcher, *memory.Store, string) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	host, err := toolvm.Open(ctx, toolvm.Config{UserDir: t.TempDir()})
-	if err != nil {
-		t.Fatalf("open toolvm: %v", err)
-	}
-	t.Cleanup(func() { _ = host.Close(ctx) })
-	host.SetShippedWorkspace(toolvm.ShippedWorkspace{Host: ws})
-	host.LoadShipped(ctx, nil)
-
 	d := agent.New()
-	d.SyncSandboxed(host, func(string) bool { return true })
+	agent.RegisterShippedTools(d, ws)
 	agent.RegisterSpillReader(d, store)
 	registerLargeOutput(d, store, "agent-test", ws)
 	return d, store, ws

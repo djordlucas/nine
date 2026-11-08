@@ -8,23 +8,18 @@ import (
 	"strings"
 	"testing"
 
-	"nine/internal/toolvm"
+	"nine/internal/agent"
 )
 
-// approvalHost loads the shipped tools over a temporary workspace, which is
+// approvalHost loads the shipped Go tools over a temporary workspace, which is
 // what approvalDiff needs to run a preview.
-func approvalHost(t *testing.T) (*toolvm.Host, string, context.Context) {
+func approvalHost(t *testing.T) (*agent.Dispatcher, string, context.Context) {
 	t.Helper()
 	ctx := context.Background()
 	ws := t.TempDir()
-	h, err := toolvm.Open(ctx, toolvm.Config{UserDir: t.TempDir()})
-	if err != nil {
-		t.Fatalf("open toolvm: %v", err)
-	}
-	t.Cleanup(func() { _ = h.Close(ctx) })
-	h.SetShippedWorkspace(toolvm.ShippedWorkspace{Host: ws})
-	h.LoadShipped(ctx, nil)
-	return h, ws, ctx
+	d := agent.New()
+	agent.RegisterShippedTools(d, ws)
+	return d, ws, ctx
 }
 
 // The question a gate asks is "should this change happen", and a path does not

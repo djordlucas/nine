@@ -347,6 +347,28 @@ func (d *Dispatcher) Dispatch(ctx context.Context, toolName string, args json.Ra
 	return d.capOrSpill(ctx, toolName, output), nil
 }
 
+// DispatchPreview routes a call straight to the handler, skipping the approval
+// gate, the ref expansion, and the hooks. The approval gate itself uses it to
+// run a tool's own preview while asking the human — re-entering Dispatch would
+// gate the preview too, and ref expansion would replace the handle the human is
+// shown with the payload behind it.
+func (d *Dispatcher) DispatchPreview(ctx context.Context, toolName string, args json.RawMessage) (CallResult, error) {
+	fn, ok := d.handlers[toolName]
+	if !ok {
+		return CallResult{}, fmt.Errorf("unknown tool: %s", toolName)
+	}
+	if len(args) == 0 {
+		args = json.RawMessage(`{}`)
+	}
+	output, err := fn(ctx, args)
+	if err != nil {
+		return CallResult{}, err
+	}
+	// No cap: a preview exists to be read in full by the approval prompt, and
+	// capping it would spill it to a handle the human cannot read.
+	return CallResult{Output: output}, nil
+}
+
 // Backend returns the backend label for toolName. Tools registered directly
 // via d.handlers (core builtins) default to "builtin" when not explicitly
 // labeled by RegisterPlugin/RegisterSandboxed/InjectHandler.

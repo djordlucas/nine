@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"nine/internal/toolvm"
+	"nine/internal/agent"
 )
 
 // approvalDiffTools are the file tools whose approval prompt carries a diff
@@ -35,18 +35,19 @@ const maxApprovalDiffLines = 40
 // falls back to naming the path. A preview that fails must never block the
 // approval: the human can still decide with less information, and a gate that
 // errors is a tool that cannot run at all.
-func approvalDiff(ctx context.Context, host *toolvm.Host, toolName string, args json.RawMessage) string {
-	if host == nil || !approvalDiffTools[toolName] {
+func approvalDiff(ctx context.Context, d *agent.Dispatcher, toolName string, args json.RawMessage) string {
+	if d == nil || !approvalDiffTools[toolName] {
 		return ""
 	}
 	previewArgs, err := withPreview(args)
 	if err != nil {
 		return ""
 	}
-	out, err := host.Call(ctx, toolName, previewArgs)
+	cr, err := d.DispatchPreview(ctx, toolName, previewArgs)
 	if err != nil {
 		return ""
 	}
+	out := cr.Output
 	var p struct {
 		Diff      string `json:"diff"`
 		Added     int    `json:"added_lines"`

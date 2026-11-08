@@ -279,9 +279,16 @@ func (h *Host) SetShippedWorkspace(w ShippedWorkspace) {
 // cannot take a shipped tool's name — the namespace rule is first-registered
 // wins, and a shipped tool losing its name to a later one would silently replace
 // first-party behavior.
+//
+// Since adr/modular_nine.md P4 the non-live shipped tools are served as in-process
+// Go handlers (internal/agent, RegisterShippedTools), not by the host: only the
+// Live process programs (pursue, reflect) still load here.
 func (h *Host) LoadShipped(ctx context.Context, collides Collides) {
 	var status []Status
 	for _, s := range shippedTools {
+		if !s.Live {
+			continue // served as a Go builtin handler now (adr/modular_nine.md §9.10)
+		}
 		st := Status{Name: s.Name, Kind: string(KindJS), Shipped: true}
 
 		src, err := shippedFS.ReadFile(s.File)

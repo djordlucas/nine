@@ -90,16 +90,17 @@ func TestAToolCannotCatchItsWayPastTheBudget(t *testing.T) {
 	}
 }
 
-// A budget nothing honest meets is the whole design: every shipped tool and the
-// harness itself must run far inside it.
+// A budget nothing honest meets is the whole design: ordinary tools and the
+// harness itself must run far inside it. (The shipped tools are Go handlers now,
+// adr/modular_nine.md §9.10, so a trivial developer tool stands in for one.)
 func TestOrdinaryWorkIsNowhereNearTheBudget(t *testing.T) {
 	ctx := context.Background()
 	h := budgetHost(t, 0, nil) // the default
 	h.SetShippedWorkspace(ShippedWorkspace{Host: t.TempDir()})
 	h.LoadShipped(ctx, nil)
 
-	if out := call(t, h, "time", `{}`); out == "" {
-		t.Error("time returned nothing under the default budget")
+	if err := spin(t, h, "ordinary", `export default () => "ok";`); err != nil {
+		t.Errorf("an ordinary tool met the default budget: %v", err)
 	}
 	// Genuinely heavy, and still meant to pass: 20k rows through nine:csv.
 	err := spin(t, h, "heavy", `

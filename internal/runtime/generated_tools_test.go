@@ -121,8 +121,10 @@ func TestGeneratedToolDeleteRefusesOtherTools(t *testing.T) {
 	t.Cleanup(func() { _ = host.Close(context.Background()) })
 	gt := NewGeneratedToolStore(store, host, nil, nil, false)
 
+	// Non-live shipped tools are Go handlers now (adr/modular_nine.md §9.10);
+	// the host still loads the live programs, so "pursue" stands in here.
 	var shipped string
-	for _, name := range []string{"read_file", "write_file", "current_time"} {
+	for _, name := range []string{"pursue", "reflect"} {
 		if tl := host.Get(name); tl != nil && tl.Shipped {
 			shipped = name
 			break

@@ -1,14 +1,20 @@
 # Contract — sandboxed tools (the wasm tool host)
 
-**Status:** Built (stages 1–6) · **Depends on:** dispatcher (registration), config (grants + the generated ceiling + the deps policy), memory store (generated tools are rows), HITL (the optional write gate), esbuild (write-time dependency bundling) · **Used by:** any turn calling a sandboxed tool
+**Status:** Built (stages 1–6); being removed per adr/modular_nine.md §9.10 · **Depends on:** dispatcher (registration), config (grants + the generated ceiling + the deps policy), memory store (generated tools are rows), HITL (the optional write gate), esbuild (write-time dependency bundling) · **Used by:** any turn calling a sandboxed tool
 
 A **sandboxed tool** is a wasm module that the daemon executes **in-process**, with an
 explicitly conferred set of capabilities and nothing else. It is a *second backend behind
 the same dispatcher* as native plugins (`spec/contracts/plugin.md`), not a replacement:
 the plugin contract, its transport, and `plugin.ProtocolVersion` are untouched, and a
 deployment that sets `[tools] enabled = false` behaves exactly as it did before this
-subsystem existed. `enabled` defaults to **true**, because this tier carries the workspace
-file tools (R-TVM.16) — without it an agent cannot read or write a file.
+subsystem existed. `enabled` defaults to **true**.
+
+> **P4 of adr/modular_nine.md, in progress:** the non-live shipped tools (the workspace
+> file tools, the fetching tools, `time`) are now plain Go handlers wired directly in
+> the dispatcher (`internal/agent`, `RegisterShippedTools`) — the host no longer loads
+> them (`LoadShipped` keeps only the Live process programs, `pursue`/`reflect`). The
+> host still serves the developer (`[tools].user_dir`) and generated tiers until the
+> toolvm itself is deleted.
 
 The design rationale is `docs/sandboxed-tools.md`; the authoring guide is
 `docs/writing-sandboxed-tools.md`. This file is normative.
