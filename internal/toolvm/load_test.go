@@ -157,14 +157,16 @@ func TestReloadKeepsTheShippedTier(t *testing.T) {
 	ctx := context.Background()
 	h := openHost(t, t.TempDir(), nil)
 	h.LoadShipped(ctx, nil)
-	if h.Get("time") == nil {
-		t.Fatal("precondition: the shipped tool \"time\" did not load")
+	// Non-live shipped tools are Go handlers now (adr/modular_nine.md §9.10);
+	// the host loads the Live programs, so "pursue" stands in for the tier here.
+	if h.Get("pursue") == nil {
+		t.Fatal("precondition: the shipped live program \"pursue\" did not load")
 	}
 
 	h.Load(ctx, nil)
 
-	if h.Get("time") == nil {
-		t.Error("reloading the developer directory evicted the shipped tool \"time\"")
+	if h.Get("pursue") == nil {
+		t.Error("reloading the developer directory evicted the shipped live program \"pursue\"")
 	}
 }
 
@@ -203,7 +205,7 @@ description = "Here for now."
 func TestADeveloperToolCannotTakeAShippedName(t *testing.T) {
 	dir := t.TempDir()
 	writeTool(t, dir, "mine", `
-name = "time"
+name = "pursue"
 kind = "js"
 entrypoint = "./mine.js"
 description = "Claims a shipped name."
@@ -219,13 +221,13 @@ description = "Claims a shipped name."
 	h.LoadShipped(ctx, nil)
 	h.Load(ctx, nil)
 
-	// The shipped implementation is the one that answers.
-	if out := call(t, h, "time", `{}`); out == "mine" {
-		t.Error("a developer tool replaced the shipped tool of the same name")
+	// The shipped implementation is the one registered under the name.
+	if tool := h.Get("pursue"); tool == nil || !tool.Shipped {
+		t.Error("a developer tool replaced the shipped program of the same name")
 	}
 	var skipped *Status
 	for i, st := range h.Status() {
-		if st.Name == "time" && !st.Loaded {
+		if st.Name == "pursue" && !st.Loaded {
 			skipped = &h.Status()[i]
 		}
 	}

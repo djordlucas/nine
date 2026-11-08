@@ -1,6 +1,6 @@
 # Modular Nine — built-ins as Go, MCP for subprocess tools
 
-- **Status:** Proposed. P1, P5 built 2026-11-08; P4's plugin half built 2026-11-08 (`internal/mcp` client + mcp-go server, `nine mcp serve shell`, external `[[mcp.server]]` spawned directly by the manager with the bridge deleted, legacy envelope removed — plugins are MCP servers, `nine mcp serve` only, `StartStdio` for `transport = "stdio"`). Remaining: P4's toolvm removal, P6 (export).
+- **Status:** Proposed. P1, P5, P4-plugins built 2026-11-08; P4-toolvm in progress 2026-11-08 (non-live shipped tools are Go dispatcher handlers — `internal/agent` `RegisterShippedTools`; the toolvm host now loads only the Live programs `pursue`/`reflect`). Remaining: full toolvm deletion (dev/generated tiers, wazero), P6 (export).
 - **Date:** 2026-11-01.
 - **Reviewed:** 2026-11-06 — fact-checked against the tree; §1 tool count and names, §2 progress-rail wording, §3 database ownership, §5 supervision wording corrected; test plan added as §10.
 - **Decisions:** 2026-11-06 — §9 items 1–4 answered by the requester: all tiers in scope, both directions, the sandbox fronted by MCP, prefix every server's tools.
@@ -329,7 +329,7 @@ Cross-cutting, at every phase:
 
 | Limit | Detail |
 |-------|--------|
-| P1+P5+P4-plugins built; toolvm removal and P6 open | P1 (2026-11-08): `internal/mcp` client + vendored-mcp-go server, `nine mcp serve shell`, manager dual-stack, `shell` over MCP. P5 (2026-11-08): `StartMCPServer` spawns/dials `[[mcp.server]]` directly; bridge builtin deleted; prefixing in the manager. P4 plugins (2026-11-08): legacy envelope removed (`serve.go`/`httpclient.go`/job methods gone), plugins are MCP servers (R-PLUG.1), `nine plugin serve` deleted, user plugins support `transport = "stdio"`, `nine plugin validate` probes either transport, plugin jobs suspended (R-PLUG.12, `_meta` extension pending). Not started: toolvm removal (shipped tools → Go built-ins, §9.10) and P6 (export). |
+| P1+P5+P4-plugins built; P4-toolvm in progress; P6 open | P1 (2026-11-08): `internal/mcp` client + vendored-mcp-go server, `nine mcp serve shell`, manager dual-stack, `shell` over MCP. P5 (2026-11-08): `StartMCPServer` spawns/dials `[[mcp.server]]` directly; bridge builtin deleted; prefixing in the manager. P4 plugins (2026-11-08): legacy envelope removed, plugins are MCP servers (R-PLUG.1), `nine plugin serve` deleted, `transport = "stdio"` user plugins, validate probes both, plugin jobs suspended (R-PLUG.12). P4 toolvm (2026-11-08, in progress): non-live shipped tools (file/http/web/time) are Go handlers in the dispatcher (`agent.RegisterShippedTools`, same names/schemas/order, workspace confinement and SSRF dial-time gates ported); host loads only `pursue`/`reflect`. Remaining: delete the toolvm host + wazero + dev/generated tiers, P6 (export). |
 | MCP has no jobs or concurrency hint | First-party servers carry jobs in a `_meta` extension and concurrency stays a transport property; third-party servers keep today's `async_jobs: false`, serial-stdio behavior. |
 | stdio stays serial | One client-side write lock per stdio server; the 3-minute handshake budget and 5-minute call timeout move with the client into the manager. |
 | Server side adds one dependency | §9.5 vendors `mcp-go` for the MCP server; the client in `internal/mcp` stays hand-rolled. |

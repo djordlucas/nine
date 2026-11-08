@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -847,6 +848,9 @@ func (f *AgentBuilder) registerCoreTools(d *agent.Dispatcher, lc LoopConfig, age
 		agent.RegisterCapabilityRequest(d, f.cfg.RequestCapability(agentID))
 	}
 	agent.RegisterMemoryTools(d, lc.Memory, lc.Embedder, protectedKeyPrefixes, lc.SurfaceMemories)
+	// The shipped tools are plain Go handlers now (adr/modular_nine.md §9.10),
+	// wired directly in the dispatcher, confined to the workspace root.
+	agent.RegisterShippedTools(d, lc.WorkspaceRoot)
 	// The workspace index, when one is configured: file_search_text then covers
 	// the operator's directory as well as the store, and list_files exists.
 	d.SetWorkspace(lc.Workspace)
@@ -1042,7 +1046,7 @@ func (f *AgentBuilder) registerApprovalGates(d *agent.Dispatcher, askerID string
 		// A path names the file; a diff names the change, which is what the
 		// human is actually being asked about (approval_diff.go).
 		question := approvalQuestion(toolName, args)
-		if diff := approvalDiff(ctx, f.cfg.Loop.Tools, toolName, args); diff != "" {
+		if diff := approvalDiff(ctx, d, toolName, args); diff != "" {
 			question = approvalQuestionWithDiff(toolName, args, diff)
 		}
 		ans, err := hitl.AskFrom(ctx, askerID, gate.owner, gate.origin, question, nil)
@@ -1217,7 +1221,9 @@ func buildToolList(lc LoopConfig, role Role, shellTools []string, roleEnum strin
 	}
 	// Sandboxed tools are advertised on the same footing as plugin tools, and
 	// intersected with the role allowlist the same way (boundary 1 of R-ROLE.4).
-	// A role that does not name one does not see it.
+	// A role that does not name one does not see it. (The non-live shipped tools
+	// are Go handlers now — the pass below — so the host contributes only the
+	// live process programs and the developer/generated tiers.)
 	if lc.Tools != nil {
 		for _, st := range lc.Tools.Tools() {
 			if !role.AllTools && !slices.Contains(role.Tools, st.Name) {
@@ -1231,6 +1237,21 @@ func buildToolList(lc LoopConfig, role Role, shellTools []string, roleEnum strin
 			}
 			tools = append(tools, tw)
 		}
+	}
+
+	// The shipped tools translated to Go (adr/modular_nine.md §9.10) are
+	// advertised like the host's shipped tools were: builtin toolkit, same role
+	// allowlist intersection, same name-sorted order the host's Tools() produced,
+	// so context snapshots do not reshuffle.
+	shipped := agent.ShippedDefs()
+	sort.Slice(shipped, func(i, j int) bool { return shipped[i].Name < shipped[j].Name })
+	for _, def := range shipped {
+		if !role.AllTools && !slices.Contains(role.Tools, def.Name) {
+			continue
+		}
+		tw := ninectx.ToolWithVector{Tool: def}
+		annotateBuiltin(&tw)
+		tools = append(tools, tw)
 	}
 
 	tools = appendInterceptedTools(tools, filterByRole(coreToolNames, role), roleEnum)
