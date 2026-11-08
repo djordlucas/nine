@@ -632,8 +632,19 @@ func (d *Daemon) forgetSession(id string) bool {
 func (d *Daemon) handleListTools(enc *json.Encoder) {
 	var tools []protocol.ToolSummary
 	if d.mgr != nil {
+		seen := map[string]bool{}
 		for _, def := range agent.InterceptedDefs {
 			tools = append(tools, protocol.ToolSummary{Plugin: "core", Name: def.Name, Description: def.Description, InputSchema: def.InputSchema})
+			seen[def.Name] = true
+		}
+		// The Go shipped tools (file, http, web, time) are core handlers too
+		// (adr/modular_nine.md 9.10); advertise them so the roster is whole.
+		for _, def := range agent.ShippedDefs() {
+			if seen[def.Name] {
+				continue
+			}
+			tools = append(tools, protocol.ToolSummary{Plugin: "core", Name: def.Name, Description: def.Description, InputSchema: def.InputSchema})
+			seen[def.Name] = true
 		}
 		for _, p := range d.mgr.Running() {
 			for _, t := range p.Tools {
