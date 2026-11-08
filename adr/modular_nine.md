@@ -5,6 +5,7 @@
 - **Reviewed:** 2026-11-06 — fact-checked against the tree; §1 tool count and names, §2 progress-rail wording, §3 database ownership, §5 supervision wording corrected; test plan added as §10.
 - **Decisions:** 2026-11-06 — §9 items 1–4 answered by the requester: all tiers in scope, both directions, the sandbox fronted by MCP, prefix every server's tools.
 - **Revised:** 2026-11-08 — §9 items 8–11: built-in tools stay direct Go calls in the dispatcher and MCP is the only wire protocol across process boundaries (architecture C taken to completion); the toolvm is removed with its shipped tools translated to Go (model-authored tools refactored separately); first-party tool names do not change (reverses item 4); phases P0/P2/P3 dropped.
+- **Decisions:** 2026-11-08 (continued) — §9 items 5–6 answered by the requester: the MCP server side is built on the vendored `mcp-go` SDK; first-party subprocess servers use unix-socket HTTP by default with stdio as a per-server opt-in.
 - **Scope:** the daemon's tool-serving path — the plugin contract (`spec/contracts/plugin.md`), the `mcp` bridge (`internal/builtins/mcp.go`, `mcp_stdio.go`, `mcp_http.go`), the toolvm host front (`internal/toolvm/host.go`), the core-intercepted handlers (`internal/agent/register_*.go`), and the dispatcher (`spec/contracts/dispatcher.md`). The wire protocol (`list_tools`/`plugin_call`, R-PROTO.5), the config shape (`[[mcp.server]]`, `[plugins]`, `[tools]`), and the tool catalogs themselves are touched only where named below.
 - **Depends on:** `internal/plugin` (manager), `internal/builtins`, `internal/toolvm`, `internal/agent`.
 - **Follows:** R-PLUG.15 (an MCP server is a plugin, `spec/contracts/plugin.md`), `adr/plugin-http-transport-design.md`, `adr/deferred-tool-schemas.md` (toolkit exposition), `adr/tool-facilities.md` §7 (tool→tool dispatch and MCP reach rejected).
@@ -38,9 +39,10 @@ naming tools literally and untouched.
 Two facts frame the change. R-PLUG.15 already made an MCP server *look like* a
 plugin: one bridge process per `[[mcp.server]]` translating `tools/call` into
 `plugin.call`. This proposal inverts that — plugins look like MCP servers, and
-the manager holds the one MCP client. Second, `go.mod` carries no MCP SDK; the
-client in `internal/builtins/mcp_stdio.go`/`mcp_http.go` is hand-rolled JSON-RPC,
-so the server side proposed here is hand-rolled symmetric, adding no dependency.
+the manager holds the one MCP client. Second, the client in
+`internal/builtins/mcp_stdio.go`/`mcp_http.go` is hand-rolled JSON-RPC today; the
+server side is built on the vendored `mcp-go` SDK (§9.5), the one dependency this
+adds.
 
 ---
 
@@ -53,7 +55,7 @@ client-side or host-side and moves with it, not into the wire.
 |---|---|---|
 | `tools/list` + `tools/call`, `inputSchema` | yes, natively | the one client in the manager/dispatcher |
 | Content arrays (`text`/`image`/`audio`/`resource`/`resource_link`) | yes | dispatcher receives structured content; binary parts spill to files instead of the bridge's text flattening (R-PLUG.15b) |
-| stdio and streamable HTTP transports | yes | two transports behind one client interface |
+| stdio, streamable HTTP, unix-socket HTTP transports | yes | one client interface behind all three; first-party servers default to unix-socket HTTP (§9.6) |
 | Protocol version negotiation (`initialize.protocolVersion`) | yes | replaces `plugin.ProtocolVersion` for MCP-speaking servers (the bridge already negotiates 2024-11-05 / 2025-03-26) |
 | `notifications/progress` with progressToken | yes | first-party servers ride it for job progress and the planned `nine:progress` rail (`adr/tool-facilities.md`, proposed) |
 | `notifications/tools/list_changed` | yes | `tool_write`/`tool_delete`/`nine tools reload` notify mid-session instead of relying on `SyncSandboxed` between turns |
@@ -117,7 +119,7 @@ as the record.
 ```text
 agent.Loop ── Dispatcher ── direct Go calls ──► built-in tools (register_* handlers,
                 │                                   store-backed, in-process as today)
-                └─ one MCP client (internal/mcp) ─┬─ unix-socket HTTP MCP    nine mcp serve shell
+                └─ one MCP client (internal/mcp) ─┬─ unix-socket HTTP/stdio MCP  nine mcp serve shell
                                                   ├─ stdio/HTTP subprocess   user plugins, MCP-only
                                                   └─ stdio/streamable HTTP  [[mcp.server]] externals
 ```
@@ -139,10 +141,11 @@ agent.Loop ── Dispatcher ── direct Go calls ──► built-in tools (re
   that server's goroutine until the existing 5-minute call timeout tears the
   connection down.
 - **`nine mcp serve <name>`** — a new hidden subcommand beside `nine plugin
-  serve` — speaks MCP streamable HTTP on the per-instance unix socket, reusing
-  the manager's socket, sanitized env, cache dir, and `[plugins].disabled`
-  machinery (R-PLUG.3/10/11/13/13a/14 all survive; only the envelope changes).
-  First user: `shell`.
+  serve` — speaks MCP streamable HTTP on the per-instance unix socket by
+  default, or stdio when the server opts in (§9.6), reusing the manager's
+  socket, sanitized env, cache dir, and `[plugins].disabled` machinery
+  (R-PLUG.3/10/11/13/13a/14 all survive; only the envelope changes). The server
+  side is built on the vendored `mcp-go` SDK (§9.5). First user: `shell`.
 - **toolvm: removed (§9.10).** The shipped sandboxed tools
   (`internal/toolvm/shipped/`) are translated to Go built-ins wired directly in
   the dispatcher; `[tools].user_dir` developer tools become user plugins.
@@ -196,7 +199,7 @@ built, so there is no loopback transport, no toolvm front and no core front.
 
 | Phase | Work | Gate |
 |---|---|---|
-| P1 | `internal/mcp`: hand-rolled MCP client (moved from `internal/builtins`) + symmetric server over real transports, no new dependency; `nine mcp serve shell`; manager dual-stack (MCP first, legacy fallback); `shell` served over MCP | unit tests against `internal/builtins/testmcpserver`; `go test ./...`; evals green; `nine plugins` roster unchanged |
+| P1 | `internal/mcp`: hand-rolled MCP client (moved from `internal/builtins`) + server side on vendored `mcp-go` (§9.5) over real transports; `nine mcp serve shell` on unix-socket HTTP by default, stdio per server (§9.6); manager dual-stack (MCP first, legacy fallback); `shell` served over MCP | unit tests against `internal/builtins/testmcpserver`; `go test ./...`; evals green; `nine plugins` roster unchanged |
 | P4 | user plugins speak MCP; legacy envelope removed; `nine plugin validate` MCP-only; `spec/contracts/plugin.md` rewritten as "plugins are MCP servers". toolvm removed; shipped tools translated to Go built-ins (§9.10) | `userplugins` + plugin contract suites; toolvm suites deleted, built-in tool coverage moves to `register_*_test.go` |
 | P5 | external `[[mcp.server]]` spawned directly by the manager; bridge builtin deleted; roster and `[plugins].disabled` semantics unchanged | `mcp_test.go`, `mcp_http_test.go`, evals incl. `deferred-mcp-discovery` |
 | P6 | export direction (in scope, §9.2): `nine mcp export` / API `/mcp` over the same adapters (§6) | OpenAPI drift checks, API tests |
@@ -244,14 +247,18 @@ Answered by the requester on 2026-11-08:
 11. **Phasing — P1/P4/P5/P6 only.** P0/P2/P3 dropped (§8); phased dual-stack
     remains. Answers open question 7.
 
-Still open:
+Answered by the requester on 2026-11-08 (continued):
 
-5. **SDK** — hand-roll the MCP server symmetric to the existing client
-   (recommended; `go.mod` vendors everything and carries no MCP SDK today), or
-   vendor `mcp-go`?
-6. **First-party subprocess transport** — unix-socket HTTP (reuses R-PLUG.8
-   concurrency machinery; recommended) or stdio (simpler, serial, fine for
-   `shell` alone)?
+5. **SDK — vendor `mcp-go`.** The server side is built on the vendored
+   `mcp-go` SDK, the one dependency this adds; the hand-rolled client in
+   `internal/builtins/mcp_stdio.go`/`mcp_http.go` moves into `internal/mcp`
+   unchanged rather than being rewritten on the SDK.
+6. **First-party subprocess transport — both, per server.** Unix-socket HTTP
+   is the default (reuses R-PLUG.8 concurrency machinery and the manager's
+   socket, sanitized env, and `[plugins].disabled` plumbing); stdio is a
+   per-server opt-in, serial with one client-side write lock.
+
+**Still open:** none.
 
 ---
 
@@ -274,7 +281,7 @@ transport).
 | Phase | Unit | Integration | Gate |
 |---|---|---|---|
 | P0 `internal/mcp` | JSON-RPC framing on the in-proc and unix-socket HTTP transports; request-id correlation; `isError`→error mapping; content-array flattening parity with `flattenMCPContent` (port `mcp_content_test.go`); protocol-version matrix (2024-11-05 stdio, 2025-03-26 HTTP); `NINE_MCP_HANDSHAKE_TIMEOUT` parse and fallback | against `internal/builtins/testmcpserver` over stdio and HTTP; ctx cancel tears down a blocked stdio read | `go test ./internal/mcp/` |
-| P1 `nine mcp serve shell`, dual-stack | shell over MCP: destructive-command guard (`shell_security_test`), `NINE_WORKSPACE` cwd, per-call timeout; legacy-envelope plugin still loads with a deprecation warning; `nine plugin validate` accepts both | manager dual-stack (MCP first, legacy fallback); `[plugins].disabled` blocks both start paths; roster unchanged; tool-name collision skips the whole plugin (R-PLUG.9); `list_tools`/`plugin_call` wire tests unchanged | `go test ./internal/plugin/ ./internal/builtins/`; evals runner run explicitly |
+| P1 `nine mcp serve shell`, dual-stack | shell over MCP on both first-party transports (§9.6): destructive-command guard (`shell_security_test`), `NINE_WORKSPACE` cwd, per-call timeout; legacy-envelope plugin still loads with a deprecation warning; `nine plugin validate` accepts both | manager dual-stack (MCP first, legacy fallback); `[plugins].disabled` blocks both start paths; roster unchanged; tool-name collision skips the whole plugin (R-PLUG.9); `list_tools`/`plugin_call` wire tests unchanged | `go test ./internal/plugin/ ./internal/builtins/`; evals runner run explicitly |
 | P2 in-proc `tools` | every shipped tool callable through the client; grants still enforced (`capability_test`, `ssrf_test`); bounds (`timeout_test`, `workbudget_test`); `x-nine-ref` expanded before `tools/call` (`refs_test`); spill and cap unchanged (`spill_test`) | `tool_write`/`tool_delete`/`nine tools reload` emit `tools/list_changed`; a written tool is callable from the next turn (`sync_sandboxed_test` plus a new notification test) | toolvm suites; evals incl. `deferred-mcp-discovery` |
 | P3 in-proc `core` | all 46 `InterceptedDefs` reachable via the client; approval gate fires pre-call with the original args (`approval_test`); `RestrictTo` enforced (`restrict_test`); hooks fire (`hooks_test`); unknown-tool + did-you-mean (`dispatcher_test`) | benchmark `memory_get` over the loopback vs the direct handler — validates §5's "json.RawMessage only" cost claim | dispatcher + `register_*_test.go` suites |
 | P4 user plugins MCP-only | manifest gate: no manifest → binary never executed; malformed manifest or non-MCP binary skipped while others load (fail-soft); `Probe`/`validate` | `nine plugins reload` starts/stops only user plugins; in-flight turns keep their tool set | `userplugins_test.go`, `transport_test.go`, `startup_test.go` |
@@ -325,6 +332,7 @@ Cross-cutting, at every phase:
 | Nothing here is built | This is an analysis and a recommendation; no phase of §8 has started. |
 | MCP has no jobs or concurrency hint | First-party servers carry jobs in a `_meta` extension and concurrency stays a transport property; third-party servers keep today's `async_jobs: false`, serial-stdio behavior. |
 | stdio stays serial | One client-side write lock per stdio server; the 3-minute handshake budget and 5-minute call timeout move with the client into the manager. |
+| Server side adds one dependency | §9.5 vendors `mcp-go` for the MCP server; the client in `internal/mcp` stays hand-rolled. |
 | Third-party server trust is unchanged | Declaring an MCP server is trusting it (R-PLUG.15b); standardization does not vet a server's arguments. |
 | Export direction adds a trust surface | An external `/mcp` endpoint needs the API's authentication, and server→client sampling/elicitation stay disabled (adr/tool-facilities.md §7). |
 | First-party tool names do not change (decided, §9.9) | Built-ins keep bare names; only MCP-roster servers carry `<server>__<tool>`, today's convention (reverses §9.4). Role allowlists, eval cases, skills, prompts, `resident_tools`, and the toolkit table are untouched. |
