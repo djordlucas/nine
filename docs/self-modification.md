@@ -82,7 +82,7 @@ plugins. Configuration changes are made by editing
 
 Nine ships one plugin, `shell`, alongside its sandboxed tools. It is immutable
 image content: compiled into the `nine` binary and served as
-`nine plugin serve shell`. Reading and writing files, fetching over HTTP and
+`nine mcp serve shell`. Reading and writing files, fetching over HTTP and
 reading the clock were plugins too, and are now shipped sandboxed tools — first-party
 capabilities under the capability model rather than subprocesses holding the
 daemon's uid. There is no mechanism for an agent to add, build, or replace a

@@ -31,11 +31,14 @@ user_dir = "./plugins.d"
 
 ## What a plugin is
 
-A Nine plugin is a **pre-built executable** that speaks the plugin wire protocol:
-on startup it listens on the Unix socket named by `NINE_PLUGIN_SOCKET` and answers
-`plugin.describe` (advertising its tools) and `plugin.call`. The easiest way to
-write one is with the `nine/internal/plugin` `Serve` helper — see the built-in
-plugins under `internal/builtins/` for worked examples (`time.go` is the smallest).
+A Nine plugin is a **pre-built executable that is an MCP server**: on startup it
+speaks MCP — streamable HTTP on the Unix socket named by `NINE_PLUGIN_SOCKET`
+(the default), or stdio if its manifest says `transport = "stdio"` — answering
+`initialize`, `tools/list`, and `tools/call`. The easiest way to write one is the
+`mcp-go` SDK (`server.NewMCPServer` + `mcp.NewToolWithRawSchema` + `AddTool`, served
+with `server.NewStreamableHTTPServer` on the socket or `server.NewStdioServer`);
+Nine's own built-ins use the `nine/internal/mcp` `Serve` helper — see
+`internal/builtins/` for a worked example (`shell.go`).
 
 Those built-ins are compiled into the `nine` binary rather than shipped as separate
 executables, which is a packaging shortcut available only to Nine's own plugins. A
@@ -52,13 +55,17 @@ manifest is the gate: **a binary with no manifest beside it is never executed.**
 ```toml
 name = "weather"
 entrypoint = "./weather"
+# transport = "stdio"   # optional; default is streamable HTTP on the plugin socket
 ```
 
 - `name` — the plugin's identity, shown in `nine plugins`.
 - `entrypoint` — path to the executable, resolved relative to the manifest.
+- `transport` — optional: `"http"` (default) serves streamable HTTP on the socket
+  the daemon allocates, concurrently; `"stdio"` speaks MCP over the process's
+  stdin/stdout, serially.
 
 The manifest only declares intent — Nine still asks the running plugin for its
-real tool list via `plugin.describe`. It does not need to enumerate tools.
+real tool list via MCP `tools/list`. It does not need to enumerate tools.
 
 ## How loading works
 
@@ -66,8 +73,8 @@ At boot (and on `nine plugins reload`), for each manifest, in name order:
 
 1. A malformed manifest or a missing binary is **skipped** — the binary is never
    run.
-2. The binary is started and must pass the plugin handshake (`plugin.describe` +
-   a matching protocol version). A binary that isn't a plugin is **skipped**.
+2. The binary is started and must pass the MCP handshake (`initialize` →
+   `tools/list` on its transport). A binary that isn't an MCP server is **skipped**.
 3. Its tools must not collide with an already-loaded plugin — a built-in **or** an
    earlier user plugin. A collision **skips** the whole plugin; there is no
    overriding a built-in, ever.

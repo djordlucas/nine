@@ -20,10 +20,10 @@ func TestDisabledRefusesBuiltin(t *testing.T) {
 	m := NewManager("")
 	m.SetDisabled([]string{"shell"})
 
-	p, err := m.StartBuiltin("shell")
+	p, err := m.StartMCPBuiltin("shell")
 	if err == nil {
 		m.Stop(p) //nolint:errcheck // cleanup on unexpected success
-		t.Fatal("StartBuiltin(\"shell\") succeeded; want it refused")
+		t.Fatal("StartMCPBuiltin(\"shell\") succeeded; want it refused")
 	}
 	if !errors.Is(err, ErrPluginDisabled) {
 		t.Errorf("err = %v, want ErrPluginDisabled", err)
@@ -39,7 +39,7 @@ func TestDisabledRefusesBeforeSpawn(t *testing.T) {
 	m.SetDisabled([]string{"shell"})
 	m.SetBuiltinBinary("/nonexistent/nine")
 
-	if _, err := m.StartBuiltin("shell"); !errors.Is(err, ErrPluginDisabled) {
+	if _, err := m.StartMCPBuiltin("shell"); !errors.Is(err, ErrPluginDisabled) {
 		t.Errorf("err = %v, want ErrPluginDisabled (not a spawn failure)", err)
 	}
 }
@@ -61,13 +61,13 @@ func TestTryStartBuiltinDisabledIsNotAFailure(t *testing.T) {
 	m := NewManager("")
 	m.SetDisabled([]string{"shell", "http"})
 
-	if p := m.TryStartBuiltin("shell"); p != nil {
+	if p := m.TryStartMCPBuiltin("shell"); p != nil {
 		t.Error("TryStartBuiltin returned a plugin for a disabled name")
 	}
 	if p := m.TryStart("browser"); p != nil {
 		t.Error("TryStart returned a plugin for a name not disabled but absent")
 	}
-	if p := m.TryStartBuiltin("http"); p != nil {
+	if p := m.TryStartMCPBuiltin("http"); p != nil {
 		t.Error("TryStartBuiltin returned a plugin for a disabled name")
 	}
 
@@ -87,8 +87,8 @@ func TestDisabledSkippedDeduplicates(t *testing.T) {
 	m := NewManager("")
 	m.SetDisabled([]string{"shell"})
 
-	m.TryStartBuiltin("shell")
-	m.TryStartBuiltin("shell")
+	m.TryStartMCPBuiltin("shell")
+	m.TryStartMCPBuiltin("shell")
 
 	if got := m.DisabledSkipped(); len(got) != 1 {
 		t.Errorf("DisabledSkipped() = %v, want one entry", got)
@@ -127,7 +127,7 @@ func TestUnmatchedDisabledReportsTypos(t *testing.T) {
 	m := NewManager("")
 	m.SetDisabled([]string{"shell", "shel", "nosuchplugin"})
 
-	m.TryStartBuiltin("shell") // the real one is refused and recorded
+	m.TryStartMCPBuiltin("shell") // the real one is refused and recorded
 
 	got := m.UnmatchedDisabled()
 	if want := []string{"nosuchplugin", "shel"}; !slices.Equal(got, want) {
@@ -140,8 +140,8 @@ func TestUnmatchedDisabledEmptyWhenAllMatched(t *testing.T) {
 	m := NewManager("")
 	m.SetDisabled([]string{"shell", "time"})
 
-	m.TryStartBuiltin("shell")
-	m.TryStartBuiltin("time")
+	m.TryStartMCPBuiltin("shell")
+	m.TryStartMCPBuiltin("time")
 
 	if got := m.UnmatchedDisabled(); len(got) != 0 {
 		t.Errorf("UnmatchedDisabled() = %v, want empty", got)

@@ -220,6 +220,10 @@ func (c *httpConn) post(ctx context.Context, body []byte) (*http.Response, error
 	// Both are accepted because the server chooses which to send per request.
 	req.Header.Set("Accept", "application/json, "+sseContentType)
 	req.Header.Set(versionHeader, ProtocolVersionHTTP)
+	// Carry the daemon's trace ID for log correlation where the transport can.
+	if id := RequestIDFromContext(ctx); id != "" {
+		req.Header.Set(HeaderRequestID, id)
+	}
 	for k, v := range c.headers {
 		req.Header.Set(k, v)
 	}

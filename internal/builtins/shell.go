@@ -32,20 +32,11 @@ func shellTool() plugin.ToolDefinition {
 	}
 }
 
-// serveShell runs the `shell` built-in over the legacy plugin envelope: a single
-// tool that executes a command through sh, with the destructive-command guard
-// in shell_security.go. Deprecated in favour of serveShellMCP
-// (adr/modular_nine.md); the manager still accepts it during the dual-stack.
-func serveShell() {
-	plugin.Serve(
-		[]plugin.ToolDefinition{shellTool()},
-		map[string]plugin.ToolHandler{"shell": runShell},
-	)
-}
-
-// serveShellMCP runs the `shell` built-in over MCP (adr/modular_nine.md): the
-// same tool and handler, served by `nine mcp serve shell` on the manager's
+// serveShellMCP runs the `shell` built-in over MCP (adr/modular_nine.md): a
+// single tool that executes a command through sh, with the destructive-command
+// guard in shell_security.go, served by `nine mcp serve shell` on the manager's
 // Unix socket by default or over stdio when NINE_MCP_TRANSPORT=stdio (§9.6).
+// The legacy `nine plugin serve shell` envelope path was removed at P4.
 func serveShellMCP(version string) {
 	def := shellTool()
 	err := mcp.Serve("shell", version,

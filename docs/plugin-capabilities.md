@@ -232,6 +232,12 @@ on. Files are also simply the right primitive for a half-downloaded tarball.
 
 ## 5. Long-running work
 
+> **Suspended at P4 of adr/modular_nine.md.** The `plugin.call`/`plugin.job_*`
+> envelope this section specifies was removed; plugins are MCP servers now, and
+> MCP has no job methods. The daemon-side registry and sweeper remain for
+> tool-backend jobs; plugin jobs return via a `_meta` extension on `tools/call`
+> (§2 of that ADR). The normative contract is `spec/contracts/plugin.md` R-PLUG.12.
+
 ### The problem
 
 `plugin.call` is synchronous: the daemon issues an HTTP request and waits. A
@@ -500,6 +506,10 @@ reverse channel §2 removed, arriving by another door.
 ---
 
 ## 6. Contract, version, and spec impact
+
+> **Superseded at P4 of adr/modular_nine.md.** The envelope and its
+> `ProtocolVersion` integer are gone; plugins speak MCP and versioning rides the
+> `initialize` negotiation. See `spec/contracts/plugin.md` R-PLUG.1.
 
 Everything here is **additive** to the plugin contract:
 

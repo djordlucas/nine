@@ -9,7 +9,7 @@ a real break happens.
 | Surface | Protects | Scheme | Lives in |
 |---|---|---|---|
 | **Release version** | "which Nine is this" (user-facing) | SemVer, git-tag driven | git tag `vX.Y.Z` → injected at build |
-| **Plugin protocol** | daemon ↔ native plugin wire compat | single integer, bump on break | `plugin.ProtocolVersion` |
+| **Plugin protocol** | daemon ↔ plugin wire compat | MCP `initialize` negotiation (`protocolVersion`) | `internal/mcp` |
 | **Sandboxed tool ABI** | daemon ↔ wasm guest compat | single integer, bump on break | `toolvm.ABIVersion` |
 | **Memory DB schema** | SQLite schema | sequential forward migrations, applied on open | `PRAGMA user_version`, currently **22** |
 | **Config schema** | `nine.toml` shape | single integer, bump on break | `schema_version` in `nine.toml`, currently **2** |
@@ -93,10 +93,9 @@ change below fails loudly; none changes behavior silently except the last.
 binary against it is neither supported nor detected.** Copy `nine.db` before
 upgrading if you may roll back.
 
-**The Go built-in plugins moved into the `nine` binary.** `shell`, `files`,
-`http`, and `time` are no longer separate executables under `[plugins].bin`; the
-daemon starts each as a `nine plugin serve <name>` child process
-(`spec/contracts/plugin.md` R-PLUG.13).
+**The Go built-in plugins moved into the `nine` binary.** `shell` is no longer a
+separate executable under `[plugins].bin`; the daemon starts it as a
+`nine mcp serve <name>` child process (`spec/contracts/plugin.md` R-PLUG.13).
 
 ⚠️ **If you withheld a plugin by not shipping its binary, it now starts.** That
 was never a documented control, but it worked: `TryStart` skips a plugin whose
@@ -145,38 +144,10 @@ daemon actually loaded, and `nine grants`, which prints the ceiling in force.
 
 ## 2. Plugin protocol version
 
-Native plugins are separate processes (one is Node), so the daemon and a plugin
-can be built at different times and disagree on the wire contract. The protocol
-version catches that at startup instead of letting it surface as a confusing
-runtime failure.
-
-`plugin.ProtocolVersion` is a single integer covering the native plugin wire
-contract: the `plugin.describe` / `plugin.call` envelope over HTTP on a Unix
-socket, its methods, and their semantics. **Bump it on any breaking change to
-that contract.** It is independent of the release version — most releases will
-not touch it.
-
-How it works:
-
-- A plugin advertises the version it was built against in its
-  `plugin.describe` response (`DescribeResult.ProtocolVersion`). Plugins built
-  with `plugin.Serve` stamp it automatically.
-- On startup the daemon (`Manager.Start`) compares the advertised version with
-  its own supported set and **rejects an unsupported version**, with a message
-  telling the operator to rebuild the plugin (or upgrade Nine). A plugin reporting
-  `0` predates protocol versioning and is treated as incompatible.
-
-The current version is **2**, which added long-running jobs (the `async_jobs`
-describe flag, a `job_id` on `plugin.call`, and the `plugin.job_status` /
-`plugin.job_cancel` methods — see `spec/contracts/plugin.md` R-PLUG.12). Because
-that is purely **additive** — a v1 plugin remains fully functional, just without
-jobs — the check (`checkProtocolVersion`) accepts a **set**, `{1, 2}`, rather than
-a single version, and treats a v1 plugin as lacking jobs. The `0` (predates
-versioning) rejection stays.
-
-This applies only to **native** Nine plugins. MCP plugins negotiate their own
-protocol version (`mcpProtocolVersion`, see `mcp`) — a
-separate, externally-defined contract.
+**Removed at P4 of adr/modular_nine.md.** Plugins are MCP servers now, and the MCP
+`initialize` negotiation (`protocolVersion`) is the wire-version check — there is
+no separate integer to bump. A plugin built against a different Nine simply fails
+the handshake with the negotiated revision named in the error.
 
 ## 2a. Sandboxed tool ABI version
 

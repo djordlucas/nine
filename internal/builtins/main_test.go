@@ -61,7 +61,7 @@ func start(t *testing.T, name string, extraEnv ...string) (*plugin.Plugin, *plug
 	t.Helper()
 	m := plugin.NewManager("")
 	m.SetBuiltinBinary(nineBin)
-	p, err := m.StartBuiltin(name, extraEnv...)
+	p, err := m.StartMCPBuiltin(name, extraEnv...)
 	if err != nil {
 		t.Fatalf("start %s: %v", name, err)
 	}

@@ -1,44 +1,169 @@
-// testplugin is a minimal plugin used by internal/plugin tests. It implements
-// the wire contract by hand (no pluginutil) over the HTTP/Unix-socket transport:
-// plugin.describe (one tool: "echo") and plugin.call (echoes args as output).
+// testplugin is a minimal MCP server used by internal/plugin tests. It speaks
+// MCP on whichever transport the manager hands it: streamable HTTP on
+// NINE_PLUGIN_SOCKET when set (the default), stdio otherwise. Tools: "echo"
+// (echoes its arguments back as text), "sleep" (fixed 150ms delay, for
+// concurrency and cancellation tests), "crash" (exits without replying), and
+// "traceid" (returns the X-Nine-Request-ID header, socket transport only).
+//
+// Knobs: NINE_TEST_ENV_DUMP writes the process environment to that path before
+// serving; NINE_TEST_STARTUP_DELAY sleeps before serving. It is hand-rolled
+// rather than built on the mcp-go server so the client and the fixture cannot
+// share a server-side bug.
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
+	"time"
 )
 
-func main() {
-	socketPath := os.Getenv("NINE_PLUGIN_SOCKET")
-	if socketPath == "" {
-		fmt.Fprintln(os.Stderr, "testplugin: NINE_PLUGIN_SOCKET not set")
-		os.Exit(1)
-	}
+const sleepDur = 150 * time.Millisecond
 
-	// Advertised protocol version. Defaults to the current contract (1); tests
-	// override it via NINE_TEST_PROTOCOL_VERSION to exercise the daemon's
-	// version-mismatch rejection.
-	protocolVersion := 1
-	if v := os.Getenv("NINE_TEST_PROTOCOL_VERSION"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "testplugin: bad NINE_TEST_PROTOCOL_VERSION %q: %v\n", v, err)
-			os.Exit(1)
-		}
-		protocolVersion = n
-	}
-	// When NINE_TEST_ENV_DUMP names a path, write the process environment there
-	// before listening. Tests use it to assert that operator settings reach the
-	// spawned plugin (docs/plugin-capabilities.md §3). No-op unless the var is set.
+type message struct {
+	JSONRPC string           `json:"jsonrpc"`
+	ID      *json.RawMessage `json:"id"`
+	Method  string           `json:"method"`
+	Params  json.RawMessage  `json:"params"`
+	Header  http.Header      `json:"-"` // socket transport only
+}
+
+func main() {
 	if dump := os.Getenv("NINE_TEST_ENV_DUMP"); dump != "" {
 		os.WriteFile(dump, []byte(strings.Join(os.Environ(), "\n")), 0o600) //nolint:errcheck
 	}
+	if d := os.Getenv("NINE_TEST_STARTUP_DELAY"); d != "" {
+		if wait, err := time.ParseDuration(d); err == nil {
+			time.Sleep(wait)
+		}
+	}
+
+	if sock := os.Getenv("NINE_PLUGIN_SOCKET"); sock != "" {
+		serveSocket(sock)
+		return
+	}
+	serveStdio()
+}
+
+var tools = []map[string]any{
+	{"name": "echo", "description": "Echoes its arguments back as text",
+		"inputSchema": map[string]any{"type": "object", "properties": map[string]any{"message": map[string]any{"type": "string"}}}},
+	{"name": "sleep", "description": "sleeps a fixed duration", "inputSchema": map[string]any{"type": "object"}},
+	{"name": "crash", "description": "exits the process without replying", "inputSchema": map[string]any{"type": "object"}},
+	{"name": "traceid", "description": "returns the request ID header", "inputSchema": map[string]any{"type": "object"}},
+}
+
+// rpcError is a JSON-RPC error object. A named pointer type so a nil check in
+// reply is not defeated by a typed-nil interface.
+type rpcError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+func handle(msg message) (result any, rpcErr *rpcError) {
+	switch msg.Method {
+	case "initialize":
+		result = map[string]any{
+			"protocolVersion": "2025-03-26",
+			"capabilities":    map[string]any{"tools": map[string]any{}},
+			"serverInfo":      map[string]any{"name": "testplugin", "version": "0.1.0"},
+		}
+	case "tools/list":
+		result = map[string]any{"tools": tools}
+	case "tools/call":
+		var params struct {
+			Name      string          `json:"name"`
+			Arguments json.RawMessage `json:"arguments"`
+		}
+		json.Unmarshal(msg.Params, &params) //nolint:errcheck
+		switch params.Name {
+		case "echo":
+			result = map[string]any{"content": []map[string]any{{"type": "text", "text": string(params.Arguments)}}, "isError": false}
+		case "sleep":
+			time.Sleep(sleepDur)
+			result = map[string]any{"content": []map[string]any{{"type": "text", "text": "ok"}}, "isError": false}
+		case "crash":
+			os.Exit(1)
+		case "traceid":
+			id := ""
+			if msg.Header != nil {
+				id = msg.Header.Get("X-Nine-Request-ID")
+			}
+			result = map[string]any{"content": []map[string]any{{"type": "text", "text": id}}, "isError": false}
+		default:
+			result = map[string]any{"content": []map[string]any{{"type": "text", "text": "unknown tool"}}, "isError": true}
+		}
+	default:
+		rpcErr = &rpcError{Code: -32601, Message: "method not found: " + msg.Method}
+	}
+	return result, rpcErr
+}
+
+// reply encodes one JSON-RPC response frame (or nothing for a notification).
+func reply(w io.Writer, msg message, result any, rpcErr *rpcError) {
+	if msg.ID == nil {
+		return // notification: no reply
+	}
+	resp := map[string]any{"jsonrpc": "2.0", "id": msg.ID}
+	if rpcErr != nil {
+		resp["error"] = rpcErr
+	} else {
+		resp["result"] = result
+	}
+	data, _ := json.Marshal(resp)
+	fmt.Fprintf(w, "%s\n", data)
+}
+
+func serveStdio() {
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Buffer(make([]byte, 4*1024*1024), 4*1024*1024)
+	for scanner.Scan() {
+		var msg message
+		if err := json.Unmarshal(scanner.Bytes(), &msg); err != nil {
+			continue
+		}
+		result, rpcErr := handle(msg)
+		reply(os.Stdout, msg, result, rpcErr)
+	}
+}
+
+func serveSocket(socketPath string) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		var msg message
+		if err := json.Unmarshal(body, &msg); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		msg.Header = r.Header
+		if msg.ID == nil {
+			w.WriteHeader(http.StatusAccepted) // notification
+			return
+		}
+		result, rpcErr := handle(msg)
+		resp := map[string]any{"jsonrpc": "2.0", "id": msg.ID}
+		if rpcErr != nil {
+			resp["error"] = rpcErr
+		} else {
+			resp["result"] = result
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp) //nolint:errcheck
+	})
 
 	os.Remove(socketPath) //nolint:errcheck
 	ln, err := net.Listen("unix", socketPath)
@@ -46,42 +171,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "testplugin: listen: %v\n", err)
 		os.Exit(1)
 	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/rpc", func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		var req struct {
-			Method string          `json:"method"`
-			Params json.RawMessage `json:"params"`
-		}
-		json.Unmarshal(body, &req) //nolint:errcheck
-
-		var resp map[string]any
-		switch req.Method {
-		case "plugin.describe":
-			resp = map[string]any{"result": map[string]any{
-				"protocol_version": protocolVersion,
-				"tools": []map[string]any{{
-					"name":        "echo",
-					"description": "Echoes its arguments back as output",
-					"input_schema": map[string]any{
-						"type":       "object",
-						"properties": map[string]any{"message": map[string]any{"type": "string"}},
-					},
-				}},
-			}}
-		case "plugin.call":
-			var p struct {
-				Tool string          `json:"tool"`
-				Args json.RawMessage `json:"args"`
-			}
-			json.Unmarshal(req.Params, &p) //nolint:errcheck
-			resp = map[string]any{"result": map[string]any{"output": string(p.Args)}}
-		default:
-			resp = map[string]any{"error": map[string]any{"code": -32601, "message": "method not found"}}
-		}
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck
-	})
-
-	http.Serve(ln, mux) //nolint:errcheck,gosec // G114: test-only local socket server
+	if err := http.Serve(ln, mux); err != nil { //nolint:gosec // G114: test-only local socket server
+		fmt.Fprintf(os.Stderr, "testplugin: serve: %v\n", err)
+	}
 }

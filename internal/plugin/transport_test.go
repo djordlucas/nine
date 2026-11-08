@@ -31,12 +31,12 @@ func callN(t *testing.T, m *plugin.Manager, p *plugin.Plugin, n int) time.Durati
 	return time.Since(start)
 }
 
-// TestConcurrencyUnbounded: with max_concurrent=0 (unset), N concurrent calls to
-// a 150ms sleep handler complete in roughly one sleep, not N×.
+// TestConcurrencyUnbounded: unix-socket HTTP is concurrent, so N concurrent calls
+// to a 150ms sleep handler complete in roughly one sleep, not N×.
 func TestConcurrencyUnbounded(t *testing.T) {
-	path := buildBinary(t, "./internal/plugin/slowplugin")
+	path := buildBinary(t, "./internal/plugin/testplugin")
 	m := plugin.NewManager("")
-	p, err := m.Start(path) // SLOW_MAX_CONCURRENT unset → unbounded
+	p, err := m.Start(path)
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -50,14 +50,15 @@ func TestConcurrencyUnbounded(t *testing.T) {
 	}
 }
 
-// TestConcurrencyCapped: with max_concurrent=1 the same calls serialize, so wall
-// time grows to roughly N× one sleep.
+// TestConcurrencyCapped: the stdio transport is serial by construction
+// (max_concurrent 1 — one client-side write lock owns the stream), so the same
+// calls serialize and wall time grows to roughly N× one sleep.
 func TestConcurrencyCapped(t *testing.T) {
-	path := buildBinary(t, "./internal/plugin/slowplugin")
+	path := buildBinary(t, "./internal/plugin/testplugin")
 	m := plugin.NewManager("")
-	p, err := m.Start(path, "SLOW_MAX_CONCURRENT=1")
+	p, err := m.StartStdio(path)
 	if err != nil {
-		t.Fatalf("Start: %v", err)
+		t.Fatalf("StartStdio: %v", err)
 	}
 	defer m.Stop(p) //nolint:errcheck
 
@@ -65,15 +66,15 @@ func TestConcurrencyCapped(t *testing.T) {
 	elapsed := callN(t, m, p, n)
 	// Serialized: ~6×150ms = 900ms. Require clearly more than the unbounded case.
 	if elapsed < 600*time.Millisecond {
-		t.Errorf("capped at 1: %d calls took %v, expected serial (~%v)", n, elapsed, n*150*time.Millisecond)
+		t.Errorf("serial stdio: %d calls took %v, expected serial (~%v)", n, elapsed, n*150*time.Millisecond)
 	}
 }
 
 // TestContextCancellation: a call whose context deadline fires mid-handler
-// returns promptly with a context error — the HTTP transport carries the ctx, so
+// returns promptly with a context error — HTTP carries the ctx per request, so
 // the daemon stops waiting even though the (150ms) sleep handler keeps running.
 func TestContextCancellation(t *testing.T) {
-	path := buildBinary(t, "./internal/plugin/slowplugin")
+	path := buildBinary(t, "./internal/plugin/testplugin")
 	m := plugin.NewManager("")
 	p, err := m.Start(path)
 	if err != nil {
@@ -95,9 +96,9 @@ func TestContextCancellation(t *testing.T) {
 }
 
 // TestTraceIDPropagation: a trace ID set on the call context reaches the plugin
-// handler — daemon ctx → X-Nine-Request-ID header → handler ctx.
+// over the socket transport — daemon ctx → X-Nine-Request-ID header → handler.
 func TestTraceIDPropagation(t *testing.T) {
-	path := buildBinary(t, "./internal/plugin/slowplugin")
+	path := buildBinary(t, "./internal/plugin/testplugin")
 	m := plugin.NewManager("")
 	p, err := m.Start(path)
 	if err != nil {
@@ -118,7 +119,7 @@ func TestTraceIDPropagation(t *testing.T) {
 // TestCrashIsolation: a plugin that exits mid-call fails that call and any
 // follow-up call, and the manager reports the failure without crashing the host.
 func TestCrashIsolation(t *testing.T) {
-	path := buildBinary(t, "./internal/plugin/slowplugin")
+	path := buildBinary(t, "./internal/plugin/testplugin")
 	m := plugin.NewManager("")
 	p, err := m.Start(path)
 	if err != nil {
@@ -129,7 +130,7 @@ func TestCrashIsolation(t *testing.T) {
 	if _, err := m.Call(context.Background(), p, "crash", json.RawMessage(`{}`)); err == nil {
 		t.Error("expected error from crashed plugin, got nil")
 	}
-	// The socket is gone; a follow-up call also errors cleanly (no panic/hang).
+	// The connection is gone; a follow-up call also errors cleanly (no panic/hang).
 	if _, err := m.Call(context.Background(), p, "sleep", json.RawMessage(`{}`)); err == nil {
 		t.Error("expected error after crash, got nil")
 	}

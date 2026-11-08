@@ -155,7 +155,7 @@ func TestProbeUsesEphemeralCache(t *testing.T) {
 	bin := buildBinary(t, "./internal/plugin/testplugin")
 	dump := filepath.Join(t.TempDir(), "env.txt")
 
-	if _, err := plugin.Probe(bin, "NINE_TEST_ENV_DUMP="+dump); err != nil {
+	if _, err := plugin.ProbeTransport(bin, plugin.TransportHTTP, "NINE_TEST_ENV_DUMP="+dump); err != nil {
 		t.Fatalf("Probe: %v", err)
 	}
 	env := readEnvDump(t, dump)

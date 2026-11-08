@@ -33,8 +33,8 @@ func (m *Manager) ReloadUserPlugins() {
 //
 //  1. A malformed manifest or missing binary is recorded as skipped — the binary
 //     is never executed.
-//  2. The binary is probed through the plugin handshake; a non-plugin (or a
-//     protocol-version mismatch) is recorded as skipped.
+//  2. The binary is probed through the MCP handshake; a non-MCP binary is
+//     recorded as skipped.
 //  3. Its tools are checked against every already-running plugin (built-in first,
 //     then earlier-accepted user plugins). Any collision skips the whole plugin —
 //     no override, ever.
@@ -75,13 +75,14 @@ func (m *Manager) loadUserPlugins(dir string) {
 		// Operator settings (docs/plugin-capabilities.md §3) apply to user plugins,
 		// which otherwise receive no environment. Probe gets the manager env plus
 		// the settings; Start prepends the manager env itself, so it gets settings
-		// alone.
+		// alone. The manifest's transport selects the wire: socket HTTP by
+		// default, stdio when declared (R-PLUG.1, adr/modular_nine.md §9.6).
 		extra := m.envFor(d.Name)
 		probeEnv := append(append([]string{}, m.env...), extra...)
-		desc, err := Probe(d.BinaryPath, probeEnv...)
+		desc, err := ProbeTransport(d.BinaryPath, d.Transport, probeEnv...)
 		if err != nil {
 			st.Err = err.Error()
-			slog.Error("skipping user plugin: not a valid plugin", "name", d.Name, "path", d.BinaryPath, "err", err)
+			slog.Error("skipping user plugin: not a valid MCP plugin", "name", d.Name, "path", d.BinaryPath, "err", err)
 			status = append(status, st)
 			continue
 		}
@@ -93,7 +94,12 @@ func (m *Manager) loadUserPlugins(dir string) {
 			continue
 		}
 
-		p, err := m.Start(d.BinaryPath, extra...)
+		var p *Plugin
+		if d.Transport == TransportStdio {
+			p, err = m.StartStdio(d.BinaryPath, extra...)
+		} else {
+			p, err = m.Start(d.BinaryPath, extra...)
+		}
 		if err != nil {
 			st.Err = err.Error()
 			slog.Error("skipping user plugin: start failed", "name", d.Name, "path", d.BinaryPath, "err", err)

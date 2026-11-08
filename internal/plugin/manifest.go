@@ -20,11 +20,17 @@ type Manifest struct {
 	// Entrypoint is the path to the plugin binary, resolved relative to the
 	// manifest file's directory (e.g. "./weather").
 	Entrypoint string `toml:"entrypoint"`
+	// Transport is how the plugin speaks MCP: "http" (the default) serves
+	// streamable HTTP on the socket the daemon allocates (NINE_PLUGIN_SOCKET),
+	// concurrent; "stdio" speaks MCP over its stdin/stdout pipes, serial.
+	// (adr/modular_nine.md §9.6.)
+	Transport string `toml:"transport,omitempty"`
 }
 
-// LoadManifest reads and validates one manifest file. Both fields are required;
-// a missing or malformed field is an error, so an incomplete manifest is caught
-// before its binary is ever executed.
+// LoadManifest reads and validates one manifest file. Name and entrypoint are
+// required; transport is optional and must be a known value — a missing or
+// malformed field is an error, so an incomplete manifest is caught before its
+// binary is ever executed.
 func LoadManifest(path string) (Manifest, error) {
 	var m Manifest
 	md, err := toml.DecodeFile(path, &m)
@@ -40,6 +46,13 @@ func LoadManifest(path string) (Manifest, error) {
 	if m.Entrypoint == "" {
 		return Manifest{}, fmt.Errorf("manifest missing required field: entrypoint")
 	}
+	switch m.Transport {
+	case "", TransportHTTP:
+		m.Transport = TransportHTTP
+	case TransportStdio:
+	default:
+		return Manifest{}, fmt.Errorf("manifest transport %q is not one of %q, %q", m.Transport, TransportHTTP, TransportStdio)
+	}
 	return m, nil
 }
 
@@ -50,6 +63,7 @@ type discovered struct {
 	Name         string
 	ManifestPath string
 	BinaryPath   string
+	Transport    string
 	Err          error
 }
 
@@ -95,6 +109,7 @@ func discoverPlugins(dir string) []discovered {
 			d.Err = fmt.Errorf("entrypoint %q is a directory, not an executable", m.Entrypoint)
 		}
 		d.BinaryPath = bin
+		d.Transport = m.Transport
 		out = append(out, d)
 	}
 

@@ -6,7 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
+	"slices"
 	"testing"
 
 	"nine/internal/plugin"
@@ -46,6 +46,11 @@ func buildBinary(t *testing.T, pkgPath string) string {
 }
 
 // --- native plugin tests ---
+//
+// Plugins are MCP servers now (R-PLUG.1): there is no hand-stamped protocol
+// version to mismatch — the MCP initialize negotiation is the versioning — so
+// the old rejection tests are gone; a binary that does not answer initialize is
+// simply not a plugin (covered in mcp_only_test.go).
 
 func TestManagerDescribe(t *testing.T) {
 	path := buildBinary(t, "./internal/plugin/testplugin")
@@ -57,50 +62,49 @@ func TestManagerDescribe(t *testing.T) {
 	}
 	defer m.Stop(p)
 
-	if len(p.Tools) != 1 {
-		t.Fatalf("expected 1 tool, got %d", len(p.Tools))
+	names := make([]string, 0, len(p.Tools))
+	for _, tool := range p.Tools {
+		names = append(names, tool.Name)
 	}
-	if p.Tools[0].Name != "echo" {
-		t.Errorf("tool name = %q, want %q", p.Tools[0].Name, "echo")
+	if !slices.Contains(names, "echo") {
+		t.Errorf("tools = %v, want echo among them", names)
 	}
-	if p.Tools[0].Description == "" {
-		t.Error("tool description is empty")
+	for _, tool := range p.Tools {
+		if tool.Name == "echo" {
+			if tool.Description == "" {
+				t.Error("tool description is empty")
+			}
+			if len(tool.InputSchema) == 0 {
+				t.Error("tool input schema is empty")
+			}
+		}
 	}
-	if len(p.Tools[0].InputSchema) == 0 {
-		t.Error("tool input_schema is empty")
-	}
-}
-
-func TestManagerRejectsProtocolMismatch(t *testing.T) {
-	path := buildBinary(t, "./internal/plugin/testplugin")
-	m := plugin.NewManager("")
-
-	// A future protocol version the daemon does not speak.
-	p, err := m.Start(path, "NINE_TEST_PROTOCOL_VERSION=999")
-	if err == nil {
-		m.Stop(p) //nolint:errcheck
-		t.Fatal("expected Start to reject a protocol-mismatched plugin, got nil error")
-	}
-	if !strings.Contains(err.Error(), "protocol") {
-		t.Errorf("error = %q, want it to mention the protocol mismatch", err)
-	}
-	if len(m.Running()) != 0 {
-		t.Errorf("rejected plugin should not be tracked; Running() = %d", len(m.Running()))
+	if p.MaxConcurrent != 0 {
+		t.Errorf("max_concurrent = %d, want 0 (unix-socket HTTP is concurrent)", p.MaxConcurrent)
 	}
 }
 
-func TestManagerRejectsUnversionedPlugin(t *testing.T) {
+// The stdio transport registers the same plugin as serial (max_concurrent 1):
+// stdio cannot match a response to a request without owning the stream.
+func TestManagerStdioIsSerial(t *testing.T) {
 	path := buildBinary(t, "./internal/plugin/testplugin")
 	m := plugin.NewManager("")
 
-	// Version 0 == absent: a plugin predating protocol versioning.
-	p, err := m.Start(path, "NINE_TEST_PROTOCOL_VERSION=0")
-	if err == nil {
-		m.Stop(p) //nolint:errcheck
-		t.Fatal("expected Start to reject an unversioned plugin, got nil error")
+	p, err := m.StartStdio(path)
+	if err != nil {
+		t.Fatalf("StartStdio: %v", err)
 	}
-	if !strings.Contains(err.Error(), "protocol") {
-		t.Errorf("error = %q, want it to mention the protocol version", err)
+	defer m.Stop(p)
+
+	if p.MaxConcurrent != 1 {
+		t.Errorf("max_concurrent = %d, want 1 for stdio", p.MaxConcurrent)
+	}
+	res, err := m.Call(context.Background(), p, "echo", json.RawMessage(`{"message":"stdio"}`))
+	if err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	if res.Output != `{"message":"stdio"}` {
+		t.Errorf("output = %q, want the echoed args", res.Output)
 	}
 }
 

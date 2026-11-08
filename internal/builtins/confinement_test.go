@@ -47,7 +47,7 @@ func linkNine(t *testing.T) string {
 	return dst
 }
 
-// serveChild starts `nine plugin serve <name>` with a deliberately hostile
+// serveChild starts `nine mcp serve <name>` with a deliberately hostile
 // environment — a cwd and $HOME that both contain a config file — and returns
 // the binary path, the combined output, and the exit error (nil if it was still
 // running and had to be killed).
@@ -63,7 +63,7 @@ func serveChild(t *testing.T, name string, budget time.Duration, env ...string) 
 		t.Fatalf("write config: %v", err)
 	}
 
-	cmd := exec.Command(bin, "plugin", "serve", name)
+	cmd := exec.Command(bin, "mcp", "serve", name)
 	cmd.Dir = workdir
 	// HOME is on the plugin env allowlist, so it is a real config search path.
 	cmd.Env = append([]string{"PATH=/usr/bin:/bin", "HOME=" + workdir}, env...)
@@ -167,7 +167,7 @@ func TestServeChildRequiresSocket(t *testing.T) {
 	_, out, err := serveChild(t, "shell", expectExit) // no NINE_PLUGIN_SOCKET
 
 	if err == nil {
-		t.Error("plugin serve with no NINE_PLUGIN_SOCKET kept running; want a non-zero exit")
+		t.Error("mcp serve with no NINE_PLUGIN_SOCKET kept running; want a non-zero exit")
 	}
 	if !strings.Contains(out, "NINE_PLUGIN_SOCKET") {
 		t.Errorf("error does not name the missing variable; output:\n%s", out)
@@ -181,7 +181,7 @@ func TestServeChildRejectsUnknownName(t *testing.T) {
 	_, out, err := serveChild(t, "nope", expectExit, "NINE_PLUGIN_SOCKET="+sock)
 
 	if err == nil {
-		t.Error("plugin serve with an unknown name kept running; want a non-zero exit")
+		t.Error("mcp serve with an unknown name kept running; want a non-zero exit")
 	}
 	if !strings.Contains(out, "nope") || strings.Contains(out, "plugin validate") {
 		t.Errorf("unhelpful error for an unknown built-in; output:\n%s", out)
