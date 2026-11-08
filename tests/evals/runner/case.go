@@ -103,16 +103,9 @@ type Setup struct {
 	// tools, not a knob.
 	MCPServers []MCPServerSetup `yaml:"mcp_servers"`
 
-	// GeneratedTools are tools Nine wrote in an earlier session, seeded through
-	// the same store tool_write uses — the starting point for a case about
-	// revising or deleting one. They need session.config tools.agent.enabled.
-	GeneratedTools map[string]GeneratedToolSetup `yaml:"generated_tools"`
 	// Genesis is a genesis document: the harness runs genesis on it once the
 	// daemon is up, before the prompts, as a first boot would.
 	Genesis string `yaml:"genesis"`
-	// Revisions rewrite seeded tools, in order, after GeneratedTools: each is
-	// a tool_write of an existing name, as a revision would be.
-	Revisions []RevisionSetup `yaml:"revisions"`
 	// Database is run in the database before the prompts, statement by
 	// statement; it needs session.config processes.database.
 	Database []string `yaml:"database"`
@@ -123,38 +116,6 @@ type Setup struct {
 	// are what a background case exercises — work that happens with no prompt
 	// at all (adr/process-sessions.md).
 	Processes []ProcessSetup `yaml:"processes"`
-}
-
-// GeneratedToolSetup is one seeded generated tool: tool_write's fields.
-type GeneratedToolSetup struct {
-	Description  string `yaml:"description"`
-	InputSchema  string `yaml:"input_schema"` // JSON
-	Source       string `yaml:"source"`
-	Capabilities string `yaml:"capabilities"` // JSON; empty declares nothing
-	Resumable    bool   `yaml:"resumable"`
-	// Process writes the tool as a process Nine wrote, gen:<name>; it needs
-	// session.config tools.agent.allow_processes.
-	Process *GeneratedProcessSetup `yaml:"process"`
-}
-
-// RevisionSetup is a rewrite of a seeded tool.
-type RevisionSetup struct {
-	Name               string `yaml:"name"`
-	GeneratedToolSetup `yaml:",inline"`
-}
-
-// GeneratedProcessSetup is a seeded tool's process block, as tool_write takes it.
-type GeneratedProcessSetup struct {
-	Every    string `yaml:"every"`
-	Schedule string `yaml:"schedule"`
-	Role     string `yaml:"role"`
-	ReportTo string `yaml:"report_to"`
-	// StoppedBy starts the process stopped by that party.
-	StoppedBy string `yaml:"stopped_by"`
-	// On, OnFilter and EventContent are its event trigger.
-	On           []string         `yaml:"on"`
-	OnFilter     EventFilterSetup `yaml:"on_filter"`
-	EventContent bool             `yaml:"event_content"`
 }
 
 // ProcessSetup is one [[process]] block, with the same fields.
@@ -271,9 +232,6 @@ type SideEffects struct {
 	Goals         *GoalExpect            `yaml:"goals"`
 	Notifications *NotificationExpect    `yaml:"notifications"`
 	Vectors       *VectorExpect          `yaml:"vectors"`
-	// GeneratedTools checks the tools Nine wrote, by name: whether one exists,
-	// and what its stored source says.
-	GeneratedTools map[string]GeneratedToolExpect `yaml:"generated_tools"`
 	// Processes checks processes by id: whether one exists, its state, and who
 	// stopped it.
 	Processes map[string]ProcessExpect `yaml:"processes"`
@@ -306,13 +264,6 @@ type ProcessExpect struct {
 	Absent    bool   `yaml:"absent"`
 	State     string `yaml:"state"`
 	StoppedBy string `yaml:"stopped_by"`
-}
-
-// GeneratedToolExpect asserts one generated tool: absent, or present with a
-// source matching Source.
-type GeneratedToolExpect struct {
-	Absent bool        `yaml:"absent"`
-	Source StringMatch `yaml:"source"`
 }
 
 // StringMatch is a tolerant assertion over a file: at most one of Equals/Contains/
@@ -542,13 +493,9 @@ func (c *Case) validate() error {
 		return fmt.Errorf("id %q must be kebab-case", c.ID)
 	}
 	// A background case may have no prompt: its processes do the work, declared
-	// or written by Nine (a seeded tool with a process block).
-	background := len(c.Setup.Processes) > 0
-	for _, g := range c.Setup.GeneratedTools {
-		background = background || g.Process != nil
-	}
-	if len(c.Prompts) == 0 && (!background || c.Wait == nil) {
-		return fmt.Errorf("at least one prompt is required, unless processes (setup.processes, or a generated tool's process) and wait are set")
+	// in setup.processes.
+	if len(c.Prompts) == 0 && (len(c.Setup.Processes) == 0 || c.Wait == nil) {
+		return fmt.Errorf("at least one prompt is required, unless processes (setup.processes) and wait are set")
 	}
 	if c.Wait != nil && c.Wait.Seconds <= 0 {
 		return fmt.Errorf("wait.seconds must be positive")
@@ -653,7 +600,7 @@ func (e Expect) hasAny() bool {
 	se := e.SideEffects
 	if len(se.Files) > 0 || len(se.StoredFiles) > 0 || len(se.KV) > 0 || se.Workflows != nil ||
 		se.Goals != nil || se.Notifications != nil || se.Vectors != nil ||
-		len(se.GeneratedTools) > 0 || len(se.Processes) > 0 || len(se.Journal) > 0 || len(se.Database) > 0 {
+		len(se.Processes) > 0 || len(se.Journal) > 0 || len(se.Database) > 0 {
 		return true
 	}
 	t := e.Trajectory

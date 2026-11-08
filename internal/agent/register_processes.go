@@ -62,7 +62,7 @@ var processToolDefs = []llm.ToolDef{
 	{
 		Name:        "process_stop",
 		DisplayName: "Stop Process",
-		Description: "Stop a process; it stays, stopped, and can be started again. A model may start it again later; one the operator stops only the operator can. To remove a process you wrote (id gen:<tool>) for good, delete its tool with tool_delete instead.",
+		Description: "Stop a process; it stays, stopped, and can be started again. A model may start it again later; one the operator stops only the operator can. To remove a process for good, remove its [[process]] block from nine.toml.",
 		InputSchema: json.RawMessage(processIDSchema),
 	},
 }

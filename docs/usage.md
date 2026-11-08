@@ -62,25 +62,6 @@ nine plugin validate [path]      Check a user plugin with the load-time handshak
                                  (defaults to [plugins].user_dir; a path may be a
                                  manifest or a binary; works with the daemon down)
 
-nine tools                       Show the sandboxed-tool roster: each tool with
-                                 the capabilities it actually runs with, plus any
-                                 skipped at load and the reason
-nine tools show <name>           Print one sandboxed tool in full: kind, status,
-                                 resolved grant, manifest path
-nine tools reload                Re-scan [tools].user_dir and reload sandboxed
-                                 tools live
-nine tools delete <name>         Delete a tool Nine wrote; shipped and
-                                 operator-installed tools are refused
-nine tools versions <name>       List a tool Nine wrote: its version, whether
-                                 it is on probation, the versions it keeps
-nine tools restore <name> <v>    Make a kept version current again; a process
-                                 it runs restarts on it
-nine tools deps                  List the external npm packages generated tools
-                                 resolved, with the tool that asked for each
-nine tool validate [path]        Check a sandboxed tool's manifest, entrypoint,
-                                 schema, and ABI exports (defaults to
-                                 [tools].user_dir; works with the daemon down)
-
 nine backup <dest.db|.tar.gz>    Snapshot the store (.db) or the store and the
                                  workspace together (.tar.gz); no downtime
 nine restore <snapshot.db|.tar.gz>
@@ -203,31 +184,27 @@ This reads directly from the store, so it works even when the daemon is down.
 
 ### `nine grants`
 
-The operator's side of the generated-tool capability loop. When a tool Nine wrote
-needs a capability its ceiling does not permit, the write is refused and the agent
-can call `capability_request` — which records a pending request and posts it to
+The operator's side of the plugin-capability loop (docs/plugin-capabilities.md §3).
+When a plugin needs a capability it does not hold, the agent can call
+`capability_request` — which records a pending request and posts it to
 `nine notifications`. Nothing is granted by asking.
 
 ```bash
-./nine grants                     # requests waiting, and the ceiling in force
+./nine grants                     # requests waiting, and the grants in force
 ./nine grants list --all          # including already-decided requests
 ./nine grants approve <id>        # confer it
 ./nine grants deny <id>
 ./nine grants revoke <grant-id>   # withdraw one you approved earlier
 ```
 
-An approval or a revocation **applies to the running daemon**: the ceiling is
-installed on the live tool host and every generated tool re-resolved against it, so
-a tool that could not load becomes callable on its next turn with no restart.
-
-The listing names each grant's source — `default` (derived from `[workspace].root`),
-`config` (from `nine.toml`) or `approved` (yours). The first two are rewritten from
-the file at every boot, so removing a grant from `nine.toml` removes it; only an
-`approved` grant persists independently, and only one of those is revocable here.
+The listing names each grant's source — `config` (from `nine.toml`) or `approved`
+(yours). The file is reconciled into the store at every boot, so removing a grant
+from `nine.toml` removes it; only an `approved` grant persists independently, and
+only one of those is revocable here.
 
 These need a running daemon and deliberately do not start one: a grant approved
 against a daemon spawned for the purpose would take effect in a process that then
-exits. Full design: [sandboxed-tools.md](sandboxed-tools.md) §7.2.
+exits. Full design: [plugin-capabilities.md](plugin-capabilities.md).
 
 ### `nine workflows` / `nine workflow`
 
@@ -311,10 +288,9 @@ cursor, progress and requested delay — because that is what you are debugging.
 
 **It runs against scratch state.** If the tool has durable state, a test call gets
 its own throwaway namespace, discarded afterwards. Without that, testing a tool
-could overwrite the cursor of a live standing run and you would have broken
+could overwrite the state of a live process and you would have broken
 production by checking something. `--live-state` opts in when reproducing a bug
-needs the real store. Capabilities are never sandboxed — a test that cannot make
-the tool's real calls tests nothing.
+needs the real store.
 
 ### `nine sessions` / `nine session delete` — the roster, and erasing one
 

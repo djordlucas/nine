@@ -76,35 +76,9 @@ Command: rm -rf /tmp/old
 Enter "yes" to proceed, anything else to cancel.
 ```
 
-The question format is tool-aware: `shell` shows `command`, `tool_write`/`js_eval` show the tool name and its declared capabilities, everything else falls back to truncated JSON args.
+The question format is tool-aware: `shell` shows `command`, everything else falls back to truncated JSON args.
 
 **A file write shows the change, not the path.** `write_file` and `edit_file` prompts carry a diff, bounded at 40 lines — a path names which file is about to change and does not answer the only question the gate asks. The diff comes from the tool's own `preview` argument rather than a second implementation, so what the human approves is what the tool then performs, and nothing is written to produce it. A preview that fails never blocks the approval: the prompt falls back to naming the path, since a human deciding with less information beats a tool that cannot run.
-
-### The generated-tools gate
-
-The generated tier (`sandboxed-tools.md` §9.4, `spec/contracts/toolvm.md` R-TVM.14) reuses this same gate for `tool_write` and `js_eval`, but keyed off its own switch, `[tools.agent].require_approval`, rather than the `[hitl]` list — and with a per-call decision the `[hitl]` list does not have:
-
-| `[tools.agent].require_approval` | Gates |
-|---|---|
-| `on_capability` *(default)* | a write/eval that **declares any capability**, or whose source **imports an external package** — a pure transform with neither passes without a prompt |
-| `always` | every write and every eval |
-| `never` | nothing — the ceiling, `allow_processes` and `process_roles` are the only controls |
-
-Two decisions sit underneath that table:
-
-- **A process write is never inert.** Under `on_capability` a `tool_write` with a
-  `process` block prompts even when it declares nothing: a catalogued tool runs when
-  a turn calls it, a process runs until somebody stops it, and the write that starts
-  one is the only moment to refuse. Under `never` it does not prompt.
-- **Unparseable arguments gate.** A `tool_write` whose JSON cannot be read counts
-  as declaring everything, because fail-closed is the only safe direction for an
-  approval decision.
-
-The default gates on **substance, not frequency**: prompting on a capability-free date-formatting tool trains the reflex that defeats the prompt that matters — a tool asking for workspace read. Both switches share the one dispatcher gate, so a generated tool armed here is gated on exactly the same owning-interactive-session terms as any `[hitl]` entry (below); a non-interactive deployment has no gate, so there the ceiling in `[tools.agent.capabilities]` is the whole control.
-
-The answer is checked case-insensitively: a response starting with `"y"` proceeds; anything else returns an error (`"tool shell rejected by user"`) that the LLM receives as a normal tool failure.
-
-A refusal is **terminal** — the loop's tool-retry path (`dispatchWithRetry`, 3 attempts) must not re-dispatch it, or the same human gets asked the same question three times. Both refusal and failure-to-obtain-approval (timeout, cancellation) are wrapped in `agent.ApprovalError`, which the retry loop returns on immediately.
 
 ### Asking out of band
 
@@ -120,9 +94,9 @@ approval conferred. An approval installs on the running daemon without a restart
 writes nothing to `nine.toml`.
 
 This is the one control a non-interactive deployment still has. The approval gates above
-need an owning interactive session, so without one the ceiling in
-`[tools.agent.capabilities]` is otherwise the whole story; a request outlives the turn
-that made it and waits for whenever an operator looks.
+need an owning interactive session, so without one the plugin-capability grants in
+the store are otherwise the whole story; a request outlives the turn that made it and
+waits for whenever an operator looks (docs/plugin-capabilities.md §3).
 
 ### Gates in sub-agents
 
@@ -200,4 +174,4 @@ On shutdown every blocked question is cancelled and written to the store as `tim
 - **One pending question per asking loop** — a loop has at most one question outstanding, and concurrent `ask_human` calls within one turn serialise behind each other. Several sub-agents of one conversation can each be waiting at once, which is why the Inbox lists them all.
 - **An approval diff is truncated at 40 lines** — a larger change is approved on a partial view, with the line counts naming what was not shown. A prompt that scrolls is one nobody reads, which is the failure the bound exists to prevent.
 - **No goroutine interruption on timeout** — when a question times out, `ask_human` returns an error to the LLM. Any tool call the LLM subsequently makes may still proceed; timeout is not equivalent to task cancellation.
-- **Approval gate scope** — the `[hitl].require_approval` list is global; there is no per-session or per-argument pattern matching for it. Fine-grained rules (e.g., "approve `shell` only for destructive-looking commands") are deferred. The generated-tools gate (`[tools.agent].require_approval = "on_capability"`) is the one per-argument exception, and only for `tool_write`/`js_eval`.
+- **Approval gate scope** — the `[hitl].require_approval` list is global; there is no per-session or per-argument pattern matching for it. Fine-grained rules (e.g., "approve `shell` only for destructive-looking commands") are deferred.

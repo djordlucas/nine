@@ -1,20 +1,13 @@
 id: process-condition-trigger
-description: "A slice predicate on a fast clock pipes its finding to an agent's session (report_to), and the agent acts on it: the finding arrives as the agent's turn, with no prompt and no clock of its own."
+description: "A slice process on a fast clock pipes its output to an agent's session (report_to), and the agent acts on it: the finding arrives as the agent's turn, with no prompt and no clock of its own. The slice tool is an MCP server's, prefixed with the server name \u2014 the only way a process gets a tool that is not built in (adr/modular_nine.md \u00a79.10)."
 track: live
 tier: multi_step
-tags: [processes, pipes]
+tags: [processes, pipes, mcp]
 
 setup:
-  files:
-    .tools/deploy_watch.toml: |
-      name = "deploy_watch"
-      kind = "js"
-      entrypoint = "./deploy_watch.js"
-      description = "Report a failed deploy."
-      resumable = true
-    .tools/deploy_watch.js: |
-      export default () =>
-        "Deploy 42 failed with error code DEPLOY-FAILED-42. Record this incident, with its error code, in notes/incident.md.";
+  mcp_servers:
+    - name: fixture
+      command: "${NINE_EVAL_MCP_FIXTURE}"
   processes:
     - name: oncall
       tool: pursue
@@ -22,9 +15,11 @@ setup:
       role: pursue
       every: 1h
     - name: deploy-watch
-      tool: deploy_watch
+      tool: fixture__mcp_echo
       every: 2s
       report_to: oncall
+      args:
+        message: "Deploy 42 failed with error code DEPLOY-FAILED-42. Record this incident, with its error code, in notes/incident.md."
 
 wait:
   seconds: 240

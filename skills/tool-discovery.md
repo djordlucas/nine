@@ -72,17 +72,17 @@ supervisor, which tries to resolve it autonomously. Reporting a gap for a tool
 that exists and did not rank well wastes that, and you still have not done the
 task.
 
-Before reporting a gap, consider whether you can close it yourself:
-`tool_write` makes a small JavaScript transform into a permanent tool, and
-`js_eval` runs one without saving it. See the `tool-authoring` skill.
+Before reporting a gap, consider whether you can close it yourself: a small
+transform you need repeatedly is an MCP user plugin the operator can install
+under `[plugins].user_dir` (docs/plugins.md) — Nine no longer writes tools
+itself (adr/modular_nine.md §9.10).
 
 ### The order to work in
 
 1. Use what is in front of you when it fits.
 2. `tool_search` when it does not.
 3. `tool_list` when you need the whole picture, or when search is unavailable.
-4. Write the tool yourself (`tool_write`, `js_eval`) if it is a transform.
-5. `gap_report` only when none of the above can work.
+4. `gap_report` only when none of the above can work.
 
 ## Limits
 

@@ -20,21 +20,6 @@ import (
 // They are the before-picture for adr/process-sessions.md phase 1, which moves
 // all five onto process sessions and must leave these files unchanged.
 
-// A predicate tool in the shape condition triggers use: silent unless it finds
-// something.
-const (
-	predicateManifest = `
-name = "predicate"
-kind = "js"
-entrypoint = "./predicate.js"
-description = "Report only when there is something."
-resumable = true
-`
-	predicateSource = `
-export default function (args) { return args.found ? "found: " + args.found : ""; }
-`
-)
-
 // startBackground starts a harness for background sessions, in the given tool
 // exposition arm ("" is the default).
 func startBackground(t *testing.T, arm string) (*live, *snapshotProvider) {
@@ -45,9 +30,7 @@ func startBackground(t *testing.T, arm string) (*live, *snapshotProvider) {
 		ID:          "background-snapshot",
 		TimeoutSecs: 60,
 		Setup: Setup{Files: map[string]string{
-			"notes/plan.md":         "# Plan\n\nShip the boundary.\n",
-			".tools/predicate.toml": predicateManifest,
-			".tools/predicate.js":   predicateSource,
+			"notes/plan.md": "# Plan\n\nShip the boundary.\n",
 		}},
 	}
 	if arm != "" {
@@ -57,6 +40,18 @@ func startBackground(t *testing.T, arm string) (*live, *snapshotProvider) {
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
+	// A predicate tool in the shape condition triggers use, registered on the
+	// core dispatcher the way a Go built-in is: silent unless it finds something.
+	lv.Core.InjectHandler("predicate", func(_ context.Context, args json.RawMessage) (string, error) {
+		var a struct {
+			Found string `json:"found"`
+		}
+		_ = json.Unmarshal(args, &a)
+		if a.Found == "" {
+			return "", nil
+		}
+		return "found: " + a.Found, nil
+	})
 	t.Cleanup(lv.Result.Close)
 	return lv, p
 }
@@ -160,7 +155,6 @@ func TestBackgroundSnapshots(t *testing.T) {
 
 	t.Run("condition-trigger", func(t *testing.T) {
 		lv, p := startBackground(t, "")
-		lv.Tools.Load(context.Background(), nil)
 		// The agent the trigger wakes; its own idle turns are told apart from the
 		// woken one by the finding in the woken turn's text.
 		spawnGoalBound(t, lv, "watcher", "monitor", "Act on what the predicate finds.")
@@ -191,7 +185,6 @@ func TestBackgroundSnapshots(t *testing.T) {
 
 	t.Run("condition-trigger-deferred", func(t *testing.T) {
 		lv, p := startBackground(t, ArmDeferred)
-		lv.Tools.Load(context.Background(), nil)
 		spawnGoalBound(t, lv, "watcher", "monitor", "Act on what the predicate finds.")
 		runStanding(t, lv, memory.Process{
 			ID: "when-watcher", Tool: "predicate",
@@ -204,7 +197,6 @@ func TestBackgroundSnapshots(t *testing.T) {
 
 	t.Run("standing-tool", func(t *testing.T) {
 		lv, _ := startBackground(t, "")
-		lv.Tools.Load(context.Background(), nil)
 		runStanding(t, lv, memory.Process{
 			ID: "scan", Tool: "predicate", Args: `{"found":"two new files"}`, IntervalSecs: 1,
 		})

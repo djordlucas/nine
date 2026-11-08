@@ -214,18 +214,12 @@ budget = { turns_per_day = 200, tokens_per_day = 2000000 }
 # many processes deep or more; the skip is journaled. 2 lets a process react to
 # someone's work and another react to that, and no further.
 max_depth = 2
-# The database: the SQLite file processes write through nine:sql (with sql = true)
-# and turns read through sql_query. A file of its own, never the store.
+# The database: the SQLite file a live process's session writes through its
+# database handler (with database = true) and turns read through sql_query. A file
+# of its own, never the store.
 # database        = "/data/database.sqlite"   # default: database.sqlite beside the store
 database_max_mb   = 100      # refused beyond this size
 statement_timeout = "5s"     # one statement's longest run
-# Revision (docs/processes.md): a process's turn, under a role that holds
-# tool_write such as the shipped `reviser`, may write and rewrite processes.
-# Off, a process's turn may still write ordinary tools.
-allow_revision = false
-# A rewritten process that fails this many times before it has run is rolled
-# back to its previous version.
-rollback_after = 3
 # Treat the goal [[process]] list as the full desired state: a goal process no
 # longer listed is retired and its goal archived at boot. Conversation-created
 # goals are never touched.
@@ -263,20 +257,7 @@ bin = "./dist/bin"
 # outstanding jobs (default 8), and the daemon-wide cap across every conversation
 # (default 32).
 #
-# Despite living under [plugins], the last three apply to BOTH job backends — a
-# plugin's detached goroutine and a resumable sandboxed tool (spec/contracts/
-# toolvm.md R-TVM.19). They stayed here rather than moving when the tool backend
-# landed, because renaming settled config keys is a breaking change for a
-# cosmetic gain. job_poll_seconds is plugin-only: a tool job's next call is due
-# when the tool said it was, not on a poll schedule.
 #
-# max_jobs_per_conversation bounds one agent; max_jobs_total bounds the machine.
-# The second matters more now that a tool job is work THIS daemon performs rather
-# than work another process is doing.
-# job_poll_seconds = 2
-# job_max_seconds = 3600
-# max_jobs_per_conversation = 8
-# max_jobs_total = 32
 
 # Per-plugin operator config (docs/plugin-capabilities.md §3). The singular
 # [plugin.<name>] table (sibling to the plural [plugins] above) configures one
@@ -350,8 +331,8 @@ api_key = ""
 
 
 [workspace]
-# The one directory Nine writes agent files into: the sandboxed file tools are
-# mounted here and `shell` runs here. Optional; the container overrides it to
+# The one directory Nine writes agent files into: the built-in file tools are
+# confined to it and `shell` runs here. Optional; the container overrides it to
 # the mounted volume at /data/workspace (NINE_WORKSPACE_ROOT).
 # root = "./workspace"
 
@@ -415,9 +396,9 @@ api_key = ""
 # self_model_path = "/etc/nine/self-model.toml"
 #
 # Genesis (docs/processes.md): on the first boot of the store, this document
-# becomes the instance's first processes. Needs [tools.agent] enabled and
-# allow_processes = true. A genesis that does not finish runs again at the next
-# boot; one that does never runs again.
+# becomes the instance's first processes. Suspended with the model-authored tool
+# tier it wrote through (adr/modular_nine.md 9.10): a configured genesis is
+# reported and skipped until that refactor lands.
 # genesis       = "/etc/nine/genesis.md"
 # genesis_turns = 8
 
@@ -576,261 +557,10 @@ tool_top_n = 20
 max_output_tokens = 2048
 
 # ── Sandboxed tools ──────────────────────────────────────────────────────────
-# A wasm tool host: JavaScript or .wasm tools an operator installs as two files,
-# run in-process with an explicitly conferred capability set. ON by default: this
-# tier carries the workspace file tools (read_file, write_file, edit_file and the
-# rest), so `enabled = false` means no host, no file tools, and agent loops
-# identical to what they were before this subsystem existed.
-enabled = true
-
-# Where developer tools live: a `<name>.js` or `<name>.wasm` beside a
-# `<name>.toml` manifest, the same sidecar layout [plugins].user_dir uses. A file
-# with no manifest beside it is never loaded. Unset loads nothing.
-user_dir = "/etc/nine/tools.d"
-
-# Per-call wall clock. Default 5s.
-timeout = "5s"
-
-# Per-call work budget for a `js` tool, in operations. Default 50,000,000;
-# a negative value turns it off.
-#
-# This bounds what a call DOES, where timeout bounds how long it takes — a
-# deadline is a property of the machine, a budget is a property of the tool. It
-# is enforced by an uncatchable interrupt, so a tool cannot try/catch past it.
-#
-# Calibrated well above real work: every shipped tool finishes under 10,000
-# operations, parsing 20,000 CSV rows costs 1.7M, and a one-million-pass loop
-# costs 2.0M. A runaway tool meets 50M in well under a second.
-#
-# A `wasm` tool is NOT metered by this — the budget is QuickJS's interrupt
-# handler and a raw module has no interpreter to interrupt.
-max_ops = 50000000
-
-# Per-call linear memory cap. Default 16.
-memory_mb = 16
-
-# How many tool calls run at once, across every tool and conversation. Default 8.
-#
-# The other half of memory_mb: that is what one call may hold, this is how many
-# may hold it, and 8 x 16 MiB is the host's 128 MiB worst case. A call arriving
-# with every slot taken waits; the wait is charged to the turn, not to the call's
-# own deadline. job_workers below bounds the sweeper's share the same way.
-max_concurrent = 8
-
-# Long-running tools: bounds on a tool that runs as a background job.
-#
-# A tool whose manifest says `resumable = true` may end a call by asking to be
-# called again, carrying a cursor. Each call is an ordinary call under the
-# ordinary deadline; what these bound is the total.
-#
-# job_max_calls is not defensive. Every individual call is legal, so without a
-# cap a tool that always asks to continue runs forever, one legal call at a time.
-# job_min_delay_ms floors the delay a tool may request, for the same reason.
-#
-# A job's lifetime and per-conversation cap are shared with plugin jobs and live
-# under [plugins]: job_max_seconds and max_jobs_per_conversation.
-job_max_calls    = 720       # 0 uses 720
-job_min_delay_ms = 250       # 0 uses 250
-
-# How many long-running tool calls the sweeper makes at once. Distinct jobs run
-# in parallel; one job is never called twice at once, whatever this is set to.
-#
-# Really a memory budget: each concurrent call is a wasm instantiation holding up
-# to memory_mb above, so 4 workers at the default 16 MiB is 64 MiB in the worst
-# case.
-job_workers      = 4         # 0 uses 4
-
-# ── Capability grants, per named tool ────────────────────────────────────────
-# `[tool.<name>]` (singular) is the grant half of the capability model, sibling
-# to the plural `[tools]` above — the same split `[plugin.<name>]` uses.
-#
-# A tool's manifest DECLARES what it needs; only this GRANTS. The two must name
-# the same capabilities or the tool fails to load with a named error that
-# `nine tools` reports. The default for everything with reach — filesystem,
-# network, environment — is nothing. Clock, randomness, and logging are always
-# granted; they leak nothing.
-#
-# There is deliberately no wildcard `[tool."*"]`: an operator granting filesystem
-# access does so to a tool they have read.
-#
-# `[tool.<name>]` also carries `timeout`, which is a resource bound rather than a
-# capability and so sits outside `[capabilities]`. It overrides `[tools] timeout`
-# for that tool alone — in either direction:
-#
-#   [tool.slow_report]
-#   timeout = "30s"        # this tool needs longer
-#
-#   [tool.untrusted]
-#   timeout = "1s"         # and this one should have less
-#
-# Worth having because a single global value has to accommodate the slowest tool,
-# which then hands that same allowance to a tool that is merely stuck.
-# [tool.<name>] max_ops overrides the work budget the same way, for the same
-# reason. An outbound HTTP request is bounded at
-# four fifths of the time the call has left, so raising the deadline raises that
-# with it. `nine tools show <name>` prints the override when one is set.
-
-[tool.csv_stats.capabilities.fs]
-# Host paths must be absolute. The guest path is what the tool's own code sees,
-# which is what makes narrowing a mount a one-line change.
-read  = [{ host = "/srv/data", guest = "/data" }]
-# write = [{ host = "/srv/out", guest = "/out" }]
-
-[tool.tz_aware.capabilities]
-# An explicit key allowlist, never all-or-nothing: the daemon's environment holds
-# the LLM provider API keys. Keys matching NINE_* or *_API_KEY are refused
-# outright as a config error.
-env = ["TZ"]
-# sql = true    # the database, for a tool run as a live process (docs/processes.md)
-
-# Outbound HTTP. The guest never touches a socket: it asks the daemon, which
-# makes the request. Two independent gates both have to pass — the hostname must
-# match allow_hosts, AND the IP actually dialed must be publicly routable.
-#
-# The second gate is not configurable and not subject to allow_hosts. Loopback,
-# link-local (169.254.0.0/16 — where every cloud serves instance credentials),
-# RFC1918, IPv6 ULA, and the other non-routable ranges are refused whatever a
-# hostname resolves to. That is what stops DNS rebinding: the check runs on the
-# address, immediately before connect, and again on every redirect hop.
-#
-# A bare "*" is permitted and means any host. It grants no address: the second
-# gate above still refuses loopback, link-local and private ranges. Name the
-# hosts when they are knowable — the wildcard is for a tool that fetches
-# whatever URL a model chose.
-[tool.weather.capabilities.net.http]
-allow_hosts = ["api.weather.example", "*.cdn.weather.example"]  # exact, or a
-                                                    # leading "*." (not the apex)
-methods     = ["GET"]        # required; no implicit default
-max_bytes   = 1048576        # response cap; 0 uses 1 MiB
-
-# Durable state: what a tool may remember between calls.
-#
-# A tool is built fresh for every call and thrown away after it, so nothing in
-# the interpreter survives. This grants a store the HOST owns instead: keys
-# scoped to this one tool, bounded below, readable by nothing else. It is the
-# proportionate answer to a tool that needs to cache 200 bytes of ETag and would
-# otherwise have to be handed a directory on your disk.
-#
-# `scope` is REQUIRED and has no default, because the two values differ in
-# something you should decide rather than inherit:
-#
-#   "tool"          one namespace shared by every caller. What a cache wants —
-#                   and a channel from one conversation into another, since a
-#                   tool's arguments come from the model and a call in one
-#                   session can write down what a call in another reads back.
-#                   No network grant is needed for that; grant it to a tool
-#                   whose code you have read.
-#   "conversation"  a separate namespace per conversation, which closes that.
-#
-# Quotas are per (tool, scope). Exceeding one is an error the tool can catch and
-# recover from, never a silent drop. `nine tools show <name>` prints the
-# resolved scope and quotas.
-[tool.geocode.capabilities.state]
-scope        = "tool"        # required: "tool" or "conversation"
-max_keys     = 512           # 0 uses 128
-max_value_kb = 8             # 0 uses 64
-max_total_kb = 256           # 0 uses 1024
-ttl          = "24h"         # optional; omit for no expiry
-
-# ── Generated tools: the tier Nine writes itself ─────────────────────────────
-# ON by default, and gated by [tools] enabled above it: the tier runs on the host, so turning
-# the host off turns this off too. The agent gets tool_write/tool_delete (and js_eval,
-# separately switched); the tools it writes are rows in the store, listable and deletable, and
-# run under exactly the same sandbox and bounds as a developer tool.
-#
-# What bounds the tier is the ceiling below, not this switch. A generated tool is granted only
-# what it declares and only what the ceiling permits, and the default ceiling is the workspace
-# — the same directory the shipped file tools reach and `shell` runs in. Set enabled = false to
-# keep the host and its shipped tools without letting the agent author any.
-[tools.agent]
-enabled          = true             # the default; false keeps the host without tool_write
-eval             = true             # additionally allow js_eval — run a snippet, persist nothing
-max_tools        = 64               # catalog cap; least-recently-called tools are evicted past it
-
-# When a write/eval routes through the human approval gate (docs/hitl.md):
-#   on_capability (default) — only when the tool DECLARES reach; a pure transform passes silently
-#   always                  — every write and every eval
-#   never                   — the ceiling below is the only control
-# The default gates on substance, not frequency: a prompt that fires on every trivial tool is a
-# prompt that gets approved without reading. Interactive sessions only — a non-interactive
-# deployment has no gate, so there the ceiling is everything.
-require_approval = "on_capability"
-
-# The CEILING — the MAXIMUM a generated tool may be granted, never an automatic grant. A tool
-# that declares nothing gets nothing, however permissive this is; a tool cannot declare its way
-# past it. Same shape as [tool.<name>.capabilities]. Narrowing it retroactively disables a tool
-# that no longer fits, on the next load.
-#
-# Omitting the fs table does NOT leave generated tools inert: with no fs grant of your own the
-# ceiling defaults to [workspace].root, read and write, mounted at /work — the same directory
-# and the same guest path the shipped file tools use, so one file has one name whichever tier
-# reaches it. An fs grant here REPLACES that default rather than adding to it, which is how you
-# narrow it. Every other capability — net.http, env, state, sql — has no default grant at all.
-# `sql = true` here lets processes Nine writes keep records in the database.
-#
-# Note there is no variable expansion in this file: a host path is a literal absolute path, and
-# a relative one is refused at load. That is why the workspace default is derived in code.
-#
-# This table is reconciled into the store at every boot, as `config` grants beside the derived
-# `default` ones and any an operator approved (`nine grants`). The file stays authoritative for
-# what it declares — add a grant and it appears, remove one and it stops applying — while an
-# approved grant survives a restart. See docs/sandboxed-tools.md §7.2.
-[tools.agent.capabilities.fs]
-read  = [{ host = "/srv/data", guest = "/data" }]    # replaces the workspace default
-write = [{ host = "/srv/out",  guest = "/out" }]
-
-# ── The nine:* stdlib and external npm dependencies ──────────────────────────
-# A generated tool may always `import` the curated nine:* stdlib — nine:csv, nine:date,
-# nine:diff — served from the binary, no config needed. External npm packages are the single
-# riskiest switch in the design and are OFF by default. When enabled, Nine resolves them once,
-# in the daemon, at tool_write time (never at call time), verifies each tarball's sha512, runs
-# no install scripts, and bundles everything into the tool's source with esbuild in-process —
-# so a called tool has no imports but nine:* and no network. Resolved packages are cached under
-# [tools].cache_dir (default os.UserCacheDir()/nine/tools) and listed by `nine tools deps`.
-[tools.agent.deps]
-mode          = "off"               # off (default) | allowlist (named packages, transitive
-                                    #   included) | open (anything within budgets — dev posture)
-registry      = ""                  # npm-compatible base URL; empty = the public registry
-frozen        = false               # resolve only from cache/lockfile, never the network
-max_packages  = 24                  # budgets: total incl. transitive / bundle KB / tree depth
-max_bundle_kb = 2048
-max_depth     = 4
-allow = [                           # allowlist mode only: the packages an operator stands behind
-  { name = "date-fns", version = "^4.1.0" },
-]
-
-# The interlock: a tool that BOTH declares net.http AND pulls an external dependency is refused,
-# because a package that can reach the network can exfiltrate whatever the tool sees. Lifting it
-# is the one combination that makes a supply-chain compromise materially dangerous — leave it off
-# unless you understand exactly why you need it.
-# [tools.agent] allow_network_deps = false
-
-# May Nine write itself a tool that runs as a long-running background job? Off by
-# default. Deliberately separate from the capability ceiling above: a ceiling
-# bounds what a tool may REACH, and running for an hour is not reach. A
-# capability-free tool that never stops is inert per call and unbounded in
-# aggregate, which is exactly what a ceiling cannot express.
-# [tools.agent] allow_long_running = false
-
-# May Nine write PROCESSES — tools that run until stopped, through tool_write's
-# process block (docs/processes.md)? Off by default, and separate from
-# allow_long_running: a job the model started still ends, where a process does
-# not until somebody stops it. A process write is approved as require_approval
-# says, and prompts under "on_capability" even when it declares nothing. Under
-# "never", and where nobody can be asked, this switch and process_roles are the
-# only controls.
-# [tools.agent] allow_processes = false
-#
-# The roles the model turns of a process Nine writes may run under. Unset is
-# ["process"], the lean role with no tools: the program does the reading and
-# writing, and its turns only think. A role listed here sets what an unattended
-# process can reach.
-# [tools.agent] process_roles = ["process"]
-#
-# A process Nine wrote that fails repeatedly is switched off. One you declared
-# in [[process]] is not — your declaration is a standing instruction, and
-# silently disabling it would be the greater surprise. How many run is
-# [processes] max_running, shared with every other process.
+# The toolvm-era keys are refused at load, not ignored: [tools] enabled/user_dir/
+# timeout/max_ops/memory_mb/max_concurrent, [tools] job_min_delay_ms/job_workers
+# (moved to [plugins]), [tools.agent], and [[tool.<name>]] all fail with a message
+# naming the replacement (adr/modular_nine.md 9.10). schema_version is 3.
 ```
 
 ---
@@ -943,7 +673,6 @@ Environment variables take priority over `nine.toml` values.
 | `NINE_PLUGINS_DISABLED` | Override `plugins.disabled` — comma-separated plugin names that must never start, e.g. `shell,mcp:github`. Replaces the file's list rather than adding to it. |
 | `NINE_WORKSPACE_ROOT` | Override `workspace.root` |
 | `NINE_SKILLS_USER_DIR` | Override `skills.user_dir` |
-| `NINE_TOOLS_USER_DIR` | Override `tools.user_dir` (sandboxed tools). Only the path — `[tools] enabled` is deliberately not env-overridable, so a stray variable cannot switch the subsystem on. |
 | `SEARCH_PROVIDER` | `web_search` backend: `brave` or `serpapi`. Unset uses DuckDuckGo, which needs no key. |
 | `SEARCH_API_KEY` | API key for the chosen `SEARCH_PROVIDER` |
 | `NINE_SHELL_UNSAFE` | Set to `1` to bypass the `shell` tool's destructive-command checks (recursive deletion, disk formatting, `sudo`, force-push) |
@@ -1007,6 +736,7 @@ current one at load; the file on disk stays exactly as you wrote it.
 | Schema | Changed |
 |---|---|
 | 2 | `[[process]]` and `[processes]` replace `[[agent]]`, `[[agent.routine]]`, `when = { … }`, `[[standing_tool]]` and `[daemon] standing_agents_authoritative`; `[processes] max_running` replaces `[daemon] max_goal_sessions` and `[tools.agent] max_standing`; `[tools.agent] allow_processes` replaces `allow_standing`. A schema-1 file that uses none of them loads unchanged; one that does is refused, naming the `[[process]]` form ([processes.md](processes.md)). |
+| 3 | The toolvm is removed (adr/modular_nine.md 9.10): `[tools]` keeps only `max_output_tokens`; `[tools] enabled/user_dir/timeout/max_ops/memory_mb/max_concurrent`, `[tools.agent]`, and `[[tool.<name>]]` are refused, naming the replacement; `[tools] job_min_delay_ms/job_workers` moved to `[plugins]`. A schema-2 file with none of the retired keys loads unchanged; one that has one is refused. |
 
 ### Keys nothing reads
 
@@ -1027,6 +757,6 @@ says so instead of leaving you to wonder why a value did not apply.
 | Limit | Detail |
 |-------|--------|
 | No runtime reload | Nine cannot modify `nine.toml`, and nothing re-reads it while the daemon runs. Every change needs a restart — including a capability grant, since `nine tools reload` and `nine plugins reload` re-scan their directories against the config read at boot. |
-| Environment overrides are a fixed set | Only the documented `NINE_*` variables override the file. Whether the sandboxed-tool subsystem runs at all stays in `nine.toml` by design — `NINE_TOOLS_USER_DIR` is deliberately the only tool-related override. |
+| Environment overrides are a fixed set | Only the documented `NINE_*` variables override the file. |
 | Ollama and Mistral only | An unrecognized `[llm].provider` is refused at startup rather than falling back. |
 | Unknown keys warn rather than fail | A key nothing reads is logged at load, naming the key. It does not stop the boot: a key from a newer Nine is worth reporting, not worth refusing an otherwise usable file over. |

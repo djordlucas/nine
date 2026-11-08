@@ -1,6 +1,6 @@
 # Contract — API layer
 
-**Status:** Design · **Depends on:** wire-protocol, plugin, toolvm · **Used by:** API server, CLI, daemon
+**Status:** Design · **Depends on:** wire-protocol, plugin · **Used by:** API server, CLI, daemon
 
 This document specifies the Nine API layer, which provides HTTP/REST access to Nine's functionality with feature parity to the CLI. The API runs as a separate process that communicates with the daemon via the Unix socket, similar to how the MCP plugin works.
 
@@ -754,7 +754,7 @@ Mark a workflow as failed.
 
 #### GET `/api/v1/tools`
 
-List all available tools (plugins + sandboxed).
+List all available tools (built-ins and plugins).
 
 **Response:**
 ```json
@@ -764,12 +764,9 @@ List all available tools (plugins + sandboxed).
       "name": "tool-name",
       "description": "tool description",
       "plugin": "plugin-name",
-      "kind": "core" | "plugin" | "sandboxed" | "generated",
+      "kind": "core" | "plugin",
       "loaded": true,
-      "capabilities": ["fs.read /work", "net.http GET api.example.com"],
       "input_schema": { },
-      "deps": ["left-pad@1.3.0"],
-      "timeout": "30s",
       "error": ""
     }
   ],
@@ -777,11 +774,10 @@ List all available tools (plugins + sandboxed).
 }
 ```
 
-The roster joins the daemon's `list_tools` and `tools_list` replies: every tool an
-agent can call, with its input schema, and every sandboxed tool with its
-provenance, capabilities, dependencies and timeout. A sandboxed tool that failed to
-load is listed with `loaded: false` and its `error`, though no agent can call it.
-`GET /api/v1/tools/{name}` returns one entry of the same roster.
+The roster joins the daemon's `list_tools` reply (the `tools_list` wire message is a
+stub now: the sandboxed tier is removed, adr/modular_nine.md 9.10) — every tool an
+agent can call, built-ins and plugin tools with their input schema, plus each
+plugin's load status. `GET /api/v1/tools/{name}` returns one entry of the same roster.
 
 #### POST `/api/v1/tools/{name}/call`
 
@@ -831,9 +827,6 @@ Delete a tool Nine wrote, and its standing run if it has one.
 | Status | When |
 |---|---|
 | 200 | deleted: `{"name": "…", "message": "…"}` |
-| 400 | missing name, or tool writing (`[tools.agent]`) is off |
-| 403 | a shipped or operator-installed tool, which cannot be deleted |
-| 404 | no tool Nine wrote by that name |
 
 ---
 

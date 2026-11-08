@@ -81,15 +81,13 @@ See [`../../adr/tool-output-spill.md`](../../adr/tool-output-spill.md).
 
 ```text
 TOOL CALL
-   ├── PLUGIN TOOLS  (RegisterPlugin)        handler → manager.Call(plugin, …) → JSON-RPC
-   │      shell, read_file, write_file, http_*, web_*, skill_*, time, <mcp>__*
-   ├── SANDBOXED TOOLS (RegisterSandboxed)   handler → toolvm.Host.Call → wasm, in-process
-   │      operator-installed, from [tools].user_dir (see toolvm.md)
-   └── CORE-INTERCEPTED TOOLS (Register* at build) handled in-process, no subprocess:
+   ├── PLUGIN TOOLS  (RegisterPlugin)   handler = manager.Call(plugin, ...) over MCP
+   │      shell, <mcp>__*, user plugins
+   └── BUILT-IN TOOLS (Register* at build)  handler = direct Go call, in-process:
+          read_file, write_file, http_*, web_*, skill_*, time, memory_*,
           gap_report
           memory_embed, memory_query
           tool_list, tool_search  (skill_list/skill_search: see skills.md)
-          tool_write, tool_delete, js_eval  (generated tier; only with [tools.agent] — toolvm.md R-TVM.14)
           run_agent, run_agents
           workflow_create/update/get/list/retry_step
           queued_messages_get, queued_message_mark_consumed, queued_messages_mark_all_consumed, queued_messages_count, queued_messages_unconsumed_count
@@ -101,12 +99,10 @@ Core-intercepted tools appear in the tool list but are routed to daemon-mediated
 — this is how the agent reaches goal/workflow state without a raw table handle
 (invariant I4).
 
-Sandboxed tools are a **second backend behind this same dispatcher**
-(`spec/contracts/toolvm.md`): they are registered, advertised, role-filtered, gated, and
-capped exactly as plugin tools are, and are indistinguishable from them downstream of
-registration. They run in-process like a core-intercepted tool but are neither built in
-nor daemon-mediated — they are operator-installed code in a wasm sandbox with an
-explicitly conferred capability set. The branch is empty unless `[tools] enabled` is set.
+Built-in tools are the other backend: registered on the same `handlers` map as
+plugin tools, so dispatch, ref-expansion, gating and capping are identical, but
+called as direct Go functions in-process (the wasm "sandboxed" backend was removed,
+adr/modular_nine.md 9.10).
 
 ---
 
@@ -124,7 +120,6 @@ daemon exists, then have daemon-closure handlers injected.
 Dispatcher.New()  → empty handler map
    └ RegisterGapReport(...)  └ RegisterRunAgent(s)(...)  └ RegisterWorkflowTools(...)
    └ RegisterGoalTools(...)  └ RegisterMemoryTools/RegisterSkillTools(...)  └ RegisterPlugin(mgr, plugin)  // per plugin
-   └ RegisterSandboxed(host)  // all sandboxed tools at once; no-op when the host is nil
 ```
 
 ---

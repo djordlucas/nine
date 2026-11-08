@@ -7,7 +7,7 @@ import (
 )
 
 // Capability endpoints: the generated-tool ceiling, and the agent's requests to
-// widen it (docs/sandboxed-tools.md).
+// widen it (the removed sandboxed tier (adr/modular_nine.md 9.10)).
 //
 // Both go over the wire protocol to the daemon rather than reading the store
 // directly, for the reason every other endpoint does: an approval must apply to the

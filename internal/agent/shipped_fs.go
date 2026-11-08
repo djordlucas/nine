@@ -15,9 +15,9 @@ import (
 	"unicode/utf8"
 )
 
-// shippedFS implements the file half of the shipped tier in Go, confined to the
+// shippedFS implements the file half of the built-in tier in Go, confined to the
 // workspace at root. The guest sees the workspace as /work; the host path is
-// root. Ported from internal/toolvm/shipped/*.js (adr/modular_nine.md §9.10) —
+// root. Ported from the removed wasm sandbox (adr/modular_nine.md §9.10) —
 // the semantics, including the trash and the error messages, are carried over
 // so a model sees the same behavior.
 

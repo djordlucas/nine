@@ -1,7 +1,7 @@
 # The shape of this file, not the version of Nine that wrote it. Absent means 1.
 # A file declaring a schema newer than the binary understands stops the daemon
 # rather than being skipped — see docs/versioning.md §4.
-schema_version = 1
+schema_version = 3
 
 ## Nine configuration.
 ##
@@ -73,9 +73,9 @@ task_timeout_seconds = 1800  # 30 minutes
 [plugins]
 # The directory holding plugins that ship as their own binaries. The Go
 # built-ins (shell/files/http/time) are not among them: they live inside the
-# nine binary and are started as `nine plugin serve <name>`. Nine ships nothing
-# into `bin` any more, so it matters only if one of your own plugins puts its
-# binary there (./dist/bin; the image resolves /opt/nine/bin via
+# nine binary as direct in-process Go calls (adr/modular_nine.md). Nine ships
+# nothing into `bin` any more, so it matters only if one of your own plugins
+# puts its binary there (./dist/bin; the image resolves /opt/nine/bin via
 # NINE_PLUGINS_BIN). Your own plugins go in `user_dir` below.
 bin = "./dist/bin"
 # Plugins that must never start, by name — the lever for withholding a
@@ -100,10 +100,11 @@ bin = "./dist/bin"
 # user_dir = "./plugins.d"
 
 # ── MCP servers ───────────────────────────────────────────────────────────────
-# Each [[mcp.server]] becomes one plugin: Nine starts an `mcp` bridge process
-# per server, so an MCP server behaves like any other plugin — it crashes on its
+# Each [[mcp.server]] becomes one plugin: Nine starts (or dials) the server
+# itself, so an MCP server behaves like any other plugin — it crashes on its
 # own, shows up in `nine plugins` as `mcp:<name>`, and is switched off with
-# `[plugins] disabled = ["mcp:github"]`.
+# `[plugins] disabled = ["mcp:github"]`. MCP is the only wire protocol that
+# crosses a process boundary (adr/modular_nine.md).
 #
 # Its tools are prefixed with the server name, so two servers that both expose
 # `search` cannot collide: github__create_issue, filesystem__read_file.
@@ -180,90 +181,16 @@ root = "./dist"
 # disables user skills. The container overrides this with NINE_SKILLS_USER_DIR.
 # user_dir = "./skills.d"
 
-# Sandboxed tools (spec/contracts/toolvm.md): JavaScript or .wasm tools you drop
-# in a directory, run in a wasm sandbox with only the capabilities granted below.
-# A second backend behind the same dispatcher as plugins — not a replacement.
-#
-#   tools.d/csvstats.toml    the manifest (the gate)
-#   tools.d/csvstats.js      the code
-#
-# tools.d/ ships EMPTY: anything in it becomes a tool the model can call, so it
-# holds what you put there. Two worked JavaScript examples are in examples/tools/
-# (copy one in). JS is the supported language; a .wasm module from another
-# language runs on a specified but unsupported contract (`nine spec toolvm`).
-#
-# ON by default: this tier carries the workspace file tools (read_file,
-# write_file, edit_file and the rest), so a deployment without it cannot touch a
-# file. Set `enabled = false` to decline it. See tools.d/README.md for a working
-# example, and `nine tools` for the roster (including anything that failed to
-# load, and why). The container overrides the directory with
-# NINE_TOOLS_USER_DIR; `enabled` is not environment-overridable in either
-# direction.
+# Tool results. [tools] is the only tool knob left: the sandboxed-tool host and
+# the generated tier it carried were removed with the toolvm
+# (adr/modular_nine.md §9.10) — the shipped tools (read_file, write_file, shell
+# and the rest) are built-in Go, and anything beyond them is an MCP user plugin
+# under [plugins] above. The old keys ([tools] enabled/user_dir/timeout/... and
+# [tools.agent]) are refused at load, not ignored.
 # [tools]
-# enabled   = true     # the default; false turns the host off entirely
-# user_dir  = "./tools.d"
-# timeout   = "5s"     # per-call wall clock; override for one tool with
-#                      # [tool.<name>] timeout below
-# max_ops   = 50000000 # per-call work budget for a `js` tool, in operations —
-#                      # what a call DOES, where timeout is how long it takes.
-#                      # Uncatchable, so a tool cannot try/catch past it. A
-#                      # `wasm` tool is not metered: no interpreter to interrupt.
-# memory_mb = 16
-# max_concurrent = 8   # how many calls run at once; memory_mb is per call, so
-#                      # the two multiply into the host's worst-case memory
-
-# Capability grants, per named tool. A tool's manifest DECLARES what it needs;
-# only this GRANTS. The two must name the same capabilities or the tool fails to
-# load with a named error. Default for everything with reach is nothing; clock,
-# randomness, and logging are always on. There is no wildcard [tool."*"].
-# [tool.csv_stats.capabilities.fs]
-# read = [{ host = "/srv/data", guest = "/data" }]   # host path must be absolute
-
-# A per-tool wall-clock deadline, overriding [tools] timeout for this tool only.
-# A resource bound rather than a capability, so it sits outside [capabilities].
-# Raising it lets one genuinely slow tool have the time without handing the same
-# budget to a tool with an infinite loop; lowering it pins a risky one down.
-# [tool.slow_report]
-# timeout = "30s"
-
-# Outbound HTTP. The hostname must match allow_hosts AND the address actually
-# dialed must be publicly routable — loopback, link-local (169.254.169.254, where
-# your cloud keeps its instance credentials), and RFC1918 are refused no matter
-# what a name resolves to, on every redirect hop. No bare "*": if you want
-# unrestricted egress, write a native plugin.
-# [tool.weather.capabilities.net.http]
-# allow_hosts = ["api.weather.example"]   # exact, or a leading "*." (not the apex)
-# methods     = ["GET"]                   # required
-# max_bytes   = 1048576                   # response cap; 0 uses 1 MiB
-
-# Generated tools: the tier Nine writes itself (docs/sandboxed-tools.md, R-TVM.14/15).
-# ON by default, and gated by [tools] enabled above it — the tier runs on the
-# host, so turning the host off turns this off with it. The ceiling is the MAXIMUM
-# a generated tool may be granted, never an automatic grant: a tool that declares
-# nothing gets nothing, however wide the ceiling is. Generated tools may always
-# import the nine:* stdlib (nine:csv, nine:date, nine:diff); external npm packages
-# are a separate, riskier switch, resolved and bundled at write time and OFF by
-# default.
-#
-# The default ceiling is the workspace, read and write, derived from
-# [workspace].root at boot — the same directory and the same /work guest path the
-# shipped file tools use. Grant any fs mount below and you replace that default
-# rather than adding to it. Note there is no variable expansion in this file: a
-# host path is a literal absolute path, which is exactly why the default is
-# derived in code instead of written here.
-# [tools.agent]
-# enabled          = true             # the default; false keeps the host without the tier
-# eval             = true             # allow js_eval (run a snippet, persist nothing)
-# max_tools        = 64               # catalog cap; least-recently-used are evicted
-# require_approval = "on_capability"  # on_capability (default) | always | never
-# [tools.agent.capabilities.fs]
-# read  = [{ host = "/srv/data", guest = "/data" }]   # absolute; replaces the workspace default
-# write = [{ host = "/srv/out",  guest = "/out" }]
-# [tools.agent.deps]
-# mode  = "allowlist"                 # off (default) | allowlist | open ; frozen = true to pin
-# allow = [{ name = "date-fns", version = "^4.1.0" }]
-# allow_network_deps is set on [tools.agent], not here, and lifting it is dangerous:
-# a networked dependency turns the sandbox into an exfiltration path.
+# max_output_tokens = 8192  # per-result output cap; over it the result spills to
+#                           # the memory file store and the model gets a preview
+#                           # naming the path. 0 (unset) uses the built-in default.
 
 # Human-in-the-loop (docs/hitl.md), interactive conversations only.
 # require_approval names tools that need an explicit "yes" before each call;
@@ -289,21 +216,17 @@ require_approval = ["shell", "write_file"]
 #   on-risky   (default) prompt only when the plan intends a [hitl].require_approval tool
 plan_approval = "on-risky"
 
-# Pre-defined, long-running agents (docs/predefined-agents.md). Each [[agent]]
-# is seeded as a config-owned goal at boot and runs under the pursue shell with
-# a narrowed role — no human turn needed to bring it to life. `id` is a stable,
-# operator-chosen key; edit `description`/`role`/trigger and restart to
-# reconcile in place. `role` defaults to "monitor" (read-only). Set a wake
-# trigger with `interval` (Go duration) XOR `schedule` (5-field cron; see
-# docs/scheduling.md). Findings reach you via `nine notifications`.
+# Long-running processes (docs/processes.md). Each [[process]] is reconciled
+# against the store at boot: created if missing, adjusted if edited, deleted if
+# its block is removed. A process with `goal` runs the `pursue` live program
+# under a narrowed role — no human turn needed to bring it to life. `role`
+# defaults to "monitor" (read-only). Set a wake trigger with `every` (Go
+# duration) XOR `schedule` (5-field cron; see docs/scheduling.md). Findings
+# reach you via `nine notifications`.
 #
-# [[agent]]
-# id          = "sec-watch"
-# description = "Monitor this repo for security issues; triage new CVEs affecting our deps."
-# role        = "monitor"
-# schedule    = "0 9 * * 1-5"   # weekdays at 09:00  (or e.g. interval = "24h")
-
-# This development config takes the defaults for both tool tiers: the sandboxed
-# host runs, and the generated tier with it, with the workspace as the ceiling.
-# The reference block above documents every key. Nothing is set here because
-# nothing needs overriding — `enabled` defaults to true on both.
+# [[process]]
+# name = "sec-watch"
+# tool = "pursue"
+# goal = "Monitor this repo for security issues; triage new CVEs affecting our deps."
+# role = "monitor"
+# schedule = "0 9 * * 1-5"   # weekdays at 09:00  (or e.g. every = "24h")

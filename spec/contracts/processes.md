@@ -1,10 +1,10 @@
 # Contract — processes, process sessions, self-model & reflection
 
 **Status:** Built (phase 1 of [`adr/process-sessions.md`](../../adr/process-sessions.md)) ·
-**Depends on:** toolvm, agent worker, memory store, roles · **Used by:** daemon, goal tools,
+**Depends on:** agent worker, memory store, roles · **Used by:** daemon, goal tools,
 configuration
 
-Everything Nine does between a person's turns is a **process**: a sandboxed tool the
+Everything Nine does between a person's turns is a **process**: a built-in or plugin tool the
 process runner drives on its triggers. A **conversation** is a session a person drives; a
 **process session** is one a process drives. Goal sessions, standing agents,
 self-reflection, condition triggers and standing tools are all processes.
@@ -28,16 +28,16 @@ operator's stop stays until an operator undoes it.
 
 ## R-PROC.2 — modes
 
-A process's mode follows from its tool. A **live** tool (shipped `pursue`/`reflect`, or a
-`js` developer tool whose manifest says `live = true`) runs as a live process; any other
-runs as a **slice** process, called once per due trigger as standing tools were. A live
+A process's mode follows from its tool. A **live** tool (the shipped Go programs `pursue`/
+`reflect`) runs as a live process; any other — a built-in or an MCP plugin tool
+(`<server>__<tool>`) — runs as a **slice** process, called once per due trigger. A live
 tool **MUST NOT** appear in any loop's tool list, and calling one **MUST** be refused.
 
 ---
 
 ## R-PROC.3 — live instances
 
-`Host.StartLive` starts a live tool's instance and leaves it running until its program
+`StandingRunner.StartLive` starts a live program's instance and leaves it running until its program
 returns, fails, or it is stopped.
 
 - It has **no call deadline**. Every host call it makes carries its own bound.
@@ -45,25 +45,26 @@ returns, fails, or it is stopped.
   apart from the call slots; a full pool refuses another start. `max_running` is also the
   cap a goal session or standing tool Nine creates counts against, with every running
   process: at the cap it is recorded and not started.
-- The work budget bounds the work **per trigger**: the host refills it when `next()`
-  returns a trigger (`nine_budget_reset`), and only then.
-- A stop makes the pending `next()` or `turn()` fail with `E_STOPPED` and closes the
-  instance.
+- The work budget bounds the work **per trigger**: the runner refills it when the
+  program's `Next` returns a trigger, and only then.
+- A stop makes the pending `Next` or `Turn` fail with `ErrStopped` and ends the program.
 
 ---
 
-## R-PROC.4 — `nine:process`
+## R-PROC.4 — the live program interface (Go)
 
-| Function | Does |
+A live program is a Go `Program`: `func(ctx, h ProcessHandler) error`, looping over the
+handler (the `nine:process` JS stdlib it replaces is gone with the toolvm,
+adr/modular_nine.md 9.10):
+
+| Method | Does |
 |---|---|
-| `next()` | blocks until the next trigger and returns it |
-| `turn(text)` | runs one model turn in the process's session and returns the reply |
-| `report(text)` | delivers text through the process's pipe (R-PROC.8), or to the human feed when it declares none; empty text is ignored |
+| `Next(ctx)` | blocks until the next trigger and returns it |
+| `Turn(ctx, text)` | runs one model turn in the process's session and returns the reply |
+| `Report(ctx, text)` | delivers text through the process's pipe (R-PROC.8), or to the human feed when it declares none; empty text is ignored |
 
-Every function **MUST** be refused (`E_NOT_LIVE`) in an instance not started as a live
-process, so a tool a model calls can never block in `next()`.
-
----
+Every method **MUST** fail with `ErrStopped` once the process is stopped, so a program can
+never block forever.
 
 ## R-PROC.5 — triggers and the clock
 
@@ -220,31 +221,11 @@ process session and a sub-agent **MUST NOT** hold any of them.
 - `GENESIS DONE` **MUST NOT** be accepted until each process genesis wrote has run once, or the
   watch window has passed without a failure; a process that fails **MUST** be handed back to the
   session as the next turn, with its last error.
-- `[bootstrap] genesis` **MUST** be refused unless `[tools.agent]` is enabled with
-  `allow_processes`.
+- `[bootstrap] genesis` is suspended with the model-authored tool tier it wrote through
+  (adr/modular_nine.md 9.10): a configured genesis **MUST** be reported and skipped, not run.
 - A genesis that finishes **MUST** be marked in the store and reported to the human feed, and
   **MUST NOT** run again in that store; one that does not **MUST** be reported and run again at
   the next boot.
-
----
-
-## R-PROC.16 — versions and revision
-
-- Every write of a tool Nine wrote **MUST** keep the version it replaces, with the process
-  definition it ran under (the newest ten). A restore **MUST** be a new version.
-- A process's program, new or rewritten, **MUST** be on probation until it has run — a live
-  program back in `next()`, a slice call completed; a rewrite **MUST** restart a running instance
-  on the new version.
-- A version on probation that fails `[processes] rollback_after` (default 3) times **MUST** be
-  rolled back to the newest kept version that ran, journaled as `process_rolled_back`, reported
-  to the human feed, and delivered to the process that wrote it. With no kept version that ran,
-  there is no rollback.
-- In a process session, `tool_write` **MUST** come from the role only, never the shell grant.
-  From there, writing or rewriting a process **MUST** be refused unless
-  `[processes] allow_revision`.
-- Rewriting a process the operator stopped **MUST** be refused to any model.
-- `tool_read` **MUST** return a tool Nine wrote with its version and its process's state, and
-  only read.
 
 ---
 
@@ -253,10 +234,9 @@ process session and a sub-agent **MUST NOT** hold any of them.
 The database **MUST** be a SQLite file apart from the store (`[processes] database`, default
 `database.sqlite` beside it, never the store's path).
 
-- A process's program — live, or a slice process's call — with the `sql` capability **MUST**
-  reach it through `nine:sql`:
-  `exec()` under the program policy, `query()` read-only. Any other caller — a tool a model
-  calls, a tool without the grant — **MUST** be refused.
+- A live process's session, with `[processes] database` on, **MUST** reach it through the
+  session's database handler: `Exec` under the program policy, `Query` read-only. Any other
+  caller — a tool a model calls — **MUST** be refused.
 - `sql_query` **MUST** be read-only, and is held by a loop whose role grants it.
 - Every statement **MUST** run under an authorizer allowlist. Denied: `ATTACH`, transactions and
   savepoints, temp objects, `load_extension`, pragmas other than table introspection, and
@@ -289,34 +269,22 @@ journal event as a trigger `{kind: "event", event: {type, session, turn, at, dat
 
 ---
 
-## R-PROC.13 — processes Nine writes
+## R-PROC.13 — processes Nine writes — removed
 
-`tool_write` with a `process` block **MUST** be refused unless `[tools.agent] allow_processes`
-is on. A written process is `gen:<tool>`: live when the tool is not resumable — its source
-**MUST** use `nine:process` — and slice when it is, which needs `every` or `schedule`.
-
-- Its turns **MUST** run under a role in `[tools.agent] process_roles` (default
-  `["process"]`, the lean role with no tools); any other is refused, naming the allowed ones.
-- Its `budget` may lower `[processes] budget`, never raise it. It counts against
-  `max_running`. Its `report_to` **MUST** name another live process Nine wrote.
-- A rewrite replaces the program and keeps the run state. Its tool **MUST NOT** be evicted
-  while the process exists.
-- `tool_delete` deletes the tool and its process; a model's **MUST** be refused for a process
-  the operator stopped. The operator's delete always succeeds.
-- Approval follows `require_approval`, except that `on_capability` **MUST** prompt for a
-  process write even when it declares no capability.
-
----
+The model-authored tier (`tool_write` with a `process` block, `gen:<tool>` processes,
+versions, probation, rollback) is removed with the toolvm (adr/modular_nine.md 9.10).
+Processes are operator-declared `[[process]]` blocks only; the store tables they wrote
+(`tools`, `tool_state`) remain dormant.
 
 ## Reference symbols
 
-`internal/toolvm/process.go` (`StartLive`, `ProcessHandler`, `nine:process`),
+`internal/runtime/liveprog.go` (`Program`, `ProcessHandler`, `StartLive`),
 `internal/runtime/process_live.go` (live runner, goal binding, pipes),
 `internal/runtime/process_budget.go` (budgets),
 `internal/runtime/process_control.go` (roster, start rule), `internal/agent/register_processes.go`,
-`internal/runtime/process_events.go` (event router, lineage), `internal/runtime/process_revision.go` (versions, rollback, `tool_read`), `internal/sqldb/` (the database,
+`internal/runtime/process_events.go` (event router, lineage), `internal/sqldb/` (the database,
 its policy), `internal/agent/register_sql.go` (`sql_query`),
-`internal/runtime/generated_tools.go` (processes Nine writes), `skills/roles/process.md`,
+`skills/roles/process.md`,
 `internal/runtime/standing_tools.go` (slice runner, `ReconcileProcesses`),
 `internal/runtime/goal_session.go`, `internal/runtime/process_sessions.go`
 (`ProcessTurn`), `internal/memory/processes.go`, `cmd/nine/standing_agents.go`.

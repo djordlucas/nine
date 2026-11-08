@@ -1,13 +1,13 @@
 package runtime
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"nine/internal/config"
 	"nine/internal/memory"
-	"nine/internal/toolvm"
 )
 
 // Budgets (adr/process-sessions.md §5, §6). Every process has one: the model
@@ -58,7 +58,7 @@ func budgetResetAt(p memory.Process) (time.Time, bool) {
 
 // spendTurn decides whether process id may run one more turn. A day that is
 // over starts again from zero. A process its budget no longer covers is paused
-// and the turn refused with toolvm.ErrBudget.
+// and the turn refused with ErrBudget.
 func (r *StandingRunner) spendTurn(id string, now time.Time) error {
 	p, ok, err := r.store.ProcessGet(id)
 	if err != nil || !ok {
@@ -76,7 +76,7 @@ func (r *StandingRunner) spendTurn(id string, now time.Time) error {
 		return nil
 	}
 	r.pauseForBudget(p, lim)
-	return toolvm.ErrBudget
+	return ErrBudget
 }
 
 // chargeTurn counts one turn of process id and the tokens it spent.
@@ -135,3 +135,6 @@ func (r *StandingRunner) resumeBudgets(now time.Time) {
 		r.log.add(p.ID, "resumed", "new budget day")
 	}
 }
+
+// ErrBudget is what a process's Turn returns when its budget is spent.
+var ErrBudget = errors.New("process budget spent")

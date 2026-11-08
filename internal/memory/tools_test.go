@@ -83,7 +83,7 @@ func TestUsageSurvivesARewrite(t *testing.T) {
 }
 
 // Eviction is least-recently-called first, so a tool that earns its place keeps
-// it (docs/sandboxed-tools.md §9.2).
+// it (the removed sandboxed tier (adr/modular_nine.md 9.10)§9.2).
 func TestEvictionDropsTheLeastRecentlyCalled(t *testing.T) {
 	s := openTools(t)
 	for _, n := range []string{"a", "b", "c", "d"} {

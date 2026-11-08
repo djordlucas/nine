@@ -42,8 +42,8 @@ var mcpServeFuncs = map[string]func(version string){
 // autoStart names the built-ins the daemon starts unconditionally at boot, one
 // process each — each over MCP (`nine mcp serve <name>`, adr/modular_nine.md).
 //
-// Only shell remains. time, files and http are shipped sandboxed tools now
-// (internal/toolvm/shipped.go). None of them needed a subprocess holding the
+// Only shell remains. time, files and http are built-in Go tools now
+// (internal/agent/shipped_*.go). None of them needed a subprocess holding the
 // daemon's uid — which is what a built-in plugin is, and which meant read_file
 // could read any absolute path and http_get could reach cloud instance
 // metadata. shell stays because it needs real exec.

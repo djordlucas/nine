@@ -209,8 +209,9 @@ daemon restart, `attach` rebuilds the session from its checkpoint.
 **Goal.** Work runs between turns, driven by processes rather than by people.
 
 **Build.** → [`contracts/processes.md`](contracts/processes.md)
-- `Host.StartLive` and `nine:process` (`next`, `turn`, `report`), in a live pool apart
-  from the call slots, with the work budget refilled per trigger.
+- `StandingRunner` starts live Go programs (`Program`/`ProcessHandler` in
+  `internal/runtime/liveprog.go`), in a live pool apart from the call slots, with the
+  work budget refilled per trigger.
 - The `processes` table: definition owned by configuration, run state by the runtime.
 - The process runner: slice processes called when due; live processes started, fed
   clock ticks and piped reports, their turns run through `Daemon.ProcessTurn`.

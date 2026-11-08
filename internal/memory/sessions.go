@@ -152,7 +152,7 @@ func (s *Store) SessionsReapable(maxAge time.Duration) ([]SessionSummary, error)
 //
 // Tool state is removed for the *conversation* scope only: a `scope_key` of the
 // session id. Tool-scoped state (`scope_key = ”`) is shared across every caller
-// and is nobody's session to delete (spec/contracts/toolvm.md R-TVM.18).
+// and is nobody's session to delete (removed with the toolvm, adr/modular_nine.md 9.10).
 //
 // A non-terminal job owned by this session is removed with it, which for the
 // tool backend *is* the cancellation: the sweeper finds no row and makes no

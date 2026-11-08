@@ -2,8 +2,8 @@ package runtime
 
 import (
 	"context"
-	"os"
-	"path/filepath"
+	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -11,54 +11,55 @@ import (
 	"nine/internal/config"
 	"nine/internal/memory"
 	"nine/internal/memory/memtest"
-	"nine/internal/toolvm"
 )
 
-func standingHost(t *testing.T, name, manifest, src string, store *memory.Store) *toolvm.Host {
+// fakeCaller stands in for the wired ProcessToolCaller (core dispatcher for Go
+// builtins, plugin manager for MCP plugins): one synchronous call per tick,
+// behavior injected per test.
+type fakeCaller struct {
+	calls int
+	fn    func(args string) (string, error)
+}
+
+func (f *fakeCaller) CallProcessTool(_ context.Context, _ string, args json.RawMessage) (string, error) {
+	f.calls++
+	return f.fn(string(args))
+}
+
+// watcherFn is the standing-tool shape: speaks only when it has something to
+// say, so a quiet run posts nothing to the human feed.
+func watcherFn(args string) (string, error) {
+	var a struct {
+		Quiet bool `json:"quiet"`
+	}
+	_ = json.Unmarshal([]byte(args), &a)
+	if a.Quiet {
+		return "", nil
+	}
+	return "found something", nil
+}
+
+func brokenFn(string) (string, error) { return "", errors.New("upstream is down") }
+
+// predicateFn is the condition-trigger shape: silent unless it finds something.
+func predicateFn(args string) (string, error) {
+	var a struct {
+		Found string `json:"found"`
+	}
+	_ = json.Unmarshal([]byte(args), &a)
+	if a.Found == "" {
+		return "", nil
+	}
+	return "found: " + a.Found, nil
+}
+
+func newStandingRunner(t *testing.T, store *memory.Store, fn func(args string) (string, error)) (*StandingRunner, *fakeCaller) {
 	t.Helper()
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, name+".toml"), []byte(manifest), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, name+".js"), []byte(src), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	ctx := context.Background()
-	cfg := toolvm.Config{UserDir: dir}
-	if store != nil {
-		cfg.StateStore = newToolStateStore(store)
-		cfg.Grants = map[string]toolvm.Grant{
-			name: {State: &toolvm.StateGrant{Scope: toolvm.StateScopeTool}},
-		}
-	}
-	h, err := toolvm.Open(ctx, cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { h.Close(context.Background()) }) //nolint:errcheck
-	h.Load(ctx, nil)
-	if h.Get(name) == nil {
-		t.Fatalf("tool %q did not load: %+v", name, h.Status())
-	}
-	return h
+	c := &fakeCaller{fn: fn}
+	r := NewStandingRunner(store, 1, 2)
+	r.SetToolCaller(c)
+	return r, c
 }
-
-const watcherManifest = `
-name = "watcher"
-kind = "js"
-entrypoint = "./watcher.js"
-description = "One pass over two calls, then report."
-resumable = true
-`
-
-// Two calls per cycle, then a result — the shape a standing tool actually has.
-const watcherSrc = `
-import { again } from "nine:job";
-export default function (args, job) {
-  if (!job.cursor) return again({ cursor: "half", afterMs: 0 });
-  return args.quiet ? "" : "found something";
-}
-`
 
 func declare(t *testing.T, store *memory.Store, id, tool string, interval int) {
 	t.Helper()
@@ -72,38 +73,28 @@ func declare(t *testing.T, store *memory.Store, id, tool string, interval int) {
 	}
 }
 
-// A cycle spans as many calls as the tool asks for, and completing one resets the
-// cursor so the next cycle starts from the tool's own beginning.
-func TestStandingToolCompletesACycleAndResets(t *testing.T) {
+// One call completes a cycle: the cycle count moves, the cursor resets, and
+// the next cycle waits for the trigger rather than firing at once.
+func TestStandingToolCompletesACycleAndReschedules(t *testing.T) {
 	store, err := memtest.Open(t)
 	if err != nil {
 		t.Fatal(err)
 	}
-	host := standingHost(t, "watcher", watcherManifest, watcherSrc, nil)
-	r := NewStandingRunner(store, host, 1, 2)
+	r, c := newStandingRunner(t, store, watcherFn)
 	declare(t, store, "w1", "watcher", 3600)
 
-	// Call 1: asks to continue.
 	r.runDue(context.Background())
+	if c.calls != 1 {
+		t.Fatalf("calls = %d, want 1", c.calls)
+	}
 	got, _, _ := store.ProcessGet("w1")
-	if got.Cursor != "half" {
-		t.Fatalf("after call 1 cursor = %q, want half", got.Cursor)
-	}
-	if got.Cycles != 0 {
-		t.Fatalf("a cycle completed early (cycles=%d)", got.Cycles)
-	}
-
-	// Call 2: completes the cycle.
-	time.Sleep(5 * time.Millisecond)
-	r.runDue(context.Background())
-	got, _, _ = store.ProcessGet("w1")
 	if got.Cycles != 1 {
 		t.Fatalf("cycles = %d, want 1", got.Cycles)
 	}
 	if got.Cursor != "" {
 		t.Fatalf("cursor = %q after a completed cycle, want it reset", got.Cursor)
 	}
-	// The next cycle waits for the trigger, not the tool's after_ms.
+	// The next cycle waits for the trigger, not for the tool.
 	next := time.Until(mustTime(t, got.NextAt))
 	if next < 30*time.Minute {
 		t.Fatalf("next cycle in %v, want the hour-long interval", next)
@@ -127,8 +118,7 @@ func TestStandingToolReportsOnlyWhenItHasSomethingToSay(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			host := standingHost(t, "watcher", watcherManifest, watcherSrc, nil)
-			r := NewStandingRunner(store, host, 1, 2)
+			r, _ := newStandingRunner(t, store, watcherFn)
 			if err := store.ProcessUpsertDefinition(memory.Process{
 				ID: "w1", Tool: "watcher", Args: tc.args, IntervalSecs: 3600,
 			}); err != nil {
@@ -138,10 +128,7 @@ func TestStandingToolReportsOnlyWhenItHasSomethingToSay(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			for range 2 {
-				r.runDue(context.Background())
-				time.Sleep(5 * time.Millisecond)
-			}
+			r.runDue(context.Background())
 
 			notes, err := store.UserNotificationList(false)
 			if err != nil {
@@ -162,14 +149,7 @@ func TestStandingToolBreakerTripsOnceAndBacksOff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	host := standingHost(t, "broken", `
-name = "broken"
-kind = "js"
-entrypoint = "./broken.js"
-description = "Always throw."
-resumable = true
-`, `export default function () { throw new Error("upstream is down"); }`, nil)
-	r := NewStandingRunner(store, host, 1, 2)
+	r, _ := newStandingRunner(t, store, brokenFn)
 	declare(t, store, "b1", "broken", 1)
 
 	for range StandingFailureThreshold + 3 {
@@ -209,8 +189,7 @@ func TestStoppedStandingToolStaysStoppedAcrossReconcile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	host := standingHost(t, "watcher", watcherManifest, watcherSrc, nil)
-	r := NewStandingRunner(store, host, 1, 2)
+	r, c := newStandingRunner(t, store, watcherFn)
 	declare(t, store, "w1", "watcher", 1)
 
 	if _, err := store.ProcessSetState("w1", memory.ProcessStopped); err != nil {
@@ -220,9 +199,12 @@ func TestStoppedStandingToolStaysStoppedAcrossReconcile(t *testing.T) {
 	if got, _, _ := store.ProcessGet("w1"); got.Calls != 0 {
 		t.Fatalf("a stopped standing tool was called %d times", got.Calls)
 	}
+	if c.calls != 0 {
+		t.Fatalf("the caller was invoked %d times for a stopped tool", c.calls)
+	}
 
 	// The operator's file still declares it, as it did before they stopped it.
-	ReconcileProcesses(store, nil, []config.ProcessConfig{
+	ReconcileProcesses(store, []config.ProcessConfig{
 		{Name: "w1", Tool: "watcher", Every: "1s"},
 	})
 	if got, _, _ := store.ProcessGet("w1"); got.State != memory.ProcessStopped {
@@ -237,7 +219,7 @@ func TestArgsChangeRestartsTheCycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ReconcileProcesses(store, nil, []config.ProcessConfig{
+	ReconcileProcesses(store, []config.ProcessConfig{
 		{Name: "w1", Tool: "watcher", Every: "1s", Args: map[string]any{"path": "/a"}},
 	})
 	if _, err := store.ProcessAdvance("w1", "mid-cycle", time.Now()); err != nil {
@@ -247,7 +229,7 @@ func TestArgsChangeRestartsTheCycle(t *testing.T) {
 		t.Fatal("precondition: the run should hold a cursor")
 	}
 
-	ReconcileProcesses(store, nil, []config.ProcessConfig{
+	ReconcileProcesses(store, []config.ProcessConfig{
 		{Name: "w1", Tool: "watcher", Every: "1s", Args: map[string]any{"path": "/b"}},
 	})
 	got, _, _ := store.ProcessGet("w1")
@@ -263,7 +245,7 @@ func TestDisabledBlockIsDeclaredButNotStarted(t *testing.T) {
 		t.Fatal(err)
 	}
 	no := false
-	ReconcileProcesses(store, nil, []config.ProcessConfig{
+	ReconcileProcesses(store, []config.ProcessConfig{
 		{Name: "w1", Tool: "watcher", Every: "1s", Enabled: &no},
 	})
 	got, found, err := store.ProcessGet("w1")
@@ -292,8 +274,7 @@ func TestStandingHeartbeatIsNotJournalled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	host := standingHost(t, "watcher", watcherManifest, watcherSrc, nil)
-	r := NewStandingRunner(store, host, 1, 2)
+	r, _ := newStandingRunner(t, store, watcherFn)
 	// quiet: the cycle completes with no output, so nothing is worth reporting.
 	if err := store.ProcessUpsertDefinition(memory.Process{
 		ID: "w1", Tool: "watcher", Args: `{"quiet":true}`, IntervalSecs: 3600,
@@ -304,10 +285,7 @@ func TestStandingHeartbeatIsNotJournalled(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for range 2 {
-		r.runDue(context.Background())
-		time.Sleep(3 * time.Millisecond)
-	}
+	r.runDue(context.Background())
 	if got, _, _ := store.ProcessGet("w1"); got.Cycles != 1 {
 		t.Fatalf("precondition: expected one completed cycle, got %d", got.Cycles)
 	}
@@ -322,8 +300,8 @@ func TestStandingHeartbeatIsNotJournalled(t *testing.T) {
 	}
 
 	// Recent activity still exists — it just lives in memory, not the journal.
-	if got := r.log.recent("w1", 10); len(got) != 2 {
-		t.Fatalf("ring buffer holds %d entries, want the 2 calls", len(got))
+	if got := r.log.recent("w1", 10); len(got) != 1 {
+		t.Fatalf("ring buffer holds %d entries, want the 1 call", len(got))
 	}
 }
 
@@ -333,14 +311,10 @@ func TestStandingOutputAndTransitionsAreJournalled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	host := standingHost(t, "watcher", watcherManifest, watcherSrc, nil)
-	r := NewStandingRunner(store, host, 1, 2)
+	r, _ := newStandingRunner(t, store, watcherFn)
 	declare(t, store, "w1", "watcher", 3600)
 
-	for range 2 {
-		r.runDue(context.Background())
-		time.Sleep(3 * time.Millisecond)
-	}
+	r.runDue(context.Background())
 	if err := r.StopProcess("w1", ByOperator); err != nil {
 		t.Fatal(err)
 	}
@@ -378,14 +352,7 @@ func TestGeneratedStandingToolAutoDisables(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			host := standingHost(t, "broken", `
-name = "broken"
-kind = "js"
-entrypoint = "./broken.js"
-description = "Always throw."
-resumable = true
-`, `export default function () { throw new Error("nope"); }`, nil)
-			r := NewStandingRunner(store, host, 1, 2)
+			r, _ := newStandingRunner(t, store, brokenFn)
 			if err := store.ProcessUpsertDefinition(memory.Process{
 				ID: "b1", Tool: "broken", Args: `{}`, IntervalSecs: 1, Generated: tc.generated,
 			}); err != nil {
@@ -423,8 +390,7 @@ func TestStartClearsFailureHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	host := standingHost(t, "watcher", watcherManifest, watcherSrc, nil)
-	r := NewStandingRunner(store, host, 1, 2)
+	r, _ := newStandingRunner(t, store, watcherFn)
 	declare(t, store, "w1", "watcher", 3600)
 	if _, err := store.ProcessFail("w1", "boom", time.Now().Add(time.Hour), memory.ProcessFailing); err != nil {
 		t.Fatal(err)
@@ -451,7 +417,7 @@ func TestRemovingABlockDeletesItsProcess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ReconcileProcesses(store, nil, []config.ProcessConfig{
+	ReconcileProcesses(store, []config.ProcessConfig{
 		{Name: "w1", Tool: "watcher", Every: "1s"},
 		{Name: "w2", Tool: "watcher", Every: "1s"},
 	})
@@ -459,7 +425,7 @@ func TestRemovingABlockDeletesItsProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ReconcileProcesses(store, nil, []config.ProcessConfig{{Name: "w2", Tool: "watcher", Every: "1s"}})
+	ReconcileProcesses(store, []config.ProcessConfig{{Name: "w2", Tool: "watcher", Every: "1s"}})
 
 	if _, found, _ := store.ProcessGet("w1"); found {
 		t.Error("the process whose block was removed still exists")
@@ -485,7 +451,7 @@ func TestRemovingAnOwnerStopsWhatIsAttachedToIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ReconcileProcesses(store, nil, []config.ProcessConfig{{Name: "agent", Tool: "watcher", Every: "1s"}})
+	ReconcileProcesses(store, []config.ProcessConfig{{Name: "agent", Tool: "watcher", Every: "1s"}})
 	// Live processes share sessions; mark these as such directly, as the
 	// reconcile of a live tool would.
 	for _, p := range []memory.Process{
@@ -497,7 +463,7 @@ func TestRemovingAnOwnerStopsWhatIsAttachedToIt(t *testing.T) {
 		}
 	}
 
-	ReconcileProcesses(store, nil, nil)
+	ReconcileProcesses(store, nil)
 
 	got, found, _ := store.ProcessGet("beside")
 	if !found || got.State != memory.ProcessStopped {

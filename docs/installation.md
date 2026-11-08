@@ -56,16 +56,6 @@ dependency of its own. Neither image ships a browser; the dev image carries
 `nodejs`/`npm` so an `npx`-launched MCP server can be tried out, and the runtime
 image carries neither (see [Browser Automation](browser.md#6-docker)).
 
-That extends to the sandboxed-tool host. Its wasm runtime (wazero) is pure Go,
-and the QuickJS interpreter it runs `js` tools on is **built ahead of time from
-pinned tags and committed** as `internal/toolvm/quickjs/qjs.wasm`
-(`sandboxed-tools.md` §10.1). So an ordinary `make build` needs **no
-wasi-sdk, no clang, and no clone**, and the runtime image gains no toolchain —
-which is the property `self-modification.md` insists on and the reason the
-blob is committed rather than built on demand. `make quickjs-wasm` rebuilds it
-and is invoked only on a deliberate version bump; `make quickjs-verify` re-checks
-the recorded hash and runs in CI.
-
 ### Production mode
 
 The built runtime image (immutable; no toolchain or source):
@@ -107,7 +97,7 @@ plugins) is immutable image content — it is **not** stored in a volume. Each m
 
 - `nine-data` / `nine-dev-data` — mounted at `/data`, holding both `nine.db`
   (conversations, goals, KV, skills, vectors, and the session event journal) and
-  the sandboxed tools' workspace at `/data/workspace`
+  the file tools' workspace at `/data/workspace`
 
 > Backing up the database means copying `nine.db` **and** its `-wal` and `-shm`
 > sidecars together, or running `VACUUM INTO` to produce a single consistent file.
@@ -162,8 +152,8 @@ The build produces **one file**:
 - `dist/nine` — the CLI, the daemon, the API server with its web UI, and the `shell` plugin. The daemon
   starts a plugin as a `nine mcp serve <name>` child process, so it keeps its
   own process, socket, and crash isolation while needing no build step and no
-  binary of its own. Files, HTTP and the clock are sandboxed tools rather than
-  plugins, and need no subprocess at all.
+  binary of its own. Files, HTTP and the clock are built-in tools compiled into
+  the binary rather than plugins, and need no subprocess at all.
 
 There is no second artifact. `dist/bin/` stays empty unless one of your own plugins
 puts a binary there, and a capability Nine does not implement itself arrives as an
@@ -250,9 +240,8 @@ and no machine-to-machine drift in what the gate reports.
 The rest of the Makefile is documented where its subject is: `image`,
 `image-test`, `image-scan` and `image-verify` in
 [Container image](docker-image.md), `eval-replay` / `eval-live` /
-`eval-generate` in [Evals](evals.md), `openapi` and its lint/check pair in
-[HTTP API](api.md), and `quickjs-wasm` / `harness-bc` in
-[Sandboxed tools](sandboxed-tools.md#101-building-the-quickjs-blob).
+`eval-generate` in [Evals](evals.md), and `openapi` and its lint/check pair in
+[HTTP API](api.md).
 
 ---
 
@@ -288,8 +277,7 @@ Plugins:  mcp, shell
 |-------|--------|
 | One container, one host | The deployment unit is a single container holding the daemon and its SQLite file. There is no multi-node story and no second service to orchestrate. |
 | Config changes need a restart | Nine cannot rewrite `nine.toml` at runtime. Edit the file and restart the daemon. |
-| Environment overrides are a fixed set | Only the documented `NINE_*` variables override the file. Whether the sandboxed-tool subsystem runs at all stays in `nine.toml`, which no environment variable can flip on. |
+| Environment overrides are a fixed set | Only the documented `NINE_*` variables override the file. |
 | No browser in either image | The dev image carries Node for `npx` MCP servers; the runtime image carries neither Node nor a browser. |
 | Published image runs unprivileged | The daemon and API run as uid 1000, so the agent cannot install packages or write outside `/data` inside the container. Derive an image to add anything. |
 | `docker exec` lands as root | Pass `-u nine` for anything touching `/data`, or a root-owned file appears in the volume. |
-| Rebuilding the QuickJS blob needs wasi-sdk | Ordinary builds use the committed `qjs.wasm` artifact and its recorded SHA-256. Only `make quickjs-wasm` wants a wasi-sdk. |

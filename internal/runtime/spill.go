@@ -119,8 +119,8 @@ func sweepSpills(store *memory.Store) {
 	}
 }
 
-// sweepToolState reclaims expired durable-state rows (spec/contracts/toolvm.md
-// R-TVM.18).
+// sweepToolState reclaims expired durable-state rows (the dormant tool_state
+// table; the toolvm is removed, adr/modular_nine.md 9.10).
 //
 // It rides on the spill sweeper's tick rather than getting a goroutine of its
 // own: both are periodic housekeeping over the same store on the same cadence,

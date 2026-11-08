@@ -178,7 +178,7 @@ func TestShellRunsInWorkspace(t *testing.T) {
 	}
 
 	// The point of the working directory: a relative path resolves in the
-	// workspace, which is what the sandboxed file tools also mean by it.
+	// workspace, which is what the built-in file tools also mean by it.
 	r, err = m.Call(context.Background(), p, "shell", json.RawMessage(`{"command":"cat notes.txt"}`))
 	if err != nil {
 		t.Fatal(err)

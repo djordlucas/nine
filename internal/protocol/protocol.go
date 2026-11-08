@@ -575,7 +575,7 @@ type SandboxedToolStatus struct {
 	Name   string `json:"name"`
 	Kind   string `json:"kind,omitempty"`
 	Loaded bool   `json:"loaded"`
-	// Generated marks a tool Nine wrote itself (docs/sandboxed-tools.md §5.2)
+	// Generated marks a tool Nine wrote itself (the removed sandboxed tier (adr/modular_nine.md 9.10)§5.2)
 	// rather than one an operator installed from a file. It has no ManifestPath —
 	// its code lives in the store — so the roster names the provenance directly.
 	Generated    bool   `json:"generated,omitempty"`
@@ -590,7 +590,7 @@ type SandboxedToolStatus struct {
 	// should not have to cross-reference two tables. Additive/optional field.
 	Timeout string `json:"timeout,omitempty"`
 	// Deps is the external npm packages a generated tool's bundle carries, as
-	// "name@version" entries (docs/sandboxed-tools.md §4.4). Empty for a tool with
+	// "name@version" entries (the removed sandboxed tier (adr/modular_nine.md 9.10)§4.4). Empty for a tool with
 	// no external dependencies — the common case. Additive/optional field.
 	Deps []string `json:"deps,omitempty"`
 }

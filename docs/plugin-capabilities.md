@@ -371,11 +371,10 @@ existing one actually hold.
 A new `jobs` table in `memory` (like everything else
 persistent):
 
-> **Now shared with the tool backend.** The table is `jobs` rather than
-> `plugin_jobs`, and a `backend` column says whether a row is a plugin's detached
-> goroutine or a resumable sandboxed tool the daemon calls itself
-> (`spec/contracts/toolvm.md` R-TVM.19). Everything below still describes the
-> plugin backend; the model-facing surface is identical for both.
+> **Suspended with the legacy envelope (adr/modular_nine.md P4).** MCP has no job
+> methods, so no plugin can start one until jobs land as a `_meta` extension on
+> `tools/call`; the table remains and rows still running at boot are marked
+> `lost`.
 
 | Column | Purpose |
 |---|---|

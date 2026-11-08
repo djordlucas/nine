@@ -91,7 +91,7 @@ func TestGenesisRunsUntilDone(t *testing.T) {
 	if len(f.texts) != 4 {
 		t.Errorf("%d turns, want 4", len(f.texts))
 	}
-	if !strings.Contains(f.texts[0], "Keep a daily digest") || !strings.Contains(f.texts[0], "Revision is off") {
+	if !strings.Contains(f.texts[0], "Keep a daily digest") {
 		t.Errorf("first turn = %q", f.texts[0])
 	}
 	if !strings.Contains(f.texts[2], "stream cut") {

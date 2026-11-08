@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -16,7 +15,6 @@ import (
 	"nine/internal/plugin"
 	"nine/internal/protocol"
 	"nine/internal/selfmodel"
-	"nine/internal/toolvm"
 )
 
 // handleStatus responds with daemon uptime, active agents, and loaded plugins.
@@ -643,14 +641,6 @@ func (d *Daemon) handleListTools(enc *json.Encoder) {
 			}
 		}
 	}
-	// Sandboxed tools are listed under their own pseudo-plugin, so plugin_call's
-	// reach matches what this advertises (R-PROTO.5) and an operator can tell at a
-	// glance which tools run in the wasm sandbox rather than a subprocess.
-	if d.tools != nil {
-		for _, t := range d.tools.Tools() {
-			tools = append(tools, protocol.ToolSummary{Plugin: "sandboxed", Name: t.Name, Description: t.Description, InputSchema: t.InputSchema})
-		}
-	}
 	if tools == nil {
 		tools = []protocol.ToolSummary{}
 	}
@@ -675,15 +665,6 @@ func (d *Daemon) handleListTools(enc *json.Encoder) {
 // they are rebuilt per turn, which is exactly the next-turn visibility R-TVM.11
 // specifies — but this surface is built once and must not go stale.
 func (d *Daemon) handlePluginCall(ctx context.Context, enc *json.Encoder, toolName string, args json.RawMessage) {
-	if d.tools != nil && d.tools.Get(toolName) != nil {
-		out, err := d.tools.Call(ctx, toolName, args)
-		if err != nil {
-			enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
-			return
-		}
-		enc.Encode(protocol.NewTextMsg(protocol.TypePluginCall, out)) //nolint:errcheck
-		return
-	}
 	if d.core != nil && d.core.Has(toolName) {
 		result, err := d.core.Dispatch(ctx, toolName, args)
 		if err != nil {
@@ -811,97 +792,17 @@ func (d *Daemon) setPlanMode(enc *json.Encoder, agentID, mode string) {
 	enc.Encode(protocol.NewTextMsg(protocol.TypeSetPlanMode, "plan mode: "+mode)) //nolint:errcheck
 }
 
-// handleToolsList returns the sandboxed-tool roster: every tool loaded from
-// [tools].user_dir with its resolved capabilities, plus every candidate that was
-// skipped at load with the reason (spec/contracts/toolvm.md).
-//
-// The skipped entries are the reason this message exists. A capability mismatch
-// is deliberately a load failure rather than a degraded tool, and that promise
-// is only kept if the operator can read the failure somewhere.
+// handleToolsList answers with an empty roster: the sandboxed tier is gone
+// (adr/modular_nine.md §9.10). The wire message stays so older clients get an
+// answer rather than a dropped connection.
 func (d *Daemon) handleToolsList(enc *json.Encoder) {
-	data, _ := json.Marshal(d.sandboxedToolStatuses())
+	data, _ := json.Marshal([]protocol.SandboxedToolStatus{})
 	enc.Encode(protocol.NewTextMsg(protocol.TypeToolsList, string(data))) //nolint:errcheck
 }
 
-// handleToolsReload re-scans the sandboxed-tool directory and returns the
-// resulting roster. Newly-loaded tools are picked up by subsequently-built agent
-// loops; turns already in flight keep the tool set they started with, which is
-// what keeps a turn replayable (docs/sandboxed-tools.md §9.1).
+// handleToolsReload: nothing to re-scan; the sandboxed tier is gone.
 func (d *Daemon) handleToolsReload(enc *json.Encoder) {
-	if d.tools == nil {
-		enc.Encode(protocol.NewErrorMsg("sandboxed tools are not enabled ([tools] enabled)")) //nolint:errcheck
-		return
-	}
-	ReloadSandboxedTools(context.Background(), d.tools, d.mgr)
-	data, _ := json.Marshal(d.sandboxedToolStatuses())
-	enc.Encode(protocol.NewTextMsg(protocol.TypeToolsReload, string(data))) //nolint:errcheck
-}
-
-// sandboxedToolStatuses assembles the roster from the host, folding the loaded
-// tools' descriptions in so `nine tools` reads as a catalog rather than a
-// diagnostic. Returns an empty slice when the subsystem is off, which the CLI
-// reports as "not enabled" rather than as an empty directory.
-func (d *Daemon) sandboxedToolStatuses() []protocol.SandboxedToolStatus {
-	out := []protocol.SandboxedToolStatus{}
-	if d.tools == nil {
-		return out
-	}
-	descriptions := map[string]string{}
-	timeouts := map[string]string{}
-	for _, t := range append(d.tools.Tools(), d.tools.Processes()...) {
-		descriptions[t.Name] = t.Description
-		if t.Timeout > 0 {
-			timeouts[t.Name] = t.Timeout.String()
-		}
-	}
-	// A generated tool's dependency lockfile lives in the store, not the host, so
-	// join it in by name for the roster (R-TVM.14). Best-effort: a store read
-	// failure drops the deps column, never the roster.
-	depsByTool := map[string][]string{}
-	if d.store != nil {
-		if rows, err := d.store.GeneratedToolList(); err == nil {
-			for _, r := range rows {
-				depsByTool[r.Name] = lockfilePackages(r.Lockfile)
-			}
-		}
-	}
-	for _, st := range d.tools.Status() {
-		out = append(out, protocol.SandboxedToolStatus{
-			Name:         st.Name,
-			Kind:         st.Kind,
-			Loaded:       st.Loaded,
-			Generated:    st.Generated,
-			Capabilities: st.Capabilities,
-			Description:  descriptions[st.Name],
-			ManifestPath: st.ManifestPath,
-			Error:        st.Err,
-			Timeout:      timeouts[st.Name],
-			Deps:         depsByTool[st.Name],
-		})
-	}
-	return out
-}
-
-// lockfilePackages renders a stored lockfile as "name@version" entries for the
-// roster. A tool with no external dependencies (the common case) yields nil.
-func lockfilePackages(raw json.RawMessage) []string {
-	if len(raw) == 0 {
-		return nil
-	}
-	var lf struct {
-		Packages []struct {
-			Name    string `json:"name"`
-			Version string `json:"version"`
-		} `json:"packages"`
-	}
-	if err := json.Unmarshal(raw, &lf); err != nil || len(lf.Packages) == 0 {
-		return nil
-	}
-	out := make([]string, len(lf.Packages))
-	for i, p := range lf.Packages {
-		out[i] = p.Name + "@" + p.Version
-	}
-	return out
+	enc.Encode(protocol.NewErrorMsg("the sandboxed-tool tier is removed (adr/modular_nine.md §9.10); developer tools are MCP user plugins now ([plugins].user_dir)")) //nolint:errcheck
 }
 
 // handleSessionsList returns the session roster: every conversation with its
@@ -1028,67 +929,18 @@ func (d *Daemon) handleProcessShow(enc *json.Encoder, id string, limit int) {
 	enc.Encode(protocol.NewTextMsg(protocol.TypeProcessShow, string(payload))) //nolint:errcheck
 }
 
-// handleToolDelete deletes a tool Nine wrote: the operator's counterpart of the
-// model's tool_delete, through the same store, so both refuse the same tools.
+// handleToolDelete / handleToolVersions / handleToolRestore: the generated
+// tier is gone (adr/modular_nine.md §9.10) — there are no model-written tools.
 func (d *Daemon) handleToolDelete(enc *json.Encoder, name string) {
-	if d.generated == nil {
-		enc.Encode(protocol.NewErrorMsg("tool writing is off here ([tools.agent]), so there are no tools Nine wrote to delete")) //nolint:errcheck
-		return
-	}
-	if err := d.generated.Delete(context.Background(), name); err != nil {
-		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
-		return
-	}
-	enc.Encode(protocol.NewTextMsg(protocol.TypeToolDelete, fmt.Sprintf("deleted tool %q", name))) //nolint:errcheck
+	enc.Encode(protocol.NewErrorMsg("the generated-tools tier is removed (adr/modular_nine.md §9.10); there are no model-written tools any more")) //nolint:errcheck
 }
 
-// toolVersioner is the generated-tool store's version history.
-type toolVersioner interface {
-	Versions(name string) (protocol.ToolVersionsInfo, error)
-	Restore(ctx context.Context, name string, version int, by string) error
-}
-
-func (d *Daemon) versioner(enc *json.Encoder) toolVersioner {
-	v, ok := d.generated.(toolVersioner)
-	if d.generated == nil || !ok {
-		enc.Encode(protocol.NewErrorMsg("tool writing is off here ([tools.agent]), so there are no tools Nine wrote")) //nolint:errcheck
-		return nil
-	}
-	return v
-}
-
-// handleToolVersions answers with a tool Nine wrote and its kept versions.
 func (d *Daemon) handleToolVersions(enc *json.Encoder, name string) {
-	v := d.versioner(enc)
-	if v == nil {
-		return
-	}
-	info, err := v.Versions(name)
-	if err != nil {
-		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
-		return
-	}
-	b, _ := json.Marshal(info)
-	enc.Encode(protocol.NewTextMsg(protocol.TypeToolVersions, string(b))) //nolint:errcheck
+	enc.Encode(protocol.NewErrorMsg("the generated-tools tier is removed (adr/modular_nine.md §9.10)")) //nolint:errcheck
 }
 
-// handleToolRestore makes a kept version current again, as the operator.
 func (d *Daemon) handleToolRestore(enc *json.Encoder, name, version string) {
-	v := d.versioner(enc)
-	if v == nil {
-		return
-	}
-	n, err := strconv.Atoi(version)
-	if err != nil || n < 1 {
-		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("version %q is not a version number", version))) //nolint:errcheck
-		return
-	}
-	if err := v.Restore(context.Background(), name, n, ByOperator); err != nil {
-		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
-		return
-	}
-	enc.Encode(protocol.NewTextMsg(protocol.TypeToolRestore, //nolint:errcheck
-		fmt.Sprintf("restored version %d of tool %q as its current version; a process it runs restarts on it", n, name)))
+	enc.Encode(protocol.NewErrorMsg("the generated-tools tier is removed (adr/modular_nine.md §9.10)")) //nolint:errcheck
 }
 
 // handleProcessControl starts or stops a process as the operator, who may
@@ -1147,93 +999,35 @@ func processInfoOf(s ProcessStatus) protocol.ProcessInfo {
 	return out
 }
 
-// handleToolCall runs one sandboxed tool once, for testing, and returns the
-// whole envelope — including a `continue` a resumable tool produced, because
-// that is exactly what is being debugged.
-//
-// Unless liveState is set, the call runs against a scratch state namespace that
-// is discarded afterwards. The trap this avoids is real: a test call sharing a
-// live standing run's store could overwrite its cursor or its bookkeeping, and
-// the operator who "just tested it" would have silently corrupted the production
-// run. Reach is NOT isolated — the tool's actual grants apply, because a test
-// that cannot make the tool's real calls tests nothing.
+// handleToolCall runs one tool once, for testing: a Go builtin through the
+// core dispatcher, a plugin tool through the manager.
 func (d *Daemon) handleToolCall(enc *json.Encoder, tool string, args json.RawMessage, liveState bool) {
-	if d.tools == nil {
-		enc.Encode(protocol.NewErrorMsg("sandboxed tools are not enabled here")) //nolint:errcheck
-		return
-	}
 	ctx := context.Background()
-	scratch := ""
-	if !liveState {
-		// The sandbox override, not WithStateScope: a tool-scoped grant ignores
-		// the conversation on the context — its namespace is shared by
-		// construction — so only a forced override actually keeps a test call out
-		// of a live standing run's store.
-		scratch = "test:" + memory.NewID()
-		ctx = toolvm.WithStateSandbox(ctx, scratch)
-	}
-	// A resumable tool is handed a first-call job context, because that is what
-	// its first call actually looks like in production. Without it the tool sees
-	// `undefined` where it expects {cursor, call} — so `nine tool call` would fail
-	// on precisely the tools it exists to help debug.
-	var out toolvm.Output
-	var err error
-	if t := d.tools.Get(tool); t != nil && t.Resumable {
-		out, err = d.tools.CallJob(ctx, tool, args, toolvm.JobContext{Call: 1})
-	} else {
-		out, err = d.tools.CallOutput(ctx, tool, args)
-	}
-	// Scratch state is discarded whatever the outcome; a failed test call must
-	// not leave debris either.
-	if scratch != "" && d.store != nil {
-		if t := d.tools.Get(tool); t != nil {
-			d.dropScratchState(t.Name, scratch)
+	if d.core != nil && d.core.Has(tool) {
+		cr, err := d.core.Dispatch(ctx, tool, args)
+		if err != nil {
+			enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+			return
 		}
-	}
-	if err != nil {
-		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		enc.Encode(protocol.NewTextMsg(protocol.TypeToolCall, cr.Output)) //nolint:errcheck
 		return
 	}
-	payload, err := json.Marshal(toolCallEnvelope(out))
-	if err != nil {
-		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
-		return
-	}
-	enc.Encode(protocol.NewTextMsg(protocol.TypeToolCall, string(payload))) //nolint:errcheck
-}
-
-// dropScratchState reclaims a test call's scratch namespace. Best-effort — the
-// TTL-less rows would otherwise sit until someone noticed, but nothing breaks if
-// this fails beyond a few orphan rows an operator can see in the table.
-func (d *Daemon) dropScratchState(tool, scratch string) {
-	type scopeDropper interface {
-		ToolStateDropScope(tool, scopeKey string) error
-	}
-	if sd, ok := d.store.(scopeDropper); ok {
-		if err := sd.ToolStateDropScope(tool, scratch); err != nil {
-			slog.Warn("tool call: drop scratch state", "tool", tool, "err", err)
+	if d.mgr != nil {
+		for _, p := range d.mgr.Running() {
+			for _, t := range p.Tools {
+				if t.Name == tool {
+					cr, err := d.mgr.Call(ctx, p, tool, args)
+					if err != nil {
+						enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+						return
+					}
+					enc.Encode(protocol.NewTextMsg(protocol.TypeToolCall, cr.Output)) //nolint:errcheck
+					return
+				}
+			}
 		}
 	}
-}
-
-// toolCallEnvelope renders a call's outcome in the guest's own vocabulary, so
-// what the operator sees is what the tool actually returned.
-func toolCallEnvelope(out toolvm.Output) map[string]any {
-	env := map[string]any{"ok": true}
-	switch {
-	case out.Continue != nil:
-		env["continue"] = map[string]any{
-			"cursor":   out.Continue.Cursor,
-			"progress": out.Continue.Progress,
-			"after_ms": out.Continue.AfterMS,
-		}
-	case out.Bytes != nil:
-		env["bytes"] = len(out.Bytes)
-		env["media_type"] = out.MediaType
-	default:
-		env["output"] = out.Text
-	}
-	return env
+	enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("unknown tool: %s", tool))) //nolint:errcheck
 }
 
 // handleGrantsList returns the generated tier's capability picture: every grant in

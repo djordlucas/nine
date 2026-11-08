@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"slices"
 	"sync"
 	"syscall"
 	"time"
@@ -119,27 +118,10 @@ func runDaemon() {
 			"names", unmatched, "loaded", pluginManager.ListRunning())
 	}
 
-	// Sandboxed tools (spec/contracts/toolvm.md), after the plugins so their tool
-	// names are already reserved and a colliding sandboxed tool is skipped rather
-	// than allowed to override. nil when [tools] enabled is unset, which is the
-	// default and leaves every loop exactly as it was.
-	toolHost := runtime.OpenSandboxedTools(context.Background(), cfg, store, pluginManager)
-	if toolHost != nil {
-		defer toolHost.Close(context.Background()) //nolint:errcheck // best-effort on shutdown
-	}
-
-	// The generated tier's write/delete/eval backend (docs/sandboxed-tools.md §5.2),
-	// or nil when `[tools.agent]` is off — in which case the meta-tools are neither
-	// registered nor advertised. The deps bundler resolves external npm imports at
-	// write time (§4.4); nil when [tools.agent.deps] is off.
-	generatedTools := runtime.NewGeneratedToolStoreWithPolicy(store, toolHost, pluginManager,
-		runtime.NewDepsBundler(cfg), cfg.Tools.Agent.AllowNetworkDeps, runtime.GeneratedPolicy{
-			AllowProcesses: cfg.Tools.Agent.AllowProcesses,
-			ProcessRoles:   cfg.Tools.Agent.ProcessRolesOrDefault(),
-			MaxRunning:     cfg.Processes.MaxRunningOrDefault(),
-			Budget:         cfg.Processes.Budget,
-			AllowRevision:  cfg.Processes.AllowRevision,
-		})
+	// The sandboxed-tool host and the generated tier are gone
+	// (adr/modular_nine.md §9.10): shipped tools are Go handlers in the
+	// dispatcher, developer tools are MCP user plugins, and model-authored
+	// tools are refactored separately.
 
 	embedder := embed.Build(cfg.Embeddings.Provider, cfg.Embeddings.Model, cfg.Embeddings.Endpoint)
 
@@ -199,20 +181,16 @@ func runDaemon() {
 		cfg.Workspace.ScanIntervalOrDefault())
 
 	asm := runtime.Assemble(runtime.AssemblyConfig{
-		Workspace:         runtime.NewWorkspaceBackend(store, workspaceScanner, cfg.Workspace.Root),
-		WorkspaceRoot:     cfg.Workspace.Root,
-		SocketPath:        cfg.SocketPath(),
-		Store:             store,
-		Plugins:           pluginManager,
-		Tools:             toolHost,
-		GeneratedTools:    generatedTools,
-		GeneratedEval:     cfg.Tools.Agent.Eval,
-		GeneratedApproval: cfg.Tools.Agent.ApprovalMode(),
-		Embedder:          embedder,
-		ContextBudget:     cfg.ContextBudget(),
-		MaxTokens:         cfg.MaxReplyTokens(),
-		SystemPrompt:      runtime.BuildSystemPrompt(),
-		Runtime:           cfg.RuntimeLabel(),
+		Workspace:     runtime.NewWorkspaceBackend(store, workspaceScanner, cfg.Workspace.Root),
+		WorkspaceRoot: cfg.Workspace.Root,
+		SocketPath:    cfg.SocketPath(),
+		Store:         store,
+		Plugins:       pluginManager,
+		Embedder:      embedder,
+		ContextBudget: cfg.ContextBudget(),
+		MaxTokens:     cfg.MaxReplyTokens(),
+		SystemPrompt:  runtime.BuildSystemPrompt(),
+		Runtime:       cfg.RuntimeLabel(),
 		// Pull-surface related prior sessions only when the out-of-band indexer
 		// that populates the store is enabled.
 		RelatedSessions: cfg.Daemon.RelatedSessionsIndexEnabled(),
@@ -240,9 +218,8 @@ func runDaemon() {
 		ProcessBudget:          cfg.Processes.Budget,
 		MaxDepth:               cfg.Processes.MaxDepthOrDefault(),
 		Database:               processDB,
-		RollbackAfter:          cfg.Processes.RollbackAfter,
-		JobMinDelayMS:          cfg.Tools.JobMinDelayMS,
-		JobWorkers:             cfg.Tools.JobWorkers,
+		JobMinDelayMS:          cfg.Plugins.JobMinDelayMS,
+		JobWorkers:             cfg.Plugins.JobWorkers,
 	})
 	daemon := asm.Daemon
 	daemon.ConfigureModel(cfg.LLMIdentity())
@@ -272,12 +249,11 @@ func runDaemon() {
 		cancel()
 	}()
 
-	// Standing tools: resumable tools the daemon runs indefinitely on their own
-	// cadence (adr/standing-tools.md). Config owns each definition; the runtime
-	// owns whether it is running, so reconciling does not restart one an operator
-	// stopped. They share the job sweeper's worker budget — what both bound is
-	// concurrent wasm instantiations.
-	runtime.ReconcileProcesses(store, toolHost, cfg.Process)
+	// Processes: standing tools run their tool on a cadence through the runner's
+	// caller (Go builtins via the dispatcher, MCP plugin tools via the manager);
+	// goal sessions, standing agents and self-reflection run the built-in live
+	// programs pursue/reflect (adr/process-sessions.md).
+	runtime.ReconcileProcesses(store, cfg.Process)
 	// The process runner, built by Assemble: standing tools, goal sessions,
 	// standing agents and self-reflection all run through it
 	// (adr/process-sessions.md).
@@ -285,7 +261,7 @@ func runDaemon() {
 	// The capability surface behind `nine grants`, the web UI's Inbox and the
 	// API's /capabilities endpoints — one decision path for all three, because an
 	// approval widens the live ceiling and that must not be three implementations.
-	daemon.ConfigureCapabilities(runtime.NewCapabilityService(store, cfg, toolHost, pluginManager))
+	daemon.ConfigureCapabilities(runtime.NewCapabilityService(store))
 	go runtime.RunStandingTools(ctx, standing,
 		time.Duration(cfg.Plugins.JobPollSeconds)*time.Second)
 
@@ -296,11 +272,10 @@ func runDaemon() {
 		if err := cfg.GenesisReady(); err != nil {
 			slog.Error("genesis not run", "err", err)
 		} else {
-			roles := cfg.Tools.Agent.ProcessRolesOrDefault()
+			roles := cfg.Processes.ProcessRolesOrDefault()
 			go func() {
 				if _, err := runtime.RunGenesis(ctx, daemon, store, cfg.Bootstrap.Genesis, runtime.GenesisOptions{
 					Turns:        cfg.Bootstrap.GenesisTurns,
-					Revision:     cfg.Processes.AllowRevision && slices.Contains(roles, "reviser"),
 					ProcessRoles: roles,
 					Database:     processDB != nil,
 				}); err != nil {
@@ -339,20 +314,13 @@ func runDaemon() {
 	// mark such rows lost and tell their owners (docs/plugin-capabilities.md §5).
 	runtime.MarkOrphanedJobsLost(store)
 
-	// A tool job is the opposite case and needs no repair. Its whole live state
-	// is the cursor on its row, so this daemon simply makes the next call; the
-	// only thing to do at boot is say which ones are being picked up.
-	runtime.ResumeToolJobs(store)
-
 	// Drive both job backends (docs/plugin-capabilities.md §5,
 	// adr/durable-and-long-running-tools.md §4.3): poll running plugin jobs,
 	// make the next call for due tool jobs, expire over-age ones, and on
 	// completion cap-or-spill the result and notify the owning conversation so
 	// the next turn learns of it.
-	go runtime.RunJobSweeperWithTools(ctx, store, pluginManager, jobWaiters,
-		time.Duration(cfg.Plugins.JobPollSeconds)*time.Second, cfg.Plugins.JobMaxSeconds,
-		runtime.NewToolJobRunner(store, toolHost,
-			cfg.Tools.JobMaxCalls, cfg.Tools.JobMinDelayMS, cfg.Tools.JobWorkers))
+	go runtime.RunJobSweeper(ctx, store, pluginManager, jobWaiters,
+		time.Duration(cfg.Plugins.JobPollSeconds)*time.Second, cfg.Plugins.JobMaxSeconds)
 
 	// Nine's own agent's background work and standing agents
 	// (internal_agent.go). The processes it writes are started by the runner.

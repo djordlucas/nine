@@ -9,7 +9,6 @@ import (
 
 	"nine/internal/config"
 	"nine/internal/memory"
-	"nine/internal/toolvm"
 )
 
 func processRow(t *testing.T, store *memory.Store, id string) memory.Process {
@@ -77,7 +76,7 @@ func TestBudgetResumesWhenItsDayIsOver(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	if err := r.spendTurn("digest", now); !errors.Is(err, toolvm.ErrBudget) {
+	if err := r.spendTurn("digest", now); !errors.Is(err, ErrBudget) {
 		t.Fatalf("spendTurn at the limit = %v, want ErrBudget", err)
 	}
 
@@ -138,7 +137,7 @@ func TestBudgetRefusalReachesTheProgramAsEBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := &liveHandler{r: r, lp: &liveProc{row: processRow(t, store, "digest")}}
-	if _, err := h.Turn(context.Background(), "tick"); !errors.Is(err, toolvm.ErrBudget) {
+	if _, err := h.Turn(context.Background(), "tick"); !errors.Is(err, ErrBudget) {
 		t.Errorf("Turn over budget = %v, want ErrBudget", err)
 	}
 }

@@ -11,7 +11,7 @@ when you need the mechanism.
 Cross-references: [glossary.md](glossary.md) for term definitions,
 [agent-loop.md](agent-loop.md), [daemon.md](daemon.md),
 [context-builder.md](context-builder.md), [processes.md](processes.md),
-[plugins.md](plugins.md), [sandboxed-tools.md](sandboxed-tools.md).
+[plugins.md](plugins.md).
 
 ---
 
@@ -51,8 +51,7 @@ fetched (`npx`) or hosted elsewhere (§10).
    │           │   LLM Queue ── Provider ──────┼──────►  LLM endpoint       │
    │           │   Supervisor                  │        (Ollama)            │
    │           │   Plugin Manager              │                            │
-   │           │   toolvm.Host ── wazero       │                            │
-   │           │     (in-process, no subproc)  │                            │
+   │           │   Core dispatcher (built-ins) │                            │
    │           └───────┬───────────────┬───────┘                            │
    │                   │ HTTP over     │ database/sql (modernc sqlite)      │
    │                   │ unix socket   │                                    │
@@ -67,17 +66,10 @@ fetched (`npx`) or hosted elsewhere (§10).
 Memory, the durable file store, and skills are **in-process** capabilities of
 `memory.Store`, not plugin subprocesses. The plugin subprocesses are `shell`, any user plugin, and one spawned
 process per declared `[[mcp.server]]` that uses `command` (a `url` server is
-hosted and has no process). The workspace
-file tools, the fetching tools and `time` are **shipped sandboxed tools** in the
-binary (§11) — they were plugins, and moving them put Nine's own capabilities
-under the capability model instead of the daemon's uid.
-
-**Sandboxed tools** (`toolvm.Host`, §11) are in-process too, but for the opposite
-reason: not because they are trusted, but because a wasm module needs no process
-of its own to be contained. JS and wasm tools from `[tools].user_dir` and from
-the store execute inside the daemon under a wazero sandbox with only the
-capabilities `nine.toml` conferred. The host is **nil** unless `[tools] enabled`
-is set, which is the shipped default.
+hosted and has no process). The workspace file tools, the fetching tools and
+`time` are **Go built-ins** compiled into the nine binary — direct in-process
+calls into the same `memory.Store` and workspace backend every other component
+uses (adr/modular_nine.md §9.10; the wasm sandbox they used to run in is gone).
 
 Key consequences of this shape:
 
@@ -85,11 +77,10 @@ Key consequences of this shape:
   Closing the web UI does not stop work; reattaching replays what was missed.
 - **Plugins are isolation boundaries.** A crashing or hanging plugin is a child
   process, not a daemon panic. Tools are reached only through the manager.
-- **There are two kinds of isolation, and they are not the same kind.** A plugin
-  is isolated for *reliability* — it is a separate process, but it runs with the
-  daemon's own reach. A sandboxed tool is isolated for *authority* — it shares
-  the process, but has no filesystem, no network, and no environment except what
-  was conferred.
+- **There is one kind of isolation that matters.** A plugin is isolated for
+  *reliability* — it is a separate process, so it can crash or hang without
+  taking the daemon down; its reach is bounded by `[plugins] disabled` and the
+  process boundary (MCP is the only wire protocol that crosses it).
 - **The LLM is behind a queue.** No agent ever calls the provider directly; the
   queue is the single choke point for concurrency and prioritization.
 
@@ -104,7 +95,6 @@ Key consequences of this shape:
 | API server | `nine` (re-exec) | HTTP/REST server; translates requests to the daemon socket. Serves OpenAPI/Swagger at `/api/v1/swagger/` (see [api.md](api.md)) | Long-lived (s6-managed in Docker) |
 | Plugin  | `bin/<name>`, or `nine` (re-exec) for the built-ins | One tool provider, HTTP over a unix socket | Spawned by daemon, killed on stop |
 | MCP server | `command` child, or hosted `url` | One declared `[[mcp.server]]`: the manager connects over stdio or streamable HTTP | Spawned by daemon (command form), killed on stop |
-| Sandboxed tool | *(none)* | JS/wasm in a wazero instance inside the daemon | One instance per call, closed on return |
 
 The CLI auto-starts the daemon if the socket is dead. One binary is the entry
 point for everything: it dispatches to the one-shot client, an operator
@@ -115,14 +105,12 @@ command, the API server, or the daemon, depending on how it was invoked.
 ```
 /data                 mutable state only (the "nine-data" volume)
 ├── nine.db      the SQLite database (+ its -wal/-shm sidecars)
-└── workspace/   the workspace sandboxed tools read and write
+└── workspace/   the workspace the file tools read and write
 
 /opt/nine             immutable image content (not in a volume)
 └── bin/         empty by default — the built-in plugins live in the nine
                  binary; a user plugin's binary can be mounted here
 
-/tools.d              developer sandboxed tools, bind-mounted (manifest + .js/.wasm)
-                      inert unless the mounted nine.toml sets [tools] enabled
 ```
 
 Primary state is the SQLite file on that same `/data` volume, so one volume carries
@@ -137,12 +125,6 @@ Built-in skills are embedded in the `nine` binary (`//go:embed` in the `nine/ski
 package) and seeded into the `skills` table on every boot — there is no skills
 directory in the image or the volume.
 
-Developer sandboxed tools are the one exception to "image content is immutable":
-`[tools].user_dir` is mounted at `/tools.d` and read at boot and on
-`nine tools reload`. The QuickJS interpreter they execute on is *not* built there
-— it is a pre-built wasm artifact committed to the repo and compiled into the
-binary, which is why the runtime image still carries no toolchain. Generated
-tools need no path at all; they live in the database on `/data`.
 
 Config is resolved in order: `$NINE_CONFIG` → `./nine.toml` → `/nine.toml`
 (Docker bind-mount) → `~/.nine/nine.toml`.
@@ -425,37 +407,34 @@ Dispatch(toolName, args):
                                         return a head+tail preview + the path
 ```
 
-Tools come in three flavors, all appearing in the same LLM tool list and all
-sharing **one namespace** — a name resolves to exactly one backend, and a
-collision is a load failure, not a silent override:
+Tools come in two flavors, both appearing in the same LLM tool list and sharing
+**one namespace** — a name resolves to exactly one backend, and a collision is a
+load failure, not a silent override:
 
 ```
-   ┌─────────────────────────────────────────────────────────────┐
+   ┌────────────────────────────────────────────────────────────┐
    │  TOOL CALL from the model                                    │
-   └───────────────────────────┬──────────────────────────────────┘
-                               ▼
-                       Dispatcher.handlers[name]
-       ┌───────────────────────┼───────────────────────┐
-       ▼                       ▼                       ▼
- PLUGIN TOOLS          CORE-INTERCEPTED         SANDBOXED TOOLS
- (RegisterPlugin)      (Register* in            (RegisterSandboxed)
- handler =             builder.go)              handler = host.Call(name, …)
-   m.Call(plugin, …)   in-process, no           → wazero instance, in-process,
- → MCP tools/call       subprocess:              capabilities only (§11)
-                        • memory_* / skill_*
- shell,                 • list_files            binary tools   (shipped)
- mcp:<server> tools     • doc_* / job_*         tools.d/*.js   (developer)
-                        • run_agent/run_agents  store rows     (generated)
-                        • workflow_* / goal_*
-                        • gap_report            read_file, write_file, edit_file,
-                        tool_write / js_eval    http_get, web_search, time, …
-                        are themselves core
+   └──────────────────────────┬───────────────────────────────────┘
+                              ▼
+                      Dispatcher.handlers[name]
+       ┌──────────────────────────────┬──────────────────────────────┐
+       ▼                              ▼                              ▼
+ PLUGIN TOOLS                 CORE-INTERCEPTED (built-ins)
+ (RegisterPlugin)             (Register* in builder.go)
+ handler =                    handler = direct Go function call:
+   m.Call(plugin, …)            • memory_* / skill_* / goal_* / workflow_*
+ → MCP tools/call               • process_* / job_* / queued_* / doc_*
+ shell, mcp:<server> tools    • run_agent/run_agents, gap_report,
+                              • read_file, write_file, edit_file, list_files,
+                                file_search_text, http_get, web_search, time, …
+                              • tool_list / tool_search / capability_request
 ```
 
-The three differ in *isolation*, which is the reason to have three: a plugin is
-a separate process with the daemon's own reach, a core tool is a Go function
-with the daemon's own reach, and a sandboxed tool is in-process but structurally
-unable to touch anything the operator did not confer.
+The two differ in *isolation*: a plugin is a separate process reached over MCP,
+so it can crash without touching the daemon; a built-in is in-process because
+the daemon owns every database handle, and a loopback protocol would add
+complexity without isolation (adr/modular_nine.md §9.8). Both go through the
+same dispatch, ref-parameter expansion, and output capping.
 
 ### Role-gated registration
 
@@ -639,171 +618,29 @@ manager's responsibility.
 
 Default plugins started at boot: `shell` — then one connection per
 `[[mcp.server]]`, then user plugins. Reading and writing files, fetching over
-HTTP and reading the clock are **sandboxed tools**, not plugins: they run in
-the wasm tool host with only the capabilities they are granted, rather than as
-subprocesses holding the daemon's own authority.
-Memory/file/vector operations and the skill tools are **core-intercepted**
-(handled in-process), not a subprocess.
+HTTP and reading the clock are **built-ins** compiled into the binary, like the
+memory/vector and skill tools: all of them are core-intercepted handlers called
+in-process, not subprocesses holding the daemon's own authority (adr/modular_nine.md
+§9.8 — the wasm tool host they used to run in is removed).
 
 ---
 
-## 11. Sandboxed tools — the in-process wasm host
+## 11. Tool tiers that no longer exist
 
-`toolvm.Host` is the dispatcher's **third backend**,
-and the only one that is neither a subprocess nor a core handler: JS and wasm
-tools run **inside the daemon process**, in a wazero sandbox, with exactly the
-capabilities the operator conferred — by default, none.
+The sandboxed-tool host (`internal/toolvm`, a wazero/QuickJS sandbox with a
+capability-grant model and a model-authored "generated" tier) was removed
+(adr/modular_nine.md §9.10). What it carried is now:
 
-The subsystem remains separable by construction, though it is now on by default:
-`runtime.OpenSandboxedTools` returns **nil** when `[tools] enabled` is false,
-every consumer downstream treats a nil host as "no sandboxed tools", and a
-failure to open the wasm runtime is logged and degraded to nil rather than
-aborting the boot — an operator whose sandbox will not start should lose the
-tools, not the daemon. What changed with the default is the cost of that
-degradation: the shipped file tools live in this tier, so a nil host is an agent
-that cannot read or write a file.
+- the **shipped tools** (read_file, write_file, edit_file, http_get, web_search,
+  time, …) are Go built-ins registered on the core dispatcher like every other
+  `memory_*` handler — see §7;
+- **developer tools** (`[tools].user_dir`) are MCP user plugins under
+  `[plugins].user_dir` (§10, [plugins.md](plugins.md));
+- **model-authored tools** (`tool_write`/`js_eval`, the `tools` store tables)
+  are gone with it. The store tables remain (dormant) so an existing database
+  still opens; the wire verbs that read them answer with the removal.
 
-### Host lifecycle
-
-```
- OpenSandboxedTools(cfg, store, pluginManager)       ← nil when [tools] disabled
-   │
-   ├─ toolvm.Open(Config{UserDir, Grants, Timeout, MemoryMB, TouchGenerated})
-   │     compiles the QuickJS-NG blob ONCE (~1 MB of wasm — the expensive step)
-   │     wazero runtime: no FS mounted, no env passed, no network to configure
-   │
-   ├─ host.SetAgentConfig(agentConfig(cfg))   ← [tools.agent]: on/off, ceiling, cap
-   ├─ host.SetShippedWorkspace([workspace].root)  ← mounted at /work, created if absent
-   ├─ host.LoadShipped(ctx, pluginCollides(mgr))  ← first-party tools, from the binary
-   ├─ host.Load(ctx, pluginCollides(mgr))     ← walk [tools].user_dir manifests
-   └─ LoadGeneratedTools(store, host, mgr)    ← project the stored catalog in
-```
-
-Three orderings are enforced. The host opens **after** the plugin manager, so
-every plugin tool name is already reserved and a colliding sandboxed tool is
-*skipped* rather than allowed to override (`pluginCollides`); `SetAgentConfig`
-runs **before** the first `LoadGenerated`, which refuses to register anything
-while the generated tier is off; and **shipped tools load first**, because the
-namespace rule is first-registered-wins and a developer or generated tool must
-not be able to take a first-party name and replace its behavior. Each later load
-merges into the registry rather than replacing it, so the shipped tier survives
-every `nine tools reload`. Compilation happens once per
-tool; instantiation happens once per **call**.
-
-| Kind | Module | ABI |
-|------|--------|-----|
-| `js` | the shared QuickJS blob + the tool's source | default-exported function, ES2023 only |
-| `wasm` | the tool's own compiled module | `nine_alloc` / `nine_run`, UTF-8 JSON in and out |
-
-### One call
-
-```
- Dispatcher.handlers[name] ──► Host.Call(ctx, name, args)
-        │
-        ├─ fresh wazero instance from the compiled module   ← ONE PER CALL
-        │     no globals, no cache, no credential survives it
-        ├─ ctx deadline = [tools].timeout (default 5s)
-        │     bounds elapsed time; [tools].max_ops bounds work done
-        ├─ linear memory capped at [tools].memory_mb (default 16 MiB, 256 pages)
-        ├─ one of [tools].max_concurrent call slots (default 8) held throughout
-        │     memory_mb x max_concurrent is the host's worst case
-        ├─ stdout/stderr → io.Discard, argv denied wholesale (no argv in a call)
-        └─ on return: instance closed, TouchGenerated(name) recorded for LRU
-```
-
-A returned string reaches the model untouched, anything else is
-JSON-stringified, and a throw becomes an ordinary tool failure the model can
-retry. Output then passes through the dispatcher's usual `capOrSpill` (§7), so a
-sandboxed tool is bounded on the way out like any other.
-
-### Capabilities are conferred, never claimed
-
-Resolution is a two-sided exact match: the manifest **declares** a need
-(`toolvm.Declaration`), `nine.toml` **grants** it (`toolvm.Grant`), and either
-side alone is a load failure — declaring something ungranted fails, and being
-granted something undeclared *also* fails. Both are loud by design.
-
-| Capability | Mechanism | Default |
-|------------|-----------|---------|
-| `clock`, `random`, `log` | host functions | granted |
-| `fs.read` / `fs.write` | wazero pre-opened directories, addressed by *guest* path | declare + grant |
-| `env` | named keys only; `Config.Validate` refuses the `NINE_*` and `*_API_KEY` patterns outright | declare + grant |
-| `net.http` | a host function — wazero has no network | declare + grant |
-
-What makes this a boundary rather than a policy: a capability is either a wazero
-pre-open or a host function the daemon exports, so anything else is not "denied"
-— it is **structurally absent**, with no function to call. A sandboxed tool
-cannot spawn a process, open a socket, load a native library, or call another
-tool.
-
-`net.http` is the exception with no primitive underneath it, so its security is
-Nine's own problem (`nethttp.go`, `ssrf.go`). The guest never touches a socket
-and never learns an IP. Two independent gates must both pass: the hostname
-matches the tool's `allow_hosts`, **and** the address actually being dialed is
-publicly routable, checked immediately before connect so there is no window to
-re-resolve into. Loopback, link-local (`169.254.169.254` included) and RFC 1918
-are refused regardless of the allowlist, on every redirect hop, and
-`Authorization`/`Cookie` are stripped across origins. The `AuditHTTP` hook is how
-a package with no journal of its own still reaches the event journal.
-
-### The generated tier
-
-Tools Nine writes itself are **rows in the store** rather than files on disk, and
-they run in the identical sandbox under identical rules — `toolvm.Generated`
-differs from a developer tool in provenance, not in enforcement.
-
-```
- tool_write  ─► deps.Bundler at WRITE time, IN THE DAEMON: resolve imports,
-     │           verify each tarball checksum, run no install scripts, inline
-     │        ─► store row + host.LoadGenerated
-     │        ─► visible NEXT TURN in every loop (turns in flight keep their tool set)
- tool_delete ─► row removed, tool unregistered
- js_eval     ─► same sandbox, same rules, persists nothing
-```
-
-`agent.RegisterGeneratedTools` registers the
-three meta-tools only when the tier is on, and `js_eval` additionally needs its
-own `eval` switch. With the tier off they are neither registered nor advertised,
-and a loop is identical to one built before the tier existed.
-
-`[tools.agent.capabilities]` is a **ceiling**, never an automatic grant: the most
-any generated tool may be conferred. Declarations are re-resolved on every load,
-so narrowing the ceiling disables a tool that no longer fits rather than leaving
-it running with reach the operator withdrew. `MaxTools` caps the catalog with
-least-recently-called eviction fed by `TouchGenerated` — every generated tool
-competes in the same tool-ranking budget (§8), so an unbounded catalog would
-degrade selection for the built-ins too.
-
-### Dispatcher integration & reporting
-
-The `agent` package deliberately does not depend on the wasm runtime. It sees
-two methods:
-
-```go
-type SandboxedHost interface {
-    Tools() []*toolvm.Tool
-    Call(ctx context.Context, name string, args json.RawMessage) (string, error)
-}
-```
-
-`Dispatcher.RegisterSandboxed` indexes every loaded tool into the same `handlers`
-map a plugin tool lands in, so dispatch, ref-parameter expansion, and output
-capping are identical; a nil host registers nothing. Unlike a plugin there is no
-process to ask over MCP `tools/list`, so the **manifest** is authoritative for name,
-description, and schema.
-
-Every load attempt — the failures included — is retained as a `toolvm.Status` and
-surfaced by `nine tools` with its reason. Generated statuses are kept in a
-separate slice so reloading the developer directory does not erase the generated
-tier's outcomes, or vice versa. A tool an operator installed that is *not*
-running is exactly the thing they need told.
-
-The normative contract is `spec/contracts/toolvm.md` (`nine spec toolvm`); the
-design rationale is [sandboxed-tools.md](sandboxed-tools.md).
-
----
-
-## 12. Memory & persistence
+## 11. Memory & persistence
 
 A single **SQLite** database file (driver: `modernc.org/sqlite` via `database/sql`
 — pure Go, no cgo) holds everything. `Store` is the **sole owner**
@@ -905,15 +742,16 @@ a process session — the process that owns it, which supplies its role.
 
 ---
 
-## 13. Processes — the autonomy substrate
+## 12. Processes — the autonomy substrate
 
 Everything Nine does between turns is a **process** ([processes.md](processes.md)):
-a sandboxed tool the process runner drives on its triggers. A worker never starts
-a turn of its own; a person, a process, or a pipe submits each one.
+a built-in tool or an MCP plugin tool the process runner drives on its triggers.
+A worker never starts a turn of its own; a person, a process, or a pipe submits
+each one.
 
 ```
    process runner (RunStandingTools, every [plugins] job_poll_seconds, and on Wake)
-     ├─ slice processes   due → call the tool once → cursor / cycle / report
+     ├─ slice processes   due → call the tool once → cycle complete / report
      └─ live processes    start once (StartLive) → next() ← clock ticks, piped reports
                                                    turn() → Daemon.ProcessTurn(session, role)
                                                    report() → pipe → owner's next() or human feed
@@ -944,7 +782,7 @@ ordinary conversations come back on demand via `attach`.
 
 ---
 
-## 14. Autonomy & oversight components
+## 13. Autonomy & oversight components
 
 ```
    ┌─────────────────────────────────────────────────────────────────┐
@@ -1032,22 +870,17 @@ the distinction matters because only `active` goals are pursued.
 
 ---
 
-## 15. Self-improvement — skills and generated tools
+## 14. Self-improvement — skills
 
-Nine improves what it **knows** by writing skills, and — where the operator turned
-that tier on — what it can **do** by writing sandboxed tools (§11). It does not
-generate plugins, write itself a capability grant, change its configuration, or
-rebuild its source at runtime, a deliberate decision to keep the running system
-from drifting away from its source. Consequently the runtime container carries no
-Go toolchain, no git, and no source tree.
+Nine improves what it **knows** by writing skills. It does not write tools,
+plugins, grants, configuration, or its own source at runtime (adr/modular_nine.md
+§9.10 removed the model-authored tool tier), a deliberate decision to keep the
+running system from drifting away from its source. Consequently the runtime
+container carries no Go toolchain, no git, and no source tree.
 
 ```
    AGENT SKILLS      skill_write / skill_modify → skills table
                      no compile   no restart   no approval
-
-   GENERATED TOOLS   tool_write / tool_delete → store rows → toolvm.Host
-                     no compile   no restart   approval per require_approval
-                     capabilities: declared by the agent, GRANTED by the operator
 ```
 
 - Skills live in the `skills` table. **Built-in** skills are embedded
@@ -1055,22 +888,6 @@ Go toolchain, no git, and no source tree.
   via `skill_write`/`skill_modify`, which refuse to touch a built-in. Each write
   embeds the description into the `skills` vector namespace so the self-model can
   surface it on the next turn.
-- Generated tools live in the store and run in the same wasm sandbox as a
-  developer tool. Both tiers are **store state** — listable and deletable like a
-  goal or a workflow — which is what keeps them inside the same boundary as
-  skills rather than being a new kind of self-modification.
-- The line that makes this safe is one column wide: **the agent writes the code,
-  the operator writes the grants, and they are never the same actor.**
-  `tool_write` writes JavaScript and a capability *declaration*; it has no path
-  to write a grant, and a declaration past the `[tools.agent.capabilities]`
-  ceiling is a refusal the model can act on.
-
-| | Code | Capabilities |
-|---|---|---|
-| Native plugin | operator (build time) | operator (`nine.toml`) |
-| Developer sandboxed tool | developer (file on disk) | operator (`nine.toml`) |
-| Generated sandboxed tool | **Nine** (runtime) | operator (`nine.toml`) |
-
 - Configuration changes are made by the operator editing `nine.toml` and restarting
   the daemon. Adding a plugin or changing a built-in skill means editing the source
   repo and rebuilding the image. See [self-modification.md](self-modification.md).
@@ -1083,7 +900,7 @@ Go toolchain, no git, and no source tree.
 > and call sites, which is what tracing a flow needs and what this document
 > deliberately avoids.
 
-## 16. Key invariants (the rules that keep it coherent)
+## 15. Key invariants (the rules that keep it coherent)
 
 1. **One session, one goroutine, serialized turns.** `agent.Loop` is never
    touched concurrently; the `AgentWorker` goroutine enforces it.
@@ -1105,17 +922,12 @@ Go toolchain, no git, and no source tree.
    written to `session_events`; subscribers enrich derived stores off the turn
    path and never make a generative LLM call or mutate an active session (enrich,
    don't interject).
-10. **A capability is conferred by config or it does not exist.** A manifest
-    declares; only `nine.toml` grants; the two must match exactly in both
-    directions or the tool does not load. Ungranted reach is not denied at call
-    time — there is no host function to call.
-11. **One sandbox instance per call.** No global state, no cache, and no
-    credential survives a sandboxed tool call; a `js` call is bounded by both a
-    wall-clock deadline and a work budget, a `wasm` call by the deadline alone.
-12. **One tool name, one backend.** Core, plugin, and sandboxed tools share a
-    single namespace; later registrations are skipped with a reported reason,
-    never allowed to shadow an earlier one.
-```
+10. **A plugin runs only if `nine.toml` lets it.** `[plugins].disabled` blocks
+    both start paths (spawned and hosted), and a user plugin is never executed
+    without its manifest (R-PLUG.9).
+11. **One tool name, one backend.** Built-in and plugin tools share a single
+    namespace; later registrations are skipped with a reported reason, never
+    allowed to shadow an earlier one.
 
 ---
 
@@ -1126,7 +938,6 @@ Go toolchain, no git, and no source tree.
 | Single host, single daemon | All state lives in one daemon process and one SQLite file. There is no clustering, no replication, and no remote client — the socket is local. |
 | One SQLite writer | Every durable write goes through one file, so concurrent writes serialize. |
 | Turns are sequential per session | Each worker's inbox holds one turn. Concurrency is across sessions, not within one. |
-| No CPU metering for `wasm` tools | A `js` tool is metered by QuickJS's interrupt handler (`[tools] max_ops`); wazero offers no fuel metering, so a raw `wasm` tool is bounded only by the wall clock. |
 | Token budgeting is estimated | Context accounting uses a 4-characters-per-token approximation calibrated against one tokenizer. |
 | Trimming, not compaction | Over-budget history is dropped from the front rather than summarized. |
 | One LLM provider at a time | No routing across models within a deployment. |

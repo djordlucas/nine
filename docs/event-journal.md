@@ -22,7 +22,7 @@ it decided to call it.
 | `llm_request` / `llm_response` | one inner model call, whole in both directions |
 | `thinking` | reasoning the model streamed before answering |
 | `tool_start` / `tool_end` | one tool call, its arguments, and its result |
-| `tool_http` | one outbound request a sandboxed tool made: host, URL, status, bytes, duration — **including a refused one, with its reason** |
+| `tool_http` | one outbound request a built-in web/http tool made: host, URL, status, bytes, duration — **including a refused one, with its reason** |
 | `context_update` | a change to what the next model call will be shown |
 
 Entries outside any turn record what changed in the daemon's state. Process

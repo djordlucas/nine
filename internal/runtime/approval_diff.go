@@ -29,7 +29,7 @@ const maxApprovalDiffLines = 40
 // The preview is the tool's, deliberately: a second implementation in Go would
 // be a second answer to "what will this do", and the one the human approves
 // must be the one the tool then performs. Nothing is written — preview is the
-// tool refusing to write — so this costs a sandboxed call and no side effect.
+// tool refusing to write — so this costs a call and no side effect.
 //
 // Returns "" when there is nothing useful to show, in which case the caller
 // falls back to naming the path. A preview that fails must never block the

@@ -270,7 +270,7 @@ could not load becomes callable on its next turn with no restart. `approve` and
 `deny` take a request id; `revoke` takes a grant id, and only an `approved` grant is
 revocable — a `config` or `default` grant is rewritten from `nine.toml` at the next
 boot. A bad action, an already-settled request and an unrevocable grant are all
-`400`. See [sandboxed-tools.md](sandboxed-tools.md) §7.2.
+`400`. See [plugin-capabilities.md](plugin-capabilities.md) §3.
 
 ### Other
 
@@ -325,10 +325,9 @@ A statement the policy refuses, an unknown column or a SQL error is `400`; an
 unknown table `404`; no workspace, no database, or a stale `If-Match` `409`. The
 operator's database writes are journaled as `sql_write` under `operator`.
 
-`GET /tools` is the whole roster: every tool an agent can call, with its input
-schema, and the sandboxed tools with their `kind` (`sandboxed` or `generated`),
-capabilities, dependencies (`deps`) and timeout. A sandboxed tool that failed to
-load is listed with `loaded: false` and its `error`. `GET /skills/{name}` returns
+`GET /tools` is the whole roster: every tool an agent can call — built-ins with
+their input schema, and plugin tools (MCP servers and user plugins) — with each
+plugin's load status. `GET /skills/{name}` returns
 one skill with its Markdown body.
 
 `GET /questions` lists the `ask_human` questions still waiting for an answer, oldest

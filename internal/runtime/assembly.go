@@ -2,6 +2,8 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 
 	"nine/internal/agent"
@@ -12,7 +14,6 @@ import (
 	"nine/internal/plugin"
 	"nine/internal/selfmodel"
 	"nine/internal/sqldb"
-	"nine/internal/toolvm"
 )
 
 // Assembly is the wired-but-not-started daemon core shared by the production
@@ -32,7 +33,10 @@ type Assembly struct {
 	Supervisor *Supervisor
 	Assembler  *selfmodel.Assembler
 	EventSink  EventSink
-	// Processes runs every process; nil without a sandboxed tool host.
+	// Core is the dispatcher the daemon's plugin_call path and the process
+	// runner's tool caller share; tests can register fixture tools on it.
+	Core *agent.Dispatcher
+	// Processes runs every process.
 	Processes *StandingRunner
 }
 
@@ -45,22 +49,6 @@ type AssemblyConfig struct {
 	Store      *memory.Store
 	Plugins    *plugin.Manager
 	Embedder   embed.Embedder
-
-	// Tools is the sandboxed-tool host (spec/contracts/toolvm.md). Nil when
-	// [tools] enabled is unset, which is the default — every loop then builds
-	// exactly the tool set it did before the host existed.
-	Tools *toolvm.Host
-
-	// GeneratedTools is the generated tier's write/delete/eval backend
-	// (docs/sandboxed-tools.md §5.2), or nil when `[tools.agent]` is off. The eval
-	// harness passes nil; only the production daemon opts the tier in.
-	GeneratedTools agent.GeneratedToolStore
-	// GeneratedEval mirrors `[tools.agent] eval`: whether js_eval is offered.
-	GeneratedEval bool
-	// GeneratedApproval is `[tools.agent].require_approval`, already defaulted
-	// (docs/sandboxed-tools.md §9.4). Gates tool_write/js_eval for interactive
-	// sessions; ignored where the generated tier is off.
-	GeneratedApproval string
 
 	// Loop / builder behavior.
 	ContextBudget int
@@ -110,8 +98,6 @@ type AssemblyConfig struct {
 	ProcessBudget config.BudgetConfig
 	// MaxDepth is [processes] max_depth; <= 0 is the default.
 	MaxDepth int
-	// RollbackAfter is [processes] rollback_after; <= 0 is the default.
-	RollbackAfter int
 	// Database is the database: written by live processes through nine:sql,
 	// read through sql_query. Nil leaves both out.
 	Database *sqldb.DB
@@ -125,6 +111,38 @@ type AssemblyConfig struct {
 	// the eval harness passes a wrapper that forces a case's declared role. The
 	// argument is the builder's own BuildForRole.
 	RoleFactory func(LoopFactory) LoopFactory
+}
+
+// processToolCaller runs a standing tool's tick: Go builtins through the core
+// dispatcher, MCP plugin tools through the plugin manager.
+type processToolCaller struct {
+	core *agent.Dispatcher
+	mgr  *plugin.Manager
+}
+
+// CallProcessTool implements ProcessToolCaller.
+func (c processToolCaller) CallProcessTool(ctx context.Context, tool string, args json.RawMessage) (string, error) {
+	if c.core != nil && c.core.Has(tool) {
+		cr, err := c.core.Dispatch(ctx, tool, args)
+		if err != nil {
+			return "", err
+		}
+		return cr.Output, nil
+	}
+	if c.mgr != nil {
+		for _, p := range c.mgr.Running() {
+			for _, t := range p.Tools {
+				if t.Name == tool {
+					cr, err := c.mgr.Call(ctx, p, tool, args)
+					if err != nil {
+						return "", err
+					}
+					return cr.Output, nil
+				}
+			}
+		}
+	}
+	return "", fmt.Errorf("unknown tool: %s", tool)
 }
 
 // Assemble builds and wires the daemon core from c and returns it stopped. The
@@ -162,11 +180,8 @@ func Assemble(c AssemblyConfig) *Assembly {
 			MaxJobsPerConversation: c.MaxJobsPerConversation,
 			MaxJobsTotal:           c.MaxJobsTotal,
 			JobWaiters:             c.JobWaiters,
-			Tools:                  c.Tools,
 			Workspace:              c.Workspace,
 			WorkspaceRoot:          c.WorkspaceRoot,
-			GeneratedTools:         c.GeneratedTools,
-			GeneratedEval:          c.GeneratedEval,
 			ToolExposition:         c.ToolExposition,
 			ResidentTools:          c.ResidentTools,
 			PromotedBudget:         c.PromotedBudget,
@@ -185,7 +200,6 @@ func Assemble(c AssemblyConfig) *Assembly {
 		HITL:               c.HITL,
 		ApprovalTools:      c.ApprovalTools,
 		GateSubAgents:      c.GateSubAgents,
-		GeneratedApproval:  c.GeneratedApproval,
 		PlanApproval:       c.PlanApproval,
 		PlanMode:           c.PlanMode,
 		DefaultLeafRole:    c.DefaultLeafRole,
@@ -229,28 +243,26 @@ func Assemble(c AssemblyConfig) *Assembly {
 	daemon.SetQueueStatFn(builder.QueueDepth)
 	daemon.ConfigureMemory(c.Store)
 	daemon.ConfigurePlugins(c.Plugins)
-	daemon.ConfigureSandboxedTools(c.Tools)
-	daemon.ConfigureGeneratedTools(c.GeneratedTools)
-	daemon.ConfigureCoreTools(builder.CoreDispatcher())
+	core := builder.CoreDispatcher()
+	daemon.ConfigureCoreTools(core)
 	daemon.SetMaxRunning(c.MaxRunning)
 	daemon.ConfigureWorkspace(c.WorkspaceRoot)
 	daemon.ConfigureDatabase(c.Database)
 
 	// The process runner (adr/process-sessions.md): every process — goal
 	// sessions, standing agents, self-reflection, standing tools — runs through
-	// it, so production and the eval harness share it. Nil without a sandboxed
-	// tool host; the caller starts it with RunStandingTools.
-	runner := NewStandingRunner(c.Store, c.Tools, c.JobMinDelayMS, c.JobWorkers)
+	// it, so production and the eval harness share it; the caller starts it with
+	// RunStandingTools.
+	runner := NewStandingRunner(c.Store, c.JobMinDelayMS, c.JobWorkers)
+	runner.SetToolCaller(processToolCaller{core: core, mgr: c.Plugins})
 	runner.SetWaker(daemon)
 	runner.SetSessions(daemon)
 	runner.SetBudget(c.ProcessBudget)
 	runner.SetMaxRunning(c.MaxRunning)
 	runner.SetMaxDepth(c.MaxDepth)
 	runner.SetDatabase(c.Database)
-	runner.SetRollbackAfter(c.RollbackAfter)
 	// The generated-tool store and the runner: deleting a tool drops its
 	// activity ring, a rewritten process restarts, a failing one rolls back.
-	LinkStandingTools(c.GeneratedTools, runner)
 	if c.Database != nil {
 		builder.SetSQLReader(sqlReader{c.Database})
 	}
@@ -274,6 +286,7 @@ func Assemble(c AssemblyConfig) *Assembly {
 		Supervisor: supervisor,
 		Assembler:  assembler,
 		EventSink:  sink,
+		Core:       core,
 		Processes:  runner,
 	}
 }

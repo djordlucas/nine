@@ -36,8 +36,8 @@ priority than background work but lower than active conversations. See
 [Architecture § 14 Autonomy & oversight](architecture.md#14-autonomy--oversight-components).
 
 **Tool Dispatcher** — Routes each tool call
-to its registered handler: plugin tools via MCP `tools/call`, sandboxed tools into
-the wasm host, core-intercepted tools in-process. Fires post-call hooks on success and caps every result at
+to its registered handler: plugin tools via MCP `tools/call`, built-in tools
+in-process. Fires post-call hooks on success and caps every result at
 ~2048 tokens, spilling larger output to the file store
 ([tool-output-spill.md](tool-output.md)). Handlers are registered at
 loop-build time via `RegisterPlugin` and the `Register*` functions.
@@ -118,18 +118,15 @@ terminal state. LLM tools: `workflow_create`, `workflow_update`,
 `run_agent`). Operator commands: `nine workflow stop|fail`. See
 [Workflows](workflows.md).
 
-**Process** — A sandboxed tool that runs on its triggers — a clock, a report
-piped to it, or a journal event — instead of being called by a model. A **live**
-process runs until stopped and drives its session through `nine:process`
-(`next`, `turn`, `report`); a **slice** process is called on each trigger, as
-standing tools were. Declared with `[[process]]`, shipped (`pursue`,
-`reflect`), written by Nine with `tool_write`, and stored in `processes`. See
-[Processes](processes.md).
+**Process** — A tool that runs on its triggers — a clock, a report piped to it,
+or a journal event — instead of being called by a model. A **live** process runs
+until stopped and drives its own session (the Go live programs `pursue` and
+`reflect`); a **slice** process is called once per trigger through the dispatcher
+(a built-in or an MCP plugin tool). Declared with `[[process]]` and stored in
+`processes`. See [Processes](processes.md).
 
-**Probation** — The state of a process's program from when it is written until
-it first runs. A rewritten one that fails `rollback_after` times on probation is
-rolled back to the newest version that ran. See [Processes](processes.md).
-
+**Probation** — *Removed with the generated tier (adr/modular_nine.md §9.10):* there are
+no model-written tool versions to put on probation any more.
 **Genesis** — The first boot of a store with `[bootstrap] genesis`: a `genesis`
 session turns the operator's document into the instance's first processes,
 once. See [Processes](processes.md).
@@ -294,90 +291,16 @@ process, with neither a subprocess nor a sandbox: the `memory_*` and
 `workflow_*`, `goal_*` and `queued_message*` groups, `tool_search`/`tool_list`,
 `notify_user`, the delegation tools (`run_agent`, `run_agents`), and
 `gap_report`. They reach Nine's own state, which is why they are neither granted
-nor sandboxed. Registered per loop, and exempt from relevance ranking
+all in-process. Registered per loop, and exempt from relevance ranking
 ([tool selection](tool-selection.md)).
 
-**Sandboxed tool** — A wasm module the daemon executes **in-process**, in a
-wazero sandbox, with an explicitly conferred capability set. A *second backend
-behind the same Tool Dispatcher* as plugins — registered, advertised, and
-role-filtered identically — but neither a subprocess (unlike a **plugin**) nor
-built in (unlike a **core-intercepted tool**). Three tiers write them and one
-runtime executes them: **shipped** (first-party, in the binary), **developer**
-(two files in `[tools].user_dir`), and **generated** (rows Nine wrote itself).
-The whole host, shipped tools included, is off unless `[tools] enabled` is set.
-See [Sandboxed tools](writing-sandboxed-tools.md) and
-[contract](../spec/contracts/toolvm.md).
+**Capability request** — The agent asking an operator to confer a **plugin
+capability** it needs, through the `capability_request` tool (docs/plugin-capabilities.md
+§3). It records a pending row and confers nothing; an operator settles it with
+`nine grants`, `/grants` or the API. Distinct from a **gap report**, which tells
+the supervisor a capability is missing and has no decision attached.
 
-**Shipped tool** — A sandboxed tool whose source is compiled into the `nine`
-binary: the workspace file tools, the fetching tools, and `time`. They were
-plugins, which is to say subprocesses holding the daemon's uid; under this tier
-each is **granted what it declares** and that grant appears in `nine tools`.
-First-party code the operator already ran with strictly more authority, so the
-grant is a reduction made explicit rather than a new trust (R-TVM.16).
-
-**Tool kind (`js` / `wasm`)** — How a sandboxed tool's module is obtained. A
-`wasm` tool is the developer's own module, built from Rust, TinyGo, Zig, or C. A
-`js` tool's module is the pre-supplied QuickJS-NG interpreter, with the author's
-JavaScript as its input — nothing is compiled at install time. Not two trust
-tiers: same ABI, same capability model, same everything downstream.
-
-**Capability declaration vs. capability grant** — The distinction the whole
-sandboxed-tool design rests on, and the one most easily blurred. A tool's
-manifest **declares** what it needs (developer, in the repo); `[tool.<name>]` in
-`nine.toml` **grants** what it gets (operator, on the host). Only the grant is
-effective — nothing reads the declaration at call time, so *a manifest that lies
-gains nothing*. The two must name the same capabilities or the tool does not
-load. Contrast **plugin settings**, which are configuration, not capability.
-
-**Generated tool** — A sandboxed tool authored by Nine itself, via the
-core-intercepted `tool_write` (`sandboxed-tools.md` §5.2, R-TVM.14). A row in
-the store's `tools` table holding the tool's `js` source and its capability
-**declaration** — never a grant. It runs through the exact same sandbox, ABI, and
-bounds as a **developer tool**; the differences are that the *agent* wrote the code
-and that the operator confers a **capability ceiling** rather than a per-tool grant.
-On unless `[tools.agent] enabled = false`, and gated by `[tools] enabled` above it.
-*Nine cannot grant itself capabilities* (R-PLUG.7) holds unchanged: `tool_write`
-writes code, never a grant.
-
-**Capability request** — The agent asking an operator to widen the **capability
-ceiling**, through the `capability_request` tool, after a `tool_write` was refused for
-want of a capability. It records a pending row and confers nothing; an operator
-settles it with `nine grants`, `/grants` or the API. An approval takes effect on the
-running daemon. Distinct from a **gap report**, which tells the supervisor a
-capability is missing and has no decision attached.
-
-**Capability ceiling (`[tools.agent.capabilities]`)** — The **maximum** any
-generated tool may be granted, and the operator's only lever over a tier where the
-agent writes the code. Held in the store, with `nine.toml` reconciled into it at every
-boot: a grant's `source` is `default` (derived from `[workspace].root`, read and
-write), `config` (the file) or `approved` (an operator's decision). An explicit fs
-grant replaces the derived default rather than adding to it. Not a
-per-tool default: a generated tool receives a capability only
-if it **declares** it, so a tool that declares nothing runs with nothing however
-permissive the ceiling is — and a tool cannot declare its way past it. Re-resolved
-on every load, so narrowing the ceiling disables a tool that no longer fits rather
-than leaving it running. Distinct from a **capability grant**, which is per named
-developer tool.
-
-**`js_eval`** — Runs one JavaScript snippet under the generated-tool rules and
-persists **nothing** — no name, no row, no catalog entry (`sandboxed-tools.md`
-§5.3). Not a softer trust tier than `tool_write`, only a less persistent one; it
-exists so iterating on an idea does not accrete single-use tools into the catalog.
-Switched on separately by `[tools.agent] eval`.
-
-**`nine:*` stdlib** — A small, pinned, vendored set of pure-JavaScript modules a
-generated tool may import with no config and no network — `nine:csv`, `nine:date`,
-`nine:diff` (`sandboxed-tools.md` §4.2, R-TVM.15). Embedded in the binary and
-served host-side; authored in-house rather than pulled from npm, so each is known
-to run under the trimmed interpreter and carries no transitive surface.
-
-**External dependencies / lockfile (`[tools.agent.deps]`)** — Off by default. When
-an operator enables it, a generated tool may `import` a named npm package; Nine
-resolves it **once, in the daemon, at `tool_write` time**, verifies its sha512,
-runs no install scripts, and bundles it into the tool's source with esbuild — so a
-called tool has no imports but `nine:*` and no network (R-TVM.15). The **lockfile**
-is the exact third-party code a tool carries (name, version, integrity, requester),
-printed by `nine tools show` / `nine tools deps`. The **interlock**: `deps` +
+**interlock**: `deps` +
 `net.http` on one tool is refused unless `allow_network_deps` — a networked package
 turns the sandbox into an exfiltration path.
 
@@ -444,23 +367,6 @@ MCP has no job methods, so no plugin can start one until jobs land as a `_meta`
 extension on `tools/call`. It dies with the daemon —
 rows still running at boot are marked `lost` — and cancelling is a best-effort
 request. See [Plugin capabilities § 5](plugin-capabilities.md).
-
-**Tool job** — a sandboxed tool declared `resumable`, run as a sequence of
-ordinary calls. Each call does a bounded slice and returns a **cursor** (via
-`again()` from `nine:job`); the daemon persists it and calls the tool again.
-Nothing outlives the wasm instance — the *host* holds the state — so unlike a
-plugin job it **resumes after a restart**, and cancelling is exact rather than a
-request. Bounded by `job_max_calls` and a delay floor. See
-[Sandboxed tools § 6.5](sandboxed-tools.md).
-
-**Cursor (job)** — a resumable tool's own resume point, opaque to Nine, handed
-back verbatim on its next call. Unrelated to a *subscription cursor*, which is a
-durable position in the event journal — both mean "where to pick up", in
-different registries.
-
----
-
-## Skills
 
 **Skill** — A named markdown how-to note (`name`, `description`, `tags`, body)
 stored in the `skills` table. Never preloaded; the description is
@@ -559,7 +465,7 @@ token (2048 tokens ⇒ 8192 characters), because it bounds a result rather than 
 request.
 
 **Volume layout (`/data/`)** — Holds `nine.db` (the SQLite database, plus its
-`-wal`/`-shm` sidecars) and `workspace/` (the sandboxed tools' workspace). All primary
+`-wal`/`-shm` sidecars) and `workspace/` (the file tools' workspace). All primary
 state is therefore on one volume. The `nine` binary (with built-in skills
 embedded) and plugins are immutable image content under `/opt/nine`.
 

@@ -61,12 +61,10 @@ Ordered outside in.
 
 | Document | Covers |
 |----------|--------|
-| [Plugins](plugins.md) | The tool catalog by tier — plugins, shipped sandboxed tools, core — and writing your own |
+| [Plugins](plugins.md) | The tool catalog — built-in Go tools, MCP servers, user plugins — and writing your own |
 | [Plugin transport](plugins-http-transport.md) | HTTP over a Unix socket: the contract and concurrency bounds |
 | [Plugin capabilities](plugin-capabilities.md) | Per-plugin settings, cache directories, and long-running jobs |
 | [Browser automation](browser.md) | Driving a browser via Playwright's MCP server |
-| [Writing sandboxed tools](writing-sandboxed-tools.md) | Adding a JS or wasm tool with two files |
-| [Sandboxed tools](sandboxed-tools.md) | The wasm tool host and its capability model |
 | [Large tool output](tool-output.md) | Caps, spilling to the store, reading back by reference |
 | [Skills](skills.md) | What skills are; creating and managing them |
 | [Self-documentation](self-documentation.md) | How Nine retrieves its own bundled docs and spec |

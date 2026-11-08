@@ -10,9 +10,8 @@ a real break happens.
 |---|---|---|---|
 | **Release version** | "which Nine is this" (user-facing) | SemVer, git-tag driven | git tag `vX.Y.Z` → injected at build |
 | **Plugin protocol** | daemon ↔ plugin wire compat | MCP `initialize` negotiation (`protocolVersion`) | `internal/mcp` |
-| **Sandboxed tool ABI** | daemon ↔ wasm guest compat | single integer, bump on break | `toolvm.ABIVersion` |
 | **Memory DB schema** | SQLite schema | sequential forward migrations, applied on open | `PRAGMA user_version`, currently **22** |
-| **Config schema** | `nine.toml` shape | single integer, bump on break | `schema_version` in `nine.toml`, currently **2** |
+| **Config schema** | `nine.toml` shape | single integer, bump on break | `schema_version` in `nine.toml`, currently **3** |
 
 The release version also names the container image. A `v*` tag builds and
 publishes `ghcr.io/djordlucas/nine` — see [Container image](docker-image.md) for
@@ -84,7 +83,6 @@ change below fails loudly; none changes behavior silently except the last.
 |---|---|
 | `[[agent]]`, `[[agent.routine]]`, `when = { … }`, `[[standing_tool]]` | `[[process]]`; a file that still has one fails to load, naming the form to use ([processes.md](processes.md)) |
 | `[daemon] max_goal_sessions`, `[tools.agent] max_standing` | `[processes] max_running`; the old keys are refused |
-| `[tools.agent] allow_standing`, `tool_write`'s `standing` block | `allow_processes`, the `process` block; the old ones are refused |
 | `nine tools standing`, `nine tool status\|logs\|stop\|start`, `/standing` | `nine process`, `/processes`; the old commands name their replacement |
 | `standing_*` wire messages | `process_*` |
 | A block removed from `nine.toml` left what it declared running | Removing a non-goal `[[process]]` block deletes its process at the next boot; its session is kept |
@@ -116,63 +114,18 @@ which lists a disabled plugin as `off`. A name that matches no plugin disables
 nothing and is reported as a warning at boot — check for it, since a typo here
 fails open.
 
-**The sandboxed-tool host and the tier Nine writes itself are on by default.**
-`[tools] enabled` and `[tools.agent] enabled` both default to true when unset
-(`ToolsConfig.IsEnabled`, `ToolsAgentConfig.IsEnabled`). They previously had to be
-turned on.
-
-⚠️ **A config that never mentioned `[tools]` now runs both.** After upgrading, the
-daemon loads the wasm host, registers the shipped file tools on it, and advertises
-`tool_write`, `tool_delete` and `js_eval` — so the agent writes JavaScript that then
-runs. The ceiling is `[workspace].root`, read and write: the same directory the shipped
-file tools reach and `shell` runs in, so it is not new reach for the agent, but it is
-new reach for a generated tool's dependencies.
-
-Decline either tier explicitly:
-
-```toml
-[tools]
-enabled = false          # no host at all, and no file tools
-
-[tools.agent]
-enabled = false          # keep the host and its shipped tools, without tool_write
-```
-
-`[tools] enabled` is deliberately not environment-overridable, so this is a config-file
-decision in every deployment. Confirm with `nine tools`, which lists the roster the
-daemon actually loaded, and `nine grants`, which prints the ceiling in force.
-
+**The sandboxed-tool host is gone (P4, adr/modular_nine.md §9.10).** The keys that
+configured it (`[tools] enabled/user_dir/timeout/...`, `[tools.agent]`,
+`[[tool.<name>]]`) are refused at load with a message naming the replacement —
+MCP user plugins under `[plugins].user_dir` — rather than silently ignored, and
+`schema_version` is now **3**. The store tables the generated tier wrote
+(`tools`, `tool_state`) are kept dormant so an existing database still opens.
 ## 2. Plugin protocol version
 
 **Removed at P4 of adr/modular_nine.md.** Plugins are MCP servers now, and the MCP
 `initialize` negotiation (`protocolVersion`) is the wire-version check — there is
 no separate integer to bump. A plugin built against a different Nine simply fails
 the handshake with the negotiated revision named in the error.
-
-## 2a. Sandboxed tool ABI version
-
-Sandboxed tools (`spec/contracts/toolvm.md`) are wasm modules, not processes, but
-they raise the same problem for the same reason: a `.wasm` file an operator drops
-in `[tools].user_dir` was built at some other time, against some other version of
-the guest contract.
-
-`toolvm.ABIVersion` is a single integer covering that contract: the `nine_alloc` /
-`nine_run` exports, their signatures, and the shape of the JSON crossing between
-them. **Bump it on any breaking change.** The current version is **1**.
-
-It is **independent of `plugin.ProtocolVersion`** and of the release version. The
-two subsystems share a dispatcher and nothing else — a change to the plugin wire
-envelope has no bearing on what a wasm guest exports, and conflating them would
-force operators to rebuild one when the other moved.
-
-How it works:
-
-- A tool's manifest may state the ABI it was built against (`abi = 1`). An absent
-  value is taken as the current version, since a `js` tool never builds anything
-  and asking its author to think about the ABI would be noise.
-- At load the host **refuses an unsupported version by name**, and `nine tools`
-  reports it — rather than instantiating the module and letting the mismatch
-  surface as a mystery trap on first call.
 
 ## 3. Memory DB schema version
 

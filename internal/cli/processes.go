@@ -180,7 +180,7 @@ func (c *CLI) ProcessSend(cfg *config.Config, id, text string) error {
 // standing run's store could overwrite its cursor, and the operator who "just
 // tested it" would have silently broken the production run. `--live-state` opts
 // in when reproducing a bug needs the real store. Capabilities are never
-// sandboxed — a test that cannot make the tool's actual calls tests nothing.
+// — a test that cannot make the tool's actual calls tests nothing.
 func (c *CLI) ToolCall(cfg *config.Config, tool, argsJSON string, liveState bool) error {
 	if argsJSON == "" {
 		argsJSON = "{}"

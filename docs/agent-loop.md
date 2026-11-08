@@ -146,7 +146,7 @@ The `Dispatcher` is a registry of `handlers` (tool name → function). It routes
 | Category | Tools |
 |----------|-------|
 | Memory | `memory_get`, `memory_set`, `memory_delete`, `memory_list`, `memory_embed`, `memory_query`, `file_search_text` |
-| Workspace | `list_files` (the rest of the file tools are shipped sandboxed tools) |
+| Workspace | `list_files`, `read_file`, `write_file`, `edit_file`, … (built-in file tools) |
 | Catalog | `tool_list` (full enumeration of the advertised tool set), `tool_search`, `skill_list`, `skill_search` (both embedder-gated where they rank) |
 | Skills | `skill_read`, `skill_write`, `skill_modify` |
 | Documentation | `doc_search`, `doc_read` |
@@ -158,9 +158,8 @@ The `Dispatcher` is a registry of `handlers` (tool name → function). It routes
 | Queued messages | `queued_messages_get`, `queued_message_mark_consumed`, and the count/mark-all variants |
 | Human output | `notify_user` |
 | Supervision | `gap_report` (registered, not advertised — it reaches the supervisor, and nothing acts on the event yet) |
-| Capabilities | `capability_request` — ask an operator to widen the generated-tool ceiling ([sandboxed-tools.md](sandboxed-tools.md) §7.2) |
+| Capabilities | `capability_request` — ask an operator to confer a plugin capability ([plugin-capabilities.md](plugin-capabilities.md) §3) |
 | Plugin tools | any tool registered via `RegisterPlugin` |
-| Sandboxed tools | the shipped, developer and generated tiers, routed into the wasm host |
 
 ### Wiring model
 

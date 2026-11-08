@@ -13,24 +13,6 @@ import (
 	"nine/internal/memory/memtest"
 )
 
-const eventRelayManifest = `
-name = "eventrelay"
-kind = "js"
-entrypoint = "./eventrelay.js"
-description = "A live process: turn every event into a model turn."
-live = true
-`
-
-// eventrelay asks the model about each event it is given.
-const eventRelaySource = `
-import { next, turn } from "nine:process";
-export default () => {
-  for (;;) {
-    const t = next();
-    if (t.kind === "event") turn(JSON.stringify(t.event));
-  }
-};`
-
 // eventSetup is a runner with one running live process triggered by events,
 // and an event router over it.
 func eventSetup(t *testing.T, row memory.Process) (*StandingRunner, *EventRouter, *memory.Store, *fakeSessions) {
@@ -39,7 +21,7 @@ func eventSetup(t *testing.T, row memory.Process) (*StandingRunner, *EventRouter
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := NewStandingRunner(store, nil, 1, 2)
+	r := NewStandingRunner(store, 1, 2)
 	sessions := &fakeSessions{}
 	r.SetSessions(sessions)
 	t.Cleanup(r.StopLive)
@@ -195,7 +177,7 @@ func TestEventHeldUntilTheProcessStarts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := NewStandingRunner(store, nil, 1, 2)
+	r := NewStandingRunner(store, 1, 2)
 	sessions := &fakeSessions{}
 	r.SetSessions(sessions)
 	t.Cleanup(r.StopLive)
