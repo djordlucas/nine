@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"nine/internal/mcp"
 )
 
 // socketDir is a short fixed directory for plugin sockets. It must be short to
@@ -44,11 +46,10 @@ const socketReadyTimeout = 30 * time.Second
 // Plugin is a running plugin process with its advertised tools.
 type Plugin struct {
 	Name string
-	// client is the concrete HTTP-over-Unix-socket client, not an interface.
-	// The interface existed only because MCP servers spoke stdio from inside the
-	// manager; now that MCP is reached through a plugin like anything else
-	// (R-PLUG.15), there is one transport and nothing to abstract over.
-	client *httpClient
+	// client reaches the plugin process over its Unix socket: the legacy
+	// envelope client, or an MCP client when the child speaks MCP
+	// (R-PLUG.16, adr/modular_nine.md). The manager handshakes MCP first.
+	client pluginClient
 	Tools  []ToolDefinition
 	// User marks a plugin loaded from the operator's plugins directory rather
 	// than a built-in. Reload stops and re-discovers only User plugins.
@@ -299,6 +300,36 @@ func (m *Manager) StartBuiltinInstance(builtin, instance string, extraEnv ...str
 	return m.start(builtinInstanceLaunch(bin, builtin, instance), extraEnv...)
 }
 
+// StartMCPBuiltin spawns a built-in plugin that serves MCP — one whose handlers
+// are linked into the nine binary — by re-executing that binary as
+// `nine mcp serve <name>` (adr/modular_nine.md P1). Everything past the spawn
+// is identical to StartBuiltin: a separate process, its own socket, the
+// sanitized environment, a cache dir, and the MCP-first handshake in
+// spawnAndDescribe. Only the subcommand differs.
+func (m *Manager) StartMCPBuiltin(name string, extraEnv ...string) (*Plugin, error) {
+	bin, err := m.builtinBinary()
+	if err != nil {
+		return nil, err
+	}
+	return m.start(mcpBuiltinLaunch(bin, name), extraEnv...)
+}
+
+// TryStartMCPBuiltin is TryStartBuiltin for an MCP-serving built-in: it logs and
+// returns nil rather than failing the daemon's boot.
+func (m *Manager) TryStartMCPBuiltin(name string, extraEnv ...string) *Plugin {
+	if m.IsDisabled(name) {
+		m.noteDisabledSkip(name)
+		slog.Info("MCP built-in plugin disabled by config, not starting", "name", name)
+		return nil
+	}
+	p, err := m.StartMCPBuiltin(name, extraEnv...)
+	if err != nil {
+		slog.Warn("MCP built-in plugin start failed", "name", name, "err", err)
+		return nil
+	}
+	return p
+}
+
 // TryStartBuiltinInstance is StartBuiltinInstance with TryStart's tolerance: it
 // logs and returns nil rather than failing the daemon's boot, so one unreachable
 // MCP server does not stop Nine from starting.
@@ -342,7 +373,7 @@ func (m *Manager) start(l launch, extraEnv ...string) (*Plugin, error) {
 		env = append(env, "NINE_PLUGIN_CACHE_DIR="+cacheDir, "NINE_PLUGIN_CACHE_PERSISTENT="+persistentEnv(!ephemeral))
 	}
 
-	cmd, watch, socketPath, desc, err := spawnAndDescribe(l, env)
+	cmd, watch, socketPath, desc, mconn, err := spawnAndDescribe(l, env)
 	if err != nil {
 		if ephemeral && cacheDir != "" {
 			os.RemoveAll(cacheDir) //nolint:errcheck // spawn failed; reclaim the dir we just made
@@ -350,7 +381,14 @@ func (m *Manager) start(l launch, extraEnv ...string) (*Plugin, error) {
 		return nil, err
 	}
 
-	c := newHTTPClient(name, socketPath, cmd, watch, desc.MaxConcurrent)
+	// The handshake in spawnAndDescribe decided which wire the child speaks:
+	// MCP gets the MCP client, the legacy envelope gets the HTTP one.
+	var c pluginClient
+	if mconn != nil {
+		c = newMCPClient(name, socketPath, cmd, watch, mconn)
+	} else {
+		c = newHTTPClient(name, socketPath, cmd, watch, desc.MaxConcurrent)
+	}
 	p := &Plugin{Name: name, client: c, Tools: desc.Tools, AsyncJobs: desc.AsyncJobs,
 		MaxConcurrent: desc.MaxConcurrent, cacheDir: cacheDir, cacheEphemeral: ephemeral}
 	m.track(p)
@@ -391,6 +429,13 @@ func builtinInstanceLaunch(nineBin, builtin, instance string) launch {
 	return launch{name: instance, path: nineBin, args: []string{"plugin", "serve", builtin}}
 }
 
+// mcpBuiltinLaunch runs a built-in that serves MCP out of the nine binary at
+// nineBin: `nine mcp serve <name>` (adr/modular_nine.md). The wire name is the
+// built-in's own, exactly as in builtinLaunch.
+func mcpBuiltinLaunch(nineBin, name string) launch {
+	return launch{name: name, path: nineBin, args: []string{"mcp", "serve", name}}
+}
+
 // MCPInstanceName is the plugin name an MCP server runs under. One function so
 // the daemon that starts it, the roster that lists it, and the operator who
 // disables it all agree on the spelling — `[plugins].disabled = ["mcp:github"]`
@@ -417,21 +462,22 @@ func (m *Manager) builtinBinary() (string, error) {
 }
 
 // spawnAndDescribe spawns l on a fresh Unix socket, waits for it to
-// listen, calls plugin.describe, and checks the reported protocol version. It is
+// listen, and identifies how it speaks — MCP handshake first, legacy
+// plugin.describe as a deprecated fallback (R-PLUG.16). It is
 // the shared front half of both Start (which keeps the process running) and
 // Probe (which stops it). On any failure it tears the process and socket down and
 // returns the error; on success the caller owns cmd and must eventually stop it
-// and remove socketPath. env is the full extra environment (NINE_PLUGIN_SOCKET is
-// appended here).
-func spawnAndDescribe(l launch, env []string) (*exec.Cmd, *procWatch, string, DescribeResult, error) {
+// and remove socketPath, and owns mconn when the plugin speaks MCP. env is the
+// full extra environment (NINE_PLUGIN_SOCKET is appended here).
+func spawnAndDescribe(l launch, env []string) (*exec.Cmd, *procWatch, string, DescribeResult, mcp.Conn, error) {
 	name := l.name
 
 	if err := os.MkdirAll(socketDir, 0o700); err != nil {
-		return nil, nil, "", DescribeResult{}, fmt.Errorf("create socket dir: %w", err)
+		return nil, nil, "", DescribeResult{}, nil, fmt.Errorf("create socket dir: %w", err)
 	}
 	socketPath, err := allocSocketPath(name)
 	if err != nil {
-		return nil, nil, "", DescribeResult{}, err
+		return nil, nil, "", DescribeResult{}, nil, err
 	}
 
 	env = append([]string{}, env...)
@@ -441,7 +487,7 @@ func spawnAndDescribe(l launch, env []string) (*exec.Cmd, *procWatch, string, De
 	cmd.Env = append(sanitizedHostEnv(), env...)
 	cmd.Stderr = os.Stderr // surface plugin startup/listen errors
 	if err := cmd.Start(); err != nil {
-		return nil, nil, "", DescribeResult{}, fmt.Errorf("start plugin: %w", err)
+		return nil, nil, "", DescribeResult{}, nil, fmt.Errorf("start plugin: %w", err)
 	}
 
 	// Claim the process's single Wait up front, so startup can tell a plugin that
@@ -456,24 +502,58 @@ func spawnAndDescribe(l launch, env []string) (*exec.Cmd, *procWatch, string, De
 
 	if err := waitForSocket(socketPath, socketReadyTimeout, watch); err != nil {
 		cleanup()
-		return nil, nil, "", DescribeResult{}, err
+		return nil, nil, "", DescribeResult{}, nil, err
 	}
 
-	// Read max_concurrent on a throwaway client first: net/http forbids mutating
-	// a Transport after a request is issued on it, so the real client's transport
-	// is built afterwards with MaxConnsPerHost already set.
-	desc, err := describeOverSocket(context.Background(), socketPath)
+	// Read max_concurrent on a throwaway client first for the legacy path:
+	// net/http forbids mutating a Transport after a request is issued on it, so
+	// the real client's transport is built afterwards with MaxConnsPerHost
+	// already set. The MCP path takes its concurrency from the transport itself
+	// (unix-socket HTTP is concurrent; stdio would be serial).
+	desc, mconn, err := describeSocket(name, socketPath)
 	if err != nil {
 		cleanup()
-		return nil, nil, "", DescribeResult{}, fmt.Errorf("plugin.describe: %w", err)
+		return nil, nil, "", DescribeResult{}, nil, err
 	}
 
+	return cmd, watch, socketPath, desc, mconn, nil
+}
+
+// describeSocket identifies how the freshly-listening plugin on socketPath
+// speaks. MCP first (adr/modular_nine.md): a child that answers initialize on
+// the socket is an MCP server, and its tools come from tools/list with bare
+// names — first-party tools are never prefixed (§9.9). A child that does not is
+// served through the legacy plugin.describe envelope, which still loads but is
+// deprecated (removal at P4). The returned mcp.Conn is nil on the legacy path.
+func describeSocket(name, socketPath string) (DescribeResult, mcp.Conn, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), mcp.HandshakeTimeout())
+	defer cancel()
+	if c, tools, err := mcp.ConnectSocket(ctx, socketPath, ""); err == nil {
+		// Unix-socket HTTP is concurrent, and MCP has no max_concurrent concept:
+		// 0 (unbounded) is the honest declaration, and async_jobs is false because
+		// jobs ride a _meta extension the manager does not consume yet (§2).
+		return DescribeResult{Tools: mcpToolsToDefs(tools)}, c, nil
+	}
+
+	desc, err := describeOverSocket(context.Background(), socketPath)
+	if err != nil {
+		return DescribeResult{}, nil, fmt.Errorf("plugin.describe: %w", err)
+	}
 	if err := checkProtocolVersion(name, desc.ProtocolVersion); err != nil {
-		cleanup()
-		return nil, nil, "", DescribeResult{}, err
+		return DescribeResult{}, nil, err
 	}
+	slog.Warn("plugin speaks the legacy envelope; it still loads, but the envelope is deprecated — serve MCP instead (adr/modular_nine.md, removal at P4)", "name", name)
+	return desc, nil, nil
+}
 
-	return cmd, watch, socketPath, desc, nil
+// mcpToolsToDefs converts MCP tool listings to the plugin contract's shape. The
+// input schema is carried through unchanged; only the envelope key differs.
+func mcpToolsToDefs(tools []mcp.Tool) []ToolDefinition {
+	defs := make([]ToolDefinition, 0, len(tools))
+	for _, t := range tools {
+		defs = append(defs, ToolDefinition{Name: t.Name, Description: t.Description, InputSchema: t.InputSchema})
+	}
+	return defs
 }
 
 // Probe runs binaryPath through the same handshake Start uses — spawn, wait for
@@ -492,9 +572,12 @@ func Probe(binaryPath string, env ...string) (DescribeResult, error) {
 			"NINE_PLUGIN_CACHE_DIR="+cacheDir,
 			"NINE_PLUGIN_CACHE_PERSISTENT=0")
 	}
-	cmd, watch, socketPath, desc, err := spawnAndDescribe(binaryLaunch(binaryPath), env)
+	cmd, watch, socketPath, desc, mconn, err := spawnAndDescribe(binaryLaunch(binaryPath), env)
 	if err != nil {
 		return DescribeResult{}, err
+	}
+	if mconn != nil {
+		mconn.Stop() //nolint:errcheck // Probe is done with the connection; the process is killed below
 	}
 	cmd.Process.Kill() //nolint:errcheck // best-effort
 	watch.wait()       //nolint:errcheck // reaped by watchProcess

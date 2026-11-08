@@ -1,6 +1,6 @@
 # Modular Nine — built-ins as Go, MCP for subprocess tools
 
-- **Status:** Proposed (architecture analysis). Nothing here is built.
+- **Status:** Proposed. P1 built 2026-11-08 (`internal/mcp` client + mcp-go server, `nine mcp serve shell`, manager dual-stack, `shell` served over MCP); P4–P6 not started.
 - **Date:** 2026-11-01.
 - **Reviewed:** 2026-11-06 — fact-checked against the tree; §1 tool count and names, §2 progress-rail wording, §3 database ownership, §5 supervision wording corrected; test plan added as §10.
 - **Decisions:** 2026-11-06 — §9 items 1–4 answered by the requester: all tiers in scope, both directions, the sandbox fronted by MCP, prefix every server's tools.
@@ -329,7 +329,7 @@ Cross-cutting, at every phase:
 
 | Limit | Detail |
 |-------|--------|
-| Nothing here is built | This is an analysis and a recommendation; no phase of §8 has started. |
+| P1 built, P4–P6 not started | P1 (2026-11-08): `internal/mcp` client + vendored-mcp-go server, `nine mcp serve shell`, manager dual-stack with legacy fallback, `shell` served over MCP, R-PLUG.16. P4 (user plugins MCP-only, toolvm removal), P5 (manager spawns `[[mcp.server]]` directly), P6 (export) are not started. |
 | MCP has no jobs or concurrency hint | First-party servers carry jobs in a `_meta` extension and concurrency stays a transport property; third-party servers keep today's `async_jobs: false`, serial-stdio behavior. |
 | stdio stays serial | One client-side write lock per stdio server; the 3-minute handshake budget and 5-minute call timeout move with the client into the manager. |
 | Server side adds one dependency | §9.5 vendors `mcp-go` for the MCP server; the client in `internal/mcp` stays hand-rolled. |
