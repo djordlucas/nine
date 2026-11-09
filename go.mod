@@ -12,7 +12,7 @@ require (
 	github.com/oapi-codegen/runtime v1.8.0
 	golang.org/x/term v0.47.0
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/libc v1.79.1
+	modernc.org/libc v1.80.1
 	modernc.org/sqlite v1.56.0
 )
 
