@@ -14,8 +14,8 @@ COPY . .
 ARG VERSION=dev
 
 # One binary: the `shell` plugin is served out of nine itself
-# (`nine plugin serve shell`, internal/builtins) and the file, fetching and clock
-# tools are shipped sandboxed tools embedded in it, so there is no per-plugin
+# (`nine mcp serve shell`, internal/builtins) and the file, fetching and clock
+# tools are built-in Go handlers in it, so there is no per-plugin
 # build loop and nothing to copy into /opt/nine/bin at all.
 #
 # CGO_ENABLED=0 makes it a static binary — the SQLite driver is a pure-Go

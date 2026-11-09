@@ -4,7 +4,7 @@
 //	go -C tools run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen ...
 module nine/tools
 
-go 1.26.0
+go 1.26.10
 
 require (
 	github.com/daveshanley/vacuum v0.30.6
