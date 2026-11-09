@@ -11,15 +11,17 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
-	"slices"
 	"os/signal"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	mcpserver "github.com/mark3labs/mcp-go/server"
 	"nine/internal/api/apigen"
 	"nine/internal/config"
+
 	"nine/internal/protocol"
 	"nine/internal/webui"
 )
@@ -46,11 +48,15 @@ type Server struct {
 	httpServer *http.Server
 	version    string
 	startTime  time.Time
+
+	// mcpOnce/mcpSrv hold the lazily built MCP export server (handlers_mcp.go).
+	mcpOnce sync.Once
+	mcpSrv  *mcpserver.MCPServer
 }
 
 // rateLimiter implements a simple token bucket rate limiter.
 type rateLimiter struct {
-	limit       int
+	limit      int
 	burst      int
 	tokens     int
 	lastUpdate time.Time
@@ -59,7 +65,7 @@ type rateLimiter struct {
 
 func newRateLimiter(limit, burst int) *rateLimiter {
 	return &rateLimiter{
-		limit:       limit,
+		limit:      limit,
 		burst:      burst,
 		tokens:     burst,
 		lastUpdate: time.Now(),
@@ -202,8 +208,8 @@ func (rw *responseWriter) Unwrap() http.ResponseWriter { return rw.ResponseWrite
 type Config struct {
 	APIConfig  config.APIConfig
 	SocketPath string
-	Version   string
-	StartTime time.Time
+	Version    string
+	StartTime  time.Time
 }
 
 // NewServer creates a new API server instance.
@@ -223,14 +229,14 @@ func NewServer(cfg Config) *Server {
 	}
 
 	return &Server{
-		config:     cfg.APIConfig,
-		socketPath: cfg.SocketPath,
-		httpServer: server,
-		rateLimiters: make(map[string]*rateLimiter),
+		config:         cfg.APIConfig,
+		socketPath:     cfg.SocketPath,
+		httpServer:     server,
+		rateLimiters:   make(map[string]*rateLimiter),
 		trustedProxies: trusted,
 		sessions:       newSessionStore(),
-		version:    cfg.Version,
-		startTime:  cfg.StartTime,
+		version:        cfg.Version,
+		startTime:      cfg.StartTime,
 	}
 }
 
@@ -440,6 +446,11 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// The WebSocket transport is outside the document (OpenAPI cannot describe
 	// one) and outside /api/v1 (spec/contracts/api.md API-STREAM-1).
 	mux.HandleFunc("GET "+wsPath, s.handleWebSocket)
+
+	// The MCP export endpoint is outside the document for the same reason
+	// (adr/modular_nine.md §6, P6) but inside /api/, so the auth chain covers
+	// it like every other API route.
+	mux.Handle(mcpPath, s.mcpHandler())
 }
 
 // getDaemonClient returns a connected client to the daemon.

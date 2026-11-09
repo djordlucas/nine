@@ -163,6 +163,11 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 		return c.Plugins(cfg)
 	case "tools":
 		return fmt.Errorf("the sandboxed-tool tier is removed (adr/modular_nine.md §9.10); use `nine plugins` for the plugin roster and `nine tool call <name>` to call a tool")
+	case "mcp":
+		if len(args) > 1 && args[1] == "export" {
+			return c.MCPExport(cfg)
+		}
+		return fmt.Errorf("%s", mcpUsage)
 	case "process", "processes":
 		return c.processCommand(cfg, args[1:])
 	case "tool":
@@ -351,6 +356,8 @@ func levenshtein(a, b string) int {
 }
 
 const toolUsage = "usage: nine tool <validate|call> …"
+
+const mcpUsage = "usage: nine mcp export  — serve the daemon's tools as an MCP stdio server (`nine mcp serve <name>` is spawned by the daemon, not run by hand)"
 
 const processUsage = "usage: nine process [list | show <id> [-n N] | start <id> | stop <id> | send <id> <text>]"
 
