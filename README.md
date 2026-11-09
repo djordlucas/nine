@@ -146,7 +146,7 @@ configuration reference: [installation](docs/installation.md),
 Every other term — workflow, process, standing agent, supervisor, checkpoint, journal —
 is defined in the [glossary](docs/glossary.md).
 
-**Modular.** Built-in tools, custom plugins, MCP servers, and JS/Wasm tools all reach the agent
+**Modular.** Built-in tools, custom plugins and MCP servers all reach the agent
 through one dispatcher. Roles gate which of them a given worker may call.
 
 **Persistent.** Conversations, goals, workflows, memory, files, skills and processes live
@@ -192,9 +192,8 @@ they open a Unix socket, send a message, relay the reply. Everything long-lived 
 │            ┌──────────────────▼─────────┐   ┌────────────▼──────────────┐ │
 │            │ LLM Queue → provider       │   │ Tool Dispatcher           │ │
 │            │ supervisor > active        │   │  ├ core (in-process)      │ │
-│            │           > background     │   │  ├ plugins (subprocess)   │ │
-│            └────────────────────────────┘   │  └ wasm host (capability) │ │
-│                                             └────────────┬──────────────┘ │
+│            │           > background     │   │  └ plugins (subprocess)   │ │
+│                                             └────────────┘ │
 │   ┌──────────────────────────────────────────────────────▼──────────────┐ │
 │   │ memory.Store → SQLite, one file: all durable state + event journal  │ │
 │   └─────────────────────────────────────────────────────────────────────┘ │
@@ -225,9 +224,9 @@ Topology, concurrency, the turn lifecycle, boot sequence and the invariants that
 
 ## Tools
 
-**The tool dispatcher** is the single place a tool name resolves to an implementation, with three
-backends behind one namespace: core tools calling the store in-process, plugin subprocesses, and
-the wasm sandbox host. A name resolves to exactly one — an unexpected collision is a load failure,
+**The tool dispatcher** is the single place a tool name resolves to an implementation, with two
+backends behind one namespace: built-in tools calling the store in-process, and plugin subprocesses
+reached over MCP. A name resolves to exactly one — an unexpected collision is a load failure,
 not a silent override.
 
 **Plugins** are tool containers, and may run asynchronous jobs. Nine ships four — `shell`,
