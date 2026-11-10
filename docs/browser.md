@@ -258,7 +258,7 @@ prefixing, a navigate + evaluate round trip against a local `httptest` server,
 and a screenshot reaching the cache dir.
 
 The rest of the MCP suite runs against a compiled fixture in
-`internal/builtins/testmcpserver/`, which is fast and hermetic but agrees with
+`internal/mcp/testmcpserver/`, which is fast and hermetic but agrees with
 Nine by construction. This test is the one that catches a handshake quirk or a
 reply shape upstream changed.
 

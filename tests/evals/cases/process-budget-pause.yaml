@@ -1,16 +1,18 @@
 id: process-budget-pause
-description: "A process that spends its budget is paused and the pause reaches the human feed: a reflect process allowed two turns a day takes two ticks, and its third is refused with E_BUDGET. Every model passes it or nine is broken — what is measured is the runtime, not the model."
+description: "A process that spends its budget is paused and the pause reaches the human feed: a pursue process allowed two turns a day takes two ticks, and its third is refused with E_BUDGET. Every model passes it or nine is broken — what is measured is the runtime, not the model. (pursue drives the ticks because a reflect process skips a clock tick with nothing new to digest, and nothing here ever happens.)"
 track: live
 tier: basic
 tags: [processes, budgets]
 
 setup:
   processes:
-    # reflect: no goal binds it, so nothing the model does in its turns can
-    # stop it before its budget does — a goal the model pauses would.
+    # A goal binds it, so every clock tick runs a turn; the goal never
+    # completes, so nothing the process's model does stops it before its
+    # budget does. Goal-bound processes are named goal:<name>.
     - name: time-log
-      tool: reflect
-      role: reflection
+      tool: pursue
+      goal: "Keep a running log of the time of day in notes/timelog.md, one line per tick. This goal never completes; leave it active."
+      role: pursue
       every: 2s
       budget: { turns_per_day: 2 }
 
@@ -22,9 +24,9 @@ wait:
 
 expect:
   side_effects:
-    notifications: { contains: "Process time-log spent its budget for the day (2 of 2 turns" }
+    notifications: { contains: "Process goal:time-log spent its budget for the day (2 of 2 turns" }
     processes:
-      time-log: { state: stopped, stopped_by: budget }
+      goal:time-log: { state: stopped, stopped_by: budget }
 
 runs: 3
 pass_threshold: "3/3"

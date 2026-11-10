@@ -1,32 +1,30 @@
 id: process-event-max-depth
-description: "Phase 4's acceptance: two processes triggered by each other's turns stop at max_depth. A conversation's turn (depth 0) triggers both; each one's turn (depth 1) triggers the other; their turns at depth 2 trigger nothing, and each skip is journaled. It measures the runtime, so every model must pass it."
+description: "The max_depth lineage bound: a slice process's piped report lands at depth 1, so the turn it starts in the receiving process runs at depth 2 — and the turn_end event that turn journals reaches an on:[turn_end] process at max_depth (2), where it is refused and the skip is journaled. It measures the runtime, so every model must pass it. (The toolvm is gone, so no shipped live program turns on events anymore; what remains to gate is the depth bound itself, journaled as process_skipped.)"
 track: live
 tier: basic
 tags: [processes, events]
 
 setup:
-  files:
-    .tools/eventecho.toml: |
-      name = "eventecho"
-      kind = "js"
-      entrypoint = "./eventecho.js"
-      description = "A live process that answers every event it is given."
-      live = true
-    .tools/eventecho.js: |
-      import { next, turn } from "nine:process";
-      export default () => {
-        for (;;) {
-          const t = next();
-          if (t.kind === "event") turn("Reply with the single word: noted");
-        }
-      };
+  mcp_servers:
+    - name: fixture
+      command: "${NINE_EVAL_MCP_FIXTURE}"
   processes:
-    - name: echo-a
-      tool: eventecho
-      role: process
-      on: [turn_end]
-    - name: echo-b
-      tool: eventecho
+    - name: oncall
+      tool: pursue
+      goal: "Handle deploy incidents reported to you: record each one, with its error code, in notes/incident.md in the workspace."
+      role: pursue
+      every: 1h
+    - name: deploy-watch
+      tool: fixture__mcp_echo
+      every: 2s
+      report_to: oncall
+      args:
+        message: "Deploy 42 failed with error code DEPLOY-FAILED-42."
+    # A live process subscribed to turn_end: the depth-2 turn oncall runs for
+    # the piped report ends in an event for echo at depth 2 = max_depth, and
+    # the skip is journaled under echo.
+    - name: echo
+      tool: reflect
       role: process
       on: [turn_end]
 
@@ -37,14 +35,12 @@ wait:
   seconds: 240
   until:
     journal:
-      - { agent: echo-a, type: process_skipped, contains: '"max_depth"' }
-      - { agent: echo-b, type: process_skipped, contains: '"max_depth"' }
+      - { agent: echo, type: process_skipped, contains: '"max_depth"' }
 
 expect:
   side_effects:
     journal:
-      - { agent: echo-a, type: process_skipped, contains: '"max_depth"' }
-      - { agent: echo-b, type: process_skipped, contains: '"max_depth"' }
+      - { agent: echo, type: process_skipped, contains: '"max_depth"' }
 
 runs: 3
 pass_threshold: "3/3"

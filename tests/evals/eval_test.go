@@ -229,11 +229,11 @@ func filterTier(cases []*runner.Case, tier string) []*runner.Case {
 // that is meant to grade the model. The fixture is hermetic and instant, and the
 // path under test is identical: the daemon cannot tell one MCP server from
 // another. Fidelity against the real thing is covered separately, and
-// deliberately out of band, by internal/builtins/mcp_playwright_test.go.
+// deliberately out of band, by internal/plugin/mcp_playwright_test.go.
 func buildMCPFixture(t *testing.T) {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), "testmcpserver")
-	cmd := exec.Command("go", "build", "-mod=vendor", "-o", bin, "./internal/builtins/testmcpserver")
+	cmd := exec.Command("go", "build", "-mod=vendor", "-o", bin, "./internal/mcp/testmcpserver")
 	cmd.Dir = moduleRoot(t)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build MCP fixture: %v\n%s", err, out)
