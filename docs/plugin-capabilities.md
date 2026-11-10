@@ -1,5 +1,12 @@
 # Plugin capabilities
 
+> **Superseded at P4 of [adr/modular_nine.md](../adr/modular_nine.md).** The legacy
+> `plugin.describe`/`plugin.call` envelope this document specifies was removed: a
+> plugin is an MCP server now, and MCP has no job methods, so the job contract in §5
+> is suspended (R-PLUG.12). Kept as a design record, not a current description. The
+> normative contract is `spec/contracts/plugin.md`; the authoring guide is
+> [plugins.md](plugins.md).
+
 A plugin gets three capabilities from the daemon, all carried on the existing
 daemon-to-plugin transport:
 

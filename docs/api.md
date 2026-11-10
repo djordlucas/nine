@@ -262,18 +262,17 @@ ones it stopped, and `done` or `archived` leave them stopped. A process its goal
 stopped is restarted this way, not with `/processes/{id}/start`. An unknown
 status is `400`, an unknown goal `404`.
 
-`GET /capabilities` returns the generated-tool ceiling in force — each grant with its
-`source`, one of `default`, `config` or `approved` — together with every request the
-agent has made to widen it.
+`GET /capabilities` returns the capability grants and requests recorded in the store —
+each grant with its `source`, one of `default`, `config` or `approved`, together with
+every request the agent has made. This surface is historical: the sandbox that grants
+conferred was removed with the toolvm (adr/modular_nine.md §9.10), so `capability_request`
+records the request and then refuses it, and nothing derives grants any more.
 
-`POST /capabilities/{id}/decision` takes `{"action": "approve"|"deny"|"revoke"}`. An
-approval or revocation applies to the running daemon: the ceiling is installed on the
-live tool host and the generated catalog re-projected against it, so a tool that
-could not load becomes callable on its next turn with no restart. `approve` and
-`deny` take a request id; `revoke` takes a grant id, and only an `approved` grant is
-revocable — a `config` or `default` grant is rewritten from `nine.toml` at the next
-boot. A bad action, an already-settled request and an unrevocable grant are all
-`400`. See [plugin-capabilities.md](plugin-capabilities.md) §3.
+`POST /capabilities/{id}/decision` takes `{"action": "approve"|"deny"|"revoke"}`. The
+decision is recorded in the store and that is the whole effect — with no sandbox to
+confer on, an approval changes nothing about what a tool can do. `approve` and `deny`
+take a request id; `revoke` takes a grant id. A bad action, an already-settled request
+and an unrevocable grant are all `400`.
 
 ### Other
 

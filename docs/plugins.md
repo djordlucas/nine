@@ -15,14 +15,14 @@ running as the daemon's user.
 Built-in plugins are fixed at build time — not generated or loaded at runtime.
 `shell` is Go, compiled **into the `nine` binary** rather than shipped as a
 separate executable; the daemon starts it by re-executing itself as
-`nine plugin serve shell`, so it still runs as its own isolated process while
+`nine mcp serve shell`, so it still runs as its own isolated process while
 there is only one artifact to build and ship.
 
 Capabilities Nine does not implement itself arrive two further ways, both of which present as ordinary plugins: an **MCP server** declared in `[[mcp.server]]` (see [MCP servers](#mcp-servers)), and a **user plugin** dropped in `[plugins].user_dir`. Browser automation is the worked example of the first — see [Browser Automation](browser.md).
 
 **Withholding a plugin.** `[plugins] disabled = ["shell"]` (or `NINE_PLUGINS_DISABLED=shell`) stops a plugin from ever starting — no process, no socket, no tools registered. It works by name and covers built-ins, MCP servers (as `mcp:<name>`), and your own plugins alike. This is how you run without `shell`, which executes arbitrary commands. A disabled plugin is reported by `nine plugins` as `off` rather than silently missing, so a tool that has gone absent is traceable to the decision that removed it. It is an operator setting read at boot; no agent or wire message can switch a plugin on or off.
 
-Sharing the binary does not widen what a plugin process does. `plugin serve` is dispatched before nine's normal startup, so a plugin child loads **no config file** (the operator's `nine.toml` carries the embeddings API key and every other plugin's settings), writes **no** `nine.log`, and holds no way to start a daemon. Its output goes to stderr, which the daemon captures. Run by hand without `NINE_PLUGIN_SOCKET`, it refuses to start.
+Sharing the binary does not widen what a plugin process does. `mcp serve` is dispatched before nine's normal startup, so a plugin child loads **no config file** (the operator's `nine.toml` carries the embeddings API key and every other plugin's settings), writes **no** `nine.log`, and holds no way to start a daemon. Its output goes to stderr, which the daemon captures. Run by hand without `NINE_PLUGIN_SOCKET` it refuses to start, unless `NINE_MCP_TRANSPORT=stdio` opts into serving over stdio.
 
 Several tools — memory, semantic search, workspace listing, and skills — are **core-intercepted**: built directly into the agent loop rather than served by a subprocess or run in the sandbox. See [Core-intercepted tools](#core-intercepted-tools) below.
 

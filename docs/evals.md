@@ -165,9 +165,9 @@ session:
   config:                            # per-case nine.toml overrides (dotted keys)
     tools.max_output_tokens: 150     # honored: the dispatcher output cap, so a small
                                      # fixture can exercise the spill path
-    tools.agent.enabled: true        # honored: turns on tool_write/tool_delete
     processes.max_running: 1         # honored: the cap a start counts against
-    tools.agent.eval: true           # honored: also offers js_eval (needs enabled)
+                                     # ([tools.agent] and the other toolvm-era keys
+                                     # are refused at load — config schema 3)
 
 # ── HITL script: canned human answers, matched in order to ask_human calls ──
 human_answers: []                    # e.g. ["yes", "the staging cluster"]
