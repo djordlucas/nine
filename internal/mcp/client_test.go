@@ -32,7 +32,7 @@ func findModuleRoot(t *testing.T) string {
 }
 
 // buildTestMCPServer compiles the stdio MCP fixture shipped in
-// internal/builtins/testmcpserver (adr/modular_nine.md §10: the internal/mcp
+// internal/mcp/testmcpserver (adr/modular_nine.md §10: the internal/mcp
 // client is unit-tested against it).
 func buildTestMCPServer(t *testing.T) string {
 	t.Helper()

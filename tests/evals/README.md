@@ -102,12 +102,12 @@ setup:
 ```
 
 `NINE_EVAL_MCP_FIXTURE` is the in-repo server under
-`internal/builtins/testmcpserver`, compiled by `TestLiveMatrix` on the live path
+`internal/mcp/testmcpserver`, compiled by `TestLiveMatrix` on the live path
 only — `make eval-replay` stays infra-free. It is hermetic where a real `npx`
 server would drag network, a minute-plus package resolve, and someone else's
 release cadence into a suite meant to grade the model; the daemon cannot tell the
 two apart. Fidelity against a real server is covered out of band by
-`internal/builtins/mcp_playwright_test.go` (see [browser.md](../../docs/browser.md) §7).
+`internal/plugin/mcp_playwright_test.go` (see [browser.md](../../docs/browser.md) §7).
 
 `mcp-tool-call` is the worked example: it asserts the model calls the *prefixed*
 tool (`fixture__mcp_echo`) and that its output reaches the answer.
