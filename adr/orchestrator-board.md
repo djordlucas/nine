@@ -81,8 +81,9 @@ results, replan. Two options:
   no file writes. Structurally safer (a planner that is itself a leaf cannot do the work), at the
   cost of a new role in the registry and the eval matrix.
 
-Proposed: **A now, B as an option** — the board tools are grantable per role either way, and B
-becomes a one-line role definition once A's behavior is measured. Open question (§4).
+**Decided 2026-11-10: A** — reuse the `orchestrator` role and grant it the `board_*` tools. The board
+tools are grantable per role either way, so B stays available as a follow-up: a one-line `planner`
+role definition once A's behavior is measured in the evals.
 
 ### 2.3 The workers
 
@@ -140,7 +141,8 @@ Admission is refused on the spot, with a reason the poster can act on:
 
 ## 4. Open questions (for discussion before building)
 
-1. **Role shape**: reuse `orchestrator` (option A) or add a narrow `planner` role (B)?
+1. ~~**Role shape**~~ — decided 2026-11-10: reuse `orchestrator` (§2.2); a narrow `planner` role
+   remains a possible follow-up.
 2. **Worker kind**: sub-agents only at first, processes too, or both from phase 1?
 3. **Dispatch style**: does `run_agent` stay wait-for-result, or does the orchestrator post and
    poll `board_list`?
