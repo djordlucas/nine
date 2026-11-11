@@ -108,20 +108,40 @@ Operator surface (full CRUD): see §2.6 — `nine board`, `/api/v1/board`, a web
 
 ### 2.2 The orchestrator
 
-Today `orchestrator` is the role of the session that follows your conversation — all tools
-(`docs/roles.md`). The pattern makes that role's *job* planning and dispatch: post tasks, review
-results, replan. Two options:
+Today `orchestrator` is the role of the session that follows your conversation — with **all
+tools** (`docs/roles.md`). The pattern makes that role's *job* planning and dispatch: post tasks,
+review results, replan.
 
-- **A — reuse the `orchestrator` role**, adding the `board_*` tools to its allowlist. Zero new
-  roles; `adr/deferred-tool-schemas.md` already measures this role's tool cost, so the board
-  tools must fit the deferred/promoted model (they are cheap, text-only schemas).
-- **B — a new narrow `planner` role**: board tools + `run_agent(s)` + read-only tools, no shell,
-  no file writes. Structurally safer (a planner that is itself a leaf cannot do the work), at the
-  cost of a new role in the registry and the eval matrix.
+**Decided 2026-11-10 (revised same day): the orchestrator does not get all tools.** Its allowlist
+is the orchestration set only — no shell, no file writes, nothing that does the work itself:
 
-**Decided 2026-11-10: A** — reuse the `orchestrator` role and grant it the `board_*` tools. The board
-tools are grantable per role either way, so B stays available as a follow-up: a one-line `planner`
-role definition once A's behavior is measured in the evals.
+| Group | Tools | Why |
+|---|---|---|
+| Board | `board_post`, `board_list`, `board_get` | dispatch and review (§2.1) |
+| Delegation | `run_agent`, `run_agents` | spawn workers |
+| Discovery | `tool_search`/`tool_list`, **`role_search`/`role_list`** (new, §2.2.1) | find tools and worker roles before dispatching |
+| Context | `memory_get`/`memory_list`, `doc_search`, `skill_read` | read what it plans against |
+| Signal | `notify_user`, `gap_report` | reach the operator |
+
+Nothing is lost system-wide: **every other tool stays available in the leaf roles** — `executor`
+keeps the full set, `software-dev` has shell+files, `sysadmin` operates, `report-writer` researches
+and writes, `monitor` and `code-reviewer` read (`docs/roles.md`). Narrowing `orchestrator` only
+means the orchestrator reaches those tools *through a worker*, which is the point of the pattern:
+blast radius stays structural, and the orchestrator cannot do the work itself. When this ships,
+the roles table in `docs/roles.md` changes `orchestrator` from "all" to this set. The board tools
+must still fit the deferred/promoted tool-cost model (`adr/deferred-tool-schemas.md`) — they are
+cheap, text-only schemas.
+
+#### 2.2.1 Role discovery
+
+The orchestrator cannot pick a worker role it cannot see. **Decided 2026-11-10:** add
+`role_list` / `role_search` tools that query the role registry (the same registry
+`run_agent`'s `role` enum is rendered from, `internal/agent/register_subagents.go`) — mirroring
+`tool_list` / `tool_search` over the tool catalog. `role_search(query)` returns matching roles
+with their tool allowlists and descriptions, so the orchestrator searches roles the way it
+searches tools: "who can run shell against the repo?" → `software-dev`, then `run_agent(task,
+role="software-dev")` or a board task whose worker claims it. Roles are data in `skills/roles/`,
+so operator- and agent-authored roles are discoverable the same way.
 
 ### 2.3 The workers
 
@@ -237,8 +257,9 @@ operator ──► web UI Board section ──► REST /api/v1/board ──► d
 
 ## 4. Open questions (for discussion before building)
 
-1. ~~**Role shape**~~ — decided 2026-11-10: reuse `orchestrator` (§2.2); a narrow `planner` role
-   remains a possible follow-up.
+1. ~~**Role shape**~~ — decided 2026-11-10, revised same day: keep the `orchestrator` role name,
+   but its allowlist is the orchestration set only, not all tools (§2.2); role discovery via
+   `role_search`/`role_list` (§2.2.1); every other tool stays in the leaf roles.
 2. ~~**Worker kind**~~ — decided 2026-11-10: sub-agent sessions only at first; process-backed
    workers arrive in phase 3 (§2.3, §5).
 3. ~~**Dispatch style**~~ — decided 2026-11-10: both. `run_agent` stays wait-for-result and its
@@ -281,3 +302,6 @@ operator ──► web UI Board section ──► REST /api/v1/board ──► d
   durable record, delivery is the convenience.
 - The board changes what sessions *see*, not what they *may do*: every tool call a worker makes
   is still bounded by its role's allowlist.
+- Narrowing `orchestrator` to the orchestration set (§2.2) is not a capability cut: every tool it
+  loses remains in a leaf role, reachable by delegation. What it loses is the ability to do the
+  work itself — which is the point.
