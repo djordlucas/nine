@@ -276,13 +276,20 @@ func Assemble(c AssemblyConfig) *Assembly {
 		daemon.AddSubscriber(runner.EventRouter())
 	}
 	// The board tools (adr/orchestrator-board.md §2.1): store-backed control,
-	// granted per role by the builder's filterByRole.
+	// granted per role by the builder's filterByRole. Finished posted/detached
+	// tasks wake their poster (restricted condition turn, §2.3); a gone poster
+	// gets the human feed via the runner's notification path.
 	if c.Store != nil {
-		builder.SetBoardControl(boardControl{
+		bc := boardControl{
 			store:     c.Store,
 			maxDepth:  c.MaxDepth,
 			maxQueued: c.Board.MaxQueuedOrDefault(),
-		})
+			wake:      daemon.WakeAgent,
+		}
+		if runner != nil {
+			bc.feed = runner.notifyHuman
+		}
+		builder.SetBoardControl(bc)
 	}
 	// agent_stop (§2.4) runs over the daemon's session stop.
 	builder.SetSessionControl(sessionControl{daemon: daemon})

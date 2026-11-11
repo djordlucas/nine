@@ -437,9 +437,12 @@ var migrations = []migrationStep{
 	}},
 
 	// 22 → 23: the board (adr/orchestrator-board.md §2.1). initSchema has
-	// already created board_tasks in its current shape; this step only stamps
-	// the version.
-	{name: "board_tasks", fn: func(q sqlExec) error { return nil }},
+	// already created board_tasks in its current shape on a fresh database;
+	// on one that predates it the CREATE is a no-op only if the table exists,
+	// so make sure the column this step relies on is there either way.
+	{name: "board_tasks", fn: func(q sqlExec) error {
+		return addColumnIfMissing(q, "board_tasks", "source", "TEXT NOT NULL DEFAULT 'post'")
+	}},
 }
 
 // convertGoalPlans turns each session plan with a pursue routine into the

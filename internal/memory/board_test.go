@@ -14,18 +14,18 @@ func TestBoardTaskCRUD(t *testing.T) {
 	}
 
 	// Create requires a title.
-	if _, err := store.BoardTaskCreate("  ", "spec", "conv1", 0); err == nil {
+	if _, err := store.BoardTaskCreate("  ", "spec", "conv1", "", 0); err == nil {
 		t.Fatal("create with empty title: want error")
 	}
 
-	t1, err := store.BoardTaskCreate("Fix the queue", "investigate INC-1", "conv1", 0)
+	t1, err := store.BoardTaskCreate("Fix the queue", "investigate INC-1", "conv1", "", 0)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	if t1.Status != memory.BoardQueued || t1.PostedBy != "conv1" || t1.ID == "" {
 		t.Fatalf("bad initial task: %+v", t1)
 	}
-	t2, err := store.BoardTaskCreate("Write the report", "", "conv1", 0)
+	t2, err := store.BoardTaskCreate("Write the report", "", "conv1", "", 0)
 	if err != nil {
 		t.Fatalf("create 2: %v", err)
 	}
@@ -109,11 +109,11 @@ func TestBoardTaskAdmissionHelpers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a, err := store.BoardTaskCreate("Same", "same spec", "conv1", 0)
+	a, err := store.BoardTaskCreate("Same", "same spec", "conv1", "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.BoardTaskCreate("Same", "same spec", "conv1", 0); err != nil {
+	if _, err := store.BoardTaskCreate("Same", "same spec", "conv1", "", 0); err != nil {
 		t.Fatal(err) // creating a duplicate row is allowed at store level; the guard is FindAlike
 	}
 

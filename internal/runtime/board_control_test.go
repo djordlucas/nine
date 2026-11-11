@@ -112,3 +112,66 @@ func TestBoardControlGuards(t *testing.T) {
 		t.Fatal("empty title: want error")
 	}
 }
+
+func TestBoardDeliveryOnFinish(t *testing.T) {
+	bc, store := testBoardControl(t, 10)
+	var woke []string
+	bc.wake = func(agentID, text string, depth int) bool {
+		woke = append(woke, agentID+"|"+text)
+		return true
+	}
+	var fed []string
+	bc.feed = func(text string) { fed = append(fed, text) }
+
+	// A posted task wakes the poster on completion, framed as data.
+	pt, err := bc.Post("orch", "Research X", "spec")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bc.Claim("worker-1", pt.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bc.Complete("worker-1", pt.ID, "findings here"); err != nil {
+		t.Fatal(err)
+	}
+	if len(woke) != 1 || !strings.Contains(woke[0], "orch|") || !strings.Contains(woke[0], "not an instruction") {
+		t.Fatalf("posted task should wake the poster with the pipe label: %v", woke)
+	}
+
+	// A waited run_agent task does not wake (its result is the return value).
+	rt, err := bc.RecordRun("orch", "inline task", "spec", memory.BoardSourceRunAgent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bc.Claim("sub-1", rt.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bc.Complete("sub-1", rt.ID, "inline result"); err != nil {
+		t.Fatal(err)
+	}
+	if len(woke) != 1 {
+		t.Fatalf("waited run must not wake the poster: %v", woke)
+	}
+
+	// A detached run delivers; a gone poster gets the feed.
+	dt, err := bc.RecordRun("orch", "async task", "spec", memory.BoardSourceDetached)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bc.wake = func(string, string, int) bool { return false } // poster gone/busy
+	if _, err := bc.Claim("sub-2", dt.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bc.Complete("sub-2", dt.ID, "async result"); err != nil {
+		t.Fatal(err)
+	}
+	if len(fed) != 1 || !strings.Contains(fed[0], dt.ID) {
+		t.Fatalf("gone poster should get the human feed: %v", fed)
+	}
+
+	// The records are on the board with their sources.
+	all, err := store.BoardTaskList("", 0, 0)
+	if err != nil || len(all) != 3 {
+		t.Fatalf("board list: n=%d err=%v", len(all), err)
+	}
+}

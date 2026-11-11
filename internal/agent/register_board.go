@@ -26,6 +26,9 @@ var BoardToolNames = []string{
 // internal/runtime (board_control.go) and wired by Assemble.
 type BoardControl interface {
 	Post(agentID, title, spec string) (memory.BoardTask, error)
+	// RecordRun records a delegation's run on the board (waited or detached),
+	// returning the queued task; the child claims and finishes it.
+	RecordRun(parentID, title, spec, source string) (memory.BoardTask, error)
 	List(agentID, status string, limit, offset int) ([]memory.BoardTask, error)
 	Get(agentID, id string) (memory.BoardTask, error)
 	Claim(agentID, id string) (memory.BoardTask, error)

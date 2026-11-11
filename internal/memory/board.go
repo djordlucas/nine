@@ -34,6 +34,10 @@ type BoardTask struct {
 	ClaimedBy  string `json:"claimed_by,omitempty"`
 	Status     string `json:"status"`
 	Result     string `json:"result,omitempty"`
+	// Source is how the task entered the board: "post" (board_post),
+	// "run_agent" (a waited delegation), "detached" (run_agent wait:false).
+	// Only non-waited sources deliver their result to the poster on finish.
+	Source     string `json:"source"`
 	Depth      int    `json:"depth"`
 	CreatedAt  string `json:"created_at"`
 	ClaimedAt  string `json:"claimed_at,omitempty"`
@@ -62,25 +66,35 @@ func validBoardStatus(s string) bool {
 func scanBoardTask(s interface{ Scan(...any) error }) (BoardTask, error) {
 	var t BoardTask
 	err := s.Scan(&t.ID, &t.Title, &t.Spec, &t.PostedBy, &t.ClaimedBy, &t.Status,
-		&t.Result, &t.Depth, &t.CreatedAt, &t.ClaimedAt, &t.FinishedAt, &t.UpdatedAt)
+		&t.Result, &t.Source, &t.Depth, &t.CreatedAt, &t.ClaimedAt, &t.FinishedAt, &t.UpdatedAt)
 	return t, err
 }
 
-const boardTaskCols = `id, title, spec, posted_by, claimed_by, status, result, depth,
+const boardTaskCols = `id, title, spec, posted_by, claimed_by, status, result, source, depth,
 	created_at, claimed_at, finished_at, updated_at`
+
+// Board task sources.
+const (
+	BoardSourcePost     = "post"
+	BoardSourceRunAgent = "run_agent"
+	BoardSourceDetached = "detached"
+)
 
 // BoardTaskCreate appends a queued task. The title must be non-empty; depth is
 // the poster's lineage depth, recorded so posting chains can end at max_depth.
-func (s *Store) BoardTaskCreate(title, spec, postedBy string, depth int) (BoardTask, error) {
+func (s *Store) BoardTaskCreate(title, spec, postedBy, source string, depth int) (BoardTask, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return BoardTask{}, fmt.Errorf("board task: title is required")
 	}
 	id := "task_" + NewID()
+	if source == "" {
+		source = BoardSourcePost
+	}
 	_, err := s.db.Exec(
-		`INSERT INTO board_tasks (id, title, spec, posted_by, status, depth)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		id, title, spec, postedBy, BoardQueued, depth)
+		`INSERT INTO board_tasks (id, title, spec, posted_by, status, source, depth)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		id, title, spec, postedBy, BoardQueued, source, depth)
 	if err != nil {
 		return BoardTask{}, err
 	}

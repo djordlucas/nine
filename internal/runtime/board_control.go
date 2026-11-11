@@ -22,12 +22,17 @@ const (
 
 // boardControl is the daemon's implementation of agent.BoardControl: the store
 // owns the rows and the atomic transitions; this type owns admission (the §2.4
-// guards) and the journal events. Wired by Assemble, granted per role by the
-// builder's filterByRole.
+// guards), the journal events, and result delivery to the poster. Wired by
+// Assemble, granted per role by the builder's filterByRole.
 type boardControl struct {
 	store     *memory.Store
 	maxDepth  int // [processes] max_depth, defaulted
 	maxQueued int // [board] max_queued, defaulted
+	// wake delivers a finished task's result to its poster as a restricted
+	// condition turn (daemon.WakeAgent); feed posts to the human feed when the
+	// poster is gone. Nil disables delivery (tests).
+	wake func(agentID, text string, depth int) bool
+	feed func(text string)
 }
 
 // maxDepthOrDefault mirrors the runner's bound for the posting guard.
@@ -66,7 +71,7 @@ func (b boardControl) Post(agentID, title, spec string) (memory.BoardTask, error
 	} else if n >= b.maxQueued {
 		return memory.BoardTask{}, fmt.Errorf("board_post: %d open tasks is at your max_queued %d; finish or cancel some first", n, b.maxQueued)
 	}
-	t, err := b.store.BoardTaskCreate(title, spec, agentID, 0)
+	t, err := b.store.BoardTaskCreate(title, spec, agentID, memory.BoardSourcePost, 0)
 	if err != nil {
 		return memory.BoardTask{}, err
 	}
@@ -140,6 +145,37 @@ func (b boardControl) finish(agentID, id, status, text, evType string) (memory.B
 		return memory.BoardTask{}, fmt.Errorf("board task %s is not running under you — claim it first, or it is already finished", id)
 	}
 	journalTransition(b.store, agentID, evType, map[string]any{"id": t.ID, "title": t.Title, "result": clipDetail(text, 2000)})
+	// Result delivery (§2.3): a posted or detached task's result goes to its
+	// poster as a restricted condition turn, framed as data (the pipe label);
+	// a waited run_agent's result is the tool's return value already, so it is
+	// not delivered again. A poster that is gone gets the human feed.
+	if t.Source != memory.BoardSourceRunAgent && t.PostedBy != "" && t.PostedBy != agentID {
+		labeled := pipeLabel(agentID, clipDetail(text, 2000))
+		if b.wake != nil && b.wake(t.PostedBy, labeled, t.Depth+1) {
+			return t, nil
+		}
+		if b.feed != nil {
+			b.feed(fmt.Sprintf("[Board task %s finished by %s, poster %s not running] %s", t.ID, agentID, t.PostedBy, clipDetail(text, 500)))
+		}
+	}
+	return t, nil
+}
+
+// RecordRun records a delegation's run on the board (adr §2.3: waited and
+// posted work share one record). It creates the task queued under the parent
+// and returns it; the child claims it and finishes it. source is
+// "run_agent" for a waited call, "detached" for run_agent wait:false.
+func (b boardControl) RecordRun(parentID, title, spec, source string) (memory.BoardTask, error) {
+	if b.store == nil {
+		return memory.BoardTask{}, fmt.Errorf("board is not enabled here")
+	}
+	t, err := b.store.BoardTaskCreate(title, spec, parentID, source, 0)
+	if err != nil {
+		return memory.BoardTask{}, err
+	}
+	journalTransition(b.store, parentID, EvTaskPosted, map[string]any{
+		"id": t.ID, "title": t.Title, "source": source, "status": t.Status,
+	})
 	return t, nil
 }
 

@@ -834,17 +834,45 @@ func (f *AgentBuilder) CoreDispatcher() *agent.Dispatcher {
 // for a delegating role. Spawned children run the leaf role named by the
 // delegation call (default executor) with depthGuard-1 (R-ROLE.6/8/9).
 func (f *AgentBuilder) registerSubAgentTools(d *agent.Dispatcher, lc LoopConfig, agentID string, role Role, depthGuard int, gate gateCtx) {
-	spawnOne := func(ctx context.Context, parentID, task, extraCtx, roleName string) agent.SubAgentResult {
-		leaf := f.roles.ResolveLeaf(roleName)
-		subID := newUUID()
-		prompt := task
+	// boardCtrl is the board a run is recorded on, or nil when the board is
+	// not wired (adr/orchestrator-board.md §2.3: every run shares one record).
+	var bc agent.BoardControl
+	if p := f.board.Load(); p != nil && *p != nil {
+		bc = *p
+	}
+
+	// prepare spawns the bookkeeping for one sub-agent run: the session id, the
+	// role, the prompt, and — when the board is wired — the board task the run
+	// is recorded on (claimed by the child). It returns the board task id (""
+	// when the board is off or the record failed, which never fails the run).
+	prepare := func(parentID, task, extraCtx, roleName string, wait bool) (subID, taskID string, leaf Role, prompt string) {
+		leaf = f.roles.ResolveLeaf(roleName)
+		subID = newUUID()
+		prompt = task
 		if extraCtx != "" {
 			prompt = extraCtx + "\n\n" + task
 		}
-		taskPreview := truncate(task, 80)
-		removeSubAgent := f.trackSubAgent(subID, task, leaf.Name)
+		if bc != nil {
+			source := memory.BoardSourceRunAgent
+			if !wait {
+				source = memory.BoardSourceDetached
+			}
+			if t, err := bc.RecordRun(parentID, truncate(task, 80), prompt, source); err == nil {
+				taskID = t.ID
+				if _, err := bc.Claim(subID, t.ID); err != nil {
+					slog.Warn("board: claim spawned run", "task", t.ID, "err", err)
+				}
+			}
+		}
 		f.emitProgressEvent(parentID, protocol.NewSubAgentStartMsg(parentID, subID, task, leaf.Name))
-		slog.Info("sub_agent_start", "parent_id", parentID, "sub_id", subID, "role", leaf.Name, "task", taskPreview)
+		slog.Info("sub_agent_start", "parent_id", parentID, "sub_id", subID, "role", leaf.Name, "task", truncate(task, 80))
+		return subID, taskID, leaf, prompt
+	}
+
+	// run executes one prepared sub-agent and records the outcome on its board
+	// task, if any.
+	run := func(ctx context.Context, parentID, task, subID, taskID string, leaf Role, prompt string) agent.SubAgentResult {
+		removeSubAgent := f.trackSubAgent(subID, task, leaf.Name)
 		spawnStart := time.Now()
 		// The child inherits this loop's gate owner, so an approval prompt from
 		// any delegation depth still lands on the session a human is watching.
@@ -868,13 +896,40 @@ func (f *AgentBuilder) registerSubAgentTools(d *agent.Dispatcher, lc LoopConfig,
 		case err != nil:
 			status = "failed"
 		}
+		if bc != nil && taskID != "" {
+			if err == nil {
+				_, ferr := bc.Complete(subID, taskID, result)
+				if ferr != nil {
+					slog.Warn("board: complete run", "task", taskID, "err", ferr)
+				}
+			} else {
+				_, ferr := bc.Fail(subID, taskID, err.Error())
+				if ferr != nil {
+					slog.Warn("board: fail run", "task", taskID, "err", ferr)
+				}
+			}
+		}
 		slog.Info("sub_agent_end", "sub_id", subID, "status", status, "elapsed_ms", time.Since(spawnStart).Milliseconds())
 		f.emitProgressEvent(parentID, protocol.NewSubAgentEndMsg(parentID, subID, task, status, leaf.Name))
 		return agent.SubAgentResult{Task: task, Result: result, Err: err}
 	}
 
-	agent.RegisterRunAgent(d, func(ctx context.Context, task, extraCtx, roleName string) (string, error) {
-		r := spawnOne(ctx, agentID, task, extraCtx, roleName)
+	spawnOne := func(ctx context.Context, parentID, task, extraCtx, roleName string, wait bool) agent.SubAgentResult {
+		subID, taskID, leaf, prompt := prepare(parentID, task, extraCtx, roleName, wait)
+		return run(ctx, parentID, task, subID, taskID, leaf, prompt)
+	}
+
+	agent.RegisterRunAgent(d, func(ctx context.Context, task, extraCtx, roleName string, wait bool) (string, error) {
+		if !wait {
+			// Detached (adr/orchestrator-board.md §2.3): spawn without blocking
+			// and return the board task id; the result is delivered as a
+			// restricted turn when the task completes. The child outlives this
+			// turn, so it runs on a context the turn's end cannot cancel.
+			subID, taskID, leaf, prompt := prepare(agentID, task, extraCtx, roleName, false)
+			go run(context.WithoutCancel(ctx), agentID, task, subID, taskID, leaf, prompt)
+			return fmt.Sprintf("Spawned sub-agent %s; the run is on the board as %s. The result is delivered to you when it completes.", subID, taskID), nil
+		}
+		r := spawnOne(ctx, agentID, task, extraCtx, roleName, true)
 		return r.Result, r.Err
 	})
 
@@ -894,7 +949,7 @@ func (f *AgentBuilder) registerSubAgentTools(d *agent.Dispatcher, lc LoopConfig,
 			wg.Add(1)
 			go func(i int, t agent.SubAgentTask) {
 				defer wg.Done()
-				results[i] = spawnOne(tctx, agentID, t.Task, t.Context, t.Role)
+				results[i] = spawnOne(tctx, agentID, t.Task, t.Context, t.Role, true)
 			}(i, t)
 		}
 		wg.Wait()
@@ -902,7 +957,7 @@ func (f *AgentBuilder) registerSubAgentTools(d *agent.Dispatcher, lc LoopConfig,
 	})
 
 	agent.RegisterWorkflowTools(d, agentID, lc.Memory, func(ctx context.Context, task, extraCtx string) (string, error) {
-		r := spawnOne(ctx, agentID, task, extraCtx, "")
+		r := spawnOne(ctx, agentID, task, extraCtx, "", true)
 		return r.Result, r.Err
 	})
 
