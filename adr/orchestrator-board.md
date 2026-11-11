@@ -35,7 +35,31 @@ child session, blocks the parent until the answer, and returns text. That covers
 The orchestrator pattern needs exactly one new concept — the board — and everything else already
 exists.
 
+**Today** — dispatch is wait-for-result or config-declared loops; no shared queue:
+
+```
+conversation ──run_agent(task, role)──► sub-agent session ──► text result (parent blocks)
+                                       (leaf role bounds tools)
+operator config ──[[process]]──► process session (clock / events / pipes) ──report_to──► feed
+```
+
 ## 2. The proposal
+
+**The shape** — one orchestrator dispatches onto the board, worker sub-agents claim and run,
+results come back as restricted turns; every transition is a journal event:
+
+```
+                       board_post                board_list / board_get
+orchestrator session ──────────► ┌───────────────────────────┐ ◄────────── any session
+(role grants board_*)             │  BOARD  (board_tasks)     │  (reads open to all)
+                                  │  queued → running → done/ │
+worker sub-agent ◄──board_claim───┤  failed / cancelled       ├────board_complete/fail──► …
+(leaf role bounds    (atomic,     │  + task_* journal events  │
+ the tool calls)       one winner)└───────────────────────────┘
+       │                                        │
+       │            result delivered: WakeAgent restricted turn (PipedTurnTools,
+       └──────────► poster's session; retried at turn_end; human feed if poster gone)
+```
 
 ### 2.1 The board
 
@@ -54,7 +78,22 @@ A `board_tasks` table in the store (one SQLite writer, like everything else):
 
 Every transition is a journal event (`task_posted`, `task_claimed`, `task_done`, `task_failed`,
 `task_cancelled`) in `session_events`, so the existing stream, `nine trace`, and a future web-UI
-tile see the board live. Reads are open to every session; writes go through role-granted tools:
+tile see the board live.
+
+**Lifecycle** — one writer per transition (the store), reads open to all:
+
+```
+            board_post            board_claim (atomic)     board_complete / board_fail
+   ( ) ───────────────► queued ─────────────────────► running ─────────────────────► done
+                          │  ▲                            │                               ▲
+                          │  │                            │ board_fail                    │ result
+                          │  │ board_cancel               ▼                               │
+                          └────┴────────────────────► cancelled ◄───────────────────────────┘
+                                               board_cancel          board_fail(reason)
+   guards on post: depth < max_depth · queue < max_queued · budget left · not an alike duplicate
+```
+
+Reads are open to every session; writes go through role-granted tools:
 
 | Tool | Who | Effect |
 |---|---|---|
