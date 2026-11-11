@@ -200,6 +200,11 @@ task_timeout_seconds = 1800
 # args     = { root = "/srv/corpus" }
 # enabled  = true                   # false declares it without starting it
 
+# The orchestrator board (docs/board.md): the per-poster cap on open
+# (queued+running) tasks. Posts beyond the cap are refused with the reason.
+# [board]
+# max_queued = 100
+
 [processes]
 # Processes running at once, live and slice alike: the one cap on background
 # work. It sizes the live pool, apart from tool calls; a goal session or a

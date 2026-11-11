@@ -39,11 +39,19 @@ privileged role, not a minimal one — write the allowlist deliberately.
 
 | Role | Tools | Delegates | Spawns goals | Persists | Interactive |
 |---|---|:---:|:---:|:---:|:---:|
-| `orchestrator` | all | ✓ | ✓ | ✓ | ✓ |
+| `orchestrator` | orchestration set: board tools, delegation, role/tool search, memory, docs, notify (§ below) | ✓ | ✓ | ✓ | ✓ |
 | `pursue` | all | ✓ | ✗ | ✓ | ✗ |
 | `reflection` | memory tools, `skill_read` | ✗ | ✗ | ✓ | ✗ |
 
-`orchestrator` is the session that follows your conversation. `pursue` works a
+`orchestrator` is the session that follows your conversation, and the default
+agent for a new one (the web UI's new-conversation picker and
+`POST /api/v1/conversations` `role` field choose it; `GET /api/v1/roles` lists
+the registry). It plans and dispatches rather than doing the work itself: its
+allowlist is the orchestration set — `board_*`, `run_agent(s)`,
+`role_list`/`role_search`, `tool_list`/`tool_search`, the memory group,
+`doc_*`/`skill_read`, queued messages, `notify_user`, `agent_stop`, and the
+process controls — no shell, no file tools. Everything else stays in the leaf
+roles, reachable by delegation ([board.md](board.md)). `pursue` works a
 [goal session](goal-sessions.md) in the background — it can delegate, but it
 cannot spawn further goal sessions, so pursuit does not multiply itself.
 `reflection` maintains Nine's self-model and is deliberately given almost

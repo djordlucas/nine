@@ -223,7 +223,7 @@ Admission is refused on the spot, with a reason the poster can act on:
 
 ### 2.5 Selecting the agent in the UI
 
-**Decided 2026-11-10:** the web UI needs a way to select the **agent** (the session's role) when
+**Decided 2026-11-10, built 2026-11-11:** the web UI has a way to select the **agent** (the session's role) when
 starting a conversation, and the **default is `orchestrator`**. Today "New conversation"
 (`docs/web-ui.md`) calls `NewConversationInteractive` (`internal/protocol/client.go`), which
 takes only `interactive` — the daemon resolves the role with no operator choice

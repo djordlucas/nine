@@ -15,7 +15,7 @@ docker run -e NINE_API_AUTH_TOKEN=… -p 8080:8080 ghcr.io/djordlucas/nine
 | Address | the API server's: `http://<host>:<port>/` |
 | Sign in | the API token (`[api] auth_token`), once per browser |
 | Turn off | `[api] ui = false`, or `NINE_API_UI=false` |
-| Layout | a rail on desktop; a bottom tab bar under 768px, with More for the rest |
+| Layout | a rail on desktop; a bottom tab bar under 768px, with More for the rest | — Board and the rest sit under "More"
 | Theme | follows the system; the theme control switches to light or dark |
 | Lists | on a desktop, ‹ folds a list away beside what it opens and › brings it back; the browser remembers which, per list |
 | Colour | black and white (the reverse in dark mode): links are underlined text, counts and meters ink. Red marks only what failed or needs you; the connection light keeps green and amber. |
@@ -124,7 +124,7 @@ journaled, so it is gone after a reload.
 
 | Control | Does |
 |---|---|
-| New conversation | starts an interactive session, which may ask you questions |
+| New conversation | starts an interactive session, which may ask you questions; an agent (role) picker beside it chooses the session's role — default `orchestrator`, from `GET /api/v1/roles` |
 | The title | renames the conversation: one line, up to 80 characters. Enter saves, Escape cancels. |
 | Send | sends a turn; Enter sends on a keyboard, Shift+Enter is a new line. A message sent mid-turn waits for the turn to end. |
 | T | asks for the model's reasoning on the next turn (`force_think`) |

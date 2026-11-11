@@ -85,10 +85,10 @@ resumable by attaching again).
 
 **Work unit** — Nine has two fundamental units: a **session** (an agent loop —
 conversation, goal-pursue, reflection, or sub-agent) and a **tool call** (the
-atom, issued within a turn). There is **no "Task" entity**: finite work is
-either a sub-agent (transient) or a workflow step (durable), and
-`task_timeout_seconds` is just the sub-agent timeout. See
-[overview.md §3](../spec/overview.md).
+atom, issued within a turn). Finite work is a sub-agent (transient), a workflow
+step (durable), or a **board task** (`task_<hex>` on the board —
+[board.md](board.md)); `task_timeout_seconds` is just the sub-agent timeout.
+See [overview.md §3](../spec/overview.md).
 
 **Goal** — A persistent, open-ended intention with no defined end condition
 (e.g. "monitor this repo for security issues"). A goal carries a status
