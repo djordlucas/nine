@@ -13,6 +13,7 @@ import { Journal } from './pages/Journal';
 import { Login } from './pages/Login';
 import { NotFound } from './pages/NotFound';
 import { Processes } from './pages/Processes';
+import { Board } from './pages/Board';
 import { System } from './pages/System';
 import { Tools } from './pages/Tools';
 
@@ -55,6 +56,9 @@ export function App() {
           <Route path="/processes/:id/session" component={Processes} />
           <Route path="/processes/:id" component={Processes} />
           <Route path="/processes" component={Processes} />
+          <Route path="/board/new" component={Board} />
+          <Route path="/board/:id" component={Board} />
+          <Route path="/board" component={Board} />
           <Route path="/goals/workflows/:id" component={Goals} />
           <Route path="/goals/:id" component={Goals} />
           <Route path="/goals" component={Goals} />

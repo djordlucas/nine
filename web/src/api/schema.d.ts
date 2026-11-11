@@ -872,6 +872,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/board": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List board tasks
+         * @description Returns the board — every session's tasks — newest first, optionally filtered to one status. Reads are open to every session; writes go through the role-gated tools or this operator surface.
+         */
+        get: operations["listBoardTasks"];
+        put?: never;
+        /**
+         * Post a board task
+         * @description Creates a task as the operator (posted_by "operator"), queued until a worker claims it. The admission guards apply — a refusal is 400 with the reason.
+         */
+        post: operations["createBoardTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/board/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a board task
+         * @description Returns one board task in full, including its result when it is done or failed.
+         */
+        get: operations["getBoardTask"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a board task
+         * @description Removes the task row outright. Journaled as task_deleted.
+         */
+        delete: operations["deleteBoardTask"];
+        options?: never;
+        head?: never;
+        /**
+         * Update a board task
+         * @description Operator edit of one task. Only the fields present are changed.
+         */
+        patch: operations["updateBoardTask"];
+        trace?: never;
+    };
     "/questions": {
         parameters: {
             query?: never;
@@ -1860,6 +1912,56 @@ export interface components {
             id?: string;
             message?: string;
             seen?: boolean;
+        };
+        /** @description A page of board tasks. */
+        ListBoardTasksResponse: {
+            data?: components["schemas"]["BoardTask"][];
+            pagination?: components["schemas"]["Pagination"];
+        };
+        /** @description One board task (adr/orchestrator-board.md §2.1). */
+        BoardTask: {
+            /** @description task_<hex> */
+            id: string;
+            title: string;
+            /** @description the task itself — data for the worker, not an instruction */
+            spec?: string;
+            /** @description session id, or "operator" */
+            posted_by: string;
+            claimed_by?: string;
+            /** @enum {string} */
+            status: "queued" | "running" | "done" | "failed" | "cancelled";
+            result?: string;
+            /**
+             * @description how the task entered the board
+             * @enum {string}
+             */
+            source: "post" | "run_agent" | "detached";
+            depth: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            claimed_at?: string;
+            /** Format: date-time */
+            finished_at?: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        BoardTaskCreate: {
+            title: string;
+            spec?: string;
+        };
+        BoardTaskPatch: {
+            title?: string;
+            spec?: string;
+            /** @enum {string} */
+            status?: "queued" | "running" | "done" | "failed" | "cancelled";
+            result?: string;
+            /** @description clears claimed_by */
+            clear_claim?: boolean;
+        };
+        BoardTaskDeleteResponse: {
+            id: string;
+            message: string;
         };
         /** @description Which page a list response carries. Paging is offset based; there is no cursor. */
         Pagination: {
@@ -5303,6 +5405,293 @@ export interface operations {
                 };
             };
             /** @description refused in the current state; the message says why */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listBoardTasks: {
+        parameters: {
+            query?: {
+                /** @description Optional status filter */
+                status?: "queued" | "running" | "done" | "failed" | "cancelled";
+                /** @description Maximum items to return */
+                limit?: number;
+                /** @description Items to skip before the page */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListBoardTasksResponse"];
+                };
+            };
+            /** @description invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createBoardTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BoardTaskCreate"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardTask"];
+                };
+            };
+            /** @description refused (empty title, unknown field) or invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getBoardTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description task id, as the list shows it (task_…) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardTask"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteBoardTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description task id, as the list shows it (task_…) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardTaskDeleteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateBoardTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description task id, as the list shows it (task_…) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BoardTaskPatch"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardTask"];
+                };
+            };
+            /** @description invalid request (unknown status, bad body) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description conflict (invalid transition) */
             409: {
                 headers: {
                     [name: string]: unknown;
