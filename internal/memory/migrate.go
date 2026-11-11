@@ -435,6 +435,11 @@ var migrations = []migrationStep{
 		_, err := q.Exec(taintedSchema)
 		return err
 	}},
+
+	// 22 → 23: the board (adr/orchestrator-board.md §2.1). initSchema has
+	// already created board_tasks in its current shape; this step only stamps
+	// the version.
+	{name: "board_tasks", fn: func(q sqlExec) error { return nil }},
 }
 
 // convertGoalPlans turns each session plan with a pursue routine into the

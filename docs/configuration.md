@@ -717,11 +717,11 @@ provider/model/endpoint at launch without editing the file — convenient in Doc
 ## Schema version
 
 ```toml
-schema_version = 2
+schema_version = 4
 ```
 
 An optional top-level integer naming the **shape of the file**, not the version
-of Nine that wrote it. Omit it and it means 1 — every config written before the
+of Nine that wrote it (current: 4). Omit it and it means 1 — every config written before the
 field existed is a schema-1 file.
 
 | Value | Behavior |
@@ -737,6 +737,7 @@ current one at load; the file on disk stays exactly as you wrote it.
 |---|---|
 | 2 | `[[process]]` and `[processes]` replace `[[agent]]`, `[[agent.routine]]`, `when = { … }`, `[[standing_tool]]` and `[daemon] standing_agents_authoritative`; `[processes] max_running` replaces `[daemon] max_goal_sessions` and `[tools.agent] max_standing`; `[tools.agent] allow_processes` replaces `allow_standing`. A schema-1 file that uses none of them loads unchanged; one that does is refused, naming the `[[process]]` form ([processes.md](processes.md)). |
 | 3 | The toolvm is removed (adr/modular_nine.md 9.10): `[tools]` keeps only `max_output_tokens`; `[tools] enabled/user_dir/timeout/max_ops/memory_mb/max_concurrent`, `[tools.agent]`, and `[[tool.<name>]]` are refused, naming the replacement; `[tools] job_min_delay_ms/job_workers` moved to `[plugins]`. A schema-2 file with none of the retired keys loads unchanged; one that has one is refused. |
+| 4 | `[board] max_queued` added (adr/orchestrator-board.md §2.4): the per-poster cap on open board tasks, default 100. Optional — a schema-3 file without it loads unchanged. |
 
 ### Keys nothing reads
 

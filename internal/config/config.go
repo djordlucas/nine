@@ -41,7 +41,10 @@ type Config struct {
 	// (adr/process-sessions.md), and Processes their shared limits.
 	Process   []ProcessConfig `toml:"process"`
 	Processes ProcessesConfig `toml:"processes"`
-	Tools     ToolsConfig     `toml:"tools"`
+	// Board is the `[board]` table: limits for the orchestrator board
+	// (adr/orchestrator-board.md §2.4).
+	Board BoardConfig  `toml:"board"`
+	Tools ToolsConfig `toml:"tools"`
 	MCP       MCPConfig       `toml:"mcp"`
 	// Context is the `[context]` table: how tools reach the model's context
 	// (adr/deferred-tool-schemas.md).
@@ -244,6 +247,25 @@ type ProcessesConfig struct {
 	// ProcessRoles lists the roles a genesis-written process may run under.
 	// 0 uses the default ["process"].
 	ProcessRoles []string `toml:"process_roles"`
+}
+
+// BoardConfig is the `[board]` table: limits shared by the board's tasks
+// (adr/orchestrator-board.md §2.4).
+type BoardConfig struct {
+	// MaxQueued caps one poster's queued+running tasks; a post beyond the cap
+	// is refused. 0 is the default, 100.
+	MaxQueued int `toml:"max_queued"`
+}
+
+// DefaultBoardMaxQueued is [board] max_queued when unset.
+const DefaultBoardMaxQueued = 100
+
+// MaxQueuedOrDefault returns [board] max_queued, defaulted.
+func (c BoardConfig) MaxQueuedOrDefault() int {
+	if c.MaxQueued <= 0 {
+		return DefaultBoardMaxQueued
+	}
+	return c.MaxQueued
 }
 
 // DefaultMaxDepth is [processes] max_depth when unset: a process may react to
@@ -933,7 +955,7 @@ type EmbeddingsConfig struct {
 // CurrentConfigSchema is the config shape this binary understands. Bump it in
 // the same change that makes an incompatible alteration to the layout, and add
 // the matching step to configMigrations.
-const CurrentConfigSchema = 3
+const CurrentConfigSchema = 4
 
 // SchemaTooNewError is returned when a config declares a shape this binary does
 // not know. It is a distinct type because the caller must not treat it the way
@@ -969,6 +991,11 @@ var configMigrations = []func(*Config) error{
 	// (retiredToolKeys below), and [tools] job_min_delay_ms/job_workers moved to
 	// [plugins]. Nothing is translated: a schema-2 file that reaches this step
 	// has none of the retired keys left to change.
+	func(*Config) error { return nil },
+	// 3 → 4: the `[board]` table is added (adr/orchestrator-board.md §2.4).
+	// It is optional and defaults when absent, so there is nothing to
+	// translate; bumping the schema is what makes an older binary refuse a
+	// file that carries it instead of silently ignoring the limits.
 	func(*Config) error { return nil },
 }
 
