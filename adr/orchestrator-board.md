@@ -87,9 +87,11 @@ role definition once A's behavior is measured in the evals.
 
 ### 2.3 The workers
 
-A worker is an ordinary **sub-agent session** (`run_agent`/`run_agents`) or a **process session**
-(`pursue`, goal-bound) whose task comes from the board instead of — or in addition to — its
-prompt:
+A worker is an ordinary **sub-agent session** (`run_agent`/`run_agents`) whose task comes from the
+board instead of — or in addition to — its prompt. **Decided 2026-11-10: sub-agents only at
+first**; process sessions (`pursue`, goal-bound) join as workers in phase 3 (§5), as the
+autonomous/background flavor — they already carry budgets, pipes and `max_depth`, so they need no
+new machinery, but the board semantics should be proven on the conversation-shaped path first.
 
 1. Worker claims a task (`board_claim`) — claim is atomic in the store, so two workers cannot
    take one task.
@@ -143,7 +145,8 @@ Admission is refused on the spot, with a reason the poster can act on:
 
 1. ~~**Role shape**~~ — decided 2026-11-10: reuse `orchestrator` (§2.2); a narrow `planner` role
    remains a possible follow-up.
-2. **Worker kind**: sub-agents only at first, processes too, or both from phase 1?
+2. ~~**Worker kind**~~ — decided 2026-11-10: sub-agent sessions only at first; process-backed
+   workers arrive in phase 3 (§2.3, §5).
 3. **Dispatch style**: does `run_agent` stay wait-for-result, or does the orchestrator post and
    poll `board_list`?
 4. **Who may post**: only the orchestrator/planner role, or any session whose role grants
