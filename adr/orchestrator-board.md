@@ -158,6 +158,16 @@ new machinery, but the board semantics should be proven on the conversation-shap
    (`docs/roles.md` §limits).
 3. Worker writes the outcome back (`board_complete` / `board_fail`).
 
+**Decided 2026-11-10: a new sub-agent per task — workers do not keep running.** Each task gets a
+fresh child session (matching `run_agent` semantics): no cross-task context contamination, and
+isolation stays structural. The cost is cold context per task, but continuity belongs on the
+board, not in the worker: the task's `spec` carries what earlier tasks produced, and the result
+stays on the board for the orchestrator to read. Persistent workers — a session that loops
+`board_claim` and keeps context across tasks — are deferred to phase 3 with process-backed
+workers (§5), where lifecycle rules (idle timeout, budget, stop conditions) and the depth guard
+already exist. The tradeoff then is cheaper per-task runs for a homogeneous queue vs. cross-task
+context risk, and the board's records make either choice safe.
+
 **Decided 2026-11-10: both modes, one record.** Two execution modes, mirroring `run_agent` vs
 posted work in `adr/coded-sub-agents.md` §5:
 
