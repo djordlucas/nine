@@ -158,8 +158,9 @@ Admission is refused on the spot, with a reason the poster can act on:
    shipped on the `orchestrator` role only by default (§2.1).
 5. ~~**Delivery**~~ — decided 2026-11-10: `WakeAgent` restricted turn primary, human feed when
    the poster is gone; queued messages not used for results (§2.3).
-6. **Naming**: `board_*` tools and `board_tasks` table, or revive `task_*` names (the glossary's
-   "no Task entity" line would then change)?
+6. ~~**Naming**~~ — decided 2026-11-10: `board_*` tools and the `board_tasks` table. "Task" is
+   already overloaded (`run_agents` takes `tasks`, workflows have steps, jobs); "board" is
+   unambiguous. The glossary's "no Task entity" line stays until the feature ships.
 
 ## 5. Phasing
 
