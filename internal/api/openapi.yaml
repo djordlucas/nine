@@ -54,6 +54,8 @@ tags:
   description: 'Everything Nine runs between turns: list, inspect, start, stop, message.'
 - name: board
   description: 'The orchestrator board (adr/orchestrator-board.md): the shared task queue — full CRUD for operators.'
+- name: roles
+  description: 'The role registry: the agents conversations and delegations can run as (adr/orchestrator-board.md §2.2.1).'
 - name: events
   description: 'The daemon-wide journal, live: every session''s events and the state changes the store
     records.'
@@ -2555,6 +2557,33 @@ paths:
       security:
       - bearerAuth: []
       - cookieAuth: []
+  /roles:
+    get:
+      operationId: listRoles
+      summary: List roles
+      description: The role registry — the agents a conversation can run as and a delegation can pick (adr/orchestrator-board.md §2.2.1) — with each role's tool allowlist. The new-conversation agent picker and run_agent's role choices both draw on this.
+      tags:
+      - roles
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListRolesResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
   /questions:
     get:
       operationId: listQuestions
@@ -3580,6 +3609,9 @@ components:
       properties:
         interactive:
           type: boolean
+        role:
+          type: string
+          description: The agent the conversation runs as (adr/orchestrator-board.md §2.5); default orchestrator. GET /roles lists the registry. An unknown role is refused.
     CreateConversationResponse:
       description: The conversation that was created.
       type: object
@@ -4590,6 +4622,33 @@ components:
           type: string
         message:
           type: string
+    ListRolesResponse:
+      description: The role registry.
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoleInfo'
+    RoleInfo:
+      description: One role — name, description and tool allowlist.
+      type: object
+      required: [name, all_tools]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        all_tools:
+          type: boolean
+          description: true when the role holds every tool; otherwise tools is the strict allowlist
+        tools:
+          type: array
+          items:
+            type: string
+        delegates:
+          type: boolean
+          description: may spawn sub-agents (run_agent/run_agents)
     Pagination:
       description: Which page a list response carries. Paging is offset based; there is no cursor.
       type: object

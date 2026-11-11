@@ -73,7 +73,11 @@ func (s *Server) CreateConversation(ctx context.Context, request apigen.CreateCo
 	}
 	defer cl.Close()
 
-	id, role, instanceName, err := cl.NewConversationInteractive(derefBool(request.Body.Interactive))
+	role := ""
+	if request.Body.Role != nil {
+		role = *request.Body.Role
+	}
+	id, role, instanceName, err := cl.NewConversationWithRole(derefBool(request.Body.Interactive), role)
 	if err != nil {
 		return apigen.CreateConversation500JSONResponse(
 			errorBody("server_error", err.Error(), nil)), nil

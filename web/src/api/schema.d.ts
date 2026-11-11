@@ -924,6 +924,26 @@ export interface paths {
         patch: operations["updateBoardTask"];
         trace?: never;
     };
+    "/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List roles
+         * @description The role registry — the agents a conversation can run as and a delegation can pick (adr/orchestrator-board.md §2.2.1) — with each role's tool allowlist. The new-conversation agent picker and run_agent's role choices both draw on this.
+         */
+        get: operations["listRoles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/questions": {
         parameters: {
             query?: never;
@@ -1449,6 +1469,8 @@ export interface components {
         /** @description Options for a new conversation. */
         CreateConversationRequest: {
             interactive?: boolean;
+            /** @description The agent the conversation runs as (adr/orchestrator-board.md §2.5); default orchestrator. GET /roles lists the registry. An unknown role is refused. */
+            role?: string;
         };
         /** @description The conversation that was created. */
         CreateConversationResponse: {
@@ -1962,6 +1984,20 @@ export interface components {
         BoardTaskDeleteResponse: {
             id: string;
             message: string;
+        };
+        /** @description The role registry. */
+        ListRolesResponse: {
+            data?: components["schemas"]["RoleInfo"][];
+        };
+        /** @description One role — name, description and tool allowlist. */
+        RoleInfo: {
+            name: string;
+            description?: string;
+            /** @description true when the role holds every tool; otherwise tools is the strict allowlist */
+            all_tools: boolean;
+            tools?: string[];
+            /** @description may spawn sub-agents (run_agent/run_agents) */
+            delegates?: boolean;
         };
         /** @description Which page a list response carries. Paging is offset based; there is no cursor. */
         Pagination: {
@@ -5700,6 +5736,46 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listRoles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListRolesResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
             429: components["responses"]["TooManyRequests"];
             /** @description internal error */
             500: {

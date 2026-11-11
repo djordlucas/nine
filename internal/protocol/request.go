@@ -32,7 +32,12 @@ type Request interface {
 
 // NewConversationReq opens a fresh conversation. Interactive marks it
 // HITL-eligible; the web UI's conversations set it.
-type NewConversationReq struct{ Interactive bool }
+type NewConversationReq struct {
+	Interactive bool
+	// Role names the agent the new conversation runs as (adr/orchestrator-board.md
+	// §2.5); empty is the default, orchestrator.
+	Role string
+}
 
 // AttachReq reconnects to an existing conversation.
 type AttachReq struct{ AgentID string }
@@ -86,6 +91,8 @@ type ProcessSendReq struct {
 
 // Board operator CRUD (adr/orchestrator-board.md §2.6). Create and update carry
 // their payload as JSON in Text.
+type RolesListReq struct{}
+
 type BoardListReq struct{ Status string }
 type BoardGetReq struct{ ID string }
 type BoardCreateReq struct{ Title, Spec string }
@@ -240,6 +247,7 @@ func (BoardGetReq) Type() MsgType          { return TypeBoardGet }
 func (BoardCreateReq) Type() MsgType       { return TypeBoardCreate }
 func (BoardUpdateReq) Type() MsgType       { return TypeBoardUpdate }
 func (BoardDeleteReq) Type() MsgType       { return TypeBoardDelete }
+func (RolesListReq) Type() MsgType         { return TypeRolesList }
 func (ToolCallReq) Type() MsgType          { return TypeToolCall }
 func (ToolDeleteReq) Type() MsgType        { return TypeToolDelete }
 func (ToolVersionsReq) Type() MsgType      { return TypeToolVersions }
@@ -290,7 +298,7 @@ func DecodeRequest(m Msg) (Request, error) {
 	}
 	switch m.Type {
 	case TypeNewConversation:
-		return NewConversationReq{Interactive: m.Interactive}, nil
+		return NewConversationReq{Interactive: m.Interactive, Role: m.Role}, nil
 	case TypeAttach:
 		return AttachReq{AgentID: m.AgentID}, nil
 	case TypeUserTurn:
@@ -329,6 +337,8 @@ func DecodeRequest(m Msg) (Request, error) {
 		return BoardUpdateReq{ID: m.ID, Patch: patch}, nil
 	case TypeBoardDelete:
 		return BoardDeleteReq{ID: m.ID}, nil
+	case TypeRolesList:
+		return RolesListReq{}, nil
 	case TypeToolDelete:
 		return ToolDeleteReq{Tool: m.ToolName}, nil
 	case TypeToolVersions:

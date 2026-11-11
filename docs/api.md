@@ -166,7 +166,7 @@ GET /api/v1/memory/value?key=… — One memory key with its value
 ### Conversations
 
 ```
-POST   /api/v1/conversations                    — Create a conversation
+POST   /api/v1/conversations                    — Create a conversation   — body takes `role` (the agent, default orchestrator; GET /roles lists them)
 GET    /api/v1/conversations                     — List all conversations
 GET    /api/v1/conversations/{id}                — Get conversation details
 PATCH  /api/v1/conversations/{id}                — Rename a conversation
@@ -211,6 +211,9 @@ GET    /api/v1/goals/{id}         DELETE /api/v1/goals/{id}
 POST   /api/v1/goals/{id}/status
 
 GET    /api/v1/workflows          POST /api/v1/workflows/{id}/stop  POST /api/v1/workflows/{id}/fail
+GET    /api/v1/board              POST /api/v1/board    (list/create tasks — [board.md](board.md))
+GET    /api/v1/board/{id}         PATCH /api/v1/board/{id}   DELETE /api/v1/board/{id}
+GET    /api/v1/roles              (the role registry — [roles.md](roles.md))
 
 GET    /api/v1/tools              GET /api/v1/tools/{name}       DELETE /api/v1/tools/{name}
 POST   /api/v1/tools/{name}/call  POST /api/v1/tools/reload

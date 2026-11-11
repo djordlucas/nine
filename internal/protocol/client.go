@@ -110,7 +110,14 @@ func (c *Client) NewConversation() (string, error) {
 // (HITL-eligible) when interactive is true. Returns the
 // new conversation's ID, its resolved role, and the daemon's instance name.
 func (c *Client) NewConversationInteractive(interactive bool) (id, role, instanceName string, err error) {
-	if err := c.send(Msg{Type: TypeNewConversation, Interactive: interactive}); err != nil {
+	return c.NewConversationWithRole(interactive, "")
+}
+
+// NewConversationWithRole is NewConversationInteractive with the agent (role)
+// the conversation runs as (adr/orchestrator-board.md §2.5); empty is the
+// default, orchestrator.
+func (c *Client) NewConversationWithRole(interactive bool, role string) (id, roleOut, instanceName string, err error) {
+	if err := c.send(Msg{Type: TypeNewConversation, Interactive: interactive, Role: role}); err != nil {
 		return "", "", "", err
 	}
 	reply, err := c.recv()
@@ -1098,4 +1105,23 @@ func (c *Client) BoardDelete(id string) error {
 		return err
 	}
 	return expectReply(reply, TypeBoardDelete)
+}
+
+// RolesList returns the role registry (adr/orchestrator-board.md §2.2.1).
+func (c *Client) RolesList() ([]RoleInfo, error) {
+	if err := c.send(NewRolesListMsg()); err != nil {
+		return nil, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return nil, err
+	}
+	if err := expectReply(reply, TypeRolesList); err != nil {
+		return nil, err
+	}
+	var out []RoleInfo
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return nil, fmt.Errorf("decode roles: %w", err)
+	}
+	return out, nil
 }

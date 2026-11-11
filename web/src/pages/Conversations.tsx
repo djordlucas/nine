@@ -37,6 +37,13 @@ function List({ current, reloadKey }: { current?: string; reloadKey: number }) {
   const [created, setCreated] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The agent a new conversation runs as (adr/orchestrator-board.md §2.5);
+  // default orchestrator.
+  const [role, setRole] = useState('orchestrator');
+  const { data: roles } = useLive(async () => {
+    const r = await get(api.GET('/roles', {}), 'the role registry');
+    return (r.data ?? []) as { name: string; description?: string }[];
+  }, []);
   const { data, error: loadError } = useLive(
     async () => {
       const list = (await get(api.GET('/conversations', { params: { query: { limit: 200 } } }), 'conversations')).data ?? [];
@@ -50,7 +57,7 @@ function List({ current, reloadKey }: { current?: string; reloadKey: number }) {
     setBusy(true);
     setError(null);
     // Interactive: the session may ask the operator questions.
-    const { data: made, error: e } = await api.POST('/conversations', { body: { interactive: true } });
+    const { data: made, error: e } = await api.POST('/conversations', { body: { interactive: true, role } });
     setBusy(false);
     if (!made) {
       setError(errorMessage(e, 'Could not start a conversation.'));
@@ -63,6 +70,16 @@ function List({ current, reloadKey }: { current?: string; reloadKey: number }) {
   return (
     <nav class={split.list} aria-label="Conversations">
       <ListHead>
+        <select
+          value={role}
+          onChange={(e) => setRole((e.target as HTMLSelectElement).value)}
+          aria-label="Agent for the new conversation"
+          title="The agent (role) the new conversation runs as — default orchestrator"
+        >
+          {(roles ?? [{ name: 'orchestrator' }]).map((r) => (
+            <option key={r.name} value={r.name}>{r.name}</option>
+          ))}
+        </select>
         <button type="button" class={`button ${styles.new}`} onClick={() => void start()} disabled={busy}>
           New conversation
         </button>

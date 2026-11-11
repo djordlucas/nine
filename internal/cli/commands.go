@@ -293,8 +293,14 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 			}
 		}
 		// Anything else is treated as a message on the CLI's persistent default
-		// conversation (`nine <message>`).
-		return c.Message(cfg, strings.Join(args, " "))
+		// conversation (`nine <message>`). A leading `--role <name>` picks the
+		// agent a fresh conversation runs as (adr/orchestrator-board.md §2.5).
+		role := ""
+		if len(args) >= 2 && args[0] == "--role" {
+			role = args[1]
+			args = args[2:]
+		}
+		return c.Message(cfg, strings.Join(args, " "), role)
 	}
 }
 
@@ -594,7 +600,7 @@ func (c *CLI) connect(cfg *config.Config) (*protocol.Client, error) {
 // restarts because the daemon revives a checkpointed conversation on a turn. If
 // the stored conversation no longer exists (e.g. the store was reset), a fresh
 // one is started transparently.
-func (c *CLI) Message(cfg *config.Config, msg string) error {
+func (c *CLI) Message(cfg *config.Config, msg string, role ...string) error {
 	cl, err := c.connect(cfg)
 	if err != nil {
 		return err
@@ -603,7 +609,11 @@ func (c *CLI) Message(cfg *config.Config, msg string) error {
 
 	id := loadConversationID()
 	if id == "" {
-		if id, err = cl.NewConversation(); err != nil {
+		if len(role) > 0 && role[0] != "" {
+			if id, _, _, err = cl.NewConversationWithRole(false, role[0]); err != nil {
+				return fmt.Errorf("new conversation: %w", err)
+			}
+		} else if id, err = cl.NewConversation(); err != nil {
 			return fmt.Errorf("new conversation: %w", err)
 		}
 	}

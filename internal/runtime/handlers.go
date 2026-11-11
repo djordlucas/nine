@@ -149,14 +149,20 @@ func (d *Daemon) handleListWorkflows(enc *json.Encoder) {
 // newConversation creates a AgentWorker with a fresh agent loop and registers
 // it. interactive marks the session HITL-eligible and persists that flag so it
 // survives a daemon restart (R-HITL.1).
-func (d *Daemon) newConversation(interactive bool) (string, error) {
+// newConversation creates a conversation. role names the agent it runs as
+// (adr/orchestrator-board.md §2.5); empty is the default, orchestrator, and an
+// unknown role is refused rather than silently defaulted.
+func (d *Daemon) newConversation(interactive bool, role string) (string, error) {
+	if role != "" && role != OrchestratorRole && !d.knownRole(role) {
+		return "", fmt.Errorf("unknown role %q (roles_list shows the registry)", role)
+	}
 	id := newUUID()
 	if interactive && d.hitl != nil {
 		if err := d.hitl.MarkInteractive(id); err != nil {
 			slog.Warn("mark interactive failed", "id", id, "err", err)
 		}
 	}
-	r := d.makeAgentWorker(id, nil, interactive)
+	r := d.makeAgentWorker(id, nil, interactive, role)
 	d.mu.Lock()
 	d.sessions[id] = r
 	d.mu.Unlock()
@@ -203,7 +209,7 @@ func (d *Daemon) attach(agentID string) error {
 		return fmt.Errorf("conversation %s not found", agentID)
 	}
 
-	r := d.makeAgentWorker(agentID, data, d.isInteractive(agentID))
+	r := d.makeAgentWorker(agentID, data, d.isInteractive(agentID), "")
 
 	name := d.loadName(agentID)
 
@@ -224,11 +230,45 @@ func (d *Daemon) attach(agentID string) error {
 // (adr/process-sessions.md), so attaching to a goal session or resuming one
 // rebuilds the pursue role it runs under; any other session is a conversation,
 // under the orchestrator role.
-func (d *Daemon) makeAgentWorker(id string, checkpointData []byte, interactive bool) *AgentWorker {
+func (d *Daemon) makeAgentWorker(id string, checkpointData []byte, interactive bool, role string) *AgentWorker {
 	if p, ok := d.processRole(id); ok {
 		return d.buildWorker(id, checkpointData, p)
 	}
-	return d.buildWorker(id, checkpointData, RoleParams{Role: OrchestratorRole, Interactive: interactive})
+	if role == "" {
+		role = OrchestratorRole
+	}
+	return d.buildWorker(id, checkpointData, RoleParams{Role: role, Interactive: interactive})
+}
+
+// knownRole reports whether name is in the role registry.
+func (d *Daemon) knownRole(name string) bool {
+	if d.agent == nil {
+		return false
+	}
+	for _, r := range d.agent.Roles() {
+		if r.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// handleRolesList returns the role registry as JSON (adr/orchestrator-board.md
+// §2.2.1: the UI's agent picker and run_agent's enum both draw on this).
+func (d *Daemon) handleRolesList(enc *json.Encoder) {
+	if d.agent == nil {
+		enc.Encode(protocol.NewErrorMsg("roles are not enabled here")) //nolint:errcheck
+		return
+	}
+	out := make([]protocol.RoleInfo, 0)
+	for _, r := range d.agent.Roles() {
+		out = append(out, protocol.RoleInfo{
+			Name: r.Name, Description: r.Description,
+			AllTools: r.AllTools, Tools: r.Tools, Delegates: r.Delegates,
+		})
+	}
+	raw, _ := json.Marshal(out)
+	enc.Encode(protocol.NewTextMsg(protocol.TypeRolesList, string(raw))) //nolint:errcheck
 }
 
 // processRole returns the role parameters of the process owning session id,
