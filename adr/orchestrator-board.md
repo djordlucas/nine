@@ -120,7 +120,7 @@ is the orchestration set only — no shell, no file writes, nothing that does th
 | Board | `board_post`, `board_list`, `board_get` | dispatch and review (§2.1) |
 | Delegation | `run_agent`, `run_agents` | spawn workers |
 | Discovery | `tool_search`/`tool_list`, **`role_search`/`role_list`** (new, §2.2.1) | find tools and worker roles before dispatching |
-| Context | `memory_get`/`memory_list`, `doc_search`, `skill_read` | read what it plans against |
+| Context | the memory group in full — `memory_get`/`memory_set`/`memory_delete`/`memory_list` (+ semantic search) — plus `doc_search`, `skill_read` | read *and write* what it plans against: a planner that cannot record its plans and decisions to memory is crippled. File tools (`read_file`, `list_files`, …) stay with the workers |
 | Signal | `notify_user`, `gap_report` | reach the operator |
 
 Nothing is lost system-wide: **every other tool stays available in the leaf roles** — `executor`
