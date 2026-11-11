@@ -37,6 +37,10 @@ type Trigger struct {
 	// Activity is, for a reflect process's clock tick, a digest of what the
 	// journal recorded since its last reflection.
 	Activity string `json:"activity,omitempty"`
+	// BoardTask is set on a boardworker process's clock tick when the runner
+	// claimed a queued board task for it: the task id, so the turn's outcome
+	// finishes the task (adr/orchestrator-board.md §5 P3).
+	BoardTask string `json:"-"`
 }
 
 // TriggerGoal is the goal a trigger carries to a goal-bound process.
@@ -98,8 +102,9 @@ type Program func(ctx context.Context, h ProcessHandler) error
 // two Live shipped tools; everything else that ran in the sandbox is gone with
 // the toolvm (adr/modular_nine.md §9.10).
 var livePrograms = map[string]Program{
-	"pursue":  pursueProgram,
-	"reflect": reflectProgram,
+	"pursue":       pursueProgram,
+	"reflect":      reflectProgram,
+	"boardworker":  boardWorkerProgram,
 }
 
 // LiveProgram reports whether name is a built-in live program.
@@ -230,6 +235,26 @@ func reflectProgram(ctx context.Context, h ProcessHandler) error {
 		}
 		if t.Kind == "clock" {
 			if _, err := h.Turn(ctx, reflectPrompt(t.Activity)); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+// boardWorkerProgram is the process-backed board worker
+// (adr/orchestrator-board.md §5 P3): a live process whose clock tick claims the
+// oldest queued board task — the runner does the claiming in Next and stuffs
+// the spec into the trigger's Text — and runs one turn on it. The outcome
+// finishes the task (process_live.go Turn). With nothing queued, the tick is
+// skipped and costs nothing.
+func boardWorkerProgram(ctx context.Context, h ProcessHandler) error {
+	for {
+		t, err := h.Next(ctx)
+		if err != nil {
+			return err
+		}
+		if t.Text != "" {
+			if _, err := h.Turn(ctx, t.Text); err != nil {
 				return err
 			}
 		}

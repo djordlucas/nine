@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"fmt"
+	"log/slog"
 
 	"nine/internal/agent"
 	"nine/internal/memory"
@@ -204,4 +205,22 @@ func (b boardControl) Cancel(agentID, id string) (memory.BoardTask, error) {
 	}
 	journalTransition(b.store, agentID, EvTaskCancelled, map[string]any{"id": ct.ID, "title": ct.Title})
 	return ct, nil
+}
+
+// finishBoardTask closes the task a boardworker process claimed for its turn:
+// done with the reply, failed with the error. Delivery to the poster rides
+// finish() (§2.3).
+func (r *StandingRunner) finishBoardTask(sessionID, taskID, reply string, turnErr error) {
+	if r == nil || r.board == nil || taskID == "" {
+		return
+	}
+	if turnErr != nil {
+		if _, err := r.board.Fail(sessionID, taskID, turnErr.Error()); err != nil {
+			slog.Warn("board: fail worker task", "task", taskID, "err", err)
+		}
+		return
+	}
+	if _, err := r.board.Complete(sessionID, taskID, reply); err != nil {
+		slog.Warn("board: complete worker task", "task", taskID, "err", err)
+	}
 }

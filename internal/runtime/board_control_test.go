@@ -1,8 +1,11 @@
 package runtime
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"nine/internal/memory"
 	"nine/internal/memory/memtest"
@@ -173,5 +176,97 @@ func TestBoardDeliveryOnFinish(t *testing.T) {
 	all, err := store.BoardTaskList("", 0, 0)
 	if err != nil || len(all) != 3 {
 		t.Fatalf("board list: n=%d err=%v", len(all), err)
+	}
+}
+
+// TestBoardworkerProcessCycle drives a boardworker process's clock tick:
+// Next claims the oldest queued task, Turn runs it, and the outcome finishes
+// the task on the board with delivery to the poster.
+func TestBoardworkerProcessCycle(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := NewStandingRunner(store, 1, 2)
+	sessions := &fakeSessions{}
+	r.SetSessions(sessions)
+	bc := boardControl{store: store, maxDepth: 2, maxQueued: 100}
+	var woke []string
+	bc.wake = func(id, text string, depth int) bool { woke = append(woke, id); return true }
+	r.SetBoard(&bc)
+
+	// A posted task waiting for a worker.
+	poster := "orch-conv"
+	task, err := bc.Post(poster, "triage incidents", "read notes/incident.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The boardworker process and its handler.
+	row := memory.Process{ID: "board-1", Tool: "boardworker", Mode: memory.ProcessLive, SessionID: "board-1", Owner: true, State: memory.ProcessRunning}
+	lp := &liveProc{row: row, triggers: make(chan Trigger, 8)}
+	h := &liveHandler{r: r, lp: lp}
+
+	// A clock tick claims the task.
+	lp.triggers <- Trigger{Kind: "clock"}
+	ctx := context.Background()
+	trig, err := h.Next(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trig.BoardTask != task.ID || !strings.Contains(trig.Text, "triage incidents") {
+		t.Fatalf("trigger after claim: %+v", trig)
+	}
+	got, ok, _ := store.BoardTaskGet(task.ID)
+	if !ok || got.Status != memory.BoardRunning || got.ClaimedBy != "board-1" {
+		t.Fatalf("claimed task: %+v", got)
+	}
+
+	// The turn completes the task and the poster is woken.
+	if _, err := h.Turn(ctx, trig.Text); err != nil {
+		t.Fatal(err)
+	}
+	done, ok, _ := store.BoardTaskGet(task.ID)
+	if !ok || done.Status != memory.BoardDone || !strings.Contains(done.Result, "reply:") {
+		t.Fatalf("finished task: %+v", done)
+	}
+	if len(woke) != 1 || woke[0] != poster {
+		t.Fatalf("poster woken: %v", woke)
+	}
+
+	// With nothing queued, the tick is skipped (Next blocks) — probe with a
+	// cancellable context and confirm no trigger comes back.
+	lp.triggers <- Trigger{Kind: "clock"}
+	probeCtx, cancelProbe := context.WithCancel(ctx)
+	defer cancelProbe()
+	done2 := make(chan Trigger, 1)
+	go func() {
+		t2, err := h.Next(probeCtx)
+		if err == nil {
+			done2 <- t2
+		}
+	}()
+	select {
+	case t2 := <-done2:
+		t.Fatalf("empty queue should skip the tick, got trigger %+v", t2)
+	case <-time.After(200 * time.Millisecond):
+	}
+	cancelProbe()
+
+	// A failing turn fails the task.
+	task2, _ := bc.Post(poster, "will fail", "spec")
+	sessions.fail = errors.New("boom")
+	lp.triggers <- Trigger{Kind: "clock"}
+	trig2, err := h.Next(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trig2.BoardTask != task2.ID {
+		t.Fatalf("second claim: %+v", trig2)
+	}
+	_, _ = h.Turn(ctx, trig2.Text)
+	failed, _, _ := store.BoardTaskGet(task2.ID)
+	if failed.Status != memory.BoardFailed || !strings.Contains(failed.Result, "boom") {
+		t.Fatalf("failed task: %+v", failed)
 	}
 }

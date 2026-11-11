@@ -289,6 +289,7 @@ func Assemble(c AssemblyConfig) *Assembly {
 		}
 		if runner != nil {
 			bc.feed = runner.notifyHuman
+			runner.SetBoard(&bc)
 		}
 		builder.SetBoardControl(bc)
 	}

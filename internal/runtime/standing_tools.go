@@ -94,6 +94,9 @@ type StandingRunner struct {
 	// database is the database processes write through nine:sql; nil when the
 	// instance has none.
 	database *sqldb.DB
+	// board finishes tasks claimed by boardworker processes
+	// (adr/orchestrator-board.md §5 P3); nil when the board is off.
+	board *boardControl
 	// database is the database processes write through nine:sql; nil when the
 	// instance has none.
 }
@@ -109,6 +112,14 @@ func (r *StandingRunner) SetToolCaller(c ProcessToolCaller) {
 func (r *StandingRunner) SetDatabase(db *sqldb.DB) {
 	if r != nil {
 		r.database = db
+	}
+}
+
+// SetBoard wires the board control that finishes tasks claimed by boardworker
+// processes. The same instance backs the board_* tools (Assemble shares it).
+func (r *StandingRunner) SetBoard(b *boardControl) {
+	if r != nil {
+		r.board = b
 	}
 }
 
