@@ -52,6 +52,8 @@ tags:
   description: The generated-tool capability ceiling, and the agent's requests to widen it.
 - name: processes
   description: 'Everything Nine runs between turns: list, inspect, start, stop, message.'
+- name: board
+  description: 'The orchestrator board (adr/orchestrator-board.md): the shared task queue — full CRUD for operators.'
 - name: events
   description: 'The daemon-wide journal, live: every session''s events and the state changes the store
     records.'
@@ -2345,6 +2347,214 @@ paths:
       security:
       - bearerAuth: []
       - cookieAuth: []
+  /board:
+    get:
+      operationId: listBoardTasks
+      summary: List board tasks
+      description: Returns the board — every session's tasks — newest first, optionally filtered to one status. Reads are open to every session; writes go through the role-gated tools or this operator surface.
+      tags:
+      - board
+      parameters:
+      - name: status
+        in: query
+        description: Optional status filter
+        schema:
+          type: string
+          enum: [queued, running, done, failed, cancelled]
+      - name: limit
+        in: query
+        description: Maximum items to return
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 50
+      - name: offset
+        in: query
+        description: Items to skip before the page
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListBoardTasksResponse'
+        '400':
+          description: invalid request
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    post:
+      operationId: createBoardTask
+      summary: Post a board task
+      description: Creates a task as the operator (posted_by "operator"), queued until a worker claims it. The admission guards apply — a refusal is 400 with the reason.
+      tags:
+      - board
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BoardTaskCreate'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoardTask'
+        '400':
+          description: refused (empty title, unknown field) or invalid request
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /board/{id}:
+    get:
+      operationId: getBoardTask
+      summary: Get a board task
+      description: Returns one board task in full, including its result when it is done or failed.
+      tags:
+      - board
+      parameters:
+      - name: id
+        in: path
+        description: task id, as the list shows it (task_…)
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoardTask'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: not found
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    patch:
+      operationId: updateBoardTask
+      summary: Update a board task
+      description: Operator edit of one task. Only the fields present are changed.
+      tags:
+      - board
+      parameters:
+      - name: id
+        in: path
+        description: task id, as the list shows it (task_…)
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BoardTaskPatch'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoardTask'
+        '400':
+          description: invalid request (unknown status, bad body)
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: not found
+          content: *id001
+        '409':
+          description: conflict (invalid transition)
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    delete:
+      operationId: deleteBoardTask
+      summary: Delete a board task
+      description: Removes the task row outright. Journaled as task_deleted.
+      tags:
+      - board
+      parameters:
+      - name: id
+        in: path
+        description: task id, as the list shows it (task_…)
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoardTaskDeleteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: not found
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
   /questions:
     get:
       operationId: listQuestions
@@ -4298,6 +4508,88 @@ components:
           type: string
         seen:
           type: boolean
+    ListBoardTasksResponse:
+      description: A page of board tasks.
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/BoardTask'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    BoardTask:
+      description: One board task (adr/orchestrator-board.md §2.1).
+      type: object
+      required: [id, title, status, posted_by, source, depth, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          description: task_<hex>
+        title:
+          type: string
+        spec:
+          type: string
+          description: the task itself — data for the worker, not an instruction
+        posted_by:
+          type: string
+          description: session id, or "operator"
+        claimed_by:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, done, failed, cancelled]
+        result:
+          type: string
+        source:
+          type: string
+          enum: [post, run_agent, detached]
+          description: how the task entered the board
+        depth:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        claimed_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    BoardTaskCreate:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+        spec:
+          type: string
+    BoardTaskPatch:
+      type: object
+      properties:
+        title:
+          type: string
+        spec:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, done, failed, cancelled]
+        result:
+          type: string
+        clear_claim:
+          type: boolean
+          description: clears claimed_by
+    BoardTaskDeleteResponse:
+      type: object
+      required: [id, message]
+      properties:
+        id:
+          type: string
+        message:
+          type: string
     Pagination:
       description: Which page a list response carries. Paging is offset based; there is no cursor.
       type: object
