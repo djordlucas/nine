@@ -104,8 +104,7 @@ Reads are open to every session; writes go through role-granted tools:
 | `board_complete({id, result})` / `board_fail({id, reason})` | the claimant | terminal state, result on the board |
 | `board_cancel({id})` | the poster or the operator | `cancelled` |
 
-Operator surface later: `nine board`, `GET/POST /api/v1/board` (mirrors `processes`), a dashboard
-tile. CLI/API are phase 3, not phase 1.
+Operator surface (full CRUD): see §2.6 — `nine board`, `/api/v1/board`, a web-UI Board section.
 
 ### 2.2 The orchestrator
 
@@ -189,7 +188,43 @@ CLI. Consequence for this pattern: the `board_*` tools appear only in sessions w
 role grants them, so a conversation started as `orchestrator` is the one that can plan and
 dispatch; one started as a leaf role sees no board tools. Lands with phase 3's operator surface
 (§5).
+### 2.6 Operator CRUD on the board (CLI, API, UI)
 
+**Decided 2026-11-10:** operators get **complete CRUD on board tasks** — create, read, update,
+delete — through the API and the web UI (and the CLI), mirroring the processes surface
+(`internal/api/handlers_processes.go`, `web/src/pages/Processes.tsx`). The daemon owns the
+rules; the surfaces are dumb clients, exactly as for processes.
+
+**API** (REST under `/api/v1`, same auth chain as every other route; OpenAPI in
+`internal/api/openapi.yaml`):
+
+| Method & path | Effect |
+|---|---|
+| `GET /api/v1/board?status=&limit=&offset=` | list tasks, paginated, optional status filter |
+| `GET /api/v1/board/{id}` | one task, including `result` |
+| `POST /api/v1/board` `{title, spec}` | create; `posted_by` = `operator`; the §2.4 admission guards apply — a refusal is `400` with the reason |
+| `PATCH /api/v1/board/{id}` `{title?, spec?, status?, result?}` | update; `status` must be one of the lifecycle states in §2.1 |
+| `DELETE /api/v1/board/{id}` | delete the row |
+
+Error mapping mirrors processes: unknown id `404`, invalid transition or refusal `409`, bad
+body `400`.
+
+**CLI:** `nine board list|show|create|edit|delete` (mirrors `nine process`).
+
+**UI:** a **Board** section beside Processes (rail on desktop, tab on mobile): the task list with
+a status filter, a create form (title, spec), a per-task view with edit (title / spec / status /
+result) and delete behind a confirm. It stays live from the `GET /api/v1/events` stream, since
+every transition is already a `task_*` journal event (§2.1) — no polling.
+
+**Journal:** operator actions write `task_posted` (`posted_by=operator`), `task_updated`, and
+`task_deleted` in addition to the claim/complete/fail/cancel events, so the board's audit trail
+is complete regardless of who acted.
+
+```
+operator ──► web UI Board section ──► REST /api/v1/board ──► daemon ──► board_tasks
+     └────► nine board CLI ────────► (unix socket protocol) ──┘         │ task_* events
+                                                                        ▼ session_events ──► /api/v1/events ──► UI live updates
+```
 ## 3. Alternatives compared
 
 | Option | Verdict | Why |
@@ -223,7 +258,7 @@ dispatch; one started as a leaf role sees no board tools. Lands with phase 3's o
 | P0 | `board_tasks` table + migration, journal events, role allowlist wiring | `go test ./internal/memory/`, store migration tests |
 | P1 | `board_post/list/get/claim/complete/fail/cancel` tools on the orchestrator role; admission guards (§2.4) | unit tests for admission/refusal; eval cases: post/list/claim/complete round trip |
 | P2 | Worker mode: `run_agent` records its run on the board; posted-task delivery via `WakeAgent` restricted turn | eval cases: orchestrator posts N tasks, workers complete them, results arrive restricted; injection case mirrors `process-pipe-injection` |
-| P3 | Process-backed workers (a pursue process claiming from the board on its clock); `nine board`, `/api/v1/board`, web-UI tile; agent (role) selector in the new-conversation flow, default `orchestrator` (§2.5) | `go test ./internal/runtime/`, API tests, eval cases with a fixture process |
+| P3 | Process-backed workers (a pursue process claiming from the board on its clock); agent (role) selector in the new-conversation flow, default `orchestrator` (§2.5); operator CRUD on the board — `nine board` CLI, full `/api/v1/board` CRUD, web-UI Board section (§2.6) | `go test ./internal/runtime/`, API tests (`handlers_board`), web-UI build + e2e, eval cases with a fixture process |
 | P4 | Depth/budget/dedup hardening, priority ordering (FIFO first), operator cancel | depth case (task at `max_depth` cannot post), budget case (poster paused at its ceiling) |
 
 ## 6. Test plan
