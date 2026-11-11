@@ -1009,3 +1009,93 @@ func (c *Client) DecideCapability(id, action string) (string, error) {
 	}
 	return reply.Text, nil
 }
+
+// Board operator CRUD over the daemon socket (adr/orchestrator-board.md §2.6).
+
+// BoardList returns board tasks, optionally filtered to one status.
+func (c *Client) BoardList(status string) ([]BoardTask, error) {
+	if err := c.send(NewBoardListMsg(status)); err != nil {
+		return nil, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return nil, err
+	}
+	if err := expectReply(reply, TypeBoardList); err != nil {
+		return nil, err
+	}
+	var out []BoardTask
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return nil, fmt.Errorf("decode board: %w", err)
+	}
+	return out, nil
+}
+
+// BoardGet returns one board task.
+func (c *Client) BoardGet(id string) (BoardTask, error) {
+	if err := c.send(NewBoardGetMsg(id)); err != nil {
+		return BoardTask{}, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return BoardTask{}, err
+	}
+	if err := expectReply(reply, TypeBoardGet); err != nil {
+		return BoardTask{}, err
+	}
+	var out BoardTask
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return BoardTask{}, fmt.Errorf("decode board task: %w", err)
+	}
+	return out, nil
+}
+
+// BoardCreate posts a task as the operator.
+func (c *Client) BoardCreate(title, spec string) (BoardTask, error) {
+	if err := c.send(NewBoardCreateMsg(title, spec)); err != nil {
+		return BoardTask{}, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return BoardTask{}, err
+	}
+	if err := expectReply(reply, TypeBoardCreate); err != nil {
+		return BoardTask{}, err
+	}
+	var out BoardTask
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return BoardTask{}, fmt.Errorf("decode board task: %w", err)
+	}
+	return out, nil
+}
+
+// BoardUpdate patches one task as the operator.
+func (c *Client) BoardUpdate(id string, patch map[string]any) (BoardTask, error) {
+	if err := c.send(NewBoardUpdateMsg(id, patch)); err != nil {
+		return BoardTask{}, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return BoardTask{}, err
+	}
+	if err := expectReply(reply, TypeBoardUpdate); err != nil {
+		return BoardTask{}, err
+	}
+	var out BoardTask
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return BoardTask{}, fmt.Errorf("decode board task: %w", err)
+	}
+	return out, nil
+}
+
+// BoardDelete removes one task as the operator.
+func (c *Client) BoardDelete(id string) error {
+	if err := c.send(NewBoardDeleteMsg(id)); err != nil {
+		return err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return err
+	}
+	return expectReply(reply, TypeBoardDelete)
+}

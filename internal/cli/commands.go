@@ -170,6 +170,8 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 		return fmt.Errorf("%s", mcpUsage)
 	case "process", "processes":
 		return c.processCommand(cfg, args[1:])
+	case "board":
+		return c.boardCommand(cfg, args[1:])
 	case "tool":
 		if len(args) < 2 {
 			return fmt.Errorf("%s", toolUsage)
@@ -360,6 +362,70 @@ const toolUsage = "usage: nine tool <validate|call> …"
 const mcpUsage = "usage: nine mcp export  — serve the daemon's tools as an MCP stdio server (`nine mcp serve <name>` is spawned by the daemon, not run by hand)"
 
 const processUsage = "usage: nine process [list | show <id> [-n N] | start <id> | stop <id> | send <id> <text>]"
+
+const boardUsage = "usage: nine board [list | show <id> | create <title> [spec] | edit <id> [--title T] [--spec S] [--status S] [--result R] [--clear-claim] | delete <id>]"
+
+// boardCommand runs `nine board …`; with no subcommand it lists
+// (adr/orchestrator-board.md §2.6).
+func (c *CLI) boardCommand(cfg *config.Config, args []string) error {
+	if len(args) == 0 || args[0] == "list" {
+		return c.Board(cfg)
+	}
+	switch args[0] {
+	case "show":
+		if len(args) < 2 {
+			return fmt.Errorf("%s", boardUsage)
+		}
+		return c.BoardShow(cfg, args[1])
+	case "create":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: nine board create <title> [spec]")
+		}
+		spec := ""
+		if len(args) > 2 {
+			spec = strings.Join(args[2:], " ")
+		}
+		return c.BoardCreate(cfg, args[1], spec)
+	case "edit":
+		if len(args) < 2 {
+			return fmt.Errorf("%s", boardUsage)
+		}
+		flags, clearClaim, err := boardEditFlags(args[2:])
+		if err != nil {
+			return err
+		}
+		return c.BoardEdit(cfg, args[1], flags, clearClaim)
+	case "delete":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: nine board delete <id>")
+		}
+		return c.BoardDelete(cfg, args[1])
+	}
+	return fmt.Errorf("%s", boardUsage)
+}
+
+// boardEditFlags splits --key value pairs and the --clear-claim flag from the
+// tail of an edit argument list.
+func boardEditFlags(rest []string) (map[string]string, bool, error) {
+	flags := map[string]string{}
+	clearClaim := false
+	for i := 0; i < len(rest); i++ {
+		a := rest[i]
+		switch a {
+		case "--clear-claim":
+			clearClaim = true
+		case "--title", "--spec", "--status", "--result":
+			if i+1 >= len(rest) {
+				return nil, false, fmt.Errorf("%s needs a value", a)
+			}
+			flags[a[2:]] = rest[i+1]
+			i++
+		default:
+			return nil, false, fmt.Errorf("unknown flag %q", a)
+		}
+	}
+	return flags, clearClaim, nil
+}
 
 // processCommand runs `nine process …`; with no subcommand it lists.
 func (c *CLI) processCommand(cfg *config.Config, args []string) error {

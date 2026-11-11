@@ -42,6 +42,17 @@ func (m *mockStore) WorkflowFail(id string, all bool) (int, error) {
 	}
 	return 0, nil
 }
+func (m *mockStore) BoardTaskCreate(_, _, _, _ string, _ int) (memory.BoardTask, error) {
+	return memory.BoardTask{}, nil
+}
+func (m *mockStore) BoardTaskList(_ string, _, _ int) ([]memory.BoardTask, error) { return nil, nil }
+func (m *mockStore) BoardTaskGet(_ string) (memory.BoardTask, bool, error) {
+	return memory.BoardTask{}, false, nil
+}
+func (m *mockStore) BoardTaskUpdate(_ string, _ memory.BoardTaskPatch) (memory.BoardTask, bool, error) {
+	return memory.BoardTask{}, false, nil
+}
+func (m *mockStore) BoardTaskDelete(_ string) (bool, error) { return false, nil }
 func (m *mockStore) UserNotificationList(_ bool) ([]memory.UserNotification, error) {
 	return nil, nil
 }

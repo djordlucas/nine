@@ -117,7 +117,7 @@ func (s *Store) BoardTaskList(status string, limit, offset int) ([]BoardTask, er
 		q += ` WHERE status = ?`
 		args = append(args, status)
 	}
-	q += ` ORDER BY created_at DESC, id DESC`
+	q += ` ORDER BY rowid DESC`
 	if limit > 0 {
 		q += ` LIMIT ? OFFSET ?`
 		args = append(args, limit, offset)
@@ -272,7 +272,7 @@ func (s *Store) BoardTaskFindAlike(poster, title, spec string) (BoardTask, bool,
 	t, err := scanBoardTask(s.db.QueryRow(
 		`SELECT `+boardTaskCols+` FROM board_tasks
 		 WHERE posted_by = ? AND title = ? AND spec = ? AND status IN (?, ?)
-		 ORDER BY created_at DESC LIMIT 1`,
+		 ORDER BY rowid DESC LIMIT 1`,
 		poster, title, spec, BoardQueued, BoardRunning))
 	if err == sql.ErrNoRows {
 		return BoardTask{}, false, nil

@@ -84,6 +84,17 @@ type ProcessSendReq struct {
 	Text string
 }
 
+// Board operator CRUD (adr/orchestrator-board.md §2.6). Create and update carry
+// their payload as JSON in Text.
+type BoardListReq struct{ Status string }
+type BoardGetReq struct{ ID string }
+type BoardCreateReq struct{ Title, Spec string }
+type BoardUpdateReq struct {
+	ID    string
+	Patch map[string]json.RawMessage
+}
+type BoardDeleteReq struct{ ID string }
+
 // ToolDeleteReq deletes a tool Nine wrote; any other tool is refused.
 type ToolDeleteReq struct {
 	Tool string
@@ -224,6 +235,11 @@ func (SessionRenameReq) Type() MsgType     { return TypeSessionRename }
 func (ProcessShowReq) Type() MsgType       { return TypeProcessShow }
 func (ProcessControlReq) Type() MsgType    { return TypeProcessControl }
 func (ProcessSendReq) Type() MsgType       { return TypeProcessSend }
+func (BoardListReq) Type() MsgType         { return TypeBoardList }
+func (BoardGetReq) Type() MsgType          { return TypeBoardGet }
+func (BoardCreateReq) Type() MsgType       { return TypeBoardCreate }
+func (BoardUpdateReq) Type() MsgType       { return TypeBoardUpdate }
+func (BoardDeleteReq) Type() MsgType       { return TypeBoardDelete }
 func (ToolCallReq) Type() MsgType          { return TypeToolCall }
 func (ToolDeleteReq) Type() MsgType        { return TypeToolDelete }
 func (ToolVersionsReq) Type() MsgType      { return TypeToolVersions }
@@ -296,6 +312,23 @@ func DecodeRequest(m Msg) (Request, error) {
 		return ProcessControlReq{ID: m.AgentID, Action: m.Text}, nil
 	case TypeProcessSend:
 		return ProcessSendReq{ID: m.AgentID, Text: m.Text}, nil
+	case TypeBoardList:
+		return BoardListReq{Status: m.Text}, nil
+	case TypeBoardGet:
+		return BoardGetReq{ID: m.ID}, nil
+	case TypeBoardCreate:
+		var cs struct {
+			Title string `json:"title"`
+			Spec  string `json:"spec"`
+		}
+		_ = json.Unmarshal([]byte(m.Text), &cs)
+		return BoardCreateReq{Title: cs.Title, Spec: cs.Spec}, nil
+	case TypeBoardUpdate:
+		var patch map[string]json.RawMessage
+		_ = json.Unmarshal([]byte(m.Text), &patch)
+		return BoardUpdateReq{ID: m.ID, Patch: patch}, nil
+	case TypeBoardDelete:
+		return BoardDeleteReq{ID: m.ID}, nil
 	case TypeToolDelete:
 		return ToolDeleteReq{Tool: m.ToolName}, nil
 	case TypeToolVersions:
