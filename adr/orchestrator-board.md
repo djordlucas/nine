@@ -58,7 +58,7 @@ tile see the board live. Reads are open to every session; writes go through role
 
 | Tool | Who | Effect |
 |---|---|---|
-| `board_post({title, spec})` | orchestrator, or any role granted it | admit or refuse with a reason (§2.4); append task |
+| `board_post({title, spec})` | any session whose role grants it — shipped on `orchestrator` only by default (**decided 2026-11-10**) | admit or refuse with a reason (§2.4); append task |
 | `board_list({status?})` | any session | queued/running/done tasks with owners and ages |
 | `board_get({id})` | any session | one task incl. its result |
 | `board_claim({id})` | worker role | `queued` → `running`, sets `claimed_by` — refused if taken |
@@ -150,8 +150,8 @@ Admission is refused on the spot, with a reason the poster can act on:
    workers arrive in phase 3 (§2.3, §5).
 3. ~~**Dispatch style**~~ — decided 2026-11-10: both. `run_agent` stays wait-for-result and its
    run is recorded on the board; the async path is `board_post` + `board_list` (§2.3).
-4. **Who may post**: only the orchestrator/planner role, or any session whose role grants
-   `board_post`?
+4. ~~**Who may post**~~ — decided 2026-11-10: any session whose role grants `board_post`;
+   shipped on the `orchestrator` role only by default (§2.1).
 5. **Delivery**: wake the orchestrator (restricted condition turn), queue a message
    (`docs/queued-messages.md`), or human feed when it is gone?
 6. **Naming**: `board_*` tools and `board_tasks` table, or revive `task_*` names (the glossary's
