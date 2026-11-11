@@ -105,12 +105,16 @@ posted work in `adr/coded-sub-agents.md` §5:
 
 - **Waited**: `run_agent` runs the task inline as today; its run is *also* recorded on the board
   (starts `running`, ends `done`), so waited and posted work share one record.
-- **Posted**: the orchestrator posts and moves on; a worker session — spawned on demand or a
-  process clock tick — claims and runs it. The result is delivered to the poster through the
-  condition-trigger path (`Daemon.WakeAgent`, `internal/runtime/daemon.go`), the same one pipes
-  use: a restricted turn in the poster's session. If the poster is mid-turn, the result waits
-  and is retried at its next `turn_end` (delivery is lossy by design, as `WakeAgent` documents);
-  undelivered results stay readable on the board, so nothing is lost.
+- **Posted**: the orchestrator posts and moves on; a worker sub-agent claims and runs it. The
+  result is delivered to the poster through the condition-trigger path (`Daemon.WakeAgent`,
+  `internal/runtime/daemon.go`), the same one pipes use: a restricted turn in the poster's
+  session. If the poster is mid-turn, the result waits and is retried at its next `turn_end`
+  (delivery is lossy by design, as `WakeAgent` documents); if the poster is gone entirely, the
+  result goes to the human feed, as an undeliverable pipe does. Undelivered results stay
+  readable on the board, so nothing is lost. **Decided 2026-11-10: wake primary, human feed
+  fallback; queued messages are deliberately not used** — a consumed queue message joins the
+  history as a user message, which is the unrestricted path this ADR rejects for task results
+  (`docs/queued-messages.md`).
 
 Sub-agents and processes both fit because both are sessions with roles; the difference is who
 drives the loop (the parent waits vs the runner's clock/pipes).
@@ -152,8 +156,8 @@ Admission is refused on the spot, with a reason the poster can act on:
    run is recorded on the board; the async path is `board_post` + `board_list` (§2.3).
 4. ~~**Who may post**~~ — decided 2026-11-10: any session whose role grants `board_post`;
    shipped on the `orchestrator` role only by default (§2.1).
-5. **Delivery**: wake the orchestrator (restricted condition turn), queue a message
-   (`docs/queued-messages.md`), or human feed when it is gone?
+5. ~~**Delivery**~~ — decided 2026-11-10: `WakeAgent` restricted turn primary, human feed when
+   the poster is gone; queued messages not used for results (§2.3).
 6. **Naming**: `board_*` tools and `board_tasks` table, or revive `task_*` names (the glossary's
    "no Task entity" line would then change)?
 
