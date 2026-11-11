@@ -163,6 +163,7 @@ type AgentBuilder struct {
 	queuePtr     atomic.Pointer[llm.Queue]
 	goalSpawnFn  atomic.Pointer[agent.GoalSessionSpawnFn]
 	processes    atomic.Pointer[agent.ProcessControl]
+	board        atomic.Pointer[agent.BoardControl]
 	sqlReader    atomic.Pointer[agent.SQLReader]
 	emitProgress atomic.Pointer[func(agentID string, msg protocol.Msg)]
 
@@ -307,6 +308,12 @@ func (f *AgentBuilder) SetSQLReader(r agent.SQLReader) {
 // (adr/process-sessions.md §9). Without it no loop advertises them.
 func (f *AgentBuilder) SetProcessControl(pc agent.ProcessControl) {
 	f.processes.Store(&pc)
+}
+
+// SetBoardControl wires the board tools a role holds
+// (adr/orchestrator-board.md §2.1). Without it no loop advertises them.
+func (f *AgentBuilder) SetBoardControl(bc agent.BoardControl) {
+	f.board.Store(&bc)
 }
 
 // SetEmitProgressFn registers the function used to deliver sub-agent
@@ -511,6 +518,16 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		processTools = filterByRole(agent.ProcessToolNames, role)
 		agent.RegisterProcessTools(d, *pc, agentID, processTools)
 	}
+	// The board tools (adr/orchestrator-board.md §2.1): granted per role like
+	// any other tool, to conversations and worker sub-agents alike — a worker
+	// needs board_claim/complete/fail, the orchestrator board_post/list/get.
+	var boardTools []string
+	if bc := f.board.Load(); bc != nil && *bc != nil {
+		boardTools = filterByRole(agent.BoardToolNames, role)
+		if len(boardTools) > 0 {
+			agent.RegisterBoardTools(d, *bc, agentID, boardTools)
+		}
+	}
 	// sql_query reads the database. Any loop whose role grants it holds it, a
 	// process session's included: it only reads.
 	if r := f.sqlReader.Load(); r != nil && *r != nil && len(filterByRole([]string{agent.SQLToolName}, role)) > 0 {
@@ -557,6 +574,7 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 	assembleTools := func() []ninectx.ToolWithVector {
 		tools := buildToolList(lc, role, shellTools, roleEnum)
 		tools = appendInterceptedTools(tools, processTools, roleEnum)
+		tools = appendInterceptedTools(tools, boardTools, roleEnum)
 		if role.Interactive && f.cfg.HITL != nil {
 			tools = append(tools, ninectx.ToolWithVector{Tool: agent.AskHumanDef})
 		}

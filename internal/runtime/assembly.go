@@ -98,6 +98,9 @@ type AssemblyConfig struct {
 	ProcessBudget config.BudgetConfig
 	// MaxDepth is [processes] max_depth; <= 0 is the default.
 	MaxDepth int
+	// Board is the [board] table (adr/orchestrator-board.md §2.4); zero fields
+	// take the defaults.
+	Board config.BoardConfig
 	// Database is the database: written by live processes through nine:sql,
 	// read through sql_query. Nil leaves both out.
 	Database *sqldb.DB
@@ -271,6 +274,15 @@ func Assemble(c AssemblyConfig) *Assembly {
 		// Event triggers: a journal subscriber that delivers events to the live
 		// processes they trigger (process_events.go).
 		daemon.AddSubscriber(runner.EventRouter())
+	}
+	// The board tools (adr/orchestrator-board.md §2.1): store-backed control,
+	// granted per role by the builder's filterByRole.
+	if c.Store != nil {
+		builder.SetBoardControl(boardControl{
+			store:     c.Store,
+			maxDepth:  c.MaxDepth,
+			maxQueued: c.Board.MaxQueuedOrDefault(),
+		})
 	}
 	daemon.ConfigureStandingTools(runner)
 	daemon.ConfigureProcesses(c.Store, runner.Wake)
