@@ -204,7 +204,7 @@ func TestRegisterPlugin(t *testing.T) {
 func TestWireRunAgentSuccess(t *testing.T) {
 	var gotTask, gotExtraCtx string
 	d := agent.New()
-	agent.RegisterRunAgent(d, func(_ context.Context, task, extraCtx, _ string) (string, error) {
+	agent.RegisterRunAgent(d, func(_ context.Context, task, extraCtx, _ string, _ bool) (string, error) {
 		gotTask = task
 		gotExtraCtx = extraCtx
 		return "sub-agent result", nil
@@ -229,7 +229,7 @@ func TestWireRunAgentSuccess(t *testing.T) {
 func TestWireRunAgentNoContext(t *testing.T) {
 	d := agent.New()
 	var gotExtraCtx string
-	agent.RegisterRunAgent(d, func(_ context.Context, _, extraCtx, _ string) (string, error) {
+	agent.RegisterRunAgent(d, func(_ context.Context, _, extraCtx, _ string, _ bool) (string, error) {
 		gotExtraCtx = extraCtx
 		return "done", nil
 	})
@@ -246,7 +246,7 @@ func TestWireRunAgentNoContext(t *testing.T) {
 
 func TestWireRunAgentError(t *testing.T) {
 	d := agent.New()
-	agent.RegisterRunAgent(d, func(_ context.Context, _, _, _ string) (string, error) {
+	agent.RegisterRunAgent(d, func(_ context.Context, _, _, _ string, _ bool) (string, error) {
 		return "", fmt.Errorf("sub-agent failed")
 	})
 
@@ -262,7 +262,7 @@ func TestWireRunAgentError(t *testing.T) {
 
 func TestWireRunAgentInvalidJSON(t *testing.T) {
 	d := agent.New()
-	agent.RegisterRunAgent(d, func(_ context.Context, _, _, _ string) (string, error) {
+	agent.RegisterRunAgent(d, func(_ context.Context, _, _, _ string, _ bool) (string, error) {
 		return "should not reach", nil
 	})
 
@@ -278,7 +278,7 @@ func TestWireRunAgentContextPropagated(t *testing.T) {
 
 	d := agent.New()
 	var gotCtx context.Context
-	agent.RegisterRunAgent(d, func(c context.Context, _, _, _ string) (string, error) {
+	agent.RegisterRunAgent(d, func(c context.Context, _, _, _ string, _ bool) (string, error) {
 		gotCtx = c
 		return "ok", nil
 	})

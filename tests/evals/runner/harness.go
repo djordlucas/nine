@@ -398,7 +398,16 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 	// session keeps the role its process names, as in production: forcing the
 	// case's role there ran every process under the case's (by default the
 	// all-tools executor) instead of pursue, reflection or process.
+	//
+	// A case that names no role runs as executor, not orchestrator: since the
+	// orchestrator's allowlist was narrowed to the orchestration set
+	// (adr/orchestrator-board.md §2.2), the default conversation role no longer
+	// carries shell/file tools, and tool-driving cases need the full leaf set.
+	// Board/orchestration cases declare `role: orchestrator` themselves.
 	forcedRole := c.Session.Role
+	if forcedRole == "" {
+		forcedRole = "executor"
+	}
 	roleFactory := func(inner runtime.LoopFactory) runtime.LoopFactory {
 		return func(agentID string, p runtime.RoleParams) *agent.Loop {
 			if forcedRole != "" && !p.Process && agentID != runtime.GenesisSession {

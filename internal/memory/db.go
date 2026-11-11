@@ -612,6 +612,23 @@ func initSchema(d db) error {
 		`CREATE INDEX IF NOT EXISTS processes_state ON processes (state)`,
 		`CREATE INDEX IF NOT EXISTS jobs_owner ON jobs (owner_id)`,
 		`CREATE INDEX IF NOT EXISTS jobs_state ON jobs (state)`,
+		`CREATE TABLE IF NOT EXISTS board_tasks (
+			id          TEXT PRIMARY KEY,
+			title       TEXT NOT NULL,
+			spec        TEXT NOT NULL DEFAULT '',
+			posted_by   TEXT NOT NULL DEFAULT '',
+			claimed_by  TEXT NOT NULL DEFAULT '',
+			status      TEXT NOT NULL DEFAULT 'queued',
+			result      TEXT NOT NULL DEFAULT '',
+			source      TEXT NOT NULL DEFAULT 'post',
+			depth       INTEGER NOT NULL DEFAULT 0,
+			created_at  TEXT NOT NULL DEFAULT ` + nowExpr + `,
+			claimed_at  TEXT NOT NULL DEFAULT '',
+			finished_at TEXT NOT NULL DEFAULT '',
+			updated_at  TEXT NOT NULL DEFAULT ` + nowExpr + `
+		)`,
+		`CREATE INDEX IF NOT EXISTS board_tasks_status ON board_tasks (status)`,
+		`CREATE INDEX IF NOT EXISTS board_tasks_poster ON board_tasks (posted_by)`,
 	}
 	for _, s := range stmts {
 		if _, err := d.Exec(s); err != nil {

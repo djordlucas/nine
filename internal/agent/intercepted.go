@@ -22,6 +22,9 @@ var InterceptedDefs = concatToolDefs(
 	queuedToolDefs,
 	workspaceToolDefs,
 	processToolDefs,
+	boardToolDefs,
+	roleToolDefs,
+	sessionToolDefs,
 	sqlToolDefs,
 )
 

@@ -238,6 +238,9 @@ type SideEffects struct {
 	// Journal checks events recorded under an id: at least Min of a type,
 	// whose payload contains a text when Contains is set.
 	Journal []JournalExpect `yaml:"journal"`
+	// Board checks the board's tasks (adr/orchestrator-board.md): how many
+	// exist, and that some task's title/spec/result carries a text.
+	Board *BoardExpect `yaml:"board"`
 	// Database runs each read-only query in the database and matches its
 	// result, as JSON {columns, rows}.
 	Database map[string]StringMatch `yaml:"database"`
@@ -260,6 +263,16 @@ type NotificationExpect struct {
 
 // ProcessExpect asserts one process: absent, or present with State and
 // StoppedBy when they are set.
+// BoardExpect asserts over the board's task rows (adr/orchestrator-board.md).
+type BoardExpect struct {
+	// MinTasks requires at least this many task rows on the board.
+	MinTasks int `yaml:"min_tasks"`
+	// Contains requires some task's title, spec or result to contain this text.
+	Contains string `yaml:"contains"`
+	// Status, when set, requires some task in this status.
+	Status string `yaml:"status"`
+}
+
 type ProcessExpect struct {
 	Absent    bool   `yaml:"absent"`
 	State     string `yaml:"state"`
@@ -599,7 +612,7 @@ func (m StringMatch) validate() error {
 func (e Expect) hasAny() bool {
 	se := e.SideEffects
 	if len(se.Files) > 0 || len(se.StoredFiles) > 0 || len(se.KV) > 0 || se.Workflows != nil ||
-		se.Goals != nil || se.Notifications != nil || se.Vectors != nil ||
+		se.Goals != nil || se.Notifications != nil || se.Vectors != nil || se.Board != nil ||
 		len(se.Processes) > 0 || len(se.Journal) > 0 || len(se.Database) > 0 {
 		return true
 	}

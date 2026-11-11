@@ -230,3 +230,10 @@ plan_approval = "on-risky"
 # goal = "Monitor this repo for security issues; triage new CVEs affecting our deps."
 # role = "monitor"
 # schedule = "0 9 * * 1-5"   # weekdays at 09:00  (or e.g. every = "24h")
+
+# The orchestrator board (adr/orchestrator-board.md). Tasks posted by an
+# orchestrator session queue here until a worker claims them; the per-poster
+# cap on open (queued+running) tasks is max_queued.
+#
+# [board]
+# max_queued = 100

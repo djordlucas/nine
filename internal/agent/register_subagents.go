@@ -62,8 +62,8 @@ func SubAgentDefs(roleEnum string) []llm.ToolDef {
 		{
 			Name:        "run_agent",
 			DisplayName: "Run Agent",
-			Description: "Spawn a sub-agent to execute a single self-contained task and return its final answer. Use this to isolate a focused piece of work or delegate a subtask. For multiple independent tasks at once, use run_agents.",
-			InputSchema: json.RawMessage(`{"type":"object","required":["task"],"properties":{"task":{"type":"string","description":"A clear, self-contained description of the task for the sub-agent."},"context":{"type":"string","description":"Optional background the sub-agent needs. Keep concise."},` + roleProp + `}}`),
+			Description: "Spawn a sub-agent to execute a single self-contained task and return its final answer. Use this to isolate a focused piece of work or delegate a subtask. For multiple independent tasks at once, use run_agents. The run is recorded on the board; with wait=false the call returns at once with the board task id and the result is delivered to you when it finishes.",
+			InputSchema: json.RawMessage(`{"type":"object","required":["task"],"properties":{"task":{"type":"string","description":"A clear, self-contained description of the task for the sub-agent."},"context":{"type":"string","description":"Optional background the sub-agent needs. Keep concise."},"wait":{"type":"boolean","description":"Default true: block until the sub-agent finishes and return its answer. false: return immediately with the board task id; the result arrives as a restricted turn when the task completes."},` + roleProp + `}}`),
 		},
 		{
 			Name:        "run_agents",
@@ -124,17 +124,20 @@ func RegisterGapReport(d *Dispatcher, post func(description string)) {
 // request context, task description, optional extra context, and optional
 // role name (empty resolves to the default leaf role), and returns the
 // sub-agent's answer.
-func RegisterRunAgent(d *Dispatcher, fn func(ctx context.Context, task, extraCtx, role string) (string, error)) {
+func RegisterRunAgent(d *Dispatcher, fn func(ctx context.Context, task, extraCtx, role string, wait bool) (string, error)) {
 	d.handlers["run_agent"] = func(ctx context.Context, args json.RawMessage) (string, error) {
 		var req struct {
 			Task    string `json:"task"`
 			Context string `json:"context"`
 			Role    string `json:"role"`
+			Wait    *bool  `json:"wait"`
 		}
 		if err := json.Unmarshal(args, &req); err != nil {
 			return "", fmt.Errorf("run_agent: %w", err)
 		}
-		return fn(ctx, req.Task, req.Context, req.Role)
+		// wait defaults to true when the field is absent.
+		wait := req.Wait == nil || *req.Wait
+		return fn(ctx, req.Task, req.Context, req.Role, wait)
 	}
 }
 

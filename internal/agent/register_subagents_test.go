@@ -11,7 +11,7 @@ import (
 func TestRegisterRunAgentAndRunAgents(t *testing.T) {
 	d := agent.New()
 
-	agent.RegisterRunAgent(d, func(_ context.Context, _, _, _ string) (string, error) { return "single", nil })
+	agent.RegisterRunAgent(d, func(_ context.Context, _, _, _ string, _ bool) (string, error) { return "single", nil })
 	agent.RegisterRunAgents(d, func(_ context.Context, _ []agent.SubAgentTask, _ int) []agent.SubAgentResult {
 		return []agent.SubAgentResult{{Task: "t", Result: "multi"}}
 	})

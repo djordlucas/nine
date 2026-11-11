@@ -1,0 +1,48 @@
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.list a {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  text-decoration: none;
+  color: inherit;
+}
+.list a:hover {
+  background: var(--hover);
+}
+.current {
+  background: var(--active);
+}
+.title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.meta {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.status {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  background: var(--muted-bg, #8882);
+}
+.queued { background: #8884; }
+.running { background: #2a6dd633; color: #7db4ff; }
+.done { background: #2f9e4433; color: #6fd39a; }
+.failed { background: #e5484d33; color: #ff8589; }
+.cancelled { background: #8885; color: var(--muted); }
+.new {
+  display: inline-flex;
+  padding: 0.2rem;
+  border-radius: 6px;
+  color: inherit;
+}

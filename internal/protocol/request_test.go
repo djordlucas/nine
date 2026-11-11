@@ -16,6 +16,38 @@ func TestDecodeRequestProducesTypedRequests(t *testing.T) {
 		msg   protocol.Msg
 		check func(*testing.T, protocol.Request)
 	}{
+		{"board_list", protocol.NewBoardListMsg("queued"),
+			func(t *testing.T, r protocol.Request) {
+				if got, ok := r.(protocol.BoardListReq); !ok || got.Status != "queued" {
+					t.Errorf("got %#v", r)
+				}
+			}},
+		{"board_get", protocol.NewBoardGetMsg("task_1"),
+			func(t *testing.T, r protocol.Request) {
+				if got, ok := r.(protocol.BoardGetReq); !ok || got.ID != "task_1" {
+					t.Errorf("got %#v", r)
+				}
+			}},
+		{"board_create", protocol.NewBoardCreateMsg("T", "S"),
+			func(t *testing.T, r protocol.Request) {
+				got, ok := r.(protocol.BoardCreateReq)
+				if !ok || got.Title != "T" || got.Spec != "S" {
+					t.Errorf("got %#v", r)
+				}
+			}},
+		{"board_update", protocol.NewBoardUpdateMsg("task_1", map[string]any{"status": "done"}),
+			func(t *testing.T, r protocol.Request) {
+				got, ok := r.(protocol.BoardUpdateReq)
+				if !ok || got.ID != "task_1" || got.Patch["status"] == nil {
+					t.Errorf("got %#v", r)
+				}
+			}},
+		{"board_delete", protocol.NewBoardDeleteMsg("task_1"),
+			func(t *testing.T, r protocol.Request) {
+				if got, ok := r.(protocol.BoardDeleteReq); !ok || got.ID != "task_1" {
+					t.Errorf("got %#v", r)
+				}
+			}},
 		{"user_turn", protocol.Msg{Type: protocol.TypeUserTurn, AgentID: "a1", Text: "hi", ForceThink: true},
 			func(t *testing.T, r protocol.Request) {
 				got, ok := r.(protocol.UserTurnReq)

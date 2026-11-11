@@ -113,6 +113,13 @@ type queryBackend interface {
 	// Queued message support: the daemon queues a user message when the
 	// session is mid-turn rather than blocking until the turn completes.
 	QueueMessage(agentID, message string) error
+	// Board operator CRUD backs the board_* wire verbs
+	// (adr/orchestrator-board.md §2.6).
+	BoardTaskCreate(title, spec, postedBy, source string, depth int) (memory.BoardTask, error)
+	BoardTaskList(status string, limit, offset int) ([]memory.BoardTask, error)
+	BoardTaskGet(id string) (memory.BoardTask, bool, error)
+	BoardTaskUpdate(id string, p memory.BoardTaskPatch) (memory.BoardTask, bool, error)
+	BoardTaskDelete(id string) (bool, error)
 	UnconsumedMessagesCount(agentID string) (int, error)
 	DrainQueuedMessage(agentID string) (string, error)
 }
@@ -579,6 +586,17 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 
 	case protocol.ProcessSendReq:
 		d.handleProcessSend(enc, r.ID, r.Text)
+
+	case protocol.BoardListReq:
+		d.handleBoardList(enc, r.Status)
+	case protocol.BoardGetReq:
+		d.handleBoardGet(enc, r.ID)
+	case protocol.BoardCreateReq:
+		d.handleBoardCreate(enc, r.Title, r.Spec)
+	case protocol.BoardUpdateReq:
+		d.handleBoardUpdate(enc, r.ID, r.Patch)
+	case protocol.BoardDeleteReq:
+		d.handleBoardDelete(enc, r.ID)
 
 	case protocol.ToolCallReq:
 		d.handleToolCall(enc, r.Tool, r.Args, r.LiveState)

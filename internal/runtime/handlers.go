@@ -593,6 +593,42 @@ func (d *Daemon) handleSessionStop(enc *json.Encoder, agentID string, all bool) 
 	enc.Encode(protocol.NewTextMsg(protocol.TypeSessionStop, "stopped "+resolved)) //nolint:errcheck
 }
 
+// StopSession force-stops one session by id: its worker's in-flight turn is
+// cancelled and its durable state removed, exactly as the operator's
+// session_stop does (adr/orchestrator-board.md §2.4 — the agent_stop tool).
+// It reports not-found as an error so a stray id is never silently "stopped".
+func (d *Daemon) StopSession(id string) error {
+	resolved := d.resolveID(id)
+	d.mu.Lock()
+	w, running := d.sessions[resolved]
+	if running {
+		delete(d.sessions, resolved)
+		delete(d.names, resolved)
+	}
+	d.mu.Unlock()
+	if !running {
+		found := false
+		if d.ckpt != nil {
+			_, found, _ = d.ckpt.Load(resolved)
+		}
+		if !found {
+			return fmt.Errorf("session %s not found", id)
+		}
+	}
+	if running {
+		w.stop()
+	}
+	d.forgetSession(resolved)
+	if d.sink != nil {
+		raw, _ := json.Marshal(map[string]any{"by": "agent_stop"})
+		d.sink.Append(memory.SessionEvent{
+			AgentID: resolved, Turn: 0, SpanID: "standing", Type: "session_stopped", Payload: raw,
+		})
+	}
+	slog.Info("session stopped", "id", resolved, "by", "agent_stop")
+	return nil
+}
+
 // forgetSession deletes a session's durable state: its checkpoint and, when a
 // process store is configured, the processes driving it (stopped by the
 // operator, so they do not recreate it). It reports whether any persisted trace of the session existed.

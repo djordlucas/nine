@@ -10,8 +10,8 @@ a real break happens.
 |---|---|---|---|
 | **Release version** | "which Nine is this" (user-facing) | SemVer, git-tag driven | git tag `vX.Y.Z` → injected at build |
 | **Plugin protocol** | daemon ↔ plugin wire compat | MCP `initialize` negotiation (`protocolVersion`) | `internal/mcp` |
-| **Memory DB schema** | SQLite schema | sequential forward migrations, applied on open | `PRAGMA user_version`, currently **22** |
-| **Config schema** | `nine.toml` shape | single integer, bump on break | `schema_version` in `nine.toml`, currently **3** |
+| **Memory DB schema** | SQLite schema | sequential forward migrations, applied on open | `PRAGMA user_version`, currently **23** |
+| **Config schema** | `nine.toml` shape | single integer, bump on break | `schema_version` in `nine.toml`, currently **4** |
 
 The release version also names the container image. A `v*` tag builds and
 publishes `ghcr.io/djordlucas/nine` — see [Container image](docker-image.md) for

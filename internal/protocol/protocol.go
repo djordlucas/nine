@@ -79,6 +79,11 @@ const (
 	TypePluginsReload     MsgType = "plugins_reload"
 	TypeSessionsList      MsgType = "sessions_list"
 	TypeProcessList       MsgType = "process_list"
+	TypeBoardList         MsgType = "board_list"
+	TypeBoardGet          MsgType = "board_get"
+	TypeBoardCreate       MsgType = "board_create"
+	TypeBoardUpdate       MsgType = "board_update"
+	TypeBoardDelete       MsgType = "board_delete"
 	TypeToolsList         MsgType = "tools_list"
 	TypeToolsReload       MsgType = "tools_reload"
 	TypeGrantsList        MsgType = "grants_list"
@@ -217,6 +222,11 @@ var ClientMsgTypes = []MsgType{
 	TypePluginsReload,
 	TypeSessionsList,
 	TypeProcessList,
+	TypeBoardList,
+	TypeBoardGet,
+	TypeBoardCreate,
+	TypeBoardUpdate,
+	TypeBoardDelete,
 	TypeToolsList,
 	TypeToolsReload,
 	TypeGrantsList,
@@ -458,6 +468,23 @@ type ToolVersionInfo struct {
 // ProcessInfo describes one process for the "process_list" and "process_show"
 // responses (adr/process-sessions.md §9). Recent is filled by show only — the
 // roster stays one line per process.
+// BoardTask is one board row over the wire (adr/orchestrator-board.md §2.1).
+type BoardTask struct {
+	ID         string `json:"id"`
+	Title      string `json:"title"`
+	Spec       string `json:"spec,omitempty"`
+	PostedBy   string `json:"posted_by"`
+	ClaimedBy  string `json:"claimed_by,omitempty"`
+	Status     string `json:"status"`
+	Result     string `json:"result,omitempty"`
+	Source     string `json:"source"`
+	Depth      int    `json:"depth"`
+	CreatedAt  string `json:"created_at"`
+	ClaimedAt  string `json:"claimed_at,omitempty"`
+	FinishedAt string `json:"finished_at,omitempty"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
 type ProcessInfo struct {
 	// Version and Probation describe a written process's program.
 	Version   int    `json:"version,omitempty"`
@@ -947,6 +974,20 @@ func NewProcessSendMsg(id, text string) Msg {
 
 // NewProcessListMsg asks for the process roster.
 func NewProcessListMsg() Msg { return Msg{Type: TypeProcessList} }
+
+// Board operator verbs (adr/orchestrator-board.md §2.6): create/update/delete
+// carry their payload as JSON in Text; get/delete carry the id in ID.
+func NewBoardListMsg(status string) Msg { return Msg{Type: TypeBoardList, Text: status} }
+func NewBoardGetMsg(id string) Msg       { return Msg{Type: TypeBoardGet, ID: id} }
+func NewBoardCreateMsg(title, spec string) Msg {
+	raw, _ := json.Marshal(map[string]string{"title": title, "spec": spec})
+	return Msg{Type: TypeBoardCreate, Text: string(raw)}
+}
+func NewBoardUpdateMsg(id string, patch map[string]any) Msg {
+	raw, _ := json.Marshal(patch)
+	return Msg{Type: TypeBoardUpdate, ID: id, Text: string(raw)}
+}
+func NewBoardDeleteMsg(id string) Msg { return Msg{Type: TypeBoardDelete, ID: id} }
 
 // NewToolCallMsg invokes one tool once, for testing.
 //

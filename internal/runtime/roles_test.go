@@ -2,6 +2,7 @@ package runtime_test
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -25,8 +26,21 @@ func TestRegistryBuiltinRoots(t *testing.T) {
 	reg := runtime.NewRoleRegistry(nil, "")
 
 	orch := reg.Resolve("orchestrator")
-	if !orch.AllTools || !orch.Delegates || !orch.SpawnsGoals || !orch.Persists || !orch.Interactive {
+	// Narrowed to the orchestration set at the board change
+	// (adr/orchestrator-board.md §2.2): not AllTools, but still a delegating,
+	// goal-spawning, persisting, interactive root.
+	if orch.AllTools || !orch.Delegates || !orch.SpawnsGoals || !orch.Persists || !orch.Interactive {
 		t.Errorf("orchestrator = %+v", orch)
+	}
+	for _, want := range []string{"board_post", "board_list", "role_search", "memory_set", "agent_stop", "process_list"} {
+		if !slices.Contains(orch.Tools, want) {
+			t.Errorf("orchestrator allowlist missing %s: %v", want, orch.Tools)
+		}
+	}
+	for _, banned := range []string{"shell", "write_file", "read_file"} {
+		if slices.Contains(orch.Tools, banned) {
+			t.Errorf("orchestrator allowlist must not contain %s", banned)
+		}
 	}
 	if orch.SystemPrompt != "" {
 		t.Errorf("orchestrator body must be empty (falls back to daemon prompt, R-ROLE.3), got %q", orch.SystemPrompt)

@@ -1,0 +1,31 @@
+id: board-post-dispatch
+description: "The orchestrator posts a task to the board and dispatches a worker sub-agent on it; the run is recorded on the board (source run_agent) and finishes done with the worker's result. Covers the board's core loop: post, record, complete, readable result."
+track: live
+tier: multi_step
+tags: [board]
+
+session:
+  role: orchestrator
+
+setup:
+  mcp_servers:
+    - name: fixture
+      command: "${NINE_EVAL_MCP_FIXTURE}"
+
+prompts:
+  - "Post a board task titled 'echo via fixture' whose spec tells the worker to call the fixture__mcp_echo tool with the message nine-board-marker and report exactly what it returned. Then dispatch a sub-agent on that task with run_agent (the spec as its task), and finish by reading the board with board_list: report the task id, its status, and its result."
+
+expect:
+  trajectory:
+    tools_all_of: [board_post, board_list]
+  side_effects:
+    board:
+      min_tasks: 1
+      status: done
+      contains: nine-board-marker
+
+runs: 3
+pass_threshold: "2/3"
+timeout_seconds: 300
+models:
+  expected_pass_min_class: small

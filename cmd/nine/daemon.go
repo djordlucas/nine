@@ -217,6 +217,7 @@ func runDaemon() {
 		MaxRunning:             cfg.Processes.MaxRunningOrDefault(),
 		ProcessBudget:          cfg.Processes.Budget,
 		MaxDepth:               cfg.Processes.MaxDepthOrDefault(),
+		Board:                  cfg.Board,
 		Database:               processDB,
 		JobMinDelayMS:          cfg.Plugins.JobMinDelayMS,
 		JobWorkers:             cfg.Plugins.JobWorkers,
