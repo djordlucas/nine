@@ -100,7 +100,8 @@ new machinery, but the board semantics should be proven on the conversation-shap
    (`docs/roles.md` §limits).
 3. Worker writes the outcome back (`board_complete` / `board_fail`).
 
-Two execution modes, mirroring `run_agent` vs posted work in `adr/coded-sub-agents.md` §5:
+**Decided 2026-11-10: both modes, one record.** Two execution modes, mirroring `run_agent` vs
+posted work in `adr/coded-sub-agents.md` §5:
 
 - **Waited**: `run_agent` runs the task inline as today; its run is *also* recorded on the board
   (starts `running`, ends `done`), so waited and posted work share one record.
@@ -147,8 +148,8 @@ Admission is refused on the spot, with a reason the poster can act on:
    remains a possible follow-up.
 2. ~~**Worker kind**~~ — decided 2026-11-10: sub-agent sessions only at first; process-backed
    workers arrive in phase 3 (§2.3, §5).
-3. **Dispatch style**: does `run_agent` stay wait-for-result, or does the orchestrator post and
-   poll `board_list`?
+3. ~~**Dispatch style**~~ — decided 2026-11-10: both. `run_agent` stays wait-for-result and its
+   run is recorded on the board; the async path is `board_post` + `board_list` (§2.3).
 4. **Who may post**: only the orchestrator/planner role, or any session whose role grants
    `board_post`?
 5. **Delivery**: wake the orchestrator (restricted condition turn), queue a message
