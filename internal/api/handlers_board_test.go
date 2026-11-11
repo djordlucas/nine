@@ -118,3 +118,46 @@ func TestBoardCRUDEndpoints(t *testing.T) {
 }
 
 var _ = json.Marshal // keep encoding/json if unused after edits
+
+// TestRolesEndpointAndRoleOnCreate maps GET /roles and the role field on
+// conversation create over a scripted daemon.
+func TestRolesEndpointAndRoleOnCreate(t *testing.T) {
+	var sawRole string
+	sock := scriptedDaemon(t, func(m protocol.Msg) []protocol.Msg {
+		switch m.Type {
+		case protocol.TypeRolesList:
+			return textReply(t, protocol.TypeRolesList, []protocol.RoleInfo{
+				{Name: "orchestrator", Description: "root", Tools: []string{"board_post"}},
+				{Name: "executor", AllTools: true, Delegates: true},
+			})
+		case protocol.TypeNewConversation:
+			sawRole = m.Role
+			return []protocol.Msg{protocol.NewConversationIDMsg("c1")}
+		}
+		return errReply("unexpected " + string(m.Type))
+	})
+
+	w := doAt(t, sock, http.MethodGet, "/api/v1/roles", "")
+	if w.Code != 200 {
+		t.Fatalf("roles: %d %s", w.Code, w.Body.String())
+	}
+	var roles struct {
+		Data []struct {
+			Name     string   `json:"name"`
+			AllTools bool     `json:"all_tools"`
+			Tools    []string `json:"tools"`
+		} `json:"data"`
+	}
+	decodeJSON(t, w, &roles)
+	if len(roles.Data) != 2 || roles.Data[0].Name != "orchestrator" || roles.Data[1].AllTools != true {
+		t.Fatalf("roles body: %s", w.Body.String())
+	}
+
+	w = doAt(t, sock, http.MethodPost, "/api/v1/conversations", `{"interactive":true,"role":"monitor"}`)
+	if w.Code != 201 {
+		t.Fatalf("create: %d %s", w.Code, w.Body.String())
+	}
+	if sawRole != "monitor" {
+		t.Fatalf("daemon saw role %q, want monitor", sawRole)
+	}
+}

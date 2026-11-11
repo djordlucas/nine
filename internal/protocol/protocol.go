@@ -84,6 +84,7 @@ const (
 	TypeBoardCreate       MsgType = "board_create"
 	TypeBoardUpdate       MsgType = "board_update"
 	TypeBoardDelete       MsgType = "board_delete"
+	TypeRolesList         MsgType = "roles_list"
 	TypeToolsList         MsgType = "tools_list"
 	TypeToolsReload       MsgType = "tools_reload"
 	TypeGrantsList        MsgType = "grants_list"
@@ -227,6 +228,7 @@ var ClientMsgTypes = []MsgType{
 	TypeBoardCreate,
 	TypeBoardUpdate,
 	TypeBoardDelete,
+	TypeRolesList,
 	TypeToolsList,
 	TypeToolsReload,
 	TypeGrantsList,
@@ -988,6 +990,18 @@ func NewBoardUpdateMsg(id string, patch map[string]any) Msg {
 	return Msg{Type: TypeBoardUpdate, ID: id, Text: string(raw)}
 }
 func NewBoardDeleteMsg(id string) Msg { return Msg{Type: TypeBoardDelete, ID: id} }
+
+// NewRolesListMsg asks for the role registry (adr/orchestrator-board.md §2.2.1).
+func NewRolesListMsg() Msg { return Msg{Type: TypeRolesList} }
+
+// RoleInfo is one role over the wire, for roles_list.
+type RoleInfo struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	AllTools    bool     `json:"all_tools"`
+	Tools       []string `json:"tools,omitempty"`
+	Delegates   bool     `json:"delegates"`
+}
 
 // NewToolCallMsg invokes one tool once, for testing.
 //

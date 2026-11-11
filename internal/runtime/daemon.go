@@ -512,7 +512,7 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 	}
 	switch r := req.(type) {
 	case protocol.NewConversationReq:
-		id, err := d.newConversation(r.Interactive)
+		id, err := d.newConversation(r.Interactive, r.Role)
 		if err != nil {
 			enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
 			return
@@ -597,6 +597,9 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 		d.handleBoardUpdate(enc, r.ID, r.Patch)
 	case protocol.BoardDeleteReq:
 		d.handleBoardDelete(enc, r.ID)
+
+	case protocol.RolesListReq:
+		d.handleRolesList(enc)
 
 	case protocol.ToolCallReq:
 		d.handleToolCall(enc, r.Tool, r.Args, r.LiveState)

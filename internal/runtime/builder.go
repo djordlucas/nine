@@ -243,6 +243,10 @@ func (f *AgentBuilder) Build(agentID string, interactive bool) *agent.Loop {
 // role's Interactive flag, adr/roles-design.md §6); p.OwnsGoal and p.Delegates layer
 // the pursue-shell's goal ownership and delegation opt-in over the resolved
 // role (adr/predefined-agents-design.md §3.1).
+// RoleInfos exposes the role registry for the daemon's roles_list verb and
+// role validation (adr/orchestrator-board.md §2.2.1).
+func (f *AgentBuilder) RoleInfos() []agent.RoleInfo { return f.roles.RoleInfos() }
+
 func (f *AgentBuilder) BuildForRole(agentID string, p RoleParams) *agent.Loop {
 	role := f.roles.Resolve(p.Role)
 	role.Interactive = role.Interactive && p.Interactive

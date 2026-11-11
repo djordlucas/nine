@@ -11,6 +11,9 @@ type Agent interface {
 	// runs around turns. It is called once per new conversation and once per
 	// resume from a checkpoint.
 	NewSession(id string, p RoleParams) Session
+	// Roles lists the role registry (adr/orchestrator-board.md §2.2.1); nil or
+	// empty means no role listing/validation beyond the default.
+	Roles() []agent.RoleInfo
 }
 
 // Session is what an agent hands the daemon for one conversation.
@@ -26,12 +29,24 @@ type Session struct {
 	OnComplete func(id string)
 }
 
+// Roles returns the registry the Roles hook was wired with, or nil.
+func (a InternalAgent) Roles() []agent.RoleInfo {
+	if a.RoleInfos == nil {
+		return nil
+	}
+	return a.RoleInfos()
+}
+
 // InternalAgent is Nine's own agent: sessions built by the role-aware loop
 // factory, with the notification feed and the supervisor around their turns.
 type InternalAgent struct {
 	// Build creates the loop for a session; the agent builder's BuildForRole
 	// in production.
 	Build LoopFactory
+	// RoleInfos lists the role registry (adr/orchestrator-board.md §2.2.1) for
+	// the roles_list verb and for validating a conversation's requested role.
+	// Nil leaves both to the defaults.
+	RoleInfos func() []agent.RoleInfo
 	// Notifications feeds the "[Notifications]" block prepended to a user
 	// turn. Nil disables it.
 	Notifications NotifStore

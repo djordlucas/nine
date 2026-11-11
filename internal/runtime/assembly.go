@@ -221,6 +221,7 @@ func Assemble(c AssemblyConfig) *Assembly {
 		Build:         factory,
 		Notifications: notif,
 		Supervisor:    supervisor,
+		RoleInfos:      builder.RoleInfos,
 	}, ckpt)
 
 	// Durable session-event journal (adr/event-log.md): every new session worker
