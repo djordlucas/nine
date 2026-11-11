@@ -3,7 +3,8 @@
 **Status:** Proposed (2026-11-10) · **Related:** `adr/coded-sub-agents.md` (§5's board —
 its mechanism died with the toolvm and is revived here on current ones), `adr/process-sessions.md`,
 `adr/roles-design.md`, `adr/deferred-tool-schemas.md`, `docs/workflows.md`, `docs/queued-messages.md`,
-`docs/roles.md` · **Amends:** the glossary's "there is no Task entity" (`docs/glossary.md` §tools)
+`docs/roles.md` · **Amends (at implementation, not now):** the glossary's "there is no Task
+entity" (`docs/glossary.md` §tools) — it stays until the board ships (decision 6, §4)
 
 **Proposal.** Add a **board** — a durable, shared task queue in the store — and make dispatch
 onto it a first-class pattern: one **orchestrator** session plans and posts tasks; **workers**
@@ -51,8 +52,8 @@ results come back as restricted turns; every transition is a journal event:
 ```
                        board_post                board_list / board_get
 orchestrator session ──────────► ┌───────────────────────────┐ ◄────────── any session
-(role grants board_*)             │  BOARD  (board_tasks)     │  (reads open to all)
-                                  │  queued → running → done/ │
+(orchestration tools only,        │  BOARD  (board_tasks)     │  (reads open to all)
+ board_* by default, §2.2)        │  queued → running → done/ │
 worker sub-agent ◄──board_claim───┤  failed / cancelled       ├────board_complete/fail──► …
 (leaf role bounds    (atomic,     │  + task_* journal events  │
  the tool calls)       one winner)└───────────────────────────┘
@@ -74,23 +75,24 @@ A `board_tasks` table in the store (one SQLite writer, like everything else):
 | `status` | `queued` → `running` → `done` / `failed` / `cancelled` |
 | `result` | the worker's final text, or the failure reason |
 | `depth` | lineage depth of the poster, so posting chains end (`adr/process-sessions.md` §7) |
-| `created_at`, `claimed_at`, `finished_at` | for ordering and age |
+| `created_at`, `claimed_at`, `finished_at`, `updated_at` | for ordering and age |
 
 Every transition is a journal event (`task_posted`, `task_claimed`, `task_done`, `task_failed`,
-`task_cancelled`) in `session_events`, so the existing stream, `nine trace`, and a future web-UI
-tile see the board live.
+`task_cancelled`, plus `task_updated` / `task_deleted` for operator edits, §2.6) in
+`session_events`, so the existing stream, `nine trace`, and a future web-UI tile see the board
+live.
 
 **Lifecycle** — one writer per transition (the store), reads open to all:
 
 ```
-            board_post            board_claim (atomic)     board_complete / board_fail
-   ( ) ───────────────► queued ─────────────────────► running ─────────────────────► done
-                          │  ▲                            │                               ▲
-                          │  │                            │ board_fail                    │ result
-                          │  │ board_cancel               ▼                               │
-                          └────┴────────────────────► cancelled ◄───────────────────────────┘
-                                               board_cancel          board_fail(reason)
-   guards on post: depth < max_depth · queue < max_queued · budget left · not an alike duplicate
+                 board_post                board_claim (atomic, one winner)
+    ( ) ─────────────────────► queued ─────────────────────────────► running
+                                │                                      │   │
+                                │ board_cancel                         │   ├─ board_complete ──► done
+                                ▼                                      │   └─ board_fail ─────► failed
+                             cancelled ◄────────────────────────────────┘
+                                                  board_cancel
+    guards on post: depth < max_depth · queue < max_queued · budget left · not an alike duplicate
 ```
 
 Reads are open to every session; writes go through role-granted tools:
@@ -121,7 +123,7 @@ is the orchestration set only — no shell, no file writes, nothing that does th
 | Delegation | `run_agent`, `run_agents` | spawn workers |
 | Discovery | `tool_search`/`tool_list`, **`role_search`/`role_list`** (new, §2.2.1) | find tools and worker roles before dispatching |
 | Context | the memory group in full — `memory_get`/`memory_set`/`memory_delete`/`memory_list` (+ semantic search) — plus `doc_search`, `skill_read` | read *and write* what it plans against: a planner that cannot record its plans and decisions to memory is crippled. File tools (`read_file`, `list_files`, …) stay with the workers |
-| Signal | `notify_user`, `gap_report` | reach the operator |
+| Signal | `notify_user`, `gap_report`, `agent_stop` | reach the operator; force-stop a misbehaving worker (§2.4) |
 
 Nothing is lost system-wide: **every other tool stays available in the leaf roles** — `executor`
 keeps the full set, `software-dev` has shell+files, `sysadmin` operates, `report-writer` researches
@@ -187,6 +189,13 @@ posted work in `adr/coded-sub-agents.md` §5:
 Sub-agents and processes both fit because both are sessions with roles; the difference is who
 drives the loop (the parent waits vs the runner's clock/pipes).
 
+**Spawn mechanics for posted tasks** (the one gap in the wait/post pair): `run_agent` blocks
+its parent, so in phases 1–2 the orchestrator spawns the worker itself — `run_agents` with the
+posted tasks as its list — and each run is recorded on the board (waited mode above). True
+fire-and-forget (post, and a worker spawns only when something claims) needs a detached spawn:
+phase 2 adds `run_agent({…, wait: false})` (or a board-driven spawner), so a posted task can
+sit queued until the orchestrator or a process worker picks it up.
+
 ### 2.4 Guards
 
 Admission is refused on the spot, with a reason the poster can act on:
@@ -226,6 +235,7 @@ CLI. Consequence for this pattern: the `board_*` tools appear only in sessions w
 role grants them, so a conversation started as `orchestrator` is the one that can plan and
 dispatch; one started as a leaf role sees no board tools. Lands with phase 3's operator surface
 (§5).
+
 ### 2.6 Operator CRUD on the board (CLI, API, UI)
 
 **Decided 2026-11-10:** operators get **complete CRUD on board tasks** — create, read, update,
@@ -263,6 +273,7 @@ operator ──► web UI Board section ──► REST /api/v1/board ──► d
      └────► nine board CLI ────────► (unix socket protocol) ──┘         │ task_* events
                                                                         ▼ session_events ──► /api/v1/events ──► UI live updates
 ```
+
 ## 3. Alternatives compared
 
 | Option | Verdict | Why |
@@ -273,7 +284,7 @@ operator ──► web UI Board section ──► REST /api/v1/board ──► d
 | D. Processes as the board (`[[process]]` + `report_to`) | partial | processes are the *workers* side (clock/event/message-driven sessions with budgets and depth) — adopted as worker mode 2. As the *queue* they are config-shaped, not conversation-shaped, and have no claim semantics |
 | E. `adr/coded-sub-agents.md` §5's `nine:board` | superseded mechanism, same idea | built on the toolvm (`nine:board` host import, js programs, `[board]` config) deleted at P4; the entity, lifecycle, and delivery rules are adopted here on the store + roles + processes |
 
-## 4. Open questions (for discussion before building)
+## 4. Decisions (all settled 2026-11-10)
 
 1. ~~**Role shape**~~ — decided 2026-11-10, revised same day: keep the `orchestrator` role name,
    but its allowlist is the orchestration set only, not all tools (§2.2); role discovery via
@@ -294,9 +305,9 @@ operator ──► web UI Board section ──► REST /api/v1/board ──► d
 
 | Phase | Content | Gate |
 |---|---|---|
-| P0 | `board_tasks` table + migration, journal events, role allowlist wiring | `go test ./internal/memory/`, store migration tests |
-| P1 | `board_post/list/get/claim/complete/fail/cancel` tools on the orchestrator role; admission guards (§2.4) | unit tests for admission/refusal; eval cases: post/list/claim/complete round trip |
-| P2 | Worker mode: `run_agent` records its run on the board; posted-task delivery via `WakeAgent` restricted turn | eval cases: orchestrator posts N tasks, workers complete them, results arrive restricted; injection case mirrors `process-pipe-injection` |
+| P0 | `board_tasks` table + migration (store schema bump), `[board] max_queued` config key (config schema bump), journal events, role allowlist wiring | `go test ./internal/memory/`, store migration tests, config load tests |
+| P1 | `board_post/list/get/claim/complete/fail/cancel` tools, shipped on `orchestrator` by default; admission guards (§2.4); the orchestrator allowlist narrowed to the orchestration set (§2.2) with `role_list`/`role_search` (§2.2.1) and `agent_stop` (§2.4) | unit tests for admission/refusal and role discovery; eval cases: post/list/claim/complete round trip |
+| P2 | Worker mode: `run_agent` records its run on the board; detached spawn (`run_agent wait:false`, §2.3) so posted tasks can queue unclaimed; posted-task delivery via `WakeAgent` restricted turn | eval cases: orchestrator posts N tasks, workers complete them, results arrive restricted; injection case mirrors `process-pipe-injection` |
 | P3 | Process-backed workers (a pursue process claiming from the board on its clock); agent (role) selector in the new-conversation flow, default `orchestrator` (§2.5); operator CRUD on the board — `nine board` CLI, full `/api/v1/board` CRUD, web-UI Board section (§2.6) | `go test ./internal/runtime/`, API tests (`handlers_board`), web-UI build + e2e, eval cases with a fixture process |
 | P4 | Depth/budget/dedup hardening, priority ordering (FIFO first), operator cancel | depth case (task at `max_depth` cannot post), budget case (poster paused at its ceiling) |
 
@@ -305,7 +316,12 @@ operator ──► web UI Board section ──► REST /api/v1/board ──► d
 - Store: task lifecycle transitions, atomic claim (two claimants, one winner), duplicate refusal,
   depth refusal, journal events written per transition.
 - Runtime: delivery to a busy poster retries at `turn_end`; undelivered result stays on the board;
-  restricted turn refuses writes outside `PipedTurnTools` on a delivered result.
+  restricted turn refuses writes outside `PipedTurnTools` on a delivered result; `agent_stop`
+  force-stops a worker session mid-task and journals it.
+- Roles: `role_search`/`role_list` return the registry's roles with allowlists; the narrowed
+  `orchestrator` allowlist is asserted in a role-wiring test.
+- Operator surface (§2.6): API CRUD round-trip tests (`handlers_board`), `nine board` CLI tests,
+  web-UI e2e for the Board section (list/create/edit/delete).
 - Evals: an orchestrator-dispatches case (posts ≥2 tasks, two workers with different leaf roles
   complete them, results on the board and delivered), an injection case (a task result containing
   an instruction does not steer the orchestrator), a depth case, a budget case. All
