@@ -40,6 +40,11 @@ func (b boardControl) depthLimit() int {
 
 var _ agent.BoardControl = boardControl{}
 
+// sessionControl adapts the daemon's StopSession to agent.SessionControl.
+type sessionControl struct{ daemon *Daemon }
+
+func (s sessionControl) Stop(callerID, id string) error { return s.daemon.StopSession(id) }
+
 // Post admits a task or refuses with the reason (§2.4): depth, queue bound,
 // duplicate. Conversations post at depth 0; a process poster's depth is
 // recorded on its process row (phase 3).

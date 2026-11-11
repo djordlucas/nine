@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"nine/internal/agent"
 	"nine/internal/memory"
 	"nine/skills"
 )
@@ -266,6 +267,57 @@ func (r *RoleRegistry) LeafRoleDescriptions() []LeafRole {
 // DefaultLeaf returns the role a delegation with no (or an unknown) role name
 // resolves to (roles.default_leaf; R-ROLE.9).
 func (r *RoleRegistry) DefaultLeaf() string { return r.defaultLeaf }
+
+// RoleInfos returns every resolvable role with its allowlist, for the
+// role_list/role_search tools (adr/orchestrator-board.md §2.2.1). Built-ins
+// first, then store-backed role skills, each group sorted by name.
+func (r *RoleRegistry) RoleInfos() []agent.RoleInfo {
+	var out []agent.RoleInfo
+	for name, role := range r.builtins {
+		out = append(out, agent.RoleInfo{
+			Name: name, Description: role.Description,
+			AllTools: role.AllTools, Tools: role.Tools, Delegates: role.Delegates,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	if r.store != nil {
+		var stored []agent.RoleInfo
+		seen := map[string]bool{}
+		for name := range r.builtins {
+			seen[name] = true
+		}
+		for _, source := range storeRoleSources {
+			roleSkills, err := r.store.SkillsBySource(source)
+			if err != nil {
+				slog.Warn("list role skills", "source", source, "err", err)
+				continue
+			}
+			for _, sk := range roleSkills {
+				if seen[sk.Name] || sk.Name == AnalystRole {
+					continue
+				}
+				parsed := skills.Parse(sk.Content)
+				if parsed.Role == nil {
+					continue
+				}
+				role := roleFromSkill(sk.Name, sk.Description, parsed.Content, *parsed.Role, trustedRoleSource(sk.Source))
+				seen[sk.Name] = true
+				stored = append(stored, agent.RoleInfo{
+					Name: sk.Name, Description: sk.Description,
+					AllTools: role.AllTools, Tools: role.Tools, Delegates: role.Delegates,
+				})
+			}
+		}
+		sort.Slice(stored, func(i, j int) bool { return stored[i].Name < stored[j].Name })
+		out = append(out, stored...)
+	}
+	return out
+}
+
+// roleCatalog adapts the registry to the agent package's RoleCatalog.
+type roleCatalog struct{ reg *RoleRegistry }
+
+func (c roleCatalog) Roles() []agent.RoleInfo { return c.reg.RoleInfos() }
 
 // RoleEnum renders the leaf-role list for the `role` field on
 // run_agent/run_agents (R-ROLE.8) as "name — description" pairs, marking the

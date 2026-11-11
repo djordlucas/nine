@@ -284,6 +284,8 @@ func Assemble(c AssemblyConfig) *Assembly {
 			maxQueued: c.Board.MaxQueuedOrDefault(),
 		})
 	}
+	// agent_stop (§2.4) runs over the daemon's session stop.
+	builder.SetSessionControl(sessionControl{daemon: daemon})
 	daemon.ConfigureStandingTools(runner)
 	daemon.ConfigureProcesses(c.Store, runner.Wake)
 

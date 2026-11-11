@@ -152,7 +152,7 @@ func TestDefaultsIncludeBuiltinRoles(t *testing.T) {
 			t.Errorf("built-in role %q missing from embedded defaults", name)
 		}
 	}
-	if r := roles["orchestrator"]; r != nil && (!r.AllTools || !r.Delegates || !r.SpawnsGoals || !r.Persists || !r.Interactive) {
+	if r := roles["orchestrator"]; r != nil && (r.AllTools || !r.Delegates || !r.SpawnsGoals || !r.Persists || !r.Interactive) {
 		t.Errorf("orchestrator spec = %+v", *r)
 	}
 	if r := roles["executor"]; r != nil && (!r.AllTools || !r.Delegates || r.SpawnsGoals || r.Persists || r.Interactive) {
