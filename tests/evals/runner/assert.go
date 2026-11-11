@@ -246,6 +246,41 @@ func (g *grader) gradeSideEffects() {
 		}
 	}
 
+	if b := se.Board; b != nil {
+		tasks, err := store.BoardTaskList("", 0, 0)
+		if err != nil {
+			g.fail("side_effect board: %v", err)
+		} else {
+			if b.MinTasks > 0 && len(tasks) < b.MinTasks {
+				g.fail("side_effect board: %d tasks, want >= %d", len(tasks), b.MinTasks)
+			}
+			if b.Contains != "" {
+				hit := false
+				for _, t := range tasks {
+					if strings.Contains(t.Title, b.Contains) || strings.Contains(t.Spec, b.Contains) || strings.Contains(t.Result, b.Contains) {
+						hit = true
+						break
+					}
+				}
+				if !hit {
+					g.fail("side_effect board: no task mentions %q", b.Contains)
+				}
+			}
+			if b.Status != "" {
+				hit := false
+				for _, t := range tasks {
+					if t.Status == b.Status {
+						hit = true
+						break
+					}
+				}
+				if !hit {
+					g.fail("side_effect board: no task in status %q", b.Status)
+				}
+			}
+		}
+	}
+
 	if v := se.Vectors; v != nil {
 		count, err := store.VectorCount(v.Namespace)
 		if err != nil {
