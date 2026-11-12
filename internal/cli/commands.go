@@ -415,17 +415,18 @@ func (c *CLI) boardCommand(cfg *config.Config, args []string) error {
 func boardEditFlags(rest []string) (map[string]string, bool, error) {
 	flags := map[string]string{}
 	clearClaim := false
-	for i := 0; i < len(rest); i++ {
-		a := rest[i]
+	for len(rest) > 0 {
+		a := rest[0]
+		rest = rest[1:]
 		switch a {
 		case "--clear-claim":
 			clearClaim = true
 		case "--title", "--spec", "--status", "--result":
-			if i+1 >= len(rest) {
+			if len(rest) == 0 {
 				return nil, false, fmt.Errorf("%s needs a value", a)
 			}
-			flags[a[2:]] = rest[i+1]
-			i++
+			flags[a[2:]] = rest[0]
+			rest = rest[1:]
 		default:
 			return nil, false, fmt.Errorf("unknown flag %q", a)
 		}
