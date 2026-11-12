@@ -15,11 +15,12 @@ prompts:
 expect:
   trajectory:
     tools_all_of: [board_post]
-  # Two posts were attempted; exactly one task may be on the board — the
-  # second was refused at the cap (the refusal text is in the trajectory).
+  # Posts beyond the cap are refused (the refusal text is in the
+  # trajectory); the cap is on open tasks, so at most one may be open even
+  # if the model cancels and re-posts.
   side_effects:
     board:
-      tasks: 1
+      max_open: 1
 
 runs: 3
 pass_threshold: "2/3"

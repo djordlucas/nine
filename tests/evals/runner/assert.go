@@ -257,6 +257,17 @@ func (g *grader) gradeSideEffects() {
 			if b.Tasks > 0 && len(tasks) != b.Tasks {
 				g.fail("side_effect board: %d tasks, want exactly %d", len(tasks), b.Tasks)
 			}
+			if b.MaxOpen > 0 {
+				open := 0
+				for _, t := range tasks {
+					if t.Status == "queued" || t.Status == "running" {
+						open++
+					}
+				}
+				if open > b.MaxOpen {
+					g.fail("side_effect board: %d open tasks, want <= %d", open, b.MaxOpen)
+				}
+			}
 			if b.Contains != "" {
 				hit := false
 				for _, t := range tasks {
