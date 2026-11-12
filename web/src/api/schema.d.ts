@@ -1968,10 +1968,12 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
+        /** @description A new board task. The title is required; the spec is the task itself — data for the worker, not an instruction. */
         BoardTaskCreate: {
             title: string;
             spec?: string;
         };
+        /** @description An operator edit of one board task; only the fields present are changed. */
         BoardTaskPatch: {
             title?: string;
             spec?: string;
@@ -1981,6 +1983,7 @@ export interface components {
             /** @description clears claimed_by */
             clear_claim?: boolean;
         };
+        /** @description Confirmation that the task row was deleted. */
         BoardTaskDeleteResponse: {
             id: string;
             message: string;
@@ -5533,6 +5536,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
+        /** @description The task to post — title required, spec optional. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["BoardTaskCreate"];
@@ -5693,6 +5697,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description The fields to change; absent fields are left as they are. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["BoardTaskPatch"];
