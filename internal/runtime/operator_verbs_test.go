@@ -157,7 +157,10 @@ func TestListSkillsOverTheWire(t *testing.T) {
 // A backup is written to a temporary file the caller streams and removes: the
 // store alone as .db, or with the workspace as .tar.gz.
 func TestBackupOverTheWire(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
+	// /tmp, not the default temp root: macOS caps Unix-socket paths at 104
+	// bytes and /var/folders/… is too long for the daemon's socket (the eval
+	// harness does the same).
+	t.Setenv("TMPDIR", "/tmp")
 	_, sock := operatorHarness(t, seqProvider(nil))
 	res, err := dial(t, sock).Backup(false)
 	if err != nil {

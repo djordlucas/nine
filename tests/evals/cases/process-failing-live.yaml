@@ -1,23 +1,10 @@
 id: process-failing-live
-description: "A live process whose program throws on every trigger backs off, reaches failing after three failures in a row, and the feed is told once. No model is involved: it gates the runtime's health rules on a real daemon."
+description: "A live process whose tool fails on every trigger backs off, reaches failing after three failures in a row, and the feed is told once. No model is involved: it gates the runtime's health rules on a real daemon. The tool is deliberately absent (the toolvm's js tools are gone, adr/modular_nine.md §9.10), so every trigger fails with unknown tool — the health path under test is identical."
 track: live
 tier: basic
 tags: [processes, health]
 
 setup:
-  files:
-    .tools/flaky.toml: |
-      name = "flaky"
-      kind = "js"
-      entrypoint = "./flaky.js"
-      description = "A live process that fails on every trigger."
-      live = true
-    .tools/flaky.js: |
-      import { next } from "nine:process";
-      export default () => {
-        next();
-        throw new Error("upstream unreachable");
-      };
   processes:
     - name: flaky
       tool: flaky

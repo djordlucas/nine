@@ -66,6 +66,9 @@ type liveProc struct {
 	// reflectedSeq is, for a reflect process, the last journal seq its digest
 	// read; 0 until the first tick reads where its session left off.
 	reflectedSeq int64
+	// boardTask is the board task claimed for the current trigger, when the
+	// process is a boardworker (adr/orchestrator-board.md §5 P3).
+	boardTask string
 }
 
 // SetSessions wires the session side of live processes. Without it, live
@@ -409,7 +412,29 @@ func (h *liveHandler) Next(ctx context.Context) (Trigger, error) {
 			}
 			lp.piped = t.Piped
 			lp.depth = t.Depth
+			lp.boardTask = t.BoardTask
 			lp.mu.Unlock()
+			// A boardworker's clock tick claims the oldest queued board task and
+			// runs its spec; with nothing queued the tick is skipped
+			// (adr/orchestrator-board.md §5 P3).
+			if t.Kind == "clock" && lp.row.Tool == "boardworker" {
+				task, ok, err := h.r.store.BoardTaskNextQueued()
+				if err != nil || !ok {
+					continue
+				}
+				claimed, ok, err := h.r.store.BoardTaskClaim(task.ID, lp.row.SessionID)
+				if err != nil || !ok {
+					continue // another worker took it
+				}
+				t.BoardTask = claimed.ID
+				t.Text = claimed.Title + "\n" + claimed.Spec
+				lp.mu.Lock()
+				lp.boardTask = claimed.ID
+				lp.mu.Unlock()
+				journalTransition(h.r.store, lp.row.SessionID, EvTaskClaimed, map[string]any{
+					"id": claimed.ID, "title": claimed.Title, "by": "process " + lp.row.ID,
+				})
+			}
 			// A reflect process reflects on what happened since its last tick,
 			// and a tick with nothing new is skipped (reflect_digest.go).
 			if t.Kind == "clock" && lp.row.Tool == "reflect" {
@@ -451,6 +476,9 @@ func (h *liveHandler) Turn(ctx context.Context, text string) (string, error) {
 		return "", err
 	}
 	var activity turnActivity
+	lp.mu.Lock()
+	boardTask := lp.boardTask
+	lp.mu.Unlock()
 	reply, tokens, err := h.r.sessions.ProcessTurn(ctx, row.SessionID, h.r.sessionParams(row), text,
 		TurnOptions{Trigger: label, Allow: allow, Depth: depth + 1, OnTool: activity.onTool,
 			Fresh: label == "idle" && row.GoalID != ""})
@@ -461,6 +489,10 @@ func (h *liveHandler) Turn(ctx context.Context, text string) (string, error) {
 	// spent nothing.
 	if err == nil || tokens > 0 {
 		h.r.chargeTurn(row.ID, tokens)
+	}
+	// A boardworker's turn finishes the task it claimed for this trigger.
+	if boardTask != "" {
+		h.r.finishBoardTask(row.SessionID, boardTask, reply, err)
 	}
 	if err != nil && ctx.Err() != nil {
 		return "", ErrStopped

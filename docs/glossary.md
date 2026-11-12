@@ -277,12 +277,10 @@ later user turn *pulls* the most relevant link into context under the token budg
 per-plugin Unix socket** (`NINE_PLUGIN_SOCKET`, `POST /mcp`) or **stdio** (manifest
 opt-in; see [HTTP transport](plugins-http-transport.md)). An external **MCP**
 server declared as `[[mcp.server]]` is reached by the manager directly, as the
-plugin row `mcp:<name>`,
-which speaks stdio JSON-RPC to the server and the ordinary plugin contract to
-Nine. A plugin may also implement two optional
-job methods (`plugin.job_status` / `plugin.job_cancel`, protocol v2) for
-long-running work. Plugins are compiled into the image at build time; there is no
-runtime generation. See [Plugins](plugins.md) and
+plugin row `mcp:<name>`. Plugins are compiled into the image at build time; there
+is no runtime generation, and the legacy `plugin.describe`/`plugin.call` envelope
+and plugin job methods were removed with the toolvm (adr/modular_nine.md §9.10,
+R-PLUG.12). See [Plugins](plugins.md) and
 [Architecture § 10 Plugin subsystem](architecture.md#10-plugin-subsystem).
 
 **Core-intercepted tools** — Tools handled directly by the Tool Dispatcher, in

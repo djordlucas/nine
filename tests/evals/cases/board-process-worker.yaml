@@ -1,0 +1,41 @@
+id: board-process-worker
+description: "A boardworker process (adr/orchestrator-board.md §5 P3) claims the oldest queued board task on its clock and completes it: the operator posts a task, no sub-agent is spawned, and the task finishes done with the worker's result."
+track: live
+tier: multi_step
+tags: [board, processes]
+
+setup:
+  mcp_servers:
+    - name: fixture
+      command: "${NINE_EVAL_MCP_FIXTURE}"
+  processes:
+    - name: board-worker
+      tool: boardworker
+      role: executor
+      every: 2s
+
+prompts:
+  - "Post a board task titled 'echo via worker' whose spec tells the worker to call the fixture__mcp_echo tool with the message nine-board-worker-marker and report exactly what it returned. Do not spawn any sub-agent. Then check the board and report the task's status and result."
+
+wait:
+  seconds: 240
+  until:
+    board:
+      status: done
+      contains: nine-board-worker-marker
+
+expect:
+  trajectory:
+    tools_all_of: [board_post]
+    tools_none_of: [run_agent, run_agents]
+  side_effects:
+    board:
+      min_tasks: 1
+      status: done
+      contains: nine-board-worker-marker
+
+runs: 3
+pass_threshold: "2/3"
+timeout_seconds: 300
+models:
+  expected_pass_min_class: small

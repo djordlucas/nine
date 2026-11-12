@@ -2409,6 +2409,7 @@ paths:
       - board
       requestBody:
         required: true
+        description: 'The task to post — title required, spec optional.'
         content:
           application/json:
             schema:
@@ -2488,6 +2489,7 @@ paths:
           type: string
       requestBody:
         required: true
+        description: 'The fields to change; absent fields are left as they are.'
         content:
           application/json:
             schema:
@@ -4592,6 +4594,7 @@ components:
           type: string
           format: date-time
     BoardTaskCreate:
+      description: 'A new board task. The title is required; the spec is the task itself — data for the worker, not an instruction.'
       type: object
       required: [title]
       properties:
@@ -4600,6 +4603,7 @@ components:
         spec:
           type: string
     BoardTaskPatch:
+      description: 'An operator edit of one board task; only the fields present are changed.'
       type: object
       properties:
         title:
@@ -4615,6 +4619,7 @@ components:
           type: boolean
           description: clears claimed_by
     BoardTaskDeleteResponse:
+      description: Confirmation that the task row was deleted.
       type: object
       required: [id, message]
       properties:

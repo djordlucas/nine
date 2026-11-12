@@ -107,8 +107,8 @@ cosign verify ghcr.io/djordlucas/nine:latest \
 ```
 
 From a clone, for hacking on Nine or building the image yourself. `make all` produces
-exactly one file, `dist/nine` — the CLI, the daemon, the API server with its web UI and the four built-in
-plugins. Deploying Nine is copying that file.
+exactly one file, `dist/nine` — the CLI, the daemon, the API server with its web UI and the built-in
+`shell` plugin. Deploying Nine is copying that file.
 
 ```bash
 git clone https://github.com/djordlucas/nine
@@ -146,7 +146,7 @@ configuration reference: [installation](docs/installation.md),
 Every other term — workflow, process, standing agent, supervisor, checkpoint, journal —
 is defined in the [glossary](docs/glossary.md).
 
-**Modular.** Built-in tools, custom plugins and MCP servers all reach the agent
+**Modular.** Built-in tools, custom plugins, MCP servers, and JS/Wasm tools all reach the agent
 through one dispatcher. Roles gate which of them a given worker may call.
 
 **Persistent.** Conversations, goals, workflows, memory, files, skills and processes live
@@ -192,8 +192,9 @@ they open a Unix socket, send a message, relay the reply. Everything long-lived 
 │            ┌──────────────────▼─────────┐   ┌────────────▼──────────────┐ │
 │            │ LLM Queue → provider       │   │ Tool Dispatcher           │ │
 │            │ supervisor > active        │   │  ├ core (in-process)      │ │
-│            │           > background     │   │  └ plugins (subprocess)   │ │
-│                                             └────────────┘ │
+│            │           > background     │   │  └ MCP (plugins/servers)  │ │
+│            └────────────────────────────┘   │                           │ │
+│                                             └────────────┬──────────────┘ │
 │   ┌──────────────────────────────────────────────────────▼──────────────┐ │
 │   │ memory.Store → SQLite, one file: all durable state + event journal  │ │
 │   └─────────────────────────────────────────────────────────────────────┘ │
@@ -225,22 +226,23 @@ Topology, concurrency, the turn lifecycle, boot sequence and the invariants that
 ## Tools
 
 **The tool dispatcher** is the single place a tool name resolves to an implementation, with two
-backends behind one namespace: built-in tools calling the store in-process, and plugin subprocesses
-reached over MCP. A name resolves to exactly one — an unexpected collision is a load failure,
-not a silent override.
+backends behind one namespace: core tools calling the store in-process, and everything that runs in
+another process, reached over MCP — one client, one wire protocol. A name resolves to exactly one —
+an unexpected collision is a load failure, not a silent override.
 
-**Plugins** are tool containers, and may run asynchronous jobs. Nine ships four — `shell`,
-`files`, `http`, `time` — served out of the `nine` binary itself: the daemon starts each by
-re-executing itself as `nine plugin serve <name>`, so they keep process and crash isolation
-without their own artifact. A crashing plugin cannot take the daemon down with it. An **MCP
-server** declared as `[[mcp.server]]` becomes a plugin too, with its tools prefixed by the server
-name; that is how Nine drives a browser ([docs/browser.md](docs/browser.md)).
+**Plugins** are MCP-server subprocesses, so a crashing plugin cannot take the daemon down with it.
+Nine ships one built-in plugin, `shell`, served out of the `nine` binary itself: the daemon starts
+it by re-executing itself as `nine mcp serve shell`, keeping process and crash isolation with a
+single artifact to build. Reading and writing files, fetching over HTTP and reading the clock are
+core built-ins compiled into the binary. An external **MCP server** declared as `[[mcp.server]]`
+becomes a plugin row too (`mcp:<name>`), with its tools prefixed by the server name; that is how Nine
+drives a browser ([docs/browser.md](docs/browser.md)).
 
-Writing one means answering two methods — `plugin.describe` and `plugin.call` — over HTTP on a
-Unix socket, then dropping the binary beside a manifest in `[plugins].user_dir`
-(`plugins.d/weather` + `plugins.d/weather.toml`). The description string is what gets embedded and
-ranked for tool selection, so it decides whether your tool is offered to the model at all.
-See [docs/plugins.md](docs/plugins.md) and
+Writing a plugin means writing an MCP server — `initialize` / `tools/list` / `tools/call` over
+stdio, or streamable HTTP on a Unix socket — and dropping the binary beside a manifest in
+`[plugins].user_dir` (`plugins.d/weather` + `plugins.d/weather.toml`). The tool descriptions are what
+get embedded and ranked for tool selection, so they decide whether your tool is offered to the model
+at all. See [docs/plugins.md](docs/plugins.md) and
 [docs/plugins-http-transport.md](docs/plugins-http-transport.md).
 
 Memory, durable file storage, semantic search and skills are **not** plugins — they are core

@@ -576,7 +576,10 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 	// including the registered-but-unadvertised tools (gap_report,
 	// memory_embed/memory_query), exactly as before roles.
 	if !role.AllTools {
-		allow := append([]string{"gap_report"}, role.Tools...)
+		// gap_report is the escape hatch (R-ROLE.5) and ask_human is
+		// interactive-only by registration (R-HITL.1) — both survive the
+		// allowlist prune, so a narrowed role can still reach the operator.
+		allow := append([]string{"gap_report", "ask_human"}, role.Tools...)
 		allow = append(allow, shellTools...)
 		d.RestrictTo(allow)
 	}

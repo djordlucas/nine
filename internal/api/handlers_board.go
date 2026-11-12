@@ -108,16 +108,15 @@ func (s *Server) GetBoardTask(ctx context.Context, request apigen.GetBoardTaskRe
 	defer cl.Close()
 
 	t, err := cl.BoardGet(request.Id)
-	switch {
-	case err == nil:
+	if err == nil {
 		return apigen.GetBoardTask200JSONResponse(toAPITask(t)), nil
-	case strings.Contains(err.Error(), "not found"):
+	}
+	if strings.Contains(err.Error(), "not found") {
 		return apigen.GetBoardTask404JSONResponse(
 			errorBody("not_found", err.Error(), map[string]any{"id": request.Id})), nil
-	default:
-		return apigen.GetBoardTask500JSONResponse(
-			errorBody("server_error", err.Error(), nil)), nil
 	}
+	return apigen.GetBoardTask500JSONResponse(
+			errorBody("server_error", err.Error(), nil)), nil
 }
 
 func (s *Server) CreateBoardTask(ctx context.Context, request apigen.CreateBoardTaskRequestObject) (apigen.CreateBoardTaskResponseObject, error) {
@@ -137,13 +136,11 @@ func (s *Server) CreateBoardTask(ctx context.Context, request apigen.CreateBoard
 		spec = *request.Body.Spec
 	}
 	t, err := cl.BoardCreate(request.Body.Title, spec)
-	switch {
-	case err == nil:
+	if err == nil {
 		return apigen.CreateBoardTask200JSONResponse(toAPITask(t)), nil
-	default:
-		return apigen.CreateBoardTask400JSONResponse(
-			errorBody("invalid_request", err.Error(), nil)), nil
 	}
+	return apigen.CreateBoardTask400JSONResponse(
+		errorBody("invalid_request", err.Error(), nil)), nil
 }
 
 func (s *Server) UpdateBoardTask(ctx context.Context, request apigen.UpdateBoardTaskRequestObject) (apigen.UpdateBoardTaskResponseObject, error) {
@@ -177,19 +174,19 @@ func (s *Server) UpdateBoardTask(ctx context.Context, request apigen.UpdateBoard
 			errorBody("invalid_request", "nothing to update", map[string]any{"id": request.Id})), nil
 	}
 	t, err := cl.BoardUpdate(request.Id, patch)
-	switch {
-	case err == nil:
+	if err == nil {
 		return apigen.UpdateBoardTask200JSONResponse(toAPITask(t)), nil
-	case strings.Contains(err.Error(), "not found"):
+	}
+	if strings.Contains(err.Error(), "not found") {
 		return apigen.UpdateBoardTask404JSONResponse(
 			errorBody("not_found", err.Error(), map[string]any{"id": request.Id})), nil
-	case strings.Contains(err.Error(), "unknown status"):
+	}
+	if strings.Contains(err.Error(), "unknown status") {
 		return apigen.UpdateBoardTask400JSONResponse(
 			errorBody("invalid_request", err.Error(), map[string]any{"id": request.Id})), nil
-	default:
-		return apigen.UpdateBoardTask409JSONResponse(
-			errorBody("conflict", err.Error(), map[string]any{"id": request.Id})), nil
 	}
+	return apigen.UpdateBoardTask409JSONResponse(
+		errorBody("conflict", err.Error(), map[string]any{"id": request.Id})), nil
 }
 
 func (s *Server) DeleteBoardTask(ctx context.Context, request apigen.DeleteBoardTaskRequestObject) (apigen.DeleteBoardTaskResponseObject, error) {
@@ -201,15 +198,14 @@ func (s *Server) DeleteBoardTask(ctx context.Context, request apigen.DeleteBoard
 	defer cl.Close()
 
 	err = cl.BoardDelete(request.Id)
-	switch {
-	case err == nil:
+	if err == nil {
 		return apigen.DeleteBoardTask200JSONResponse(
 			apigen.BoardTaskDeleteResponse{Id: request.Id, Message: "deleted " + request.Id}), nil
-	case strings.Contains(err.Error(), "not found"):
+	}
+	if strings.Contains(err.Error(), "not found") {
 		return apigen.DeleteBoardTask404JSONResponse(
 			errorBody("not_found", err.Error(), map[string]any{"id": request.Id})), nil
-	default:
-		return apigen.DeleteBoardTask500JSONResponse(
-			errorBody("server_error", err.Error(), nil)), nil
 	}
+	return apigen.DeleteBoardTask500JSONResponse(
+			errorBody("server_error", err.Error(), nil)), nil
 }

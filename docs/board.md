@@ -6,7 +6,7 @@ The board is Nine's shared work queue: one **orchestrator** session plans and po
 
 - **Task** — one row: `id` (`task_<hex>`), `title`, `spec`, `posted_by`, `claimed_by`, `status` (`queued` → `running` → `done` / `failed` / `cancelled`), `result`, `source` (`post`, `run_agent`, `detached`), `depth`, timestamps. Every transition is a `task_*` event in the journal, so the event stream, `nine trace` and the web UI see the board live.
 - **Orchestrator** — the `orchestrator` role ([roles.md](roles.md)): board tools, delegation, role/tool search, memory — no shell, no file tools. New conversations default to it (the web UI picker, `POST /api/v1/conversations` `role`, `nine --role <name> <message>`).
-- **Workers** — sub-agent sessions (`run_agent`/`run_agents`) spawned per task, running under a leaf role. `run_agent` records its run on the board; `run_agent wait:false` returns the task id immediately and the result arrives as a restricted turn when the task completes.
+- **Workers** — sub-agent sessions (`run_agent`/`run_agents`) spawned per task, running under a leaf role. `run_agent` records its run on the board; `run_agent wait:false` returns the task id immediately and the result arrives as a restricted turn when the task completes. For background work, a `boardworker` process claims the oldest queued task on its clock (a `[[process]]` block with `tool = "boardworker"` and `every = "2s"`) and finishes it the same way.
 
 ## Model tools
 

@@ -38,12 +38,13 @@ nine goals                       List active goals
 nine reflections [agent-id]      Reflection history from the journal (default: self-reflection)
 nine notifications [--all]       Show the human-facing notification feed
                                  (--all includes already-seen entries)
-nine grants                      Capability requests waiting, and the generated-tool
-                                 ceiling in force with each grant's source
-nine grants approve <id>         Grant a requested capability — takes effect on the
-                                 running daemon, no restart
+nine grants                      Capability requests and grants, from the store
+                                 (historical: the sandbox that conferred them was
+                                 removed with the toolvm — adr/modular_nine.md §9.10)
+nine grants approve <id>         Settle a requested capability — recorded only, it
+                                 confers nothing (no sandbox tier exists any more)
 nine grants deny <id>            Refuse it; nothing is granted
-nine grants revoke <grant-id>    Withdraw a grant an earlier approval conferred
+nine grants revoke <grant-id>    Withdraw a recorded grant
 
 nine workflows                   List workflows (active and recent)
 nine workflow stop <id>          Cancel an ongoing workflow
@@ -57,9 +58,9 @@ nine skills validate [path]      Check your own skill/role files against the
 nine plugins                     Show the plugin roster (built-in + user, with
                                  any skipped user plugins and the reason)
 nine plugins reload              Re-scan [plugins].user_dir and reload user
-nine mcp export                  Serve the daemon's tools as an MCP stdio
-                                 server for an external MCP client (adr/modular_nine.md §6)
-                                 plugins live (built-ins untouched)
+                                 plugins (built-ins untouched)
+nine mcp export                  Serve the daemon's tools as an MCP stdio server
+                                 for an external MCP client (adr/modular_nine.md §6)
 nine plugin validate [path]      Check a user plugin with the load-time handshake
                                  (defaults to [plugins].user_dir; a path may be a
                                  manifest or a binary; works with the daemon down)

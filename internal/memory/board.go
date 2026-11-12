@@ -282,3 +282,18 @@ func (s *Store) BoardTaskFindAlike(poster, title, spec string) (BoardTask, bool,
 	}
 	return t, true, nil
 }
+
+// BoardTaskNextQueued returns the oldest queued task, for a board worker's
+// clock tick (adr/orchestrator-board.md §5 P3: process-backed workers).
+func (s *Store) BoardTaskNextQueued() (BoardTask, bool, error) {
+	t, err := scanBoardTask(s.db.QueryRow(
+		`SELECT `+boardTaskCols+` FROM board_tasks WHERE status = ? ORDER BY rowid ASC LIMIT 1`,
+		BoardQueued))
+	if err == sql.ErrNoRows {
+		return BoardTask{}, false, nil
+	}
+	if err != nil {
+		return BoardTask{}, false, err
+	}
+	return t, true, nil
+}
