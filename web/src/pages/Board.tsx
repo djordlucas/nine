@@ -25,6 +25,7 @@ type Task = {
   status: Status;
   result?: string;
   source: string;
+  priority?: number;
   depth: number;
   created_at: string;
   claimed_at?: string;
@@ -92,6 +93,7 @@ function Roster({ current }: { current?: string }) {
 function CreateForm() {
   const [title, setTitle] = useState('');
   const [spec, setSpec] = useState('');
+  const [priority, setPriority] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const { path } = useLocation();
@@ -104,7 +106,7 @@ function CreateForm() {
             if (!title.trim()) return;
             setBusy(true);
             setError('');
-            const { data, error: err } = await api.POST('/board', { body: { title: title.trim(), spec: spec.trim() || undefined } });
+            const { data, error: err } = await api.POST('/board', { body: { title: title.trim(), spec: spec.trim() || undefined, priority } });
             setBusy(false);
             if (err || !data) {
               setError(errorMessage(err, 'Could not post the task.'));
@@ -120,6 +122,10 @@ function CreateForm() {
           <label class={detail.field}>
             <span>Spec — what the worker should do</span>
             <textarea value={spec} onInput={(e) => setSpec((e.target as HTMLTextAreaElement).value)} rows={6} />
+          </label>
+          <label class={detail.field}>
+            <span>Priority (0–10, higher claimed first)</span>
+            <input type="number" min={0} max={10} value={priority} onInput={(e) => setPriority(Number((e.target as HTMLInputElement).value))} />
           </label>
           {error && <p class="card error">{error}</p>}
           <div class={detail.actions}>
@@ -139,6 +145,7 @@ function TaskDetail({ id }: { id: string }) {
   const [title, setTitle] = useState('');
   const [spec, setSpec] = useState('');
   const [status, setStatus] = useState<Status>('queued');
+  const [priority, setPriority] = useState(0);
   const [result, setResult] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -149,10 +156,11 @@ function TaskDetail({ id }: { id: string }) {
   const save = async () => {
     setBusy(true);
     setErr('');
-    const body: Record<string, string> = {};
+    const body: Record<string, string | number> = {};
     if (title.trim() && title.trim() !== t.title) body.title = title.trim();
     if (spec !== (t.spec ?? '')) body.spec = spec;
     if (status !== t.status) body.status = status;
+    if (priority !== t.priority) body.priority = priority;
     if (result !== (t.result ?? '')) body.result = result;
     const { error: e } = await api.PATCH('/board/{id}', { params: { path: { id } }, body });
     setBusy(false);
@@ -180,6 +188,7 @@ function TaskDetail({ id }: { id: string }) {
           <>
             <label class={detail.field}><span>Title</span><input value={title} onInput={(e) => setTitle((e.target as HTMLInputElement).value)} /></label>
             <label class={detail.field}><span>Spec</span><textarea value={spec} onInput={(e) => setSpec((e.target as HTMLTextAreaElement).value)} rows={6} /></label>
+            <label class={detail.field}><span>Priority</span><input type="number" min={0} max={10} value={priority} onInput={(e) => setPriority(Number((e.target as HTMLInputElement).value))} /></label>
             <label class={detail.field}><span>Status</span>
               <select value={status} onChange={(e) => setStatus((e.target as HTMLSelectElement).value as Status)}>
                 {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -202,7 +211,7 @@ function TaskDetail({ id }: { id: string }) {
             <button class="button" onClick={() => setEditing(false)}>Cancel</button>
           </>
         ) : (
-          <button class="button" onClick={() => { setEditing(true); setTitle(t.title); setSpec(t.spec ?? ''); setStatus(t.status); setResult(t.result ?? ''); }}>Edit</button>
+          <button class="button" onClick={() => { setEditing(true); setTitle(t.title); setSpec(t.spec ?? ''); setStatus(t.status); setPriority(t.priority ?? 0); setResult(t.result ?? ''); }}>Edit</button>
         )}
         <button class="button danger" onClick={remove}><Icon name="trash" /> Delete</button>
         <a class="button" href="/board">Back</a>

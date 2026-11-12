@@ -4579,6 +4579,12 @@ components:
           type: string
           enum: [post, run_agent, detached]
           description: how the task entered the board
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 10
+          default: 0
+          description: higher is claimed first; FIFO within a priority
         depth:
           type: integer
         created_at:
@@ -4602,10 +4608,19 @@ components:
           type: string
         spec:
           type: string
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 10
+          default: 0
     BoardTaskPatch:
       description: 'An operator edit of one board task; only the fields present are changed.'
       type: object
       properties:
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 10
         title:
           type: string
         spec:

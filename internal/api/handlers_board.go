@@ -27,6 +27,8 @@ func toAPITask(t protocol.BoardTask) apigen.BoardTask {
 	if t.Spec != "" {
 		out.Spec = &t.Spec
 	}
+	pri := t.Priority
+	out.Priority = &pri
 	if t.ClaimedBy != "" {
 		out.ClaimedBy = &t.ClaimedBy
 	}
@@ -135,7 +137,11 @@ func (s *Server) CreateBoardTask(ctx context.Context, request apigen.CreateBoard
 	if request.Body.Spec != nil {
 		spec = *request.Body.Spec
 	}
-	t, err := cl.BoardCreate(request.Body.Title, spec)
+	priority := 0
+	if request.Body.Priority != nil {
+		priority = *request.Body.Priority
+	}
+	t, err := cl.BoardCreate(request.Body.Title, spec, priority)
 	if err == nil {
 		return apigen.CreateBoardTask200JSONResponse(toAPITask(t)), nil
 	}
@@ -167,6 +173,9 @@ func (s *Server) UpdateBoardTask(ctx context.Context, request apigen.UpdateBoard
 		}
 		if request.Body.ClearClaim != nil && *request.Body.ClearClaim {
 			patch["clear_claim"] = true
+		}
+		if request.Body.Priority != nil {
+			patch["priority"] = *request.Body.Priority
 		}
 	}
 	if len(patch) == 0 {

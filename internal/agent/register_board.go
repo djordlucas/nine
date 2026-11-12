@@ -25,7 +25,7 @@ var BoardToolNames = []string{
 // BoardControl is the daemon side of the board tools, implemented in
 // internal/runtime (board_control.go) and wired by Assemble.
 type BoardControl interface {
-	Post(agentID, title, spec string) (memory.BoardTask, error)
+	Post(agentID, title, spec string, priority int) (memory.BoardTask, error)
 	// RecordRun records a delegation's run on the board (waited or detached),
 	// returning the queued task; the child claims and finishes it.
 	RecordRun(parentID, title, spec, source string) (memory.BoardTask, error)
@@ -103,13 +103,17 @@ func RegisterBoardTools(d *Dispatcher, bc BoardControl, agentID string, names []
 		case "board_post":
 			d.handlers["board_post"] = func(_ context.Context, args json.RawMessage) (string, error) {
 				var req struct {
-					Title string `json:"title"`
-					Spec  string `json:"spec"`
+					Title    string `json:"title"`
+					Spec     string `json:"spec"`
+					Priority int    `json:"priority"`
 				}
 				if err := json.Unmarshal(args, &req); err != nil {
 					return "", fmt.Errorf("board_post: %w", err)
 				}
-				t, err := bc.Post(agentID, req.Title, req.Spec)
+				if req.Priority < 0 || req.Priority > 10 {
+					return "", fmt.Errorf("board_post: priority is 0-10, got %d", req.Priority)
+				}
+				t, err := bc.Post(agentID, req.Title, req.Spec, req.Priority)
 				if err != nil {
 					return "", err
 				}

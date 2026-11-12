@@ -428,8 +428,13 @@ func (h *liveHandler) Next(ctx context.Context) (Trigger, error) {
 				}
 				t.BoardTask = claimed.ID
 				t.Text = claimed.Title + "\n" + claimed.Spec
+				// The spec came off the shared queue from another session: it is
+				// data, so the turn it starts runs restricted (PipedTurnTools),
+				// exactly like a piped report (adr/orchestrator-board.md §2.4).
+				t.Piped = true
 				lp.mu.Lock()
 				lp.boardTask = claimed.ID
+				lp.piped = true
 				lp.mu.Unlock()
 				journalTransition(h.r.store, lp.row.SessionID, EvTaskClaimed, map[string]any{
 					"id": claimed.ID, "title": claimed.Title, "by": "process " + lp.row.ID,

@@ -621,6 +621,7 @@ func initSchema(d db) error {
 			status      TEXT NOT NULL DEFAULT 'queued',
 			result      TEXT NOT NULL DEFAULT '',
 			source      TEXT NOT NULL DEFAULT 'post',
+			priority    INTEGER NOT NULL DEFAULT 0,
 			depth       INTEGER NOT NULL DEFAULT 0,
 			created_at  TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			claimed_at  TEXT NOT NULL DEFAULT '',
@@ -629,6 +630,7 @@ func initSchema(d db) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS board_tasks_status ON board_tasks (status)`,
 		`CREATE INDEX IF NOT EXISTS board_tasks_poster ON board_tasks (posted_by)`,
+		`CREATE INDEX IF NOT EXISTS board_tasks_prio ON board_tasks (status, priority DESC)`,
 	}
 	for _, s := range stmts {
 		if _, err := d.Exec(s); err != nil {

@@ -1058,8 +1058,8 @@ func (c *Client) BoardGet(id string) (BoardTask, error) {
 }
 
 // BoardCreate posts a task as the operator.
-func (c *Client) BoardCreate(title, spec string) (BoardTask, error) {
-	if err := c.send(NewBoardCreateMsg(title, spec)); err != nil {
+func (c *Client) BoardCreate(title, spec string, priority int) (BoardTask, error) {
+	if err := c.send(NewBoardCreateMsg(title, spec, priority)); err != nil {
 		return BoardTask{}, err
 	}
 	reply, err := c.recv()

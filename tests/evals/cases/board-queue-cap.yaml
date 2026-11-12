@@ -1,0 +1,29 @@
+id: board-queue-cap
+description: "The [board] max_queued admission guard: with max_queued = 1, a second open post from the same session is refused with the reason, and the first task still completes. What is measured is the runtime, not the model."
+track: live
+tier: basic
+tags: [board, limits]
+
+session:
+  role: orchestrator
+  config:
+    board.max_queued: 1
+
+prompts:
+  - "Post a board task titled 'first' with spec 'anything'. Then post a second task titled 'second' with spec 'anything' and report exactly what the second post returned."
+
+expect:
+  trajectory:
+    tools_all_of: [board_post]
+  # Posts beyond the cap are refused (the refusal text is in the
+  # trajectory); the cap is on open tasks, so at most one may be open even
+  # if the model cancels and re-posts.
+  side_effects:
+    board:
+      max_open: 1
+
+runs: 3
+pass_threshold: "2/3"
+timeout_seconds: 180
+models:
+  expected_pass_min_class: nano

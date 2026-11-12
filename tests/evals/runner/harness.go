@@ -470,6 +470,7 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 		HITL:                hitl,
 		DefaultLeafRole:     "executor",
 		MaxRunning:          caseInt(c, "processes.max_running", runtime.DefaultMaxRunning),
+		Board:               config.BoardConfig{MaxQueued: caseInt(c, "board.max_queued", 0)},
 		RoleFactory:         roleFactory,
 		Database:            processDB,
 	})

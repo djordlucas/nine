@@ -648,7 +648,7 @@ func (m *mockGoalStore) GoalList() ([]memory.Goal, error)                   { re
 func (m *mockGoalStore) WorkflowList(_ string) ([]workflow.Workflow, error) { return nil, nil }
 func (m *mockGoalStore) WorkflowCancel(_ string) (int, error)               { return 0, nil }
 func (m *mockGoalStore) WorkflowFail(_ string, _ bool) (int, error)         { return 0, nil }
-func (m *mockGoalStore) BoardTaskCreate(_, _, _, _ string, _ int) (memory.BoardTask, error) {
+func (m *mockGoalStore) BoardTaskCreate(_, _, _, _ string, _, _ int) (memory.BoardTask, error) {
 	return memory.BoardTask{}, nil
 }
 func (m *mockGoalStore) BoardTaskList(_ string, _, _ int) ([]memory.BoardTask, error) { return nil, nil }

@@ -95,7 +95,7 @@ type RolesListReq struct{}
 
 type BoardListReq struct{ Status string }
 type BoardGetReq struct{ ID string }
-type BoardCreateReq struct{ Title, Spec string }
+type BoardCreateReq struct{ Title, Spec string; Priority int }
 type BoardUpdateReq struct {
 	ID    string
 	Patch map[string]json.RawMessage
@@ -326,11 +326,12 @@ func DecodeRequest(m Msg) (Request, error) {
 		return BoardGetReq{ID: m.ID}, nil
 	case TypeBoardCreate:
 		var cs struct {
-			Title string `json:"title"`
-			Spec  string `json:"spec"`
+			Title    string `json:"title"`
+			Spec     string `json:"spec"`
+			Priority int    `json:"priority"`
 		}
 		_ = json.Unmarshal([]byte(m.Text), &cs)
-		return BoardCreateReq{Title: cs.Title, Spec: cs.Spec}, nil
+		return BoardCreateReq{Title: cs.Title, Spec: cs.Spec, Priority: cs.Priority}, nil
 	case TypeBoardUpdate:
 		var patch map[string]json.RawMessage
 		_ = json.Unmarshal([]byte(m.Text), &patch)

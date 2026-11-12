@@ -54,7 +54,7 @@ func (s sessionControl) Stop(callerID, id string) error { return s.daemon.StopSe
 // Post admits a task or refuses with the reason (§2.4): depth, queue bound,
 // duplicate. Conversations post at depth 0; a process poster's depth is
 // recorded on its process row (phase 3).
-func (b boardControl) Post(agentID, title, spec string) (memory.BoardTask, error) {
+func (b boardControl) Post(agentID, title, spec string, priority int) (memory.BoardTask, error) {
 	if b.store == nil {
 		return memory.BoardTask{}, fmt.Errorf("board is not enabled here")
 	}
@@ -72,7 +72,7 @@ func (b boardControl) Post(agentID, title, spec string) (memory.BoardTask, error
 	} else if n >= b.maxQueued {
 		return memory.BoardTask{}, fmt.Errorf("board_post: %d open tasks is at your max_queued %d; finish or cancel some first", n, b.maxQueued)
 	}
-	t, err := b.store.BoardTaskCreate(title, spec, agentID, memory.BoardSourcePost, 0)
+	t, err := b.store.BoardTaskCreate(title, spec, agentID, memory.BoardSourcePost, priority, 0)
 	if err != nil {
 		return memory.BoardTask{}, err
 	}
@@ -170,7 +170,7 @@ func (b boardControl) RecordRun(parentID, title, spec, source string) (memory.Bo
 	if b.store == nil {
 		return memory.BoardTask{}, fmt.Errorf("board is not enabled here")
 	}
-	t, err := b.store.BoardTaskCreate(title, spec, parentID, source, 0)
+	t, err := b.store.BoardTaskCreate(title, spec, parentID, source, 0, 0)
 	if err != nil {
 		return memory.BoardTask{}, err
 	}

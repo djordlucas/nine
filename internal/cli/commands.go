@@ -421,7 +421,7 @@ func boardEditFlags(rest []string) (map[string]string, bool, error) {
 		switch a {
 		case "--clear-claim":
 			clearClaim = true
-		case "--title", "--spec", "--status", "--result":
+		case "--title", "--spec", "--status", "--result", "--priority":
 			if len(rest) == 0 {
 				return nil, false, fmt.Errorf("%s needs a value", a)
 			}

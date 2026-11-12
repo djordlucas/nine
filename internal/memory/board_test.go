@@ -14,18 +14,18 @@ func TestBoardTaskCRUD(t *testing.T) {
 	}
 
 	// Create requires a title.
-	if _, err := store.BoardTaskCreate("  ", "spec", "conv1", "", 0); err == nil {
+	if _, err := store.BoardTaskCreate("  ", "spec", "conv1", "", 0, 0); err == nil {
 		t.Fatal("create with empty title: want error")
 	}
 
-	t1, err := store.BoardTaskCreate("Fix the queue", "investigate INC-1", "conv1", "", 0)
+	t1, err := store.BoardTaskCreate("Fix the queue", "investigate INC-1", "conv1", "", 0, 0)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	if t1.Status != memory.BoardQueued || t1.PostedBy != "conv1" || t1.ID == "" {
 		t.Fatalf("bad initial task: %+v", t1)
 	}
-	t2, err := store.BoardTaskCreate("Write the report", "", "conv1", "", 0)
+	t2, err := store.BoardTaskCreate("Write the report", "", "conv1", "", 0, 0)
 	if err != nil {
 		t.Fatalf("create 2: %v", err)
 	}
@@ -109,11 +109,11 @@ func TestBoardTaskAdmissionHelpers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a, err := store.BoardTaskCreate("Same", "same spec", "conv1", "", 0)
+	a, err := store.BoardTaskCreate("Same", "same spec", "conv1", "", 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.BoardTaskCreate("Same", "same spec", "conv1", "", 0); err != nil {
+	if _, err := store.BoardTaskCreate("Same", "same spec", "conv1", "", 0, 0); err != nil {
 		t.Fatal(err) // creating a duplicate row is allowed at store level; the guard is FindAlike
 	}
 
@@ -141,5 +141,31 @@ func TestBoardTaskAdmissionHelpers(t *testing.T) {
 	}
 	if _, ok, _ := store.BoardTaskFindAlike("conv1", "Same", "same spec"); !ok {
 		t.Fatal("alike should still match the one open duplicate")
+	}
+}
+
+func TestBoardTaskPriorityOrdering(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	low, _ := store.BoardTaskCreate("low", "", "conv1", "", 0, 0)
+	high, _ := store.BoardTaskCreate("high", "", "conv1", "", 9, 0)
+	mid1, _ := store.BoardTaskCreate("mid1", "", "conv1", "", 5, 0)
+	mid2, _ := store.BoardTaskCreate("mid2", "", "conv1", "", 5, 0)
+
+	// Highest priority first; FIFO within a priority.
+	want := []string{high.ID, mid1.ID, mid2.ID, low.ID}
+	for _, id := range want {
+		next, ok, err := store.BoardTaskNextQueued()
+		if err != nil || !ok || next.ID != id {
+			t.Fatalf("next = %s ok=%v err=%v, want %s", next.ID, ok, err, id)
+		}
+		if _, ok, _ := store.BoardTaskClaim(next.ID, "w"); !ok {
+			t.Fatalf("claim %s", next.ID)
+		}
+	}
+	if _, ok, _ := store.BoardTaskNextQueued(); ok {
+		t.Fatal("queue should be empty")
 	}
 }
