@@ -267,6 +267,8 @@ type NotificationExpect struct {
 type BoardExpect struct {
 	// MinTasks requires at least this many task rows on the board.
 	MinTasks int `yaml:"min_tasks"`
+	// Tasks requires exactly this many task rows on the board.
+	Tasks int `yaml:"tasks"`
 	// Contains requires some task's title, spec or result to contain this text.
 	Contains string `yaml:"contains"`
 	// Status, when set, requires some task in this status.

@@ -15,11 +15,11 @@ prompts:
 expect:
   trajectory:
     tools_all_of: [board_post]
-  answer:
-    matches: "(?i)max_queued|already open|open tasks"
+  # Two posts were attempted; exactly one task may be on the board — the
+  # second was refused at the cap (the refusal text is in the trajectory).
   side_effects:
     board:
-      min_tasks: 1
+      tasks: 1
 
 runs: 3
 pass_threshold: "2/3"

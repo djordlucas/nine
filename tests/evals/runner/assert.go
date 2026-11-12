@@ -254,6 +254,9 @@ func (g *grader) gradeSideEffects() {
 			if b.MinTasks > 0 && len(tasks) < b.MinTasks {
 				g.fail("side_effect board: %d tasks, want >= %d", len(tasks), b.MinTasks)
 			}
+			if b.Tasks > 0 && len(tasks) != b.Tasks {
+				g.fail("side_effect board: %d tasks, want exactly %d", len(tasks), b.Tasks)
+			}
 			if b.Contains != "" {
 				hit := false
 				for _, t := range tasks {
