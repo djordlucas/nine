@@ -38,6 +38,7 @@ type BoardTask struct {
 	// "run_agent" (a waited delegation), "detached" (run_agent wait:false).
 	// Only non-waited sources deliver their result to the poster on finish.
 	Source     string `json:"source"`
+	Priority   int    `json:"priority"`
 	Depth      int    `json:"depth"`
 	CreatedAt  string `json:"created_at"`
 	ClaimedAt  string `json:"claimed_at,omitempty"`
@@ -48,11 +49,12 @@ type BoardTask struct {
 // BoardTaskPatch is an operator or poster update (§2.6, §2.1): nil fields are
 // left unchanged.
 type BoardTaskPatch struct {
-	Title   *string
-	Spec    *string
-	Status  *string
-	Result  *string
-	Claimed *string // clears the claim when set to ""
+	Title    *string
+	Spec     *string
+	Status   *string
+	Result   *string
+	Priority *int
+	Claimed  *string // clears the claim when set to ""
 }
 
 func validBoardStatus(s string) bool {
@@ -66,11 +68,11 @@ func validBoardStatus(s string) bool {
 func scanBoardTask(s interface{ Scan(...any) error }) (BoardTask, error) {
 	var t BoardTask
 	err := s.Scan(&t.ID, &t.Title, &t.Spec, &t.PostedBy, &t.ClaimedBy, &t.Status,
-		&t.Result, &t.Source, &t.Depth, &t.CreatedAt, &t.ClaimedAt, &t.FinishedAt, &t.UpdatedAt)
+		&t.Result, &t.Source, &t.Priority, &t.Depth, &t.CreatedAt, &t.ClaimedAt, &t.FinishedAt, &t.UpdatedAt)
 	return t, err
 }
 
-const boardTaskCols = `id, title, spec, posted_by, claimed_by, status, result, source, depth,
+const boardTaskCols = `id, title, spec, posted_by, claimed_by, status, result, source, priority, depth,
 	created_at, claimed_at, finished_at, updated_at`
 
 // Board task sources.
@@ -82,7 +84,7 @@ const (
 
 // BoardTaskCreate appends a queued task. The title must be non-empty; depth is
 // the poster's lineage depth, recorded so posting chains can end at max_depth.
-func (s *Store) BoardTaskCreate(title, spec, postedBy, source string, depth int) (BoardTask, error) {
+func (s *Store) BoardTaskCreate(title, spec, postedBy, source string, priority, depth int) (BoardTask, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return BoardTask{}, fmt.Errorf("board task: title is required")
@@ -92,9 +94,9 @@ func (s *Store) BoardTaskCreate(title, spec, postedBy, source string, depth int)
 		source = BoardSourcePost
 	}
 	_, err := s.db.Exec(
-		`INSERT INTO board_tasks (id, title, spec, posted_by, status, source, depth)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		id, title, spec, postedBy, BoardQueued, source, depth)
+		`INSERT INTO board_tasks (id, title, spec, posted_by, status, source, priority, depth)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, title, spec, postedBy, BoardQueued, source, priority, depth)
 	if err != nil {
 		return BoardTask{}, err
 	}
@@ -230,9 +232,10 @@ func (s *Store) BoardTaskUpdate(id string, p BoardTaskPatch) (BoardTask, bool, e
 			status = COALESCE(?, status),
 			result = COALESCE(?, result),
 			claimed_by = CASE WHEN ? THEN '' ELSE claimed_by END,
+			priority = COALESCE(?, priority),
 			updated_at = strftime('%Y-%m-%dT%H:%M:%f000Z','now')
 		 WHERE id = ?`,
-		p.Title, p.Spec, p.Status, p.Result, p.Claimed != nil, id)
+		p.Title, p.Spec, p.Status, p.Result, p.Claimed != nil, p.Priority, id)
 	if err != nil {
 		return BoardTask{}, false, err
 	}
@@ -287,7 +290,7 @@ func (s *Store) BoardTaskFindAlike(poster, title, spec string) (BoardTask, bool,
 // clock tick (adr/orchestrator-board.md §5 P3: process-backed workers).
 func (s *Store) BoardTaskNextQueued() (BoardTask, bool, error) {
 	t, err := scanBoardTask(s.db.QueryRow(
-		`SELECT `+boardTaskCols+` FROM board_tasks WHERE status = ? ORDER BY rowid ASC LIMIT 1`,
+		`SELECT `+boardTaskCols+` FROM board_tasks WHERE status = ? ORDER BY priority DESC, rowid ASC LIMIT 1`,
 		BoardQueued))
 	if err == sql.ErrNoRows {
 		return BoardTask{}, false, nil

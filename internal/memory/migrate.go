@@ -443,6 +443,12 @@ var migrations = []migrationStep{
 	{name: "board_tasks", fn: func(q sqlExec) error {
 		return addColumnIfMissing(q, "board_tasks", "source", "TEXT NOT NULL DEFAULT 'post'")
 	}},
+
+	// 23 → 24: board task priority (adr/orchestrator-board.md §5 P4): higher
+	// priority is claimed first; FIFO within a priority.
+	{name: "board_tasks_priority", fn: func(q sqlExec) error {
+		return addColumnIfMissing(q, "board_tasks", "priority", "INTEGER NOT NULL DEFAULT 0")
+	}},
 }
 
 // convertGoalPlans turns each session plan with a pursue routine into the

@@ -309,7 +309,7 @@ operator ──► web UI Board section ──► REST /api/v1/board ──► d
 | P1 | `board_post/list/get/claim/complete/fail/cancel` tools, shipped on `orchestrator` by default; admission guards (§2.4); the orchestrator allowlist narrowed to the orchestration set (§2.2) with `role_list`/`role_search` (§2.2.1) and `agent_stop` (§2.4) | unit tests for admission/refusal and role discovery; eval cases: post/list/claim/complete round trip |
 | P2 | Worker mode: `run_agent` records its run on the board; detached spawn (`run_agent wait:false`, §2.3) so posted tasks can queue unclaimed; posted-task delivery via `WakeAgent` restricted turn | eval cases: orchestrator posts N tasks, workers complete them, results arrive restricted; injection case mirrors `process-pipe-injection` |
 | P3 | Process-backed workers (a pursue process claiming from the board on its clock); agent (role) selector in the new-conversation flow, default `orchestrator` (§2.5); operator CRUD on the board — `nine board` CLI, full `/api/v1/board` CRUD, web-UI Board section (§2.6) | `go test ./internal/runtime/`, API tests (`handlers_board`), web-UI build + e2e, eval cases with a fixture process |
-| P4 | Depth/budget/dedup hardening, priority ordering (FIFO first), operator cancel | depth case (task at `max_depth` cannot post), budget case (poster paused at its ceiling) |
+| P4 — built 2026-11-12 | priority ordering (0–10 on post/edit, higher claimed first, FIFO within), `board-injection` and `board-queue-cap` eval cases | priority ordering unit test; the two eval cases live |
 
 ## 6. Test plan
 

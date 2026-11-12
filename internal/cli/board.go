@@ -77,7 +77,7 @@ func (c *CLI) BoardCreate(cfg *config.Config, title, spec string) error {
 	}
 	defer done()
 
-	t, err := cl.BoardCreate(title, spec)
+	t, err := cl.BoardCreate(title, spec, 0)
 	if err != nil {
 		return err
 	}

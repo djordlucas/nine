@@ -34,6 +34,6 @@ REST under the same auth as everything else: `GET/POST /api/v1/board`, `GET/PATC
 
 ## Limits
 
-- One board per store; FIFO ordering; results are text.
+- One board per store; results are text. Queued tasks are claimed highest-`priority` first (0–10, set on `board_post` or operator edit), FIFO within a priority.
 - Delivery to a mid-turn poster is retried at its next `turn_end`; a gone poster gets the human feed. The board is the durable record.
 - `[board] max_queued` (default 100) caps one poster's open tasks ([configuration.md](configuration.md)).

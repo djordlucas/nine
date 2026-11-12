@@ -16,7 +16,7 @@ func toWireTask(t memory.BoardTask) protocol.BoardTask {
 	return protocol.BoardTask{
 		ID: t.ID, Title: t.Title, Spec: t.Spec, PostedBy: t.PostedBy,
 		ClaimedBy: t.ClaimedBy, Status: t.Status, Result: t.Result, Source: t.Source,
-		Depth: t.Depth, CreatedAt: t.CreatedAt, ClaimedAt: t.ClaimedAt,
+		Priority: t.Priority, Depth: t.Depth, CreatedAt: t.CreatedAt, ClaimedAt: t.ClaimedAt,
 		FinishedAt: t.FinishedAt, UpdatedAt: t.UpdatedAt,
 	}
 }
@@ -56,12 +56,12 @@ func (d *Daemon) handleBoardGet(enc *json.Encoder, id string) {
 	}
 }
 
-func (d *Daemon) handleBoardCreate(enc *json.Encoder, title, spec string) {
+func (d *Daemon) handleBoardCreate(enc *json.Encoder, title, spec string, priority int) {
 	if d.store == nil {
 		enc.Encode(protocol.NewErrorMsg("board is not enabled here")) //nolint:errcheck
 		return
 	}
-	t, err := d.store.BoardTaskCreate(title, spec, "operator", memory.BoardSourcePost, 0)
+	t, err := d.store.BoardTaskCreate(title, spec, "operator", memory.BoardSourcePost, priority, 0)
 	if err != nil {
 		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
 		return
@@ -101,6 +101,11 @@ func (d *Daemon) handleBoardUpdate(enc *json.Encoder, id string, payload map[str
 			var s string
 			if json.Unmarshal(v, &s) == nil {
 				p.Result = &s
+			}
+		case "priority":
+			var n int
+			if json.Unmarshal(v, &n) == nil {
+				p.Priority = &n
 			}
 		case "clear_claim":
 			var b bool

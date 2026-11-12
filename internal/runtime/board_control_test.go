@@ -23,7 +23,7 @@ func testBoardControl(t *testing.T, maxQueued int) (boardControl, *memory.Store)
 func TestBoardControlLifecycle(t *testing.T) {
 	bc, store := testBoardControl(t, 10)
 
-	t1, err := bc.Post("conv1", "Fix the queue", "investigate INC-1")
+	t1, err := bc.Post("conv1", "Fix the queue", "investigate INC-1", 0)
 	if err != nil {
 		t.Fatalf("post: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestBoardControlLifecycle(t *testing.T) {
 	}
 
 	// Cancel by the poster; a stranger cannot.
-	t2, _ := bc.Post("conv1", "Second", "spec")
+	t2, _ := bc.Post("conv1", "Second", "spec", 0)
 	if _, err := bc.Cancel("worker-a", t2.ID); err == nil {
 		t.Fatal("cancel by non-poster: want refusal")
 	}
@@ -91,27 +91,27 @@ func TestBoardControlGuards(t *testing.T) {
 	bc, _ := testBoardControl(t, 2)
 
 	// Queue cap: two open tasks allowed, third refused.
-	if _, err := bc.Post("conv1", "one", ""); err != nil {
+	if _, err := bc.Post("conv1", "one", "", 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := bc.Post("conv1", "two", ""); err != nil {
+	if _, err := bc.Post("conv1", "two", "", 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := bc.Post("conv1", "three", ""); err == nil || !strings.Contains(err.Error(), "max_queued") {
+	if _, err := bc.Post("conv1", "three", "", 0); err == nil || !strings.Contains(err.Error(), "max_queued") {
 		t.Fatalf("third post: err=%v, want max_queued refusal", err)
 	}
 
 	// Duplicate: same poster, same title+spec, while open.
-	if _, err := bc.Post("conv1", "one", ""); err == nil || !strings.Contains(err.Error(), "already open") {
+	if _, err := bc.Post("conv1", "one", "", 0); err == nil || !strings.Contains(err.Error(), "already open") {
 		t.Fatalf("duplicate post: err=%v, want alike refusal", err)
 	}
 	// A different poster may post the same text.
-	if _, err := bc.Post("conv2", "one", ""); err != nil {
+	if _, err := bc.Post("conv2", "one", "", 0); err != nil {
 		t.Fatalf("other poster: err=%v", err)
 	}
 
 	// Empty title refused (store-level).
-	if _, err := bc.Post("conv1", "  ", ""); err == nil {
+	if _, err := bc.Post("conv1", "  ", "", 0); err == nil {
 		t.Fatal("empty title: want error")
 	}
 }
@@ -127,7 +127,7 @@ func TestBoardDeliveryOnFinish(t *testing.T) {
 	bc.feed = func(text string) { fed = append(fed, text) }
 
 	// A posted task wakes the poster on completion, framed as data.
-	pt, err := bc.Post("orch", "Research X", "spec")
+	pt, err := bc.Post("orch", "Research X", "spec", 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestBoardworkerProcessCycle(t *testing.T) {
 
 	// A posted task waiting for a worker.
 	poster := "orch-conv"
-	task, err := bc.Post(poster, "triage incidents", "read notes/incident.md")
+	task, err := bc.Post(poster, "triage incidents", "read notes/incident.md", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +254,7 @@ func TestBoardworkerProcessCycle(t *testing.T) {
 	cancelProbe()
 
 	// A failing turn fails the task.
-	task2, _ := bc.Post(poster, "will fail", "spec")
+	task2, _ := bc.Post(poster, "will fail", "spec", 0)
 	sessions.fail = errors.New("boom")
 	lp.triggers <- Trigger{Kind: "clock"}
 	trig2, err := h.Next(ctx)

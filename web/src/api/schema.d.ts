@@ -1958,6 +1958,11 @@ export interface components {
              * @enum {string}
              */
             source: "post" | "run_agent" | "detached";
+            /**
+             * @description higher is claimed first; FIFO within a priority
+             * @default 0
+             */
+            priority: number;
             depth: number;
             /** Format: date-time */
             created_at: string;
@@ -1972,9 +1977,12 @@ export interface components {
         BoardTaskCreate: {
             title: string;
             spec?: string;
+            /** @default 0 */
+            priority: number;
         };
         /** @description An operator edit of one board task; only the fields present are changed. */
         BoardTaskPatch: {
+            priority?: number;
             title?: string;
             spec?: string;
             /** @enum {string} */

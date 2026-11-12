@@ -480,6 +480,7 @@ type BoardTask struct {
 	Status     string `json:"status"`
 	Result     string `json:"result,omitempty"`
 	Source     string `json:"source"`
+	Priority   int    `json:"priority"`
 	Depth      int    `json:"depth"`
 	CreatedAt  string `json:"created_at"`
 	ClaimedAt  string `json:"claimed_at,omitempty"`
@@ -981,8 +982,8 @@ func NewProcessListMsg() Msg { return Msg{Type: TypeProcessList} }
 // carry their payload as JSON in Text; get/delete carry the id in ID.
 func NewBoardListMsg(status string) Msg { return Msg{Type: TypeBoardList, Text: status} }
 func NewBoardGetMsg(id string) Msg       { return Msg{Type: TypeBoardGet, ID: id} }
-func NewBoardCreateMsg(title, spec string) Msg {
-	raw, _ := json.Marshal(map[string]string{"title": title, "spec": spec})
+func NewBoardCreateMsg(title, spec string, priority int) Msg {
+	raw, _ := json.Marshal(map[string]any{"title": title, "spec": spec, "priority": priority})
 	return Msg{Type: TypeBoardCreate, Text: string(raw)}
 }
 func NewBoardUpdateMsg(id string, patch map[string]any) Msg {

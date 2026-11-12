@@ -42,7 +42,7 @@ func (m *mockStore) WorkflowFail(id string, all bool) (int, error) {
 	}
 	return 0, nil
 }
-func (m *mockStore) BoardTaskCreate(_, _, _, _ string, _ int) (memory.BoardTask, error) {
+func (m *mockStore) BoardTaskCreate(_, _, _, _ string, _, _ int) (memory.BoardTask, error) {
 	return memory.BoardTask{}, nil
 }
 func (m *mockStore) BoardTaskList(_ string, _, _ int) ([]memory.BoardTask, error) { return nil, nil }
