@@ -30,6 +30,7 @@ const paths: Record<IconName, string> = {
   plus: 'M12 5v14M5 12h14',
   prev: 'M15 6l-6 6 6 6',
   next: 'M9 6l6 6-6 6',
+  send: 'M4 12l16-8-6 16-3-7zM11 13l9-9',
 };
 
 export function Icon({ name, size = 22 }: { name: IconName; size?: number }) {

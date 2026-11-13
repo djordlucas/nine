@@ -29,6 +29,7 @@ export type IconName =
   | 'plus'
   | 'prev'
   | 'next'
+  | 'send'
   | 'dashboard'
   | 'chat'
   | 'process'

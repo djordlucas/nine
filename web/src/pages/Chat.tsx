@@ -713,12 +713,12 @@ function Composer({
         />
         <div class={styles.send}>
           {busy && (
-            <button type="button" class={`button ${styles.press} ${styles.stop}`} onClick={onCancel}>
-              Stop
+            <button type="button" class={`button ${styles.press} ${styles.stop} ${styles.sendBtn}`} onClick={onCancel}>
+              <Icon name="stop" size={16} /> Stop
             </button>
           )}
-          <button type="submit" class={`button ${styles.press}`} disabled={!text.trim() || !connected}>
-            Send
+          <button type="submit" class={`button ${styles.press} ${styles.sendBtn}`} disabled={!text.trim() || !connected}>
+            <Icon name="send" size={16} /> Send
           </button>
           <button
             type="button"

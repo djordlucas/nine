@@ -568,6 +568,13 @@
   flex-shrink: 0;
 }
 
+/* Icon and label share the button, like five's Send. */
+.sendBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .stop {
   background: var(--danger);
   color: var(--accent-text);
@@ -619,6 +626,21 @@
      the tab bar, which the scroll area already ends above. */
   .footer {
     bottom: env(safe-area-inset-bottom);
+    /* A phone bar is compact like five's: less padding, and a small side
+       inset so the last button never touches the screen edge. */
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-2);
+  }
+
+  .footer .entry,
+  .footer .send {
+    gap: var(--space-2);
+  }
+
+  /* 36px buttons, like five's actions, instead of the 44px touch height. */
+  .footer .sendBtn {
+    min-height: 36px;
+    padding: 0 var(--space-3);
   }
 }
 
