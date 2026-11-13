@@ -284,16 +284,16 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
             <li key={`${r.type}:${r.id}`}>
               <a
                 href={r.href}
-                class={split.row}
+                class={styles.agentRow}
                 aria-current={r.current ? 'page' : undefined}
                 style={r.depth ? { paddingLeft: `calc(var(--space-2) + ${r.depth} * var(--space-4))` } : undefined}
               >
-                <span class={styles.badges}>
+                <span class={styles.name}>{r.name}</span>
+                <span class={styles.meta}>
                   {r.type !== 'conversation' && <span class={detail.badge}>{r.badge ?? r.type}</span>}
                   {r.state && <span class={`${detail.badge} ${detail[r.state]}`}>{r.state}</span>}
+                  {r.meta}
                 </span>
-                <span class={split.name}>{r.name}</span>
-                <span class={split.meta}>{r.meta}</span>
               </a>
             </li>
           ))}

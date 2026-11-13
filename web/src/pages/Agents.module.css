@@ -4,11 +4,55 @@
   min-height: 32px;
 }
 
-/* A row's type badge, and the process state beside it. Conversations carry no
-   badge: the activity is their shape. */
-.badges {
-  display: inline-flex;
+/* A roster row: the agent's name, then its labels (type, state) and details
+   on the line under. */
+.agentRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  padding: 6px var(--space-2);
+  color: inherit;
+  font-size: var(--text-sm);
+  text-decoration: none;
+}
+
+.agentRow:hover {
+  background: var(--surface-2);
+}
+
+.agentRow[aria-current='page'] {
+  background: var(--ink);
+  color: var(--ink-text);
+}
+
+.agentRow .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentRow .meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 4px;
+  color: var(--text-2);
+  font-size: var(--text-2xs);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.agentRow[aria-current='page'] .meta {
+  color: var(--ink-text);
+  opacity: 0.75;
+}
+
+@media (max-width: 767px) {
+  .agentRow {
+    min-height: var(--touch);
+    align-content: center;
+  }
 }
 
 /* The activity pane: the agent's chat in the middle — a little narrower to
