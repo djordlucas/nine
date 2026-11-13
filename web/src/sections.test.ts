@@ -17,7 +17,7 @@ describe('sectionFor', () => {
     expect(sectionFor('/goals/some-goal').label).toBe('Agents');
     expect(sectionFor('/board/task_1').label).toBe('Agents');
   });
-  it('gives the mobile tab bar two sections, leaving room for More', () => {
-    expect(sections.filter((s) => s.tab)).toHaveLength(2);
+  it('lists every section for the mobile tab bar, foot ones included', () => {
+    expect(sections.map((s) => s.label)).toEqual(['Agents', 'Tools', 'Inbox', 'Data', 'Journal', 'System']);
   });
 });

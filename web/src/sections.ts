@@ -1,13 +1,12 @@
 /**
- * The UI's sections (adr/web-ui.md §5). `tab` marks the ones the mobile tab
- * bar holds; the rest are under More.
+ * The UI's sections (adr/web-ui.md §5). On a phone every section is a tab in
+ * the bottom bar; on desktop the `foot` ones pin to the bottom of the rail.
  */
 export interface Section {
   path: string;
   label: string;
   icon: IconName;
-  tab: boolean;
-  /** Pinned to the bottom of the sidebar, above the controls, not in the list. */
+  /** Pinned to the bottom of the desktop rail, above the controls. */
   foot?: boolean;
 }
 
@@ -39,16 +38,15 @@ export type IconName =
   | 'inbox'
   | 'journal'
   | 'data'
-  | 'system'
-  | 'more';
+  | 'system';
 
 export const sections: Section[] = [
-  { path: '/conversations', label: 'Agents', icon: 'chat', tab: true },
-  { path: '/tools', label: 'Tools', icon: 'tool', tab: false },
-  { path: '/inbox', label: 'Inbox', icon: 'inbox', tab: true },
-  { path: '/data', label: 'Data', icon: 'data', tab: false },
-  { path: '/journal', label: 'Journal', icon: 'journal', tab: false },
-  { path: '/system', label: 'System', icon: 'system', tab: false, foot: true },
+  { path: '/conversations', label: 'Agents', icon: 'chat' },
+  { path: '/tools', label: 'Tools', icon: 'tool' },
+  { path: '/inbox', label: 'Inbox', icon: 'inbox' },
+  { path: '/data', label: 'Data', icon: 'data' },
+  { path: '/journal', label: 'Journal', icon: 'journal' },
+  { path: '/system', label: 'System', icon: 'system', foot: true },
 ];
 
 /** The section a path belongs to: the longest matching prefix. */

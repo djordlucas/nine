@@ -12,7 +12,6 @@ const paths: Record<IconName, string> = {
   journal: 'M6 3h12v18H6zM9 7h6M9 11h6M9 15h4',
   data: 'M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3',
   system: 'M4 6h16M4 12h16M4 18h16M8 4v4M16 10v4M10 16v4',
-  more: 'M5 12h.01M12 12h.01M19 12h.01',
   inspect: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4',
   context: 'M12 3l9 5-9 5-9-5zM3 12l9 5 9-5M3 16l9 5 9-5',
   power: 'M12 3v9M6.3 6.3a8 8 0 1 0 11.4 0',

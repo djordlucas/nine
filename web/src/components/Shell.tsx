@@ -1,5 +1,4 @@
 import type { ComponentChildren } from 'preact';
-import { useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import { sections, sectionFor } from '../sections';
 import { api, authRequired, get, signOut } from '../api/client';
@@ -12,17 +11,12 @@ import styles from './Shell.module.css';
 
 /**
  * The frame around every section: a rail on desktop; a header and a bottom
- * tab bar under 768px, with a More sheet for the sections the bar has no room
- * for.
+ * tab bar holding every section under 768px.
  */
 export function Shell({ children }: { children: ComponentChildren }) {
   const { path } = useLocation();
   const current = sectionFor(path);
-  const [more, setMore] = useState(false);
-  const tabs = sections.filter((s) => s.tab);
-  const rest = sections.filter((s) => !s.tab && !s.foot);
   const foot = sections.filter((s) => s.foot);
-  const inMore = !current.tab;
   const waiting = useWaiting();
   const instance = useInstanceName();
 
@@ -67,64 +61,30 @@ export function Shell({ children }: { children: ComponentChildren }) {
       <div class={styles.main}>
         <header class={styles.header}>
           <h1>{current.label}</h1>
+          {/* On a phone the rail is gone, so the live state and the controls
+             live in this top bar instead. */}
+          <div class={styles.headerFoot}>
+            <LiveState />
+            <Controls />
+          </div>
         </header>
         <main class={styles.content}>{children}</main>
       </div>
 
       <nav class={styles.tabs} aria-label="Sections">
-        {tabs.map((s) => (
+        {sections.map((s) => (
           <a
             key={s.path}
             href={s.path}
             class={styles.tab}
             aria-current={s === current ? 'page' : undefined}
-            onClick={() => setMore(false)}
           >
-            <Icon name={s.icon} />
-            <span>{s.label}</span>
+            <Icon name={s.icon} size={20} />
+            <span class={styles.tabLabel}>{s.label}</span>
             {s.path === '/inbox' && <Badge n={waiting} />}
           </a>
         ))}
-        <button
-          type="button"
-          class={styles.tab}
-          aria-current={inMore ? 'page' : undefined}
-          aria-expanded={more}
-          aria-controls="more-sheet"
-          onClick={() => setMore(!more)}
-        >
-          <Icon name="more" />
-          <span>More</span>
-        </button>
       </nav>
-
-      {more && (
-        <div class={styles.scrim} onClick={() => setMore(false)}>
-          <div
-            id="more-sheet"
-            class={styles.sheet}
-            role="dialog"
-            aria-label="More sections"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {rest.map((s) => (
-              <a key={s.path} href={s.path} class={styles.sheetLink} onClick={() => setMore(false)}>
-                <Icon name={s.icon} />
-                <span>{s.label}</span>
-              </a>
-            ))}
-            <div class={styles.sheetFoot}>
-              {foot.map((s) => (
-                <a key={s.path} href={s.path} class={styles.sheetLink} onClick={() => setMore(false)}>
-                  <Icon name={s.icon} />
-                  <span>{s.label}</span>
-                </a>
-              ))}
-              <Controls />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
