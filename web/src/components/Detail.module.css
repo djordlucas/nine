@@ -27,6 +27,11 @@
   text-decoration: none;
 }
 
+/* The file pane's back link is always shown. */
+.backShown {
+  display: inline-flex;
+}
+
 .title {
   flex: 1;
   min-width: 0;
