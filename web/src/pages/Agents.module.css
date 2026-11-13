@@ -125,18 +125,24 @@
   border-radius: var(--radius-lg);
 }
 
-@media (max-width: 767px) {
+/* Below 1200px the pane is too narrow for chat and panel side by side — the
+   composer overflowed its frame — so the details drop under the activity. */
+@media (max-width: 1199px) {
   .activity {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  /* On a phone the details — and the orchestrator's board — come first; the
-     activity scrolls below. */
   .activitySide {
-    order: -1;
     position: static;
     max-height: none;
     overflow: visible;
   }
+}
 
+@media (max-width: 767px) {
+  /* On a phone the details — and the orchestrator's board — come first; the
+     activity scrolls below. */
+  .activitySide {
+    order: -1;
+  }
 }

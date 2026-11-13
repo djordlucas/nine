@@ -472,6 +472,12 @@
   border-top: 1px solid var(--border);
 }
 
+/* Grid items shrink with the column instead of overflowing it: the entry's
+   buttons keep their size, the message box takes what is left. */
+.footer > * {
+  min-width: 0;
+}
+
 .composer {
   display: grid;
   gap: var(--space-2);
