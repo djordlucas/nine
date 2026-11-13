@@ -90,21 +90,6 @@
   gap: var(--space-2);
 }
 
-/* Send and Stop cast their shadow only while hovered, and press into its
-   place, a shade lighter, on a click. */
-.press {
-  box-shadow: none;
-}
-
-.press:hover:not(:disabled) {
-  box-shadow: var(--shadow);
-}
-
-.press:active:not(:disabled) {
-  box-shadow: none;
-  transform: translate(3px, 3px);
-  background: var(--text-2);
-}
 
 /* The conversation's controls are the shared icon actions
    (components/Detail.module.css); Context, while its panel is open, is light
@@ -247,9 +232,6 @@
   border-radius: var(--radius);
 }
 
-.inspect:hover {
-  box-shadow: 2px 2px 0 var(--border);
-}
 
 .inspect[aria-expanded='true'] {
   border-color: var(--ink);
@@ -295,9 +277,6 @@
   border-radius: var(--radius);
 }
 
-.copy:hover {
-  box-shadow: 2px 2px 0 var(--border);
-}
 
 .copy:focus-visible {
   outline-color: var(--ink-text);
@@ -405,18 +384,6 @@
   color: var(--warn);
 }
 
-/* Hovered, it casts the buttons' hard shadow; clicked, it presses in like
-   them and lightens for the moment of the click. Only its summary presses
-   it: selecting text in an open box does not. */
-.toolBox:hover {
-  box-shadow: var(--shadow);
-}
-
-.toolBox:has(> summary:active) {
-  background: var(--surface);
-  box-shadow: none;
-  transform: translate(3px, 3px);
-}
 
 .toolName {
   font-family: var(--mono);
@@ -468,7 +435,6 @@
   display: grid;
   gap: var(--space-3);
   border-color: var(--edge);
-  box-shadow: var(--shadow);
 }
 
 .qText {
@@ -562,9 +528,6 @@
   cursor: pointer;
 }
 
-.think:hover {
-  box-shadow: 2px 2px 0 var(--border);
-}
 
 .think[aria-pressed='true'] {
   border-color: var(--ink);
@@ -572,10 +535,6 @@
   color: var(--ink-text);
 }
 
-.think:active {
-  box-shadow: none;
-  transform: translate(1px, 1px);
-}
 
 .model {
   min-width: 0;
