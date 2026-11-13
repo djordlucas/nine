@@ -615,9 +615,10 @@
     max-width: 100%;
   }
 
-  /* The composer stays reachable above the tab bar while the activity scrolls. */
+  /* The composer is pinned to the bottom of the scroll area — flush above
+     the tab bar, which the scroll area already ends above. */
   .footer {
-    bottom: calc(var(--tabbar) + env(safe-area-inset-bottom));
+    bottom: env(safe-area-inset-bottom);
   }
 }
 
