@@ -146,9 +146,9 @@
     grid-template-rows: 1fr auto;
   }
 
-  /* A phone uses the full portrait width: no side padding. */
+  /* A phone keeps a little side padding, like five. */
   .main {
-    padding: 0;
+    padding: 0 var(--space-4);
   }
 
   .rail {
