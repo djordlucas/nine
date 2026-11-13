@@ -16,12 +16,57 @@
   text-decoration: none;
 }
 
-.agentRow:hover {
+.rowLine {
+  display: flex;
+  align-items: center;
+}
+
+.rowLine .agentRow {
+  flex: 1;
+  min-width: 0;
+}
+
+.rowLine:hover {
   background: var(--surface-2);
 }
 
-.agentRow[aria-current='page'] {
+.rowLine:has(> .agentRow[aria-current='page']) {
   background: var(--ink);
+}
+
+.agentRow[aria-current='page'] {
+  color: var(--ink-text);
+}
+
+/* The fold toggle on a parent row: a small chevron that turns down. */
+.toggle {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  min-height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.toggle:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.toggle svg {
+  transition: transform 0.15s;
+}
+
+.toggle[aria-expanded='true'] svg {
+  transform: rotate(90deg);
+}
+
+.rowLine:has(> .agentRow[aria-current='page']) .toggle {
   color: var(--ink-text);
 }
 

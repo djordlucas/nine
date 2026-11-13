@@ -8,11 +8,31 @@ import { useLive, useRecent } from '../live';
 import { byAttention, processState } from '../processes';
 import { Chat } from './Chat';
 import { ListHead, Split } from '../components/Split';
+import { Icon } from '../components/Icon';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
 import styles from './Agents.module.css';
 import { param, processEvents, ProcessChat, ProcessPanel, processPath } from './Processes';
 import { BoardPanel } from './Board';
+
+const COLLAPSED_KEY = 'nine.agents.collapsed';
+
+function readCollapsed(): Set<string> {
+  try {
+    return new Set((localStorage.getItem(COLLAPSED_KEY) ?? '').split(',').filter(Boolean));
+  } catch {
+    return new Set();
+  }
+}
+
+function writeCollapsed(s: Set<string>) {
+  try {
+    if (s.size) localStorage.setItem(COLLAPSED_KEY, [...s].join(','));
+    else localStorage.removeItem(COLLAPSED_KEY);
+  } catch {
+    // Not remembered; the list still folds.
+  }
+}
 
 /**
  * Agents (adr/web-ui.md §5): every agent the runtime runs — conversations,
@@ -113,6 +133,7 @@ type Row = {
   state?: string;
   badge?: string;
   depth?: number;
+  parent?: string;
   current: boolean;
 };
 
@@ -204,7 +225,17 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
   };
 
   const subs = useSubAgents(board.data);
-  const subRow = (s: Sub): Row => ({
+  // Parents whose sub-agent children are folded away, remembered per browser.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => readCollapsed());
+  const toggle = (id: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      writeCollapsed(next);
+      return next;
+    });
+  const subRow = (s: Sub, parent: string): Row => ({
     type: 'sub-agent',
     id: s.id,
     name: shortId(s.id),
@@ -212,6 +243,7 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
     href: `/conversations/${encodeURIComponent(s.id)}`,
     badge: s.role || 'sub-agent',
     depth: 1,
+    parent,
     current: !currentIsProcess && s.id === current,
   });
   const rows: Row[] = [
@@ -236,17 +268,19 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
         href: `/conversations/${encodeURIComponent(c.id ?? '')}`,
         current: !currentIsProcess && c.id === current,
       };
-      const children = [...(subs.get(c.id ?? '')?.values() ?? [])].map((s) => subRow(s));
+      const children = [...(subs.get(c.id ?? '')?.values() ?? [])].map((s) => subRow(s, c.id ?? ''));
       return [row, ...children];
     }),
     // Sub-agents whose parent is not in the roster (e.g. a reaped session).
     ...[...subs.entries()].flatMap(([parent, m]) =>
       (data ?? []).some((c) => c.id === parent) || (procs.data?.list ?? []).some((p) => p.id === parent)
         ? []
-        : [...m.values()].map((s) => subRow(s)),
+        : [...m.values()].map((s) => subRow(s, parent)),
     ),
   ];
   const running = procs.data?.list.filter((p) => p.state !== 'stopped').length ?? 0;
+  const visible = rows.filter((r) => !r.parent || !collapsed.has(r.parent));
+  const hasKids = (r: Row) => (subs.get(r.id)?.size ?? 0) > 0;
 
   return (
     <nav class={split.list} aria-label="Agents">
@@ -280,21 +314,35 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
       {data && procs.data && rows.length === 0 && <p class="empty">No agents yet.</p>}
       {rows.length > 0 && (
         <ul>
-          {rows.map((r) => (
+          {visible.map((r) => (
             <li key={`${r.type}:${r.id}`}>
-              <a
-                href={r.href}
-                class={styles.agentRow}
-                aria-current={r.current ? 'page' : undefined}
-                style={r.depth ? { paddingLeft: `calc(var(--space-2) + ${r.depth} * var(--space-4))` } : undefined}
-              >
-                <span class={styles.name}>{r.name}</span>
-                <span class={styles.meta}>
-                  {r.type !== 'conversation' && <span class={detail.badge}>{r.badge ?? r.type}</span>}
-                  {r.state && <span class={`${detail.badge} ${detail[r.state]}`}>{r.state}</span>}
-                  {r.meta}
-                </span>
-              </a>
+              <div class={styles.rowLine}>
+                <a
+                  href={r.href}
+                  class={styles.agentRow}
+                  aria-current={r.current ? 'page' : undefined}
+                  style={r.depth ? { paddingLeft: `calc(var(--space-2) + ${r.depth} * var(--space-4))` } : undefined}
+                >
+                  <span class={styles.name}>{r.name}</span>
+                  <span class={styles.meta}>
+                    {r.type !== 'conversation' && <span class={detail.badge}>{r.badge ?? r.type}</span>}
+                    {r.state && <span class={`${detail.badge} ${detail[r.state]}`}>{r.state}</span>}
+                    {r.meta}
+                  </span>
+                </a>
+                {hasKids(r) && (
+                  <button
+                    type="button"
+                    class={styles.toggle}
+                    aria-expanded={!collapsed.has(r.id)}
+                    aria-label={`${collapsed.has(r.id) ? 'Show' : 'Hide'} the sub-agents of ${r.name}`}
+                    title={collapsed.has(r.id) ? 'Show sub-agents' : 'Hide sub-agents'}
+                    onClick={() => toggle(r.id)}
+                  >
+                    <Icon name="next" size={14} />
+                  </button>
+                )}
+              </div>
             </li>
           ))}
         </ul>
