@@ -3,10 +3,9 @@
   margin: 0;
   padding: 0;
   display: grid;
+  /* minmax(0, 1fr): items shrink to the box instead of overflowing it. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-1);
-  /* The board fits a default size; a long list scrolls inside itself. */
-  max-height: 280px;
-  overflow-y: auto;
 }
 
 /* One task in the panel: a box whose summary is the title and status. */
@@ -15,15 +14,17 @@
   border-radius: var(--radius);
   background: var(--surface-2);
   padding: 0 var(--space-2);
+  min-width: 0;
 }
 
 .task summary {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: 28px;
+  min-height: 26px;
   cursor: pointer;
   font-size: var(--text-sm);
+  list-style: none;
 }
 
 .task summary .title {
@@ -34,7 +35,7 @@
 .taskBody {
   display: grid;
   gap: var(--space-1);
-  padding-bottom: var(--space-2);
+  padding-bottom: var(--space-1);
 }
 
 .title {
@@ -85,6 +86,10 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-2);
+  /* The new-task form stays on top of the board while the list scrolls. */
+  position: sticky;
+  top: calc(-1 * var(--space-2));
+  z-index: 1;
 }
 
 .field {
@@ -105,7 +110,7 @@
 /* A task's spec or result, as it was written. */
 .pre {
   margin: 0;
-  max-height: 120px;
+  max-height: 100px;
   overflow-y: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;

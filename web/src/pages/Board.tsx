@@ -106,6 +106,20 @@ export function BoardPanel({ conversation }: { conversation: string }) {
       {!data && !loadError && <p class="muted">Loading…</p>}
       {error && <p class="error" role="alert">{error}</p>}
       {data && data.length === 0 && <p class="empty">No tasks on this agent’s board.</p>}
+      <form class={styles.form} aria-label="Post a task to this board" onSubmit={(e) => void post(e)}>
+        <div class={styles.field}>
+          <label for={`board-title-${conversation}`}>New task</label>
+          <input id={`board-title-${conversation}`} class="input" value={title} onInput={(e) => setTitle((e.target as HTMLInputElement).value)} placeholder="Title" required />
+        </div>
+        <div class={styles.field}>
+          <label for={`board-spec-${conversation}`}>Spec — what the worker should do</label>
+          <Area id={`board-spec-${conversation}`} class="input" rows={2} max={120} value={spec} onInput={(e) => setSpec((e.target as HTMLTextAreaElement).value)} />
+        </div>
+        <div class={detail.actions}>
+          <button class={`${detail.action} ${detail.primary}`} type="submit" disabled={busy || !title.trim()}>Post</button>
+        </div>
+      </form>
+
       {data && data.length > 0 && (
         <ul class={styles.list}>
           {data.map((t) => (
@@ -167,19 +181,6 @@ export function BoardPanel({ conversation }: { conversation: string }) {
           ))}
         </ul>
       )}
-      <form class={styles.form} aria-label="Post a task to this board" onSubmit={(e) => void post(e)}>
-        <div class={styles.field}>
-          <label for={`board-title-${conversation}`}>New task</label>
-          <input id={`board-title-${conversation}`} class="input" value={title} onInput={(e) => setTitle((e.target as HTMLInputElement).value)} placeholder="Title" required />
-        </div>
-        <div class={styles.field}>
-          <label for={`board-spec-${conversation}`}>Spec — what the worker should do</label>
-          <Area id={`board-spec-${conversation}`} class="input" rows={2} max={120} value={spec} onInput={(e) => setSpec((e.target as HTMLTextAreaElement).value)} />
-        </div>
-        <div class={detail.actions}>
-          <button class={`${detail.action} ${detail.primary}`} type="submit" disabled={busy || !title.trim()}>Post</button>
-        </div>
-      </form>
     </section>
   );
 }
