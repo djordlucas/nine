@@ -5,6 +5,10 @@
   min-width: 0;
   /* On a wide screen the conversation stops growing; its lines stay readable. */
   max-width: 900px;
+  /* The box keeps its height: the header and composer stay at the top and
+     bottom of the screen, and the messages scroll inside. */
+  height: calc(100dvh - 176px);
+  min-height: 320px;
   padding: var(--space-4) var(--space-4) 0;
   background: var(--surface);
   border: 1px solid var(--edge);
@@ -106,6 +110,10 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  /* The messages scroll; the box's header and composer do not. */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* The operator's message spans the row, its bubble at the right. The row's
@@ -591,6 +599,10 @@
 }
 
 @media (max-width: 767px) {
+  .chat {
+    height: calc(100dvh - 120px);
+  }
+
   .back {
     display: inline-flex;
   }
