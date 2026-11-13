@@ -20,7 +20,8 @@ export function Shell({ children }: { children: ComponentChildren }) {
   const current = sectionFor(path);
   const [more, setMore] = useState(false);
   const tabs = sections.filter((s) => s.tab);
-  const rest = sections.filter((s) => !s.tab);
+  const rest = sections.filter((s) => !s.tab && !s.foot);
+  const foot = sections.filter((s) => s.foot);
   const inMore = !current.tab;
   const waiting = useWaiting();
   const instance = useInstanceName();
@@ -32,7 +33,7 @@ export function Shell({ children }: { children: ComponentChildren }) {
           Nine
           {instance && <span class={styles.instance} title="This instance's name">{instance}</span>}
         </a>
-        {sections.map((s) => (
+        {sections.filter((s) => !s.foot).map((s) => (
           <a
             key={s.path}
             href={s.path}
@@ -46,14 +47,26 @@ export function Shell({ children }: { children: ComponentChildren }) {
           </a>
         ))}
         <div class={styles.railFoot}>
+          {foot.map((s) => (
+            <a
+              key={s.path}
+              href={s.path}
+              class={styles.railLink}
+              aria-current={s === current ? 'page' : undefined}
+              title={s.label}
+            >
+              <Icon name={s.icon} />
+              <span>{s.label}</span>
+            </a>
+          ))}
           <Controls />
+          <LiveState />
         </div>
       </nav>
 
       <div class={styles.main}>
         <header class={styles.header}>
           <h1>{current.label}</h1>
-          <LiveState />
         </header>
         <main class={styles.content}>{children}</main>
       </div>
@@ -101,6 +114,12 @@ export function Shell({ children }: { children: ComponentChildren }) {
               </a>
             ))}
             <div class={styles.sheetFoot}>
+              {foot.map((s) => (
+                <a key={s.path} href={s.path} class={styles.sheetLink} onClick={() => setMore(false)}>
+                  <Icon name={s.icon} />
+                  <span>{s.label}</span>
+                </a>
+              ))}
               <Controls />
             </div>
           </div>

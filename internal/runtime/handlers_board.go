@@ -56,18 +56,21 @@ func (d *Daemon) handleBoardGet(enc *json.Encoder, id string) {
 	}
 }
 
-func (d *Daemon) handleBoardCreate(enc *json.Encoder, title, spec string, priority int) {
+func (d *Daemon) handleBoardCreate(enc *json.Encoder, title, spec string, priority int, postedBy string) {
 	if d.store == nil {
 		enc.Encode(protocol.NewErrorMsg("board is not enabled here")) //nolint:errcheck
 		return
 	}
-	t, err := d.store.BoardTaskCreate(title, spec, "operator", memory.BoardSourcePost, priority, 0)
+	if postedBy == "" {
+		postedBy = "operator"
+	}
+	t, err := d.store.BoardTaskCreate(title, spec, postedBy, memory.BoardSourcePost, priority, 0)
 	if err != nil {
 		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
 		return
 	}
 	if d.sink != nil {
-		raw, _ := json.Marshal(map[string]any{"id": t.ID, "title": t.Title, "posted_by": "operator"})
+		raw, _ := json.Marshal(map[string]any{"id": t.ID, "title": t.Title, "posted_by": postedBy})
 		d.sink.Append(memory.SessionEvent{AgentID: "operator", Type: EvTaskPosted, Payload: raw})
 	}
 	raw, _ := json.Marshal(toWireTask(t))

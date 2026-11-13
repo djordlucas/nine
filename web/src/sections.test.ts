@@ -7,13 +7,13 @@ describe('sectionFor', () => {
     expect(sectionFor('/processes/sec-watch').label).toBe('Processes');
   });
   it('does not match on a shared prefix alone', () => {
-    expect(sectionFor('/toolsmith').label).toBe('Dashboard');
+    expect(sectionFor('/toolsmith').label).toBe('Conversations');
   });
-  it('falls back to the dashboard', () => {
-    expect(sectionFor('/').label).toBe('Dashboard');
-    expect(sectionFor('/nowhere').label).toBe('Dashboard');
+  it('falls back to the first section', () => {
+    expect(sectionFor('/').label).toBe('Conversations');
+    expect(sectionFor('/nowhere').label).toBe('Conversations');
   });
-  it('gives the mobile tab bar four sections, leaving room for More', () => {
-    expect(sections.filter((s) => s.tab)).toHaveLength(4);
+  it('gives the mobile tab bar three sections, leaving room for More', () => {
+    expect(sections.filter((s) => s.tab)).toHaveLength(3);
   });
 });

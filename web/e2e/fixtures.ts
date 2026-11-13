@@ -24,7 +24,7 @@ export async function signIn(page: Page) {
   await page.goto('/');
   await page.getByLabel('API token').fill(token);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Conversations', level: 1 })).toBeVisible();
 }
 
 export { expect };

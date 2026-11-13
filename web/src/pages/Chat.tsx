@@ -292,6 +292,7 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
         ))}
         {chat.busy && !chat.items.some((i) => i.kind === 'reply' && i.streaming) && (
           <li class={styles.working} aria-live="polite">
+            <span class={styles.spinner} aria-hidden="true" />
             {chat.stage ? `${chat.stage}…` : 'Working…'}
           </li>
         )}

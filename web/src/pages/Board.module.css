@@ -5,12 +5,15 @@
 }
 .list a {
   display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 0.5rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.15rem 0.5rem;
   padding: 0.45rem 0.6rem;
   border-radius: 6px;
   text-decoration: none;
   color: inherit;
+}
+.list a .meta {
+  grid-column: 1 / -1;
 }
 .list a:hover {
   background: var(--hover);
@@ -45,4 +48,38 @@
   padding: 0.2rem;
   border-radius: 6px;
   color: inherit;
+}
+
+/* The create/edit form in the pane, as on the Data page. */
+.form {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1);
+}
+
+.field > label:first-child {
+  font-size: var(--text-sm);
+}
+
+.field textarea {
+  font-family: var(--mono);
+  resize: none;
+}
+
+/* A task's spec or result, as it was written. */
+.pre {
+  margin: 0;
+  max-height: 360px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

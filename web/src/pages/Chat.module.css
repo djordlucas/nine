@@ -219,11 +219,17 @@
   display: flex;
   align-items: flex-start;
   gap: 2px;
+  max-width: min(85%, 640px);
 }
 
+/* Nine's reply in a box, like a user message and a tool call. */
 .replyBody {
   flex: 1;
   min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
 }
 
 /* The turn's inspector, a square under MD; it stays dark while its turn
@@ -371,10 +377,46 @@
   font-family: var(--mono);
 }
 
-.agentLine,
 .working {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   font-size: var(--text-sm);
   color: var(--text-2);
+}
+
+/* A sub-agent's line, boxed like a reply and a tool call. */
+.agentLine {
+  max-width: min(85%, 640px);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+/* The waiting-for-model spinner: a ring with one lit arc, turning. */
+.spinner {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--text-2);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
 }
 
 .question {

@@ -7,13 +7,6 @@ test('a wrong token is refused', async ({ page }) => {
   await expect(page.getByRole('alert')).toContainText('not the one');
 });
 
-test('signing in shows the dashboard with the daemon status', async ({ page }) => {
-  await signIn(page);
-  const daemon = page.getByRole('region', { name: 'Daemon' });
-  await expect(daemon.getByText('Version')).toBeVisible();
-  await expect(daemon.getByText('Uptime')).toBeVisible();
-});
-
 test('the session survives a reload and a deep link', async ({ page }) => {
   await signIn(page);
   await page.goto('/processes');

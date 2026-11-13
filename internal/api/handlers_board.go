@@ -141,7 +141,11 @@ func (s *Server) CreateBoardTask(ctx context.Context, request apigen.CreateBoard
 	if request.Body.Priority != nil {
 		priority = *request.Body.Priority
 	}
-	t, err := cl.BoardCreate(request.Body.Title, spec, priority)
+	postedBy := ""
+	if request.Body.PostedBy != nil {
+		postedBy = *request.Body.PostedBy
+	}
+	t, err := cl.BoardCreate(request.Body.Title, spec, priority, postedBy)
 	if err == nil {
 		return apigen.CreateBoardTask200JSONResponse(toAPITask(t)), nil
 	}

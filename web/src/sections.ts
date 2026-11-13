@@ -1,5 +1,5 @@
 /**
- * The UI's sections (adr/web-ui.md §5). `tab` marks the four the mobile tab
+ * The UI's sections (adr/web-ui.md §5). `tab` marks the ones the mobile tab
  * bar holds; the rest are under More.
  */
 export interface Section {
@@ -7,6 +7,8 @@ export interface Section {
   label: string;
   icon: IconName;
   tab: boolean;
+  /** Pinned to the bottom of the sidebar, above the controls, not in the list. */
+  foot?: boolean;
 }
 
 export type IconName =
@@ -36,7 +38,6 @@ export type IconName =
   | 'more';
 
 export const sections: Section[] = [
-  { path: '/', label: 'Dashboard', icon: 'dashboard', tab: true },
   { path: '/conversations', label: 'Conversations', icon: 'chat', tab: true },
   { path: '/processes', label: 'Processes', icon: 'process', tab: true },
   { path: '/board', label: 'Board', icon: 'board', tab: false },
@@ -45,7 +46,7 @@ export const sections: Section[] = [
   { path: '/inbox', label: 'Inbox', icon: 'inbox', tab: true },
   { path: '/data', label: 'Data', icon: 'data', tab: false },
   { path: '/journal', label: 'Journal', icon: 'journal', tab: false },
-  { path: '/system', label: 'System', icon: 'system', tab: false },
+  { path: '/system', label: 'System', icon: 'system', tab: false, foot: true },
 ];
 
 /** The section a path belongs to: the longest matching prefix. */

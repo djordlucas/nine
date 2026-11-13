@@ -592,7 +592,7 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 	case protocol.BoardGetReq:
 		d.handleBoardGet(enc, r.ID)
 	case protocol.BoardCreateReq:
-		d.handleBoardCreate(enc, r.Title, r.Spec, r.Priority)
+		d.handleBoardCreate(enc, r.Title, r.Spec, r.Priority, r.PostedBy)
 	case protocol.BoardUpdateReq:
 		d.handleBoardUpdate(enc, r.ID, r.Patch)
 	case protocol.BoardDeleteReq:

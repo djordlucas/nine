@@ -1,10 +1,9 @@
 import { useEffect } from 'preact/hooks';
-import { LocationProvider, Router, Route } from 'preact-iso';
+import { LocationProvider, Router, Route, useLocation } from 'preact-iso';
 import { auth, checkSession } from './api/client';
 import { connect, disconnect } from './api/events';
 import { ConfirmHost } from './components/Confirm';
 import { Shell } from './components/Shell';
-import { Dashboard } from './pages/Dashboard';
 import { Data } from './pages/Data';
 import { Conversations } from './pages/Conversations';
 import { Goals } from './pages/Goals';
@@ -16,6 +15,15 @@ import { Processes } from './pages/Processes';
 import { Board } from './pages/Board';
 import { System } from './pages/System';
 import { Tools } from './pages/Tools';
+
+/** "/" lands on Conversations while the Dashboard is away. */
+function Home() {
+  const { route } = useLocation();
+  useEffect(() => {
+    route('/conversations', true);
+  }, []);
+  return null;
+}
 
 export function App() {
   useEffect(() => {
@@ -50,7 +58,7 @@ export function App() {
     <LocationProvider>
       <Shell>
         <Router>
-          <Route path="/" component={Dashboard} />
+          <Route path="/" component={Home} />
           <Route path="/conversations/:id" component={Conversations} />
           <Route path="/conversations" component={Conversations} />
           <Route path="/processes/:id/session" component={Processes} />

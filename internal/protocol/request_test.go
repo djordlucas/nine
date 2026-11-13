@@ -28,10 +28,10 @@ func TestDecodeRequestProducesTypedRequests(t *testing.T) {
 					t.Errorf("got %#v", r)
 				}
 			}},
-		{"board_create", protocol.NewBoardCreateMsg("T", "S", 3),
+		{"board_create", protocol.NewBoardCreateMsg("T", "S", 3, "conv-1"),
 			func(t *testing.T, r protocol.Request) {
 				got, ok := r.(protocol.BoardCreateReq)
-				if !ok || got.Title != "T" || got.Spec != "S" || got.Priority != 3 {
+				if !ok || got.Title != "T" || got.Spec != "S" || got.Priority != 3 || got.PostedBy != "conv-1" {
 					t.Errorf("got %#v", r)
 				}
 			}},
