@@ -12,6 +12,9 @@
   top: 0;
   max-height: calc(100dvh - 120px);
   overflow-y: auto;
+  /* The gutter is reserved whether or not the bar shows, so folding rows
+     (e.g. sub-agents) never changes the list's width. */
+  scrollbar-gutter: stable;
   /* Room for the buttons' offset shadow, which the scroll box would clip. */
   padding: 0 3px 3px 0;
   display: grid;
