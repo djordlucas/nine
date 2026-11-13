@@ -38,10 +38,7 @@ export type IconName =
   | 'more';
 
 export const sections: Section[] = [
-  { path: '/conversations', label: 'Conversations', icon: 'chat', tab: true },
-  { path: '/processes', label: 'Processes', icon: 'process', tab: true },
-  { path: '/board', label: 'Board', icon: 'board', tab: false },
-  { path: '/goals', label: 'Goals & workflows', icon: 'goal', tab: false },
+  { path: '/conversations', label: 'Agents', icon: 'chat', tab: true },
   { path: '/tools', label: 'Tools', icon: 'tool', tab: false },
   { path: '/inbox', label: 'Inbox', icon: 'inbox', tab: true },
   { path: '/data', label: 'Data', icon: 'data', tab: false },

@@ -1,0 +1,53 @@
+/* The list and the pane share the sections' layout (components/Split). */
+
+.new {
+  min-height: 32px;
+}
+
+/* A row's type badge, and the process state beside it. Conversations carry no
+   badge: the activity is their shape. */
+.badges {
+  display: inline-flex;
+  gap: 4px;
+}
+
+/* The activity pane: the agent's chat in the middle — a little narrower to
+   leave the side panel room within the page's 10% side padding — and the
+   agent's specifics in the panel on the right. */
+.activity {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(230px, 280px);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.activityMain {
+  min-width: 0;
+}
+
+.activitySide {
+  position: sticky;
+  top: 0;
+  max-height: calc(100dvh - 125px);
+  overflow-y: auto;
+  padding: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
+}
+
+@media (max-width: 767px) {
+  .activity {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* On a phone the details — and the orchestrator's board — come first; the
+     activity scrolls below. */
+  .activitySide {
+    order: -1;
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+
+}

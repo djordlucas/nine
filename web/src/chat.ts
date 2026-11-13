@@ -13,9 +13,108 @@ export type Item =
   | { kind: 'reply'; text: string; turn?: number; streaming: boolean }
   | { kind: 'question'; id: string; question: string; options: string[]; origin?: string; answered?: string }
   | { kind: 'notice'; text: string }
+  /** A workflow the agent runs, shown as a tool-call box: its steps and their statuses. */
+  | { kind: 'workflow'; id: string; name: string; status: string; steps: { id: string; label: string; status: string }[] }
   /** The model's reasoning for one call, streamed as it is produced; never journaled. */
   | { kind: 'thinking'; step: number; text: string; done: boolean }
   | { kind: 'error'; text: string; cancelled: boolean };
+
+type WorkflowItem = Extract<Item, { kind: 'workflow' }>;
+
+/** The workflow tools, whose calls become a workflow box instead of a plain tool box. */
+const WORKFLOW_TOOLS = new Set(['workflow_create', 'workflow_get', 'workflow_update', 'workflow_retry_step']);
+
+function parseJSON(v: unknown): Record<string, unknown> {
+  if (typeof v === 'string') {
+    try {
+      const p = JSON.parse(v);
+      return p && typeof p === 'object' ? (p as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  }
+  return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
+}
+
+function workflowOf(items: Item[], id: string): WorkflowItem | undefined {
+  return items.findLast((i): i is WorkflowItem => i.kind === 'workflow' && i.id === id);
+}
+
+/** Folds one workflow tool call into the timeline as a workflow box; true when it was one. */
+function applyWorkflowTool(items: Item[], name: string, input: unknown, output?: unknown, done?: boolean): boolean {
+  if (!WORKFLOW_TOOLS.has(name)) return false;
+  const inp = parseJSON(input);
+  const out = done ? parseJSON(output) : {};
+  switch (name) {
+    case 'workflow_create': {
+      if (!done) {
+        const labels = Array.isArray(inp.steps) ? inp.steps.map(String) : [];
+        items.push({
+          kind: 'workflow',
+          id: str0(out.id ?? inp.workflow_id),
+          name: str0(inp.name) || 'Workflow',
+          status: 'running',
+          steps: labels.map((label, i) => ({ id: String(i), label, status: 'pending' })),
+        });
+      } else {
+        upsertWorkflow(items, out);
+      }
+      return true;
+    }
+    case 'workflow_get': {
+      if (done) upsertWorkflow(items, out);
+      return true;
+    }
+    case 'workflow_update': {
+      const wfId = str0(inp.workflow_id);
+      // A create box not yet labelled with its id (the id arrives in the
+      // create call's output) is this workflow.
+      let wf = workflowOf(items, wfId) ?? items.findLast((i): i is WorkflowItem => i.kind === 'workflow' && i.id === '');
+      if (!wf) {
+        wf = { kind: 'workflow', id: wfId, name: 'Workflow', status: 'running', steps: [] };
+        items.push(wf);
+      }
+      wf.id = wfId;
+      const stepId = str0(inp.step_id);
+      const status = str0(inp.status) || 'running';
+      const step = wf.steps.find((s) => s.id === stepId);
+      if (step) step.status = status;
+      else wf.steps.push({ id: stepId, label: stepId, status });
+      return true;
+    }
+    case 'workflow_retry_step': {
+      const wf = workflowOf(items, str0(inp.workflow_id)) ?? items.findLast((i): i is WorkflowItem => i.kind === 'workflow' && i.id === '');
+      const step = wf?.steps.find((s) => s.id === str0(inp.step_id));
+      if (step) step.status = 'pending';
+      return true;
+    }
+  }
+  return true;
+}
+
+function str0(v: unknown): string {
+  return typeof v === 'string' ? v : '';
+}
+
+/** Replaces or adds the workflow a tool call returned in full. */
+function upsertWorkflow(items: Item[], out: Record<string, unknown>) {
+  const id = str0(out.id);
+  // A create box not yet labelled with its id is this workflow.
+  let wf = workflowOf(items, id) ?? items.findLast((i): i is WorkflowItem => i.kind === 'workflow' && i.id === '');
+  if (!wf) {
+    wf = { kind: 'workflow', id, name: str0(out.name) || 'Workflow', status: str0(out.status) || 'running', steps: [] };
+    items.push(wf);
+  }
+  wf.id = id;
+  if (out.name) wf.name = str0(out.name);
+  if (out.status) wf.status = str0(out.status);
+  if (Array.isArray(out.step_list)) {
+    wf.steps = out.step_list.map((s) => {
+      const step = parseJSON(s);
+      return { id: str0(step.id), label: str0(step.label) || str0(step.id), status: str0(step.status) || 'pending' };
+    });
+  }
+}
 
 export interface Chat {
   items: Item[];
@@ -43,12 +142,17 @@ export function fromHistory(entries: Schemas['HistoryEntry'][]): Item[] {
         items.push({ kind: 'reply', text: e.text ?? '', turn: e.turn_number, streaming: false });
         break;
       case 'tool_start':
-        items.push({ kind: 'tool', name: e.tool_name ?? '', input: e.tool_input, done: false });
+        if (!applyWorkflowTool(items, e.tool_name ?? '', e.tool_input)) {
+          items.push({ kind: 'tool', name: e.tool_name ?? '', input: e.tool_input, done: false });
+        }
         break;
       case 'tool_end': {
-        const open = lastOpenTool(items, e.tool_name ?? '');
-        if (open) Object.assign(open, { output: e.tool_output, done: true });
-        else items.push({ kind: 'tool', name: e.tool_name ?? '', input: e.tool_input, output: e.tool_output, done: true });
+        const name = e.tool_name ?? '';
+        if (!applyWorkflowTool(items, name, e.tool_input, e.tool_output, true)) {
+          const open = lastOpenTool(items, name);
+          if (open) Object.assign(open, { output: e.tool_output, done: true });
+          else items.push({ kind: 'tool', name, input: e.tool_input, output: e.tool_output, done: true });
+        }
         break;
       }
       case 'sub_agent_start':
@@ -140,13 +244,17 @@ function applyItems(chat: Chat, ev: WsEvent): Chat {
     }
     case 'tool_start':
       endThinking(items);
-      items.push({ kind: 'tool', name: str(ev.tool_name), input: ev.tool_input, done: false });
+      if (!applyWorkflowTool(items, str(ev.tool_name), ev.tool_input)) {
+        items.push({ kind: 'tool', name: str(ev.tool_name), input: ev.tool_input, done: false });
+      }
       return { items, busy: true };
     case 'tool_end': {
       const name = str(ev.tool_name);
-      const open = lastOpenTool(items, name);
-      if (open) items[items.indexOf(open)] = { ...open, output: str(ev.tool_output), done: true };
-      else items.push({ kind: 'tool', name, output: str(ev.tool_output), done: true });
+      if (!applyWorkflowTool(items, name, ev.tool_input, ev.tool_output, true)) {
+        const open = lastOpenTool(items, name);
+        if (open) items[items.indexOf(open)] = { ...open, output: str(ev.tool_output), done: true };
+        else items.push({ kind: 'tool', name, output: str(ev.tool_output), done: true });
+      }
       return { items, busy: true };
     }
     case 'sub_agent_start':

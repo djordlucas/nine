@@ -97,10 +97,10 @@ test('a conversation can be deleted', async ({ page }) => {
 
 test('a phone shows the list or the chat, not both', async ({ page, isMobile }) => {
   await newConversation(page);
-  const list = page.getByRole('navigation', { name: 'Conversations' });
+  const list = page.getByRole('navigation', { name: 'Agents' });
   await expect(list).toBeVisible({ visible: !isMobile });
   if (isMobile) {
-    await page.getByRole('link', { name: 'All conversations' }).click();
+    await page.getByRole('link', { name: 'All agents' }).click();
     await expect(list).toBeVisible();
   }
 });

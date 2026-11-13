@@ -10,9 +10,9 @@ test('a wrong token is refused', async ({ page }) => {
 test('the session survives a reload and a deep link', async ({ page }) => {
   await signIn(page);
   await page.goto('/processes');
-  await expect(page.getByRole('heading', { name: 'Processes', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Agents', level: 1 })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Processes', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Agents', level: 1 })).toBeVisible();
 });
 
 test('the layout fits the viewport', async ({ page }) => {
@@ -23,7 +23,7 @@ test('the layout fits the viewport', async ({ page }) => {
 
 test('every section is reachable', async ({ page, isMobile }) => {
   await signIn(page);
-  const sections = ['Conversations', 'Processes', 'Goals & workflows', 'Tools', 'Inbox', 'Journal', 'System'];
+  const sections = ['Agents', 'Tools', 'Inbox', 'Data', 'Journal', 'System'];
   for (const name of sections) {
     if (isMobile) {
       const tab = page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name, exact: true });

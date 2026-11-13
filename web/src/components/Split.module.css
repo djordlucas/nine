@@ -137,6 +137,12 @@
     display: none;
   }
 
+  /* The first control (a count line or a filter) gets a full row; the rest
+     wrap below it. */
+  .top > :first-child:not(.fold) {
+    flex-basis: 100%;
+  }
+
   /* A finger needs the full touch height. */
   .row {
     min-height: var(--touch);

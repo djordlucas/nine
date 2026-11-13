@@ -18,7 +18,7 @@ async function deleteGoal(request: APIRequestContext, id: string) {
 }
 
 const processPage = (id: string) => `/processes/${encodeURIComponent(`goal:${id}`)}`;
-const state = (page: Page) => page.getByRole('region', { name: 'Process' }).locator('header');
+const state = (page: Page) => page.getByRole('complementary', { name: 'Agent details' }).locator('header');
 
 test('a process is stopped and started from its page', async ({ page, request }) => {
   const id = await createGoal(request, `e2e process ${Date.now()}`);
@@ -26,7 +26,7 @@ test('a process is stopped and started from its page', async ({ page, request })
     await signIn(page);
     await page.goto('/processes');
     await expect(page.getByText(/of \d+ running/)).toBeVisible();
-    await page.getByRole('navigation', { name: 'Processes' }).getByRole('link', { name: new RegExp(`goal:${id}`) }).click();
+    await page.getByRole('navigation', { name: 'Agents' }).getByRole('link', { name: new RegExp(`goal:${id}`) }).click();
     await expect(page.getByRole('heading', { name: `goal:${id}`, level: 2 })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Budget today' })).toBeVisible();
 
@@ -47,15 +47,14 @@ test('pausing a goal stops its process, and resuming it starts it again', async 
   const id = await createGoal(request, description);
   try {
     await signIn(page);
-    await page.goto('/goals');
-    await page.getByRole('navigation', { name: 'Goals' }).getByRole('link', { name: description }).click();
-    await expect(page.getByRole('heading', { name: description, level: 2 })).toBeVisible();
-    const procs = page.getByRole('region', { name: 'Goal' }).getByRole('list').first();
-    await expect(procs.getByRole('link', { name: `goal:${id}` })).toBeVisible();
+    // A goal shows on the Agents page attached to its pursue process.
+    await page.goto('/conversations');
+    const agents = page.getByRole('navigation', { name: 'Agents' });
+    await expect(agents.getByRole('link', { name: new RegExp(description) })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Pause' }).click();
-    await expect(page.getByText('Now paused.')).toBeVisible();
-    await expect(procs).toContainText('stopped');
+    // Pause the goal through the API; its process stops.
+    const pause = await request.post(`/api/v1/goals/${id}/status`, { headers: bearer, data: { status: 'paused' } });
+    expect(pause.status()).toBe(200);
 
     // The process page sends a goal-stopped process back to its goal.
     await page.goto(processPage(id));
@@ -68,65 +67,39 @@ test('pausing a goal stops its process, and resuming it starts it again', async 
   }
 });
 
-test('a goal and a sub-goal are created and deleted from the page', async ({ page }) => {
-  await signIn(page);
-  await page.goto('/goals');
-  const description = `e2e created ${Date.now()}`;
-  await page.getByRole('textbox', { name: 'New goal' }).fill(description);
-  await page.getByRole('button', { name: 'Create' }).click();
-  await expect(page.getByRole('heading', { name: description, level: 2 })).toBeVisible();
-
-  const step = `a first step ${Date.now()}`;
-  await page.getByRole('textbox', { name: 'New sub-goal' }).fill(step);
-  await page.getByRole('button', { name: 'Add' }).click();
-  // The goal's own list, which a phone shows in place of the goal list.
-  await expect(page.getByRole('region', { name: 'Sub-goals' }).getByRole('link', { name: step })).toBeVisible();
-
-  await page.getByRole('button', { name: 'Delete' }).click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
-  await expect(page).toHaveURL(/\/goals$/);
-  const goals = page.getByRole('navigation', { name: 'Goals' });
-  await expect(goals.getByRole('link', { name: description })).toHaveCount(0);
-  await expect(goals.getByRole('link', { name: step })).toHaveCount(0);
+test('a goal created through the API appears on the Agents page, attached to its process', async ({ page, request }) => {
+  const description = `e2e agent goal ${Date.now()}`;
+  const id = await createGoal(request, description);
+  try {
+    await signIn(page);
+    await page.goto('/conversations');
+    const row = page.getByRole('navigation', { name: 'Agents' }).getByRole('link', { name: new RegExp(description) });
+    await expect(row).toBeVisible();
+    await expect(row).toContainText('goal');
+    // The old /goals/:id link lands on the goal's process.
+    await page.goto(`/goals/${id}`);
+    await expect(page).toHaveURL(new RegExp(`/processes/goal%3A${id}$`));
+    await expect(page.getByRole('heading', { name: `goal:${id}`, level: 2 })).toBeVisible();
+  } finally {
+    await deleteGoal(request, id);
+  }
 });
 
-test('a recurring goal is created with its cadence, which its page and process show', async ({ page }) => {
-  await signIn(page);
-  await page.goto('/goals');
-  const description = `e2e daily ${Date.now()}`;
-  await page.getByRole('textbox', { name: 'New goal' }).fill(description);
-  await page.getByRole('combobox', { name: 'Repeat' }).selectOption('24h');
-  await page.getByRole('button', { name: 'Create' }).click();
-  await expect(page.getByRole('heading', { name: description, level: 2 })).toBeVisible();
-  await expect(page.getByText('daily', { exact: true })).toBeVisible();
-
-  await page.getByRole('button', { name: 'Delete' }).click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
-  await expect(page).toHaveURL(/\/goals$/);
-});
-
-test('the goals page lists workflows, or says there are none', async ({ page }) => {
-  await signIn(page);
-  await page.goto('/goals');
-  const workflows = page.getByRole('navigation', { name: 'Workflows' });
-  await expect(workflows.getByRole('heading', { name: 'Workflows' })).toBeVisible();
-  await expect(workflows.getByText(/No workflows|steps/).first()).toBeVisible();
-});
-
-test('a process session is watched, read-only', async ({ page, request }) => {
+test('a process agent’s activity is its session, read-only', async ({ page, request }) => {
   const id = await createGoal(request, `e2e watch ${Date.now()}`);
   try {
     await signIn(page);
     await page.goto(processPage(id));
-    await page.getByRole('link', { name: 'Watch it' }).click();
-    await expect(page).toHaveURL(/\/session$/);
-    const pane = page.getByRole('region', { name: 'Process' });
-    // Its session has a chat once the process has run a turn; until then the pane says so.
+    const pane = page.getByRole('region', { name: 'Activity' });
+    // Its session has an activity once the process has run a turn; until then the pane says so.
     await expect(pane.getByRole('list', { name: 'Messages' }).or(pane.getByText('has not run a turn yet'))).toBeVisible();
+    // Read-only: no composer, no delete.
     await expect(page.getByRole('textbox', { name: 'Message' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Delete', exact: true })).toHaveCount(0);
-    await pane.getByRole('link', { name: `‹ goal:${id}` }).click();
-    await expect(page.getByRole('heading', { name: `goal:${id}`, level: 2 })).toBeVisible();
+    // The process’s specifics sit in the panel on the right.
+    const side = page.getByRole('complementary', { name: 'Agent details' });
+    await expect(side.getByRole('heading', { name: `goal:${id}`, level: 2 })).toBeVisible();
+    await expect(side.getByText('Budget today')).toBeVisible();
   } finally {
     await deleteGoal(request, id);
   }

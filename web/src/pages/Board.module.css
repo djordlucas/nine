@@ -2,35 +2,55 @@
   list-style: none;
   margin: 0;
   padding: 0;
-}
-.list a {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.15rem 0.5rem;
-  padding: 0.45rem 0.6rem;
-  border-radius: 6px;
-  text-decoration: none;
-  color: inherit;
+  gap: var(--space-1);
+  /* The board fits a default size; a long list scrolls inside itself. */
+  max-height: 280px;
+  overflow-y: auto;
 }
-.list a .meta {
-  grid-column: 1 / -1;
+
+/* One task in the panel: a box whose summary is the title and status. */
+.task {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  padding: 0 var(--space-2);
 }
-.list a:hover {
-  background: var(--hover);
+
+.task summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 28px;
+  cursor: pointer;
+  font-size: var(--text-sm);
 }
-.current {
-  background: var(--active);
+
+.task summary .title {
+  flex: 1;
+  min-width: 0;
 }
+
+.taskBody {
+  display: grid;
+  gap: var(--space-1);
+  padding-bottom: var(--space-2);
+}
+
 .title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .meta {
-  color: var(--muted);
+  margin: 0;
+  color: var(--muted, var(--text-2));
   font-size: 0.8rem;
 }
+
 .status {
+  flex: none;
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -42,19 +62,26 @@
 .running { background: #2a6dd633; color: #7db4ff; }
 .done { background: #2f9e4433; color: #6fd39a; }
 .failed { background: #e5484d33; color: #ff8589; }
-.cancelled { background: #8885; color: var(--muted); }
-.new {
-  display: inline-flex;
-  padding: 0.2rem;
-  border-radius: 6px;
-  color: inherit;
+.cancelled { background: #8885; color: var(--muted, var(--text-2)); }
+
+/* The board panel in an orchestrator agent's right side. */
+.panel {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
 }
 
-/* The create/edit form in the pane, as on the Data page. */
+.panelTitle {
+  margin: 0;
+  font-size: var(--text-md);
+}
+
+/* The post-a-task form, as on the other pages. */
 .form {
   display: grid;
-  gap: var(--space-3);
-  padding: var(--space-3);
+  gap: var(--space-2);
+  padding: var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-2);
@@ -78,8 +105,9 @@
 /* A task's spec or result, as it was written. */
 .pre {
   margin: 0;
-  max-height: 360px;
+  max-height: 120px;
   overflow-y: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  font-size: var(--text-sm);
 }

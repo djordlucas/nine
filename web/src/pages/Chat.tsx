@@ -51,6 +51,11 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
   const { route } = useLocation();
   const [info, setInfo] = useState<Schemas['ConversationInfo'] | null>(null);
   const [missing, setMissing] = useState(false);
+  // A sub-agent's session is reaped once it finishes: the conversation is 404
+  // but its journaled history remains, shown read-only.
+  const [reaped, setReaped] = useState(false);
+  // A reaped sub-agent's activity is watch-only, like a process session's.
+  const ro = readOnly || reaped;
   const [chat, setChat] = useState<ChatState>(empty);
   const current = useRef(chat);
   current.current = chat;
@@ -120,7 +125,16 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
     void api.GET('/conversations/{id}', { params: { path: { id } } }).then(({ data, response }) => {
       if (!alive) return;
       if (response.status === 404) {
-        setMissing(true);
+        // Not a live conversation: a finished sub-agent still has its history.
+        void loadHistory(id).then((h) => {
+          if (!alive) return;
+          if (h.length > 0) {
+            setReaped(true);
+            void load();
+          } else {
+            setMissing(true);
+          }
+        });
         return;
       }
       if (data) setInfo(data);
@@ -214,7 +228,7 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
     return (
       <div class="card">
         <p>This conversation does not exist.</p>
-        <a href="/conversations">All conversations</a>
+        <a href="/conversations">All agents</a>
       </div>
     );
   }
@@ -223,11 +237,11 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
   return (
     <div class={styles.chat}>
       <header class={styles.head}>
-        <a class={styles.back} href="/conversations" aria-label="All conversations">
+        <a class={styles.back} href="/conversations" aria-label="All agents">
           ‹
         </a>
         <div class={styles.title}>
-          {readOnly ? (
+          {ro ? (
             <h2>{title}</h2>
           ) : (
             <Title
@@ -240,7 +254,7 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
             />
           )}
           <span class="muted">
-            {[info?.role, sock === 'open' ? '' : sock === 'connecting' ? 'connecting…' : 'reconnecting…'].filter(Boolean).join(' · ')}
+            {[info?.role, reaped ? 'finished' : sock === 'open' ? '' : sock === 'connecting' ? 'connecting…' : 'reconnecting…'].filter(Boolean).join(' · ')}
           </span>
         </div>
         <div class={styles.actions}>
@@ -254,7 +268,7 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
           >
             <Icon name="context" size={16} />
           </button>
-          {!readOnly && (
+          {!ro && (
             <>
               <button type="button" class={`${detail.action} ${detail.iconAction}`} aria-label="End session" title="End session" onClick={endSession}>
                 <Icon name="power" size={16} />
@@ -300,7 +314,7 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
       <div ref={bottom} />
 
       <footer class={styles.footer}>
-        {!readOnly && (
+        {!ro && (
           <Composer
             id={id}
             busy={chat.busy}
@@ -526,6 +540,26 @@ function ItemView({
           </summary>
           {item.input !== undefined && item.input !== null && <Json value={item.input} class={styles.pre} />}
           {item.output !== undefined && <Json value={item.output} class={styles.pre} />}
+        </details>
+      );
+    case 'workflow':
+      // A workflow the agent runs, as a tool-call box: the plan and each step's status.
+      return (
+        <details class={styles.toolBox} open={item.status !== 'done' && item.status !== 'failed' && item.status !== 'cancelled'}>
+          <summary>
+            <span class={styles.toolName}>workflow · {item.name}</span>
+            <span class="muted">{item.status}</span>
+          </summary>
+          {item.steps.length > 0 && (
+            <ol class={styles.wfSteps}>
+              {item.steps.map((s) => (
+                <li key={s.id}>
+                  <span class={styles.wfStatus} data-status={s.status}>{s.status}</span>
+                  <span>{s.label}</span>
+                </li>
+              ))}
+            </ol>
+          )}
         </details>
       );
     case 'agent':

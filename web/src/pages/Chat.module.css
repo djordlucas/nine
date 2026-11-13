@@ -360,6 +360,51 @@
   border-radius: var(--radius);
 }
 
+/* A workflow's plan, inside its tool-call box. */
+.wfSteps {
+  list-style: none;
+  margin: var(--space-2) 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.wfSteps li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.wfStatus {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 18px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wfStatus[data-status='done'] {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.wfStatus[data-status='failed'] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.wfStatus[data-status='running'] {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
 /* Hovered, it casts the buttons' hard shadow; clicked, it presses in like
    them and lightens for the moment of the click. Only its summary presses
    it: selecting text in an open box does not. */
@@ -593,6 +638,18 @@
 
   .userRow {
     max-width: 90%;
+  }
+
+  /* A phone has no room to spare: the boxes take the full width. */
+  .reply,
+  .toolBox,
+  .agentLine {
+    max-width: 100%;
+  }
+
+  /* The composer stays reachable above the tab bar while the activity scrolls. */
+  .footer {
+    bottom: calc(var(--tabbar) + env(safe-area-inset-bottom));
   }
 }
 

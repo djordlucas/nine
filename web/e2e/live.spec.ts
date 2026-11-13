@@ -18,28 +18,25 @@ async function deleteGoal(request: APIRequestContext, id: string) {
   await request.delete(`/api/v1/goals/${id}`, { headers: bearer });
 }
 
-test('the dashboard shows its tiles and goes live', async ({ page }) => {
+test('the shell shows its sections and goes live', async ({ page }) => {
   await signIn(page);
-  for (const name of ['Needs you', 'Processes', 'Activity', 'Recent conversations', 'Goals & workflows', 'Notifications', 'Daemon']) {
-    await expect(page.getByRole('region', { name })).toBeVisible();
-  }
+  // The top bar's sections and the Live status are there on landing.
+  await expect(page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Agents' })).toBeVisible();
   await expect(page.getByRole('status').filter({ hasText: 'Live' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Needs you' })).toContainText('Nothing is waiting for you.');
+  await expect(page.getByRole('navigation', { name: 'Agents' })).toBeVisible();
 });
 
-test('a goal created elsewhere reaches the dashboard and the journal live', async ({ page, request }) => {
+test('a goal created elsewhere reaches the journal live', async ({ page, request }) => {
   await signIn(page);
   await expect(page.getByRole('status').filter({ hasText: 'Live' })).toBeVisible();
 
   const description = `e2e goal ${Date.now()}`;
   const id = await createGoal(request, description);
   try {
-    await expect(page.getByRole('region', { name: 'Goals & workflows' })).toContainText(description);
-    await expect(page.getByRole('region', { name: 'Activity' })).toContainText('goal_created');
-
     // In-app navigation keeps the tab's stream and what it has kept.
-    await page.getByRole('link', { name: 'Open Activity' }).click();
+    await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Journal' }).click();
     await expect(page.getByRole('heading', { name: 'Journal', level: 1 })).toBeVisible();
+    await expect(page.getByRole('list', { name: 'Journal events' }).getByRole('button', { name: new RegExp(`goal_created.*${description}`) })).toBeVisible();
     await page.getByLabel('Show').selectOption('state');
     const row = page.getByRole('list', { name: 'Journal events' }).getByRole('button', { name: new RegExp(`goal_created.*${description}`) });
     await expect(row).toBeVisible();
