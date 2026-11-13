@@ -207,20 +207,20 @@ again:
 }
 
 // Close frees the resources of t: every stack segment, every alloca and the
-// thread registration. It does not depend on the Alloc/Free and FreeAlloca
-// pairs of the frames having balanced, so it also cleans up after a recovered
-// panic that skipped their frees, or when t is closed from under a call that
-// still has frames on it.
+// thread registration. It does not depend on the Alloc/Free pairs and the
+// alloca regions of the frames having balanced, so it also cleans up after a
+// recovered panic that skipped their frees, or when t is closed from under a
+// call that still has frames on it.
 func (t *TLS) Close() {
-	// The current alloca list and the lists saved by FreeAlloca.
-	for _, p := range t.allocas {
-		Xfree(t, p)
-	}
-	for _, a := range t.allocaStack {
-		for _, p := range a {
-			Xfree(t, p)
-		}
-	}
+	t.freeMemory()
+	t.pthreadData.close(t)
+	*t = TLS{}
+}
+
+// freeMemory frees the memory of t, see Close, and leaves its other fields
+// alone.
+func (t *TLS) freeMemory() {
+	t.allocaClose()
 	// t.stack is the header of the current segment, the other segments hold
 	// their own. Store it, then walk the chain from the first segment: prev
 	// links lead back to it and next links lead forward, through the empty
@@ -241,6 +241,8 @@ func (t *TLS) Close() {
 			Xfree(t, p)
 			p = next
 		}
+		t.stack = stackHeader{}
+		t.sp = 0
 	}
 	if memgrind {
 		if t.stackHeaderBalance != 0 {
@@ -249,8 +251,6 @@ func (t *TLS) Close() {
 
 		atomic.AddInt32(&tlsBalance, -1)
 	}
-	t.pthreadData.close(t)
-	*t = TLS{}
 }
 
 // Alloc allocates n bytes of thread-local storage. It must be paired with a
