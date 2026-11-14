@@ -134,12 +134,14 @@
   padding: var(--space-3) 0 var(--space-6);
 }
 
-/* On the split (agents) page the bottom padding would sit outside the chat's
+/* On a phone the split page's bottom padding would sit outside the chat's
    sticky containing block, leaving a gap under the composer at full scroll;
    the chat's timeline carries it instead. The marker is an attribute because
    the split's class is hashed in its own module. */
-.content:has(> [data-split]) {
-  padding-bottom: 0;
+@media (max-width: 767px) {
+  .content:has(> [data-split]) {
+    padding-bottom: 0;
+  }
 }
 
 /* The phone-only pieces: the bottom tab bar, and the live state and controls

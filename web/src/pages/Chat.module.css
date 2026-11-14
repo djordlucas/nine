@@ -699,3 +699,38 @@
   background: var(--ink);
   color: var(--ink-text);
 }
+
+/* On a desktop the chat is a box like the panel beside it — bordered, rounded,
+   as tall as the view — so its header and footer show their edges, and the
+   messages scroll inside the box instead of the page. (Kept last so it wins
+   over the base rules above at equal specificity.) */
+@media (min-width: 768px) {
+  .chat {
+    height: calc(100dvh - 140px);
+    min-height: 320px;
+    border: 1px solid var(--edge);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    overflow: hidden;
+  }
+
+  .head {
+    position: static;
+    flex: none;
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .timeline {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 var(--space-4) var(--space-6);
+  }
+
+  .footer {
+    position: static;
+    bottom: auto;
+    flex: none;
+    padding: var(--space-3) var(--space-4);
+  }
+}
