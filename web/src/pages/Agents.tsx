@@ -186,7 +186,7 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
       const list = (await get(api.GET('/conversations', { params: { query: { limit: 200 } } }), 'conversations')).data ?? [];
       return [...list].sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''));
     },
-    ['turn_start', 'turn_end'],
+    ['turn_start', 'turn_end', 'session_created'],
     `${created}:${reloadKey}`,
   );
   const procs = useLive(
