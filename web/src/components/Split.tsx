@@ -16,7 +16,7 @@ export function Split({ name, noun, open, children }: { name: string; noun: stri
   };
   return (
     <Fold.Provider value={{ noun, fold: () => fold(true) }}>
-      <div class={`${css.split} ${open ? css.open : ''} ${folded ? css.collapsed : ''}`}>
+      <div data-split class={`${css.split} ${open ? css.open : ''} ${folded ? css.collapsed : ''}`}>
         {folded && (
           <div class={css.strip}>
             <FoldButton expanded={false} label={`Show ${noun}`} onClick={() => fold(false)} />
