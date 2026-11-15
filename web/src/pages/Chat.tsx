@@ -671,6 +671,29 @@ function Composer({
   const [think, setThink] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const area = useRef<HTMLTextAreaElement>(null);
+  // The custom caret: a hidden mirror of the textarea's text up to the
+  // selection, whose marker's position the caret copies.
+  const mirror = useRef<HTMLDivElement>(null);
+  const marker = useRef<HTMLSpanElement>(null);
+  const caretEl = useRef<HTMLDivElement>(null);
+
+  const updateCaret = useCallback(() => {
+    const el = area.current, m = mirror.current, mk = marker.current, c = caretEl.current;
+    if (!el || !m || !mk || !c) return;
+    m.textContent = el.value.slice(0, el.selectionStart ?? el.value.length);
+    mk.textContent = '​';
+    m.appendChild(mk);
+    c.style.transform = `translate(${mk.offsetLeft - el.scrollLeft}px, ${mk.offsetTop - el.scrollTop}px)`;
+    c.style.height = `${mk.offsetHeight || 22}px`;
+  }, []);
+
+  useLayoutEffect(() => {
+    updateCaret();
+  }, [text, updateCaret]);
+  useEffect(() => {
+    window.addEventListener('resize', updateCaret);
+    return () => window.removeEventListener('resize', updateCaret);
+  }, [updateCaret]);
 
   const grow = () => fit(area.current, MAX_INPUT);
   const submit = () => {
@@ -696,7 +719,6 @@ function Composer({
     >
       {error && <p class="error">{error}</p>}
       <div class={styles.msgRow}>
-        <span class={styles.caret} aria-hidden="true" />
         <textarea
           ref={area}
           class={styles.input}
@@ -713,7 +735,12 @@ function Composer({
           onInput={(e) => {
             setText((e.target as HTMLTextAreaElement).value);
             grow();
+            updateCaret();
           }}
+          onKeyUp={updateCaret}
+          onClick={updateCaret}
+          onSelect={updateCaret}
+          onFocus={updateCaret}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && enterSends()) {
               e.preventDefault();
@@ -721,6 +748,10 @@ function Composer({
             }
           }}
         />
+        <div ref={mirror} class={`${styles.input} ${styles.mirror}`} aria-hidden="true">
+          <span ref={marker} />
+        </div>
+        <div ref={caretEl} class={styles.caret} aria-hidden="true" />
       </div>
       <div class={styles.actions}>
         {busy && (

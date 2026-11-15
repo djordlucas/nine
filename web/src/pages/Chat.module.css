@@ -508,25 +508,34 @@
   line-height: 22px;
 }
 
-/* The message box spans the footer's full width, with a blinking cursor at
-   its left; the actions (Stop, Think, Plan) and the session details sit on
-   the row below it. */
+/* The message box spans the footer's full width; the actions (Stop, Think,
+   Plan) and the session details sit on the row below it. */
 .msgRow {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  position: relative;
 }
 
-.msgRow .input {
-  flex: 1;
-  min-width: 0;
+/* The native caret is hidden; the custom one is positioned over the box from
+   a hidden mirror of the text up to the selection. */
+.input {
+  caret-color: transparent;
+}
+
+.mirror {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  pointer-events: none;
+  overflow: hidden;
 }
 
 .caret {
-  flex: none;
+  position: absolute;
+  left: 0;
+  top: 0;
   width: 2px;
-  height: 20px;
+  height: 22px;
   background: var(--text);
+  pointer-events: none;
   animation: caretBlink 1.1s steps(1) infinite;
 }
 
