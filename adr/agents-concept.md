@@ -85,6 +85,147 @@ same operations the `A5` API exposes, driven from the UI. The agent
 import/export controls (per `A3`) live in this Builder UI too. Additive on top
 of the existing web UI and API (`A1`).
 
+## Analysis
+
+Where the codebase stands (`main` at `52a10c1`, 2026-11-15) against each
+requirement, what has to be done, and the questions left open.
+
+### A1 — Reuse what exists; renaming is free
+
+**Stands:** one conversation path end to end — the `conversations` table and
+checkpoints (`internal/memory/conversations.go`), the wire messages
+(`internal/protocol`), the daemon handlers (`internal/runtime/daemon.go`), the
+API `/api/v1/conversations` (`internal/api/openapi.yaml`), the web UI. The name
+"agent" is already in use beside it: the web UI roster page is
+`web/src/pages/Agents.tsx` listing conversations, processes and goals
+(`adr/web-ui.md` §5), and `docs/glossary.md` already flags agent/session/
+conversation as overloaded.
+
+**Needs:** a naming map — which identifiers become "agent" (API paths, wire
+fields, store table, UI labels) and which stay; renames land as aliases where
+clients already exist.
+
+**Questions:** do the `/api/v1/conversations` paths change or alias? Which
+names are user-facing versus internal-only?
+
+### A2 — Modifications are allowed when needed
+
+**Stands:** nothing to build — this is the governance rule the other entries
+invoke.
+
+**Needs:** every behavior change under `A3`–`A8` is recorded in this document
+with its reason, as each analysis below already does.
+
+**Questions:** none.
+
+### A3 — Agents are self-contained and importable/exportable
+
+**Stands:** role, skills, self-model and self-reflection are all daemon-wide
+today — a role is a skill with a role block in its frontmatter (`skills/`,
+`[skills].user_dir`; `docs/roles.md`), the self-model is assembled once per
+daemon (`internal/selfmodel/assembler.go`, `GET /self-model`,
+`[bootstrap] self_model_path`), self-reflection is one fixed session
+`self-reflection` driven by the shipped `reflect` process
+(`internal/runtime/bootstrap.go:16`). Export exists only for the whole
+instance: `GET /backup` backed by `internal/backup/backup.go` (tar of the db
+plus the workspace), with CLI `nine backup`/`restore` (`internal/cli`).
+
+**Needs:** attach role, skills, self-model and self-reflection to the agent;
+an export/import bundle per agent (definition plus its database, `A4`); the
+optional generalized copies imported back into daemon scope.
+
+**Questions:** what exactly is in an agent export — definition manifest, the
+SQLite file, workspace files, all three? Does an imported agent get a fresh
+database or adopt an existing one? What stays daemon-wide (board, processes,
+notifications)?
+
+### A4 — Each agent is stored in a dedicated SQLite database
+
+**Stands:** one `Store` over one file — `internal/memory/db.go` `Open`, path
+from `[memory].path` (default `~/.nine/nine.db`), with the "single gateway"
+invariant (one writer-connection pool). All tables live in that one database:
+`conversations`, `goals`, `board_tasks`, `processes`, `notifications`, the
+vectors.
+
+**Needs:** one database file per agent reusing the same `Store` machinery; a
+daemon-level registry database for cross-agent state; a migration path from an
+existing `nine.db`; backup/restore adjusted (`internal/backup`).
+
+**Questions:** which tables are agent-scoped versus daemon-scoped
+(`board_tasks`, `processes`, `notifications`, the event journal)? Directory
+layout for the per-agent files? Does the vector namespace split per agent too?
+
+### A5 — An API builds and runs agents in a running Nine
+
+**Stands:** `POST /api/v1/conversations` (with a `role` field) creates a
+conversation; the CLI passes `--role`. There is no endpoint that composes an
+agent definition (role + skills + self-model + reflection) as a stored object,
+and no separate "run" step. `GET /roles` lists roles.
+
+**Needs:** agent CRUD endpoints on `internal/api` (definition per `A3`, stored
+per `A4`) plus a run endpoint that starts a session from a definition; the CLI
+and web UI call these.
+
+**Questions:** is running an agent a conversation created with the agent's
+bundle, or a new session kind? Does the agent definition live in the agent's
+own database or in the daemon registry?
+
+### A6 — Board workers take a configurable role
+
+**Stands:** the model side is partly there — `run_agent`/`run_agents` accept a
+`role` argument, empty resolving to `[roles] default_leaf` (`executor`)
+(`internal/agent/register_subagents.go:128`). But `board_post({title, spec,
+priority})` has no role field — the spec is free text
+(`internal/agent/register_board.go:104`) — and a `boardworker` process claims
+the oldest queued task and runs under its own configured process role
+(`internal/runtime/liveprog.go` `boardWorkerProgram`). The web UI role picker
+sets the role of new conversations only.
+
+**Needs:** a per-task role on the board (set at post or claim time) that the
+model can name; a web UI control to set or override a board worker's role.
+
+**Questions:** does the boardworker read the role from the task spec, or is the
+role a claim-time choice? Can any role be named, or only leaf roles (leaves are
+barred from delegating)? In the web UI, is the role set per task or per worker?
+
+### A7 — Plugins installable into a running Nine
+
+**Stands:** plugins start at boot — built-ins, `[[mcp.server]]`, and
+`[plugins].user_dir` scanned at boot (`internal/plugin/userplugins.go`); tool
+handlers register at loop-build via `RegisterPlugin`. Runtime *reload* already
+exists: `POST /plugins/reload` and `POST /tools/reload` rescan the user dir and
+restart user plugins (`internal/api/handlers_tools.go:129,180` →
+`ReloadPlugins`). What does not exist is *install* — no endpoint takes plugin
+files into the workspace — and `[plugins] disabled` is read at boot only.
+
+**Needs:** an install endpoint (fetch or upload plugin files, place them in the
+workspace, trigger the existing reload), a health check before a plugin's tools
+are exposed, and a path for newly registered tools to reach sessions that are
+already running.
+
+**Questions:** plugin distribution format — binary, MCP server config, or URL?
+Operator-only install? Does a running conversation pick up new tools without a
+restart, or must tool definitions be resolved per turn? How are name collisions
+handled at install (`firstToolCollision` exists at reload)?
+
+### A8 — The web UI gains a Builder UI
+
+**Stands:** pages in `web/src/app.tsx` — Agents (roster + chat), Board, Tools
+(`/tools`, plugins, skills), Data (`/data`, including raw database tables),
+Inbox, Journal, System, Processes. Backing APIs: `GET /skills`,
+`GET /skills/{name}`, `GET /roles`, `GET /plugins`, read-only `/database/*` and
+`/memory`, `GET /backup`; skill authoring today happens through the model's
+`skill_write`/`skill_modify` tools, not the UI. There is no Builder page, no
+write endpoints for roles, no agent CRUD, no import/export controls.
+
+**Needs:** a Builder route and page with CRUD for roles, skills, data and
+agents, backed by the `A5` API plus new write endpoints where missing, and the
+agent import/export controls per `A3`.
+
+**Questions:** do roles and skills gain REST write endpoints, or does the
+Builder drive the same tools the model uses? Is the Builder operator-only? Where
+does it sit in the navigation?
+
 ## Limits
 
 - Requirements `A1`–`A8` are recorded; later entries extend or amend them.
