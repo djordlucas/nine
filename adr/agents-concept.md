@@ -26,9 +26,28 @@ Changing something is not forbidden when it is needed: if a behavior truly has
 to change, it can. Each such change is recorded in this document with the
 reason it could not be a rename, so the reuse default of `A1` stays auditable.
 
+### A3 — Agents are self-contained and importable/exportable
+
+An agent bundles what makes it that agent: its **role**, its **skills**, its
+**self-model** and its **self-reflection** are agent-specific, attached to the
+agent rather than to the daemon. An agent can be exported as a single unit and
+imported into Nine, so it is portable. Optionally, a role or a skill can have a
+generalized copy imported into Nine itself, shared daemon-wide. Moving these
+from daemon scope to agent scope is a behavior change under `A2`; it cannot be
+a rename because self-containment requires them to travel with the agent.
+
+### A4 — Each agent is stored in a dedicated SQLite database
+
+An agent's persistent state lives in its own SQLite file rather than in the
+daemon's single database (`[memory].path`, default `~/.nine/nine.db`): the same
+engine (`modernc.org/sqlite`) and the same `Store` machinery (`internal/memory`),
+one file per agent instead of one per daemon. Also a behavior change under
+`A2` — the reason is `A3`: the store must travel with the agent for export and
+import to be whole.
+
 ## Limits
 
-- So far `A1`–`A2` are recorded; later entries extend or amend them.
+- So far `A1`–`A4` are recorded; later entries extend or amend them.
 - Related ADRs cover overlapping ground (`agent-boundary.md` splits runtime from
   agent; `process-sessions.md` already separates conversation sessions from
   process sessions); this note decides the user-facing concept, not the internals.
