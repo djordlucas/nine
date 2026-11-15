@@ -1,6 +1,6 @@
 # Design note — Conversations become agents
 
-**Status:** **Proposed** (requirements `A1`–`A8`, analysis, sequencing, consistency check and test plan recorded) ·
+**Status:** **Proposed** (complete: requirements `A1`–`A8`, analysis, sequencing, test plan, all questions resolved) ·
 **Date:** 2026-11-15 · **Related:** `adr/agent-boundary.md`, `adr/concept-consolidation.md`, `adr/process-sessions.md`, `docs/glossary.md`
 
 The unit a user drives in Nine moves from the **conversation** concept — an
@@ -117,9 +117,7 @@ glossary) or stays; aliases where external clients exist — plugins speak the
 wire protocol, so an incompatible rename bumps `plugin.ProtocolVersion`.
 Internal symbols (`AgentWorker`, `AgentInfo`) already read as "agent".
 
-**Questions:** do the `/api/v1/conversations` paths change or alias? Is the
-`conversations` table renamed (costs a migration) or kept? Which names are
-user-facing versus internal-only?
+**Questions:** `Q1`–`Q3` — resolved in [Resolved questions](#resolved-questions).
 
 ### A2 — Modifications are allowed when needed
 
@@ -157,10 +155,7 @@ optionally workspace files, reusing the `internal/backup` tar mechanics; an
 import path that optionally copies the role/skills as generalized daemon-wide
 copies.
 
-**Questions:** does an imported agent get a fresh database or adopt an existing
-one? What stays daemon-wide — board, processes, notifications, the event
-journal? Bundle format: same tar as backup, or manifest + db? Who may export an
-agent, given its memory may be private?
+**Questions:** `Q4`–`Q7` — resolved in [Resolved questions](#resolved-questions).
 
 ### A4 — Each agent is stored in a dedicated SQLite database
 
@@ -180,10 +175,7 @@ for cross-agent state; route each `AgentWorker` at its agent's store; a
 migration that splits an existing `nine.db`; `internal/backup` and restore
 adjusted to walk per-agent databases.
 
-**Questions:** the table split — `conversations`/`goals`/`kv`/`vectors` per
-agent, `board_tasks`/`processes`/`notifications` daemon-wide? Layout
-(`~/.nine/agents/<id>.db`)? The event journal feeds the web UI inbox — does it
-stay in the registry db? Auto-split on boot or an explicit migration command?
+**Questions:** `Q8`–`Q11` — resolved in [Resolved questions](#resolved-questions).
 
 ### A5 — An API builds and runs agents in a running Nine
 
@@ -200,9 +192,7 @@ bundle, stored per `A4`), CRUD on that definition, and `POST
 web UI as clients of the same endpoints. Rides the cross-cutting mechanics:
 openapi.yaml + apigen + a wire message + daemon handler + spec contract.
 
-**Questions:** is "run" a conversation created with the agent's bundle, or a
-distinct session kind? Do agent definitions live in the agent's own database or
-in the registry? Are definitions versioned?
+**Questions:** `Q12`–`Q14` — resolved in [Resolved questions](#resolved-questions).
 
 ### A6 — Board workers take a configurable role
 
@@ -223,10 +213,7 @@ picker sets a new conversation's role only.
 argument, claim path — resolved against the registry with leaf-only
 enforcement; a web UI control to set or override a task's/worker's role.
 
-**Questions:** role named at post time (orchestrator) or claim time (worker)?
-Leaf roles only, since leaves are barred from delegating? Does the
-boardworker's own process role remain the fallback? Do depth and capability
-admission checks apply to task-named roles?
+**Questions:** `Q15`–`Q18` — resolved in [Resolved questions](#resolved-questions).
 
 ### A7 — Plugins installable into a running Nine
 
@@ -252,10 +239,7 @@ running loops' tool definitions on reload or resolve definitions per turn — an
 a disabled-list and name-collision check at install (`firstToolCollision`,
 `internal/plugin/userplugins.go:134`).
 
-**Questions:** distribution format — binary, `[[mcp.server]]` entry, or URL?
-Operator-only install? Do new tools reach running conversations without a
-restart today, or only new ones? What happens to in-flight sessions when a
-plugin is replaced mid-run?
+**Questions:** `Q19`–`Q22` — resolved in [Resolved questions](#resolved-questions).
 
 ### A8 — The web UI gains a Builder UI
 
@@ -275,9 +259,7 @@ skills, data and agents, plus agent import/export controls (`A3`); the write
 endpoints they need (roles, skills, agents — `A5`); regenerated
 `schema.d.ts`/`apigen` from `openapi.yaml`.
 
-**Questions:** REST write endpoints for roles/skills, or server-side reuse of
-the model tools? Operator-only access (auth role)? Where in the nav — beside
-Tools? Import from file upload or URL?
+**Questions:** `Q23`–`Q26` — resolved in [Resolved questions](#resolved-questions).
 
 ## Sequencing
 
@@ -305,6 +287,41 @@ agent's database. `A6` and `A7` are leaf features with no dependency on `A3` or
 `A4`; they slot in parallel once the API conventions exist. The Builder UI
 (phase 6) is last because it surfaces all of the above and needs the write
 endpoints they add.
+
+## Resolved questions
+
+The 26 questions raised in the Analysis, answered. "Basis" cites the evidence
+behind each decision; anything not directly evidenced is a judgment call and
+can be reopened.
+
+| # | Asked | Decision | Basis |
+|---|-------|----------|-------|
+| Q1 | `/api/v1/conversations` paths: change or alias? | Add canonical `/api/v1/agents/*`; old paths stay as aliases | `A1`; the web nav already labels `/conversations` as "Agents" (`web/src/sections.ts:44`) |
+| Q2 | Rename the `conversations` table? | No — rename is user-facing only (API, UI, CLI, glossary); internal names follow later | a table rename costs a migration for no behavior gain |
+| Q3 | Which names are user-facing? | API paths, web UI labels, CLI flags, `docs/glossary.md` terms; Go symbols and table names are internal | `docs/` avoids code references; `adr/` expects them |
+| Q4 | Imported agent: fresh db or adopt? | Fresh agent, fresh id and db; adopting an existing one is an explicit flag, never implicit | an import must never clobber live state |
+| Q5 | What stays daemon-wide? | `processes`, `board_tasks`, `notifications`, `user_notifications`, `human_requests`, `capability_requests`, `capability_grants`, `session_events`, `event_cursors`, `interactive_sessions`, `jobs`, `workflows`; per-agent: `conversations`, `related_sessions`, `kv`, `files`, `workspace_files`, `vectors`, agent-local skills, `tools`/`tool_state`, agent-owned `goals` | coordination tables are cross-agent by nature; `session_events` is already keyed by `agent_id` (`internal/memory/db.go:498`) |
+| Q6 | Export bundle format? | tar reusing `internal/backup` mechanics: `agent.json` manifest (name, role, skills, self-model, reflection config) + `agent.db` + optional `workspace/` | `GET /backup` already tars db + workspace |
+| Q7 | Who may export an agent? | Operator-authenticated API/UI only; never a model tool | memory may be private; same posture as `[plugins] disabled` (`docs/plugins.md`) |
+| Q8 | Table split | = Q5 | — |
+| Q9 | Per-agent db layout | `agents/<id>.db` next to `[memory].path` (`~/.nine/agents/<id>.db`; `/data/agents/<id>.db` in the container); the `[memory].path` file becomes the registry db, name unchanged | volume layout (`docs/glossary.md` `/data/`) |
+| Q10 | Event journal location | stays in the registry db, keyed by `agent_id`; the web inbox reads it daemon-wide | `session_events.agent_id` exists (`db.go:500`) |
+| Q11 | Migration: auto or command? | automatic at boot, extending the in-code migration runner; per-conversation data moves into per-agent dbs, old file kept as `nine.db.pre-agents.bak`; restore reverses; a CLI verify command checks the split | schema migrations already run automatically on `Store` open (`internal/memory`) |
+| Q12 | What is "run an agent"? | a conversation created from the agent's bundle (`RoleParams` from its role); no new session kind | conversations are the interactive unit; the UI already calls them agents |
+| Q13 | Where do definitions live? | the registry db; runtime state in the agent's own db (`A4`) | board/processes/UI list agents daemon-wide |
+| Q14 | Are definitions versioned? | yes — every change writes a version row, reusing the tool-versions pattern | `/tools/{name}/versions/{version}/restore`, `tool_state` |
+| Q15 | Board role: post time or claim time? | post time — the poster names the role in `board_post`; claim cannot change it | mirrors `run_agent`, which names the role at spawn |
+| Q16 | Leaf roles only? | yes — validated against the registry's leaf roles; non-leaf refused | workers are sub-agent sessions; leaves (except `executor`) cannot delegate (`docs/roles.md`) |
+| Q17 | Boardworker fallback role? | yes — a task with no role runs under the claiming worker's own process role, else `[roles] default_leaf` | today's behavior, preserved |
+| Q18 | Admission checks on task-named roles? | yes — existence, leaf-only, depth cap and capability grants, same as delegation | `board_post` admission rules already exist (`register_board.go`) |
+| Q19 | Plugin distribution format? | phase 5 covers user-plugin files (upload or URL fetch) dropped into `[plugins].user_dir`, then the existing reload; `[[mcp.server]]` entries stay config-only in this phase | user plugins are the only runtime-reloadable kind today |
+| Q20 | Operator-only install? | yes — authenticated operator session required; not exposed to models | same posture as `[plugins] disabled` (operator-only, read at boot) |
+| Q21 | Do new tools reach running conversations today? | no — `handlePluginsReload` (`internal/runtime/handlers.go:816`) only rescans/restarts plugins; tool definitions are composed per loop at build (`builder.go:563,654`), so only new sessions see them. Live grants are new behavior in `A7` | verified in code |
+| Q22 | Plugin replaced mid-run? | dispatcher swaps handlers atomically per call (old or new, never a gap); running sessions keep old definitions until loop rebuild/resume; no mid-turn kill | dispatcher handler map swap is per-call |
+| Q23 | REST write endpoints for roles/skills? | yes — write endpoints on the API; the model's `skill_write`/`skill_modify` tools call the same store layer | one store, two front doors (REST for UI/CLI, tools for the model) |
+| Q24 | Builder operator-only? | yes, auth-gated like install/export | `auth_session.go`; consistent with Q7/Q20 |
+| Q25 | Builder in nav where? | new top-level "Builder" section (`web/src/sections.ts`, routes `/builder/…`), not under Tools — it covers agents, not just tools | sections list at `web/src/sections.ts:44-49` |
+| Q26 | Import from upload or URL? | both, through the same operator-only import endpoint | Q7/Q20 posture; URL fetch lands in the workspace first |
 
 ## Consistency check
 
