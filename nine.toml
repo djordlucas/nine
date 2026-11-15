@@ -237,3 +237,10 @@ plan_approval = "on-risky"
 #
 # [board]
 # max_queued = 100
+
+[api]
+# HTTP API + web UI. Bound to 0.0.0.0 for network reach; auth_token is
+# disabled at the operator's request; anyone on the network can drive the daemon.
+enabled = true
+port = 8080
+host = "0.0.0.0"

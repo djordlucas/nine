@@ -1,0 +1,239 @@
+/* The list and the pane share the sections' layout (components/Split). */
+
+.new {
+  min-height: 32px;
+}
+
+/* A roster row: the agent's name, then its labels (type, state) and details
+   on the line under. */
+.agentRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  padding: 6px var(--space-2);
+  color: inherit;
+  font-size: var(--text-sm);
+  text-decoration: none;
+}
+
+.rowLine {
+  display: flex;
+  align-items: center;
+}
+
+.rowLine .agentRow {
+  flex: 1;
+  min-width: 0;
+}
+
+.rowLine:hover {
+  background: var(--surface-2);
+}
+
+.rowLine:has(> .agentRow[aria-current='page']) {
+  background: var(--ink);
+}
+
+.agentRow[aria-current='page'] {
+  color: var(--ink-text);
+}
+
+/* The fold toggle on a parent row: a small chevron that turns down. */
+.toggle {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  min-height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.toggle:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.toggle svg {
+  transition: transform 0.15s;
+}
+
+.toggle[aria-expanded='true'] svg {
+  transform: rotate(90deg);
+}
+
+.rowLine:has(> .agentRow[aria-current='page']) .toggle {
+  color: var(--ink-text);
+}
+
+.agentRow .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentRow .meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-2);
+  font-size: var(--text-2xs);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.agentRow[aria-current='page'] .meta {
+  color: var(--ink-text);
+  opacity: 0.75;
+}
+
+@media (max-width: 767px) {
+  .agentRow {
+    min-height: var(--touch);
+    align-content: center;
+  }
+}
+
+/* The activity pane: the agent's chat in the middle — a little narrower to
+   leave the side panel room within the page's 10% side padding — and the
+   agent's specifics in the panel on the right. */
+.activity {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(230px, 280px);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.activityMain {
+  min-width: 0;
+}
+
+.activitySide {
+  position: sticky;
+  top: 0;
+  max-height: calc(100dvh - 125px);
+  overflow-y: auto;
+  padding: var(--space-2);
+  background: var(--surface);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
+}
+
+/* Below 1200px the pane is too narrow for chat and panel side by side — the
+   composer overflowed its frame — so the details drop under the activity. */
+@media (max-width: 1199px) {
+  .activity {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .activitySide {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+@media (max-width: 767px) {
+  /* On a phone the details — and the orchestrator's board — come first; the
+     activity scrolls below. */
+  .activitySide {
+    order: -1;
+  }
+}
+
+/* The counts ("N of M running", "N agents") shown in the shell's header row. */
+.counts {
+  display: inline-flex;
+  gap: var(--space-3);
+}
+
+/* The New agent pop-up: a native dialog over a dimmed page, like Confirm's. */
+.dialog {
+  width: min(440px, calc(100vw - 2 * var(--space-4)));
+  padding: 0;
+  border: 1px solid var(--edge);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+
+.dialog::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+
+.dialogBox {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-5);
+}
+
+.dialogBox h2 {
+  font-size: var(--text-lg);
+}
+
+.dialogBox p {
+  margin: 0;
+  color: var(--text-2);
+}
+
+.roles {
+  display: grid;
+  gap: var(--space-2);
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.roleOpt {
+  display: grid;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.roleOpt:hover {
+  background: var(--surface-2);
+}
+
+.roleOpt[aria-checked='true'] {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
+.roleOpt span {
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+
+.dialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.cancel {
+  min-height: var(--touch);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.cancel:hover {
+  background: var(--surface-2);
+}

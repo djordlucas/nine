@@ -4,10 +4,10 @@
   --bg: #f7f7f8;
   --surface: #ffffff;
   --surface-2: #f0f1f3;
-  --border: #a4a8b1;
-  --edge: #16181d;
-  --ink: #16181d;
-  --ink-text: #ffffff;
+  --border: #dcdee3;
+  --edge: var(--border);
+  --ink: var(--accent);
+  --ink-text: var(--accent-text);
   --text: #16181d;
   --text-2: #5b6170;
   --accent: #2f5bd3;
@@ -15,10 +15,13 @@
   --ok: #1d7a46;
   --warn: #9a6200;
   --danger: #b42318;
-  --focus: #16181d;
-  --syntax-key: #8a2be2;
-  --syntax-string: #1d7a46;
-  --syntax-number: #9a4a00;
+  --focus: var(--accent);
+  --syntax-key: #7a3fd1;
+  --syntax-string: #17803d;
+  --syntax-number: #b35900;
+  --syntax-literal: #c0266d;
+  --syntax-keyword: #2f5bd3;
+  --syntax-comment: #8a8f9c;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -27,19 +30,20 @@
   --space-5: 24px;
   --space-6: 32px;
 
-  --radius: 3px;
-  --radius-lg: 4px;
-  --shadow: 3px 3px 0 var(--border);
+  --radius: 8px;
+  --radius-lg: 12px;
+  --shadow: none;
   --touch: 44px;
 
   --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --text-2xs: 11px;
+  --text-xs: 12px;
   --text-sm: 13px;
   --text-md: 15px;
   --text-lg: 18px;
   --text-xl: 22px;
 
-  --rail: 220px;
   --tabbar: 60px;
   color-scheme: light;
 }
@@ -49,10 +53,10 @@
     --bg: #0f1115;
     --surface: #171a20;
     --surface-2: #1f232b;
-    --border: #4a505c;
-    --edge: #e8eaee;
-    --ink: #e8eaee;
-    --ink-text: #0f1115;
+    --border: #2c313b;
+    --edge: var(--border);
+    --ink: var(--accent);
+    --ink-text: var(--accent-text);
     --text: #e8eaee;
     --text-2: #9aa1af;
     --accent: #7c9cff;
@@ -60,10 +64,13 @@
     --ok: #4cc38a;
     --warn: #e0a83a;
     --danger: #ff7b72;
-    --focus: #e8eaee;
-    --syntax-key: #d2a8ff;
-    --syntax-string: #7ee2a8;
-    --syntax-number: #f0a860;
+    --focus: var(--accent);
+    --syntax-key: #c3a6ff;
+    --syntax-string: #7fd8a0;
+    --syntax-number: #f2b35e;
+    --syntax-literal: #f58fc0;
+    --syntax-keyword: #8fadff;
+    --syntax-comment: #7d8494;
     color-scheme: dark;
   }
 }
@@ -72,10 +79,10 @@
   --bg: #0f1115;
   --surface: #171a20;
   --surface-2: #1f232b;
-  --border: #4a505c;
-  --edge: #e8eaee;
-  --ink: #e8eaee;
-  --ink-text: #0f1115;
+  --border: #2c313b;
+  --edge: var(--border);
+  --ink: var(--accent);
+  --ink-text: var(--accent-text);
   --text: #e8eaee;
   --text-2: #9aa1af;
   --accent: #7c9cff;
@@ -83,10 +90,13 @@
   --ok: #4cc38a;
   --warn: #e0a83a;
   --danger: #ff7b72;
-  --focus: #e8eaee;
-  --syntax-key: #d2a8ff;
-  --syntax-string: #7ee2a8;
-  --syntax-number: #f0a860;
+  --focus: var(--accent);
+  --syntax-key: #c3a6ff;
+  --syntax-string: #7fd8a0;
+  --syntax-number: #f2b35e;
+  --syntax-literal: #f58fc0;
+  --syntax-keyword: #8fadff;
+  --syntax-comment: #7d8494;
   color-scheme: dark;
 }
 
@@ -115,17 +125,20 @@ body {
   height: 100%;
 }
 
-/* Links are the text's colour, underlined: colour is kept for what went wrong. */
-a {
-  color: inherit;
-  text-decoration: underline;
-  text-decoration-color: var(--text-2);
-  text-underline-offset: 2px;
+/* Scrollbars are hidden everywhere; scrolling itself keeps working (wheel,
+   touch, keyboard, programmatic). */
+* {
+  scrollbar-width: none;
 }
 
-a:hover {
-  text-decoration-color: currentColor;
-  text-decoration-thickness: 2px;
+*::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+a {
+  color: var(--accent);
 }
 
 button,
@@ -136,21 +149,9 @@ select {
   color: inherit;
 }
 
-/* Focus thickens an element's own edge instead of drawing a second box
-   around it: the 2px outline lies over the 1px border, inward. A dark-filled
-   element (a primary button, a selected row) would hide a dark outline, so it
-   gets a light one just inside its edge. */
 :focus-visible {
   outline: 2px solid var(--focus);
-  outline-offset: -2px;
-}
-
-.button:focus-visible,
-[aria-current='page']:focus-visible,
-[aria-expanded='true']:focus-visible,
-[aria-pressed='true']:focus-visible {
-  outline-color: var(--ink-text);
-  outline-offset: -4px;
+  outline-offset: 2px;
 }
 
 h1,
@@ -181,23 +182,16 @@ samp {
 .button {
   min-height: var(--touch);
   padding: 0 var(--space-4);
-  border: 1px solid var(--edge);
+  border: 1px solid transparent;
   border-radius: var(--radius);
-  background: var(--ink);
-  color: var(--ink-text);
+  background: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
-  box-shadow: var(--shadow);
   cursor: pointer;
-}
-
-.button:active:not(:disabled) {
-  box-shadow: none;
-  transform: translate(3px, 3px);
 }
 
 .button:disabled {
   opacity: 0.6;
-  box-shadow: none;
   cursor: default;
 }
 

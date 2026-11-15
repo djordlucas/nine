@@ -32,7 +32,6 @@
 }
 
 .toggle:hover:not(:disabled) .box {
-  box-shadow: 2px 2px 0 var(--border);
 }
 
 .toggle[aria-pressed='true'] .box {
@@ -42,8 +41,6 @@
 }
 
 .toggle:active:not(:disabled) .box {
-  box-shadow: none;
-  transform: translate(1px, 1px);
 }
 
 /* The focus ring sits on the square, which is what is pressed. */

@@ -1,19 +1,17 @@
 import { useState } from 'preact/hooks';
-import { useLocation, useRoute } from 'preact-iso';
 import { api, errorMessage, get } from '../api/client';
 import { ago } from '../format';
 import { useLive } from '../live';
-import { actionsFor, byAttention, processState, stoppedReason, used, type Process } from '../processes';
+import { actionsFor, processState, stoppedReason, used, type Process } from '../processes';
 import { Area } from '../components/Area';
 import { ask } from '../components/Confirm';
-import { ListHead, Split } from '../components/Split';
-import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
 import styles from './Processes.module.css';
 import { Icon } from '../components/Icon';
 import { Chat } from './Chat';
 
-const processEvents = ['process_*', 'standing_*', 'goal_status'];
+/** The event types that mean a process changed. */
+export const processEvents = ['process_*', 'standing_*', 'goal_status'];
 
 /** A route parameter as written, whether or not the router decoded it. */
 export function param(v: string | undefined): string | undefined {
@@ -31,32 +29,12 @@ export function processPath(id: string): string {
 }
 
 /**
- * Processes (adr/web-ui.md §5): the roster beside one process, with its
- * session, budget and health; start, stop and send.
- */
-export function Processes() {
-  const { params } = useRoute();
-  const { path } = useLocation();
-  const id = param(params.id as string | undefined);
-  const watching = !!id && path.endsWith('/session');
-  return (
-    <Split name="processes" noun="processes" open={!!id}>
-      <Roster current={id} />
-      <section class={split.pane} aria-label="Process">
-        {id && watching && <ProcessSession key={id} id={id} />}
-        {id && !watching && <ProcessDetail key={id} id={id} />}
-        {!id && <p class="empty">Choose a process.</p>}
-      </section>
-    </Split>
-  );
-}
-
-/**
  * A process's session as a chat, live, to watch: its turns, tool calls and
  * reasoning as they happen. Read-only; the process drives it, and the
  * operator's way in is Message it on the process.
  */
-function ProcessSession({ id }: { id: string }) {
+/** The middle of a process agent's activity: its session as a read-only chat. */
+export function ProcessChat({ id }: { id: string }) {
   // Its session exists once the process has run a turn; until then there is
   // nothing to watch.
   const { data, error } = useLive(
@@ -70,65 +48,18 @@ function ProcessSession({ id }: { id: string }) {
   );
   if (error) return <p class="card error">{error}</p>;
   if (!data) return <p class="card muted">Loading…</p>;
-  return (
+  return data.ran ? (
+    <Chat key={data.session} id={data.session} readOnly />
+  ) : (
     <div class={styles.watch}>
-      <a href={processPath(id)}>‹ {id}</a>
-      {data.ran ? (
-        <Chat key={data.session} id={data.session} readOnly />
-      ) : (
-        <p class="empty">This process has not run a turn yet. Its session appears here once it has.</p>
-      )}
+      <a class={detail.back} href="/conversations" aria-label="All agents">‹</a>
+      <p class="empty">This process has not run a turn yet. Its activity appears here once it has.</p>
     </div>
   );
 }
 
-function Roster({ current }: { current?: string }) {
-  const { data, error } = useLive(
-    async () => {
-      const [list, status] = await Promise.all([
-        get(api.GET('/processes', { params: { query: { limit: 1000 } } }), 'processes'),
-        get(api.GET('/status'), 'the daemon status'),
-      ]);
-      return { list: byAttention(list.data ?? []), max: status.max_running };
-    },
-    processEvents,
-  );
-  const running = data?.list.filter((p) => p.state !== 'stopped').length ?? 0;
-  return (
-    <nav class={split.list} aria-label="Processes">
-      <ListHead>
-        <p class={split.heading}>
-          {data && (
-            <>
-              <span>{data.max ? `${running} of ${data.max} running` : `${running} running`}</span>
-              <span>{data.list.length} in all</span>
-            </>
-          )}
-        </p>
-      </ListHead>
-      {error && <p class="error">{error}</p>}
-      {!data && !error && <p class="muted">Loading…</p>}
-      {data && data.list.length === 0 && (
-        <p class="empty">No processes. A goal, a [[process]] block in nine.toml, or the model starts one.</p>
-      )}
-      {data && data.list.length > 0 && (
-        <ul>
-          {data.list.map((p) => (
-            <li key={p.id}>
-              <a href={processPath(p.id)} class={split.row} aria-current={p.id === current ? 'page' : undefined}>
-                <span class={`${detail.badge} ${detail[processState(p)]}`}>{processState(p)}</span>
-                <span class={split.name}>{p.id}</span>
-                <span class={split.meta}>{[p.tool, p.trigger !== '—' ? p.trigger : ''].filter(Boolean).join(' · ')}</span>
-              </a>
-            </li>
-          ))}
-        </ul>
-      )}
-    </nav>
-  );
-}
-
-function ProcessDetail({ id }: { id: string }) {
+/** The right side of a process agent's activity: what is specific to it (or its goal). */
+export function ProcessPanel({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<{ ok: boolean; text: string } | null>(null);
   const { data: p, error } = useLive(
@@ -170,11 +101,8 @@ function ProcessDetail({ id }: { id: string }) {
     );
 
   return (
-    <article class={`card ${detail.detail}`}>
+    <div class={detail.detail}>
       <header class={detail.head}>
-        <a class={detail.back} href="/processes" aria-label="All processes">
-          ‹
-        </a>
         <div class={detail.title}>
           <h2>{p.id}</h2>
           <span class="muted">
@@ -223,7 +151,7 @@ function ProcessDetail({ id }: { id: string }) {
       <Budget p={p} />
       {can.send && <Send id={id} />}
       <Recent p={p} />
-    </article>
+    </div>
   );
 }
 
@@ -243,7 +171,7 @@ function Facts({ p }: { p: Process }) {
           <dt>Session</dt>
           <dd>
             <code>{p.session}</code>
-            {p.attached ? ' (shared)' : ''} · <a href={`${processPath(p.id)}/session`}>Watch it</a>
+            {p.attached ? ' (shared)' : ''}
           </dd>
         </>
       )}
@@ -251,7 +179,9 @@ function Facts({ p }: { p: Process }) {
         <>
           <dt>Goal</dt>
           <dd>
-            <a href={`/goals/${encodeURIComponent(p.goal)}`}>{p.goal}</a>
+            {/* A goal is its pursue process — this page — so the id is text,
+                not a link back to itself. */}
+            <code>{p.goal}</code>
           </dd>
         </>
       )}

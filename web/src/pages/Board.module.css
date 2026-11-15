@@ -2,32 +2,56 @@
   list-style: none;
   margin: 0;
   padding: 0;
-}
-.list a {
   display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 0.5rem;
-  padding: 0.45rem 0.6rem;
-  border-radius: 6px;
-  text-decoration: none;
-  color: inherit;
+  /* minmax(0, 1fr): items shrink to the box instead of overflowing it. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1);
 }
-.list a:hover {
-  background: var(--hover);
+
+/* One task in the panel: a box whose summary is the title and status. */
+.task {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  padding: 0 var(--space-2);
+  min-width: 0;
 }
-.current {
-  background: var(--active);
+
+.task summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 26px;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  list-style: none;
 }
+
+.task summary .title {
+  flex: 1;
+  min-width: 0;
+}
+
+.taskBody {
+  display: grid;
+  gap: var(--space-1);
+  padding-bottom: var(--space-1);
+}
+
 .title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .meta {
-  color: var(--muted);
+  margin: 0;
+  color: var(--muted, var(--text-2));
   font-size: 0.8rem;
 }
+
 .status {
+  flex: none;
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -39,10 +63,56 @@
 .running { background: #2a6dd633; color: #7db4ff; }
 .done { background: #2f9e4433; color: #6fd39a; }
 .failed { background: #e5484d33; color: #ff8589; }
-.cancelled { background: #8885; color: var(--muted); }
-.new {
-  display: inline-flex;
-  padding: 0.2rem;
-  border-radius: 6px;
-  color: inherit;
+.cancelled { background: #8885; color: var(--muted, var(--text-2)); }
+
+/* The board panel in an orchestrator agent's right side. */
+.panel {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: var(--text-md);
+}
+
+/* The post-a-task form, as on the other pages. */
+.form {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  /* The new-task form stays on top of the board while the list scrolls. */
+  position: sticky;
+  top: calc(-1 * var(--space-2));
+  z-index: 1;
+}
+
+.field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1);
+}
+
+.field > label:first-child {
+  font-size: var(--text-sm);
+}
+
+.field textarea {
+  font-family: var(--mono);
+  resize: none;
+}
+
+/* A task's spec or result, as it was written. */
+.pre {
+  margin: 0;
+  max-height: 100px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--text-sm);
 }

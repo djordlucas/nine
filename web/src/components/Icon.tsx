@@ -12,7 +12,6 @@ const paths: Record<IconName, string> = {
   journal: 'M6 3h12v18H6zM9 7h6M9 11h6M9 15h4',
   data: 'M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3',
   system: 'M4 6h16M4 12h16M4 18h16M8 4v4M16 10v4M10 16v4',
-  more: 'M5 12h.01M12 12h.01M19 12h.01',
   inspect: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4',
   context: 'M12 3l9 5-9 5-9-5zM3 12l9 5 9-5M3 16l9 5 9-5',
   power: 'M12 3v9M6.3 6.3a8 8 0 1 0 11.4 0',
@@ -23,9 +22,14 @@ const paths: Record<IconName, string> = {
   download: 'M12 4v11M7 10l5 5 5-5M5 20h14',
   upload: 'M12 16V5M7 10l5-5 5 5M5 20h14',
   filePlus: 'M6 3h8l4 4v14H6zM14 3v4h4M12 11v6M9 14h6',
+  file: 'M6 3h8l4 4v14H6zM14 3v4h4',
+  folder: 'M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z',
+  search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4',
+  image: 'M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15 9h.01',
   plus: 'M12 5v14M5 12h14',
   prev: 'M15 6l-6 6 6 6',
   next: 'M9 6l6 6-6 6',
+  send: 'M4 12l16-8-6 16-3-7zM11 13l9-9',
 };
 
 export function Icon({ name, size = 22 }: { name: IconName; size?: number }) {

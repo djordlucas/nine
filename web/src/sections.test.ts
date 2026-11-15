@@ -3,17 +3,21 @@ import { sectionFor, sections } from './sections';
 
 describe('sectionFor', () => {
   it('matches a section and its sub-paths', () => {
-    expect(sectionFor('/processes').label).toBe('Processes');
-    expect(sectionFor('/processes/sec-watch').label).toBe('Processes');
+    expect(sectionFor('/conversations').label).toBe('Agents');
+    expect(sectionFor('/conversations/sec-watch').label).toBe('Agents');
   });
   it('does not match on a shared prefix alone', () => {
-    expect(sectionFor('/toolsmith').label).toBe('Dashboard');
+    expect(sectionFor('/toolsmith').label).toBe('Agents');
   });
-  it('falls back to the dashboard', () => {
-    expect(sectionFor('/').label).toBe('Dashboard');
-    expect(sectionFor('/nowhere').label).toBe('Dashboard');
+  it('falls back to the first section', () => {
+    expect(sectionFor('/').label).toBe('Agents');
+    expect(sectionFor('/nowhere').label).toBe('Agents');
+    // Process, goal and board deep links still land on the Agents section.
+    expect(sectionFor('/processes/self-reflection').label).toBe('Agents');
+    expect(sectionFor('/goals/some-goal').label).toBe('Agents');
+    expect(sectionFor('/board/task_1').label).toBe('Agents');
   });
-  it('gives the mobile tab bar four sections, leaving room for More', () => {
-    expect(sections.filter((s) => s.tab)).toHaveLength(4);
+  it('lists every section for the mobile tab bar, foot ones included', () => {
+    expect(sections.map((s) => s.label)).toEqual(['Agents', 'Tools', 'Inbox', 'Data', 'Journal', 'System']);
   });
 });

@@ -7,15 +7,16 @@ import { expect, signIn, test } from './fixtures';
 async function newConversation(page: Page) {
   await signIn(page);
   await page.goto('/conversations');
-  await page.getByRole('button', { name: 'New conversation' }).click();
+  await page.getByRole('button', { name: 'New agent' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Start' }).click();
   await expect(page).toHaveURL(/\/conversations\/[^/]+$/);
   await expect(page.getByText('No messages yet. Say something.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Send' })).toBeDisabled();
 }
 
 async function send(page: Page, text: string) {
-  await page.getByRole('textbox', { name: 'Message' }).fill(text);
-  await page.getByRole('button', { name: 'Send' }).click();
+  const box = page.getByRole('textbox', { name: 'Message' });
+  await box.fill(text);
+  await box.press('Enter');
 }
 
 const messages = (page: Page) => page.getByRole('list', { name: 'Messages' });
@@ -97,10 +98,10 @@ test('a conversation can be deleted', async ({ page }) => {
 
 test('a phone shows the list or the chat, not both', async ({ page, isMobile }) => {
   await newConversation(page);
-  const list = page.getByRole('navigation', { name: 'Conversations' });
+  const list = page.getByRole('navigation', { name: 'Agents' });
   await expect(list).toBeVisible({ visible: !isMobile });
   if (isMobile) {
-    await page.getByRole('link', { name: 'All conversations' }).click();
+    await page.getByRole('link', { name: 'All agents' }).click();
     await expect(list).toBeVisible();
   }
 });

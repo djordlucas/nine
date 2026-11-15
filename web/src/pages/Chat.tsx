@@ -1,3 +1,4 @@
+import type { ComponentChildren } from 'preact';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import { api, errorMessage, get, type Schemas } from '../api/client';
@@ -51,6 +52,11 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
   const { route } = useLocation();
   const [info, setInfo] = useState<Schemas['ConversationInfo'] | null>(null);
   const [missing, setMissing] = useState(false);
+  // A sub-agent's session is reaped once it finishes: the conversation is 404
+  // but its journaled history remains, shown read-only.
+  const [reaped, setReaped] = useState(false);
+  // A reaped sub-agent's activity is watch-only, like a process session's.
+  const ro = readOnly || reaped;
   const [chat, setChat] = useState<ChatState>(empty);
   const current = useRef(chat);
   current.current = chat;
@@ -120,7 +126,16 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
     void api.GET('/conversations/{id}', { params: { path: { id } } }).then(({ data, response }) => {
       if (!alive) return;
       if (response.status === 404) {
-        setMissing(true);
+        // Not a live conversation: a finished sub-agent still has its history.
+        void loadHistory(id).then((h) => {
+          if (!alive) return;
+          if (h.length > 0) {
+            setReaped(true);
+            void load();
+          } else {
+            setMissing(true);
+          }
+        });
         return;
       }
       if (data) setInfo(data);
@@ -214,7 +229,7 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
     return (
       <div class="card">
         <p>This conversation does not exist.</p>
-        <a href="/conversations">All conversations</a>
+        <a href="/conversations">All agents</a>
       </div>
     );
   }
@@ -223,11 +238,11 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
   return (
     <div class={styles.chat}>
       <header class={styles.head}>
-        <a class={styles.back} href="/conversations" aria-label="All conversations">
+        <a class={styles.back} href="/conversations" aria-label="All agents">
           ‹
         </a>
         <div class={styles.title}>
-          {readOnly ? (
+          {ro ? (
             <h2>{title}</h2>
           ) : (
             <Title
@@ -240,7 +255,7 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
             />
           )}
           <span class="muted">
-            {[info?.role, sock === 'open' ? '' : sock === 'connecting' ? 'connecting…' : 'reconnecting…'].filter(Boolean).join(' · ')}
+            {[info?.role, reaped ? 'finished' : sock === 'open' ? '' : sock === 'connecting' ? 'connecting…' : 'reconnecting…'].filter(Boolean).join(' · ')}
           </span>
         </div>
         <div class={styles.actions}>
@@ -254,7 +269,7 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
           >
             <Icon name="context" size={16} />
           </button>
-          {!readOnly && (
+          {!ro && (
             <>
               <button type="button" class={`${detail.action} ${detail.iconAction}`} aria-label="End session" title="End session" onClick={endSession}>
                 <Icon name="power" size={16} />
@@ -292,6 +307,7 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
         ))}
         {chat.busy && !chat.items.some((i) => i.kind === 'reply' && i.streaming) && (
           <li class={styles.working} aria-live="polite">
+            <span class={styles.spinner} aria-hidden="true" />
             {chat.stage ? `${chat.stage}…` : 'Working…'}
           </li>
         )}
@@ -299,18 +315,19 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
       <div ref={bottom} />
 
       <footer class={styles.footer}>
-        {!readOnly && (
+        {ro ? (
+          <SessionBar model={llm.model} provider={llm.provider} context={chat.context ?? contextNow} />
+        ) : (
           <Composer
             id={id}
             busy={chat.busy}
-            connected={sock === 'open'}
             onSend={send}
             onCancel={cancel}
             planMode={info?.plan_mode}
             onPlanMode={(plan_mode) => setInfo((i) => ({ ...(i ?? {}), plan_mode }))}
+            trailing={<SessionBar model={llm.model} provider={llm.provider} context={chat.context ?? contextNow} />}
           />
         )}
-        <SessionBar model={llm.model} provider={llm.provider} context={chat.context ?? contextNow} />
       </footer>
     </div>
   );
@@ -527,6 +544,26 @@ function ItemView({
           {item.output !== undefined && <Json value={item.output} class={styles.pre} />}
         </details>
       );
+    case 'workflow':
+      // A workflow the agent runs, as a tool-call box: the plan and each step's status.
+      return (
+        <details class={styles.toolBox} open={item.status !== 'done' && item.status !== 'failed' && item.status !== 'cancelled'}>
+          <summary>
+            <span class={styles.toolName}>workflow · {item.name}</span>
+            <span class="muted">{item.status}</span>
+          </summary>
+          {item.steps.length > 0 && (
+            <ol class={styles.wfSteps}>
+              {item.steps.map((s) => (
+                <li key={s.id}>
+                  <span class={styles.wfStatus} data-status={s.status}>{s.status}</span>
+                  <span>{s.label}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </details>
+      );
     case 'agent':
       return (
         <div class={styles.agentLine}>
@@ -615,24 +652,48 @@ const MAX_INPUT = 200;
 function Composer({
   id,
   busy,
-  connected,
   onSend,
   onCancel,
   planMode,
   onPlanMode,
+  trailing,
 }: {
   id: string;
   busy: boolean;
-  connected: boolean;
   onSend: (text: string, think: boolean) => boolean;
   onCancel: () => void;
   planMode?: string;
   onPlanMode: (mode: string) => void;
+  /** The session details (model, context), on the same row as the buttons. */
+  trailing?: ComponentChildren;
 }) {
   const [text, setText] = useState('');
   const [think, setThink] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const area = useRef<HTMLTextAreaElement>(null);
+  // The custom caret: a hidden mirror of the textarea's text up to the
+  // selection, whose marker's position the caret copies.
+  const mirror = useRef<HTMLDivElement>(null);
+  const marker = useRef<HTMLSpanElement>(null);
+  const caretEl = useRef<HTMLDivElement>(null);
+
+  const updateCaret = useCallback(() => {
+    const el = area.current, m = mirror.current, mk = marker.current, c = caretEl.current;
+    if (!el || !m || !mk || !c) return;
+    m.textContent = el.value.slice(0, el.selectionStart ?? el.value.length);
+    mk.textContent = '​';
+    m.appendChild(mk);
+    c.style.transform = `translate(${mk.offsetLeft - el.scrollLeft}px, ${mk.offsetTop - el.scrollTop}px)`;
+    c.style.height = `${mk.offsetHeight || 22}px`;
+  }, []);
+
+  useLayoutEffect(() => {
+    updateCaret();
+  }, [text, updateCaret]);
+  useEffect(() => {
+    window.addEventListener('resize', updateCaret);
+    return () => window.removeEventListener('resize', updateCaret);
+  }, [updateCaret]);
 
   const grow = () => fit(area.current, MAX_INPUT);
   const submit = () => {
@@ -657,18 +718,29 @@ function Composer({
       }}
     >
       {error && <p class="error">{error}</p>}
-      <div class={styles.entry}>
+      <div class={styles.msgRow}>
         <textarea
           ref={area}
           class={styles.input}
           rows={1}
           aria-label="Message"
-          placeholder={busy ? 'A message now waits for the turn to finish' : 'Message'}
+          placeholder={
+            busy
+              ? 'A message now waits for the turn to finish'
+              : enterSends()
+                ? 'Message — Enter sends, Shift+Enter for a new line'
+                : 'Message'
+          }
           value={text}
           onInput={(e) => {
             setText((e.target as HTMLTextAreaElement).value);
             grow();
+            updateCaret();
           }}
+          onKeyUp={updateCaret}
+          onClick={updateCaret}
+          onSelect={updateCaret}
+          onFocus={updateCaret}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && enterSends()) {
               e.preventDefault();
@@ -676,27 +748,29 @@ function Composer({
             }
           }}
         />
-        <div class={styles.send}>
-          {busy && (
-            <button type="button" class={`button ${styles.press} ${styles.stop}`} onClick={onCancel}>
-              Stop
-            </button>
-          )}
-          <button type="submit" class={`button ${styles.press}`} disabled={!text.trim() || !connected}>
-            Send
-          </button>
-          <button
-            type="button"
-            class={styles.think}
-            aria-pressed={think}
-            aria-label="Think"
-            title={think ? 'Think: on for the next message' : 'Think: reason before answering the next message'}
-            onClick={() => setThink(!think)}
-          >
-            T
-          </button>
-          {planMode && <PlanButton id={id} mode={planMode} onChange={onPlanMode} onError={setError} />}
+        <div ref={mirror} class={`${styles.input} ${styles.mirror}`} aria-hidden="true">
+          <span ref={marker} />
         </div>
+        <div ref={caretEl} class={styles.caret} aria-hidden="true" />
+      </div>
+      <div class={styles.actions}>
+        {busy && (
+          <button type="button" class={`button ${styles.press} ${styles.stop} ${styles.actionBtn}`} onClick={onCancel}>
+            <Icon name="stop" size={16} /> Stop
+          </button>
+        )}
+        <button
+          type="button"
+          class={styles.think}
+          aria-pressed={think}
+          aria-label="Think"
+          title={think ? 'Think: on for the next message' : 'Think: reason before answering the next message'}
+          onClick={() => setThink(!think)}
+        >
+          Think
+        </button>
+        {planMode && <PlanButton id={id} mode={planMode} onChange={onPlanMode} onError={setError} />}
+        {trailing && <div class={styles.session}>{trailing}</div>}
       </div>
     </form>
   );
@@ -742,7 +816,7 @@ function PlanButton(props: { id: string; mode: string; onChange: (mode: string) 
       title={`${PLAN_HELP[props.mode] ?? `Plan: ${props.mode}`}. Click for ${next}.`}
       onClick={() => void change()}
     >
-      P
+      Plan
     </button>
   );
 }

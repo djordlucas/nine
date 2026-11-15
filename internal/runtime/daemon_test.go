@@ -498,6 +498,67 @@ func TestDaemonStatus(t *testing.T) {
 	}
 }
 
+// captureSink records journaled events synchronously.
+type captureSink struct {
+	mu  sync.Mutex
+	evs []memory.SessionEvent
+}
+
+func (s *captureSink) Append(ev memory.SessionEvent) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.evs = append(s.evs, ev)
+}
+
+func (s *captureSink) Close() error { return nil }
+
+// A new conversation must be in the durable session list immediately (not only
+// after its first checkpoint) and must journal a session_created event, so the
+// web roster can refresh the moment one is created from anywhere.
+func TestNewConversationIsListedAndJournaled(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := seqProvider(nil)
+	d, sock := startDaemon(t, makeFactory(provider), nil, nil)
+	d.ConfigureMemory(store)
+	sink := &captureSink{}
+	d.SetEventSink(sink)
+
+	c := dial(t, sock)
+	id, err := c.NewConversation()
+	if err != nil {
+		t.Fatalf("NewConversation: %v", err)
+	}
+
+	sums, err := store.SessionList()
+	if err != nil {
+		t.Fatalf("SessionList: %v", err)
+	}
+	listed := false
+	for _, s := range sums {
+		if s.ID == id {
+			listed = true
+		}
+	}
+	if !listed {
+		t.Errorf("new conversation %s missing from SessionList (%d sessions)", id, len(sums))
+	}
+
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	journaled := false
+	for _, ev := range sink.evs {
+		if ev.AgentID == id && ev.Type == "session_created" {
+			journaled = true
+		}
+	}
+	if !journaled {
+		t.Errorf("no session_created event journaled for %s (got %v)", id, sink.evs)
+	}
+}
+
 func TestDaemonListGoals(t *testing.T) {
 	provider := seqProvider(nil)
 	d, sock := startDaemon(t, makeFactory(provider), nil, nil)

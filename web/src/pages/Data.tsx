@@ -4,6 +4,8 @@ import { api, errorMessage, get, type Schemas } from '../api/client';
 import { useLive } from '../live';
 import { asText, cell, crumbs, dirHref, fieldValue, fileHref, join, MAX_EDIT_BYTES, parent, version } from '../data';
 import { bytes } from '../system';
+import { ago } from '../format';
+import type { IconName } from '../sections';
 import { Toggle } from '../components/Toggle';
 import { Area } from '../components/Area';
 import { ask } from '../components/Confirm';
@@ -57,11 +59,30 @@ export function Data() {
 
 // Files
 
+type Kind = 'all' | 'dir' | 'file' | 'db';
+type Sort = 'name' | 'newest' | 'largest';
+
+const KINDS: { value: Kind; label: string; icon?: IconName }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'dir', label: 'Folders', icon: 'folder' },
+  { value: 'file', label: 'Files', icon: 'file' },
+  { value: 'db', label: 'Databases', icon: 'data' },
+];
+
+/** The entry's kind; nine's listing has no sqlite flag, so databases are by extension. */
+const kindOf = (e: { name: string; dir?: boolean }): Exclude<Kind, 'all'> =>
+  e.dir ? 'dir' : /\.(db|sqlite3?|db3)$/i.test(e.name) ? 'db' : 'file';
+
+const isImage = (name: string) => /\.(png|jpe?g|gif|webp|svg|avif)$/i.test(name);
+
 function Files({ dir, file }: { dir: string; file?: string }) {
   const { route } = useLocation();
   const [changed, setChanged] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [kind, setKind] = useState<Kind>('all');
+  const [sort, setSort] = useState<Sort>('name');
   const reload = () => setChanged((n) => n + 1);
   const { data, error: loadError } = useLive(
     async () => get(api.GET('/workspace/files', { params: { query: { path: dir } } }), 'the directory'),
@@ -118,26 +139,60 @@ function Files({ dir, file }: { dir: string; file?: string }) {
     }
   };
 
+  async function removeDir(path: string) {
+    setBusy(true);
+    const { data: e, error: err } = await api.DELETE('/workspace/file', { params: { query: { path } } });
+    setBusy(false);
+    if (!e) {
+      setError(errorMessage(err, `Could not delete ${path}.`));
+      return;
+    }
+    route(dirHref(parent(path)));
+  }
+
+  // An open file takes the whole width (five's workspace layout).
+  if (file !== undefined) {
+    return (
+      <section class={styles.filePane} aria-label="File">
+        <FileDetail key={`${file}#${changed}`} path={file} put={put} onChanged={reload} />
+      </section>
+    );
+  }
+
+  const all = data?.entries ?? [];
+  const needle = search.trim().toLowerCase();
+  const shown = all
+    .filter((e) => (kind === 'all' || kindOf(e) === kind) && (!needle || e.name.toLowerCase().includes(needle)))
+    .sort((a, b) => {
+      // Folders first, then by the chosen order.
+      if (!!a.dir !== !!b.dir) return a.dir ? -1 : 1;
+      if (sort === 'newest') return Date.parse(b.modified) - Date.parse(a.modified);
+      if (sort === 'largest') return (b.dir ? 0 : b.bytes ?? 0) - (a.dir ? 0 : a.bytes ?? 0);
+      return a.name.localeCompare(b.name);
+    });
+  const counts: Record<Kind, number> = { all: all.length, dir: 0, file: 0, db: 0 };
+  for (const e of all) counts[kindOf(e)]++;
+
   return (
-    <Split name="files" noun="files" open={file !== undefined}>
-      <nav class={split.list} aria-label="Files">
-        <ListHead>
-          <ol class={styles.crumbs} aria-label="Directory">
-            {crumbs(dir).map((c) => (
-              <li key={c.path}>
-                <a href={dirHref(c.path)} aria-current={c.path === dir ? 'page' : undefined}>
-                  {c.name}
-                </a>
-              </li>
-            ))}
-          </ol>
-        </ListHead>
-        <div class={detail.actions}>
-          <button type="button" class={`${detail.action} ${detail.iconAction}`} disabled={busy} onClick={() => void newFile()} aria-label="New file" title="New file">
-            <Icon name="filePlus" size={16} />
+    <section class={styles.browser} aria-label="Files">
+      <div class={styles.toolbar}>
+        <ol class={styles.crumbs} aria-label="Directory">
+          {crumbs(dir).map((c) => (
+            <li key={c.path}>
+              <a href={dirHref(c.path)} aria-current={c.path === dir ? 'page' : undefined}>
+                {c.name}
+              </a>
+            </li>
+          ))}
+        </ol>
+        <div class={styles.actions}>
+          <button type="button" class={styles.toolAction} disabled={busy} onClick={() => void newFile()}>
+            <Icon name="plus" size={16} />
+            New file
           </button>
-          <label class={`${detail.action} ${detail.iconAction} ${styles.upload}`} title="Upload">
+          <label class={`${styles.toolAction} ${styles.upload}`}>
             <Icon name="upload" size={16} />
+            Upload
             <input
               type="file"
               aria-label="Upload"
@@ -149,57 +204,77 @@ function Files({ dir, file }: { dir: string; file?: string }) {
               }}
             />
           </label>
+          {dir !== '' && data?.entries.length === 0 && (
+            <button type="button" class={`${styles.toolAction} ${styles.danger}`} disabled={busy} onClick={() => void removeDir(dir)}>
+              <Icon name="trash" size={16} />
+              Delete directory
+            </button>
+          )}
         </div>
-        {(error || loadError) && <p class="error">{error || loadError}</p>}
-        {!data && !loadError && <p class="muted">Loading…</p>}
-        {data && data.entries.length === 0 && <p class="empty">This directory is empty.</p>}
-        {data && data.entries.length > 0 && (
-          <ul>
-            {data.entries.map((e) => (
+      </div>
+
+      <div class={styles.filters}>
+        <label class={styles.search}>
+          <Icon name="search" size={16} />
+          <input
+            type="search"
+            placeholder="Search this directory"
+            value={search}
+            aria-label="Search by name"
+            onInput={(e) => setSearch((e.target as HTMLInputElement).value)}
+          />
+        </label>
+        <div class={styles.kinds} role="group" aria-label="Show">
+          {KINDS.map((k) => (
+            <button
+              key={k.value}
+              type="button"
+              class={styles.kindButton}
+              aria-pressed={kind === k.value}
+              onClick={() => setKind(k.value)}
+            >
+              {k.icon && <Icon name={k.icon} size={14} />}
+              {k.label}
+              <span class={styles.kindCount}>{counts[k.value]}</span>
+            </button>
+          ))}
+        </div>
+        <label class={styles.sort}>
+          Sort
+          <select value={sort} onChange={(e) => setSort((e.target as HTMLSelectElement).value as Sort)}>
+            <option value="name">Name</option>
+            <option value="newest">Newest</option>
+            <option value="largest">Largest</option>
+          </select>
+        </label>
+      </div>
+
+      {(error || loadError) && <p class="error">{error || loadError}</p>}
+      {!data && !loadError && <p class="muted">Loading…</p>}
+      {data && data.entries.length === 0 && <p class="empty">This directory is empty.</p>}
+      {data && all.length > 0 && shown.length === 0 && <p class="muted">Nothing here matches.</p>}
+      {shown.length > 0 && (
+        <ul class={styles.cards}>
+          {shown.map((e) => {
+            const k = kindOf(e);
+            return (
               <li key={e.path}>
-                <a
-                  href={e.dir ? dirHref(e.path) : fileHref(e.path)}
-                  class={split.row}
-                  aria-current={e.path === file ? 'page' : undefined}
-                >
-                  <span class={detail.badge}>{e.dir ? 'dir' : 'file'}</span>
-                  <span class={split.name}>{e.name}</span>
-                  <span class={split.meta}>
-                    {e.dir ? new Date(e.modified).toLocaleString() : `${bytes(e.bytes)} · ${new Date(e.modified).toLocaleString()}`}
+                <a href={e.dir ? dirHref(e.path) : fileHref(e.path)} class={styles.fileCard} data-kind={k} title={e.name}>
+                  <span class={styles.fileIcon}>
+                    <Icon name={k === 'dir' ? 'folder' : k === 'db' ? 'data' : isImage(e.name) ? 'image' : 'file'} size={22} />
+                  </span>
+                  <span class={styles.fileName}>{e.name}</span>
+                  <span class={styles.fileMeta} title={new Date(e.modified).toLocaleString()}>
+                    {k === 'dir' ? 'folder' : bytes(e.bytes)} · {ago(e.modified)}
                   </span>
                 </a>
               </li>
-            ))}
-          </ul>
-        )}
-        {data && dir !== '' && data.entries.length === 0 && (
-          <button type="button" class={`${detail.action} ${detail.iconAction} ${detail.danger}`} disabled={busy} onClick={() => void removeDir(dir)} aria-label="Delete this directory" title="Delete this directory">
-            <Icon name="trash" size={16} />
-          </button>
-        )}
-      </nav>
-      <section class={split.pane} aria-label="File">
-        {file !== undefined ? (
-          <FileDetail key={`${file}#${changed}`} path={file} put={put} onChanged={reload} />
-        ) : (
-          <p class="empty">
-            The workspace: the files Nine's tools read and write, and yours. Choose a file to read or edit it.
-          </p>
-        )}
-      </section>
-    </Split>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
-
-  async function removeDir(path: string) {
-    setBusy(true);
-    const { data: e, error: err } = await api.DELETE('/workspace/file', { params: { query: { path } } });
-    setBusy(false);
-    if (!e) {
-      setError(errorMessage(err, `Could not delete ${path}.`));
-      return;
-    }
-    route(dirHref(parent(path)));
-  }
 }
 
 interface Loaded {
@@ -276,7 +351,7 @@ function FileDetail(props: {
   return (
     <article class={`card ${detail.detail}`}>
       <header class={detail.head}>
-        <a class={detail.back} href={dirHref(parent(path))} aria-label="The directory">
+        <a class={`${detail.back} ${detail.backShown}`} href={dirHref(parent(path))} aria-label="The directory">
           ‹
         </a>
         <div class={detail.title}>

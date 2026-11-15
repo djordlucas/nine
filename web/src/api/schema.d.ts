@@ -887,7 +887,7 @@ export interface paths {
         put?: never;
         /**
          * Post a board task
-         * @description Creates a task as the operator (posted_by "operator"), queued until a worker claims it. The admission guards apply — a refusal is 400 with the reason.
+         * @description Creates a task, queued until a worker claims it, posted_by "operator" unless the body names a conversation. The admission guards apply — a refusal is 400 with the reason.
          */
         post: operations["createBoardTask"];
         delete?: never;
@@ -1979,6 +1979,8 @@ export interface components {
             spec?: string;
             /** @default 0 */
             priority: number;
+            /** @description Optional conversation (session id) whose board this task belongs to; defaults to "operator". The board is one shared queue namespaced by posted_by (adr/orchestrator-board.md §2.1). */
+            posted_by?: string;
         };
         /** @description An operator edit of one board task; only the fields present are changed. */
         BoardTaskPatch: {

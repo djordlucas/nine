@@ -982,8 +982,8 @@ func NewProcessListMsg() Msg { return Msg{Type: TypeProcessList} }
 // carry their payload as JSON in Text; get/delete carry the id in ID.
 func NewBoardListMsg(status string) Msg { return Msg{Type: TypeBoardList, Text: status} }
 func NewBoardGetMsg(id string) Msg       { return Msg{Type: TypeBoardGet, ID: id} }
-func NewBoardCreateMsg(title, spec string, priority int) Msg {
-	raw, _ := json.Marshal(map[string]any{"title": title, "spec": spec, "priority": priority})
+func NewBoardCreateMsg(title, spec string, priority int, postedBy string) Msg {
+	raw, _ := json.Marshal(map[string]any{"title": title, "spec": spec, "priority": priority, "posted_by": postedBy})
 	return Msg{Type: TypeBoardCreate, Text: string(raw)}
 }
 func NewBoardUpdateMsg(id string, patch map[string]any) Msg {

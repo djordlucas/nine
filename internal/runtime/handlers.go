@@ -152,6 +152,12 @@ func (d *Daemon) handleListWorkflows(enc *json.Encoder) {
 // newConversation creates a conversation. role names the agent it runs as
 // (adr/orchestrator-board.md §2.5); empty is the default, orchestrator, and an
 // unknown role is refused rather than silently defaulted.
+// conversationCreator persists a conversation row. queryBackend leaves it out,
+// so a test backend need not implement it (same pattern as kvReader below).
+type conversationCreator interface {
+	ConversationCreate(id string) error
+}
+
 func (d *Daemon) newConversation(interactive bool, role string) (string, error) {
 	if role != "" && role != OrchestratorRole && !d.knownRole(role) {
 		return "", fmt.Errorf("unknown role %q (roles_list shows the registry)", role)
@@ -166,6 +172,23 @@ func (d *Daemon) newConversation(interactive bool, role string) (string, error) 
 	d.mu.Lock()
 	d.sessions[id] = r
 	d.mu.Unlock()
+	// Persist the row now: the session list reads the durable store, so without
+	// this a fresh conversation is invisible until its first checkpoint — and
+	// gone entirely after a daemon restart.
+	if d.store != nil {
+		if cc, ok := d.store.(conversationCreator); ok {
+			if err := cc.ConversationCreate(id); err != nil {
+				slog.Warn("persist new conversation failed", "id", id, "err", err)
+			}
+		}
+	}
+	// Journal the creation so live subscribers (the web roster) refresh at once.
+	if d.sink != nil {
+		raw, _ := json.Marshal(map[string]any{"role": role, "interactive": interactive})
+		d.sink.Append(memory.SessionEvent{
+			AgentID: id, Turn: 0, SpanID: "standing", Type: "session_created", Payload: raw,
+		})
+	}
 	slog.Info("conversation created", "id", id, "interactive", interactive)
 	return id, nil
 }

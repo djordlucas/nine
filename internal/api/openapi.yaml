@@ -2404,7 +2404,7 @@ paths:
     post:
       operationId: createBoardTask
       summary: Post a board task
-      description: Creates a task as the operator (posted_by "operator"), queued until a worker claims it. The admission guards apply — a refusal is 400 with the reason.
+      description: Creates a task, queued until a worker claims it, posted_by "operator" unless the body names a conversation. The admission guards apply — a refusal is 400 with the reason.
       tags:
       - board
       requestBody:
@@ -4613,6 +4613,9 @@ components:
           minimum: 0
           maximum: 10
           default: 0
+        posted_by:
+          type: string
+          description: 'Optional conversation (session id) whose board this task belongs to; defaults to "operator". The board is one shared queue namespaced by posted_by (adr/orchestrator-board.md §2.1).'
     BoardTaskPatch:
       description: 'An operator edit of one board task; only the fields present are changed.'
       type: object

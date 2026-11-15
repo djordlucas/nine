@@ -12,6 +12,9 @@
   top: 0;
   max-height: calc(100dvh - 120px);
   overflow-y: auto;
+  /* The gutter is reserved whether or not the bar shows, so folding rows
+     (e.g. sub-agents) never changes the list's width. */
+  scrollbar-gutter: stable;
   /* Room for the buttons' offset shadow, which the scroll box would clip. */
   padding: 0 3px 3px 0;
   display: grid;
@@ -22,6 +25,7 @@
 /* The list's first row: its controls, then the fold button at its right. */
 .top {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
 }
@@ -134,6 +138,12 @@
   .fold,
   .strip {
     display: none;
+  }
+
+  /* The first control (a count line or a filter) gets a full row; the rest
+     wrap below it. */
+  .top > :first-child:not(.fold) {
+    flex-basis: 100%;
   }
 
   /* A finger needs the full touch height. */
