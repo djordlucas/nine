@@ -1,6 +1,6 @@
 # Design note — Conversations become agents
 
-**Status:** **Proposed** (requirements `A1`–`A8`, analysis and sequencing recorded) ·
+**Status:** **Proposed** (requirements `A1`–`A8`, analysis, sequencing, consistency check and test plan recorded) ·
 **Date:** 2026-11-15 · **Related:** `adr/agent-boundary.md`, `adr/concept-consolidation.md`, `adr/process-sessions.md`, `docs/glossary.md`
 
 The unit a user drives in Nine moves from the **conversation** concept — an
@@ -109,7 +109,7 @@ the `conversations` table and checkpoints (`internal/memory/conversations.go`),
 the per-conversation `AgentWorker` (`internal/runtime/agent_worker.go`), and
 the web UI — where "agent" already exists as a label: `web/src/pages/Agents.tsx`
 is the roster of conversations, processes and goals (`adr/web-ui.md` §5).
-52 non-test Go files mention "conversation".
+52 non-test Go files under `internal/` mention "conversation".
 
 **Required changes:** a naming map deciding per surface whether the identifier
 becomes "agent" (wire types, API paths, table name, CLI flags, UI labels,
@@ -135,12 +135,12 @@ document with its reason, as each analysis below already does.
 
 **Stands:** all four are daemon-wide and shared by every session. Role:
 resolved per session from one registry — `NewRoleRegistry(rs,
-cfg.DefaultLeafRole)` (`internal/runtime/roles.go:225` region,
+cfg.DefaultLeafRole)` (`internal/runtime/roles.go:101`, used at
 `internal/runtime/builder.go:225`); roles are skills with a role block in
 frontmatter (`skills/`, `[skills].user_dir`; `docs/roles.md`); the system prompt
 is composed from `role.SystemPrompt` (`internal/runtime/builder.go:697`).
-Skills: seeded into one daemon-wide vector namespace (`internal/skills`,
-`internal/runtime/docs_seed.go`). Self-model: one `Assembler` built once,
+Skills: seeded at boot into one daemon-wide vector namespace
+(`internal/runtime/skills_seed.go` `SeedSkills`). Self-model: one `Assembler` built once,
 `Build(ctx, queryVec)` per turn (`internal/selfmodel/assembler.go:48`), served
 at `GET /self-model`, bootstrapped from `[bootstrap] self_model_path`.
 Self-reflection: one fixed session `self-reflection` owned by the shipped
@@ -211,8 +211,10 @@ in the registry? Are definitions versioned?
 (`internal/agent/register_subagents.go:128`, `internal/runtime/roles.go:100`);
 the registry validates names (`role_list`/`role_search`). The board side has
 no role: `board_post({title, spec, priority})` — spec is free text
-(`internal/agent/register_board.go:104`) — `board_tasks` rows carry no role
-column, and a `boardworker` process claims the oldest queued task on its clock
+(`internal/agent/register_board.go:104`) — the `board_tasks` schema
+(`internal/memory/db.go:615`: id, title, spec, posted_by, claimed_by, status,
+result, source, priority, depth, timestamps) has no role column, and a
+`boardworker` process claims the oldest queued task on its clock
 and runs under its own configured process role (`internal/runtime/
 process_live.go:417`, `liveprog.go:250` `boardWorkerProgram`). The web UI role
 picker sets a new conversation's role only.
@@ -303,6 +305,41 @@ agent's database. `A6` and `A7` are leaf features with no dependency on `A3` or
 `A4`; they slot in parallel once the API conventions exist. The Builder UI
 (phase 6) is last because it surfaces all of the above and needs the write
 endpoints they add.
+
+## Consistency check
+
+Run against `main` at `52a10c1` (2026-11-15). Every file, symbol and line cited
+in the Decision and Analysis sections was re-grepped; terms were checked against
+`docs/glossary.md`; the document follows `DOCS_STYLE.md` (conclusion first,
+`## Limits` last) and is indexed in `adr/README.md`. Corrections made during
+the check: `NewRoleRegistry` is defined at `internal/runtime/roles.go:101` (used
+at `builder.go:225`), not in the builder; skills are seeded by
+`internal/runtime/skills_seed.go` `SeedSkills` (`docs_seed.go` seeds docs/spec,
+not skills); the `board_tasks` schema (`internal/memory/db.go:615`) indeed has
+no role column; the "52 Go files" count covers `internal/` only.
+
+## Tests & evals
+
+Repo machinery: `make test` / `make cover` (Go unit), `make lint`, `make
+openapi` + `make openapi-check` (regenerate and validate `internal/api/apigen`
+and `web/src/api/schema.d.ts` from `openapi.yaml`), `make webui-test` (web unit,
+`web/src/*.test.ts`), `make webui-e2e` (playwright, `web/e2e`), `make
+integration-test` (`tests/integration`), `make eval-replay` (Track R,
+deterministic, every PR) and `make eval-live` (Track L, behavioral, nightly) —
+case schema in `docs/evals.md`, cases in `tests/evals/cases`, graded on
+side-effects first, then trajectory (`docs/evals.md` §1). Wire changes touch the
+five lockstep places plus `spec/contracts/wire-protocol.md`, and bump
+`plugin.ProtocolVersion` when incompatible; docs/spec sync via `/sync-nine` on
+the feature branch.
+
+| Phase | Unit / integration | E2E | Evals |
+|-------|--------------------|-----|-------|
+| 1 (`A1`, `A5`) | API handler tests in `internal/api` (`handlers_*_test.go`, `spec_test.go` mux patterns); wire tests in `internal/protocol`; CLI tests (`internal/cli/commands_test.go`); a grep guard that old names still alias | `web/e2e` smoke over renamed routes | Track R: replay a recorded session after the rename (journal intact); Track L: compose an agent via `POST /agents`, run it, assert the conversation row and journal side effects |
+| 2 (`A3`) | Builder tests (`internal/runtime/builder_test.go`, `builder_roles_test.go`): per-agent role/skills/self-model resolution; `internal/selfmodel` per-agent source; export/import round-trip modeled on the `internal/backup` tests | — | Track L: imported agent behaves like the exported one (side-effect + trajectory parity); role-gating case: a leaf-role agent never advertises a forbidden tool |
+| 3 (`A4`) | `internal/memory` migration test from a fixture `nine.db`; per-agent `Store` open/close and single-writer concurrency; backup/restore round-trip across per-agent databases (`internal/backup/backup_test.go`, `internal/cli/restore_test.go`) | — | Track R: replay a pre-migration recorded conversation post-migration (checkpoint and history intact) |
+| 4 (`A6`) | `internal/memory/board_test.go` for the new role column; board handler tests (`internal/agent/register_board.go`, `internal/api/handlers_board_test.go`): role validated, leaf-only, depth/admission checks; claim-time resolution in `internal/runtime/process_live.go` | `web/e2e` spec for the role control on a board task | Track L: orchestrator posts a task naming role X, assert the worker's `sub_agent_start` carries role X; its recording becomes the Track R fixture |
+| 5 (`A7`) | Plugin manager tests (`internal/plugin/manager_test.go`, `userplugins_test.go`, `disabled_test.go`, `testplugin/` fixture): install endpoint, health gate (`socketReadyTimeout`), collision refusal, disabled re-check; a live-grant test that a running loop sees a newly installed tool | — | Track L: install an MCP fixture plugin at runtime, then the model calls its tool (pattern: the `process-condition-trigger` MCP fixture); Track R from its recording |
+| 6 (`A8`) | Web unit tests (`web/src/*.test.ts`) and API coverage (`web/src/api/coverage.test.ts`, `unused.ts`); write endpoints covered as in phases 1–2 | `web/e2e` Builder spec: CRUD a role/skill/agent, export, import into a fresh instance, run it | Track L: drive the Builder flow end to end (stub model, `web/e2e/stub-model.mjs`) and assert the built agent runs |
 
 ## Limits
 
