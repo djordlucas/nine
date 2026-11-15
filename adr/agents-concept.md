@@ -88,143 +88,194 @@ of the existing web UI and API (`A1`).
 ## Analysis
 
 Where the codebase stands (`main` at `52a10c1`, 2026-11-15) against each
-requirement, what has to be done, and the questions left open.
+requirement, what has to change, and the questions left open. Second pass:
+mechanics named at file/symbol level.
+
+**Cross-cutting mechanics** (per `AGENT.md`): an API change touches
+`internal/api/openapi.yaml` → regenerated `internal/api/apigen` and strict
+handlers → `web/src/api/schema.d.ts` (openapi-fetch client). A wire change
+touches the `Msg` fields + constructor + doc block in
+`internal/protocol/protocol.go`, a client method in `client.go`, the dispatch
+switch in `internal/runtime/daemon.go`, the handler, and the tables in
+`spec/contracts/wire-protocol.md`. `A5`, `A7` and `A8` all ride these paths.
 
 ### A1 — Reuse what exists; renaming is free
 
-**Stands:** one conversation path end to end — the `conversations` table and
-checkpoints (`internal/memory/conversations.go`), the wire messages
-(`internal/protocol`), the daemon handlers (`internal/runtime/daemon.go`), the
-API `/api/v1/conversations` (`internal/api/openapi.yaml`), the web UI. The name
-"agent" is already in use beside it: the web UI roster page is
-`web/src/pages/Agents.tsx` listing conversations, processes and goals
-(`adr/web-ui.md` §5), and `docs/glossary.md` already flags agent/session/
-conversation as overloaded.
+**Stands:** one conversation path end to end — wire messages `new_conversation`
+/`conversation_id` (`internal/protocol/protocol.go:26,97`, documented in
+`spec/contracts/wire-protocol.md`), `POST /api/v1/conversations`
+(`internal/api/handlers_conversations.go:63` → `cl.NewConversationWithRole`),
+the `conversations` table and checkpoints (`internal/memory/conversations.go`),
+the per-conversation `AgentWorker` (`internal/runtime/agent_worker.go`), and
+the web UI — where "agent" already exists as a label: `web/src/pages/Agents.tsx`
+is the roster of conversations, processes and goals (`adr/web-ui.md` §5).
+52 non-test Go files mention "conversation".
 
-**Needs:** a naming map — which identifiers become "agent" (API paths, wire
-fields, store table, UI labels) and which stay; renames land as aliases where
-clients already exist.
+**Required changes:** a naming map deciding per surface whether the identifier
+becomes "agent" (wire types, API paths, table name, CLI flags, UI labels,
+glossary) or stays; aliases where external clients exist — plugins speak the
+wire protocol, so an incompatible rename bumps `plugin.ProtocolVersion`.
+Internal symbols (`AgentWorker`, `AgentInfo`) already read as "agent".
 
-**Questions:** do the `/api/v1/conversations` paths change or alias? Which
-names are user-facing versus internal-only?
+**Questions:** do the `/api/v1/conversations` paths change or alias? Is the
+`conversations` table renamed (costs a migration) or kept? Which names are
+user-facing versus internal-only?
 
 ### A2 — Modifications are allowed when needed
 
 **Stands:** nothing to build — this is the governance rule the other entries
 invoke.
 
-**Needs:** every behavior change under `A3`–`A8` is recorded in this document
-with its reason, as each analysis below already does.
+**Required changes:** every behavior change under `A3`–`A8` is recorded in this
+document with its reason, as each analysis below already does.
 
 **Questions:** none.
 
 ### A3 — Agents are self-contained and importable/exportable
 
-**Stands:** role, skills, self-model and self-reflection are all daemon-wide
-today — a role is a skill with a role block in its frontmatter (`skills/`,
-`[skills].user_dir`; `docs/roles.md`), the self-model is assembled once per
-daemon (`internal/selfmodel/assembler.go`, `GET /self-model`,
-`[bootstrap] self_model_path`), self-reflection is one fixed session
-`self-reflection` driven by the shipped `reflect` process
-(`internal/runtime/bootstrap.go:16`). Export exists only for the whole
-instance: `GET /backup` backed by `internal/backup/backup.go` (tar of the db
-plus the workspace), with CLI `nine backup`/`restore` (`internal/cli`).
+**Stands:** all four are daemon-wide and shared by every session. Role:
+resolved per session from one registry — `NewRoleRegistry(rs,
+cfg.DefaultLeafRole)` (`internal/runtime/roles.go:225` region,
+`internal/runtime/builder.go:225`); roles are skills with a role block in
+frontmatter (`skills/`, `[skills].user_dir`; `docs/roles.md`); the system prompt
+is composed from `role.SystemPrompt` (`internal/runtime/builder.go:697`).
+Skills: seeded into one daemon-wide vector namespace (`internal/skills`,
+`internal/runtime/docs_seed.go`). Self-model: one `Assembler` built once,
+`Build(ctx, queryVec)` per turn (`internal/selfmodel/assembler.go:48`), served
+at `GET /self-model`, bootstrapped from `[bootstrap] self_model_path`.
+Self-reflection: one fixed session `self-reflection` owned by the shipped
+`reflect` process (`internal/runtime/bootstrap.go:16`). Export exists only
+whole-instance: `GET /backup` → `internal/backup/backup.go` (tar of the db plus
+the workspace), CLI `nine backup`/`restore` (`internal/cli`).
 
-**Needs:** attach role, skills, self-model and self-reflection to the agent;
-an export/import bundle per agent (definition plus its database, `A4`); the
-optional generalized copies imported back into daemon scope.
+**Required changes:** per-agent role (the agent carries a role name or an
+inline role definition), per-agent skill set (its own namespace or a subset),
+per-agent self-model source (its own file/namespace instead of the single
+`Assembler`), per-agent reflection (a session per agent, not the single
+`self-reflection`); an export bundle = agent definition + its database (`A4`) +
+optionally workspace files, reusing the `internal/backup` tar mechanics; an
+import path that optionally copies the role/skills as generalized daemon-wide
+copies.
 
-**Questions:** what exactly is in an agent export — definition manifest, the
-SQLite file, workspace files, all three? Does an imported agent get a fresh
-database or adopt an existing one? What stays daemon-wide (board, processes,
-notifications)?
+**Questions:** does an imported agent get a fresh database or adopt an existing
+one? What stays daemon-wide — board, processes, notifications, the event
+journal? Bundle format: same tar as backup, or manifest + db? Who may export an
+agent, given its memory may be private?
 
 ### A4 — Each agent is stored in a dedicated SQLite database
 
-**Stands:** one `Store` over one file — `internal/memory/db.go` `Open`, path
-from `[memory].path` (default `~/.nine/nine.db`), with the "single gateway"
-invariant (one writer-connection pool). All tables live in that one database:
-`conversations`, `goals`, `board_tasks`, `processes`, `notifications`, the
-vectors.
+**Stands:** one `Store` over one file — `memory.Open(path)` with the "single
+gateway" invariant (one writer-connection pool; `internal/memory/db.go:138,156`),
+path from `[memory].path` (default `~/.nine/nine.db`;
+`internal/config/factory.go:169`). One schema holds every table: `kv`, `files`,
+`workspace_files`, `vectors`, `conversations`, `goals`, `notifications`,
+`user_notifications`, `skills`, `tools`, `tool_state`, `workflows`,
+`human_requests`, `interactive_sessions`, `capability_requests`,
+`capability_grants`, `session_events`, `event_cursors`, `related_sessions`,
+`jobs`, `processes`, `board_tasks`.
 
-**Needs:** one database file per agent reusing the same `Store` machinery; a
-daemon-level registry database for cross-agent state; a migration path from an
-existing `nine.db`; backup/restore adjusted (`internal/backup`).
+**Required changes:** open one `Store` per agent (same engine and schema
+machinery) under a per-agent directory; keep a daemon-level registry database
+for cross-agent state; route each `AgentWorker` at its agent's store; a
+migration that splits an existing `nine.db`; `internal/backup` and restore
+adjusted to walk per-agent databases.
 
-**Questions:** which tables are agent-scoped versus daemon-scoped
-(`board_tasks`, `processes`, `notifications`, the event journal)? Directory
-layout for the per-agent files? Does the vector namespace split per agent too?
+**Questions:** the table split — `conversations`/`goals`/`kv`/`vectors` per
+agent, `board_tasks`/`processes`/`notifications` daemon-wide? Layout
+(`~/.nine/agents/<id>.db`)? The event journal feeds the web UI inbox — does it
+stay in the registry db? Auto-split on boot or an explicit migration command?
 
 ### A5 — An API builds and runs agents in a running Nine
 
-**Stands:** `POST /api/v1/conversations` (with a `role` field) creates a
-conversation; the CLI passes `--role`. There is no endpoint that composes an
-agent definition (role + skills + self-model + reflection) as a stored object,
-and no separate "run" step. `GET /roles` lists roles.
+**Stands:** `POST /api/v1/conversations` (`internal/api/
+handlers_conversations.go:63`) forwards `role` + `interactive` over the wire
+(`cl.NewConversationWithRole`) and the daemon spawns the `AgentWorker`; the CLI
+passes `--role`. No stored agent object exists — a conversation is created
+directly with a role name. `GET /roles` lists the registry.
 
-**Needs:** agent CRUD endpoints on `internal/api` (definition per `A3`, stored
-per `A4`) plus a run endpoint that starts a session from a definition; the CLI
-and web UI call these.
+**Required changes:** `POST /api/v1/agents` to compose and persist an agent
+definition (name, role, skills, self-model, reflection config — the `A3`
+bundle, stored per `A4`), CRUD on that definition, and `POST
+/api/v1/agents/{id}/run` to start a session from it; CLI (`nine agent …`) and
+web UI as clients of the same endpoints. Rides the cross-cutting mechanics:
+openapi.yaml + apigen + a wire message + daemon handler + spec contract.
 
-**Questions:** is running an agent a conversation created with the agent's
-bundle, or a new session kind? Does the agent definition live in the agent's
-own database or in the daemon registry?
+**Questions:** is "run" a conversation created with the agent's bundle, or a
+distinct session kind? Do agent definitions live in the agent's own database or
+in the registry? Are definitions versioned?
 
 ### A6 — Board workers take a configurable role
 
 **Stands:** the model side is partly there — `run_agent`/`run_agents` accept a
-`role` argument, empty resolving to `[roles] default_leaf` (`executor`)
-(`internal/agent/register_subagents.go:128`). But `board_post({title, spec,
-priority})` has no role field — the spec is free text
-(`internal/agent/register_board.go:104`) — and a `boardworker` process claims
-the oldest queued task and runs under its own configured process role
-(`internal/runtime/liveprog.go` `boardWorkerProgram`). The web UI role picker
-sets the role of new conversations only.
+`role` argument, empty resolving to `DefaultLeafRoleName` "executor"
+(`internal/agent/register_subagents.go:128`, `internal/runtime/roles.go:100`);
+the registry validates names (`role_list`/`role_search`). The board side has
+no role: `board_post({title, spec, priority})` — spec is free text
+(`internal/agent/register_board.go:104`) — `board_tasks` rows carry no role
+column, and a `boardworker` process claims the oldest queued task on its clock
+and runs under its own configured process role (`internal/runtime/
+process_live.go:417`, `liveprog.go:250` `boardWorkerProgram`). The web UI role
+picker sets a new conversation's role only.
 
-**Needs:** a per-task role on the board (set at post or claim time) that the
-model can name; a web UI control to set or override a board worker's role.
+**Required changes:** a `role` on the board task — schema column, `board_post`
+argument, claim path — resolved against the registry with leaf-only
+enforcement; a web UI control to set or override a task's/worker's role.
 
-**Questions:** does the boardworker read the role from the task spec, or is the
-role a claim-time choice? Can any role be named, or only leaf roles (leaves are
-barred from delegating)? In the web UI, is the role set per task or per worker?
+**Questions:** role named at post time (orchestrator) or claim time (worker)?
+Leaf roles only, since leaves are barred from delegating? Does the
+boardworker's own process role remain the fallback? Do depth and capability
+admission checks apply to task-named roles?
 
 ### A7 — Plugins installable into a running Nine
 
 **Stands:** plugins start at boot — built-ins, `[[mcp.server]]`, and
-`[plugins].user_dir` scanned at boot (`internal/plugin/userplugins.go`); tool
-handlers register at loop-build via `RegisterPlugin`. Runtime *reload* already
-exists: `POST /plugins/reload` and `POST /tools/reload` rescan the user dir and
-restart user plugins (`internal/api/handlers_tools.go:129,180` →
-`ReloadPlugins`). What does not exist is *install* — no endpoint takes plugin
-files into the workspace — and `[plugins] disabled` is read at boot only.
+`[plugins].user_dir` scanned at boot (`internal/plugin/userplugins.go:11`);
+tool handlers register at loop-build via `RegisterPlugin`, and tool
+*definitions* are composed per session at build time under `[context]
+tool_exposition` (`internal/runtime/builder.go:563,654`). Runtime *reload*
+already exists and crosses the wire: `POST /plugins/reload` and
+`POST /tools/reload` → `cl.ReloadPlugins()` (`internal/protocol/client.go:861`)
+→ daemon rescans the user dir, restarts user plugins, re-registers their tools
+(`internal/plugin/userplugins.go:23`, `internal/api/handlers_tools.go:129,180`).
+Missing: an *install* step (no endpoint takes plugin files into the workspace),
+a health gate before a plugin's tools are exposed (`socketReadyTimeout` exists
+at `internal/plugin/manager.go:35`), and delivery of new tools to sessions
+already running (definitions are per-loop-build today). `[plugins] disabled` is
+read at boot only.
 
-**Needs:** an install endpoint (fetch or upload plugin files, place them in the
-workspace, trigger the existing reload), a health check before a plugin's tools
-are exposed, and a path for newly registered tools to reach sessions that are
-already running.
+**Required changes:** an install endpoint (upload or fetch plugin files, place
+them under the user dir, trigger the existing reload), a health check through
+the manager before tools are exposed, a live-grant path — either rebuild
+running loops' tool definitions on reload or resolve definitions per turn — and
+a disabled-list and name-collision check at install (`firstToolCollision`,
+`internal/plugin/userplugins.go:134`).
 
-**Questions:** plugin distribution format — binary, MCP server config, or URL?
-Operator-only install? Does a running conversation pick up new tools without a
-restart, or must tool definitions be resolved per turn? How are name collisions
-handled at install (`firstToolCollision` exists at reload)?
+**Questions:** distribution format — binary, `[[mcp.server]]` entry, or URL?
+Operator-only install? Do new tools reach running conversations without a
+restart today, or only new ones? What happens to in-flight sessions when a
+plugin is replaced mid-run?
 
 ### A8 — The web UI gains a Builder UI
 
-**Stands:** pages in `web/src/app.tsx` — Agents (roster + chat), Board, Tools
-(`/tools`, plugins, skills), Data (`/data`, including raw database tables),
+**Stands:** pages (`web/src/app.tsx`): Agents (roster + chat), Tools with
+Plugins and Skills views (`web/src/pages/Tools.tsx:25,377,449` — the plugins
+view already has a reload button wired to `POST /tools/reload`; the skills view
+is read-only), Data (`/data`, including raw `/database/tables` browsing),
 Inbox, Journal, System, Processes. Backing APIs: `GET /skills`,
 `GET /skills/{name}`, `GET /roles`, `GET /plugins`, read-only `/database/*` and
-`/memory`, `GET /backup`; skill authoring today happens through the model's
-`skill_write`/`skill_modify` tools, not the UI. There is no Builder page, no
-write endpoints for roles, no agent CRUD, no import/export controls.
+`/memory` K/V, `GET /backup`; skill authoring is model-side only
+(`skill_write`/`skill_modify`). The web client is openapi-fetch over the
+generated `web/src/api/schema.d.ts` (`web/src/api/client.ts:41`). No Builder
+page, no role/skill write endpoints, no agent CRUD, no import/export controls.
 
-**Needs:** a Builder route and page with CRUD for roles, skills, data and
-agents, backed by the `A5` API plus new write endpoints where missing, and the
-agent import/export controls per `A3`.
+**Required changes:** a `/builder` route and page with CRUD sections for roles,
+skills, data and agents, plus agent import/export controls (`A3`); the write
+endpoints they need (roles, skills, agents — `A5`); regenerated
+`schema.d.ts`/`apigen` from `openapi.yaml`.
 
-**Questions:** do roles and skills gain REST write endpoints, or does the
-Builder drive the same tools the model uses? Is the Builder operator-only? Where
-does it sit in the navigation?
+**Questions:** REST write endpoints for roles/skills, or server-side reuse of
+the model tools? Operator-only access (auth role)? Where in the nav — beside
+Tools? Import from file upload or URL?
 
 ## Limits
 
