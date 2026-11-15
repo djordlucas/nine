@@ -45,9 +45,19 @@ one file per agent instead of one per daemon. Also a behavior change under
 `A2` — the reason is `A3`: the store must travel with the agent for export and
 import to be whole.
 
+### A5 — An API builds and runs agents in a running Nine
+
+The daemon's HTTP API (`internal/api`) covers the agent lifecycle against the
+running instance: compose an agent — its role, skills, self-model and
+self-reflection per `A3`, stored in its own database per `A4` — and then run
+it, which starts the agent and opens the thread the user talks to. The CLI
+(`internal/cli`) and the web UI (`web/`) are clients of this same API; neither
+composes agents on its own. New endpoints sit beside the existing ones, which
+keep working unchanged (`A1`).
+
 ## Limits
 
-- So far `A1`–`A4` are recorded; later entries extend or amend them.
+- So far `A1`–`A5` are recorded; later entries extend or amend them.
 - Related ADRs cover overlapping ground (`agent-boundary.md` splits runtime from
   agent; `process-sessions.md` already separates conversation sessions from
   process sessions); this note decides the user-facing concept, not the internals.
