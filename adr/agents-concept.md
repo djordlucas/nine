@@ -12,12 +12,18 @@ glossary) are recorded below as they are decided, one by one.
 
 ## Decision
 
-Pending — no sub-requirement has been recorded yet. Each one lands here as a
-numbered entry (`A1`, `A2`, …) with the decision it settles.
+### A1 — Reuse what exists; renaming is free
+
+The agents concept is built on the existing conversation machinery, not beside
+it: the `conversations` table and checkpoints, the wire protocol, the daemon
+handlers and the web UI flow stay as they are. What may change is naming —
+concept, identifiers, API paths, UI labels — not behavior. Nine is functional
+today and stays functional through the move: every step is a rename or relabel
+on top of working behavior, not a rewrite of it.
 
 ## Limits
 
-- Skeleton only: the reframe above is the whole decision so far.
+- So far only `A1` is recorded; later entries extend or amend it.
 - Related ADRs cover overlapping ground (`agent-boundary.md` splits runtime from
   agent; `process-sessions.md` already separates conversation sessions from
   process sessions); this note decides the user-facing concept, not the internals.
