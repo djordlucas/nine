@@ -708,6 +708,10 @@
   .chat {
     height: calc(100dvh - 140px);
     min-height: 320px;
+    /* No gaps: the message list uses the whole space between the header's
+       and the footer's edge lines, so messages clip right at those edges
+       instead of in a background strip before them. */
+    gap: 0;
     border: 1px solid var(--edge);
     border-radius: var(--radius-lg);
     background: var(--surface);
@@ -724,7 +728,7 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: 0 var(--space-4) var(--space-6);
+    padding: var(--space-3) var(--space-4) var(--space-6);
   }
 
   .footer {
