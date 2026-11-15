@@ -318,7 +318,6 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
           <Composer
             id={id}
             busy={chat.busy}
-            connected={sock === 'open'}
             onSend={send}
             onCancel={cancel}
             planMode={info?.plan_mode}
@@ -650,7 +649,6 @@ const MAX_INPUT = 200;
 function Composer({
   id,
   busy,
-  connected,
   onSend,
   onCancel,
   planMode,
@@ -658,7 +656,6 @@ function Composer({
 }: {
   id: string;
   busy: boolean;
-  connected: boolean;
   onSend: (text: string, think: boolean) => boolean;
   onCancel: () => void;
   planMode?: string;
@@ -692,46 +689,42 @@ function Composer({
       }}
     >
       {error && <p class="error">{error}</p>}
-      <div class={styles.entry}>
-        <textarea
-          ref={area}
-          class={styles.input}
-          rows={1}
-          aria-label="Message"
-          placeholder={busy ? 'A message now waits for the turn to finish' : 'Message'}
-          value={text}
-          onInput={(e) => {
-            setText((e.target as HTMLTextAreaElement).value);
-            grow();
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && enterSends()) {
-              e.preventDefault();
-              submit();
-            }
-          }}
-        />
-        <div class={styles.send}>
-          {busy && (
-            <button type="button" class={`button ${styles.press} ${styles.stop} ${styles.sendBtn}`} onClick={onCancel}>
-              <Icon name="stop" size={16} /> Stop
-            </button>
-          )}
-          <button type="submit" class={`button ${styles.press} ${styles.sendBtn}`} disabled={!text.trim() || !connected}>
-            <Icon name="send" size={16} /> Send
+      <textarea
+        ref={area}
+        class={styles.input}
+        rows={1}
+        aria-label="Message"
+        placeholder={busy ? 'A message now waits for the turn to finish' : 'Message'}
+        value={text}
+        onInput={(e) => {
+          setText((e.target as HTMLTextAreaElement).value);
+          grow();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && enterSends()) {
+            e.preventDefault();
+            submit();
+          }
+        }}
+      />
+      <div class={styles.actions}>
+        {busy && (
+          <button type="button" class={`button ${styles.press} ${styles.stop} ${styles.actionBtn}`} onClick={onCancel}>
+            <Icon name="stop" size={16} /> Stop
           </button>
-          <button
-            type="button"
-            class={styles.think}
-            aria-pressed={think}
-            aria-label="Think"
-            title={think ? 'Think: on for the next message' : 'Think: reason before answering the next message'}
-            onClick={() => setThink(!think)}
-          >
-            T
-          </button>
-          {planMode && <PlanButton id={id} mode={planMode} onChange={onPlanMode} onError={setError} />}
-        </div>
+        )}
+        <button
+          type="button"
+          class={styles.think}
+          aria-pressed={think}
+          aria-label="Think"
+          title={think ? 'Think: on for the next message' : 'Think: reason before answering the next message'}
+          onClick={() => setThink(!think)}
+        >
+          Think
+        </button>
+        {planMode && <PlanButton id={id} mode={planMode} onChange={onPlanMode} onError={setError} />}
+        <span class={styles.hint}>Enter sends · Shift+Enter for a new line</span>
       </div>
     </form>
   );
@@ -777,7 +770,7 @@ function PlanButton(props: { id: string; mode: string; onChange: (mode: string) 
       title={`${PLAN_HELP[props.mode] ?? `Plan: ${props.mode}`}. Click for ${next}.`}
       onClick={() => void change()}
     >
-      P
+      Plan
     </button>
   );
 }

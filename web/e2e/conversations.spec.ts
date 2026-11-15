@@ -10,12 +10,12 @@ async function newConversation(page: Page) {
   await page.getByRole('button', { name: 'New conversation' }).click();
   await expect(page).toHaveURL(/\/conversations\/[^/]+$/);
   await expect(page.getByText('No messages yet. Say something.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Send' })).toBeDisabled();
 }
 
 async function send(page: Page, text: string) {
-  await page.getByRole('textbox', { name: 'Message' }).fill(text);
-  await page.getByRole('button', { name: 'Send' }).click();
+  const box = page.getByRole('textbox', { name: 'Message' });
+  await box.fill(text);
+  await box.press('Enter');
 }
 
 const messages = (page: Page) => page.getByRole('list', { name: 'Messages' });

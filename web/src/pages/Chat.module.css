@@ -508,16 +508,20 @@
   line-height: 22px;
 }
 
-/* The message box with Send and Think at its right; the model below, at the left. */
-.entry {
+/* The message box spans the footer's full width; the actions (Stop, Think,
+   Plan) sit on the row below it. */
+.actions {
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
 }
 
-.entry .input {
-  flex: 1;
-  min-width: 0;
+.hint {
+  margin-left: auto;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  white-space: nowrap;
 }
 
 .controls {
@@ -528,21 +532,20 @@
   gap: var(--space-1) var(--space-3);
 }
 
-/* Think, a toggle shaped like MD: light with a dark edge when off, dark when
-   on; it presses in on a click like MD and the inspect button do. */
+/* Think and Plan, labelled toggle buttons: light with a dark edge when off,
+   dark when on; they press in on a click like the inspect button does. */
 .think {
-  display: grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
   flex-shrink: 0;
-  width: 18px;
-  height: 18px;
-  padding: 0;
+  min-height: 28px;
+  padding: 0 var(--space-2);
   border: 1px solid var(--edge);
   border-radius: var(--radius);
   background: var(--surface);
   color: var(--text);
-  font-size: 9px;
-  font-weight: 700;
+  font-size: var(--text-xs);
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -570,15 +573,8 @@
   letter-spacing: 0.06em;
 }
 
-.send {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-shrink: 0;
-}
-
-/* Icon and label share the button, like five's Send. */
-.sendBtn {
+/* Icon and label share the button, like five's actions. */
+.actionBtn {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
@@ -641,13 +637,12 @@
     padding: var(--space-2) var(--space-2);
   }
 
-  .footer .entry,
-  .footer .send {
+  .footer .actions {
     gap: var(--space-2);
   }
 
   /* 36px buttons, like five's actions, instead of the 44px touch height. */
-  .footer .sendBtn {
+  .footer .actions button {
     min-height: 36px;
     padding: 0 var(--space-3);
   }
