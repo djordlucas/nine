@@ -508,8 +508,34 @@
   line-height: 22px;
 }
 
-/* The message box spans the footer's full width; the actions (Stop, Think,
-   Plan) sit on the row below it. */
+/* The message box spans the footer's full width, with a blinking cursor at
+   its left; the actions (Stop, Think, Plan) and the session details sit on
+   the row below it. */
+.msgRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.msgRow .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.caret {
+  flex: none;
+  width: 2px;
+  height: 20px;
+  background: var(--text);
+  animation: caretBlink 1.1s steps(1) infinite;
+}
+
+@keyframes caretBlink {
+  50% {
+    opacity: 0;
+  }
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -517,11 +543,12 @@
   gap: var(--space-2);
 }
 
-.hint {
+/* The model and context details ride at the right end of the actions row. */
+.session {
+  display: flex;
+  align-items: center;
+  min-width: 0;
   margin-left: auto;
-  color: var(--text-2);
-  font-size: var(--text-xs);
-  white-space: nowrap;
 }
 
 .controls {

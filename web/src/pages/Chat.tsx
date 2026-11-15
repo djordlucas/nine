@@ -1,3 +1,4 @@
+import type { ComponentChildren } from 'preact';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import { api, errorMessage, get, type Schemas } from '../api/client';
@@ -314,7 +315,9 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
       <div ref={bottom} />
 
       <footer class={styles.footer}>
-        {!ro && (
+        {ro ? (
+          <SessionBar model={llm.model} provider={llm.provider} context={chat.context ?? contextNow} />
+        ) : (
           <Composer
             id={id}
             busy={chat.busy}
@@ -322,9 +325,9 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
             onCancel={cancel}
             planMode={info?.plan_mode}
             onPlanMode={(plan_mode) => setInfo((i) => ({ ...(i ?? {}), plan_mode }))}
+            trailing={<SessionBar model={llm.model} provider={llm.provider} context={chat.context ?? contextNow} />}
           />
         )}
-        <SessionBar model={llm.model} provider={llm.provider} context={chat.context ?? contextNow} />
       </footer>
     </div>
   );
@@ -653,6 +656,7 @@ function Composer({
   onCancel,
   planMode,
   onPlanMode,
+  trailing,
 }: {
   id: string;
   busy: boolean;
@@ -660,6 +664,8 @@ function Composer({
   onCancel: () => void;
   planMode?: string;
   onPlanMode: (mode: string) => void;
+  /** The session details (model, context), on the same row as the buttons. */
+  trailing?: ComponentChildren;
 }) {
   const [text, setText] = useState('');
   const [think, setThink] = useState(false);
@@ -689,24 +695,33 @@ function Composer({
       }}
     >
       {error && <p class="error">{error}</p>}
-      <textarea
-        ref={area}
-        class={styles.input}
-        rows={1}
-        aria-label="Message"
-        placeholder={busy ? 'A message now waits for the turn to finish' : 'Message'}
-        value={text}
-        onInput={(e) => {
-          setText((e.target as HTMLTextAreaElement).value);
-          grow();
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && enterSends()) {
-            e.preventDefault();
-            submit();
+      <div class={styles.msgRow}>
+        <span class={styles.caret} aria-hidden="true" />
+        <textarea
+          ref={area}
+          class={styles.input}
+          rows={1}
+          aria-label="Message"
+          placeholder={
+            busy
+              ? 'A message now waits for the turn to finish'
+              : enterSends()
+                ? 'Message — Enter sends, Shift+Enter for a new line'
+                : 'Message'
           }
-        }}
-      />
+          value={text}
+          onInput={(e) => {
+            setText((e.target as HTMLTextAreaElement).value);
+            grow();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && enterSends()) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+        />
+      </div>
       <div class={styles.actions}>
         {busy && (
           <button type="button" class={`button ${styles.press} ${styles.stop} ${styles.actionBtn}`} onClick={onCancel}>
@@ -724,7 +739,7 @@ function Composer({
           Think
         </button>
         {planMode && <PlanButton id={id} mode={planMode} onChange={onPlanMode} onError={setError} />}
-        <span class={styles.hint}>Enter sends · Shift+Enter for a new line</span>
+        {trailing && <div class={styles.session}>{trailing}</div>}
       </div>
     </form>
   );
