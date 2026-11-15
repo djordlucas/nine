@@ -16,10 +16,11 @@ glossary) are recorded below as they are decided, one by one.
 
 The agents concept is built on the existing conversation machinery, not beside
 it: the `conversations` table and checkpoints, the wire protocol, the daemon
-handlers and the web UI flow stay as they are. What may change is naming —
-concept, identifiers, API paths, UI labels — not behavior. Nine is functional
-today and stays functional through the move: every step is a rename or relabel
-on top of working behavior, not a rewrite of it.
+handlers and the web UI flow stay as they are. The default is renaming only —
+concept, identifiers, API paths, UI labels — because Nine is functional today
+and stays functional through the move. A behavior change is allowed when it
+truly needs to change; each such change is recorded here with the reason it
+could not be a rename.
 
 ## Limits
 
