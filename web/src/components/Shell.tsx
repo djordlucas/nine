@@ -5,6 +5,7 @@ import { api, authRequired, get, signOut } from '../api/client';
 import { streamState } from '../api/events';
 import { cycleTheme, theme } from '../theme';
 import { attentionEvents, loadAttention } from '../inbox';
+import { headerSlot } from '../headerSlot';
 import { useLive } from '../live';
 import { Icon } from './Icon';
 import styles from './Shell.module.css';
@@ -61,6 +62,7 @@ export function Shell({ children }: { children: ComponentChildren }) {
       <div class={styles.main}>
         <header class={styles.header}>
           <h1>{current.label}</h1>
+          {headerSlot.value && <div class={styles.headerSlot}>{headerSlot.value}</div>}
           {/* On a phone the rail is gone, so the live state and the controls
              live in this top bar instead. */}
           <div class={styles.headerFoot}>

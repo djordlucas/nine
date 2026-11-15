@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { useLocation, useRoute } from 'preact-iso';
 import { api, errorMessage, get } from '../api/client';
 import { ago } from '../format';
 import { shortId } from '../journal';
 import { recentEvents } from '../api/events';
+import { headerSlot } from '../headerSlot';
 import { useLive, useRecent } from '../live';
 import { byAttention, processState } from '../processes';
 import { Chat } from './Chat';
@@ -49,7 +50,7 @@ export function Agents() {
   // Bumped by a rename, so the list reads the new name.
   const [renamed, setRenamed] = useState(0);
   return (
-    <Split name="agents" noun="agents" open={!!id}>
+    <Split name="agents" noun="agents" open={!!id} foldable={false}>
       <Roster current={id} currentIsProcess={isProcess} reloadKey={renamed} />
       <section class={split.pane} aria-label="Activity">
         {id ? (
@@ -175,8 +176,16 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The role a new agent runs as (adr/orchestrator-board.md §2.5); default
-  // orchestrator.
+  // orchestrator. Chosen in the pop-up the New agent button opens.
   const [role, setRole] = useState('orchestrator');
+  const [picking, setPicking] = useState(false);
+  const picker = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = picker.current;
+    if (!d) return;
+    if (picking && !d.open) d.showModal();
+    else if (!picking && d.open) d.close();
+  }, [picking]);
   const { data: roles } = useLive(async () => {
     const r = await get(api.GET('/roles', {}), 'the role registry');
     return (r.data ?? []) as { name: string; description?: string }[];
@@ -282,28 +291,27 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
   const visible = rows.filter((r) => !r.parent || !collapsed.has(r.parent));
   const hasKids = (r: Row) => (subs.get(r.id)?.size ?? 0) > 0;
 
+  // The counts ride at the right of the shell's "Agents" label row.
+  useEffect(() => {
+    headerSlot.value = (
+      <span class={styles.counts}>
+        {procs.data && (
+          <>
+            <span>{procs.data.max ? `${running} of ${procs.data.max} running` : `${running} running`}</span>
+            <span>{rows.length} agents</span>
+          </>
+        )}
+      </span>
+    );
+    return () => {
+      headerSlot.value = null;
+    };
+  });
+
   return (
     <nav class={split.list} aria-label="Agents">
       <ListHead>
-        <p class={split.heading}>
-          {procs.data && (
-            <>
-              <span>{procs.data.max ? `${running} of ${procs.data.max} running` : `${running} running`}</span>
-              <span>{rows.length} agents</span>
-            </>
-          )}
-        </p>
-        <select
-          value={role}
-          onChange={(e) => setRole((e.target as HTMLSelectElement).value)}
-          aria-label="Role for the new agent"
-          title="The role the new agent runs as — default orchestrator"
-        >
-          {(roles ?? [{ name: 'orchestrator' }]).map((r) => (
-            <option key={r.name} value={r.name}>{r.name}</option>
-          ))}
-        </select>
-        <button type="button" class={`button ${styles.new}`} onClick={() => void start()} disabled={busy}>
+        <button type="button" class={`button ${styles.new}`} onClick={() => setPicking(true)} disabled={busy}>
           New agent
         </button>
       </ListHead>
@@ -347,6 +355,53 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
           ))}
         </ul>
       )}
+      <dialog
+        ref={picker}
+        class={styles.dialog}
+        aria-labelledby="new-agent-title"
+        onClose={() => setPicking(false)}
+        onClick={(e) => {
+          // A click outside the box lands on the dialog element itself.
+          if (e.target === picker.current) setPicking(false);
+        }}
+      >
+        <div class={styles.dialogBox}>
+          <h2 id="new-agent-title">New agent</h2>
+          <p class="muted">Pick the role the new agent runs as.</p>
+          <div class={styles.roles} role="radiogroup" aria-label="Role">
+            {(roles ?? [{ name: 'orchestrator' }]).map((r) => (
+              <button
+                key={r.name}
+                type="button"
+                role="radio"
+                aria-checked={role === r.name}
+                class={styles.roleOpt}
+                onClick={() => setRole(r.name)}
+              >
+                <strong>{r.name}</strong>
+                {r.description && <span>{r.description}</span>}
+              </button>
+            ))}
+          </div>
+          <div class={styles.dialogActions}>
+            <button type="button" class={styles.cancel} onClick={() => setPicking(false)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="button"
+              disabled={busy}
+              onClick={() => {
+                setPicking(false);
+                void start();
+              }}
+            >
+              Start
+            </button>
+          </div>
+          {error && <p class="error">{error}</p>}
+        </div>
+      </dialog>
     </nav>
   );
 }

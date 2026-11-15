@@ -4,20 +4,33 @@ import { useContext, useState } from 'preact/hooks';
 import css from './Split.module.css';
 
 /**
- * A list beside its open item (adr/web-ui.md §5). On a desktop the list folds
- * away to a thin strip, remembered per browser under name; on a phone the
- * list, then the item in its place, so nothing folds.
+ * A list beside its open item (adr/web-ui.md §5). On a desktop a foldable list
+ * folds away to a thin strip, remembered per browser under name; on a phone
+ * the list, then the item in its place, so nothing folds. A list with
+ * `foldable={false}` never folds and shows no fold button.
  */
-export function Split({ name, noun, open, children }: { name: string; noun: string; open: boolean; children: ComponentChildren }) {
-  const [folded, setFolded] = useState(() => readFolded(name));
+export function Split({
+  name,
+  noun,
+  open,
+  foldable = true,
+  children,
+}: {
+  name: string;
+  noun: string;
+  open: boolean;
+  foldable?: boolean;
+  children: ComponentChildren;
+}) {
+  const [folded, setFolded] = useState(() => (foldable ? readFolded(name) : false));
   const fold = (f: boolean) => {
     setFolded(f);
     writeFolded(name, f);
   };
   return (
-    <Fold.Provider value={{ noun, fold: () => fold(true) }}>
-      <div data-split class={`${css.split} ${open ? css.open : ''} ${folded ? css.collapsed : ''}`}>
-        {folded && (
+    <Fold.Provider value={foldable ? { noun, fold: () => fold(true) } : null}>
+      <div data-split class={`${css.split} ${open ? css.open : ''} ${foldable && folded ? css.collapsed : ''}`}>
+        {foldable && folded && (
           <div class={css.strip}>
             <FoldButton expanded={false} label={`Show ${noun}`} onClick={() => fold(false)} />
           </div>

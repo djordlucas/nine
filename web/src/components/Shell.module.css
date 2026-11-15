@@ -130,6 +130,23 @@
   font-size: var(--text-xl);
 }
 
+/* The page's own extras on the label row (the Agents counts). */
+.headerSlot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+/* On a desktop they sit at the right end of the label row. */
+@media (min-width: 768px) {
+  .headerSlot {
+    margin-left: auto;
+  }
+}
+
 .content {
   padding: var(--space-3) 0 var(--space-6);
 }

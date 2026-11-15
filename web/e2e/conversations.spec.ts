@@ -7,7 +7,8 @@ import { expect, signIn, test } from './fixtures';
 async function newConversation(page: Page) {
   await signIn(page);
   await page.goto('/conversations');
-  await page.getByRole('button', { name: 'New conversation' }).click();
+  await page.getByRole('button', { name: 'New agent' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Start' }).click();
   await expect(page).toHaveURL(/\/conversations\/[^/]+$/);
   await expect(page.getByText('No messages yet. Say something.')).toBeVisible();
 }
