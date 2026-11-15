@@ -55,9 +55,20 @@ it, which starts the agent and opens the thread the user talks to. The CLI
 composes agents on its own. New endpoints sit beside the existing ones, which
 keep working unchanged (`A1`).
 
+### A6 — Board workers take a configurable role
+
+A board worker — the sub-agent session the orchestrator spawns per task
+(`run_agent`/`run_agents`, or a `boardworker` process claiming a queued task
+from `board_tasks`) — runs under a role that is configurable per worker and
+set by either the model (naming the role when it posts or spawns the worker,
+discovered via `role_list`/`role_search`) or a person in the web UI. Today a
+worker's role is picked at delegation and defaults to the `[roles] default_leaf`
+(`executor`); the web UI role picker sets the role of new conversations
+(`POST /api/v1/conversations`), not of board workers.
+
 ## Limits
 
-- So far `A1`–`A5` are recorded; later entries extend or amend them.
+- So far `A1`–`A6` are recorded; later entries extend or amend them.
 - Related ADRs cover overlapping ground (`agent-boundary.md` splits runtime from
   agent; `process-sessions.md` already separates conversation sessions from
   process sessions); this note decides the user-facing concept, not the internals.
