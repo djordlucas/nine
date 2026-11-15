@@ -16,7 +16,10 @@ async function newConversation(page: Page) {
 async function send(page: Page, text: string) {
   const box = page.getByRole('textbox', { name: 'Message' });
   await box.fill(text);
-  await box.press('Enter');
+  // Enter sends only with a fine pointer; on a touch screen it is a newline
+  // and the Send button submits instead.
+  if (await page.evaluate(() => matchMedia('(pointer: coarse)').matches)) await page.getByRole('button', { name: 'Send' }).click();
+  else await box.press('Enter');
 }
 
 const messages = (page: Page) => page.getByRole('list', { name: 'Messages' });

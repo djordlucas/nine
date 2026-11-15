@@ -21,21 +21,13 @@ test('the layout fits the viewport', async ({ page }) => {
   expect(overflow).toBeLessThanOrEqual(0);
 });
 
-test('every section is reachable', async ({ page, isMobile }) => {
+test('every section is reachable', async ({ page }) => {
   await signIn(page);
   const sections = ['Agents', 'Tools', 'Inbox', 'Data', 'Journal', 'System'];
   for (const name of sections) {
-    if (isMobile) {
-      const tab = page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name, exact: true });
-      if (await tab.isVisible()) {
-        await tab.click();
-      } else {
-        await page.getByRole('button', { name: 'More' }).click();
-        await page.getByRole('dialog', { name: 'More sections' }).getByRole('link', { name }).click();
-      }
-    } else {
-      await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name, exact: true }).click();
-    }
+    // The rail (desktop) and the tab bar (phone) share the name; the hidden one
+    // is not in the accessibility tree, so this finds whichever is shown.
+    await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name, exact: true }).click();
     await expect(page.getByRole('heading', { name, level: 1 })).toBeVisible();
   }
 });
@@ -43,13 +35,13 @@ test('every section is reachable', async ({ page, isMobile }) => {
 test('the rail shows on desktop and the tab bar on a phone', async ({ page, isMobile }) => {
   await signIn(page);
   const navs = page.getByRole('navigation', { name: 'Sections' });
-  await expect(navs.filter({ has: page.getByRole('button', { name: 'More' }) })).toBeVisible({ visible: isMobile });
+  // The rail carries the brand link; the phone tab bar does not.
   await expect(navs.filter({ has: page.getByRole('link', { name: 'Nine' }) })).toBeVisible({ visible: !isMobile });
+  await expect(navs.filter({ hasNot: page.getByRole('link', { name: 'Nine' }) })).toBeVisible({ visible: isMobile });
 });
 
-test('signing out returns to the sign-in page and ends the session', async ({ page, isMobile }) => {
+test('signing out returns to the sign-in page and ends the session', async ({ page }) => {
   await signIn(page);
-  if (isMobile) await page.getByRole('button', { name: 'More' }).click();
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByLabel('API token')).toBeVisible();
   await page.goto('/');
