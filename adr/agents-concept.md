@@ -18,13 +18,17 @@ The agents concept is built on the existing conversation machinery, not beside
 it: the `conversations` table and checkpoints, the wire protocol, the daemon
 handlers and the web UI flow stay as they are. The default is renaming only —
 concept, identifiers, API paths, UI labels — because Nine is functional today
-and stays functional through the move. A behavior change is allowed when it
-truly needs to change; each such change is recorded here with the reason it
-could not be a rename.
+and stays functional through the move.
+
+### A2 — Modifications are allowed when needed
+
+Changing something is not forbidden when it is needed: if a behavior truly has
+to change, it can. Each such change is recorded in this document with the
+reason it could not be a rename, so the reuse default of `A1` stays auditable.
 
 ## Limits
 
-- So far only `A1` is recorded; later entries extend or amend it.
+- So far `A1`–`A2` are recorded; later entries extend or amend them.
 - Related ADRs cover overlapping ground (`agent-boundary.md` splits runtime from
   agent; `process-sessions.md` already separates conversation sessions from
   process sessions); this note decides the user-facing concept, not the internals.
