@@ -1,6 +1,6 @@
 # Design note — Conversations become agents
 
-**Status:** **Proposed** (requirements `A1`–`A8` recorded) ·
+**Status:** **Proposed** (requirements `A1`–`A8`, analysis and sequencing recorded) ·
 **Date:** 2026-11-15 · **Related:** `adr/agent-boundary.md`, `adr/concept-consolidation.md`, `adr/process-sessions.md`, `docs/glossary.md`
 
 The unit a user drives in Nine moves from the **conversation** concept — an
@@ -276,6 +276,33 @@ endpoints they need (roles, skills, agents — `A5`); regenerated
 **Questions:** REST write endpoints for roles/skills, or server-side reuse of
 the model tools? Operator-only access (auth role)? Where in the nav — beside
 Tools? Import from file upload or URL?
+
+## Sequencing
+
+Proposed order, derived from the dependencies in the analysis above. Each phase
+lands as rename-or-additive where possible (`A1`); the behavior changes (`A3`
+scoping, `A4` storage, `A7` live grants) are recorded under `A2` as they land.
+The wire/openapi/spec mechanics are established once in phase 1 and reused after.
+
+| Phase | Entries | Work | Depends on |
+|-------|---------|------|-----------|
+| 1 | `A1` naming map, `A5` API skeleton | Glossary/naming decisions; `POST /agents` CRUD + `POST /agents/{id}/run` with definitions stored in the existing single store; CLI `nine agent …` | — |
+| 2 | `A3` self-containment | Per-agent role/skills/self-model/reflection resolution in the builder; definition export/import (manifest only) | Phase 1 |
+| 3 | `A4` per-agent storage | One SQLite file per agent, daemon registry db, migration, backup/restore; the export bundle gains the agent's db | Phase 2 |
+| 4 | `A6` board worker roles | `board_tasks.role` column, `board_post` argument, claim-time resolution, web UI control | Phase 1 (parallel with 2–3) |
+| 5 | `A7` runtime plugin install | Install endpoint → user dir → existing reload, health gate, live tool grants | Phase 1 (parallel with 2–4) |
+| 6 | `A8` Builder UI | `/builder` page: CRUD for roles/skills/data/agents plus import/export controls; write endpoints for roles and skills | Phases 1–5 |
+
+**Why this order:** the API skeleton (phase 1) fixes the wire/openapi/spec
+conventions every later phase reuses, and gives the CLI and web UI something to
+call before any behavior changes. Self-containment (phase 2) needs somewhere to
+store the agent definition, so it rides phase 1's store; storage (phase 3) is
+the most invasive phase — migration, backup/restore — so it comes before
+export-with-data, and export/import completes there, when a bundle can carry the
+agent's database. `A6` and `A7` are leaf features with no dependency on `A3` or
+`A4`; they slot in parallel once the API conventions exist. The Builder UI
+(phase 6) is last because it surfaces all of the above and needs the write
+endpoints they add.
 
 ## Limits
 
