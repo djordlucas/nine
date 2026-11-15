@@ -1,6 +1,6 @@
 # Design note — Conversations become agents
 
-**Status:** **Proposed** (skeleton — sub-requirements are added one by one) ·
+**Status:** **Proposed** (requirements `A1`–`A8` recorded) ·
 **Date:** 2026-11-15 · **Related:** `adr/agent-boundary.md`, `adr/concept-consolidation.md`, `adr/process-sessions.md`, `docs/glossary.md`
 
 The unit a user drives in Nine moves from the **conversation** concept — an
@@ -77,9 +77,17 @@ start only at boot (`[[mcp.server]]`, `[plugins].user_dir`, build-time
 built-ins — `docs/plugins.md`) and register tools at loop-build time, so
 runtime install plus live tool grants is a behavior change under `A2`.
 
+### A8 — The web UI gains a Builder UI
+
+The web UI (`web/`) gains a **Builder** view where a user authors, edits and
+removes roles, skills and data, and authors, changes and removes agents — the
+same operations the `A5` API exposes, driven from the UI. The agent
+import/export controls (per `A3`) live in this Builder UI too. Additive on top
+of the existing web UI and API (`A1`).
+
 ## Limits
 
-- So far `A1`–`A7` are recorded; later entries extend or amend them.
+- Requirements `A1`–`A8` are recorded; later entries extend or amend them.
 - Related ADRs cover overlapping ground (`agent-boundary.md` splits runtime from
   agent; `process-sessions.md` already separates conversation sessions from
   process sessions); this note decides the user-facing concept, not the internals.
