@@ -58,6 +58,7 @@ changed; the document stays as the record and is not rewritten.
 |----------|-----------------|
 | `accurate-token-counting.md` | Real tokenizer behind a feature flag, replacing the character estimate |
 | `agent-boundary.md` | Splitting Nine into a runtime and an agent behind one interface; today's behavior becomes the internal agent, and a mode lets an external agent (an API client) drive the runtime instead |
+| `agents-concept.md` | Moving the conversations concept to an agents concept — skeleton; sub-requirements to be added one by one |
 | `coded-sub-agents.md` | A delegation whose child is a program, not a ReAct loop: `run_agent({ program })` to wait, a board to post without waiting; `nine:llm` (`ask` with fresh contexts, a bounded `agent`, the run's `evidence`); runtime checks (text results, validated structure, step warning, repeated calls, alike delegations, task admission, undo of failed runs, a trial for written programs); `nine:check` (claims kept only when the evidence carries them); the model-layer changes this needs and an optional MLX provider. Each of five's findings is listed as adopted, adapted, existing or not adopted, and Node is not. Domain-free |
 | `codebase-improvement.md` | Design note: prioritized improvements across the tree |
 | `critic.md` | Assessment of the feature set, the limits and the positioning: findings `C1`–`C11`, what is differentiated, and where Nine should be aimed |
