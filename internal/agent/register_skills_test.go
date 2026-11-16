@@ -16,7 +16,7 @@ func skillDispatcher(t *testing.T) (*agent.Dispatcher, *memory.Store) {
 	store := newTestStore(t)
 	d := agent.New()
 	e := embed.EmbedderFunc(func(_ context.Context, _ string) ([]float32, error) { return []float32{1}, nil })
-	agent.RegisterSkillTools(d, store, e)
+	agent.RegisterSkillTools(d, store, e, nil)
 	return d, store
 }
 

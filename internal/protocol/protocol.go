@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"strconv"
 	"time"
@@ -96,6 +97,9 @@ const (
 	TypeAgentUpdate       MsgType = "agent_update"
 	TypeAgentDelete       MsgType = "agent_delete"
 	TypeAgentRun          MsgType = "agent_run"
+	TypeAgentExport       MsgType = "agent_export"
+	TypeAgentImport       MsgType = "agent_import"
+	TypeAgentApprove      MsgType = "agent_approve"
 )
 
 // Daemon → client.
@@ -246,6 +250,9 @@ var ClientMsgTypes = []MsgType{
 	TypeAgentUpdate,
 	TypeAgentDelete,
 	TypeAgentRun,
+	TypeAgentExport,
+	TypeAgentImport,
+	TypeAgentApprove,
 	TypeHumanInputAnswer,
 }
 
@@ -304,6 +311,11 @@ const (
 //	"agent_delete"     — delete an agent and its versions; ID = agent id
 //	"agent_run"        — start a conversation from an agent; ID = agent id,
 //	                     Interactive marks the session HITL-eligible
+//	"agent_export"     — export an agent as a bundle tar; ID = agent id,
+//	                     Text reply carries JSON AgentExportResult (base64 tar)
+//	"agent_import"     — import a bundle tar; Text = JSON AgentImportRequest
+//	                     (base64 tar); the agent lands staged until approved
+//	"agent_approve"    — approve a staged (imported) agent; ID = agent id
 //
 // Daemon → client:
 //
@@ -353,6 +365,9 @@ const (
 //	"agent_update"     — the updated agent; Text carries JSON Agent
 //	"agent_delete"     — deletion result; Text = "deleted"
 //	"agent_run"        — run result; Text carries JSON AgentRunResult
+//	"agent_export"     — export result; Text carries JSON AgentExportResult
+//	"agent_import"     — the imported (staged) agent; Text carries JSON Agent
+//	"agent_approve"    — the approved agent; Text carries JSON Agent
 type Msg struct {
 	AgentID         string          `json:"agent_id,omitempty"`
 	Type            MsgType         `json:"type"`
@@ -525,10 +540,12 @@ type AgentDefinition struct {
 }
 
 // Agent is a stored agent definition with its identity and version
-// (adr/agents-concept.md A5; definitions are versioned, Q14).
+// (adr/agents-concept.md A5; definitions are versioned, Q14). Status is
+// "active" or "staged" — an imported agent is staged until approved (Q30).
 type Agent struct {
 	ID         string          `json:"id"`
 	Version    int             `json:"version"`
+	Status     string          `json:"status"`
 	Definition AgentDefinition `json:"definition"`
 	CreatedAt  string          `json:"created_at"`
 	UpdatedAt  string          `json:"updated_at"`
@@ -539,6 +556,17 @@ type AgentRunResult struct {
 	AgentID        string `json:"agent_id"`
 	ConversationID string `json:"conversation_id"`
 	Role           string `json:"role,omitempty"`
+}
+
+// AgentExportResult is the agent_export reply: the bundle as a base64 tar.
+type AgentExportResult struct {
+	Filename  string `json:"filename"`
+	TarBase64 string `json:"tar_base64"`
+}
+
+// AgentImportRequest is the agent_import payload: a bundle as a base64 tar.
+type AgentImportRequest struct {
+	TarBase64 string `json:"tar_base64"`
 }
 
 type ProcessInfo struct {
@@ -1065,6 +1093,17 @@ func NewAgentCreateMsg(def AgentDefinition) Msg {
 func NewAgentUpdateMsg(id string, patch map[string]any) Msg {
 	raw, _ := json.Marshal(patch)
 	return Msg{Type: TypeAgentUpdate, ID: id, Text: string(raw)}
+}
+
+func NewAgentExportMsg(id string) Msg { return Msg{Type: TypeAgentExport, ID: id} }
+func NewAgentApproveMsg(id string) Msg {
+	return Msg{Type: TypeAgentApprove, ID: id}
+}
+
+// NewAgentImportMsg builds an agent_import from a bundle's raw tar bytes.
+func NewAgentImportMsg(tarBytes []byte) Msg {
+	raw, _ := json.Marshal(AgentImportRequest{TarBase64: base64.StdEncoding.EncodeToString(tarBytes)})
+	return Msg{Type: TypeAgentImport, Text: string(raw)}
 }
 
 // NewRolesListMsg asks for the role registry (adr/orchestrator-board.md §2.2.1).

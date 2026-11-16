@@ -449,6 +449,15 @@ var migrations = []migrationStep{
 	{name: "board_tasks_priority", fn: func(q sqlExec) error {
 		return addColumnIfMissing(q, "board_tasks", "priority", "INTEGER NOT NULL DEFAULT 0")
 	}},
+	// Agents gain a status column (active | staged — an imported agent is staged
+	// until approved, adr/agents-concept.md Q30), and conversations record the
+	// agent they were run from, if any.
+	{name: "agents_status_conversations_agent", fn: func(q sqlExec) error {
+		if err := addColumnIfMissing(q, "agents", "status", "TEXT NOT NULL DEFAULT 'active'"); err != nil {
+			return err
+		}
+		return addColumnIfMissing(q, "conversations", "agent_id", "TEXT NOT NULL DEFAULT ''")
+	}},
 }
 
 // convertGoalPlans turns each session plan with a pursue routine into the

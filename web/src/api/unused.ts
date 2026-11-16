@@ -22,4 +22,7 @@ export const unused: Record<string, string> = {
   updateAgent: 'Same: edited via `nine agent edit` until the Builder UI lands (A8).',
   deleteAgent: 'Same: deleted via `nine agent delete` until the Builder UI lands (A8).',
   runAgent: 'Running an agent opens a conversation the Agents page then shows; no direct UI control until the Builder UI (A8).',
+  exportAgent: 'Agent export lands in the Builder UI with the rest of the agent controls (A8, phase 6).',
+  importAgent: 'Same: import (staged until approved) is a Builder UI control (A8, phase 6).',
+  approveAgent: 'Same: approving a staged import is a Builder UI control (A8, phase 6).',
 };

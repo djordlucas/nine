@@ -1214,6 +1214,65 @@ func (c *Client) AgentRun(id string, interactive bool) (AgentRunResult, error) {
 	return out, nil
 }
 
+// AgentExport returns the agent's bundle tar (manifest; the agent's database
+// joins the bundle in phase 3, adr/agents-concept.md A4).
+func (c *Client) AgentExport(id string) (AgentExportResult, error) {
+	if err := c.send(NewAgentExportMsg(id)); err != nil {
+		return AgentExportResult{}, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return AgentExportResult{}, err
+	}
+	if err := expectReply(reply, TypeAgentExport); err != nil {
+		return AgentExportResult{}, err
+	}
+	var out AgentExportResult
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return AgentExportResult{}, fmt.Errorf("decode agent export: %w", err)
+	}
+	return out, nil
+}
+
+// AgentImport imports a bundle tar and returns the staged agent it created
+// (adr/agents-concept.md Q30 — approve it before running).
+func (c *Client) AgentImport(tarBytes []byte) (Agent, error) {
+	if err := c.send(NewAgentImportMsg(tarBytes)); err != nil {
+		return Agent{}, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return Agent{}, err
+	}
+	if err := expectReply(reply, TypeAgentImport); err != nil {
+		return Agent{}, err
+	}
+	var out Agent
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return Agent{}, fmt.Errorf("decode agent import: %w", err)
+	}
+	return out, nil
+}
+
+// AgentApprove approves a staged (imported) agent, making it runnable.
+func (c *Client) AgentApprove(id string) (Agent, error) {
+	if err := c.send(NewAgentApproveMsg(id)); err != nil {
+		return Agent{}, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return Agent{}, err
+	}
+	if err := expectReply(reply, TypeAgentApprove); err != nil {
+		return Agent{}, err
+	}
+	var out Agent
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return Agent{}, fmt.Errorf("decode agent approve: %w", err)
+	}
+	return out, nil
+}
+
 // RolesList returns the role registry (adr/orchestrator-board.md §2.2.1).
 func (c *Client) RolesList() ([]RoleInfo, error) {
 	if err := c.send(NewRolesListMsg()); err != nil {

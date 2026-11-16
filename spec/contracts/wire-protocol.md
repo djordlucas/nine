@@ -117,7 +117,10 @@ Msg {
 | `agent_create` | `text` = JSON `AgentDefinition` (**required**) | create a stored agent; `name` required, `skills` a JSON array of strings |
 | `agent_update` | `id` = agent id, `text` = JSON patch (both **required**) | change fields of one agent (`name`/`role`/`skills`/`self_model`/`reflection`); bumps the version and records it |
 | `agent_delete` | `id` = agent id (**required**) | delete one agent and its version history |
-| `agent_run` | `id` = agent id (**required**), (`interactive` flag) | start a conversation from the agent — its role names the conversation's role; the reply carries the conversation id |
+| `agent_run` | `id` = agent id (**required**), (`interactive` flag) | start a conversation from the agent — its role names the conversation's role; the reply carries the conversation id; a staged (imported, unapproved) agent is refused |
+| `agent_export` | `id` = agent id (**required**) | export the agent as a bundle tar (agent.json manifest; phase 3 adds agent.db) |
+| `agent_import` | `text` = JSON `AgentImportRequest { tar_base64 }` (**required**) | import a bundle; the agent is created **staged** and journaled, runnable only after `agent_approve` |
+| `agent_approve` | `id` = agent id (**required**) | approve a staged agent (staged → active), journaled |
 
 `plugin_call` (R-PROTO.5) is the only way to reach a tool without an agent loop; the CLI
 uses it for `nine workflow fail` when the daemon is up and for diagnostics.
@@ -172,6 +175,9 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `agent_get` / `agent_create` / `agent_update` | `text` = JSON `Agent` | the one agent (or `error` "… not found" for get/update/delete) |
 | `agent_delete` | `text` = `deleted <id>` | deletion result (or `error` "… not found") |
 | `agent_run` | `text` = JSON `AgentRunResult` | `{ agent_id, conversation_id, role }`: the conversation started from the agent and its resolved role |
+| `agent_export` | `text` = JSON `AgentExportResult` | `{ filename, tar_base64 }`: the bundle tar, base64 |
+| `agent_import` | `text` = JSON `Agent` | the imported agent, staged (or `error` on a bad bundle / unknown role) |
+| `agent_approve` | `text` = JSON `Agent` | the approved agent, active (or `error` "… not found") |
 
 **Streaming progress** (emitted during a turn, before `response`+`done`):
 

@@ -13,6 +13,13 @@ import (
 // scoping of the bundle's parts lands in phase 2 (A3); here the definition is
 // one row plus a version history (Q14: every change writes a version row).
 
+// Agent statuses: active agents run; a staged agent was imported and awaits
+// operator approval (adr/agents-concept.md Q30) — agent_run refuses it.
+const (
+	AgentActive = "active"
+	AgentStaged = "staged"
+)
+
 // Agent is one row of the agents table. Skills, SelfModel and Reflection are
 // JSON text, '' when unset.
 type Agent struct {
@@ -23,6 +30,7 @@ type Agent struct {
 	SelfModel  string `json:"self_model"`
 	Reflection string `json:"reflection"`
 	Version    int    `json:"version"`
+	Status     string `json:"status"`
 	CreatedAt  string `json:"created_at"`
 	UpdatedAt  string `json:"updated_at"`
 }
@@ -48,11 +56,11 @@ type AgentVersion struct {
 func scanAgent(s interface{ Scan(...any) error }) (Agent, error) {
 	var a Agent
 	err := s.Scan(&a.ID, &a.Name, &a.Role, &a.Skills, &a.SelfModel, &a.Reflection,
-		&a.Version, &a.CreatedAt, &a.UpdatedAt)
+		&a.Version, &a.Status, &a.CreatedAt, &a.UpdatedAt)
 	return a, err
 }
 
-const agentCols = `id, name, role, skills, self_model, reflection, version, created_at, updated_at`
+const agentCols = `id, name, role, skills, self_model, reflection, version, status, created_at, updated_at`
 
 // validSkillsJSON reports whether s is a JSON array of strings ('' is valid).
 func validSkillsJSON(s string) bool {
@@ -63,8 +71,14 @@ func validSkillsJSON(s string) bool {
 	return json.Unmarshal([]byte(s), &skills) == nil
 }
 
-// AgentCreate inserts a new agent at version 1 and records that version.
+// AgentCreate inserts a new active agent at version 1 and records that version.
 func (s *Store) AgentCreate(name, role, skills, selfModel, reflection string) (Agent, error) {
+	return s.AgentCreateWithStatus(name, role, skills, selfModel, reflection, AgentActive)
+}
+
+// AgentCreateWithStatus is AgentCreate with an explicit status — an imported
+// bundle lands staged (adr/agents-concept.md Q30), operator-created active.
+func (s *Store) AgentCreateWithStatus(name, role, skills, selfModel, reflection, status string) (Agent, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return Agent{}, fmt.Errorf("agent: name is required")
@@ -72,11 +86,14 @@ func (s *Store) AgentCreate(name, role, skills, selfModel, reflection string) (A
 	if !validSkillsJSON(skills) {
 		return Agent{}, fmt.Errorf("agent: skills must be a JSON array of strings")
 	}
+	if status != AgentActive && status != AgentStaged {
+		return Agent{}, fmt.Errorf("agent: unknown status %q", status)
+	}
 	id := "agent_" + NewID()
 	if _, err := s.db.Exec(
-		`INSERT INTO agents (id, name, role, skills, self_model, reflection, version)
-		 VALUES (?, ?, ?, ?, ?, ?, 1)`,
-		id, name, role, skills, selfModel, reflection); err != nil {
+		`INSERT INTO agents (id, name, role, skills, self_model, reflection, version, status)
+		 VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
+		id, name, role, skills, selfModel, reflection, status); err != nil {
 		return Agent{}, err
 	}
 	a, ok, err := s.AgentGet(id)
@@ -165,6 +182,28 @@ func (s *Store) AgentUpdate(id string, p AgentPatch) (Agent, bool, error) {
 		return Agent{}, false, err
 	}
 	return a, true, nil
+}
+
+// AgentApprove moves a staged agent to active (Q30 review gate). It is a no-op
+// for an already-active agent and reports false for an unknown id.
+func (s *Store) AgentApprove(id string) (Agent, bool, error) {
+	res, err := s.db.Exec(`UPDATE agents SET status = ?, updated_at = ? WHERE id = ? AND status = ?`,
+		AgentActive, nowText(), id, AgentStaged)
+	if err != nil {
+		return Agent{}, false, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		// Either unknown or already active; report which via the read below.
+		a, ok, err := s.AgentGet(id)
+		if err != nil || !ok {
+			return Agent{}, false, err
+		}
+		if a.Status != AgentActive {
+			return Agent{}, false, fmt.Errorf("agent %q has status %q", id, a.Status)
+		}
+		return a, true, nil
+	}
+	return s.AgentGet(id)
 }
 
 // AgentDelete removes an agent and its version history.

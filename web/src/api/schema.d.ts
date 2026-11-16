@@ -996,6 +996,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agents/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import an agent bundle
+         * @description Imports a bundle tar (adr/agents-concept.md Q6 — manifest only until phase 3 adds the database). The agent is created **staged** and cannot run until approved via POST /agents/{id}/approve (Q30); the import is journaled.
+         */
+        post: operations["importAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/{id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export an agent as a bundle
+         * @description Returns the agent's bundle — a tar holding agent.json with the definition (name, role, skills, self-model, reflection; adr/agents-concept.md Q6) — as base64. Phase 3 adds the agent's database as agent.db in the same tar.
+         */
+        get: operations["exportAgent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/{id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve a staged agent
+         * @description Moves an imported (staged) agent to active so it can run (adr/agents-concept.md Q30). The approval is journaled. Already-active agents pass through unchanged.
+         */
+        post: operations["approveAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/roles": {
         parameters: {
             query?: never;
@@ -2047,6 +2107,11 @@ export interface components {
             id: string;
             /** @description Bumped on every update. */
             version: number;
+            /**
+             * @description staged is an imported agent awaiting approval (Q30); agent run refuses it.
+             * @enum {string}
+             */
+            status: "active" | "staged";
             definition: components["schemas"]["AgentDefinition"];
             /** Format: date-time */
             created_at: string;
@@ -2069,6 +2134,18 @@ export interface components {
             conversation_id: string;
             /** @description The role the new conversation resolved to. */
             role?: string;
+        };
+        /** @description A bundle to import — a tar holding agent.json, base64-encoded (adr/agents-concept.md Q6). */
+        AgentImportRequest: {
+            /** @description The bundle tar, base64-encoded. */
+            tar_base64: string;
+        };
+        /** @description An exported agent bundle — a tar holding agent.json, base64-encoded. */
+        AgentExportResult: {
+            /** @description Suggested file name for the bundle. */
+            filename: string;
+            /** @description The bundle tar, base64-encoded. */
+            tar_base64: string;
         };
         /** @description A page of stored agents. */
         ListAgentsResponse: {
@@ -6230,6 +6307,164 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    importAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The bundle to import. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentImportRequest"];
+            };
+        };
+        responses: {
+            /** @description OK — the staged agent */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Agent"];
+                };
+            };
+            /** @description refused (bad bundle, unknown role) or invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    exportAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description agent id, as the list shows it (agent_…) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentExportResult"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    approveAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description agent id, as the list shows it (agent_…) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Agent"];
                 };
             };
             401: components["responses"]["Unauthorized"];

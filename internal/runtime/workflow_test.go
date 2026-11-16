@@ -391,8 +391,14 @@ func (m *mockStore) AgentGet(string) (memory.Agent, bool, error) {
 func (m *mockStore) AgentCreate(_, _, _, _, _ string) (memory.Agent, error) {
 	return memory.Agent{}, nil
 }
+func (m *mockStore) AgentCreateWithStatus(_, _, _, _, _, _ string) (memory.Agent, error) {
+	return memory.Agent{}, nil
+}
 func (m *mockStore) AgentUpdate(_ string, _ memory.AgentPatch) (memory.Agent, bool, error) {
 	return memory.Agent{}, false, nil
 }
 func (m *mockStore) AgentDelete(string) (bool, error)                    { return false, nil }
 func (m *mockStore) AgentVersions(string) ([]memory.AgentVersion, error) { return nil, nil }
+func (m *mockStore) AgentApprove(string) (memory.Agent, bool, error) {
+	return memory.Agent{}, false, nil
+}

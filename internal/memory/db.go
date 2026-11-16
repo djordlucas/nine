@@ -337,6 +337,7 @@ func initSchema(d db) error {
 			scratchpad   TEXT NOT NULL DEFAULT '[]',
 			queued_messages TEXT NOT NULL DEFAULT '[]',
 			status       TEXT NOT NULL DEFAULT 'active',
+			agent_id     TEXT NOT NULL DEFAULT '',
 			created_at  TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			updated_at  TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,
@@ -639,6 +640,7 @@ func initSchema(d db) error {
 			self_model TEXT NOT NULL DEFAULT '',
 			reflection TEXT NOT NULL DEFAULT '',
 			version    INTEGER NOT NULL DEFAULT 1,
+			status     TEXT NOT NULL DEFAULT 'active',
 			created_at TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			updated_at TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,

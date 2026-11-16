@@ -55,7 +55,7 @@ tags:
 - name: board
   description: 'The orchestrator board (adr/orchestrator-board.md): the shared task queue — full CRUD for operators.'
 - name: agents
-  description: 'Stored agents (adr/agents-concept.md): compose a definition (role, skills, self-model, reflection), then run it — full CRUD for operators.'
+  description: 'Stored agents (adr/agents-concept.md): compose a definition (role, skills, self-model, reflection), run it, and export/import it as a bundle — full CRUD for operators.'
 - name: roles
   description: 'The role registry: the agents conversations and delegations can run as (adr/orchestrator-board.md §2.2.1).'
 - name: events
@@ -2809,6 +2809,117 @@ paths:
       security:
       - bearerAuth: []
       - cookieAuth: []
+  /agents/import:
+    post:
+      operationId: importAgent
+      summary: Import an agent bundle
+      description: Imports a bundle tar (adr/agents-concept.md Q6 — manifest only until phase 3 adds the database). The agent is created **staged** and cannot run until approved via POST /agents/{id}/approve (Q30); the import is journaled.
+      tags:
+      - agents
+      requestBody:
+        required: true
+        description: The bundle to import.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentImportRequest'
+      responses:
+        '200':
+          description: OK — the staged agent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          description: refused (bad bundle, unknown role) or invalid request
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /agents/{id}/export:
+    get:
+      operationId: exportAgent
+      summary: Export an agent as a bundle
+      description: Returns the agent's bundle — a tar holding agent.json with the definition (name, role, skills, self-model, reflection; adr/agents-concept.md Q6) — as base64. Phase 3 adds the agent's database as agent.db in the same tar.
+      tags:
+      - agents
+      parameters:
+      - name: id
+        in: path
+        description: agent id, as the list shows it (agent_…)
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentExportResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: not found
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /agents/{id}/approve:
+    post:
+      operationId: approveAgent
+      summary: Approve a staged agent
+      description: Moves an imported (staged) agent to active so it can run (adr/agents-concept.md Q30). The approval is journaled. Already-active agents pass through unchanged.
+      tags:
+      - agents
+      parameters:
+      - name: id
+        in: path
+        description: agent id, as the list shows it (agent_…)
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: not found
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
   /roles:
     get:
       operationId: listRoles
@@ -4844,7 +4955,7 @@ components:
     Agent:
       description: One stored agent definition with its identity and current version (adr/agents-concept.md A5; definitions are versioned, Q14).
       type: object
-      required: [id, version, definition, created_at, updated_at]
+      required: [id, version, status, definition, created_at, updated_at]
       properties:
         id:
           type: string
@@ -4853,6 +4964,10 @@ components:
           type: integer
           minimum: 1
           description: Bumped on every update.
+        status:
+          type: string
+          enum: [active, staged]
+          description: 'staged is an imported agent awaiting approval (Q30); agent run refuses it.'
         definition:
           $ref: '#/components/schemas/AgentDefinition'
         created_at:
@@ -4883,6 +4998,25 @@ components:
         role:
           type: string
           description: The role the new conversation resolved to.
+    AgentImportRequest:
+      description: A bundle to import — a tar holding agent.json, base64-encoded (adr/agents-concept.md Q6).
+      type: object
+      required: [tar_base64]
+      properties:
+        tar_base64:
+          type: string
+          description: The bundle tar, base64-encoded.
+    AgentExportResult:
+      description: An exported agent bundle — a tar holding agent.json, base64-encoded.
+      type: object
+      required: [filename, tar_base64]
+      properties:
+        filename:
+          type: string
+          description: Suggested file name for the bundle.
+        tar_base64:
+          type: string
+          description: The bundle tar, base64-encoded.
     ListAgentsResponse:
       description: A page of stored agents.
       type: object

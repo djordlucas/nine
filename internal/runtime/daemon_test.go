@@ -589,7 +589,7 @@ func TestDaemonPluginCallReachesCoreTools(t *testing.T) {
 		t.Fatalf("SkillUpsert: %v", err)
 	}
 	core := agent.New()
-	agent.RegisterSkillTools(core, store, nil)
+	agent.RegisterSkillTools(core, store, nil, nil)
 
 	d, sock := startDaemon(t, makeFactory(seqProvider(nil)), nil, nil)
 	d.ConfigureCoreTools(core)
@@ -729,11 +729,17 @@ func (m *mockGoalStore) AgentGet(string) (memory.Agent, bool, error) {
 func (m *mockGoalStore) AgentCreate(_, _, _, _, _ string) (memory.Agent, error) {
 	return memory.Agent{}, nil
 }
+func (m *mockGoalStore) AgentCreateWithStatus(_, _, _, _, _, _ string) (memory.Agent, error) {
+	return memory.Agent{}, nil
+}
 func (m *mockGoalStore) AgentUpdate(_ string, _ memory.AgentPatch) (memory.Agent, bool, error) {
 	return memory.Agent{}, false, nil
 }
 func (m *mockGoalStore) AgentDelete(string) (bool, error)                  { return false, nil }
 func (m *mockGoalStore) AgentVersions(string) ([]memory.AgentVersion, error) { return nil, nil }
+func (m *mockGoalStore) AgentApprove(string) (memory.Agent, bool, error) {
+	return memory.Agent{}, false, nil
+}
 
 func (m *mockGoalStore) UserNotificationList(_ bool) ([]memory.UserNotification, error) {
 	return nil, nil

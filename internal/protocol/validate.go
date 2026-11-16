@@ -115,6 +115,9 @@ var clientMsgSpecs = map[MsgType]clientMsgSpec{
 	TypeAgentUpdate: {required: []fieldRule{needID, needText}},
 	TypeAgentDelete: {required: []fieldRule{needID}},
 	TypeAgentRun:    {required: []fieldRule{needID}},
+	TypeAgentExport: {required: []fieldRule{needID}},
+	TypeAgentImport: {required: []fieldRule{needText}},
+	TypeAgentApprove: {required: []fieldRule{needID}},
 }
 
 // ValidateClient checks an inbound client message carries what its type needs.

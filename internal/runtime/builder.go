@@ -259,7 +259,17 @@ func (f *AgentBuilder) BuildForRole(agentID string, p RoleParams) *agent.Loop {
 	if role.Interactive && f.cfg.HITL != nil {
 		gate.owner = agentID
 	}
-	return f.build(agentID, role, f.maxDelegationDepth(), gate)
+	// Per-agent bundle resolution (adr/agents-concept.md A3): when the session
+	// was run from a stored agent, the agent's skills and self-model scope the
+	// loop. An unknown or deleted agent id falls back to the daemon-wide
+	// defaults — the conversation still runs under the named role.
+	var agentDef *memory.Agent
+	if p.AgentID != "" && f.cfg.Loop.Memory != nil {
+		if a, ok, err := f.cfg.Loop.Memory.AgentGet(p.AgentID); err == nil && ok {
+			agentDef = &a
+		}
+	}
+	return f.build(agentID, role, f.maxDelegationDepth(), gate, agentDef)
 }
 
 // maxDelegationDepth returns the configured depthGuard seed (R-ROLE.6).
@@ -424,7 +434,7 @@ func appendInterceptedTools(tools []ninectx.ToolWithVector, names []string, role
 // eligibility AND caller interactivity). gate routes approval-gate prompts to
 // the owning interactive session, if any — a sub-agent has role.Interactive
 // false but may still be gated through its parent's owner.
-func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gateCtx) *agent.Loop {
+func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gateCtx, agentDef *memory.Agent) *agent.Loop {
 	lc := f.cfg.Loop
 	d := agent.New()
 
@@ -444,7 +454,13 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 			d.RegisterPlugin(lc.Mgr, p)
 		}
 	}
-	f.registerCoreTools(d, lc, agentID, onConsumed)
+	// The agent's skill list scopes the skill tools when the session was run
+	// from a stored agent (adr/agents-concept.md A3); nil means daemon-wide.
+	var skillAllow []string
+	if agentDef != nil && agentDef.Skills != "" {
+		_ = json.Unmarshal([]byte(agentDef.Skills), &skillAllow)
+	}
+	f.registerCoreTools(d, lc, agentID, onConsumed, skillAllow)
 
 	// shellTools are conferred by the session shell, not the role's allowlist —
 	// they are granted unfiltered (like gap_report) and pruning in RestrictTo
@@ -661,6 +677,13 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 	if lc.Assembler != nil {
 		selfModelFn = lc.Assembler.Build
 	}
+	// A stored agent's own self-model source replaces the daemon-wide one for
+	// sessions run from it (adr/agents-concept.md A3).
+	if agentDef != nil && agentDef.SelfModel != "" {
+		selfModelFn = func(context.Context, []float32) string {
+			return "## Self-model (this agent)\n```json\n" + agentDef.SelfModel + "\n```"
+		}
+	}
 
 	// Pull-surface a recorded related prior session (adr/reactive-events.md §5),
 	// only when the indexer that populates the store is itself enabled and an
@@ -786,7 +809,7 @@ func planMentionRiskyTool(plan string, riskyTools []string) bool {
 
 // registerCoreTools registers the gap-report, memory/file, and skill tools
 // available to every role (allowlist pruning happens afterwards in build).
-func (f *AgentBuilder) registerCoreTools(d *agent.Dispatcher, lc LoopConfig, agentID string, onConsumed func(string)) {
+func (f *AgentBuilder) registerCoreTools(d *agent.Dispatcher, lc LoopConfig, agentID string, onConsumed func(string), skillAllow []string) {
 	agent.RegisterGapReport(d, func(desc string) {
 		f.cfg.Sup.Post(Event{Kind: EventGapReported, AgentID: agentID, Payload: desc})
 	})
@@ -803,7 +826,7 @@ func (f *AgentBuilder) registerCoreTools(d *agent.Dispatcher, lc LoopConfig, age
 	// The workspace index, when one is configured: file_search_text then covers
 	// the operator's directory as well as the store, and list_files exists.
 	d.SetWorkspace(lc.Workspace)
-	agent.RegisterSkillTools(d, lc.Memory, lc.Embedder)
+	agent.RegisterSkillTools(d, lc.Memory, lc.Embedder, skillAllow)
 	agent.RegisterDocTools(d, lc.Memory, lc.Embedder)
 	agent.RegisterQueuedTools(d, lc.Memory, func() string { return agentID }, onConsumed)
 	// Over-cap tool results spill to the file store and come back by path, for
@@ -833,7 +856,7 @@ const directCallAgentID = "direct-call"
 // them against the live host instead (handlePluginCall).
 func (f *AgentBuilder) CoreDispatcher() *agent.Dispatcher {
 	d := agent.New()
-	f.registerCoreTools(d, f.cfg.Loop, directCallAgentID, nil)
+	f.registerCoreTools(d, f.cfg.Loop, directCallAgentID, nil, nil)
 	return d
 }
 
@@ -894,7 +917,7 @@ func (f *AgentBuilder) registerSubAgentTools(d *agent.Dispatcher, lc LoopConfig,
 			}
 			f.emitProgressEvent(parentID, msg)
 		}
-		result, err := RunSubAgentSync(ctx, subID, prompt, f.build(subID, leaf, depthGuard-1, f.subGate(gate, leaf.Name, task)), f.sink, subProgress)
+		result, err := RunSubAgentSync(ctx, subID, prompt, f.build(subID, leaf, depthGuard-1, f.subGate(gate, leaf.Name, task), nil), f.sink, subProgress)
 		removeSubAgent()
 		status := "done"
 		switch {

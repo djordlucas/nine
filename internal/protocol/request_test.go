@@ -206,6 +206,9 @@ func TestEveryClientMsgTypeDecodes(t *testing.T) {
 		protocol.TypeAgentUpdate:      {ID: "agent_1", Text: `{}`},
 		protocol.TypeAgentDelete:      {ID: "agent_1"},
 		protocol.TypeAgentRun:         {ID: "agent_1"},
+		protocol.TypeAgentExport:      {ID: "agent_1"},
+		protocol.TypeAgentImport:      {Text: `{"tar_base64":""}`},
+		protocol.TypeAgentApprove:     {ID: "agent_1"},
 		protocol.TypeConfig:           {},
 		protocol.TypeSelfModel:        {},
 	}

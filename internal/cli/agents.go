@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"nine/internal/config"
 	"nine/internal/protocol"
@@ -12,7 +14,7 @@ import (
 // changes, removes and runs the agent definitions the daemon stores. The web UI
 // and POST /api/v1/agents are clients of the same wire verbs.
 
-const agentUsage = "usage: nine agent [list | show <id> | create <name> [--role R] [--skill S]... [--self-model JSON] [--reflection JSON] | edit <id> [--name N] [--role R] [--skill S]... [--self-model JSON] [--reflection JSON] | delete <id> | run <id>]"
+const agentUsage = "usage: nine agent [list | show <id> | create <name> [--role R] [--skill S]... [--self-model JSON] [--reflection JSON] | edit <id> [--name N] [--role R] [--skill S]... [--self-model JSON] [--reflection JSON] | delete <id> | run <id> | export <id> <path> | import <path> | approve <id>]"
 
 // agentCommand runs `nine agent …`; with no subcommand it lists.
 func (c *CLI) agentCommand(cfg *config.Config, args []string) error {
@@ -56,6 +58,21 @@ func (c *CLI) agentCommand(cfg *config.Config, args []string) error {
 			return fmt.Errorf("usage: nine agent run <id>")
 		}
 		return c.AgentRun(cfg, args[1])
+	case "export":
+		if len(args) < 3 {
+			return fmt.Errorf("usage: nine agent export <id> <path>")
+		}
+		return c.AgentExport(cfg, args[1], args[2])
+	case "import":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: nine agent import <path>")
+		}
+		return c.AgentImport(cfg, args[1])
+	case "approve":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: nine agent approve <id>")
+		}
+		return c.AgentApprove(cfg, args[1])
 	}
 	return fmt.Errorf("%s", agentUsage)
 }
@@ -212,6 +229,66 @@ func (c *CLI) AgentDelete(cfg *config.Config, id string) error {
 		return fmt.Errorf("delete agent: %w", err)
 	}
 	fmt.Fprintf(c.Out, "deleted agent %s\n", id)
+	return nil
+}
+
+// AgentExport writes an agent's bundle tar to path.
+func (c *CLI) AgentExport(cfg *config.Config, id, path string) error {
+	cl, done, err := c.dialDaemon(cfg)
+	if err != nil || cl == nil {
+		return err
+	}
+	defer done()
+
+	res, err := cl.AgentExport(id)
+	if err != nil {
+		return fmt.Errorf("export agent: %w", err)
+	}
+	tarBytes, err := base64.StdEncoding.DecodeString(res.TarBase64)
+	if err != nil {
+		return fmt.Errorf("decode bundle: %w", err)
+	}
+	if err := os.WriteFile(path, tarBytes, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	fmt.Fprintf(c.Out, "exported agent %s to %s (%d bytes)\n", id, path, len(tarBytes))
+	return nil
+}
+
+// AgentImport imports a bundle tar from path; the agent lands staged until
+// `nine agent approve` (adr/agents-concept.md Q30).
+func (c *CLI) AgentImport(cfg *config.Config, path string) error {
+	cl, done, err := c.dialDaemon(cfg)
+	if err != nil || cl == nil {
+		return err
+	}
+	defer done()
+
+	tarBytes, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+	a, err := cl.AgentImport(tarBytes)
+	if err != nil {
+		return fmt.Errorf("import agent: %w", err)
+	}
+	fmt.Fprintf(c.Out, "imported agent %s (%s) as staged; approve with `nine agent approve %s`\n", a.ID, a.Definition.Name, a.ID)
+	return nil
+}
+
+// AgentApprove approves a staged (imported) agent.
+func (c *CLI) AgentApprove(cfg *config.Config, id string) error {
+	cl, done, err := c.dialDaemon(cfg)
+	if err != nil || cl == nil {
+		return err
+	}
+	defer done()
+
+	a, err := cl.AgentApprove(id)
+	if err != nil {
+		return fmt.Errorf("approve agent: %w", err)
+	}
+	fmt.Fprintf(c.Out, "approved agent %s (%s) — status %s\n", a.ID, a.Definition.Name, a.Status)
 	return nil
 }
 

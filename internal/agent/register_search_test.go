@@ -189,7 +189,7 @@ func TestSkillSearch(t *testing.T) {
 	store := newTestStore(t)
 	d := agent.New()
 	e := axisEmbedder()
-	agent.RegisterSkillTools(d, store, e)
+	agent.RegisterSkillTools(d, store, e, nil)
 	ctx := context.Background()
 
 	if _, err := d.Dispatch(ctx, "skill_write",
@@ -214,7 +214,7 @@ func TestSkillSearch(t *testing.T) {
 
 	// Without an embedder, skill_search is not registered.
 	dNil := agent.New()
-	agent.RegisterSkillTools(dNil, newTestStore(t), nil)
+	agent.RegisterSkillTools(dNil, newTestStore(t), nil, nil)
 	if _, err := dNil.Dispatch(ctx, "skill_search", json.RawMessage(`{"query":"x"}`)); err == nil {
 		t.Error("skill_search must be absent without an embedder")
 	}

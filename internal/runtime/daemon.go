@@ -51,6 +51,10 @@ type RoleParams struct {
 	// Delegates opts a standing agent into sub-agent fan-out; OR-ed with the
 	// resolved role's own Delegates flag (adr/predefined-agents-design.md §3.1).
 	Delegates bool
+	// AgentID names the stored agent the session was run from, '' for a directly
+	// created conversation. The builder resolves the agent's bundle (skills,
+	// self-model) from it (adr/agents-concept.md A3).
+	AgentID string
 }
 
 // CheckpointStore persists and retrieves serialised loop state keyed by agent ID.
@@ -127,9 +131,11 @@ type queryBackend interface {
 	AgentList() ([]memory.Agent, error)
 	AgentGet(id string) (memory.Agent, bool, error)
 	AgentCreate(name, role, skills, selfModel, reflection string) (memory.Agent, error)
+	AgentCreateWithStatus(name, role, skills, selfModel, reflection, status string) (memory.Agent, error)
 	AgentUpdate(id string, p memory.AgentPatch) (memory.Agent, bool, error)
 	AgentDelete(id string) (bool, error)
 	AgentVersions(id string) ([]memory.AgentVersion, error)
+	AgentApprove(id string) (memory.Agent, bool, error)
 }
 
 // pluginRegistry provides the plugin access needed by message handlers.
@@ -618,6 +624,12 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 		d.handleAgentDelete(enc, r.ID)
 	case protocol.AgentRunReq:
 		d.handleAgentRun(enc, r.ID, r.Interactive)
+	case protocol.AgentExportReq:
+		d.handleAgentExport(enc, r.ID)
+	case protocol.AgentImportReq:
+		d.handleAgentImport(enc, r.Bundle)
+	case protocol.AgentApproveReq:
+		d.handleAgentApprove(enc, r.ID)
 
 	case protocol.RolesListReq:
 		d.handleRolesList(enc)

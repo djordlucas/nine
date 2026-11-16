@@ -44,6 +44,20 @@ func TestAgentCRUDEndpoints(t *testing.T) {
 			return textReply(t, protocol.TypeAgentRun, protocol.AgentRunResult{
 				AgentID: m.ID, ConversationID: "conv_1", Role: "researcher",
 			})
+		case protocol.TypeAgentExport:
+			if m.ID == "agent_nope" {
+				return errReply(`agent "agent_nope" not found`)
+			}
+			return textReply(t, protocol.TypeAgentExport, protocol.AgentExportResult{
+				Filename: "Researcher.agent.tar", TarBase64: "dGFy",
+			})
+		case protocol.TypeAgentImport:
+			return textReply(t, protocol.TypeAgentImport, agent)
+		case protocol.TypeAgentApprove:
+			if m.ID == "agent_nope" {
+				return errReply(`agent "agent_nope" not found`)
+			}
+			return textReply(t, protocol.TypeAgentApprove, agent)
 		}
 		return errReply("unexpected " + string(m.Type))
 	})
@@ -125,5 +139,38 @@ func TestAgentCRUDEndpoints(t *testing.T) {
 	w = doAt(t, sock, http.MethodPost, "/api/v1/agents/agent_nope/run", "")
 	if w.Code != 404 {
 		t.Fatalf("run missing: %d %s", w.Code, w.Body.String())
+	}
+
+	// export
+	w = doAt(t, sock, http.MethodGet, "/api/v1/agents/agent_1/export", "")
+	if w.Code != 200 {
+		t.Fatalf("export: %d %s", w.Code, w.Body.String())
+	}
+	var exp struct {
+		Filename  string `json:"filename"`
+		TarBase64 string `json:"tar_base64"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &exp); err != nil || exp.TarBase64 != "dGFy" {
+		t.Fatalf("export body: %s", w.Body.String())
+	}
+	w = doAt(t, sock, http.MethodGet, "/api/v1/agents/agent_nope/export", "")
+	if w.Code != 404 {
+		t.Fatalf("export missing: %d %s", w.Code, w.Body.String())
+	}
+
+	// import
+	w = doAt(t, sock, http.MethodPost, "/api/v1/agents/import", `{"tar_base64":"dGFy"}`)
+	if w.Code != 200 {
+		t.Fatalf("import: %d %s", w.Code, w.Body.String())
+	}
+
+	// approve
+	w = doAt(t, sock, http.MethodPost, "/api/v1/agents/agent_1/approve", "")
+	if w.Code != 200 {
+		t.Fatalf("approve: %d %s", w.Code, w.Body.String())
+	}
+	w = doAt(t, sock, http.MethodPost, "/api/v1/agents/agent_nope/approve", "")
+	if w.Code != 404 {
+		t.Fatalf("approve missing: %d %s", w.Code, w.Body.String())
 	}
 }

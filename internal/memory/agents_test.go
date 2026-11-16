@@ -84,3 +84,70 @@ func TestAgentCRUD(t *testing.T) {
 		t.Fatal("second delete: want false")
 	}
 }
+
+func TestAgentStagingAndApprove(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	staged, err := store.AgentCreateWithStatus("Imported", "researcher", `[]`, "", "", memory.AgentStaged)
+	if err != nil {
+		t.Fatalf("create staged: %v", err)
+	}
+	if staged.Status != memory.AgentStaged {
+		t.Fatalf("status = %q, want staged", staged.Status)
+	}
+	active, err := store.AgentCreate("Local", "", "", "", "")
+	if err != nil || active.Status != memory.AgentActive {
+		t.Fatalf("create active: %v %+v", err, active)
+	}
+
+	// Approve moves staged → active; unknown id reports false.
+	ap, ok, err := store.AgentApprove(staged.ID)
+	if err != nil || !ok || ap.Status != memory.AgentActive {
+		t.Fatalf("approve: ok=%v err=%v agent=%+v", ok, err, ap)
+	}
+	if _, ok, _ := store.AgentApprove("agent_nope"); ok {
+		t.Fatal("approve unknown: want false")
+	}
+	if _, err := store.AgentCreateWithStatus("x", "", "", "", "", "bogus"); err == nil {
+		t.Fatal("create with bogus status: want error")
+	}
+}
+
+func TestAgentBundleRoundTrip(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := store.AgentCreate("Researcher", "researcher", `["web","git"]`, `{"persona":"x"}`, `{"interval":"1h"}`)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	tarBytes, err := memory.AgentBundleTar(a)
+	if err != nil {
+		t.Fatalf("bundle tar: %v", err)
+	}
+	m, err := memory.ParseAgentBundleTar(tarBytes)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if m.Format != memory.AgentBundleFormat || m.Name != "Researcher" || m.Role != "researcher" ||
+		m.SourceAgentID != a.ID {
+		t.Fatalf("manifest mismatch: %+v", m)
+	}
+	var skills []string
+	var selfModel map[string]string
+	if err := json.Unmarshal(m.Skills, &skills); err != nil || len(skills) != 2 || skills[0] != "web" {
+		t.Fatalf("manifest skills: %s", m.Skills)
+	}
+	if err := json.Unmarshal(m.SelfModel, &selfModel); err != nil || selfModel["persona"] != "x" {
+		t.Fatalf("manifest self_model: %s", m.SelfModel)
+	}
+
+	if _, err := memory.ParseAgentBundleTar([]byte("not a tar")); err == nil {
+		t.Fatal("parse garbage: want error")
+	}
+}

@@ -86,7 +86,11 @@ resumable by attaching again).
 **Agent** — A named, stored bundle of role, skills, self-model and reflection
 that an operator composes (`nine agent create`, `POST /api/v1/agents`) and
 runs (`nine agent run <id>`, `POST /api/v1/agents/{id}/run`), which opens a
-**conversation** running as that agent. Distinct from the conversation (the
+**conversation** running as that agent. An agent exports as a bundle tar
+(`nine agent export`, `GET /api/v1/agents/{id}/export`) and imports staged
+(`nine agent import`, `POST /api/v1/agents/import`) — staged agents cannot run
+until approved (`nine agent approve`). A conversation run from an agent sees
+only that agent's skills and self-model. Distinct from the conversation (the
 interactive thread itself) and from the internal `AgentWorker` that drives one.
 
 **Work unit** — Nine has two fundamental units: a **session** (an agent loop —
@@ -493,7 +497,8 @@ List goals (with their sub-goals), self-reflection history,
 and active/recent workflows respectively. (There is no `tasks` verb.)
 
 **`nine agent …`** — List, show, create, edit and delete stored **agents**;
-`nine agent run <id>` opens a conversation from the agent.
+`nine agent run <id>` opens a conversation from the agent; `export`/`import`/
+`approve` move agent bundles in and out (imported agents land staged).
 
 **`nine workflow stop <id>`** — Live cancellation of an ongoing workflow
 (daemon must be running): marks it `cancelled`, pending steps `skipped`,

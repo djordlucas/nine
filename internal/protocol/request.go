@@ -117,6 +117,9 @@ type AgentRunReq struct {
 	ID          string
 	Interactive bool
 }
+type AgentExportReq struct{ ID string }
+type AgentImportReq struct{ Bundle json.RawMessage }
+type AgentApproveReq struct{ ID string }
 
 // ToolDeleteReq deletes a tool Nine wrote; any other tool is refused.
 type ToolDeleteReq struct {
@@ -269,6 +272,9 @@ func (AgentCreateReq) Type() MsgType       { return TypeAgentCreate }
 func (AgentUpdateReq) Type() MsgType       { return TypeAgentUpdate }
 func (AgentDeleteReq) Type() MsgType       { return TypeAgentDelete }
 func (AgentRunReq) Type() MsgType          { return TypeAgentRun }
+func (AgentExportReq) Type() MsgType       { return TypeAgentExport }
+func (AgentImportReq) Type() MsgType       { return TypeAgentImport }
+func (AgentApproveReq) Type() MsgType      { return TypeAgentApprove }
 func (RolesListReq) Type() MsgType         { return TypeRolesList }
 func (ToolCallReq) Type() MsgType          { return TypeToolCall }
 func (ToolDeleteReq) Type() MsgType        { return TypeToolDelete }
@@ -373,6 +379,12 @@ func DecodeRequest(m Msg) (Request, error) {
 		return AgentDeleteReq{ID: m.ID}, nil
 	case TypeAgentRun:
 		return AgentRunReq{ID: m.ID, Interactive: m.Interactive}, nil
+	case TypeAgentExport:
+		return AgentExportReq{ID: m.ID}, nil
+	case TypeAgentImport:
+		return AgentImportReq{Bundle: json.RawMessage(m.Text)}, nil
+	case TypeAgentApprove:
+		return AgentApproveReq{ID: m.ID}, nil
 	case TypeRolesList:
 		return RolesListReq{}, nil
 	case TypeToolDelete:

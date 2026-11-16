@@ -159,6 +159,15 @@ type conversationCreator interface {
 }
 
 func (d *Daemon) newConversation(interactive bool, role string) (string, error) {
+	return d.newConversationFromAgent(interactive, role, "")
+}
+
+// newConversationFromAgent is newConversation with the stored agent the
+// conversation is run from (adr/agents-concept.md A5/Q12): agentID is '' for a
+// directly created conversation. The agent's role names the conversation's
+// role, and the agent link is persisted so a restart rebuilds the session from
+// the same bundle.
+func (d *Daemon) newConversationFromAgent(interactive bool, role, agentID string) (string, error) {
 	if role != "" && role != OrchestratorRole && !d.knownRole(role) {
 		return "", fmt.Errorf("unknown role %q (roles_list shows the registry)", role)
 	}
@@ -168,7 +177,7 @@ func (d *Daemon) newConversation(interactive bool, role string) (string, error) 
 			slog.Warn("mark interactive failed", "id", id, "err", err)
 		}
 	}
-	r := d.makeAgentWorker(id, nil, interactive, role)
+	r := d.makeAgentWorkerFromAgent(id, nil, interactive, role, agentID)
 	d.mu.Lock()
 	d.sessions[id] = r
 	d.mu.Unlock()
@@ -179,6 +188,13 @@ func (d *Daemon) newConversation(interactive bool, role string) (string, error) 
 		if cc, ok := d.store.(conversationCreator); ok {
 			if err := cc.ConversationCreate(id); err != nil {
 				slog.Warn("persist new conversation failed", "id", id, "err", err)
+			}
+		}
+		if agentID != "" {
+			if cs, ok := d.store.(interface{ ConversationSetAgent(id, agentID string) error }); ok {
+				if err := cs.ConversationSetAgent(id, agentID); err != nil {
+					slog.Warn("persist conversation agent failed", "id", id, "agent", agentID, "err", err)
+				}
 			}
 		}
 	}
@@ -254,13 +270,19 @@ func (d *Daemon) attach(agentID string) error {
 // rebuilds the pursue role it runs under; any other session is a conversation,
 // under the orchestrator role.
 func (d *Daemon) makeAgentWorker(id string, checkpointData []byte, interactive bool, role string) *AgentWorker {
+	return d.makeAgentWorkerFromAgent(id, checkpointData, interactive, role, "")
+}
+
+// makeAgentWorkerFromAgent is makeAgentWorker with the stored agent the session
+// runs from, '' for none (adr/agents-concept.md A5).
+func (d *Daemon) makeAgentWorkerFromAgent(id string, checkpointData []byte, interactive bool, role, agentID string) *AgentWorker {
 	if p, ok := d.processRole(id); ok {
 		return d.buildWorker(id, checkpointData, p)
 	}
 	if role == "" {
 		role = OrchestratorRole
 	}
-	return d.buildWorker(id, checkpointData, RoleParams{Role: role, Interactive: interactive})
+	return d.buildWorker(id, checkpointData, RoleParams{Role: role, Interactive: interactive, AgentID: agentID})
 }
 
 // knownRole reports whether name is in the role registry.

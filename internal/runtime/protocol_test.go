@@ -280,7 +280,7 @@ func TestSkillHook(t *testing.T) {
 	embedder := mockEmbedder(vec)
 
 	d := agent.New()
-	agent.RegisterSkillTools(d, store, embedder)
+	agent.RegisterSkillTools(d, store, embedder, nil)
 
 	args := json.RawMessage(`{"name":"my-skill","description":"does something useful","content":"steps"}`)
 	if _, err := d.Dispatch(context.Background(), "skill_write", args); err != nil {

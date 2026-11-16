@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 
 	"nine/internal/api/apigen"
@@ -33,7 +34,7 @@ func toAPIAgent(a protocol.Agent) apigen.Agent {
 		}
 	}
 	return apigen.Agent{
-		Id: a.ID, Version: a.Version, Definition: def,
+		Id: a.ID, Version: a.Version, Status: apigen.AgentStatus(a.Status), Definition: def,
 		CreatedAt: parseTime(a.CreatedAt), UpdatedAt: parseTime(a.UpdatedAt),
 	}
 }
@@ -181,6 +182,73 @@ func (s *Server) DeleteAgent(ctx context.Context, request apigen.DeleteAgentRequ
 			errorBody("not_found", err.Error(), map[string]any{"id": request.Id})), nil
 	}
 	return apigen.DeleteAgent500JSONResponse(
+		errorBody("server_error", err.Error(), nil)), nil
+}
+
+func (s *Server) ImportAgent(ctx context.Context, request apigen.ImportAgentRequestObject) (apigen.ImportAgentResponseObject, error) {
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		return apigen.ImportAgent503JSONResponse(
+			errorBody("service_unavailable", err.Error(), nil)), nil
+	}
+	defer cl.Close()
+
+	if request.Body == nil || request.Body.TarBase64 == "" {
+		return apigen.ImportAgent400JSONResponse(
+			errorBody("invalid_request", "request body with tar_base64 is required", nil)), nil
+	}
+	tarBytes, err := base64.StdEncoding.DecodeString(request.Body.TarBase64)
+	if err != nil {
+		return apigen.ImportAgent400JSONResponse(
+			errorBody("invalid_request", "tar_base64 is not base64: "+err.Error(), nil)), nil
+	}
+	a, err := cl.AgentImport(tarBytes)
+	if err != nil {
+		return apigen.ImportAgent400JSONResponse(
+			errorBody("invalid_request", err.Error(), nil)), nil
+	}
+	return apigen.ImportAgent200JSONResponse(toAPIAgent(a)), nil
+}
+
+func (s *Server) ExportAgent(ctx context.Context, request apigen.ExportAgentRequestObject) (apigen.ExportAgentResponseObject, error) {
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		return apigen.ExportAgent503JSONResponse(
+			errorBody("service_unavailable", err.Error(), nil)), nil
+	}
+	defer cl.Close()
+
+	res, err := cl.AgentExport(request.Id)
+	if err == nil {
+		return apigen.ExportAgent200JSONResponse(apigen.AgentExportResult{
+			Filename: res.Filename, TarBase64: res.TarBase64,
+		}), nil
+	}
+	if errNotFound(err) {
+		return apigen.ExportAgent404JSONResponse(
+			errorBody("not_found", err.Error(), map[string]any{"id": request.Id})), nil
+	}
+	return apigen.ExportAgent500JSONResponse(
+		errorBody("server_error", err.Error(), nil)), nil
+}
+
+func (s *Server) ApproveAgent(ctx context.Context, request apigen.ApproveAgentRequestObject) (apigen.ApproveAgentResponseObject, error) {
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		return apigen.ApproveAgent503JSONResponse(
+			errorBody("service_unavailable", err.Error(), nil)), nil
+	}
+	defer cl.Close()
+
+	a, err := cl.AgentApprove(request.Id)
+	if err == nil {
+		return apigen.ApproveAgent200JSONResponse(toAPIAgent(a)), nil
+	}
+	if errNotFound(err) {
+		return apigen.ApproveAgent404JSONResponse(
+			errorBody("not_found", err.Error(), map[string]any{"id": request.Id})), nil
+	}
+	return apigen.ApproveAgent500JSONResponse(
 		errorBody("server_error", err.Error(), nil)), nil
 }
 
