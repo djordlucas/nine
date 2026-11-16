@@ -25,9 +25,10 @@ func (s *Server) ListRoles(ctx context.Context, request apigen.ListRolesRequestO
 	out := make([]apigen.RoleInfo, 0, len(roles))
 	for _, r := range roles {
 		ri := apigen.RoleInfo{
-			Name:     r.Name,
-			AllTools: r.AllTools,
+			Name:      r.Name,
+			AllTools:  r.AllTools,
 			Delegates: &r.Delegates,
+			Leaf:      &r.Leaf,
 		}
 		if r.Description != "" {
 			ri.Description = &r.Description

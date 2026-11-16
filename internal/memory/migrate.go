@@ -472,6 +472,12 @@ var migrations = []migrationStep{
 		_, err = q.Exec(`CREATE INDEX IF NOT EXISTS session_index_agent ON session_index (agent_id)`)
 		return err
 	}},
+	// 26 → 27: a board task may name the leaf role its worker runs as
+	// (adr/agents-concept.md A6, Q15 — fixed at post time); '' means the
+	// claiming worker's own process role (Q17).
+	{name: "board_tasks_role", fn: func(q sqlExec) error {
+		return addColumnIfMissing(q, "board_tasks", "role", "TEXT NOT NULL DEFAULT ''")
+	}},
 }
 
 // convertGoalPlans turns each session plan with a pursue routine into the

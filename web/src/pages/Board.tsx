@@ -22,6 +22,7 @@ type Task = {
   status: Status;
   result?: string;
   source: string;
+  role?: string;
   priority?: number;
   depth: number;
   created_at: string;
@@ -38,6 +39,7 @@ type Task = {
 export function BoardPanel({ conversation }: { conversation: string }) {
   const [title, setTitle] = useState('');
   const [spec, setSpec] = useState('');
+  const [role, setRole] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   // The one task being edited, if any.
@@ -45,8 +47,14 @@ export function BoardPanel({ conversation }: { conversation: string }) {
   const [eTitle, setETitle] = useState('');
   const [eSpec, setESpec] = useState('');
   const [ePriority, setEPriority] = useState(0);
+  const [eRole, setERole] = useState('');
   const [eStatus, setEStatus] = useState<Status>('queued');
   const [eResult, setEResult] = useState('');
+  // Leaf roles a posted task may name (adr/agents-concept.md A6, Q15/Q16).
+  const { data: leafRoles } = useLive(async () => {
+    const r = await get(api.GET('/roles', {}), 'the role registry');
+    return ((r.data ?? []) as { name: string; leaf?: boolean }[]).filter((x) => x.leaf).map((x) => x.name);
+  }, []);
   const { data, error: loadError } = useLive(async () => {
     const page = await get(api.GET('/board', { params: { query: { limit: 1000 } } }), 'the board');
     return ((page.data ?? []) as Task[]).filter((t) => t.posted_by === conversation);
@@ -58,7 +66,7 @@ export function BoardPanel({ conversation }: { conversation: string }) {
     setBusy(true);
     setError('');
     const { data: made, error: err } = await api.POST('/board', {
-      body: { title: title.trim(), spec: spec.trim() || undefined, priority: 0, posted_by: conversation },
+      body: { title: title.trim(), spec: spec.trim() || undefined, role: role || undefined, priority: 0, posted_by: conversation },
     });
     setBusy(false);
     if (err || !made) {
@@ -67,6 +75,7 @@ export function BoardPanel({ conversation }: { conversation: string }) {
     }
     setTitle('');
     setSpec('');
+    setRole('');
   };
 
   const remove = async (t: Task) => {
@@ -80,6 +89,7 @@ export function BoardPanel({ conversation }: { conversation: string }) {
     setETitle(t.title);
     setESpec(t.spec ?? '');
     setEPriority(t.priority ?? 0);
+    setERole(t.role ?? '');
     setEStatus(t.status);
     setEResult(t.result ?? '');
   };
@@ -92,6 +102,7 @@ export function BoardPanel({ conversation }: { conversation: string }) {
     if (eSpec !== (t.spec ?? '')) body.spec = eSpec;
     if (eStatus !== t.status) body.status = eStatus;
     if (ePriority !== (t.priority ?? 0)) body.priority = ePriority;
+    if (eRole !== (t.role ?? '')) body.role = eRole;
     if (eResult !== (t.result ?? '')) body.result = eResult;
     const { error: e } = await api.PATCH('/board/{id}', { params: { path: { id: t.id } }, body });
     setBusy(false);
@@ -114,6 +125,13 @@ export function BoardPanel({ conversation }: { conversation: string }) {
         <div class={styles.field}>
           <label for={`board-spec-${conversation}`}>Spec — what the worker should do</label>
           <Area id={`board-spec-${conversation}`} class="input" rows={2} max={120} value={spec} onInput={(e) => setSpec((e.target as HTMLTextAreaElement).value)} />
+        </div>
+        <div class={styles.field}>
+          <label for={`board-role-${conversation}`}>Worker role</label>
+          <select id={`board-role-${conversation}`} class="input" value={role} onChange={(e) => setRole((e.target as HTMLSelectElement).value)}>
+            <option value="">worker's own role</option>
+            {(leafRoles ?? []).map((r) => <option key={r} value={r}>{r}</option>)}
+          </select>
         </div>
         <div class={detail.actions}>
           <button class={`${detail.action} ${detail.primary}`} type="submit" disabled={busy || !title.trim()}>Post</button>
@@ -145,6 +163,13 @@ export function BoardPanel({ conversation }: { conversation: string }) {
                         <input class="input" type="number" min={0} max={10} value={ePriority} onInput={(e) => setEPriority(Number((e.target as HTMLInputElement).value))} />
                       </div>
                       <div class={styles.field}>
+                        <label>Worker role</label>
+                        <select class="input" value={eRole} onChange={(e) => setERole((e.target as HTMLSelectElement).value)}>
+                          <option value="">worker's own role</option>
+                          {(leafRoles ?? []).map((r) => <option key={r} value={r}>{r}</option>)}
+                        </select>
+                      </div>
+                      <div class={styles.field}>
                         <label>Status</label>
                         <select class="input" value={eStatus} onChange={(e) => setEStatus((e.target as HTMLSelectElement).value as Status)}>
                           {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -164,6 +189,7 @@ export function BoardPanel({ conversation }: { conversation: string }) {
                       <p class={styles.meta}>
                         {ago(t.created_at)}
                         {t.claimed_by ? ` · claimed by ${shortId(t.claimed_by)}` : ''}
+                        {t.role ? ` · runs as ${t.role}` : ''}
                       </p>
                       {t.spec && <p class={styles.pre}>{t.spec}</p>}
                       {t.result && <p class={styles.pre}>{t.result}</p>}

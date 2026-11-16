@@ -52,6 +52,9 @@ func (c *CLI) BoardShow(cfg *config.Config, id string) error {
 	fmt.Fprintf(c.Out, "title:      %s\n", t.Title)
 	fmt.Fprintf(c.Out, "status:     %s\n", t.Status)
 	fmt.Fprintf(c.Out, "posted by:  %s (source %s, depth %d)\n", t.PostedBy, t.Source, t.Depth)
+	if t.Role != "" {
+		fmt.Fprintf(c.Out, "role:       %s\n", t.Role)
+	}
 	fmt.Fprintf(c.Out, "claimed by: %s\n", orDash(t.ClaimedBy))
 	fmt.Fprintf(c.Out, "created:    %s\n", t.CreatedAt)
 	if t.ClaimedAt != "" {
@@ -69,15 +72,16 @@ func (c *CLI) BoardShow(cfg *config.Config, id string) error {
 	return nil
 }
 
-// BoardCreate posts a task as the operator.
-func (c *CLI) BoardCreate(cfg *config.Config, title, spec string) error {
+// BoardCreate posts a task as the operator; role names the leaf role the
+// worker runs as (adr/agents-concept.md A6), "" for the worker's own.
+func (c *CLI) BoardCreate(cfg *config.Config, title, spec, role string) error {
 	cl, done, err := c.dialDaemon(cfg)
 	if err != nil || cl == nil {
 		return err
 	}
 	defer done()
 
-	t, err := cl.BoardCreate(title, spec, 0, "")
+	t, err := cl.BoardCreate(title, spec, role, 0, "")
 	if err != nil {
 		return err
 	}
@@ -102,7 +106,7 @@ func (c *CLI) BoardEdit(cfg *config.Config, id string, flags map[string]string, 
 		patch["clear_claim"] = true
 	}
 	if len(patch) == 0 {
-		return fmt.Errorf("nothing to edit: pass --title/--spec/--status/--result/--clear-claim")
+		return fmt.Errorf("nothing to edit: pass --title/--spec/--status/--result/--priority/--role/--clear-claim")
 	}
 	t, err := cl.BoardUpdate(id, patch)
 	if err != nil {

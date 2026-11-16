@@ -86,8 +86,8 @@ func (r *agentStoreRouter) SkillList() ([]memory.Skill, error)          { return
 func (r *agentStoreRouter) SkillGet(n string) (memory.Skill, bool, error) {
 	return r.mgr.Registry().SkillGet(n)
 }
-func (r *agentStoreRouter) BoardTaskCreate(t, s, p, src string, pri, d int) (memory.BoardTask, error) {
-	return r.mgr.Registry().BoardTaskCreate(t, s, p, src, pri, d)
+func (r *agentStoreRouter) BoardTaskCreate(t, s, p, src, role string, pri, d int) (memory.BoardTask, error) {
+	return r.mgr.Registry().BoardTaskCreate(t, s, p, src, role, pri, d)
 }
 func (r *agentStoreRouter) BoardTaskList(s string, l, o int) ([]memory.BoardTask, error) {
 	return r.mgr.Registry().BoardTaskList(s, l, o)

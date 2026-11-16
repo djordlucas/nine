@@ -1059,8 +1059,8 @@ func (c *Client) BoardGet(id string) (BoardTask, error) {
 
 // BoardCreate posts a task as the operator; postedBy names the conversation
 // whose board the task belongs to ("" for the operator's own).
-func (c *Client) BoardCreate(title, spec string, priority int, postedBy string) (BoardTask, error) {
-	if err := c.send(NewBoardCreateMsg(title, spec, priority, postedBy)); err != nil {
+func (c *Client) BoardCreate(title, spec, role string, priority int, postedBy string) (BoardTask, error) {
+	if err := c.send(NewBoardCreateMsg(title, spec, role, priority, postedBy)); err != nil {
 		return BoardTask{}, err
 	}
 	reply, err := c.recv()

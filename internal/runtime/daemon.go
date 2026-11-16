@@ -119,7 +119,7 @@ type queryBackend interface {
 	QueueMessage(agentID, message string) error
 	// Board operator CRUD backs the board_* wire verbs
 	// (adr/orchestrator-board.md §2.6).
-	BoardTaskCreate(title, spec, postedBy, source string, priority, depth int) (memory.BoardTask, error)
+	BoardTaskCreate(title, spec, postedBy, source, role string, priority, depth int) (memory.BoardTask, error)
 	BoardTaskList(status string, limit, offset int) ([]memory.BoardTask, error)
 	BoardTaskGet(id string) (memory.BoardTask, bool, error)
 	BoardTaskUpdate(id string, p memory.BoardTaskPatch) (memory.BoardTask, bool, error)
@@ -181,6 +181,9 @@ type Daemon struct {
 	// (adr/agents-concept.md A4): journaling and anything needing the concrete
 	// *memory.Store go here.
 	registry *memory.Store
+	// roles validates task-named roles on the operator board path
+	// (adr/agents-concept.md A6); nil when no registry is wired.
+	roles *RoleRegistry
 	hitl     *HITL
 	sink     EventSink // durable session-event journal for new workers (nil = disabled)
 
@@ -610,7 +613,7 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 	case protocol.BoardGetReq:
 		d.handleBoardGet(enc, r.ID)
 	case protocol.BoardCreateReq:
-		d.handleBoardCreate(enc, r.Title, r.Spec, r.Priority, r.PostedBy)
+		d.handleBoardCreate(enc, r.Title, r.Spec, r.Role, r.Priority, r.PostedBy)
 	case protocol.BoardUpdateReq:
 		d.handleBoardUpdate(enc, r.ID, r.Patch)
 	case protocol.BoardDeleteReq:
@@ -770,6 +773,11 @@ func (d *Daemon) ConfigureMemory(store queryBackend) {
 		d.registry = r.RegistryStore()
 	}
 }
+
+// ConfigureRoles wires the role registry so operator board writes can admit a
+// task-named role the same way board_post does (adr/agents-concept.md A6,
+// Q16/Q18).
+func (d *Daemon) ConfigureRoles(r *RoleRegistry) { d.roles = r }
 
 // ConfigureHITL wires the human-in-the-loop coordinator used to route
 // human_input_answer messages and resolve session interactivity on attach.

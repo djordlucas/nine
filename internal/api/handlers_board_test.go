@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"nine/internal/protocol"
@@ -159,5 +160,55 @@ func TestRolesEndpointAndRoleOnCreate(t *testing.T) {
 	}
 	if sawRole != "monitor" {
 		t.Fatalf("daemon saw role %q, want monitor", sawRole)
+	}
+}
+
+// TestBoardRolePassthrough checks the task role travels the wire: create
+// sends it in the board_create payload, patch sends it in board_update, and
+// the daemon's refusal (unknown/non-leaf role) maps to 400 (adr/agents-concept.md A6).
+func TestBoardRolePassthrough(t *testing.T) {
+	var gotCreate, gotUpdate string
+	sock := scriptedDaemon(t, func(m protocol.Msg) []protocol.Msg {
+		switch m.Type {
+		case protocol.TypeBoardCreate:
+			gotCreate = m.Text
+			if strings.Contains(m.Text, "no-such-role") {
+				return errReply(`board task role "no-such-role" is unknown or not a leaf role`)
+			}
+			return textReply(t, protocol.TypeBoardCreate, protocol.BoardTask{ID: "task_1", Title: "t", Status: "queued", Role: "researcher"})
+		case protocol.TypeBoardUpdate:
+			gotUpdate = m.Text
+			return textReply(t, protocol.TypeBoardUpdate, protocol.BoardTask{ID: m.ID, Title: "t", Status: "queued", Role: "executor"})
+		}
+		return errReply("unexpected " + string(m.Type))
+	})
+
+	w := doAt(t, sock, http.MethodPost, "/api/v1/board", `{"title":"t","role":"researcher"}`)
+	if w.Code != 200 {
+		t.Fatalf("create with role: %d %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(gotCreate, `"role":"researcher"`) {
+		t.Fatalf("board_create payload = %s, want role researcher", gotCreate)
+	}
+	var created struct {
+		Role *string `json:"role"`
+	}
+	decodeJSON(t, w, &created)
+	if created.Role == nil || *created.Role != "researcher" {
+		t.Fatalf("create response role: %s", w.Body.String())
+	}
+
+	w = doAt(t, sock, http.MethodPatch, "/api/v1/board/task_1", `{"role":"executor"}`)
+	if w.Code != 200 {
+		t.Fatalf("patch role: %d %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(gotUpdate, `"role":"executor"`) {
+		t.Fatalf("board_update payload = %s, want role executor", gotUpdate)
+	}
+
+	// A refused role is a 400 with the daemon's reason.
+	w = doAt(t, sock, http.MethodPost, "/api/v1/board", `{"title":"t","role":"no-such-role"}`)
+	if w.Code != 400 || !strings.Contains(w.Body.String(), "not a leaf") {
+		t.Fatalf("create with bad role: %d %s", w.Code, w.Body.String())
 	}
 }

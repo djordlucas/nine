@@ -25,6 +25,9 @@ type RoleInfo struct {
 	AllTools    bool     `json:"all_tools"`
 	Tools       []string `json:"tools,omitempty"`
 	Delegates   bool     `json:"delegates"`
+	// Leaf marks a delegatable leaf role (adr/agents-concept.md A6, Q16): a
+	// board task's role must be one of these.
+	Leaf bool `json:"leaf"`
 }
 
 // RoleCatalog is the role registry as the tools see it. Implemented in

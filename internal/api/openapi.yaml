@@ -5075,6 +5075,9 @@ components:
           type: string
           enum: [post, run_agent, detached]
           description: how the task entered the board
+        role:
+          type: string
+          description: 'The leaf role the claiming worker runs the task under (adr/agents-concept.md A6, Q15 — fixed at post time); empty means the worker''s own process role (Q17).'
         priority:
           type: integer
           minimum: 0
@@ -5109,6 +5112,9 @@ components:
           minimum: 0
           maximum: 10
           default: 0
+        role:
+          type: string
+          description: 'Optional leaf role the claiming worker runs the task as; empty leaves the worker''s own role. Unknown or non-leaf roles are refused.'
         posted_by:
           type: string
           description: 'Optional conversation (session id) whose board this task belongs to; defaults to "operator". The board is one shared queue namespaced by posted_by (adr/orchestrator-board.md §2.1).'
@@ -5124,6 +5130,9 @@ components:
           type: string
         spec:
           type: string
+        role:
+          type: string
+          description: 'Leaf role the claiming worker runs the task as (adr/agents-concept.md A6); empty clears it back to the worker''s own role. Unknown or non-leaf roles are refused.'
         status:
           type: string
           enum: [queued, running, done, failed, cancelled]
@@ -5168,6 +5177,9 @@ components:
         delegates:
           type: boolean
           description: may spawn sub-agents (run_agent/run_agents)
+        leaf:
+          type: boolean
+          description: a delegatable leaf role — a board task may name it as its worker role (adr/agents-concept.md A6, Q16)
     Pagination:
       description: Which page a list response carries. Paging is offset based; there is no cursor.
       type: object

@@ -3,6 +3,8 @@ package runtime
 import (
 	"fmt"
 	"log/slog"
+	"slices"
+	"strings"
 
 	"nine/internal/agent"
 	"nine/internal/memory"
@@ -29,6 +31,10 @@ type boardControl struct {
 	store     *memory.Store
 	maxDepth  int // [processes] max_depth, defaulted
 	maxQueued int // [board] max_queued, defaulted
+	// roles validates a task-named role (adr/agents-concept.md A6, Q16/Q18):
+	// it must exist and be a leaf, same as a delegation target. Nil in tests
+	// that never name a role.
+	roles *RoleRegistry
 	// wake delivers a finished task's result to its poster as a restricted
 	// condition turn (daemon.WakeAgent); feed posts to the human feed when the
 	// poster is gone. Nil disables delivery (tests).
@@ -52,14 +58,23 @@ type sessionControl struct{ daemon *Daemon }
 func (s sessionControl) Stop(callerID, id string) error { return s.daemon.StopSession(id) }
 
 // Post admits a task or refuses with the reason (§2.4): depth, queue bound,
-// duplicate. Conversations post at depth 0; a process poster's depth is
-// recorded on its process row (phase 3).
-func (b boardControl) Post(agentID, title, spec string, priority int) (memory.BoardTask, error) {
+// duplicate, and — when the poster names a role — role admission
+// (adr/agents-concept.md A6, Q15–Q18): the role must exist in the registry and
+// be a leaf, exactly as a delegation target; the depth and queue guards are
+// the same ones delegation posts under. Conversations post at depth 0; a
+// process poster's depth is recorded on its process row (phase 3).
+func (b boardControl) Post(agentID, title, spec, role string, priority int) (memory.BoardTask, error) {
 	if b.store == nil {
 		return memory.BoardTask{}, fmt.Errorf("board is not enabled here")
 	}
 	if b.depthLimit() <= 0 {
 		return memory.BoardTask{}, fmt.Errorf("board_post: posting is disabled (max_depth 0)")
+	}
+	role = strings.TrimSpace(role)
+	if role != "" {
+		if err := b.validateTaskRole(role); err != nil {
+			return memory.BoardTask{}, err
+		}
 	}
 	// A duplicate is not a new task: the alike check runs before the queue cap.
 	if dup, ok, err := b.store.BoardTaskFindAlike(agentID, title, spec); err != nil {
@@ -72,14 +87,27 @@ func (b boardControl) Post(agentID, title, spec string, priority int) (memory.Bo
 	} else if n >= b.maxQueued {
 		return memory.BoardTask{}, fmt.Errorf("board_post: %d open tasks is at your max_queued %d; finish or cancel some first", n, b.maxQueued)
 	}
-	t, err := b.store.BoardTaskCreate(title, spec, agentID, memory.BoardSourcePost, priority, 0)
+	t, err := b.store.BoardTaskCreate(title, spec, agentID, memory.BoardSourcePost, role, priority, 0)
 	if err != nil {
 		return memory.BoardTask{}, err
 	}
 	journalTransition(b.store, agentID, EvTaskPosted, map[string]any{
-		"id": t.ID, "title": t.Title, "spec": clipDetail(t.Spec, 2000), "status": t.Status,
+		"id": t.ID, "title": t.Title, "spec": clipDetail(t.Spec, 2000), "status": t.Status, "role": t.Role,
 	})
 	return t, nil
+}
+
+// validateTaskRole enforces the task-named role's admission (Q16/Q18): the
+// name must resolve to a registry role and that role must be a leaf — workers
+// are sub-agent sessions, and non-leaf roles cannot be workers.
+func (b boardControl) validateTaskRole(role string) error {
+	if b.roles == nil {
+		return nil
+	}
+	if !slices.Contains(b.roles.LeafRoles(), role) {
+		return fmt.Errorf("board_post: role %q is unknown or not a leaf role — role_list shows the delegatable leaves", role)
+	}
+	return nil
 }
 
 // List reads the board; reads are open to every session (§2.1).
@@ -170,7 +198,7 @@ func (b boardControl) RecordRun(parentID, title, spec, source string) (memory.Bo
 	if b.store == nil {
 		return memory.BoardTask{}, fmt.Errorf("board is not enabled here")
 	}
-	t, err := b.store.BoardTaskCreate(title, spec, parentID, source, 0, 0)
+	t, err := b.store.BoardTaskCreate(title, spec, parentID, source, "", 0, 0)
 	if err != nil {
 		return memory.BoardTask{}, err
 	}

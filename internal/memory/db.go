@@ -626,6 +626,7 @@ func initSchema(d db) error {
 			status      TEXT NOT NULL DEFAULT 'queued',
 			result      TEXT NOT NULL DEFAULT '',
 			source      TEXT NOT NULL DEFAULT 'post',
+			role        TEXT NOT NULL DEFAULT '',
 			priority    INTEGER NOT NULL DEFAULT 0,
 			depth       INTEGER NOT NULL DEFAULT 0,
 			created_at  TEXT NOT NULL DEFAULT ` + nowExpr + `,

@@ -2182,6 +2182,8 @@ export interface components {
              * @enum {string}
              */
             source: "post" | "run_agent" | "detached";
+            /** @description The leaf role the claiming worker runs the task under (adr/agents-concept.md A6, Q15 — fixed at post time); empty means the worker's own process role (Q17). */
+            role?: string;
             /**
              * @description higher is claimed first; FIFO within a priority
              * @default 0
@@ -2203,6 +2205,8 @@ export interface components {
             spec?: string;
             /** @default 0 */
             priority: number;
+            /** @description Optional leaf role the claiming worker runs the task as; empty leaves the worker's own role. Unknown or non-leaf roles are refused. */
+            role?: string;
             /** @description Optional conversation (session id) whose board this task belongs to; defaults to "operator". The board is one shared queue namespaced by posted_by (adr/orchestrator-board.md §2.1). */
             posted_by?: string;
         };
@@ -2211,6 +2215,8 @@ export interface components {
             priority?: number;
             title?: string;
             spec?: string;
+            /** @description Leaf role the claiming worker runs the task as (adr/agents-concept.md A6); empty clears it back to the worker's own role. Unknown or non-leaf roles are refused. */
+            role?: string;
             /** @enum {string} */
             status?: "queued" | "running" | "done" | "failed" | "cancelled";
             result?: string;
@@ -2235,6 +2241,8 @@ export interface components {
             tools?: string[];
             /** @description may spawn sub-agents (run_agent/run_agents) */
             delegates?: boolean;
+            /** @description a delegatable leaf role — a board task may name it as its worker role (adr/agents-concept.md A6, Q16) */
+            leaf?: boolean;
         };
         /** @description Which page a list response carries. Paging is offset based; there is no cursor. */
         Pagination: {

@@ -268,6 +268,7 @@ func Assemble(c AssemblyConfig) *Assembly {
 
 	daemon.SetSubAgentLister(builder.SubAgents)
 	daemon.SetQueueStatFn(builder.QueueDepth)
+	daemon.ConfigureRoles(builder.Roles())
 	if router != nil {
 		daemon.ConfigureMemory(router)
 		builder.SetAgentMemory(func(sessionID string) *memory.Store {
@@ -320,6 +321,7 @@ func Assemble(c AssemblyConfig) *Assembly {
 			store:     c.Store,
 			maxDepth:  c.MaxDepth,
 			maxQueued: c.Board.MaxQueuedOrDefault(),
+			roles:     builder.Roles(),
 			wake:      daemon.WakeAgent,
 		}
 		if runner != nil {

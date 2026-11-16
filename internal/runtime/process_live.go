@@ -69,6 +69,10 @@ type liveProc struct {
 	// boardTask is the board task claimed for the current trigger, when the
 	// process is a boardworker (adr/orchestrator-board.md §5 P3).
 	boardTask string
+	// boardRole is the task-named role for that claim (adr/agents-concept.md
+	// A6, Q15): the turn runs under it instead of the process's own role;
+	// "" keeps the worker's own process role (Q17).
+	boardRole string
 }
 
 // SetSessions wires the session side of live processes. Without it, live
@@ -413,6 +417,7 @@ func (h *liveHandler) Next(ctx context.Context) (Trigger, error) {
 			lp.piped = t.Piped
 			lp.depth = t.Depth
 			lp.boardTask = t.BoardTask
+			lp.boardRole = ""
 			lp.mu.Unlock()
 			// A boardworker's clock tick claims the oldest queued board task and
 			// runs its spec; with nothing queued the tick is skipped
@@ -434,10 +439,11 @@ func (h *liveHandler) Next(ctx context.Context) (Trigger, error) {
 				t.Piped = true
 				lp.mu.Lock()
 				lp.boardTask = claimed.ID
+				lp.boardRole = claimed.Role
 				lp.piped = true
 				lp.mu.Unlock()
 				journalTransition(h.r.store, lp.row.SessionID, EvTaskClaimed, map[string]any{
-					"id": claimed.ID, "title": claimed.Title, "by": "process " + lp.row.ID,
+					"id": claimed.ID, "title": claimed.Title, "by": "process " + lp.row.ID, "role": claimed.Role,
 				})
 			}
 			// A reflect process reflects on what happened since its last tick,
@@ -483,8 +489,19 @@ func (h *liveHandler) Turn(ctx context.Context, text string) (string, error) {
 	var activity turnActivity
 	lp.mu.Lock()
 	boardTask := lp.boardTask
+	boardRole := lp.boardRole
+	lp.boardRole = ""
 	lp.mu.Unlock()
-	reply, tokens, err := h.r.sessions.ProcessTurn(ctx, row.SessionID, h.r.sessionParams(row), text,
+	// Claim-time role resolution (adr/agents-concept.md A6, Q15/Q17): a task
+	// that names a role runs its turn under that leaf role — validated at post
+	// time — instead of the worker's own process role; an unnamed task keeps
+	// the process role (and unknown names degrade to the default leaf, as any
+	// role resolution does).
+	params := h.r.sessionParams(row)
+	if boardTask != "" && boardRole != "" {
+		params.Role = boardRole
+	}
+	reply, tokens, err := h.r.sessions.ProcessTurn(ctx, row.SessionID, params, text,
 		TurnOptions{Trigger: label, Allow: allow, Depth: depth + 1, OnTool: activity.onTool,
 			Fresh: label == "idle" && row.GoalID != ""})
 	if err == nil {

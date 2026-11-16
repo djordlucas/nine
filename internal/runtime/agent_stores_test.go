@@ -98,7 +98,7 @@ func TestAgentStoreRouterRoutesAndFansOut(t *testing.T) {
 	}
 
 	// Cross-agent state stays in the registry and round-trips through the router.
-	bt, err := r.BoardTaskCreate("title", "spec", "test", "test", 0, 0)
+	bt, err := r.BoardTaskCreate("title", "spec", "test", "test", "", 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

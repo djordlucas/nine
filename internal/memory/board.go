@@ -37,7 +37,11 @@ type BoardTask struct {
 	// Source is how the task entered the board: "post" (board_post),
 	// "run_agent" (a waited delegation), "detached" (run_agent wait:false).
 	// Only non-waited sources deliver their result to the poster on finish.
-	Source     string `json:"source"`
+	Source string `json:"source"`
+	// Role is the leaf role the claiming worker runs the task under
+	// (adr/agents-concept.md A6, Q15): named at post time, immutable at claim.
+	// "" means the claiming worker's own process role (Q17).
+	Role       string `json:"role,omitempty"`
 	Priority   int    `json:"priority"`
 	Depth      int    `json:"depth"`
 	CreatedAt  string `json:"created_at"`
@@ -53,6 +57,7 @@ type BoardTaskPatch struct {
 	Spec     *string
 	Status   *string
 	Result   *string
+	Role     *string
 	Priority *int
 	Claimed  *string // clears the claim when set to ""
 }
@@ -68,11 +73,11 @@ func validBoardStatus(s string) bool {
 func scanBoardTask(s interface{ Scan(...any) error }) (BoardTask, error) {
 	var t BoardTask
 	err := s.Scan(&t.ID, &t.Title, &t.Spec, &t.PostedBy, &t.ClaimedBy, &t.Status,
-		&t.Result, &t.Source, &t.Priority, &t.Depth, &t.CreatedAt, &t.ClaimedAt, &t.FinishedAt, &t.UpdatedAt)
+		&t.Result, &t.Source, &t.Role, &t.Priority, &t.Depth, &t.CreatedAt, &t.ClaimedAt, &t.FinishedAt, &t.UpdatedAt)
 	return t, err
 }
 
-const boardTaskCols = `id, title, spec, posted_by, claimed_by, status, result, source, priority, depth,
+const boardTaskCols = `id, title, spec, posted_by, claimed_by, status, result, source, role, priority, depth,
 	created_at, claimed_at, finished_at, updated_at`
 
 // Board task sources.
@@ -84,7 +89,8 @@ const (
 
 // BoardTaskCreate appends a queued task. The title must be non-empty; depth is
 // the poster's lineage depth, recorded so posting chains can end at max_depth.
-func (s *Store) BoardTaskCreate(title, spec, postedBy, source string, priority, depth int) (BoardTask, error) {
+// role names the leaf role the worker runs under ('' = the worker's own).
+func (s *Store) BoardTaskCreate(title, spec, postedBy, source, role string, priority, depth int) (BoardTask, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return BoardTask{}, fmt.Errorf("board task: title is required")
@@ -94,9 +100,9 @@ func (s *Store) BoardTaskCreate(title, spec, postedBy, source string, priority, 
 		source = BoardSourcePost
 	}
 	_, err := s.db.Exec(
-		`INSERT INTO board_tasks (id, title, spec, posted_by, status, source, priority, depth)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, title, spec, postedBy, BoardQueued, source, priority, depth)
+		`INSERT INTO board_tasks (id, title, spec, posted_by, status, source, role, priority, depth)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, title, spec, postedBy, BoardQueued, source, role, priority, depth)
 	if err != nil {
 		return BoardTask{}, err
 	}
@@ -231,11 +237,12 @@ func (s *Store) BoardTaskUpdate(id string, p BoardTaskPatch) (BoardTask, bool, e
 			spec = COALESCE(?, spec),
 			status = COALESCE(?, status),
 			result = COALESCE(?, result),
+			role = COALESCE(?, role),
 			claimed_by = CASE WHEN ? THEN '' ELSE claimed_by END,
 			priority = COALESCE(?, priority),
 			updated_at = strftime('%Y-%m-%dT%H:%M:%f000Z','now')
 		 WHERE id = ?`,
-		p.Title, p.Spec, p.Status, p.Result, p.Claimed != nil, p.Priority, id)
+		p.Title, p.Spec, p.Status, p.Result, p.Role, p.Claimed != nil, p.Priority, id)
 	if err != nil {
 		return BoardTask{}, false, err
 	}
