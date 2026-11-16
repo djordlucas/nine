@@ -144,6 +144,9 @@ type pluginRegistry interface {
 	Running() []*plugin.Plugin
 	Call(ctx context.Context, p *plugin.Plugin, toolName string, args json.RawMessage) (plugin.CallResult, error)
 	ReloadUserPlugins()
+	// InstallUserPlugin stages, vets and lands a plugin's files into the user
+	// dir, then reloads (adr/agents-concept.md A7) — operator-only.
+	InstallUserPlugin(files map[string][]byte) (string, error)
 	UserStatus() []plugin.UserPluginStatus
 	// DisabledSkipped names default plugins that config switched off. They are
 	// in neither Running() nor UserStatus(), so the roster needs them from here
@@ -745,6 +748,12 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 			d.handlePluginsList(enc)
 		case protocol.TypePluginsReload:
 			d.handlePluginsReload(enc)
+		case protocol.TypePluginInstall:
+			if r, ok := req.(protocol.PluginInstallReq); ok {
+				d.handlePluginInstall(enc, r.Files)
+			} else {
+				enc.Encode(protocol.NewErrorMsg("bad plugin_install request")) //nolint:errcheck
+			}
 		case protocol.TypeSessionsList:
 			d.handleSessionsList(enc)
 		case protocol.TypeProcessList:

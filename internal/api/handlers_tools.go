@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"strings"
 
@@ -204,6 +205,55 @@ func (s *Server) ReloadPlugins(ctx context.Context, request apigen.ReloadPlugins
 
 	return apigen.ReloadPlugins200JSONResponse{
 		Message:     ptr("plugins reloaded"),
+		LoadedCount: ptr(loaded),
+		FailedCount: ptr(failed),
+		Plugins:     &infos,
+	}, nil
+}
+
+// InstallPlugin lands a plugin's files in [plugins].user_dir and reloads, so
+// its tools reach running sessions from their next turn (adr/agents-concept.md
+// A7, Q20/Q32). Operator-only: the route sits behind the same auth as every
+// write, and no model tool maps to it.
+func (s *Server) InstallPlugin(ctx context.Context, request apigen.InstallPluginRequestObject) (apigen.InstallPluginResponseObject, error) {
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		return apigen.InstallPlugin503JSONResponse(
+			errorBody("service_unavailable", err.Error(), nil)), nil
+	}
+	defer cl.Close()
+
+	if request.Body == nil || len(request.Body.Files) == 0 {
+		return apigen.InstallPlugin400JSONResponse(
+			errorBody("invalid_request", "files is required: relpath → base64 content, one <name>.toml manifest", nil)), nil
+	}
+	files := make(map[string][]byte, len(request.Body.Files))
+	for name, b64 := range request.Body.Files {
+		raw, err := base64.StdEncoding.DecodeString(b64)
+		if err != nil {
+			return apigen.InstallPlugin400JSONResponse(
+				errorBody("invalid_request", name+" is not base64: "+err.Error(), nil)), nil
+		}
+		files[name] = raw
+	}
+	plugins, err := cl.InstallPlugin(files)
+	if err != nil {
+		return apigen.InstallPlugin400JSONResponse(
+			errorBody("invalid_request", err.Error(), nil)), nil
+	}
+
+	infos := make([]apigen.PluginInfo, 0, len(plugins))
+	loaded, failed := 0, 0
+	for _, plugin := range plugins {
+		infos = append(infos, toPluginInfo(plugin))
+		if plugin.Loaded {
+			loaded++
+		} else {
+			failed++
+		}
+	}
+	return apigen.InstallPlugin200JSONResponse{
+		Message:     ptr("plugin installed; running sessions get its tools from the next turn"),
 		LoadedCount: ptr(loaded),
 		FailedCount: ptr(failed),
 		Plugins:     &infos,

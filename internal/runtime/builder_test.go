@@ -2,6 +2,9 @@ package runtime_test
 
 import (
 	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -192,5 +195,80 @@ func TestAgentBuilderStampsSessionID(t *testing.T) {
 	}
 	if !strings.Contains(system, "Session ID: "+id) {
 		t.Errorf("system prompt = %q, want it to carry the built session id", system)
+	}
+}
+
+// TestLiveGrantNewPluginToolFromNextTurn is Q32 end to end at the builder: a
+// loop built before a plugin is installed advertises its tools only from the
+// turn after the install — never mid-turn — because Run re-resolves the tool
+// set and the dispatcher's plugin handlers at turn start
+// (adr/agents-concept.md A7).
+func TestLiveGrantNewPluginToolFromNextTurn(t *testing.T) {
+	// Build the testplugin fixture binary.
+	root, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(t.TempDir(), "testplugin")
+	cmd := exec.Command("go", "build", "-o", bin, "./internal/plugin/testplugin")
+	cmd.Dir = root
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build testplugin: %v\n%s", err, out)
+	}
+
+	mgr := plugin.NewManager("")
+	mgr.LoadUserPlugins(t.TempDir()) // empty user dir: nothing running yet
+
+	provider := llm.ProviderFunc(func(_ context.Context, _ llm.Request) (llm.Response, error) {
+		return llm.Response{Text: "ok", StopReason: "end_turn"}, nil
+	})
+	lc := minimalLoopConfig("test")
+	lc.Mgr = mgr
+	f := runtime.NewAgentBuilder(runtime.AgentBuilderConfig{
+		Loop:         lc,
+		InitialQueue: llm.NewQueue(provider, 1),
+		Sup:          runtime.NewSupervisor(8),
+	})
+
+	// The executor role holds every tool, so a plugin tool is advertised once
+	// the roster has it.
+	loop := f.BuildForRole("agent-live", runtime.RoleParams{Role: "executor"})
+	hasEcho := func() bool {
+		for _, tw := range loop.CurrentTools() {
+			if tw.Tool.Name == "echo" {
+				return true
+			}
+		}
+		return false
+	}
+	if hasEcho() {
+		t.Fatal("echo advertised before any plugin is installed")
+	}
+	if _, err := loop.Run(context.Background(), "hi"); err != nil {
+		t.Fatal(err)
+	}
+	if hasEcho() {
+		t.Fatal("echo advertised on the first turn, before the install")
+	}
+
+	// Install the plugin into the running manager (the daemon's install path).
+	binBytes, err := os.ReadFile(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := []byte("name = \"liveplug\"\nentrypoint = \"./liveplug-bin\"\n")
+	if _, err := mgr.InstallUserPlugin(map[string][]byte{
+		"liveplug.toml": manifest, "liveplug-bin": binBytes,
+	}); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	defer mgr.StopAll() //nolint:errcheck
+
+	// The next turn picks the tool up.
+	if _, err := loop.Run(context.Background(), "hi again"); err != nil {
+		t.Fatal(err)
+	}
+	if !hasEcho() {
+		t.Fatal("echo not advertised on the turn after the install (Q32)")
 	}
 }

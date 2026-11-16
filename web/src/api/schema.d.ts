@@ -772,6 +772,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/plugins/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install a plugin into the running daemon
+         * @description Operator-only (adr/agents-concept.md A7, Q20 — never exposed to models). Takes the plugin's files — one <name>.toml manifest plus its entrypoint and any sidecars, keyed by path relative to [plugins].user_dir, values base64 — vets them (disabled list, MCP handshake, tool collision), lands them in the user dir and reloads, so the plugin's tools reach running sessions from their next turn (Q32). Nothing is overwritten: an existing file is a 400 refusal.
+         */
+        post: operations["installPlugin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/processes": {
         parameters: {
             query?: never;
@@ -2260,6 +2280,13 @@ export interface components {
             /** @description builtin, user */
             source?: string;
             tools?: string[];
+        };
+        /** @description The plugin's files: one <name>.toml manifest plus its entrypoint binary and any sidecars, keyed by path relative to the user-plugin dir; values are base64. */
+        PluginInstallRequest: {
+            /** @description relpath → base64 content */
+            files: {
+                [key: string]: string;
+            };
         };
         /** @description The plugin roster after a reload, with how many loaded and how many failed. */
         ReloadPluginsResponse: {
@@ -5388,6 +5415,60 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReloadPluginsResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    installPlugin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The plugin's files, base64-encoded, keyed by relative path. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PluginInstallRequest"];
+            };
+        };
+        responses: {
+            /** @description Installed and loaded; the roster shows it. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReloadPluginsResponse"];
+                };
+            };
+            /** @description refused — unsafe path, missing/duplicate manifest, disabled plugin, existing file, not an MCP plugin, or a tool collision */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             401: components["responses"]["Unauthorized"];

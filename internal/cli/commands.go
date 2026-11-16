@@ -198,14 +198,23 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 		// built-in plugin child, and cmd/nine/main.go dispatches it before the
 		// config or this CLI is built, so a plugin process holds no StartDaemon
 		// (spec/contracts/plugin.md R-PLUG.13).
-		if len(args) < 2 || args[1] != "validate" {
-			return fmt.Errorf("usage: nine plugin validate [path]")
+		if len(args) < 2 {
+			return fmt.Errorf("usage: nine plugin validate [path] | install <dir|file|url>")
 		}
-		p := ""
-		if len(args) > 2 {
-			p = args[2]
+		switch args[1] {
+		case "validate":
+			p := ""
+			if len(args) > 2 {
+				p = args[2]
+			}
+			return c.PluginValidate(cfg, p)
+		case "install":
+			if len(args) < 3 {
+				return fmt.Errorf("usage: nine plugin install <dir|file|url>")
+			}
+			return c.PluginInstall(cfg, args[2])
 		}
-		return c.PluginValidate(cfg, p)
+		return fmt.Errorf("usage: nine plugin validate [path] | install <dir|file|url>")
 	case "status":
 		return c.Status(cfg)
 	case "context":

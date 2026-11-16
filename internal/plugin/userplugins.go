@@ -1,8 +1,14 @@
 package plugin
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 )
 
 // LoadUserPlugins discovers and starts operator plugins from dir and remembers
@@ -108,6 +114,18 @@ func (m *Manager) loadUserPlugins(dir string) {
 		}
 		p.User = true
 
+		// Health gate (adr/agents-concept.md A7): the plugin answered the
+		// spawn handshake, but its tools are exposed only once it answers on
+		// its live connection too — a plugin that died between the two is
+		// stopped here and recorded skipped, never half-exposed.
+		if err := m.HealthCheck(context.Background(), p); err != nil {
+			st.Err = err.Error()
+			m.Stop(p) //nolint:errcheck
+			slog.Error("skipping user plugin: health check failed", "name", d.Name, "err", err)
+			status = append(status, st)
+			continue
+		}
+
 		st.Loaded = true
 		st.Tools = toolNames(desc.Tools)
 		status = append(status, st)
@@ -166,4 +184,145 @@ func toolNames(tools []ToolDefinition) []string {
 		names[i] = t.Name
 	}
 	return names
+}
+
+// InstallUserPlugin installs a user plugin into a running Nine
+// (adr/agents-concept.md A7, Q19/Q20): files (manifest + entrypoint + any
+// sidecars, keyed by relative path) are staged beside the user dir, vetted —
+// disabled-list, MCP handshake probe, tool collision against every running
+// plugin — then moved into place and the existing reload runs, so the plugin's
+// tools reach sessions from their next turn (Q32). Nothing is overwritten: an
+// existing file at a target path is a refusal. It returns the plugin name.
+//
+// files values are raw bytes; the wire carries them base64 (see
+// protocol.NewPluginInstallMsg). The caller is the operator surface — the
+// daemon never exposes this to a model tool.
+func (m *Manager) InstallUserPlugin(files map[string][]byte) (string, error) {
+	m.mu.Lock()
+	dir := m.userDir
+	m.mu.Unlock()
+	if dir == "" {
+		return "", fmt.Errorf("plugin install: no user plugin directory is configured ([plugins].user_dir)")
+	}
+	if len(files) == 0 {
+		return "", fmt.Errorf("plugin install: no files")
+	}
+
+	// Exactly one top-level manifest; every path relative and inside the dir.
+	var manifestName string
+	names := make([]string, 0, len(files))
+	for name := range files {
+		clean := filepath.Clean(name)
+		if name == "" || filepath.IsAbs(name) || clean == "." || clean == ".." ||
+			strings.HasPrefix(clean, ".."+string(filepath.Separator)) || strings.HasPrefix(clean, "/") {
+			return "", fmt.Errorf("plugin install: refusing unsafe path %q", name)
+		}
+		if filepath.Ext(clean) == ".toml" && !strings.Contains(clean, string(filepath.Separator)) {
+			if manifestName != "" {
+				return "", fmt.Errorf("plugin install: one manifest per install, got %q and %q", manifestName, clean)
+			}
+			manifestName = clean
+		}
+		names = append(names, clean)
+	}
+	if manifestName == "" {
+		return "", fmt.Errorf("plugin install: a <name>.toml manifest is required")
+	}
+	name := strings.TrimSuffix(manifestName, ".toml")
+	if name == "" || strings.HasPrefix(name, ".") {
+		return "", fmt.Errorf("plugin install: bad manifest name %q", manifestName)
+	}
+
+	m.mu.Lock()
+	disabled := m.disabled[name]
+	m.mu.Unlock()
+	if disabled {
+		return "", fmt.Errorf("plugin install: %q is disabled by config ([plugins] disabled)", name)
+	}
+
+	// An existing file at any target path means the plugin (or something else)
+	// is already installed under it — refuse rather than overwrite.
+	for _, n := range names {
+		if _, err := os.Stat(filepath.Join(dir, n)); err == nil {
+			return "", fmt.Errorf("plugin install: %s already exists in the user dir — remove or reload it first", n)
+		}
+	}
+
+	// Stage, vet, then move into place: a rejected install leaves no trace.
+	var b [4]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("plugin install: %w", err)
+	}
+	staging := filepath.Join(dir, ".install-"+hex.EncodeToString(b[:]))
+	if err := os.MkdirAll(staging, 0o700); err != nil {
+		return "", err
+	}
+	cleanup := func() { os.RemoveAll(staging) } //nolint:errcheck
+	defer cleanup()
+
+	manifestPath := filepath.Join(staging, manifestName)
+	if err := os.WriteFile(manifestPath, files[manifestName], 0o600); err != nil {
+		return "", err
+	}
+	mf, err := LoadManifest(manifestPath)
+	if err != nil {
+		return "", fmt.Errorf("plugin install: %w", err)
+	}
+	for _, n := range names {
+		if n == manifestName {
+			continue
+		}
+		dst := filepath.Join(staging, n)
+		if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+			return "", err
+		}
+		mode := os.FileMode(0o600)
+		if filepath.Clean(mf.Entrypoint) == n || filepath.Clean("./"+mf.Entrypoint) == n {
+			mode = 0o755 // the entrypoint must be executable
+		}
+		if err := os.WriteFile(dst, files[n], mode); err != nil {
+			return "", err
+		}
+	}
+
+	// Vet like the boot load does: the binary must pass the MCP handshake
+	// (the probe) and advertise no tool a running plugin already owns.
+	bin := mf.Entrypoint
+	if !filepath.IsAbs(bin) {
+		bin = filepath.Join(staging, bin)
+	}
+	desc, err := ProbeTransport(bin, mf.Transport, m.envFor(name)...)
+	if err != nil {
+		return "", fmt.Errorf("plugin install: %q is not a valid MCP plugin: %w", name, err)
+	}
+	if owner, tool := m.firstToolCollision(desc.Tools); tool != "" {
+		return "", fmt.Errorf("plugin install: tool %q already provided by %q", tool, owner)
+	}
+
+	// Move into place, then reload so the plugin starts and its tools are
+	// granted to running sessions from their next turn (Q32).
+	for _, n := range names {
+		if err := os.Rename(filepath.Join(staging, n), filepath.Join(dir, n)); err != nil {
+			return "", fmt.Errorf("plugin install: move %s: %w", n, err)
+		}
+	}
+	os.Remove(staging) //nolint:errcheck // now empty
+	m.loadUserPlugins(dir)
+
+	st, ok := func() (UserPluginStatus, bool) {
+		for _, s := range m.UserStatus() {
+			if s.Name == name || s.Manifest == filepath.Join(dir, manifestName) {
+				return s, true
+			}
+		}
+		return UserPluginStatus{}, false
+	}()
+	if !ok {
+		return name, fmt.Errorf("plugin install: %q was written but did not load (see `nine plugins`)", name)
+	}
+	if !st.Loaded {
+		return name, fmt.Errorf("plugin install: %q did not load: %s", name, st.Err)
+	}
+	slog.Info("user plugin installed", "name", name, "tools", len(st.Tools))
+	return name, nil
 }

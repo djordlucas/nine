@@ -78,6 +78,7 @@ const (
 	TypeDatabase          MsgType = "database"
 	TypePluginsList       MsgType = "plugins_list"
 	TypePluginsReload     MsgType = "plugins_reload"
+	TypePluginInstall     MsgType = "plugin_install"
 	TypeSessionsList      MsgType = "sessions_list"
 	TypeProcessList       MsgType = "process_list"
 	TypeBoardList         MsgType = "board_list"
@@ -231,6 +232,7 @@ var ClientMsgTypes = []MsgType{
 	TypeDatabase,
 	TypePluginsList,
 	TypePluginsReload,
+	TypePluginInstall,
 	TypeSessionsList,
 	TypeProcessList,
 	TypeBoardList,
@@ -282,6 +284,10 @@ const (
 //	"session_stop"     — terminate a session; AgentID set, or Text = "--all"
 //	"plugins_list"     — request the plugin roster; no extra fields
 //	"plugins_reload"   — re-scan the user-plugin dir and reload; no extra fields
+//	"plugin_install"   — install a user plugin into a running Nine (operator only,
+//	                     never a model tool; adr/agents-concept.md A7); Text = JSON
+//	                     {"files": {relpath: base64, ...}} — one <name>.toml manifest
+//	                     plus its entrypoint and sidecars
 //	"tools_list"       — request the sandboxed-tool roster; no extra fields
 //	"tools_reload"     — re-scan the sandboxed-tool dir and reload; no extra fields
 //	"grants_list"      — capability requests and grants; no extra fields
@@ -331,6 +337,7 @@ const (
 //	"workflow_fail"    — fail result; Text = "failed"
 //	"plugins_list"     — plugin roster; Text carries JSON-encoded PluginStatus array
 //	"plugins_reload"   — reload result; Text carries the JSON-encoded PluginStatus array
+//	"plugin_install"   — install result; Text carries the JSON-encoded PluginStatus array
 //	"tools_list"       — sandboxed-tool roster; Text carries JSON-encoded SandboxedToolStatus array
 //	"tools_reload"     — reload result; Text carries the JSON-encoded SandboxedToolStatus array
 //	"grants_list"      — capability state; Text carries JSON-encoded CapabilityState
@@ -1073,6 +1080,15 @@ func NewBoardUpdateMsg(id string, patch map[string]any) Msg {
 	return Msg{Type: TypeBoardUpdate, ID: id, Text: string(raw)}
 }
 func NewBoardDeleteMsg(id string) Msg { return Msg{Type: TypeBoardDelete, ID: id} }
+
+// NewPluginInstallMsg builds a plugin_install from the plugin's files, each
+// keyed by its path relative to the user-plugin dir (one <name>.toml manifest
+// plus its entrypoint and any sidecars), values base64-encoded
+// (adr/agents-concept.md A7 — operator-only, never a model tool).
+func NewPluginInstallMsg(files map[string]string) Msg {
+	raw, _ := json.Marshal(map[string]any{"files": files})
+	return Msg{Type: TypePluginInstall, Text: string(raw)}
+}
 
 // Agent verbs (adr/agents-concept.md A5): stored agent definitions, composed and
 // run through the daemon. Create/update carry their payload as JSON in Text;

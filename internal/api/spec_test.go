@@ -134,8 +134,8 @@ func TestOpenAPI_MatchesRegisteredRoutes(t *testing.T) {
 		}
 	}
 
-	if len(declared) != 87 { // 72 + 5 board CRUD + 1 roles list + 6 agent CRUD/run + 3 agent bundle verbs
-		t.Errorf("Expected 87 declared operations, got %d — update this count deliberately", len(declared))
+	if len(declared) != 88 { // 72 + 5 board CRUD + 1 roles list + 6 agent CRUD/run + 3 agent bundle verbs + 1 plugin install
+		t.Errorf("Expected 88 declared operations, got %d — update this count deliberately", len(declared))
 	}
 }
 

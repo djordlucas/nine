@@ -89,6 +89,7 @@ Msg {
 | `plugin_call` | `tool_name`, `tool_input` | invoke a tool directly, **bypassing the LLM** |
 | `plugins_list` | — | request the plugin roster (built-in + user, with skip reasons) |
 | `plugins_reload` | — | re-scan `[plugins].user_dir` and reload user plugins live (built-ins untouched) |
+| `plugin_install` | `text` = JSON `{"files": {relpath: base64, …}}` (**required**) | install a user plugin into the running daemon — operator-only, never an agent tool (adr/agents-concept.md A7, Q20): one `<name>.toml` manifest plus entrypoint/sidecars, vetted (disabled list, MCP handshake, tool collision) and landed in `[plugins].user_dir`, then reloaded so its tools reach running sessions from the next turn (Q32); existing files are never overwritten |
 | `tools_list` | — | stub: answers an empty roster (the sandboxed tier is removed, adr/modular_nine.md 9.10) |
 | `tools_reload` | — | stub: answers an error naming the removal |
 | `tool_delete` | `tool_name` (**required**) | delete a tool Nine wrote, and its standing run; a shipped, operator-installed or unknown tool is refused with the reason |
@@ -139,7 +140,7 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `done` | `agent_id` | turn complete |
 | `error` | `text` | failure |
 | `status` / `list_*` | `text` = JSON payload | the requested read (StatusInfo / array) |
-| `plugins_list` / `plugins_reload` | `text` = JSON `[]PluginStatus` | the plugin roster (each: `name`, `source`, `loaded`, `tools`, `error`) |
+| `plugins_list` / `plugins_reload` / `plugin_install` | `text` = JSON `[]PluginStatus` | the plugin roster (each: `name`, `source`, `loaded`, `tools`, `error`) |
 | `tools_list` / `tools_reload` | `text` = JSON `[]` / an error | stubs; see R-PROTO.4a |
 | `grants_list` | `text` = JSON `CapabilityState` | grants in force, each with its `source`, plus every capability request and its status (plugin.md) |
 | `grants_decide` | `text` = a sentence | what the decision did, including whether it took effect without a restart |
@@ -244,7 +245,10 @@ PluginStatus { name string, source string, loaded bool, tools []string, error st
 
 `plugins_reload` re-scans `[plugins].user_dir` (stopping and restarting only user
 plugins) before returning the resulting roster; both are operator reads/actions,
-never agent tools.
+never agent tools. `plugin_install` answers the same roster shape after landing and
+loading the submitted files, or `error` with the refusal reason (unsafe path, missing
+or duplicate manifest, disabled name, existing file, failed MCP handshake, tool
+collision).
 
 ### R-PROTO.4a — sandboxed tool roster — removed
 

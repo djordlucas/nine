@@ -102,6 +102,10 @@ type BoardUpdateReq struct {
 }
 type BoardDeleteReq struct{ ID string }
 
+// PluginInstallReq carries a plugin's files (relpath → base64) in the
+// operator-only plugin_install verb (adr/agents-concept.md A7).
+type PluginInstallReq struct{ Files map[string]string }
+
 // Agent verbs (adr/agents-concept.md A5): stored agent definitions, composed and
 // run through the daemon. Create and update carry their payload as JSON in Text;
 // get, update, delete and run carry the agent id in ID.
@@ -266,6 +270,7 @@ func (BoardGetReq) Type() MsgType          { return TypeBoardGet }
 func (BoardCreateReq) Type() MsgType       { return TypeBoardCreate }
 func (BoardUpdateReq) Type() MsgType       { return TypeBoardUpdate }
 func (BoardDeleteReq) Type() MsgType       { return TypeBoardDelete }
+func (PluginInstallReq) Type() MsgType     { return TypePluginInstall }
 func (AgentListReq) Type() MsgType         { return TypeAgentList }
 func (AgentGetReq) Type() MsgType          { return TypeAgentGet }
 func (AgentCreateReq) Type() MsgType       { return TypeAgentCreate }
@@ -368,6 +373,12 @@ func DecodeRequest(m Msg) (Request, error) {
 		return BoardUpdateReq{ID: m.ID, Patch: patch}, nil
 	case TypeBoardDelete:
 		return BoardDeleteReq{ID: m.ID}, nil
+	case TypePluginInstall:
+		var pl struct {
+			Files map[string]string `json:"files"`
+		}
+		_ = json.Unmarshal([]byte(m.Text), &pl)
+		return PluginInstallReq{Files: pl.Files}, nil
 	case TypeAgentList:
 		return AgentListReq{}, nil
 	case TypeAgentGet:

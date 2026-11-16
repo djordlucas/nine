@@ -526,6 +526,11 @@ func (l *Loop) resolveQualifiedName(name string) string {
 	return name
 }
 
+// CurrentTools returns the tool set the loop currently advertises — after any
+// ToolsForTurn refresh — so surfaces that enumerate tools (tool_list,
+// tool_search) track what Run is actually offering.
+func (l *Loop) CurrentTools() []ninectx.ToolWithVector { return l.cfg.Tools }
+
 // refreshTools applies ToolsForTurn at the start of a turn.
 func (l *Loop) refreshTools() {
 	if l.cfg.ToolsForTurn == nil {

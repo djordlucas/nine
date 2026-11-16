@@ -664,7 +664,14 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 
 	// tool_search ranks — and tool_list enumerates — the finalized advertised set
 	// (vectors populated above), so register them now that `tools` is complete.
-	getTools := func() []ninectx.ToolWithVector { return tools }
+	// Once the loop exists they read its live set, so a per-turn refresh (below)
+	// is what these surfaces see (adr/agents-concept.md A7, Q32).
+	getTools := func() []ninectx.ToolWithVector {
+		if loop != nil {
+			return loop.CurrentTools()
+		}
+		return tools
+	}
 	var promotions *agent.Promotions
 	if deferred {
 		// A sub-agent's loop is built here too, with its own set: it starts from
@@ -791,6 +798,17 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		Priority:       llm.PriorityConversation,
 		MaxTokens:      lc.maxReplyTokens(),
 		Tools:          tools,
+		// Live grants (adr/agents-concept.md A7, Q32): at the start of every
+		// turn the advertised set and the dispatcher's plugin handlers are
+		// re-resolved from the live plugin roster, so a plugin installed while
+		// this loop runs is offered — and callable, within the role's
+		// allowlist — from the next turn. Never mid-turn.
+		ToolsForTurn: func() []ninectx.ToolWithVector {
+			d.RefreshPlugins(lc.Mgr, func(n string) bool {
+				return role.AllTools || slices.Contains(role.Tools, n)
+			})
+			return assembleTools()
+		},
 		Embedder:       lc.Embedder,
 		SelfModelFn:    selfModelFn,
 		EnrichmentFn:   enrichmentFn,

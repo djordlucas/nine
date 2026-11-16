@@ -1,9 +1,14 @@
 package cli
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -225,4 +230,140 @@ func firstClaimed(tools []string, claimed map[string]string, owner string) strin
 		claimed[t] = owner
 	}
 	return ""
+}
+
+// PluginInstall installs a user plugin into the running daemon
+// (adr/agents-concept.md A7, Q19/Q20): the source is a directory of plugin
+// files, a single manifest/binary, or a URL (a .tar.gz is extracted; anything
+// else is fetched as one file). The files go to the daemon, which vets them —
+// disabled list, MCP handshake, tool collision — lands them in
+// [plugins].user_dir and reloads, so the tools reach running sessions from the
+// next turn (Q32).
+func (c *CLI) PluginInstall(cfg *config.Config, src string) error {
+	files, err := pluginInstallFiles(src)
+	if err != nil {
+		return err
+	}
+	cl, done, err := c.dialDaemon(cfg)
+	if err != nil || cl == nil {
+		return err
+	}
+	defer done()
+
+	plugins, err := cl.InstallPlugin(files)
+	if err != nil {
+		return fmt.Errorf("install plugin: %w", err)
+	}
+	fmt.Fprintln(c.Out, "Installed plugin; running sessions get its tools from the next turn.")
+	printPlugins(c.Out, plugins)
+	return nil
+}
+
+// pluginInstallFiles gathers the files to upload from a local path or a URL.
+// Keys are paths relative to the plugin root (the manifest sits at the top).
+func pluginInstallFiles(src string) (map[string][]byte, error) {
+	if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
+		return fetchPluginFiles(src)
+	}
+	info, err := os.Stat(src)
+	if err != nil {
+		return nil, fmt.Errorf("plugin install: %w", err)
+	}
+	out := map[string][]byte{}
+	if !info.IsDir() {
+		raw, err := os.ReadFile(src)
+		if err != nil {
+			return nil, err
+		}
+		out[filepath.Base(src)] = raw
+		return out, nil
+	}
+	// Walk with ReadDir (never follows symlinks: a symlinked entry is skipped,
+	// not traversed) so the uploaded set is exactly what the operator sees.
+	var walk func(dir, rel string) error
+	walk = func(dir, rel string) error {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return err
+		}
+		for _, e := range entries {
+			p := filepath.Join(dir, e.Name())
+			r := e.Name()
+			if rel != "" {
+				r = rel + "/" + e.Name()
+			}
+			if e.IsDir() {
+				if err := walk(p, r); err != nil {
+					return err
+				}
+				continue
+			}
+			if !e.Type().IsRegular() {
+				continue // symlink, socket, …: not uploaded
+			}
+			raw, err := os.ReadFile(p)
+			if err != nil {
+				return err
+			}
+			out[r] = raw
+		}
+		return nil
+	}
+	if err := walk(src, ""); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// fetchPluginFiles downloads src: a .tar.gz/.tgz is extracted entry by entry;
+// anything else lands as a single file named after the URL's last path segment.
+func fetchPluginFiles(url string) (map[string][]byte, error) {
+	resp, err := http.Get(url) //nolint:gosec // the operator named the URL
+	if err != nil {
+		return nil, fmt.Errorf("plugin install: fetch %s: %w", url, err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("plugin install: fetch %s: %s", url, resp.Status)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	lower := strings.ToLower(url)
+	if strings.HasSuffix(lower, ".tar.gz") || strings.HasSuffix(lower, ".tgz") {
+		gz, err := gzip.NewReader(bytes.NewReader(body))
+		if err != nil {
+			return nil, fmt.Errorf("plugin install: %s is not gzip: %w", url, err)
+		}
+		defer gz.Close() //nolint:errcheck
+		out := map[string][]byte{}
+		tr := tar.NewReader(gz)
+		for {
+			hdr, err := tr.Next()
+			if err == io.EOF {
+				return out, nil
+			}
+			if err != nil {
+				return nil, fmt.Errorf("plugin install: read tar: %w", err)
+			}
+			if hdr.Typeflag != tar.TypeReg {
+				continue
+			}
+			name := filepath.Clean(hdr.Name)
+			if strings.HasPrefix(name, "..") || filepath.IsAbs(name) {
+				return nil, fmt.Errorf("plugin install: refusing unsafe archive path %q", hdr.Name)
+			}
+			raw, err := io.ReadAll(tr)
+			if err != nil {
+				return nil, err
+			}
+			out[name] = raw
+		}
+	}
+	name := path.Base(strings.Split(url, "?")[0])
+	if name == "/" || name == "." || name == "" {
+		name = "plugin.toml"
+	}
+	return map[string][]byte{name: body}, nil
 }

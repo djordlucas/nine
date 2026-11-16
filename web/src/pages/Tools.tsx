@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useRef, useState } from 'preact/hooks';
 import { useLocation, useRoute } from 'preact-iso';
 import { api, errorMessage, get, type Schemas } from '../api/client';
 import { duration } from '../format';
@@ -378,6 +378,7 @@ function PluginsView() {
   const [reloads, setReloads] = useState(0);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const { data, error } = useLive(
     async () => (await get(api.GET('/plugins', { params: { query: { limit: 1000 } } }), 'plugins')).data ?? [],
     [],
@@ -391,6 +392,25 @@ function PluginsView() {
     setOutcome(done ? 'Plugins reloaded.' : errorMessage(e, 'Could not reload the plugins.'));
     setReloads((n) => n + 1);
   };
+  // Install a plugin into the running daemon (adr/agents-concept.md A7): the
+  // picked files — one <name>.toml manifest plus its entrypoint — go up base64,
+  // land in the user dir, and load on the spot.
+  const install = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setBusy(true);
+    setOutcome(null);
+    const body: Record<string, string> = {};
+    for (const f of Array.from(files)) {
+      const buf = new Uint8Array(await f.arrayBuffer());
+      let bin = '';
+      for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+      body[f.name] = btoa(bin);
+    }
+    const { data: done, error: e } = await api.POST('/plugins/install', { body: { files: body } });
+    setBusy(false);
+    setOutcome(done ? `Installed: ${done.message ?? 'ok'}` : errorMessage(e, 'Could not install the plugin.'));
+    setReloads((n) => n + 1);
+  };
   return (
     <section class={`card ${detail.detail}`} aria-label="Plugins">
       <header class={detail.head}>
@@ -399,6 +419,19 @@ function PluginsView() {
           <span class="muted">Programs that serve tools. Reloading re-reads the plugin directories.</span>
         </div>
         <div class={detail.actions}>
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            hidden
+            onChange={(e) => {
+              void install((e.target as HTMLInputElement).files);
+              (e.target as HTMLInputElement).value = '';
+            }}
+          />
+          <button type="button" class={`${detail.action} ${detail.secondary}`} disabled={busy} onClick={() => fileInput.current?.click()} title="Install a plugin from its files (one .toml manifest plus its entrypoint)">
+            Install
+          </button>
           <button type="button" class={`${detail.action} ${detail.iconAction}`} disabled={busy} onClick={() => void reload()} aria-label="Reload" title="Reload the plugins">
             <Icon name="reload" size={16} />
           </button>

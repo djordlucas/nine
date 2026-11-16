@@ -2138,6 +2138,43 @@ paths:
       security:
       - bearerAuth: []
       - cookieAuth: []
+  /plugins/install:
+    post:
+      operationId: installPlugin
+      summary: Install a plugin into the running daemon
+      description: 'Operator-only (adr/agents-concept.md A7, Q20 — never exposed to models). Takes the plugin''s files — one <name>.toml manifest plus its entrypoint and any sidecars, keyed by path relative to [plugins].user_dir, values base64 — vets them (disabled list, MCP handshake, tool collision), lands them in the user dir and reloads, so the plugin''s tools reach running sessions from their next turn (Q32). Nothing is overwritten: an existing file is a 400 refusal.'
+      tags:
+      - plugins
+      requestBody:
+        required: true
+        description: 'The plugin''s files, base64-encoded, keyed by relative path.'
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PluginInstallRequest'
+      responses:
+        '200':
+          description: Installed and loaded; the roster shows it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReloadPluginsResponse'
+        '400':
+          description: refused — unsafe path, missing/duplicate manifest, disabled plugin, existing file, not an MCP plugin, or a tool collision
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
   /processes:
     get:
       operationId: listProcesses
@@ -5217,6 +5254,17 @@ components:
           type: array
           items:
             type: string
+    PluginInstallRequest:
+      description: 'The plugin''s files: one <name>.toml manifest plus its entrypoint binary and any sidecars, keyed by path relative to the user-plugin dir; values are base64.'
+      type: object
+      required: [files]
+      properties:
+        files:
+          type: object
+          additionalProperties:
+            type: string
+            description: base64-encoded file content
+          description: relpath → base64 content
     ReloadPluginsResponse:
       description: The plugin roster after a reload, with how many loaded and how many failed.
       type: object

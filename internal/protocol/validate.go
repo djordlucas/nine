@@ -86,6 +86,9 @@ var clientMsgSpecs = map[MsgType]clientMsgSpec{
 
 	TypePluginCall:       {required: []fieldRule{needToolName}},
 	TypeHumanInputAnswer: {required: []fieldRule{needRequestID}},
+	// The files payload is required: an install with no manifest is refused by
+	// the daemon, but an empty text is a malformed request, not an install.
+	TypePluginInstall: {required: []fieldRule{needText}},
 
 	// Both are required: a decision with no id, or an id with no verb, must not
 	// resolve to a default. Widening a capability ceiling is not a place for one.

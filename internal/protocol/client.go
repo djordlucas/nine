@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bufio"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -854,6 +855,33 @@ func (c *Client) ListTools() ([]ToolSummary, error) {
 // each with its tools, plus any user plugins that were skipped with a reason.
 func (c *Client) ListPlugins() ([]PluginStatus, error) {
 	return c.pluginStatusQuery(TypePluginsList)
+}
+
+// InstallPlugin installs a user plugin into the running daemon
+// (adr/agents-concept.md A7): files are keyed by path relative to
+// [plugins].user_dir — one <name>.toml manifest plus its entrypoint and any
+// sidecars — and are vetted (disabled list, MCP handshake, tool collision)
+// before landing, then the reload starts them. Operator-only.
+func (c *Client) InstallPlugin(files map[string][]byte) ([]PluginStatus, error) {
+	b64 := make(map[string]string, len(files))
+	for name, raw := range files {
+		b64[name] = base64.StdEncoding.EncodeToString(raw)
+	}
+	if err := c.send(NewPluginInstallMsg(b64)); err != nil {
+		return nil, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return nil, err
+	}
+	if err := expectReply(reply, TypePluginInstall); err != nil {
+		return nil, err
+	}
+	var plugins []PluginStatus
+	if err := json.Unmarshal([]byte(reply.Text), &plugins); err != nil {
+		return nil, fmt.Errorf("decode plugins: %w", err)
+	}
+	return plugins, nil
 }
 
 // ReloadPlugins asks the daemon to re-scan the user-plugin directory and reload

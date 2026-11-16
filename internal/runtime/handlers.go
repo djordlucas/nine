@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -854,6 +855,33 @@ func (d *Daemon) handlePluginsReload(enc *json.Encoder) {
 	d.mgr.ReloadUserPlugins()
 	data, _ := json.Marshal(d.pluginStatuses())
 	enc.Encode(protocol.NewTextMsg(protocol.TypePluginsReload, string(data))) //nolint:errcheck
+}
+
+// handlePluginInstall installs a user plugin into a running daemon
+// (adr/agents-concept.md A7, Q19/Q20): files arrive base64 in the wire payload,
+// land in [plugins].user_dir after the disabled/collision vetting, and the
+// existing reload starts them — so their tools reach running sessions from the
+// next turn (Q32). Operator-only: no model tool maps here.
+func (d *Daemon) handlePluginInstall(enc *json.Encoder, filesB64 map[string]string) {
+	if d.mgr == nil {
+		enc.Encode(protocol.NewErrorMsg("plugin manager not available")) //nolint:errcheck
+		return
+	}
+	files := make(map[string][]byte, len(filesB64))
+	for name, b64 := range filesB64 {
+		raw, err := base64.StdEncoding.DecodeString(b64)
+		if err != nil {
+			enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("plugin_install: %s is not base64: %v", name, err))) //nolint:errcheck
+			return
+		}
+		files[name] = raw
+	}
+	if _, err := d.mgr.InstallUserPlugin(files); err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	data, _ := json.Marshal(d.pluginStatuses())
+	enc.Encode(protocol.NewTextMsg(protocol.TypePluginInstall, string(data))) //nolint:errcheck
 }
 
 // pluginStatuses assembles the plugin roster from the manager: every running
