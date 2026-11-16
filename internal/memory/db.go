@@ -137,6 +137,9 @@ func (d db) BeginWrite() (*sql.Tx, error) { return d.w.Begin() }
 // Store wraps the database and exposes typed methods for every domain.
 type Store struct {
 	db        db
+	// path is the file the store was opened from ("" for in-memory); used by
+	// the backup/export copy paths (adr/agents-concept.md Q33).
+	path      string
 	workflows *workflow.Service
 	// queueMu serializes read-modify-write operations on the queued-messages
 	// array. Each QueueMessage/MarkConsumed/MarkAllConsumed call reads the
@@ -195,6 +198,7 @@ func Open(path string) (*Store, error) {
 
 	return &Store{
 		db:        d,
+		path:      path,
 		workflows: workflow.NewService(&sqlWorkflowRepo{db: d}),
 	}, nil
 }
@@ -652,6 +656,17 @@ func initSchema(d db) error {
 			created_at TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			PRIMARY KEY (agent_id, version)
 		)`,
+		// session_index is the registry-side map from a session (conversation)
+		// to the agent whose database holds its rows (adr/agents-concept.md
+		// A4/Q31): the roster and fan-out reads resolve through it.
+		`CREATE TABLE IF NOT EXISTS session_index (
+			id         TEXT PRIMARY KEY,
+			agent_id   TEXT NOT NULL DEFAULT '',
+			status     TEXT NOT NULL DEFAULT 'active',
+			created_at TEXT NOT NULL DEFAULT ` + nowExpr + `,
+			updated_at TEXT NOT NULL DEFAULT ` + nowExpr + `
+		)`,
+		`CREATE INDEX IF NOT EXISTS session_index_agent ON session_index (agent_id)`,
 	}
 	for _, s := range stmts {
 		if _, err := d.Exec(s); err != nil {

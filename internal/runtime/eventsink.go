@@ -30,6 +30,30 @@ type sessionEventStore interface {
 // configured (e.g. sub-agents and tests that don't assert on the journal).
 type NoopSink struct{}
 
+// routingEventStore is a sessionEventStore that routes each batch to the store
+// of the agent the events belong to (per-agent layout, adr/agents-concept.md
+// A4/Q31: the journal lives in each agent's own db).
+type routingEventStore struct {
+	resolve func(sessionID string) (sessionEventStore, error)
+}
+
+func (s routingEventStore) SessionEventsAppend(evs []memory.SessionEvent) error {
+	byStore := map[sessionEventStore][]memory.SessionEvent{}
+	for _, ev := range evs {
+		st, err := s.resolve(ev.AgentID)
+		if err != nil {
+			return err
+		}
+		byStore[st] = append(byStore[st], ev)
+	}
+	for st, batch := range byStore {
+		if err := st.SessionEventsAppend(batch); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (NoopSink) Append(memory.SessionEvent) {}
 func (NoopSink) Close() error               { return nil }
 

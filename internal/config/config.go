@@ -841,6 +841,11 @@ type MemoryConfig struct {
 	// when embeddings are disabled. A *bool so an unset value can default to on
 	// while an explicit false still disables it.
 	SurfaceMemories *bool `toml:"surface_memories"`
+
+	// MaxOpenAgents caps how many per-agent databases are open at once
+	// (adr/agents-concept.md Q35): idle ones are LRU-closed beyond the cap.
+	// 0 uses the default (32).
+	MaxOpenAgents int `toml:"max_open_agents"`
 }
 
 // SurfaceMemoriesEnabled reports whether stored memories are indexed and

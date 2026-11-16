@@ -47,8 +47,12 @@ type Assembly struct {
 type AssemblyConfig struct {
 	SocketPath string
 	Store      *memory.Store
-	Plugins    *plugin.Manager
-	Embedder   embed.Embedder
+	// AgentStores, when set, is the per-agent layout (adr/agents-concept.md A4):
+	// Store is its registry db, and AgentStores provides the per-agent dbs. The
+	// daemon's query backend becomes a router over them.
+	AgentStores *memory.AgentStores
+	Plugins     *plugin.Manager
+	Embedder    embed.Embedder
 
 	// Loop / builder behavior.
 	ContextBudget int
@@ -225,8 +229,27 @@ func Assemble(c AssemblyConfig) *Assembly {
 	}, ckpt)
 
 	// Durable session-event journal (adr/event-log.md): every new session worker
-	// writes its full execution trajectory through this async batched sink.
-	sink := NewSQLEventSink(c.Store, daemon.NotifySubscribers)
+	// writes its full execution trajectory through this async batched sink. With
+	// the per-agent layout the sink routes each event to its agent's own db (Q31).
+	var journalStore sessionEventStore = c.Store
+	var router *agentStoreRouter
+	if c.AgentStores != nil {
+		router = newAgentStoreRouter(c.AgentStores)
+		journalStore = routingEventStore{resolve: func(sessionID string) (sessionEventStore, error) {
+			return router.storeFor(sessionID)
+		}}
+		// Fresh agent dbs get the skills seed and the journal wake hook.
+		c.AgentStores.SetOnOpen(func(st *memory.Store) {
+			if err := SeedSkills(st, c.Embedder); err != nil {
+				slog.Warn("seed skills into agent store", "err", err)
+			}
+			st.OnJournal(daemon.JournalWritten)
+		})
+		if err := memory.MigrateToAgentStores(c.AgentStores); err != nil {
+			slog.Warn("migrate to per-agent stores failed", "err", err)
+		}
+	}
+	sink := NewSQLEventSink(journalStore, daemon.NotifySubscribers)
 	// Every journal write, the sink's and the store's own state changes, wakes
 	// the daemon's journal followers.
 	c.Store.OnJournal(daemon.JournalWritten)
@@ -245,7 +268,19 @@ func Assemble(c AssemblyConfig) *Assembly {
 
 	daemon.SetSubAgentLister(builder.SubAgents)
 	daemon.SetQueueStatFn(builder.QueueDepth)
-	daemon.ConfigureMemory(c.Store)
+	if router != nil {
+		daemon.ConfigureMemory(router)
+		builder.SetAgentMemory(func(sessionID string) *memory.Store {
+			st, err := c.AgentStores.StoreForSession(sessionID)
+			if err != nil {
+				slog.Warn("resolve agent store", "session", sessionID, "err", err)
+				return c.Store
+			}
+			return st
+		})
+	} else {
+		daemon.ConfigureMemory(c.Store)
+	}
 	daemon.ConfigurePlugins(c.Plugins)
 	core := builder.CoreDispatcher()
 	daemon.ConfigureCoreTools(core)

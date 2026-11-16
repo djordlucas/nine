@@ -458,6 +458,20 @@ var migrations = []migrationStep{
 		}
 		return addColumnIfMissing(q, "conversations", "agent_id", "TEXT NOT NULL DEFAULT ''")
 	}},
+	{name: "session_index", fn: func(q sqlExec) error {
+		_, err := q.Exec(`CREATE TABLE IF NOT EXISTS session_index (
+			id         TEXT PRIMARY KEY,
+			agent_id   TEXT NOT NULL DEFAULT '',
+			status     TEXT NOT NULL DEFAULT 'active',
+			created_at TEXT NOT NULL DEFAULT ` + nowExpr + `,
+			updated_at TEXT NOT NULL DEFAULT ` + nowExpr + `
+		)`)
+		if err != nil {
+			return err
+		}
+		_, err = q.Exec(`CREATE INDEX IF NOT EXISTS session_index_agent ON session_index (agent_id)`)
+		return err
+	}},
 }
 
 // convertGoalPlans turns each session plan with a pursue routine into the

@@ -32,7 +32,21 @@ const (
 // pointing outside the workspace would either break on extract or, worse,
 // recreate a pointer into the host filesystem somewhere it did not exist
 // before. The count is returned so the caller can say what was left out.
+// DBFile is one database file in an archive: Name is its path inside the tar
+// ("nine.db" for the registry, "agents/<id>.db" for a per-agent db), Path the
+// file on disk (adr/agents-concept.md A4).
+type DBFile struct {
+	Name string
+	Path string
+}
+
 func WriteArchive(dst, dbSrc, workRoot string) (files int, skipped int, err error) {
+	return WriteArchiveDBs(dst, []DBFile{{Name: DBEntry, Path: dbSrc}}, workRoot)
+}
+
+// WriteArchiveDBs is WriteArchive with several database files — the per-agent
+// layout: the registry db plus every agents/<id>.db.
+func WriteArchiveDBs(dst string, dbs []DBFile, workRoot string) (files int, skipped int, err error) {
 	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return 0, 0, err
@@ -42,8 +56,10 @@ func WriteArchive(dst, dbSrc, workRoot string) (files int, skipped int, err erro
 	gz := gzip.NewWriter(out)
 	tw := tar.NewWriter(gz)
 
-	if err := addFile(tw, dbSrc, DBEntry); err != nil {
-		return 0, 0, fmt.Errorf("add %s: %w", DBEntry, err)
+	for _, db := range dbs {
+		if err := addFile(tw, db.Path, db.Name); err != nil {
+			return 0, 0, fmt.Errorf("add %s: %w", db.Name, err)
+		}
 	}
 
 	if workRoot != "" {

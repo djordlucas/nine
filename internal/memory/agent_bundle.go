@@ -21,6 +21,8 @@ const (
 	AgentBundleVersion = 1
 	// AgentManifestFile is the manifest's name inside the tar.
 	AgentManifestFile = "agent.json"
+	// AgentDBFile is the agent's database inside the tar (phase 3+, Q6).
+	AgentDBFile = "agent.db"
 )
 
 // AgentManifest is the agent.json inside an export bundle.
@@ -37,8 +39,14 @@ type AgentManifest struct {
 	ExportedAt      string          `json:"exported_at"`
 }
 
-// AgentBundleTar renders an agent row as a bundle tar (manifest only).
-func AgentBundleTar(a Agent) ([]byte, error) {
+// AgentBundleTar renders an agent row as a bundle tar: the agent.json manifest,
+// plus agent.db (the agent's database file) when db is non-empty (Q6 — phase 3
+// onward carries the data; earlier phases exported the manifest only).
+func AgentBundleTar(a Agent) ([]byte, error) { return AgentBundleTarWithDB(a, nil) }
+
+// AgentBundleTarWithDB is AgentBundleTar with the agent's database bytes
+// included as agent.db.
+func AgentBundleTarWithDB(a Agent, db []byte) ([]byte, error) {
 	manifest := AgentManifest{
 		Format:        AgentBundleFormat,
 		Version:       AgentBundleVersion,
@@ -68,6 +76,16 @@ func AgentBundleTar(a Agent) ([]byte, error) {
 	if _, err := tw.Write(raw); err != nil {
 		return nil, err
 	}
+	if len(db) > 0 {
+		if err := tw.WriteHeader(&tar.Header{
+			Name: AgentDBFile, Mode: 0o600, Size: int64(len(db)), ModTime: time.Now(),
+		}); err != nil {
+			return nil, err
+		}
+		if _, err := tw.Write(db); err != nil {
+			return nil, err
+		}
+	}
 	if err := tw.Close(); err != nil {
 		return nil, err
 	}
@@ -88,7 +106,7 @@ func ParseAgentBundleTar(data []byte) (AgentManifest, error) {
 			return AgentManifest{}, fmt.Errorf("agent bundle: %w", err)
 		}
 		if hdr.Name != AgentManifestFile {
-			continue
+			continue // agent.db and anything else is data for the importer, not the manifest
 		}
 		raw, err := io.ReadAll(tr)
 		if err != nil {

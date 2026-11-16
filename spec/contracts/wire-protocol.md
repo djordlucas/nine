@@ -100,7 +100,7 @@ Msg {
 | `grants_decide` | `request_id`, `text` | settle a capability request (`approve`/`deny`) or revoke a grant (`revoke`). Both fields are required: a decision with no id, or an id with no verb, **MUST NOT** resolve to a default |
 | `list_skills` | — | the skill catalog, without bodies |
 | `skill_get` | `text` = skill name (**required**) | one skill with its body |
-| `backup` | (`text` = `workspace`) | write a snapshot of the store, with the workspace when asked, to a temporary file |
+| `backup` | (`text` = `workspace`) | write a snapshot of every database — the registry plus each agent's own db (`nine.db`, `agents/<id>.db`) — with the workspace when asked, to a temporary file |
 | `workspace` | `text` = `list` \| `read` \| `write` \| `delete` (**required**), `tool_input` = JSON `WorkspaceArgs { path, content, if_version }` | a workspace file operation as the operator. Paths resolve inside the workspace root, links included; `.nine/` is refused. A replaced or deleted file **MUST** go to the trash. With `if_version`, a write or delete of a file at another version **MUST** fail. |
 | `database` | `text` = `tables` \| `rows` \| `insert` \| `update` \| `delete` \| `run` (**required**), `tool_input` = JSON `DatabaseArgs { table, offset, limit, rowid, values, sql, args }` | a database operation as the operator, under the database policy; never the store. Writes are journaled as `sql_write` under `operator`. |
 | `goal_create` | `text` = description (**required**), (`id` = parent goal) | create a goal as the operator; a top-level goal gets a pursue session (R-PROTO.13) |
@@ -118,7 +118,7 @@ Msg {
 | `agent_update` | `id` = agent id, `text` = JSON patch (both **required**) | change fields of one agent (`name`/`role`/`skills`/`self_model`/`reflection`); bumps the version and records it |
 | `agent_delete` | `id` = agent id (**required**) | delete one agent and its version history |
 | `agent_run` | `id` = agent id (**required**), (`interactive` flag) | start a conversation from the agent — its role names the conversation's role; the reply carries the conversation id; a staged (imported, unapproved) agent is refused |
-| `agent_export` | `id` = agent id (**required**) | export the agent as a bundle tar (agent.json manifest; phase 3 adds agent.db) |
+| `agent_export` | `id` = agent id (**required**) | export the agent as a bundle tar: an `agent.json` manifest plus the agent's own database as `agent.db` |
 | `agent_import` | `text` = JSON `AgentImportRequest { tar_base64 }` (**required**) | import a bundle; the agent is created **staged** and journaled, runnable only after `agent_approve` |
 | `agent_approve` | `id` = agent id (**required**) | approve a staged agent (staged → active), journaled |
 

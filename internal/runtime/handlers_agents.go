@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"nine/internal/memory"
 	"nine/internal/protocol"
@@ -209,7 +210,17 @@ func (d *Daemon) handleAgentExport(enc *json.Encoder, id string) {
 		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("agent %q not found", id))) //nolint:errcheck
 		return
 	}
-	tarBytes, err := memory.AgentBundleTar(a)
+	// Phase 3+ bundles carry the agent's db too (Q6): checkpoint its WAL and
+	// read the file, so the bundle is self-contained.
+	var dbBytes []byte
+	if mgrs, ok := d.store.(interface{ AgentStores() *memory.AgentStores }); ok {
+		if st, err := mgrs.AgentStores().AgentStore(id); err == nil {
+			if err := st.CheckpointWAL(); err == nil {
+				dbBytes, _ = os.ReadFile(mgrs.AgentStores().AgentDBPath(id))
+			}
+		}
+	}
+	tarBytes, err := memory.AgentBundleTarWithDB(a, dbBytes)
 	if err != nil {
 		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
 		return

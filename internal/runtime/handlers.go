@@ -183,8 +183,19 @@ func (d *Daemon) newConversationFromAgent(interactive bool, role, agentID string
 	d.mu.Unlock()
 	// Persist the row now: the session list reads the durable store, so without
 	// this a fresh conversation is invisible until its first checkpoint — and
-	// gone entirely after a daemon restart.
+	// gone entirely after a daemon restart. The session index is written first:
+	// with the per-agent layout (adr/agents-concept.md A4) it decides which
+	// agent db the conversation row lands in.
 	if d.store != nil {
+		if si, ok := d.store.(interface{ SessionIndexSet(id, agentID string) error }); ok {
+			mapAgent := agentID
+			if mapAgent == "" {
+				mapAgent = memory.DefaultAgentID
+			}
+			if err := si.SessionIndexSet(id, mapAgent); err != nil {
+				slog.Warn("persist session index failed", "id", id, "err", err)
+			}
+		}
 		if cc, ok := d.store.(conversationCreator); ok {
 			if err := cc.ConversationCreate(id); err != nil {
 				slog.Warn("persist new conversation failed", "id", id, "err", err)

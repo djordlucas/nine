@@ -45,19 +45,39 @@ func (d *Daemon) writeBackup(withWorkspace bool, now time.Time) (res protocol.Ba
 		}
 	}()
 	stamp := now.UTC().Format("20060102-150405")
-	db, err := d.store.BackupTo(filepath.Join(dir, backup.DBEntry))
-	if err != nil {
-		return res, err
-	}
-	res = protocol.BackupResult{Path: db, Name: "nine-" + stamp + ".db"}
-	if withWorkspace {
+	// Per-agent layout (adr/agents-concept.md A4): the snapshot is a tar of the
+	// registry db plus every agents/<id>.db, each VACUUM INTO its own file so
+	// each is consistent by construction (Q33).
+	if bd, ok := d.store.(interface{ BackupDBs(dir string) ([]backup.DBFile, error) }); ok {
+		dbs, err := bd.BackupDBs(dir)
+		if err != nil {
+			return res, err
+		}
+		workRoot := ""
+		if withWorkspace {
+			workRoot = d.workspaceRoot
+		}
 		archive := filepath.Join(dir, "nine-"+stamp+".tar.gz")
-		files, skipped, err := backup.WriteArchive(archive, db, d.workspaceRoot)
+		files, skipped, err := backup.WriteArchiveDBs(archive, dbs, workRoot)
 		if err != nil {
 			return res, fmt.Errorf("archive: %w", err)
 		}
-		os.Remove(db) //nolint:errcheck // it is inside the archive now
 		res = protocol.BackupResult{Path: archive, Name: filepath.Base(archive), Files: files, Skipped: skipped}
+	} else {
+		db, err := d.store.BackupTo(filepath.Join(dir, backup.DBEntry))
+		if err != nil {
+			return res, err
+		}
+		res = protocol.BackupResult{Path: db, Name: "nine-" + stamp + ".db"}
+		if withWorkspace {
+			archive := filepath.Join(dir, "nine-"+stamp+".tar.gz")
+			files, skipped, err := backup.WriteArchive(archive, db, d.workspaceRoot)
+			if err != nil {
+				return res, fmt.Errorf("archive: %w", err)
+			}
+			os.Remove(db) //nolint:errcheck // it is inside the archive now
+			res = protocol.BackupResult{Path: archive, Name: filepath.Base(archive), Files: files, Skipped: skipped}
+		}
 	}
 	info, err := os.Stat(res.Path)
 	if err != nil {

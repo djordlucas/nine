@@ -216,7 +216,11 @@ Nine's persistent state — *not* a plugin subprocess. Opens a file
 (`[memory].path`, default `~/.nine/nine.db`), creating it if absent, fails fast if
 it is unusable, and is the sole owner of the database handles (the "single
 gateway" invariant — a one-connection writer pool plus a read-only pool, since
-SQLite serializes writes). Agent-facing K/V (`memory_get/set/delete/list`), file storage
+SQLite serializes writes). Since the agents concept (adr/agents-concept.md A4),
+`[memory].path` is the **registry** db (processes, board, agent definitions, skills
+catalog, session index); each agent's own state lives in its own db at
+`agents/<agentID>.db` beside it, opened lazily and LRU-capped
+(`[memory] max_open_agents`, default 32). Agent-facing K/V (`memory_get/set/delete/list`), file storage
 (`file_search_text`, `list_files`), and (core-intercepted) vector ops
 (`memory_embed`/`memory_query`) are exposed as tools.
 Operational tables (`conversations`, `goals`, `notifications`,
@@ -472,13 +476,15 @@ have. The dispatcher's output cap is the one place still counting 4 bytes to the
 token (2048 tokens ⇒ 8192 characters), because it bounds a result rather than a
 request.
 
-**Volume layout (`/data/`)** — Holds `nine.db` (the SQLite database, plus its
-`-wal`/`-shm` sidecars) and `workspace/` (the file tools' workspace). All primary
+**Volume layout (`/data/`)** — Holds `nine.db` (the registry SQLite database, plus
+its `-wal`/`-shm` sidecars), `agents/` (one `<agentID>.db` per stored agent, plus
+sidecars), and `workspace/` (the file tools' workspace). All primary
 state is therefore on one volume. The `nine` binary (with built-in skills
 embedded) and plugins are immutable image content under `/opt/nine`.
 
-**`path` (`[memory].path` / `NINE_DB_PATH`)** — The SQLite database file the
-daemon opens, creating it and its parent directory if absent. Defaults to
+**`path` (`[memory].path` / `NINE_DB_PATH`)** — The registry SQLite database file
+the daemon opens, creating it and its parent directory if absent. Per-agent
+databases live in the `agents/` directory beside it. Defaults to
 `/data/nine.db` when the container's `/data` volume is present, else
 `~/.nine/nine.db`. The daemon fails fast if the file cannot be opened.
 

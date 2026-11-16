@@ -175,6 +175,10 @@ type AgentBuilder struct {
 	subAgentMu      sync.RWMutex
 	activeSubAgents []protocol.SubAgentInfo
 
+	// agentMemory resolves a session id to the per-agent store its loop should
+	// use (adr/agents-concept.md A4); nil = the single shared LoopConfig.Memory.
+	agentMemory func(sessionID string) *memory.Store
+
 	// toolVecs caches per-tool description embeddings, keyed by the embedded text
 	// (name and description), so the context builder can rank tools by relevance
 	// to the query. Each distinct description is embedded at most once across all
@@ -225,6 +229,14 @@ func NewAgentBuilder(cfg AgentBuilderConfig) *AgentBuilder {
 	f := &AgentBuilder{cfg: cfg, roles: NewRoleRegistry(rs, cfg.DefaultLeafRole), calibration: ninectx.NewCalibration()}
 	f.queuePtr.Store(cfg.InitialQueue)
 	return f
+}
+
+// SetAgentMemory installs the per-session store resolver used in the per-agent
+// layout (adr/agents-concept.md A4): build() swaps LoopConfig.Memory for the
+// store of the agent the session runs from, so the loop's kv, files, vectors,
+// skills and journal are the agent's own.
+func (f *AgentBuilder) SetAgentMemory(fn func(sessionID string) *memory.Store) {
+	f.agentMemory = fn
 }
 
 // Roles exposes the builder's role registry (read-side: Resolve/LeafRoles).
@@ -436,6 +448,13 @@ func appendInterceptedTools(tools []ninectx.ToolWithVector, names []string, role
 // false but may still be gated through its parent's owner.
 func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gateCtx, agentDef *memory.Agent) *agent.Loop {
 	lc := f.cfg.Loop
+	// Per-agent layout (A4): the loop's memory is the store of the agent this
+	// session runs from, so kv/files/vectors/skills/journal are agent-local.
+	if f.agentMemory != nil {
+		if st := f.agentMemory(agentID); st != nil {
+			lc.Memory = st
+		}
+	}
 	d := agent.New()
 
 	// The loop is created after registerCoreTools, so the onConsumed callback

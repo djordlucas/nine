@@ -177,8 +177,12 @@ type Daemon struct {
 	grants *CapabilityService
 	core   *agent.Dispatcher // core-intercepted tools, for plugin_call (see ConfigureCoreTools)
 	store  queryBackend
-	hitl   *HITL
-	sink   EventSink // durable session-event journal for new workers (nil = disabled)
+	// registry is the cross-agent store when store is an agentStoreRouter
+	// (adr/agents-concept.md A4): journaling and anything needing the concrete
+	// *memory.Store go here.
+	registry *memory.Store
+	hitl     *HITL
+	sink     EventSink // durable session-event journal for new workers (nil = disabled)
 
 	maxRunning int // see SetMaxRunning
 	// workspaceRoot is [workspace].root (ConfigureWorkspace).
@@ -758,8 +762,13 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 }
 
 // ConfigureMemory stores the memory backend used by goal, reflection, and workflow handlers.
+// When the backend is an agentStoreRouter (per-agent layout, adr/agents-concept.md
+// A4), the registry store is kept aside for the concrete-*memory.Store call sites.
 func (d *Daemon) ConfigureMemory(store queryBackend) {
 	d.store = store
+	if r, ok := store.(interface{ RegistryStore() *memory.Store }); ok {
+		d.registry = r.RegistryStore()
+	}
 }
 
 // ConfigureHITL wires the human-in-the-loop coordinator used to route
