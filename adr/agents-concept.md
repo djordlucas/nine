@@ -41,7 +41,7 @@ a rename because self-containment requires them to travel with the agent.
 An agent's persistent state lives in its own SQLite file rather than in the
 daemon's single database (`[memory].path`, default `~/.nine/nine.db`): the same
 engine (`modernc.org/sqlite`) and the same `Store` machinery (`internal/memory`),
-one file per agent instead of one per daemon. Also a behavior change under
+one file per agent instead of one per daemon. Idle agent Stores are LRU-closed (default 32 concurrently open) with a configurable max-agents-per-daemon limit (Q35), so per-agent files do not exhaust file descriptors. Also a behavior change under
 `A2` — the reason is `A3`: the store must travel with the agent for export and
 import to be whole.
 
@@ -155,7 +155,7 @@ optionally workspace files, reusing the `internal/backup` tar mechanics; an
 import path that optionally copies the role/skills as generalized daemon-wide
 copies.
 
-**Questions:** `Q4`–`Q7` — resolved in [Resolved questions](#resolved-questions).
+**Questions:** `Q4`–`Q7`, `Q30` — resolved in [Resolved questions](#resolved-questions).
 
 ### A4 — Each agent is stored in a dedicated SQLite database
 
@@ -175,7 +175,7 @@ for cross-agent state; route each `AgentWorker` at its agent's store; a
 migration that splits an existing `nine.db`; `internal/backup` and restore
 adjusted to walk per-agent databases.
 
-**Questions:** `Q8`–`Q11` — resolved in [Resolved questions](#resolved-questions).
+**Questions:** `Q8`–`Q11`, `Q28`–`Q29`, `Q31` — resolved in [Resolved questions](#resolved-questions).
 
 ### A5 — An API builds and runs agents in a running Nine
 
@@ -192,7 +192,7 @@ bundle, stored per `A4`), CRUD on that definition, and `POST
 web UI as clients of the same endpoints. Rides the cross-cutting mechanics:
 openapi.yaml + apigen + a wire message + daemon handler + spec contract.
 
-**Questions:** `Q12`–`Q14` — resolved in [Resolved questions](#resolved-questions).
+**Questions:** `Q12`–`Q14`, `Q27` — resolved in [Resolved questions](#resolved-questions).
 
 ### A6 — Board workers take a configurable role
 
@@ -213,7 +213,7 @@ picker sets a new conversation's role only.
 argument, claim path — resolved against the registry with leaf-only
 enforcement; a web UI control to set or override a task's/worker's role.
 
-**Questions:** `Q15`–`Q18` — resolved in [Resolved questions](#resolved-questions).
+**Questions:** `Q15`–`Q18`, `Q28` — resolved in [Resolved questions](#resolved-questions).
 
 ### A7 — Plugins installable into a running Nine
 
@@ -239,7 +239,7 @@ running loops' tool definitions on reload or resolve definitions per turn — an
 a disabled-list and name-collision check at install (`firstToolCollision`,
 `internal/plugin/userplugins.go:134`).
 
-**Questions:** `Q19`–`Q22` — resolved in [Resolved questions](#resolved-questions).
+**Questions:** `Q19`–`Q22`, `Q32` — resolved in [Resolved questions](#resolved-questions).
 
 ### A8 — The web UI gains a Builder UI
 
@@ -259,7 +259,7 @@ skills, data and agents, plus agent import/export controls (`A3`); the write
 endpoints they need (roles, skills, agents — `A5`); regenerated
 `schema.d.ts`/`apigen` from `openapi.yaml`.
 
-**Questions:** `Q23`–`Q26` — resolved in [Resolved questions](#resolved-questions).
+**Questions:** `Q23`–`Q26`, `Q34` — resolved in [Resolved questions](#resolved-questions).
 
 ## Sequencing
 
@@ -272,7 +272,7 @@ The wire/openapi/spec mechanics are established once in phase 1 and reused after
 |-------|---------|------|-----------|
 | 1 | `A1` naming map, `A5` API skeleton | Glossary/naming decisions; `POST /agents` CRUD + `POST /agents/{id}/run` with definitions stored in the existing single store; CLI `nine agent …` | — |
 | 2 | `A3` self-containment | Per-agent role/skills/self-model/reflection resolution in the builder; definition export/import (manifest only) | Phase 1 |
-| 3 | `A4` per-agent storage | One SQLite file per agent, daemon registry db, migration, backup/restore; the export bundle gains the agent's db | Phase 2 |
+| 3 | `A4` per-agent storage | One SQLite file per agent, registry db reduced to `processes`+`board_tasks` (Q31), migration, backup/restore, LRU open-store cap + max-agents limit (Q35); the export bundle gains the agent's db | Phase 2 |
 | 4 | `A6` board worker roles | `board_tasks.role` column, `board_post` argument, claim-time resolution, web UI control | Phase 1 (parallel with 2–3) |
 | 5 | `A7` runtime plugin install | Install endpoint → user dir → existing reload, health gate, live tool grants | Phase 1 (parallel with 2–4) |
 | 6 | `A8` Builder UI | `/builder` page: CRUD for roles/skills/data/agents plus import/export controls; write endpoints for roles and skills | Phases 1–5 |
@@ -290,7 +290,7 @@ endpoints they add.
 
 ## Resolved questions
 
-The 26 questions raised in the Analysis, answered. "Basis" cites the evidence
+The 35 questions raised in the Analysis, answered. `Q27`–`Q30` record decisions from the completeness review (agent-API auth, worker-session storage, migration mapping, import trust); `Q31`–`Q35` were confirmed in the same review's follow-up on 2026-11-16 (table split, cross-db writes, live grants, backup snapshot, deletion, resource caps). No proposed defaults remain. "Basis" cites the evidence
 behind each decision; anything not directly evidenced is a judgment call and
 can be reopened.
 
@@ -300,12 +300,12 @@ can be reopened.
 | Q2 | Rename the `conversations` table? | No — rename is user-facing only (API, UI, CLI, glossary); internal names follow later | a table rename costs a migration for no behavior gain |
 | Q3 | Which names are user-facing? | API paths, web UI labels, CLI flags, `docs/glossary.md` terms; Go symbols and table names are internal | `docs/` avoids code references; `adr/` expects them |
 | Q4 | Imported agent: fresh db or adopt? | Fresh agent, fresh id and db; adopting an existing one is an explicit flag, never implicit | an import must never clobber live state |
-| Q5 | What stays daemon-wide? | `processes`, `board_tasks`, `notifications`, `user_notifications`, `human_requests`, `capability_requests`, `capability_grants`, `session_events`, `event_cursors`, `interactive_sessions`, `jobs`, `workflows`; per-agent: `conversations`, `related_sessions`, `kv`, `files`, `workspace_files`, `vectors`, agent-local skills, `tools`/`tool_state`, agent-owned `goals` | coordination tables are cross-agent by nature; `session_events` is already keyed by `agent_id` (`internal/memory/db.go:498`) |
+| Q5 | What stays daemon-wide? | Amended by Q31: only `processes` and `board_tasks` stay in the registry db. Per-agent: `conversations`, `related_sessions`, `kv`, `files`, `workspace_files`, `vectors`, agent-local skills, `tools`/`tool_state`, `goals`, `notifications`, `user_notifications`, `human_requests`, `capability_requests`, `capability_grants`, `interactive_sessions`, agent-owned `jobs`, `workflows`, `session_events`, `event_cursors` | Amended 2026-11-16: all of these already carry `agent_id`/`conversation_id`/`owner_id` (`internal/memory/db.go:352-540`); only board/process coordination is inherently cross-agent |
 | Q6 | Export bundle format? | tar reusing `internal/backup` mechanics: `agent.json` manifest (name, role, skills, self-model, reflection config) + `agent.db` + optional `workspace/` | `GET /backup` already tars db + workspace |
 | Q7 | Who may export an agent? | Operator-authenticated API/UI only; never a model tool | memory may be private; same posture as `[plugins] disabled` (`docs/plugins.md`) |
-| Q8 | Table split | = Q5 | — |
+| Q8 | Table split | = Q5 as amended by Q31 | — |
 | Q9 | Per-agent db layout | `agents/<id>.db` next to `[memory].path` (`~/.nine/agents/<id>.db`; `/data/agents/<id>.db` in the container); the `[memory].path` file becomes the registry db, name unchanged | volume layout (`docs/glossary.md` `/data/`) |
-| Q10 | Event journal location | stays in the registry db, keyed by `agent_id`; the web inbox reads it daemon-wide | `session_events.agent_id` exists (`db.go:500`) |
+| Q10 | Event journal location | Reversed by Q31: `session_events`/`event_cursors` live in the agent's own db; the web inbox and journal fan out reads across all agent dbs | `session_events.agent_id` exists (`db.go:498`); original daemon-wide-inbox rationale superseded 2026-11-16 |
 | Q11 | Migration: auto or command? | automatic at boot, extending the in-code migration runner; per-conversation data moves into per-agent dbs, old file kept as `nine.db.pre-agents.bak`; restore reverses; a CLI verify command checks the split | schema migrations already run automatically on `Store` open (`internal/memory`) |
 | Q12 | What is "run an agent"? | a conversation created from the agent's bundle (`RoleParams` from its role); no new session kind | conversations are the interactive unit; the UI already calls them agents |
 | Q13 | Where do definitions live? | the registry db; runtime state in the agent's own db (`A4`) | board/processes/UI list agents daemon-wide |
@@ -322,6 +322,15 @@ can be reopened.
 | Q24 | Builder operator-only? | yes, auth-gated like install/export | `auth_session.go`; consistent with Q7/Q20 |
 | Q25 | Builder in nav where? | new top-level "Builder" section (`web/src/sections.ts`, routes `/builder/…`), not under Tools — it covers agents, not just tools | sections list at `web/src/sections.ts:44-49` |
 | Q26 | Import from upload or URL? | both, through the same operator-only import endpoint | Q7/Q20 posture; URL fetch lands in the workspace first |
+| Q27 | Who may create/run agents via the agent API (A5)? | Any authenticated API client (bearer token or browser cookie); models are excluded implicitly because they never hold the token. This single tier is what "operator" means in Q7/Q20/Q24 | Single-tier `authMiddleware` (`internal/api/middleware.go:19`); no separate operator role exists in code |
+| Q28 | Which agent's db holds a board worker / `run_agent` sub-agent session after A4? | The spawning agent's db; when the spawner is the daemon itself (boardworker claim, root-model `run_agent`) the session lands in a default agent's db | Board workers turn on the process handler (`internal/runtime/liveprog.go:250`); keeps worker state out of unrelated user agents |
+| Q29 | What does a legacy conversation become in the Q11 migration? | One agent per conversation, adopting that conversation's role as its role bundle; ids stay stable; the old file is kept as `nine.db.pre-agents.bak` per Q11 | Preserves per-conversation roles set via `NewConversationWithRole` |
+| Q30 | Trust level for imported agent bundles (A3)? | Staging + review gate: the import lands staged, the role/skills diff is shown for approval before the agent is runnable, and an audit entry is written; the endpoints stay authenticated-API-only per Q7 | Imported role/skills compose the system prompt — a prompt-injection vector |
+| Q31 | Cross-db write atomicity after the A4 split? | Move every agent-keyed table — including `session_events`/`event_cursors` — into the agent's db, so the registry db holds only `processes` + `board_tasks`. The remaining cross-db writes (board/process coordination) are ordered registry-first with boot reconciliation; two SQLite files still cannot share a transaction. Cost: daemon-wide inbox/journal/notification reads fan out across all agent dbs, amplified by the Q35 LRU cap. Amends Q5/Q8, reverses Q10 | Confirmed 2026-11-16; the schemas already key these tables by `agent_id`/`conversation_id`/`owner_id` (`internal/memory/db.go:352-540`), and only `processes`/`board_tasks` are cross-agent by nature |
+| Q32 | A7 live-grant mechanism for running sessions? | After a plugin reload, running loops resolve tool definitions per turn, so new tools are granted from the next turn (amends Q22's "until rebuild"); still no mid-turn swap | Confirmed 2026-11-16; definitions are composed per loop build today (`internal/runtime/builder.go:563,654`) |
+| Q33 | Backup consistency across per-agent dbs? | Checkpoint the WAL on every agent db and the registry db before tarring, then resume; each db is individually consistent, the tar is not cross-db transactional | Confirmed 2026-11-16; `internal/backup` tars files, a WAL checkpoint gives per-db consistency |
+| Q34 | Agent deletion semantics (A8 "remove")? | Refuse deletion while the agent has running sessions or referenced board tasks; otherwise stop its sessions and archive the db as `agents/<id>.db.deleted-<ts>` rather than hard delete | Confirmed 2026-11-16; CRUD without delete semantics is undefined today |
+| Q35 | Resource caps for per-agent stores? | LRU-close idle agent Stores — default 32 concurrently open — plus a configurable max-agents-per-daemon limit, both configured under `[memory]`; per-db single-writer is already enforced | Confirmed 2026-11-16; one pool + one file per agent (`internal/memory/db.go:138,156`); the cap also bounds Q31's read fan-out |
 
 ## Consistency check
 
@@ -333,7 +342,7 @@ the check: `NewRoleRegistry` is defined at `internal/runtime/roles.go:101` (used
 at `builder.go:225`), not in the builder; skills are seeded by
 `internal/runtime/skills_seed.go` `SeedSkills` (`docs_seed.go` seeds docs/spec,
 not skills); the `board_tasks` schema (`internal/memory/db.go:615`) indeed has
-no role column; the "52 Go files" count covers `internal/` only.
+no role column; the "52 Go files" count covers `internal/` only. Review additions `Q27`–`Q35` (2026-11-16) verified against `main` at `0adffba0`: `authMiddleware` is single-tier (`internal/api/middleware.go:19`), `boardWorkerProgram` turns on the process handler (`internal/runtime/liveprog.go:250`), `board_tasks` has no role column (`internal/memory/db.go:615`); Q31's amended table split checked against the schemas at `internal/memory/db.go:352-540` (agent/conversation/owner keys present on all moved tables).
 
 ## Tests & evals
 
@@ -353,7 +362,7 @@ the feature branch.
 |-------|--------------------|-----|-------|
 | 1 (`A1`, `A5`) | API handler tests in `internal/api` (`handlers_*_test.go`, `spec_test.go` mux patterns); wire tests in `internal/protocol`; CLI tests (`internal/cli/commands_test.go`); a grep guard that old names still alias | `web/e2e` smoke over renamed routes | Track R: replay a recorded session after the rename (journal intact); Track L: compose an agent via `POST /agents`, run it, assert the conversation row and journal side effects |
 | 2 (`A3`) | Builder tests (`internal/runtime/builder_test.go`, `builder_roles_test.go`): per-agent role/skills/self-model resolution; `internal/selfmodel` per-agent source; export/import round-trip modeled on the `internal/backup` tests | — | Track L: imported agent behaves like the exported one (side-effect + trajectory parity); role-gating case: a leaf-role agent never advertises a forbidden tool |
-| 3 (`A4`) | `internal/memory` migration test from a fixture `nine.db`; per-agent `Store` open/close and single-writer concurrency; backup/restore round-trip across per-agent databases (`internal/backup/backup_test.go`, `internal/cli/restore_test.go`) | — | Track R: replay a pre-migration recorded conversation post-migration (checkpoint and history intact) |
+| 3 (`A4`) | `internal/memory` migration test from a fixture `nine.db`; per-agent `Store` open/close and single-writer concurrency; backup/restore round-trip across per-agent databases (`internal/backup/backup_test.go`, `internal/cli/restore_test.go`); Q35 cap test: LRU eviction holds open Stores ≤ 32 under load; Q31 fan-out test: with more agents than the cap, the daemon-wide inbox/journal aggregates `session_events` from every agent db completely (inbox handler test in `internal/api`) | — | Track R: replay a pre-migration recorded conversation post-migration (checkpoint and history intact); Track L: with 100 agents, inbox load returns the complete journal while holding ≤ 32 Stores open |
 | 4 (`A6`) | `internal/memory/board_test.go` for the new role column; board handler tests (`internal/agent/register_board.go`, `internal/api/handlers_board_test.go`): role validated, leaf-only, depth/admission checks; claim-time resolution in `internal/runtime/process_live.go` | `web/e2e` spec for the role control on a board task | Track L: orchestrator posts a task naming role X, assert the worker's `sub_agent_start` carries role X; its recording becomes the Track R fixture |
 | 5 (`A7`) | Plugin manager tests (`internal/plugin/manager_test.go`, `userplugins_test.go`, `disabled_test.go`, `testplugin/` fixture): install endpoint, health gate (`socketReadyTimeout`), collision refusal, disabled re-check; a live-grant test that a running loop sees a newly installed tool | — | Track L: install an MCP fixture plugin at runtime, then the model calls its tool (pattern: the `process-condition-trigger` MCP fixture); Track R from its recording |
 | 6 (`A8`) | Web unit tests (`web/src/*.test.ts`) and API coverage (`web/src/api/coverage.test.ts`, `unused.ts`); write endpoints covered as in phases 1–2 | `web/e2e` Builder spec: CRUD a role/skill/agent, export, import into a fresh instance, run it | Track L: drive the Builder flow end to end (stub model, `web/e2e/stub-model.mjs`) and assert the built agent runs |
