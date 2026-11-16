@@ -71,8 +71,13 @@ const (
 	TypeListTools         MsgType = "list_tools"
 	TypeListSkills        MsgType = "list_skills"
 	TypeSkillGet          MsgType = "skill_get"
+	TypeSkillCreate       MsgType = "skill_create"
+	TypeSkillUpdate       MsgType = "skill_update"
+	TypeSkillDelete       MsgType = "skill_delete"
 	TypeMemoryList        MsgType = "memory_list"
 	TypeMemoryGet         MsgType = "memory_get"
+	TypeMemorySet         MsgType = "memory_set"
+	TypeMemoryDelete      MsgType = "memory_delete"
 	TypeBackup            MsgType = "backup"
 	TypeWorkspace         MsgType = "workspace"
 	TypeDatabase          MsgType = "database"
@@ -225,8 +230,13 @@ var ClientMsgTypes = []MsgType{
 	TypeListTools,
 	TypeListSkills,
 	TypeSkillGet,
+	TypeSkillCreate,
+	TypeSkillUpdate,
+	TypeSkillDelete,
 	TypeMemoryList,
 	TypeMemoryGet,
+	TypeMemorySet,
+	TypeMemoryDelete,
 	TypeBackup,
 	TypeWorkspace,
 	TypeDatabase,
@@ -295,6 +305,14 @@ const (
 //	                     RequestID = the id, Text = approve|deny|revoke
 //	"list_skills"      — request the skill catalog; no extra fields
 //	"skill_get"        — request one skill with its body; Text = skill name
+//	"skill_create"     — write a new skill (operator REST only, never a model
+//	                     tool; adr/agents-concept.md A8, Q23); Text = JSON
+//	                     {name, description, tags, content}
+//	"skill_update"     — patch one skill; ID = name, Text = JSON patch
+//	"skill_delete"     — delete one skill; ID = name
+//	"memory_set"       — set one memory key (operator REST only); Text = JSON
+//	                     {key, value}
+//	"memory_delete"    — delete one memory key; Text = key
 //	"backup"           — write a snapshot to a temporary file; Text = "workspace" to
 //	                     include the workspace, else empty
 //	"workspace"        — a workspace file operation; Text = list|read|write|delete,
@@ -352,6 +370,11 @@ const (
 //	"stage"            — the turn entered a named waiting phase; Text carries the label
 //	"list_skills"      — skill catalog; Text carries JSON {"skills": [SkillInfo]}
 //	"skill_get"        — one skill; Text carries JSON SkillDetail
+//	"skill_create"     — the created skill; Text carries JSON SkillDetail
+//	"skill_update"     — the updated skill; Text carries JSON SkillDetail
+//	"skill_delete"     — Text = "deleted <name>"
+//	"memory_set"       — Text = "ok"
+//	"memory_delete"    — Text = "deleted <key>"
 //	"backup"           — the snapshot written; Text carries JSON BackupResult
 //	"workspace"        — Text carries JSON: WorkspaceListing (list), WorkspaceFile
 //	                     (read), WorkspaceEntry (write, delete)
@@ -892,6 +915,17 @@ func NewMemoryGetMsg(key string) Msg {
 	return Msg{Type: TypeMemoryGet, Text: key}
 }
 
+// NewMemorySetMsg sets one key of the key-value memory (operator REST only).
+func NewMemorySetMsg(key, value string) Msg {
+	raw, _ := json.Marshal(map[string]any{"key": key, "value": value})
+	return Msg{Type: TypeMemorySet, Text: string(raw)}
+}
+
+// NewMemoryDeleteMsg deletes one key of the key-value memory (operator REST only).
+func NewMemoryDeleteMsg(key string) Msg {
+	return Msg{Type: TypeMemoryDelete, Text: key}
+}
+
 // MemoryEntry is one key of the key-value memory, as memory_list lists it:
 // its size and when it last changed, not its value.
 type MemoryEntry struct {
@@ -909,6 +943,26 @@ type MemoryValue struct {
 // NewSkillGetMsg asks for one skill with its body.
 func NewSkillGetMsg(name string) Msg {
 	return Msg{Type: TypeSkillGet, Text: name}
+}
+
+// NewSkillCreateMsg writes a new skill (operator REST only, adr/agents-concept.md
+// A8, Q23 — the model's skill_write calls the same store layer).
+func NewSkillCreateMsg(name, description string, tags []string, content string) Msg {
+	raw, _ := json.Marshal(map[string]any{
+		"name": name, "description": description, "tags": tags, "content": content,
+	})
+	return Msg{Type: TypeSkillCreate, Text: string(raw)}
+}
+
+// NewSkillUpdateMsg patches one skill; the patch carries the JSON fields to change.
+func NewSkillUpdateMsg(name string, patch map[string]any) Msg {
+	raw, _ := json.Marshal(patch)
+	return Msg{Type: TypeSkillUpdate, ID: name, Text: string(raw)}
+}
+
+// NewSkillDeleteMsg deletes one skill by name.
+func NewSkillDeleteMsg(name string) Msg {
+	return Msg{Type: TypeSkillDelete, ID: name}
 }
 
 // GoalCreateResult is the "goal_create" reply. Goal is the stored row, as a
@@ -1134,6 +1188,11 @@ type RoleInfo struct {
 	Tools       []string `json:"tools,omitempty"`
 	Delegates   bool     `json:"delegates"`
 	Leaf        bool     `json:"leaf"`
+	// The remaining structural flags, exposed so the Builder UI can edit a
+	// role without losing them (adr/agents-concept.md A8, Q23).
+	SpawnsGoals bool `json:"spawns_goals"`
+	Persists    bool `json:"persists"`
+	Interactive bool `json:"interactive"`
 }
 
 // NewToolCallMsg invokes one tool once, for testing.

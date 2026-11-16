@@ -663,6 +663,48 @@ func (c *Client) GetSkill(name string) (SkillDetail, error) {
 	return out, err
 }
 
+// SkillCreate writes a new skill (operator REST only, adr/agents-concept.md
+// A8, Q23 — the model's skill_write calls the same store layer).
+func (c *Client) SkillCreate(name, description string, tags []string, content string) (SkillDetail, error) {
+	var out SkillDetail
+	err := c.roundTrip(NewSkillCreateMsg(name, description, tags, content), &out)
+	return out, err
+}
+
+// SkillUpdate patches one skill; only the patch's fields change.
+func (c *Client) SkillUpdate(name string, patch map[string]any) (SkillDetail, error) {
+	var out SkillDetail
+	err := c.roundTrip(NewSkillUpdateMsg(name, patch), &out)
+	return out, err
+}
+
+// SkillDelete removes one skill by name.
+func (c *Client) SkillDelete(name string) error {
+	return c.roundTripText(NewSkillDeleteMsg(name))
+}
+
+// MemorySet sets one key of the key-value memory (operator REST only).
+func (c *Client) MemorySet(key, value string) error {
+	return c.roundTripText(NewMemorySetMsg(key, value))
+}
+
+// MemoryDelete removes one key of the key-value memory.
+func (c *Client) MemoryDelete(key string) error {
+	return c.roundTripText(NewMemoryDeleteMsg(key))
+}
+
+// roundTripText is roundTrip for a reply whose Text is a plain string, not JSON.
+func (c *Client) roundTripText(m Msg) error {
+	if err := c.send(m); err != nil {
+		return err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return err
+	}
+	return expectReply(reply, m.Type)
+}
+
 // CreateGoal creates a goal on the operator's behalf. parentID names a parent
 // goal for a sub-goal; empty creates a top-level goal with its own pursue
 // session. schedule makes a top-level goal recurring: a duration ("24h") or a

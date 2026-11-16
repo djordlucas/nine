@@ -87,6 +87,10 @@ type queryBackend interface {
 	GoalUpdateStatus(id, status string) error
 	SkillList() ([]memory.Skill, error)
 	SkillGet(name string) (memory.Skill, bool, error)
+	// Skill write backs the operator REST verbs (adr/agents-concept.md A8,
+	// Q23) — the same store rows the model's skill_write/skill_modify write.
+	SkillUpsert(sk memory.Skill) error
+	SkillDelete(name string) error
 	// BackupTo writes a consistent snapshot of the store (the backup message).
 	BackupTo(path string) (string, error)
 	WorkflowList(agentID string) ([]workflow.Workflow, error)
@@ -695,8 +699,18 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 
 	case protocol.SkillGetReq:
 		d.handleSkillGet(enc, r.Name)
+	case protocol.SkillCreateReq:
+		d.handleSkillCreate(enc, r)
+	case protocol.SkillUpdateReq:
+		d.handleSkillUpdate(enc, r.ID, r.Patch)
+	case protocol.SkillDeleteReq:
+		d.handleSkillDelete(enc, r.ID)
 	case protocol.MemoryGetReq:
 		d.handleMemoryGet(enc, r.Key)
+	case protocol.MemorySetReq:
+		d.handleMemorySet(enc, r.Key, r.Value)
+	case protocol.MemoryDeleteReq:
+		d.handleMemoryDelete(enc, r.Key)
 
 	case protocol.BackupReq:
 		d.handleBackup(enc, r)

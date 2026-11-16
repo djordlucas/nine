@@ -27,7 +27,12 @@ type RoleInfo struct {
 	Delegates   bool     `json:"delegates"`
 	// Leaf marks a delegatable leaf role (adr/agents-concept.md A6, Q16): a
 	// board task's role must be one of these.
-	Leaf bool `json:"leaf"`
+	Leaf        bool `json:"leaf"`
+	// The remaining structural flags, so the Builder UI can edit a role
+	// without losing them (adr/agents-concept.md A8, Q23).
+	SpawnsGoals bool `json:"spawns_goals"`
+	Persists    bool `json:"persists"`
+	Interactive bool `json:"interactive"`
 }
 
 // RoleCatalog is the role registry as the tools see it. Implemented in

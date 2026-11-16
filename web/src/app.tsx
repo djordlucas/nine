@@ -4,6 +4,7 @@ import { api, auth, checkSession, get } from './api/client';
 import { connect, disconnect } from './api/events';
 import { ConfirmHost } from './components/Confirm';
 import { Shell } from './components/Shell';
+import { Builder } from './pages/Builder';
 import { Data } from './pages/Data';
 import { Agents } from './pages/Agents';
 import { Inbox } from './pages/Inbox';
@@ -115,6 +116,14 @@ export function App() {
           <Route path="/data/*" component={Data} />
           <Route path="/data" component={Data} />
           <Route path="/journal" component={Journal} />
+          <Route path="/builder/agents/:id" component={Builder} />
+          <Route path="/builder/agents" component={Builder} />
+          <Route path="/builder/roles/:name" component={Builder} />
+          <Route path="/builder/roles" component={Builder} />
+          <Route path="/builder/skills/:name" component={Builder} />
+          <Route path="/builder/skills" component={Builder} />
+          <Route path="/builder/data" component={Builder} />
+          <Route path="/builder" component={Builder} />
           <Route path="/system/sessions/:id" component={System} />
           <Route path="/system/docs/:id" component={System} />
           <Route path="/system/spec/:id" component={System} />

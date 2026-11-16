@@ -99,7 +99,15 @@ var clientMsgSpecs = map[MsgType]clientMsgSpec{
 	// An empty status must not reach the store, which accepts any string.
 	TypeGoalSetStatus: {required: []fieldRule{needID, needText}},
 	TypeSkillGet:      {required: []fieldRule{needText}},
+	// The operator REST writes (adr/agents-concept.md A8, Q23): the payloads
+	// are required — an empty create or set is a malformed request, not a
+	// silent no-op.
+	TypeSkillCreate:   {required: []fieldRule{needText}},
+	TypeSkillUpdate:   {required: []fieldRule{needID, needText}},
+	TypeSkillDelete:   {required: []fieldRule{needID}},
 	TypeMemoryGet:     {required: []fieldRule{needText}},
+	TypeMemorySet:     {required: []fieldRule{needText}},
+	TypeMemoryDelete:  {required: []fieldRule{needText}},
 	// The action, as for process_control: no verb must not default to one.
 	TypeWorkspace: {required: []fieldRule{needText}},
 	TypeDatabase:  {required: []fieldRule{needText}},

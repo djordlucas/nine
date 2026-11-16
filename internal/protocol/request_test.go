@@ -210,6 +210,11 @@ func TestEveryClientMsgTypeDecodes(t *testing.T) {
 		protocol.TypeAgentImport:      {Text: `{"tar_base64":""}`},
 		protocol.TypeAgentApprove:     {ID: "agent_1"},
 		protocol.TypePluginInstall:    {Text: `{"files":{"p.toml":""}}`},
+		protocol.TypeSkillCreate:      {Text: `{"name":"s","content":"c"}`},
+		protocol.TypeSkillUpdate:      {ID: "s", Text: `{"content":"c2"}`},
+		protocol.TypeSkillDelete:      {ID: "s"},
+		protocol.TypeMemorySet:        {Text: `{"key":"k","value":"v"}`},
+		protocol.TypeMemoryDelete:     {Text: "k"},
 		protocol.TypeConfig:           {},
 		protocol.TypeSelfModel:        {},
 	}

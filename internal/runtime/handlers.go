@@ -322,6 +322,7 @@ func (d *Daemon) handleRolesList(enc *json.Encoder) {
 		out = append(out, protocol.RoleInfo{
 			Name: r.Name, Description: r.Description,
 			AllTools: r.AllTools, Tools: r.Tools, Delegates: r.Delegates, Leaf: r.Leaf,
+			SpawnsGoals: r.SpawnsGoals, Persists: r.Persists, Interactive: r.Interactive,
 		})
 	}
 	raw, _ := json.Marshal(out)

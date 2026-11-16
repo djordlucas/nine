@@ -214,8 +214,35 @@ type DatabaseReq struct {
 // SkillGetReq asks for one skill with its body.
 type SkillGetReq struct{ Name string }
 
+// SkillCreateReq writes a new skill (operator REST only, adr/agents-concept.md
+// A8, Q23 — the model's skill_write calls the same store layer).
+type SkillCreateReq struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Tags        []string `json:"tags"`
+	Content     string   `json:"content"`
+}
+
+// SkillUpdateReq patches one skill; Patch carries the JSON fields to change.
+type SkillUpdateReq struct {
+	ID    string
+	Patch map[string]json.RawMessage
+}
+
+// SkillDeleteReq deletes one skill by name.
+type SkillDeleteReq struct{ ID string }
+
 // MemoryGetReq asks for one key of the key-value memory, with its value.
 type MemoryGetReq struct{ Key string }
+
+// MemorySetReq sets one key of the key-value memory (operator REST only).
+type MemorySetReq struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+// MemoryDeleteReq deletes one key of the key-value memory.
+type MemoryDeleteReq struct{ Key string }
 
 // GoalSetStatusReq sets a goal's status as the operator.
 type GoalSetStatusReq struct {
@@ -295,7 +322,12 @@ func (GoalCreateReq) Type() MsgType        { return TypeGoalCreate }
 func (GoalDeleteReq) Type() MsgType        { return TypeGoalDelete }
 func (GoalSetStatusReq) Type() MsgType     { return TypeGoalSetStatus }
 func (SkillGetReq) Type() MsgType          { return TypeSkillGet }
+func (SkillCreateReq) Type() MsgType       { return TypeSkillCreate }
+func (SkillUpdateReq) Type() MsgType       { return TypeSkillUpdate }
+func (SkillDeleteReq) Type() MsgType       { return TypeSkillDelete }
 func (MemoryGetReq) Type() MsgType         { return TypeMemoryGet }
+func (MemorySetReq) Type() MsgType         { return TypeMemorySet }
+func (MemoryDeleteReq) Type() MsgType      { return TypeMemoryDelete }
 func (BackupReq) Type() MsgType            { return TypeBackup }
 func (WorkspaceReq) Type() MsgType         { return TypeWorkspace }
 func (DatabaseReq) Type() MsgType          { return TypeDatabase }
@@ -430,8 +462,24 @@ func DecodeRequest(m Msg) (Request, error) {
 		return GoalSetStatusReq{ID: m.ID, Status: m.Text}, nil
 	case TypeSkillGet:
 		return SkillGetReq{Name: m.Text}, nil
+	case TypeSkillCreate:
+		var cs SkillCreateReq
+		_ = json.Unmarshal([]byte(m.Text), &cs)
+		return cs, nil
+	case TypeSkillUpdate:
+		var patch map[string]json.RawMessage
+		_ = json.Unmarshal([]byte(m.Text), &patch)
+		return SkillUpdateReq{ID: m.ID, Patch: patch}, nil
+	case TypeSkillDelete:
+		return SkillDeleteReq{ID: m.ID}, nil
 	case TypeMemoryGet:
 		return MemoryGetReq{Key: m.Text}, nil
+	case TypeMemorySet:
+		var ms MemorySetReq
+		_ = json.Unmarshal([]byte(m.Text), &ms)
+		return ms, nil
+	case TypeMemoryDelete:
+		return MemoryDeleteReq{Key: m.Text}, nil
 	case TypeBackup:
 		return BackupReq{Workspace: m.Text == BackupWorkspace}, nil
 	case TypeWorkspace:

@@ -101,6 +101,11 @@ Msg {
 | `grants_decide` | `request_id`, `text` | settle a capability request (`approve`/`deny`) or revoke a grant (`revoke`). Both fields are required: a decision with no id, or an id with no verb, **MUST NOT** resolve to a default |
 | `list_skills` | — | the skill catalog, without bodies |
 | `skill_get` | `text` = skill name (**required**) | one skill with its body |
+| `skill_create` | `text` = JSON `{name, description, tags, content}` (**required**) | write a new skill into the catalog — operator-only, never an agent tool (adr/agents-concept.md A8, Q23); a name owned by a builtin or user source file is refused |
+| `skill_update` | `id` = skill name, `text` = JSON patch (both **required**) | change a skill's `description` / `tags` / `content`; same ownership rules as `skill_create` |
+| `skill_delete` | `id` = skill name (**required**) | remove one skill from the catalog; source-owned (builtin/user) skills are refused |
+| `memory_set` | `text` = JSON `{key, value}` (**required**) | write one key of the key-value memory — operator-only over REST (A8), the same store row the model's `memory_set` tool writes in a turn |
+| `memory_delete` | `text` = key (**required**) | remove one key of the key-value memory |
 | `backup` | (`text` = `workspace`) | write a snapshot of every database — the registry plus each agent's own db (`nine.db`, `agents/<id>.db`) — with the workspace when asked, to a temporary file |
 | `workspace` | `text` = `list` \| `read` \| `write` \| `delete` (**required**), `tool_input` = JSON `WorkspaceArgs { path, content, if_version }` | a workspace file operation as the operator. Paths resolve inside the workspace root, links included; `.nine/` is refused. A replaced or deleted file **MUST** go to the trash. With `if_version`, a write or delete of a file at another version **MUST** fail. |
 | `database` | `text` = `tables` \| `rows` \| `insert` \| `update` \| `delete` \| `run` (**required**), `tool_input` = JSON `DatabaseArgs { table, offset, limit, rowid, values, sql, args }` | a database operation as the operator, under the database policy; never the store. Writes are journaled as `sql_write` under `operator`. |
@@ -160,6 +165,8 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `set_plan_mode` | `text` = `"plan mode: <mode>"` | mode change acknowledged (or `error` on an unknown mode) |
 | `list_skills` | `text` = JSON `{"skills": []SkillInfo}` | `SkillInfo { name, description, tags, source }`; `source` is `builtin`, `user` or `agent` |
 | `skill_get` | `text` = JSON `SkillDetail` | `SkillInfo` plus `content`, the skill's Markdown body; an unknown name is `error` "… not found" |
+| `skill_create` / `skill_update` | `text` = JSON `SkillDetail` | the skill as stored after the write; refusals are `error` (source-owned or unknown name, empty name, empty patch) |
+| `skill_delete` / `memory_set` / `memory_delete` | `text` = a sentence | what was done (or `error` naming the reason) |
 | `workspace` | `text` = JSON | `WorkspaceListing { path, entries }` for `list`, `WorkspaceFile` (an entry with `content`, base64) for `read`, `WorkspaceEntry { name, path, dir, bytes, modified, version, trashed }` for `write` and `delete`. A missing path is `error` "not found: …"; a stale version "… the file changed since it was read" |
 | `database` | `text` = JSON | `{"tables": []Table}` for `tables`; a page `{ table, columns, rowids, rows, total, offset }` for `rows`; `{ columns, rows, truncated, write, changes, last_insert_rowid }` otherwise. An unknown table is `error` "table not found: …" |
 | `backup` | `text` = JSON `BackupResult` | `{ path, name, bytes, files, skipped }`: a temporary file in a `nine-backup-*` directory, which the caller streams and removes with the directory; one left over an hour is swept by the next backup |
@@ -249,6 +256,13 @@ never agent tools. `plugin_install` answers the same roster shape after landing 
 loading the submitted files, or `error` with the refusal reason (unsafe path, missing
 or duplicate manifest, disabled name, existing file, failed MCP handshake, tool
 collision).
+
+The operator-only write verbs (adr/agents-concept.md A8, Q23) — `skill_create` /
+`skill_update` / `skill_delete`, `memory_set` / `memory_delete`, and the `agent_*`
+verbs above — reach the same store rows the model's own tools write; one store, two
+front doors. They are dispatched only for operator connections, never as agent tools,
+and the daemon enforces source ownership: builtin and user skills are read-only to
+them (`error` naming the owner).
 
 ### R-PROTO.4a — sandboxed tool roster — removed
 

@@ -262,6 +262,102 @@ paths:
       security:
       - bearerAuth: []
       - cookieAuth: []
+    put:
+      operationId: setMemoryValue
+      summary: Set one memory key
+      description: Writes one key of the key-value memory (operator-only; adr/agents-concept.md A8). The same store row memory_set writes in a turn.
+      tags:
+      - health
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemorySetRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryValue'
+        '400':
+          description: missing key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    delete:
+      operationId: deleteMemoryValue
+      summary: Delete one memory key
+      description: Deletes one key of the key-value memory (operator-only; adr/agents-concept.md A8).
+      tags:
+      - health
+      parameters:
+      - name: key
+        in: query
+        description: the key, e.g. self/identity
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: missing key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: no such key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
   /self-model:
     get:
       operationId: getSelfModel
@@ -2984,6 +3080,126 @@ paths:
       security:
       - bearerAuth: []
       - cookieAuth: []
+    post:
+      operationId: createRole
+      summary: Create a role
+      description: 'Creates a role as a catalog skill with a role block (operator-only; adr/agents-concept.md A8, Q23 — roles are skills, one store, two front doors). Refused when a builtin or user skill of the name exists.'
+      tags:
+      - roles
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleCreateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleInfo'
+        '400':
+          description: refused (empty name, invalid tool list, name owned by a source file) or invalid request
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /roles/{name}:
+    patch:
+      operationId: updateRole
+      summary: Update a role
+      description: 'Patches one role''s definition (operator-only; adr/agents-concept.md A8, Q23). Builtin and user roles are refused: they are owned by their source file.'
+      tags:
+      - roles
+      parameters:
+      - name: name
+        in: path
+        description: role name
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RolePatch'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleInfo'
+        '400':
+          description: refused or invalid request
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: role not found
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    delete:
+      operationId: deleteRole
+      summary: Delete a role
+      description: 'Deletes one role (operator-only; adr/agents-concept.md A8, Q23). Builtin and user roles are refused: they are owned by their source file.'
+      tags:
+      - roles
+      parameters:
+      - name: name
+        in: path
+        description: role name
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: refused (owned by a source file / missing key) or invalid request
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: role not found
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
   /questions:
     get:
       operationId: listQuestions
@@ -3086,6 +3302,41 @@ paths:
                 $ref: '#/components/schemas/ListSkillsResponse'
         '400':
           description: invalid paging
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    post:
+      operationId: createSkill
+      summary: Create a skill
+      description: 'Writes a new skill into the catalog (operator-only; adr/agents-concept.md A8, Q23 — the model''s skill_write calls the same store layer). Refused when a builtin or user skill of the name exists: those are owned by their source file.'
+      tags:
+      - skills
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SkillCreateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillDetail'
+        '400':
+          description: refused (empty name, name owned by a source file) or invalid request
           content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -3207,6 +3458,90 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SkillDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: skill not found
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    patch:
+      operationId: updateSkill
+      summary: Update a skill
+      description: 'Patches one skill; only the fields present change (like the model''s skill_modify, same store layer — adr/agents-concept.md A8, Q23). Builtin and user skills are refused: they are owned by their source file.'
+      tags:
+      - skills
+      parameters:
+      - name: name
+        in: path
+        description: skill name
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SkillPatch'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillDetail'
+        '400':
+          description: refused or invalid request
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: skill not found
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    delete:
+      operationId: deleteSkill
+      summary: Delete a skill
+      description: 'Deletes one skill (operator-only; adr/agents-concept.md A8, Q23). Builtin and user skills are refused: they are owned by their source file.'
+      tags:
+      - skills
+      parameters:
+      - name: name
+        in: path
+        description: skill name
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: refused (owned by a source file / missing key) or invalid request
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -4027,6 +4362,13 @@ components:
           type: string
       required:
       - id
+    MessageResponse:
+      description: A confirmation message.
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
     DeleteConversationResponse:
       description: Confirmation that a conversation and its journal were removed.
       type: object
@@ -5217,6 +5559,15 @@ components:
         leaf:
           type: boolean
           description: a delegatable leaf role — a board task may name it as its worker role (adr/agents-concept.md A6, Q16)
+        spawns_goals:
+          type: boolean
+          description: may spawn background pursue sessions
+        persists:
+          type: boolean
+          description: runs as a checkpointing session worker rather than an ephemeral leaf
+        interactive:
+          type: boolean
+          description: HITL-eligible when the caller is interactive
     Pagination:
       description: Which page a list response carries. Paging is offset based; there is no cursor.
       type: object
@@ -5679,6 +6030,89 @@ components:
       - name
       - source
       - content
+    SkillCreateRequest:
+      description: A new skill — name and Markdown body required.
+      type: object
+      required: [name, content]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        content:
+          type: string
+          description: the skill's body, in Markdown
+    SkillPatch:
+      description: 'An update of one skill; only the fields present are changed.'
+      type: object
+      properties:
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        content:
+          type: string
+    RoleCreateRequest:
+      description: 'A new role: name plus its tool boundary and structural flags. Stored as a catalog skill with a role block (docs/roles.md R-ROLE.1).'
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        all_tools:
+          type: boolean
+          description: true when the role holds every tool; otherwise tools is the strict allowlist
+        tools:
+          type: array
+          items:
+            type: string
+          description: the strict tool allowlist when all_tools is false
+        delegates:
+          type: boolean
+          description: may spawn sub-agents (run_agent/run_agents)
+        spawns_goals:
+          type: boolean
+        persists:
+          type: boolean
+        interactive:
+          type: boolean
+    RolePatch:
+      description: 'An update of one role; only the fields present are changed.'
+      type: object
+      properties:
+        description:
+          type: string
+        all_tools:
+          type: boolean
+        tools:
+          type: array
+          items:
+            type: string
+        delegates:
+          type: boolean
+        spawns_goals:
+          type: boolean
+        persists:
+          type: boolean
+        interactive:
+          type: boolean
+    MemorySetRequest:
+      description: One key of the key-value memory and its value.
+      type: object
+      required: [key, value]
+      properties:
+        key:
+          type: string
+        value:
+          type: string
     CancelTurnResponse:
       description: Whether a running turn was cancelled.
       type: object

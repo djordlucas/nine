@@ -86,6 +86,13 @@ func (r *agentStoreRouter) SkillList() ([]memory.Skill, error)          { return
 func (r *agentStoreRouter) SkillGet(n string) (memory.Skill, bool, error) {
 	return r.mgr.Registry().SkillGet(n)
 }
+func (r *agentStoreRouter) SkillUpsert(sk memory.Skill) error { return r.mgr.Registry().SkillUpsert(sk) }
+func (r *agentStoreRouter) SkillDelete(n string) error        { return r.mgr.Registry().SkillDelete(n) }
+
+// kvWriter is the store's key-value write; operator memory_set/memory_delete
+// land in the registry db, which daemon-wide reads consult first.
+func (r *agentStoreRouter) Set(key, value string) error { return r.mgr.Registry().Set(key, value) }
+func (r *agentStoreRouter) Delete(key string) error      { return r.mgr.Registry().Delete(key) }
 func (r *agentStoreRouter) BoardTaskCreate(t, s, p, src, role string, pri, d int) (memory.BoardTask, error) {
 	return r.mgr.Registry().BoardTaskCreate(t, s, p, src, role, pri, d)
 }

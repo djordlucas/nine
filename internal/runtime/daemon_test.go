@@ -784,6 +784,8 @@ func (m *mockGoalStore) SkillGet(string) (memory.Skill, bool, error) {
 }
 func (m *mockGoalStore) BackupTo(string) (string, error)    { return "", nil }
 func (m *mockGoalStore) SkillList() ([]memory.Skill, error) { return nil, nil }
+func (m *mockGoalStore) SkillUpsert(memory.Skill) error      { return nil }
+func (m *mockGoalStore) SkillDelete(string) error             { return nil }
 
 // A condition trigger wakes a session with a turn nobody waits on. Its reply must
 // not block the worker: the session has to answer the next turn, and stop.

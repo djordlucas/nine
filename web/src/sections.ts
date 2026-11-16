@@ -46,6 +46,7 @@ export const sections: Section[] = [
   { path: '/inbox', label: 'Inbox', icon: 'inbox' },
   { path: '/data', label: 'Data', icon: 'data' },
   { path: '/journal', label: 'Journal', icon: 'journal' },
+  { path: '/builder', label: 'Builder', icon: 'dashboard' },
   { path: '/system', label: 'System', icon: 'system', foot: true },
 ];
 

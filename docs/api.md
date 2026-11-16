@@ -213,13 +213,24 @@ POST   /api/v1/goals/{id}/status
 GET    /api/v1/workflows          POST /api/v1/workflows/{id}/stop  POST /api/v1/workflows/{id}/fail
 GET    /api/v1/board              POST /api/v1/board    (list/create tasks — [board.md](board.md))
 GET    /api/v1/board/{id}         PATCH /api/v1/board/{id}   DELETE /api/v1/board/{id}
-GET    /api/v1/roles              (the role registry — [roles.md](roles.md))
+GET    /api/v1/roles              POST /api/v1/roles     (the role registry — [roles.md](roles.md))
+GET    /api/v1/roles/{name}       PATCH /api/v1/roles/{name}   DELETE /api/v1/roles/{name}
+
+GET    /api/v1/skills             POST /api/v1/skills
+GET    /api/v1/skills/{name}      PATCH /api/v1/skills/{name}   DELETE /api/v1/skills/{name}
+
+PUT    /api/v1/memory/value       DELETE /api/v1/memory/value?key=…
+
+GET    /api/v1/agents             POST /api/v1/agents
+GET    /api/v1/agents/{id}       PATCH /api/v1/agents/{id}     DELETE /api/v1/agents/{id}
+POST   /api/v1/agents/{id}/run    POST /api/v1/agents/{id}/approve
+GET    /api/v1/agents/{id}/export POST /api/v1/agents/import
 
 GET    /api/v1/tools              GET /api/v1/tools/{name}       DELETE /api/v1/tools/{name}
 POST   /api/v1/tools/{name}/call  POST /api/v1/tools/reload
 GET    /api/v1/tools/{name}/versions   POST /api/v1/tools/{name}/versions/{version}/restore
 
-GET    /api/v1/plugins            POST /api/v1/plugins/reload
+GET    /api/v1/plugins            POST /api/v1/plugins/reload   POST /api/v1/plugins/install
 
 GET    /api/v1/processes          GET /api/v1/processes/{id}
 POST   /api/v1/processes/{id}/start   POST /api/v1/processes/{id}/stop
@@ -240,6 +251,19 @@ every five minutes. A goal reads its schedule back in `schedule`; a schedule on
 a sub-goal, or one Nine cannot read, is `400`. The API caller creates the goal as the operator, so the role gate on the
 agent's `goal_create` tool does not apply — it decides which agents may start
 background work, and an authenticated API caller is not an agent.
+
+The role, skill, memory and agent endpoints are the Builder UI's front door
+(adr/agents-concept.md A8, Q23): the same store rows the model's own tools write,
+one store, two front doors. Role writes compose the role skill's Markdown
+(frontmatter `role:` block plus persona body) and go through the skill store; the
+daemon refuses writes to builtin- or user-owned skills with `400`. `POST /roles`
+takes `all_tools` or a non-empty `tools` allowlist. `PUT /memory/value` takes
+`{"key", "value"}`; `DELETE` takes `?key=`. The `/agents` endpoints manage stored
+agent definitions; `POST /agents/{id}/run` starts a conversation from the agent,
+`GET …/export` downloads its bundle (`agent.json` plus its own database) and
+`POST /agents/import` takes `{"tar_base64"}` and lands the agent **staged** until
+`POST /agents/{id}/approve`. `POST /plugins/install` takes
+`{"files": {name: base64, …}}` (one `<name>.toml` manifest plus its entrypoint).
 
 The `/processes` endpoints are the operator's view of [processes](processes.md):
 the roster with each one's state, who stopped it, trigger and budget use; one
