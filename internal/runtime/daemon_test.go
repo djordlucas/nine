@@ -721,6 +721,20 @@ func (m *mockGoalStore) BoardTaskUpdate(_ string, _ memory.BoardTaskPatch) (memo
 }
 func (m *mockGoalStore) BoardTaskDelete(_ string) (bool, error) { return false, nil }
 
+// Agent verbs: inert, so this mock still satisfies queryBackend.
+func (m *mockGoalStore) AgentList() ([]memory.Agent, error) { return nil, nil }
+func (m *mockGoalStore) AgentGet(string) (memory.Agent, bool, error) {
+	return memory.Agent{}, false, nil
+}
+func (m *mockGoalStore) AgentCreate(_, _, _, _, _ string) (memory.Agent, error) {
+	return memory.Agent{}, nil
+}
+func (m *mockGoalStore) AgentUpdate(_ string, _ memory.AgentPatch) (memory.Agent, bool, error) {
+	return memory.Agent{}, false, nil
+}
+func (m *mockGoalStore) AgentDelete(string) (bool, error)                  { return false, nil }
+func (m *mockGoalStore) AgentVersions(string) ([]memory.AgentVersion, error) { return nil, nil }
+
 func (m *mockGoalStore) UserNotificationList(_ bool) ([]memory.UserNotification, error) {
 	return nil, nil
 }

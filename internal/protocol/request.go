@@ -102,6 +102,22 @@ type BoardUpdateReq struct {
 }
 type BoardDeleteReq struct{ ID string }
 
+// Agent verbs (adr/agents-concept.md A5): stored agent definitions, composed and
+// run through the daemon. Create and update carry their payload as JSON in Text;
+// get, update, delete and run carry the agent id in ID.
+type AgentListReq struct{}
+type AgentGetReq struct{ ID string }
+type AgentCreateReq struct{ Definition json.RawMessage }
+type AgentUpdateReq struct {
+	ID    string
+	Patch json.RawMessage
+}
+type AgentDeleteReq struct{ ID string }
+type AgentRunReq struct {
+	ID          string
+	Interactive bool
+}
+
 // ToolDeleteReq deletes a tool Nine wrote; any other tool is refused.
 type ToolDeleteReq struct {
 	Tool string
@@ -247,6 +263,12 @@ func (BoardGetReq) Type() MsgType          { return TypeBoardGet }
 func (BoardCreateReq) Type() MsgType       { return TypeBoardCreate }
 func (BoardUpdateReq) Type() MsgType       { return TypeBoardUpdate }
 func (BoardDeleteReq) Type() MsgType       { return TypeBoardDelete }
+func (AgentListReq) Type() MsgType         { return TypeAgentList }
+func (AgentGetReq) Type() MsgType          { return TypeAgentGet }
+func (AgentCreateReq) Type() MsgType       { return TypeAgentCreate }
+func (AgentUpdateReq) Type() MsgType       { return TypeAgentUpdate }
+func (AgentDeleteReq) Type() MsgType       { return TypeAgentDelete }
+func (AgentRunReq) Type() MsgType          { return TypeAgentRun }
 func (RolesListReq) Type() MsgType         { return TypeRolesList }
 func (ToolCallReq) Type() MsgType          { return TypeToolCall }
 func (ToolDeleteReq) Type() MsgType        { return TypeToolDelete }
@@ -339,6 +361,18 @@ func DecodeRequest(m Msg) (Request, error) {
 		return BoardUpdateReq{ID: m.ID, Patch: patch}, nil
 	case TypeBoardDelete:
 		return BoardDeleteReq{ID: m.ID}, nil
+	case TypeAgentList:
+		return AgentListReq{}, nil
+	case TypeAgentGet:
+		return AgentGetReq{ID: m.ID}, nil
+	case TypeAgentCreate:
+		return AgentCreateReq{Definition: json.RawMessage(m.Text)}, nil
+	case TypeAgentUpdate:
+		return AgentUpdateReq{ID: m.ID, Patch: json.RawMessage(m.Text)}, nil
+	case TypeAgentDelete:
+		return AgentDeleteReq{ID: m.ID}, nil
+	case TypeAgentRun:
+		return AgentRunReq{ID: m.ID, Interactive: m.Interactive}, nil
 	case TypeRolesList:
 		return RolesListReq{}, nil
 	case TypeToolDelete:

@@ -90,6 +90,12 @@ const (
 	TypeGrantsList        MsgType = "grants_list"
 	TypeListHumanRequests MsgType = "list_human_requests"
 	TypeGrantsDecide      MsgType = "grants_decide"
+	TypeAgentList         MsgType = "agent_list"
+	TypeAgentGet          MsgType = "agent_get"
+	TypeAgentCreate       MsgType = "agent_create"
+	TypeAgentUpdate       MsgType = "agent_update"
+	TypeAgentDelete       MsgType = "agent_delete"
+	TypeAgentRun          MsgType = "agent_run"
 )
 
 // Daemon → client.
@@ -234,6 +240,12 @@ var ClientMsgTypes = []MsgType{
 	TypeGrantsList,
 	TypeListHumanRequests,
 	TypeGrantsDecide,
+	TypeAgentList,
+	TypeAgentGet,
+	TypeAgentCreate,
+	TypeAgentUpdate,
+	TypeAgentDelete,
+	TypeAgentRun,
 	TypeHumanInputAnswer,
 }
 
@@ -285,6 +297,13 @@ const (
 //	"session_events"   — a session's raw journal; AgentID set, Turn = 0 for every
 //	                     turn, N for turn N, or -1 for the latest turn
 //	"watch"            — follow a session's progress events; AgentID set
+//	"agent_list"       — request the stored agent definitions; no extra fields
+//	"agent_get"        — one agent definition; ID = agent id
+//	"agent_create"     — create an agent; Text = JSON AgentDefinition
+//	"agent_update"     — update an agent; ID = agent id, Text = JSON patch
+//	"agent_delete"     — delete an agent and its versions; ID = agent id
+//	"agent_run"        — start a conversation from an agent; ID = agent id,
+//	                     Interactive marks the session HITL-eligible
 //
 // Daemon → client:
 //
@@ -328,6 +347,12 @@ const (
 //	"watch"            — watch accepted; AgentID echoed. Then, for every turn the
 //	                     session runs whatever started it: its progress events,
 //	                     "response" (or "error" with AgentID), and "done"
+//	"agent_list"       — agent list; Text carries JSON []Agent
+//	"agent_get"        — one agent; Text carries JSON Agent
+//	"agent_create"     — the created agent; Text carries JSON Agent
+//	"agent_update"     — the updated agent; Text carries JSON Agent
+//	"agent_delete"     — deletion result; Text = "deleted"
+//	"agent_run"        — run result; Text carries JSON AgentRunResult
 type Msg struct {
 	AgentID         string          `json:"agent_id,omitempty"`
 	Type            MsgType         `json:"type"`
@@ -486,6 +511,34 @@ type BoardTask struct {
 	ClaimedAt  string `json:"claimed_at,omitempty"`
 	FinishedAt string `json:"finished_at,omitempty"`
 	UpdatedAt  string `json:"updated_at"`
+}
+
+// AgentDefinition is the composable bundle an agent is made of
+// (adr/agents-concept.md A3): its role, skills, self-model and reflection.
+// SelfModel and Reflection are free-form JSON, empty when unset.
+type AgentDefinition struct {
+	Name       string          `json:"name"`
+	Role       string          `json:"role,omitempty"`
+	Skills     []string        `json:"skills,omitempty"`
+	SelfModel  json.RawMessage `json:"self_model,omitempty"`
+	Reflection json.RawMessage `json:"reflection,omitempty"`
+}
+
+// Agent is a stored agent definition with its identity and version
+// (adr/agents-concept.md A5; definitions are versioned, Q14).
+type Agent struct {
+	ID         string          `json:"id"`
+	Version    int             `json:"version"`
+	Definition AgentDefinition `json:"definition"`
+	CreatedAt  string          `json:"created_at"`
+	UpdatedAt  string          `json:"updated_at"`
+}
+
+// AgentRunResult is the agent_run reply: the conversation started from the agent.
+type AgentRunResult struct {
+	AgentID        string `json:"agent_id"`
+	ConversationID string `json:"conversation_id"`
+	Role           string `json:"role,omitempty"`
 }
 
 type ProcessInfo struct {
@@ -991,6 +1044,28 @@ func NewBoardUpdateMsg(id string, patch map[string]any) Msg {
 	return Msg{Type: TypeBoardUpdate, ID: id, Text: string(raw)}
 }
 func NewBoardDeleteMsg(id string) Msg { return Msg{Type: TypeBoardDelete, ID: id} }
+
+// Agent verbs (adr/agents-concept.md A5): stored agent definitions, composed and
+// run through the daemon. Create/update carry their payload as JSON in Text;
+// get/update/delete/run carry the agent id in ID.
+func NewAgentListMsg() Msg                        { return Msg{Type: TypeAgentList} }
+func NewAgentGetMsg(id string) Msg                { return Msg{Type: TypeAgentGet, ID: id} }
+func NewAgentDeleteMsg(id string) Msg             { return Msg{Type: TypeAgentDelete, ID: id} }
+func NewAgentRunMsg(id string, interactive bool) Msg {
+	return Msg{Type: TypeAgentRun, ID: id, Interactive: interactive}
+}
+
+// NewAgentCreateMsg builds an agent_create from a definition.
+func NewAgentCreateMsg(def AgentDefinition) Msg {
+	raw, _ := json.Marshal(def)
+	return Msg{Type: TypeAgentCreate, Text: string(raw)}
+}
+
+// NewAgentUpdateMsg builds an agent_update from a patch (field name → JSON value).
+func NewAgentUpdateMsg(id string, patch map[string]any) Msg {
+	raw, _ := json.Marshal(patch)
+	return Msg{Type: TypeAgentUpdate, ID: id, Text: string(raw)}
+}
 
 // NewRolesListMsg asks for the role registry (adr/orchestrator-board.md §2.2.1).
 func NewRolesListMsg() Msg { return Msg{Type: TypeRolesList} }

@@ -1108,6 +1108,112 @@ func (c *Client) BoardDelete(id string) error {
 	return expectReply(reply, TypeBoardDelete)
 }
 
+// Agent verbs (adr/agents-concept.md A5): the stored agent definitions, CRUD plus
+// run. Replies echo the request type with the agent(s) as JSON in Text.
+
+func (c *Client) AgentList() ([]Agent, error) {
+	if err := c.send(NewAgentListMsg()); err != nil {
+		return nil, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return nil, err
+	}
+	if err := expectReply(reply, TypeAgentList); err != nil {
+		return nil, err
+	}
+	var out []Agent
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return nil, fmt.Errorf("decode agents: %w", err)
+	}
+	return out, nil
+}
+
+func (c *Client) AgentGet(id string) (Agent, error) {
+	if err := c.send(NewAgentGetMsg(id)); err != nil {
+		return Agent{}, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return Agent{}, err
+	}
+	if err := expectReply(reply, TypeAgentGet); err != nil {
+		return Agent{}, err
+	}
+	var out Agent
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return Agent{}, fmt.Errorf("decode agent: %w", err)
+	}
+	return out, nil
+}
+
+func (c *Client) AgentCreate(def AgentDefinition) (Agent, error) {
+	if err := c.send(NewAgentCreateMsg(def)); err != nil {
+		return Agent{}, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return Agent{}, err
+	}
+	if err := expectReply(reply, TypeAgentCreate); err != nil {
+		return Agent{}, err
+	}
+	var out Agent
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return Agent{}, fmt.Errorf("decode agent: %w", err)
+	}
+	return out, nil
+}
+
+func (c *Client) AgentUpdate(id string, patch map[string]any) (Agent, error) {
+	if err := c.send(NewAgentUpdateMsg(id, patch)); err != nil {
+		return Agent{}, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return Agent{}, err
+	}
+	if err := expectReply(reply, TypeAgentUpdate); err != nil {
+		return Agent{}, err
+	}
+	var out Agent
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return Agent{}, fmt.Errorf("decode agent: %w", err)
+	}
+	return out, nil
+}
+
+func (c *Client) AgentDelete(id string) error {
+	if err := c.send(NewAgentDeleteMsg(id)); err != nil {
+		return err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return err
+	}
+	return expectReply(reply, TypeAgentDelete)
+}
+
+// AgentRun starts a conversation from the stored agent and returns the run
+// result naming both ids and the resolved role.
+func (c *Client) AgentRun(id string, interactive bool) (AgentRunResult, error) {
+	if err := c.send(NewAgentRunMsg(id, interactive)); err != nil {
+		return AgentRunResult{}, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return AgentRunResult{}, err
+	}
+	if err := expectReply(reply, TypeAgentRun); err != nil {
+		return AgentRunResult{}, err
+	}
+	var out AgentRunResult
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return AgentRunResult{}, fmt.Errorf("decode agent run: %w", err)
+	}
+	return out, nil
+}
+
 // RolesList returns the role registry (adr/orchestrator-board.md §2.2.1).
 func (c *Client) RolesList() ([]RoleInfo, error) {
 	if err := c.send(NewRolesListMsg()); err != nil {

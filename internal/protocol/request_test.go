@@ -200,6 +200,12 @@ func TestEveryClientMsgTypeDecodes(t *testing.T) {
 		protocol.TypeWatch:            {AgentID: "a1"},
 		protocol.TypeJournalFollow:    {After: 7, Limit: 10},
 		protocol.TypeTurnCancel:       {AgentID: "a1"},
+		protocol.TypeAgentList:        {},
+		protocol.TypeAgentGet:         {ID: "agent_1"},
+		protocol.TypeAgentCreate:      {Text: `{"name":"x"}`},
+		protocol.TypeAgentUpdate:      {ID: "agent_1", Text: `{}`},
+		protocol.TypeAgentDelete:      {ID: "agent_1"},
+		protocol.TypeAgentRun:         {ID: "agent_1"},
 		protocol.TypeConfig:           {},
 		protocol.TypeSelfModel:        {},
 	}

@@ -631,6 +631,25 @@ func initSchema(d db) error {
 		`CREATE INDEX IF NOT EXISTS board_tasks_status ON board_tasks (status)`,
 		`CREATE INDEX IF NOT EXISTS board_tasks_poster ON board_tasks (posted_by)`,
 		`CREATE INDEX IF NOT EXISTS board_tasks_prio ON board_tasks (status, priority DESC)`,
+		`CREATE TABLE IF NOT EXISTS agents (
+			id         TEXT PRIMARY KEY,
+			name       TEXT NOT NULL,
+			role       TEXT NOT NULL DEFAULT '',
+			skills     TEXT NOT NULL DEFAULT '',
+			self_model TEXT NOT NULL DEFAULT '',
+			reflection TEXT NOT NULL DEFAULT '',
+			version    INTEGER NOT NULL DEFAULT 1,
+			created_at TEXT NOT NULL DEFAULT ` + nowExpr + `,
+			updated_at TEXT NOT NULL DEFAULT ` + nowExpr + `
+		)`,
+		`CREATE INDEX IF NOT EXISTS agents_name ON agents (name)`,
+		`CREATE TABLE IF NOT EXISTS agent_versions (
+			agent_id   TEXT NOT NULL,
+			version    INTEGER NOT NULL,
+			definition TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT ` + nowExpr + `,
+			PRIMARY KEY (agent_id, version)
+		)`,
 	}
 	for _, s := range stmts {
 		if _, err := d.Exec(s); err != nil {

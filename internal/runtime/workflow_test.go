@@ -382,3 +382,17 @@ func (m *mockStore) GoalUpdateStatus(string, string) error       { return nil }
 func (m *mockStore) SkillGet(string) (memory.Skill, bool, error) { return memory.Skill{}, false, nil }
 func (m *mockStore) BackupTo(string) (string, error)             { return "", nil }
 func (m *mockStore) SkillList() ([]memory.Skill, error)          { return nil, nil }
+
+// Agent verbs: inert, so this mock still satisfies queryBackend.
+func (m *mockStore) AgentList() ([]memory.Agent, error) { return nil, nil }
+func (m *mockStore) AgentGet(string) (memory.Agent, bool, error) {
+	return memory.Agent{}, false, nil
+}
+func (m *mockStore) AgentCreate(_, _, _, _, _ string) (memory.Agent, error) {
+	return memory.Agent{}, nil
+}
+func (m *mockStore) AgentUpdate(_ string, _ memory.AgentPatch) (memory.Agent, bool, error) {
+	return memory.Agent{}, false, nil
+}
+func (m *mockStore) AgentDelete(string) (bool, error)                    { return false, nil }
+func (m *mockStore) AgentVersions(string) ([]memory.AgentVersion, error) { return nil, nil }

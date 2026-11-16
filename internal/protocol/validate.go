@@ -107,6 +107,14 @@ var clientMsgSpecs = map[MsgType]clientMsgSpec{
 	TypeSessionEvents:  {required: []fieldRule{needAgentID}},
 	TypeWatch:          {required: []fieldRule{needAgentID}},
 	TypeTurnCancel:     {required: []fieldRule{needAgentID}},
+
+	// Agent verbs: every one but the list names its agent in id; create/update
+	// also carry their JSON payload in text.
+	TypeAgentGet:    {required: []fieldRule{needID}},
+	TypeAgentCreate: {required: []fieldRule{needText}},
+	TypeAgentUpdate: {required: []fieldRule{needID, needText}},
+	TypeAgentDelete: {required: []fieldRule{needID}},
+	TypeAgentRun:    {required: []fieldRule{needID}},
 }
 
 // ValidateClient checks an inbound client message carries what its type needs.

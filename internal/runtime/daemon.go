@@ -122,6 +122,14 @@ type queryBackend interface {
 	BoardTaskDelete(id string) (bool, error)
 	UnconsumedMessagesCount(agentID string) (int, error)
 	DrainQueuedMessage(agentID string) (string, error)
+	// Stored agent definitions back the agent_* wire verbs
+	// (adr/agents-concept.md A5).
+	AgentList() ([]memory.Agent, error)
+	AgentGet(id string) (memory.Agent, bool, error)
+	AgentCreate(name, role, skills, selfModel, reflection string) (memory.Agent, error)
+	AgentUpdate(id string, p memory.AgentPatch) (memory.Agent, bool, error)
+	AgentDelete(id string) (bool, error)
+	AgentVersions(id string) ([]memory.AgentVersion, error)
 }
 
 // pluginRegistry provides the plugin access needed by message handlers.
@@ -597,6 +605,19 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 		d.handleBoardUpdate(enc, r.ID, r.Patch)
 	case protocol.BoardDeleteReq:
 		d.handleBoardDelete(enc, r.ID)
+
+	case protocol.AgentListReq:
+		d.handleAgentList(enc)
+	case protocol.AgentGetReq:
+		d.handleAgentGet(enc, r.ID)
+	case protocol.AgentCreateReq:
+		d.handleAgentCreate(enc, r.Definition)
+	case protocol.AgentUpdateReq:
+		d.handleAgentUpdate(enc, r.ID, r.Patch)
+	case protocol.AgentDeleteReq:
+		d.handleAgentDelete(enc, r.ID)
+	case protocol.AgentRunReq:
+		d.handleAgentRun(enc, r.ID, r.Interactive)
 
 	case protocol.RolesListReq:
 		d.handleRolesList(enc)

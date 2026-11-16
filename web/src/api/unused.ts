@@ -16,4 +16,10 @@ export const unused: Record<string, string> = {
   failWorkflow: 'Same: marked failed by the agent’s tools, shown in the conversation’s workflow box.',
   getSession: 'The Sessions view reads one session from the roster, which carries every field.',
   getHealth: 'The API server’s liveness probe for a load balancer; the UI learns reachability from /auth/session.',
+  listAgents: 'Agents are managed from the CLI/API until the Builder UI lands (adr/agents-concept.md A8, phase 6).',
+  createAgent: 'Same: composed via `nine agent create` or POST /agents until the Builder UI lands (A8).',
+  getAgent: 'Same: agent detail is read via `nine agent show` until the Builder UI lands (A8).',
+  updateAgent: 'Same: edited via `nine agent edit` until the Builder UI lands (A8).',
+  deleteAgent: 'Same: deleted via `nine agent delete` until the Builder UI lands (A8).',
+  runAgent: 'Running an agent opens a conversation the Agents page then shows; no direct UI control until the Builder UI (A8).',
 };

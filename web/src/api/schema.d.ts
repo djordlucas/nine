@@ -924,6 +924,78 @@ export interface paths {
         patch: operations["updateBoardTask"];
         trace?: never;
     };
+    "/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List agents
+         * @description Returns every stored agent definition — the composable bundles (role, skills, self-model, reflection) that POST /agents builds and POST /agents/{id}/run starts (adr/agents-concept.md A5) — oldest first.
+         */
+        get: operations["listAgents"];
+        put?: never;
+        /**
+         * Compose an agent
+         * @description Creates a stored agent definition (adr/agents-concept.md A5). The name is required; role names a role from GET /roles, empty resolving to the default role when the agent runs. Every later change is recorded as a new version (Q14).
+         */
+        post: operations["createAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get an agent
+         * @description Returns one stored agent definition in full, with its current version.
+         */
+        get: operations["getAgent"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete an agent
+         * @description Deletes one stored agent definition and its version history. Running conversations opened from it are unaffected.
+         */
+        delete: operations["deleteAgent"];
+        options?: never;
+        head?: never;
+        /**
+         * Update an agent
+         * @description Changes one stored agent definition; only the fields present are changed. Each update bumps the version and records it (adr/agents-concept.md Q14).
+         */
+        patch: operations["updateAgent"];
+        trace?: never;
+    };
+    "/agents/{id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run an agent
+         * @description Starts a conversation from the stored agent — the agent's role names the new conversation's role, no new session kind (adr/agents-concept.md Q12). Returns the conversation id to talk to.
+         */
+        post: operations["runAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/roles": {
         parameters: {
             query?: never;
@@ -1934,6 +2006,81 @@ export interface components {
             id?: string;
             message?: string;
             seen?: boolean;
+        };
+        /** @description The composable bundle an agent is made of (adr/agents-concept.md A3): its role, skills, self-model and reflection. Used as the create body. */
+        AgentDefinition: {
+            /** @description Display name of the agent; required. */
+            name: string;
+            /** @description Role the agent runs as — a name from GET /roles. Empty resolves to the default role when the agent runs. */
+            role?: string;
+            /** @description Skill names attached to the agent. */
+            skills?: string[];
+            /** @description Free-form JSON self-model source for the agent. */
+            self_model?: {
+                [key: string]: unknown;
+            };
+            /** @description Free-form JSON self-reflection configuration for the agent. */
+            reflection?: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description An edit of one agent definition; only the fields present are changed. skills, self_model and reflection take JSON values — an empty array or object clears the field. */
+        AgentPatch: {
+            /** @description New display name; must be non-empty. */
+            name?: string;
+            /** @description New role name from GET /roles. */
+            role?: string;
+            /** @description Replacement skill list. */
+            skills?: string[];
+            /** @description Replacement self-model source. */
+            self_model?: {
+                [key: string]: unknown;
+            };
+            /** @description Replacement reflection configuration. */
+            reflection?: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description One stored agent definition with its identity and current version (adr/agents-concept.md A5; definitions are versioned, Q14). */
+        Agent: {
+            /** @description agent_<hex> */
+            id: string;
+            /** @description Bumped on every update. */
+            version: number;
+            definition: components["schemas"]["AgentDefinition"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        /** @description Options for running an agent. */
+        AgentRunRequest: {
+            /**
+             * @description Marks the new conversation HITL-eligible.
+             * @default false
+             */
+            interactive: boolean;
+        };
+        /** @description The result of running an agent — the conversation it opened. */
+        AgentRunResult: {
+            /** @description The stored agent that was run. */
+            agent_id: string;
+            /** @description The new conversation's id — attach or send turns to it. */
+            conversation_id: string;
+            /** @description The role the new conversation resolved to. */
+            role?: string;
+        };
+        /** @description A page of stored agents. */
+        ListAgentsResponse: {
+            data?: components["schemas"]["Agent"][];
+            pagination?: components["schemas"]["Pagination"];
+        };
+        /** @description Confirmation that the agent and its version history were deleted. */
+        AgentDeleteResponse: {
+            /** @description The agent id that was deleted. */
+            id: string;
+            /** @description Whether a row was actually removed. */
+            deleted: boolean;
         };
         /** @description A page of board tasks. */
         ListBoardTasksResponse: {
@@ -5744,6 +5891,350 @@ export interface operations {
             };
             /** @description conflict (invalid transition) */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgents: {
+        parameters: {
+            query?: {
+                /** @description Maximum items to return */
+                limit?: number;
+                /** @description Items to skip before the page */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListAgentsResponse"];
+                };
+            };
+            /** @description invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The agent definition to store. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentDefinition"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Agent"];
+                };
+            };
+            /** @description refused (empty name, bad skills JSON) or invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description agent id, as the list shows it (agent_…) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Agent"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description agent id, as the list shows it (agent_…) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentDeleteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description agent id, as the list shows it (agent_…) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description The fields to change. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentPatch"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Agent"];
+                };
+            };
+            /** @description refused (empty name, bad skills JSON) or invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    runAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description agent id, as the list shows it (agent_…) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Run options. */
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AgentRunRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunResult"];
+                };
+            };
+            /** @description refused (unknown role) or invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

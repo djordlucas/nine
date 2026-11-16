@@ -172,6 +172,8 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 		return c.processCommand(cfg, args[1:])
 	case "board":
 		return c.boardCommand(cfg, args[1:])
+	case "agent", "agents":
+		return c.agentCommand(cfg, args[1:])
 	case "tool":
 		if len(args) < 2 {
 			return fmt.Errorf("%s", toolUsage)

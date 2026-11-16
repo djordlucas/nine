@@ -112,6 +112,12 @@ Msg {
 | `turn_cancel` | `agent_id` (**required**) | cancel the turn the session is running; the session stays (R-PROTO.16) |
 | `journal_follow` | (`after`), (`limit`) | follow the whole journal on this connection until it closes, after `seq` `after`; with none, from now with up to `limit` earlier events (R-PROTO.15) |
 | `list_human_requests` | — | the `ask_human` questions still waiting for an answer |
+| `agent_list` | — | the stored agent definitions (adr/agents-concept.md A5) |
+| `agent_get` | `id` = agent id (**required**) | one agent definition with its current version |
+| `agent_create` | `text` = JSON `AgentDefinition` (**required**) | create a stored agent; `name` required, `skills` a JSON array of strings |
+| `agent_update` | `id` = agent id, `text` = JSON patch (both **required**) | change fields of one agent (`name`/`role`/`skills`/`self_model`/`reflection`); bumps the version and records it |
+| `agent_delete` | `id` = agent id (**required**) | delete one agent and its version history |
+| `agent_run` | `id` = agent id (**required**), (`interactive` flag) | start a conversation from the agent — its role names the conversation's role; the reply carries the conversation id |
 
 `plugin_call` (R-PROTO.5) is the only way to reach a tool without an agent loop; the CLI
 uses it for `nine workflow fail` when the daemon is up and for diagnostics.
@@ -162,6 +168,10 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `turn_cancel` | `text` = `cancelled` \| `idle` | a running turn was cancelled, or the session was idle (or `error` when the session is unknown) |
 | `journal_follow` | `after`, (`status` = `reset`) | follow accepted, starting after `after`; then one per batch with `text` = JSON `[]JournalEvent` (R-PROTO.15) |
 | `list_human_requests` | `text` = JSON `[]PendingQuestion` | `{ id, agent_id, question, options, created_at, expires_at }`, oldest first; one past its deadline is left out |
+| `agent_list` | `text` = JSON `[]Agent` | every stored agent: `{ id, version, definition, created_at, updated_at }`, oldest first |
+| `agent_get` / `agent_create` / `agent_update` | `text` = JSON `Agent` | the one agent (or `error` "… not found" for get/update/delete) |
+| `agent_delete` | `text` = `deleted <id>` | deletion result (or `error` "… not found") |
+| `agent_run` | `text` = JSON `AgentRunResult` | `{ agent_id, conversation_id, role }`: the conversation started from the agent and its resolved role |
 
 **Streaming progress** (emitted during a turn, before `response`+`done`):
 
