@@ -127,15 +127,22 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
       if (!alive) return;
       if (response.status === 404) {
         // Not a live conversation: a finished sub-agent still has its history.
-        void loadHistory(id).then((h) => {
-          if (!alive) return;
-          if (h.length > 0) {
-            setReaped(true);
-            void load();
-          } else {
-            setMissing(true);
-          }
-        });
+        // A deleted one has no history left either — its history read fails
+        // with the same 404, which means missing, not an unhandled rejection.
+        void loadHistory(id).then(
+          (h) => {
+            if (!alive) return;
+            if (h.length > 0) {
+              setReaped(true);
+              void load();
+            } else {
+              setMissing(true);
+            }
+          },
+          () => {
+            if (alive) setMissing(true);
+          },
+        );
         return;
       }
       if (data) setInfo(data);
@@ -238,9 +245,6 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
   return (
     <div class={styles.chat}>
       <header class={styles.head}>
-        <a class={styles.back} href="/conversations" aria-label="All agents">
-          ‹
-        </a>
         <div class={styles.title}>
           {ro ? (
             <h2>{title}</h2>
@@ -759,6 +763,9 @@ function Composer({
             <Icon name="stop" size={16} /> Stop
           </button>
         )}
+        <button type="submit" class={`button ${styles.actionBtn}`} disabled={!text.trim()}>
+          <Icon name="send" size={16} /> Send
+        </button>
         <button
           type="button"
           class={styles.think}

@@ -21,12 +21,13 @@ const processPage = (id: string) => `/processes/${encodeURIComponent(`goal:${id}
 const state = (page: Page) => page.getByRole('complementary', { name: 'Agent details' }).locator('header');
 
 test('a process is stopped and started from its page', async ({ page, request }) => {
-  const id = await createGoal(request, `e2e process ${Date.now()}`);
+  const description = `e2e process ${Date.now()}`;
+  const id = await createGoal(request, description);
   try {
     await signIn(page);
     await page.goto('/processes');
     await expect(page.getByText(/of \d+ running/)).toBeVisible();
-    await page.getByRole('navigation', { name: 'Agents' }).getByRole('link', { name: new RegExp(`goal:${id}`) }).click();
+    await page.getByRole('navigation', { name: 'Agents' }).getByRole('link', { name: new RegExp(description) }).click();
     await expect(page.getByRole('heading', { name: `goal:${id}`, level: 2 })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Budget today' })).toBeVisible();
 
@@ -93,8 +94,9 @@ test('a process agent’s activity is its session, read-only', async ({ page, re
     const pane = page.getByRole('region', { name: 'Activity' });
     // Its session has an activity once the process has run a turn; until then the pane says so.
     await expect(pane.getByRole('list', { name: 'Messages' }).or(pane.getByText('has not run a turn yet'))).toBeVisible();
-    // Read-only: no composer, no delete.
-    await expect(page.getByRole('textbox', { name: 'Message' })).toHaveCount(0);
+    // Read-only: no composer, no delete. (exact: the panel's "Message to the
+    // process" input must not match.)
+    await expect(page.getByRole('textbox', { name: 'Message', exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Delete', exact: true })).toHaveCount(0);
     // The process’s specifics sit in the panel on the right.
     const side = page.getByRole('complementary', { name: 'Agent details' });

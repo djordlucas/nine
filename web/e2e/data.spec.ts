@@ -14,7 +14,7 @@ test('a workspace file is edited, uploaded beside and deleted; .nine stays priva
 
   await signIn(page);
   await page.goto('/data/files');
-  const files = page.getByRole('navigation', { name: 'Files' });
+  const files = page.getByRole('region', { name: 'Files' });
   await expect(files.getByRole('link', { name: /e2e-data/ })).toBeVisible();
   await expect(files.getByRole('link', { name: /\.nine/ })).toHaveCount(0);
 
