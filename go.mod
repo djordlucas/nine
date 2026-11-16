@@ -9,7 +9,7 @@ require (
 	github.com/getkin/kin-openapi v0.152.0
 	github.com/mark3labs/mcp-go v1.5.0
 	github.com/oapi-codegen/nethttp-middleware v1.3.1
-	github.com/oapi-codegen/runtime v1.8.0
+	github.com/oapi-codegen/runtime v1.9.0
 	golang.org/x/term v0.47.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/libc v1.79.1

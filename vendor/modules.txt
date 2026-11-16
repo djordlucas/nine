@@ -122,9 +122,10 @@ github.com/ncruces/go-strftime
 # github.com/oapi-codegen/nethttp-middleware v1.3.1
 ## explicit; go 1.25.0
 github.com/oapi-codegen/nethttp-middleware
-# github.com/oapi-codegen/runtime v1.8.0
-## explicit; go 1.24.0
+# github.com/oapi-codegen/runtime v1.9.0
+## explicit; go 1.26.0
 github.com/oapi-codegen/runtime
+github.com/oapi-codegen/runtime/internal/jsoncodec
 github.com/oapi-codegen/runtime/types
 # github.com/oasdiff/yaml v0.1.1
 ## explicit; go 1.25
