@@ -13,6 +13,12 @@ test('the Builder is reachable from the section navigation and its views work', 
   await page.goto('/');
   await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Builder', exact: true }).click();
   await expect(page).toHaveURL(/\/builder/);
+  // On a desktop the landing pane says what the section is for — the page is
+  // never bare. (On a phone the list itself is the landing; the pane opens with
+  // the first item.)
+  if (test.info().project.name === 'desktop') {
+    await expect(page.getByRole('heading', { name: 'Agents', level: 2 })).toBeVisible();
+  }
   const views = page.getByRole('navigation', { name: 'Builder views' });
   await expect(page.getByRole('navigation', { name: 'Agents' })).toBeVisible();
   for (const label of ['Roles', 'Skills', 'Data']) {

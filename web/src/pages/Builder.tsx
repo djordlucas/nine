@@ -1,3 +1,4 @@
+import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { useLocation, useRoute } from 'preact-iso';
 import { api, errorMessage, get, type Schemas } from '../api/client';
@@ -68,6 +69,21 @@ function skillHref(name: string): string {
 
 function dataHref(key: string): string {
   return `/builder/data?key=${encodeURIComponent(key)}`;
+}
+
+/** What a Builder view's pane shows when nothing is selected: a word on what
+ * the section is for, so the page is never a bare pane. */
+function Blank({ title, children }: { title: string; children: ComponentChildren }) {
+  return (
+    <article class={`card ${detail.detail}`}>
+      <header class={detail.head}>
+        <div class={detail.title}>
+          <h2>{title}</h2>
+        </div>
+      </header>
+      <p class="muted">{children}</p>
+    </article>
+  );
 }
 
 /** Reads a File as a base64 string, in chunks (String.fromCharCode overflows on large buffers). */
@@ -219,7 +235,9 @@ function AgentsView({ id }: { id?: string }) {
         ) : id ? (
           <AgentForm key={id} id={id} roles={data.roles} skills={data.skills} reload={reloads} onSaved={() => setReloads((n) => n + 1)} onRun={run} onExport={exportBundle} onApprove={approve} onDelete={remove} busy={busy} />
         ) : (
-          <p class="empty">Choose an agent to edit it, run it, export or import bundles.</p>
+          <Blank title="Agents">
+            An agent is a named definition — a role, skills, an optional self-model — with its own memory database. Create one here or import an exported bundle; imports land staged until approved, and Run opens a new conversation.
+          </Blank>
         )}
       </section>
     </Split>
@@ -452,7 +470,11 @@ function RolesView({ name }: { name?: string }) {
         )}
       </nav>
       <section class={split.pane} aria-label="Role">
-        {data && (name ? <RoleForm key={name} name={name} roles={data} onSaved={() => setReloads((n) => n + 1)} onDelete={remove} /> : <p class="empty">Choose a role to edit it.</p>)}
+        {data && (name ? <RoleForm key={name} name={name} roles={data} onSaved={() => setReloads((n) => n + 1)} onDelete={remove} /> : (
+          <Blank title="Roles">
+            A role is a persona with a tool allowlist, stored as a skill with a role block. Pick one to edit it, or start from New role.
+          </Blank>
+        ))}
       </section>
     </Split>
   );
@@ -619,7 +641,11 @@ function SkillsView({ name }: { name?: string }) {
         )}
       </nav>
       <section class={split.pane} aria-label="Skill">
-        {data && (name ? <SkillForm key={name} name={name} onSaved={() => setReloads((n) => n + 1)} onDelete={remove} /> : <p class="empty">Choose a skill to read or edit it.</p>)}
+        {data && (name ? <SkillForm key={name} name={name} onSaved={() => setReloads((n) => n + 1)} onDelete={remove} /> : (
+          <Blank title="Skills">
+            Skills are Markdown programs the model can read and call. Agent-written ones are editable here; builtin and user skills are read-only.
+          </Blank>
+        ))}
       </section>
     </Split>
   );
