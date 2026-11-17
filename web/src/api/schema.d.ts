@@ -3067,6 +3067,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
+        /** @description The key and value to store. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["MemorySetRequest"];
@@ -6849,6 +6850,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
+        /** @description The role to create: name, description, tool boundary (all_tools or tools) and structural flags. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["RoleCreateRequest"];
@@ -6966,6 +6968,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description The fields to change on the role. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["RolePatch"];
@@ -7185,6 +7188,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
+        /** @description The skill to write: name, description, tags and the Markdown body. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SkillCreateRequest"];
@@ -7468,6 +7472,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description The fields to change on the skill. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SkillPatch"];

@@ -270,6 +270,7 @@ paths:
       - health
       requestBody:
         required: true
+        description: The key and value to store.
         content:
           application/json:
             schema:
@@ -3088,6 +3089,7 @@ paths:
       - roles
       requestBody:
         required: true
+        description: 'The role to create: name, description, tool boundary (all_tools or tools) and structural flags.'
         content:
           application/json:
             schema:
@@ -3131,6 +3133,7 @@ paths:
           type: string
       requestBody:
         required: true
+        description: The fields to change on the role.
         content:
           application/json:
             schema:
@@ -3324,6 +3327,7 @@ paths:
       - skills
       requestBody:
         required: true
+        description: 'The skill to write: name, description, tags and the Markdown body.'
         content:
           application/json:
             schema:
@@ -3489,6 +3493,7 @@ paths:
           type: string
       requestBody:
         required: true
+        description: The fields to change on the skill.
         content:
           application/json:
             schema:
